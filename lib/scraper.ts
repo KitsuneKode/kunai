@@ -1,6 +1,7 @@
 import { chromium, type Browser } from "playwright";
 import { fetchSubtitlesFromWyzie } from "./subtitle";
 import { cacheStream } from "./cache";
+import { dbg, dbgErr } from "./logger";
 
 // =============================================================================
 // AD BLOCKLIST — aborted at the network layer via Playwright route().
@@ -52,6 +53,7 @@ export async function scrapeStream(
   subLang:   string,
   headless = true,
 ): Promise<StreamData | null> {
+  dbg("scraper", "start", { targetUrl, subLang, headless });
   let browser: Browser | null = null;
   try {
     browser = await chromium.launch({ headless });
@@ -102,6 +104,7 @@ export async function scrapeStream(
           streamFound = true;
           const streamUrl     = url;
           const streamHeaders = req.headers();
+          dbg("scraper", "m3u8 intercepted", { streamUrl });
 
           setTimeout(async () => {
             // Give wyzie an extra 1.5 s to fire if it hasn't yet
@@ -118,14 +121,16 @@ export async function scrapeStream(
               subtitleList = result.list;
             }
 
-            resolve({
+            const result = {
               url: streamUrl,
               headers: streamHeaders,
               subtitle,
               subtitleList,
               title: scrapedTitle,
               timestamp: Date.now(),
-            });
+            };
+            dbg("scraper", "resolved", { subtitle, subtitleCount: subtitleList.length });
+            resolve(result);
           }, 2000);
         }
       };
@@ -205,6 +210,7 @@ export async function scrapeStream(
 
     return streamData;
   } catch (e: unknown) {
+    dbgErr("scraper", "uncaught error", e);
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`\n❌ Scrape error: ${msg}`);
     await browser?.close().catch(() => {});
