@@ -12,9 +12,11 @@ coverage
 
 # logs
 logs
+logs.*
 _.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
+stream_cache.json
 # dotenv environment variable files
 .env
 .env.development.local
