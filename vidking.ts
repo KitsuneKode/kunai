@@ -15,11 +15,11 @@ import { appendFile } from "fs/promises";
   console.log("Navigating to Vidking and analyzing network traffic...");
 
   let streamFound = false;
+  let capturedSubtitleUrl: string | null = null;
 
-  // Function to log stream details to logs.txt
-  const logStream = async (url: string, headers: Record<string, string>) => {
+  const logStream = async (url: string, headers: Record<string, string>, subUrl: string | null) => {
     try {
-      const logEntry = `\n=== Stream Log ===\nTimestamp: ${new Date().toISOString()}\nURL: ${url}\nHeaders:\n${JSON.stringify(headers, null, 2)}\n===================\n`;
+      const logEntry = `\n=== Stream Log ===\nTimestamp: ${new Date().toISOString()}\nURL: ${url}\nSubtitle: ${subUrl || "None"}\nHeaders:\n${JSON.stringify(headers, null, 2)}\n===================\n`;
       await appendFile("logs.txt", logEntry, "utf8");
     } catch (logError) {
       console.error("[!] Failed to write to log file:", logError);
@@ -27,11 +27,7 @@ import { appendFile } from "fs/promises";
   };
 
   const launchMpv = async (url: string, headers: Record<string, string>) => {
-    if (streamFound) return;
-    streamFound = true;
-
-    // Log the stream details
-    await logStream(url, headers);
+    await logStream(url, headers, capturedSubtitleUrl);
 
     console.log("\n=================================================");
     console.log("🎉 BINGO! STREAM FOUND. LAUNCHING MPV...");
@@ -42,6 +38,11 @@ import { appendFile } from "fs/promises";
     if (headers["user-agent"]) mpvArgs.push(`--user-agent=${headers["user-agent"]}`);
     if (headers["origin"]) mpvArgs.push(`--http-header-fields=Origin: ${headers["origin"]}`);
 
+    if (capturedSubtitleUrl) {
+      console.log(`[+] Attaching Subtitle: ${capturedSubtitleUrl}`);
+      mpvArgs.push(`--sub-file=${capturedSubtitleUrl}`);
+    }
+
     console.log("[+] Injecting MPV Args:\n", mpvArgs);
 
     await browser.close().catch(() => {});
@@ -50,22 +51,33 @@ import { appendFile } from "fs/promises";
     mpv.on("close", () => process.exit(0));
   };
 
-  // 1. SNOOP ON EVERYTHING: This helps you write the Go CLI
   const checkRequest = (request: any) => {
     const url = request.url();
     const type = request.resourceType();
 
-    // Log the hidden APIs so you know what to replicate in Go
+    // 1. SNOOP FOR HIDDEN APIs (Helpful for writing your Go/TS CLI)
     if (type === "fetch" || type === "xhr") {
-      // Filter out obvious noise
       if (!url.includes("google") && !url.includes("cloudflare")) {
         console.log(`[🔍 API SNOOP] ${request.method()} -> ${url}`);
       }
     }
 
-    // Catch the final stream
+    // 2. SNOOP FOR SUBTITLES
+    if (url.includes(".vtt") || url.includes(".srt") || url.includes("sub.wyzie.io")) {
+      if (!capturedSubtitleUrl) {
+        console.log(`\n[💬 SUBTITLE CAUGHT] URL: ${url}\n`);
+        capturedSubtitleUrl = url;
+      }
+    }
+
+    // 3. CATCH THE STREAM AND WAIT
     if (url.includes(".m3u8") && !streamFound) {
-      launchMpv(url, request.headers());
+      streamFound = true;
+      console.log("[+] Master stream found! Waiting 1.5s to catch subtitles...");
+
+      setTimeout(() => {
+        launchMpv(url, request.headers()).catch(console.error);
+      }, 1500);
     }
   };
 
@@ -77,22 +89,28 @@ import { appendFile } from "fs/promises";
   page.on("request", checkRequest);
 
   try {
-    // Testing with TMDB ID 127529 (Bloodhounds Korean drama) on Vidking
     await page.goto("https://www.vidking.net/embed/tv/127529/1/1", {
       waitUntil: "domcontentloaded",
     });
 
-    // Sometimes you have to physically click the "Play" button on embed players to trigger the API.
-    // This waits for a bit to give you time to click it if needed.
-    await page.waitForTimeout(15000);
+    // Robust wait loop: Breaks instantly if stream is found
+    for (let i = 0; i < 20; i++) {
+      if (streamFound) break;
+      await page.waitForTimeout(1000);
+    }
   } catch (error: any) {
     console.log(`[!] Page error: ${error.message}`);
-    await new Promise((r) => setTimeout(r, 10000));
+    for (let i = 0; i < 10; i++) {
+      if (streamFound) break;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
   }
 
-  if (!streamFound) {
-    console.log("\n[!] Timeout: Could not find m3u8.");
-    await browser.close().catch(() => {});
-    process.exit(1);
-  }
+  setTimeout(async () => {
+    if (!streamFound) {
+      console.log("\n[!] Timeout: Could not find m3u8.");
+      await browser.close().catch(() => {});
+      process.exit(1);
+    }
+  }, 2000);
 })();
