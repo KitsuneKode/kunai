@@ -1,7 +1,8 @@
-import { chromium, type Browser } from "playwright";
+import { chromium, type Browser, type Page } from "playwright";
 import { fetchSubtitlesFromWyzie } from "./subtitle";
 import { cacheStream } from "./cache";
 import { dbg, dbgErr } from "./logger";
+import { PLAYER_DOMAINS, type Provider } from "./providers";
 
 // =============================================================================
 // AD BLOCKLIST — aborted at the network layer via Playwright route().
@@ -37,23 +38,67 @@ export type StreamData = {
 };
 
 // =============================================================================
+// TITLE EXTRACTION
+//
+// Each provider declares its preferred strategy. We execute it here so the
+// scraper stays provider-agnostic — no if/else provider checks in the core.
+// =============================================================================
+
+async function extractTitle(page: Page, provider: Provider): Promise<string> {
+  if (provider.titleSource === "selectors") {
+    for (const sel of provider.titleSelectors ?? []) {
+      const el   = await page.$(sel).catch(() => null);
+      const text = el ? (await el.innerText().catch(() => "")).trim() : "";
+      if (text) return text;
+    }
+    // Fallback: page title (filter out the provider name)
+    const pt = await page.title().catch(() => "");
+    if (pt && pt.toLowerCase() !== provider.id) return pt;
+    return "Unknown";
+  }
+
+  if (provider.titleSource === "og") {
+    const og = await page.$eval(
+      'meta[property="og:title"]',
+      (el: any) => (el.content as string) ?? ""  // eslint-disable-line @typescript-eslint/no-explicit-any
+    ).catch(() => "");
+
+    if (og && !new RegExp(`^${provider.id}$`, "i").test(og.trim())) {
+      return (og.split(/\s*[-|–—·]\s*/)[0] ?? og).trim() || og.trim();
+    }
+
+    // OG missing or equal to provider name — fall back to page title
+    const raw = await page.title().catch(() => "");
+    if (raw) {
+      return raw
+        .replace(/\bwatch\b/gi, "")
+        .replace(new RegExp(`\\b${provider.id}\\b`, "gi"), "")
+        .replace(/\s*[-|–—·]\s*/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() || "Unknown";
+    }
+    return "Unknown";
+  }
+
+  // "page-title" strategy
+  const raw = await page.title().catch(() => "");
+  return raw.trim() || "Unknown";
+}
+
+// =============================================================================
 // SCRAPER
 //
-// Launches a Playwright browser, navigates to the target URL, intercepts:
-//   - .m3u8 stream URL + request headers
-//   - wyzie subtitle search URL (captured from request, fetched independently)
-//   - direct .vtt/.srt subtitle URLs
-//
-// Popup ad tabs are detected and closed. A 20-second hard timeout prevents
-// hanging indefinitely if the provider doesn't emit a stream.
+// Accepts a Provider object so all provider-specific behaviour (click, title
+// extraction, popup detection) is driven by the registry, not inline checks.
 // =============================================================================
 
 export async function scrapeStream(
+  provider:  Provider,
   targetUrl: string,
   subLang:   string,
   headless = true,
 ): Promise<StreamData | null> {
-  dbg("scraper", "start", { targetUrl, subLang, headless });
+  dbg("scraper", "start", { provider: provider.id, targetUrl, subLang, headless });
   let browser: Browser | null = null;
   try {
     browser = await chromium.launch({ headless });
@@ -92,11 +137,13 @@ export async function scrapeStream(
             (url.includes(".vtt") || url.includes(".srt") || url.includes("sub.wyzie.io/c/")) &&
             !url.includes("search")) {
           directSubUrl = url;
+          dbg("scraper", "direct subtitle found", { url });
         }
 
-        // Wyzie subtitle search — capture the full URL (contains an embedded API key)
+        // Wyzie subtitle search — capture the full URL (contains embedded API key)
         if (!wyzieSearchUrl && url.includes("sub.wyzie.io/search")) {
           wyzieSearchUrl = url;
+          dbg("scraper", "wyzie search URL captured", { url });
         }
 
         // m3u8 stream
@@ -122,12 +169,12 @@ export async function scrapeStream(
             }
 
             const result = {
-              url: streamUrl,
-              headers: streamHeaders,
+              url:          streamUrl,
+              headers:      streamHeaders,
               subtitle,
               subtitleList,
-              title: scrapedTitle,
-              timestamp: Date.now(),
+              title:        scrapedTitle,
+              timestamp:    Date.now(),
             };
             dbg("scraper", "resolved", { subtitle, subtitleCount: subtitleList.length });
             resolve(result);
@@ -137,59 +184,30 @@ export async function scrapeStream(
 
       page.on("request", onRequest);
 
-      // Popup tab handling — attach request listeners, close non-player tabs
+      // Popup tab handling — allow player tabs, close everything else
       context.on("page", async (newPage) => {
         newPage.on("request", onRequest);
         newPage.on("dialog", (d) => d.dismiss());
         await newPage.waitForLoadState("domcontentloaded").catch(() => {});
-        const pu = newPage.url();
-        const isPlayer = ["cineby", "vidking", "about:blank", "blob:"].some((d) => pu.includes(d));
-        if (!isPlayer && pu && pu !== "about:blank") await newPage.close().catch(() => {});
+        const pu       = newPage.url();
+        const isPlayer = PLAYER_DOMAINS.some((d) => pu.includes(d));
+        if (!isPlayer && pu && pu !== "about:blank") {
+          dbg("scraper", "closing ad popup", { url: pu });
+          await newPage.close().catch(() => {});
+        }
       });
-
-      const isVidking = targetUrl.includes("vidking.net");
 
       page.goto(targetUrl, { waitUntil: "domcontentloaded" })
         .then(async () => {
           try {
             await page.waitForTimeout(500);
-            // Cineby's player is lazy and needs a click to start.
-            // VidKing uses autoPlay=true, no click needed.
-            if (!isVidking) await page.mouse.click(500, 500);
 
-            // Title extraction
-            if (isVidking) {
-              for (const sel of ["h1", "h2", "[class*='title']", "[class*='name']"]) {
-                const el   = await page.$(sel).catch(() => null);
-                const text = el ? (await el.innerText().catch(() => "")).trim() : "";
-                if (text) { scrapedTitle = text; break; }
-              }
-              if (scrapedTitle === "Unknown") {
-                const pt = await page.title().catch(() => "");
-                if (pt && pt.toLowerCase() !== "vidking") scrapedTitle = pt;
-              }
-            } else {
-              // Cineby: OG meta title is the most reliable source
-              const ogTitle = await page.$eval(
-                'meta[property="og:title"]',
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (el: any) => (el.content as string) ?? ""
-              ).catch(() => "");
+            // Click only if the provider's player requires it
+            if (provider.needsClick) await page.mouse.click(500, 500);
 
-              if (ogTitle && !/^cineby$/i.test(ogTitle.trim())) {
-                scrapedTitle = (ogTitle.split(/\s*[-|–—·]\s*/)[0] ?? ogTitle).trim() || ogTitle.trim();
-              } else {
-                const raw = await page.title().catch(() => "");
-                if (raw) {
-                  scrapedTitle = raw
-                    .replace(/\bwatch\b/gi, "")
-                    .replace(/\bcineby\b/gi, "")
-                    .replace(/\s*[-|–—·]\s*/g, " ")
-                    .replace(/\s+/g, " ")
-                    .trim() || "Unknown";
-                }
-              }
-            }
+            // Title extraction is fully driven by the provider's declared strategy
+            scrapedTitle = await extractTitle(page, provider);
+            dbg("scraper", "title extracted", { scrapedTitle, strategy: provider.titleSource });
           } catch {}
         })
         .catch(() => {});
@@ -200,7 +218,10 @@ export async function scrapeStream(
           if (streamFound) return;
           await new Promise((r) => setTimeout(r, 1000));
         }
-        if (!streamFound) resolve(null);
+        if (!streamFound) {
+          dbg("scraper", "timeout — no stream found");
+          resolve(null);
+        }
       })();
     });
 

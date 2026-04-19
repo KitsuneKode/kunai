@@ -6,7 +6,7 @@ import { searchVideasy, type SearchResult } from "./lib/search";
 import { displayPoster, isKittyCompatible } from "./lib/image";
 import { getHistory, saveHistory, isFinished, formatTimestamp, type HistoryEntry } from "./lib/history";
 import { getCachedStream } from "./lib/cache";
-import { buildUrl } from "./lib/urls";
+import { buildUrl, getProvider, PROVIDER_LIST } from "./lib/providers";
 import { scrapeStream, type StreamData } from "./lib/scraper";
 import { launchMpv } from "./lib/mpv";
 import { checkDeps, pickWithFzf, pickSubtitleWithFzf } from "./lib/ui";
@@ -103,14 +103,14 @@ async function resolveStream(targetUrl: string): Promise<StreamData | null> {
   // 3. Fresh scrape
   const s = spinner();
   s.start("Scraping stream…");
-  const data = await scrapeStream(targetUrl, currentSubLang, useHeadless);
+  const data = await scrapeStream(getProvider(currentProvider), targetUrl, currentSubLang, useHeadless);
   s.stop(data ? "Stream found." : "Failed to find stream.");
   return data;
 }
 
 function startPrefetch(url: string) {
   if (prefetchedStream?.url === url) return;
-  prefetchedStream = { url, data: scrapeStream(url, currentSubLang, true) };
+  prefetchedStream = { url, data: scrapeStream(getProvider(currentProvider), url, currentSubLang, true) };
 }
 
 // =============================================================================
@@ -298,13 +298,15 @@ function startPrefetch(url: string) {
 
     // Auto-fallback: if primary fails, silently try the other provider
     if (!streamInfo) {
-      const fallback = currentProvider === "vidking" ? "cineby" : "vidking";
-      log.warn(`${currentProvider} failed — trying ${fallback}…`);
-      const fallbackUrl = buildUrl(fallback, currentId, currentType, currentSeason, currentEpisode);
-      const s = spinner();
-      s.start(`Scraping via ${fallback}…`);
-      streamInfo = await scrapeStream(fallbackUrl, currentSubLang, useHeadless);
-      s.stop(streamInfo ? `Got stream via ${fallback}.` : `${fallback} also failed.`);
+      const fallbackProvider = PROVIDER_LIST.find((p) => p.id !== currentProvider);
+      if (fallbackProvider) {
+        log.warn(`${currentProvider} failed — trying ${fallbackProvider.id}…`);
+        const fallbackUrl = buildUrl(fallbackProvider.id, currentId, currentType, currentSeason, currentEpisode);
+        const s = spinner();
+        s.start(`Scraping via ${fallbackProvider.id}…`);
+        streamInfo = await scrapeStream(fallbackProvider, fallbackUrl, currentSubLang, useHeadless);
+        s.stop(streamInfo ? `Got stream via ${fallbackProvider.id}.` : `${fallbackProvider.id} also failed.`);
+      }
     }
 
     if (!streamInfo) {
@@ -414,7 +416,8 @@ function startPrefetch(url: string) {
       currentEpisode = 1;
     } else if (k === "o" && currentType === "series") {
       prefetchedStream = null;
-      currentProvider = currentProvider === "vidking" ? "cineby" : "vidking";
+      const idx = PROVIDER_LIST.findIndex((p) => p.id === currentProvider);
+      currentProvider = (PROVIDER_LIST[(idx + 1) % PROVIDER_LIST.length] ?? PROVIDER_LIST[0])!.id;
       log.info(`Switched to ${green(currentProvider)}`);
     }
     // Any unknown key replays the current episode (safe default)

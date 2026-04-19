@@ -1,6 +1,7 @@
 import { note, select, confirm, log } from "@clack/prompts";
 import { isCancel } from "@clack/prompts";
 import { saveConfig, type KitsuneConfig } from "./config";
+import { PROVIDER_LIST } from "./providers";
 import { getAllHistory, clearEntry, clearAllHistory, isFinished, formatTimestamp } from "./history";
 
 // =============================================================================
@@ -131,12 +132,9 @@ export async function openSettings(current: KitsuneConfig): Promise<KitsuneConfi
   // ── Preferences ──────────────────────────────────────────────────────────
   const newProvider = guard(await select({
     message: "Default provider:",
-    options: [
-      { value: "vidking", label: "VidKing  (recommended)" },
-      { value: "cineby",  label: "Cineby" },
-    ],
+    options: PROVIDER_LIST.map((p) => ({ value: p.id, label: p.description })),
     initialValue: current.provider,
-  })) as "vidking" | "cineby" | null;
+  })) as string | null;
   if (newProvider === null) return null;
 
   const newSubLang = guard(await select({
@@ -174,7 +172,7 @@ export async function openSettings(current: KitsuneConfig): Promise<KitsuneConfi
   if (newAutoNext === null) return null;
 
   const updated: KitsuneConfig = {
-    provider:   newProvider,
+    provider:   newProvider as string,
     subLang:    newSubLang,
     headless:   newHeadless,
     showMemory: newShowMem,

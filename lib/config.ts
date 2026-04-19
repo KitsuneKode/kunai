@@ -3,7 +3,7 @@ import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 
 export type KitsuneConfig = {
-  provider:   "vidking" | "cineby";
+  provider:   string; // provider ID from the registry (e.g. "vidking", "cineby")
   subLang:    string;
   headless:   boolean;
   showMemory: boolean;
