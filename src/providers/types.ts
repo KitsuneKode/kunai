@@ -18,11 +18,11 @@ import type { StreamData } from "@/scraper";
 // ── Shared base ───────────────────────────────────────────────────────────────
 
 interface BaseProvider {
-  readonly id:              string;   // machine key — used in config / CLI flags
-  readonly name:            string;   // short human label
-  readonly description:     string;   // shown in select menus
-  readonly domain:          string;   // hostname fragment for popup tab detection
-  readonly recommended?:    boolean;
+  readonly id: string; // machine key — used in config / CLI flags
+  readonly name: string; // short human label
+  readonly description: string; // shown in select menus
+  readonly domain: string; // hostname fragment for popup tab detection
+  readonly recommended?: boolean;
   readonly isAnimeProvider?: boolean; // true → shown in anime provider picker
 }
 
@@ -40,7 +40,7 @@ export interface PlaywrightProvider extends BaseProvider {
   //   "selectors"  — walk titleSelectors, take first non-empty text
   //   "og"         — prefer <meta property="og:title">
   //   "page-title" — document.title
-  readonly titleSource:     "selectors" | "og" | "page-title";
+  readonly titleSource: "selectors" | "og" | "page-title";
   readonly titleSelectors?: readonly string[];
 }
 
@@ -54,25 +54,27 @@ export interface PlaywrightProvider extends BaseProvider {
 export type SearchBackend = "tmdb" | "allanime" | "hianime" | "self";
 
 export type ApiSearchResult = {
-  id:         string;   // provider-internal ID (not a TMDB ID)
-  title:      string;
-  type:       "movie" | "series";
-  year?:      string;
+  id: string; // provider-internal ID (not a TMDB ID)
+  title: string;
+  type: "movie" | "series";
+  year?: string;
   posterUrl?: string;
-  epCount?:   number;
+  epCount?: number;
 };
 
 // Passed to resolveStream and search.
 // embedScraper is injected by index.ts so ApiProviders that need a final
 // Playwright pass (e.g. Braflix embed extraction) don't need to import scraper.ts.
+export type EmbedScraperOpts = { needsClick?: boolean };
+
 export type ResolveOpts = {
-  subLang:      string;
-  animeLang:    "sub" | "dub";
-  embedScraper: (embedUrl: string) => Promise<StreamData | null>;
+  subLang: string;
+  animeLang: "sub" | "dub";
+  embedScraper: (embedUrl: string, opts?: EmbedScraperOpts) => Promise<StreamData | null>;
 };
 
 export interface ApiProvider extends BaseProvider {
-  readonly kind:          "api";
+  readonly kind: "api";
   readonly searchBackend: SearchBackend;
 
   // Called when searchBackend === "self" or "allanime".
@@ -80,11 +82,11 @@ export interface ApiProvider extends BaseProvider {
 
   // Full resolution: HTTP metadata + optional embedScraper for the last step.
   resolveStream(
-    id:      string,
-    type:    "movie" | "series",
-    season:  number,
+    id: string,
+    type: "movie" | "series",
+    season: number,
     episode: number,
-    opts:    ResolveOpts,
+    opts: ResolveOpts,
   ): Promise<StreamData | null>;
 }
 
@@ -93,4 +95,4 @@ export interface ApiProvider extends BaseProvider {
 export type Provider = PlaywrightProvider | ApiProvider;
 
 export const isPlaywright = (p: Provider): p is PlaywrightProvider => p.kind === "playwright";
-export const isApi        = (p: Provider): p is ApiProvider        => p.kind === "api";
+export const isApi = (p: Provider): p is ApiProvider => p.kind === "api";
