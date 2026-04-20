@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { intro, outro, text, spinner, log, isCancel, cancel } from "@clack/prompts";
+import { intro, outro, spinner, log, cancel } from "@clack/prompts";
 import { parseArgs } from "util";
 
 import { searchVideasy, type SearchResult } from "@/search";
@@ -27,7 +27,12 @@ import {
 } from "@/config";
 import { openSettings, bold, cyan, dim, green, yellow } from "@/menu";
 import { initLogger, dbg } from "@/logger";
-import { openHomeShell, openPlaybackShell, formatMemoryUsage } from "@/app-shell/ink-shell";
+import {
+  openHomeShell,
+  openPlaybackShell,
+  openSearchShell,
+  formatMemoryUsage,
+} from "@/app-shell/ink-shell";
 import { chooseStartingEpisode, cycleProvider, describeHistoryEntry } from "@/session-flow";
 
 // =============================================================================
@@ -80,10 +85,6 @@ function cancelAndExit(): never {
   cancel("Cancelled.");
   process.exit(0);
 }
-function guard<T>(v: T | symbol): T {
-  if (isCancel(v)) cancelAndExit();
-  return v as T;
-}
 
 process.on("SIGINT", () => {
   process.stdout.write("\n");
@@ -102,6 +103,17 @@ function statusForCurrentMode() {
     label: `${isAnime ? "Anime" : "Series"} mode ready`,
     tone: "neutral" as const,
   };
+}
+
+async function promptForSearchQuery(initialValue?: string): Promise<string> {
+  const query = await openSearchShell({
+    mode: isAnime ? "anime" : "series",
+    provider: currentProvider,
+    initialValue,
+    placeholder: isAnime ? "Demon Slayer" : "Breaking Bad",
+  });
+  if (!query) cancelAndExit();
+  return query;
 }
 
 // Non-blocking key peek — waits up to 800 ms for a keypress before proceeding.
@@ -352,14 +364,7 @@ function startPrefetch() {
 
       if (isAnime) {
         // ── Anime search (provider-native) ───────────────────────────────────────
-        const rawQuery =
-          (firstPass && (values.search as string)) ||
-          (guard(
-            await text({
-              message: `Search ${isAnime ? "anime" : ""}:`,
-              placeholder: isAnime ? "Demon Slayer" : "Breaking Bad",
-            }),
-          ) as string);
+        const rawQuery = (firstPass && (values.search as string)) || (await promptForSearchQuery());
 
         const provider = getProvider(currentProvider);
         if (!isApi(provider)) throw new Error(`${currentProvider} is not an API provider`);
@@ -392,9 +397,7 @@ function startPrefetch() {
         currentTitle = (firstPass && (values.title as string)) || apiPicked.title;
       } else {
         // ── TMDB search (videasy) ────────────────────────────────────────────────
-        const rawQuery =
-          (firstPass && (values.search as string)) ||
-          (guard(await text({ message: "Search:", placeholder: "Breaking Bad" })) as string);
+        const rawQuery = (firstPass && (values.search as string)) || (await promptForSearchQuery());
 
         const s = spinner();
         s.start("Searching…");

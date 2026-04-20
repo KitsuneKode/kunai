@@ -3,11 +3,22 @@
   "private": true,
   "type": "module",
   "module": "cineby.ts",
+  "scripts": {
+    "dev": "bun run index.ts",
+    "start": "bun run index.ts",
+    "test": "bun test",
+    "typecheck": "bun tsc --noEmit",
+    "lint": "./node_modules/.bin/oxlint .",
+    "format": "./node_modules/.bin/oxfmt --check .",
+    "format:write": "./node_modules/.bin/oxfmt --write .",
+    "check": "bun run typecheck && bun run lint && bun run format"
+  },
   "dependencies": {
     "@clack/prompts": "^1.2.0",
     "@kitsunekode/run-cli": "^0.1.0",
     "@types/react": "^19.2.14",
     "ink": "^7.0.1",
+    "ink-text-input": "^6.0.0",
     "playwright": "^1.59.1",
     "react": "^19.2.5"
   },

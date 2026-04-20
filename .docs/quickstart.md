@@ -32,13 +32,13 @@ bun run index.ts --debug
 ## Dev Checks
 
 ```sh
-bun tsc --noEmit
-./node_modules/.bin/oxlint .
-./node_modules/.bin/oxfmt --check .
+bun run typecheck
+bun run lint
+bun run format
 bun run test
 ```
 
-Do not use `bun test` directly. The repo currently has local `oxlint` and `oxfmt` binaries but does not define `bun run lint` or `bun run format` scripts.
+Do not use `bun test` directly.
 
 ## CLI Flags
 

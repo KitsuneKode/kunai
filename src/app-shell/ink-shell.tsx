@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, render, useInput } from "ink";
+import TextInput from "ink-text-input";
 
 import { parseCommand, suggestCommands, type AppCommandId } from "./commands";
 import {
@@ -353,6 +354,90 @@ export function openHomeShell(state: HomeShellState): Promise<ShellAction> {
 
 export function openPlaybackShell(state: PlaybackShellState): Promise<ShellAction> {
   return openShell({ Component: PlaybackShell, props: { state } });
+}
+
+function SearchShell({
+  mode,
+  provider,
+  initialValue,
+  placeholder,
+  onSubmit,
+  onCancel,
+}: {
+  mode: "series" | "anime";
+  provider: string;
+  initialValue?: string;
+  placeholder: string;
+  onSubmit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initialValue ?? "");
+
+  useInput((_input, key) => {
+    if (key.escape) onCancel();
+  });
+
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Box borderStyle="round" borderColor={palette.gray} flexDirection="column" paddingX={1}>
+        <Text color={palette.amber}>KitsuneSnipe</Text>
+        <Box marginTop={1}>
+          <Text bold color="white">
+            {mode === "anime" ? "Search anime" : "Search titles"}
+          </Text>
+        </Box>
+        <Text
+          color={palette.muted}
+        >{`Provider ${provider}  ·  Enter submits  ·  Esc cancels`}</Text>
+        <Box marginTop={1}>
+          <Text color={palette.cyan}>› </Text>
+          <TextInput
+            value={value}
+            onChange={setValue}
+            placeholder={placeholder}
+            onSubmit={(next) => onSubmit(next.trim())}
+          />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+export function openSearchShell({
+  mode,
+  provider,
+  initialValue,
+  placeholder,
+}: {
+  mode: "series" | "anime";
+  provider: string;
+  initialValue?: string;
+  placeholder: string;
+}): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      ink.unmount();
+      resolve(value);
+    };
+
+    const ink = render(
+      <SearchShell
+        mode={mode}
+        provider={provider}
+        initialValue={initialValue}
+        placeholder={placeholder}
+        onSubmit={(value) => finish(value.length > 0 ? value : null)}
+        onCancel={() => finish(null)}
+      />,
+    );
+
+    ink.waitUntilExit().then(() => {
+      if (!settled) resolve(null);
+    });
+  });
 }
 
 export function formatMemoryUsage(): string {

@@ -65,9 +65,9 @@ bun run index.ts --debug
 Before finishing work:
 
 ```sh
-bun tsc --noEmit
-./node_modules/.bin/oxlint .
-./node_modules/.bin/oxfmt --check .
+bun run typecheck
+bun run lint
+bun run format
 ```
 
 Use `bun run test` if tests are relevant and available. Do not use `bun test` directly.
