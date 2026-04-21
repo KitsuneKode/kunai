@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Box, Text, render, useInput } from "ink";
 import TextInput from "ink-text-input";
 
@@ -332,6 +332,7 @@ function openShell<TProps>({
   Component: React.ComponentType<TProps & { onResolve: (action: ShellAction) => void }>;
   props: TProps;
 }): Promise<ShellAction> {
+  if (process.stdin.isTTY) process.stdin.ref();
   return new Promise((resolve) => {
     let settled = false;
     const onResolve = (action: ShellAction) => {
@@ -414,6 +415,7 @@ export function openSearchShell({
   initialValue?: string;
   placeholder: string;
 }): Promise<string | null> {
+  if (process.stdin.isTTY) process.stdin.ref();
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: string | null) => {
@@ -460,9 +462,15 @@ function ListShell<T>({
   onCancel: () => void;
 }) {
   const [index, setIndex] = useState(0);
+  const mountedAt = useRef(Date.now());
 
   useInput((input, key) => {
-    if (key.escape) {
+    // The Enter key used to submit the search box can bleed into the
+    // next picker frame. Ignore immediate input on mount so selection
+    // requires a deliberate keypress.
+    if (Date.now() - mountedAt.current < 150) return;
+
+    if (key.escape || input === "q") {
       onCancel();
       return;
     }
@@ -534,6 +542,7 @@ export function openListShell<T>({
   subtitle: string;
   options: readonly ListOption<T>[];
 }): Promise<T | null> {
+  if (process.stdin.isTTY) process.stdin.ref();
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: T | null) => {

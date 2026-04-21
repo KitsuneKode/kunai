@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { intro, outro, spinner, log, cancel } from "@clack/prompts";
+import { intro, outro, spinner, log } from "@clack/prompts";
 import { parseArgs } from "util";
 
 import { searchVideasy, type SearchResult } from "@/search";
@@ -81,11 +81,6 @@ let prefetchedStream: { url: string; data: Promise<StreamData | null> } | null =
 // 3. HELPERS
 // =============================================================================
 
-function cancelAndExit(): never {
-  cancel("Cancelled.");
-  process.exit(0);
-}
-
 process.on("SIGINT", () => {
   process.stdout.write("\n");
   outro("See you next time 🦊");
@@ -105,15 +100,13 @@ function statusForCurrentMode() {
   };
 }
 
-async function promptForSearchQuery(initialValue?: string): Promise<string> {
-  const query = await openSearchShell({
+async function promptForSearchQuery(initialValue?: string): Promise<string | null> {
+  return openSearchShell({
     mode: isAnime ? "anime" : "series",
     provider: currentProvider,
     initialValue,
     placeholder: isAnime ? "Demon Slayer" : "Breaking Bad",
   });
-  if (!query) cancelAndExit();
-  return query;
 }
 
 async function pickSearchResult<T>({
@@ -128,8 +121,8 @@ async function pickSearchResult<T>({
   items: readonly T[];
   toLabel: (item: T) => string;
   toDetail?: (item: T) => string | undefined;
-}): Promise<T> {
-  const picked = await openListShell({
+}): Promise<T | null> {
+  return openListShell({
     title,
     subtitle,
     options: items.map((item) => ({
@@ -138,8 +131,6 @@ async function pickSearchResult<T>({
       detail: toDetail?.(item),
     })),
   });
-  if (!picked) cancelAndExit();
-  return picked;
 }
 
 // Non-blocking key peek — waits up to 800 ms for a keypress before proceeding.
@@ -391,6 +382,10 @@ function startPrefetch() {
       if (isAnime) {
         // ── Anime search (provider-native) ───────────────────────────────────────
         const rawQuery = (firstPass && (values.search as string)) || (await promptForSearchQuery());
+        if (!rawQuery) {
+          firstPass = false;
+          continue;
+        }
 
         const provider = getProvider(currentProvider);
         if (!isApi(provider)) throw new Error(`${currentProvider} is not an API provider`);
@@ -420,6 +415,10 @@ function startPrefetch() {
           toDetail: (result) =>
             `${result.epCount ? `${result.epCount} eps` : "episode count unknown"}${result.year ? `  ·  ${result.year}` : ""}`,
         });
+        if (!apiPicked) {
+          firstPass = false;
+          continue;
+        }
 
         currentId = apiPicked.id;
         currentType = apiPicked.type;
@@ -427,6 +426,10 @@ function startPrefetch() {
       } else {
         // ── TMDB search (videasy) ────────────────────────────────────────────────
         const rawQuery = (firstPass && (values.search as string)) || (await promptForSearchQuery());
+        if (!rawQuery) {
+          firstPass = false;
+          continue;
+        }
 
         const s = spinner();
         s.start("Searching…");
@@ -453,6 +456,10 @@ function startPrefetch() {
           toDetail: (result) =>
             `${result.type === "series" ? "Series" : "Movie"}${result.overview ? `  ·  ${result.overview}` : ""}`,
         });
+        if (!picked) {
+          firstPass = false;
+          continue;
+        }
 
         currentId = picked.id;
         currentType = picked.type;
