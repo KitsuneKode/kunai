@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Box, Text, render, useInput } from "ink";
+import React, { useState, useEffect } from "react";
+import { Box, Text, render, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 
 import { parseCommand, suggestCommands, type AppCommandId } from "./commands";

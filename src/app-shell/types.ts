@@ -48,6 +48,15 @@ export type PlaybackShellState = {
   status?: ShellStatus;
 };
 
+export type LoadingShellState = {
+  title: string;
+  subtitle?: string;
+  operation: "searching" | "scraping" | "resolving" | "loading";
+  progress?: number; // 0-100 or undefined for indeterminate
+  details?: string;
+  cancellable?: boolean;
+};
+
 export function toShellAction(commandId: AppCommandId): ShellAction {
   switch (commandId) {
     case "search":

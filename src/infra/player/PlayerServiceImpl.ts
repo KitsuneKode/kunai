@@ -22,6 +22,9 @@ export class PlayerServiceImpl implements PlayerService {
     stream: import("../../domain/types").StreamInfo,
     options: PlayerOptions,
   ): Promise<PlaybackResult> {
+    // Always show this to user - not just debug
+    console.log(`▶ Starting playback: ${options.displayTitle}`);
+
     this.deps.logger.info("Launching MPV", {
       title: options.displayTitle,
       url: stream.url,

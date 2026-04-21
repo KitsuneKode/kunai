@@ -75,6 +75,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         if (!currentEpisode) break;
 
         // Resolve stream
+        console.log(
+          `⏳ Resolving stream from ${stateManager.getState().provider}...`,
+        );
+
         logger.info("Resolving stream", {
           provider: stateManager.getState().provider,
           title: title.name,
@@ -105,6 +109,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         });
 
         if (!stream) {
+          console.log(`⚠ Stream not found on ${provider.metadata.id}`);
           logger.error("Stream not found", { provider: provider.metadata.id });
 
           // Try fallback provider
@@ -117,6 +122,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           const fallback = compatible[0];
           if (fallback) {
+            console.log(`🔄 Trying fallback: ${fallback.metadata.id}...`);
             logger.info("Trying fallback provider", {
               fallback: fallback.metadata.id,
             });
