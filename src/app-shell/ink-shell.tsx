@@ -579,6 +579,12 @@ export function openShell<TProps>({
   props: TProps;
 }): Promise<ShellAction> {
   stdinManager.enterShell();
+
+  // Clear screen before rendering to prevent stacking
+  if (process.stdout.isTTY) {
+    process.stdout.write("\x1b[2J\x1b[0f");
+  }
+
   return new Promise((resolve) => {
     let settled = false;
     const onResolve = (action: ShellAction) => {
