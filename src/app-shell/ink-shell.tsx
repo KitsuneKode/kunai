@@ -250,7 +250,12 @@ function HomeShell({
     "quit",
   ];
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
+    // Ctrl+C handling
+    if (input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
     if (key.return) onResolve("search");
   });
 
@@ -332,6 +337,17 @@ function PlaybackShell({
         ).padStart(2, "0")}`
       : "Movie";
 
+  useInput((input, key) => {
+    // Ctrl+C handling
+    if (input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
+    if (key.return) {
+      onResolve("replay");
+    }
+  });
+
   return (
     <ShellFrame
       eyebrow="KitsuneSnipe"
@@ -355,42 +371,6 @@ function PlaybackShell({
   );
 }
 
-function openShell<TProps>({
-  Component,
-  props,
-}: {
-  Component: React.ComponentType<
-    TProps & { onResolve: (action: ShellAction) => void }
-  >;
-  props: TProps;
-}): Promise<ShellAction> {
-  if (process.stdin.isTTY) process.stdin.ref();
-  return new Promise((resolve) => {
-    let settled = false;
-    const onResolve = (action: ShellAction) => {
-      if (settled) return;
-      settled = true;
-      ink.unmount();
-      resolve(action);
-    };
-
-    const ink = render(<Component {...props} onResolve={onResolve} />);
-    ink.waitUntilExit().then(() => {
-      if (!settled) resolve("quit");
-    });
-  });
-}
-
-export function openHomeShell(state: HomeShellState): Promise<ShellAction> {
-  return openShell({ Component: HomeShell, props: { state } });
-}
-
-export function openPlaybackShell(
-  state: PlaybackShellState,
-): Promise<ShellAction> {
-  return openShell({ Component: PlaybackShell, props: { state } });
-}
-
 function SearchShell({
   mode,
   provider,
@@ -408,8 +388,20 @@ function SearchShell({
 }) {
   const [value, setValue] = useState(initialValue ?? "");
 
-  useInput((_input, key) => {
-    if (key.escape) onCancel();
+  useInput((input, key) => {
+    // Ctrl+C handling
+    if (input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
+    if (key.escape || input === "q") {
+      onCancel();
+      return;
+    }
+    if (key.return) {
+      const next = value.trim();
+      if (next.length > 0) onSubmit(next);
+    }
   });
 
   return (
@@ -435,7 +427,6 @@ function SearchShell({
             value={value}
             onChange={setValue}
             placeholder={placeholder}
-            onSubmit={(next) => onSubmit(next.trim())}
           />
         </Box>
       </Box>
@@ -467,7 +458,12 @@ function LoadingShell({
   const spinner = useSpinner();
   const { stdout } = useStdout();
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
+    // Ctrl+C handling
+    if (input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
     if (key.escape && state.cancellable && onCancel) {
       onCancel();
     }
@@ -520,6 +516,42 @@ function LoadingShell({
       )}
     </Box>
   );
+}
+
+export function openShell<TProps>({
+  Component,
+  props,
+}: {
+  Component: React.ComponentType<
+    TProps & { onResolve: (action: ShellAction) => void }
+  >;
+  props: TProps;
+}): Promise<ShellAction> {
+  if (process.stdin.isTTY) process.stdin.ref();
+  return new Promise((resolve) => {
+    let settled = false;
+    const onResolve = (action: ShellAction) => {
+      if (settled) return;
+      settled = true;
+      ink.unmount();
+      resolve(action);
+    };
+
+    const ink = render(<Component {...props} onResolve={onResolve} />);
+    ink.waitUntilExit().then(() => {
+      if (!settled) resolve("quit");
+    });
+  });
+}
+
+export function openHomeShell(state: HomeShellState): Promise<ShellAction> {
+  return openShell({ Component: HomeShell, props: { state } });
+}
+
+export function openPlaybackShell(
+  state: PlaybackShellState,
+): Promise<ShellAction> {
+  return openShell({ Component: PlaybackShell, props: { state } });
 }
 
 export function openLoadingShell({
@@ -611,8 +643,41 @@ function ListShell<T>({
 }) {
   const [index, setIndex] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
+  const { stdout } = useStdout();
+
+  // Calculate visible window size (leave room for header/footer)
+  const maxVisible = Math.max(5, stdout.rows - 8);
+
+  // Calculate window start to keep selected item visible
+  const getWindowStart = (
+    selectedIndex: number,
+    total: number,
+    windowSize: number,
+  ) => {
+    if (total <= windowSize) return 0;
+
+    // Center the selected item when possible
+    const halfWindow = Math.floor(windowSize / 2);
+    let start = selectedIndex - halfWindow;
+
+    // Clamp to valid range
+    if (start < 0) start = 0;
+    if (start + windowSize > total) start = total - windowSize;
+
+    return start;
+  };
+
+  const windowStart = getWindowStart(index, options.length, maxVisible);
+  const windowEnd = Math.min(windowStart + maxVisible, options.length);
+  const visibleOptions = options.slice(windowStart, windowEnd);
 
   useInput((input, key) => {
+    // Ctrl+C handling
+    if (input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
+
     if (key.escape || input === "q") {
       onCancel();
       return;
@@ -621,7 +686,6 @@ function ListShell<T>({
       const selected = options[index];
       if (selected && !confirmed) {
         setConfirmed(true);
-        // Brief delay to show confirmation before submitting
         setTimeout(() => onSubmit(selected.value), 150);
       }
       return;
@@ -642,6 +706,7 @@ function ListShell<T>({
         borderColor={confirmed ? palette.green : palette.gray}
         flexDirection="column"
         paddingX={1}
+        height={Math.min(stdout.rows - 2, options.length * 2 + 6)}
       >
         <Text color={palette.amber}>KitsuneSnipe</Text>
         <Box marginTop={1}>
@@ -652,15 +717,24 @@ function ListShell<T>({
         <Text color={palette.muted}>
           {confirmed ? options[index]?.label : subtitle}
         </Text>
+        <Text color={palette.gray}>
+          {options.length > maxVisible
+            ? `Showing ${windowStart + 1}-${windowEnd} of ${
+                options.length
+              } (↑↓ to scroll)`
+            : `${options.length} items`}
+        </Text>
         <Box flexDirection="column" marginTop={1}>
-          {options.map((option, optionIndex) => {
+          {windowStart > 0 && <Text color={palette.gray}> ▲ ...</Text>}
+          {visibleOptions.map((option, i) => {
+            const optionIndex = windowStart + i;
             const selected = optionIndex === index;
             const isConfirmed = confirmed && selected;
             return (
               <Box
                 key={optionIndex}
                 flexDirection="column"
-                marginBottom={optionIndex === options.length - 1 ? 0 : 1}
+                marginBottom={i === visibleOptions.length - 1 ? 0 : 1}
               >
                 <Text
                   color={
@@ -683,6 +757,9 @@ function ListShell<T>({
               </Box>
             );
           })}
+          {windowEnd < options.length && (
+            <Text color={palette.gray}> ▼ ...</Text>
+          )}
         </Box>
       </Box>
       <Footer
