@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text, render, useInput, useStdout } from "ink";
+import { Box, Text, render, useInput, useStdout, useApp } from "ink";
 import TextInput from "ink-text-input";
 
 import { parseCommand, suggestCommands, type AppCommandId } from "./commands";
@@ -235,6 +235,17 @@ function ShellFrame({
   onResolve: (action: ShellAction) => void;
   children: React.ReactNode;
 }) {
+  const { exit } = useApp();
+
+  // Global Ctrl+C handler for all shells
+  useInput((input, _key) => {
+    if (input === "\x03") {
+      // Ctrl+C - force immediate exit
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
+  });
+
   const { commandMode, commandInput } = useShellInput({
     footerActions,
     commandSet,
@@ -428,8 +439,13 @@ function SearchShell({
 }) {
   const [value, setValue] = useState(initialValue ?? "");
 
-  useInput((_input, key) => {
-    if (key.escape || _input === "q") {
+  useInput((input, key) => {
+    // Ctrl+C handling
+    if (input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
+    if (key.escape || input === "q") {
       onCancel();
       return;
     }
@@ -493,7 +509,12 @@ function LoadingShell({
   const spinner = useSpinner();
   const { stdout } = useStdout();
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
+    // Ctrl+C handling
+    if (input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
     if (key.escape && state.cancellable && onCancel) {
       onCancel();
     }
@@ -714,6 +735,11 @@ function ListShell<T>({
   const visibleOptions = options.slice(windowStart, windowEnd);
 
   useInput((input, key) => {
+    // Ctrl+C handling
+    if (input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
     if (key.escape || input === "q") {
       onCancel();
       return;
