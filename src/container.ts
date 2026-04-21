@@ -32,7 +32,9 @@ import { ShellServiceImpl } from "./infra/shell/ShellServiceImpl";
 import { BrowserServiceImpl } from "./infra/browser/BrowserServiceImpl";
 import { PlayerServiceImpl } from "./infra/player/PlayerServiceImpl";
 import { ProviderRegistryImpl } from "./services/providers/ProviderRegistry";
+import { PROVIDER_DEFINITIONS } from "./services/providers/definitions";
 import { SearchRegistryImpl } from "./services/search/SearchRegistry";
+import { SEARCH_SERVICE_DEFINITIONS } from "./services/search/definitions";
 
 /**
  * The container is the single source of truth for all dependencies.
@@ -102,12 +104,12 @@ export async function createContainer(): Promise<Container> {
   // Registries (depend on infrastructure)
   const providerRegistry = new ProviderRegistryImpl(
     { browser, logger, tracer, config },
-    [], // TODO: Add provider definitions
+    PROVIDER_DEFINITIONS,
   );
 
   const searchRegistry = new SearchRegistryImpl(
     { logger, tracer },
-    [], // TODO: Add search service definitions
+    SEARCH_SERVICE_DEFINITIONS,
   );
 
   const container: Container = {

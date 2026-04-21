@@ -28,9 +28,10 @@ export interface EpisodeInfo {
 
 export interface StreamInfo {
   readonly url: string;
-  readonly headers?: Record<string, string>;
+  readonly headers: Record<string, string>;
   readonly subtitle?: string;
   readonly subtitleList?: SubtitleTrack[];
+  readonly title?: string;
   readonly timestamp: number;
 }
 
