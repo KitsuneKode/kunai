@@ -87,16 +87,34 @@ async function main(): Promise<void> {
   }
 }
 
+// Signal handling for clean shutdown
+function setupSignalHandlers(): void {
+  const shutdown = (signal: string) => {
+    console.log(`\nReceived ${signal}, shutting down...`);
+    // Unref stdin to allow clean exit (counteracts ink-shell .ref() calls)
+    if (process.stdin.isTTY) process.stdin.unref();
+    process.exit(0);
+  };
+
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+}
+
 // Handle uncaught errors
 process.on("uncaughtException", (e) => {
   console.error("Uncaught exception:", e);
+  if (process.stdin.isTTY) process.stdin.unref();
   process.exit(1);
 });
 
 process.on("unhandledRejection", (e) => {
   console.error("Unhandled rejection:", e);
+  if (process.stdin.isTTY) process.stdin.unref();
   process.exit(1);
 });
+
+// Setup handlers before starting
+setupSignalHandlers();
 
 // Start
 main();
