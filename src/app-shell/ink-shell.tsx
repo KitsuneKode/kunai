@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import { Box, Text, render, useInput } from "ink";
 import TextInput from "ink-text-input";
 
@@ -50,7 +50,10 @@ function Footer({ actions }: { actions: readonly FooterAction[] }) {
             <Text color={action.disabled ? palette.gray : palette.cyan}>
               {hotkeyLabel(action.key)}
             </Text>
-            <Text color={action.disabled ? palette.gray : "white"}> {action.label}</Text>
+            <Text color={action.disabled ? palette.gray : "white"}>
+              {" "}
+              {action.label}
+            </Text>
           </Box>
         ))}
       </Box>
@@ -68,7 +71,13 @@ function Footer({ actions }: { actions: readonly FooterAction[] }) {
   );
 }
 
-function CommandPalette({ input, allowed }: { input: string; allowed: readonly AppCommandId[] }) {
+function CommandPalette({
+  input,
+  allowed,
+}: {
+  input: string;
+  allowed: readonly AppCommandId[];
+}) {
   const matches = suggestCommands(input, allowed).slice(0, 4);
 
   return (
@@ -175,7 +184,11 @@ function ShellFrame({
   onResolve: (action: ShellAction) => void;
   children: React.ReactNode;
 }) {
-  const { commandMode, commandInput } = useShellInput({ footerActions, commandSet, onResolve });
+  const { commandMode, commandInput } = useShellInput({
+    footerActions,
+    commandSet,
+    onResolve,
+  });
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0}>
@@ -191,7 +204,9 @@ function ShellFrame({
           <Text bold color="white">
             {title}
           </Text>
-          {status ? <Text color={statusColor(status.tone)}>{status.label}</Text> : null}
+          {status ? (
+            <Text color={statusColor(status.tone)}>{status.label}</Text>
+          ) : null}
         </Box>
         <Text color={palette.muted}>{subtitle}</Text>
         <Box marginTop={1} flexDirection="column">
@@ -199,7 +214,9 @@ function ShellFrame({
         </Box>
       </Box>
 
-      {commandMode ? <CommandPalette input={commandInput} allowed={commandSet} /> : null}
+      {commandMode ? (
+        <CommandPalette input={commandInput} allowed={commandSet} />
+      ) : null}
 
       <Footer actions={footerActions} />
     </Box>
@@ -225,7 +242,12 @@ function HomeShell({
     { key: "q", label: "quit", action: "quit" },
   ];
 
-  const commandSet: readonly AppCommandId[] = ["search", "settings", "toggle-mode", "quit"];
+  const commandSet: readonly AppCommandId[] = [
+    "search",
+    "settings",
+    "toggle-mode",
+    "quit",
+  ];
 
   useInput((_input, key) => {
     if (key.return) onResolve("search");
@@ -235,15 +257,17 @@ function HomeShell({
     <ShellFrame
       eyebrow="KitsuneSnipe"
       title="Fast stream search without prompt spaghetti"
-      subtitle={`Mode ${state.mode}  ·  Provider ${state.provider}  ·  Subs ${state.subtitle}${state.mode === "anime" ? `  ·  Audio ${state.animeLang}` : ""}`}
+      subtitle={`Mode ${state.mode}  ·  Provider ${state.provider}  ·  Subs ${
+        state.subtitle
+      }${state.mode === "anime" ? `  ·  Audio ${state.animeLang}` : ""}`}
       status={state.status}
       footerActions={footerActions}
       commandSet={commandSet}
       onResolve={onResolve}
     >
       <Text color={palette.muted}>
-        Press Enter to search, or use `/` for commands. Settings and mode switch stay reachable
-        before the first query.
+        Press Enter to search, or use `/` for commands. Settings and mode switch
+        stay reachable before the first query.
       </Text>
     </ShellFrame>
   );
@@ -275,7 +299,10 @@ function PlaybackShell({
       label: "previous",
       action: "previous",
       disabled: state.type !== "series" || state.episode <= 1,
-      reason: state.type !== "series" ? "only available for series" : "already at episode 1",
+      reason:
+        state.type !== "series"
+          ? "only available for series"
+          : "already at episode 1",
     },
     {
       key: "s",
@@ -299,7 +326,9 @@ function PlaybackShell({
 
   const location =
     state.type === "series"
-      ? `S${String(state.season).padStart(2, "0")}E${String(state.episode).padStart(2, "0")}`
+      ? `S${String(state.season).padStart(2, "0")}E${String(
+          state.episode,
+        ).padStart(2, "0")}`
       : "Movie";
 
   return (
@@ -313,8 +342,8 @@ function PlaybackShell({
       onResolve={onResolve}
     >
       <Text color={palette.muted}>
-        Playback controls stay visible and command-driven. Use `/` for direct actions without
-        leaving the shell.
+        Playback controls stay visible and command-driven. Use `/` for direct
+        actions without leaving the shell.
       </Text>
       {state.showMemory && state.memoryUsage ? (
         <Box marginTop={1}>
@@ -329,7 +358,9 @@ function openShell<TProps>({
   Component,
   props,
 }: {
-  Component: React.ComponentType<TProps & { onResolve: (action: ShellAction) => void }>;
+  Component: React.ComponentType<
+    TProps & { onResolve: (action: ShellAction) => void }
+  >;
   props: TProps;
 }): Promise<ShellAction> {
   if (process.stdin.isTTY) process.stdin.ref();
@@ -353,7 +384,9 @@ export function openHomeShell(state: HomeShellState): Promise<ShellAction> {
   return openShell({ Component: HomeShell, props: { state } });
 }
 
-export function openPlaybackShell(state: PlaybackShellState): Promise<ShellAction> {
+export function openPlaybackShell(
+  state: PlaybackShellState,
+): Promise<ShellAction> {
   return openShell({ Component: PlaybackShell, props: { state } });
 }
 
@@ -380,7 +413,12 @@ function SearchShell({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box borderStyle="round" borderColor={palette.gray} flexDirection="column" paddingX={1}>
+      <Box
+        borderStyle="round"
+        borderColor={palette.gray}
+        flexDirection="column"
+        paddingX={1}
+      >
         <Text color={palette.amber}>KitsuneSnipe</Text>
         <Box marginTop={1}>
           <Text bold color="white">
@@ -462,14 +500,8 @@ function ListShell<T>({
   onCancel: () => void;
 }) {
   const [index, setIndex] = useState(0);
-  const mountedAt = useRef(Date.now());
 
   useInput((input, key) => {
-    // The Enter key used to submit the search box can bleed into the
-    // next picker frame. Ignore immediate input on mount so selection
-    // requires a deliberate keypress.
-    if (Date.now() - mountedAt.current < 150) return;
-
     if (key.escape || input === "q") {
       onCancel();
       return;
@@ -490,7 +522,12 @@ function ListShell<T>({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box borderStyle="round" borderColor={palette.gray} flexDirection="column" paddingX={1}>
+      <Box
+        borderStyle="round"
+        borderColor={palette.gray}
+        flexDirection="column"
+        paddingX={1}
+      >
         <Text color={palette.amber}>KitsuneSnipe</Text>
         <Box marginTop={1}>
           <Text bold color="white">
@@ -543,11 +580,13 @@ export function openListShell<T>({
   options: readonly ListOption<T>[];
 }): Promise<T | null> {
   if (process.stdin.isTTY) process.stdin.ref();
+
   return new Promise((resolve) => {
-    let settled = false;
+    let resolved = false;
+
     const finish = (value: T | null) => {
-      if (settled) return;
-      settled = true;
+      if (resolved) return;
+      resolved = true;
       ink.unmount();
       resolve(value);
     };
@@ -562,8 +601,9 @@ export function openListShell<T>({
       />,
     );
 
+    // Fallback: resolve to null (cancel) if shell exits without explicit selection
     ink.waitUntilExit().then(() => {
-      if (!settled) resolve(null);
+      if (!resolved) finish(null);
     });
   });
 }
@@ -571,5 +611,7 @@ export function openListShell<T>({
 export function formatMemoryUsage(): string {
   const memory = process.memoryUsage();
   const toMb = (bytes: number) => `${(bytes / 1_048_576).toFixed(1)} MB`;
-  return `Mem  RSS ${toMb(memory.rss)}  ·  Heap ${toMb(memory.heapUsed)}/${toMb(memory.heapTotal)}`;
+  return `Mem  RSS ${toMb(memory.rss)}  ·  Heap ${toMb(memory.heapUsed)}/${toMb(
+    memory.heapTotal,
+  )}`;
 }

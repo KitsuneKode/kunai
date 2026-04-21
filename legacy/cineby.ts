@@ -84,7 +84,7 @@ import { appendFile } from "fs/promises";
   page.on("request", checkRequest);
 
   try {
-    await page.goto("https://www.cineby.sc/tv/127529/1/1?play=true", {
+    await page.goto("https://www.cineby.sc/tv/289560/1/1?play=true", {
       waitUntil: "domcontentloaded",
     });
 

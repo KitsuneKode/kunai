@@ -89,7 +89,7 @@ import { appendFile } from "fs/promises";
   page.on("request", checkRequest);
 
   try {
-    await page.goto("https://www.vidking.net/embed/tv/127529/1/1", {
+    await page.goto("https://www.vidking.net/embed/tv/289560/1/1", {
       waitUntil: "domcontentloaded",
     });
 

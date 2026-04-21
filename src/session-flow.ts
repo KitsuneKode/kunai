@@ -1,9 +1,15 @@
 import { type HistoryEntry, formatTimestamp, isFinished } from "@/history";
 import { cyan, dim, yellow } from "@/menu";
-import { fetchSeriesData } from "@/tmdb";
+import { fetchEpisodes, fetchSeriesData } from "@/tmdb";
 import { ANIME_PROVIDERS, PLAYWRIGHT_PROVIDERS, getProvider } from "@/providers";
 import type { ApiSearchResult } from "@/providers";
-import { openAnimeEpisodePicker, openEpisodePicker, openSeasonPicker } from "@/app-shell/workflows";
+import {
+  chooseEpisodeFromOptions,
+  chooseSeasonFromOptions,
+  openAnimeEpisodePicker,
+  openEpisodePicker,
+  openSeasonPicker,
+} from "@/app-shell/workflows";
 import { openListShell } from "@/app-shell/ink-shell";
 
 export type EpisodeSelection = {
@@ -39,8 +45,11 @@ async function pickEpisodeSelection(
   opts: Pick<SelectionOpts, "currentId" | "isAnime" | "apiPicked">,
 ): Promise<EpisodeSelection> {
   if (!opts.isAnime) {
-    const season = (await openSeasonPicker(opts.currentId, initSeason)) ?? initSeason;
-    const episode = await openEpisodePicker(opts.currentId, season, initEpisode);
+    const { seasons, episodes: initialEpisodes } = await fetchSeriesData(opts.currentId, initSeason);
+    const season = (await chooseSeasonFromOptions(seasons, initSeason)) ?? initSeason;
+    const episodes =
+      season === initSeason ? initialEpisodes : await fetchEpisodes(opts.currentId, season);
+    const episode = await chooseEpisodeFromOptions(episodes, season, initEpisode);
     return { season, episode: episode?.number ?? initEpisode };
   }
 
@@ -56,15 +65,7 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
     };
   }
 
-  const warmMetadata = !opts.isAnime
-    ? fetchSeriesData(opts.currentId, 1)
-        .then(() => {})
-        .catch(() => {})
-    : Promise.resolve();
-
-  const history = await Promise.all([opts.getHistoryEntry(), warmMetadata]).then(
-    ([entry]) => entry,
-  );
+  const history = await opts.getHistoryEntry();
   if (!history) {
     return pickEpisodeSelection(1, 1, opts);
   }

@@ -51,6 +51,44 @@ async function chooseOption<T>({
   return openListShell({ title, subtitle, options });
 }
 
+export async function chooseSeasonFromOptions(
+  seasons: readonly number[],
+  currentSeason: number,
+): Promise<number | null> {
+  if (seasons.length === 0) return null;
+  if (seasons.length === 1) return seasons[0] ?? currentSeason;
+
+  return chooseOption({
+    title: "Choose season",
+    subtitle: `Current season ${currentSeason}`,
+    options: seasons.map((season) => ({
+      value: season,
+      label: season === currentSeason ? `Season ${season}  ·  current` : `Season ${season}`,
+    })),
+  });
+}
+
+export async function chooseEpisodeFromOptions(
+  episodes: readonly EpisodeInfo[],
+  season: number,
+  currentEpisode: number,
+): Promise<EpisodeInfo | null> {
+  if (episodes.length === 0) return null;
+
+  return chooseOption({
+    title: "Choose episode",
+    subtitle: `Season ${season}  ·  Current episode ${currentEpisode}`,
+    options: episodes.map((episode) => ({
+      value: episode,
+      label:
+        episode.number === currentEpisode
+          ? `Episode ${episode.number}  ·  ${episode.name}  ·  current`
+          : `Episode ${episode.number}  ·  ${episode.name}`,
+      detail: `${episode.airDate || "unknown year"}${episode.overview ? `  ·  ${episode.overview}` : ""}`,
+    })),
+  });
+}
+
 function formatHistoryLabel(entry: HistoryEntry): string {
   const progress = entry.duration
     ? `${Math.round((entry.timestamp / entry.duration) * 100)}%`
@@ -168,17 +206,7 @@ export async function openSeasonPicker(
   currentSeason: number,
 ): Promise<number | null> {
   const seasons = await fetchSeasons(tmdbId);
-  if (seasons.length === 0) return null;
-  if (seasons.length === 1) return seasons[0] ?? currentSeason;
-
-  return chooseOption({
-    title: "Choose season",
-    subtitle: `Current season ${currentSeason}`,
-    options: seasons.map((season) => ({
-      value: season,
-      label: season === currentSeason ? `Season ${season}  ·  current` : `Season ${season}`,
-    })),
-  });
+  return chooseSeasonFromOptions(seasons, currentSeason);
 }
 
 export async function openEpisodePicker(
@@ -187,20 +215,7 @@ export async function openEpisodePicker(
   currentEpisode: number,
 ): Promise<EpisodeInfo | null> {
   const episodes = await fetchEpisodes(tmdbId, season);
-  if (episodes.length === 0) return null;
-
-  return chooseOption({
-    title: "Choose episode",
-    subtitle: `Season ${season}  ·  Current episode ${currentEpisode}`,
-    options: episodes.map((episode) => ({
-      value: episode,
-      label:
-        episode.number === currentEpisode
-          ? `Episode ${episode.number}  ·  ${episode.name}  ·  current`
-          : `Episode ${episode.number}  ·  ${episode.name}`,
-      detail: `${episode.airDate || "unknown year"}${episode.overview ? `  ·  ${episode.overview}` : ""}`,
-    })),
-  });
+  return chooseEpisodeFromOptions(episodes, season, currentEpisode);
 }
 
 export async function openAnimeEpisodePicker(
