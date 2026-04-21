@@ -13,6 +13,56 @@ import {
   type ShellStatus,
 } from "./types";
 
+// =============================================================================
+// STDIN LIFECYCLE MANAGER
+// =============================================================================
+// Prevents event loop drainage during shell transitions.
+// Ink calls unref when unmounting, which can drain the loop before
+// the next shell mounts. We keep one persistent ref throughout the app.
+// =============================================================================
+
+const stdinManager = {
+  _refCount: 0,
+  _isSetup: false,
+
+  setup() {
+    if (this._isSetup || !process.stdin.isTTY) return;
+    this._isSetup = true;
+
+    // Keep one persistent ref to prevent event loop drainage
+    process.stdin.ref();
+
+    // Handle Ctrl+C in raw mode (Ink sets raw mode, so SIGINT won't fire)
+    process.stdin.on("data", (chunk: Buffer) => {
+      const data = chunk.toString();
+      if (data === "\x03" || data === "\x04") {
+        // Ctrl+C or Ctrl+D
+        this.cleanup();
+        process.exit(0);
+      }
+    });
+  },
+
+  // Track shell nesting (for debugging/monitoring)
+  enterShell() {
+    this._refCount++;
+    this.setup();
+  },
+
+  exitShell() {
+    this._refCount--;
+    // Never unref - we keep stdin alive until app exits
+  },
+
+  cleanup() {
+    if (!process.stdin.isTTY) return;
+    process.stdin.unref();
+  },
+};
+
+// Initialize on module load
+stdinManager.setup();
+
 const palette = {
   amber: "#d4a44c",
   cyan: "#78dce8",
@@ -250,12 +300,7 @@ function HomeShell({
     "quit",
   ];
 
-  useInput((input, key) => {
-    // Ctrl+C handling
-    if (input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
-    }
+  useInput((_input, key) => {
     if (key.return) onResolve("search");
   });
 
@@ -337,12 +382,7 @@ function PlaybackShell({
         ).padStart(2, "0")}`
       : "Movie";
 
-  useInput((input, key) => {
-    // Ctrl+C handling
-    if (input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
-    }
+  useInput((_input, key) => {
     if (key.return) {
       onResolve("replay");
     }
@@ -388,13 +428,8 @@ function SearchShell({
 }) {
   const [value, setValue] = useState(initialValue ?? "");
 
-  useInput((input, key) => {
-    // Ctrl+C handling
-    if (input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
-    }
-    if (key.escape || input === "q") {
+  useInput((_input, key) => {
+    if (key.escape || _input === "q") {
       onCancel();
       return;
     }
@@ -458,12 +493,7 @@ function LoadingShell({
   const spinner = useSpinner();
   const { stdout } = useStdout();
 
-  useInput((input, key) => {
-    // Ctrl+C handling
-    if (input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
-    }
+  useInput((_input, key) => {
     if (key.escape && state.cancellable && onCancel) {
       onCancel();
     }
@@ -527,19 +557,23 @@ export function openShell<TProps>({
   >;
   props: TProps;
 }): Promise<ShellAction> {
-  if (process.stdin.isTTY) process.stdin.ref();
+  stdinManager.enterShell();
   return new Promise((resolve) => {
     let settled = false;
     const onResolve = (action: ShellAction) => {
       if (settled) return;
       settled = true;
       ink.unmount();
+      stdinManager.exitShell();
       resolve(action);
     };
 
     const ink = render(<Component {...props} onResolve={onResolve} />);
     ink.waitUntilExit().then(() => {
-      if (!settled) resolve("quit");
+      if (!settled) {
+        stdinManager.exitShell();
+        resolve("quit");
+      }
     });
   });
 }
@@ -561,13 +595,14 @@ export function openLoadingShell({
   state: LoadingShellState;
   cancellable?: boolean;
 }): Promise<"done" | "cancelled"> {
-  if (process.stdin.isTTY) process.stdin.ref();
+  stdinManager.enterShell();
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: "done" | "cancelled") => {
       if (settled) return;
       settled = true;
       ink.unmount();
+      stdinManager.exitShell();
       resolve(value);
     };
 
@@ -579,7 +614,10 @@ export function openLoadingShell({
     );
 
     ink.waitUntilExit().then(() => {
-      if (!settled) finish("done");
+      if (!settled) {
+        stdinManager.exitShell();
+        finish("done");
+      }
     });
   });
 }
@@ -595,13 +633,14 @@ export function openSearchShell({
   initialValue?: string;
   placeholder: string;
 }): Promise<string | null> {
-  if (process.stdin.isTTY) process.stdin.ref();
+  stdinManager.enterShell();
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: string | null) => {
       if (settled) return;
       settled = true;
       ink.unmount();
+      stdinManager.exitShell();
       resolve(value);
     };
 
@@ -617,7 +656,10 @@ export function openSearchShell({
     );
 
     ink.waitUntilExit().then(() => {
-      if (!settled) resolve(null);
+      if (!settled) {
+        stdinManager.exitShell();
+        finish(null);
+      }
     });
   });
 }
@@ -672,12 +714,6 @@ function ListShell<T>({
   const visibleOptions = options.slice(windowStart, windowEnd);
 
   useInput((input, key) => {
-    // Ctrl+C handling
-    if (input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
-    }
-
     if (key.escape || input === "q") {
       onCancel();
       return;
@@ -782,7 +818,7 @@ export function openListShell<T>({
   subtitle: string;
   options: readonly ListOption<T>[];
 }): Promise<T | null> {
-  if (process.stdin.isTTY) process.stdin.ref();
+  stdinManager.enterShell();
 
   return new Promise((resolve) => {
     let resolved = false;
@@ -791,6 +827,7 @@ export function openListShell<T>({
       if (resolved) return;
       resolved = true;
       ink.unmount();
+      stdinManager.exitShell();
       resolve(value);
     };
 
@@ -804,9 +841,11 @@ export function openListShell<T>({
       />,
     );
 
-    // Fallback: resolve to null (cancel) if shell exits without explicit selection
     ink.waitUntilExit().then(() => {
-      if (!resolved) finish(null);
+      if (!resolved) {
+        stdinManager.exitShell();
+        finish(null);
+      }
     });
   });
 }
