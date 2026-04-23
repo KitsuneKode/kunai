@@ -1,6 +1,6 @@
 # KitsuneSnipe — Persistent Shell Implementation Plan
 
-Status: Planned
+Status: In Progress
 
 Use this file for the engineering sequence that turns the agreed product direction into code without creating another generation of architectural drift.
 
@@ -118,6 +118,12 @@ Migration priority:
 7. setup blocker and setup overlay
 8. history and diagnostics
 9. post-playback action panel
+
+Current checkpoint:
+
+- shared app state, command registry, and responsive layout policy exist
+- home and playback shells already resolve shared command availability
+- search input and result selection are now moving onto one mounted browse shell path instead of separate prompt/shell hops
 
 Tasks:
 

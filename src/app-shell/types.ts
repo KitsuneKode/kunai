@@ -65,6 +65,23 @@ export type LoadingShellState = {
   cancellable?: boolean;
 };
 
+export type BrowseShellOption<T> = {
+  value: T;
+  label: string;
+  detail?: string;
+};
+
+export type BrowseShellSearchResponse<T> = {
+  options: readonly BrowseShellOption<T>[];
+  subtitle: string;
+  emptyMessage?: string;
+};
+
+export type BrowseShellResult<T> =
+  | { type: "selected"; value: T }
+  | { type: "action"; action: ShellAction }
+  | { type: "cancelled" };
+
 export function toShellAction(commandId: AppCommandId): ShellAction {
   switch (commandId) {
     case "search":

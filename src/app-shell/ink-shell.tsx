@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 
@@ -15,6 +15,9 @@ import {
   type HomeShellState,
   type PlaybackShellState,
   type LoadingShellState,
+  type BrowseShellOption,
+  type BrowseShellResult,
+  type BrowseShellSearchResponse,
   type ShellAction,
   type ShellStatus,
 } from "./types";
@@ -756,6 +759,16 @@ function truncateLine(value: string, maxLength: number): string {
   return `${value.slice(0, maxLength - 1)}…`;
 }
 
+function getWindowStart(selectedIndex: number, total: number, windowSize: number): number {
+  if (total <= windowSize) return 0;
+
+  const halfWindow = Math.floor(windowSize / 2);
+  let start = selectedIndex - halfWindow;
+  if (start < 0) start = 0;
+  if (start + windowSize > total) start = total - windowSize;
+  return start;
+}
+
 function ListShell<T>({
   title,
   subtitle,
@@ -780,21 +793,6 @@ function ListShell<T>({
   const rowWidth = Math.max(20, innerWidth - 4);
   const selectedLabel = selectedOption?.label ?? "Nothing selected";
   const selectedDetail = selectedOption?.detail ?? "Use ↑↓ or j/k to move through results";
-
-  // Calculate window start to keep selected item visible
-  const getWindowStart = (selectedIndex: number, total: number, windowSize: number) => {
-    if (total <= windowSize) return 0;
-
-    // Center the selected item when possible
-    const halfWindow = Math.floor(windowSize / 2);
-    let start = selectedIndex - halfWindow;
-
-    // Clamp to valid range
-    if (start < 0) start = 0;
-    if (start + windowSize > total) start = total - windowSize;
-
-    return start;
-  };
 
   const windowStart = getWindowStart(index, options.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, options.length);
@@ -917,6 +915,335 @@ function ListShell<T>({
       />
     </Box>
   );
+}
+
+function BrowseShell<T>({
+  mode,
+  provider,
+  initialQuery,
+  placeholder,
+  commands,
+  onSearch,
+  onResolve,
+  onSubmit,
+  onCancel,
+}: {
+  mode: "series" | "anime";
+  provider: string;
+  initialQuery?: string;
+  placeholder: string;
+  commands: readonly ResolvedAppCommand[];
+  onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
+  onResolve: (action: ShellAction) => void;
+  onSubmit: (value: T) => void;
+  onCancel: () => void;
+}) {
+  const spinner = useSpinner();
+  const { stdout } = useStdout();
+  const [query, setQuery] = useState(initialQuery ?? "");
+  const [commandMode, setCommandMode] = useState(false);
+  const [commandInput, setCommandInput] = useState("");
+  const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedDetail, setSelectedDetail] = useState("Type a title and press Enter to search.");
+  const [resultSubtitle, setResultSubtitle] = useState(
+    `Provider ${provider}  ·  Enter searches  ·  / commands`,
+  );
+  const [searchState, setSearchState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [lastSearchedQuery, setLastSearchedQuery] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
+  const requestIdRef = useRef(0);
+
+  const clearResults = () => {
+    setOptions([]);
+    setSelectedIndex(0);
+    setSearchState("idle");
+    setLastSearchedQuery("");
+    setErrorMessage(null);
+    setEmptyMessage("Type a title and press Enter to search.");
+    setResultSubtitle(`Provider ${provider}  ·  Enter searches  ·  / commands`);
+    setSelectedDetail("Type a title and press Enter to search.");
+  };
+
+  const updateQuery = (nextValue: string) => {
+    setQuery(nextValue);
+    if (nextValue.trim().length === 0) {
+      clearResults();
+    }
+  };
+
+  const runSearch = async () => {
+    const trimmed = query.trim();
+    if (trimmed.length === 0 || searchState === "loading") return;
+
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setSearchState("loading");
+    setErrorMessage(null);
+    setEmptyMessage("Searching…");
+    setSelectedDetail("Finding titles and available matches…");
+
+    try {
+      const response = await onSearch(trimmed);
+      if (requestIdRef.current !== requestId) return;
+
+      setLastSearchedQuery(trimmed);
+      setOptions(response.options);
+      setSelectedIndex(0);
+      setResultSubtitle(response.subtitle);
+      setEmptyMessage(response.emptyMessage ?? "No results found.");
+      setSearchState("ready");
+      setSelectedDetail(
+        response.options[0]?.detail ?? "Use ↑↓ to move through results, then press Enter.",
+      );
+    } catch (error) {
+      if (requestIdRef.current !== requestId) return;
+
+      setSearchState("error");
+      setOptions([]);
+      setSelectedIndex(0);
+      setErrorMessage(String(error));
+      setEmptyMessage("Search failed.");
+      setSelectedDetail("The search failed. Press Enter to retry or Esc to clear.");
+    }
+  };
+
+  useEffect(() => {
+    const option = options[selectedIndex];
+    if (!option) return;
+    setSelectedDetail(option.detail ?? "Press Enter to select this result.");
+  }, [options, selectedIndex]);
+
+  const queryDirty = query.trim() !== lastSearchedQuery;
+  const selectedOption = options[selectedIndex];
+  const maxVisible = Math.max(5, stdout.rows - 18);
+  const innerWidth = Math.max(24, stdout.columns - 8);
+  const rowWidth = Math.max(20, innerWidth - 4);
+  const windowStart = getWindowStart(selectedIndex, options.length, maxVisible);
+  const windowEnd = Math.min(windowStart + maxVisible, options.length);
+  const visibleOptions = options.slice(windowStart, windowEnd);
+
+  useInput((input, key) => {
+    if (input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
+
+    if (commandMode) {
+      if (key.escape) {
+        setCommandMode(false);
+        setCommandInput("");
+        return;
+      }
+      if (key.return) {
+        const command = parseCommand(commandInput);
+        const resolved = command ? commands.find((candidate) => candidate.id === command.id) : null;
+        if (resolved?.enabled) {
+          onResolve(toShellAction(resolved.id));
+        }
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setCommandInput((current) => current.slice(0, -1));
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) {
+        setCommandInput((current) => current + input);
+      }
+      return;
+    }
+
+    if (input === "/") {
+      setCommandMode(true);
+      setCommandInput("");
+      return;
+    }
+
+    if (key.escape) {
+      if (options.length > 0 || searchState === "error" || searchState === "loading") {
+        clearResults();
+        return;
+      }
+      if (query.length > 0) {
+        updateQuery("");
+        return;
+      }
+      onCancel();
+      return;
+    }
+
+    if (key.upArrow && options.length > 0) {
+      setSelectedIndex((current) => (current - 1 + options.length) % options.length);
+      return;
+    }
+
+    if (key.downArrow && options.length > 0) {
+      setSelectedIndex((current) => (current + 1) % options.length);
+      return;
+    }
+
+    if (key.return) {
+      if (!queryDirty && selectedOption && options.length > 0 && searchState === "ready") {
+        onSubmit(selectedOption.value);
+        return;
+      }
+      void runSearch();
+      return;
+    }
+
+    if (key.backspace || key.delete) {
+      updateQuery(query.slice(0, -1));
+      return;
+    }
+
+    if (input && !key.ctrl && !key.meta) {
+      updateQuery(`${query}${input}`);
+    }
+  });
+
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Box
+        borderStyle="round"
+        borderColor={palette.gray}
+        flexDirection="column"
+        paddingX={1}
+        paddingY={0}
+      >
+        <Text color={palette.amber}>{APP_LABEL}</Text>
+        <Box marginTop={1} justifyContent="space-between">
+          <Text bold color="white">
+            {mode === "anime" ? "Browse anime" : "Browse titles"}
+          </Text>
+          <Text color={searchState === "error" ? palette.red : palette.cyan}>
+            {searchState === "loading"
+              ? `${spinner} searching`
+              : searchState === "error"
+                ? "search failed"
+                : searchState === "ready" && options.length > 0
+                  ? `${options.length} results`
+                  : "ready"}
+          </Text>
+        </Box>
+        <Text color={palette.muted}>{resultSubtitle}</Text>
+
+        <Box marginTop={1}>
+          <Text color={palette.cyan}>› </Text>
+          <Text color={query.length > 0 ? "white" : palette.gray}>
+            {query.length > 0 ? query : placeholder}
+          </Text>
+        </Box>
+
+        {queryDirty && options.length > 0 ? (
+          <Text color={palette.gray}>Query changed · Press Enter to refresh results</Text>
+        ) : null}
+
+        {searchState === "error" && errorMessage ? (
+          <Box marginTop={1}>
+            <Text color={palette.red}>{errorMessage}</Text>
+          </Box>
+        ) : null}
+
+        {options.length > 0 ? (
+          <Box flexDirection="column" marginTop={1}>
+            {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
+            {visibleOptions.map((option, index) => {
+              const optionIndex = windowStart + index;
+              const selected = optionIndex === selectedIndex;
+              const secondary = option.detail ? `  ${truncateLine(option.detail, rowWidth)}` : "";
+              const rowText = truncateLine(`${option.label}${secondary}`, rowWidth);
+
+              return (
+                <Box key={optionIndex}>
+                  <Text
+                    backgroundColor={selected ? palette.cyan : undefined}
+                    color={selected ? "black" : "white"}
+                    bold={selected}
+                    dimColor={!selected}
+                  >
+                    <Text color={selected ? "black" : palette.gray}>{selected ? "❯ " : "  "}</Text>
+                    {rowText}
+                  </Text>
+                </Box>
+              );
+            })}
+            {windowEnd < options.length ? <Text color={palette.gray}> ▼ ...</Text> : null}
+          </Box>
+        ) : (
+          <Box marginTop={1}>
+            <Text color={palette.gray}>{emptyMessage}</Text>
+          </Box>
+        )}
+
+        <Box
+          marginTop={1}
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={palette.cyan}
+          paddingX={1}
+        >
+          <Text color={palette.cyan}>Current Selection</Text>
+          <Text bold color="white">
+            {truncateLine(selectedOption?.label ?? "No selection yet", innerWidth)}
+          </Text>
+          <Text color={palette.muted}>
+            {truncateLine(selectedDetail, Math.max(innerWidth, 48))}
+          </Text>
+        </Box>
+      </Box>
+
+      {commandMode ? <CommandPalette input={commandInput} commands={commands} /> : null}
+
+      <Footer
+        actions={[
+          {
+            key: "enter",
+            label: options.length > 0 && !queryDirty ? "select" : "search",
+            action: "search",
+          },
+          { key: "↑↓", label: "navigate", action: "search" },
+          { key: "/", label: "commands", action: "search" },
+          { key: "esc", label: "clear/back", action: "quit" },
+        ]}
+      />
+    </Box>
+  );
+}
+
+export function openBrowseShell<T>({
+  mode,
+  provider,
+  initialQuery,
+  placeholder,
+  commands,
+  onSearch,
+}: {
+  mode: "series" | "anime";
+  provider: string;
+  initialQuery?: string;
+  placeholder: string;
+  commands: readonly ResolvedAppCommand[];
+  onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
+}): Promise<BrowseShellResult<T>> {
+  const session = mountShell<BrowseShellResult<T>>({
+    renderShell: (finish) => (
+      <BrowseShell
+        mode={mode}
+        provider={provider}
+        initialQuery={initialQuery}
+        placeholder={placeholder}
+        commands={commands}
+        onSearch={onSearch}
+        onResolve={(action) => finish({ type: "action", action })}
+        onSubmit={(value) => finish({ type: "selected", value })}
+        onCancel={() => finish({ type: "cancelled" })}
+      />
+    ),
+    fallbackValue: { type: "cancelled" },
+  });
+
+  return session.result;
 }
 
 export function openListShell<T>({

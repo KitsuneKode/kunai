@@ -8,6 +8,8 @@
 import type { Phase, PhaseResult, PhaseContext } from "./Phase";
 import type { TitleInfo } from "../domain/types";
 import { searchTitles } from "./search-routing";
+import { resolveCommands } from "../app-shell/commands";
+import { openBrowseShell } from "../app-shell/ink-shell";
 
 export class SearchPhase implements Phase<void, TitleInfo> {
   name = "search";
@@ -17,141 +19,116 @@ export class SearchPhase implements Phase<void, TitleInfo> {
     const { searchRegistry, stateManager, logger } = container;
 
     try {
-      // Initialize search UI state
       stateManager.dispatch({ type: "RESET_SEARCH" });
       stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
 
-      // Show search-first UI and wait for selection
-      // For now, delegate to the existing shell functions
-      // TODO: Implement search-first Ink shell with live results
-
-      // Use legacy flow for now:
-      const { openHomeShell } = await import("../app-shell/ink-shell");
-      const { openSearchShell } = await import("../app-shell/ink-shell");
-      const { openListShell } = await import("../app-shell/ink-shell");
-
-      // ── Home Gate: Show hotkeys [c]/[a]/[q] before search ─────────────────────
-      let gating = true;
-      while (gating) {
-        stateManager.dispatch({ type: "SET_VIEW", view: "home" });
-        const gateAction = await openHomeShell({
-          mode: stateManager.getState().mode,
-          provider: stateManager.getState().provider,
-          subtitle: stateManager.getState().subLang,
-          animeLang: stateManager.getState().animeLang,
-          status: { label: "Ready", tone: "neutral" },
-          commands: (await import("../app-shell/commands")).resolveCommands(
-            stateManager.getState(),
-            [
-              "search",
-              "settings",
-              "toggle-mode",
-              "history",
-              "diagnostics",
-              "help",
-              "about",
-              "quit",
-            ],
-          ),
+      while (true) {
+        const currentState = stateManager.getState();
+        stateManager.dispatch({
+          type: "SET_VIEW",
+          view: currentState.searchResults.length > 0 ? "results" : "search",
         });
 
-        if (gateAction === "quit") {
+        const outcome = await openBrowseShell({
+          mode: currentState.mode,
+          provider: currentState.provider,
+          initialQuery: currentState.searchQuery,
+          placeholder: currentState.mode === "anime" ? "Demon Slayer" : "Breaking Bad",
+          commands: resolveCommands(currentState, [
+            "settings",
+            "toggle-mode",
+            "history",
+            "diagnostics",
+            "help",
+            "about",
+            "quit",
+          ]),
+          onSearch: async (query) => {
+            stateManager.dispatch({ type: "SET_SEARCH_QUERY", query });
+            stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
+
+            const search = await searchTitles(query, {
+              mode: stateManager.getState().mode,
+              providerId: stateManager.getState().provider,
+              animeLang: stateManager.getState().animeLang,
+              searchRegistry,
+            });
+            const results = search.results;
+
+            logger.info("Search complete", {
+              query,
+              count: results.length,
+              strategy: search.strategy,
+              source: search.sourceId,
+            });
+
+            stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
+
+            return {
+              options: results.map((result) => ({
+                value: result,
+                label: result.year ? `${result.title} (${result.year})` : result.title,
+                detail: `${result.type === "series" ? "Series" : "Movie"}${
+                  result.overview ? ` · ${result.overview}` : ""
+                }`,
+              })),
+              subtitle: `${results.length} results · ${search.sourceName}`,
+              emptyMessage: "No results found. Adjust the query and try again.",
+            };
+          },
+        });
+
+        if (outcome.type === "cancelled") {
           return { status: "cancelled" };
         }
-        if (gateAction === "toggle-mode") {
-          const currentState = stateManager.getState();
-          const newMode = currentState.mode === "anime" ? "series" : "anime";
-          stateManager.dispatch({
-            type: "SET_MODE",
-            mode: newMode,
-            provider:
-              newMode === "anime"
-                ? currentState.defaultProviders.anime
-                : currentState.defaultProviders.series,
-          });
-        } else if (gateAction === "settings") {
-          // TODO: Open settings overlay
-          logger.info("Settings - not implemented");
-        } else {
-          gating = false; // Proceed to search
+
+        if (outcome.type === "action") {
+          if (outcome.action === "quit") {
+            return { status: "cancelled" };
+          }
+
+          if (outcome.action === "toggle-mode") {
+            const nextState = stateManager.getState();
+            const newMode = nextState.mode === "anime" ? "series" : "anime";
+            stateManager.dispatch({
+              type: "SET_MODE",
+              mode: newMode,
+              provider:
+                newMode === "anime"
+                  ? nextState.defaultProviders.anime
+                  : nextState.defaultProviders.series,
+            });
+            stateManager.dispatch({ type: "RESET_SEARCH" });
+            stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
+            continue;
+          }
+
+          if (outcome.action === "settings") {
+            logger.info("Settings - not implemented");
+            continue;
+          }
+
+          logger.info("Browse shell action", { action: outcome.action });
+          continue;
         }
-      }
 
-      // Prompt for search query
-      stateManager.dispatch({ type: "SET_VIEW", view: "search" });
-      const query = await openSearchShell({
-        mode: stateManager.getState().mode,
-        provider: stateManager.getState().provider,
-        placeholder: stateManager.getState().mode === "anime" ? "Demon Slayer" : "Breaking Bad",
-      });
+        const selected = outcome.value;
 
-      if (!query) {
-        return { status: "cancelled" };
-      }
-
-      // Search
-      stateManager.dispatch({ type: "SET_SEARCH_QUERY", query });
-      stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
-
-      const search = await searchTitles(query, {
-        mode: stateManager.getState().mode,
-        providerId: stateManager.getState().provider,
-        animeLang: stateManager.getState().animeLang,
-        searchRegistry,
-      });
-      const results = search.results;
-
-      logger.info("Search complete", {
-        query,
-        count: results.length,
-        strategy: search.strategy,
-        source: search.sourceId,
-      });
-
-      stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
-
-      if (results.length === 0) {
-        return {
-          status: "error",
-          error: {
-            code: "STREAM_NOT_FOUND",
-            message: "No results found",
-            retryable: false,
-          },
+        // Convert SearchResult to TitleInfo
+        const title: TitleInfo = {
+          id: selected.id,
+          type: selected.type,
+          name: selected.title,
+          year: selected.year,
+          overview: selected.overview,
+          posterUrl: selected.posterPath ?? undefined,
+          episodeCount: selected.episodeCount,
         };
+
+        stateManager.dispatch({ type: "SELECT_TITLE", title });
+
+        return { status: "success", value: title };
       }
-
-      // Show results and wait for selection
-      const selected = await openListShell<import("../domain/types").SearchResult>({
-        title: "Choose title",
-        subtitle: `${results.length} results · ${search.sourceName}`,
-        options: results.map((r: import("../domain/types").SearchResult) => ({
-          value: r,
-          label: r.year ? `${r.title} (${r.year})` : r.title,
-          detail: `${r.type === "series" ? "Series" : "Movie"}${
-            r.overview ? ` · ${r.overview}` : ""
-          }`,
-        })),
-      });
-
-      if (!selected) {
-        return { status: "cancelled" };
-      }
-
-      // Convert SearchResult to TitleInfo
-      const title: TitleInfo = {
-        id: selected.id,
-        type: selected.type,
-        name: selected.title,
-        year: selected.year,
-        overview: selected.overview,
-        posterUrl: selected.posterPath ?? undefined,
-        episodeCount: selected.episodeCount,
-      };
-
-      stateManager.dispatch({ type: "SELECT_TITLE", title });
-
-      return { status: "success", value: title };
     } catch (e) {
       logger.error("Search phase error", { error: String(e) });
       return {

@@ -15,10 +15,10 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 ### Active Follow-Ups
 
-- Settings pre-search gate polish
+- Search/results migration into the persistent shell path
+- Overlay-driven settings and provider workflows
 - `mpv` reopen reliability bug investigation
 - `cineby-anime` click handling parity
-- Persistent shell and global command router design lock-in
 - Runtime entrypoint consolidation around `src/main.ts`
 - First-run dependency guardrails for `mpv` and Playwright
 - Engineering and test discipline docs for the persistent shell and provider-hardening tracks
@@ -27,15 +27,15 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 ## Planned Tracks
 
-| Track                           | Status   | Doc                                                                                    |
-| ------------------------------- | -------- | -------------------------------------------------------------------------------------- |
-| CLI UX overhaul                 | Planned  | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                 |
-| Persistent shell implementation | Planned  | [.plans/persistent-shell-implementation.md](.plans/persistent-shell-implementation.md) |
-| Ink UI migration                | Planned  | [.plans/ink-migration.md](.plans/ink-migration.md)                                     |
-| Provider hardening              | Planned  | [.plans/provider-hardening.md](.plans/provider-hardening.md)                           |
-| Runtime entry consolidation     | Planned  | [.docs/architecture-v2.md](.docs/architecture-v2.md)                                   |
-| Search/provider decoupling      | Deferred | [.plans/search-service.md](.plans/search-service.md)                                   |
-| YouTube provider research       | Idea     | [.plans/yt-provider.md](.plans/yt-provider.md)                                         |
+| Track                           | Status      | Doc                                                                                    |
+| ------------------------------- | ----------- | -------------------------------------------------------------------------------------- |
+| CLI UX overhaul                 | Planned     | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                 |
+| Persistent shell implementation | In Progress | [.plans/persistent-shell-implementation.md](.plans/persistent-shell-implementation.md) |
+| Ink UI migration                | Planned     | [.plans/ink-migration.md](.plans/ink-migration.md)                                     |
+| Provider hardening              | Planned     | [.plans/provider-hardening.md](.plans/provider-hardening.md)                           |
+| Runtime entry consolidation     | Planned     | [.docs/architecture-v2.md](.docs/architecture-v2.md)                                   |
+| Search/provider decoupling      | Deferred    | [.plans/search-service.md](.plans/search-service.md)                                   |
+| YouTube provider research       | Idea        | [.plans/yt-provider.md](.plans/yt-provider.md)                                         |
 
 ## Rules For This Folder
 
