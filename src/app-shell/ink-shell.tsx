@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text, render, useInput, useStdout, useApp } from "ink";
+import { Box, Text, render, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 
 import { parseCommand, suggestCommands, type AppCommandId } from "./commands";
@@ -101,10 +101,7 @@ function Footer({ actions }: { actions: readonly FooterAction[] }) {
             <Text color={action.disabled ? palette.gray : palette.cyan}>
               {hotkeyLabel(action.key)}
             </Text>
-            <Text color={action.disabled ? palette.gray : "white"}>
-              {" "}
-              {action.label}
-            </Text>
+            <Text color={action.disabled ? palette.gray : "white"}> {action.label}</Text>
           </Box>
         ))}
       </Box>
@@ -122,13 +119,7 @@ function Footer({ actions }: { actions: readonly FooterAction[] }) {
   );
 }
 
-function CommandPalette({
-  input,
-  allowed,
-}: {
-  input: string;
-  allowed: readonly AppCommandId[];
-}) {
+function CommandPalette({ input, allowed }: { input: string; allowed: readonly AppCommandId[] }) {
   const matches = suggestCommands(input, allowed).slice(0, 4);
 
   return (
@@ -235,8 +226,6 @@ function ShellFrame({
   onResolve: (action: ShellAction) => void;
   children: React.ReactNode;
 }) {
-  const { exit } = useApp();
-
   // Global Ctrl+C handler for all shells
   useInput((input, _key) => {
     if (input === "\x03") {
@@ -266,9 +255,7 @@ function ShellFrame({
           <Text bold color="white">
             {title}
           </Text>
-          {status ? (
-            <Text color={statusColor(status.tone)}>{status.label}</Text>
-          ) : null}
+          {status ? <Text color={statusColor(status.tone)}>{status.label}</Text> : null}
         </Box>
         <Text color={palette.muted}>{subtitle}</Text>
         <Box marginTop={1} flexDirection="column">
@@ -276,13 +263,77 @@ function ShellFrame({
         </Box>
       </Box>
 
-      {commandMode ? (
-        <CommandPalette input={commandInput} allowed={commandSet} />
-      ) : null}
+      {commandMode ? <CommandPalette input={commandInput} allowed={commandSet} /> : null}
 
       <Footer actions={footerActions} />
     </Box>
   );
+}
+
+type MountedShell<TResult> = {
+  close: (value: TResult) => void;
+  result: Promise<TResult>;
+};
+
+function clearShellScreen() {
+  if (process.stdout.isTTY) {
+    process.stdout.write("\x1b[2J\x1b[H");
+  }
+}
+
+function mountShell<TResult>({
+  renderShell,
+  fallbackValue,
+}: {
+  renderShell: (finish: (value: TResult) => void) => React.ReactElement;
+  fallbackValue: TResult;
+}): MountedShell<TResult> {
+  stdinManager.enterShell();
+  clearShellScreen();
+
+  let settled = false;
+  let resolveResult!: (value: TResult) => void;
+  let ink!: ReturnType<typeof render>;
+  let exitPromise!: Promise<unknown>;
+
+  const result = new Promise<TResult>((resolve) => {
+    resolveResult = resolve;
+  });
+
+  const settle = (value: TResult, shouldUnmount: boolean) => {
+    if (settled) return;
+    settled = true;
+
+    if (shouldUnmount) {
+      ink.unmount();
+    }
+
+    void exitPromise.then(() => {
+      stdinManager.exitShell();
+      resolveResult(value);
+    });
+  };
+
+  ink = render(
+    renderShell((value) => settle(value, true)),
+    {
+      exitOnCtrlC: false,
+    },
+  );
+  exitPromise = ink.waitUntilExit();
+
+  void exitPromise.then(() => {
+    if (!settled) {
+      settled = true;
+      stdinManager.exitShell();
+      resolveResult(fallbackValue);
+    }
+  });
+
+  return {
+    close: (value: TResult) => settle(value, true),
+    result,
+  };
 }
 
 function HomeShell({
@@ -304,12 +355,7 @@ function HomeShell({
     { key: "q", label: "quit", action: "quit" },
   ];
 
-  const commandSet: readonly AppCommandId[] = [
-    "search",
-    "settings",
-    "toggle-mode",
-    "quit",
-  ];
+  const commandSet: readonly AppCommandId[] = ["search", "settings", "toggle-mode", "quit"];
 
   useInput((_input, key) => {
     if (key.return) onResolve("search");
@@ -328,8 +374,8 @@ function HomeShell({
       onResolve={onResolve}
     >
       <Text color={palette.muted}>
-        Press Enter to search, or use `/` for commands. Settings and mode switch
-        stay reachable before the first query.
+        Press Enter to search, or use `/` for commands. Settings and mode switch stay reachable
+        before the first query.
       </Text>
     </ShellFrame>
   );
@@ -361,10 +407,7 @@ function PlaybackShell({
       label: "previous",
       action: "previous",
       disabled: state.type !== "series" || state.episode <= 1,
-      reason:
-        state.type !== "series"
-          ? "only available for series"
-          : "already at episode 1",
+      reason: state.type !== "series" ? "only available for series" : "already at episode 1",
     },
     {
       key: "s",
@@ -388,9 +431,7 @@ function PlaybackShell({
 
   const location =
     state.type === "series"
-      ? `S${String(state.season).padStart(2, "0")}E${String(
-          state.episode,
-        ).padStart(2, "0")}`
+      ? `S${String(state.season).padStart(2, "0")}E${String(state.episode).padStart(2, "0")}`
       : "Movie";
 
   useInput((_input, key) => {
@@ -410,8 +451,8 @@ function PlaybackShell({
       onResolve={onResolve}
     >
       <Text color={palette.muted}>
-        Playback controls stay visible and command-driven. Use `/` for direct
-        actions without leaving the shell.
+        Playback controls stay visible and command-driven. Use `/` for direct actions without
+        leaving the shell.
       </Text>
       {state.showMemory && state.memoryUsage ? (
         <Box marginTop={1}>
@@ -457,12 +498,7 @@ function SearchShell({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box
-        borderStyle="round"
-        borderColor={palette.gray}
-        flexDirection="column"
-        paddingX={1}
-      >
+      <Box borderStyle="round" borderColor={palette.gray} flexDirection="column" paddingX={1}>
         <Text color={palette.amber}>KitsuneSnipe</Text>
         <Box marginTop={1}>
           <Text bold color="white">
@@ -474,11 +510,7 @@ function SearchShell({
         >{`Provider ${provider}  ·  Enter submits  ·  Esc cancels`}</Text>
         <Box marginTop={1}>
           <Text color={palette.cyan}>› </Text>
-          <TextInput
-            value={value}
-            onChange={setValue}
-            placeholder={placeholder}
-          />
+          <TextInput value={value} onChange={setValue} placeholder={placeholder} />
         </Box>
       </Box>
     </Box>
@@ -499,13 +531,7 @@ function useSpinner() {
   return SPINNER_FRAMES[frame];
 }
 
-function LoadingShell({
-  state,
-  onCancel,
-}: {
-  state: LoadingShellState;
-  onCancel?: () => void;
-}) {
+function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?: () => void }) {
   const spinner = useSpinner();
   const { stdout } = useStdout();
 
@@ -573,45 +599,22 @@ export function openShell<TProps>({
   Component,
   props,
 }: {
-  Component: React.ComponentType<
-    TProps & { onResolve: (action: ShellAction) => void }
-  >;
+  Component: React.ComponentType<TProps & { onResolve: (action: ShellAction) => void }>;
   props: TProps;
 }): Promise<ShellAction> {
-  stdinManager.enterShell();
-
-  // Clear screen before rendering to prevent stacking
-  if (process.stdout.isTTY) {
-    process.stdout.write("\x1b[2J\x1b[0f");
-  }
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const onResolve = (action: ShellAction) => {
-      if (settled) return;
-      settled = true;
-      ink.unmount();
-      stdinManager.exitShell();
-      resolve(action);
-    };
-
-    const ink = render(<Component {...props} onResolve={onResolve} />);
-    ink.waitUntilExit().then(() => {
-      if (!settled) {
-        stdinManager.exitShell();
-        resolve("quit");
-      }
-    });
+  const session = mountShell<ShellAction>({
+    renderShell: (finish) => <Component {...props} onResolve={finish} />,
+    fallbackValue: "quit",
   });
+
+  return session.result;
 }
 
 export function openHomeShell(state: HomeShellState): Promise<ShellAction> {
   return openShell({ Component: HomeShell, props: { state } });
 }
 
-export function openPlaybackShell(
-  state: PlaybackShellState,
-): Promise<ShellAction> {
+export function openPlaybackShell(state: PlaybackShellState): Promise<ShellAction> {
   return openShell({ Component: PlaybackShell, props: { state } });
 }
 
@@ -621,33 +624,24 @@ export function openLoadingShell({
 }: {
   state: LoadingShellState;
   cancellable?: boolean;
-}): Promise<"done" | "cancelled"> {
-  stdinManager.enterShell();
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value: "done" | "cancelled") => {
-      if (settled) return;
-      settled = true;
-      ink.unmount();
-      stdinManager.exitShell();
-      resolve(value);
-    };
-
-    const ink = render(
-      <LoadingShell
-        state={state}
-        onCancel={cancellable ? () => finish("cancelled") : undefined}
-      />,
-    );
-
-    ink.waitUntilExit().then(() => {
-      if (!settled) {
-        stdinManager.exitShell();
-        finish("done");
-      }
-    });
+}): LoadingShellHandle {
+  const session = mountShell<"done" | "cancelled">({
+    renderShell: (finish) => (
+      <LoadingShell state={state} onCancel={cancellable ? () => finish("cancelled") : undefined} />
+    ),
+    fallbackValue: "done",
   });
+
+  return {
+    close: () => session.close("done"),
+    result: session.result,
+  };
 }
+
+export type LoadingShellHandle = {
+  close: () => void;
+  result: Promise<"done" | "cancelled">;
+};
 
 export function openSearchShell({
   mode,
@@ -660,35 +654,44 @@ export function openSearchShell({
   initialValue?: string;
   placeholder: string;
 }): Promise<string | null> {
-  stdinManager.enterShell();
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value: string | null) => {
-      if (settled) return;
-      settled = true;
-      ink.unmount();
-      stdinManager.exitShell();
-      resolve(value);
-    };
+  const session = mountShell<string | null>({
+    renderShell: (finish) => {
+      const finishWithLog = (value: string | null) => {
+        // #region agent log
+        fetch("http://127.0.0.1:7354/ingest/f23bf8ed-06ee-406a-91ac-a87f92e34e82", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Debug-Session-Id": "d7fbe5",
+          },
+          body: JSON.stringify({
+            sessionId: "d7fbe5",
+            location: "ink-shell.tsx:openSearchShell.finish",
+            message: "search finish",
+            data: { hasValue: value !== null, len: value?.length ?? 0 },
+            timestamp: Date.now(),
+            hypothesisId: "D",
+          }),
+        }).catch(() => {});
+        // #endregion
+        finish(value);
+      };
 
-    const ink = render(
-      <SearchShell
-        mode={mode}
-        provider={provider}
-        initialValue={initialValue}
-        placeholder={placeholder}
-        onSubmit={(value) => finish(value.length > 0 ? value : null)}
-        onCancel={() => finish(null)}
-      />,
-    );
-
-    ink.waitUntilExit().then(() => {
-      if (!settled) {
-        stdinManager.exitShell();
-        finish(null);
-      }
-    });
+      return (
+        <SearchShell
+          mode={mode}
+          provider={provider}
+          initialValue={initialValue}
+          placeholder={placeholder}
+          onSubmit={(value) => finishWithLog(value.length > 0 ? value : null)}
+          onCancel={() => finishWithLog(null)}
+        />
+      );
+    },
+    fallbackValue: null,
   });
+
+  return session.result;
 }
 
 type ListOption<T> = {
@@ -696,6 +699,13 @@ type ListOption<T> = {
   label: string;
   detail?: string;
 };
+
+function truncateLine(value: string, maxLength: number): string {
+  if (maxLength <= 0) return "";
+  if (value.length <= maxLength) return value;
+  if (maxLength <= 1) return "…";
+  return `${value.slice(0, maxLength - 1)}…`;
+}
 
 function ListShell<T>({
   title,
@@ -713,16 +723,17 @@ function ListShell<T>({
   const [index, setIndex] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
   const { stdout } = useStdout();
+  const selectedOption = options[index];
 
-  // Calculate visible window size (leave room for header/footer)
-  const maxVisible = Math.max(5, stdout.rows - 8);
+  // Leave room for the frame, footer, and selected-item preview.
+  const maxVisible = Math.max(5, stdout.rows - 14);
+  const innerWidth = Math.max(24, stdout.columns - 8);
+  const rowWidth = Math.max(20, innerWidth - 4);
+  const selectedLabel = selectedOption?.label ?? "Nothing selected";
+  const selectedDetail = selectedOption?.detail ?? "Use ↑↓ or j/k to move through results";
 
   // Calculate window start to keep selected item visible
-  const getWindowStart = (
-    selectedIndex: number,
-    total: number,
-    windowSize: number,
-  ) => {
+  const getWindowStart = (selectedIndex: number, total: number, windowSize: number) => {
     if (total <= windowSize) return 0;
 
     // Center the selected item when possible
@@ -752,6 +763,28 @@ function ListShell<T>({
     }
     if (key.return) {
       const selected = options[index];
+      // #region agent log
+      fetch("http://127.0.0.1:7354/ingest/f23bf8ed-06ee-406a-91ac-a87f92e34e82", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "d7fbe5",
+        },
+        body: JSON.stringify({
+          sessionId: "d7fbe5",
+          location: "ink-shell.tsx:ListShell.useInput",
+          message: "return key",
+          data: {
+            index,
+            confirmed,
+            hasSelected: Boolean(selected),
+            label: selected?.label?.slice(0, 80),
+          },
+          timestamp: Date.now(),
+          hypothesisId: "A",
+        }),
+      }).catch(() => {});
+      // #endregion
       if (selected && !confirmed) {
         setConfirmed(true);
         setTimeout(() => onSubmit(selected.value), 150);
@@ -774,7 +807,7 @@ function ListShell<T>({
         borderColor={confirmed ? palette.green : palette.gray}
         flexDirection="column"
         paddingX={1}
-        height={Math.min(stdout.rows - 2, options.length * 2 + 6)}
+        paddingY={0}
       >
         <Text color={palette.amber}>KitsuneSnipe</Text>
         <Box marginTop={1}>
@@ -782,15 +815,9 @@ function ListShell<T>({
             {confirmed ? "✓ Selected" : title}
           </Text>
         </Box>
-        <Text color={palette.muted}>
-          {confirmed ? options[index]?.label : subtitle}
-        </Text>
+        <Text color={palette.muted}>{confirmed ? selectedLabel : subtitle}</Text>
         <Text color={palette.gray}>
-          {options.length > maxVisible
-            ? `Showing ${windowStart + 1}-${windowEnd} of ${
-                options.length
-              } (↑↓ to scroll)`
-            : `${options.length} items`}
+          {`Selected ${index + 1} of ${options.length}  ·  Enter confirms  ·  q cancels`}
         </Text>
         <Box flexDirection="column" marginTop={1}>
           {windowStart > 0 && <Text color={palette.gray}> ▲ ...</Text>}
@@ -798,36 +825,38 @@ function ListShell<T>({
             const optionIndex = windowStart + i;
             const selected = optionIndex === index;
             const isConfirmed = confirmed && selected;
+            const itemPrefix = isConfirmed ? "✓" : selected ? "❯" : " ";
+            const itemTone = isConfirmed ? palette.green : selected ? palette.amber : palette.gray;
+            const secondary = option.detail ? `  ${truncateLine(option.detail, rowWidth)}` : "";
+            const rowText = truncateLine(`${option.label}${secondary}`, rowWidth);
             return (
-              <Box
-                key={optionIndex}
-                flexDirection="column"
-                marginBottom={i === visibleOptions.length - 1 ? 0 : 1}
-              >
+              <Box key={optionIndex} marginBottom={i === visibleOptions.length - 1 ? 0 : 0}>
                 <Text
-                  color={
-                    isConfirmed
-                      ? palette.green
-                      : selected
-                      ? palette.cyan
-                      : "white"
-                  }
+                  backgroundColor={selected ? palette.cyan : undefined}
+                  color={selected ? "black" : "white"}
+                  bold={selected || isConfirmed}
+                  dimColor={!selected && !isConfirmed}
                 >
-                  {isConfirmed ? "✓ " : selected ? "› " : "  "}
-                  {option.label}
+                  <Text color={selected ? "black" : itemTone}>{`${itemPrefix} `}</Text>
+                  {rowText}
                 </Text>
-                {option.detail ? (
-                  <Text color={palette.gray}>
-                    {selected ? "  " : "  "}
-                    {option.detail}
-                  </Text>
-                ) : null}
               </Box>
             );
           })}
-          {windowEnd < options.length && (
-            <Text color={palette.gray}> ▼ ...</Text>
-          )}
+          {windowEnd < options.length && <Text color={palette.gray}> ▼ ...</Text>}
+        </Box>
+        <Box
+          marginTop={1}
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={palette.cyan}
+          paddingX={1}
+        >
+          <Text color={palette.cyan}>Current Selection</Text>
+          <Text bold color="white">
+            {truncateLine(selectedLabel, innerWidth)}
+          </Text>
+          <Text color={palette.muted}>{truncateLine(selectedDetail, innerWidth * 2)}</Text>
         </Box>
       </Box>
       <Footer
@@ -850,42 +879,89 @@ export function openListShell<T>({
   subtitle: string;
   options: readonly ListOption<T>[];
 }): Promise<T | null> {
-  stdinManager.enterShell();
+  // #region agent log
+  fetch("http://127.0.0.1:7354/ingest/f23bf8ed-06ee-406a-91ac-a87f92e34e82", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "d7fbe5",
+    },
+    body: JSON.stringify({
+      sessionId: "d7fbe5",
+      location: "ink-shell.tsx:openListShell",
+      message: "openListShell invoked",
+      data: { title, optionCount: options.length },
+      timestamp: Date.now(),
+      hypothesisId: "E",
+    }),
+  }).catch(() => {});
+  // #endregion
 
-  return new Promise((resolve) => {
-    let resolved = false;
+  const session = mountShell<T | null>({
+    renderShell: (finish) => {
+      const finishWithLog = (value: T | null) => {
+        // #region agent log
+        fetch("http://127.0.0.1:7354/ingest/f23bf8ed-06ee-406a-91ac-a87f92e34e82", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Debug-Session-Id": "d7fbe5",
+          },
+          body: JSON.stringify({
+            sessionId: "d7fbe5",
+            location: "ink-shell.tsx:openListShell.finish",
+            message: "finish called",
+            data: {
+              hasValue: value !== null,
+              title,
+              optionCount: options.length,
+            },
+            timestamp: Date.now(),
+            hypothesisId: "B",
+          }),
+        }).catch(() => {});
+        // #endregion
+        finish(value);
+      };
 
-    const finish = (value: T | null) => {
-      if (resolved) return;
-      resolved = true;
-      ink.unmount();
-      stdinManager.exitShell();
-      resolve(value);
-    };
-
-    const ink = render(
-      <ListShell
-        title={title}
-        subtitle={subtitle}
-        options={options}
-        onSubmit={(value) => finish(value)}
-        onCancel={() => finish(null)}
-      />,
-    );
-
-    ink.waitUntilExit().then(() => {
-      if (!resolved) {
-        stdinManager.exitShell();
-        finish(null);
-      }
-    });
+      return (
+        <ListShell
+          title={title}
+          subtitle={subtitle}
+          options={options}
+          onSubmit={(value) => finishWithLog(value)}
+          onCancel={() => finishWithLog(null)}
+        />
+      );
+    },
+    fallbackValue: null,
   });
+
+  void session.result.finally(() => {
+    // #region agent log
+    fetch("http://127.0.0.1:7354/ingest/f23bf8ed-06ee-406a-91ac-a87f92e34e82", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "d7fbe5",
+      },
+      body: JSON.stringify({
+        sessionId: "d7fbe5",
+        location: "ink-shell.tsx:openListShell.waitUntilExit",
+        message: "waitUntilExit resolved",
+        data: { title },
+        timestamp: Date.now(),
+        hypothesisId: "C",
+      }),
+    }).catch(() => {});
+    // #endregion
+  });
+
+  return session.result;
 }
 
 export function formatMemoryUsage(): string {
   const memory = process.memoryUsage();
   const toMb = (bytes: number) => `${(bytes / 1_048_576).toFixed(1)} MB`;
-  return `Mem  RSS ${toMb(memory.rss)}  ·  Heap ${toMb(memory.heapUsed)}/${toMb(
-    memory.heapTotal,
-  )}`;
+  return `Mem  RSS ${toMb(memory.rss)}  ·  Heap ${toMb(memory.heapUsed)}/${toMb(memory.heapTotal)}`;
 }

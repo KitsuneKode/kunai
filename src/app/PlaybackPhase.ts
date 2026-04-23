@@ -6,32 +6,17 @@
 // =============================================================================
 
 import type { Phase, PhaseResult, PhaseContext } from "./Phase";
-import type {
-  TitleInfo,
-  EpisodeInfo,
-  StreamInfo,
-  PlaybackResult,
-} from "../domain/types";
+import type { TitleInfo, EpisodeInfo, StreamInfo, PlaybackResult } from "../domain/types";
 
 export type PlaybackOutcome = "back_to_search" | "mode_switch" | "quit";
 
 export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
 
-  async execute(
-    title: TitleInfo,
-    context: PhaseContext,
-  ): Promise<PhaseResult<PlaybackOutcome>> {
+  async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
     const { container } = context;
-    const {
-      shell,
-      providerRegistry,
-      player,
-      stateManager,
-      logger,
-      historyStore,
-      config,
-    } = container;
+    const { shell, providerRegistry, player, stateManager, logger, historyStore, config } =
+      container;
 
     try {
       // Episode selection (for series)
@@ -75,22 +60,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         if (!currentEpisode) break;
 
         // Resolve stream with loading UI
-        const { openLoadingShell } = await import("../app-shell/ink-shell");
-
-        // Show loading UI
-        const loadingPromise = openLoadingShell({
-          state: {
-            title: title.name,
-            subtitle: `S${String(currentEpisode.season).padStart(
-              2,
-              "0",
-            )}E${String(currentEpisode.episode).padStart(2, "0")}`,
-            operation: "resolving",
-            details: `Provider: ${stateManager.getState().provider}`,
-          },
-          cancellable: false,
-        });
-
         const provider = providerRegistry.get(stateManager.getState().provider);
         if (!provider) {
           return {
@@ -103,19 +72,39 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           };
         }
 
+        const { openLoadingShell } = await import("../app-shell/ink-shell");
+
+        // Show loading UI while the provider resolves the stream, then always
+        // wait for Ink to finish unmounting before the next terminal render.
+        const loading = openLoadingShell({
+          state: {
+            title: title.name,
+            subtitle: `S${String(currentEpisode.season).padStart(
+              2,
+              "0",
+            )}E${String(currentEpisode.episode).padStart(2, "0")}`,
+            operation: "resolving",
+            details: `Provider: ${stateManager.getState().provider}`,
+          },
+          cancellable: false,
+        });
+
         stateManager.dispatch({
           type: "SET_PLAYBACK_STATUS",
           status: "loading",
         });
 
-        const stream = await provider.resolveStream({
-          title,
-          episode: currentEpisode,
-          subLang: stateManager.getState().subLang,
-        });
-
-        // Close loading UI
-        loadingPromise.then(() => {}); // Fire and forget to unmount
+        let stream: StreamInfo | null = null;
+        try {
+          stream = await provider.resolveStream({
+            title,
+            episode: currentEpisode,
+            subLang: stateManager.getState().subLang,
+          });
+        } finally {
+          loading.close();
+          await loading.result;
+        }
 
         if (!stream) {
           console.log(`⚠ Stream not found on ${provider.metadata.id}`);
@@ -150,12 +139,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 type: "SET_PLAYBACK_STATUS",
                 status: "ready",
               });
-              await this.playStream(
-                fallbackStream,
-                title,
-                currentEpisode,
-                context,
-              );
+              await this.playStream(fallbackStream, title, currentEpisode, context);
               continue;
             }
           }
@@ -175,12 +159,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "ready" });
 
         // Play in MPV
-        const result = await this.playStream(
-          stream,
-          title,
-          currentEpisode,
-          context,
-        );
+        const result = await this.playStream(stream, title, currentEpisode, context);
 
         // Save history
         if (result.watchedSeconds > 10) {
@@ -197,11 +176,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         }
 
         // Handle post-playback
-        if (
-          result.endReason === "eof" &&
-          config.autoNext &&
-          title.type === "series"
-        ) {
+        if (result.endReason === "eof" && config.autoNext && title.type === "series") {
           // Auto-advance to next episode
           stateManager.dispatch({
             type: "SELECT_EPISODE",
@@ -230,8 +205,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         if (postAction === "quit") {
           return { status: "cancelled" };
         } else if (postAction === "toggle-mode") {
-          const newMode =
-            stateManager.getState().mode === "anime" ? "series" : "anime";
+          const newMode = stateManager.getState().mode === "anime" ? "series" : "anime";
           stateManager.dispatch({
             type: "SET_MODE",
             mode: newMode,
@@ -281,9 +255,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               value: p.metadata.id,
               label: p.metadata.name,
               detail:
-                stateManager.getState().mode === "anime"
-                  ? "Anime provider"
-                  : "General provider",
+                stateManager.getState().mode === "anime" ? "Anime provider" : "General provider",
             })),
           });
           if (selected) {
