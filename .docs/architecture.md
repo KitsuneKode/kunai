@@ -128,17 +128,20 @@ For new providers or major provider hardening, do not jump straight from this do
 - Episode numbering in the UI is always 1-based
 - `anime-base.ts` should stay aligned with ani-cli assumptions unless the codebase deliberately chooses a new contract
 
-### AllAnime invariants
+### AllAnime-compatible invariants
 
 - `KNOWN_SOURCES = ["Default", "Yt-mp4", "S-mp4", "Luf-Mp4"]`
 - `hexDecode` mirrors ani-cli provider decoding logic
 - AES mode is `AES-256-CTR`
-- Key source is `SHA-256("SimtVuagFbGR2K7P")`
-- IV is derived from the first 12 bytes of the provider blob
+- Key source is `SHA-256("Xot36i3lK3:v1")`
+- The current blob layout is `1-byte version prefix + 12-byte IV + ciphertext + 16-byte footer`
+- IV is derived from bytes `1..12` of the provider blob
 - `counter[15] = 2`
 - `countryOrigin: "ALL"` is required for broad search coverage
 - `tobeparsed` stays out of the GraphQL selection set
 - `m3u8Referer` comes from the JSON response body, not the static config referer
+
+This parity policy only applies to the AllAnime / AllManga API family and other deliberate compatibles. It is not a universal standard for every anime provider in the repo.
 
 ## Playback and Recovery
 

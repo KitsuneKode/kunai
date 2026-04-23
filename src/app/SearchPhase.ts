@@ -7,27 +7,19 @@
 
 import type { Phase, PhaseResult, PhaseContext } from "./Phase";
 import type { TitleInfo } from "../domain/types";
+import { searchTitles } from "./search-routing";
 
 export class SearchPhase implements Phase<void, TitleInfo> {
   name = "search";
 
-  async execute(
-    _input: void,
-    context: PhaseContext,
-  ): Promise<PhaseResult<TitleInfo>> {
+  async execute(_input: void, context: PhaseContext): Promise<PhaseResult<TitleInfo>> {
     const { container } = context;
-    const { shell, searchRegistry, stateManager, logger } = container;
+    const { searchRegistry, stateManager, logger } = container;
 
     try {
       // Initialize search UI state
       stateManager.dispatch({ type: "RESET_SEARCH" });
       stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
-
-      // Get search service based on current mode
-      const searchService = searchRegistry.getDefault();
-      logger.info("Using search service", {
-        service: searchService.metadata.id,
-      });
 
       // Show search-first UI and wait for selection
       // For now, delegate to the existing shell functions
@@ -37,29 +29,45 @@ export class SearchPhase implements Phase<void, TitleInfo> {
       const { openHomeShell } = await import("../app-shell/ink-shell");
       const { openSearchShell } = await import("../app-shell/ink-shell");
       const { openListShell } = await import("../app-shell/ink-shell");
-      const { searchVideasy } = await import("../search");
 
       // ── Home Gate: Show hotkeys [c]/[a]/[q] before search ─────────────────────
       let gating = true;
       while (gating) {
+        stateManager.dispatch({ type: "SET_VIEW", view: "home" });
         const gateAction = await openHomeShell({
           mode: stateManager.getState().mode,
           provider: stateManager.getState().provider,
           subtitle: stateManager.getState().subLang,
-          animeLang: "sub", // TODO: Get from config
+          animeLang: stateManager.getState().animeLang,
           status: { label: "Ready", tone: "neutral" },
+          commands: (await import("../app-shell/commands")).resolveCommands(
+            stateManager.getState(),
+            [
+              "search",
+              "settings",
+              "toggle-mode",
+              "history",
+              "diagnostics",
+              "help",
+              "about",
+              "quit",
+            ],
+          ),
         });
 
         if (gateAction === "quit") {
           return { status: "cancelled" };
         }
         if (gateAction === "toggle-mode") {
-          const newMode =
-            stateManager.getState().mode === "anime" ? "series" : "anime";
+          const currentState = stateManager.getState();
+          const newMode = currentState.mode === "anime" ? "series" : "anime";
           stateManager.dispatch({
             type: "SET_MODE",
             mode: newMode,
-            provider: newMode === "anime" ? "allanime" : "vidking", // TODO: Get from config
+            provider:
+              newMode === "anime"
+                ? currentState.defaultProviders.anime
+                : currentState.defaultProviders.series,
           });
         } else if (gateAction === "settings") {
           // TODO: Open settings overlay
@@ -70,13 +78,11 @@ export class SearchPhase implements Phase<void, TitleInfo> {
       }
 
       // Prompt for search query
+      stateManager.dispatch({ type: "SET_VIEW", view: "search" });
       const query = await openSearchShell({
         mode: stateManager.getState().mode,
         provider: stateManager.getState().provider,
-        placeholder:
-          stateManager.getState().mode === "anime"
-            ? "Demon Slayer"
-            : "Breaking Bad",
+        placeholder: stateManager.getState().mode === "anime" ? "Demon Slayer" : "Breaking Bad",
       });
 
       if (!query) {
@@ -87,7 +93,20 @@ export class SearchPhase implements Phase<void, TitleInfo> {
       stateManager.dispatch({ type: "SET_SEARCH_QUERY", query });
       stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
-      const results = await searchService.search(query);
+      const search = await searchTitles(query, {
+        mode: stateManager.getState().mode,
+        providerId: stateManager.getState().provider,
+        animeLang: stateManager.getState().animeLang,
+        searchRegistry,
+      });
+      const results = search.results;
+
+      logger.info("Search complete", {
+        query,
+        count: results.length,
+        strategy: search.strategy,
+        source: search.sourceId,
+      });
 
       stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
 
@@ -103,11 +122,9 @@ export class SearchPhase implements Phase<void, TitleInfo> {
       }
 
       // Show results and wait for selection
-      const selected = await openListShell<
-        import("../domain/types").SearchResult
-      >({
+      const selected = await openListShell<import("../domain/types").SearchResult>({
         title: "Choose title",
-        subtitle: `${results.length} results · Search mode`,
+        subtitle: `${results.length} results · ${search.sourceName}`,
         options: results.map((r: import("../domain/types").SearchResult) => ({
           value: r,
           label: `${r.title} (${r.year})`,

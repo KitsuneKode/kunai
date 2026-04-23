@@ -40,6 +40,19 @@ interface ApiProvider extends BaseProvider {
 
 `opts.embedScraper` is injected from `index.ts` so providers can reuse Playwright scraping without importing `scraper.ts` directly.
 
+## When A Playwright Provider Can Become Browser-Less
+
+Do not assume every iframe or embed site can be converted into an HTTP-only provider just because AllAnime can.
+
+Move a provider away from Playwright only when research shows at least one of these is true:
+
+- the page exposes a stable JSON or AJAX endpoint for servers or source links
+- the embed URL can be derived deterministically without executing site JS
+- the final stream request can be reproduced with normal headers and referers
+- the remaining browser step is just a last-mile embed scrape, which fits the hybrid `ApiProvider + embedScraper` pattern
+
+Keep Playwright when the real stream only appears after runtime JS, player boot code, anti-bot challenges, or click-driven state that cannot be reproduced cheaply and reliably over plain HTTP.
+
 ## Registration
 
 - Add the implementation under `src/providers/`
@@ -130,6 +143,7 @@ export const MyAnime = createAnimeProvider({
 - when AllAnime or AllManga breaks, compare against ani-cli before guessing at a fix
 - on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli`
 - if ani-cli is also broken upstream, KitsuneSnipe may carry a temporary local fix, but that divergence should be documented and easy to remove when parity can be restored
+- this is a family-specific reference contract for AllAnime-compatible providers, not the default contract for every anime source
 - when fixing this family of providers, check:
   - search GraphQL query shape
   - episode list query shape

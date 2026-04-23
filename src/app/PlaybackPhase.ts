@@ -15,8 +15,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
   async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
     const { container } = context;
-    const { shell, providerRegistry, player, stateManager, logger, historyStore, config } =
-      container;
+    const { providerRegistry, stateManager, logger, historyStore, config } = container;
 
     try {
       // Episode selection (for series)
@@ -58,6 +57,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       while (true) {
         const currentEpisode = stateManager.getState().currentEpisode;
         if (!currentEpisode) break;
+
+        stateManager.dispatch({
+          type: "SET_EPISODE_NAVIGATION",
+          navigation: buildEpisodeNavigationState(title.type, currentEpisode),
+        });
 
         // Resolve stream with loading UI
         const provider = providerRegistry.get(stateManager.getState().provider);
@@ -190,6 +194,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         // Show post-playback menu
         const { openPlaybackShell } = await import("../app-shell/ink-shell");
+        const { resolveCommands } = await import("../app-shell/commands");
 
         const postAction = await openPlaybackShell({
           type: title.type,
@@ -200,16 +205,33 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           showMemory: false,
           mode: stateManager.getState().mode,
           status: { label: "Ready for next action", tone: "success" },
+          commands: resolveCommands(stateManager.getState(), [
+            "settings",
+            "toggle-mode",
+            "provider",
+            "replay",
+            "next",
+            "previous",
+            "next-season",
+            "diagnostics",
+            "help",
+            "about",
+            "quit",
+          ]),
         });
 
         if (postAction === "quit") {
           return { status: "cancelled" };
         } else if (postAction === "toggle-mode") {
-          const newMode = stateManager.getState().mode === "anime" ? "series" : "anime";
+          const currentState = stateManager.getState();
+          const newMode = currentState.mode === "anime" ? "series" : "anime";
           stateManager.dispatch({
             type: "SET_MODE",
             mode: newMode,
-            provider: newMode === "anime" ? "allanime" : "vidking",
+            provider:
+              newMode === "anime"
+                ? currentState.defaultProviders.anime
+                : currentState.defaultProviders.series,
           });
           return { status: "success", value: "back_to_search" };
         } else if (postAction === "replay") {
@@ -318,4 +340,37 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
     return result;
   }
+}
+
+function buildEpisodeNavigationState(type: TitleInfo["type"], episode: EpisodeInfo) {
+  if (type !== "series") {
+    return {
+      hasPrevious: false,
+      hasNext: false,
+      hasNextSeason: false,
+      previousUnavailableReason: "Previous episode is only available for episodic playback.",
+      nextUnavailableReason: "Next episode is only available for episodic playback.",
+      nextSeasonUnavailableReason: "Season jump is only available for episodic playback.",
+    };
+  }
+
+  return {
+    hasPrevious: episode.episode > 1,
+    hasNext: true,
+    hasNextSeason: true,
+    previousLabel:
+      episode.episode > 1
+        ? `S${String(episode.season).padStart(2, "0")}E${String(episode.episode - 1).padStart(
+            2,
+            "0",
+          )}`
+        : undefined,
+    nextLabel: `S${String(episode.season).padStart(2, "0")}E${String(episode.episode + 1).padStart(
+      2,
+      "0",
+    )}`,
+    nextSeasonLabel: `S${String(episode.season + 1).padStart(2, "0")}E01`,
+    previousUnavailableReason:
+      episode.episode > 1 ? undefined : "Already at the first known episode.",
+  };
 }

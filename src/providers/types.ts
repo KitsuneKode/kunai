@@ -48,7 +48,7 @@ export interface PlaywrightProvider extends BaseProvider {
 
 // Which search backend the provider uses.
 //   "tmdb"      — shared videasy search (TMDB-format, works for most providers)
-//   "allanime"  — AllAnime GraphQL search (anime-only)
+//   "allanime"  — AllAnime-family GraphQL search (anime-only)
 //   "hianime"   — HiAnime API search via anime-db.videasy.net (anime-only)
 //   "self"      — provider has its own search()  (Braflix, etc.)
 export type SearchBackend = "tmdb" | "allanime" | "hianime" | "self";

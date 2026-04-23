@@ -2,7 +2,13 @@ import React, { useState, useEffect } from "react";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 
-import { parseCommand, suggestCommands, type AppCommandId } from "./commands";
+import {
+  COMMANDS,
+  parseCommand,
+  suggestCommands,
+  type AppCommandId,
+  type ResolvedAppCommand,
+} from "./commands";
 import {
   toShellAction,
   type FooterAction,
@@ -121,8 +127,18 @@ function Footer({ actions }: { actions: readonly FooterAction[] }) {
   );
 }
 
-function CommandPalette({ input, allowed }: { input: string; allowed: readonly AppCommandId[] }) {
-  const matches = suggestCommands(input, allowed).slice(0, 4);
+function CommandPalette({
+  input,
+  commands,
+}: {
+  input: string;
+  commands: readonly ResolvedAppCommand[];
+}) {
+  const allowed = commands.map((command) => command.id);
+  const matches = suggestCommands(input, allowed)
+    .map((command) => commands.find((resolved) => resolved.id === command.id))
+    .filter((command): command is ResolvedAppCommand => Boolean(command))
+    .slice(0, 6);
 
   return (
     <Box
@@ -138,9 +154,14 @@ function CommandPalette({ input, allowed }: { input: string; allowed: readonly A
       <Box flexDirection="column" marginTop={1}>
         {matches.length > 0 ? (
           matches.map((command) => (
-            <Text key={command.id} color={palette.muted}>
-              /{command.aliases[0]} {command.description}
-            </Text>
+            <Box key={command.id}>
+              <Text color={command.enabled ? palette.muted : palette.gray}>
+                /{command.aliases[0]} {command.description}
+              </Text>
+              {!command.enabled && command.reason ? (
+                <Text color={palette.gray}>{`  ·  ${command.reason}`}</Text>
+              ) : null}
+            </Box>
           ))
         ) : (
           <Text color={palette.gray}>No matching commands</Text>
@@ -152,11 +173,11 @@ function CommandPalette({ input, allowed }: { input: string; allowed: readonly A
 
 function useShellInput({
   footerActions,
-  commandSet,
+  commands,
   onResolve,
 }: {
   footerActions: readonly FooterAction[];
-  commandSet: readonly AppCommandId[];
+  commands: readonly ResolvedAppCommand[];
   onResolve: (action: ShellAction) => void;
 }) {
   const [commandMode, setCommandMode] = useState(false);
@@ -176,12 +197,11 @@ function useShellInput({
     if (commandMode) {
       if (key.return) {
         const command = parseCommand(commandInput);
-        if (command && commandSet.includes(command.id)) {
-          onResolve(toShellAction(command.id));
+        const resolved = command ? commands.find((candidate) => candidate.id === command.id) : null;
+        if (resolved?.enabled) {
+          onResolve(toShellAction(resolved.id));
           return;
         }
-        setCommandInput("");
-        setCommandMode(false);
         return;
       }
       if (key.backspace || key.delete) {
@@ -215,7 +235,7 @@ function ShellFrame({
   subtitle,
   status,
   footerActions,
-  commandSet,
+  commands,
   onResolve,
   children,
 }: {
@@ -224,7 +244,7 @@ function ShellFrame({
   subtitle: string;
   status?: ShellStatus;
   footerActions: readonly FooterAction[];
-  commandSet: readonly AppCommandId[];
+  commands: readonly ResolvedAppCommand[];
   onResolve: (action: ShellAction) => void;
   children: React.ReactNode;
 }) {
@@ -239,7 +259,7 @@ function ShellFrame({
 
   const { commandMode, commandInput } = useShellInput({
     footerActions,
-    commandSet,
+    commands,
     onResolve,
   });
 
@@ -265,7 +285,7 @@ function ShellFrame({
         </Box>
       </Box>
 
-      {commandMode ? <CommandPalette input={commandInput} allowed={commandSet} /> : null}
+      {commandMode ? <CommandPalette input={commandInput} commands={commands} /> : null}
 
       <Footer actions={footerActions} />
     </Box>
@@ -345,19 +365,22 @@ function HomeShell({
   state: HomeShellState;
   onResolve: (action: ShellAction) => void;
 }) {
+  const commands =
+    state.commands ?? fallbackCommandState(["search", "settings", "toggle-mode", "help", "quit"]);
   const footerActions: readonly FooterAction[] = [
     { key: "/", label: "commands", action: "search" },
     { key: "enter", label: "search", action: "search" },
-    { key: "c", label: "settings", action: "settings" },
+    footerActionFromCommand(commands, "settings", { key: "c", label: "settings" }),
     {
       key: "a",
       label: state.mode === "anime" ? "series mode" : "anime mode",
       action: "toggle-mode",
+      disabled: isCommandDisabled(commands, "toggle-mode"),
+      reason: getCommandReason(commands, "toggle-mode"),
     },
-    { key: "q", label: "quit", action: "quit" },
+    footerActionFromCommand(commands, "help", { key: "?", label: "help" }),
+    footerActionFromCommand(commands, "quit", { key: "q", label: "quit" }),
   ];
-
-  const commandSet: readonly AppCommandId[] = ["search", "settings", "toggle-mode", "quit"];
 
   useInput((_input, key) => {
     if (key.return) onResolve("search");
@@ -372,7 +395,7 @@ function HomeShell({
       }${state.mode === "anime" ? `  ·  Audio ${state.animeLang}` : ""}`}
       status={state.status}
       footerActions={footerActions}
-      commandSet={commandSet}
+      commands={commands}
       onResolve={onResolve}
     >
       <Text color={palette.muted}>
@@ -390,45 +413,31 @@ function PlaybackShell({
   state: PlaybackShellState;
   onResolve: (action: ShellAction) => void;
 }) {
+  const commands =
+    state.commands ??
+    fallbackCommandState([
+      "settings",
+      "toggle-mode",
+      "provider",
+      "replay",
+      "next",
+      "previous",
+      "next-season",
+      "diagnostics",
+      "help",
+      "quit",
+    ]);
   const footerActions: readonly FooterAction[] = [
     { key: "/", label: "commands", action: "replay" },
-    { key: "r", label: "replay", action: "replay" },
-    { key: "c", label: "settings", action: "settings" },
-    { key: "a", label: "switch mode", action: "toggle-mode" },
-    { key: "o", label: "provider", action: "provider" },
-    { key: "q", label: "quit", action: "quit" },
-    {
-      key: "n",
-      label: "next",
-      action: "next",
-      disabled: state.type !== "series",
-      reason: "only available for series",
-    },
-    {
-      key: "p",
-      label: "previous",
-      action: "previous",
-      disabled: state.type !== "series" || state.episode <= 1,
-      reason: state.type !== "series" ? "only available for series" : "already at episode 1",
-    },
-    {
-      key: "s",
-      label: "next season",
-      action: "next-season",
-      disabled: state.type !== "series",
-      reason: "only available for series",
-    },
-  ];
-
-  const commandSet: readonly AppCommandId[] = [
-    "settings",
-    "toggle-mode",
-    "quit",
-    "provider",
-    "replay",
-    "next",
-    "previous",
-    "next-season",
+    footerActionFromCommand(commands, "replay", { key: "r", label: "replay" }),
+    footerActionFromCommand(commands, "settings", { key: "c", label: "settings" }),
+    footerActionFromCommand(commands, "toggle-mode", { key: "a", label: "switch mode" }),
+    footerActionFromCommand(commands, "provider", { key: "o", label: "provider" }),
+    footerActionFromCommand(commands, "diagnostics", { key: "d", label: "diagnostics" }),
+    footerActionFromCommand(commands, "quit", { key: "q", label: "quit" }),
+    footerActionFromCommand(commands, "next", { key: "n", label: "next" }),
+    footerActionFromCommand(commands, "previous", { key: "p", label: "previous" }),
+    footerActionFromCommand(commands, "next-season", { key: "s", label: "next season" }),
   ];
 
   const location =
@@ -449,7 +458,7 @@ function PlaybackShell({
       subtitle={`${location}  ·  Provider ${state.provider}  ·  Mode ${state.mode}`}
       status={state.status}
       footerActions={footerActions}
-      commandSet={commandSet}
+      commands={commands}
       onResolve={onResolve}
     >
       <Text color={palette.muted}>
@@ -463,6 +472,42 @@ function PlaybackShell({
       ) : null}
     </ShellFrame>
   );
+}
+
+function fallbackCommandState(allowed: readonly AppCommandId[]): readonly ResolvedAppCommand[] {
+  return allowed
+    .map((id) => COMMANDS.find((command) => command.id === id))
+    .filter((command): command is ResolvedAppCommand => Boolean(command))
+    .map((command) => ({
+      ...command,
+      enabled: true,
+    }));
+}
+
+function footerActionFromCommand(
+  commands: readonly ResolvedAppCommand[],
+  id: AppCommandId,
+  presentation: { key: string; label: string },
+): FooterAction {
+  const command = commands.find((candidate) => candidate.id === id);
+  return {
+    key: presentation.key,
+    label: presentation.label,
+    action: toShellAction(id),
+    disabled: command ? !command.enabled : false,
+    reason: command?.reason,
+  };
+}
+
+function isCommandDisabled(commands: readonly ResolvedAppCommand[], id: AppCommandId): boolean {
+  return !commands.find((command) => command.id === id)?.enabled;
+}
+
+function getCommandReason(
+  commands: readonly ResolvedAppCommand[],
+  id: AppCommandId,
+): string | undefined {
+  return commands.find((command) => command.id === id)?.reason;
 }
 
 function SearchShell({

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { decodeTobeparsed } from "./anime-base";
+import { buildStreamHeaders, decodeTobeparsed } from "./anime-base";
 
 const TEST_KEY_RAW = "Xot36i3lK3:v1";
 
@@ -18,12 +18,25 @@ describe("decodeTobeparsed", () => {
   });
 });
 
+describe("buildStreamHeaders", () => {
+  test("prefers the stream-specific referer when one is required", () => {
+    expect(buildStreamHeaders("https://cdn.example/ref", "https://allmanga.to", "ua")).toEqual({
+      Referer: "https://cdn.example/ref",
+      "User-Agent": "ua",
+    });
+  });
+
+  test("falls back to the provider referer when the stream has no override", () => {
+    expect(buildStreamHeaders(undefined, "https://allmanga.to", "ua")).toEqual({
+      Referer: "https://allmanga.to",
+      "User-Agent": "ua",
+    });
+  });
+});
+
 async function buildBlob(plain: string): Promise<string> {
   const iv = Uint8Array.from({ length: 12 }, (_, index) => index + 1);
-  const footer = Uint8Array.from(
-    { length: 16 },
-    (_, index) => 200 + index,
-  );
+  const footer = Uint8Array.from({ length: 16 }, (_, index) => 200 + index);
   const version = new Uint8Array([1]);
   const counter = new Uint8Array(16);
   counter.set(iv, 0);
@@ -31,13 +44,9 @@ async function buildBlob(plain: string): Promise<string> {
 
   const keyBytes = new TextEncoder().encode(TEST_KEY_RAW);
   const hashBuf = await crypto.subtle.digest("SHA-256", keyBytes);
-  const key = await crypto.subtle.importKey(
-    "raw",
-    hashBuf,
-    { name: "AES-CTR" },
-    false,
-    ["encrypt"],
-  );
+  const key = await crypto.subtle.importKey("raw", hashBuf, { name: "AES-CTR" }, false, [
+    "encrypt",
+  ]);
 
   const encrypted = new Uint8Array(
     await crypto.subtle.encrypt(
@@ -47,9 +56,7 @@ async function buildBlob(plain: string): Promise<string> {
     ),
   );
 
-  const bytes = new Uint8Array(
-    version.length + iv.length + encrypted.length + footer.length,
-  );
+  const bytes = new Uint8Array(version.length + iv.length + encrypted.length + footer.length);
   bytes.set(version, 0);
   bytes.set(iv, version.length);
   bytes.set(encrypted, version.length + iv.length);

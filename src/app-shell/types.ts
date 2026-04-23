@@ -1,4 +1,4 @@
-import type { AppCommandId } from "./commands";
+import type { ResolvedAppCommand, AppCommandId } from "./commands";
 
 export type ShellAction =
   | "search"
@@ -39,6 +39,7 @@ export type HomeShellState = {
   subtitle: string;
   animeLang: "sub" | "dub";
   status?: ShellStatus;
+  commands?: readonly ResolvedAppCommand[];
 };
 
 export type PlaybackShellState = {
@@ -51,6 +52,7 @@ export type PlaybackShellState = {
   showMemory: boolean;
   memoryUsage?: string;
   status?: ShellStatus;
+  commands?: readonly ResolvedAppCommand[];
 };
 
 export type LoadingShellState = {
