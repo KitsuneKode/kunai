@@ -145,6 +145,7 @@ Current checkpoint:
 - settings now expose the default startup mode, and `src/main.ts` honors it unless CLI flags override it
 - episode auto-next is now owned by the playback phase instead of mpv countdown/keep-open behavior
 - integration tests, live smoke scripts, and VHS UI tapes now have a dedicated `test/` tree instead of drifting through `src/`
+- browse results now open an in-shell details state before committing playback, which gives `Esc` a clearer parent context while the mounted root shell work continues
 - browser/embed scraping now reuses the shared runtime cache instead of bypassing the new persistence layer
 
 ## Next Passes

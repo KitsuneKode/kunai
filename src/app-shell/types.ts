@@ -70,6 +70,10 @@ export type BrowseShellOption<T> = {
   value: T;
   label: string;
   detail?: string;
+  previewTitle?: string;
+  previewMeta?: readonly string[];
+  previewBody?: string;
+  previewNote?: string;
 };
 
 export type BrowseShellSearchResponse<T> = {

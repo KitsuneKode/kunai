@@ -7,6 +7,7 @@
 
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import type { TitleInfo } from "@/domain/types";
+import { toBrowseResultOption } from "@/app/browse-option-mappers";
 import { searchTitles } from "@/app/search-routing";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
@@ -84,13 +85,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           mode: currentState.mode,
           provider: currentState.provider,
           initialQuery: currentState.searchQuery,
-          initialResults: currentState.searchResults.map((result) => ({
-            value: result,
-            label: result.year ? `${result.title} (${result.year})` : result.title,
-            detail: `${result.type === "series" ? "Series" : "Movie"}${
-              result.overview ? ` · ${result.overview}` : ""
-            }`,
-          })),
+          initialResults: currentState.searchResults.map(toBrowseResultOption),
           initialResultSubtitle:
             currentState.searchResults.length > 0
               ? `${currentState.searchResults.length} results · previous search`
@@ -138,13 +133,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
 
             return {
-              options: results.map((result) => ({
-                value: result,
-                label: result.year ? `${result.title} (${result.year})` : result.title,
-                detail: `${result.type === "series" ? "Series" : "Movie"}${
-                  result.overview ? ` · ${result.overview}` : ""
-                }`,
-              })),
+              options: results.map(toBrowseResultOption),
               subtitle: `${results.length} results · ${search.sourceName}`,
               emptyMessage: "No results found. Adjust the query and try again.",
             };

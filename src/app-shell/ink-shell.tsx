@@ -880,6 +880,39 @@ function truncateLine(value: string, maxLength: number): string {
   return `${value.slice(0, maxLength - 1)}…`;
 }
 
+function wrapText(value: string, width: number, maxLines: number): string[] {
+  if (width <= 0 || maxLines <= 0) return [];
+
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [""];
+
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current.length === 0 ? word : `${current} ${word}`;
+    if (candidate.length <= width) {
+      current = candidate;
+      continue;
+    }
+
+    lines.push(current);
+    if (lines.length === maxLines) {
+      lines[maxLines - 1] = truncateLine(lines[maxLines - 1] ?? "", width);
+      return lines;
+    }
+    current = word;
+  }
+
+  if (current.length > 0 && lines.length < maxLines) {
+    lines.push(current);
+  }
+
+  return lines
+    .slice(0, maxLines)
+    .map((line, index, all) => (index === all.length - 1 ? truncateLine(line, width) : line));
+}
+
 function deleteLastWord(value: string): string {
   return value.replace(/\s*\S+\s*$/, "");
 }
@@ -1088,6 +1121,7 @@ function BrowseShell<T>({
   const spinner = useSpinner();
   const { stdout } = useStdout();
   const [query, setQuery] = useState(initialQuery ?? "");
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
@@ -1123,6 +1157,7 @@ function BrowseShell<T>({
 
   const updateQuery = (nextValue: string) => {
     setQuery(nextValue);
+    setDetailsOpen(false);
     if (nextValue.trim().length === 0) {
       clearResults();
     }
@@ -1130,7 +1165,11 @@ function BrowseShell<T>({
 
   const handleQuerySubmit = () => {
     if (!queryDirty && selectedOption && options.length > 0 && searchState === "ready") {
-      onSubmit(selectedOption.value);
+      if (detailsOpen) {
+        onSubmit(selectedOption.value);
+      } else {
+        setDetailsOpen(true);
+      }
       return;
     }
     void runSearch();
@@ -1154,6 +1193,7 @@ function BrowseShell<T>({
       setLastSearchedQuery(trimmed);
       setOptions(response.options);
       setSelectedIndex(0);
+      setDetailsOpen(false);
       setResultSubtitle(response.subtitle);
       setEmptyMessage(response.emptyMessage ?? "No results found.");
       setSearchState("ready");
@@ -1166,6 +1206,7 @@ function BrowseShell<T>({
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
+      setDetailsOpen(false);
       setErrorMessage(String(error));
       setEmptyMessage("Search failed.");
       setSelectedDetail("The search failed. Press Enter to retry or Esc to clear.");
@@ -1174,7 +1215,10 @@ function BrowseShell<T>({
 
   useEffect(() => {
     const option = options[selectedIndex];
-    if (!option) return;
+    if (!option) {
+      setDetailsOpen(false);
+      return;
+    }
     setSelectedDetail(option.detail ?? "Press Enter to select this result.");
   }, [options, selectedIndex]);
 
@@ -1199,6 +1243,12 @@ function BrowseShell<T>({
   const windowStart = getWindowStart(selectedIndex, options.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, options.length);
   const visibleOptions = options.slice(windowStart, windowEnd);
+  const previewMeta = selectedOption?.previewMeta ?? [];
+  const previewBodyLines = wrapText(
+    selectedOption?.previewBody ?? "Type a title and press Enter to search.",
+    Math.max(innerWidth - 2, 24),
+    detailsOpen ? 4 : 2,
+  );
 
   useInput((input, key) => {
     if (input === "\x03") {
@@ -1267,6 +1317,10 @@ function BrowseShell<T>({
     }
 
     if (key.escape) {
+      if (detailsOpen) {
+        setDetailsOpen(false);
+        return;
+      }
       if (options.length > 0 || searchState === "error" || searchState === "loading") {
         clearResults();
         return;
@@ -1324,6 +1378,7 @@ function BrowseShell<T>({
           <Badge
             label={mode === "anime" ? "search anime by title" : "search movies and shows by title"}
           />
+          {detailsOpen ? <Badge label="details open" tone="success" /> : null}
         </Box>
 
         <Box marginTop={1}>
@@ -1383,16 +1438,43 @@ function BrowseShell<T>({
           marginTop={1}
           flexDirection="column"
           borderStyle="round"
-          borderColor={palette.cyan}
+          borderColor={detailsOpen ? palette.green : palette.cyan}
           paddingX={1}
         >
-          <Text color={palette.cyan}>Current Selection</Text>
+          <Text color={detailsOpen ? palette.green : palette.cyan}>
+            {detailsOpen ? "Title Details" : "Current Selection"}
+          </Text>
           <Text bold color="white">
-            {truncateLine(selectedOption?.label ?? "No selection yet", innerWidth)}
+            {truncateLine(
+              selectedOption?.previewTitle ?? selectedOption?.label ?? "No selection yet",
+              innerWidth,
+            )}
           </Text>
-          <Text color={palette.muted}>
-            {truncateLine(selectedDetail, Math.max(innerWidth, 48))}
-          </Text>
+          {previewMeta.length > 0 ? (
+            <Box marginTop={1}>
+              {previewMeta.map((item, index) => (
+                <Badge
+                  key={`${item}-${index}`}
+                  label={item}
+                  tone={index === 0 ? "info" : "neutral"}
+                />
+              ))}
+            </Box>
+          ) : null}
+          <Box marginTop={1} flexDirection="column">
+            {previewBodyLines.map((line, index) => (
+              <Text key={`${line}-${index}`} color={palette.muted}>
+                {line}
+              </Text>
+            ))}
+          </Box>
+          <Box marginTop={1}>
+            <Text color={palette.gray}>
+              {detailsOpen
+                ? (selectedOption?.previewNote ?? "Press Enter again to confirm this selection.")
+                : truncateLine(selectedDetail, Math.max(innerWidth, 48))}
+            </Text>
+          </Box>
         </Box>
       </Box>
 
@@ -1408,7 +1490,8 @@ function BrowseShell<T>({
         actions={[
           {
             key: "enter",
-            label: options.length > 0 && !queryDirty ? "select" : "search",
+            label:
+              options.length > 0 && !queryDirty ? (detailsOpen ? "open" : "details") : "search",
             action: "search",
           },
           { key: "↑↓", label: "navigate", action: "search" },
