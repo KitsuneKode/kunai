@@ -38,6 +38,7 @@ KitsuneSnipe is a terminal-first Bun CLI that finds playable video streams by in
 - Read [.docs/provider-intake.md](.docs/provider-intake.md) before researching or hardening a provider, especially for new sites or major scraper changes
 - Read [.docs/provider-examples.md](.docs/provider-examples.md) before implementing a new provider shape from scratch
 - Read [.docs/design-system.md](.docs/design-system.md) before changing terminal UI styling or interaction patterns
+- Read [.docs/ui-redesign-playbook.md](.docs/ui-redesign-playbook.md) when doing a major shell polish or redesign pass
 - Read [.docs/testing-strategy.md](.docs/testing-strategy.md) before adding tests, changing test seams, or introducing new provider/runtime behaviors
 - Read [.docs/quickstart.md](.docs/quickstart.md) only for setup, local run flow, and troubleshooting
 - Read `.plans/*` only when you are actively working on that tracked change

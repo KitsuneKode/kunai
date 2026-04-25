@@ -91,6 +91,13 @@ Best target for:
 
 Use VHS for terminal UX capture and review, not as the only proof that behavior works.
 
+For this repo, treat VHS as the primary CLI e2e medium for visual flows.
+Plain non-TTY process tests are often misleading for Ink UIs, so prefer:
+
+- deterministic state tests for behavior
+- VHS tapes for visible terminal UX
+- live smoke scripts for provider/network reality
+
 ### 6. Manual or opt-in live verification
 
 Reserve for:
