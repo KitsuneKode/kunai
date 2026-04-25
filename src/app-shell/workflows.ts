@@ -13,6 +13,7 @@ import type { EpisodePickerOption } from "@/domain/types";
 import type { Container } from "@/container";
 import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
 import type { ShellAction } from "./types";
+import { resolveCommands } from "./commands";
 
 import { openListShell, type ListShellActionContext } from "./ink-shell";
 
@@ -139,7 +140,10 @@ function summarizeHeaderKeys(headers: Record<string, string> | undefined): strin
   return keys.length > 0 ? keys.join(", ") : "none";
 }
 
-async function openHistoryShell(historyStore: HistoryStore): Promise<void> {
+async function openHistoryShell(
+  historyStore: HistoryStore,
+  actionContext?: ListShellActionContext,
+): Promise<void> {
   while (true) {
     const entries = Object.entries(await historyStore.getAll()).sort(
       (a, b) => new Date(b[1].watchedAt).getTime() - new Date(a[1].watchedAt).getTime(),
@@ -169,6 +173,7 @@ async function openHistoryShell(historyStore: HistoryStore): Promise<void> {
         entries.length > 0
           ? "Select an entry to remove it, or clear the full history"
           : "No watch history yet",
+      actionContext,
       options,
     });
 
@@ -178,6 +183,7 @@ async function openHistoryShell(historyStore: HistoryStore): Promise<void> {
       const confirm = await chooseOption({
         title: "Clear all history?",
         subtitle: "This removes every saved playback position",
+        actionContext,
         options: [
           { value: true, label: "Yes, clear all history" },
           { value: false, label: "Cancel" },
@@ -190,6 +196,7 @@ async function openHistoryShell(historyStore: HistoryStore): Promise<void> {
     const confirm = await chooseOption({
       title: `Remove ${picked.title}?`,
       subtitle: "This deletes the saved position for this title",
+      actionContext,
       options: [
         { value: true, label: "Remove entry" },
         { value: false, label: "Keep entry" },
@@ -222,6 +229,25 @@ async function openStaticInfoShell({
   });
 }
 
+export function buildPickerActionContext({
+  container,
+  taskLabel,
+  footerMode = "detailed",
+  allowed = ["settings", "history", "diagnostics", "help", "about", "quit"],
+}: {
+  container: Container;
+  taskLabel: string;
+  footerMode?: "detailed" | "minimal";
+  allowed?: readonly import("./commands").AppCommandId[];
+}): ListShellActionContext {
+  return {
+    taskLabel,
+    footerMode,
+    commands: resolveCommands(container.stateManager.getState(), allowed),
+    onAction: (action) => handleShellAction({ action, container }),
+  };
+}
+
 export async function handleShellAction({
   action,
   container,
@@ -248,7 +274,12 @@ export async function handleShellAction({
   }
 
   if (action === "history") {
-    await withOverlay({ type: "history" }, () => openHistoryShell(historyStore));
+    await withOverlay({ type: "history" }, () =>
+      openHistoryShell(
+        historyStore,
+        buildPickerActionContext({ container, taskLabel: "Manage history" }),
+      ),
+    );
     return "handled";
   }
 
@@ -410,6 +441,11 @@ export async function handleShellAction({
         openProviderPicker({
           currentProvider: state.provider,
           isAnime: state.mode === "anime",
+          actionContext: buildPickerActionContext({
+            container,
+            taskLabel: "Choose provider",
+            allowed: ["settings", "history", "diagnostics", "help", "about", "quit"],
+          }),
         }),
     );
 
@@ -425,7 +461,15 @@ export async function handleShellAction({
   if (action === "settings") {
     const current = config.getRaw();
     const next = await withOverlay({ type: "settings" }, () =>
-      openSettingsShell(current, historyStore),
+      openSettingsShell(
+        current,
+        historyStore,
+        buildPickerActionContext({
+          container,
+          taskLabel: "Adjust settings",
+          allowed: ["history", "diagnostics", "help", "about", "quit"],
+        }),
+      ),
     );
 
     if (next) {
@@ -576,6 +620,7 @@ function configSummary(config: KitsuneConfig): string {
 export async function openSettingsShell(
   current: KitsuneConfig,
   historyStore?: HistoryStore,
+  actionContext?: ListShellActionContext,
 ): Promise<KitsuneConfig | null> {
   let next = { ...current };
   const settingsHistoryStore = historyStore ?? createLegacyHistoryStore();
@@ -585,6 +630,7 @@ export async function openSettingsShell(
     const action = await chooseOption({
       title: "Settings",
       subtitle: configSummary(next),
+      actionContext,
       options: [
         {
           value: "defaultMode" as const,
@@ -645,7 +691,7 @@ export async function openSettingsShell(
     }
 
     if (action === "history") {
-      await openHistoryShell(settingsHistoryStore);
+      await openHistoryShell(settingsHistoryStore, actionContext);
       continue;
     }
 
@@ -653,6 +699,7 @@ export async function openSettingsShell(
       const picked = await chooseOption({
         title: "Default provider",
         subtitle: `Current ${next.provider}`,
+        actionContext,
         options: PLAYWRIGHT_PROVIDERS.map((provider) => ({
           value: provider.id,
           label: provider.id === next.provider ? `${provider.name}  ·  current` : provider.name,
@@ -670,6 +717,7 @@ export async function openSettingsShell(
       const picked = await chooseOption({
         title: "Default startup mode",
         subtitle: `Current ${next.defaultMode}`,
+        actionContext,
         options: [
           {
             value: "series" as const,
@@ -694,6 +742,7 @@ export async function openSettingsShell(
       const picked = await chooseOption({
         title: "Anime provider",
         subtitle: `Current ${next.animeProvider}`,
+        actionContext,
         options: ANIME_PROVIDERS.map((provider) => ({
           value: provider.id,
           label:
@@ -712,6 +761,7 @@ export async function openSettingsShell(
       const picked = await chooseOption({
         title: "Subtitle preference",
         subtitle: `Current ${next.subLang}`,
+        actionContext,
         options: SUBTITLE_OPTIONS.map((option) => ({
           value: option.value,
           label: option.value === next.subLang ? `${option.label}  ·  current` : option.label,
@@ -728,6 +778,7 @@ export async function openSettingsShell(
       const picked = await chooseOption({
         title: "Anime audio",
         subtitle: `Current ${next.animeLang}`,
+        actionContext,
         options: ANIME_AUDIO_OPTIONS.map((option) => ({
           value: option.value,
           label: option.value === next.animeLang ? `${option.label}  ·  current` : option.label,

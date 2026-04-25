@@ -1,18 +1,17 @@
 import { type HistoryEntry, formatTimestamp, isFinished } from "@/history";
 import type { Container } from "@/container";
-import { resolveCommands } from "@/app-shell/commands";
 import { cyan, dim, yellow } from "@/menu";
 import { fetchEpisodes, fetchSeriesData } from "@/tmdb";
 import { ANIME_PROVIDERS, PLAYWRIGHT_PROVIDERS, getProvider } from "@/providers";
 import type { EpisodePickerOption } from "@/domain/types";
 import {
+  buildPickerActionContext,
   chooseEpisodeFromOptions,
   chooseSeasonFromOptions,
-  handleShellAction,
   openAnimeEpisodePicker,
   openAnimeEpisodeListPicker,
 } from "@/app-shell/workflows";
-import { openListShell, type ListShellActionContext } from "@/app-shell/ink-shell";
+import { openListShell } from "@/app-shell/ink-shell";
 
 export type EpisodeSelection = {
   season: number;
@@ -31,25 +30,8 @@ type SelectionOpts = {
   container?: Container;
 };
 
-function createPickerActionContext(
-  container: Container | undefined,
-  taskLabel: string,
-): ListShellActionContext | undefined {
-  if (!container) return undefined;
-
-  return {
-    taskLabel,
-    footerMode: "detailed",
-    commands: resolveCommands(container.stateManager.getState(), [
-      "settings",
-      "history",
-      "diagnostics",
-      "help",
-      "about",
-      "quit",
-    ]),
-    onAction: (action) => handleShellAction({ action, container }),
-  };
+function createPickerActionContext(container: Container | undefined, taskLabel: string) {
+  return container ? buildPickerActionContext({ container, taskLabel }) : undefined;
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {

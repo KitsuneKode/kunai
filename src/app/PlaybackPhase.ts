@@ -13,7 +13,11 @@ import type {
   StreamInfo,
   PlaybackResult,
 } from "@/domain/types";
-import { handleShellAction, openSubtitlePicker } from "@/app-shell/workflows";
+import {
+  buildPickerActionContext,
+  handleShellAction,
+  openSubtitlePicker,
+} from "@/app-shell/workflows";
 import { resolveCommands } from "@/app-shell/commands";
 import {
   buildAboutPanelLines,
@@ -525,19 +529,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stream,
       subLang,
       pickSubtitle: (tracks) =>
-        openSubtitlePicker(tracks, {
-          taskLabel: "Choose subtitles",
-          footerMode: "detailed",
-          commands: resolveCommands(stateManager.getState(), [
-            "settings",
-            "history",
-            "diagnostics",
-            "help",
-            "about",
-            "quit",
-          ]),
-          onAction: (action) => handleShellAction({ action, container: context.container }),
-        }),
+        openSubtitlePicker(
+          tracks,
+          buildPickerActionContext({
+            container: context.container,
+            taskLabel: "Choose subtitles",
+          }),
+        ),
     });
 
     logger.info("Subtitle resolution", {
