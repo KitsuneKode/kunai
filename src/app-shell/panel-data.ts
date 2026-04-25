@@ -161,7 +161,7 @@ export function buildHistoryPanelLines(
       {
         label: "No watch history yet",
         detail:
-          "Playback positions will appear here after you watch something long enough to resume.",
+          "Playback positions appear here after you stop mid-episode or finish a title with a saved runtime result.",
       },
     ];
   }

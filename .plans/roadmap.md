@@ -24,6 +24,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Browse and post-playback now keep provider, help, about, history, and diagnostics inside the mounted shell instead of bouncing into separate helper screens
 - Playback navigation labels and availability now come from real episode metadata or provider catalogs instead of blind episode math
 - History persistence is hardened so completed playback still saves even if mpv reports a weak final playback position
+- History browsing and clearing in the new runtime now use the shared `HistoryStore` instead of bypassing it through legacy helper wiring
 
 ### Active Follow-Ups
 

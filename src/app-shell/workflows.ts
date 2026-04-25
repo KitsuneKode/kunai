@@ -1,10 +1,17 @@
-import { clearAllHistory, clearEntry, getAllHistory, isFinished, formatTimestamp } from "@/history";
+import {
+  clearAllHistory,
+  clearEntry,
+  formatTimestamp,
+  getAllHistory,
+  isFinished,
+  saveHistory,
+} from "@/history";
 import type { KitsuneConfig } from "@/config";
 import { ANIME_PROVIDERS, PLAYWRIGHT_PROVIDERS } from "@/providers";
 import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
 import type { EpisodePickerOption } from "@/domain/types";
 import type { Container } from "@/container";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
 import type { ShellAction } from "./types";
 
 import { openListShell } from "./ink-shell";
@@ -35,6 +42,27 @@ const ANIME_AUDIO_OPTIONS = [
   { value: "sub", label: "Sub", detail: "Original audio with subtitles" },
   { value: "dub", label: "Dub", detail: "Dubbed audio when available" },
 ] as const;
+
+function createLegacyHistoryStore(): HistoryStore {
+  return {
+    async get(id) {
+      const entries = await getAllHistory();
+      return entries[id] ?? null;
+    },
+    async getAll() {
+      return getAllHistory();
+    },
+    async save(id, entry) {
+      await saveHistory(id, entry);
+    },
+    async delete(id) {
+      await clearEntry(id);
+    },
+    async clear() {
+      await clearAllHistory();
+    },
+  };
+}
 
 async function chooseOption<T>({
   title,
@@ -105,9 +133,9 @@ function summarizeHeaderKeys(headers: Record<string, string> | undefined): strin
   return keys.length > 0 ? keys.join(", ") : "none";
 }
 
-async function openHistoryShell(): Promise<void> {
+async function openHistoryShell(historyStore: HistoryStore): Promise<void> {
   while (true) {
-    const entries = Object.entries(await getAllHistory()).sort(
+    const entries = Object.entries(await historyStore.getAll()).sort(
       (a, b) => new Date(b[1].watchedAt).getTime() - new Date(a[1].watchedAt).getTime(),
     );
 
@@ -149,7 +177,7 @@ async function openHistoryShell(): Promise<void> {
           { value: false, label: "Cancel" },
         ],
       });
-      if (confirm) await clearAllHistory();
+      if (confirm) await historyStore.clear();
       continue;
     }
 
@@ -161,7 +189,7 @@ async function openHistoryShell(): Promise<void> {
         { value: false, label: "Keep entry" },
       ],
     });
-    if (confirm) await clearEntry(picked.id);
+    if (confirm) await historyStore.delete(picked.id);
   }
 }
 
@@ -195,7 +223,7 @@ export async function handleShellAction({
   action: ShellAction;
   container: Container;
 }): Promise<"handled" | "quit" | "unhandled"> {
-  const { stateManager, config, diagnosticsStore } = container;
+  const { stateManager, config, diagnosticsStore, historyStore } = container;
 
   const withOverlay = async <T>(
     overlay: import("@/domain/session/SessionState").OverlayState,
@@ -214,7 +242,7 @@ export async function handleShellAction({
   }
 
   if (action === "history") {
-    await withOverlay({ type: "history" }, () => openHistoryShell());
+    await withOverlay({ type: "history" }, () => openHistoryShell(historyStore));
     return "handled";
   }
 
@@ -390,7 +418,9 @@ export async function handleShellAction({
 
   if (action === "settings") {
     const current = config.getRaw();
-    const next = await withOverlay({ type: "settings" }, () => openSettingsShell(current));
+    const next = await withOverlay({ type: "settings" }, () =>
+      openSettingsShell(current, historyStore),
+    );
 
     if (next) {
       await config.update(next);
@@ -526,8 +556,12 @@ function configSummary(config: KitsuneConfig): string {
   return `default ${config.defaultMode}  ·  provider ${config.provider}  ·  anime ${config.animeProvider}  ·  subs ${config.subLang}`;
 }
 
-export async function openSettingsShell(current: KitsuneConfig): Promise<KitsuneConfig | null> {
+export async function openSettingsShell(
+  current: KitsuneConfig,
+  historyStore?: HistoryStore,
+): Promise<KitsuneConfig | null> {
   let next = { ...current };
+  const settingsHistoryStore = historyStore ?? createLegacyHistoryStore();
   let changed = false;
 
   while (true) {
@@ -594,7 +628,7 @@ export async function openSettingsShell(current: KitsuneConfig): Promise<Kitsune
     }
 
     if (action === "history") {
-      await openHistoryShell();
+      await openHistoryShell(settingsHistoryStore);
       continue;
     }
 
