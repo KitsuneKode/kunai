@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { AllAnime as LegacyAllAnime } from "../../../providers/allanime";
-import { fetchAnimeEpisodeCatalog } from "../../../providers/anime-base";
+import { fetchAnimeEpisodeCatalog } from "../../../providers/allanime-family";
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import type {
   TitleInfo,

@@ -16,7 +16,7 @@ import {
   type ApiProvider,
   type ApiSearchResult,
 } from "@/providers";
-import { fetchAnimeEpisodeCatalog } from "@/providers/anime-base";
+import { fetchAnimeEpisodeCatalog } from "@/providers/allanime-family";
 import { scrapeStream, type StreamData } from "@/scraper";
 import { launchMpv } from "@/mpv";
 import { checkDeps } from "@/ui";
@@ -527,6 +527,13 @@ async function loadAnimeEpisodeOptions(
         getHistoryEntry: () => Promise.resolve(history),
       });
 
+      // Esc from the starting episode flow should return to search, not
+      // silently fall through into playback on episode 1.
+      if (!selection) {
+        log.info("Episode selection cancelled. Returning to search.");
+        continue;
+      }
+
       currentSeason = selection.season;
       currentEpisode = selection.episode;
     } else {
@@ -716,6 +723,7 @@ async function loadAnimeEpisodeOptions(
           animeEpisodeCount: apiPicked?.epCount,
           animeEpisodes: animeEpisodeOptions,
         });
+        if (!selection) continue;
         currentSeason = selection.season;
         currentEpisode = selection.episode;
       } else if (postAction === "next" && currentType === "series") {

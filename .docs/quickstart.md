@@ -74,4 +74,4 @@ Try a different provider from the shell picker or change the default provider in
 
 **Anime playback broke after an upstream change**
 
-Check the invariants in [`src/providers/anime-base.ts`](../src/providers/anime-base.ts) against the current ani-cli behavior before changing anything.
+Check the invariants in [`src/providers/allanime-family.ts`](../src/providers/allanime-family.ts) against the current ani-cli behavior before changing anything.

@@ -88,7 +88,7 @@ Use `bun run test` if tests are relevant and available. Do not use `bun test` di
 - Episode numbers are 1-based in the UI; providers adapt internally
 - `src/providers/index.ts` is the single registry source of truth
 - `isAnimeProvider: true` is what places a provider in anime mode
-- `src/providers/anime-base.ts` contains ani-cli parity logic; check external parity before changing crypto or decoder constants
+- `src/providers/allanime-family.ts` contains ani-cli parity logic; check external parity before changing crypto or decoder constants
 - On this machine, the local canonical ani-cli checkout for AllAnime or AllManga parity checks is `~/Projects/osc/ani-cli`
 - If AllAnime or AllManga issues arise, compare against that local ani-cli checkout first, treat it as the reference behavior until upstream is clearly unmaintained, and document any temporary local divergence in provider docs or plans
 - `embedScraper` is injected to avoid circular imports between providers and `scraper.ts`

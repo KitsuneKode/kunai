@@ -1,5 +1,5 @@
 // =============================================================================
-// AnimeBase — reusable AllAnime / AllManga-family GraphQL client
+// AllAnime-family — reusable AllAnime / AllManga-family GraphQL client
 //
 // Providers that deliberately target the allanime.day API family share:
 //   • GraphQL endpoint, Referer header, User-Agent
@@ -169,7 +169,7 @@ export async function decodeTobeparsed(
     }
     return results;
   } catch (e) {
-    dbgErr("anime-base", "tobeparsed decryption failed", e);
+    dbgErr("allanime-family", "tobeparsed decryption failed", e);
     return [];
   }
 }

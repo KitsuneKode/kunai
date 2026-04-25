@@ -179,7 +179,7 @@ Goal:
 
 Tasks:
 
-- rename `anime-base.ts` to an explicit AllAnime-family name
+- rename `anime-base.ts` to `allanime-family.ts` and keep AllAnime-family naming explicit
 - update docs and references so it is not mistaken for a generic anime-provider base
 - reserve generic anime abstractions for shared concepts only
 

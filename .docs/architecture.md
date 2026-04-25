@@ -126,7 +126,7 @@ For new providers or major provider hardening, do not jump straight from this do
 
 - `isAnimeProvider: true` is what includes a provider in anime mode
 - Episode numbering in the UI is always 1-based
-- `anime-base.ts` should stay aligned with ani-cli assumptions unless the codebase deliberately chooses a new contract
+- `allanime-family.ts` should stay aligned with ani-cli assumptions unless the codebase deliberately chooses a new contract
 
 ### AllAnime-compatible invariants
 

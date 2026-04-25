@@ -46,8 +46,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
         }
 
-        // For now, use legacy session-flow logic
-        // TODO: Implement proper episode picker with Ink
+        // Session-flow owns the current season/episode selection rules until the
+        // mounted root shell fully absorbs the picker stack.
         const { chooseStartingEpisode } = await import("../session-flow");
         const selection = await chooseStartingEpisode({
           currentId: title.id,
@@ -57,6 +57,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           flags: {},
           getHistoryEntry: () => Promise.resolve(history),
         });
+
+        if (!selection) {
+          logger.info("Episode selection cancelled before playback", {
+            titleId: title.id,
+            mode: stateManager.getState().mode,
+          });
+          return { status: "success", value: "back_to_search" };
+        }
 
         episode = {
           season: selection.season,
@@ -277,6 +285,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             animeEpisodeCount: title.episodeCount,
             animeEpisodes,
           });
+          // Cancel keeps the user in the post-playback menu instead of mutating
+          // the current episode or restarting playback implicitly.
+          if (!selection) {
+            logger.info("Episode picker cancelled", {
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+            });
+            continue;
+          }
           stateManager.dispatch({
             type: "SELECT_EPISODE",
             episode: {

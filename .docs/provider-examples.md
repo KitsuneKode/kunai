@@ -28,12 +28,12 @@ For non-trivial work:
 
 Use existing providers as anchors before inventing a new shape.
 
-| Pattern                                    | Reference file                                                                                             | When to copy the shape                                                                 |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Playwright embed capture                   | [src/providers/vidking.ts](/home/kitsunekode/Projects/hacking/kitsunesnipe/src/providers/vidking.ts)       | Site builds a stable page or embed URL and the real stream appears during runtime      |
-| Playwright with activation click           | [src/providers/cineby.ts](/home/kitsunekode/Projects/hacking/kitsunesnipe/src/providers/cineby.ts)         | The page must be activated before the stream request happens                           |
-| API-first with browser-assisted final step | [src/providers/braflix.ts](/home/kitsunekode/Projects/hacking/kitsunesnipe/src/providers/braflix.ts)       | Search or metadata come from HTTP or GraphQL, but the final embed still needs scraping |
-| Shared anime parity helper                 | [src/providers/anime-base.ts](/home/kitsunekode/Projects/hacking/kitsunesnipe/src/providers/anime-base.ts) | The site follows the same ani-cli-style contract or decoding path                      |
+| Pattern                                    | Reference file                                                                                                       | When to copy the shape                                                                 |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Playwright embed capture                   | [src/providers/vidking.ts](/home/kitsunekode/Projects/hacking/kitsunesnipe/src/providers/vidking.ts)                 | Site builds a stable page or embed URL and the real stream appears during runtime      |
+| Playwright with activation click           | [src/providers/cineby.ts](/home/kitsunekode/Projects/hacking/kitsunesnipe/src/providers/cineby.ts)                   | The page must be activated before the stream request happens                           |
+| API-first with browser-assisted final step | [src/providers/braflix.ts](/home/kitsunekode/Projects/hacking/kitsunesnipe/src/providers/braflix.ts)                 | Search or metadata come from HTTP or GraphQL, but the final embed still needs scraping |
+| Shared anime parity helper                 | [src/providers/allanime-family.ts](/home/kitsunekode/Projects/hacking/kitsunesnipe/src/providers/allanime-family.ts) | The site follows the same ani-cli-style contract or decoding path                      |
 
 ## Pattern 1: Playwright Embed Provider
 

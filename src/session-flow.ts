@@ -16,6 +16,8 @@ export type EpisodeSelection = {
   episode: number;
 };
 
+export type EpisodeSelectionResult = EpisodeSelection | null;
+
 type SelectionOpts = {
   currentId: string;
   isAnime: boolean;
@@ -34,32 +36,35 @@ async function pickAnimeEpisode(
   initialEpisode: number,
   episodes: readonly EpisodePickerOption[] | undefined,
   episodeCount: number | undefined,
-): Promise<number> {
+): Promise<number | null> {
   if (episodes && episodes.length > 0) {
-    return (await openAnimeEpisodeListPicker(episodes, initialEpisode)) ?? initialEpisode;
+    return await openAnimeEpisodeListPicker(episodes, initialEpisode);
   }
   if (!episodeCount || episodeCount < 1) return initialEpisode;
-  return (await openAnimeEpisodePicker(episodeCount, initialEpisode)) ?? initialEpisode;
+  return await openAnimeEpisodePicker(episodeCount, initialEpisode);
 }
 
 async function pickEpisodeSelection(
   initSeason: number,
   initEpisode: number,
   opts: Pick<SelectionOpts, "currentId" | "isAnime" | "animeEpisodeCount" | "animeEpisodes">,
-): Promise<EpisodeSelection> {
+): Promise<EpisodeSelectionResult> {
   if (!opts.isAnime) {
     const { seasons, episodes: initialEpisodes } = await fetchSeriesData(
       opts.currentId,
       initSeason,
     );
-    const season = (await chooseSeasonFromOptions(seasons, initSeason)) ?? initSeason;
+    const season = await chooseSeasonFromOptions(seasons, initSeason);
+    if (!season) return null;
     const episodes =
       season === initSeason ? initialEpisodes : await fetchEpisodes(opts.currentId, season);
     const episode = await chooseEpisodeFromOptions(episodes, season, initEpisode);
-    return { season, episode: episode?.number ?? initEpisode };
+    if (!episode) return null;
+    return { season, episode: episode.number };
   }
 
   const episode = await pickAnimeEpisode(initEpisode, opts.animeEpisodes, opts.animeEpisodeCount);
+  if (!episode) return null;
   return { season: 1, episode };
 }
 
@@ -70,11 +75,11 @@ export async function chooseEpisodeFromMetadata(opts: {
   currentEpisode: number;
   animeEpisodeCount?: number;
   animeEpisodes?: readonly EpisodePickerOption[];
-}): Promise<EpisodeSelection> {
+}): Promise<EpisodeSelectionResult> {
   return pickEpisodeSelection(opts.currentSeason, opts.currentEpisode, opts);
 }
 
-export async function chooseStartingEpisode(opts: SelectionOpts): Promise<EpisodeSelection> {
+export async function chooseStartingEpisode(opts: SelectionOpts): Promise<EpisodeSelectionResult> {
   if (opts.flags.season || opts.flags.episode) {
     return {
       season: opts.isAnime ? 1 : parsePositiveInt(opts.flags.season, 1),
@@ -124,7 +129,12 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
     ],
   })) as "resume" | "restart" | "next" | "pick" | null;
 
-  if (!choice || choice === "resume" || choice === "restart") {
+  // Esc should back out of the start picker, not silently launch playback.
+  if (!choice) {
+    return null;
+  }
+
+  if (choice === "resume" || choice === "restart") {
     return { season: opts.isAnime ? 1 : history.season, episode: history.episode };
   }
   if (choice === "next") {

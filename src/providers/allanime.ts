@@ -1,4 +1,4 @@
-import { createAnimeProvider } from "./anime-base";
+import { createAnimeProvider } from "./allanime-family";
 
 // AllAnime / AllManga — the reference implementation for this specific API family.
 // To add a compatible provider, call createAnimeProvider with different config.

@@ -9,8 +9,8 @@
 //   bun run src/main.ts -a                 # Anime mode
 // =============================================================================
 
-import { createContainer } from "./container";
-import { SessionController } from "./app/SessionController";
+import { createContainer } from "@/container";
+import { SessionController } from "@/app/SessionController";
 
 // Simple CLI arg parser
 function parseArgs(argv: string[]): {
@@ -49,9 +49,6 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
   // Bootstrap the DI container
-  if (!args.debug) {
-    console.log("🦊 Starting KitsuneSnipe beta...");
-  }
   const container = await createContainer({ debug: args.debug });
   const { logger, config, stateManager } = container;
 

@@ -125,7 +125,7 @@ export const MyApiProvider: ApiProvider = {
 
 ## Adding an AllAnime-Compatible Provider
 
-If the provider follows the same contract as `anime-base.ts`, use `createAnimeProvider()` instead of reimplementing the crypto and decoder path.
+If the provider follows the same contract as `allanime-family.ts`, use `createAnimeProvider()` instead of reimplementing the crypto and decoder path.
 
 ```ts
 export const MyAnime = createAnimeProvider({
@@ -139,7 +139,7 @@ export const MyAnime = createAnimeProvider({
 
 ## AllAnime / AllManga Parity Policy
 
-- `src/providers/anime-base.ts` should stay aligned with ani-cli behavior unless KitsuneSnipe deliberately chooses a different contract
+- `src/providers/allanime-family.ts` should stay aligned with ani-cli behavior unless KitsuneSnipe deliberately chooses a different contract
 - when AllAnime or AllManga breaks, compare against ani-cli before guessing at a fix
 - on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli`
 - if ani-cli is also broken upstream, KitsuneSnipe may carry a temporary local fix, but that divergence should be documented and easy to remove when parity can be restored
