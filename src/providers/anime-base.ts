@@ -200,6 +200,35 @@ export type StreamLink = {
   subtitle?: string;
 };
 
+function episodeOrderValue(episodeString: string): number | null {
+  const parsed = Number.parseFloat(episodeString);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function compareEpisodeStrings(a: string, b: string): number {
+  const aValue = episodeOrderValue(a);
+  const bValue = episodeOrderValue(b);
+
+  if (aValue !== null && bValue !== null && aValue !== bValue) {
+    return aValue - bValue;
+  }
+
+  return a.localeCompare(b, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+export function resolveAnimeEpisodeString(
+  episodeStrings: readonly string[],
+  requestedEpisode: number,
+): string {
+  const exact = episodeStrings.find(
+    (episodeString) => episodeOrderValue(episodeString) === requestedEpisode,
+  );
+  return exact ?? episodeStrings[requestedEpisode - 1] ?? String(requestedEpisode);
+}
+
 const KNOWN_SOURCES = new Set(["Default", "Yt-mp4", "S-mp4", "Luf-Mp4"]);
 
 function isDirectStream(url: string): boolean {
@@ -441,7 +470,7 @@ export async function fetchAnimeEpisodeCatalog(opts: {
   };
   const episodeStrings = (listData.data.show.availableEpisodesDetail[mode] ?? []) as string[];
 
-  return episodeStrings.map((episodeString, index) => ({
+  return [...episodeStrings].sort(compareEpisodeStrings).map((episodeString, index) => ({
     index: index + 1,
     label: `Episode ${episodeString}`,
     detail: `Source episode ${episodeString}`,
@@ -522,7 +551,7 @@ export function createAnimeProvider(cfg: AnimeProviderConfig): ApiProvider {
           data: { show: { availableEpisodesDetail: Record<string, unknown[]> } };
         };
         const eps = (listData.data.show.availableEpisodesDetail[mode] ?? []) as string[];
-        const epStr = eps[episode - 1] ?? String(episode);
+        const epStr = resolveAnimeEpisodeString(eps, episode);
         dbg(cfg.id, "episode string", { epStr, total: eps.length });
 
         const links = await resolveEpisodeSources({

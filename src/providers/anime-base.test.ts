@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildStreamHeaders, decodeTobeparsed } from "./anime-base";
+import { buildStreamHeaders, decodeTobeparsed, resolveAnimeEpisodeString } from "./anime-base";
 
 const TEST_KEY_RAW = "Xot36i3lK3:v1";
 
@@ -31,6 +31,24 @@ describe("buildStreamHeaders", () => {
       Referer: "https://allmanga.to",
       "User-Agent": "ua",
     });
+  });
+});
+
+describe("resolveAnimeEpisodeString", () => {
+  test("matches the exact episode number even when the upstream list is reverse ordered", () => {
+    expect(
+      resolveAnimeEpisodeString(["12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1"], 1),
+    ).toBe("1");
+    expect(
+      resolveAnimeEpisodeString(
+        ["12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1"],
+        12,
+      ),
+    ).toBe("12");
+  });
+
+  test("falls back to positional lookup when an exact numeric match is unavailable", () => {
+    expect(resolveAnimeEpisodeString(["special-a", "special-b"], 2)).toBe("special-b");
   });
 });
 

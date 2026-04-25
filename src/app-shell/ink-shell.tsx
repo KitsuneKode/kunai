@@ -130,18 +130,41 @@ function Footer({ actions }: { actions: readonly FooterAction[] }) {
   );
 }
 
-function CommandPalette({
-  input,
-  commands,
-}: {
-  input: string;
-  commands: readonly ResolvedAppCommand[];
-}) {
+function getCommandMatches(
+  input: string,
+  commands: readonly ResolvedAppCommand[],
+): readonly ResolvedAppCommand[] {
   const allowed = commands.map((command) => command.id);
-  const matches = suggestCommands(input, allowed)
+  return suggestCommands(input, allowed)
     .map((command) => commands.find((resolved) => resolved.id === command.id))
     .filter((command): command is ResolvedAppCommand => Boolean(command))
     .slice(0, 6);
+}
+
+function getHighlightedCommand(
+  input: string,
+  commands: readonly ResolvedAppCommand[],
+  highlightedIndex: number,
+): ResolvedAppCommand | null {
+  const exact = parseCommand(input);
+  if (exact) {
+    return commands.find((candidate) => candidate.id === exact.id) ?? null;
+  }
+
+  const matches = getCommandMatches(input, commands);
+  return matches[highlightedIndex] ?? matches[0] ?? null;
+}
+
+function CommandPalette({
+  input,
+  commands,
+  highlightedIndex,
+}: {
+  input: string;
+  commands: readonly ResolvedAppCommand[];
+  highlightedIndex: number;
+}) {
+  const matches = getCommandMatches(input, commands);
 
   return (
     <Box
@@ -154,18 +177,27 @@ function CommandPalette({
     >
       <Text color={palette.amber}>Command</Text>
       <Text color="white">{`/${input}`}</Text>
+      <Text color={palette.gray}>Tab autocomplete · ↑↓ choose · Enter run</Text>
       <Box flexDirection="column" marginTop={1}>
         {matches.length > 0 ? (
-          matches.map((command) => (
-            <Box key={command.id}>
-              <Text color={command.enabled ? palette.muted : palette.gray}>
-                /{command.aliases[0]} {command.description}
-              </Text>
-              {!command.enabled && command.reason ? (
-                <Text color={palette.gray}>{`  ·  ${command.reason}`}</Text>
-              ) : null}
-            </Box>
-          ))
+          matches.map((command, index) => {
+            const selected = index === highlightedIndex;
+            return (
+              <Box key={command.id} flexDirection="column">
+                <Text
+                  backgroundColor={selected ? palette.cyan : undefined}
+                  color={selected ? "black" : command.enabled ? palette.muted : palette.gray}
+                  bold={selected}
+                >
+                  <Text color={selected ? "black" : palette.gray}>{selected ? "❯ " : "  "}</Text>/
+                  {command.aliases[0]} {command.description}
+                </Text>
+                {!command.enabled && command.reason ? (
+                  <Text color={palette.gray}>{`  ·  ${command.reason}`}</Text>
+                ) : null}
+              </Box>
+            );
+          })
         ) : (
           <Text color={palette.gray}>No matching commands</Text>
         )}
@@ -185,12 +217,27 @@ function useShellInput({
 }) {
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+
+  useEffect(() => {
+    if (!commandMode) {
+      setHighlightedIndex(0);
+      return;
+    }
+
+    const matches = getCommandMatches(commandInput, commands);
+    setHighlightedIndex((current) => {
+      if (matches.length === 0) return 0;
+      return Math.min(current, matches.length - 1);
+    });
+  }, [commandInput, commandMode, commands]);
 
   useInput((input, key) => {
     if (key.escape) {
       if (commandMode) {
         setCommandMode(false);
         setCommandInput("");
+        setHighlightedIndex(0);
         return;
       }
       onResolve("quit");
@@ -198,12 +245,34 @@ function useShellInput({
     }
 
     if (commandMode) {
+      const matches = getCommandMatches(commandInput, commands);
+
       if (key.return) {
-        const command = parseCommand(commandInput);
-        const resolved = command ? commands.find((candidate) => candidate.id === command.id) : null;
+        const resolved = getHighlightedCommand(commandInput, commands, highlightedIndex);
         if (resolved?.enabled) {
           onResolve(toShellAction(resolved.id));
           return;
+        }
+        return;
+      }
+      if (key.tab) {
+        const nextIndex = matches.length > 0 ? (highlightedIndex + 1) % matches.length : 0;
+        const target = matches[nextIndex];
+        if (target) {
+          setHighlightedIndex(nextIndex);
+          setCommandInput(target.aliases[0] ?? target.id);
+        }
+        return;
+      }
+      if (key.upArrow) {
+        if (matches.length > 0) {
+          setHighlightedIndex((current) => (current - 1 + matches.length) % matches.length);
+        }
+        return;
+      }
+      if (key.downArrow) {
+        if (matches.length > 0) {
+          setHighlightedIndex((current) => (current + 1) % matches.length);
         }
         return;
       }
@@ -213,6 +282,7 @@ function useShellInput({
       }
       if (input && !key.ctrl && !key.meta) {
         setCommandInput((current) => current + input);
+        setHighlightedIndex(0);
       }
       return;
     }
@@ -229,7 +299,7 @@ function useShellInput({
     if (footerAction) onResolve(footerAction.action);
   });
 
-  return { commandMode, commandInput };
+  return { commandMode, commandInput, highlightedIndex };
 }
 
 function ShellFrame({
@@ -260,7 +330,7 @@ function ShellFrame({
     }
   });
 
-  const { commandMode, commandInput } = useShellInput({
+  const { commandMode, commandInput, highlightedIndex } = useShellInput({
     footerActions,
     commands,
     onResolve,
@@ -288,7 +358,13 @@ function ShellFrame({
         </Box>
       </Box>
 
-      {commandMode ? <CommandPalette input={commandInput} commands={commands} /> : null}
+      {commandMode ? (
+        <CommandPalette
+          input={commandInput}
+          commands={commands}
+          highlightedIndex={highlightedIndex}
+        />
+      ) : null}
 
       <Footer actions={footerActions} />
     </Box>
@@ -761,6 +837,10 @@ function truncateLine(value: string, maxLength: number): string {
   return `${value.slice(0, maxLength - 1)}…`;
 }
 
+function deleteLastWord(value: string): string {
+  return value.replace(/\s*\S+\s*$/, "");
+}
+
 function getWindowStart(selectedIndex: number, total: number, windowSize: number): number {
   if (total <= windowSize) return 0;
 
@@ -786,19 +866,39 @@ function ListShell<T>({
 }) {
   const [index, setIndex] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
   const { stdout } = useStdout();
-  const selectedOption = options[index];
+  const normalizedFilter = filterQuery.trim().toLowerCase();
+  const filteredOptions = options.filter((option) => {
+    if (normalizedFilter.length === 0) return true;
+    const haystack = `${option.label} ${option.detail ?? ""}`.toLowerCase();
+    return haystack.includes(normalizedFilter);
+  });
+
+  useEffect(() => {
+    if (filteredOptions.length === 0) {
+      setIndex(0);
+      return;
+    }
+    setIndex((current) => Math.min(current, filteredOptions.length - 1));
+  }, [filteredOptions.length]);
+
+  const selectedOption = filteredOptions[index];
 
   // Leave room for the frame, footer, and selected-item preview.
-  const maxVisible = Math.max(5, stdout.rows - 14);
+  const maxVisible = Math.max(5, stdout.rows - 16);
   const innerWidth = Math.max(24, stdout.columns - 8);
   const rowWidth = Math.max(20, innerWidth - 4);
   const selectedLabel = selectedOption?.label ?? "Nothing selected";
-  const selectedDetail = selectedOption?.detail ?? "Use ↑↓ or j/k to move through results";
+  const selectedDetail =
+    selectedOption?.detail ??
+    (filteredOptions.length > 0
+      ? "Use ↑↓ to move through results"
+      : "No matching results. Keep typing or press Esc to clear the filter.");
 
-  const windowStart = getWindowStart(index, options.length, maxVisible);
-  const windowEnd = Math.min(windowStart + maxVisible, options.length);
-  const visibleOptions = options.slice(windowStart, windowEnd);
+  const windowStart = getWindowStart(index, filteredOptions.length, maxVisible);
+  const windowEnd = Math.min(windowStart + maxVisible, filteredOptions.length);
+  const visibleOptions = filteredOptions.slice(windowStart, windowEnd);
 
   useInput((input, key) => {
     // Ctrl+C handling
@@ -806,12 +906,20 @@ function ListShell<T>({
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(0);
     }
-    if (key.escape || input === "q") {
+    if (key.escape) {
+      if (filterQuery.length > 0) {
+        setFilterQuery("");
+        return;
+      }
       onCancel();
       return;
     }
+    if (key.ctrl && input.toLowerCase() === "w") {
+      setFilterQuery((current) => deleteLastWord(current));
+      return;
+    }
     if (key.return) {
-      const selected = options[index];
+      const selected = filteredOptions[index];
       // #region agent log
       fetch("http://127.0.0.1:7354/ingest/f23bf8ed-06ee-406a-91ac-a87f92e34e82", {
         method: "POST",
@@ -840,12 +948,12 @@ function ListShell<T>({
       }
       return;
     }
-    if (key.upArrow || input === "k") {
-      setIndex((current) => (current - 1 + options.length) % options.length);
+    if (key.upArrow && filteredOptions.length > 0) {
+      setIndex((current) => (current - 1 + filteredOptions.length) % filteredOptions.length);
       return;
     }
-    if (key.downArrow || input === "j") {
-      setIndex((current) => (current + 1) % options.length);
+    if (key.downArrow && filteredOptions.length > 0) {
+      setIndex((current) => (current + 1) % filteredOptions.length);
     }
   });
 
@@ -865,8 +973,17 @@ function ListShell<T>({
           </Text>
         </Box>
         <Text color={palette.muted}>{confirmed ? selectedLabel : subtitle}</Text>
+        <Box marginTop={1}>
+          <Text color={palette.cyan}>filter › </Text>
+          <TextInput
+            value={filterQuery}
+            onChange={setFilterQuery}
+            placeholder="Type to narrow this list"
+            showCursor
+          />
+        </Box>
         <Text color={palette.gray}>
-          {`Selected ${index + 1} of ${options.length}  ·  Enter confirms  ·  q cancels`}
+          {`Selected ${filteredOptions.length > 0 ? index + 1 : 0} of ${filteredOptions.length}  ·  Showing ${filteredOptions.length} of ${options.length}  ·  Enter confirms  ·  Esc clears/back`}
         </Text>
         <Box flexDirection="column" marginTop={1}>
           {windowStart > 0 && <Text color={palette.gray}> ▲ ...</Text>}
@@ -892,7 +1009,7 @@ function ListShell<T>({
               </Box>
             );
           })}
-          {windowEnd < options.length && <Text color={palette.gray}> ▼ ...</Text>}
+          {windowEnd < filteredOptions.length && <Text color={palette.gray}> ▼ ...</Text>}
         </Box>
         <Box
           marginTop={1}
@@ -910,9 +1027,10 @@ function ListShell<T>({
       </Box>
       <Footer
         actions={[
+          { key: "type", label: "filter", action: "search" },
           { key: "↑↓", label: "navigate", action: "search" },
           { key: "enter", label: "select", action: "search" },
-          { key: "q", label: "cancel", action: "quit" },
+          { key: "esc", label: "clear/back", action: "quit" },
         ]}
       />
     </Box>
@@ -945,6 +1063,7 @@ function BrowseShell<T>({
   const [query, setQuery] = useState(initialQuery ?? "");
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
+  const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [selectedDetail, setSelectedDetail] = useState("Type a title and press Enter to search.");
@@ -973,6 +1092,14 @@ function BrowseShell<T>({
     if (nextValue.trim().length === 0) {
       clearResults();
     }
+  };
+
+  const handleQuerySubmit = () => {
+    if (!queryDirty && selectedOption && options.length > 0 && searchState === "ready") {
+      onSubmit(selectedOption.value);
+      return;
+    }
+    void runSearch();
   };
 
   const runSearch = async () => {
@@ -1017,6 +1144,19 @@ function BrowseShell<T>({
     setSelectedDetail(option.detail ?? "Press Enter to select this result.");
   }, [options, selectedIndex]);
 
+  useEffect(() => {
+    if (!commandMode) {
+      setHighlightedCommandIndex(0);
+      return;
+    }
+
+    const matches = getCommandMatches(commandInput, commands);
+    setHighlightedCommandIndex((current) => {
+      if (matches.length === 0) return 0;
+      return Math.min(current, matches.length - 1);
+    });
+  }, [commandInput, commandMode, commands]);
+
   const queryDirty = query.trim() !== lastSearchedQuery;
   const selectedOption = options[selectedIndex];
   const maxVisible = Math.max(5, stdout.rows - 18);
@@ -1033,16 +1173,39 @@ function BrowseShell<T>({
     }
 
     if (commandMode) {
+      const matches = getCommandMatches(commandInput, commands);
+
       if (key.escape) {
         setCommandMode(false);
         setCommandInput("");
+        setHighlightedCommandIndex(0);
         return;
       }
       if (key.return) {
-        const command = parseCommand(commandInput);
-        const resolved = command ? commands.find((candidate) => candidate.id === command.id) : null;
+        const resolved = getHighlightedCommand(commandInput, commands, highlightedCommandIndex);
         if (resolved?.enabled) {
           onResolve(toShellAction(resolved.id));
+        }
+        return;
+      }
+      if (key.tab) {
+        const nextIndex = matches.length > 0 ? (highlightedCommandIndex + 1) % matches.length : 0;
+        const target = matches[nextIndex];
+        if (target) {
+          setHighlightedCommandIndex(nextIndex);
+          setCommandInput(target.aliases[0] ?? target.id);
+        }
+        return;
+      }
+      if (key.upArrow) {
+        if (matches.length > 0) {
+          setHighlightedCommandIndex((current) => (current - 1 + matches.length) % matches.length);
+        }
+        return;
+      }
+      if (key.downArrow) {
+        if (matches.length > 0) {
+          setHighlightedCommandIndex((current) => (current + 1) % matches.length);
         }
         return;
       }
@@ -1052,13 +1215,20 @@ function BrowseShell<T>({
       }
       if (input && !key.ctrl && !key.meta) {
         setCommandInput((current) => current + input);
+        setHighlightedCommandIndex(0);
       }
       return;
     }
 
-    if (input === "/") {
+    if (input === "/" && query.length === 0) {
       setCommandMode(true);
       setCommandInput("");
+      setHighlightedCommandIndex(0);
+      return;
+    }
+
+    if (key.tab) {
+      onResolve("toggle-mode");
       return;
     }
 
@@ -1075,6 +1245,11 @@ function BrowseShell<T>({
       return;
     }
 
+    if (key.ctrl && input.toLowerCase() === "w") {
+      updateQuery(deleteLastWord(query));
+      return;
+    }
+
     if (key.upArrow && options.length > 0) {
       setSelectedIndex((current) => (current - 1 + options.length) % options.length);
       return;
@@ -1083,24 +1258,6 @@ function BrowseShell<T>({
     if (key.downArrow && options.length > 0) {
       setSelectedIndex((current) => (current + 1) % options.length);
       return;
-    }
-
-    if (key.return) {
-      if (!queryDirty && selectedOption && options.length > 0 && searchState === "ready") {
-        onSubmit(selectedOption.value);
-        return;
-      }
-      void runSearch();
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      updateQuery(query.slice(0, -1));
-      return;
-    }
-
-    if (input && !key.ctrl && !key.meta) {
-      updateQuery(`${query}${input}`);
     }
   });
 
@@ -1132,9 +1289,14 @@ function BrowseShell<T>({
 
         <Box marginTop={1}>
           <Text color={palette.cyan}>› </Text>
-          <Text color={query.length > 0 ? "white" : palette.gray}>
-            {query.length > 0 ? query : placeholder}
-          </Text>
+          <TextInput
+            value={query}
+            onChange={updateQuery}
+            onSubmit={handleQuerySubmit}
+            placeholder={placeholder}
+            focus={!commandMode}
+            showCursor
+          />
         </Box>
 
         {queryDirty && options.length > 0 ? (
@@ -1195,7 +1357,13 @@ function BrowseShell<T>({
         </Box>
       </Box>
 
-      {commandMode ? <CommandPalette input={commandInput} commands={commands} /> : null}
+      {commandMode ? (
+        <CommandPalette
+          input={commandInput}
+          commands={commands}
+          highlightedIndex={highlightedCommandIndex}
+        />
+      ) : null}
 
       <Footer
         actions={[
@@ -1205,7 +1373,8 @@ function BrowseShell<T>({
             action: "search",
           },
           { key: "↑↓", label: "navigate", action: "search" },
-          { key: "/", label: "commands", action: "search" },
+          { key: "tab", label: "switch mode", action: "toggle-mode" },
+          { key: "/", label: "commands when empty", action: "search" },
           { key: "esc", label: "clear/back", action: "quit" },
         ]}
       />
