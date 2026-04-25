@@ -147,9 +147,22 @@ export function resolveCommands(
   allowed: readonly AppCommandId[] = COMMANDS.map((command) => command.id),
 ): readonly ResolvedAppCommand[] {
   return COMMANDS.filter((command) => allowed.includes(command.id)).map((command) => ({
-    ...command,
+    ...resolveCommandPresentation(command, state),
     ...resolveCommandState(command.id, state),
   }));
+}
+
+function resolveCommandPresentation(command: AppCommand, state: SessionState): AppCommand {
+  if (command.id !== "toggle-mode") {
+    return command;
+  }
+
+  const targetMode = state.mode === "anime" ? "series" : "anime";
+  return {
+    ...command,
+    label: targetMode === "anime" ? "Anime Mode" : "Series Mode",
+    description: targetMode === "anime" ? "Switch into anime mode" : "Switch into series mode",
+  };
 }
 
 function resolveCommandState(

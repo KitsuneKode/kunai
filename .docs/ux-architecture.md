@@ -40,6 +40,7 @@ KitsuneSnipe should behave like a terminal app shell, not a sequence of unrelate
 - if text input is focused, normal typing wins except for `Ctrl+C`, `/`, and `Esc`
 - prefer explicit leader mode over hidden timed key chords
 - if an action is unavailable, show why instead of silently ignoring the input
+- mode actions should be phrased by destination, like `Anime mode` or `Series mode`, instead of generic toggle wording
 
 ## Selection Over Freeform Input
 
@@ -75,6 +76,13 @@ Overlay behavior should stay disciplined:
 - one child picker or confirmation above it when needed
 - `Esc` closes only the top overlay
 - unrelated deep overlay chains are a smell
+- `Esc` must never act like confirm or implicit playback start
+
+## Picker Filtering
+
+- filterable pickers are the default for season, episode, provider, subtitle, history, and settings flows
+- picker filtering should keep terminal-style editing semantics where practical
+- if a picker filter is non-empty, the first `Esc` clears the filter and the second `Esc` closes the picker
 
 ## Validation And Reliability
 
@@ -136,6 +144,7 @@ Keep deeper detail in a diagnostics overlay:
 - treat Kitty graphics and `chafa` as enhancements, not assumptions
 - load posters lazily and never block interaction for them
 - preserve a strong plain-text fallback path
+- footers should wrap and group actions cleanly instead of forcing one long horizontal command sentence
 
 ## Anti-Patterns
 

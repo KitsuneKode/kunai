@@ -103,11 +103,12 @@ function hotkeyLabel(key: string): string {
 function Footer({ actions }: { actions: readonly FooterAction[] }) {
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Box borderStyle="round" borderColor={palette.gray} paddingX={1}>
+      <Box borderStyle="round" borderColor={palette.gray} paddingX={1} flexWrap="wrap">
         {actions.map((action, index) => (
           <Box
             key={`${action.key}-${action.label}`}
             marginRight={index === actions.length - 1 ? 0 : 2}
+            marginBottom={1}
           >
             <Text color={action.disabled ? palette.gray : palette.cyan}>
               {hotkeyLabel(action.key)}
@@ -452,7 +453,11 @@ function HomeShell({
     footerActionFromCommand(commands, "settings", { key: "c", label: "settings" }),
     {
       key: "a",
-      label: state.mode === "anime" ? "series mode" : "anime mode",
+      label: getCommandLabel(
+        commands,
+        "toggle-mode",
+        state.mode === "anime" ? "series mode" : "anime mode",
+      ),
       action: "toggle-mode",
       disabled: isCommandDisabled(commands, "toggle-mode"),
       reason: getCommandReason(commands, "toggle-mode"),
@@ -512,7 +517,10 @@ function PlaybackShell({
     { key: "/", label: "commands", action: "replay" },
     footerActionFromCommand(commands, "replay", { key: "r", label: "replay" }),
     footerActionFromCommand(commands, "settings", { key: "c", label: "settings" }),
-    footerActionFromCommand(commands, "toggle-mode", { key: "a", label: "switch mode" }),
+    footerActionFromCommand(commands, "toggle-mode", {
+      key: "a",
+      label: getCommandLabel(commands, "toggle-mode", "switch mode"),
+    }),
     footerActionFromCommand(commands, "provider", { key: "o", label: "provider" }),
     footerActionFromCommand(commands, "history", { key: "h", label: "history" }),
     footerActionFromCommand(commands, "diagnostics", { key: "d", label: "diagnostics" }),
@@ -548,6 +556,19 @@ function PlaybackShell({
         Playback controls stay visible and command-driven. Use `/` for direct actions without
         leaving the shell.
       </Text>
+      <Box marginTop={1}>
+        <Badge label={`provider ${state.provider}`} tone="info" />
+        <Badge label={state.mode === "anime" ? "anime mode" : "series mode"} />
+        {state.type === "series" ? (
+          <Badge
+            label={`episode S${String(state.season).padStart(2, "0")}E${String(
+              state.episode,
+            ).padStart(2, "0")}`}
+          />
+        ) : (
+          <Badge label="movie" />
+        )}
+      </Box>
       {state.showMemory && state.memoryUsage ? (
         <Box marginTop={1}>
           <Text color={palette.gray}>{state.memoryUsage}</Text>
@@ -591,6 +612,38 @@ function getCommandReason(
   id: AppCommandId,
 ): string | undefined {
   return commands.find((command) => command.id === id)?.reason;
+}
+
+function getCommandLabel(
+  commands: readonly ResolvedAppCommand[],
+  id: AppCommandId,
+  fallback: string,
+): string {
+  return commands.find((command) => command.id === id)?.label.toLowerCase() ?? fallback;
+}
+
+function Badge({
+  label,
+  tone = "neutral",
+}: {
+  label: string;
+  tone?: "neutral" | "info" | "success";
+}) {
+  const color = tone === "success" ? palette.green : tone === "info" ? palette.cyan : palette.gray;
+
+  return (
+    <Box borderStyle="round" borderColor={color} paddingX={1} marginRight={1}>
+      <Text color={color}>{label}</Text>
+    </Box>
+  );
+}
+
+function BrowseTitle({ mode }: { mode: "series" | "anime" }) {
+  return (
+    <Text bold color="white">
+      {mode === "anime" ? "Browse your favorite anime" : "Browse your favorite movies and series"}
+    </Text>
+  );
 }
 
 function SearchShell({
@@ -1272,9 +1325,7 @@ function BrowseShell<T>({
       >
         <Text color={palette.amber}>{APP_LABEL}</Text>
         <Box marginTop={1} justifyContent="space-between">
-          <Text bold color="white">
-            {mode === "anime" ? "Browse anime" : "Browse titles"}
-          </Text>
+          <BrowseTitle mode={mode} />
           <Text color={searchState === "error" ? palette.red : palette.cyan}>
             {searchState === "loading"
               ? `${spinner} searching`
@@ -1286,6 +1337,13 @@ function BrowseShell<T>({
           </Text>
         </Box>
         <Text color={palette.muted}>{resultSubtitle}</Text>
+        <Box marginTop={1}>
+          <Badge label={`provider ${provider}`} tone="info" />
+          <Badge label={mode === "anime" ? "anime mode" : "series mode"} />
+          <Badge
+            label={mode === "anime" ? "search anime by title" : "search movies and shows by title"}
+          />
+        </Box>
 
         <Box marginTop={1}>
           <Text color={palette.cyan}>› </Text>
@@ -1373,7 +1431,11 @@ function BrowseShell<T>({
             action: "search",
           },
           { key: "↑↓", label: "navigate", action: "search" },
-          { key: "tab", label: "switch mode", action: "toggle-mode" },
+          {
+            key: "tab",
+            label: getCommandLabel(commands, "toggle-mode", "switch mode"),
+            action: "toggle-mode",
+          },
           { key: "/", label: "commands when empty", action: "search" },
           { key: "esc", label: "clear/back", action: "quit" },
         ]}

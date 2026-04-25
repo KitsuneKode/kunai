@@ -123,7 +123,65 @@ Current checkpoint:
 
 - shared app state, command registry, and responsive layout policy exist
 - home and playback shells already resolve shared command availability
-- search input and result selection are now moving onto one mounted browse shell path instead of separate prompt/shell hops
+- search input and result selection now use one mounted browse shell path instead of separate prompt/shell hops
+- shared shell actions now handle settings, provider, history, diagnostics, help, and about in both search and playback
+- shared pickers now support inline filtering, and browse input keeps terminal-style editing semantics
+- anime episode catalogs now sort into ascending picker order while stream resolution still maps correctly against reverse-ordered upstream episode strings
+
+## Next Passes
+
+### Pass A: Back-stack And Escape Correctness
+
+Goal:
+
+- make `Esc` mean clear, close, or go back, but never implicitly confirm or start playback
+
+Tasks:
+
+- thread true cancel results through `session-flow.ts`
+- stop picker cancellation from falling back to default episode playback
+- define parent-return behavior for season and episode pickers
+- remove startup banner flicker caused by pre-Ink console logging
+
+### Pass B: Mounted Root AppShell
+
+Goal:
+
+- stop treating home, browse, and playback as separate shell launches
+
+Tasks:
+
+- build a single mounted `AppShell`
+- render home, browse, playback, and post-playback as content states
+- keep the footer, command bar, and overlay host mounted across those states
+
+### Pass C: Overlay Migration
+
+Goal:
+
+- move blocking picker-style helpers into true overlays
+
+Tasks:
+
+- settings overlay
+- provider overlay
+- history overlay
+- diagnostics overlay
+- season picker overlay
+- episode picker overlay
+- subtitle picker overlay
+
+### Pass D: Naming And Provider Boundary Cleanup
+
+Goal:
+
+- reduce provider-architecture confusion before deeper hardening work
+
+Tasks:
+
+- rename `anime-base.ts` to an explicit AllAnime-family name
+- update docs and references so it is not mistaken for a generic anime-provider base
+- reserve generic anime abstractions for shared concepts only
 
 Tasks:
 

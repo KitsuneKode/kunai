@@ -217,23 +217,51 @@ export async function handleShellAction({
     await withOverlay({ type: "help" }, () =>
       openStaticInfoShell({
         title: "Help",
-        subtitle: "Global commands and keyboard flow",
+        subtitle: "Global commands, editing, filtering, and playback navigation",
         lines: [
           {
             label: "/ Command bar",
-            detail: "Open global actions from anywhere inside the shell.",
+            detail:
+              "Open global actions from anywhere in the shell. Use Tab to autocomplete, ↑↓ to choose, and Enter to run the highlighted command.",
           },
           {
             label: "Esc Clear or close",
-            detail: "Clear the current transient state first, then close the top overlay.",
+            detail:
+              "Clear the current transient state first, then close the top overlay or go back one level. Esc should never imply confirm.",
           },
           {
             label: "Enter Search or confirm",
-            detail: "Searches when the query changed, otherwise confirms the selected item.",
+            detail:
+              "Searches when the query changed, otherwise confirms the selected result or picker entry.",
           },
           {
             label: "↑↓ Navigate",
-            detail: "Move through visible results, episodes, and picker rows.",
+            detail: "Move through visible results, episodes, season rows, and command suggestions.",
+          },
+          {
+            label: "Type to filter pickers",
+            detail:
+              "Season, episode, provider, subtitle, history, and settings pickers all support inline filtering.",
+          },
+          {
+            label: "Ctrl+W Delete previous word",
+            detail:
+              "Supported in the browse input and picker filters so terminal-native editing keeps working.",
+          },
+          {
+            label: "Tab Switch destination mode",
+            detail:
+              "In browse, Tab jumps directly into the destination mode shown in the footer, like anime mode or series mode.",
+          },
+          {
+            label: "Playback actions",
+            detail:
+              "Replay, episode picker, provider switch, history, diagnostics, and next/previous actions stay reachable after playback ends.",
+          },
+          {
+            label: "Why commands are disabled",
+            detail:
+              "If an action is unavailable, the footer and command palette show the reason instead of silently ignoring input.",
           },
         ],
       }),
