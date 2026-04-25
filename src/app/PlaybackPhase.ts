@@ -21,8 +21,13 @@ import {
   buildHistoryPanelLines,
   buildProviderPickerOptions,
 } from "@/app-shell/panel-data";
-import { getAutoAdvanceEpisode } from "@/app/playback-policy";
+import {
+  getAutoAdvanceEpisode,
+  resolveEpisodeAvailability,
+  toEpisodeNavigationState,
+} from "@/app/playback-policy";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
+import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 
 export type PlaybackOutcome = "back_to_search" | "back_to_results" | "mode_switch" | "quit";
 
@@ -33,22 +38,27 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const { container } = context;
     const { providerRegistry, stateManager, logger, historyStore, config, diagnosticsStore } =
       container;
+    const animeEpisodeCatalogByProvider = new Map<
+      string,
+      readonly EpisodePickerOption[] | undefined
+    >();
 
     try {
       // Episode selection (for series)
       let episode: EpisodeInfo | undefined;
       const provider = providerRegistry.get(stateManager.getState().provider);
-      const animeEpisodes = await this.loadAnimeEpisodeOptions(
+      const initialAnimeEpisodes = await this.getAnimeEpisodeOptions({
         title,
-        stateManager.getState().mode,
+        mode: stateManager.getState().mode,
         provider,
-      );
+        cache: animeEpisodeCatalogByProvider,
+      });
       logger.info("Episode selection metadata", {
         titleId: title.id,
         mode: stateManager.getState().mode,
         provider: stateManager.getState().provider,
         episodeCount: title.episodeCount ?? null,
-        animeEpisodeOptions: animeEpisodes?.length ?? 0,
+        animeEpisodeOptions: initialAnimeEpisodes?.length ?? 0,
       });
       diagnosticsStore.record({
         category: "provider",
@@ -58,7 +68,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           mode: stateManager.getState().mode,
           provider: stateManager.getState().provider,
           episodeCount: title.episodeCount ?? null,
-          animeEpisodeOptions: animeEpisodes?.length ?? 0,
+          animeEpisodeOptions: initialAnimeEpisodes?.length ?? 0,
         },
       });
 
@@ -80,7 +90,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           currentId: title.id,
           isAnime: stateManager.getState().mode === "anime",
           animeEpisodeCount: title.episodeCount,
-          animeEpisodes,
+          animeEpisodes: initialAnimeEpisodes,
           flags: {},
           getHistoryEntry: () => Promise.resolve(history),
         });
@@ -108,14 +118,32 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const currentEpisode = stateManager.getState().currentEpisode;
         if (!currentEpisode) break;
 
+        const currentProvider = providerRegistry.get(stateManager.getState().provider);
+        const currentAnimeEpisodes = await this.getAnimeEpisodeOptions({
+          title,
+          mode: stateManager.getState().mode,
+          provider: currentProvider,
+          cache: animeEpisodeCatalogByProvider,
+        });
+        const episodeAvailability = await resolveEpisodeAvailability({
+          title,
+          currentEpisode,
+          isAnime: stateManager.getState().mode === "anime",
+          animeEpisodeCount: title.episodeCount,
+          animeEpisodes: currentAnimeEpisodes,
+          loaders: {
+            loadSeasons: fetchSeasons,
+            loadEpisodes: fetchEpisodes,
+          },
+        });
+
         stateManager.dispatch({
           type: "SET_EPISODE_NAVIGATION",
-          navigation: buildEpisodeNavigationState(title.type, currentEpisode),
+          navigation: toEpisodeNavigationState(title.type, episodeAvailability),
         });
 
         // Resolve stream with loading UI
-        const provider = providerRegistry.get(stateManager.getState().provider);
-        if (!provider) {
+        if (!currentProvider) {
           return {
             status: "error",
             error: {
@@ -150,7 +178,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         let stream: StreamInfo | null = null;
         try {
-          stream = await provider.resolveStream({
+          stream = await currentProvider.resolveStream({
             title,
             episode: currentEpisode,
             subLang: stateManager.getState().subLang,
@@ -161,13 +189,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         }
 
         if (!stream) {
-          console.log(`⚠ Stream not found on ${provider.metadata.id}`);
-          logger.error("Stream not found", { provider: provider.metadata.id });
+          console.log(`⚠ Stream not found on ${currentProvider.metadata.id}`);
+          logger.error("Stream not found", { provider: currentProvider.metadata.id });
           diagnosticsStore.record({
             category: "provider",
             message: "Stream not found",
             context: {
-              provider: provider.metadata.id,
+              provider: currentProvider.metadata.id,
               titleId: title.id,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
@@ -179,7 +207,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             .getCompatible(title)
             .filter(
               (p: import("../services/providers/Provider").Provider) =>
-                p.metadata.id !== provider.metadata.id,
+                p.metadata.id !== currentProvider.metadata.id,
             );
 
           const fallback = compatible[0];
@@ -192,7 +220,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               category: "provider",
               message: "Trying fallback provider",
               context: {
-                from: provider.metadata.id,
+                from: currentProvider.metadata.id,
                 fallback: fallback.metadata.id,
               },
             });
@@ -228,7 +256,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               code: "STREAM_NOT_FOUND",
               message: "Could not resolve stream from any provider",
               retryable: true,
-              provider: provider.metadata.id,
+              provider: currentProvider.metadata.id,
             },
           };
         }
@@ -260,12 +288,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         }
 
         // Handle post-playback
-        const nextEpisode = getAutoAdvanceEpisode(result, title, currentEpisode, config.autoNext);
+        const nextEpisode = await getAutoAdvanceEpisode(
+          result,
+          title,
+          currentEpisode,
+          config.autoNext,
+          episodeAvailability,
+        );
         if (nextEpisode) {
           logger.info("Auto-next advancing to next episode", {
             titleId: title.id,
             season: currentEpisode.season,
             episode: currentEpisode.episode,
+            nextSeason: nextEpisode.season,
+            nextEpisode: nextEpisode.episode,
           });
           diagnosticsStore.record({
             category: "playback",
@@ -274,6 +310,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               titleId: title.id,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
+              nextSeason: nextEpisode.season,
+              nextEpisode: nextEpisode.episode,
             },
           });
           stateManager.dispatch({
@@ -375,7 +413,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             currentSeason: currentEpisode.season,
             currentEpisode: currentEpisode.episode,
             animeEpisodeCount: title.episodeCount,
-            animeEpisodes,
+            animeEpisodes: currentAnimeEpisodes,
           });
           // Cancel keeps the user in the post-playback menu instead of mutating
           // the current episode or restarting playback implicitly.
@@ -396,33 +434,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
           continue;
         } else if (postAction === "next" && title.type === "series") {
-          stateManager.dispatch({
-            type: "SELECT_EPISODE",
-            episode: {
-              season: currentEpisode.season,
-              episode: currentEpisode.episode + 1,
-            },
-          });
-          continue;
-        } else if (postAction === "previous" && title.type === "series") {
-          if (currentEpisode.episode > 1) {
+          if (episodeAvailability.nextEpisode) {
             stateManager.dispatch({
               type: "SELECT_EPISODE",
-              episode: {
-                season: currentEpisode.season,
-                episode: currentEpisode.episode - 1,
-              },
+              episode: episodeAvailability.nextEpisode,
+            });
+          }
+          continue;
+        } else if (postAction === "previous" && title.type === "series") {
+          if (episodeAvailability.previousEpisode) {
+            stateManager.dispatch({
+              type: "SELECT_EPISODE",
+              episode: episodeAvailability.previousEpisode,
             });
           }
           continue;
         } else if (postAction === "next-season" && title.type === "series") {
-          stateManager.dispatch({
-            type: "SELECT_EPISODE",
-            episode: {
-              season: currentEpisode.season + 1,
-              episode: 1,
-            },
-          });
+          if (episodeAvailability.nextSeasonEpisode) {
+            stateManager.dispatch({
+              type: "SELECT_EPISODE",
+              episode: episodeAvailability.nextSeasonEpisode,
+            });
+          }
           continue;
         } else if (postAction === "provider") {
           await handleShellAction({ action: "provider", container });
@@ -541,6 +574,29 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     return result;
   }
 
+  private async getAnimeEpisodeOptions({
+    title,
+    mode,
+    provider,
+    cache,
+  }: {
+    title: TitleInfo;
+    mode: "series" | "anime";
+    provider: import("../services/providers/Provider").Provider | undefined;
+    cache: Map<string, readonly EpisodePickerOption[] | undefined>;
+  }): Promise<readonly EpisodePickerOption[] | undefined> {
+    const cacheKey = provider?.metadata.id;
+    if (cacheKey && cache.has(cacheKey)) {
+      return cache.get(cacheKey);
+    }
+
+    const result = await this.loadAnimeEpisodeOptions(title, mode, provider);
+    if (cacheKey) {
+      cache.set(cacheKey, result);
+    }
+    return result;
+  }
+
   private async loadAnimeEpisodeOptions(
     title: TitleInfo,
     mode: "series" | "anime",
@@ -572,37 +628,4 @@ function describeSubtitleStatus(stream: StreamInfo, subLang: string): string {
   }
 
   return "subtitles not found";
-}
-
-function buildEpisodeNavigationState(type: TitleInfo["type"], episode: EpisodeInfo) {
-  if (type !== "series") {
-    return {
-      hasPrevious: false,
-      hasNext: false,
-      hasNextSeason: false,
-      previousUnavailableReason: "Previous episode is only available for episodic playback.",
-      nextUnavailableReason: "Next episode is only available for episodic playback.",
-      nextSeasonUnavailableReason: "Season jump is only available for episodic playback.",
-    };
-  }
-
-  return {
-    hasPrevious: episode.episode > 1,
-    hasNext: true,
-    hasNextSeason: true,
-    previousLabel:
-      episode.episode > 1
-        ? `S${String(episode.season).padStart(2, "0")}E${String(episode.episode - 1).padStart(
-            2,
-            "0",
-          )}`
-        : undefined,
-    nextLabel: `S${String(episode.season).padStart(2, "0")}E${String(episode.episode + 1).padStart(
-      2,
-      "0",
-    )}`,
-    nextSeasonLabel: `S${String(episode.season + 1).padStart(2, "0")}E01`,
-    previousUnavailableReason:
-      episode.episode > 1 ? undefined : "Already at the first known episode.",
-  };
 }

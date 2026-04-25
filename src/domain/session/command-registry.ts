@@ -153,16 +153,40 @@ export function resolveCommands(
 }
 
 function resolveCommandPresentation(command: AppCommand, state: SessionState): AppCommand {
-  if (command.id !== "toggle-mode") {
-    return command;
+  if (command.id === "toggle-mode") {
+    const targetMode = state.mode === "anime" ? "series" : "anime";
+    return {
+      ...command,
+      label: targetMode === "anime" ? "Anime Mode" : "Series Mode",
+      description: targetMode === "anime" ? "Switch into anime mode" : "Switch into series mode",
+    };
   }
 
-  const targetMode = state.mode === "anime" ? "series" : "anime";
-  return {
-    ...command,
-    label: targetMode === "anime" ? "Anime Mode" : "Series Mode",
-    description: targetMode === "anime" ? "Switch into anime mode" : "Switch into series mode",
-  };
+  if (command.id === "next" && state.episodeNavigation.nextLabel) {
+    return {
+      ...command,
+      label: `Next ${state.episodeNavigation.nextLabel}`,
+      description: "Advance to the next available episode",
+    };
+  }
+
+  if (command.id === "previous" && state.episodeNavigation.previousLabel) {
+    return {
+      ...command,
+      label: `Previous ${state.episodeNavigation.previousLabel}`,
+      description: "Go to the previous available episode",
+    };
+  }
+
+  if (command.id === "next-season" && state.episodeNavigation.nextSeasonLabel) {
+    return {
+      ...command,
+      label: `Next Season ${state.episodeNavigation.nextSeasonLabel}`,
+      description: "Jump to the first available episode of the next season",
+    };
+  }
+
+  return command;
 }
 
 function resolveCommandState(

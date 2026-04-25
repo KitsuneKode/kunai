@@ -542,9 +542,18 @@ function PlaybackShell({
     footerActionFromCommand(commands, "diagnostics", { key: "d", label: "diagnostics" }),
     footerActionFromCommand(commands, "quit", { key: "q", label: "quit" }),
     footerActionFromCommand(commands, "pick-episode", { key: "e", label: "episodes" }),
-    footerActionFromCommand(commands, "next", { key: "n", label: "next" }),
-    footerActionFromCommand(commands, "previous", { key: "p", label: "previous" }),
-    footerActionFromCommand(commands, "next-season", { key: "s", label: "next season" }),
+    footerActionFromCommand(commands, "next", {
+      key: "n",
+      label: getCommandLabel(commands, "next", "next"),
+    }),
+    footerActionFromCommand(commands, "previous", {
+      key: "p",
+      label: getCommandLabel(commands, "previous", "previous"),
+    }),
+    footerActionFromCommand(commands, "next-season", {
+      key: "s",
+      label: getCommandLabel(commands, "next-season", "next season"),
+    }),
   ];
 
   const location =

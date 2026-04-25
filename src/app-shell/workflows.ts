@@ -572,8 +572,9 @@ export async function openSettingsShell(current: KitsuneConfig): Promise<Kitsune
         },
         {
           value: "autoNext" as const,
-          label: `Auto next  ·  ${next.autoNext ? "on" : "off"}`,
-          detail: "Close mpv on episode EOF, then launch the next episode automatically",
+          label: `Autoplay next  ·  ${next.autoNext ? "on" : "off"}`,
+          detail:
+            "Close mpv on episode EOF, then continue through the next available released episode automatically",
         },
         {
           value: "history" as const,

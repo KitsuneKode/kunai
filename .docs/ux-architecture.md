@@ -23,6 +23,7 @@ KitsuneSnipe should behave like a terminal app shell, not a sequence of unrelate
 - compact status strip for user-critical runtime state
 - command bar for global actions
 - overlays for secondary flows
+- playback surfaces should keep title, episode identity, provider, and subtitle state visible without making users infer where they are
 
 ### Command philosophy
 
@@ -139,6 +140,8 @@ Keep deeper detail in a diagnostics overlay:
 - scrape timing
 - retry and fallback history
 - capability state for `mpv`, Playwright, and image backends
+
+Autoplay and next/previous actions should follow real episode availability from provider or metadata catalogs, not guessed episode numbers.
 
 ## Setup Guardrails
 
