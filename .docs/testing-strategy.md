@@ -4,6 +4,16 @@ Use this doc when adding tests, refactoring code to improve testability, or deci
 
 The goal is not "more tests" in the abstract. The goal is confident, maintainable tests that catch real regressions without turning the repo into a flaky lab.
 
+## Repo Test Layout
+
+- keep pure unit tests close to the modules they protect under `src/**/*.test.ts`
+- keep cross-module deterministic integration tests under `test/integration/`
+- keep opt-in live provider smoke scripts under `test/live/`
+- keep copyable templates for new contract tests under `test/templates/`
+- keep VHS tapes and captured golden outputs under `test/vhs/` for UI demos and visual regression review
+
+The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist`, `README.md`, and `LICENSE`.
+
 ## Core Principles
 
 - test behavior, not incidental implementation structure
@@ -70,7 +80,18 @@ Best target for:
 
 Keep these few and high-signal.
 
-### 5. Manual or opt-in live verification
+### 5. Visual CLI tapes with VHS
+
+Best target for:
+
+- browse shell snapshots
+- help and diagnostics overlays
+- command palette discoverability
+- before and after UX comparison for major shell redesign passes
+
+Use VHS for terminal UX capture and review, not as the only proof that behavior works.
+
+### 6. Manual or opt-in live verification
 
 Reserve for:
 
@@ -161,3 +182,8 @@ Prefer to extract:
 - contract adapters
 
 before writing tests that mock half the world.
+
+For CLI UX:
+
+- prefer VHS tapes over brittle pseudo-interactive assertions when the real need is visual review
+- prefer deterministic state tests over VHS when the real need is behavior confidence

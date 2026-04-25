@@ -141,7 +141,20 @@ Notes:
 - prefer extracting shared abstractions over copying fixes into multiple files
 - if legacy flow and refactored flow diverge, document the migration target immediately
 - if a module becomes responsible for UI, provider logic, caching, and diagnostics at once, it is too broad
+- do not let `src/` become a dumping ground for every test type; keep integration, live, and VHS assets under `test/`
 - keep data models and UI models distinct where possible
+
+## Drift Watchlist
+
+If one of these starts appearing again, treat it as design debt immediately:
+
+- two runtime entry stories with different behavior
+- two cache paths storing the same concept in different shapes
+- provider-specific conditionals leaking into shell components
+- playback, setup, and diagnostics each inventing their own command handling
+- picker cancel paths that silently mutate state or start playback
+- settings that change runtime defaults without updating visible labels and bootstrap behavior
+- new UI flows that cannot be expressed in tests or VHS tapes without heroic mocking
 
 ## Documentation Rules
 

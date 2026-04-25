@@ -16,6 +16,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - New runtime now preserves the previous browse/result state when episode selection is cancelled before playback starts
 - Default startup mode is now configurable and honored by `src/main.ts`
 - Auto-next is now app-driven: mpv exits cleanly at EOF, then KitsuneSnipe launches the next episode when enabled
+- The repo now has a dedicated `test/` tree for integration, live smoke, provider templates, and VHS tapes
 - Browser/embed scraping in the new runtime now reads and writes the shared stream cache
 - AllAnime family parity code is explicitly named `allanime-family.ts`
 - `src/main.ts` is now the default runnable and build entrypoint

@@ -14,6 +14,7 @@ import type {
   PlaybackResult,
 } from "@/domain/types";
 import { handleShellAction, openSubtitlePicker } from "@/app-shell/workflows";
+import { getAutoAdvanceEpisode } from "@/app/playback-policy";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 
 export type PlaybackOutcome = "back_to_search" | "back_to_results" | "mode_switch" | "quit";
@@ -252,7 +253,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         }
 
         // Handle post-playback
-        if (result.endReason === "eof" && config.autoNext && title.type === "series") {
+        const nextEpisode = getAutoAdvanceEpisode(result, title, currentEpisode, config.autoNext);
+        if (nextEpisode) {
           logger.info("Auto-next advancing to next episode", {
             titleId: title.id,
             season: currentEpisode.season,
@@ -269,10 +271,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
           stateManager.dispatch({
             type: "SELECT_EPISODE",
-            episode: {
-              season: currentEpisode.season,
-              episode: currentEpisode.episode + 1,
-            },
+            episode: nextEpisode,
           });
           continue;
         }
