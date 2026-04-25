@@ -36,14 +36,18 @@ describe("CacheStoreImpl", () => {
   test("reads legacy cache entries from stream_cache.json shape", async () => {
     const storage = new MemoryStorage();
     const store = new CacheStoreImpl(storage);
+    const cachedTimestamp = Date.now();
     await storage.write("cache", {
       "https://embed.example/watch/123": {
         ...STREAM,
-        timestamp: Date.now(),
+        timestamp: cachedTimestamp,
       },
     });
 
-    await expect(store.get("https://embed.example/watch/123")).resolves.toEqual(STREAM);
+    await expect(store.get("https://embed.example/watch/123")).resolves.toMatchObject({
+      ...STREAM,
+      timestamp: cachedTimestamp,
+    });
   });
 
   test("writes cache entries in the legacy-compatible shape", async () => {

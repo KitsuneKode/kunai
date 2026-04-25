@@ -644,7 +644,6 @@ async function loadAnimeEpisodeOptions(
           subtitle: finalSubtitle,
           displayTitle: buildDisplayTitle(),
           startAt,
-          autoNext: config.autoNext && currentType === "series",
           attach: !!values.attach,
         });
 

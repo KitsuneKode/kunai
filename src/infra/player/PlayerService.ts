@@ -4,7 +4,7 @@
 // MPV abstraction for media playback.
 // =============================================================================
 
-import type { StreamInfo, PlaybackResult } from "../../domain/types";
+import type { StreamInfo, PlaybackResult } from "@/domain/types";
 
 export interface PlayerOptions {
   url: string;
@@ -12,7 +12,6 @@ export interface PlayerOptions {
   subtitle?: string;
   displayTitle: string;
   startAt?: number;
-  autoNext?: boolean;
   attach?: boolean;
   onProgress?: (seconds: number) => void;
 }

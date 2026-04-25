@@ -5,11 +5,11 @@
 // =============================================================================
 
 import type { PlayerService, PlayerOptions } from "./PlayerService";
-import type { PlaybackResult } from "../../domain/types";
-import type { Logger } from "../logger/Logger";
-import type { Tracer } from "../tracer/Tracer";
-import type { DiagnosticsStore } from "../../services/diagnostics/DiagnosticsStore";
-import { launchMpv } from "../../mpv";
+import type { PlaybackResult, StreamInfo } from "@/domain/types";
+import type { Logger } from "@/infra/logger/Logger";
+import type { Tracer } from "@/infra/tracer/Tracer";
+import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import { launchMpv } from "@/mpv";
 
 export class PlayerServiceImpl implements PlayerService {
   constructor(
@@ -20,10 +20,7 @@ export class PlayerServiceImpl implements PlayerService {
     },
   ) {}
 
-  async play(
-    stream: import("../../domain/types").StreamInfo,
-    options: PlayerOptions,
-  ): Promise<PlaybackResult> {
+  async play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
     // Always show this to user - not just debug
     console.log(`▶ Starting playback: ${options.displayTitle}`);
 
@@ -49,7 +46,6 @@ export class PlayerServiceImpl implements PlayerService {
         subtitle: stream.subtitle ?? null,
         displayTitle: options.displayTitle,
         startAt: options.startAt,
-        autoNext: options.autoNext,
         attach: options.attach,
       });
 

@@ -143,6 +143,7 @@ Current checkpoint:
 - subtitle policy is restored in the new runtime, and the shell now surfaces when subtitles are disabled, attached, or not found
 - canceling before first playback now returns to the previous browse result list instead of discarding search context
 - settings now expose the default startup mode, and `src/main.ts` honors it unless CLI flags override it
+- episode auto-next is now owned by the playback phase instead of mpv countdown/keep-open behavior
 - browser/embed scraping now reuses the shared runtime cache instead of bypassing the new persistence layer
 
 ## Next Passes

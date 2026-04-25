@@ -7,17 +7,16 @@ import { join } from "path";
 // =============================================================================
 // LUA REPORTER
 //
-// Injected via --script into every MPV session. Responsibilities:
+// Injected via --script into every MPV session. Responsibility:
 //   1. Write "seconds,duration,reason" to KITSUNE_POS_FILE on exit.
-//   2. When reason === "eof" AND KITSUNE_AUTO_NEXT === "1":
-//      - Keep MPV alive (via --keep-open=yes)
-//      - Show an OSD countdown ("⏭ Next episode in 5 s · q to cancel")
-//      - After 5 s, quit programmatically
+//
+// Episode advancement belongs to the app loop now, not MPV itself. That keeps
+// EOF behavior predictable: mpv closes cleanly, then KitsuneSnipe decides
+// whether to open the next episode or return to the shell.
 // =============================================================================
 
 const LUA_REPORTER = `
 local written    = false
-local auto_next  = os.getenv("KITSUNE_AUTO_NEXT") == "1"
 
 mp.register_event("end-file", function(event)
     if written then return end
@@ -34,20 +33,6 @@ mp.register_event("end-file", function(event)
             f:write(string.format("%d,%d,%s", math.floor(pos), math.floor(dur), reason))
             f:close()
         end
-    end
-
-    if reason == "eof" and auto_next then
-        local n = 5
-        local function tick()
-            if n <= 0 then mp.command("quit") return end
-            mp.osd_message(
-                string.format("\\xE2\\x8F\\xAD  Next episode in %d s  \\xC2\\xB7  q to cancel", n),
-                1.5
-            )
-            n = n - 1
-            mp.add_timeout(1, tick)
-        end
-        tick()
     end
 end)
 `;
@@ -84,7 +69,6 @@ export async function launchMpv(opts: {
   subtitle: string | null;
   displayTitle: string;
   startAt?: number;
-  autoNext?: boolean;
   attach?: boolean; // true → stdio:inherit (old behaviour)
 }): Promise<PlaybackResult> {
   const scriptPath = join(tmpdir(), "kitsune-reporter.lua");
@@ -105,15 +89,12 @@ export async function launchMpv(opts: {
 
   if (opts.subtitle) args.push(`--sub-file=${opts.subtitle}`);
   if (opts.startAt && opts.startAt > 5) args.push(`--start=${opts.startAt}`);
-  if (opts.autoNext) args.push("--keep-open=yes");
-
   args.push(`--force-media-title=${opts.displayTitle}`);
   args.push(`--script=${scriptPath}`);
 
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
     KITSUNE_POS_FILE: posPath,
-    KITSUNE_AUTO_NEXT: opts.autoNext ? "1" : "0",
   };
 
   if (opts.attach) {

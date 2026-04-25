@@ -253,7 +253,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         // Handle post-playback
         if (result.endReason === "eof" && config.autoNext && title.type === "series") {
-          // Auto-advance to next episode
+          logger.info("Auto-next advancing to next episode", {
+            titleId: title.id,
+            season: currentEpisode.season,
+            episode: currentEpisode.episode,
+          });
+          diagnosticsStore.record({
+            category: "playback",
+            message: "Auto-next advancing to next episode",
+            context: {
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+            },
+          });
           stateManager.dispatch({
             type: "SELECT_EPISODE",
             episode: {
@@ -461,7 +474,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     episode: EpisodeInfo,
     context: PhaseContext,
   ): Promise<PlaybackResult> {
-    const { player, stateManager, config } = context.container;
+    const { player, stateManager } = context.container;
 
     const displayTitle =
       title.type === "movie"
@@ -478,7 +491,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       subtitle: stream.subtitle,
       displayTitle,
       startAt: 0,
-      autoNext: config.autoNext && title.type === "series",
       attach: false,
     });
 
