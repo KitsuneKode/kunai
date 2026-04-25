@@ -18,6 +18,8 @@ import {
   type BrowseShellOption,
   type BrowseShellResult,
   type BrowseShellSearchResponse,
+  type ShellPanelLine,
+  type ShellPickerOption,
   type ShellAction,
   type ShellStatus,
 } from "./types";
@@ -492,11 +494,25 @@ function HomeShell({
 
 function PlaybackShell({
   state,
+  providerOptions,
+  loadHistoryPanel,
+  loadDiagnosticsPanel,
+  loadHelpPanel,
+  loadAboutPanel,
+  onChangeProvider,
   onResolve,
 }: {
   state: PlaybackShellState;
+  providerOptions?: readonly ShellPickerOption<string>[];
+  loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadAboutPanel?: () => Promise<readonly ShellPanelLine[]>;
+  onChangeProvider?: (providerId: string) => Promise<void>;
   onResolve: (action: ShellAction) => void;
 }) {
+  const [activeProvider, setActiveProvider] = useState(state.provider);
+  const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
   const commands =
     state.commands ??
     fallbackCommandState([
@@ -536,9 +552,206 @@ function PlaybackShell({
       ? `S${String(state.season).padStart(2, "0")}E${String(state.episode).padStart(2, "0")}`
       : "Movie";
 
-  useInput((_input, key) => {
+  const openInfoOverlay = async ({
+    type,
+    title,
+    subtitle,
+    loader,
+  }: {
+    type: "help" | "about" | "diagnostics" | "history";
+    title: string;
+    subtitle: string;
+    loader?: () => Promise<readonly ShellPanelLine[]>;
+  }) => {
+    setActiveOverlay({
+      type,
+      title,
+      subtitle,
+      lines: [],
+      loading: true,
+      scrollIndex: 0,
+    });
+
+    try {
+      const lines = loader ? await loader() : [];
+      setActiveOverlay({
+        type,
+        title,
+        subtitle,
+        lines,
+        loading: false,
+        scrollIndex: 0,
+      });
+    } catch (error) {
+      setActiveOverlay({
+        type,
+        title,
+        subtitle,
+        lines: [
+          {
+            label: "Unable to load this panel",
+            detail: String(error),
+            tone: "error",
+          },
+        ],
+        loading: false,
+        scrollIndex: 0,
+      });
+    }
+  };
+
+  const handleLocalAction = (action: ShellAction): boolean => {
+    if (action === "provider" && providerOptions && onChangeProvider) {
+      setActiveOverlay({
+        type: "provider",
+        title: "Provider",
+        subtitle: `Current provider ${activeProvider}`,
+        options: providerOptions,
+        filterQuery: "",
+        selectedIndex: 0,
+        busy: false,
+      });
+      return true;
+    }
+    if (action === "history" && loadHistoryPanel) {
+      void openInfoOverlay({
+        type: "history",
+        title: "History",
+        subtitle: "Recent playback positions without leaving playback",
+        loader: loadHistoryPanel,
+      });
+      return true;
+    }
+    if (action === "diagnostics" && loadDiagnosticsPanel) {
+      void openInfoOverlay({
+        type: "diagnostics",
+        title: "Diagnostics",
+        subtitle: "Current runtime snapshot and recent events",
+        loader: loadDiagnosticsPanel,
+      });
+      return true;
+    }
+    if (action === "help" && loadHelpPanel) {
+      void openInfoOverlay({
+        type: "help",
+        title: "Help",
+        subtitle: "Playback commands and shell behavior",
+        loader: loadHelpPanel,
+      });
+      return true;
+    }
+    if (action === "about" && loadAboutPanel) {
+      void openInfoOverlay({
+        type: "about",
+        title: "About",
+        subtitle: "KitsuneSnipe beta",
+        loader: loadAboutPanel,
+      });
+      return true;
+    }
+    return false;
+  };
+
+  const filteredProviderOptions =
+    activeOverlay?.type === "provider"
+      ? activeOverlay.options.filter((option) => {
+          const filter = activeOverlay.filterQuery.trim().toLowerCase();
+          if (filter.length === 0) return true;
+          return `${option.label} ${option.detail ?? ""}`.toLowerCase().includes(filter);
+        })
+      : [];
+
+  const resolvePlaybackAction = (action: ShellAction) => {
+    if (!handleLocalAction(action)) {
+      onResolve(action);
+    }
+  };
+
+  useInput((input, key) => {
+    if (activeOverlay) {
+      if (key.escape) {
+        setActiveOverlay(null);
+        return;
+      }
+
+      if (activeOverlay.type === "provider") {
+        if (key.ctrl && input.toLowerCase() === "w") {
+          setActiveOverlay({
+            ...activeOverlay,
+            filterQuery: deleteLastWord(activeOverlay.filterQuery),
+            selectedIndex: 0,
+          });
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setActiveOverlay({
+            ...activeOverlay,
+            filterQuery: activeOverlay.filterQuery.slice(0, -1),
+            selectedIndex: 0,
+          });
+          return;
+        }
+        if (key.upArrow && filteredProviderOptions.length > 0) {
+          setActiveOverlay({
+            ...activeOverlay,
+            selectedIndex:
+              (activeOverlay.selectedIndex - 1 + filteredProviderOptions.length) %
+              filteredProviderOptions.length,
+          });
+          return;
+        }
+        if (key.downArrow && filteredProviderOptions.length > 0) {
+          setActiveOverlay({
+            ...activeOverlay,
+            selectedIndex: (activeOverlay.selectedIndex + 1) % filteredProviderOptions.length,
+          });
+          return;
+        }
+        if (key.return) {
+          const target = filteredProviderOptions[activeOverlay.selectedIndex];
+          if (!target || !onChangeProvider) return;
+
+          setActiveOverlay({ ...activeOverlay, busy: true });
+          void onChangeProvider(target.value)
+            .then(() => {
+              setActiveProvider(target.value);
+              setActiveOverlay(null);
+            })
+            .catch((error) => {
+              setActiveOverlay({
+                ...activeOverlay,
+                busy: false,
+                subtitle: `Failed to switch provider: ${String(error)}`,
+              });
+            });
+          return;
+        }
+        if (input && !key.ctrl && !key.meta) {
+          setActiveOverlay({
+            ...activeOverlay,
+            filterQuery: `${activeOverlay.filterQuery}${input}`,
+            selectedIndex: 0,
+          });
+        }
+        return;
+      }
+
+      if (
+        (key.upArrow || key.downArrow) &&
+        !activeOverlay.loading &&
+        activeOverlay.lines.length > 0
+      ) {
+        const maxScroll = Math.max(0, activeOverlay.lines.length - 1);
+        const nextScroll = key.upArrow
+          ? Math.max(0, (activeOverlay.scrollIndex ?? 0) - 1)
+          : Math.min(maxScroll, (activeOverlay.scrollIndex ?? 0) + 1);
+        setActiveOverlay({ ...activeOverlay, scrollIndex: nextScroll });
+      }
+      return;
+    }
+
     if (key.return) {
-      onResolve("replay");
+      resolvePlaybackAction("replay");
     }
   });
 
@@ -546,18 +759,18 @@ function PlaybackShell({
     <ShellFrame
       eyebrow={APP_LABEL}
       title={state.title}
-      subtitle={`${location}  ·  Provider ${state.provider}  ·  Mode ${state.mode}`}
+      subtitle={`${location}  ·  Provider ${activeProvider}  ·  Mode ${state.mode}`}
       status={state.status}
       footerActions={footerActions}
       commands={commands}
-      onResolve={onResolve}
+      onResolve={resolvePlaybackAction}
     >
       <Text color={palette.muted}>
         Playback controls stay visible and command-driven. Use `/` for direct actions without
         leaving the shell.
       </Text>
       <Box marginTop={1}>
-        <Badge label={`provider ${state.provider}`} tone="info" />
+        <Badge label={`provider ${activeProvider}`} tone="info" />
         <Badge label={state.mode === "anime" ? "anime mode" : "series mode"} />
         {state.type === "series" ? (
           <Badge
@@ -574,6 +787,9 @@ function PlaybackShell({
             tone={state.subtitleStatus.toLowerCase().includes("not found") ? "neutral" : "info"}
           />
         ) : null}
+        {activeOverlay ? (
+          <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
+        ) : null}
       </Box>
       {state.subtitleStatus ? (
         <Box marginTop={1}>
@@ -584,6 +800,23 @@ function PlaybackShell({
         <Box marginTop={1}>
           <Text color={palette.gray}>{state.memoryUsage}</Text>
         </Box>
+      ) : null}
+      {activeOverlay ? (
+        <OverlayPanel
+          overlay={
+            activeOverlay.type === "provider"
+              ? {
+                  ...activeOverlay,
+                  options: filteredProviderOptions,
+                  selectedIndex: Math.min(
+                    activeOverlay.selectedIndex,
+                    Math.max(filteredProviderOptions.length - 1, 0),
+                  ),
+                }
+              : activeOverlay
+          }
+          width={Math.max(24, process.stdout.columns - 8)}
+        />
       ) : null}
     </ShellFrame>
   );
@@ -808,8 +1041,35 @@ export function openHomeShell(state: HomeShellState): Promise<ShellAction> {
   return openShell({ Component: HomeShell, props: { state } });
 }
 
-export function openPlaybackShell(state: PlaybackShellState): Promise<ShellAction> {
-  return openShell({ Component: PlaybackShell, props: { state } });
+export function openPlaybackShell({
+  state,
+  providerOptions,
+  loadHistoryPanel,
+  loadDiagnosticsPanel,
+  loadHelpPanel,
+  loadAboutPanel,
+  onChangeProvider,
+}: {
+  state: PlaybackShellState;
+  providerOptions?: readonly ShellPickerOption<string>[];
+  loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadAboutPanel?: () => Promise<readonly ShellPanelLine[]>;
+  onChangeProvider?: (providerId: string) => Promise<void>;
+}): Promise<ShellAction> {
+  return openShell({
+    Component: PlaybackShell,
+    props: {
+      state,
+      providerOptions,
+      loadHistoryPanel,
+      loadDiagnosticsPanel,
+      loadHelpPanel,
+      loadAboutPanel,
+      onChangeProvider,
+    },
+  });
 }
 
 export function openLoadingShell({
@@ -1091,6 +1351,122 @@ function ListShell<T>({
   );
 }
 
+type BrowseOverlay =
+  | {
+      type: "help" | "about" | "diagnostics" | "history";
+      title: string;
+      subtitle: string;
+      lines: readonly ShellPanelLine[];
+      loading?: boolean;
+      scrollIndex?: number;
+    }
+  | {
+      type: "provider";
+      title: string;
+      subtitle: string;
+      options: readonly ShellPickerOption<string>[];
+      filterQuery: string;
+      selectedIndex: number;
+      busy?: boolean;
+    };
+
+function resolvePanelTone(tone: ShellPanelLine["tone"]): string {
+  switch (tone) {
+    case "success":
+      return palette.green;
+    case "warning":
+      return palette.amber;
+    case "error":
+      return palette.red;
+    case "neutral":
+    default:
+      return palette.muted;
+  }
+}
+
+function OverlayPanel({ overlay, width }: { overlay: BrowseOverlay; width: number }) {
+  const contentWidth = Math.max(24, width - 4);
+  const maxLines = overlay.type === "provider" ? 8 : 10;
+
+  return (
+    <Box
+      marginTop={1}
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={overlay.type === "provider" ? palette.amber : palette.cyan}
+      paddingX={1}
+    >
+      <Text color={overlay.type === "provider" ? palette.amber : palette.cyan}>
+        {overlay.title}
+      </Text>
+      <Text color={palette.gray}>{overlay.subtitle}</Text>
+      {overlay.type === "provider" ? (
+        <>
+          <Box marginTop={1}>
+            <Text color={palette.gray}>
+              {overlay.filterQuery.length > 0
+                ? `Filter: ${overlay.filterQuery}`
+                : "Type to narrow providers"}
+            </Text>
+          </Box>
+          <Box marginTop={1} flexDirection="column">
+            {overlay.options.slice(0, maxLines).map((option, index) => {
+              const selected = index === overlay.selectedIndex;
+              const row = truncateLine(
+                `${option.label}${option.detail ? `  ${option.detail}` : ""}`,
+                contentWidth,
+              );
+              return (
+                <Text
+                  key={`${option.value}-${index}`}
+                  backgroundColor={selected ? palette.cyan : undefined}
+                  color={selected ? "black" : "white"}
+                  bold={selected}
+                  dimColor={!selected}
+                >
+                  <Text color={selected ? "black" : palette.gray}>{selected ? "❯ " : "  "}</Text>
+                  {row}
+                </Text>
+              );
+            })}
+          </Box>
+          <Box marginTop={1}>
+            <Text color={overlay.busy ? palette.amber : palette.gray}>
+              {overlay.busy
+                ? "Updating provider…"
+                : "Type to filter, ↑↓ to choose, Enter to switch, Esc to close"}
+            </Text>
+          </Box>
+        </>
+      ) : overlay.loading ? (
+        <Box marginTop={1}>
+          <Text color={palette.amber}>Loading panel…</Text>
+        </Box>
+      ) : (
+        <Box marginTop={1} flexDirection="column">
+          {overlay.lines
+            .slice(overlay.scrollIndex ?? 0, (overlay.scrollIndex ?? 0) + maxLines)
+            .map((line, index) => (
+              <Box key={`${line.label}-${index}`} flexDirection="column" marginBottom={1}>
+                <Text color={resolvePanelTone(line.tone)}>
+                  {truncateLine(line.label, contentWidth)}
+                </Text>
+                {line.detail
+                  ? wrapText(line.detail, contentWidth, 2).map((detailLine, detailIndex) => (
+                      <Text key={`${line.label}-${detailIndex}`} color={palette.gray}>
+                        {detailLine}
+                      </Text>
+                    ))
+                  : null}
+              </Box>
+            ))}
+          <Text color={palette.gray}>Esc closes this panel</Text>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 function BrowseShell<T>({
   mode,
   provider,
@@ -1100,6 +1476,12 @@ function BrowseShell<T>({
   initialSelectedIndex,
   placeholder,
   commands,
+  providerOptions,
+  loadHistoryPanel,
+  loadDiagnosticsPanel,
+  loadHelpPanel,
+  loadAboutPanel,
+  onChangeProvider,
   onSearch,
   onResolve,
   onSubmit,
@@ -1113,6 +1495,12 @@ function BrowseShell<T>({
   initialSelectedIndex?: number;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
+  providerOptions?: readonly ShellPickerOption<string>[];
+  loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadAboutPanel?: () => Promise<readonly ShellPanelLine[]>;
+  onChangeProvider?: (providerId: string) => Promise<void>;
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
   onResolve: (action: ShellAction) => void;
   onSubmit: (value: T) => void;
@@ -1125,6 +1513,8 @@ function BrowseShell<T>({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
+  const [activeProvider, setActiveProvider] = useState(provider);
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const [selectedDetail, setSelectedDetail] = useState(
@@ -1144,14 +1534,14 @@ function BrowseShell<T>({
   const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
   const requestIdRef = useRef(0);
 
-  const clearResults = () => {
+  const clearResults = (nextProvider = activeProvider) => {
     setOptions([]);
     setSelectedIndex(0);
     setSearchState("idle");
     setLastSearchedQuery("");
     setErrorMessage(null);
     setEmptyMessage("Type a title and press Enter to search.");
-    setResultSubtitle(`Provider ${provider}  ·  Enter searches  ·  / commands`);
+    setResultSubtitle(`Provider ${nextProvider}  ·  Enter searches  ·  / commands`);
     setSelectedDetail("Type a title and press Enter to search.");
   };
 
@@ -1213,6 +1603,116 @@ function BrowseShell<T>({
     }
   };
 
+  const closeOverlay = () => {
+    setActiveOverlay(null);
+  };
+
+  const openInfoOverlay = async ({
+    type,
+    title,
+    subtitle,
+    loader,
+  }: {
+    type: "help" | "about" | "diagnostics" | "history";
+    title: string;
+    subtitle: string;
+    loader?: () => Promise<readonly ShellPanelLine[]>;
+  }) => {
+    setCommandMode(false);
+    setActiveOverlay({
+      type,
+      title,
+      subtitle,
+      lines: [],
+      loading: true,
+      scrollIndex: 0,
+    });
+
+    try {
+      const lines = loader ? await loader() : [];
+      setActiveOverlay({
+        type,
+        title,
+        subtitle,
+        lines,
+        loading: false,
+        scrollIndex: 0,
+      });
+    } catch (error) {
+      setActiveOverlay({
+        type,
+        title,
+        subtitle,
+        lines: [
+          {
+            label: "Unable to load this panel",
+            detail: String(error),
+            tone: "error",
+          },
+        ],
+        loading: false,
+        scrollIndex: 0,
+      });
+    }
+  };
+
+  const openProviderOverlay = () => {
+    setCommandMode(false);
+    setActiveOverlay({
+      type: "provider",
+      title: "Provider",
+      subtitle: `Current provider ${activeProvider}`,
+      options: providerOptions ?? [],
+      filterQuery: "",
+      selectedIndex: 0,
+      busy: false,
+    });
+  };
+
+  const handleLocalAction = (action: ShellAction): boolean => {
+    if (action === "provider" && providerOptions && onChangeProvider) {
+      openProviderOverlay();
+      return true;
+    }
+    if (action === "history" && loadHistoryPanel) {
+      void openInfoOverlay({
+        type: "history",
+        title: "History",
+        subtitle: "Recent playback positions without leaving browse",
+        loader: loadHistoryPanel,
+      });
+      return true;
+    }
+    if (action === "diagnostics" && loadDiagnosticsPanel) {
+      void openInfoOverlay({
+        type: "diagnostics",
+        title: "Diagnostics",
+        subtitle: "Current runtime snapshot and recent events",
+        loader: loadDiagnosticsPanel,
+      });
+      return true;
+    }
+    if (action === "help" && loadHelpPanel) {
+      void openInfoOverlay({
+        type: "help",
+        title: "Help",
+        subtitle: "Commands, editing, filtering, and shell behavior",
+        loader: loadHelpPanel,
+      });
+      return true;
+    }
+    if (action === "about" && loadAboutPanel) {
+      void openInfoOverlay({
+        type: "about",
+        title: "About",
+        subtitle: "KitsuneSnipe beta",
+        loader: loadAboutPanel,
+      });
+      return true;
+    }
+    return false;
+  };
+
   useEffect(() => {
     const option = options[selectedIndex];
     if (!option) {
@@ -1243,6 +1743,14 @@ function BrowseShell<T>({
   const windowStart = getWindowStart(selectedIndex, options.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, options.length);
   const visibleOptions = options.slice(windowStart, windowEnd);
+  const filteredProviderOptions =
+    activeOverlay?.type === "provider"
+      ? activeOverlay.options.filter((option) => {
+          const filter = activeOverlay.filterQuery.trim().toLowerCase();
+          if (filter.length === 0) return true;
+          return `${option.label} ${option.detail ?? ""}`.toLowerCase().includes(filter);
+        })
+      : [];
   const previewMeta = selectedOption?.previewMeta ?? [];
   const previewBodyLines = wrapText(
     selectedOption?.previewBody ?? "Type a title and press Enter to search.",
@@ -1254,6 +1762,89 @@ function BrowseShell<T>({
     if (input === "\x03") {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(0);
+    }
+
+    if (activeOverlay) {
+      if (key.escape) {
+        closeOverlay();
+        return;
+      }
+
+      if (activeOverlay.type === "provider") {
+        if (key.ctrl && input.toLowerCase() === "w") {
+          setActiveOverlay({
+            ...activeOverlay,
+            filterQuery: deleteLastWord(activeOverlay.filterQuery),
+            selectedIndex: 0,
+          });
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setActiveOverlay({
+            ...activeOverlay,
+            filterQuery: activeOverlay.filterQuery.slice(0, -1),
+            selectedIndex: 0,
+          });
+          return;
+        }
+        if (key.upArrow && filteredProviderOptions.length > 0) {
+          setActiveOverlay({
+            ...activeOverlay,
+            selectedIndex:
+              (activeOverlay.selectedIndex - 1 + filteredProviderOptions.length) %
+              filteredProviderOptions.length,
+          });
+          return;
+        }
+        if (key.downArrow && filteredProviderOptions.length > 0) {
+          setActiveOverlay({
+            ...activeOverlay,
+            selectedIndex: (activeOverlay.selectedIndex + 1) % filteredProviderOptions.length,
+          });
+          return;
+        }
+        if (key.return) {
+          const target = filteredProviderOptions[activeOverlay.selectedIndex];
+          if (!target || !onChangeProvider) return;
+
+          setActiveOverlay({ ...activeOverlay, busy: true });
+          void onChangeProvider(target.value)
+            .then(() => {
+              setActiveProvider(target.value);
+              setActiveOverlay(null);
+              clearResults(target.value);
+            })
+            .catch((error) => {
+              setActiveOverlay({
+                ...activeOverlay,
+                busy: false,
+                subtitle: `Failed to switch provider: ${String(error)}`,
+              });
+            });
+          return;
+        }
+        if (input && !key.ctrl && !key.meta) {
+          setActiveOverlay({
+            ...activeOverlay,
+            filterQuery: `${activeOverlay.filterQuery}${input}`,
+            selectedIndex: 0,
+          });
+        }
+        return;
+      }
+
+      if (
+        (key.upArrow || key.downArrow) &&
+        !activeOverlay.loading &&
+        activeOverlay.lines.length > 0
+      ) {
+        const maxScroll = Math.max(0, activeOverlay.lines.length - 1);
+        const nextScroll = key.upArrow
+          ? Math.max(0, (activeOverlay.scrollIndex ?? 0) - 1)
+          : Math.min(maxScroll, (activeOverlay.scrollIndex ?? 0) + 1);
+        setActiveOverlay({ ...activeOverlay, scrollIndex: nextScroll });
+      }
+      return;
     }
 
     if (commandMode) {
@@ -1268,7 +1859,10 @@ function BrowseShell<T>({
       if (key.return) {
         const resolved = getHighlightedCommand(commandInput, commands, highlightedCommandIndex);
         if (resolved?.enabled) {
-          onResolve(toShellAction(resolved.id));
+          const action = toShellAction(resolved.id);
+          if (!handleLocalAction(action)) {
+            onResolve(action);
+          }
         }
         return;
       }
@@ -1304,7 +1898,7 @@ function BrowseShell<T>({
       return;
     }
 
-    if (input === "/" && query.length === 0) {
+    if (input === "/") {
       setCommandMode(true);
       setCommandInput("");
       setHighlightedCommandIndex(0);
@@ -1373,12 +1967,13 @@ function BrowseShell<T>({
         </Box>
         <Text color={palette.muted}>{resultSubtitle}</Text>
         <Box marginTop={1}>
-          <Badge label={`provider ${provider}`} tone="info" />
+          <Badge label={`provider ${activeProvider}`} tone="info" />
           <Badge label={mode === "anime" ? "anime mode" : "series mode"} />
-          <Badge
-            label={mode === "anime" ? "search anime by title" : "search movies and shows by title"}
-          />
+          <Badge label={mode === "anime" ? "search anime by title" : "search by title"} />
           {detailsOpen ? <Badge label="details open" tone="success" /> : null}
+          {activeOverlay ? (
+            <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
+          ) : null}
         </Box>
 
         <Box marginTop={1}>
@@ -1403,7 +1998,23 @@ function BrowseShell<T>({
           </Box>
         ) : null}
 
-        {options.length > 0 ? (
+        {activeOverlay ? (
+          <OverlayPanel
+            overlay={
+              activeOverlay.type === "provider"
+                ? {
+                    ...activeOverlay,
+                    options: filteredProviderOptions,
+                    selectedIndex: Math.min(
+                      activeOverlay.selectedIndex,
+                      Math.max(filteredProviderOptions.length - 1, 0),
+                    ),
+                  }
+                : activeOverlay
+            }
+            width={innerWidth}
+          />
+        ) : options.length > 0 ? (
           <Box flexDirection="column" marginTop={1}>
             {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
             {visibleOptions.map((option, index) => {
@@ -1500,6 +2111,9 @@ function BrowseShell<T>({
             label: getCommandLabel(commands, "toggle-mode", "switch mode"),
             action: "toggle-mode",
           },
+          footerActionFromCommand(commands, "provider", { key: "o", label: "provider" }),
+          footerActionFromCommand(commands, "history", { key: "h", label: "history" }),
+          footerActionFromCommand(commands, "diagnostics", { key: "d", label: "diagnostics" }),
           { key: "/", label: "commands when empty", action: "search" },
           { key: "esc", label: "clear/back", action: "quit" },
         ]}
@@ -1517,6 +2131,12 @@ export function openBrowseShell<T>({
   initialSelectedIndex,
   placeholder,
   commands,
+  providerOptions,
+  loadHistoryPanel,
+  loadDiagnosticsPanel,
+  loadHelpPanel,
+  loadAboutPanel,
+  onChangeProvider,
   onSearch,
 }: {
   mode: "series" | "anime";
@@ -1527,6 +2147,12 @@ export function openBrowseShell<T>({
   initialSelectedIndex?: number;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
+  providerOptions?: readonly ShellPickerOption<string>[];
+  loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
+  loadAboutPanel?: () => Promise<readonly ShellPanelLine[]>;
+  onChangeProvider?: (providerId: string) => Promise<void>;
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
 }): Promise<BrowseShellResult<T>> {
   const session = mountShell<BrowseShellResult<T>>({
@@ -1540,6 +2166,12 @@ export function openBrowseShell<T>({
         initialSelectedIndex={initialSelectedIndex}
         placeholder={placeholder}
         commands={commands}
+        providerOptions={providerOptions}
+        loadHistoryPanel={loadHistoryPanel}
+        loadDiagnosticsPanel={loadDiagnosticsPanel}
+        loadHelpPanel={loadHelpPanel}
+        loadAboutPanel={loadAboutPanel}
+        onChangeProvider={onChangeProvider}
         onSearch={onSearch}
         onResolve={(action) => finish({ type: "action", action })}
         onSubmit={(value) => finish({ type: "selected", value })}

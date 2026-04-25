@@ -9,6 +9,13 @@ import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import type { TitleInfo } from "@/domain/types";
 import { toBrowseResultOption } from "@/app/browse-option-mappers";
 import { searchTitles } from "@/app/search-routing";
+import {
+  buildAboutPanelLines,
+  buildDiagnosticsPanelLines,
+  buildHelpPanelLines,
+  buildHistoryPanelLines,
+  buildProviderPickerOptions,
+} from "@/app-shell/panel-data";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { handleShellAction } from "@/app-shell/workflows";
@@ -26,7 +33,15 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
     context: PhaseContext,
   ): Promise<PhaseResult<TitleInfo>> {
     const { container } = context;
-    const { searchRegistry, stateManager, logger, diagnosticsStore } = container;
+    const {
+      searchRegistry,
+      stateManager,
+      logger,
+      diagnosticsStore,
+      providerRegistry,
+      historyStore,
+      config,
+    } = container;
 
     try {
       const preserveExistingSearch =
@@ -84,6 +99,37 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         const outcome = await openBrowseShell({
           mode: currentState.mode,
           provider: currentState.provider,
+          providerOptions: buildProviderPickerOptions({
+            providers: providerRegistry
+              .getAll()
+              .map((provider) => provider.metadata)
+              .filter((metadata) => metadata.isAnimeProvider === (currentState.mode === "anime")),
+            currentProvider: currentState.provider,
+          }),
+          onChangeProvider: async (providerId) => {
+            stateManager.dispatch({ type: "SET_PROVIDER", provider: providerId });
+            diagnosticsStore.record({
+              category: "ui",
+              message: "Browse provider switched in-shell",
+              context: {
+                mode: stateManager.getState().mode,
+                provider: providerId,
+              },
+            });
+          },
+          loadHelpPanel: async () => buildHelpPanelLines(),
+          loadAboutPanel: async () =>
+            buildAboutPanelLines({
+              config: config.getRaw(),
+              state: stateManager.getState(),
+            }),
+          loadDiagnosticsPanel: async () =>
+            buildDiagnosticsPanelLines({
+              state: stateManager.getState(),
+              recentEvents: diagnosticsStore.getRecent(10),
+            }),
+          loadHistoryPanel: async () =>
+            buildHistoryPanelLines(Object.entries(await historyStore.getAll())),
           initialQuery: currentState.searchQuery,
           initialResults: currentState.searchResults.map(toBrowseResultOption),
           initialResultSubtitle:
@@ -95,6 +141,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           commands: resolveCommands(currentState, [
             "settings",
             "toggle-mode",
+            "provider",
             "history",
             "diagnostics",
             "help",

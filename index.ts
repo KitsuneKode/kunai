@@ -677,17 +677,19 @@ async function loadAnimeEpisodeOptions(
 
       // ── Post-playback menu ─────────────────────────────────────────────────────
       const postAction = await openPlaybackShell({
-        type: currentType,
-        title: currentTitle,
-        season: currentSeason,
-        episode: currentEpisode,
-        provider: currentProvider,
-        showMemory: config.showMemory,
-        memoryUsage: config.showMemory ? formatMemoryUsage() : undefined,
-        mode: isAnime ? "anime" : "series",
-        status: {
-          label: streamInfo ? "Ready for next action" : "Resolve failed",
-          tone: streamInfo ? "success" : "warning",
+        state: {
+          type: currentType,
+          title: currentTitle,
+          season: currentSeason,
+          episode: currentEpisode,
+          provider: currentProvider,
+          showMemory: config.showMemory,
+          memoryUsage: config.showMemory ? formatMemoryUsage() : undefined,
+          mode: isAnime ? "anime" : "series",
+          status: {
+            label: streamInfo ? "Ready for next action" : "Resolve failed",
+            tone: streamInfo ? "success" : "warning",
+          },
         },
       });
 

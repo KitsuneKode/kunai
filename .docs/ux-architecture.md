@@ -70,6 +70,18 @@ Preferred overlay or panel flows:
 
 These should feel like parts of the same application, not separate tools launched from the side.
 
+Browse should prefer shell-hosted panels for lightweight secondary flows such as:
+
+- provider switch
+- help
+- about
+- history snapshot
+- diagnostics snapshot
+
+This keeps the user anchored in the current query and result list while they inspect or adjust nearby state.
+
+Post-playback should use the same rule for lightweight panels so provider changes, history, diagnostics, help, and about do not break the user out of the current title context.
+
 Overlay behavior should stay disciplined:
 
 - one primary overlay at a time

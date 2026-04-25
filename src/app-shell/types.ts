@@ -82,6 +82,18 @@ export type BrowseShellSearchResponse<T> = {
   emptyMessage?: string;
 };
 
+export type ShellPanelLine = {
+  label: string;
+  detail?: string;
+  tone?: ShellStatusTone;
+};
+
+export type ShellPickerOption<T> = {
+  value: T;
+  label: string;
+  detail?: string;
+};
+
 export type BrowseShellResult<T> =
   | { type: "selected"; value: T }
   | { type: "action"; action: ShellAction }

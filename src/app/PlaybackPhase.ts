@@ -14,6 +14,13 @@ import type {
   PlaybackResult,
 } from "@/domain/types";
 import { handleShellAction, openSubtitlePicker } from "@/app-shell/workflows";
+import {
+  buildAboutPanelLines,
+  buildDiagnosticsPanelLines,
+  buildHelpPanelLines,
+  buildHistoryPanelLines,
+  buildProviderPickerOptions,
+} from "@/app-shell/panel-data";
 import { getAutoAdvanceEpisode } from "@/app/playback-policy";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 
@@ -281,30 +288,66 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const { resolveCommands } = await import("../app-shell/commands");
 
         const postAction = await openPlaybackShell({
-          type: title.type,
-          title: title.name,
-          season: currentEpisode.season,
-          episode: currentEpisode.episode,
-          provider: stateManager.getState().provider,
-          subtitleStatus: describeSubtitleStatus(preparedStream, stateManager.getState().subLang),
-          showMemory: false,
-          mode: stateManager.getState().mode,
-          status: { label: "Ready for next action", tone: "success" },
-          commands: resolveCommands(stateManager.getState(), [
-            "settings",
-            "toggle-mode",
-            "provider",
-            "history",
-            "replay",
-            "pick-episode",
-            "next",
-            "previous",
-            "next-season",
-            "diagnostics",
-            "help",
-            "about",
-            "quit",
-          ]),
+          state: {
+            type: title.type,
+            title: title.name,
+            season: currentEpisode.season,
+            episode: currentEpisode.episode,
+            provider: stateManager.getState().provider,
+            subtitleStatus: describeSubtitleStatus(preparedStream, stateManager.getState().subLang),
+            showMemory: false,
+            mode: stateManager.getState().mode,
+            status: { label: "Ready for next action", tone: "success" },
+            commands: resolveCommands(stateManager.getState(), [
+              "settings",
+              "toggle-mode",
+              "provider",
+              "history",
+              "replay",
+              "pick-episode",
+              "next",
+              "previous",
+              "next-season",
+              "diagnostics",
+              "help",
+              "about",
+              "quit",
+            ]),
+          },
+          providerOptions: buildProviderPickerOptions({
+            providers: providerRegistry
+              .getAll()
+              .map((candidate) => candidate.metadata)
+              .filter(
+                (metadata) =>
+                  metadata.isAnimeProvider === (stateManager.getState().mode === "anime"),
+              ),
+            currentProvider: stateManager.getState().provider,
+          }),
+          onChangeProvider: async (providerId) => {
+            stateManager.dispatch({ type: "SET_PROVIDER", provider: providerId });
+            diagnosticsStore.record({
+              category: "ui",
+              message: "Playback provider switched in-shell",
+              context: {
+                mode: stateManager.getState().mode,
+                provider: providerId,
+              },
+            });
+          },
+          loadHelpPanel: async () => buildHelpPanelLines(),
+          loadAboutPanel: async () =>
+            buildAboutPanelLines({
+              config: config.getRaw(),
+              state: stateManager.getState(),
+            }),
+          loadDiagnosticsPanel: async () =>
+            buildDiagnosticsPanelLines({
+              state: stateManager.getState(),
+              recentEvents: diagnosticsStore.getRecent(10),
+            }),
+          loadHistoryPanel: async () =>
+            buildHistoryPanelLines(Object.entries(await historyStore.getAll())),
         });
 
         if (postAction === "quit") {

@@ -21,11 +21,13 @@ Use this file as the planning index. It should stay short. Put implementation de
 - AllAnime family parity code is explicitly named `allanime-family.ts`
 - `src/main.ts` is now the default runnable and build entrypoint
 - Shell-local debug POST instrumentation has been removed from the Ink UI path
+- Browse and post-playback now keep provider, help, about, history, and diagnostics inside the mounted shell instead of bouncing into separate helper screens
 
 ### Active Follow-Ups
 
 - Mounted root `AppShell` migration so home, browse, and playback stop remounting as separate shells
 - Overlay-driven settings, provider, history, diagnostics, season, episode, and subtitle workflows
+- Settings, season, episode, and subtitle overlay migration so those flows stop falling back to helper shells
 - `Esc` and back-stack correctness for the remaining shell helpers
 - `mpv` reopen reliability bug investigation
 - `cineby-anime` click handling parity

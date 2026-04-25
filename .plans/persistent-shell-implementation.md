@@ -147,6 +147,7 @@ Current checkpoint:
 - integration tests, live smoke scripts, and VHS UI tapes now have a dedicated `test/` tree instead of drifting through `src/`
 - browse results now open an in-shell details state before committing playback, which gives `Esc` a clearer parent context while the mounted root shell work continues
 - browser/embed scraping now reuses the shared runtime cache instead of bypassing the new persistence layer
+- browse and post-playback now host provider, help, about, history, and diagnostics panels inside the mounted shell instead of ejecting to separate helper shells
 
 ## Next Passes
 
@@ -185,6 +186,8 @@ Status:
 
 - not done yet
 - current code still launches separate shell sessions for browse and playback, even though they now share more state and action plumbing
+- browse-side and post-playback secondary panels are now mounted in-shell
+- playback still remains a separate shell session from browse, so the true root `AppShell` milestone is still open
 
 ### Pass C: Overlay Migration
 
@@ -205,7 +208,8 @@ Tasks:
 Status:
 
 - partially done
-- settings, provider, history, diagnostics, and subtitle picking are available through shared workflows, but they are still blocking shell helpers rather than true mounted overlays
+- browse and post-playback now host provider, history, diagnostics, help, and about panels in the mounted shell
+- settings, season, episode, and subtitle flows still rely on blocking shell helpers rather than true mounted overlays
 - diagnostics now show recent runtime events from the new in-memory diagnostics store, which improves developer-mode inspection before the mounted overlay host lands
 
 ### Pass D: Naming And Provider Boundary Cleanup
