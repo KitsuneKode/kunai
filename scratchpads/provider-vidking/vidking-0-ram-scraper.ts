@@ -99,7 +99,7 @@ async function main() {
 
     // 4. DECRYPT USING PATCHED WASM
     console.log(`[*] Loading patched WASM decryptor...`);
-    const wasmBuffer = await readFile("scratchpads/module1_patched.wasm");
+    const wasmBuffer = await readFile(new URL("module1_patched.wasm", import.meta.url));
     const wasmModule = await loader.instantiate(wasmBuffer, { 
         env: { 
             seed: () => Date.now(), 
@@ -133,14 +133,15 @@ async function main() {
     // 6. EXTRACT QUALITIES
     console.log(`\n[+] Available Qualities:`);
     streamData.sources.forEach((s: any, i: number) => {
-        console.log(`  - ${s.quality}`);
+        console.log(`  [${i + 1}] ${s.quality}`);
     });
     
-    // Sort so highest quality is at the end, or we can just pick the last one natively.
-    // Usually they are returned as 360p, 720p, 1080p.
-    const bestSource = streamData.sources[streamData.sources.length - 1];
+    const qualityPickStr = await ask(`\nPick quality [${streamData.sources.length}]: `);
+    const qualityPick = parseInt(qualityPickStr || String(streamData.sources.length)) - 1;
+    const bestSource = streamData.sources[qualityPick] || streamData.sources[streamData.sources.length - 1];
+    
     const m3u8Url = bestSource.url;
-    console.log(`\n[+] Auto-selected Highest Quality: ${bestSource.quality}`);
+    console.log(`\n[+] Selected Quality: ${bestSource.quality}`);
     console.log(`    -> ${m3u8Url}`);
 
     // 7. EXTRACT SUBTITLES (From the JSON directly, no extra API call needed!)
