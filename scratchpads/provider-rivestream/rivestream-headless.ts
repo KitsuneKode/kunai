@@ -1,6 +1,15 @@
 import * as readline from 'readline';
+import { spawn } from 'child_process';
 
-const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://www.rivestream.app",
+    "Referer": "https://www.rivestream.app/"
+};
+
+const fetchOptions = { headers, signal: AbortSignal.timeout(15000) };
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -74,73 +83,183 @@ function generateSecretKey(e: string | number) {
 async function main() {
     console.log("=========================================");
     console.log(" RIVESTREAM HEADLESS SCRAPER");
-    console.log(" (0 RAM, Full Deobfuscation, Multi-Mode)");
+    console.log(" (0 RAM, Full Flow w/ Search & Qualities)");
     console.log("=========================================\n");
 
-    const typeStr = await ask("Enter type (1 for movie, 2 for tv) [1]: ");
-    const isTv = typeStr.trim() === "2";
-    const type = isTv ? "tv" : "movie";
+    const query = process.argv[2] || await ask("Enter movie/show to search (e.g. bloodhounds): ");
 
-    const tmdbId = await ask("Enter TMDB ID (e.g. 533535 or 1396): ");
+    console.log(`\n[*] Searching Rivestream for "${query}"...`);
+    // Ensure we hash the RAW query, not the URL-encoded one
+    const searchKey = generateSecretKey(query);
+    const searchUrl = `https://www.rivestream.app/api/backendfetch?requestID=searchMulti&query=${encodeURIComponent(query)}&secretKey=${searchKey}&proxyMode=undefined`;
     
-    let season = "", episode = "";
-    if (isTv) {
-        season = await ask("Season [1]: ") || "1";
-        episode = await ask("Episode [1]: ") || "1";
-    }
+    try {
+        const searchRes = await fetch(searchUrl, fetchOptions);
+        if (!searchRes.ok) {
+            console.error(`\n[!] Search API failed with status: ${searchRes.status} ${searchRes.statusText}`);
+            if (searchRes.status === 521) {
+                console.error("    -> A 521 Error means the Rivestream API origin server is temporarily down or blocking requests via Cloudflare. Please try again in a few moments.");
+            } else if (searchRes.status === 403) {
+                console.error("    -> A 403 Error means our generated SecretKey was rejected by the server.");
+            }
+            process.exit(1);
+        }
 
-    const modeStr = await ask("\nEnter mode (1 for Embed/Agg, 2 for Torrent) [1]: ");
-    const mode = modeStr.trim() === "2" ? "Torrent" : "Embed";
-
-    console.log(`\n[*] Fetching available providers for ${type} in ${mode} mode...`);
-    const provRes = await fetch("https://www.rivestream.app/api/backendfetch?requestID=EmbedProviderServices&secretKey=rive&proxyMode=undefined", {
-        headers: { "User-Agent": userAgent }
-    });
-
-    if (!provRes.ok) {
-        console.error(`[!] Failed to fetch providers. Status: ${provRes.status}`);
-        process.exit(1);
-    }
-
-    const provData = await provRes.json();
-    const providers = provData.data || [];
-    console.log(`[+] Found providers: ${providers.join(", ")}`);
-
-    const secretKey = generateSecretKey(tmdbId);
-    console.log(`[+] Generated secret key for TMDB ${tmdbId}: ${secretKey}`);
-
-    let requestID = `${type}${mode}Provider`; // e.g. movieEmbedProvider, tvEmbedProvider, movieTorrentProvider, tvTorrentProvider
-
-    console.log("\n-----------------------------------------");
-    for (const provider of providers) {
-        console.log(`\n[*] Querying provider: ${provider}...`);
+        const searchData = await searchRes.json();
+        const results = searchData.results || [];
         
-        let url = `https://www.rivestream.app/api/backendfetch?requestID=${requestID}&id=${tmdbId}&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
+        if (results.length === 0) {
+            console.log("[-] No results found.");
+            process.exit(0);
+        }
+
+        console.log("\nSearch Results:");
+        results.slice(0, 10).forEach((r: any, i: number) => {
+            const title = r.name || r.title || r.original_title;
+            const year = r.release_date ? r.release_date.split('-')[0] : (r.first_air_date ? r.first_air_date.split('-')[0] : "Unknown");
+            console.log(`  [${i + 1}] ${title} (${year}) - [${r.media_type.toUpperCase()}]`);
+        });
+
+        const pickStr = await ask("\nPick item [1]: ");
+        const pick = parseInt(pickStr || "1") - 1;
+        const selected = results[pick];
+
+        const isTv = selected.media_type === "tv";
+        const type = isTv ? "tv" : "movie";
+        const tmdbId = selected.id;
+        
+        let season = "", episode = "";
+        if (isTv) {
+            season = await ask("Season [1]: ") || "1";
+            episode = await ask("Episode [1]: ") || "1";
+        }
+
+        const modeStr = await ask("\nEnter mode (1: Direct Video, 2: Embed/Iframes, 3: Torrent) [1]: ");
+        let modePrefix = "Video";
+        if (modeStr.trim() === "2") modePrefix = "Embed";
+        if (modeStr.trim() === "3") modePrefix = "Torrent";
+
+        const providerRequestID = `${modePrefix}ProviderServices`;
+        console.log(`\n[*] Fetching available providers for ${modePrefix}...`);
+        const provRes = await fetch(`https://www.rivestream.app/api/backendfetch?requestID=${providerRequestID}&secretKey=rive&proxyMode=undefined`, fetchOptions);
+
+        if (!provRes.ok) {
+            console.error(`[!] Failed to fetch providers. Status: ${provRes.status}`);
+            process.exit(1);
+        }
+
+        const provData = await provRes.json();
+        const providers = provData.data || [];
+        
+        if (providers.length === 0) {
+            console.error("[!] No providers found for this mode.");
+            process.exit(1);
+        }
+
+        console.log("\nAvailable Providers:");
+        providers.forEach((p: string, i: number) => console.log(`  [${i + 1}] ${p}`));
+        const provPickStr = await ask(`\nPick provider [1]: `);
+        const provPick = parseInt(provPickStr || "1") - 1;
+        const selectedProvider = providers[provPick] || providers[0];
+
+        const secretKey = generateSecretKey(tmdbId);
+
+        const sourceRequestID = `${type}${modePrefix}Provider`;
+        let url = `https://www.rivestream.app/api/backendfetch?requestID=${sourceRequestID}&id=${tmdbId}&service=${selectedProvider}&secretKey=${secretKey}&proxyMode=noProxy`;
         if (isTv) {
             url += `&season=${season}&episode=${episode}`;
         }
         
-        const sourceRes = await fetch(url, {
-            headers: { "User-Agent": userAgent }
+        console.log(`\n[*] Fetching sources from ${selectedProvider}...`);
+        const sourceRes = await fetch(url, fetchOptions);
+
+        if (!sourceRes.ok) {
+            console.error(`[!] Request failed: ${sourceRes.status}`);
+            process.exit(1);
+        }
+
+        const sourceData = await sourceRes.json();
+        const sources = sourceData?.data?.sources || sourceData?.data || [];
+        
+        if (sources.length === 0) {
+            console.log(`[-] No sources found for ${selectedProvider}.`);
+            process.exit(0);
+        }
+
+        if (modePrefix === "Embed") {
+            console.log("\n[+] Found Embed Links:");
+            sources.forEach((s: any, i: number) => console.log(`  ${i + 1}. [${s.host}] ${s.link}`));
+            console.log("\nTo play these, you would need to use an extractor for that specific host.");
+            process.exit(0);
+        }
+
+        // Direct Video Mode
+        console.log("\nAvailable Qualities:");
+        sources.forEach((s: any, i: number) => {
+            const qualityName = s.quality || s.format || "Unknown";
+            console.log(`  [${i + 1}] ${qualityName} (${s.source || 'default'})`);
         });
 
-        if (sourceRes.ok) {
-            const sourceData = await sourceRes.json();
-            if (sourceData.data && sourceData.data.sources) {
-                sourceData.data.sources.forEach((source: any) => {
-                    console.log(`    -> Host: ${source.host}`);
-                    console.log(`    -> Link: ${source.link}`);
-                });
-            } else {
-                console.log(`    -> No sources found in response.`);
+        const qualityPickStr2 = await ask(`\nPick quality [${sources.length}]: `);
+        const qualityPick = parseInt(qualityPickStr2 || String(sources.length)) - 1;
+        const selectedSource = sources[qualityPick] || sources[sources.length - 1];
+
+        console.log(`\n[+] Selected Stream URL:`);
+        console.log(`    -> ${selectedSource.url}`);
+
+        // Fetch Subtitles
+        console.log(`\n[*] Fetching Subtitles...`);
+        const subRequestID = `${type}OnlineSubtitles`;
+        let subUrl = `https://www.rivestream.app/api/backendfetch?requestID=${subRequestID}&id=${tmdbId}&secretKey=${secretKey}&proxyMode=undefined`;
+        if (isTv) {
+            subUrl += `&season=${season}&episode=${episode}`;
+        }
+
+        const subRes = await fetch(subUrl, fetchOptions);
+        let selectedSubUrl = null;
+
+        if (subRes.ok) {
+            try {
+                const subData = await subRes.json();
+                if (subData?.data && subData.data.length > 0) {
+                    const enSub = subData.data.find((s: any) => s.lang?.toLowerCase() === "en" || s.language?.toLowerCase() === "english");
+                    selectedSubUrl = enSub ? enSub.url : subData.data[0].url;
+                    console.log(`[+] Found Subtitle: ${selectedSubUrl}`);
+                } else {
+                    console.log(`[-] No subtitles found.`);
+                }
+            } catch (e) {
+                console.log(`[-] Could not parse subtitles (or API key required).`);
             }
         } else {
-            console.log(`    -> Request failed: ${sourceRes.status}`);
+            console.log(`[-] Subtitle request failed (${subRes.status}).`);
         }
+
+        console.log(`\n[*] Launching MPV Player...`);
+        const mpvArgs = [selectedSource.url, `--user-agent=${headers["User-Agent"]}`];
+        
+        if (selectedSource.url.includes("valhallastream")) {
+            mpvArgs.push(`--referrer=https://123chill.to/`);
+        } else {
+            mpvArgs.push(`--referrer=https://www.rivestream.app/`);
+        }
+
+        if (selectedSubUrl) {
+            mpvArgs.push(`--sub-file=${selectedSubUrl}`);
+        }
+
+        rl.close();
+        
+        const mpv = spawn("mpv", mpvArgs, { stdio: "inherit" });
+        mpv.on("close", () => {
+            console.log("\n[+] Playback finished.");
+            process.exit(0);
+        });
+
+    } catch (e) {
+        console.error("\n[!] Fatal Error during fetch:", e.message);
+        process.exit(1);
+    } finally {
+        rl.close();
     }
-    console.log("-----------------------------------------\n");
-
-    rl.close();
 }
-
-main();
