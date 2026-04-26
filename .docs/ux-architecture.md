@@ -81,6 +81,7 @@ These should feel like parts of the same application, not separate tools launche
 Browse should prefer shell-hosted panels for lightweight secondary flows such as:
 
 - provider switch
+- settings
 - help
 - about
 - history snapshot
@@ -89,6 +90,7 @@ Browse should prefer shell-hosted panels for lightweight secondary flows such as
 This keeps the user anchored in the current query and result list while they inspect or adjust nearby state.
 
 Post-playback should use the same rule for lightweight panels so provider changes, history, diagnostics, help, and about do not break the user out of the current title context.
+Settings should follow that same in-shell rule for browse and post-playback shells, even while deeper season, episode, and subtitle flows still finish their overlay migration.
 
 Overlay behavior should stay disciplined:
 

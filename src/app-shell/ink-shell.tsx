@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
+import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import {
   COMMANDS,
@@ -552,6 +553,10 @@ function HomeShell({
 function PlaybackShell({
   state,
   providerOptions,
+  settings,
+  settingsSeriesProviderOptions,
+  settingsAnimeProviderOptions,
+  onSaveSettings,
   loadHistoryPanel,
   loadDiagnosticsPanel,
   loadHelpPanel,
@@ -561,6 +566,10 @@ function PlaybackShell({
 }: {
   state: PlaybackShellState;
   providerOptions?: readonly ShellPickerOption<string>[];
+  settings?: KitsuneConfig;
+  settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
+  settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
+  onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
   loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
   loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
@@ -570,6 +579,8 @@ function PlaybackShell({
 }) {
   const [activeProvider, setActiveProvider] = useState(state.provider);
   const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
+  const [draftSettings, setDraftSettings] = useState<KitsuneConfig | null>(null);
+  const [appliedSettings, setAppliedSettings] = useState<KitsuneConfig | null>(settings ?? null);
   const commands =
     state.commands ??
     fallbackCommandState([
@@ -653,7 +664,98 @@ function PlaybackShell({
     }
   };
 
+  const openSettingsOverlay = (nextDraft: KitsuneConfig, selectedIndex = 0) => {
+    const dirty = !settingsEqual(nextDraft, appliedSettings);
+    setDraftSettings(nextDraft);
+    setActiveOverlay({
+      type: "settings",
+      title: "Settings",
+      subtitle: buildSettingsSummary(nextDraft),
+      options: buildSettingsOptions(nextDraft, dirty),
+      filterQuery: "",
+      selectedIndex,
+      dirty,
+      busy: false,
+    });
+  };
+
+  const openSettingsChoiceOverlay = (nextDraft: KitsuneConfig, setting: SettingsChoiceValue) => {
+    let title = "Choose setting";
+    let subtitle = "Select a value";
+    let options: readonly ShellPickerOption<string>[] = [];
+
+    if (setting === "defaultMode") {
+      title = "Default startup mode";
+      subtitle = `Current ${nextDraft.defaultMode}`;
+      options = [
+        { value: "series", label: "Series mode", detail: "Browse movies and TV on launch" },
+        { value: "anime", label: "Anime mode", detail: "Browse anime on launch" },
+      ].map((option) => ({
+        ...option,
+        label:
+          option.value === nextDraft.defaultMode ? `${option.label}  ·  current` : option.label,
+      }));
+    } else if (setting === "provider") {
+      title = "Default provider";
+      subtitle = `Current ${nextDraft.provider}`;
+      options = (settingsSeriesProviderOptions ?? []).map((option) => ({
+        ...option,
+        label:
+          option.value === nextDraft.provider
+            ? `${option.label.replace(/  ·  current$/, "")}  ·  current`
+            : option.label.replace(/  ·  current$/, ""),
+      }));
+    } else if (setting === "animeProvider") {
+      title = "Anime provider";
+      subtitle = `Current ${nextDraft.animeProvider}`;
+      options = (settingsAnimeProviderOptions ?? []).map((option) => ({
+        ...option,
+        label:
+          option.value === nextDraft.animeProvider
+            ? `${option.label.replace(/  ·  current$/, "")}  ·  current`
+            : option.label.replace(/  ·  current$/, ""),
+      }));
+    } else if (setting === "subLang") {
+      title = "Subtitle preference";
+      subtitle = `Current ${nextDraft.subLang}`;
+      options = SUBTITLE_SETTINGS_OPTIONS.map((option) => ({
+        ...option,
+        label: option.value === nextDraft.subLang ? `${option.label}  ·  current` : option.label,
+      }));
+    } else if (setting === "animeLang") {
+      title = "Anime audio";
+      subtitle = `Current ${nextDraft.animeLang}`;
+      options = ANIME_AUDIO_SETTINGS_OPTIONS.map((option) => ({
+        ...option,
+        label: option.value === nextDraft.animeLang ? `${option.label}  ·  current` : option.label,
+      })) as readonly ShellPickerOption<string>[];
+    } else if (setting === "footerHints") {
+      title = "Footer hint density";
+      subtitle = `Current ${nextDraft.footerHints}`;
+      options = FOOTER_HINT_OPTIONS.map((option) => ({
+        ...option,
+        label:
+          option.value === nextDraft.footerHints ? `${option.label}  ·  current` : option.label,
+      })) as readonly ShellPickerOption<string>[];
+    }
+
+    setActiveOverlay({
+      type: "settings-choice",
+      title,
+      subtitle,
+      setting,
+      options,
+      filterQuery: "",
+      selectedIndex: 0,
+      busy: false,
+    });
+  };
+
   const handleLocalAction = (action: ShellAction): boolean => {
+    if (action === "settings" && appliedSettings && onSaveSettings) {
+      openSettingsOverlay(appliedSettings);
+      return true;
+    }
     if (action === "provider" && providerOptions && onChangeProvider) {
       setActiveOverlay({
         type: "provider",
@@ -705,8 +807,11 @@ function PlaybackShell({
     return false;
   };
 
-  const filteredProviderOptions =
-    activeOverlay?.type === "provider"
+  const filteredOverlayOptions =
+    activeOverlay &&
+    (activeOverlay.type === "provider" ||
+      activeOverlay.type === "settings" ||
+      activeOverlay.type === "settings-choice")
       ? activeOverlay.options.filter((option) => {
           const filter = activeOverlay.filterQuery.trim().toLowerCase();
           if (filter.length === 0) return true;
@@ -727,11 +832,19 @@ function PlaybackShell({
       }
 
       if (key.escape) {
+        if (activeOverlay.type === "settings-choice" && draftSettings) {
+          openSettingsOverlay(draftSettings);
+          return;
+        }
         setActiveOverlay(null);
         return;
       }
 
-      if (activeOverlay.type === "provider") {
+      if (
+        activeOverlay.type === "provider" ||
+        activeOverlay.type === "settings" ||
+        activeOverlay.type === "settings-choice"
+      ) {
         if (key.ctrl && input.toLowerCase() === "w") {
           setActiveOverlay({
             ...activeOverlay,
@@ -748,39 +861,115 @@ function PlaybackShell({
           });
           return;
         }
-        if (key.upArrow && filteredProviderOptions.length > 0) {
+        if (key.upArrow && filteredOverlayOptions.length > 0) {
           setActiveOverlay({
             ...activeOverlay,
             selectedIndex:
-              (activeOverlay.selectedIndex - 1 + filteredProviderOptions.length) %
-              filteredProviderOptions.length,
+              (activeOverlay.selectedIndex - 1 + filteredOverlayOptions.length) %
+              filteredOverlayOptions.length,
           });
           return;
         }
-        if (key.downArrow && filteredProviderOptions.length > 0) {
+        if (key.downArrow && filteredOverlayOptions.length > 0) {
           setActiveOverlay({
             ...activeOverlay,
-            selectedIndex: (activeOverlay.selectedIndex + 1) % filteredProviderOptions.length,
+            selectedIndex: (activeOverlay.selectedIndex + 1) % filteredOverlayOptions.length,
           });
           return;
         }
         if (key.return) {
-          const target = filteredProviderOptions[activeOverlay.selectedIndex];
-          if (!target || !onChangeProvider) return;
+          const target = filteredOverlayOptions[activeOverlay.selectedIndex];
+          if (!target) return;
 
-          setActiveOverlay({ ...activeOverlay, busy: true });
-          void onChangeProvider(target.value)
-            .then(() => {
-              setActiveProvider(target.value);
-              setActiveOverlay(null);
-            })
-            .catch((error) => {
-              setActiveOverlay({
-                ...activeOverlay,
-                busy: false,
-                subtitle: `Failed to switch provider: ${String(error)}`,
+          if (activeOverlay.type === "provider") {
+            if (!onChangeProvider) return;
+            setActiveOverlay({ ...activeOverlay, busy: true });
+            void onChangeProvider(target.value)
+              .then(() => {
+                setActiveProvider(target.value);
+                setActiveOverlay(null);
+              })
+              .catch((error) => {
+                setActiveOverlay({
+                  ...activeOverlay,
+                  busy: false,
+                  subtitle: `Failed to switch provider: ${String(error)}`,
+                });
               });
-            });
+            return;
+          }
+
+          if (activeOverlay.type === "settings") {
+            if (!draftSettings) return;
+            const action = target.value;
+            if (action === "__discard") {
+              setDraftSettings(null);
+              setActiveOverlay(null);
+              return;
+            }
+            if (action === "__save") {
+              if (!onSaveSettings) {
+                setDraftSettings(null);
+                setActiveOverlay(null);
+                return;
+              }
+              setActiveOverlay({ ...activeOverlay, busy: true });
+              void onSaveSettings(draftSettings)
+                .then(() => {
+                  setAppliedSettings(draftSettings);
+                  setDraftSettings(null);
+                  setActiveOverlay(null);
+                })
+                .catch((error) => {
+                  setActiveOverlay({
+                    ...activeOverlay,
+                    busy: false,
+                    subtitle: `Failed to save settings: ${String(error)}`,
+                  });
+                });
+              return;
+            }
+            if (action === "headless") {
+              openSettingsOverlay(
+                { ...draftSettings, headless: !draftSettings.headless },
+                activeOverlay.selectedIndex,
+              );
+              return;
+            }
+            if (action === "showMemory") {
+              openSettingsOverlay(
+                { ...draftSettings, showMemory: !draftSettings.showMemory },
+                activeOverlay.selectedIndex,
+              );
+              return;
+            }
+            if (action === "autoNext") {
+              openSettingsOverlay(
+                { ...draftSettings, autoNext: !draftSettings.autoNext },
+                activeOverlay.selectedIndex,
+              );
+              return;
+            }
+            openSettingsChoiceOverlay(draftSettings, action as SettingsChoiceValue);
+            return;
+          }
+
+          if (!draftSettings) return;
+          const updatedDraft = { ...draftSettings };
+          if (activeOverlay.setting === "defaultMode") {
+            updatedDraft.defaultMode = target.value as "series" | "anime";
+          } else if (activeOverlay.setting === "provider") {
+            updatedDraft.provider = target.value;
+          } else if (activeOverlay.setting === "animeProvider") {
+            updatedDraft.animeProvider = target.value;
+          } else if (activeOverlay.setting === "subLang") {
+            updatedDraft.subLang = target.value;
+          } else if (activeOverlay.setting === "animeLang") {
+            updatedDraft.animeLang = target.value as "sub" | "dub";
+          } else if (activeOverlay.setting === "footerHints") {
+            updatedDraft.footerHints = target.value as "detailed" | "minimal";
+          }
+          openSettingsOverlay(updatedDraft);
           return;
         }
         if (input && !key.ctrl && !key.meta) {
@@ -863,13 +1052,15 @@ function PlaybackShell({
       {activeOverlay ? (
         <OverlayPanel
           overlay={
-            activeOverlay.type === "provider"
+            activeOverlay.type === "provider" ||
+            activeOverlay.type === "settings" ||
+            activeOverlay.type === "settings-choice"
               ? {
                   ...activeOverlay,
-                  options: filteredProviderOptions,
+                  options: filteredOverlayOptions,
                   selectedIndex: Math.min(
                     activeOverlay.selectedIndex,
-                    Math.max(filteredProviderOptions.length - 1, 0),
+                    Math.max(filteredOverlayOptions.length - 1, 0),
                   ),
                 }
               : activeOverlay
@@ -1103,6 +1294,10 @@ export function openHomeShell(state: HomeShellState): Promise<ShellAction> {
 export function openPlaybackShell({
   state,
   providerOptions,
+  settings,
+  settingsSeriesProviderOptions,
+  settingsAnimeProviderOptions,
+  onSaveSettings,
   loadHistoryPanel,
   loadDiagnosticsPanel,
   loadHelpPanel,
@@ -1111,6 +1306,10 @@ export function openPlaybackShell({
 }: {
   state: PlaybackShellState;
   providerOptions?: readonly ShellPickerOption<string>[];
+  settings?: KitsuneConfig;
+  settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
+  settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
+  onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
   loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
   loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
@@ -1122,6 +1321,10 @@ export function openPlaybackShell({
     props: {
       state,
       providerOptions,
+      settings,
+      settingsSeriesProviderOptions,
+      settingsAnimeProviderOptions,
+      onSaveSettings,
       loadHistoryPanel,
       loadDiagnosticsPanel,
       loadHelpPanel,
@@ -1565,7 +1768,147 @@ type BrowseOverlay =
       filterQuery: string;
       selectedIndex: number;
       busy?: boolean;
+    }
+  | {
+      type: "settings";
+      title: string;
+      subtitle: string;
+      options: readonly ShellPickerOption<string>[];
+      filterQuery: string;
+      selectedIndex: number;
+      dirty: boolean;
+      busy?: boolean;
+    }
+  | {
+      type: "settings-choice";
+      title: string;
+      subtitle: string;
+      setting: SettingsChoiceValue;
+      options: readonly ShellPickerOption<string>[];
+      filterQuery: string;
+      selectedIndex: number;
+      busy?: boolean;
     };
+
+type SettingsAction =
+  | "defaultMode"
+  | "provider"
+  | "animeProvider"
+  | "subLang"
+  | "animeLang"
+  | "headless"
+  | "showMemory"
+  | "autoNext"
+  | "footerHints"
+  | "__save"
+  | "__discard";
+
+type SettingsChoiceValue = Exclude<SettingsAction, "__save" | "__discard">;
+
+const SUBTITLE_SETTINGS_OPTIONS: readonly ShellPickerOption<string>[] = [
+  { value: "en", label: "English" },
+  { value: "fzf", label: "Pick interactively" },
+  { value: "none", label: "None" },
+  { value: "ar", label: "Arabic" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "es", label: "Spanish" },
+  { value: "ja", label: "Japanese" },
+];
+
+const ANIME_AUDIO_SETTINGS_OPTIONS: readonly ShellPickerOption<"sub" | "dub">[] = [
+  { value: "sub", label: "Sub", detail: "Original audio with subtitles" },
+  { value: "dub", label: "Dub", detail: "Dubbed audio when available" },
+];
+
+const FOOTER_HINT_OPTIONS: readonly ShellPickerOption<"detailed" | "minimal">[] = [
+  {
+    value: "detailed",
+    label: "Detailed",
+    detail: "Current task plus a second line of active shortcuts",
+  },
+  {
+    value: "minimal",
+    label: "Minimal",
+    detail: "Keep the task visible and trim the shortcut strip down",
+  },
+];
+
+function buildSettingsSummary(config: KitsuneConfig): string {
+  return `${config.defaultMode} default  ·  series ${config.provider}  ·  anime ${config.animeProvider}  ·  footer ${config.footerHints}`;
+}
+
+function buildSettingsOptions(
+  config: KitsuneConfig,
+  dirty: boolean,
+): readonly ShellPickerOption<SettingsAction>[] {
+  return [
+    {
+      value: "defaultMode",
+      label: `Default startup mode  ·  ${config.defaultMode}`,
+      detail: "Series or anime when the app launches",
+    },
+    {
+      value: "provider",
+      label: `Default provider  ·  ${config.provider}`,
+      detail: "Movies and series provider",
+    },
+    {
+      value: "animeProvider",
+      label: `Anime provider  ·  ${config.animeProvider}`,
+      detail: "Default anime source",
+    },
+    {
+      value: "subLang",
+      label: `Subtitles  ·  ${config.subLang}`,
+      detail: "Preferred subtitle behavior",
+    },
+    {
+      value: "animeLang",
+      label: `Anime audio  ·  ${config.animeLang}`,
+      detail: "Sub or dub preference",
+    },
+    {
+      value: "headless",
+      label: `Browser mode  ·  ${config.headless ? "headless" : "visible"}`,
+      detail: "Playwright browser visibility",
+    },
+    {
+      value: "showMemory",
+      label: `Memory line  ·  ${config.showMemory ? "shown" : "hidden"}`,
+      detail: "Show memory usage in playback shell",
+    },
+    {
+      value: "autoNext",
+      label: `Autoplay next  ·  ${config.autoNext ? "on" : "off"}`,
+      detail: "Close mpv on EOF and continue through the next available released episode",
+    },
+    {
+      value: "footerHints",
+      label: `Footer hints  ·  ${config.footerHints}`,
+      detail: "Detailed keeps two lines, minimal keeps only the task line",
+    },
+    {
+      value: "__save",
+      label: dirty ? "Save changes" : "Close settings",
+      detail: dirty
+        ? "Apply these settings to the runtime and future sessions"
+        : "Nothing changed yet",
+    },
+    {
+      value: "__discard",
+      label: dirty ? "Discard changes" : "Back",
+      detail: dirty ? "Close settings without saving this draft" : "Return to the previous screen",
+    },
+  ];
+}
+
+function settingsEqual(
+  left: KitsuneConfig | null | undefined,
+  right: KitsuneConfig | null | undefined,
+): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
 
 function resolvePanelTone(tone: ShellPanelLine["tone"]): string {
   switch (tone) {
@@ -1583,7 +1926,10 @@ function resolvePanelTone(tone: ShellPanelLine["tone"]): string {
 
 function OverlayPanel({ overlay, width }: { overlay: BrowseOverlay; width: number }) {
   const contentWidth = Math.max(24, width - 4);
-  const maxLines = overlay.type === "provider" ? 8 : 10;
+  const maxLines =
+    overlay.type === "provider" || overlay.type === "settings" || overlay.type === "settings-choice"
+      ? 8
+      : 10;
 
   return (
     <Box
@@ -1597,13 +1943,17 @@ function OverlayPanel({ overlay, width }: { overlay: BrowseOverlay; width: numbe
         {overlay.title}
       </Text>
       <Text color={palette.gray}>{overlay.subtitle}</Text>
-      {overlay.type === "provider" ? (
+      {overlay.type === "provider" ||
+      overlay.type === "settings" ||
+      overlay.type === "settings-choice" ? (
         <>
           <Box marginTop={1}>
             <Text color={palette.gray}>
               {overlay.filterQuery.length > 0
                 ? `Filter: ${overlay.filterQuery}`
-                : "Type to narrow providers"}
+                : overlay.type === "provider"
+                  ? "Type to narrow providers"
+                  : "Type to narrow this list"}
             </Text>
           </Box>
           <Box marginTop={1} flexDirection="column">
@@ -1630,8 +1980,14 @@ function OverlayPanel({ overlay, width }: { overlay: BrowseOverlay; width: numbe
           <Box marginTop={1}>
             <Text color={overlay.busy ? palette.amber : palette.gray}>
               {overlay.busy
-                ? "Updating provider…"
-                : "Type to filter, ↑↓ to choose, Enter to switch, Esc to close"}
+                ? overlay.type === "provider"
+                  ? "Updating provider…"
+                  : "Saving settings…"
+                : overlay.type === "provider"
+                  ? "Type to filter, ↑↓ to choose, Enter to switch, Esc to close"
+                  : overlay.type === "settings"
+                    ? "Type to filter, ↑↓ to choose, Enter to edit, Esc to discard or close"
+                    : "Type to filter, ↑↓ to choose, Enter to apply, Esc to go back"}
             </Text>
           </Box>
         </>
@@ -1681,6 +2037,10 @@ function BrowseShell<T>({
   onChangeProvider,
   onSearch,
   footerMode = "detailed",
+  settings,
+  settingsSeriesProviderOptions,
+  settingsAnimeProviderOptions,
+  onSaveSettings,
   onResolve,
   onSubmit,
   onCancel,
@@ -1701,6 +2061,10 @@ function BrowseShell<T>({
   onChangeProvider?: (providerId: string) => Promise<void>;
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
   footerMode?: ShellFooterMode;
+  settings?: KitsuneConfig;
+  settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
+  settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
+  onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   onResolve: (action: ShellAction) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
@@ -1714,6 +2078,8 @@ function BrowseShell<T>({
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
   const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
   const [activeProvider, setActiveProvider] = useState(provider);
+  const [draftSettings, setDraftSettings] = useState<KitsuneConfig | null>(null);
+  const [appliedSettings, setAppliedSettings] = useState<KitsuneConfig | null>(settings ?? null);
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const [selectedDetail, setSelectedDetail] = useState(
@@ -1868,7 +2234,99 @@ function BrowseShell<T>({
     });
   };
 
+  const openSettingsOverlay = (nextDraft: KitsuneConfig, selectedIndex = 0) => {
+    setCommandMode(false);
+    const dirty = !settingsEqual(nextDraft, appliedSettings);
+    setDraftSettings(nextDraft);
+    setActiveOverlay({
+      type: "settings",
+      title: "Settings",
+      subtitle: buildSettingsSummary(nextDraft),
+      options: buildSettingsOptions(nextDraft, dirty),
+      filterQuery: "",
+      selectedIndex,
+      dirty,
+      busy: false,
+    });
+  };
+
+  const openSettingsChoiceOverlay = (nextDraft: KitsuneConfig, setting: SettingsChoiceValue) => {
+    let title = "Choose setting";
+    let subtitle = "Select a value";
+    let options: readonly ShellPickerOption<string>[] = [];
+
+    if (setting === "defaultMode") {
+      title = "Default startup mode";
+      subtitle = `Current ${nextDraft.defaultMode}`;
+      options = [
+        { value: "series", label: "Series mode", detail: "Browse movies and TV on launch" },
+        { value: "anime", label: "Anime mode", detail: "Browse anime on launch" },
+      ].map((option) => ({
+        ...option,
+        label:
+          option.value === nextDraft.defaultMode ? `${option.label}  ·  current` : option.label,
+      }));
+    } else if (setting === "provider") {
+      title = "Default provider";
+      subtitle = `Current ${nextDraft.provider}`;
+      options = (settingsSeriesProviderOptions ?? []).map((option) => ({
+        ...option,
+        label:
+          option.value === nextDraft.provider
+            ? `${option.label.replace(/  ·  current$/, "")}  ·  current`
+            : option.label.replace(/  ·  current$/, ""),
+      }));
+    } else if (setting === "animeProvider") {
+      title = "Anime provider";
+      subtitle = `Current ${nextDraft.animeProvider}`;
+      options = (settingsAnimeProviderOptions ?? []).map((option) => ({
+        ...option,
+        label:
+          option.value === nextDraft.animeProvider
+            ? `${option.label.replace(/  ·  current$/, "")}  ·  current`
+            : option.label.replace(/  ·  current$/, ""),
+      }));
+    } else if (setting === "subLang") {
+      title = "Subtitle preference";
+      subtitle = `Current ${nextDraft.subLang}`;
+      options = SUBTITLE_SETTINGS_OPTIONS.map((option) => ({
+        ...option,
+        label: option.value === nextDraft.subLang ? `${option.label}  ·  current` : option.label,
+      }));
+    } else if (setting === "animeLang") {
+      title = "Anime audio";
+      subtitle = `Current ${nextDraft.animeLang}`;
+      options = ANIME_AUDIO_SETTINGS_OPTIONS.map((option) => ({
+        ...option,
+        label: option.value === nextDraft.animeLang ? `${option.label}  ·  current` : option.label,
+      })) as readonly ShellPickerOption<string>[];
+    } else if (setting === "footerHints") {
+      title = "Footer hint density";
+      subtitle = `Current ${nextDraft.footerHints}`;
+      options = FOOTER_HINT_OPTIONS.map((option) => ({
+        ...option,
+        label:
+          option.value === nextDraft.footerHints ? `${option.label}  ·  current` : option.label,
+      })) as readonly ShellPickerOption<string>[];
+    }
+
+    setActiveOverlay({
+      type: "settings-choice",
+      title,
+      subtitle,
+      setting,
+      options,
+      filterQuery: "",
+      selectedIndex: 0,
+      busy: false,
+    });
+  };
+
   const handleLocalAction = (action: ShellAction): boolean => {
+    if (action === "settings" && appliedSettings && onSaveSettings) {
+      openSettingsOverlay(appliedSettings);
+      return true;
+    }
     if (action === "provider" && providerOptions && onChangeProvider) {
       openProviderOverlay();
       return true;
@@ -1942,8 +2400,11 @@ function BrowseShell<T>({
   const windowStart = getWindowStart(selectedIndex, options.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, options.length);
   const visibleOptions = options.slice(windowStart, windowEnd);
-  const filteredProviderOptions =
-    activeOverlay?.type === "provider"
+  const filteredOverlayOptions =
+    activeOverlay &&
+    (activeOverlay.type === "provider" ||
+      activeOverlay.type === "settings" ||
+      activeOverlay.type === "settings-choice")
       ? activeOverlay.options.filter((option) => {
           const filter = activeOverlay.filterQuery.trim().toLowerCase();
           if (filter.length === 0) return true;
@@ -1972,11 +2433,19 @@ function BrowseShell<T>({
       }
 
       if (key.escape) {
+        if (activeOverlay.type === "settings-choice" && draftSettings) {
+          openSettingsOverlay(draftSettings);
+          return;
+        }
         closeOverlay();
         return;
       }
 
-      if (activeOverlay.type === "provider") {
+      if (
+        activeOverlay.type === "provider" ||
+        activeOverlay.type === "settings" ||
+        activeOverlay.type === "settings-choice"
+      ) {
         if (key.ctrl && input.toLowerCase() === "w") {
           setActiveOverlay({
             ...activeOverlay,
@@ -1993,40 +2462,117 @@ function BrowseShell<T>({
           });
           return;
         }
-        if (key.upArrow && filteredProviderOptions.length > 0) {
+        if (key.upArrow && filteredOverlayOptions.length > 0) {
           setActiveOverlay({
             ...activeOverlay,
             selectedIndex:
-              (activeOverlay.selectedIndex - 1 + filteredProviderOptions.length) %
-              filteredProviderOptions.length,
+              (activeOverlay.selectedIndex - 1 + filteredOverlayOptions.length) %
+              filteredOverlayOptions.length,
           });
           return;
         }
-        if (key.downArrow && filteredProviderOptions.length > 0) {
+        if (key.downArrow && filteredOverlayOptions.length > 0) {
           setActiveOverlay({
             ...activeOverlay,
-            selectedIndex: (activeOverlay.selectedIndex + 1) % filteredProviderOptions.length,
+            selectedIndex: (activeOverlay.selectedIndex + 1) % filteredOverlayOptions.length,
           });
           return;
         }
         if (key.return) {
-          const target = filteredProviderOptions[activeOverlay.selectedIndex];
-          if (!target || !onChangeProvider) return;
+          const options = filteredOverlayOptions;
+          const target = options[activeOverlay.selectedIndex];
+          if (!target) return;
 
-          setActiveOverlay({ ...activeOverlay, busy: true });
-          void onChangeProvider(target.value)
-            .then(() => {
-              setActiveProvider(target.value);
-              setActiveOverlay(null);
-              clearResults(target.value);
-            })
-            .catch((error) => {
-              setActiveOverlay({
-                ...activeOverlay,
-                busy: false,
-                subtitle: `Failed to switch provider: ${String(error)}`,
+          if (activeOverlay.type === "provider") {
+            if (!onChangeProvider) return;
+            setActiveOverlay({ ...activeOverlay, busy: true });
+            void onChangeProvider(target.value)
+              .then(() => {
+                setActiveProvider(target.value);
+                setActiveOverlay(null);
+                clearResults(target.value);
+              })
+              .catch((error) => {
+                setActiveOverlay({
+                  ...activeOverlay,
+                  busy: false,
+                  subtitle: `Failed to switch provider: ${String(error)}`,
+                });
               });
-            });
+            return;
+          }
+
+          if (activeOverlay.type === "settings") {
+            if (!draftSettings) return;
+            const action = target.value;
+            if (action === "__discard") {
+              setDraftSettings(null);
+              setActiveOverlay(null);
+              return;
+            }
+            if (action === "__save") {
+              if (!onSaveSettings) {
+                setDraftSettings(null);
+                setActiveOverlay(null);
+                return;
+              }
+              setActiveOverlay({ ...activeOverlay, busy: true });
+              void onSaveSettings(draftSettings)
+                .then(() => {
+                  setAppliedSettings(draftSettings);
+                  setDraftSettings(null);
+                  setActiveOverlay(null);
+                })
+                .catch((error) => {
+                  setActiveOverlay({
+                    ...activeOverlay,
+                    busy: false,
+                    subtitle: `Failed to save settings: ${String(error)}`,
+                  });
+                });
+              return;
+            }
+            if (action === "headless") {
+              openSettingsOverlay(
+                { ...draftSettings, headless: !draftSettings.headless },
+                activeOverlay.selectedIndex,
+              );
+              return;
+            }
+            if (action === "showMemory") {
+              openSettingsOverlay(
+                { ...draftSettings, showMemory: !draftSettings.showMemory },
+                activeOverlay.selectedIndex,
+              );
+              return;
+            }
+            if (action === "autoNext") {
+              openSettingsOverlay(
+                { ...draftSettings, autoNext: !draftSettings.autoNext },
+                activeOverlay.selectedIndex,
+              );
+              return;
+            }
+            openSettingsChoiceOverlay(draftSettings, action as SettingsChoiceValue);
+            return;
+          }
+
+          if (!draftSettings) return;
+          const updatedDraft = { ...draftSettings };
+          if (activeOverlay.setting === "defaultMode") {
+            updatedDraft.defaultMode = target.value as "series" | "anime";
+          } else if (activeOverlay.setting === "provider") {
+            updatedDraft.provider = target.value;
+          } else if (activeOverlay.setting === "animeProvider") {
+            updatedDraft.animeProvider = target.value;
+          } else if (activeOverlay.setting === "subLang") {
+            updatedDraft.subLang = target.value;
+          } else if (activeOverlay.setting === "animeLang") {
+            updatedDraft.animeLang = target.value as "sub" | "dub";
+          } else if (activeOverlay.setting === "footerHints") {
+            updatedDraft.footerHints = target.value as "detailed" | "minimal";
+          }
+          openSettingsOverlay(updatedDraft);
           return;
         }
         if (input && !key.ctrl && !key.meta) {
@@ -2210,10 +2756,10 @@ function BrowseShell<T>({
               activeOverlay.type === "provider"
                 ? {
                     ...activeOverlay,
-                    options: filteredProviderOptions,
+                    options: filteredOverlayOptions,
                     selectedIndex: Math.min(
                       activeOverlay.selectedIndex,
-                      Math.max(filteredProviderOptions.length - 1, 0),
+                      Math.max(filteredOverlayOptions.length - 1, 0),
                     ),
                   }
                 : activeOverlay
@@ -2351,6 +2897,10 @@ export function openBrowseShell<T>({
   onChangeProvider,
   onSearch,
   footerMode,
+  settings,
+  settingsSeriesProviderOptions,
+  settingsAnimeProviderOptions,
+  onSaveSettings,
 }: {
   mode: "series" | "anime";
   provider: string;
@@ -2368,6 +2918,10 @@ export function openBrowseShell<T>({
   onChangeProvider?: (providerId: string) => Promise<void>;
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
   footerMode?: ShellFooterMode;
+  settings?: KitsuneConfig;
+  settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
+  settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
+  onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
 }): Promise<BrowseShellResult<T>> {
   const session = mountShell<BrowseShellResult<T>>({
     renderShell: (finish) => (
@@ -2388,6 +2942,10 @@ export function openBrowseShell<T>({
         onChangeProvider={onChangeProvider}
         onSearch={onSearch}
         footerMode={footerMode}
+        settings={settings}
+        settingsSeriesProviderOptions={settingsSeriesProviderOptions}
+        settingsAnimeProviderOptions={settingsAnimeProviderOptions}
+        onSaveSettings={onSaveSettings}
         onResolve={(action) => finish({ type: "action", action })}
         onSubmit={(value) => finish({ type: "selected", value })}
         onCancel={() => finish({ type: "cancelled" })}

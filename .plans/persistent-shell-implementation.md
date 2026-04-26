@@ -210,6 +210,7 @@ Status:
 
 - partially done
 - browse and post-playback now host provider, history, diagnostics, help, and about panels in the mounted shell
+- browse and post-playback now host settings in-shell too, using the shared runtime config path instead of always ejecting into a blocking helper shell
 - settings, season, episode, and subtitle flows still rely on blocking shell helpers rather than true mounted overlays
 - diagnostics now show recent runtime events from the new in-memory diagnostics store, which improves developer-mode inspection before the mounted overlay host lands
 - picker states now keep the shared command layer and task-first footer guidance even while standalone list shells remain in the path

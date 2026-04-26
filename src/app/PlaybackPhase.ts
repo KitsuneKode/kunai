@@ -14,6 +14,7 @@ import type {
   PlaybackResult,
 } from "@/domain/types";
 import {
+  applySettingsToRuntime,
   buildPickerActionContext,
   handleShellAction,
   openSubtitlePicker,
@@ -392,6 +393,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 mode: stateManager.getState().mode,
                 provider: providerId,
               },
+            });
+          },
+          settings: config.getRaw(),
+          settingsSeriesProviderOptions: buildProviderPickerOptions({
+            providers: providerRegistry
+              .getAll()
+              .map((candidate) => candidate.metadata)
+              .filter((metadata) => !metadata.isAnimeProvider),
+            currentProvider: config.getRaw().provider,
+          }),
+          settingsAnimeProviderOptions: buildProviderPickerOptions({
+            providers: providerRegistry
+              .getAll()
+              .map((candidate) => candidate.metadata)
+              .filter((metadata) => metadata.isAnimeProvider),
+            currentProvider: config.getRaw().animeProvider,
+          }),
+          onSaveSettings: async (next) => {
+            await applySettingsToRuntime({
+              container,
+              next,
+              previous: config.getRaw(),
             });
           },
           loadHelpPanel: async () => buildHelpPanelLines(),

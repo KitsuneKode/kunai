@@ -248,6 +248,54 @@ export function buildPickerActionContext({
   };
 }
 
+export async function applySettingsToRuntime({
+  container,
+  next,
+  previous,
+}: {
+  container: Container;
+  next: KitsuneConfig;
+  previous?: KitsuneConfig;
+}): Promise<void> {
+  const { stateManager, config } = container;
+  const before = previous ?? config.getRaw();
+
+  await config.update(next);
+  await config.save();
+
+  const state = stateManager.getState();
+  stateManager.dispatch({
+    type: "SET_DEFAULT_PROVIDER",
+    mode: "series",
+    provider: next.provider,
+  });
+  stateManager.dispatch({
+    type: "SET_DEFAULT_PROVIDER",
+    mode: "anime",
+    provider: next.animeProvider,
+  });
+  stateManager.dispatch({ type: "SET_SUB_LANG", subLang: next.subLang });
+  stateManager.dispatch({ type: "SET_ANIME_LANG", animeLang: next.animeLang });
+
+  const currentProvider =
+    state.mode === "anime" ? state.defaultProviders.anime : state.defaultProviders.series;
+  const nextDefault = state.mode === "anime" ? next.animeProvider : next.provider;
+  if (state.provider === currentProvider && state.provider !== nextDefault) {
+    stateManager.dispatch({
+      type: "SET_PROVIDER",
+      provider: nextDefault,
+    });
+  }
+
+  if (state.mode === before.defaultMode && state.mode !== next.defaultMode) {
+    stateManager.dispatch({
+      type: "SET_MODE",
+      mode: next.defaultMode,
+      provider: next.defaultMode === "anime" ? next.animeProvider : next.provider,
+    });
+  }
+}
+
 export async function handleShellAction({
   action,
   container,
@@ -473,40 +521,7 @@ export async function handleShellAction({
     );
 
     if (next) {
-      await config.update(next);
-      await config.save();
-
-      const state = stateManager.getState();
-      stateManager.dispatch({
-        type: "SET_DEFAULT_PROVIDER",
-        mode: "series",
-        provider: next.provider,
-      });
-      stateManager.dispatch({
-        type: "SET_DEFAULT_PROVIDER",
-        mode: "anime",
-        provider: next.animeProvider,
-      });
-      stateManager.dispatch({ type: "SET_SUB_LANG", subLang: next.subLang });
-      stateManager.dispatch({ type: "SET_ANIME_LANG", animeLang: next.animeLang });
-
-      const currentProvider =
-        state.mode === "anime" ? state.defaultProviders.anime : state.defaultProviders.series;
-      const nextDefault = state.mode === "anime" ? next.animeProvider : next.provider;
-      if (state.provider === currentProvider && state.provider !== nextDefault) {
-        stateManager.dispatch({
-          type: "SET_PROVIDER",
-          provider: nextDefault,
-        });
-      }
-
-      if (state.mode === current.defaultMode && state.mode !== next.defaultMode) {
-        stateManager.dispatch({
-          type: "SET_MODE",
-          mode: next.defaultMode,
-          provider: next.defaultMode === "anime" ? next.animeProvider : next.provider,
-        });
-      }
+      await applySettingsToRuntime({ container, next, previous: current });
     }
 
     return "handled";

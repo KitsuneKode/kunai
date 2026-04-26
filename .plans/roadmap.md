@@ -26,6 +26,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - History persistence is hardened so completed playback still saves even if mpv reports a weak final playback position
 - History browsing and clearing in the new runtime now use the shared `HistoryStore` instead of bypassing it through legacy helper wiring
 - Footer hints are now configurable, and the browse, playback, and picker shells use the calmer task-first footer model
+- Browse and post-playback settings now stay inside the mounted shell and save through the shared runtime config path
 
 ### Active Follow-Ups
 

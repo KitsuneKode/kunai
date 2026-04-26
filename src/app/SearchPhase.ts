@@ -18,7 +18,7 @@ import {
 } from "@/app-shell/panel-data";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
-import { handleShellAction } from "@/app-shell/workflows";
+import { applySettingsToRuntime, handleShellAction } from "@/app-shell/workflows";
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -106,6 +106,21 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               .filter((metadata) => metadata.isAnimeProvider === (currentState.mode === "anime")),
             currentProvider: currentState.provider,
           }),
+          settings: config.getRaw(),
+          settingsSeriesProviderOptions: buildProviderPickerOptions({
+            providers: providerRegistry
+              .getAll()
+              .map((provider) => provider.metadata)
+              .filter((metadata) => !metadata.isAnimeProvider),
+            currentProvider: config.getRaw().provider,
+          }),
+          settingsAnimeProviderOptions: buildProviderPickerOptions({
+            providers: providerRegistry
+              .getAll()
+              .map((provider) => provider.metadata)
+              .filter((metadata) => metadata.isAnimeProvider),
+            currentProvider: config.getRaw().animeProvider,
+          }),
           onChangeProvider: async (providerId) => {
             stateManager.dispatch({ type: "SET_PROVIDER", provider: providerId });
             diagnosticsStore.record({
@@ -115,6 +130,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 mode: stateManager.getState().mode,
                 provider: providerId,
               },
+            });
+          },
+          onSaveSettings: async (next) => {
+            await applySettingsToRuntime({
+              container,
+              next,
+              previous: config.getRaw(),
             });
           },
           loadHelpPanel: async () => buildHelpPanelLines(),
