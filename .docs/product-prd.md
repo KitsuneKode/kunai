@@ -4,6 +4,8 @@ Last updated: 2026-04-23
 
 Use this doc as the product and UX source of truth for the next major passes. It captures what KitsuneSnipe is trying to become, the user experience we are aiming for, and the implementation constraints that matter.
 
+For the shorter user-facing scope and support overview, read [.docs/experience-overview.md](./experience-overview.md).
+
 ## Product Summary
 
 KitsuneSnipe is a terminal-first streaming browser and playback launcher.
@@ -33,6 +35,7 @@ It is a cohesive, keyboard-native media shell that feels closer to a lightweight
 - a screen-scraper that only works by tribal knowledge
 - a UI that depends on images, motion, or perfect terminal capabilities to function
 - an account-required product
+- a media host, mirror, uploader, or content distribution service
 
 ## Primary User Experience
 

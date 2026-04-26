@@ -6,6 +6,8 @@ Supports movie, series, and anime flows through a unified Ink shell. No API keys
 
 KitsuneSnipe is currently in beta: usable, but still actively being hardened across UI flow, provider support, subtitles, and diagnostics.
 
+KitsuneSnipe does not host, store, upload, mirror, or distribute any video files on its own servers. All playable media, manifests, subtitles, posters, and related assets are provided by non-affiliated third-party services and infrastructure.
+
 ## ✨ Features
 
 - **Ink shell UI** — command-aware terminal app flow instead of stacked prompts
@@ -67,6 +69,8 @@ You'll be guided through:
 3. Choose provider, settings, subtitles, season, and episode from shell pickers
 4. Launch playback in `mpv`
 5. Return to the same shell for replay, provider changes, settings, and next actions
+
+For a fuller product and scope overview, see [.docs/experience-overview.md](.docs/experience-overview.md).
 
 ### Skip prompts with flags
 
@@ -156,8 +160,10 @@ bun run relink:global
 
 KitsuneSnipe is a client-side tool for research, automation, and playback handoff.
 
+- This app does not store any video files on its server.
 - This project does not host, store, upload, mirror, or distribute video content itself.
-- Streams, manifests, subtitles, posters, and related assets are served by third-party sites and infrastructure.
+- All playable content, streams, manifests, subtitles, posters, metadata, and related assets are provided by non-affiliated third-party sites and infrastructure.
+- Provider names, media titles, posters, metadata, and playback endpoints remain the property and responsibility of their respective owners and providers.
 - If you believe specific content is infringing, copyright or DMCA-style notices should be directed to the actual hosting or serving provider, not this repository.
 - The project maintainers are not the content host and do not control the third-party media servers that upstream providers expose.
 
