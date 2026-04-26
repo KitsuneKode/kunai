@@ -527,7 +527,9 @@ function RootShellHost() {
     };
   }, []);
 
-  return rootShellScreen?.element ?? null;
+  return rootShellScreen ? (
+    <React.Fragment key={rootShellScreen.id}>{rootShellScreen.element}</React.Fragment>
+  ) : null;
 }
 
 function ensureRootShell() {
