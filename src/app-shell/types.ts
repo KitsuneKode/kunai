@@ -6,6 +6,7 @@ export type ShellAction =
   | "toggle-mode"
   | "quit"
   | "history"
+  | "details"
   | "diagnostics"
   | "help"
   | "about"
@@ -76,6 +77,9 @@ export type BrowseShellOption<T> = {
   detail?: string;
   previewTitle?: string;
   previewMeta?: readonly string[];
+  previewFacts?: readonly ShellPanelLine[];
+  previewImageUrl?: string;
+  previewRating?: string;
   previewBody?: string;
   previewNote?: string;
 };
@@ -118,6 +122,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "toggle-mode":
     case "quit":
     case "history":
+    case "details":
     case "diagnostics":
     case "help":
     case "about":

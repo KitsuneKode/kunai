@@ -23,6 +23,11 @@ export class PlayerServiceImpl implements PlayerService {
   async play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
     // Always show this to user - not just debug
     console.log(`▶ Starting playback: ${options.displayTitle}`);
+    console.log(
+      stream.subtitle
+        ? `✓ Subtitle attached: ${stream.subtitle}`
+        : "⚠ Subtitle not found or disabled; playback will start without a subtitle file.",
+    );
 
     this.deps.logger.info("Launching MPV", {
       title: options.displayTitle,
@@ -35,6 +40,7 @@ export class PlayerServiceImpl implements PlayerService {
       context: {
         title: options.displayTitle,
         hasSubtitle: Boolean(stream.subtitle),
+        subtitleUrl: stream.subtitle ?? null,
         startAt: options.startAt ?? 0,
       },
     });

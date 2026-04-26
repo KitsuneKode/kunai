@@ -4,6 +4,7 @@ import TextInput from "ink-text-input";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 
+import { buildBrowseDetailsPanel } from "./details-panel";
 import {
   COMMANDS,
   parseCommand,
@@ -87,7 +88,7 @@ const palette = {
   muted: "#a6acb9",
 };
 
-const APP_LABEL = "KitsuneSnipe beta";
+const APP_LABEL = "🦊 KitsuneSnipe beta";
 
 function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
   switch (tone) {
@@ -1970,10 +1971,11 @@ function ListShell<T>({
 
 type BrowseOverlay =
   | {
-      type: "help" | "about" | "diagnostics" | "history";
+      type: "help" | "about" | "diagnostics" | "history" | "details";
       title: string;
       subtitle: string;
       lines: readonly ShellPanelLine[];
+      imageUrl?: string;
       loading?: boolean;
       scrollIndex?: number;
     }
@@ -2261,6 +2263,22 @@ function OverlayPanel({
         </Box>
       ) : (
         <Box marginTop={1} flexDirection="column">
+          {overlay.type === "details" ? (
+            <Box marginBottom={1} flexDirection="column">
+              <Text color={overlay.imageUrl ? palette.green : palette.amber}>
+                {overlay.imageUrl ? "Poster image ready" : "Poster image missing"}
+              </Text>
+              <Text color={palette.gray}>
+                {overlay.imageUrl
+                  ? truncateLine(overlay.imageUrl, contentWidth)
+                  : "This provider did not expose artwork for the selected title."}
+              </Text>
+              <Text color={palette.gray}>
+                Inline Kitty/Ghostty rendering is kept behind the image-pane path to avoid Ink
+                scroll flicker.
+              </Text>
+            </Box>
+          ) : null}
           {overlay.lines
             .slice(overlay.scrollIndex ?? 0, (overlay.scrollIndex ?? 0) + maxLines)
             .map((line, index) => (
@@ -2483,6 +2501,20 @@ function BrowseShell<T>({
     }
   };
 
+  const openDetailsOverlay = () => {
+    const panel = buildBrowseDetailsPanel(selectedOption);
+    setCommandMode(false);
+    setActiveOverlay({
+      type: "details",
+      title: panel.title,
+      subtitle: panel.subtitle,
+      lines: panel.lines,
+      imageUrl: panel.imageUrl,
+      loading: false,
+      scrollIndex: 0,
+    });
+  };
+
   const openProviderOverlay = () => {
     setCommandMode(false);
     setActiveOverlay({
@@ -2605,6 +2637,10 @@ function BrowseShell<T>({
         subtitle: "Recent playback positions without leaving browse",
         loader: loadHistoryPanel,
       });
+      return true;
+    }
+    if (action === "details") {
+      openDetailsOverlay();
       return true;
     }
     if (action === "diagnostics" && loadDiagnosticsPanel) {

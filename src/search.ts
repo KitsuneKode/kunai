@@ -17,6 +17,8 @@ export type SearchResult = {
   year: string;
   overview: string;
   posterPath: string | null;
+  rating?: number | null;
+  popularity?: number | null;
 };
 
 export type SearchService = {
@@ -51,6 +53,8 @@ export async function searchVideasy(query: string): Promise<SearchResult[]> {
       year: (r.release_date || r.first_air_date || "").split("-")[0] || "?",
       overview: (r.overview || "").slice(0, 120),
       posterPath: r.poster_path || null,
+      rating: typeof r.vote_average === "number" ? r.vote_average : null,
+      popularity: typeof r.popularity === "number" ? r.popularity : null,
     }));
 
   cache.set(key, results);

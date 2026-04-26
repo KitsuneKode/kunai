@@ -102,6 +102,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             "toggle-mode",
             "provider",
             "history",
+            "details",
             "diagnostics",
             "help",
             "about",

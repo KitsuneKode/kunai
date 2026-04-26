@@ -7,6 +7,7 @@ export type AppCommandId =
   | "quit"
   | "provider"
   | "history"
+  | "details"
   | "diagnostics"
   | "help"
   | "about"
@@ -65,6 +66,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "History",
     aliases: ["history", "resume", "recent"],
     description: "Open watch history",
+  },
+  {
+    id: "details",
+    label: "Details",
+    aliases: ["details", "detail", "overview", "info"],
+    description: "Open the expanded title overview",
   },
   {
     id: "diagnostics",
@@ -203,6 +210,7 @@ function resolveCommandState(
     case "search":
     case "settings":
     case "history":
+    case "details":
     case "diagnostics":
     case "help":
     case "about":

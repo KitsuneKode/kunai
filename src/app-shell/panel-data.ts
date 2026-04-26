@@ -29,6 +29,11 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
         "Searches when the query changed, otherwise confirms the selected result or the focused picker option.",
     },
     {
+      label: "/ details Title overview",
+      detail:
+        "Open the expanded overview panel for the selected title, including poster status, rating when available, and provider metadata gaps.",
+    },
+    {
       label: "↑↓ Navigate",
       detail:
         "Move through results, provider options, episodes, seasons, and command suggestions without leaving the shell.",
@@ -122,6 +127,13 @@ export function buildDiagnosticsPanelLines({
       detail: String(state.stream?.subtitleList?.length ?? 0),
     },
     {
+      label: "Subtitle diagnosis",
+      detail: state.stream?.subtitle
+        ? "A subtitle URL was attached before mpv launched."
+        : "For Vidking, this usually means the embed did not request a direct subtitle file or Wyzie search before the stream was captured, the preference is disabled, or the subtitle provider had no match.",
+      tone: state.stream?.subtitle ? "success" : "warning",
+    },
+    {
       label: "Stream URL",
       detail: state.stream?.url ?? "not resolved yet",
     },
@@ -161,7 +173,7 @@ export function buildHistoryPanelLines(
       {
         label: "No watch history yet",
         detail:
-          "Playback positions appear here after you stop mid-episode or finish a title with a saved runtime result.",
+          "Playback positions appear here after mpv reports a watched position or EOF duration. If this stays empty after playback, open Diagnostics and check for a skipped history save.",
       },
     ];
   }

@@ -45,6 +45,7 @@ describe("panel-data", () => {
     expect(lines.find((line) => line.label === "Selected subtitle URL")?.detail).toBe(
       "not found or disabled",
     );
+    expect(lines.find((line) => line.label === "Subtitle diagnosis")?.tone).toBe("warning");
   });
 
   test("buildHistoryPanelLines sorts newest entries first", () => {

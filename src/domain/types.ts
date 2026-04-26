@@ -56,6 +56,8 @@ export interface SearchResult {
   readonly year: string;
   readonly overview: string;
   readonly posterPath: string | null;
+  readonly rating?: number | null;
+  readonly popularity?: number | null;
   readonly episodeCount?: number;
 }
 

@@ -149,6 +149,8 @@ Current checkpoint:
 - episode autoplay is now owned by the playback phase instead of mpv countdown/keep-open behavior, and it advances only to actually available released episodes
 - integration tests, live smoke scripts, and VHS UI tapes now have a dedicated `test/` tree instead of drifting through `src/`
 - browse results now open an in-shell details state before committing playback, which gives `Esc` a clearer parent context while the mounted root shell work continues
+- the browse details state now uses an expanded overview panel with poster URL availability, rating when search metadata provides it, and explicit placeholders when provider-native sources omit detail fields
+- subtitle status is now emitted before mpv launch and diagnostics explain the likely Vidking subtitle capture causes when no track is found
 - browser/embed scraping now reuses the shared runtime cache instead of bypassing the new persistence layer
 - browse and post-playback now host provider, help, about, history, and diagnostics panels inside the mounted shell instead of ejecting to separate helper shells
 - post-playback episode selection now opens inside the playback shell and returns a selected season/episode without launching a separate helper shell

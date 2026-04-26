@@ -103,8 +103,16 @@ Browse should prefer shell-hosted panels for lightweight secondary flows such as
 - about
 - history snapshot
 - diagnostics snapshot
+- selected-title details and overview
 
 This keeps the user anchored in the current query and result list while they inspect or adjust nearby state.
+
+Title details should be honest about data quality:
+
+- show overview, poster availability, rating, episode count, and provider facts when the source returned them
+- show explicit unavailable placeholders when a provider-native result does not expose those fields
+- keep actual Kitty/Ghostty image rendering outside the Ink render tree until the image-pane service owns layout, clearing, and flicker control
+- never require image support for selection, playback, or episode navigation
 
 Post-playback should use the same rule for lightweight panels so provider changes, history, diagnostics, help, and about do not break the user out of the current title context.
 Settings should follow that same in-shell rule for browse and post-playback shells, even while deeper season, episode, and subtitle flows still finish their overlay migration.

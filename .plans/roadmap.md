@@ -34,6 +34,8 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Browse and playback now share one runtime binding helper for provider options, settings persistence, and info-panel loaders
 - Post-playback helper fallbacks for provider, settings, history, diagnostics, help, and about were removed now that the playback shell owns those panels directly
 - Fullscreen TUI convergence is now an explicit next milestone: viewport-contained layouts, resize blockers, and one dominant shell frame
+- Browse results now have an expanded title overview panel with poster availability, rating when provided by search metadata, and explicit placeholders for provider-native gaps
+- Subtitle status is surfaced before mpv launches so missing subtitles are visible during playback startup, not only after returning to the shell
 
 ### Active Follow-Ups
 
@@ -48,6 +50,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - First-run dependency guardrails for `mpv` and Playwright
 - Developer-mode diagnostics surface for stream, subtitle, and provider resolution stages
 - Metadata-store and preview-service migration beyond the current in-memory caches
+- Image-pane service migration for safe Kitty/Ghostty poster rendering inside the persistent shell without Ink scroll flicker
 
 ### Recently Improved
 
