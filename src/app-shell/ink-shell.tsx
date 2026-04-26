@@ -1389,7 +1389,6 @@ function SearchShell({
   );
 }
 
-// Simple spinner animation frames
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 function useSpinner() {
@@ -1403,12 +1402,44 @@ function useSpinner() {
   return SPINNER_FRAMES[frame];
 }
 
+function useElapsed(): number {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return elapsed;
+}
+
+function usePulse(periodMs: number): boolean {
+  const [on, setOn] = useState(true);
+  useEffect(() => {
+    const start = Date.now();
+    const timer = setInterval(() => {
+      const phase = ((Date.now() - start) % periodMs) / periodMs;
+      setOn(phase < 0.5);
+    }, 80);
+    return () => clearInterval(timer);
+  }, [periodMs]);
+  return on;
+}
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${String(s)}s`;
+}
+
 function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?: () => void }) {
   const spinner = useSpinner();
+  const elapsed = useElapsed();
+  const pulse = usePulse(1400);
   const { stdout } = useStdout();
 
   useInput((input, key) => {
-    // Ctrl+C handling
     if (input === "\x03") {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(0);
@@ -1418,52 +1449,100 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
     }
   });
 
+  const isPlaying = state.operation === "playing";
+  const leadIcon = isPlaying ? "▶" : spinner;
+  const accentColor = isPlaying ? palette.green : pulse ? palette.cyan : "white";
+  const separatorWidth = Math.min(44, (stdout.columns ?? 80) - 4);
+
   const operationLabels: Record<LoadingShellState["operation"], string> = {
     searching: "Searching",
     scraping: "Scraping",
     resolving: "Resolving stream",
-    playing: "Playing",
+    playing: "Now playing",
     loading: "Loading",
   };
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
+      {/* App identity */}
+      <Box marginBottom={1}>
+        <Text color={palette.muted} dimColor>
+          🦊 KitsuneSnipe
+        </Text>
+      </Box>
+
+      {/* Content title */}
       <Box>
-        <Text color={palette.cyan}>{spinner} </Text>
+        <Text color={accentColor}>{leadIcon} </Text>
         <Text bold color="white">
           {state.title}
         </Text>
       </Box>
       {state.subtitle && (
-        <Box marginTop={1}>
+        <Box marginLeft={2}>
           <Text color={palette.muted}>{state.subtitle}</Text>
         </Box>
       )}
-      <Box marginTop={1}>
-        <Text color={palette.amber}>{operationLabels[state.operation]}...</Text>
-        {state.details && <Text color={palette.gray}> {state.details}</Text>}
+
+      {/* Separator */}
+      <Box marginY={1}>
+        <Text color={palette.muted} dimColor>
+          {"─".repeat(separatorWidth)}
+        </Text>
       </Box>
-      {state.subtitleStatus ? (
+
+      {/* Operation status */}
+      <Box>
+        <Text color={accentColor}>{operationLabels[state.operation]}</Text>
+        {state.details && (
+          <Text color={palette.gray} dimColor>
+            {"  "}
+            {state.details}
+          </Text>
+        )}
+      </Box>
+
+      {/* Subtitle status */}
+      {state.subtitleStatus && (
         <Box marginTop={1}>
           <Text color={state.subtitleStatus.includes("attached") ? palette.green : palette.amber}>
             {state.subtitleStatus}
           </Text>
         </Box>
-      ) : null}
-      {state.trace ? (
+      )}
+
+      {/* Trace */}
+      {state.trace && (
         <Box marginTop={1}>
-          <Text color={palette.gray}>{state.trace}</Text>
+          <Text color={palette.gray} dimColor>
+            {state.trace}
+          </Text>
         </Box>
-      ) : null}
-      {state.showMemory ? (
+      )}
+
+      {/* Elapsed — only while actively resolving, after 2s */}
+      {!isPlaying && elapsed >= 2 && (
         <Box marginTop={1}>
-          <Text color={palette.gray}>{formatMemoryUsage()}</Text>
+          <Text color={palette.gray} dimColor>
+            {formatElapsed(elapsed)} elapsed
+          </Text>
         </Box>
-      ) : null}
+      )}
+
+      {/* Memory */}
+      {state.showMemory && (
+        <Box marginTop={1}>
+          <Text color={palette.gray} dimColor>
+            {formatMemoryUsage()}
+          </Text>
+        </Box>
+      )}
+
+      {/* Progress bar */}
       {state.progress !== undefined && (
         <Box marginTop={1}>
           <Box
-            width={Math.min(40, stdout.columns - 4)}
+            width={Math.min(40, (stdout.columns ?? 80) - 4)}
             borderStyle="round"
             borderColor={palette.cyan}
             paddingX={1}
@@ -1476,9 +1555,13 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
           </Box>
         </Box>
       )}
+
+      {/* Cancel hint */}
       {state.cancellable && (
         <Box marginTop={1}>
-          <Text color={palette.gray}>Press Esc to cancel</Text>
+          <Text color={palette.gray} dimColor>
+            ESC to cancel
+          </Text>
         </Box>
       )}
     </Box>
@@ -1560,30 +1643,45 @@ export function openPlaybackShell({
   return session.result;
 }
 
+export type LoadingShellHandle = {
+  close: () => void;
+  update: (state: LoadingShellState) => void;
+  result: Promise<"done" | "cancelled">;
+};
+
 export function openLoadingShell({
-  state,
+  state: initialState,
   cancellable = false,
 }: {
   state: LoadingShellState;
   cancellable?: boolean;
 }): LoadingShellHandle {
-  const session = mountShell<"done" | "cancelled">({
-    renderShell: (finish) => (
+  let externalSetState: ((s: LoadingShellState) => void) | null = null;
+
+  function LiveLoadingShell({ finish }: { finish: (value: "done" | "cancelled") => void }) {
+    const [state, setState] = useState(initialState);
+    useEffect(() => {
+      externalSetState = setState;
+      return () => {
+        externalSetState = null;
+      };
+    }, []);
+    return (
       <LoadingShell state={state} onCancel={cancellable ? () => finish("cancelled") : undefined} />
-    ),
+    );
+  }
+
+  const session = mountShell<"done" | "cancelled">({
+    renderShell: (finish) => <LiveLoadingShell finish={finish} />,
     fallbackValue: "done",
   });
 
   return {
     close: () => session.close("done"),
+    update: (state) => externalSetState?.(state),
     result: session.result,
   };
 }
-
-export type LoadingShellHandle = {
-  close: () => void;
-  result: Promise<"done" | "cancelled">;
-};
 
 export function openSearchShell({
   mode,

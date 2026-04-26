@@ -164,15 +164,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         const { openLoadingShell } = await import("../app-shell/ink-shell");
 
-        // Show loading UI while the provider resolves the stream, then always
-        // wait for Ink to finish unmounting before the next terminal render.
+        const episodeLabel = `S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}`;
+
         const loading = openLoadingShell({
           state: {
             title: title.name,
-            subtitle: `S${String(currentEpisode.season).padStart(
-              2,
-              "0",
-            )}E${String(currentEpisode.episode).padStart(2, "0")}`,
+            subtitle: episodeLabel,
             operation: "resolving",
             details: `Provider: ${stateManager.getState().provider}`,
           },
@@ -192,13 +189,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             episode: currentEpisode,
             subLang: stateManager.getState().subLang,
           });
-        } finally {
+        } catch (e) {
           loading.close();
           await loading.result;
+          throw e;
         }
 
         if (!stream) {
-          console.log(`⚠ Stream not found on ${currentProvider.metadata.id}`);
           logger.error("Stream not found", { provider: currentProvider.metadata.id });
           diagnosticsStore.record({
             category: "provider",
@@ -211,7 +208,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             },
           });
 
-          // Try fallback provider
+          // Try fallback provider — update loading in-place to avoid shell flicker
           const compatible = providerRegistry
             .getCompatible(title)
             .filter(
@@ -221,10 +218,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           const fallback = compatible[0];
           if (fallback) {
-            console.log(`🔄 Trying fallback: ${fallback.metadata.id}...`);
-            logger.info("Trying fallback provider", {
-              fallback: fallback.metadata.id,
-            });
+            logger.info("Trying fallback provider", { fallback: fallback.metadata.id });
             diagnosticsStore.record({
               category: "provider",
               message: "Trying fallback provider",
@@ -233,20 +227,33 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 fallback: fallback.metadata.id,
               },
             });
-            const fallbackStream = await fallback.resolveStream({
-              title,
-              episode: currentEpisode,
-              subLang: stateManager.getState().subLang,
+            loading.update({
+              title: title.name,
+              subtitle: episodeLabel,
+              operation: "resolving",
+              details: `Fallback: ${fallback.metadata.id}`,
             });
-
-            if (fallbackStream) {
-              stream = fallbackStream;
-              resolvedProviderId = fallback.metadata.id;
+            try {
+              const fallbackStream = await fallback.resolveStream({
+                title,
+                episode: currentEpisode,
+                subLang: stateManager.getState().subLang,
+              });
+              if (fallbackStream) {
+                stream = fallbackStream;
+                resolvedProviderId = fallback.metadata.id;
+              }
+            } catch (e) {
+              loading.close();
+              await loading.result;
+              throw e;
             }
           }
         }
 
         if (!stream) {
+          loading.close();
+          await loading.result;
           return {
             status: "error",
             error: {
@@ -267,7 +274,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
         stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "ready" });
 
-        // Play in MPV — consume the pending resume position on the first play only
+        // Play in MPV — consume the pending resume position on the first play only.
+        // Pass loading handle so playStream can update it in-place (no shell flicker).
         const startAt = pendingStartAt;
         pendingStartAt = 0;
         const result = await this.playStream(
@@ -276,6 +284,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           currentEpisode,
           context,
           startAt,
+          loading,
         );
 
         // Save history
@@ -545,6 +554,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     episode: EpisodeInfo,
     context: PhaseContext,
     startAt = 0,
+    loading: import("../app-shell/ink-shell").LoadingShellHandle,
   ): Promise<PlaybackResult> {
     const { player, stateManager, config } = context.container;
 
@@ -558,18 +568,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
     stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
 
-    const { openLoadingShell } = await import("../app-shell/ink-shell");
-    const playing = openLoadingShell({
-      state: {
-        title: displayTitle,
-        subtitle: "mpv is open; KitsuneSnipe is waiting for playback to finish",
-        operation: "playing",
-        details: `Provider: ${stateManager.getState().provider}`,
-        trace: `Stream resolved  ·  headers ${Object.keys(stream.headers ?? {}).length} keys`,
-        subtitleStatus,
-        showMemory: config.showMemory,
-      },
-      cancellable: false,
+    // Update the existing loading shell in-place — no close/reopen, no null-frame flicker.
+    loading.update({
+      title: displayTitle,
+      subtitle: "mpv is open — waiting for playback to finish",
+      operation: "playing",
+      details: `Provider: ${stateManager.getState().provider}`,
+      trace: `Stream resolved · headers ${Object.keys(stream.headers ?? {}).length} keys`,
+      subtitleStatus,
+      showMemory: config.showMemory,
     });
 
     try {
@@ -586,8 +593,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "finished" });
       return result;
     } finally {
-      playing.close();
-      await playing.result.catch(() => {});
+      loading.close();
+      await loading.result.catch(() => {});
     }
   }
 
