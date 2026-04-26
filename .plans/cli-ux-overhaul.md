@@ -20,6 +20,18 @@ Turn KitsuneSnipe from a chain of prompts into a coherent terminal app shell:
 - strong validation and diagnostics
 - premium feel without sacrificing speed or reliability
 
+## Fullscreen TUI consensus
+
+This plan now adopts the following default direction:
+
+- KitsuneSnipe should present as a fullscreen TUI first
+- the shell should have one dominant frame, not a stack of equal-weight cards
+- nested borders should only mark local context, not rebuild the whole page over and over
+- scrollback is not part of the primary interaction model
+- if a workflow cannot fit legibly, the app should show a resize blocker instead of silently overflowing
+- weak provider metadata should produce light previews, not fake rich detail states
+- wide layouts should be opt-in by available space, not the default everywhere
+
 ## Product Decisions
 
 These are the current decisions and should be treated as the default direction unless the project intentionally changes them.
@@ -73,6 +85,7 @@ These are the current decisions and should be treated as the default direction u
 - Disabled actions should explain why they are disabled
 - The UI should not rely on invisible timing windows for action discovery
 - If a prefix mode exists, it should be explicit and visible rather than a hidden timeout chord
+- `/` is reserved shell input and should open commands even when the user is in a search or picker filter field
 
 ### Reliability and diagnostics
 
@@ -133,6 +146,14 @@ These are the current decisions and should be treated as the default direction u
 - Disabled actions move into the command palette and help overlay
 - The command palette should replace footer guidance while open
 - Picker and filter states should simplify the footer instead of showing a long command row
+
+### Viewport and overflow policy
+
+- normal interaction must remain inside the visible terminal viewport
+- list, picker, and overlay surfaces must use windowing rather than full unbounded rendering
+- if the viewport is below a workflow-specific minimum, show a graceful resize blocker
+- companion and preview surfaces should collapse before the main list or active workflow does
+- helper copy should disappear before primary controls do
 
 ### Picker presentation
 

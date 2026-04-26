@@ -27,6 +27,9 @@ Move KitsuneSnipe from nested prompt flow toward one persistent shell with:
 - preserve current reliability guarantees during migration
 - prefer additive seams and shims over big-bang replacement
 - every phase should leave behind tests or docs strong enough to support the next phase
+- the shell must behave like a fullscreen TUI, not a stack of independent framed cards
+- normal interaction must fit inside the current viewport; if it cannot, show a resize blocker instead of relying on terminal scrollback
+- content hierarchy should stay stable across browse, picker, overlay, playback, and post-playback states
 
 ## Phase 0: Canonical Doc And Runtime Routing
 
@@ -190,6 +193,39 @@ Status:
 - playback still remains a separate shell session from browse, so the true root `AppShell` milestone is still open
 - playback navigation now resolves `next`, `previous`, `next season`, and autoplay from actual provider or metadata availability instead of blindly incrementing episode numbers
 
+### Pass B1: Fullscreen Layout Convergence
+
+Goal:
+
+- make every major workflow read as one fullscreen TUI with one dominant content region
+
+Tasks:
+
+- remove repeated full-width nested framing where a local sub-panel is enough
+- define a viewport budget helper for:
+  - header
+  - content region
+  - footer
+  - overlay height
+  - picker window size
+- make browse prefer:
+  - stacked layout on medium or narrow terminals
+  - split list and companion layout only when width is truly sufficient
+- make picker and overlay surfaces window to the viewport instead of overflowing into scrollback
+- add explicit resize blockers for states that cannot stay legible below a minimum size
+- ensure companion panes and helper copy collapse before the main task region does
+
+Testing:
+
+- deterministic layout-budget tests
+- small-terminal smoke tests for picker and browse states
+- manual verification for wide, medium, and too-small terminals
+
+Exit criteria:
+
+- users do not need terminal scrollback to use browse, picker, or settings flows
+- the shell feels like one fullscreen app instead of stacked cards
+
 ### Pass C: Overlay Migration
 
 Goal:
@@ -214,6 +250,7 @@ Status:
 - settings, season, episode, and subtitle flows still rely on blocking shell helpers rather than true mounted overlays
 - diagnostics now show recent runtime events from the new in-memory diagnostics store, which improves developer-mode inspection before the mounted overlay host lands
 - picker states now keep the shared command layer and task-first footer guidance even while standalone list shells remain in the path
+- settings and provider overlays now window around the selected row instead of hiding selected actions off-screen
 
 ### Pass C1: Command-Consistent Picker States
 
@@ -358,6 +395,7 @@ Recommended skills while implementing:
 - prefer deterministic tests first
 - reserve live provider checks for opt-in verification
 - fixture-driven parser tests should be the default for provider logic
+- add viewport-sensitive shell tests only around layout policy and visible-window calculations, not brittle screenshot snapshots by default
 - avoid shipping architecture work that only "works manually" without lower-level test seams
 
 ### Documentation updates

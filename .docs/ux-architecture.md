@@ -25,6 +25,22 @@ KitsuneSnipe should behave like a terminal app shell, not a sequence of unrelate
 - overlays for secondary flows
 - playback surfaces should keep title, episode identity, provider, and subtitle state visible without making users infer where they are
 
+### Fullscreen TUI consensus
+
+- the app should read as one fullscreen TUI, not stacked floating cards on a terminal canvas
+- there should be one dominant outer frame and one dominant content region
+- nested bordered boxes should be treated as local sub-panels, not repeated full-width containers
+- the shell should never rely on terminal scrollback for normal interaction
+- if the terminal is too small for a workflow, show a resize blocker instead of half-rendering
+- content should win over chrome as space gets tight:
+  - primary list or active workflow
+  - local context strip
+  - companion preview
+  - secondary helper copy
+- companion panes should appear only when the viewport can support them without crowding the main task
+- when a provider or result does not have real detail data, the shell should show a light preview rather than pretending there is a richer details state
+- the fullscreen hierarchy should stay stable across browse, picker, overlay, and post-playback states
+
 ### Command philosophy
 
 - `/` is the global entry point for actions
@@ -101,6 +117,7 @@ Overlay behavior should stay disciplined:
 - unrelated deep overlay chains are a smell
 - `Esc` must never act like confirm or implicit playback start
 - pickers should preserve their local filter, selection, and scroll state when command overlays open and close above them
+- overlays and pickers should be windowed to the viewport, not allowed to push content into terminal scrollback
 
 ## Picker Filtering
 
@@ -194,6 +211,9 @@ Autoplay and next/previous actions should follow real episode availability from 
   - total runtime under roughly `180–220ms`
 - `Ctrl+C` should remain near-instant and should not wait on decorative exit motion
 - reduced or minimal modes should simplify or skip exit motion entirely
+- high-frequency shell actions like picker navigation, command palette open, and search focus should avoid decorative animation
+- fullscreen transitions should favor instant layout stability over flourish
+- the shell should feel denser and calmer over long sessions, especially during episode browsing and repeated picker use
 
 ## Anti-Patterns
 
