@@ -1,0 +1,75 @@
+import type { ShellPickerOption } from "@/app-shell/types";
+import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
+import { fetchEpisodes } from "@/tmdb";
+
+export type PlaybackEpisodePickerInput = {
+  title: TitleInfo;
+  currentEpisode: EpisodeInfo;
+  isAnime: boolean;
+  animeEpisodeCount?: number;
+  animeEpisodes?: readonly EpisodePickerOption[];
+  loadEpisodes?: typeof fetchEpisodes;
+};
+
+export type PlaybackEpisodePickerOptions = {
+  options: readonly ShellPickerOption<string>[];
+  subtitle: string;
+};
+
+export async function buildPlaybackEpisodePickerOptions({
+  title,
+  currentEpisode,
+  isAnime,
+  animeEpisodeCount,
+  animeEpisodes,
+  loadEpisodes = fetchEpisodes,
+}: PlaybackEpisodePickerInput): Promise<PlaybackEpisodePickerOptions> {
+  if (title.type !== "series") {
+    return {
+      options: [],
+      subtitle: "Episode picker is only available for episodic playback",
+    };
+  }
+
+  if (isAnime) {
+    if (animeEpisodes && animeEpisodes.length > 0) {
+      return {
+        subtitle: `${animeEpisodes.length} released episodes available`,
+        options: animeEpisodes.map((entry) => ({
+          value: `${1}:${entry.index}`,
+          label:
+            entry.index === currentEpisode.episode ? `${entry.label}  ·  current` : entry.label,
+          detail: entry.detail,
+        })),
+      };
+    }
+
+    const fallbackCount = Math.max(
+      animeEpisodeCount ?? title.episodeCount ?? 0,
+      currentEpisode.episode,
+    );
+    return {
+      subtitle: `${fallbackCount} episode slots available`,
+      options: Array.from({ length: fallbackCount }, (_, index) => index + 1).map((episode) => ({
+        value: `${1}:${episode}`,
+        label:
+          episode === currentEpisode.episode
+            ? `Episode ${episode}  ·  current`
+            : `Episode ${episode}`,
+      })),
+    };
+  }
+
+  const episodes = await loadEpisodes(title.id, currentEpisode.season);
+  return {
+    subtitle: `Season ${currentEpisode.season}  ·  ${episodes.length} episodes`,
+    options: episodes.map((entry) => ({
+      value: `${currentEpisode.season}:${entry.number}`,
+      label:
+        entry.number === currentEpisode.episode
+          ? `Episode ${entry.number}  ·  ${entry.name}  ·  current`
+          : `Episode ${entry.number}  ·  ${entry.name}`,
+      detail: `${entry.airDate || "unknown year"}${entry.overview ? `  ·  ${entry.overview}` : ""}`,
+    })),
+  };
+}

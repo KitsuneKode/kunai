@@ -27,12 +27,12 @@ import {
   buildHistoryPanelLines,
   buildProviderPickerOptions,
 } from "@/app-shell/panel-data";
-import type { ShellPickerOption } from "@/app-shell/types";
 import {
   getAutoAdvanceEpisode,
   resolveEpisodeAvailability,
   toEpisodeNavigationState,
 } from "@/app/playback-policy";
+import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
@@ -134,7 +134,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           provider: currentProvider,
           cache: animeEpisodeCatalogByProvider,
         });
-        const shellEpisodePicker = await this.buildShellEpisodePicker({
+        const shellEpisodePicker = await buildPlaybackEpisodePickerOptions({
           title,
           currentEpisode,
           isAnime: stateManager.getState().mode === "anime",
@@ -563,69 +563,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
     // Fallback return (should not reach here)
     return { status: "success", value: "back_to_search" };
-  }
-
-  private async buildShellEpisodePicker({
-    title,
-    currentEpisode,
-    isAnime,
-    animeEpisodeCount,
-    animeEpisodes,
-  }: {
-    title: TitleInfo;
-    currentEpisode: EpisodeInfo;
-    isAnime: boolean;
-    animeEpisodeCount?: number;
-    animeEpisodes?: readonly EpisodePickerOption[];
-  }): Promise<{
-    options: readonly ShellPickerOption<string>[];
-    subtitle: string;
-  }> {
-    if (title.type !== "series") {
-      return {
-        options: [],
-        subtitle: "Episode picker is only available for episodic playback",
-      };
-    }
-
-    if (isAnime) {
-      if (animeEpisodes && animeEpisodes.length > 0) {
-        return {
-          subtitle: `${animeEpisodes.length} released episodes available`,
-          options: animeEpisodes.map((entry) => ({
-            value: `${1}:${entry.index}`,
-            label:
-              entry.index === currentEpisode.episode ? `${entry.label}  ·  current` : entry.label,
-            detail: entry.detail,
-          })),
-        };
-      }
-
-      const fallbackCount = Math.max(animeEpisodeCount ?? 0, currentEpisode.episode);
-      return {
-        subtitle: `${fallbackCount} episode slots available`,
-        options: Array.from({ length: fallbackCount }, (_, index) => index + 1).map((episode) => ({
-          value: `${1}:${episode}`,
-          label:
-            episode === currentEpisode.episode
-              ? `Episode ${episode}  ·  current`
-              : `Episode ${episode}`,
-        })),
-      };
-    }
-
-    const episodes = await fetchEpisodes(title.id, currentEpisode.season);
-    return {
-      subtitle: `Season ${currentEpisode.season}  ·  ${episodes.length} episodes`,
-      options: episodes.map((entry) => ({
-        value: `${currentEpisode.season}:${entry.number}`,
-        label:
-          entry.number === currentEpisode.episode
-            ? `Episode ${entry.number}  ·  ${entry.name}  ·  current`
-            : `Episode ${entry.number}  ·  ${entry.name}`,
-        detail: `${entry.airDate || "unknown year"}${entry.overview ? `  ·  ${entry.overview}` : ""}`,
-      })),
-    };
   }
 
   private async preparePlaybackStream(
