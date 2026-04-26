@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 
 import {
   COMMANDS,
@@ -248,18 +249,6 @@ function CommandPalette({
   );
 }
 
-function shouldUseCompactLayout(columns: number, rows: number): boolean {
-  return columns < 110 || rows < 34;
-}
-
-function shouldUseUltraCompactLayout(columns: number, rows: number): boolean {
-  return columns < 92 || rows < 28;
-}
-
-function shouldUseWideBrowseLayout(columns: number, rows: number): boolean {
-  return columns >= 150 && rows >= 28;
-}
-
 function useShellInput({
   footerActions,
   commands,
@@ -434,6 +423,32 @@ function ShellFrame({
   );
 }
 
+function ResizeBlocker({
+  minColumns,
+  minRows,
+  message = "Resize terminal to continue",
+}: {
+  minColumns: number;
+  minRows: number;
+  message?: string;
+}) {
+  return (
+    <Box
+      marginTop={1}
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={palette.red}
+      paddingX={1}
+    >
+      <Text color={palette.red}>{message}</Text>
+      <Text color={palette.muted}>
+        {`Need at least ${minColumns} columns × ${minRows} rows for this view.`}
+      </Text>
+      <Text color={palette.gray}>Resize the terminal, then continue.</Text>
+    </Box>
+  );
+}
+
 type MountedShell<TResult> = {
   close: (value: TResult) => void;
   result: Promise<TResult>;
@@ -585,6 +600,8 @@ function PlaybackShell({
   const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
   const [draftSettings, setDraftSettings] = useState<KitsuneConfig | null>(null);
   const [appliedSettings, setAppliedSettings] = useState<KitsuneConfig | null>(settings ?? null);
+  const { stdout } = useStdout();
+  const playbackViewport = getShellViewportPolicy("playback", stdout.columns, stdout.rows);
   const commands =
     state.commands ??
     fallbackCommandState([
@@ -1028,61 +1045,71 @@ function PlaybackShell({
       commands={commands}
       onResolve={resolvePlaybackAction}
     >
-      <Text color={palette.muted}>
-        Playback controls stay visible and command-driven. Use `/` for direct actions without
-        leaving the shell.
-      </Text>
-      <Box marginTop={1}>
-        <Badge label={`provider ${activeProvider}`} tone="info" />
-        <Badge label={state.mode === "anime" ? "anime mode" : "series mode"} />
-        {state.type === "series" ? (
-          <Badge
-            label={`episode S${String(state.season).padStart(2, "0")}E${String(
-              state.episode,
-            ).padStart(2, "0")}`}
-          />
-        ) : (
-          <Badge label="movie" />
-        )}
-        {state.subtitleStatus ? (
-          <Badge
-            label={state.subtitleStatus}
-            tone={state.subtitleStatus.toLowerCase().includes("not found") ? "neutral" : "info"}
-          />
-        ) : null}
-        {activeOverlay ? (
-          <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
-        ) : null}
-      </Box>
-      {state.subtitleStatus ? (
-        <Box marginTop={1}>
-          <Text color={palette.gray}>{state.subtitleStatus}</Text>
-        </Box>
-      ) : null}
-      {state.showMemory && state.memoryUsage ? (
-        <Box marginTop={1}>
-          <Text color={palette.gray}>{state.memoryUsage}</Text>
-        </Box>
-      ) : null}
-      {activeOverlay ? (
-        <OverlayPanel
-          overlay={
-            activeOverlay.type === "provider" ||
-            activeOverlay.type === "settings" ||
-            activeOverlay.type === "settings-choice"
-              ? {
-                  ...activeOverlay,
-                  options: filteredOverlayOptions,
-                  selectedIndex: Math.min(
-                    activeOverlay.selectedIndex,
-                    Math.max(filteredOverlayOptions.length - 1, 0),
-                  ),
-                }
-              : activeOverlay
-          }
-          width={Math.max(24, process.stdout.columns - 8)}
+      {playbackViewport.tooSmall ? (
+        <ResizeBlocker
+          minColumns={playbackViewport.minColumns}
+          minRows={playbackViewport.minRows}
+          message="Resize terminal for playback controls"
         />
-      ) : null}
+      ) : (
+        <>
+          <Text color={palette.muted}>
+            Playback controls stay visible and command-driven. Use `/` for direct actions without
+            leaving the shell.
+          </Text>
+          <Box marginTop={1}>
+            <Badge label={`provider ${activeProvider}`} tone="info" />
+            <Badge label={state.mode === "anime" ? "anime mode" : "series mode"} />
+            {state.type === "series" ? (
+              <Badge
+                label={`episode S${String(state.season).padStart(2, "0")}E${String(
+                  state.episode,
+                ).padStart(2, "0")}`}
+              />
+            ) : (
+              <Badge label="movie" />
+            )}
+            {state.subtitleStatus ? (
+              <Badge
+                label={state.subtitleStatus}
+                tone={state.subtitleStatus.toLowerCase().includes("not found") ? "neutral" : "info"}
+              />
+            ) : null}
+            {activeOverlay ? (
+              <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
+            ) : null}
+          </Box>
+          {state.subtitleStatus ? (
+            <Box marginTop={1}>
+              <Text color={palette.gray}>{state.subtitleStatus}</Text>
+            </Box>
+          ) : null}
+          {state.showMemory && state.memoryUsage ? (
+            <Box marginTop={1}>
+              <Text color={palette.gray}>{state.memoryUsage}</Text>
+            </Box>
+          ) : null}
+          {activeOverlay ? (
+            <OverlayPanel
+              overlay={
+                activeOverlay.type === "provider" ||
+                activeOverlay.type === "settings" ||
+                activeOverlay.type === "settings-choice"
+                  ? {
+                      ...activeOverlay,
+                      options: filteredOverlayOptions,
+                      selectedIndex: Math.min(
+                        activeOverlay.selectedIndex,
+                        Math.max(filteredOverlayOptions.length - 1, 0),
+                      ),
+                    }
+                  : activeOverlay
+              }
+              width={Math.max(24, process.stdout.columns - 8)}
+            />
+          ) : null}
+        </>
+      )}
     </ShellFrame>
   );
 }
@@ -1557,12 +1584,8 @@ function ListShell<T>({
 
   const selectedOption = filteredOptions[index];
 
-  const compactLayout = shouldUseCompactLayout(stdout.columns, stdout.rows);
-  const ultraCompactLayout = shouldUseUltraCompactLayout(stdout.columns, stdout.rows);
-  const minPickerColumns = 84;
-  const minPickerRows = 24;
-  const pickerTooSmall = stdout.columns < minPickerColumns || stdout.rows < minPickerRows;
-  const maxVisible = Math.max(5, stdout.rows - (ultraCompactLayout ? 18 : compactLayout ? 22 : 26));
+  const viewport = getShellViewportPolicy("picker", stdout.columns, stdout.rows);
+  const { ultraCompact, tooSmall, minColumns, minRows, maxVisibleRows: maxVisible } = viewport;
   const innerWidth = Math.max(24, stdout.columns - 8);
   const rowWidth = Math.max(20, innerWidth - 4);
   const selectedLabel = selectedOption?.label ?? "Nothing selected";
@@ -1579,9 +1602,7 @@ function ListShell<T>({
     normalizedFilter.length > 0
       ? "Refine the filter or confirm the highlighted match"
       : (actionContext?.taskLabel ?? "Filter this list and confirm a selection");
-  const effectiveFooterMode = ultraCompactLayout
-    ? "minimal"
-    : (actionContext?.footerMode ?? "detailed");
+  const effectiveFooterMode = ultraCompact ? "minimal" : (actionContext?.footerMode ?? "detailed");
   const footerActions: readonly FooterAction[] =
     effectiveFooterMode === "minimal"
       ? [
@@ -1737,20 +1758,8 @@ function ListShell<T>({
             showCursor
           />
         </Box>
-        {pickerTooSmall ? (
-          <Box
-            marginTop={1}
-            flexDirection="column"
-            borderStyle="round"
-            borderColor={palette.red}
-            paddingX={1}
-          >
-            <Text color={palette.red}>Resize terminal to continue</Text>
-            <Text color={palette.muted}>
-              {`Need at least ${minPickerColumns} columns × ${minPickerRows} rows for this picker.`}
-            </Text>
-            <Text color={palette.gray}>Esc goes back. Resize, then reopen this picker.</Text>
-          </Box>
+        {tooSmall ? (
+          <ResizeBlocker minColumns={minColumns} minRows={minRows} />
         ) : (
           <>
             <Text color={palette.gray}>
@@ -1786,7 +1795,7 @@ function ListShell<T>({
               })}
               {windowEnd < filteredOptions.length && <Text color={palette.gray}> ▼ ...</Text>}
             </Box>
-            {!ultraCompactLayout ? (
+            {!ultraCompact ? (
               <Box
                 marginTop={1}
                 flexDirection="column"
@@ -2481,14 +2490,20 @@ function BrowseShell<T>({
 
   const queryDirty = query.trim() !== lastSearchedQuery;
   const selectedOption = options[selectedIndex];
-  const compactLayout = shouldUseCompactLayout(stdout.columns, stdout.rows);
-  const ultraCompactLayout = shouldUseUltraCompactLayout(stdout.columns, stdout.rows);
-  const wideBrowseLayout = shouldUseWideBrowseLayout(stdout.columns, stdout.rows);
-  const effectiveFooterMode = ultraCompactLayout ? "minimal" : (footerMode ?? "detailed");
-  const maxVisible = Math.max(5, stdout.rows - (compactLayout ? 13 : 18));
+  const viewport = getShellViewportPolicy("browse", stdout.columns, stdout.rows);
+  const {
+    compact,
+    ultraCompact,
+    tooSmall,
+    wideBrowse,
+    minColumns,
+    minRows,
+    maxVisibleRows: maxVisible,
+  } = viewport;
+  const effectiveFooterMode = ultraCompact ? "minimal" : (footerMode ?? "detailed");
   const innerWidth = Math.max(24, stdout.columns - 8);
-  const previewWidth = wideBrowseLayout ? Math.max(36, Math.floor(innerWidth * 0.4)) : innerWidth;
-  const listWidth = wideBrowseLayout ? Math.max(42, innerWidth - previewWidth - 3) : innerWidth;
+  const previewWidth = wideBrowse ? Math.max(36, Math.floor(innerWidth * 0.4)) : innerWidth;
+  const listWidth = wideBrowse ? Math.max(42, innerWidth - previewWidth - 3) : innerWidth;
   const rowWidth = Math.max(20, listWidth - 4);
   const windowStart = getWindowStart(selectedIndex, options.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, options.length);
@@ -2508,7 +2523,7 @@ function BrowseShell<T>({
   const previewBodyLines = wrapText(
     selectedOption?.previewBody ?? "Type a title and press Enter to search.",
     Math.max(previewWidth - 2, 24),
-    ultraCompactLayout ? 1 : compactLayout ? 2 : 3,
+    ultraCompact ? 1 : compact ? 2 : 3,
   );
 
   useInput((input, key) => {
@@ -2810,12 +2825,10 @@ function BrowseShell<T>({
                   : "ready"}
           </Text>
         </Box>
-        {!ultraCompactLayout ? <Text color={palette.muted}>{resultSubtitle}</Text> : null}
+        {!ultraCompact ? <Text color={palette.muted}>{resultSubtitle}</Text> : null}
         <Box marginTop={1}>
           <Badge label={`provider ${activeProvider}`} tone="info" />
-          {!ultraCompactLayout ? (
-            <Badge label={mode === "anime" ? "anime mode" : "series mode"} />
-          ) : null}
+          {!ultraCompact ? <Badge label={mode === "anime" ? "anime mode" : "series mode"} /> : null}
           {activeOverlay ? (
             <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
           ) : null}
@@ -2833,7 +2846,7 @@ function BrowseShell<T>({
           />
         </Box>
 
-        {queryDirty && options.length > 0 && !ultraCompactLayout ? (
+        {queryDirty && options.length > 0 && !ultraCompact ? (
           <Text color={palette.gray}>Query changed · Press Enter to refresh results</Text>
         ) : null}
 
@@ -2843,7 +2856,13 @@ function BrowseShell<T>({
           </Box>
         ) : null}
 
-        {activeOverlay ? (
+        {tooSmall ? (
+          <ResizeBlocker
+            minColumns={minColumns}
+            minRows={minRows}
+            message="Resize terminal to browse results"
+          />
+        ) : activeOverlay ? (
           <OverlayPanel
             overlay={
               activeOverlay.type === "provider"
@@ -2861,11 +2880,11 @@ function BrowseShell<T>({
           />
         ) : options.length > 0 ? (
           <Box
-            flexDirection={wideBrowseLayout ? "row" : "column"}
+            flexDirection={wideBrowse ? "row" : "column"}
             marginTop={1}
             justifyContent="space-between"
           >
-            <Box flexDirection="column" width={wideBrowseLayout ? listWidth : undefined}>
+            <Box flexDirection="column" width={wideBrowse ? listWidth : undefined}>
               {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
               {visibleOptions.map((option, index) => {
                 const optionIndex = windowStart + index;
@@ -2893,13 +2912,13 @@ function BrowseShell<T>({
             </Box>
 
             <Box
-              marginTop={wideBrowseLayout ? 0 : 1}
-              marginLeft={wideBrowseLayout ? 1 : 0}
+              marginTop={wideBrowse ? 0 : 1}
+              marginLeft={wideBrowse ? 1 : 0}
               flexDirection="column"
               borderStyle="round"
               borderColor={palette.green}
               paddingX={1}
-              width={wideBrowseLayout ? previewWidth : undefined}
+              width={wideBrowse ? previewWidth : undefined}
             >
               <Text color={palette.green}>Selection Preview</Text>
               <Text bold color="white">
@@ -2908,17 +2927,15 @@ function BrowseShell<T>({
                   previewWidth,
                 )}
               </Text>
-              {previewMeta.length > 0 && !ultraCompactLayout ? (
+              {previewMeta.length > 0 && !ultraCompact ? (
                 <Box marginTop={1}>
-                  {previewMeta
-                    .slice(0, compactLayout ? 2 : previewMeta.length)
-                    .map((item, index) => (
-                      <Badge
-                        key={`${item}-${index}`}
-                        label={item}
-                        tone={index === 0 ? "info" : "neutral"}
-                      />
-                    ))}
+                  {previewMeta.slice(0, compact ? 2 : previewMeta.length).map((item, index) => (
+                    <Badge
+                      key={`${item}-${index}`}
+                      label={item}
+                      tone={index === 0 ? "info" : "neutral"}
+                    />
+                  ))}
                 </Box>
               ) : null}
               {previewBodyLines.length > 0 ? (
@@ -2930,7 +2947,7 @@ function BrowseShell<T>({
                   ))}
                 </Box>
               ) : null}
-              {!ultraCompactLayout ? (
+              {!ultraCompact ? (
                 <Box marginTop={1}>
                   <Text color={palette.gray}>
                     {selectedOption?.previewNote ??
