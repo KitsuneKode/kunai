@@ -16,6 +16,7 @@ import type {
 import { buildPickerActionContext, openSubtitlePicker } from "@/app-shell/workflows";
 import { resolveCommands } from "@/app-shell/commands";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
+import { switchSessionMode } from "@/app/mode-switch";
 import {
   getAutoAdvanceEpisode,
   resolveEpisodeAvailability,
@@ -401,16 +402,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         if (postAction === "quit") {
           return { status: "quit" };
         } else if (postAction === "toggle-mode") {
-          const currentState = stateManager.getState();
-          const newMode = currentState.mode === "anime" ? "series" : "anime";
-          stateManager.dispatch({
-            type: "SET_MODE",
-            mode: newMode,
-            provider:
-              newMode === "anime"
-                ? currentState.defaultProviders.anime
-                : currentState.defaultProviders.series,
-          });
+          switchSessionMode(stateManager);
           return { status: "success", value: "back_to_search" };
         } else if (postAction === "replay") {
           // Loop continues - same episode

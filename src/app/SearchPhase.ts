@@ -9,6 +9,7 @@ import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import type { TitleInfo } from "@/domain/types";
 import { toBrowseResultOption } from "@/app/browse-option-mappers";
 import { searchTitles } from "@/app/search-routing";
+import { switchSessionMode } from "@/app/mode-switch";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
@@ -155,16 +156,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
 
           if (outcome.action === "toggle-mode") {
-            const nextState = stateManager.getState();
-            const newMode = nextState.mode === "anime" ? "series" : "anime";
-            stateManager.dispatch({
-              type: "SET_MODE",
-              mode: newMode,
-              provider:
-                newMode === "anime"
-                  ? nextState.defaultProviders.anime
-                  : nextState.defaultProviders.series,
-            });
+            switchSessionMode(stateManager);
             stateManager.dispatch({ type: "RESET_SEARCH" });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
             continue;
