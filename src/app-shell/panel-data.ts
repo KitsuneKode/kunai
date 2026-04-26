@@ -11,6 +11,25 @@ function summarizeHeaderKeys(headers: Record<string, string> | undefined): strin
   return keys.length > 0 ? keys.join(", ") : "none";
 }
 
+function describeSubtitleState(state: SessionState): {
+  label: string;
+  tone: ShellPanelLine["tone"];
+} {
+  if (state.subLang === "none") {
+    return { label: "disabled by preference", tone: "neutral" };
+  }
+  if (!state.stream) {
+    return { label: "not resolved yet", tone: "neutral" };
+  }
+  if (state.stream.subtitle) {
+    return { label: "attached", tone: "success" };
+  }
+  if (state.stream.subtitleList?.length) {
+    return { label: `${state.stream.subtitleList.length} tracks available`, tone: "warning" };
+  }
+  return { label: "not found", tone: "warning" };
+}
+
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
   return [
     {
@@ -104,6 +123,7 @@ export function buildDiagnosticsPanelLines({
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
 }): readonly ShellPanelLine[] {
+  const subtitleState = describeSubtitleState(state);
   return [
     {
       label: "Mode and provider",
@@ -115,22 +135,35 @@ export function buildDiagnosticsPanelLines({
     },
     {
       label: "Subtitle state",
-      detail: state.stream?.subtitle ? "resolved" : "not found or disabled",
-      tone: state.stream?.subtitle ? "success" : "warning",
+      detail: subtitleState.label,
+      tone: subtitleState.tone,
     },
     {
       label: "Selected subtitle URL",
-      detail: state.stream?.subtitle ?? "not found or disabled",
+      detail: state.stream?.subtitle ?? subtitleState.label,
     },
     {
       label: "Subtitle tracks",
       detail: String(state.stream?.subtitleList?.length ?? 0),
     },
     {
+      label: "Subtitle source",
+      detail: state.stream?.subtitleSource ?? "none",
+    },
+    {
+      label: "Subtitle evidence",
+      detail: state.stream?.subtitleEvidence
+        ? JSON.stringify(state.stream.subtitleEvidence)
+        : "no subtitle evidence recorded yet",
+      tone: state.stream?.subtitleEvidence ? "neutral" : "warning",
+    },
+    {
       label: "Subtitle diagnosis",
       detail: state.stream?.subtitle
         ? "A subtitle URL was attached before mpv launched."
-        : "For Vidking, this usually means the embed did not request a direct subtitle file or Wyzie search before the stream was captured, the preference is disabled, or the subtitle provider had no match.",
+        : state.subLang === "none"
+          ? "Subtitle preference is set to none, so mpv launches without a subtitle file by design."
+          : "For Vidking, this usually means the embed did not request a direct subtitle file or Wyzie search before the stream was captured, or the subtitle provider had no match.",
       tone: state.stream?.subtitle ? "success" : "warning",
     },
     {

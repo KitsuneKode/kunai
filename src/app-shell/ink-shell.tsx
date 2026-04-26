@@ -252,10 +252,12 @@ function CommandPalette({
 function useShellInput({
   footerActions,
   commands,
+  disabled = false,
   onResolve,
 }: {
   footerActions: readonly FooterAction[];
   commands: readonly ResolvedAppCommand[];
+  disabled?: boolean;
   onResolve: (action: ShellAction) => void;
 }) {
   const [commandMode, setCommandMode] = useState(false);
@@ -263,6 +265,12 @@ function useShellInput({
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
   useEffect(() => {
+    if (disabled) {
+      setCommandMode(false);
+      setCommandInput("");
+      setHighlightedIndex(0);
+      return;
+    }
     if (!commandMode) {
       setHighlightedIndex(0);
       return;
@@ -273,9 +281,13 @@ function useShellInput({
       if (matches.length === 0) return 0;
       return Math.min(current, matches.length - 1);
     });
-  }, [commandInput, commandMode, commands]);
+  }, [commandInput, commandMode, commands, disabled]);
 
   useInput((input, key) => {
+    if (disabled) {
+      return;
+    }
+
     if (key.escape) {
       if (commandMode) {
         setCommandMode(false);
@@ -354,6 +366,7 @@ function ShellFrame({
   footerActions,
   footerMode,
   commands,
+  inputLocked = false,
   onResolve,
   children,
 }: {
@@ -365,6 +378,7 @@ function ShellFrame({
   footerActions: readonly FooterAction[];
   footerMode?: ShellFooterMode;
   commands: readonly ResolvedAppCommand[];
+  inputLocked?: boolean;
   onResolve: (action: ShellAction) => void;
   children: React.ReactNode;
 }) {
@@ -380,6 +394,7 @@ function ShellFrame({
   const { commandMode, commandInput, highlightedIndex } = useShellInput({
     footerActions,
     commands,
+    disabled: inputLocked,
     onResolve,
   });
 
@@ -417,7 +432,7 @@ function ShellFrame({
         taskLabel={footerTask}
         actions={footerActions}
         mode={footerMode}
-        commandMode={commandMode}
+        commandMode={commandMode && !inputLocked}
       />
     </Box>
   );
@@ -787,7 +802,7 @@ function PlaybackShell({
       type: "settings",
       title: "Settings",
       subtitle: buildSettingsSummary(nextDraft),
-      options: buildSettingsOptions(nextDraft, dirty),
+      options: buildSettingsOptions(nextDraft),
       filterQuery: "",
       selectedIndex,
       dirty,
@@ -870,6 +885,31 @@ function PlaybackShell({
       parentSelectedIndex,
       busy: false,
     });
+  };
+
+  const saveSettingsOverlay = () => {
+    if (!draftSettings) return;
+    if (!onSaveSettings || settingsEqual(draftSettings, appliedSettings)) {
+      setDraftSettings(null);
+      setActiveOverlay(null);
+      return;
+    }
+    const currentOverlay = activeOverlay;
+    if (!currentOverlay || currentOverlay.type !== "settings") return;
+    setActiveOverlay({ ...currentOverlay, busy: true });
+    void onSaveSettings(draftSettings)
+      .then(() => {
+        setAppliedSettings(draftSettings);
+        setDraftSettings(null);
+        setActiveOverlay(null);
+      })
+      .catch((error) => {
+        setActiveOverlay({
+          ...currentOverlay,
+          busy: false,
+          subtitle: `Failed to save settings: ${String(error)}`,
+        });
+      });
   };
 
   const handleLocalAction = (action: ShellAction): boolean => {
@@ -980,6 +1020,10 @@ function PlaybackShell({
         activeOverlay.type === "settings-choice" ||
         activeOverlay.type === "episode-picker"
       ) {
+        if (activeOverlay.type === "settings" && input.toLowerCase() === "s") {
+          saveSettingsOverlay();
+          return;
+        }
         if (key.ctrl && input.toLowerCase() === "w") {
           setActiveOverlay({
             ...activeOverlay,
@@ -1048,33 +1092,6 @@ function PlaybackShell({
           if (activeOverlay.type === "settings") {
             if (!draftSettings) return;
             const action = target.value;
-            if (action === "__discard") {
-              setDraftSettings(null);
-              setActiveOverlay(null);
-              return;
-            }
-            if (action === "__save") {
-              if (!onSaveSettings) {
-                setDraftSettings(null);
-                setActiveOverlay(null);
-                return;
-              }
-              setActiveOverlay({ ...activeOverlay, busy: true });
-              void onSaveSettings(draftSettings)
-                .then(() => {
-                  setAppliedSettings(draftSettings);
-                  setDraftSettings(null);
-                  setActiveOverlay(null);
-                })
-                .catch((error) => {
-                  setActiveOverlay({
-                    ...activeOverlay,
-                    busy: false,
-                    subtitle: `Failed to save settings: ${String(error)}`,
-                  });
-                });
-              return;
-            }
             if (action === "headless") {
               openSettingsOverlay(
                 { ...draftSettings, headless: !draftSettings.headless },
@@ -1157,7 +1174,7 @@ function PlaybackShell({
     }
 
     if (key.return) {
-      resolvePlaybackAction("replay");
+      return;
     }
   });
 
@@ -1171,6 +1188,7 @@ function PlaybackShell({
       footerActions={footerActions}
       footerMode={state.footerMode}
       commands={commands}
+      inputLocked={activeOverlay !== null}
       onResolve={resolvePlaybackAction}
     >
       {playbackViewport.tooSmall ? (
@@ -1291,9 +1309,16 @@ function Badge({
   tone = "neutral",
 }: {
   label: string;
-  tone?: "neutral" | "info" | "success";
+  tone?: "neutral" | "info" | "success" | "warning";
 }) {
-  const color = tone === "success" ? palette.green : tone === "info" ? palette.cyan : palette.gray;
+  const color =
+    tone === "success"
+      ? palette.green
+      : tone === "info"
+        ? palette.cyan
+        : tone === "warning"
+          ? palette.amber
+          : palette.gray;
 
   return (
     <Box borderStyle="round" borderColor={color} paddingX={1} marginRight={1}>
@@ -1397,6 +1422,7 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
     searching: "Searching",
     scraping: "Scraping",
     resolving: "Resolving stream",
+    playing: "Playing",
     loading: "Loading",
   };
 
@@ -1417,6 +1443,23 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
         <Text color={palette.amber}>{operationLabels[state.operation]}...</Text>
         {state.details && <Text color={palette.gray}> {state.details}</Text>}
       </Box>
+      {state.subtitleStatus ? (
+        <Box marginTop={1}>
+          <Text color={state.subtitleStatus.includes("attached") ? palette.green : palette.amber}>
+            {state.subtitleStatus}
+          </Text>
+        </Box>
+      ) : null}
+      {state.trace ? (
+        <Box marginTop={1}>
+          <Text color={palette.gray}>{state.trace}</Text>
+        </Box>
+      ) : null}
+      {state.showMemory ? (
+        <Box marginTop={1}>
+          <Text color={palette.gray}>{formatMemoryUsage()}</Text>
+        </Box>
+      ) : null}
       {state.progress !== undefined && (
         <Box marginTop={1}>
           <Box
@@ -2028,11 +2071,9 @@ type SettingsAction =
   | "headless"
   | "showMemory"
   | "autoNext"
-  | "footerHints"
-  | "__save"
-  | "__discard";
+  | "footerHints";
 
-type SettingsChoiceValue = Exclude<SettingsAction, "__save" | "__discard">;
+type SettingsChoiceValue = SettingsAction;
 
 const SUBTITLE_SETTINGS_OPTIONS: readonly ShellPickerOption<string>[] = [
   { value: "en", label: "English" },
@@ -2067,10 +2108,7 @@ function buildSettingsSummary(config: KitsuneConfig): string {
   return `${config.defaultMode} default  ·  series ${config.provider}  ·  anime ${config.animeProvider}  ·  footer ${config.footerHints}`;
 }
 
-function buildSettingsOptions(
-  config: KitsuneConfig,
-  dirty: boolean,
-): readonly ShellPickerOption<SettingsAction>[] {
+function buildSettingsOptions(config: KitsuneConfig): readonly ShellPickerOption<SettingsAction>[] {
   return [
     {
       value: "defaultMode",
@@ -2117,18 +2155,6 @@ function buildSettingsOptions(
       label: `Footer hints  ·  ${config.footerHints}`,
       detail: "Detailed keeps two lines, minimal keeps only the task line",
     },
-    {
-      value: "__save",
-      label: dirty ? "Save changes" : "Close settings",
-      detail: dirty
-        ? "Apply these settings to the runtime and future sessions"
-        : "Nothing changed yet",
-    },
-    {
-      value: "__discard",
-      label: dirty ? "Discard changes" : "Back",
-      detail: dirty ? "Close settings without saving this draft" : "Return to the previous screen",
-    },
   ];
 }
 
@@ -2170,7 +2196,7 @@ function OverlayPanel({
     overlay.type === "settings-choice" ||
     overlay.type === "episode-picker"
       ? 8
-      : 10);
+      : 6);
   const optionWindowStart =
     overlay.type === "provider" ||
     overlay.type === "settings" ||
@@ -2192,10 +2218,24 @@ function OverlayPanel({
       marginTop={1}
       flexDirection="column"
       borderStyle="round"
-      borderColor={overlay.type === "provider" ? palette.amber : palette.cyan}
+      borderColor={
+        overlay.type === "settings" || overlay.type === "settings-choice"
+          ? palette.green
+          : overlay.type === "provider"
+            ? palette.amber
+            : palette.cyan
+      }
       paddingX={1}
     >
-      <Text color={overlay.type === "provider" ? palette.amber : palette.cyan}>
+      <Text
+        color={
+          overlay.type === "settings" || overlay.type === "settings-choice"
+            ? palette.green
+            : overlay.type === "provider"
+              ? palette.amber
+              : palette.cyan
+        }
+      >
         {overlay.title}
       </Text>
       <Text color={palette.gray}>{overlay.subtitle}</Text>
@@ -2252,10 +2292,19 @@ function OverlayPanel({
                   : overlay.type === "episode-picker"
                     ? "Type to filter, ↑↓ to choose, Enter to jump, Esc to close"
                     : overlay.type === "settings"
-                      ? "Type to filter, ↑↓ to choose, Enter to edit, Esc to discard or close"
+                      ? "Type to filter, ↑↓ to choose, Enter to edit"
                       : "Type to filter, ↑↓ to choose, Enter to apply, Esc to go back"}
             </Text>
           </Box>
+          {overlay.type === "settings" ? (
+            <Box marginTop={1}>
+              <Badge
+                label={overlay.dirty ? "s save changes" : "s close"}
+                tone={overlay.dirty ? "success" : "neutral"}
+              />
+              <Badge label={overlay.dirty ? "esc discard" : "esc close"} tone="warning" />
+            </Box>
+          ) : null}
         </>
       ) : overlay.loading ? (
         <Box marginTop={1}>
@@ -2295,7 +2344,14 @@ function OverlayPanel({
                   : null}
               </Box>
             ))}
-          <Text color={palette.gray}>Esc closes this panel</Text>
+          <Text color={palette.gray}>
+            {overlay.lines.length > maxLines
+              ? `Showing ${(overlay.scrollIndex ?? 0) + 1}-${Math.min(
+                  (overlay.scrollIndex ?? 0) + maxLines,
+                  overlay.lines.length,
+                )} of ${overlay.lines.length}  ·  ↑↓ scroll  ·  Esc closes`
+              : "Esc closes this panel"}
+          </Text>
         </Box>
       )}
     </Box>
@@ -2367,9 +2423,7 @@ function BrowseShell<T>({
     initialResults?.[initialSelectedIndex ?? 0]?.detail ??
       "Type a title and press Enter to search.",
   );
-  const [resultSubtitle, setResultSubtitle] = useState(
-    initialResultSubtitle ?? `Provider ${provider}  ·  Enter searches  ·  / commands`,
-  );
+  const [resultSubtitle, setResultSubtitle] = useState(initialResultSubtitle ?? "");
   const [searchState, setSearchState] = useState<"idle" | "loading" | "ready" | "error">(
     initialResults && initialResults.length > 0 ? "ready" : "idle",
   );
@@ -2380,14 +2434,14 @@ function BrowseShell<T>({
   const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
   const requestIdRef = useRef(0);
 
-  const clearResults = (nextProvider = activeProvider) => {
+  const clearResults = () => {
     setOptions([]);
     setSelectedIndex(0);
     setSearchState("idle");
     setLastSearchedQuery("");
     setErrorMessage(null);
     setEmptyMessage("Type a title and press Enter to search.");
-    setResultSubtitle(`Provider ${nextProvider}  ·  Enter searches  ·  / commands`);
+    setResultSubtitle("");
     setSelectedDetail("Type a title and press Enter to search.");
   };
 
@@ -2536,7 +2590,7 @@ function BrowseShell<T>({
       type: "settings",
       title: "Settings",
       subtitle: buildSettingsSummary(nextDraft),
-      options: buildSettingsOptions(nextDraft, dirty),
+      options: buildSettingsOptions(nextDraft),
       filterQuery: "",
       selectedIndex,
       dirty,
@@ -2619,6 +2673,31 @@ function BrowseShell<T>({
       parentSelectedIndex,
       busy: false,
     });
+  };
+
+  const saveSettingsOverlay = () => {
+    if (!draftSettings) return;
+    if (!onSaveSettings || settingsEqual(draftSettings, appliedSettings)) {
+      setDraftSettings(null);
+      setActiveOverlay(null);
+      return;
+    }
+    const currentOverlay = activeOverlay;
+    if (!currentOverlay || currentOverlay.type !== "settings") return;
+    setActiveOverlay({ ...currentOverlay, busy: true });
+    void onSaveSettings(draftSettings)
+      .then(() => {
+        setAppliedSettings(draftSettings);
+        setDraftSettings(null);
+        setActiveOverlay(null);
+      })
+      .catch((error) => {
+        setActiveOverlay({
+          ...currentOverlay,
+          busy: false,
+          subtitle: `Failed to save settings: ${String(error)}`,
+        });
+      });
   };
 
   const handleLocalAction = (action: ShellAction): boolean => {
@@ -2740,9 +2819,6 @@ function BrowseShell<T>({
 
     if (activeOverlay) {
       if (input === "/") {
-        setCommandMode(true);
-        setCommandInput("");
-        setHighlightedCommandIndex(0);
         return;
       }
 
@@ -2760,6 +2836,10 @@ function BrowseShell<T>({
         activeOverlay.type === "settings" ||
         activeOverlay.type === "settings-choice"
       ) {
+        if (activeOverlay.type === "settings" && input.toLowerCase() === "s") {
+          saveSettingsOverlay();
+          return;
+        }
         if (key.ctrl && input.toLowerCase() === "w") {
           setActiveOverlay({
             ...activeOverlay,
@@ -2804,7 +2884,7 @@ function BrowseShell<T>({
               .then(() => {
                 setActiveProvider(target.value);
                 setActiveOverlay(null);
-                clearResults(target.value);
+                clearResults();
               })
               .catch((error) => {
                 setActiveOverlay({
@@ -2819,33 +2899,6 @@ function BrowseShell<T>({
           if (activeOverlay.type === "settings") {
             if (!draftSettings) return;
             const action = target.value;
-            if (action === "__discard") {
-              setDraftSettings(null);
-              setActiveOverlay(null);
-              return;
-            }
-            if (action === "__save") {
-              if (!onSaveSettings) {
-                setDraftSettings(null);
-                setActiveOverlay(null);
-                return;
-              }
-              setActiveOverlay({ ...activeOverlay, busy: true });
-              void onSaveSettings(draftSettings)
-                .then(() => {
-                  setAppliedSettings(draftSettings);
-                  setDraftSettings(null);
-                  setActiveOverlay(null);
-                })
-                .catch((error) => {
-                  setActiveOverlay({
-                    ...activeOverlay,
-                    busy: false,
-                    subtitle: `Failed to save settings: ${String(error)}`,
-                  });
-                });
-              return;
-            }
             if (action === "headless") {
               openSettingsOverlay(
                 { ...draftSettings, headless: !draftSettings.headless },
@@ -3035,7 +3088,9 @@ function BrowseShell<T>({
                   : "ready"}
           </Text>
         </Box>
-        {!ultraCompact ? <Text color={palette.muted}>{resultSubtitle}</Text> : null}
+        {!ultraCompact && resultSubtitle ? (
+          <Text color={palette.muted}>{resultSubtitle}</Text>
+        ) : null}
         <Box marginTop={1}>
           <Badge label={`provider ${activeProvider}`} tone="info" />
           {!ultraCompact ? <Badge label={mode === "anime" ? "anime mode" : "series mode"} /> : null}

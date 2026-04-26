@@ -63,6 +63,8 @@ export class AllAnimeProvider implements Provider {
       headers: result.headers,
       subtitle: result.subtitle ?? undefined,
       subtitleList: result.subtitleList as SubtitleTrack[] | undefined,
+      subtitleSource: result.subtitleSource,
+      subtitleEvidence: result.subtitleEvidence,
       timestamp: result.timestamp,
     };
   }

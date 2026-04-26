@@ -65,9 +65,12 @@ export type PlaybackShellState = {
 export type LoadingShellState = {
   title: string;
   subtitle?: string;
-  operation: "searching" | "scraping" | "resolving" | "loading";
+  operation: "searching" | "scraping" | "resolving" | "playing" | "loading";
   progress?: number; // 0-100 or undefined for indeterminate
   details?: string;
+  trace?: string;
+  subtitleStatus?: string;
+  showMemory?: boolean;
   cancellable?: boolean;
 };
 

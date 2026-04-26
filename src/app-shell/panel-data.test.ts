@@ -43,7 +43,7 @@ describe("panel-data", () => {
     });
 
     expect(lines.find((line) => line.label === "Selected subtitle URL")?.detail).toBe(
-      "not found or disabled",
+      "not resolved yet",
     );
     expect(lines.find((line) => line.label === "Subtitle diagnosis")?.tone).toBe("warning");
   });

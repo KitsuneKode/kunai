@@ -514,6 +514,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       subtitleReason: subtitleDecision.reason,
       availableTracks: subtitleDecision.availableTracks,
       subtitleSelected: subtitleDecision.subtitle ?? null,
+      providerSubtitleSource: stream.subtitleSource ?? "none",
+      providerSubtitleEvidence: stream.subtitleEvidence ?? null,
     });
     context.container.diagnosticsStore.record({
       category: "subtitle",
@@ -528,6 +530,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         subtitleReason: subtitleDecision.reason,
         availableTracks: subtitleDecision.availableTracks,
         subtitleSelected: subtitleDecision.subtitle ?? null,
+        providerSubtitleSource: stream.subtitleSource ?? "none",
+        providerSubtitleEvidence: stream.subtitleEvidence ?? null,
       },
     });
 
@@ -543,7 +547,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     episode: EpisodeInfo,
     context: PhaseContext,
   ): Promise<PlaybackResult> {
-    const { player, stateManager } = context.container;
+    const { player, stateManager, config } = context.container;
 
     const displayTitle =
       title.type === "movie"
@@ -551,21 +555,41 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         : `${title.name} - S${String(episode.season).padStart(2, "0")}E${String(
             episode.episode,
           ).padStart(2, "0")}`;
+    const subtitleStatus = describeSubtitleStatus(stream, stateManager.getState().subLang);
 
     stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
 
-    const result = await player.play(stream, {
-      url: stream.url,
-      headers: stream.headers,
-      subtitle: stream.subtitle,
-      displayTitle,
-      startAt: 0,
-      attach: false,
+    const { openLoadingShell } = await import("../app-shell/ink-shell");
+    const playing = openLoadingShell({
+      state: {
+        title: displayTitle,
+        subtitle: "mpv is open; KitsuneSnipe is waiting for playback to finish",
+        operation: "playing",
+        details: `Provider: ${stateManager.getState().provider}`,
+        trace: `Stream resolved  ·  headers ${Object.keys(stream.headers ?? {}).length}`,
+        subtitleStatus,
+        showMemory: config.showMemory,
+      },
+      cancellable: false,
     });
 
-    stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "finished" });
+    try {
+      const result = await player.play(stream, {
+        url: stream.url,
+        headers: stream.headers,
+        subtitle: stream.subtitle,
+        subtitleStatus,
+        displayTitle,
+        startAt: 0,
+        attach: false,
+      });
 
-    return result;
+      stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "finished" });
+      return result;
+    } finally {
+      playing.close();
+      await playing.result;
+    }
   }
 
   private async getAnimeEpisodeOptions({

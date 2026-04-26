@@ -10,6 +10,7 @@ export interface PlayerOptions {
   url: string;
   headers?: Record<string, string>;
   subtitle?: string;
+  subtitleStatus?: string;
   displayTitle: string;
   startAt?: number;
   attach?: boolean;

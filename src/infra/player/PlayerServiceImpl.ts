@@ -26,7 +26,7 @@ export class PlayerServiceImpl implements PlayerService {
     console.log(
       stream.subtitle
         ? `✓ Subtitle attached: ${stream.subtitle}`
-        : "⚠ Subtitle not found or disabled; playback will start without a subtitle file.",
+        : `⚠ ${options.subtitleStatus ?? "Subtitles not attached"}; playback will start without a subtitle file.`,
     );
 
     this.deps.logger.info("Launching MPV", {
@@ -41,6 +41,7 @@ export class PlayerServiceImpl implements PlayerService {
         title: options.displayTitle,
         hasSubtitle: Boolean(stream.subtitle),
         subtitleUrl: stream.subtitle ?? null,
+        subtitleStatus: options.subtitleStatus ?? null,
         startAt: options.startAt ?? 0,
       },
     });

@@ -576,6 +576,12 @@ export function createAnimeProvider(cfg: AnimeProviderConfig): ApiProvider {
           headers: buildStreamHeaders(best.referer, cfg.referer, ua),
           subtitle: best.subtitle ?? null,
           subtitleList: best.subtitle ? [best.subtitle] : [],
+          subtitleSource: best.subtitle ? "provider" : "none",
+          subtitleEvidence: {
+            directSubtitleObserved: false,
+            wyzieSearchObserved: false,
+            reason: best.subtitle ? "provider-default" : "not-observed",
+          },
           title: "",
           timestamp: Date.now(),
         };

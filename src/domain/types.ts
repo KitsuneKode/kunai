@@ -38,8 +38,23 @@ export interface StreamInfo {
   readonly headers: Record<string, string>;
   readonly subtitle?: string;
   readonly subtitleList?: SubtitleTrack[];
+  readonly subtitleSource?: "direct" | "wyzie" | "provider" | "none";
+  readonly subtitleEvidence?: SubtitleEvidence;
   readonly title?: string;
   readonly timestamp: number;
+}
+
+export interface SubtitleEvidence {
+  readonly directSubtitleObserved?: boolean;
+  readonly wyzieSearchObserved?: boolean;
+  readonly reason?:
+    | "direct-file"
+    | "provider-default"
+    | "wyzie-selected"
+    | "wyzie-empty"
+    | "wyzie-failed"
+    | "not-observed"
+    | "cache-refresh-needed";
 }
 
 export interface SubtitleTrack {

@@ -2,14 +2,10 @@
 // BitCine Provider Adapter
 // =============================================================================
 
-import { BitCine as LegacyBitCine } from "../../../providers/bitcine";
+import { BitCine as LegacyBitCine } from "@/providers/bitcine";
+import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
+
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
-import type {
-  TitleInfo,
-  StreamInfo,
-  ProviderMetadata,
-  ProviderCapabilities,
-} from "../../../domain/types";
 
 export class BitCineProvider implements Provider {
   readonly metadata: ProviderMetadata = {

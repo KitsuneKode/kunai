@@ -2,14 +2,17 @@
 // Braflix Provider Adapter
 // =============================================================================
 
-import { Braflix as LegacyBraflix } from "../../../providers/braflix";
-import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
+import { Braflix as LegacyBraflix } from "@/providers/braflix";
+import type { StreamData } from "@/scraper";
 import type {
-  TitleInfo,
-  StreamInfo,
-  ProviderMetadata,
   ProviderCapabilities,
-} from "../../../domain/types";
+  ProviderMetadata,
+  StreamInfo,
+  SubtitleTrack,
+  TitleInfo,
+} from "@/domain/types";
+
+import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
 export class BraflixProvider implements Provider {
   readonly metadata: ProviderMetadata = {
@@ -36,9 +39,11 @@ export class BraflixProvider implements Provider {
       subLang: request.subLang,
       animeLang: "sub" as const,
       embedScraper: (embedUrl: string) =>
-        this.deps.browser.scrape({ url: embedUrl, subLang: request.subLang, signal }) as Promise<
-          import("../../../scraper").StreamData | null
-        >,
+        this.deps.browser.scrape({
+          url: embedUrl,
+          subLang: request.subLang,
+          signal,
+        }) as Promise<StreamData | null>,
     };
 
     const result = await LegacyBraflix.resolveStream(
@@ -56,9 +61,9 @@ export class BraflixProvider implements Provider {
       url: result.url,
       headers: result.headers,
       subtitle: result.subtitle ?? undefined,
-      subtitleList: result.subtitleList as
-        | import("../../../domain/types").SubtitleTrack[]
-        | undefined,
+      subtitleList: result.subtitleList as SubtitleTrack[] | undefined,
+      subtitleSource: result.subtitleSource,
+      subtitleEvidence: result.subtitleEvidence,
       timestamp: result.timestamp,
     };
   }

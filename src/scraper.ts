@@ -1,5 +1,6 @@
 import { chromium, type Browser, type Page } from "playwright";
 import { fetchSubtitlesFromWyzie } from "./subtitle";
+import type { StreamInfo, SubtitleEvidence } from "@/domain/types";
 import { cacheStream } from "./cache";
 import { dbg, dbgErr } from "./logger";
 import { PLAYER_DOMAINS, type PlaywrightProvider } from "./providers";
@@ -50,6 +51,8 @@ export type StreamData = {
   headers: Record<string, string>;
   subtitle: string | null;
   subtitleList: unknown[];
+  subtitleSource: NonNullable<StreamInfo["subtitleSource"]>;
+  subtitleEvidence: SubtitleEvidence;
   title: string;
   timestamp: number;
 };
@@ -187,11 +190,21 @@ export async function scrapeStream(
 
             let subtitle: string | null = directSubUrl;
             let subtitleList: unknown[] = [];
+            let subtitleSource: StreamData["subtitleSource"] = directSubUrl ? "direct" : "none";
+            let subtitleReason: StreamData["subtitleEvidence"]["reason"] = directSubUrl
+              ? "direct-file"
+              : "not-observed";
 
             if (!subtitle && wyzieSearchUrl) {
               const result = await fetchSubtitlesFromWyzie(wyzieSearchUrl, subLang);
               subtitle = result.selected;
               subtitleList = result.list;
+              subtitleSource = subtitle ? "wyzie" : "none";
+              subtitleReason = subtitle
+                ? "wyzie-selected"
+                : result.failed
+                  ? "wyzie-failed"
+                  : "wyzie-empty";
             }
 
             const result = {
@@ -199,10 +212,23 @@ export async function scrapeStream(
               headers: streamHeaders,
               subtitle,
               subtitleList,
+              subtitleSource,
+              subtitleEvidence: {
+                directSubtitleObserved: Boolean(directSubUrl),
+                wyzieSearchObserved: Boolean(wyzieSearchUrl),
+                reason: subtitleReason,
+              },
               title: scrapedTitle,
               timestamp: Date.now(),
             };
-            dbg("scraper", "resolved", { subtitle, subtitleCount: subtitleList.length });
+            dbg("scraper", "resolved", {
+              subtitle,
+              subtitleCount: subtitleList.length,
+              subtitleSource,
+              subtitleReason,
+              directSubtitleObserved: Boolean(directSubUrl),
+              wyzieSearchObserved: Boolean(wyzieSearchUrl),
+            });
             resolve(result);
           }, 2000);
         }

@@ -200,7 +200,6 @@ function resolveCommandState(
   id: AppCommandId,
   state: SessionState,
 ): { enabled: boolean; reason?: string } {
-  const hasTitle = state.currentTitle !== null;
   const hasEpisode = state.currentEpisode !== null;
   const inSeriesContext = state.currentTitle?.type === "series" && hasEpisode;
   const resolving = state.playbackStatus === "loading";
@@ -234,12 +233,6 @@ function resolveCommandState(
       return { enabled: true };
 
     case "provider":
-      if (!hasTitle) {
-        return {
-          enabled: false,
-          reason: "Select a title before switching providers.",
-        };
-      }
       if (resolving) {
         return {
           enabled: false,

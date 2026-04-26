@@ -188,6 +188,12 @@ export const Braflix: ApiProvider = {
           headers: {},
           subtitle: null,
           subtitleList: [],
+          subtitleSource: "none",
+          subtitleEvidence: {
+            directSubtitleObserved: false,
+            wyzieSearchObserved: false,
+            reason: "not-observed",
+          },
           title: "",
           timestamp: Date.now(),
         };

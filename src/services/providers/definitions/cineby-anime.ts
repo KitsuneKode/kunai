@@ -2,14 +2,17 @@
 // CinebyAnime Provider Adapter
 // =============================================================================
 
-import { CinebyAnime as LegacyCinebyAnime } from "../../../providers/cineby-anime";
-import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
+import { CinebyAnime as LegacyCinebyAnime } from "@/providers/cineby-anime";
+import type { StreamData } from "@/scraper";
 import type {
-  TitleInfo,
-  StreamInfo,
-  ProviderMetadata,
   ProviderCapabilities,
-} from "../../../domain/types";
+  ProviderMetadata,
+  StreamInfo,
+  SubtitleTrack,
+  TitleInfo,
+} from "@/domain/types";
+
+import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
 export class CinebyAnimeProvider implements Provider {
   readonly metadata: ProviderMetadata = {
@@ -35,9 +38,11 @@ export class CinebyAnimeProvider implements Provider {
       subLang: request.subLang,
       animeLang: this.deps.config.animeLang,
       embedScraper: (embedUrl: string) =>
-        this.deps.browser.scrape({ url: embedUrl, subLang: request.subLang, signal }) as Promise<
-          import("../../../scraper").StreamData | null
-        >,
+        this.deps.browser.scrape({
+          url: embedUrl,
+          subLang: request.subLang,
+          signal,
+        }) as Promise<StreamData | null>,
     };
 
     const result = await LegacyCinebyAnime.resolveStream(
@@ -54,9 +59,9 @@ export class CinebyAnimeProvider implements Provider {
       url: result.url,
       headers: result.headers,
       subtitle: result.subtitle ?? undefined,
-      subtitleList: result.subtitleList as
-        | import("../../../domain/types").SubtitleTrack[]
-        | undefined,
+      subtitleList: result.subtitleList as SubtitleTrack[] | undefined,
+      subtitleSource: result.subtitleSource,
+      subtitleEvidence: result.subtitleEvidence,
       timestamp: result.timestamp,
     };
   }

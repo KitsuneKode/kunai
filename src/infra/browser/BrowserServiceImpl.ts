@@ -5,14 +5,14 @@
 // =============================================================================
 
 import type { BrowserService, ScrapeOptions } from "./BrowserService";
-import type { StreamInfo } from "../../domain/types";
-import type { Logger } from "../logger/Logger";
-import type { Tracer } from "../tracer/Tracer";
-import type { ConfigService } from "../../services/persistence/ConfigService";
-import type { CacheStore } from "../../services/persistence/CacheStore";
-import type { DiagnosticsStore } from "../../services/diagnostics/DiagnosticsStore";
-import { scrapeStream } from "../../scraper";
-import type { PlaywrightProvider } from "../../providers/types";
+import type { StreamInfo, SubtitleTrack } from "@/domain/types";
+import type { Logger } from "@/infra/logger/Logger";
+import type { Tracer } from "@/infra/tracer/Tracer";
+import type { ConfigService } from "@/services/persistence/ConfigService";
+import type { CacheStore } from "@/services/persistence/CacheStore";
+import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import { scrapeStream } from "@/scraper";
+import type { PlaywrightProvider } from "@/providers/types";
 
 export class BrowserServiceImpl implements BrowserService {
   constructor(
@@ -26,22 +26,40 @@ export class BrowserServiceImpl implements BrowserService {
   ) {}
 
   async scrape(options: ScrapeOptions): Promise<StreamInfo | null> {
+    const requestedSubLang = options.subLang ?? this.deps.config.subLang;
     const cached = await this.deps.cacheStore.get(options.url);
     if (cached) {
+      const needsSubtitleRefresh = requestedSubLang !== "none" && !cached.subtitle;
       this.deps.logger.info("Browser scrape cache hit", {
         url: options.url,
+        needsSubtitleRefresh,
       });
       this.deps.diagnosticsStore.record({
         category: "cache",
-        message: "Browser scrape cache hit",
-        context: { url: options.url },
+        message: needsSubtitleRefresh
+          ? "Browser scrape cache hit without subtitles; refreshing"
+          : "Browser scrape cache hit",
+        context: {
+          url: options.url,
+          requestedSubLang,
+          subtitle: cached.subtitle ?? null,
+          subtitleTrackCount: cached.subtitleList?.length ?? 0,
+        },
       });
-      return cached;
+      if (!needsSubtitleRefresh) {
+        return cached;
+      }
+    } else {
+      this.deps.diagnosticsStore.record({
+        category: "cache",
+        message: "Browser scrape cache miss",
+        context: { url: options.url, requestedSubLang },
+      });
     }
     this.deps.diagnosticsStore.record({
       category: "provider",
       message: "Browser scrape started",
-      context: { url: options.url, subLang: options.subLang ?? this.deps.config.subLang },
+      context: { url: options.url, subLang: requestedSubLang },
     });
 
     // Create a synthetic PlaywrightProvider for the legacy scraper
@@ -71,7 +89,9 @@ export class BrowserServiceImpl implements BrowserService {
       url: result.url,
       headers: result.headers,
       subtitle: result.subtitle ?? undefined,
-      subtitleList: result.subtitleList as import("../../domain/types").SubtitleTrack[] | undefined,
+      subtitleList: result.subtitleList as SubtitleTrack[] | undefined,
+      subtitleSource: result.subtitleSource,
+      subtitleEvidence: result.subtitleEvidence,
       title: result.title,
       timestamp: result.timestamp,
     };
@@ -84,6 +104,8 @@ export class BrowserServiceImpl implements BrowserService {
         streamUrl: stream.url,
         subtitle: stream.subtitle ?? null,
         subtitleTrackCount: stream.subtitleList?.length ?? 0,
+        subtitleSource: stream.subtitleSource ?? "none",
+        subtitleEvidence: stream.subtitleEvidence ?? null,
       },
     });
     return stream;

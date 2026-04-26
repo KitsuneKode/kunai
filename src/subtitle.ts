@@ -13,19 +13,21 @@ export type SubtitleEntry = {
 export async function fetchSubtitlesFromWyzie(
   searchUrl: string,
   preferredLang: string,
-): Promise<{ list: SubtitleEntry[]; selected: string | null }> {
+): Promise<{ list: SubtitleEntry[]; selected: string | null; failed: boolean }> {
   try {
     const res = await fetch(searchUrl, { signal: AbortSignal.timeout(5000) });
     const list = (await res.json()) as SubtitleEntry[];
-    if (!Array.isArray(list) || list.length === 0) return { list: [], selected: null };
+    if (!Array.isArray(list) || list.length === 0) {
+      return { list: [], selected: null, failed: false };
+    }
 
     const pick =
       list.find((s) => s.language === preferredLang) ||
       (preferredLang !== "en" ? list.find((s) => s.language === "en") : null) ||
       list[0];
 
-    return { list, selected: pick?.url ?? null };
+    return { list, selected: pick?.url ?? null, failed: false };
   } catch {
-    return { list: [], selected: null };
+    return { list: [], selected: null, failed: true };
   }
 }
