@@ -32,6 +32,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Shell screens now share one Ink root host internally, reducing remount churn while the full browse/playback state-machine merge continues
 - Interactive shell handoffs now keep the outgoing screen visible until the next screen replaces it, reducing blank transitions
 - Browse and playback now share one runtime binding helper for provider options, settings persistence, and info-panel loaders
+- Post-playback helper fallbacks for provider, settings, history, diagnostics, help, and about were removed now that the playback shell owns those panels directly
 - Fullscreen TUI convergence is now an explicit next milestone: viewport-contained layouts, resize blockers, and one dominant shell frame
 
 ### Active Follow-Ups

@@ -13,11 +13,7 @@ import type {
   StreamInfo,
   PlaybackResult,
 } from "@/domain/types";
-import {
-  buildPickerActionContext,
-  handleShellAction,
-  openSubtitlePicker,
-} from "@/app-shell/workflows";
+import { buildPickerActionContext, openSubtitlePicker } from "@/app-shell/workflows";
 import { resolveCommands } from "@/app-shell/commands";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import {
@@ -470,24 +466,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               type: "SELECT_EPISODE",
               episode: episodeAvailability.nextSeasonEpisode,
             });
-          }
-          continue;
-        } else if (postAction === "provider") {
-          await handleShellAction({ action: "provider", container });
-          continue;
-        } else if (
-          postAction === "settings" ||
-          postAction === "history" ||
-          postAction === "diagnostics" ||
-          postAction === "help" ||
-          postAction === "about"
-        ) {
-          const actionResult = await handleShellAction({
-            action: postAction,
-            container,
-          });
-          if (actionResult === "quit") {
-            return { status: "quit" };
           }
           continue;
         } else if (postAction === "search") {

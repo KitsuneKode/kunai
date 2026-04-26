@@ -193,6 +193,7 @@ Status:
 - shell openings now render through one module-level Ink root host, so browse, playback, loading, and list surfaces swap root content instead of creating independent Ink roots
 - interactive shell screens now remain visible until the next screen replaces them, reducing blank gaps between browse, picker, and playback states
 - browse and playback now share one runtime shell binding helper for provider options, settings persistence, and info-panel loaders
+- post-playback no longer falls back to helper shells for provider, settings, history, diagnostics, help, or about because the playback shell handles those locally
 - browse-side and post-playback secondary panels are now mounted in-shell
 - playback still remains a separate shell session from browse, so the true root `AppShell` milestone is still open
 - playback navigation now resolves `next`, `previous`, `next season`, and autoplay from actual provider or metadata availability instead of blindly incrementing episode numbers
