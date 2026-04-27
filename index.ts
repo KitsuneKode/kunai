@@ -2,22 +2,25 @@
 import { intro, outro, spinner, log } from "@clack/prompts";
 import { parseArgs } from "util";
 
+
 import { searchVideasy, type SearchResult } from "@/search";
 import { displayPoster, isKittyCompatible } from "@/image";
 import { getHistory, saveHistory, isFinished, formatTimestamp, type HistoryEntry } from "@/history";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
-import { getCachedStream } from "@/cache";
+import { getCachedStream } from "@/legacy/cache";
 import {
   buildUrl,
   getProvider,
   PLAYWRIGHT_PROVIDERS,
+  ANIME_PROVIDERS,
+  PLAYER_DOMAINS,
   isPlaywright,
   isApi,
   type PlaywrightProvider,
   type ApiProvider,
   type ApiSearchResult,
-} from "@/providers";
-import { fetchAnimeEpisodeCatalog } from "@/providers/allanime-family";
+} from "@/legacy/providers";
+import { fetchAnimeEpisodeCatalog } from "@/legacy/providers/allanime-family";
 import { scrapeStream, type StreamData } from "@/scraper";
 import { launchMpv } from "@/mpv";
 import { checkDeps } from "@/ui";
@@ -39,10 +42,19 @@ import {
 import {
   chooseStartingEpisode,
   chooseEpisodeFromMetadata,
-  cycleProvider,
   describeHistoryEntry,
 } from "@/session-flow";
+
+function cycleProvider(current: string, isAnime: boolean): string {
+  const list = isAnime ? ANIME_PROVIDERS : PLAYWRIGHT_PROVIDERS;
+  if (list.length === 0) return current;
+  const idx = list.findIndex((p) => p.id === current);
+  if (idx === -1) return list[0]?.id || current;
+  const nextItem = list[(idx + 1) % list.length];
+  return nextItem?.id || current;
+}
 import { openProviderPicker, openSettingsShell, openSubtitlePicker } from "@/app-shell/workflows";
+
 import type { EpisodePickerOption } from "@/domain/types";
 
 // =============================================================================
@@ -191,10 +203,8 @@ const embedScraper = (
     domain: "",
     recommended: false,
     movieUrl: () => "",
-    seriesUrl: () => "",
-    needsClick: scraperOpts?.needsClick ?? false,
     titleSource: "page-title",
-  };
+  } as any;
   return scrapeStream(provider, embedUrl, currentSubLang, useHeadless);
 };
 
@@ -237,7 +247,8 @@ async function resolvePlaywrightStream(
 
   const s = spinner();
   s.start("Scraping stream…");
-  const data = await scrapeStream(provider, targetUrl, currentSubLang, useHeadless);
+  const scrapeConfig = { ...provider, playerDomains: PLAYER_DOMAINS };
+  const data = await scrapeStream(scrapeConfig, targetUrl, currentSubLang, useHeadless);
   s.stop(data ? "Stream found." : "Failed to find stream.");
   return data;
 }
@@ -271,7 +282,8 @@ function startPrefetch() {
   if (!isPlaywright(provider)) return; // API providers don't use URL-based pre-fetch
   const nextUrl = buildUrl(provider, currentId, currentType, currentSeason, currentEpisode + 1);
   if (prefetchedStream?.url === nextUrl) return;
-  prefetchedStream = { url: nextUrl, data: scrapeStream(provider, nextUrl, currentSubLang, true) };
+  const scrapeConfig = { ...provider, playerDomains: PLAYER_DOMAINS };
+  prefetchedStream = { url: nextUrl, data: scrapeStream(scrapeConfig, nextUrl, currentSubLang, true) };
 }
 
 async function loadAnimeEpisodeOptions(
@@ -393,7 +405,11 @@ async function loadAnimeEpisodeOptions(
             prefetchedStream = null;
             log.info(`Switched to ${isAnime ? "🌸 anime" : "📺 series"} mode`);
           } else if (gateAction === "settings") {
-            const updated = await openSettingsShell(config);
+            const updated = await openSettingsShell({
+              current: config,
+              seriesProviders: PLAYWRIGHT_PROVIDERS as any,
+              animeProviders: ANIME_PROVIDERS as any,
+            });
             if (updated) {
               config = updated;
               currentProvider = isAnime ? updated.animeProvider : updated.provider;
@@ -573,7 +589,11 @@ async function loadAnimeEpisodeOptions(
           break;
         }
         if (k === "c") {
-          const updated = await openSettingsShell(config);
+          const updated = await openSettingsShell({
+            current: config,
+            seriesProviders: PLAYWRIGHT_PROVIDERS as any,
+            animeProviders: ANIME_PROVIDERS as any,
+          });
           if (updated) {
             config = updated;
             currentProvider = isAnime ? updated.animeProvider : updated.provider;
@@ -596,7 +616,8 @@ async function loadAnimeEpisodeOptions(
           const fbUrl = buildUrl(fallback, currentId, currentType, currentSeason, currentEpisode);
           const s = spinner();
           s.start(`Scraping via ${fallback.id}…`);
-          streamInfo = await scrapeStream(fallback, fbUrl, currentSubLang, useHeadless);
+          const scrapeConfig = { ...fallback, playerDomains: PLAYER_DOMAINS };
+          streamInfo = await scrapeStream(scrapeConfig, fbUrl, currentSubLang, useHeadless);
           s.stop(streamInfo ? `Got stream via ${fallback.id}.` : `${fallback.id} also failed.`);
         }
       }
@@ -705,7 +726,11 @@ async function loadAnimeEpisodeOptions(
         log.info(`Switched to ${isAnime ? "🌸 anime" : "📺 series"} mode`);
         backToSearch = true;
       } else if (postAction === "settings") {
-        const updated = await openSettingsShell(config);
+        const updated = await openSettingsShell({
+          current: config,
+          seriesProviders: PLAYWRIGHT_PROVIDERS as any,
+          animeProviders: ANIME_PROVIDERS as any,
+        });
         if (updated) {
           const provChanged =
             updated.provider !== currentProvider || updated.animeProvider !== config.animeProvider;
@@ -741,7 +766,10 @@ async function loadAnimeEpisodeOptions(
         currentEpisode = 1;
       } else if (postAction === "provider") {
         prefetchedStream = null;
-        const pickedProvider = await openProviderPicker({ currentProvider, isAnime });
+        const pickedProvider = await openProviderPicker({
+          currentProvider,
+          providers: (isAnime ? ANIME_PROVIDERS : PLAYWRIGHT_PROVIDERS) as any,
+        });
         currentProvider = pickedProvider ?? cycleProvider(currentProvider, isAnime);
         log.info(`Switched to ${green(currentProvider)}`);
       }

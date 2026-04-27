@@ -16,7 +16,9 @@ export type AppCommandId =
   | "pick-episode"
   | "next"
   | "previous"
-  | "next-season";
+  | "next-season"
+  | "clear-cache"
+  | "clear-history";
 
 export type AppCommand = {
   readonly id: AppCommandId;
@@ -127,6 +129,18 @@ export const COMMANDS: readonly AppCommand[] = [
     aliases: ["season", "next-season"],
     description: "Jump to the next season",
   },
+  {
+    id: "clear-cache",
+    label: "Clear Cache",
+    aliases: ["clear-cache", "purge-cache", "flush-cache"],
+    description: "Remove all cached stream URLs",
+  },
+  {
+    id: "clear-history",
+    label: "Clear History",
+    aliases: ["clear-history", "reset-history", "wipe-history"],
+    description: "Remove all watch history and progress",
+  },
 ] as const;
 
 export function parseCommand(input: string): AppCommand | null {
@@ -211,8 +225,10 @@ function resolveCommandState(
     case "history":
     case "details":
     case "diagnostics":
-    case "help":
-    case "about":
+    case "help" :
+    case "about" :
+    case "clear-cache" :
+    case "clear-history" :
       return { enabled: true };
 
     case "toggle-mode":

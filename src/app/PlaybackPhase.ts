@@ -13,7 +13,7 @@ import type {
   StreamInfo,
   PlaybackResult,
 } from "@/domain/types";
-import { buildPickerActionContext, openSubtitlePicker } from "@/app-shell/workflows";
+import { buildPickerActionContext, openSubtitlePicker, handleShellAction } from "@/app-shell/workflows";
 import { resolveCommands } from "@/app-shell/commands";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import { switchSessionMode } from "@/app/mode-switch";
@@ -162,20 +162,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           };
         }
 
-        const { openLoadingShell } = await import("../app-shell/ink-shell");
-
-        const episodeLabel = `S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}`;
-
-        const loading = openLoadingShell({
-          state: {
-            title: title.name,
-            subtitle: episodeLabel,
-            operation: "resolving",
-            details: `Provider: ${stateManager.getState().provider}`,
-          },
-          cancellable: false,
-        });
-
         stateManager.dispatch({
           type: "SET_PLAYBACK_STATUS",
           status: "loading",
@@ -190,8 +176,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             subLang: stateManager.getState().subLang,
           });
         } catch (e) {
-          loading.close();
-          await loading.result;
+          stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
           throw e;
         }
 
@@ -227,12 +212,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 fallback: fallback.metadata.id,
               },
             });
-            loading.update({
-              title: title.name,
-              subtitle: episodeLabel,
-              operation: "resolving",
-              details: `Fallback: ${fallback.metadata.id}`,
-            });
+            stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
             try {
               const fallbackStream = await fallback.resolveStream({
                 title,
@@ -244,16 +224,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 resolvedProviderId = fallback.metadata.id;
               }
             } catch (e) {
-              loading.close();
-              await loading.result;
+              stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
               throw e;
             }
           }
         }
 
         if (!stream) {
-          loading.close();
-          await loading.result;
           return {
             status: "error",
             error: {
@@ -284,7 +261,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           currentEpisode,
           context,
           startAt,
-          loading,
         );
 
         // Save history
@@ -342,11 +318,56 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               nextEpisode: nextEpisode.episode,
             },
           });
-          stateManager.dispatch({
-            type: "SELECT_EPISODE",
-            episode: nextEpisode,
+
+          const { openLoadingShell } = await import("../app-shell/ink-shell");
+          const countdownShell = openLoadingShell({
+            state: {
+              title: "Auto-Next",
+              subtitle: `Next up: ${nextEpisode.name || `Episode ${nextEpisode.episode}`}`,
+              operation: "loading",
+              details: "Starting in 5 seconds... (Press ESC to cancel)",
+              cancellable: true,
+            },
+            cancellable: true,
           });
-          continue;
+
+          let cancelled = false;
+          let secondsLeft = 5;
+
+          await new Promise<void>((resolve) => {
+            const interval = setInterval(() => {
+              secondsLeft--;
+              if (secondsLeft <= 0) {
+                clearInterval(interval);
+                countdownShell.close();
+                resolve();
+              } else {
+                countdownShell.update({
+                  title: "Auto-Next",
+                  subtitle: `Next up: ${nextEpisode.name || `Episode ${nextEpisode.episode}`}`,
+                  operation: "loading",
+                  details: `Starting in ${secondsLeft} seconds... (Press ESC to cancel)`,
+                  cancellable: true,
+                });
+              }
+            }, 1000);
+
+            countdownShell.result.then((res) => {
+              if (res === "cancelled") {
+                cancelled = true;
+                clearInterval(interval);
+                resolve();
+              }
+            });
+          });
+
+          if (!cancelled) {
+            stateManager.dispatch({
+              type: "SELECT_EPISODE",
+              episode: nextEpisode,
+            });
+            continue;
+          }
         }
 
         // Post-playback menu — inner loop so unavailable navigation
@@ -417,6 +438,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             return { status: "success", value: "back_to_search" };
           } else if (postAction === "replay") {
             break postPlayback;
+          } else if (postAction === "clear-cache" || postAction === "clear-history") {
+            await handleShellAction({ action: postAction, container });
+            continue postPlayback;
           } else if (postAction === "pick-episode" && title.type === "series") {
             const { chooseEpisodeFromMetadata } = await import("@/session-flow");
             const selection = await chooseEpisodeFromMetadata({
@@ -557,9 +581,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     episode: EpisodeInfo,
     context: PhaseContext,
     startAt = 0,
-    loading: import("../app-shell/ink-shell").LoadingShellHandle,
   ): Promise<PlaybackResult> {
-    const { player, stateManager, config } = context.container;
+    const { player, stateManager } = context.container;
 
     const displayTitle =
       title.type === "movie"
@@ -570,17 +593,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const subtitleStatus = describeSubtitleStatus(stream, stateManager.getState().subLang);
 
     stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
-
-    // Update the existing loading shell in-place — no close/reopen, no null-frame flicker.
-    loading.update({
-      title: displayTitle,
-      subtitle: "mpv is open — waiting for playback to finish",
-      operation: "playing",
-      details: `Provider: ${stateManager.getState().provider}`,
-      trace: `Stream resolved · headers ${Object.keys(stream.headers ?? {}).length} keys`,
-      subtitleStatus,
-      showMemory: config.showMemory,
-    });
 
     try {
       const result = await player.play(stream, {
@@ -596,8 +608,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "finished" });
       return result;
     } finally {
-      loading.close();
-      await loading.result.catch(() => {});
+      // resolved via status update
     }
   }
 

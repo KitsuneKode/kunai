@@ -16,16 +16,25 @@ export interface ProviderRegistry {
   getMetadata(id: string): ProviderMetadata | undefined;
 }
 
-export interface ProviderRegistryDeps extends ProviderDeps {}
+export interface ProviderRegistryDeps extends Omit<ProviderDeps, "playerDomains"> {}
 
 export class ProviderRegistryImpl implements ProviderRegistry {
   private providers = new Map<string, Provider>();
   private definitions = new Map<string, ProviderDefinition>();
 
   constructor(deps: ProviderRegistryDeps, definitions: ProviderDefinition[]) {
+    // Calculate global player domains
+    const playerDomains = Array.from(
+      new Set(
+        definitions
+          .map((d) => d.metadata.domain)
+          .filter((d): d is string => !!d),
+      ),
+    );
+
     // Instantiate all providers
     for (const def of definitions) {
-      const instance = def.factory(deps);
+      const instance = def.factory({ ...deps, playerDomains });
       this.providers.set(def.id, instance);
       this.definitions.set(def.id, def);
     }

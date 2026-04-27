@@ -1,29 +1,25 @@
 import { describe, expect, test } from "bun:test";
 
 import { searchTitles } from "./search-routing";
-import type { SearchResult } from "../domain/types";
+import type { SearchResult, ProviderMetadata } from "../domain/types";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
-import type { Provider } from "../providers";
+import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 
 describe("searchTitles", () => {
   test("uses provider-native anime search for anime providers", async () => {
-    const provider: Provider = {
-      kind: "api",
-      id: "allanime",
-      name: "AllAnime",
-      description: "",
-      domain: "allanime.day",
-      isAnimeProvider: true,
-      searchBackend: "allanime",
-      async search() {
-        return [{ id: "anime-1", title: "Mob Psycho 100", type: "series", epCount: 12 }];
-      },
-      async resolveStream() {
-        return null;
-      },
+    const provider: any = {
+      metadata: {
+        id: "allanime",
+        name: "AllAnime",
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        domain: "allanime.day",
+      } as ProviderMetadata,
+      search: async () => [{ id: "anime-1", title: "Mob Psycho 100", type: "series", epCount: 12 }],
     };
 
-    const registry = createRegistry({
+    const searchRegistry = createSearchRegistry({
       defaultResults: [
         {
           id: "tmdb-1",
@@ -36,12 +32,16 @@ describe("searchTitles", () => {
       ],
     });
 
+    const providerRegistry: any = {
+      get: (id: string) => (id === "allanime" ? provider : undefined),
+    };
+
     const result = await searchTitles("mob", {
       mode: "anime",
       providerId: "allanime",
       animeLang: "sub",
-      searchRegistry: registry,
-      lookupProvider: () => provider,
+      searchRegistry: searchRegistry as any,
+      providerRegistry,
     });
 
     expect(result.strategy).toBe("provider-native");
@@ -60,7 +60,7 @@ describe("searchTitles", () => {
   });
 
   test("uses registry-backed search for non-anime providers", async () => {
-    const registry = createRegistry({
+    const searchRegistry = createSearchRegistry({
       providerResults: [
         {
           id: "tmdb-2",
@@ -73,23 +73,28 @@ describe("searchTitles", () => {
       ],
     });
 
+    const providerRegistry: any = {
+      get: (id: string) =>
+        id === "vidking"
+          ? {
+              metadata: {
+                id: "vidking",
+                name: "VidKing",
+                description: "",
+                recommended: true,
+                isAnimeProvider: false,
+                domain: "vidking.net",
+              },
+            }
+          : undefined,
+    };
+
     const result = await searchTitles("dune", {
       mode: "series",
       providerId: "vidking",
       animeLang: "sub",
-      searchRegistry: registry,
-      lookupProvider: () =>
-        ({
-          kind: "playwright",
-          id: "vidking",
-          name: "VidKing",
-          description: "",
-          domain: "vidking.net",
-          movieUrl: () => "",
-          seriesUrl: () => "",
-          needsClick: false,
-          titleSource: "page-title",
-        }) satisfies Provider,
+      searchRegistry: searchRegistry as any,
+      providerRegistry,
     });
 
     expect(result.strategy).toBe("registry");
@@ -98,13 +103,13 @@ describe("searchTitles", () => {
   });
 });
 
-function createRegistry({
+function createSearchRegistry({
   providerResults = [],
   defaultResults = [],
 }: {
   providerResults?: SearchResult[];
   defaultResults?: SearchResult[];
-}): Pick<SearchRegistry, "getDefault" | "getForProvider"> {
+}) {
   const providerService = {
     metadata: { id: "tmdb", name: "TMDB", description: "" },
     compatibleProviders: ["vidking"],
@@ -120,7 +125,7 @@ function createRegistry({
   };
 
   return {
-    getForProvider(providerId) {
+    getForProvider(providerId: string) {
       return providerId === "vidking" ? providerService : undefined;
     },
     getDefault() {

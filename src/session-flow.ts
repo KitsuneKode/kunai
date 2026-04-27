@@ -6,7 +6,6 @@ import {
 import type { Container } from "@/container";
 import { cyan, dim, yellow } from "@/menu";
 import { fetchEpisodes, fetchSeriesData } from "@/tmdb";
-import { ANIME_PROVIDERS, PLAYWRIGHT_PROVIDERS, getProvider } from "@/providers";
 import type { EpisodePickerOption } from "@/domain/types";
 import {
   buildPickerActionContext,
@@ -213,8 +212,3 @@ export function describeHistoryEntry(entry: HistoryEntry): string {
     : `Last watched: ${cyan(`S${entry.season}E${entry.episode}`)}  stopped at ${yellow(resumeAt)}  ${dim(`(${percent}%)`)}`;
 }
 
-export function cycleProvider(currentProvider: string, isAnime: boolean): string {
-  const pool = isAnime ? ANIME_PROVIDERS : PLAYWRIGHT_PROVIDERS;
-  const currentIndex = pool.findIndex((provider) => provider.id === currentProvider);
-  return (pool[(currentIndex + 1) % pool.length] ?? pool[0] ?? getProvider(currentProvider)).id;
-}

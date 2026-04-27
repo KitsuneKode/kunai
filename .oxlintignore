@@ -1,0 +1,4 @@
+# Third-party / generated files that should never be linted
+scratchpads/
+dist/
+node_modules/

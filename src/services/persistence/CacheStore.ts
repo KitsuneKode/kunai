@@ -16,6 +16,7 @@ export interface CacheStore {
   set(url: string, stream: StreamInfo): Promise<void>;
   delete(url: string): Promise<void>;
   clear(): Promise<void>;
+  prune(): Promise<void>;
 
   // TTL in milliseconds
   readonly ttl: number;

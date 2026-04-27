@@ -31,7 +31,45 @@ function langMatches(entryLang: string, preferred: string): boolean {
   const el = entryLang.toLowerCase().trim();
   const pl = preferred.toLowerCase().trim();
   if (!el || !pl) return false;
-  return el === pl || el.startsWith(pl + "-") || pl.startsWith(el + "-");
+  if (el === pl || el.startsWith(pl + "-") || pl.startsWith(el + "-")) return true;
+
+  // Map ISO 639-1 codes ↔ common English full-name representations.
+  // Wyzie often returns "English" when the player auto-picks; we request "en".
+  const CODE_TO_NAME: Record<string, string> = {
+    en: "english",
+    es: "spanish",
+    fr: "french",
+    de: "german",
+    it: "italian",
+    pt: "portuguese",
+    ru: "russian",
+    ja: "japanese",
+    ar: "arabic",
+    ko: "korean",
+    zh: "chinese",
+    hi: "hindi",
+    nl: "dutch",
+    pl: "polish",
+    tr: "turkish",
+    sv: "swedish",
+    da: "danish",
+    fi: "finnish",
+    no: "norwegian",
+    cs: "czech",
+    hu: "hungarian",
+    ro: "romanian",
+    th: "thai",
+    vi: "vietnamese",
+    id: "indonesian",
+  };
+
+  const plFull = CODE_TO_NAME[pl];
+  const elFull = CODE_TO_NAME[el];
+
+  if (plFull && (el === plFull || el.startsWith(plFull))) return true;
+  if (elFull && (pl === elFull || pl.startsWith(elFull))) return true;
+
+  return false;
 }
 
 // Among a filtered set, prefer non-hearing-impaired entries with the most downloads.
@@ -149,4 +187,83 @@ function isSubtitleEntry(value: unknown): value is SubtitleEntry {
     typeof entry.language === "string" &&
     entry.language.length > 0
   );
+}
+
+// =============================================================================
+// ACTIVE WYZIE RESOLUTION
+//
+// Bypasses the passive browser-sniffing approach entirely. The Wyzie API key
+// embedded in Vidking's player is static and reusable. We call the search
+// endpoint directly with the TMDB ID + episode info so we never need to wait
+// for the embed to click the CC button.
+//
+// Ref: .docs/subtitle-resolver-analysis.md
+// =============================================================================
+
+const WYZIE_KEY = "wyzie-9bafe78d95b0ae85e716d772b4d63ec4";
+const WYZIE_SEARCH = "https://sub.wyzie.io/search";
+
+export async function resolveSubtitlesByTmdbId(opts: {
+  tmdbId: string;
+  type: "movie" | "series";
+  season?: number;
+  episode?: number;
+  preferredLang: string;
+}): Promise<{ list: SubtitleEntry[]; selected: string | null; failed: boolean }> {
+  const { tmdbId, type, season, episode, preferredLang } = opts;
+
+  try {
+    const params = new URLSearchParams({ id: tmdbId, key: WYZIE_KEY });
+    if (type === "series" && season != null) params.set("season", String(season));
+    if (type === "series" && episode != null) params.set("episode", String(episode));
+
+    const url = `${WYZIE_SEARCH}?${params.toString()}`;
+    dbg("subtitle", "active wyzie fetch", {
+      tmdbId,
+      type,
+      season,
+      episode,
+      preferredLang,
+      url: redactWyzieKey(url),
+    });
+
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      headers: {
+        accept: "application/json, text/plain, */*",
+        "user-agent":
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+      },
+    });
+
+    dbg("subtitle", "active wyzie response", {
+      status: res.status,
+      ok: res.ok,
+      contentType: res.headers.get("content-type"),
+    });
+
+    if (!res.ok) {
+      dbgErr("subtitle", "active wyzie response not ok", { status: res.status });
+      return { list: [], selected: null, failed: true };
+    }
+
+    const list = parseWyzieSubtitleList(await res.json());
+    if (list.length === 0) {
+      dbg("subtitle", "active wyzie empty result", { tmdbId, preferredLang });
+      return { list: [], selected: null, failed: false };
+    }
+
+    const pick = selectSubtitle(list, preferredLang);
+    dbg("subtitle", "active wyzie selected", {
+      preferredLang,
+      selectedLanguage: pick?.language ?? null,
+      selectedDisplay: pick?.display ?? null,
+      total: list.length,
+    });
+
+    return { list, selected: pick?.url ?? null, failed: false };
+  } catch (error) {
+    dbgErr("subtitle", "active wyzie fetch failed", error);
+    return { list: [], selected: null, failed: true };
+  }
 }

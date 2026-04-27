@@ -1,12 +1,8 @@
 // =============================================================================
 // VidKing Provider Adapter
-//
-// Wraps the legacy Playwright provider into the new Provider interface.
 // =============================================================================
 
 import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
-import { VidKing as LegacyVidKing } from "@/providers/vidking";
-
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
 export class VidKingProvider implements Provider {
@@ -16,6 +12,7 @@ export class VidKingProvider implements Provider {
     description: "VidKing (recommended)",
     recommended: true,
     isAnimeProvider: false,
+    domain: "vidking.net",
   };
 
   readonly capabilities: ProviderCapabilities = {
@@ -31,18 +28,19 @@ export class VidKingProvider implements Provider {
   async resolveStream(request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> {
     const url =
       request.title.type === "movie"
-        ? LegacyVidKing.movieUrl(request.title.id)
-        : LegacyVidKing.seriesUrl(
-            request.title.id,
-            request.episode!.season,
-            request.episode!.episode,
-          );
+        ? `https://www.vidking.net/embed/movie/${request.title.id}?autoPlay=true`
+        : `https://www.vidking.net/embed/tv/${request.title.id}/${request.episode!.season}/${request.episode!.episode}?autoPlay=true&episodeSelector=false&nextEpisode=false`;
 
     return this.deps.browser.scrape({
       url,
-      needsClick: LegacyVidKing.needsClick,
+      needsClick: false, // autoPlay=true handles it
       subLang: request.subLang,
       signal,
+      tmdbId: request.title.id,
+      titleType: request.title.type,
+      season: request.episode?.season,
+      episode: request.episode?.episode,
+      playerDomains: this.deps.playerDomains,
     });
   }
 }

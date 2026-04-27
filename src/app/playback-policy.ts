@@ -13,6 +13,14 @@ export type EpisodeCatalogLoaders = {
   loadEpisodes: (titleId: string, season: number) => Promise<readonly CatalogEpisode[]>;
 };
 
+function isReleased(episode: CatalogEpisode): boolean {
+  if (!episode.airDate) return true;
+  // If airDate is just a year "2024", new Date("2024") parses to Jan 1, 2024 UTC.
+  const airTime = new Date(episode.airDate).getTime();
+  if (isNaN(airTime)) return true;
+  return airTime <= Date.now();
+}
+
 export type EpisodeAvailability = {
   previousEpisode: EpisodeInfo | null;
   nextEpisode: EpisodeInfo | null;
@@ -86,7 +94,9 @@ export async function resolveEpisodeAvailability({
 
   const currentSeasonEpisodes = [
     ...(await loaders.loadEpisodes(title.id, currentEpisode.season)),
-  ].sort((a, b) => a.number - b.number);
+  ]
+    .filter(isReleased)
+    .sort((a, b) => a.number - b.number);
   const seasons = [...(await loaders.loadSeasons(title.id))].sort((a, b) => a - b);
 
   const previousInSeason = [...currentSeasonEpisodes]
@@ -102,14 +112,14 @@ export async function resolveEpisodeAvailability({
   const nextSeasonNumber = seasons.find((season) => season > currentEpisode.season);
 
   const previousSeasonEpisodes = previousSeasonNumber
-    ? [...(await loaders.loadEpisodes(title.id, previousSeasonNumber))].sort(
-        (a, b) => a.number - b.number,
-      )
+    ? [...(await loaders.loadEpisodes(title.id, previousSeasonNumber))]
+        .filter(isReleased)
+        .sort((a, b) => a.number - b.number)
     : [];
   const nextSeasonEpisodes = nextSeasonNumber
-    ? [...(await loaders.loadEpisodes(title.id, nextSeasonNumber))].sort(
-        (a, b) => a.number - b.number,
-      )
+    ? [...(await loaders.loadEpisodes(title.id, nextSeasonNumber))]
+        .filter(isReleased)
+        .sort((a, b) => a.number - b.number)
     : [];
 
   const previousEpisode = previousInSeason

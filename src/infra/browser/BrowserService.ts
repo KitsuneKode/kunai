@@ -12,6 +12,13 @@ export interface ScrapeOptions {
   intercept?: string[]; // URL patterns to intercept (e.g., "*.m3u8")
   subLang?: string;
   signal?: AbortSignal;
+  // Used for active Wyzie subtitle resolution as fallback when passive
+  // sniffing finds no subtitle during the scrape.
+  tmdbId?: string;
+  titleType?: "movie" | "series";
+  season?: number;
+  episode?: number;
+  playerDomains?: string[];
 }
 
 export interface BrowserService {

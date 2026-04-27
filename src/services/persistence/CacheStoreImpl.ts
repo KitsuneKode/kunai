@@ -49,6 +49,21 @@ export class CacheStoreImpl implements CacheStore {
     await this.storage.delete(STORAGE_KEY);
   }
 
+  async prune(): Promise<void> {
+    const all = await this.getAllEntries();
+    let changed = false;
+    for (const [url, entry] of Object.entries(all)) {
+      const normalized = this.normalizeEntry(entry);
+      if (!normalized || isExpired(normalized, this.ttl)) {
+        delete all[url];
+        changed = true;
+      }
+    }
+    if (changed) {
+      await this.storage.write(STORAGE_KEY, all);
+    }
+  }
+
   private async getAllEntries(): Promise<Record<string, LegacyCacheEntry>> {
     return (await this.storage.read<Record<string, LegacyCacheEntry>>(STORAGE_KEY)) ?? {};
   }

@@ -1,19 +1,14 @@
-import {
-  getProvider,
-  isApi,
-  type ApiProvider,
-  type ApiSearchResult,
-  type Provider,
-} from "../providers";
 import type { SearchResult, ShellMode } from "../domain/types";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
+import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
+import type { Provider } from "../services/providers/Provider";
 
 export type SearchRoutingContext = {
   mode: ShellMode;
   providerId: string;
   animeLang: "sub" | "dub";
   searchRegistry: Pick<SearchRegistry, "getDefault" | "getForProvider">;
-  lookupProvider?: (providerId: string) => Provider;
+  providerRegistry: ProviderRegistry;
 };
 
 export type SearchRoutingResult = {
@@ -27,19 +22,21 @@ export async function searchTitles(
   query: string,
   context: SearchRoutingContext,
 ): Promise<SearchRoutingResult> {
-  const provider = (context.lookupProvider ?? getProvider)(context.providerId);
+  const provider = context.providerRegistry.get(context.providerId);
 
-  if (shouldUseProviderNativeSearch(context.mode, provider)) {
+  if (provider && context.mode === "anime" && provider.search) {
     const results = await provider.search(query, {
       animeLang: context.animeLang,
     });
 
-    return {
-      results: results.map(mapApiSearchResult),
-      sourceId: provider.id,
-      sourceName: provider.name,
-      strategy: "provider-native",
-    };
+    if (results) {
+      return {
+        results,
+        sourceId: provider.metadata.id,
+        sourceName: provider.metadata.name,
+        strategy: "provider-native",
+      };
+    }
   }
 
   const searchService =
@@ -51,26 +48,5 @@ export async function searchTitles(
     sourceId: searchService.metadata.id,
     sourceName: searchService.metadata.name,
     strategy: "registry",
-  };
-}
-
-function shouldUseProviderNativeSearch(
-  mode: ShellMode,
-  provider: Provider,
-): provider is ApiProvider {
-  return mode === "anime" && isApi(provider) && provider.isAnimeProvider === true;
-}
-
-function mapApiSearchResult(result: ApiSearchResult): SearchResult {
-  return {
-    id: result.id,
-    type: result.type,
-    title: result.title,
-    year: result.year ?? "",
-    overview: "",
-    posterPath: result.posterUrl ?? null,
-    rating: null,
-    popularity: null,
-    episodeCount: result.epCount,
   };
 }

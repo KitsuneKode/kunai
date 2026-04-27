@@ -11,28 +11,33 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import type { StreamData } from "@/scraper";
-import { AllAnime as LegacyAllAnime } from "@/providers/allanime";
-import { fetchAnimeEpisodeCatalog } from "@/providers/allanime-family";
+import { createAnimeProvider, fetchAnimeEpisodeCatalog } from "./allanime-family";
 
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
+const ALLANIME_CONFIG = {
+  id: "allanime",
+  name: "AllAnime",
+  description: "AllAnime / AllManga (anime, sub & dub, no browser needed)",
+  domain: "allanime.day",
+  apiUrl: "https://api.allanime.day/api",
+  referer: "https://youtu-chan.com",
+  recommended: false,
+  isAnimeProvider: true,
+};
+
 export class AllAnimeProvider implements Provider {
-  readonly metadata: ProviderMetadata = {
-    id: "allanime",
-    name: "AllAnime",
-    description: "AllAnime / AllManga (anime, sub & dub, no browser needed)",
-    recommended: false,
-    isAnimeProvider: true,
-  };
+  readonly metadata: ProviderMetadata = ALLANIME_CONFIG;
 
   readonly capabilities: ProviderCapabilities = {
     contentTypes: ["series"], // Anime is always series
   };
 
+  private legacyProvider = createAnimeProvider(ALLANIME_CONFIG);
+
   constructor(private deps: ProviderDeps) {}
 
   canHandle(title: TitleInfo): boolean {
-    // AllAnime only handles anime (series type with anime provider flag)
     return title.type === "series";
   }
 
@@ -48,7 +53,7 @@ export class AllAnimeProvider implements Provider {
         }) as Promise<StreamData | null>,
     };
 
-    const result = await LegacyAllAnime.resolveStream(
+    const result = await this.legacyProvider.resolveStream(
       request.title.id,
       request.title.type,
       request.episode?.season ?? 1,
@@ -74,12 +79,33 @@ export class AllAnimeProvider implements Provider {
     _signal?: AbortSignal,
   ): Promise<EpisodePickerOption[] | null> {
     return fetchAnimeEpisodeCatalog({
-      apiUrl: "https://api.allanime.day/api",
+      apiUrl: ALLANIME_CONFIG.apiUrl,
       referer: "https://allmanga.to",
       ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
       showId: request.title.id,
       mode: this.deps.config.animeLang,
     });
+  }
+
+  async search(
+    query: string,
+    opts: { animeLang: "sub" | "dub" },
+    _signal?: AbortSignal,
+  ): Promise<import("@/domain/types").SearchResult[] | null> {
+    const results = await this.legacyProvider.search(query, opts);
+    if (!results) return null;
+
+    return results.map((r) => ({
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      year: r.year ?? "",
+      overview: "",
+      posterPath: r.posterUrl ?? null,
+      rating: null,
+      popularity: null,
+      episodeCount: r.epCount,
+    }));
   }
 }
 

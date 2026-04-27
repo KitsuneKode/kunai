@@ -3,6 +3,7 @@ import { Box, Text, render, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { getShellViewportPolicy } from "@/app-shell/layout-policy";
+import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 
 import { buildBrowseDetailsPanel } from "./details-panel";
 import { fetchPoster, deleteKittyImage, type PosterResult } from "./image-pane";
@@ -405,8 +406,7 @@ function ShellFrame({
   return (
     <Box flexDirection="column">
       {/* App bar */}
-      <Box justifyContent="space-between" paddingX={1}>
-        <Text color={palette.amber}>{eyebrow}</Text>
+      <Box justifyContent="flex-end" paddingX={1}>
         {status ? (
           <Box>
             <Text color={statusColor(status.tone)}>{"● "}</Text>
@@ -535,7 +535,10 @@ let rootShellInk: ReturnType<typeof render> | null = null;
 let rootShellExitPromise: Promise<unknown> | null = null;
 let rootShellNextId = 1;
 
-function clearShellScreen() {
+/**
+ * Clears the terminal screen using ANSI escape codes.
+ */
+export function clearShellScreen() {
   if (process.stdout.isTTY) {
     process.stdout.write("\x1b[2J\x1b[H");
   }
@@ -620,6 +623,14 @@ function mountShell<TResult>({
     resolveResult(value);
   };
 
+  // When mounting a new shell, if it's a "major" transition (clearOnResolve was true for previous),
+  // we might want to clear. But usually ensureRootShell handles the first clear.
+  // To make transitions "really good", we ensure the screen is cleared if we're swapping 
+  // from null to a component.
+  if (!rootShellScreen && clearOnResolve) {
+    clearShellScreen();
+  }
+
   setRootShellScreen({
     id: screenId,
     element: renderShell((value) => settle(value, clearOnResolve)),
@@ -636,6 +647,130 @@ function mountShell<TResult>({
     close: (value: TResult) => settle(value, true),
     result,
   };
+}
+
+// =============================================================================
+// STATE-DRIVEN APP HOST
+// =============================================================================
+
+/**
+ * Hook to subscribe to the global session state.
+ */
+export function useSessionState(stateManager: SessionStateManager) {
+  const [state, setState] = useState(stateManager.getState());
+
+  useEffect(() => {
+    return stateManager.subscribe((nextState) => {
+      setState(nextState);
+    });
+  }, [stateManager]);
+
+  return state;
+}
+
+/**
+ * Persistent root of the state-driven UI.
+ * Holds the identity logo and renders the appropriate shell based on state.
+ */
+function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
+  const state = useSessionState(stateManager);
+
+  // We keep the main identity fixed at the top to prevent flicker
+  return (
+    <Box flexDirection="column" paddingX={2} paddingY={1}>
+      {/* App identity - Always persistent */}
+      <Box marginBottom={1}>
+        <Text color={palette.muted} dimColor>
+          {APP_LABEL}
+        </Text>
+      </Box>
+
+      {/* Dynamic shell based on current state view */}
+      {state.playbackStatus === "error" ? (
+        <ErrorShell
+          message={state.playbackError || "An unknown error occurred"}
+          onResolve={() => stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" })}
+        />
+      ) : state.playbackStatus === "loading" ? (
+        <LoadingShell
+          state={{
+            title: state.currentTitle?.name || "Resolving...",
+            subtitle: state.currentEpisode
+              ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
+                  state.currentEpisode.episode,
+                ).padStart(2, "0")}`
+              : undefined,
+            operation: "resolving",
+            details: `Provider: ${state.provider}`,
+          }}
+          onCancel={() => {}}
+        />
+      ) : rootShellScreen ? (
+        <Box key={rootShellScreen.id}>{rootShellScreen.element}</Box>
+      ) : (
+        <Box>
+          <Text color={palette.gray} dimColor italic>
+            Waiting for session...
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/**
+ * Error shell for displaying failures.
+ */
+function ErrorShell({ message, onResolve }: { message: string; onResolve: () => void }) {
+  useInput((_input, key) => {
+    if (key.return || key.escape) {
+      onResolve();
+    }
+  });
+
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor={palette.red} paddingX={1}>
+      <Box marginBottom={1}>
+        <Text color={palette.red} bold>
+          ⚠ Error
+        </Text>
+      </Box>
+      <Box marginBottom={1}>
+        <Text color="white">{message}</Text>
+      </Box>
+      <Box>
+        <Text color={palette.gray} dimColor>
+          Press Enter or Esc to continue
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+/**
+ * Launches the persistent state-driven app shell.
+ */
+export async function launchSessionApp(stateManager: SessionStateManager) {
+  if (rootShellInk) {
+    return rootShellExitPromise!;
+  }
+
+  stdinManager.enterShell();
+  clearShellScreen();
+
+  rootShellInk = render(<AppRoot stateManager={stateManager} />, {
+    exitOnCtrlC: false,
+  });
+  rootShellExitPromise = rootShellInk.waitUntilExit();
+
+  void rootShellExitPromise.then(() => {
+    rootShellInk = null;
+    rootShellExitPromise = null;
+    rootShellScreen = null;
+    stdinManager.exitShell();
+  });
+
+  return rootShellExitPromise;
 }
 
 function HomeShell({
@@ -1148,6 +1283,14 @@ function PlaybackShell({
               );
               return;
             }
+            if (action === "clearCache") {
+              onResolve("clear-cache");
+              return;
+            }
+            if (action === "clearHistory") {
+              onResolve("clear-history");
+              return;
+            }
             openSettingsChoiceOverlay(
               draftSettings,
               action as SettingsChoiceValue,
@@ -1424,8 +1567,7 @@ function SearchShell({
   return (
     <Box flexDirection="column" paddingX={1}>
       <Box borderStyle="round" borderColor={palette.gray} flexDirection="column" paddingX={1}>
-        <Text color={palette.amber}>{APP_LABEL}</Text>
-        <Box marginTop={1} flexDirection="column">
+        <Box marginTop={0} flexDirection="column">
           <Text bold color="white">
             {mode === "anime" ? "Search anime" : "Search titles"}
           </Text>
@@ -1517,13 +1659,6 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* App identity */}
-      <Box marginBottom={1}>
-        <Text color={palette.muted} dimColor>
-          🦊 KitsuneSnipe
-        </Text>
-      </Box>
-
       {/* Content title */}
       <Box>
         <Text color={accentColor}>{leadIcon} </Text>
@@ -1631,7 +1766,7 @@ export function openShell<TProps>({
   const session = mountShell<ShellAction>({
     renderShell: (finish) => <Component {...props} onResolve={finish} />,
     fallbackValue: "quit",
-    clearOnResolve: false,
+    clearOnResolve: true,
   });
 
   return session.result;
@@ -1690,7 +1825,7 @@ export function openPlaybackShell({
       />
     ),
     fallbackValue: "quit",
-    clearOnResolve: false,
+    clearOnResolve: true,
   });
 
   return session.result;
@@ -2222,7 +2357,9 @@ type SettingsAction =
   | "headless"
   | "showMemory"
   | "autoNext"
-  | "footerHints";
+  | "footerHints"
+  | "clearCache"
+  | "clearHistory";
 
 type SettingsChoiceValue = SettingsAction;
 
@@ -2305,6 +2442,16 @@ function buildSettingsOptions(config: KitsuneConfig): readonly ShellPickerOption
       value: "footerHints",
       label: `Footer hints  ·  ${config.footerHints}`,
       detail: "Detailed keeps two lines, minimal keeps only the task line",
+    },
+    {
+      value: "clearCache",
+      label: "Clear stream cache",
+      detail: "Wipe the local URL cache (stream_cache.json)",
+    },
+    {
+      value: "clearHistory",
+      label: "Clear watch history",
+      detail: "Reset all watch progress and history",
     },
   ];
 }
@@ -3567,7 +3714,7 @@ export function openBrowseShell<T>({
       />
     ),
     fallbackValue: { type: "cancelled" },
-    clearOnResolve: false,
+    clearOnResolve: true,
   });
 
   return session.result;
@@ -3608,7 +3755,7 @@ export function openListShell<T>({
           />
         ),
         fallbackValue: { type: "cancelled" },
-        clearOnResolve: false,
+        clearOnResolve: true,
       });
 
       const result = await session.result;

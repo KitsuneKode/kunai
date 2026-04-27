@@ -15,10 +15,47 @@
 // Nothing else needs to change.
 // =============================================================================
 
-import type { ApiProvider, ApiSearchResult } from "./types";
 import type { StreamData } from "@/scraper";
 import type { EpisodePickerOption } from "@/domain/types";
 import { dbg, dbgErr } from "@/logger";
+
+// ── Legacy Adapter Types (retained for AllAnime family) ────────────────────────
+
+export type ApiSearchResult = {
+  id: string;
+  title: string;
+  type: "movie" | "series";
+  year?: string;
+  posterUrl?: string;
+  epCount?: number;
+};
+
+export type EmbedScraperOpts = { needsClick?: boolean };
+
+export type ResolveOpts = {
+  subLang: string;
+  animeLang: "sub" | "dub";
+  embedScraper: (embedUrl: string, opts?: EmbedScraperOpts) => Promise<StreamData | null>;
+};
+
+export interface ApiProvider {
+  kind: "api";
+  id: string;
+  name: string;
+  description: string;
+  domain: string;
+  recommended?: boolean;
+  isAnimeProvider?: boolean;
+  searchBackend: "allanime";
+  search(query: string, opts: Pick<ResolveOpts, "animeLang">): Promise<ApiSearchResult[]>;
+  resolveStream(
+    id: string,
+    type: "movie" | "series",
+    season: number,
+    episode: number,
+    opts: ResolveOpts,
+  ): Promise<StreamData | null>;
+}
 
 // ── Hex-decode cipher (ani-cli provider_init) ─────────────────────────────────
 

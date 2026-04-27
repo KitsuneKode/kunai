@@ -19,7 +19,13 @@ export interface SessionBootstrap {
 }
 
 export class SessionController {
+  private abortController = new AbortController();
+
   constructor(private container: Container) {}
+
+  public shutdown(): void {
+    this.abortController.abort();
+  }
 
   async run(bootstrap: SessionBootstrap = {}): Promise<void> {
     const { logger, tracer, stateManager, diagnosticsStore } = this.container;
@@ -55,6 +61,8 @@ export class SessionController {
             pendingInitialQuery = undefined;
             preserveExistingSearch = false;
 
+            if (this.abortController.signal.aborted) break;
+
             if (searchResult.status === "quit") break;
             if (searchResult.status === "cancelled") continue;
             if (searchResult.status === "error") {
@@ -71,6 +79,8 @@ export class SessionController {
             title,
             new (await import("./PlaybackPhase")).PlaybackPhase(),
           );
+
+          if (this.abortController.signal.aborted) break;
 
           if (playbackResult.status === "quit") break;
           if (playbackResult.status === "cancelled") continue;

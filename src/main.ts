@@ -45,13 +45,18 @@ function parseArgs(argv: string[]): {
   return args;
 }
 
+let globalController: SessionController | null = null;
+
 async function main(): Promise<void> {
   // Parse CLI arguments
   const args = parseArgs(process.argv.slice(2));
 
   // Bootstrap the DI container
   const container = await createContainer({ debug: args.debug });
-  const { logger, config, stateManager } = container;
+  const { logger, config, stateManager, cacheStore } = container;
+
+  // Prune expired cache entries at startup to prevent indefinite bloat
+  await cacheStore.prune();
 
   if (args.debug) {
     const initialMode = args.anime ? "anime" : config.defaultMode;
@@ -103,16 +108,21 @@ async function main(): Promise<void> {
     }
   }
 
+  // Launch the persistent state-driven UI
+  const { launchSessionApp } = await import("./app-shell/ink-shell");
+  const shellExitPromise = launchSessionApp(stateManager);
+
   // Run the main session loop
   try {
-    const controller = new SessionController(container);
-    await controller.run({
+    globalController = new SessionController(container);
+    await globalController.run({
       initialQuery: bootstrapQuery,
       initialTitle: bootstrapTitle,
     });
 
     logger.info("KitsuneSnipe exited normally");
-    process.stdout.write("🦊 bye\n");
+    // Ensure the shell is unmounted if the controller finishes
+    if (process.stdin.isTTY) process.stdin.unref();
     process.exit(0);
   } catch (e) {
     logger.error("KitsuneSnipe crashed", { error: String(e) });
@@ -123,10 +133,16 @@ async function main(): Promise<void> {
 
 // Signal handling for clean shutdown
 function setupSignalHandlers(): void {
-  const shutdown = (signal: string) => {
-    console.log(`\nReceived ${signal}, shutting down...`);
-    // Unref stdin to allow clean exit (counteracts ink-shell .ref() calls)
+  const shutdown = async (signal: string) => {
+    console.log(`\nReceived ${signal}, shutting down cleanly...`);
     if (process.stdin.isTTY) process.stdin.unref();
+    
+    if (globalController) {
+      globalController.shutdown();
+      // Wait a short tick for synchronous pending tasks to wind down
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
     process.exit(0);
   };
 

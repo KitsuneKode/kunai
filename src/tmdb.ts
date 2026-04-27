@@ -75,7 +75,7 @@ export async function fetchEpisodes(tmdbId: string, season: number): Promise<Epi
     const eps: EpisodeInfo[] = ((data as any).episodes ?? []).map((e: any) => ({
       number: e.episode_number,
       name: e.name || `Episode ${e.episode_number}`,
-      airDate: (e.air_date || "").split("-")[0] || "",
+      airDate: e.air_date || "",
       overview: (e.overview || "").slice(0, 100),
     }));
 
@@ -106,6 +106,7 @@ export async function fetchSeriesData(
 export function formatEpisode(ep: EpisodeInfo): string {
   const num = `Ep ${String(ep.number).padStart(3, " ")}`;
   const name = ep.name.slice(0, 44).padEnd(44, " ");
-  const year = ep.airDate.padEnd(4, " ");
+  const yearArr = (ep.airDate || "").split("-");
+  const year = (yearArr[0] || "").padEnd(4, " ");
   return `${num}  ${name}  ${year}`;
 }

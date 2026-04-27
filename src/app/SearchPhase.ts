@@ -28,7 +28,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
     context: PhaseContext,
   ): Promise<PhaseResult<TitleInfo>> {
     const { container } = context;
-    const { searchRegistry, stateManager, logger, diagnosticsStore } = container;
+    const { searchRegistry, providerRegistry, stateManager, logger, diagnosticsStore } = container;
 
     try {
       const preserveExistingSearch =
@@ -54,6 +54,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             providerId: currentState.provider,
             animeLang: currentState.animeLang,
             searchRegistry,
+            providerRegistry,
           });
           const results = search.results;
 
@@ -117,6 +118,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               providerId: stateManager.getState().provider,
               animeLang: stateManager.getState().animeLang,
               searchRegistry,
+              providerRegistry,
             });
             const results = search.results;
 

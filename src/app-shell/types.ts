@@ -17,6 +17,8 @@ export type ShellAction =
   | "next"
   | "previous"
   | "next-season"
+  | "clear-cache"
+  | "clear-history"
   | "provider";
 
 export type ShellMode = "series" | "anime";
@@ -138,6 +140,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "next":
     case "previous":
     case "next-season":
+    case "clear-cache":
+    case "clear-history":
       return commandId;
   }
 }

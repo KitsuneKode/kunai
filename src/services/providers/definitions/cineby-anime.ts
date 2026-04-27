@@ -2,13 +2,10 @@
 // CinebyAnime Provider Adapter
 // =============================================================================
 
-import { CinebyAnime as LegacyCinebyAnime } from "@/providers/cineby-anime";
-import type { StreamData } from "@/scraper";
 import type {
   ProviderCapabilities,
   ProviderMetadata,
   StreamInfo,
-  SubtitleTrack,
   TitleInfo,
 } from "@/domain/types";
 
@@ -21,6 +18,7 @@ export class CinebyAnimeProvider implements Provider {
     description: "Cineby Anime (HiAnime via anime-db.videasy.net)",
     recommended: false,
     isAnimeProvider: true,
+    domain: "cineby.sc",
   };
 
   readonly capabilities: ProviderCapabilities = {
@@ -34,36 +32,19 @@ export class CinebyAnimeProvider implements Provider {
   }
 
   async resolveStream(request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> {
-    const legacyOpts = {
+    const url = `https://www.cineby.sc/anime/${request.title.id}?episode=${request.episode?.episode ?? 1}&play=true`;
+
+    return this.deps.browser.scrape({
+      url,
+      needsClick: true,
       subLang: request.subLang,
-      animeLang: this.deps.config.animeLang,
-      embedScraper: (embedUrl: string) =>
-        this.deps.browser.scrape({
-          url: embedUrl,
-          subLang: request.subLang,
-          signal,
-        }) as Promise<StreamData | null>,
-    };
-
-    const result = await LegacyCinebyAnime.resolveStream(
-      request.title.id,
-      request.title.type,
-      request.episode?.season ?? 1,
-      request.episode?.episode ?? 1,
-      legacyOpts,
-    );
-
-    if (!result) return null;
-
-    return {
-      url: result.url,
-      headers: result.headers,
-      subtitle: result.subtitle ?? undefined,
-      subtitleList: result.subtitleList as SubtitleTrack[] | undefined,
-      subtitleSource: result.subtitleSource,
-      subtitleEvidence: result.subtitleEvidence,
-      timestamp: result.timestamp,
-    };
+      signal,
+      playerDomains: this.deps.playerDomains,
+      tmdbId: request.title.id,
+      titleType: request.title.type,
+      season: request.episode?.season,
+      episode: request.episode?.episode,
+    });
   }
 }
 

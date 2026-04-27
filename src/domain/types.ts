@@ -89,6 +89,7 @@ export interface ProviderMetadata {
   readonly description: string;
   readonly recommended: boolean;
   readonly isAnimeProvider: boolean;
+  readonly domain?: string;
 }
 
 export interface SearchMetadata {

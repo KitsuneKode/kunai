@@ -11,6 +11,7 @@ const search = await searchTitles(query, {
   providerId: config.animeProvider,
   animeLang: config.animeLang,
   searchRegistry,
+  providerRegistry,
 });
 
 const selected =

@@ -1,6 +1,5 @@
-import { clearAllHistory, clearEntry, getAllHistory, saveHistory } from "@/history";
+
 import type { KitsuneConfig } from "@/config";
-import { ANIME_PROVIDERS, PLAYWRIGHT_PROVIDERS } from "@/providers";
 import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
 import type { EpisodePickerOption } from "@/domain/types";
 import type { Container } from "@/container";
@@ -14,6 +13,7 @@ import type { ShellAction } from "./types";
 import { resolveCommands } from "./commands";
 
 import { openListShell, type ListShellActionContext } from "./ink-shell";
+import { buildShellRuntimeBindings } from "./runtime-bindings";
 
 type HistoryAction =
   | { type: "entry"; id: string; title: string }
@@ -42,26 +42,7 @@ const ANIME_AUDIO_OPTIONS = [
   { value: "dub", label: "Dub", detail: "Dubbed audio when available" },
 ] as const;
 
-function createLegacyHistoryStore(): HistoryStore {
-  return {
-    async get(id) {
-      const entries = await getAllHistory();
-      return entries[id] ?? null;
-    },
-    async getAll() {
-      return getAllHistory();
-    },
-    async save(id, entry) {
-      await saveHistory(id, entry);
-    },
-    async delete(id) {
-      await clearEntry(id);
-    },
-    async clear() {
-      await clearAllHistory();
-    },
-  };
-}
+
 
 async function chooseOption<T>({
   title,
@@ -144,7 +125,9 @@ async function openHistoryShell(
 ): Promise<void> {
   while (true) {
     const entries = Object.entries(await historyStore.getAll()).sort(
-      (a, b) => new Date(b[1].watchedAt).getTime() - new Date(a[1].watchedAt).getTime(),
+      (a, b) =>
+        (new Date(b[1].watchedAt).getTime() || 0) -
+        (new Date(a[1].watchedAt).getTime() || 0),
     );
 
     const options: ShellOption<HistoryAction>[] = [
@@ -301,7 +284,7 @@ export async function handleShellAction({
   action: ShellAction;
   container: Container;
 }): Promise<"handled" | "quit" | "unhandled"> {
-  const { stateManager, config, diagnosticsStore, historyStore } = container;
+  const { providerRegistry, stateManager, config, diagnosticsStore, historyStore } = container;
 
   const withOverlay = async <T>(
     overlay: import("@/domain/session/SessionState").OverlayState,
@@ -486,7 +469,10 @@ export async function handleShellAction({
       () =>
         openProviderPicker({
           currentProvider: state.provider,
-          isAnime: state.mode === "anime",
+          providers: providerRegistry
+            .getAll()
+            .map((p) => p.metadata)
+            .filter((p) => p.isAnimeProvider === (state.mode === "anime")),
           actionContext: buildPickerActionContext({
             container,
             taskLabel: "Choose provider",
@@ -505,23 +491,62 @@ export async function handleShellAction({
   }
 
   if (action === "settings") {
-    const current = config.getRaw();
     const next = await withOverlay({ type: "settings" }, () =>
-      openSettingsShell(
-        current,
-        historyStore,
-        buildPickerActionContext({
+      openSettingsShell({
+        container,
+        current: config.getRaw(),
+        historyStore: container.historyStore,
+        actionContext: buildPickerActionContext({
           container,
           taskLabel: "Adjust settings",
           allowed: ["history", "diagnostics", "help", "about", "quit"],
         }),
-      ),
+        seriesProviders: providerRegistry
+          .getAll()
+          .map((p) => p.metadata)
+          .filter((p) => !p.isAnimeProvider),
+        animeProviders: providerRegistry
+          .getAll()
+          .map((p) => p.metadata)
+          .filter((p) => p.isAnimeProvider),
+      }),
     );
 
     if (next) {
-      await applySettingsToRuntime({ container, next, previous: current });
+      await applySettingsToRuntime({ container, next, previous: config.getRaw() });
     }
 
+    return "handled";
+  }
+
+  if (action === "clear-cache") {
+    const confirm = await chooseOption({
+      title: "Clear stream cache?",
+      subtitle: "This will remove all cached stream URLs. Next play will require fresh scraping.",
+      options: [
+        { value: true, label: "Yes, clear cache" },
+        { value: false, label: "Cancel" },
+      ],
+    });
+    if (confirm) {
+      diagnosticsStore.record({ category: "cache", message: "Stream cache cleared" });
+    }
+    return "handled";
+  }
+  
+  if (action === "clear-history") {
+    const confirm = await chooseOption({
+      title: "Clear watch history?",
+      subtitle: "This will remove all saved playback positions and progress.",
+      options: [
+        { value: true, label: "Yes, clear history" },
+        { value: false, label: "Cancel" },
+      ],
+    });
+    if (confirm) {
+      await historyStore.clear();
+      diagnosticsStore.record({ category: "session", message: "Watch history cleared" });
+    }
     return "handled";
   }
 
@@ -530,19 +555,18 @@ export async function handleShellAction({
 
 export async function openProviderPicker({
   currentProvider,
-  isAnime,
+  providers,
   actionContext,
 }: {
   currentProvider: string;
-  isAnime: boolean;
+  providers: readonly import("@/domain/types").ProviderMetadata[];
   actionContext?: ListShellActionContext;
 }): Promise<string | null> {
-  const pool = isAnime ? ANIME_PROVIDERS : PLAYWRIGHT_PROVIDERS;
   return chooseOption({
     title: "Choose provider",
     subtitle: `Current provider ${currentProvider}`,
     actionContext,
-    options: pool.map((provider) => ({
+    options: providers.map((provider) => ({
       value: provider.id,
       label: provider.id === currentProvider ? `${provider.name}  ·  current` : provider.name,
       detail: provider.description,
@@ -630,13 +654,22 @@ function configSummary(config: KitsuneConfig): string {
   return `default ${config.defaultMode}  ·  provider ${config.provider}  ·  anime ${config.animeProvider}  ·  footer ${config.footerHints}`;
 }
 
-export async function openSettingsShell(
-  current: KitsuneConfig,
-  historyStore?: HistoryStore,
-  actionContext?: ListShellActionContext,
-): Promise<KitsuneConfig | null> {
+export async function openSettingsShell({
+  container,
+  current,
+  historyStore,
+  actionContext,
+  seriesProviders,
+  animeProviders,
+}: {
+  container?: Container;
+  current: KitsuneConfig;
+  historyStore?: HistoryStore;
+  actionContext?: ListShellActionContext;
+  seriesProviders: readonly import("@/domain/types").ProviderMetadata[];
+  animeProviders: readonly import("@/domain/types").ProviderMetadata[];
+}): Promise<KitsuneConfig | null> {
   let next = { ...current };
-  const settingsHistoryStore = historyStore ?? createLegacyHistoryStore();
   let changed = false;
 
   while (true) {
@@ -696,6 +729,16 @@ export async function openSettingsShell(
           label: "Manage history",
           detail: "Review and remove saved positions",
         },
+        {
+          value: "clearCache" as const,
+          label: "Clear stream cache",
+          detail: "Wipe the local URL cache (stream_cache.json)",
+        },
+        {
+          value: "clearHistory" as const,
+          label: "Clear watch history",
+          detail: "Reset all watch progress and history",
+        },
         { value: "done" as const, label: changed ? "Save and close" : "Close" },
       ],
     });
@@ -709,7 +752,17 @@ export async function openSettingsShell(
     }
 
     if (action === "history") {
-      await openHistoryShell(settingsHistoryStore, actionContext);
+      if (historyStore) await openHistoryShell(historyStore, actionContext);
+      continue;
+    }
+
+    if (action === "clearCache") {
+      if (container) await handleShellAction({ action: "clear-cache", container });
+      continue;
+    }
+
+    if (action === "clearHistory") {
+      if (container) await handleShellAction({ action: "clear-history", container });
       continue;
     }
 
@@ -718,7 +771,7 @@ export async function openSettingsShell(
         title: "Default provider",
         subtitle: `Current ${next.provider}`,
         actionContext,
-        options: PLAYWRIGHT_PROVIDERS.map((provider) => ({
+        options: seriesProviders.map((provider) => ({
           value: provider.id,
           label: provider.id === next.provider ? `${provider.name}  ·  current` : provider.name,
           detail: provider.description,
@@ -761,7 +814,7 @@ export async function openSettingsShell(
         title: "Anime provider",
         subtitle: `Current ${next.animeProvider}`,
         actionContext,
-        options: ANIME_PROVIDERS.map((provider) => ({
+        options: animeProviders.map((provider) => ({
           value: provider.id,
           label:
             provider.id === next.animeProvider ? `${provider.name}  ·  current` : provider.name,

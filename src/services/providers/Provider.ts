@@ -28,6 +28,7 @@ export interface ProviderDeps {
   tracer: import("@/infra/tracer/Tracer").Tracer;
   config: import("@/services/persistence/ConfigService").ConfigService;
   browser: import("@/infra/browser/BrowserService").BrowserService;
+  playerDomains: string[];
 }
 
 export interface Provider {
@@ -45,6 +46,13 @@ export interface Provider {
     request: EpisodeListRequest,
     signal?: AbortSignal,
   ): Promise<EpisodePickerOption[] | null>;
+
+  // Optional search capability for providers that expose a search API (e.g. anime).
+  search?(
+    query: string,
+    opts: { animeLang: "sub" | "dub" },
+    signal?: AbortSignal,
+  ): Promise<import("@/domain/types").SearchResult[] | null>;
 }
 
 // Factory function type for creating providers
