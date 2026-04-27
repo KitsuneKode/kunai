@@ -5,25 +5,69 @@
 // =============================================================================
 
 import { existsSync, mkdirSync } from "fs";
-import { readFile, writeFile, unlink } from "fs/promises";
-import { join } from "path";
+import { readFile, writeFile, unlink, rename } from "fs/promises";
+import { join, dirname } from "path";
+import os from "os";
 import type { StorageService } from "./StorageService";
 
-const HOME = process.env.HOME ?? "~";
+// OS-aware path resolution
+function getAppDataDir(appName: string): string {
+  const platform = process.platform;
+  const home = os.homedir();
+
+  if (platform === "win32") {
+    return join(process.env.APPDATA || join(home, "AppData", "Roaming"), appName);
+  }
+  if (platform === "darwin") {
+    return join(home, "Library", "Application Support", appName);
+  }
+  return join(home, ".local", "share", appName);
+}
+
+function getConfigDir(appName: string): string {
+  const platform = process.platform;
+  const home = os.homedir();
+
+  if (platform === "win32") {
+    return join(process.env.APPDATA || join(home, "AppData", "Roaming"), appName);
+  }
+  if (platform === "darwin") {
+    return join(home, "Library", "Application Support", appName);
+  }
+  return join(process.env.XDG_CONFIG_HOME || join(home, ".config"), appName);
+}
+
+function getCacheDir(appName: string): string {
+  const platform = process.platform;
+  const home = os.homedir();
+
+  if (platform === "win32") {
+    return join(process.env.LOCALAPPDATA || join(home, "AppData", "Local"), appName);
+  }
+  if (platform === "darwin") {
+    return join(home, "Library", "Caches", appName);
+  }
+  return join(process.env.XDG_CACHE_HOME || join(home, ".cache"), appName);
+}
+
+const APP_NAME = "kitsunesnipe";
 
 // Key → file path mapping
 const PATHS: Record<string, string> = {
-  config: join(HOME, ".config", "kitsunesnipe", "config.json"),
-  history: join(HOME, ".local", "share", "kitsunesnipe", "history.json"),
-  cache: join(process.cwd(), "stream_cache.json"),
+  config: join(getConfigDir(APP_NAME), "config.json"),
+  history: join(getAppDataDir(APP_NAME), "history.json"),
+  cache: join(getCacheDir(APP_NAME), "stream_cache.json"),
 };
 
 function ensureDir(filePath: string) {
-  const dir = filePath.substring(0, filePath.lastIndexOf("/"));
+  const dir = dirname(filePath);
   if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
 export class FileStorage implements StorageService {
+  // Simple mutex to prevent concurrent writes from interleaving and corrupting files
+  private writeLock: Promise<void> = Promise.resolve();
+
   async read<T>(key: string): Promise<T | null> {
     const path = PATHS[key];
     if (!path) throw new Error(`Unknown storage key: ${key}`);
@@ -33,6 +77,11 @@ export class FileStorage implements StorageService {
       const raw = await readFile(path, "utf-8");
       return JSON.parse(raw) as T;
     } catch {
+      // Safe fallback on corrupt parse: back it up so we don't nuke it permanently
+      const corruptPath = `${path}.corrupt.bak`;
+      try {
+        await rename(path, corruptPath);
+      } catch {}
       return null;
     }
   }
@@ -41,15 +90,29 @@ export class FileStorage implements StorageService {
     const path = PATHS[key];
     if (!path) throw new Error(`Unknown storage key: ${key}`);
 
-    ensureDir(path);
-    await writeFile(path, JSON.stringify(data, null, 2), "utf-8");
+    const task = this.writeLock.then(async () => {
+      ensureDir(path);
+      const tmpPath = `${path}.tmp`;
+      const str = JSON.stringify(data, null, 2);
+      // Write to .tmp first, then atomic rename
+      await writeFile(tmpPath, str, "utf-8");
+      await rename(tmpPath, path);
+    });
+
+    this.writeLock = task.catch(() => {});
+    await task;
   }
 
   async delete(key: string): Promise<void> {
     const path = PATHS[key];
     if (!path) throw new Error(`Unknown storage key: ${key}`);
 
-    if (existsSync(path)) await unlink(path);
+    const task = this.writeLock.then(async () => {
+      if (existsSync(path)) await unlink(path);
+    });
+
+    this.writeLock = task.catch(() => {});
+    await task;
   }
 
   async exists(key: string): Promise<boolean> {

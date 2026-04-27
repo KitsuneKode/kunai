@@ -151,6 +151,12 @@ export async function launchMpv(opts: {
   }
 
   // ── Parse position file ───────────────────────────────────────────────────
+  let retries = 0;
+  while (!existsSync(posPath) && retries < 5) {
+    await Bun.sleep(100); // 500ms total buffer for filesystem flush
+    retries++;
+  }
+
   if (existsSync(posPath)) {
     try {
       const raw = await readFile(posPath, "utf-8");
