@@ -72,9 +72,10 @@ async function main() {
     try {
         await page.goto(`https://anikai.to/watch/${selected.slug}`, { waitUntil: "domcontentloaded" });
         // Wait for the episode list to load. Anikai loads episodes via ajax into .ep-item
-        await page.waitForSelector('a[token]', { timeout: 30000 });
+        // Give it a massive timeout for Cloudflare to clear
+        await page.waitForSelector('a[token]', { timeout: 60000 });
     } catch (e) {
-        console.error("[!] Failed to load watch page or episode list.");
+        console.error(`[!] Failed to load watch page or episode list. Cloudflare might be blocking heavily. Error: ${e.message}`);
         rl.close();
         await browser.close();
         process.exit(1);
@@ -151,6 +152,7 @@ async function main() {
 
     console.log(`[*] Clicking server ${selectedSrv.name}...`);
     try {
+        await page.waitForTimeout(2000); // Small delay to let the episode DOM settle
         await page.evaluate((idx) => {
             const items = Array.from(document.querySelectorAll('.server'));
             const btn = items[idx] as HTMLElement;
@@ -159,19 +161,27 @@ async function main() {
         
         // Wait for the intercepted response to populate finalStreamUrl
         let retries = 0;
-        while (!finalStreamUrl && retries < 20) {
+        while (!finalStreamUrl && retries < 30) {
             await new Promise(r => setTimeout(r, 500));
             retries++;
         }
 
         // Fallback: Check if an iframe was loaded
         if (!finalStreamUrl) {
+            console.log("    [i] Trying iframe fallback...");
             try {
-                const iframe = await page.waitForSelector('iframe', { timeout: 15000 });
+                const iframe = await page.waitForSelector('.play-video iframe, iframe', { timeout: 20000 });
                 if (iframe) {
                     finalStreamUrl = await iframe.getAttribute('src') || "";
+                    if (!finalStreamUrl || finalStreamUrl === "about:blank") {
+                         // Wait a bit more for src to be populated
+                         await page.waitForTimeout(3000);
+                         finalStreamUrl = await iframe.getAttribute('src') || "";
+                    }
                 }
-            } catch (e) {}
+            } catch (e) {
+                 console.log("    [!] Iframe fallback failed.");
+            }
         }
     } catch (e) {
         console.error("[!] Failed to click server or extract stream.");
