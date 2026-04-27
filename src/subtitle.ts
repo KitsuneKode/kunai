@@ -25,13 +25,42 @@ export function parseWyzieSubtitleList(payload: unknown): SubtitleEntry[] {
   return candidates.filter(isSubtitleEntry);
 }
 
-export function selectSubtitle(list: SubtitleEntry[], preferredLang: string): SubtitleEntry | null {
-  return (
-    list.find((s) => s.language === preferredLang) ||
-    (preferredLang !== "en" ? list.find((s) => s.language === "en") : null) ||
-    list[0] ||
-    null
+// True when an entry's language code matches the requested code.
+// Handles: exact match, locale variants (en === en-US), and full-name strings.
+function langMatches(entryLang: string, preferred: string): boolean {
+  const el = entryLang.toLowerCase().trim();
+  const pl = preferred.toLowerCase().trim();
+  if (!el || !pl) return false;
+  return el === pl || el.startsWith(pl + "-") || pl.startsWith(el + "-");
+}
+
+// Among a filtered set, prefer non-hearing-impaired entries with the most downloads.
+function bestFrom(candidates: SubtitleEntry[]): SubtitleEntry | null {
+  if (candidates.length === 0) return null;
+  const normal = candidates.filter(
+    (s) => !(s as SubtitleEntry & { isHearingImpaired?: boolean }).isHearingImpaired,
   );
+  const pool = normal.length > 0 ? normal : candidates;
+  return pool.reduce((best, s) => {
+    const bc = (best as SubtitleEntry & { downloadCount?: number }).downloadCount ?? 0;
+    const sc = (s as SubtitleEntry & { downloadCount?: number }).downloadCount ?? 0;
+    return sc > bc ? s : best;
+  });
+}
+
+export function selectSubtitle(list: SubtitleEntry[], preferredLang: string): SubtitleEntry | null {
+  // 1. Exact-language match (with locale variant tolerance)
+  const exactMatches = list.filter((s) => langMatches(s.language, preferredLang));
+  if (exactMatches.length > 0) return bestFrom(exactMatches);
+
+  // 2. English fallback when a non-English language was requested
+  if (!langMatches(preferredLang, "en")) {
+    const englishMatches = list.filter((s) => langMatches(s.language, "en"));
+    if (englishMatches.length > 0) return bestFrom(englishMatches);
+  }
+
+  // 3. Last resort: best entry from whatever is available
+  return bestFrom(list);
 }
 
 export async function fetchSubtitlesFromWyzie(
@@ -114,5 +143,10 @@ function redactWyzieKey(url: string): string {
 function isSubtitleEntry(value: unknown): value is SubtitleEntry {
   if (!value || typeof value !== "object") return false;
   const entry = value as Partial<SubtitleEntry>;
-  return typeof entry.url === "string" && entry.url.length > 0;
+  return (
+    typeof entry.url === "string" &&
+    entry.url.length > 0 &&
+    typeof entry.language === "string" &&
+    entry.language.length > 0
+  );
 }

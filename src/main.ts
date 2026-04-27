@@ -112,6 +112,7 @@ async function main(): Promise<void> {
     });
 
     logger.info("KitsuneSnipe exited normally");
+    process.stdout.write("🦊 bye\n");
     process.exit(0);
   } catch (e) {
     logger.error("KitsuneSnipe crashed", { error: String(e) });

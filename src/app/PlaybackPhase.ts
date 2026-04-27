@@ -361,6 +361,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               title: title.name,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
+              posterUrl: title.posterUrl,
               provider: resolvedProviderId,
               subtitleStatus: describeSubtitleStatus(
                 preparedStream,
@@ -469,6 +470,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             continue postPlayback;
           } else if (postAction === "search") {
             return { status: "success", value: "back_to_search" };
+          } else if (postAction === "back-to-results") {
+            return { status: "success", value: "back_to_results" };
           } else {
             return { status: "success", value: "back_to_search" };
           }

@@ -71,6 +71,9 @@ export async function launchMpv(opts: {
   url: string;
   headers: Record<string, string>;
   subtitle: string | null;
+  /** All available subtitle URLs. The first entry is auto-selected by mpv.
+   *  User can switch tracks in mpv with j/J. */
+  subtitleUrls?: readonly string[];
   displayTitle: string;
   startAt?: number;
   attach?: boolean; // true → stdio:inherit (old behaviour)
@@ -92,7 +95,13 @@ export async function launchMpv(opts: {
   if (userAgent) args.push(`--user-agent=${userAgent}`);
   if (origin) args.push(`--http-header-fields=Origin: ${origin}`);
 
-  if (opts.subtitle) args.push(`--sub-file=${opts.subtitle}`);
+  // Build deduplicated subtitle URL list: preferred first, then the rest.
+  const allSubUrls: string[] = [];
+  if (opts.subtitle) allSubUrls.push(opts.subtitle);
+  for (const u of opts.subtitleUrls ?? []) {
+    if (!allSubUrls.includes(u)) allSubUrls.push(u);
+  }
+  for (const u of allSubUrls) args.push(`--sub-file=${u}`);
   if (opts.startAt && opts.startAt > 5) args.push(`--start=${opts.startAt}`);
   args.push(`--force-media-title=${opts.displayTitle}`);
   args.push(`--script=${scriptPath}`);

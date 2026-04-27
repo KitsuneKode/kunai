@@ -52,10 +52,11 @@ const posterCache = new Map<string, PosterResult>();
 export async function fetchPoster(
   url: string | undefined,
   { rows, cols }: { rows: number; cols: number },
-): Promise<PosterResult>
+): Promise<PosterResult>;
 ```
 
 **Kitty path** (`isKittyCompatible()` true):
+
 1. Fetch image from TMDB (5 s timeout); decode to raw bytes
 2. Base64-encode; send Kitty `a=T,f=100,q=2,i=<id>,m=0` sequence to transmit the image
    silently (no display yet)
@@ -65,6 +66,7 @@ export async function fetchPoster(
 4. Return `{ kind: "kitty", placeholder, rows, cols }`
 
 **chafa fallback** (no Kitty, `chafa` binary found):
+
 1. Download image to tmp file
 2. `Bun.spawn(["chafa", "--size", `${cols}x${rows}`, "--format", "utf8", tmpPath])`
 3. Return `{ kind: "chafa", art: stdout, rows, cols }`
@@ -75,7 +77,8 @@ export async function fetchPoster(
 previous placement when the URL changes: `\x1b_Ga=d,d=I,i=<old_id>;\x1b\\`
 
 **Helper** (`src/image.ts` update):
-- Keep `isKittyCompatible()` 
+
+- Keep `isKittyCompatible()`
 - Add `isChafaAvailable(): boolean` — checks `which chafa` once, caches result
 - Move `displayPoster()` to a legacy export only; do not use in new code
 
@@ -111,24 +114,22 @@ useEffect(() => {
 **Rendering in the companion pane** (the right-side preview panel that already exists):
 
 ```tsx
-{poster.kind !== "none" && wideBrowse && (
-  <Box
-    flexDirection="column"
-    width={posterCols}
-    height={posterRows}
-    marginBottom={1}
-  >
-    {poster.kind === "kitty" ? (
-      // Ink renders the placeholder chars; Kitty composites the image
-      <Text>{poster.placeholder}</Text>
-    ) : (
-      // chafa block art: split by newlines, render each line
-      poster.art.split("\n").slice(0, posterRows).map((line, i) => (
-        <Text key={i}>{line}</Text>
-      ))
-    )}
-  </Box>
-)}
+{
+  poster.kind !== "none" && wideBrowse && (
+    <Box flexDirection="column" width={posterCols} height={posterRows} marginBottom={1}>
+      {poster.kind === "kitty" ? (
+        // Ink renders the placeholder chars; Kitty composites the image
+        <Text>{poster.placeholder}</Text>
+      ) : (
+        // chafa block art: split by newlines, render each line
+        poster.art
+          .split("\n")
+          .slice(0, posterRows)
+          .map((line, i) => <Text key={i}>{line}</Text>)
+      )}
+    </Box>
+  );
+}
 ```
 
 When no poster is available (provider doesn't expose it, or unsupported terminal), the companion
@@ -155,12 +156,14 @@ change in `types.ts`) and thread it from `PlaybackPhase.ts`.
 **Current**: selected item uses `❯` + cyan background on the cursor char, no type badge.
 
 **New row layout**:
+
 ```
 ❯  Breaking Bad                              📺 2008
    One of the greatest shows ever made        AMC
 ```
 
 Changes:
+
 - Lead `❯` uses `palette.amber` (brand color) not `palette.cyan` — selection cursor owns amber
 - Second column: type emoji `🎬` (movie) or `📺` (series) + year, right-aligned to list width
 - Detail line (body preview) shown only on selected row, truncated to one line
@@ -176,7 +179,7 @@ function ResultRow({
   selected: boolean;
   width: number;
 }) {
-  const typeIcon = option.value /* need type info */; // see note below
+  const typeIcon = option.value; /* need type info */ // see note below
   const titleWidth = width - 10; // leave room for year+icon
 
   return (
@@ -184,21 +187,21 @@ function ResultRow({
       <Box width={width} justifyContent="space-between">
         <Box>
           <Text color={selected ? palette.amber : palette.gray}>{selected ? "❯ " : "  "}</Text>
-          <Text
-            bold={selected}
-            color={selected ? "white" : palette.muted}
-            dimColor={!selected}
-          >
+          <Text bold={selected} color={selected ? "white" : palette.muted} dimColor={!selected}>
             {truncateLine(option.label, titleWidth)}
           </Text>
         </Box>
         {option.previewMeta?.[0] ? (
-          <Text color={palette.gray} dimColor>{option.previewMeta[0]}</Text>
+          <Text color={palette.gray} dimColor>
+            {option.previewMeta[0]}
+          </Text>
         ) : null}
       </Box>
       {selected && option.detail ? (
         <Box marginLeft={2}>
-          <Text color={palette.gray} dimColor>{truncateLine(option.detail, width - 2)}</Text>
+          <Text color={palette.gray} dimColor>
+            {truncateLine(option.detail, width - 2)}
+          </Text>
         </Box>
       ) : null}
     </Box>
@@ -294,6 +297,7 @@ S02E05  ·  Provider rivestream  ·  Mode series            ● Ready
 ```
 
 Components:
+
 - **App bar**: `eyebrow` text left, `mode · provider` right — both `dimColor`
 - **Thin separator**: `─` at full terminal width (`stdout.columns`)
 - **Title line**: bold white, large
@@ -351,10 +355,11 @@ loading shell uses its own layout and is not affected.
 session"). The footer renders on two lines: task label, then hotkeys.
 
 **New**:
+
 - `taskLabel` shortened to just the task noun: `"Playback"`, `"Browse"`, `"Search"`
 - Status suffix appended inline after `·`: `"Playback  ·  Ready"`
 - Hotkeys line: group primary (`r replay  f search  e episodes`) and secondary (`n/p nav  q quit
-  / commands`) separated by a gap
+/ commands`) separated by a gap
 - Disabled commands omitted from footer (already done) but their reason shown as a tooltip-style
   suffix on the adjacent enabled command when relevant
 
@@ -363,6 +368,7 @@ session"). The footer renders on two lines: task label, then hotkeys.
 **Current**: command list shows `/alias  description` in a bordered box below the footer.
 
 **New**:
+
 - Opened command shows current match count: `Command (3 matches)`
 - Disabled commands shown in a separate "Unavailable" section at the bottom, dimmed, with reason
 - Default highlight: the most recently used command is pre-highlighted (stored in module-level
@@ -381,7 +387,9 @@ paragraph that provides no value after the first session.
 **New**:
 
 ```tsx
-{/* Title identity card */}
+{
+  /* Title identity card */
+}
 <Box flexDirection="column" marginBottom={1}>
   {state.type === "series" ? (
     <>
@@ -393,23 +401,29 @@ paragraph that provides no value after the first session.
   ) : (
     <Text color={palette.muted}>Playback complete</Text>
   )}
-</Box>
+</Box>;
 
-{/* Inline poster (when available + Kitty) */}
-{poster.kind !== "none" && (
-  <Box marginBottom={1}>
-    {/* same poster rendering as browse companion */}
-  </Box>
-)}
+{
+  /* Inline poster (when available + Kitty) */
+}
+{
+  poster.kind !== "none" && (
+    <Box marginBottom={1}>{/* same poster rendering as browse companion */}</Box>
+  );
+}
 
-{/* Subtitle status as a status chip */}
-{state.subtitleStatus ? (
-  <Box>
-    <Text color={state.subtitleStatus.includes("attached") ? palette.green : palette.amber}>
-      ● {state.subtitleStatus}
-    </Text>
-  </Box>
-) : null}
+{
+  /* Subtitle status as a status chip */
+}
+{
+  state.subtitleStatus ? (
+    <Box>
+      <Text color={state.subtitleStatus.includes("attached") ? palette.green : palette.amber}>
+        ● {state.subtitleStatus}
+      </Text>
+    </Box>
+  ) : null;
+}
 ```
 
 ### 4b. Search Shell
@@ -418,6 +432,7 @@ paragraph that provides no value after the first session.
 no recent-query suggestion.
 
 Improvements:
+
 - Show last search query as placeholder (already done via `initialValue`, but only if passed — make
   sure `SearchPhase` threads the previous query through `bootstrap.initialQuery` on back-to-results)
 - On empty state (first open), show: `"Search by title, year, or phrase"`
@@ -429,6 +444,7 @@ The UX doc specifies a "soft exit" — dim → footer drops → optional mascot 
 done in 180–220ms. Currently `process.exit(0)` is called immediately on Ctrl+C.
 
 Light implementation (no mascot reaction needed — keep it minimal):
+
 1. On Ctrl+C: unmount Ink root → `clearShellScreen()` → write `🦊 bye\n` → `process.exit(0)` after a 150ms delay
 2. Keep `Ctrl+C` → `process.exit(0)` as the instant path (< 50ms) — the "bye" only fires for graceful quit (`q`)
 
@@ -438,28 +454,28 @@ This is a small change to `stdinManager.cleanup()` and the `"quit"` resolve path
 
 ## 5. UX Bug Fixes
 
-| Bug | Location | Fix |
-|-----|----------|-----|
-| `Esc` in playback shell → immediately navigates to search, not a confirm | `PlaybackShell` `useInput` | Keep as-is per UX doc: Esc on post-playback is documented to go back. Not a bug. |
-| Browse picker: first `Esc` should clear filter, second closes | `ListShell` | Already correct per code. No change needed. |
-| Footer shows `/` key with label `"commands"` but action is `"replay"` | `PlaybackShell` footer | This conflates two hotkeys. Fix: `{ key: "/", label: "commands", action: "command-mode" }` — add `command-mode` as a local action in `resolvePlaybackAction` that calls `setCommandMode(true)` |
-| Empty overlay `loading` state shows no indicator in `OverlayPanel` | `OverlayPanel` | Already handled via `overlay.loading ? <Text>Loading panel…</Text>` — fine |
-| Browse results: `options.length === 0` after search shows nothing | `BrowseShell` render | Add empty state (section 2b above) |
-| `previewBody` shows "Type a title and press Enter to search" even after results load and option has body | `BrowseShell` | The fallback is applied when `previewBody` is falsy — correct, but the fallback copy should change to something less instructional when results exist: `"No description available"` |
-| Post-playback `Esc` resolves `"search"` but should signal `"back_to_results"` | `PlaybackShell` | Change Esc to emit `"back_to_results"` so the search state is preserved (user returns to the result list) |
-| Command palette `Tab` autocomplete only cycles forward | `useShellInput` | Already correct — forward only, fine |
+| Bug                                                                                                      | Location                   | Fix                                                                                                                                                                                            |
+| -------------------------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Esc` in playback shell → immediately navigates to search, not a confirm                                 | `PlaybackShell` `useInput` | Keep as-is per UX doc: Esc on post-playback is documented to go back. Not a bug.                                                                                                               |
+| Browse picker: first `Esc` should clear filter, second closes                                            | `ListShell`                | Already correct per code. No change needed.                                                                                                                                                    |
+| Footer shows `/` key with label `"commands"` but action is `"replay"`                                    | `PlaybackShell` footer     | This conflates two hotkeys. Fix: `{ key: "/", label: "commands", action: "command-mode" }` — add `command-mode` as a local action in `resolvePlaybackAction` that calls `setCommandMode(true)` |
+| Empty overlay `loading` state shows no indicator in `OverlayPanel`                                       | `OverlayPanel`             | Already handled via `overlay.loading ? <Text>Loading panel…</Text>` — fine                                                                                                                     |
+| Browse results: `options.length === 0` after search shows nothing                                        | `BrowseShell` render       | Add empty state (section 2b above)                                                                                                                                                             |
+| `previewBody` shows "Type a title and press Enter to search" even after results load and option has body | `BrowseShell`              | The fallback is applied when `previewBody` is falsy — correct, but the fallback copy should change to something less instructional when results exist: `"No description available"`            |
+| Post-playback `Esc` resolves `"search"` but should signal `"back_to_results"`                            | `PlaybackShell`            | Change Esc to emit `"back_to_results"` so the search state is preserved (user returns to the result list)                                                                                      |
+| Command palette `Tab` autocomplete only cycles forward                                                   | `useShellInput`            | Already correct — forward only, fine                                                                                                                                                           |
 
 ---
 
 ## 6. Files Changed
 
-| File | Change |
-|------|--------|
-| `src/app-shell/image-pane.ts` | **new** — `fetchPoster()`, Kitty unicode placeholder builder, chafa fallback, cache |
-| `src/image.ts` | Add `isChafaAvailable()`, keep `isKittyCompatible()`, deprecate `displayPoster` |
+| File                          | Change                                                                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app-shell/image-pane.ts` | **new** — `fetchPoster()`, Kitty unicode placeholder builder, chafa fallback, cache                                                                      |
+| `src/image.ts`                | Add `isChafaAvailable()`, keep `isKittyCompatible()`, deprecate `displayPoster`                                                                          |
 | `src/app-shell/ink-shell.tsx` | `ShellFrame` header redesign; `BrowseShell` poster effect + row design + empty state; `PlaybackShell` body + poster + Esc fix; `SearchShell` placeholder |
-| `src/app-shell/types.ts` | Add `posterUrl?: string` to `PlaybackShellState` |
-| `src/app/PlaybackPhase.ts` | Thread `title.posterUrl` into `PlaybackShellState` |
+| `src/app-shell/types.ts`      | Add `posterUrl?: string` to `PlaybackShellState`                                                                                                         |
+| `src/app/PlaybackPhase.ts`    | Thread `title.posterUrl` into `PlaybackShellState`                                                                                                       |
 
 ---
 
@@ -478,8 +494,9 @@ This is a small change to `stdinManager.cleanup()` and the `"quit"` resolve path
 ## 8. Acceptance Criteria
 
 ### Image Protocol
+
 - [ ] On Kitty/Ghostty: poster image appears in companion pane when a result with a poster URL is
-  selected in browse shell
+      selected in browse shell
 - [ ] Image changes without flicker when selection changes
 - [ ] Image is cleared when browse shell closes
 - [ ] On unsupported terminals: pane shows text-only companion, no errors
@@ -487,23 +504,27 @@ This is a small change to `stdinManager.cleanup()` and the `"quit"` resolve path
 - [ ] Image never blocks selection — navigation remains instant
 
 ### Browse Shell
+
 - [ ] Selected row: amber `❯`, bold title, type/year on right, one-line detail below
 - [ ] Empty search result shows explicit message with recovery hint
 - [ ] Filter input shows count of results and Esc-clears hint
 - [ ] Provider change → brief "Searching…" indicator visible
 
 ### ShellFrame
+
 - [ ] App bar replaces bordered box — feels like a TUI, not a floating card
 - [ ] Status `●` dot uses correct tone color
 - [ ] `taskLabel` is concise (noun + status suffix, not prose)
 - [ ] Footer separator line visible above footer
 
 ### Post-Playback
+
 - [ ] Body shows episode identity card (S02E05, Episode complete)
 - [ ] `Esc` returns to browse results, not bare search
 - [ ] `q` quit shows brief exit line before process ends
 
 ### General
+
 - [ ] `bun run typecheck` passes
 - [ ] `bun run lint` passes (ignoring scratchpads)
 - [ ] No terminal corruption on shells where images are not supported

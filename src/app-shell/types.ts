@@ -2,6 +2,7 @@ import type { ResolvedAppCommand, AppCommandId } from "./commands";
 
 export type ShellAction =
   | "search"
+  | "back-to-results"
   | "settings"
   | "toggle-mode"
   | "quit"
@@ -54,6 +55,7 @@ export type PlaybackShellState = {
   type: "movie" | "series";
   season: number;
   episode: number;
+  posterUrl?: string;
   subtitleStatus?: string;
   showMemory: boolean;
   memoryUsage?: string;

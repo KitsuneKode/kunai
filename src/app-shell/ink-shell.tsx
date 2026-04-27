@@ -5,6 +5,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 
 import { buildBrowseDetailsPanel } from "./details-panel";
+import { fetchPoster, deleteKittyImage, type PosterResult } from "./image-pane";
 import {
   COMMANDS,
   parseCommand,
@@ -398,21 +399,35 @@ function ShellFrame({
     onResolve,
   });
 
+  const { stdout } = useStdout();
+  const sepWidth = stdout.columns ?? 80;
+
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={0}>
-      <Box
-        borderStyle="round"
-        borderColor={palette.gray}
-        flexDirection="column"
-        paddingX={1}
-        paddingY={0}
-      >
+    <Box flexDirection="column">
+      {/* App bar */}
+      <Box justifyContent="space-between" paddingX={1}>
         <Text color={palette.amber}>{eyebrow}</Text>
-        <Box marginTop={1} justifyContent="space-between">
+        {status ? (
+          <Box>
+            <Text color={statusColor(status.tone)}>{"● "}</Text>
+            <Text color={palette.gray} dimColor>
+              {status.label}
+            </Text>
+          </Box>
+        ) : null}
+      </Box>
+
+      {/* Header separator */}
+      <Text color={palette.gray} dimColor>
+        {"─".repeat(sepWidth)}
+      </Text>
+
+      {/* Shell content */}
+      <Box flexDirection="column" paddingX={2} paddingY={1}>
+        <Box justifyContent="space-between">
           <Text bold color="white">
             {title}
           </Text>
-          {status ? <Text color={statusColor(status.tone)}>{status.label}</Text> : null}
         </Box>
         <Text color={palette.muted}>{subtitle}</Text>
         <Box marginTop={1} flexDirection="column">
@@ -427,6 +442,11 @@ function ShellFrame({
           highlightedIndex={highlightedIndex}
         />
       ) : null}
+
+      {/* Footer separator */}
+      <Text color={palette.gray} dimColor>
+        {"─".repeat(sepWidth)}
+      </Text>
 
       <ShellFooter
         taskLabel={footerTask}
@@ -707,8 +727,23 @@ function PlaybackShell({
   const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
   const [draftSettings, setDraftSettings] = useState<KitsuneConfig | null>(null);
   const [appliedSettings, setAppliedSettings] = useState<KitsuneConfig | null>(settings ?? null);
+  const [poster, setPoster] = useState<PosterResult>({ kind: "none" });
   const { stdout } = useStdout();
   const playbackViewport = getShellViewportPolicy("playback", stdout.columns, stdout.rows);
+
+  useEffect(() => {
+    const url = state.posterUrl;
+    if (!url) return;
+    fetchPoster(url, { rows: 10, cols: 22 })
+      .then(setPoster)
+      .catch(() => {});
+    return () => {
+      setPoster((prev) => {
+        if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
+        return { kind: "none" };
+      });
+    };
+  }, [state.posterUrl]);
   const commands =
     state.commands ??
     fallbackCommandState([
@@ -1169,7 +1204,7 @@ function PlaybackShell({
     }
 
     if (key.escape) {
-      resolvePlaybackAction("search");
+      resolvePlaybackAction("back-to-results");
       return;
     }
 
@@ -1184,7 +1219,7 @@ function PlaybackShell({
       title={state.title}
       subtitle={`${location}  ·  Provider ${activeProvider}  ·  Mode ${state.mode}`}
       status={state.status}
-      footerTask="Review playback actions and continue this session"
+      footerTask="Playback"
       footerActions={footerActions}
       footerMode={state.footerMode}
       commands={commands}
@@ -1199,35 +1234,53 @@ function PlaybackShell({
         />
       ) : (
         <>
-          <Text color={palette.muted}>
-            Playback controls stay visible and command-driven. Use `/` for direct actions without
-            leaving the shell.
-          </Text>
-          <Box marginTop={1}>
+          {/* Episode identity card */}
+          <Box flexDirection="column" marginBottom={1}>
+            {state.type === "series" ? (
+              <>
+                <Text bold color="white">
+                  {`S${String(state.season).padStart(2, "0")}E${String(state.episode).padStart(2, "0")}`}
+                </Text>
+                <Text color={palette.muted}>Episode complete</Text>
+              </>
+            ) : (
+              <Text color={palette.muted}>Playback complete</Text>
+            )}
+          </Box>
+
+          {/* Inline poster when available */}
+          {poster.kind !== "none" ? (
+            <Box marginBottom={1} flexDirection="column">
+              {poster.kind === "kitty" ? (
+                <Text>{poster.placeholder}</Text>
+              ) : (
+                poster.art
+                  .split("\n")
+                  .slice(0, poster.rows)
+                  .map((line, i) => <Text key={i}>{line}</Text>)
+              )}
+            </Box>
+          ) : null}
+
+          <Box>
             <Badge label={`provider ${activeProvider}`} tone="info" />
             <Badge label={state.mode === "anime" ? "anime mode" : "series mode"} />
-            {state.type === "series" ? (
-              <Badge
-                label={`episode S${String(state.season).padStart(2, "0")}E${String(
-                  state.episode,
-                ).padStart(2, "0")}`}
-              />
-            ) : (
-              <Badge label="movie" />
-            )}
-            {state.subtitleStatus ? (
-              <Badge
-                label={state.subtitleStatus}
-                tone={state.subtitleStatus.toLowerCase().includes("not found") ? "neutral" : "info"}
-              />
-            ) : null}
             {activeOverlay ? (
               <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
             ) : null}
           </Box>
           {state.subtitleStatus ? (
             <Box marginTop={1}>
-              <Text color={palette.gray}>{state.subtitleStatus}</Text>
+              <Text
+                color={
+                  state.subtitleStatus.toLowerCase().includes("not found")
+                    ? palette.amber
+                    : palette.green
+                }
+              >
+                {"● "}
+                {state.subtitleStatus}
+              </Text>
             </Box>
           ) : null}
           {state.showMemory && state.memoryUsage ? (
@@ -2530,7 +2583,40 @@ function BrowseShell<T>({
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
+  const [poster, setPoster] = useState<PosterResult>({ kind: "none" });
   const requestIdRef = useRef(0);
+
+  // Debounced poster fetch: fires 120 ms after selection URL changes
+  useEffect(() => {
+    const isWide = getShellViewportPolicy("browse", stdout.columns, stdout.rows).wideBrowse;
+    const url = options[selectedIndex]?.previewImageUrl;
+    if (!url || !isWide) {
+      setPoster({ kind: "none" });
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetchPoster(url, { rows: 12, cols: 26 })
+        .then((r) => {
+          if (!cancelled) setPoster(r);
+        })
+        .catch(() => {});
+    }, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [options[selectedIndex]?.previewImageUrl, stdout.columns, stdout.rows]);
+
+  // Cleanup Kitty image on unmount
+  useEffect(() => {
+    return () => {
+      setPoster((prev) => {
+        if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
+        return { kind: "none" };
+      });
+    };
+  }, []);
 
   const clearResults = () => {
     setOptions([]);
@@ -2904,7 +2990,10 @@ function BrowseShell<T>({
       : [];
   const previewMeta = selectedOption?.previewMeta ?? [];
   const previewBodyLines = wrapText(
-    selectedOption?.previewBody ?? "Type a title and press Enter to search.",
+    selectedOption?.previewBody ??
+      (options.length > 0
+        ? "No description available."
+        : "Type a title and press Enter to search."),
     Math.max(previewWidth - 2, 24),
     ultraCompact ? 1 : compact ? 2 : 3,
   );
@@ -3247,75 +3336,125 @@ function BrowseShell<T>({
             marginTop={1}
             justifyContent="space-between"
           >
+            {/* Result list */}
             <Box flexDirection="column" width={wideBrowse ? listWidth : undefined}>
               {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
               {visibleOptions.map((option, index) => {
                 const optionIndex = windowStart + index;
                 const selected = optionIndex === selectedIndex;
-                const secondary = option.detail ? `  ${truncateLine(option.detail, rowWidth)}` : "";
-                const rowText = truncateLine(`${option.label}${secondary}`, rowWidth);
+                const titleText = truncateLine(option.label, rowWidth - 2);
+                const metaText = option.previewMeta?.[0];
 
                 return (
-                  <Box key={optionIndex}>
-                    <Text
-                      backgroundColor={selected ? palette.cyan : undefined}
-                      color={selected ? "black" : "white"}
-                      bold={selected}
-                      dimColor={!selected}
-                    >
-                      <Text color={selected ? "black" : palette.gray}>
-                        {selected ? "❯ " : "  "}
-                      </Text>
-                      {rowText}
-                    </Text>
+                  <Box key={optionIndex} flexDirection="column">
+                    <Box width={rowWidth} justifyContent="space-between">
+                      <Box>
+                        <Text color={selected ? palette.amber : palette.gray}>
+                          {selected ? "❯ " : "  "}
+                        </Text>
+                        <Text
+                          bold={selected}
+                          color={selected ? "white" : palette.muted}
+                          dimColor={!selected}
+                        >
+                          {titleText}
+                        </Text>
+                      </Box>
+                      {metaText ? (
+                        <Text color={palette.gray} dimColor>
+                          {metaText}
+                        </Text>
+                      ) : null}
+                    </Box>
+                    {selected && option.detail ? (
+                      <Box marginLeft={2}>
+                        <Text color={palette.gray} dimColor>
+                          {truncateLine(option.detail, rowWidth - 2)}
+                        </Text>
+                      </Box>
+                    ) : null}
                   </Box>
                 );
               })}
               {windowEnd < options.length ? <Text color={palette.gray}> ▼ ...</Text> : null}
             </Box>
 
-            <Box
-              marginTop={wideBrowse ? 0 : 1}
-              marginLeft={wideBrowse ? 1 : 0}
-              flexDirection="column"
-              width={wideBrowse ? previewWidth : undefined}
-            >
-              <Text color={palette.green}>Selection Preview</Text>
-              <Text bold color="white">
-                {truncateLine(
-                  selectedOption?.previewTitle ?? selectedOption?.label ?? "No selection yet",
-                  previewWidth,
-                )}
-              </Text>
-              {previewMeta.length > 0 && !ultraCompact ? (
-                <Box marginTop={1}>
-                  {previewMeta.slice(0, compact ? 2 : previewMeta.length).map((item, index) => (
-                    <Badge
-                      key={`${item}-${index}`}
-                      label={item}
-                      tone={index === 0 ? "info" : "neutral"}
-                    />
-                  ))}
-                </Box>
-              ) : null}
-              {previewBodyLines.length > 0 ? (
-                <Box marginTop={1} flexDirection="column">
-                  {previewBodyLines.map((line, index) => (
-                    <Text key={`${line}-${index}`} color={palette.muted}>
-                      {line}
+            {/* Companion pane */}
+            {wideBrowse ? (
+              <Box marginLeft={1} flexDirection="column" width={previewWidth}>
+                {/* Poster image */}
+                {poster.kind !== "none" ? (
+                  <Box flexDirection="column" marginBottom={1}>
+                    {poster.kind === "kitty" ? (
+                      <Text>{poster.placeholder}</Text>
+                    ) : (
+                      poster.art
+                        .split("\n")
+                        .slice(0, poster.rows)
+                        .map((line, i) => <Text key={i}>{line}</Text>)
+                    )}
+                    <Text color={palette.gray} dimColor>
+                      {"─".repeat(previewWidth)}
                     </Text>
-                  ))}
-                </Box>
-              ) : null}
-              {!ultraCompact ? (
-                <Box marginTop={1}>
-                  <Text color={palette.gray}>
-                    {selectedOption?.previewNote ??
-                      truncateLine(selectedDetail, Math.max(previewWidth, 48))}
-                  </Text>
-                </Box>
-              ) : null}
-            </Box>
+                  </Box>
+                ) : null}
+
+                {/* Preview text */}
+                <Text bold color="white">
+                  {truncateLine(
+                    selectedOption?.previewTitle ?? selectedOption?.label ?? "No selection yet",
+                    previewWidth,
+                  )}
+                </Text>
+                {previewMeta.length > 0 && !ultraCompact ? (
+                  <Box marginTop={1}>
+                    {previewMeta.slice(0, compact ? 2 : previewMeta.length).map((item, index) => (
+                      <Badge
+                        key={`${item}-${index}`}
+                        label={item}
+                        tone={index === 0 ? "info" : "neutral"}
+                      />
+                    ))}
+                  </Box>
+                ) : null}
+                {previewBodyLines.length > 0 ? (
+                  <Box marginTop={1} flexDirection="column">
+                    {previewBodyLines.map((line, index) => (
+                      <Text key={`${line}-${index}`} color={palette.muted}>
+                        {line}
+                      </Text>
+                    ))}
+                  </Box>
+                ) : null}
+                {!ultraCompact ? (
+                  <Box marginTop={1}>
+                    <Text color={palette.gray}>
+                      {selectedOption?.previewNote ??
+                        truncateLine(selectedDetail, Math.max(previewWidth, 48))}
+                    </Text>
+                  </Box>
+                ) : null}
+              </Box>
+            ) : (
+              <Box marginTop={1} flexDirection="column">
+                <Text bold color="white">
+                  {truncateLine(
+                    selectedOption?.previewTitle ?? selectedOption?.label ?? "",
+                    innerWidth,
+                  )}
+                </Text>
+                {previewBodyLines.length > 0 ? (
+                  <Text color={palette.muted}>{previewBodyLines[0]}</Text>
+                ) : null}
+              </Box>
+            )}
+          </Box>
+        ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
+          <Box marginTop={2} flexDirection="column">
+            <Text color={palette.amber}>{`No results for "${lastSearchedQuery}"`}</Text>
+            <Text color={palette.gray} dimColor>
+              Try a different spelling, or switch provider with /provider
+            </Text>
           </Box>
         ) : (
           <Box marginTop={1}>
@@ -3333,11 +3472,7 @@ function BrowseShell<T>({
       ) : null}
 
       <ShellFooter
-        taskLabel={
-          options.length > 0 && !queryDirty
-            ? "Browse results and open a title"
-            : `Search ${mode === "anime" ? "anime titles" : "movies and series"}`
-        }
+        taskLabel={options.length > 0 && !queryDirty ? "Browse" : "Search"}
         mode={effectiveFooterMode}
         commandMode={commandMode}
         actions={[
