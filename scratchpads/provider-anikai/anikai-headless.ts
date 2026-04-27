@@ -58,6 +58,8 @@ async function main() {
 
     if (!results || results.length === 0) {
         console.error("[!] No results found.");
+        const html = await page.content();
+        console.log("DEBUG HTML Preview:", html.substring(0, 500));
         rl.close();
         await browser.close();
         process.exit(1);
@@ -69,8 +71,32 @@ async function main() {
     const selected = results[parseInt(pickStr || "1") - 1] || results[0];
 
     console.log(`\n[*] Navigating to ${selected.title}...`);
+    let sessionToken = "";
+    
+    // We will intercept the final stream URL by watching network requests after we click the server
+    // And also grab the session token from the initial episode list load
+    let finalStreamUrl = "";
+    page.on('response', async res => {
+        const url = res.url();
+        if (url.includes('ajax/')) {
+            const parts = url.split('&_=');
+            if (parts.length > 1 && !sessionToken) {
+                sessionToken = parts[1];
+                console.log(`[+] Captured Session Token: ${sessionToken.substring(0, 15)}...`);
+            }
+        }
+        if (url.includes('ajax/sources/extract')) {
+            try {
+                const json = await res.json();
+                if (json.status === "ok" && json.result?.url) {
+                    finalStreamUrl = json.result.url;
+                }
+            } catch(e) {}
+        }
+    });
+
     try {
-        await page.goto(`https://anikai.to/watch/${selected.slug}`, { waitUntil: "domcontentloaded" });
+        await page.goto(`https://anikai.to/watch/${selected.slug}`, { waitUntil: "commit" });
         // Wait for the episode list to load. Anikai loads episodes via ajax into .ep-item
         // Give it a massive timeout for Cloudflare to clear
         await page.waitForSelector('a[token]', { timeout: 60000 });
@@ -104,30 +130,8 @@ async function main() {
     const selectedEp = episodes.find(e => parseInt(e.epNum!) === selectedEpNum) || episodes[episodes.length - 1];
 
     console.log(`[*] Clicking episode ${selectedEp.epNum}...`);
-    
-    // We will intercept the final stream URL by watching network requests after we click the server
-    let finalStreamUrl = "";
-    page.on('response', async res => {
-        const url = res.url();
-        if (url.includes('ajax/sources/extract')) {
-            try {
-                const json = await res.json();
-                if (json.status === "ok" && json.result?.url) {
-                    finalStreamUrl = json.result.url;
-                }
-            } catch(e) {}
-        }
-    });
-
     try {
-        // Click the episode
-        await page.evaluate((idx) => {
-            const items = Array.from(document.querySelectorAll('a[token]'));
-            const btn = items[idx] as HTMLElement;
-            if (btn) btn.click();
-        }, selectedEp.elementIndex);
-        
-        // Wait for servers to appear
+        await page.locator('a[token]').nth(selectedEp.elementIndex).click();
         await page.waitForSelector('.server', { timeout: 30000 });
     } catch (e) {
         console.error("[!] Failed to click episode or load servers.");
@@ -150,48 +154,48 @@ async function main() {
     const srvPickStr = process.argv[5] || await ask("\nPick server [1]: ");
     const selectedSrv = servers[parseInt(srvPickStr || "1") - 1] || servers[0];
 
+    finalStreamUrl = "";
+    page.on('request', req => {
+        const url = req.url();
+        if (url.includes('/iframe/')) {
+            finalStreamUrl = url;
+        }
+    });
+
     console.log(`[*] Clicking server ${selectedSrv.name}...`);
     try {
-        await page.waitForTimeout(2000); // Small delay to let the episode DOM settle
-        await page.evaluate((idx) => {
-            const items = Array.from(document.querySelectorAll('.server'));
-            const btn = items[idx] as HTMLElement;
-            if (btn) btn.click();
-        }, selectedSrv.elementIndex);
+        await page.locator('.server').nth(selectedSrv.elementIndex).click({ force: true });
         
-        // Wait for the intercepted response to populate finalStreamUrl
         let retries = 0;
         while (!finalStreamUrl && retries < 30) {
             await new Promise(r => setTimeout(r, 500));
             retries++;
         }
-
-        // Fallback: Check if an iframe was loaded
-        if (!finalStreamUrl) {
-            console.log("    [i] Trying iframe fallback...");
-            try {
-                const iframe = await page.waitForSelector('.play-video iframe, iframe', { timeout: 20000 });
-                if (iframe) {
-                    finalStreamUrl = await iframe.getAttribute('src') || "";
-                    if (!finalStreamUrl || finalStreamUrl === "about:blank") {
-                         // Wait a bit more for src to be populated
-                         await page.waitForTimeout(3000);
-                         finalStreamUrl = await iframe.getAttribute('src') || "";
-                    }
-                }
-            } catch (e) {
-                 console.log("    [!] Iframe fallback failed.");
-            }
-        }
     } catch (e) {
-        console.error("[!] Failed to click server or extract stream.");
+        console.error("[!] Failed to click server:", e.message);
     }
 
     if (!finalStreamUrl) {
-        console.error("[!] Failed to extract final stream URL from network interception.");
+        console.error("[!] Failed to extract final stream URL.");
         rl.close();
         await browser.close();
         process.exit(1);
+    }
+
+    // The intercepted URL is Anikai's internal iframe wrapper.
+    // We need to navigate to it and extract the actual third-party filehost embed URL.
+    console.log(`[*] Resolving actual embed URL from Anikai's iframe wrapper...`);
+    try {
+        await page.goto(finalStreamUrl, { waitUntil: "domcontentloaded" });
+        const realIframe = await page.waitForSelector('iframe', { timeout: 15000 });
+        if (realIframe) {
+            const realSrc = await realIframe.getAttribute('src');
+            if (realSrc && realSrc !== "about:blank") {
+                finalStreamUrl = realSrc;
+            }
+        }
+    } catch (e) {
+        console.log(`    [!] Failed to extract inner iframe. Using wrapper URL...`);
     }
 
     console.log(`\n[+] SUCCESS! Stream URL extracted:`);
