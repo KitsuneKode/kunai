@@ -9,7 +9,7 @@ export const AllAnime = createAnimeProvider({
   description: "AllAnime / AllManga  (anime · sub & dub · no browser needed)",
   domain: "allanime.day",
   apiUrl: "https://api.allanime.day/api",
-  referer: "https://allmanga.to",
+  referer: "https://youtu-chan.com",
   recommended: false,
   isAnimeProvider: true,
 });

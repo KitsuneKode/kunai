@@ -1,38 +1,41 @@
 import { chromium } from "playwright";
 
 (async () => {
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext();
-    const page = await context.newPage();
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
 
-    await context.addInitScript(() => {
-        // Hook getAttribute
-        const originalGetAttribute = Element.prototype.getAttribute;
-        Element.prototype.getAttribute = function(name: string) {
-            if (name === 'data-meta') {
-                const stack = new Error().stack;
-                console.log(`[HOOK] data-meta read. Stack:\n${stack}`);
-            }
-            return originalGetAttribute.apply(this, arguments);
-        };
+  console.log("Loading Anikai watch page...");
+  await page.goto("https://anikai.to/watch/one-piece-dk6r", { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(5000);
 
-        // Hook JSON.parse to see the decrypted content
-        const originalParse = JSON.parse;
-        (JSON as any).parse = function(text: string) {
-            const result = originalParse.apply(this, arguments);
-            // If the JSON looks like episode or link data, log it
-            if (result && (result.episodes || result.sources || result.links)) {
-                console.log(`[HOOK] JSON.parse intercepted significant data:`, JSON.stringify(result).substring(0, 500));
-            }
-            return result;
-        };
-    });
+  const result = await page.evaluate(() => {
+    const input = (window as any).__$;
+    const target = "xQm9tJfLwGhz_0Eq8S_YAHYkwp-qQPLfm50W5fxnyd30nAY";
+    const results: any = [];
 
-    page.on('console', msg => console.log('PAGE:', msg.text()));
+    function scan(obj: any, path: string, depth: number) {
+      if (depth > 3) return;
+      try {
+        for (let key in obj) {
+          const val = obj[key];
+          if (typeof val === "function") {
+            try {
+              const out = val(input);
+              if (out === target) results.push(path + "." + key);
+            } catch (e) {}
+          } else if (val && typeof val === "object" && val !== window) {
+            scan(val, path + "." + key, depth + 1);
+          }
+        }
+      } catch (e) {}
+    }
 
-    console.log("Loading Anikai watch page...");
-    await page.goto("https://anikai.to/watch/one-piece-dk6r", { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(10000);
+    scan(window, "window", 0);
+    return results;
+  });
 
-    await browser.close();
+  console.log("Functions that generate the token:", result);
+
+  await browser.close();
 })();

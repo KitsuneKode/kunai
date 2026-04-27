@@ -78,27 +78,33 @@ Never use JSDOM or Playwright to execute obfuscated code if you can avoid it. In
 - **Port the Math:** If they use AES, extract their secret key/salt from the JS and write a native `CryptoJS.AES.decrypt(payload, "secret_key")` call in TypeScript.
 - **WASM Native Loading:** If they use WASM, load it natively using `@assemblyscript/loader` inside Node.js. It runs instantly and consumes 0 RAM.
 
+## Phase 5: Discovery & Trending (The Homepage Logic)
+
+Most aggregators have a "Trending" or "Discover" section. We can scrape these to build a high-quality "Browse" mode in our app.
+
+### Discovery Patterns by Provider:
+
+1. **Rivestream:**
+   - Trending: `https://www.rivestream.app/api/backendfetch?requestID=trending&secretKey=rive`
+   - Search: `https://www.rivestream.app/api/backendfetch?requestID=searchMulti&query={q}&secretKey={hashed_q}`
+2. **Cineby / Vidking:**
+   - The homepage uses Next.js static props. Fetch `https://www.cineby.sc/_next/data/{buildId}/en.json` to get the `initialGenreMovies` and `popularMovies` arrays.
+   - buildId can be found by searching the raw HTML for `buildId":"([^"]+)"`.
+3. **Anikai:**
+   - Schedule: `https://anikai.to/ajax/schedule?tz=+05:30` returns the daily anime broadcast schedule.
+   - Trending: Results are SSR'd directly into the home page HTML inside `.aitem` elements. Use `cheerio` to extract the `ani_id` from the `data-tip` attribute.
+
 ---
 
-## Phase 4: Execution (The Headless Fetch)
+6. **Subtitles (Wyzie / JSON APIs):** Many providers return a subtitle JSON array. Do not just pick `subtitles[0]`.
+   - **Language Matching:** Filter for `"en"` or `"eng"`. Handles locale variants like `en-US`.
+   - **Filter SDH:** Exclude subtitles with "SDH" in the name/display unless no others exist (Hearing Impaired tracks contain annoying text like `[car screeches]`).
+   - **Format Priority:** Prefer `.vtt` for web players, but `.srt` is usually safer for `mpv`.
 
-Once you have successfully decrypted the payload in a scratchpad, you wrap it in a clean, reusable function.
+---
 
-**The Golden Architecture (Zero RAM):**
+## 7. Porting to Production (The Provider Contract)
 
-1. `fetch()` the search results HTML -> use `cheerio` to parse the TMDB ID.
-2. `fetch()` the backend API using the TMDB ID.
-3. `CryptoJS.AES.decrypt()` the response.
-4. Output the `.m3u8` link.
+Once you have the logic working in a scratchpad, implement it in `src/providers/` following the existing `ApiProvider` or `PlaywrightProvider` interfaces. Always prioritize `ApiProvider` (pure fetch) for 0-RAM performance.
 
-**Example for Rivestream:**
-Based on the documentation you provided, Rivestream is heavily API-driven. Their aggregator API (`https://www.rivestream.app/embed/agg?type=movie&id={tmdbId}`) likely returns a JSON list of multiple server iframes or direct `.m3u8` links.
-Your goal is to write a fast `fetch` request to that endpoint. If it returns standard JSON, building a provider for it will take less than 10 minutes.
-
-### Summary Checklist for New Providers (Anikai, Cineby, Rivestream)
-
-- [ ] What is the final `.m3u8` URL?
-- [ ] What API endpoint did the browser call to get that URL?
-- [ ] What headers were required? (Often `Referer`, `User-Agent`, or custom `X-API-Key` headers are needed to prevent 403 Forbidden errors).
-- [ ] Is the response encrypted? If yes, find the JS file that calls `decrypt()`.
-- [ ] Write a pure TypeScript script using `fetch` + `cheerio` + `crypto-js` to replicate the flow.
+---
