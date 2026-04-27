@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveCommands } from "./command-registry";
-import { createInitialState, reduceState } from "./SessionState";
+import { resolveCommands } from "@/domain/session/command-registry";
+import { createInitialState, reduceState } from "@/domain/session/SessionState";
 
 describe("SessionState overlays", () => {
   test("keeps a shallow overlay stack and closes the top overlay first", () => {

@@ -84,6 +84,7 @@ bun run format
 ```
 
 Use `bun run test` if tests are relevant and available. Do not use `bun test` directly.
+Unit tests live under `test/unit/`, integration tests under `test/integration/`, and live provider checks under `test/live/`.
 
 ## Hard Boundaries
 

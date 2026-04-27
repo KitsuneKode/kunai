@@ -1,6 +1,7 @@
 import type { ResolvedAppCommand, AppCommandId } from "./commands";
 
 export type ShellAction =
+  | "command-mode"
   | "search"
   | "back-to-results"
   | "settings"

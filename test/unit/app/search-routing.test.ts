@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { searchTitles } from "./search-routing";
-import type { SearchResult, ProviderMetadata } from "../domain/types";
-import type { SearchRegistry } from "../services/search/SearchRegistry";
-import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
+import { searchTitles } from "@/app/search-routing";
+import type { SearchResult, ProviderMetadata } from "@/domain/types";
 
 describe("searchTitles", () => {
   test("uses provider-native anime search for anime providers", async () => {
@@ -54,6 +52,8 @@ describe("searchTitles", () => {
         year: "",
         overview: "",
         posterPath: null,
+        rating: null,
+        popularity: null,
         episodeCount: 12,
       },
     ]);

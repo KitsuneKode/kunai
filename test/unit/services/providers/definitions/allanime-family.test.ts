@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildStreamHeaders, decodeTobeparsed, resolveAnimeEpisodeString } from "./allanime-family";
+import {
+  buildStreamHeaders,
+  decodeTobeparsed,
+  resolveAnimeEpisodeString,
+} from "@/services/providers/definitions/allanime-family";
 
 const TEST_KEY_RAW = "Xot36i3lK3:v1";
 

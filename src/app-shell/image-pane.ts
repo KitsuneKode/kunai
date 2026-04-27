@@ -36,6 +36,10 @@ export function deleteKittyImage(imageId: number): void {
   process.stdout.write(`\x1b_Ga=d,d=I,i=${imageId};\x1b\\`);
 }
 
+export function deleteAllKittyImages(): void {
+  process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
+}
+
 // Kitty diacritics table — 256 combining codepoints used to encode byte values.
 // From the Kitty terminal source (graphics.c).
 const DIACRITICS: readonly number[] = [
@@ -87,13 +91,19 @@ function buildPlaceholder(imageId: number, rows: number, cols: number): string {
   return lines.join("\n");
 }
 
-async function uploadKitty(data: ArrayBuffer, imageId: number): Promise<void> {
+async function uploadKitty(
+  data: ArrayBuffer,
+  imageId: number,
+  rows: number,
+  cols: number,
+): Promise<void> {
   const b64 = Buffer.from(data).toString("base64");
   const CHUNK = 4096;
   for (let i = 0; i < b64.length || i === 0; i += CHUNK) {
     const chunk = b64.slice(i, i + CHUNK);
     const more = i + CHUNK < b64.length ? 1 : 0;
-    const ctrl = i === 0 ? `a=T,f=100,q=2,i=${imageId},m=${more}` : `m=${more}`;
+    const ctrl =
+      i === 0 ? `a=T,f=100,U=1,q=2,i=${imageId},c=${cols},r=${rows},m=${more}` : `m=${more}`;
     process.stdout.write(`\x1b_G${ctrl};${chunk}\x1b\\`);
   }
 }
@@ -109,7 +119,7 @@ async function fetchKitty(url: string, rows: number, cols: number): Promise<Post
   if (!res.ok) return { kind: "none" };
   const data = await res.arrayBuffer();
   const imageId = allocId();
-  await uploadKitty(data, imageId);
+  await uploadKitty(data, imageId, rows, cols);
   const placeholder = buildPlaceholder(imageId, rows, cols);
   return { kind: "kitty", placeholder, rows, cols, imageId };
 }

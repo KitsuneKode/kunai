@@ -1,7 +1,6 @@
 import type { SearchResult, ShellMode } from "../domain/types";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
-import type { Provider } from "../services/providers/Provider";
 
 export type SearchRoutingContext = {
   mode: ShellMode;
@@ -31,7 +30,7 @@ export async function searchTitles(
 
     if (results) {
       return {
-        results,
+        results: results.map(normalizeProviderSearchResult),
         sourceId: provider.metadata.id,
         sourceName: provider.metadata.name,
         strategy: "provider-native",
@@ -48,5 +47,26 @@ export async function searchTitles(
     sourceId: searchService.metadata.id,
     sourceName: searchService.metadata.name,
     strategy: "registry",
+  };
+}
+
+function normalizeProviderSearchResult(result: SearchResult): SearchResult {
+  const candidate = result as SearchResult & {
+    epCount?: number;
+    year?: string;
+    overview?: string;
+    posterPath?: string | null;
+  };
+
+  return {
+    id: candidate.id,
+    type: candidate.type,
+    title: candidate.title,
+    year: candidate.year ?? "",
+    overview: candidate.overview ?? "",
+    posterPath: candidate.posterPath ?? null,
+    rating: candidate.rating ?? null,
+    popularity: candidate.popularity ?? null,
+    episodeCount: candidate.episodeCount ?? candidate.epCount,
   };
 }

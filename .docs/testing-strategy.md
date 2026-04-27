@@ -6,7 +6,7 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 
 ## Repo Test Layout
 
-- keep pure unit tests close to the modules they protect under `src/**/*.test.ts`
+- keep pure unit tests under `test/unit/`, mirrored by domain or feature area
 - keep cross-module deterministic integration tests under `test/integration/`
 - keep opt-in live provider smoke scripts under `test/live/`
 - keep copyable templates for new contract tests under `test/templates/`

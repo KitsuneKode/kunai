@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { DiagnosticsStoreImpl } from "./DiagnosticsStoreImpl";
+import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImpl";
 
 describe("DiagnosticsStoreImpl", () => {
   test("returns recent events in reverse chronological order", () => {

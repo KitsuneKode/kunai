@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { StreamInfo } from "@/domain/types";
 
-import { choosePlaybackSubtitle } from "./subtitle-selection";
+import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 
 const BASE_STREAM: StreamInfo = {
   url: "https://cdn.example/stream.m3u8",

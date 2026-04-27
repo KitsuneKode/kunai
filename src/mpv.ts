@@ -125,6 +125,7 @@ export async function launchMpv(opts: {
     // ── Detached mode (default): MPV window opens independently ──────────
     // Mirrors ani-cli's: nohup mpv ... >/dev/null 2>&1 &
     let mpvExited = false;
+    let mpvExitCode: number | null = null;
 
     const mpv = spawn("mpv", args, {
       detached: true,
@@ -134,8 +135,9 @@ export async function launchMpv(opts: {
 
     // Track process exit so we don't poll forever if MPV crashes before
     // the Lua reporter writes the position file.
-    mpv.on("close", () => {
+    mpv.on("close", (code) => {
       mpvExited = true;
+      mpvExitCode = code;
     });
     mpv.on("error", (e) => {
       console.error(`\n[!] mpv: ${e.message}`);
@@ -148,12 +150,21 @@ export async function launchMpv(opts: {
     while (!existsSync(posPath) && !mpvExited && Date.now() < deadline) {
       await Bun.sleep(500);
     }
+
+    // MPV can exit a moment before the Lua reporter file becomes visible.
+    // Give the position file a short grace period so EOF-based auto-next stays reliable.
+    if (mpvExited && !existsSync(posPath) && mpvExitCode === 0) {
+      const flushDeadline = Date.now() + 3_000;
+      while (!existsSync(posPath) && Date.now() < flushDeadline) {
+        await Bun.sleep(100);
+      }
+    }
   }
 
   // ── Parse position file ───────────────────────────────────────────────────
   let retries = 0;
-  while (!existsSync(posPath) && retries < 5) {
-    await Bun.sleep(100); // 500ms total buffer for filesystem flush
+  while (!existsSync(posPath) && retries < 30) {
+    await Bun.sleep(100); // 3s total buffer for filesystem flush
     retries++;
   }
 

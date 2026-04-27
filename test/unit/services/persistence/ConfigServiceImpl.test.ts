@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ConfigStore } from "./ConfigStore";
-import type { KitsuneConfig } from "./ConfigService";
-import { ConfigServiceImpl } from "./ConfigServiceImpl";
+import type { ConfigStore } from "@/services/persistence/ConfigStore";
+import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 
 class MemoryConfigStore implements ConfigStore {
   constructor(private loaded: Partial<KitsuneConfig> = {}) {}

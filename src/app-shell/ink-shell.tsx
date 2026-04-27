@@ -6,7 +6,12 @@ import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 
 import { buildBrowseDetailsPanel } from "./details-panel";
-import { fetchPoster, deleteKittyImage, type PosterResult } from "./image-pane";
+import {
+  fetchPoster,
+  deleteAllKittyImages,
+  deleteKittyImage,
+  type PosterResult,
+} from "./image-pane";
 import {
   COMMANDS,
   parseCommand,
@@ -255,11 +260,13 @@ function useShellInput({
   footerActions,
   commands,
   disabled = false,
+  escapeAction = "quit",
   onResolve,
 }: {
   footerActions: readonly FooterAction[];
   commands: readonly ResolvedAppCommand[];
   disabled?: boolean;
+  escapeAction?: ShellAction | null;
   onResolve: (action: ShellAction) => void;
 }) {
   const [commandMode, setCommandMode] = useState(false);
@@ -297,7 +304,7 @@ function useShellInput({
         setHighlightedIndex(0);
         return;
       }
-      onResolve("quit");
+      if (escapeAction) onResolve(escapeAction);
       return;
     }
 
@@ -353,14 +360,22 @@ function useShellInput({
     const footerAction = footerActions.find(
       (action) => action.key === input.toLowerCase() && !action.disabled,
     );
-    if (footerAction) onResolve(footerAction.action);
+    if (footerAction) {
+      if (footerAction.action === "command-mode") {
+        setCommandMode(true);
+        setCommandInput("");
+        setHighlightedIndex(0);
+        return;
+      }
+      onResolve(footerAction.action);
+    }
   });
 
   return { commandMode, commandInput, highlightedIndex };
 }
 
 function ShellFrame({
-  eyebrow,
+  eyebrow: _eyebrow,
   title,
   subtitle,
   status,
@@ -369,6 +384,7 @@ function ShellFrame({
   footerMode,
   commands,
   inputLocked = false,
+  escapeAction,
   onResolve,
   children,
 }: {
@@ -381,6 +397,7 @@ function ShellFrame({
   footerMode?: ShellFooterMode;
   commands: readonly ResolvedAppCommand[];
   inputLocked?: boolean;
+  escapeAction?: ShellAction | null;
   onResolve: (action: ShellAction) => void;
   children: React.ReactNode;
 }) {
@@ -397,6 +414,7 @@ function ShellFrame({
     footerActions,
     commands,
     disabled: inputLocked,
+    escapeAction,
     onResolve,
   });
 
@@ -519,6 +537,53 @@ function LocalSection({
   );
 }
 
+function InputField({
+  label,
+  value,
+  onChange,
+  onSubmit,
+  placeholder,
+  focus = true,
+  hint,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  onSubmit?: (value: string) => void;
+  placeholder?: string;
+  focus?: boolean;
+  hint?: string;
+}) {
+  return (
+    <Box marginTop={1} flexDirection="column">
+      <Text color={palette.muted}>{label}</Text>
+      <Box
+        marginTop={1}
+        borderStyle="round"
+        borderColor={focus ? palette.cyan : palette.gray}
+        paddingX={1}
+      >
+        <Text color={focus ? palette.cyan : palette.gray}>› </Text>
+        <TextInput
+          value={value}
+          onChange={onChange}
+          onSubmit={onSubmit}
+          placeholder={placeholder}
+          focus={focus}
+          showCursor
+        />
+      </Box>
+      {hint ? (
+        <Box marginTop={1}>
+          <Text color={palette.gray} dimColor>
+            {hint}
+          </Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
 type MountedShell<TResult> = {
   close: (value: TResult) => void;
   result: Promise<TResult>;
@@ -540,6 +605,7 @@ let rootShellNextId = 1;
  */
 export function clearShellScreen() {
   if (process.stdout.isTTY) {
+    deleteAllKittyImages();
     process.stdout.write("\x1b[2J\x1b[H");
   }
 }
@@ -625,7 +691,7 @@ function mountShell<TResult>({
 
   // When mounting a new shell, if it's a "major" transition (clearOnResolve was true for previous),
   // we might want to clear. But usually ensureRootShell handles the first clear.
-  // To make transitions "really good", we ensure the screen is cleared if we're swapping 
+  // To make transitions "really good", we ensure the screen is cleared if we're swapping
   // from null to a component.
   if (!rootShellScreen && clearOnResolve) {
     clearShellScreen();
@@ -674,6 +740,19 @@ export function useSessionState(stateManager: SessionStateManager) {
  */
 function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
   const state = useSessionState(stateManager);
+  const playbackSubtitle = state.currentEpisode
+    ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
+        state.currentEpisode.episode,
+      ).padStart(2, "0")}`
+    : undefined;
+  const playbackSubtitleStatus =
+    state.subLang === "none"
+      ? "subtitles disabled"
+      : state.stream?.subtitle
+        ? "subtitle attached"
+        : state.stream?.subtitleList?.length
+          ? `${state.stream.subtitleList.length} subtitle tracks available`
+          : "subtitles not found";
 
   // We keep the main identity fixed at the top to prevent flicker
   return (
@@ -691,17 +770,19 @@ function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
           message={state.playbackError || "An unknown error occurred"}
           onResolve={() => stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" })}
         />
-      ) : state.playbackStatus === "loading" ? (
+      ) : state.playbackStatus === "loading" || state.playbackStatus === "playing" ? (
         <LoadingShell
           state={{
             title: state.currentTitle?.name || "Resolving...",
-            subtitle: state.currentEpisode
-              ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
-                  state.currentEpisode.episode,
-                ).padStart(2, "0")}`
-              : undefined,
-            operation: "resolving",
+            subtitle: playbackSubtitle,
+            operation: state.playbackStatus === "playing" ? "playing" : "resolving",
             details: `Provider: ${state.provider}`,
+            subtitleStatus: state.playbackStatus === "playing" ? playbackSubtitleStatus : undefined,
+            trace:
+              state.playbackStatus === "playing"
+                ? "mpv is open; KitsuneSnipe is waiting for playback to finish"
+                : undefined,
+            showMemory: state.playbackStatus === "playing",
           }}
           onCancel={() => {}}
         />
@@ -783,7 +864,7 @@ function HomeShell({
   const commands =
     state.commands ?? fallbackCommandState(["search", "settings", "toggle-mode", "help", "quit"]);
   const footerActions: readonly FooterAction[] = [
-    { key: "/", label: "commands", action: "search" },
+    { key: "/", label: "commands", action: "command-mode" },
     { key: "enter", label: "search", action: "search" },
     footerActionFromCommand(commands, "settings", { key: "c", label: "settings" }),
     {
@@ -868,9 +949,22 @@ function PlaybackShell({
 
   useEffect(() => {
     const url = state.posterUrl;
-    if (!url) return;
+    if (!url) {
+      setPoster((prev) => {
+        if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
+        return { kind: "none" };
+      });
+      return;
+    }
     fetchPoster(url, { rows: 10, cols: 22 })
-      .then(setPoster)
+      .then((next) => {
+        setPoster((prev) => {
+          if (prev.kind === "kitty" && (next.kind !== "kitty" || prev.imageId !== next.imageId)) {
+            deleteKittyImage(prev.imageId);
+          }
+          return next;
+        });
+      })
       .catch(() => {});
     return () => {
       setPoster((prev) => {
@@ -897,7 +991,7 @@ function PlaybackShell({
       "quit",
     ]);
   const footerActions: readonly FooterAction[] = [
-    { key: "/", label: "commands", action: "replay" },
+    { key: "/", label: "commands", action: "command-mode" },
     footerActionFromCommand(commands, "replay", { key: "r", label: "replay" }),
     footerActionFromCommand(commands, "search", { key: "f", label: "search" }),
     footerActionFromCommand(commands, "pick-episode", { key: "e", label: "episodes" }),
@@ -1340,20 +1434,6 @@ function PlaybackShell({
       }
       return;
     }
-
-    if (input.toLowerCase() === "q") {
-      resolvePlaybackAction("quit");
-      return;
-    }
-
-    if (key.escape) {
-      resolvePlaybackAction("back-to-results");
-      return;
-    }
-
-    if (key.return) {
-      return;
-    }
   });
 
   return (
@@ -1367,6 +1447,7 @@ function PlaybackShell({
       footerMode={state.footerMode}
       commands={commands}
       inputLocked={activeOverlay !== null}
+      escapeAction="back-to-results"
       onResolve={resolvePlaybackAction}
     >
       {playbackViewport.tooSmall ? (
@@ -1575,10 +1656,13 @@ function SearchShell({
             color={palette.muted}
           >{`Provider ${provider}  ·  Enter submits  ·  Esc cancels`}</Text>
         </Box>
-        <Box marginTop={1}>
-          <Text color={palette.cyan}>› </Text>
-          <TextInput value={value} onChange={setValue} placeholder={placeholder} />
-        </Box>
+        <InputField
+          label="Search"
+          value={value}
+          onChange={setValue}
+          placeholder={placeholder}
+          hint="Enter submits · / opens commands"
+        />
       </Box>
     </Box>
   );
@@ -2087,14 +2171,16 @@ function ListShell<T>({
   const footerActions: readonly FooterAction[] =
     effectiveFooterMode === "minimal"
       ? [
-          { key: "/", label: "commands", action: "search" },
+          { key: "/", label: "commands", action: "command-mode" },
           { key: "esc", label: "back", action: "quit" },
         ]
       : [
           { key: "type", label: "filter", action: "search" },
           { key: "enter", label: "select", action: "search" },
           { key: "esc", label: "back", action: "quit" },
-          ...(actionContext ? [{ key: "/", label: "commands", action: "search" as const }] : []),
+          ...(actionContext
+            ? [{ key: "/", label: "commands", action: "command-mode" as const }]
+            : []),
         ];
 
   const updateFilterQuery = (nextValue: string) => {
@@ -2216,23 +2302,20 @@ function ListShell<T>({
         paddingX={1}
         paddingY={0}
       >
-        <Text color={palette.amber}>{APP_LABEL}</Text>
-        <Box marginTop={1} flexDirection="column">
+        <Box flexDirection="column">
           <Text color={confirmed ? palette.green : palette.cyan}>
             {confirmed ? "Selected" : title}
           </Text>
           <Text color={palette.muted}>{confirmed ? selectedLabel : subtitle}</Text>
         </Box>
-        <Box marginTop={1}>
-          <Text color={palette.cyan}>filter › </Text>
-          <TextInput
-            value={filterQuery}
-            onChange={updateFilterQuery}
-            placeholder="Type to narrow this list"
-            focus={!commandMode}
-            showCursor
-          />
-        </Box>
+        <InputField
+          label="Filter"
+          value={filterQuery}
+          onChange={updateFilterQuery}
+          placeholder="Type to narrow this list"
+          focus={!commandMode}
+          hint={actionContext ? "Type to filter · / opens commands" : undefined}
+        />
         {tooSmall ? (
           <ResizeBlocker minColumns={minColumns} minRows={minRows} />
         ) : (
@@ -2738,14 +2821,24 @@ function BrowseShell<T>({
     const isWide = getShellViewportPolicy("browse", stdout.columns, stdout.rows).wideBrowse;
     const url = options[selectedIndex]?.previewImageUrl;
     if (!url || !isWide) {
-      setPoster({ kind: "none" });
+      setPoster((prev) => {
+        if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
+        return { kind: "none" };
+      });
       return;
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      fetchPoster(url, { rows: 12, cols: 26 })
+      fetchPoster(url, { rows: 10, cols: 20 })
         .then((r) => {
-          if (!cancelled) setPoster(r);
+          if (!cancelled) {
+            setPoster((prev) => {
+              if (prev.kind === "kitty" && (r.kind !== "kitty" || prev.imageId !== r.imageId)) {
+                deleteKittyImage(prev.imageId);
+              }
+              return r;
+            });
+          }
         })
         .catch(() => {});
     }, 120);
@@ -3118,7 +3211,7 @@ function BrowseShell<T>({
   } = viewport;
   const effectiveFooterMode = ultraCompact ? "minimal" : (footerMode ?? "detailed");
   const innerWidth = Math.max(24, stdout.columns - 8);
-  const previewWidth = wideBrowse ? Math.max(36, Math.floor(innerWidth * 0.4)) : innerWidth;
+  const previewWidth = wideBrowse ? Math.max(30, Math.floor(innerWidth * 0.34)) : innerWidth;
   const listWidth = wideBrowse ? Math.max(42, innerWidth - previewWidth - 3) : innerWidth;
   const rowWidth = Math.max(20, listWidth - 4);
   const windowStart = getWindowStart(selectedIndex, options.length, maxVisible);
@@ -3409,8 +3502,7 @@ function BrowseShell<T>({
         paddingX={1}
         paddingY={0}
       >
-        <Text color={palette.amber}>{APP_LABEL}</Text>
-        <Box marginTop={1} justifyContent="space-between">
+        <Box justifyContent="space-between">
           <BrowseTitle mode={mode} />
           <Text color={searchState === "error" ? palette.red : palette.cyan}>
             {searchState === "loading"
@@ -3433,17 +3525,15 @@ function BrowseShell<T>({
           ) : null}
         </Box>
 
-        <Box marginTop={1}>
-          <Text color={palette.cyan}>› </Text>
-          <TextInput
-            value={query}
-            onChange={updateQuery}
-            onSubmit={handleQuerySubmit}
-            placeholder={placeholder}
-            focus={!commandMode}
-            showCursor
-          />
-        </Box>
+        <InputField
+          label="Search title"
+          value={query}
+          onChange={updateQuery}
+          onSubmit={handleQuerySubmit}
+          placeholder={placeholder}
+          focus={!commandMode}
+          hint="Enter searches · / opens commands · Ctrl+W deletes a word"
+        />
 
         {queryDirty && options.length > 0 && !ultraCompact ? (
           <Text color={palette.gray}>Query changed · Press Enter to refresh results</Text>
@@ -3634,7 +3724,7 @@ function BrowseShell<T>({
             label: getCommandLabel(commands, "toggle-mode", "switch mode"),
             action: "toggle-mode",
           },
-          { key: "/", label: "commands", action: "search" },
+          { key: "/", label: "commands", action: "command-mode" },
           { key: "esc", label: "clear/back", action: "quit" },
         ]}
       />

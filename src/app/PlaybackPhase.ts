@@ -13,7 +13,11 @@ import type {
   StreamInfo,
   PlaybackResult,
 } from "@/domain/types";
-import { buildPickerActionContext, openSubtitlePicker, handleShellAction } from "@/app-shell/workflows";
+import {
+  buildPickerActionContext,
+  openSubtitlePicker,
+  handleShellAction,
+} from "@/app-shell/workflows";
 import { resolveCommands } from "@/app-shell/commands";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import { switchSessionMode } from "@/app/mode-switch";
@@ -318,56 +322,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               nextEpisode: nextEpisode.episode,
             },
           });
-
-          const { openLoadingShell } = await import("../app-shell/ink-shell");
-          const countdownShell = openLoadingShell({
-            state: {
-              title: "Auto-Next",
-              subtitle: `Next up: ${nextEpisode.name || `Episode ${nextEpisode.episode}`}`,
-              operation: "loading",
-              details: "Starting in 5 seconds... (Press ESC to cancel)",
-              cancellable: true,
-            },
-            cancellable: true,
+          stateManager.dispatch({
+            type: "SELECT_EPISODE",
+            episode: nextEpisode,
           });
-
-          let cancelled = false;
-          let secondsLeft = 5;
-
-          await new Promise<void>((resolve) => {
-            const interval = setInterval(() => {
-              secondsLeft--;
-              if (secondsLeft <= 0) {
-                clearInterval(interval);
-                countdownShell.close();
-                resolve();
-              } else {
-                countdownShell.update({
-                  title: "Auto-Next",
-                  subtitle: `Next up: ${nextEpisode.name || `Episode ${nextEpisode.episode}`}`,
-                  operation: "loading",
-                  details: `Starting in ${secondsLeft} seconds... (Press ESC to cancel)`,
-                  cancellable: true,
-                });
-              }
-            }, 1000);
-
-            countdownShell.result.then((res) => {
-              if (res === "cancelled") {
-                cancelled = true;
-                clearInterval(interval);
-                resolve();
-              }
-            });
-          });
-
-          if (!cancelled) {
-            stateManager.dispatch({
-              type: "SELECT_EPISODE",
-              episode: nextEpisode,
-            });
-            continue;
-          }
+          continue;
         }
 
         // Post-playback menu — inner loop so unavailable navigation

@@ -38,7 +38,8 @@
   "scripts": {
     "dev": "bun run src/main.ts",
     "start": "bun run src/main.ts",
-    "test": "bun test",
+    "test": "bun test test/unit test/integration",
+    "test:unit": "bun test test/unit",
     "test:integration": "bun test test/integration",
     "test:live:allanime": "bun run test/live/allanime-demonslayer.smoke.ts",
     "test:live:vidking": "bun run test/live/vidking-bloodhounds.smoke.ts",

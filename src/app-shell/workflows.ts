@@ -1,4 +1,3 @@
-
 import type { KitsuneConfig } from "@/config";
 import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
 import type { EpisodePickerOption } from "@/domain/types";
@@ -13,7 +12,6 @@ import type { ShellAction } from "./types";
 import { resolveCommands } from "./commands";
 
 import { openListShell, type ListShellActionContext } from "./ink-shell";
-import { buildShellRuntimeBindings } from "./runtime-bindings";
 
 type HistoryAction =
   | { type: "entry"; id: string; title: string }
@@ -41,8 +39,6 @@ const ANIME_AUDIO_OPTIONS = [
   { value: "sub", label: "Sub", detail: "Original audio with subtitles" },
   { value: "dub", label: "Dub", detail: "Dubbed audio when available" },
 ] as const;
-
-
 
 async function chooseOption<T>({
   title,
@@ -126,8 +122,7 @@ async function openHistoryShell(
   while (true) {
     const entries = Object.entries(await historyStore.getAll()).sort(
       (a, b) =>
-        (new Date(b[1].watchedAt).getTime() || 0) -
-        (new Date(a[1].watchedAt).getTime() || 0),
+        (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
     );
 
     const options: ShellOption<HistoryAction>[] = [
@@ -284,7 +279,8 @@ export async function handleShellAction({
   action: ShellAction;
   container: Container;
 }): Promise<"handled" | "quit" | "unhandled"> {
-  const { providerRegistry, stateManager, config, diagnosticsStore, historyStore } = container;
+  const { providerRegistry, stateManager, config, diagnosticsStore, historyStore, cacheStore } =
+    container;
 
   const withOverlay = async <T>(
     overlay: import("@/domain/session/SessionState").OverlayState,
@@ -529,11 +525,12 @@ export async function handleShellAction({
       ],
     });
     if (confirm) {
+      await cacheStore.clear();
       diagnosticsStore.record({ category: "cache", message: "Stream cache cleared" });
     }
     return "handled";
   }
-  
+
   if (action === "clear-history") {
     const confirm = await chooseOption({
       title: "Clear watch history?",
