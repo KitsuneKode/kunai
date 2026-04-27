@@ -419,33 +419,16 @@ function ShellFrame({
   });
 
   const { stdout } = useStdout();
-  const sepWidth = stdout.columns ?? 80;
+  const sepWidth = Math.max(24, (stdout.columns ?? 80) - 4);
 
   return (
     <Box flexDirection="column">
-      {/* App bar */}
-      <Box justifyContent="flex-end" paddingX={1}>
-        {status ? (
-          <Box>
-            <Text color={statusColor(status.tone)}>{"● "}</Text>
-            <Text color={palette.gray} dimColor>
-              {status.label}
-            </Text>
-          </Box>
-        ) : null}
-      </Box>
-
-      {/* Header separator */}
-      <Text color={palette.gray} dimColor>
-        {"─".repeat(sepWidth)}
-      </Text>
-
-      {/* Shell content */}
-      <Box flexDirection="column" paddingX={2} paddingY={1}>
+      <Box flexDirection="column" paddingX={1}>
         <Box justifyContent="space-between">
           <Text bold color="white">
             {title}
           </Text>
+          {status ? <Text color={statusColor(status.tone)}>{status.label}</Text> : null}
         </Box>
         <Text color={palette.muted}>{subtitle}</Text>
         <Box marginTop={1} flexDirection="column">
@@ -461,10 +444,11 @@ function ShellFrame({
         />
       ) : null}
 
-      {/* Footer separator */}
-      <Text color={palette.gray} dimColor>
-        {"─".repeat(sepWidth)}
-      </Text>
+      <Box marginTop={1}>
+        <Text color={palette.gray} dimColor>
+          {"─".repeat(sepWidth)}
+        </Text>
+      </Box>
 
       <ShellFooter
         taskLabel={footerTask}
@@ -637,6 +621,20 @@ function RootShellHost() {
   ) : null;
 }
 
+function useRootShellScreen(): RootShellScreen | null {
+  const [, setRevision] = useState(0);
+
+  useEffect(() => {
+    const subscriber = () => setRevision((revision) => revision + 1);
+    rootShellSubscribers.add(subscriber);
+    return () => {
+      rootShellSubscribers.delete(subscriber);
+    };
+  }, []);
+
+  return rootShellScreen;
+}
+
 function ensureRootShell() {
   if (rootShellInk && rootShellExitPromise) {
     return rootShellExitPromise;
@@ -740,6 +738,18 @@ export function useSessionState(stateManager: SessionStateManager) {
  */
 function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
   const state = useSessionState(stateManager);
+  const screen = useRootShellScreen();
+  const rootContext = `Mode ${state.mode}  ·  Provider ${state.provider}`;
+  const rootStatus =
+    state.playbackStatus === "playing"
+      ? "playing"
+      : state.playbackStatus === "loading"
+        ? "resolving"
+        : state.searchState === "loading"
+          ? "searching"
+          : state.playbackStatus === "error"
+            ? "error"
+            : "ready";
   const playbackSubtitle = state.currentEpisode
     ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
         state.currentEpisode.episode,
@@ -754,47 +764,58 @@ function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
           ? `${state.stream.subtitleList.length} subtitle tracks available`
           : "subtitles not found";
 
-  // We keep the main identity fixed at the top to prevent flicker
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* App identity - Always persistent */}
-      <Box marginBottom={1}>
-        <Text color={palette.muted} dimColor>
-          {APP_LABEL}
-        </Text>
-      </Box>
-
-      {/* Dynamic shell based on current state view */}
-      {state.playbackStatus === "error" ? (
-        <ErrorShell
-          message={state.playbackError || "An unknown error occurred"}
-          onResolve={() => stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" })}
-        />
-      ) : state.playbackStatus === "loading" || state.playbackStatus === "playing" ? (
-        <LoadingShell
-          state={{
-            title: state.currentTitle?.name || "Resolving...",
-            subtitle: playbackSubtitle,
-            operation: state.playbackStatus === "playing" ? "playing" : "resolving",
-            details: `Provider: ${state.provider}`,
-            subtitleStatus: state.playbackStatus === "playing" ? playbackSubtitleStatus : undefined,
-            trace:
-              state.playbackStatus === "playing"
-                ? "mpv is open; KitsuneSnipe is waiting for playback to finish"
-                : undefined,
-            showMemory: state.playbackStatus === "playing",
-          }}
-          onCancel={() => {}}
-        />
-      ) : rootShellScreen ? (
-        <Box key={rootShellScreen.id}>{rootShellScreen.element}</Box>
-      ) : (
-        <Box>
-          <Text color={palette.gray} dimColor italic>
-            Waiting for session...
-          </Text>
+    <Box flexDirection="column" paddingX={1} paddingY={0}>
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={palette.gray}
+        paddingX={1}
+        paddingY={0}
+      >
+        <Box justifyContent="space-between">
+          <Text color={palette.amber}>{APP_LABEL}</Text>
+          <Text color={rootStatus === "error" ? palette.red : palette.cyan}>{rootStatus}</Text>
         </Box>
-      )}
+        <Text color={palette.gray} dimColor>
+          {rootContext}
+        </Text>
+        <Box marginTop={1} flexDirection="column">
+          {state.playbackStatus === "error" ? (
+            <ErrorShell
+              message={state.playbackError || "An unknown error occurred"}
+              onResolve={() =>
+                stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" })
+              }
+            />
+          ) : state.playbackStatus === "loading" || state.playbackStatus === "playing" ? (
+            <LoadingShell
+              state={{
+                title: state.currentTitle?.name || "Resolving...",
+                subtitle: playbackSubtitle,
+                operation: state.playbackStatus === "playing" ? "playing" : "resolving",
+                details: `Provider: ${state.provider}`,
+                subtitleStatus:
+                  state.playbackStatus === "playing" ? playbackSubtitleStatus : undefined,
+                trace:
+                  state.playbackStatus === "playing"
+                    ? "mpv is open; KitsuneSnipe is waiting for playback to finish"
+                    : undefined,
+                showMemory: state.playbackStatus === "playing",
+              }}
+              onCancel={() => {}}
+            />
+          ) : screen ? (
+            <Box key={screen.id}>{screen.element}</Box>
+          ) : (
+            <Box paddingY={1}>
+              <Text color={palette.gray} dimColor italic>
+                Waiting for session...
+              </Text>
+            </Box>
+          )}
+        </Box>
+      </Box>
     </Box>
   );
 }
@@ -1647,22 +1668,23 @@ function SearchShell({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box borderStyle="round" borderColor={palette.gray} flexDirection="column" paddingX={1}>
-        <Box marginTop={0} flexDirection="column">
-          <Text bold color="white">
-            {mode === "anime" ? "Search anime" : "Search titles"}
-          </Text>
-          <Text
-            color={palette.muted}
-          >{`Provider ${provider}  ·  Enter submits  ·  Esc cancels`}</Text>
-        </Box>
-        <InputField
-          label="Search"
-          value={value}
-          onChange={setValue}
-          placeholder={placeholder}
-          hint="Enter submits · / opens commands"
-        />
+      <Box marginTop={0} flexDirection="column">
+        <Text bold color="white">
+          {mode === "anime" ? "Search anime" : "Search titles"}
+        </Text>
+        <Text
+          color={palette.muted}
+        >{`Provider ${provider}  ·  Enter submits  ·  Esc cancels`}</Text>
+      </Box>
+      <InputField
+        label="Search"
+        value={value}
+        onChange={setValue}
+        placeholder={placeholder}
+        hint="Enter submits · / opens commands"
+      />
+      <Box marginTop={1}>
+        <Text color={palette.gray}>Start with a title, then refine from inside the shell.</Text>
       </Box>
     </Box>
   );
@@ -2295,13 +2317,7 @@ function ListShell<T>({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box
-        borderStyle="round"
-        borderColor={confirmed ? palette.green : palette.gray}
-        flexDirection="column"
-        paddingX={1}
-        paddingY={0}
-      >
+      <Box flexDirection="column">
         <Box flexDirection="column">
           <Text color={confirmed ? palette.green : palette.cyan}>
             {confirmed ? "Selected" : title}
@@ -2364,6 +2380,7 @@ function ListShell<T>({
           </>
         )}
       </Box>
+
       {commandMode && actionContext ? (
         <CommandPalette
           input={commandInput}
@@ -3237,6 +3254,16 @@ function BrowseShell<T>({
     Math.max(previewWidth - 2, 24),
     ultraCompact ? 1 : compact ? 2 : 3,
   );
+  const showCompanion =
+    wideBrowse &&
+    Boolean(
+      poster.kind !== "none" ||
+      selectedOption?.previewTitle ||
+      previewMeta.length > 0 ||
+      previewBodyLines.some((line) => line.trim().length > 0) ||
+      selectedOption?.previewNote,
+    );
+  const browseContext = `Provider ${activeProvider}  ·  ${mode === "anime" ? "anime mode" : "series mode"}`;
 
   useInput((input, key) => {
     if (input === "\x03") {
@@ -3495,13 +3522,7 @@ function BrowseShell<T>({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box
-        borderStyle="round"
-        borderColor={palette.gray}
-        flexDirection="column"
-        paddingX={1}
-        paddingY={0}
-      >
+      <Box flexDirection="column">
         <Box justifyContent="space-between">
           <BrowseTitle mode={mode} />
           <Text color={searchState === "error" ? palette.red : palette.cyan}>
@@ -3517,11 +3538,12 @@ function BrowseShell<T>({
         {!ultraCompact && resultSubtitle ? (
           <Text color={palette.muted}>{resultSubtitle}</Text>
         ) : null}
-        <Box marginTop={1}>
-          <Badge label={`provider ${activeProvider}`} tone="info" />
-          {!ultraCompact ? <Badge label={mode === "anime" ? "anime mode" : "series mode"} /> : null}
+        <Box marginTop={1} justifyContent="space-between">
+          <Text color={palette.gray} dimColor>
+            {browseContext}
+          </Text>
           {activeOverlay ? (
-            <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
+            <Text color={palette.green}>{`${activeOverlay.title.toLowerCase()} panel`}</Text>
           ) : null}
         </Box>
 
@@ -3538,6 +3560,12 @@ function BrowseShell<T>({
         {queryDirty && options.length > 0 && !ultraCompact ? (
           <Text color={palette.gray}>Query changed · Press Enter to refresh results</Text>
         ) : null}
+
+        <Box marginTop={1}>
+          <Text color={palette.gray} dimColor>
+            {"─".repeat(innerWidth)}
+          </Text>
+        </Box>
 
         {searchState === "error" && errorMessage ? (
           <Box marginTop={1}>
@@ -3569,43 +3597,47 @@ function BrowseShell<T>({
           />
         ) : options.length > 0 ? (
           <Box
-            flexDirection={wideBrowse ? "row" : "column"}
+            flexDirection={showCompanion ? "row" : "column"}
             marginTop={1}
             justifyContent="space-between"
           >
             {/* Result list */}
-            <Box flexDirection="column" width={wideBrowse ? listWidth : undefined}>
+            <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
+              <Text color={palette.gray} dimColor>
+                {`Results  ·  ${options.length} available`}
+              </Text>
               {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
               {visibleOptions.map((option, index) => {
                 const optionIndex = windowStart + index;
                 const selected = optionIndex === selectedIndex;
-                const titleText = truncateLine(option.label, rowWidth - 2);
+                const titleText = truncateLine(option.label, rowWidth - 4);
                 const metaText = option.previewMeta?.[0];
 
                 return (
                   <Box key={optionIndex} flexDirection="column">
                     <Box width={rowWidth} justifyContent="space-between">
                       <Box>
-                        <Text color={selected ? palette.amber : palette.gray}>
-                          {selected ? "❯ " : "  "}
-                        </Text>
                         <Text
+                          backgroundColor={selected ? palette.cyan : undefined}
+                          color={selected ? "black" : "white"}
                           bold={selected}
-                          color={selected ? "white" : palette.muted}
                           dimColor={!selected}
                         >
+                          <Text color={selected ? "black" : palette.gray}>
+                            {selected ? "❯ " : "  "}
+                          </Text>
                           {titleText}
                         </Text>
                       </Box>
                       {metaText ? (
-                        <Text color={palette.gray} dimColor>
+                        <Text color={selected ? palette.cyan : palette.gray} dimColor={!selected}>
                           {metaText}
                         </Text>
                       ) : null}
                     </Box>
                     {selected && option.detail ? (
                       <Box marginLeft={2}>
-                        <Text color={palette.gray} dimColor>
+                        <Text color={palette.gray}>
                           {truncateLine(option.detail, rowWidth - 2)}
                         </Text>
                       </Box>
@@ -3617,11 +3649,13 @@ function BrowseShell<T>({
             </Box>
 
             {/* Companion pane */}
-            {wideBrowse ? (
+            {showCompanion ? (
               <Box marginLeft={1} flexDirection="column" width={previewWidth}>
-                {/* Poster image */}
+                <Text color={palette.gray} dimColor>
+                  Selection preview
+                </Text>
                 {poster.kind !== "none" ? (
-                  <Box flexDirection="column" marginBottom={1}>
+                  <Box flexDirection="column" marginTop={1} marginBottom={1}>
                     {poster.kind === "kitty" ? (
                       <Text>{poster.placeholder}</Text>
                     ) : (
@@ -3630,13 +3664,8 @@ function BrowseShell<T>({
                         .slice(0, poster.rows)
                         .map((line, i) => <Text key={i}>{line}</Text>)
                     )}
-                    <Text color={palette.gray} dimColor>
-                      {"─".repeat(previewWidth)}
-                    </Text>
                   </Box>
                 ) : null}
-
-                {/* Preview text */}
                 <Text bold color="white">
                   {truncateLine(
                     selectedOption?.previewTitle ?? selectedOption?.label ?? "No selection yet",
@@ -3644,15 +3673,9 @@ function BrowseShell<T>({
                   )}
                 </Text>
                 {previewMeta.length > 0 && !ultraCompact ? (
-                  <Box marginTop={1}>
-                    {previewMeta.slice(0, compact ? 2 : previewMeta.length).map((item, index) => (
-                      <Badge
-                        key={`${item}-${index}`}
-                        label={item}
-                        tone={index === 0 ? "info" : "neutral"}
-                      />
-                    ))}
-                  </Box>
+                  <Text color={palette.gray} dimColor>
+                    {truncateLine(previewMeta.join("  ·  "), previewWidth)}
+                  </Text>
                 ) : null}
                 {previewBodyLines.length > 0 ? (
                   <Box marginTop={1} flexDirection="column">

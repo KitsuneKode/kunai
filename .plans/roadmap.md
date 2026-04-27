@@ -1,6 +1,6 @@
 # KitsuneSnipe — Roadmap
 
-Last updated: 2026-04-25
+Last updated: 2026-04-28
 
 Use this file as the planning index. It should stay short. Put implementation detail in the linked plan files, not here.
 
@@ -41,6 +41,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 - Mounted root `AppShell` migration so home, browse, and playback stop remounting as separate shells
 - Fullscreen shell convergence so the UI stops reading like stacked full-width cards and stays inside the viewport
+- Fullscreen root-shell redesign spec is now tracked in [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)
 - Overlay-driven settings, provider, history, diagnostics, season, episode, and subtitle workflows
 - Settings, season, starting episode, and subtitle overlay migration so those flows stop falling back to helper shells
 - `Esc` and back-stack correctness for the remaining shell helpers
@@ -61,6 +62,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 | Track                           | Status      | Doc                                                                                    |
 | ------------------------------- | ----------- | -------------------------------------------------------------------------------------- |
+| Fullscreen root shell redesign  | In Progress | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)   |
 | CLI UX overhaul                 | Planned     | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                 |
 | Persistent shell implementation | In Progress | [.plans/persistent-shell-implementation.md](.plans/persistent-shell-implementation.md) |
 | Ink UI migration                | Planned     | [.plans/ink-migration.md](.plans/ink-migration.md)                                     |
