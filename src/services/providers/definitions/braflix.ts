@@ -2,13 +2,7 @@
 // Braflix Provider Adapter
 // =============================================================================
 
-import type {
-  ProviderCapabilities,
-  ProviderMetadata,
-  StreamInfo,
-  SubtitleTrack,
-  TitleInfo,
-} from "@/domain/types";
+import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
 const DEFAULT_BASE = "https://braflix.mov";
@@ -145,7 +139,7 @@ export class BraflixProvider implements Provider {
         episode: request.episode?.episode,
         playerDomains: this.deps.playerDomains,
       });
-    } catch (e) {
+    } catch {
       this.deps.logger.error("braflix: resolveStream failed");
       return null;
     }

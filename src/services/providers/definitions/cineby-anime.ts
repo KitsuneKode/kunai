@@ -2,12 +2,7 @@
 // CinebyAnime Provider Adapter
 // =============================================================================
 
-import type {
-  ProviderCapabilities,
-  ProviderMetadata,
-  StreamInfo,
-  TitleInfo,
-} from "@/domain/types";
+import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
 
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 

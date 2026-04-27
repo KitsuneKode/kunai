@@ -87,15 +87,16 @@ const stdinManager = {
 stdinManager.setup();
 
 const palette = {
-  amber: "#d4a44c",
-  cyan: "#78dce8",
-  green: "#8dd694",
-  red: "#ff8b8b",
-  gray: "#7c7f8a",
-  muted: "#a6acb9",
+  amber: "#e63946", // Replacing amber with a sharp Kunai red
+  cyan: "#f1faee",  // Pure white/off-white for text
+  green: "#2a9d8f", // Keeping a muted green for success
+  rose: "#f29ac2",
+  red: "#e63946",   // Deep red for errors/accents
+  gray: "#4a4e69",  // Stealthy dark gray
+  muted: "#6c757d", // Muted text
 };
 
-const APP_LABEL = "🦊 KitsuneSnipe beta";
+const APP_LABEL = "🥷 Kunai beta";
 
 function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
   switch (tone) {
@@ -816,7 +817,7 @@ function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
                   state.playbackStatus === "playing" ? playbackSubtitleStatus : undefined,
                 trace:
                   state.playbackStatus === "playing"
-                    ? "mpv is open; KitsuneSnipe is waiting for playback to finish"
+                    ? "mpv is open; Kunai is waiting for playback to finish"
                     : undefined,
                 showMemory: state.playbackStatus === "playing",
               }}
@@ -1276,7 +1277,7 @@ function PlaybackShell({
       void openInfoOverlay({
         type: "about",
         title: "About",
-        subtitle: "KitsuneSnipe beta",
+        subtitle: "Kunai beta",
         loader: loadAboutPanel,
       });
       return true;
@@ -3224,7 +3225,7 @@ function BrowseShell<T>({
       void openInfoOverlay({
         type: "about",
         title: "About",
-        subtitle: "KitsuneSnipe beta",
+        subtitle: "Kunai beta",
         loader: loadAboutPanel,
       });
       return true;

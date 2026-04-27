@@ -92,9 +92,7 @@ export async function resolveEpisodeAvailability({
     };
   }
 
-  const currentSeasonEpisodes = [
-    ...(await loaders.loadEpisodes(title.id, currentEpisode.season)),
-  ]
+  const currentSeasonEpisodes = [...(await loaders.loadEpisodes(title.id, currentEpisode.season))]
     .filter(isReleased)
     .sort((a, b) => a.number - b.number);
   const seasons = [...(await loaders.loadSeasons(title.id))].sort((a, b) => a - b);

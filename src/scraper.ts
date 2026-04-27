@@ -332,7 +332,8 @@ export async function scrapeStream(
         }
         const playerDomains = config.playerDomains ?? [];
         const isPlayer =
-          playerDomains.some((d) => pu.includes(d)) || ["about:blank", "blob:"].some((d) => pu.includes(d));
+          playerDomains.some((d) => pu.includes(d)) ||
+          ["about:blank", "blob:"].some((d) => pu.includes(d));
         if (!isPlayer && pu && pu !== "about:blank") {
           dbg("scraper", "closing ad popup", { url: pu });
           await newPage.close().catch(() => {});

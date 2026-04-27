@@ -214,8 +214,7 @@ export function buildHistoryPanelLines(
   return [...historyEntries]
     .sort(
       (a: [string, HistoryEntry], b: [string, HistoryEntry]) =>
-        (new Date(b[1].watchedAt).getTime() || 0) -
-        (new Date(a[1].watchedAt).getTime() || 0),
+        (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
     )
     .slice(0, 10)
     .map(([, entry]: [string, HistoryEntry]) => ({

@@ -50,7 +50,7 @@ function getCacheDir(appName: string): string {
   return join(process.env.XDG_CACHE_HOME || join(home, ".cache"), appName);
 }
 
-const APP_NAME = "kitsunesnipe";
+const APP_NAME = "kunai";
 
 // Key → file path mapping
 const PATHS: Record<string, string> = {

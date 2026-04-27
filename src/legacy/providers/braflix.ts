@@ -14,7 +14,7 @@ import { dbg, dbgErr } from "@/logger";
 //   7. The `link` is a video embed URL — caller passes it to embedScraper
 //      (Playwright) to extract the actual .m3u8.
 //
-// Domain can be overridden via ~/.config/kitsunesnipe/providers.json
+// Domain can be overridden via ~/.config/kunai/providers.json
 // =============================================================================
 
 const DEFAULT_BASE = "https://braflix.mov";

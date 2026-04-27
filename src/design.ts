@@ -1,8 +1,8 @@
 // =============================================================================
-// KitsuneSnipe — Terminal Design System
+// Kunai — Terminal Design System
 //
-// Aesthetic: refined utilitarian with fox character.
-// Fox-amber primary accent, rounded box drawing, dense-but-clear layout.
+// Aesthetic: refined utilitarian with a stealthy, sharp edge.
+// Kunai-red primary accent, clean box drawing, dense-but-clear layout.
 // Everything visible at once — no hidden menus, no modal blocking.
 // =============================================================================
 
@@ -12,8 +12,8 @@ const ESC = "\x1b[";
 
 // Colors
 export const clr = {
-  // Fox amber — brand primary
-  fox: (s: string) => `\x1b[38;5;214m${s}\x1b[0m`,
+  // Kunai red — brand primary
+  fox: (s: string) => `\x1b[38;5;196m${s}\x1b[0m`,
   // Accents
   cyan: (s: string) => `${ESC}36m${s}${ESC}0m`,
   green: (s: string) => `${ESC}32m${s}${ESC}0m`,
@@ -45,13 +45,13 @@ export const screen = {
 
 // ── Box drawing ───────────────────────────────────────────────────────────────
 //
-// Rounded corners — softer than the typical sharp box, matches the fox vibe.
+// Clean, sharp corners for a mechanical feel.
 
 export const box = {
-  tl: "╭",
-  tr: "╮",
-  bl: "╰",
-  br: "╯",
+  tl: "┌",
+  tr: "┐",
+  bl: "└",
+  br: "┘",
   h: "─",
   v: "│",
   ml: "├",
@@ -67,10 +67,10 @@ export function sep(char = box.h, tint?: (s: string) => string): string {
   return tint ? tint(line) : clr.dim(line);
 }
 
-// Draw a labelled header box line: ╭── Title ──╮
+// Draw a labelled header box line: ┌── Title ──┐
 export function headerLine(label: string): string {
   const width = Math.min(process.stdout.columns ?? 80, 80);
-  const inner = width - 4; // room for ╭─ and ─╮
+  const inner = width - 4; // room for ┌─ and ─┐
   const padded = ` ${label} `;
   const left = Math.floor((inner - padded.length) / 2);
   const right = inner - padded.length - left;
@@ -81,10 +81,10 @@ export function headerLine(label: string): string {
 // ── Status icons ──────────────────────────────────────────────────────────────
 
 export const icon = {
-  fox: "🦊",
+  fox: "🥷", // Renamed 'fox' to Ninja/Kunai emoji
   movie: "🎬",
   series: "📺",
-  anime: "🌸",
+  anime: "🗡️", // Changed anime to dagger/sword to fit the ninja theme
   play: "▶",
   next: "⏭",
   prev: "⏮",
@@ -100,7 +100,7 @@ export const icon = {
 // ── Keyboard shortcut renderer ─────────────────────────────────────────────────
 //
 // Renders a shortcut list as: [n] next  [p] prev  [c] settings
-// Keys are fox-amber, labels are dim.
+// Keys are Kunai red, labels are dim.
 
 export function shortcuts(map: Array<[key: string, label: string]>, separator = "  "): string {
   return map.map(([k, label]) => `${clr.fox(`[${k}]`)} ${clr.dim(label)}`).join(separator);
@@ -118,14 +118,15 @@ export function progressBar(watched: number, total: number, width = 20): string 
 
 // ── Spinner frames ────────────────────────────────────────────────────────────
 
-export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+// A sharp, aggressive spinner suitable for Kunai
+export const SPINNER_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
 
 // Lightweight inline spinner — returns a cleanup function.
 export function startSpinner(msg: string): () => void {
   let i = 0;
   process.stdout.write(cursor.hide);
   const id = setInterval(() => {
-    const frame = SPINNER_FRAMES[i++ % SPINNER_FRAMES.length] ?? "⠋";
+    const frame = SPINNER_FRAMES[i++ % SPINNER_FRAMES.length] ?? "⣾";
     process.stdout.write(`\r${clr.fox(frame)} ${msg}${" ".repeat(10)}`);
   }, 80);
   return () => {

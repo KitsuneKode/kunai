@@ -33,14 +33,14 @@ export class HiAnimeSearchService implements SearchService {
         id: String(a.id ?? a.animeId ?? ""),
         title: String(a.name ?? a.title ?? a.english ?? a.romaji ?? a.id ?? "Unknown"),
         type: "series",
-        year: a.premiered ? String(a.premiered).split(" ").pop() ?? "" : "",
+        year: a.premiered ? (String(a.premiered).split(" ").pop() ?? "") : "",
         posterPath: a.poster,
         overview: "",
       }),
     );
   }
 
-  async getTitleDetails(id: string, _signal?: AbortSignal): Promise<TitleInfo | null> {
+  async getTitleDetails(_id: string, _signal?: AbortSignal): Promise<TitleInfo | null> {
     // HiAnime search results are already detailed enough for title pickers.
     // In this simple implementation, we don't have a separate details endpoint.
     return null;

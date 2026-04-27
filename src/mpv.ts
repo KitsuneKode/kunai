@@ -11,7 +11,7 @@ import { join } from "path";
 //   1. Write "seconds,duration,reason" to KITSUNE_POS_FILE on exit.
 //
 // Episode advancement belongs to the app loop now, not MPV itself. That keeps
-// EOF behavior predictable: mpv closes cleanly, then KitsuneSnipe decides
+// EOF behavior predictable: mpv closes cleanly, then Kunai decides
 // whether to open the next episode or return to the shell.
 // =============================================================================
 

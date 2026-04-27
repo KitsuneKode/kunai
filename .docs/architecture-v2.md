@@ -1,193 +1,63 @@
-# KitsuneSnipe Architecture v2 (Target Runtime)
+# Kunai Architecture V2: The "Crowd-Cached" Ecosystem 🥷✨
 
-## Overview
+Based on our intensive grilling session, we have forged the ultimate architecture for Kunai. It solves the biggest problems in the anime streaming space: server costs, IP bans, slow UI, and intrusive ads.
 
-This document describes the target runtime architecture for the persistent-shell migration.
+Here is the blueprint for how we will dominate HiAnime and Miruro by building a vastly superior, minimal product.
 
-Use:
+---
 
-- [.docs/architecture.md](./architecture.md) for the current runtime and existing invariants
-- this file for the target runtime direction
-- [.plans/persistent-shell-implementation.md](../.plans/persistent-shell-implementation.md) for migration order
+## 1. The Core Philosophy
+1. **Never Show an Iframe:** We will use `ArtPlayer` or `Plyr` in the Web/Desktop apps. If a provider forces an embed, the local daemon extracts the raw video invisibly via `yt-dlp`. The user sees nothing but a sleek, Netflix-style custom player.
+2. **Lightning Fast Catalog:** We do not scrape for search. The entire catalog, metadata, and images are powered by the **AniList GraphQL API** and cached in Upstash/Redis. Searching is instantaneous.
+3. **Zero Web Compute (The Secret Weapon):** The Web App does **not** run Playwright or heavy scrapers. It relies on the "Crowd-Cache" model (explained below).
+4. **Clean Income:** No popups, no redirects, no invisible overlays. Only tasteful, static banner ads and GitHub Sponsors/Patreon for the web version. The CLI/Desktop remain 100% pure.
 
-## Runtime Direction
+---
 
-The target runtime shape is:
+## 2. The "Crowd-Cached" Compute Model (How we win)
 
-- `src/main.ts` becomes the canonical entrypoint
-- `bin/kitsunesnipe.ts` stays a thin executable shim
-- the current root `index.ts` should be reduced to a migration shim once parity is complete
+You noted: *"Try not to scrape when possible so that we don't actually have to worry about compute for the webapp, cli is bring ur compute."*
 
-Current status:
+This leads us to the most brilliant, scalable architecture possible: **Crowd-Sourced Stream Caching**.
 
-- `src/main.ts` is now the default runnable and build entrypoint
-- `bin/kitsunesnipe.ts` is already a thin shim to that entrypoint
-- `index.ts` still exists as a runnable legacy path until the remaining parity and shell-mount work is finished
+### How it works:
+1. **The CLI / Desktop Users (The Harvesters):**
+   When a user runs `kunai watch "one piece" ep 1159` on their laptop, *their* machine does the heavy Playwright scraping and Cloudflare bypassing.
+2. **The Silent Push:**
+   Once their local CLI successfully extracts the raw `.m3u8` stream link (e.g., `https://vault-99.owocdn...uwu.m3u8`), the CLI silently makes a tiny, authenticated POST request to our central `api.kunai.app` server. It says: *"Hey, AniList ID 21, Episode 1159 maps to this raw HLS link for the next 4 hours."*
+3. **The Central Redis Cache:**
+   Our server (Next.js Edge Function) takes that raw link and saves it in a super-fast Redis database. (Cost: practically $0).
+4. **The Web App Users (The Consumers):**
+   When a mobile user goes to `kunai.app` and clicks "Play" on One Piece Ep 1159, the web server **does not scrape anything**. It just instantly reads the `.m3u8` link from Redis and feeds it to the custom video player. 
 
-## Layer Structure
+**The Result:** 
+- The Web App costs us nothing to host (Vercel Edge + Upstash Redis free tiers). 
+- We never get IP banned because our servers aren't scraping anything; our CLI users are doing the work for us, distributed across thousands of residential IP addresses globally!
+- The Web App feels faster than Netflix because stream links load instantly from memory.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Entry Layer                                    │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │   CLI Args  │  │   Config    │  │   Logger    │  │   Telemetry/Tracing │ │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Application Layer (Orchestration)                   │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    SessionController                                  │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                │   │
-│  │  │ SearchPhase  │→ │ SelectPhase  │→ │ PlaybackPhase│                │   │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘                │   │
-│  │         ↑________________________________↓                            │   │
-│  │                    (mode toggle loops back)                           │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-┌─────────────────────────┐ ┌─────────────────┐ ┌─────────────────────────┐
-│    Search Service         │ │  Provider       │ │     Persistence         │
-│    Registry               │ │  Registry       │ │     Layer               │
-│  ┌─────────────────┐    │ │  ┌───────────┐  │ │  ┌─────────────────┐   │
-│  │ Service: TMDB   │    │ │  │ Playwright│  │ │  │ ConfigStore     │   │
-│  │ Service: HiAnime│    │ │  │ Api       │  │ │  │ HistoryStore    │   │
-│  │ Service: Custom │    │ │  │ AnimeBase │  │ │  │ CacheStore      │   │
-│  └─────────────────┘    │ │  └───────────┘  │ │  └─────────────────┘   │
-└─────────────────────────┘ └─────────────────┘ └─────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Infrastructure Layer                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │  Shell      │  │    MPV      │  │   Browser   │  │    File Storage     │ │
-│  │  (Ink)      │  │  (Player)   │  │(Playwright) │  │    (JSON)           │ │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+---
 
-## Target Foundation
+## 3. The Tech Stack
 
-### Created Files
+### A. Packages (`packages/`)
+- `@kunai/scraper`: The Node.js scraping engine we just built. Runs in the CLI and Desktop app.
+- `@kunai/types`: Shared TypeScript interfaces (SearchResult, Episode, Stream).
+- `@kunai/ui`: Radix UI / Shadcn components for the Web and Desktop apps.
 
-| File                                            | Purpose                                                |
-| ----------------------------------------------- | ------------------------------------------------------ |
-| `src/container.ts`                              | DI container with all service wiring                   |
-| `src/domain/types.ts`                           | Core domain types (TitleInfo, EpisodeInfo, StreamInfo) |
-| `src/domain/errors.ts`                          | Typed error taxonomy with recovery strategies          |
-| `src/domain/session/SessionState.ts`            | Immutable session state with transitions               |
-| `src/domain/session/SessionStateManager.ts`     | Centralized state management                           |
-| `src/infra/logger/Logger.ts`                    | Logger interface                                       |
-| `src/infra/logger/StructuredLogger.ts`          | Implementation with structured output                  |
-| `src/infra/tracer/Tracer.ts`                    | Tracer interface                                       |
-| `src/infra/tracer/TracerImpl.ts`                | Implementation with spans                              |
-| `src/infra/storage/StorageService.ts`           | Storage interface                                      |
-| `src/infra/storage/FileStorage.ts`              | JSON file implementation                               |
-| `src/infra/shell/ShellService.ts`               | Shell interface                                        |
-| `src/infra/shell/ShellServiceImpl.ts`           | Stub implementation                                    |
-| `src/infra/browser/BrowserService.ts`           | Browser interface                                      |
-| `src/infra/browser/BrowserServiceImpl.ts`       | Stub implementation                                    |
-| `src/infra/player/PlayerService.ts`             | Player interface                                       |
-| `src/infra/player/PlayerServiceImpl.ts`         | Stub implementation                                    |
-| `src/services/providers/Provider.ts`            | Provider interface definition                          |
-| `src/services/providers/ProviderRegistry.ts`    | Registry with auto-discovery                           |
-| `src/services/search/SearchService.ts`          | Search service interface                               |
-| `src/services/search/SearchRegistry.ts`         | Registry with advisory coupling                        |
-| `src/services/persistence/ConfigService.ts`     | Config interface                                       |
-| `src/services/persistence/ConfigServiceImpl.ts` | Implementation                                         |
-| `src/services/persistence/ConfigStore.ts`       | Store interface                                        |
-| `src/services/persistence/ConfigStoreImpl.ts`   | File implementation                                    |
-| `src/services/persistence/HistoryStore.ts`      | History interface                                      |
-| `src/services/persistence/HistoryStoreImpl.ts`  | File implementation                                    |
-| `src/services/persistence/CacheStore.ts`        | Cache interface                                        |
-| `src/services/persistence/CacheStoreImpl.ts`    | File implementation                                    |
+### B. Applications (`apps/`)
+- **`apps/cli` (Ink + Node.js):** The elite terminal tool. Connects to `mpv`. Pushes successful stream links to our central cache to help the community.
+- **`apps/web` (Next.js 14 App Router):** The beautiful, minimal frontend. Uses AniList for the UI. Pulls stream links from Redis. Serves clean ads.
+- **`apps/desktop` (Tauri + Rust/React):** The ultimate consumer app. Looks like the Web App but bundles the `@kunai/scraper` locally so the user can scrape directly if a link isn't in the global cache yet.
 
-### Bug Fix
+---
 
-- Fixed `openListShell` missing `waitUntilExit()` handler in `src/app-shell/ink-shell.tsx`
+## 4. Next Steps for Implementation
+To start building this ecosystem today, we need to take the following concrete steps:
 
-## Migration Phases
+1. **Initialize Turborepo:** Create the monorepo structure.
+2. **Migrate the Scrapers:** Move our finalized `scratchpads` logic (Anikai Hybrid, Miruro Hybrid, Vidking 0-RAM, Rivestream 0-RAM) into `packages/scraper-core/src/providers/`.
+3. **Build the API Contract:** Create a unified interface so that all scrapers return the exact same `StreamSource` object.
+4. **Setup the Database/Cache:** Spin up a free Upstash Redis database to store the mappings: `AniListID:EpisodeNum -> RawStreamURL`.
+5. **Build the Web Player:** Start the Next.js app, integrate `ArtPlayer` (it has the best HLS support and UI customization), and connect it to the Redis cache.
 
-### Phase 2: Domain Layer (In Progress)
-
-- Define concrete Provider implementations
-- Create provider adapters for existing providers
-- Implement SearchService definitions
-
-### Phase 3: Infrastructure (Pending)
-
-- Integrate BrowserService with existing scraper.ts
-- Integrate PlayerService with existing mpv.ts
-- Build new search-first Ink shell
-
-### Phase 4: Application Layer (Pending)
-
-- Implement SessionController
-- Build Phase classes (SearchPhase, PlaybackPhase)
-- Wire up telemetry throughout
-
-## Adding a New Provider
-
-With this architecture, adding a provider requires only 1 file:
-
-```typescript
-// src/services/providers/definitions/myprovider.ts
-export class MyProvider implements Provider {
-  metadata = {
-    id: "myprovider",
-    name: "MyProvider",
-    description: "Example provider",
-    recommended: false,
-    isAnimeProvider: false,
-  };
-
-  capabilities = { contentTypes: ["movie", "series"] };
-
-  constructor(private deps: ProviderDeps) {}
-
-  canHandle(title: TitleInfo): boolean {
-    return true;
-  }
-
-  async resolveStream(request, signal): Promise<StreamInfo | null> {
-    // Provider-specific logic
-  }
-}
-
-// Add one line to src/services/providers/index.ts:
-export const PROVIDER_DEFINITIONS = [
-  // ... existing providers
-  MyProvider, // ← one line
-];
-```
-
-## Key Design Decisions
-
-1. **Constructor Injection**: All services receive dependencies through constructors
-2. **Immutable Session State**: State transitions are explicit and logged
-3. **Layer Boundaries**: Domain has no infrastructure dependencies
-4. **Registry Pattern**: Auto-discovery through definition arrays
-5. **Search-First UI**: Single persistent shell with modal overlays
-6. **Global Command Router**: hotkey enablement and command semantics should be owned centrally
-7. **Progressive Enhancement**: images, motion, and setup helpers should enhance the shell without becoming hard dependencies
-
-## Shell Architecture Direction
-
-The app shell should be persistent through the whole session:
-
-- a stable header for app and playback context
-- a compact status strip for user-critical state
-- a main content region for search, pickers, playback state, or history
-- a footer for stable core actions plus contextual actions
-- a global command bar
-- a shallow overlay stack for settings, diagnostics, provider switching, subtitle picking, and confirmations
-
-The shell should support:
-
-- lazy-loaded overlays
-- inline setup blockers for missing capabilities
-- diagnostics split between always-visible state and a deeper overlay
-- configurable recovery patterns instead of forever-hardcoded fallback behavior
+This architecture scales infinitely, costs almost nothing to run, and provides an immaculate user experience.

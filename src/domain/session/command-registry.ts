@@ -55,7 +55,7 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "quit",
     label: "Quit",
     aliases: ["quit", "exit", "q"],
-    description: "Exit KitsuneSnipe",
+    description: "Exit Kunai",
   },
   {
     id: "provider",
@@ -225,10 +225,10 @@ function resolveCommandState(
     case "history":
     case "details":
     case "diagnostics":
-    case "help" :
-    case "about" :
-    case "clear-cache" :
-    case "clear-history" :
+    case "help":
+    case "about":
+    case "clear-cache":
+    case "clear-history":
       return { enabled: true };
 
     case "toggle-mode":

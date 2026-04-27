@@ -1,9 +1,5 @@
 version = 1
-default_profile = "cineby"
-command = "bun run cineby.ts"
+default_profile = "kinox"
 
-[profiles.cineby]
-command = "bun run cineby.ts"
-
-[profiles.vidking]
-command = "bun run vidking.ts"
+[profiles.kinox]
+command = "bun run start"

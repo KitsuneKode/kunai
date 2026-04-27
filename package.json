@@ -1,7 +1,7 @@
 {
-  "name": "kitsune-snipe",
+  "name": "kunai",
   "version": "0.1.0-beta.0",
-  "description": "Terminal-first CLI streaming engine that intercepts playable streams with Playwright and launches mpv.",
+  "description": "Elite terminal-first streaming engine. Intercepts playable streams with Playwright and launches mpv.",
   "keywords": [
     "anime",
     "bun",
@@ -11,19 +11,18 @@
     "streaming",
     "terminal"
   ],
-  "homepage": "https://github.com/kitsunekode/kitsunesnipe#readme",
+  "homepage": "https://github.com/kitsunekode/kunai#readme",
   "bugs": {
-    "url": "https://github.com/kitsunekode/kitsunesnipe/issues"
+    "url": "https://github.com/kitsunekode/kunai/issues"
   },
   "license": "MIT",
   "author": "kitsunekode",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kitsunekode/kitsunesnipe.git"
+    "url": "git+https://github.com/kitsunekode/kunai.git"
   },
   "bin": {
-    "kitsune-snipe": "./dist/kitsune-snipe.js",
-    "kitsunesnipe": "./dist/kitsune-snipe.js"
+    "kunai": "./dist/kunai.js"
   },
   "files": [
     "dist",
@@ -31,7 +30,7 @@
     "LICENSE"
   ],
   "type": "module",
-  "module": "./dist/kitsune-snipe.js",
+  "module": "./dist/kunai.js",
   "publishConfig": {
     "access": "public"
   },
@@ -50,7 +49,7 @@
     "format": "oxfmt --write .",
     "check": "bun run typecheck && bun run lint && bun run format",
     "clean": "rm -rf dist",
-    "build": "bun run clean && bun build src/main.ts --target bun --packages external --outfile dist/kitsune-snipe.js && chmod 755 dist/kitsune-snipe.js",
+    "build": "bun run clean && bun build src/main.ts --target bun --packages external --outfile dist/kunai.js && chmod 755 dist/kunai.js",
     "build:prod": "bun run check && bun run build",
     "pkg:check": "bun run build && npm pack --dry-run --ignore-scripts",
     "release:dry-run": "bun run build:prod && bun run pkg:check",

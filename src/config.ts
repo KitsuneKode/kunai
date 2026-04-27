@@ -26,7 +26,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   footerHints: "detailed",
 };
 
-const CONFIG_DIR = join(process.env.HOME ?? "~", ".config", "kitsunesnipe");
+const CONFIG_DIR = join(process.env.HOME ?? "~", ".config", "kunai");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 const DOMAIN_FILE = join(CONFIG_DIR, "providers.json");
 

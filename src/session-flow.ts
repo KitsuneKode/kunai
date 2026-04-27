@@ -211,4 +211,3 @@ export function describeHistoryEntry(entry: HistoryEntry): string {
     ? `Last finished: ${cyan(`S${entry.season}E${entry.episode}`)}`
     : `Last watched: ${cyan(`S${entry.season}E${entry.episode}`)}  stopped at ${yellow(resumeAt)}  ${dim(`(${percent}%)`)}`;
 }
-

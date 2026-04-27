@@ -1,6 +1,7 @@
 # V2 Hardening & Legacy Removal Plan
 
 ## Objective
+
 Address critical bugs identified during the architectural review and eliminate the legacy `src/providers/` system. Transition all provider logic natively to the new dependency-injected `src/services/providers/Provider.ts` interface.
 
 ## Phase 1: Core Bug Fixes & Resilience
@@ -11,7 +12,7 @@ Address critical bugs identified during the architectural review and eliminate t
 
 2. **Fix Duplicate Cache Management**
    - **Target**: `src/scraper.ts`, `src/cache.ts`
-   - **Action**: Remove `import { cacheStream }` from `scraper.ts`. All caching should *only* happen in `BrowserServiceImpl.ts` via the DI `CacheStore`. (Also requires moving the text log append to `BrowserServiceImpl` or a new Logger method).
+   - **Action**: Remove `import { cacheStream }` from `scraper.ts`. All caching should _only_ happen in `BrowserServiceImpl.ts` via the DI `CacheStore`. (Also requires moving the text log append to `BrowserServiceImpl` or a new Logger method).
 
 3. **Handle Playwright 'Target Closed' Exceptions**
    - **Target**: `src/scraper.ts`
@@ -23,7 +24,7 @@ Address critical bugs identified during the architectural review and eliminate t
 
 5. **Fix Auto-Next Bugs (Unreleased Episodes & Hijacking)**
    - **Target**: `src/tmdb.ts`, `src/app/playback-policy.ts`, `src/app/PlaybackPhase.ts`
-   - **Action**: 
+   - **Action**:
      - Update `tmdb.ts` to parse the full `airDate` (YYYY-MM-DD) instead of truncating it to just the year. Update `formatEpisode` to only show the year in the UI.
      - Update `playback-policy.ts` to filter out `CatalogEpisode`s where `new Date(airDate).getTime() > Date.now()`. This prevents auto-next from attempting to scrape unreleased episodes (which causes "Stream not found" loops).
      - Update `PlaybackPhase.ts`: Instead of instantly firing the next episode when `autoNext` triggers, show an interactive 5-second countdown prompt (or simply make the resolving shell cancellable) so the user isn't held hostage by an un-cancellable stream resolution if they wanted to stop watching.
@@ -38,7 +39,7 @@ Currently, the `src/services/providers/definitions/` are just thin wrappers over
 
 2. **Migrate API Providers (e.g. AllAnime, CinebyAnime, Braflix, BitCine)**
    - Move the API logic, crypto algorithms (for AllAnime), and parsing logic directly into the v2 Provider definitions.
-   - For hybrid providers like Braflix that need API metadata *and* browser scraping, they will natively call their API, get the embed URL, and then call `this.deps.browser.scrape()` directly.
+   - For hybrid providers like Braflix that need API metadata _and_ browser scraping, they will natively call their API, get the embed URL, and then call `this.deps.browser.scrape()` directly.
 
 3. **Delete Legacy Types**
    - Delete `src/providers/` entirely.

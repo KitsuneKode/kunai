@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // =============================================================================
-// KitsuneSnipe - New Architecture Entry Point
+// Kunai - New Architecture Entry Point
 //
 // Usage:
 //   bun run src/main.ts                    # Interactive mode
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
 
   if (args.debug) {
     const initialMode = args.anime ? "anime" : config.defaultMode;
-    logger.info("KitsuneSnipe started", {
+    logger.info("Kunai started", {
       version: "2.0.0-beta",
       mode: initialMode,
       provider: initialMode === "anime" ? config.animeProvider : config.provider,
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
 
   // Launch the persistent state-driven UI
   const { launchSessionApp } = await import("./app-shell/ink-shell");
-  const shellExitPromise = launchSessionApp(stateManager);
+  launchSessionApp(stateManager);
 
   // Run the main session loop
   try {
@@ -120,12 +120,12 @@ async function main(): Promise<void> {
       initialTitle: bootstrapTitle,
     });
 
-    logger.info("KitsuneSnipe exited normally");
+    logger.info("Kunai exited normally");
     // Ensure the shell is unmounted if the controller finishes
     if (process.stdin.isTTY) process.stdin.unref();
     process.exit(0);
   } catch (e) {
-    logger.error("KitsuneSnipe crashed", { error: String(e) });
+    logger.error("Kunai crashed", { error: String(e) });
     console.error("Fatal error:", e);
     process.exit(1);
   }
@@ -136,13 +136,13 @@ function setupSignalHandlers(): void {
   const shutdown = async (signal: string) => {
     console.log(`\nReceived ${signal}, shutting down cleanly...`);
     if (process.stdin.isTTY) process.stdin.unref();
-    
+
     if (globalController) {
       globalController.shutdown();
       // Wait a short tick for synchronous pending tasks to wind down
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    
+
     process.exit(0);
   };
 

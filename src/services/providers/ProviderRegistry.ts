@@ -25,11 +25,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   constructor(deps: ProviderRegistryDeps, definitions: ProviderDefinition[]) {
     // Calculate global player domains
     const playerDomains = Array.from(
-      new Set(
-        definitions
-          .map((d) => d.metadata.domain)
-          .filter((d): d is string => !!d),
-      ),
+      new Set(definitions.map((d) => d.metadata.domain).filter((d): d is string => !!d)),
     );
 
     // Instantiate all providers

@@ -2,7 +2,6 @@
 import { intro, outro, spinner, log } from "@clack/prompts";
 import { parseArgs } from "util";
 
-
 import { searchVideasy, type SearchResult } from "@/search";
 import { displayPoster, isKittyCompatible } from "@/image";
 import { getHistory, saveHistory, isFinished, formatTimestamp, type HistoryEntry } from "@/history";
@@ -193,7 +192,7 @@ async function readPrePlaybackKey(): Promise<string> {
 // importing scraper.ts themselves (avoids circular dependencies).
 const embedScraper = (
   embedUrl: string,
-  scraperOpts?: { needsClick?: boolean },
+  _scraperOpts?: { needsClick?: boolean },
 ): Promise<StreamData | null> => {
   const provider: PlaywrightProvider = {
     kind: "playwright",
@@ -283,7 +282,10 @@ function startPrefetch() {
   const nextUrl = buildUrl(provider, currentId, currentType, currentSeason, currentEpisode + 1);
   if (prefetchedStream?.url === nextUrl) return;
   const scrapeConfig = { ...provider, playerDomains: PLAYER_DOMAINS };
-  prefetchedStream = { url: nextUrl, data: scrapeStream(scrapeConfig, nextUrl, currentSubLang, true) };
+  prefetchedStream = {
+    url: nextUrl,
+    data: scrapeStream(scrapeConfig, nextUrl, currentSubLang, true),
+  };
 }
 
 async function loadAnimeEpisodeOptions(

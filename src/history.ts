@@ -15,7 +15,7 @@ export type HistoryEntry = {
 
 type HistoryFile = Record<string, HistoryEntry>;
 
-const HISTORY_DIR = join(process.env.HOME ?? "~", ".local", "share", "kitsunesnipe");
+const HISTORY_DIR = join(process.env.HOME ?? "~", ".local", "share", "kunai");
 const HISTORY_FILE = join(HISTORY_DIR, "history.json");
 
 function ensureDir() {

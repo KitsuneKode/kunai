@@ -101,12 +101,7 @@ export class BrowserServiceImpl implements BrowserService {
     // Active Wyzie resolution: if the passive sniff found no subtitle and we
     // have a TMDB ID, query Wyzie directly. This covers the Vidking/lazy-load
     // case documented in .docs/subtitle-resolver-analysis.md.
-    if (
-      !scrapeSubtitle &&
-      requestedSubLang !== "none" &&
-      options.tmdbId &&
-      options.titleType
-    ) {
+    if (!scrapeSubtitle && requestedSubLang !== "none" && options.tmdbId && options.titleType) {
       this.deps.logger.info("No subtitle from passive sniff — trying active Wyzie", {
         tmdbId: options.tmdbId,
         titleType: options.titleType,
@@ -150,7 +145,9 @@ export class BrowserServiceImpl implements BrowserService {
       } else {
         this.deps.diagnosticsStore.record({
           category: "subtitle",
-          message: wyzieResult.failed ? "Active Wyzie fetch failed" : "Active Wyzie found no tracks",
+          message: wyzieResult.failed
+            ? "Active Wyzie fetch failed"
+            : "Active Wyzie found no tracks",
           context: { tmdbId: options.tmdbId, requestedSubLang },
         });
       }
