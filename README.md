@@ -24,12 +24,12 @@ KitsuneSnipe does not host, store, upload, mirror, or distribute any video files
 
 ## 🚀 Prerequisites
 
-| Tool                     | Required | Notes                       |
-| ------------------------ | -------- | --------------------------- |
-| [Bun](https://bun.sh/)   | ✅       | Runtime and package manager |
-| [mpv](https://mpv.io/)   | ✅       | Media player                |
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | ✅ | Extracts embed URLs |
-| Kitty / Ghostty terminal | Optional | Poster image preview        |
+| Tool                                       | Required | Notes                       |
+| ------------------------------------------ | -------- | --------------------------- |
+| [Bun](https://bun.sh/)                     | ✅       | Runtime and package manager |
+| [mpv](https://mpv.io/)                     | ✅       | Media player                |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | ✅       | Extracts embed URLs         |
+| Kitty / Ghostty terminal                   | Optional | Poster image preview        |
 
 Install mpv and yt-dlp:
 

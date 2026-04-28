@@ -102,7 +102,9 @@ Most aggregators have a "Trending" or "Discover" section. We can scrape these to
    - **Format Priority:** Prefer `.vtt` for web players, but `.srt` is usually safer for `mpv`.
 
 ## 7. The `yt-dlp` Fallback Strategy (Embed Links)
-If a provider only provides a third-party embed link (e.g., `mp4upload.com`, `streamtape.com`) and does not expose a raw `.m3u8` or `.mp4` file, **do not throw an error or attempt to write a custom extractor.** 
+
+If a provider only provides a third-party embed link (e.g., `mp4upload.com`, `streamtape.com`) and does not expose a raw `.m3u8` or `.mp4` file, **do not throw an error or attempt to write a custom extractor.**
+
 1. Log that an embed link was found and `yt-dlp` will be used.
 2. Return the embed URL directly to the application.
 3. `mpv` natively hooks into `yt-dlp` (if installed on the user's system) and will automatically resolve the file host's obfuscation and stream the raw video.

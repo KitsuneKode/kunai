@@ -1069,6 +1069,11 @@ function PlaybackShell({
     state.type === "series"
       ? `S${String(state.season).padStart(2, "0")}E${String(state.episode).padStart(2, "0")}`
       : "Movie";
+  const playbackSubtitleTone =
+    state.subtitleStatus?.toLowerCase().includes("not found") ||
+    state.subtitleStatus?.toLowerCase().includes("disabled")
+      ? "warning"
+      : "success";
 
   const openInfoOverlay = async ({
     type,
@@ -1548,44 +1553,63 @@ function PlaybackShell({
               flexDirection="column"
               width={showPosterCompanion ? Math.max(56, (stdout.columns ?? 80) - 38) : undefined}
             >
-              {state.type === "series" ? (
-                <>
-                  <Text bold color="white">
-                    {`S${String(state.season).padStart(2, "0")}E${String(state.episode).padStart(2, "0")}`}
-                  </Text>
-                  <Text color={palette.muted}>Episode complete</Text>
-                </>
-              ) : (
-                <Text color={palette.muted}>Playback complete</Text>
-              )}
-
-              {state.subtitleStatus ? (
-                <Box marginTop={1}>
-                  <Text
-                    color={
-                      state.subtitleStatus.toLowerCase().includes("not found")
-                        ? palette.amber
-                        : palette.green
-                    }
-                  >
-                    {"● "}
-                    {state.subtitleStatus}
-                  </Text>
-                </Box>
-              ) : null}
-
-              {state.showMemory && state.memoryUsage ? (
-                <Box marginTop={1}>
-                  <Text color={palette.gray}>{state.memoryUsage}</Text>
-                </Box>
-              ) : null}
+              <Text bold color="white">
+                {state.title}
+              </Text>
+              <Box marginTop={1}>
+                <Badge label={location.toLowerCase()} tone="accent" />
+                <Badge label={state.type === "series" ? "episode complete" : "playback complete"} />
+                {state.status ? (
+                  <Badge
+                    label={state.status.label.toLowerCase()}
+                    tone={state.status.tone === "success" ? "success" : "info"}
+                  />
+                ) : null}
+              </Box>
+              <Box marginTop={1} flexDirection="column">
+                <DetailLine label="Provider" value={activeProvider} tone="info" />
+                <DetailLine
+                  label="Subtitle state"
+                  value={state.subtitleStatus ?? "not reported"}
+                  tone={playbackSubtitleTone}
+                />
+                <DetailLine
+                  label="Next step"
+                  value="Replay, move episodes, or start a fresh search"
+                />
+                {state.showMemory && state.memoryUsage ? (
+                  <DetailLine label="Memory" value={state.memoryUsage} />
+                ) : null}
+              </Box>
+              <Box marginTop={1}>
+                <Text color={palette.muted}>
+                  Playback stays inside the shell now, so you can inspect the result, navigate to
+                  the next episode, or jump back into search without leaving the fullscreen flow.
+                </Text>
+              </Box>
             </Box>
 
             {showPosterCompanion ? (
               <Box marginLeft={2} flexDirection="column" width={26}>
-                <Text color={palette.gray} dimColor>
-                  Episode art
-                </Text>
+                <Box>
+                  <Badge label="episode art" />
+                  <Badge
+                    label={
+                      posterState === "loading"
+                        ? "loading"
+                        : posterState === "unavailable"
+                          ? "unavailable"
+                          : "ready"
+                    }
+                    tone={
+                      posterState === "loading"
+                        ? "info"
+                        : posterState === "unavailable"
+                          ? "warning"
+                          : "success"
+                    }
+                  />
+                </Box>
                 <Box marginTop={1}>
                   {poster.kind === "kitty" ? (
                     <Text>{poster.placeholder}</Text>
@@ -1699,6 +1723,35 @@ function Badge({
       <Text color={color} bold={tone !== "neutral"}>
         {label}
       </Text>
+    </Box>
+  );
+}
+
+function DetailLine({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "info" | "success" | "warning" | "accent";
+}) {
+  const valueColor =
+    tone === "success"
+      ? palette.green
+      : tone === "info"
+        ? palette.cyan
+        : tone === "accent"
+          ? palette.rose
+          : tone === "warning"
+            ? palette.amber
+            : "white";
+
+  return (
+    <Box>
+      <Text color={palette.gray}>{label}</Text>
+      <Text color={palette.gray}> · </Text>
+      <Text color={valueColor}>{value}</Text>
     </Box>
   );
 }
@@ -1834,6 +1887,10 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
   const accentColor = isPlaying ? palette.green : pulse ? palette.cyan : "white";
   const separatorWidth = Math.min(52, Math.max(24, (stdout.columns ?? 80) - 22));
   const infoWidth = Math.min(76, Math.max(40, (stdout.columns ?? 80) - 12));
+  const subtitleTone =
+    state.subtitleStatus?.includes("attached") || state.subtitleStatus?.includes("available")
+      ? "success"
+      : "warning";
 
   const operationLabels: Record<LoadingShellState["operation"], string> = {
     searching: "Searching",
@@ -1852,12 +1909,7 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
             tone={isPlaying ? "success" : "info"}
           />
           {state.details ? <Badge label={state.details.toLowerCase()} tone="neutral" /> : null}
-          {state.subtitleStatus ? (
-            <Badge
-              label={state.subtitleStatus}
-              tone={state.subtitleStatus.includes("attached") ? "success" : "warning"}
-            />
-          ) : null}
+          {state.subtitleStatus ? <Badge label={state.subtitleStatus} tone={subtitleTone} /> : null}
         </Box>
         <Box marginTop={1}>
           <Text color={accentColor}>{leadIcon} </Text>
@@ -1885,34 +1937,29 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
           </Text>
         </Box>
 
-        {state.subtitleStatus && (
-          <Box marginTop={1}>
-            <Text color={state.subtitleStatus.includes("attached") ? palette.green : palette.amber}>
-              {state.subtitleStatus}
-            </Text>
-          </Box>
-        )}
+        <Box marginTop={1} flexDirection="column">
+          {state.subtitleStatus ? (
+            <DetailLine label="Subtitle state" value={state.subtitleStatus} tone={subtitleTone} />
+          ) : null}
+          <DetailLine
+            label="Status"
+            value={
+              isPlaying
+                ? "Handed off to mpv, the shell will return here when playback ends"
+                : "Resolving provider data, stream headers, and playback context"
+            }
+            tone={isPlaying ? "success" : "info"}
+          />
+          {!isPlaying && elapsed >= 2 ? (
+            <DetailLine label="Elapsed" value={formatElapsed(elapsed)} />
+          ) : null}
+          {state.showMemory ? <DetailLine label="Memory" value={formatMemoryUsage()} /> : null}
+        </Box>
 
         {state.trace && (
           <Box marginTop={1}>
             <Text color={palette.gray} dimColor>
               {state.trace}
-            </Text>
-          </Box>
-        )}
-
-        {!isPlaying && elapsed >= 2 && (
-          <Box marginTop={1}>
-            <Text color={palette.gray} dimColor>
-              {formatElapsed(elapsed)} elapsed
-            </Text>
-          </Box>
-        )}
-
-        {state.showMemory && (
-          <Box marginTop={1}>
-            <Text color={palette.gray} dimColor>
-              {formatMemoryUsage()}
             </Text>
           </Box>
         )}
