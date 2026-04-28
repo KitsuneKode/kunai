@@ -1,5 +1,5 @@
 // =============================================================================
-// KitsuneSnipe — Terminal Design System
+// Kunai — Terminal Design System
 //
 // Aesthetic: refined utilitarian with a cinematic terminal edge.
 // Fox-amber primary accent, clean box drawing, dense-but-clear layout.

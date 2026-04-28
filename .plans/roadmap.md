@@ -48,7 +48,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - `Esc` and back-stack correctness for the remaining shell helpers
 - `mpv` reopen reliability bug investigation
 - `cineby-anime` click handling parity
-- Final legacy runtime cleanup after `apps/cli/index.ts` wrapper shrink
+- Final compatibility wrapper cleanup once `apps/cli/index.ts` is no longer useful
 - Phase 1.5 true root shell foundation after the scoped Turborepo move
 - First-run dependency guardrails for `mpv` and Playwright
 - Developer-mode diagnostics surface for stream, subtitle, and provider resolution stages

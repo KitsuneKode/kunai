@@ -118,7 +118,7 @@ History is stored at `~/.local/share/kunai/history.json`, keyed by TMDB ID.
 
 ```text
 apps/cli/src/main.ts             canonical runtime entrypoint
-apps/cli/index.ts                legacy runtime path kept during migration
+apps/cli/index.ts                temporary compatibility wrapper into apps/cli/src/main.ts
 apps/cli/src/app-shell/*         Ink shell, command UI, settings/history/picker workflows
 apps/cli/src/search.ts           db.videasy/TMDB-backed search
 apps/cli/src/scraper.ts          Playwright stream + subtitle interception

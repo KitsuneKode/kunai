@@ -50,7 +50,7 @@ Kunai is a terminal-first Bun CLI that finds playable video streams by intercept
 
 ```text
 apps/cli/src/main.ts                 canonical runtime entrypoint and refactored session controller
-apps/cli/index.ts                    legacy runtime path kept during migration and parity verification
+apps/cli/index.ts                    temporary compatibility wrapper into apps/cli/src/main.ts
 apps/cli/src/app-shell/*             Ink shell, command bar, list pickers, settings/history workflows
 apps/cli/src/search.ts               search service registry and TMDB-backed search
 apps/cli/src/scraper.ts              Playwright interception for stream/subtitle capture
@@ -89,7 +89,7 @@ Unit tests live under `apps/cli/test/unit/`, integration tests under `apps/cli/t
 
 ## Hard Boundaries
 
-- `apps/cli/index.ts` keeps the legacy outer search loop separate from the inner playback loop; `[a]` returns to search by breaking the inner loop
+- `apps/cli/index.ts` is a temporary compatibility wrapper only; new runtime work belongs in `apps/cli/src/main.ts`
 - Episode numbers are 1-based in the UI; providers adapt internally
 - `apps/cli/src/services/providers/definitions/index.ts` is the single registry source of truth
 - `isAnimeProvider: true` is what places a provider in anime mode

@@ -12,7 +12,7 @@
 
 - [ ] **fzf npm package** — replace fzf binary dependency with `fzf` npm (pure TypeScript). Prerequisite for Ink migration. Package: https://www.npmjs.com/package/fzf
 
-- [ ] **npm publish setup** — shebang line in `index.ts` + `bin` field in `package.json` for `kitsune-snipe` CLI. (Task #1 in task list.)
+- [ ] **npm publish setup** — verify `apps/cli/src/main.ts` builds to `dist/kunai.js` and the `kunai` bin field points at that artifact. (Task #1 in task list.)
 
 - [ ] **Tests for pure functions** — `formatTimestamp`, `isFinished`, `buildUrl`, cache TTL logic, search result mapping. (Task #5 in task list.)
 

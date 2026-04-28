@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // =============================================================================
-// KitsuneSnipe - Canonical Runtime Entry Point
+// Kunai - Canonical Runtime Entry Point
 //
 // Usage:
 //   bun run dev                            # Interactive mode
@@ -9,8 +9,8 @@
 //   bun run dev -- -a                      # Anime mode
 //
 // This file owns the current fullscreen session runtime.
-// Keep new architecture work here and treat apps/cli/index.ts as the legacy parity path
-// until the remaining migration residue is fully retired.
+// Keep new architecture work here. apps/cli/index.ts is only a temporary
+// compatibility shim while migration residue is retired.
 // =============================================================================
 
 import { createContainer } from "@/container";
@@ -70,7 +70,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   if (args.debug) {
     const initialMode = args.anime ? "anime" : config.defaultMode;
-    logger.info("KitsuneSnipe started", {
+    logger.info("Kunai started", {
       version: "2.0.0-beta",
       mode: initialMode,
       provider: initialMode === "anime" ? config.animeProvider : config.provider,
@@ -130,12 +130,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       initialTitle: bootstrapTitle,
     });
 
-    logger.info("KitsuneSnipe exited normally");
+    logger.info("Kunai exited normally");
     await shutdownShell();
     if (process.stdin.isTTY) process.stdin.unref();
     process.exit(0);
   } catch (e) {
-    logger.error("KitsuneSnipe crashed", { error: String(e) });
+    logger.error("Kunai crashed", { error: String(e) });
     await shutdownShell();
     console.error("Fatal error:", e);
     process.exit(1);

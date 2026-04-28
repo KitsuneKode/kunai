@@ -34,52 +34,31 @@ user input -> Ink shell -> picker -> provider resolve -> Playwright/API stream c
 There are currently two architectural truths that must be kept distinct:
 
 - `apps/cli/src/main.ts` is now the default runnable entrypoint and the target runtime for the persistent-shell architecture
-- `apps/cli/index.ts` remains as a legacy runtime path for parity verification and migration fallback work
+- `apps/cli/index.ts` remains only as a temporary compatibility wrapper into `apps/cli/src/main.ts`
 
 Practical status right now:
 
 - `apps/cli/src/main.ts` owns the DI container, config service, history store, cache store, provider registry, shared shell workflows, and the refactored search/playback phases
 - package scripts and build now point at `apps/cli/src/main.ts`
 - shell-local debug POST instrumentation has been removed from the Ink runtime path
-- `apps/cli/index.ts` still remains runnable and still contains legacy control flow, picker orchestration, and some fallback behavior that has not been fully absorbed into the mounted shell architecture yet
+- `apps/cli/index.ts` still remains runnable for old local habits, but it should not regain orchestration logic
 
 Do not mix these mentally.
 
 When fixing current behavior in the default runtime:
 
 - treat `apps/cli/src/main.ts` and the v2 docs as the primary source of truth
-- migrate missing behavior into `apps/cli/src/main.ts` rather than extending `apps/cli/index.ts` unless the task is explicitly legacy-only
+- migrate missing behavior into `apps/cli/src/main.ts` rather than extending `apps/cli/index.ts`
 
 ## Control Flow
 
-`apps/cli/index.ts` still owns the legacy two-loop shape:
-
-```ts
-while (true) {
-  searchAndPickTitle();
-
-  while (!backToSearch) {
-    resolveStream();
-    playInMpv();
-    openPostEpisodeMenu();
-  }
-}
-```
-
-This split is intentional because it preserves a clean boundary between search state and playback state.
-
-- The outer loop owns title/mode selection
-- The inner loop owns playback continuity
-- `[a]` breaks the inner loop so anime/series mode can switch without restarting the process
-- CLI bootstrap flags apply on the first outer-loop pass only
-
-This remains the legacy runtime contract while parity work is still being drained into `apps/cli/src/main.ts`.
+The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.ts` path. Preserve search/playback boundaries in the new state-driven runtime instead of reviving a second entrypoint.
 
 ## Runtime Modules
 
 | Area                  | Files                                             | Responsibility                                                                        |
 | --------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`, legacy `apps/cli/index.ts` | Default runtime orchestration in `apps/cli/src/main.ts`; legacy loop kept for migration parity |
+| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`, `apps/cli/index.ts` wrapper | Default runtime orchestration in `apps/cli/src/main.ts`; wrapper is compatibility only |
 | Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`               | Ink shell, commands, settings, history, and structured pickers                                  |
 | Search                | `apps/cli/src/search.ts`, `apps/cli/src/tmdb.ts`, `apps/cli/src/ui.ts`    | Search backends, metadata fetches, and dependency checks                                        |
 | Scraping              | `apps/cli/src/scraper.ts`                                                | Browser automation and network interception                                                     |
