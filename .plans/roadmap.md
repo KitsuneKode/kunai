@@ -41,6 +41,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 ### Active Follow-Ups
 
 - Mounted true root shell migration inside `apps/cli` after the Turborepo move so home, browse, pickers, loading, playback, overlays, and post-playback are content states instead of separate shells
+- Phase 1.8 single mounted content tree plan is now tracked in [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)
 - Fullscreen shell convergence so the UI stops reading like stacked full-width cards and stays inside the viewport
 - Fullscreen root-shell redesign spec is now tracked in [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)
 - Overlay-driven settings, provider, history, diagnostics, season, episode, and subtitle workflows
@@ -65,6 +66,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Track                            | Status      | Doc                                                                                                  |
 | -------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
 | Fullscreen root shell redesign   | In Progress | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                 |
+| Phase 1.8 mounted content tree   | Planned     | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)   |
 | Kunai architecture hardening     | Planned     | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md) |
 | Kunai experience and growth moat | Planned     | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)             |
 | Kunai principal grill Q&A        | Planned     | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                             |
