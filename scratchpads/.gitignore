@@ -33,6 +33,5 @@ chunks/
 
 # Explicitly KEEP these specific documentation files if they accidentally match
 !anikai-findings.json
-!decrypted-sample.json
 !decrypted-strings.json
 !episodes.json
