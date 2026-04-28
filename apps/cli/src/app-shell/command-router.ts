@@ -17,7 +17,7 @@ async function openRootOwnedOverlay(
   container: Container,
   overlay: Extract<
     import("@/domain/session/SessionState").OverlayState,
-    { type: "help" | "about" | "diagnostics" | "provider_picker" | "history" }
+    { type: "help" | "about" | "diagnostics" | "provider_picker" | "history" | "settings" }
   >,
 ): Promise<void> {
   const { stateManager } = container;
@@ -75,6 +75,10 @@ export async function routeSearchShellAction({
     await openRootOwnedOverlay(container, { type: "history" });
     return "handled";
   }
+  if (action === "settings") {
+    await openRootOwnedOverlay(container, { type: "settings" });
+    return "handled";
+  }
 
   const result = await handleShellAction({ action, container });
   return result === "quit" ? "quit" : result;
@@ -120,6 +124,10 @@ export async function routePlaybackShellAction({
   }
   if (action === "history") {
     await openRootOwnedOverlay(container, { type: "history" });
+    return "handled";
+  }
+  if (action === "settings") {
+    await openRootOwnedOverlay(container, { type: "settings" });
     return "handled";
   }
 
