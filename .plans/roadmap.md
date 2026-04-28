@@ -60,16 +60,21 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 ## Planned Tracks
 
-| Track                           | Status      | Doc                                                                                    |
-| ------------------------------- | ----------- | -------------------------------------------------------------------------------------- |
-| Fullscreen root shell redesign  | In Progress | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)   |
-| CLI UX overhaul                 | Planned     | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                 |
-| Persistent shell implementation | In Progress | [.plans/persistent-shell-implementation.md](.plans/persistent-shell-implementation.md) |
-| Ink UI migration                | Planned     | [.plans/ink-migration.md](.plans/ink-migration.md)                                     |
-| Provider hardening              | Planned     | [.plans/provider-hardening.md](.plans/provider-hardening.md)                           |
-| Runtime entry consolidation     | Planned     | [.docs/architecture-v2.md](.docs/architecture-v2.md)                                   |
-| Search/provider decoupling      | Deferred    | [.plans/search-service.md](.plans/search-service.md)                                   |
-| YouTube provider research       | Idea        | [.plans/yt-provider.md](.plans/yt-provider.md)                                         |
+| Track                            | Status      | Doc                                                                                                  |
+| -------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
+| Fullscreen root shell redesign   | In Progress | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                 |
+| Kunai architecture hardening     | Planned     | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md) |
+| Kunai experience and growth moat | Planned     | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)             |
+| Kunai principal grill Q&A        | Planned     | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                             |
+| Kunai V2 ecosystem and Debrid    | Planned     | [.plans/v2-ecosystem-and-debrid.md](.plans/v2-ecosystem-and-debrid.md)                               |
+| Kunai V3 metadata and sync       | Planned     | [.plans/v3-metadata-and-sync.md](.plans/v3-metadata-and-sync.md)                                     |
+| CLI UX overhaul                  | Planned     | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                               |
+| Persistent shell implementation  | In Progress | [.plans/persistent-shell-implementation.md](.plans/persistent-shell-implementation.md)               |
+| Ink UI migration                 | Planned     | [.plans/ink-migration.md](.plans/ink-migration.md)                                                   |
+| Provider hardening               | Planned     | [.plans/provider-hardening.md](.plans/provider-hardening.md)                                         |
+| Runtime entry consolidation      | Planned     | [.docs/architecture-v2.md](.docs/architecture-v2.md)                                                 |
+| Search/provider decoupling       | Deferred    | [.plans/search-service.md](.plans/search-service.md)                                                 |
+| YouTube provider research        | Idea        | [.plans/yt-provider.md](.plans/yt-provider.md)                                                       |
 
 ## Rules For This Folder
 

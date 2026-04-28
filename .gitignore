@@ -3,6 +3,7 @@ node_modules
 .worktrees
 
 .codex
+.context
 # output
 out
 dist

@@ -2,6 +2,8 @@
 
 Based on the strategic alignment, we are prioritizing the **CLI-Only Daemon** with an **Elite Hacker UI** as the V1 product. The goal is to build an engineering marvel that attracts users, fame, and monetization, while technically preventing low-effort clones from stealing our backend resources.
 
+> Status note: this plan captures the V1 ambition, but the WASM anti-leech model has been superseded. WASM can be used as clone friction or telemetry attestation, but paid compute must be protected with server-side account auth, entitlements, short-lived capability tokens, replay protection, quotas, and abuse controls. See [.plans/kunai-architecture-and-cache-hardening.md](./kunai-architecture-and-cache-hardening.md) and [.plans/kunai-principal-grill-qa.md](./kunai-principal-grill-qa.md).
+
 ---
 
 ## 1. The Monetization & Defensive Strategy ("The Unclonable Core")
