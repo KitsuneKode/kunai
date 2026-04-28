@@ -33,26 +33,26 @@ user input -> Ink shell -> picker -> provider resolve -> Playwright/API stream c
 
 There are currently two architectural truths that must be kept distinct:
 
-- `src/main.ts` is now the default runnable entrypoint and the target runtime for the persistent-shell architecture
-- `index.ts` remains as a legacy runtime path for parity verification and migration fallback work
+- `apps/cli/src/main.ts` is now the default runnable entrypoint and the target runtime for the persistent-shell architecture
+- `apps/cli/index.ts` remains as a legacy runtime path for parity verification and migration fallback work
 
 Practical status right now:
 
-- `src/main.ts` owns the DI container, config service, history store, cache store, provider registry, shared shell workflows, and the refactored search/playback phases
-- package scripts and build now point at `src/main.ts`
+- `apps/cli/src/main.ts` owns the DI container, config service, history store, cache store, provider registry, shared shell workflows, and the refactored search/playback phases
+- package scripts and build now point at `apps/cli/src/main.ts`
 - shell-local debug POST instrumentation has been removed from the Ink runtime path
-- `index.ts` still remains runnable and still contains legacy control flow, picker orchestration, and some fallback behavior that has not been fully absorbed into the mounted shell architecture yet
+- `apps/cli/index.ts` still remains runnable and still contains legacy control flow, picker orchestration, and some fallback behavior that has not been fully absorbed into the mounted shell architecture yet
 
 Do not mix these mentally.
 
 When fixing current behavior in the default runtime:
 
-- treat `src/main.ts` and the v2 docs as the primary source of truth
-- migrate missing behavior into `src/main.ts` rather than extending `index.ts` unless the task is explicitly legacy-only
+- treat `apps/cli/src/main.ts` and the v2 docs as the primary source of truth
+- migrate missing behavior into `apps/cli/src/main.ts` rather than extending `apps/cli/index.ts` unless the task is explicitly legacy-only
 
 ## Control Flow
 
-`index.ts` still owns the legacy two-loop shape:
+`apps/cli/index.ts` still owns the legacy two-loop shape:
 
 ```ts
 while (true) {
@@ -73,21 +73,21 @@ This split is intentional because it preserves a clean boundary between search s
 - `[a]` breaks the inner loop so anime/series mode can switch without restarting the process
 - CLI bootstrap flags apply on the first outer-loop pass only
 
-This remains the legacy runtime contract while parity work is still being drained into `src/main.ts`.
+This remains the legacy runtime contract while parity work is still being drained into `apps/cli/src/main.ts`.
 
 ## Runtime Modules
 
 | Area                  | Files                                             | Responsibility                                                                        |
 | --------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Entry + orchestration | `src/main.ts`, `src/app/*`, legacy `index.ts`     | Default runtime orchestration in `src/main.ts`; legacy loop kept for migration parity |
-| Shell UI              | `src/app-shell/*`, `src/session-flow.ts`          | Ink shell, commands, settings, history, and structured pickers                        |
-| Search                | `src/search.ts`, `src/tmdb.ts`, `src/ui.ts`       | Search backends, metadata fetches, and dependency checks                              |
-| Scraping              | `src/scraper.ts`                                  | Browser automation and network interception                                           |
-| Playback              | `src/mpv.ts`                                      | `mpv` launch and Lua-assisted progress tracking                                       |
-| Persistence           | `src/config.ts`, `src/history.ts`, `src/cache.ts` | Config, watch progress, stream cache                                                  |
-| Providers             | `src/providers/*`                                 | Stream-source-specific resolution logic                                               |
-| Terminal UI           | `src/design.ts`, `src/menu.ts`, `src/image.ts`    | Shared styling tokens, ANSI helpers, posters                                          |
-| Observability         | `src/logger.ts`                                   | Structured debug logs                                                                 |
+| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`, legacy `apps/cli/index.ts` | Default runtime orchestration in `apps/cli/src/main.ts`; legacy loop kept for migration parity |
+| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`               | Ink shell, commands, settings, history, and structured pickers                                  |
+| Search                | `apps/cli/src/search.ts`, `apps/cli/src/tmdb.ts`, `apps/cli/src/ui.ts`    | Search backends, metadata fetches, and dependency checks                                        |
+| Scraping              | `apps/cli/src/scraper.ts`                                                | Browser automation and network interception                                                     |
+| Playback              | `apps/cli/src/mpv.ts`                                                    | `mpv` launch and Lua-assisted progress tracking                                                 |
+| Persistence           | `apps/cli/src/config.ts`, `apps/cli/src/history.ts`                      | Config, watch progress, stream cache                                                            |
+| Providers             | `apps/cli/src/services/providers/*`                                      | Stream-source-specific resolution logic                                                         |
+| Terminal UI           | `apps/cli/src/design.ts`, `apps/cli/src/menu.ts`, `apps/cli/src/image.ts` | Shared styling tokens, ANSI helpers, posters                                                    |
+| Observability         | `apps/cli/src/logger.ts`                                                 | Structured debug logs                                                                           |
 
 If your change is broad enough to blur these module boundaries, stop and check whether the work belongs in the v2 migration path instead.
 
@@ -95,7 +95,7 @@ Diagnostics note:
 
 - the new runtime also keeps a small in-memory diagnostics event buffer for live inspection in the diagnostics overlay
 - the new runtime preserves browse search state across pre-playback cancel paths, so episode-picker escape can return to the prior result list without a fresh search
-- startup mode is now part of persisted config and is applied by `src/main.ts` before the session loop starts
+- startup mode is now part of persisted config and is applied by `apps/cli/src/main.ts` before the session loop starts
 - mpv now exits normally at episode EOF; auto-next decisions happen in the playback phase so the shell can keep control of the transition
 - this is currently the main developer-facing trace surface inside the shell while broader report/export work is still pending
 
@@ -106,7 +106,7 @@ There are two provider families:
 - `PlaywrightProvider`: constructs an embed URL and lets `scraper.ts` intercept the stream
 - `ApiProvider`: resolves metadata or stream URLs over HTTP/GraphQL and can delegate the final embed step through `embedScraper`
 
-`src/providers/index.ts` is the single registry source of truth:
+`apps/cli/src/services/providers/definitions/index.ts` is the single registry source of truth:
 
 - `PROVIDERS`
 - `PLAYWRIGHT_PROVIDERS`
@@ -158,7 +158,7 @@ This parity policy only applies to the AllAnime / AllManga API family and other 
 
 ### Scraper flow
 
-`src/scraper.ts`:
+`apps/cli/src/scraper.ts`:
 
 1. launches Chromium
 2. listens for stream and subtitle requests
@@ -168,7 +168,7 @@ This parity policy only applies to the AllAnime / AllManga API family and other 
 
 ### `mpv` flow
 
-`src/mpv.ts`:
+`apps/cli/src/mpv.ts`:
 
 - launches `mpv` detached
 - writes playback position through a Lua helper
@@ -183,11 +183,11 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 | Data               | Path                                       | Owner            |
 | ------------------ | ------------------------------------------ | ---------------- |
-| Config             | `~/.config/kunai/config.json`              | `src/config.ts`  |
-| Provider overrides | `~/.config/kunai/providers.json`           | `src/config.ts`  |
-| Watch history      | `~/.local/share/kunai/history.json`        | `src/history.ts` |
-| Stream cache       | `./stream_cache.json` legacy default       | `src/cache.ts`   |
-| Debug logs         | `./logs.txt`                               | `src/logger.ts`  |
+| Config             | `~/.config/kunai/config.json`              | `apps/cli/src/config.ts`  |
+| Provider overrides | `~/.config/kunai/providers.json`           | `apps/cli/src/config.ts`  |
+| Watch history      | `~/.local/share/kunai/history.json`        | `apps/cli/src/history.ts` |
+| Stream cache       | `./stream_cache.json` legacy default       | CLI cache store           |
+| Debug logs         | `./logs.txt`                               | `apps/cli/src/logger.ts`  |
 
 Known caveat: the repo-local stream cache is a migration liability. The target path is the OS cache directory described in [.plans/storage-hardening.md](../.plans/storage-hardening.md).
 

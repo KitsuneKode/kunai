@@ -14,12 +14,12 @@ Use this file as the planning index. It should stay short. Put implementation de
 - `AGENTS.md`, `.docs/`, and `.plans/` now have separated responsibilities
 - New runtime subtitle policy is restored: `none`, interactive picker, and provider-default flows all work again
 - New runtime now preserves the previous browse/result state when episode selection is cancelled before playback starts
-- Default startup mode is now configurable and honored by `src/main.ts`
+- Default startup mode is now configurable and honored by `apps/cli/src/main.ts`
 - Autoplay is now app-driven: mpv exits cleanly at EOF, then Kunai launches the next actually available released episode when enabled
-- The repo now has a dedicated `test/` tree for integration, live smoke, provider templates, and VHS tapes
+- The CLI now has a dedicated `apps/cli/test/` tree for integration, live smoke, provider templates, and VHS tapes
 - Browser/embed scraping in the new runtime now reads and writes the shared stream cache
 - AllAnime family parity code is explicitly named `allanime-family.ts`
-- `src/main.ts` is now the default runnable and build entrypoint
+- `apps/cli/src/main.ts` is now the default runnable and build entrypoint
 - Shell-local debug POST instrumentation has been removed from the Ink UI path
 - Browse and post-playback now keep provider, help, about, history, and diagnostics inside the mounted shell instead of bouncing into separate helper screens
 - Playback navigation labels and availability now come from real episode metadata or provider catalogs instead of blind episode math
@@ -36,6 +36,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Fullscreen TUI convergence is now an explicit next milestone: viewport-contained layouts, resize blockers, and one dominant shell frame
 - Browse results now have an expanded title overview panel with poster availability, rating when provided by search metadata, and explicit placeholders for provider-native gaps
 - Subtitle status is surfaced before mpv launches so missing subtitles are visible during playback startup, not only after returning to the shell
+- Minimal Turborepo workspace scaffold is in place with the current CLI package under `apps/cli` and provider scratchpads under `apps/experiments`
 
 ### Active Follow-Ups
 
@@ -47,8 +48,8 @@ Use this file as the planning index. It should stay short. Put implementation de
 - `Esc` and back-stack correctness for the remaining shell helpers
 - `mpv` reopen reliability bug investigation
 - `cineby-anime` click handling parity
-- Final legacy runtime cleanup after `index.ts` wrapper shrink
-- Turborepo migration baseline: resolve active runtime diffs, then move the CLI into `apps/cli` without behavior changes
+- Final legacy runtime cleanup after `apps/cli/index.ts` wrapper shrink
+- Phase 1.5 true root shell foundation after the scoped Turborepo move
 - First-run dependency guardrails for `mpv` and Playwright
 - Developer-mode diagnostics surface for stream, subtitle, and provider resolution stages
 - Metadata-store and preview-service migration beyond the current in-memory caches
@@ -67,7 +68,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Kunai architecture hardening     | Planned     | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md) |
 | Kunai experience and growth moat | Planned     | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)             |
 | Kunai principal grill Q&A        | Planned     | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                             |
-| Turborepo and package boundaries | Planned     | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)             |
+| Turborepo and package boundaries | In Progress | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)             |
 | Kunai V2 ecosystem and Debrid    | Planned     | [.plans/v2-ecosystem-and-debrid.md](.plans/v2-ecosystem-and-debrid.md)                               |
 | Kunai V3 metadata and sync       | Planned     | [.plans/v3-metadata-and-sync.md](.plans/v3-metadata-and-sync.md)                                     |
 | CLI UX overhaul                  | Planned     | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                               |
@@ -83,4 +84,4 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Keep `roadmap.md` high-level and current
 - Give each major initiative its own file when it needs implementation detail
 - When a plan becomes stale, update or delete it instead of letting it drift
-- When runtime ownership changes between `index.ts` and `src/main.ts`, update both this file and the persistent-shell plan in the same task
+- When runtime ownership changes between `apps/cli/index.ts` and `apps/cli/src/main.ts`, update both this file and the persistent-shell plan in the same task

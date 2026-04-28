@@ -59,7 +59,7 @@ bun run link:global
 ### Fully interactive (recommended)
 
 ```bash
-bun run src/main.ts
+bun run dev
 kunai
 ```
 
@@ -78,11 +78,11 @@ For a fuller product and scope overview, see [.docs/experience-overview.md](.doc
 All flags are optional — mix and match to pre-fill any step:
 
 ```bash
-bun run src/main.ts -S "Breaking Bad"            # pre-fill search query
-bun run src/main.ts -i 1396 -t series            # jump by TMDB ID in the new runtime
-bun run src/main.ts -i 438631 -t movie           # direct movie bootstrap
-bun run src/main.ts -a                           # start in anime mode
-bun run src/main.ts --debug                      # debug logging
+bun run dev -- -S "Breaking Bad"            # pre-fill search query
+bun run dev -- -i 1396 -t series            # jump by TMDB ID in the new runtime
+bun run dev -- -i 438631 -t movie           # direct movie bootstrap
+bun run dev -- -a                           # start in anime mode
+bun run dev -- --debug                      # debug logging
 ```
 
 ### All flags
@@ -117,19 +117,20 @@ History is stored at `~/.local/share/kunai/history.json`, keyed by TMDB ID.
 ## 🗂️ Project Structure
 
 ```text
-src/main.ts             canonical runtime entrypoint
-index.ts                legacy runtime path kept during migration
-src/app-shell/*         Ink shell, command UI, settings/history/picker workflows
-src/search.ts           db.videasy/TMDB-backed search
-src/scraper.ts          Playwright stream + subtitle interception
-src/mpv.ts              mpv launcher with Lua position IPC
-src/history.ts          watch history persistence
-src/image.ts            Kitty/Ghostty poster preview
-src/subtitle.ts         wyzie subtitle API
-src/tmdb.ts             season/episode metadata
-src/session-flow.ts     start-episode and provider/session helpers
-stream_cache.json       legacy 1-hour stream URL cache during storage migration
-logs.txt                scrape log
+apps/cli/src/main.ts             canonical runtime entrypoint
+apps/cli/index.ts                legacy runtime path kept during migration
+apps/cli/src/app-shell/*         Ink shell, command UI, settings/history/picker workflows
+apps/cli/src/search.ts           db.videasy/TMDB-backed search
+apps/cli/src/scraper.ts          Playwright stream + subtitle interception
+apps/cli/src/mpv.ts              mpv launcher with Lua position IPC
+apps/cli/src/history.ts          watch history persistence
+apps/cli/src/image.ts            Kitty/Ghostty poster preview
+apps/cli/src/subtitle.ts         wyzie subtitle API
+apps/cli/src/tmdb.ts             season/episode metadata
+apps/cli/src/session-flow.ts     start-episode and provider/session helpers
+apps/experiments/scratchpads/*   provider probes and reverse-engineering notes
+stream_cache.json                legacy 1-hour stream URL cache during storage migration
+logs.txt                         scrape log
 ```
 
 ## 📦 Release workflow

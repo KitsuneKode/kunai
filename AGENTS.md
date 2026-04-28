@@ -49,30 +49,30 @@ Kunai is a terminal-first Bun CLI that finds playable video streams by intercept
 ## Fast Map
 
 ```text
-src/main.ts                 canonical runtime entrypoint and refactored session controller
-index.ts                    legacy runtime path kept during migration and parity verification
-src/app-shell/*             Ink shell, command bar, list pickers, settings/history workflows
-src/search.ts               search service registry and TMDB-backed search
-src/scraper.ts              Playwright interception for stream/subtitle capture
-src/mpv.ts                  mpv launch + Lua position reporting
-src/menu.ts                 ANSI color helpers used by logs and terminal output
-src/ui.ts                   dependency checks
-src/tmdb.ts                 TMDB season/episode data with proxy fallback
-src/session-flow.ts         start-episode selection and provider/session flow helpers
-src/history.ts              watch history persistence
-src/cache.ts                stream URL cache
-src/config.ts               persisted user config + provider overrides
-src/providers/*             provider implementations and registry
+apps/cli/src/main.ts                 canonical runtime entrypoint and refactored session controller
+apps/cli/index.ts                    legacy runtime path kept during migration and parity verification
+apps/cli/src/app-shell/*             Ink shell, command bar, list pickers, settings/history workflows
+apps/cli/src/search.ts               search service registry and TMDB-backed search
+apps/cli/src/scraper.ts              Playwright interception for stream/subtitle capture
+apps/cli/src/mpv.ts                  mpv launch + Lua position reporting
+apps/cli/src/menu.ts                 ANSI color helpers used by logs and terminal output
+apps/cli/src/ui.ts                   dependency checks
+apps/cli/src/tmdb.ts                 TMDB season/episode data with proxy fallback
+apps/cli/src/session-flow.ts         start-episode selection and provider/session flow helpers
+apps/cli/src/history.ts              watch history persistence
+apps/cli/src/config.ts               persisted user config + provider overrides
+apps/cli/src/services/providers/*    provider implementations and registry
+apps/experiments/scratchpads/*       provider probes and reverse-engineering scratch work
 ```
 
 ## Commands
 
 ```sh
-bun run src/main.ts
-bun run src/main.ts -S "Dune"
-bun run src/main.ts -i 438631 -t movie
-bun run src/main.ts -a
-bun run src/main.ts --debug
+bun run dev
+bun run dev -- -S "Dune"
+bun run dev -- -i 438631 -t movie
+bun run dev -- -a
+bun run dev -- --debug
 bun run link:global
 ```
 
@@ -85,15 +85,15 @@ bun run fmt
 ```
 
 Use `bun run test` if tests are relevant and available. Do not use `bun test` directly.
-Unit tests live under `test/unit/`, integration tests under `test/integration/`, and live provider checks under `test/live/`.
+Unit tests live under `apps/cli/test/unit/`, integration tests under `apps/cli/test/integration/`, and live provider checks under `apps/cli/test/live/`.
 
 ## Hard Boundaries
 
-- `index.ts` keeps the legacy outer search loop separate from the inner playback loop; `[a]` returns to search by breaking the inner loop
+- `apps/cli/index.ts` keeps the legacy outer search loop separate from the inner playback loop; `[a]` returns to search by breaking the inner loop
 - Episode numbers are 1-based in the UI; providers adapt internally
-- `src/providers/index.ts` is the single registry source of truth
+- `apps/cli/src/services/providers/definitions/index.ts` is the single registry source of truth
 - `isAnimeProvider: true` is what places a provider in anime mode
-- `src/providers/allanime-family.ts` contains ani-cli parity logic; check external parity before changing crypto or decoder constants
+- `apps/cli/src/services/providers/definitions/allanime-family.ts` contains ani-cli parity logic; check external parity before changing crypto or decoder constants
 - On this machine, the local canonical ani-cli checkout for AllAnime or AllManga parity checks is `~/Projects/osc/ani-cli`
 - If AllAnime or AllManga issues arise, compare against that local ani-cli checkout first, treat it as the reference behavior until upstream is clearly unmaintained, and document any temporary local divergence in provider docs or plans
 - `embedScraper` is injected to avoid circular imports between providers and `scraper.ts`

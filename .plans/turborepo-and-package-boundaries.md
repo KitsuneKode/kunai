@@ -1,6 +1,6 @@
 # Kunai Turborepo And Package Boundaries Plan
 
-Status: Planned
+Status: Phase 1 complete; Phase 1.5 next
 
 Last updated: 2026-04-28
 
@@ -11,6 +11,14 @@ Use this plan for the first physical migration from the current single-package C
 Move to a Turborepo without breaking the CLI.
 
 The first migration is a packaging move, not a rewrite. We should preserve current behavior, isolate legacy code, and create package boundaries that let future agents extract shared logic safely.
+
+Phase 1 result:
+
+- root `package.json` is a private workspace orchestrator
+- `turbo.json` delegates common checks to workspace packages
+- the publishable CLI package remains named `kunai` under `apps/cli`
+- provider scratchpads moved to `apps/experiments/scratchpads`
+- no provider logic or runtime behavior was intentionally changed
 
 ## Brutal Constraints
 
@@ -66,9 +74,9 @@ packages/
 
 Do this before moving folders:
 
-1. Resolve the dirty `index.ts` and `src/main.ts` state with the agent/user that owns it.
-2. Confirm `src/main.ts` is the canonical runtime.
-3. Decide whether `index.ts` remains runnable, becomes a shim, or moves to `packages/legacy`.
+1. Resolve the dirty `apps/cli/index.ts` and `apps/cli/src/main.ts` state with the agent/user that owns it.
+2. Confirm `apps/cli/src/main.ts` is the canonical runtime.
+3. Decide whether `apps/cli/index.ts` remains runnable, becomes a shim, or moves to `packages/legacy`.
 4. Run `bun run typecheck`, `bun run lint`, and relevant tests from the current root.
 5. Commit only the cleanup needed for a clean migration baseline.
 
@@ -79,6 +87,8 @@ Acceptance:
 - The legacy decision is documented in `.docs/architecture.md`.
 
 ## Phase 1: Minimal Workspace Move
+
+Status: Complete.
 
 Actions:
 

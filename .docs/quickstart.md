@@ -21,12 +21,12 @@ bun run link:global   # optional: installs local CLI command
 ## Run
 
 ```sh
-bun run src/main.ts
-bun run src/main.ts -S "Attack on Titan"
-bun run src/main.ts -i 1429 -t series
-bun run src/main.ts -i 438631 -t movie
-bun run src/main.ts -a
-bun run src/main.ts --debug
+bun run dev
+bun run dev -- -S "Attack on Titan"
+bun run dev -- -i 1429 -t series
+bun run dev -- -i 438631 -t movie
+bun run dev -- -a
+bun run dev -- --debug
 kunai -S "Dune"   # after bun run link:global
 ```
 
@@ -74,4 +74,4 @@ Try a different provider from the shell picker or change the default provider in
 
 **Anime playback broke after an upstream change**
 
-Check the invariants in [`src/providers/allanime-family.ts`](../src/providers/allanime-family.ts) against the current ani-cli behavior before changing anything.
+Check the invariants in [`apps/cli/src/services/providers/definitions/allanime-family.ts`](../apps/cli/src/services/providers/definitions/allanime-family.ts) against the current ani-cli behavior before changing anything.
