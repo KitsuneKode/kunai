@@ -1,16 +1,36 @@
-[
-  {
-    "slug": "one-piece-dk6r",
-    "error": "evaluate: Execution context was destroyed, most likely because of a navigation"
+{
+  "meta": {
+    "capturedAt": "2026-04-27T13:40:58.392Z",
+    "searchQuery": "one piece",
+    "animeSlug": "one-piece-dk6r",
+    "episode": "1",
+    "browserUrl": "https://anikai.to/browser?keyword=one%20piece",
+    "watchUrl": "https://anikai.to/watch/one-piece-dk6r#ep=1",
+    "interactiveSeconds": 240
   },
-  {
-    "slug": "dragon-ball-z-kj2q",
-    "window_$": "ZZYdbXagjEpeaR4SF5y_Ccp_Y07nNw7xYW8dkjfW2k5qNK0ZeAcmgFulISFLvUvM0X_T6lQg_jIQEWBTGcEuZH6u9gzEXMIDmTpLYrAGCw",
-    "sessionToken": "xQm9tJfLwGhz_0Eq8S_YAHYkwp-qFvLfm50W5fxnyd3ZnDopZDX7yCU-w5JGNa0W"
-  },
-  {
-    "slug": "naruto-9r5k",
-    "window_$": "ZZYdbXagjEpeaR4SF5y_Ccp_Y07nNw7xYW8dkjfW2k5qNK0ZeAcmgFulISFLvUvM0X_T6lQg_jIQEWBTGcEuZH6u9gzEXMIDmTpLYrAGCw",
-    "sessionToken": "xQm9tJfLwGhz_0Eq8S_YAHYkwp-qQPLfm50W5fxnyd2OnAspzTW2"
+  "error": "Error: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()",
+  "findings": {
+    "meta": {
+      "capturedAt": "2026-04-27T13:40:58.392Z",
+      "searchQuery": "one piece",
+      "animeSlug": "one-piece-dk6r",
+      "episode": "1",
+      "browserUrl": "https://anikai.to/browser?keyword=one%20piece",
+      "watchUrl": "https://anikai.to/watch/one-piece-dk6r#ep=1",
+      "interactiveSeconds": 240
+    },
+    "staticSearch": null,
+    "staticWatch": null,
+    "clicks": [],
+    "domSnapshots": [],
+    "network": {
+      "search": [],
+      "watch": [],
+      "interactions": []
+    },
+    "iframes": [],
+    "notes": [
+      "Fatal error: Error: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
+    ]
   }
-]
+}

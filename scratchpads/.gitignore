@@ -1,0 +1,38 @@
+# Ignore messy reverse-engineering artifacts
+# The scratchpads directory is a laboratory. We only want to commit the finalized 
+# scraper scripts (*-headless.ts, *-0-ram-scraper.ts) and markdown playbooks.
+
+# Ignore temporary debug scripts
+debug-*.ts
+test-*.ts
+analyze-*.ts
+check-*.ts
+sniff-*.ts
+find-*.ts
+get-*.ts
+trace-*.ts
+extract-*.ts
+download-*.ts
+live-*.ts
+decompile-*.ts
+parse-*.ts
+
+# Ignore dumped raw provider payloads
+*.json
+*.js
+*.mjs
+*.cjs
+*.html
+*.bin
+*.wasm
+*.wat
+*.png
+*.jpg
+*.log
+chunks/
+
+# Explicitly KEEP these specific documentation files if they accidentally match
+!anikai-findings.json
+!decrypted-sample.json
+!decrypted-strings.json
+!episodes.json
