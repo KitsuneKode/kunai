@@ -2148,7 +2148,7 @@ export function openShell<TProps>({
   const session = mountShell<ShellAction>({
     renderShell: (finish) => <Component {...props} onResolve={finish} />,
     fallbackValue: "quit",
-    clearOnResolve: true,
+    clearOnResolve: false,
   });
 
   return session.result;
@@ -2207,7 +2207,7 @@ export function openPlaybackShell({
       />
     ),
     fallbackValue: "quit",
-    clearOnResolve: true,
+    clearOnResolve: false,
   });
 
   return session.result;
@@ -4180,7 +4180,7 @@ export function openBrowseShell<T>({
       />
     ),
     fallbackValue: { type: "cancelled" },
-    clearOnResolve: true,
+    clearOnResolve: false,
   });
 
   return session.result;
@@ -4221,7 +4221,7 @@ export function openListShell<T>({
           />
         ),
         fallbackValue: { type: "cancelled" },
-        clearOnResolve: true,
+        clearOnResolve: false,
       });
 
       const result = await session.result;

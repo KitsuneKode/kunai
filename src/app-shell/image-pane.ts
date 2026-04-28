@@ -10,6 +10,7 @@ export type PosterResult =
 
 // LRU-style cache keyed by "url:WxH"
 const posterCache = new Map<string, PosterResult>();
+const posterInflight = new Map<string, Promise<PosterResult>>();
 const MAX_CACHE = 12;
 
 // Monotonic image ID counter, wrapped at 16-bit range
@@ -39,6 +40,14 @@ export function deleteKittyImage(imageId: number): void {
 
 export function deleteAllKittyImages(): void {
   process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
+}
+
+function evictPosterCacheEntry(key: string): void {
+  const cached = posterCache.get(key);
+  if (cached?.kind === "kitty") {
+    deleteKittyImage(cached.imageId);
+  }
+  posterCache.delete(key);
 }
 
 // Kitty diacritics table — 256 combining codepoints used to encode byte values.
@@ -161,28 +170,43 @@ export async function fetchPoster(
   const cached = posterCache.get(key);
   if (cached) return cached;
 
-  let result: PosterResult;
-  try {
-    if (isKittyCompatible()) {
-      result = await fetchKitty(resolved, rows, cols);
-      if (result.kind === "none" && (await isChafaAvailable())) {
-        result = await fetchChafa(resolved, rows, cols);
-      }
-    } else if (await isChafaAvailable()) {
-      result = await fetchChafa(resolved, rows, cols);
-    } else {
-      result = { kind: "none" };
-    }
-  } catch {
-    result = { kind: "none" };
+  const inflight = posterInflight.get(key);
+  if (inflight) {
+    return inflight;
   }
 
-  if (posterCache.size >= MAX_CACHE) {
-    const first = posterCache.keys().next().value;
-    if (first) posterCache.delete(first);
+  const task = (async (): Promise<PosterResult> => {
+    let result: PosterResult;
+    try {
+      if (isKittyCompatible()) {
+        result = await fetchKitty(resolved, rows, cols);
+        if (result.kind === "none" && (await isChafaAvailable())) {
+          result = await fetchChafa(resolved, rows, cols);
+        }
+      } else if (await isChafaAvailable()) {
+        result = await fetchChafa(resolved, rows, cols);
+      } else {
+        result = { kind: "none" };
+      }
+    } catch {
+      result = { kind: "none" };
+    }
+
+    if (posterCache.size >= MAX_CACHE) {
+      const first = posterCache.keys().next().value;
+      if (first) evictPosterCacheEntry(first);
+    }
+    if (result.kind !== "none") {
+      posterCache.set(key, result);
+    }
+    return result;
+  })();
+
+  posterInflight.set(key, task);
+
+  try {
+    return await task;
+  } finally {
+    posterInflight.delete(key);
   }
-  if (result.kind !== "none") {
-    posterCache.set(key, result);
-  }
-  return result;
 }

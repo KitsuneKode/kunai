@@ -194,6 +194,31 @@ describe("getAutoAdvanceEpisode", () => {
     ).resolves.toEqual({ season: 1, episode: 8 });
   });
 
+  test("auto-advances across a season boundary when playback ends near eof", async () => {
+    const availability = await resolveEpisodeAvailability({
+      title: SERIES_TITLE,
+      currentEpisode: CURRENT_EPISODE,
+      isAnime: false,
+      loaders: SERIES_LOADERS,
+    });
+
+    await expect(
+      getAutoAdvanceEpisode(
+        { watchedSeconds: 1438, duration: 1440, endReason: "quit" },
+        SERIES_TITLE,
+        CURRENT_EPISODE,
+        true,
+        availability,
+      ),
+    ).resolves.toEqual({
+      season: 2,
+      episode: 1,
+      name: "Season Two",
+      airDate: "2025",
+      overview: "Return",
+    });
+  });
+
   test("does not auto-advance when provider navigation points back to the current episode", async () => {
     await expect(
       getAutoAdvanceEpisode(EOF_RESULT, SERIES_TITLE, CURRENT_EPISODE, true, {

@@ -18,7 +18,7 @@ import { SessionController } from "@/app/SessionController";
 import type { TitleInfo } from "@/domain/types";
 
 // Simple CLI arg parser
-function parseArgs(argv: string[]): {
+export function parseArgs(argv: string[]): {
   search?: string;
   id?: string;
   type?: string;
@@ -50,15 +50,16 @@ function parseArgs(argv: string[]): {
 }
 
 let globalController: SessionController | null = null;
+let processHandlersInitialized = false;
 
 async function shutdownShell(): Promise<void> {
   const { shutdownSessionApp } = await import("./app-shell/ink-shell");
   await shutdownSessionApp();
 }
 
-async function main(): Promise<void> {
+export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // Parse CLI arguments
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseArgs(argv);
 
   // Bootstrap the DI container
   const container = await createContainer({ debug: args.debug });
@@ -143,6 +144,11 @@ async function main(): Promise<void> {
 
 // Signal handling for clean shutdown
 function setupSignalHandlers(): void {
+  if (processHandlersInitialized) {
+    return;
+  }
+  processHandlersInitialized = true;
+
   const shutdown = async (signal: string) => {
     console.log(`\nReceived ${signal}, shutting down cleanly...`);
     await shutdownShell();
@@ -159,25 +165,27 @@ function setupSignalHandlers(): void {
 
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+  process.on("uncaughtException", (e) => {
+    console.error("Uncaught exception:", e);
+    void shutdownShell();
+    if (process.stdin.isTTY) process.stdin.unref();
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (e) => {
+    console.error("Unhandled rejection:", e);
+    void shutdownShell();
+    if (process.stdin.isTTY) process.stdin.unref();
+    process.exit(1);
+  });
 }
 
-// Handle uncaught errors
-process.on("uncaughtException", (e) => {
-  console.error("Uncaught exception:", e);
-  void shutdownShell();
-  if (process.stdin.isTTY) process.stdin.unref();
-  process.exit(1);
-});
+export async function startCli(argv = process.argv.slice(2)): Promise<void> {
+  setupSignalHandlers();
+  await runCli(argv);
+}
 
-process.on("unhandledRejection", (e) => {
-  console.error("Unhandled rejection:", e);
-  void shutdownShell();
-  if (process.stdin.isTTY) process.stdin.unref();
-  process.exit(1);
-});
-
-// Setup handlers before starting
-setupSignalHandlers();
-
-// Start
-main();
+if (import.meta.main) {
+  void startCli();
+}
