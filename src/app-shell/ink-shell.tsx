@@ -1883,6 +1883,24 @@ function formatElapsed(seconds: number): string {
   return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${String(s)}s`;
 }
 
+function renderPhaseRail(active: LoadingShellState["operation"]): readonly {
+  label: string;
+  tone: "neutral" | "info" | "success";
+}[] {
+  const order: readonly LoadingShellState["operation"][] = [
+    "searching",
+    "scraping",
+    "resolving",
+    "playing",
+  ];
+  const activeIndex = order.indexOf(active);
+
+  return order.map((phase, index) => ({
+    label: phase === "playing" ? "play" : phase,
+    tone: index < activeIndex ? "success" : index === activeIndex ? "info" : "neutral",
+  }));
+}
+
 function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?: () => void }) {
   const spinner = useSpinner();
   const elapsed = useElapsed();
@@ -1916,6 +1934,10 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
     playing: "Now playing",
     loading: "Loading",
   };
+  const phaseRail =
+    state.operation === "loading"
+      ? [{ label: "loading", tone: "info" as const }]
+      : renderPhaseRail(state.operation);
 
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent="center" paddingX={2} paddingY={1}>
@@ -1944,6 +1966,12 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
           <Text color={palette.muted} dimColor>
             {"─".repeat(separatorWidth)}
           </Text>
+        </Box>
+
+        <Box flexWrap="wrap">
+          {phaseRail.map((phase, index) => (
+            <Badge key={`${phase.label}-${index}`} label={phase.label} tone={phase.tone} />
+          ))}
         </Box>
 
         <Box>
@@ -1981,8 +2009,7 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
           </Box>
         )}
 
-        {/* Progress bar */}
-        {state.progress !== undefined && (
+        {state.progress !== undefined ? (
           <Box marginTop={1}>
             <Box
               width={Math.min(40, (stdout.columns ?? 80) - 4)}
@@ -1997,6 +2024,14 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
               <Text color={palette.cyan}> {Math.round(state.progress)}%</Text>
             </Box>
           </Box>
+        ) : (
+          !isPlaying && (
+            <Box marginTop={1}>
+              <Text color={pulse ? palette.cyan : palette.gray} dimColor>
+                {pulse ? "Preparing playback context…" : "Waiting on provider response…"}
+              </Text>
+            </Box>
+          )
         )}
 
         {state.cancellable && (
