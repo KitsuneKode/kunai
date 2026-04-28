@@ -12,6 +12,7 @@ import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
   buildHelpPanelLines,
+  buildHistoryPanelLines,
   buildProviderPickerOptions,
 } from "./panel-data";
 import {
@@ -797,6 +798,7 @@ function RootOverlayShell({
 }: {
   overlay:
     | { type: "help" | "about" | "diagnostics" }
+    | { type: "history" }
     | { type: "provider_picker"; currentProvider: string; isAnime: boolean };
   state: SessionState;
   container: Container;
@@ -806,8 +808,10 @@ function RootOverlayShell({
   const [scrollIndex, setScrollIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const commands = resolveCommands(state, ["provider", "help", "about", "diagnostics"]);
-  const lines =
+  const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
+  const [loadingAsyncLines, setLoadingAsyncLines] = useState(false);
+  const commands = resolveCommands(state, ["provider", "history", "help", "about", "diagnostics"]);
+  const staticLines =
     overlay.type === "help"
       ? buildHelpPanelLines()
       : overlay.type === "about"
@@ -821,6 +825,7 @@ function RootOverlayShell({
               recentEvents: container.diagnosticsStore.getRecent(10),
             })
           : [];
+  const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;
   const providerOptions =
     overlay.type === "provider_picker"
       ? buildProviderPickerOptions({
@@ -843,6 +848,8 @@ function RootOverlayShell({
         ? "About"
         : overlay.type === "diagnostics"
           ? "Diagnostics"
+          : overlay.type === "history"
+            ? "History"
           : "Provider";
   const subtitle =
     overlay.type === "help"
@@ -851,6 +858,8 @@ function RootOverlayShell({
         ? "Kunai beta"
         : overlay.type === "diagnostics"
           ? "Current runtime snapshot and recent events"
+          : overlay.type === "history"
+            ? "Recent playback positions without leaving the shell"
           : `Current provider ${state.provider}`;
   const footerActions: readonly FooterAction[] = [
     { key: "/", label: "commands", action: "command-mode" },
@@ -865,6 +874,7 @@ function RootOverlayShell({
         action === "help" ||
         action === "about" ||
         action === "diagnostics" ||
+        action === "history" ||
         action === "provider"
       ) {
         container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
@@ -877,6 +887,8 @@ function RootOverlayShell({
                   currentProvider: state.provider,
                   isAnime: state.mode === "anime",
                 }
+              : action === "history"
+                ? { type: "history" }
               : { type: action },
         });
       }
@@ -887,7 +899,34 @@ function RootOverlayShell({
     setScrollIndex(0);
     setFilterQuery("");
     setSelectedIndex(0);
+    setAsyncLines(null);
+    setLoadingAsyncLines(false);
   }, [overlay.type]);
+
+  useEffect(() => {
+    if (overlay.type !== "history") {
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingAsyncLines(true);
+
+    void container.historyStore
+      .getAll()
+      .then((entries) => {
+        if (cancelled) return;
+        setAsyncLines(buildHistoryPanelLines(Object.entries(entries)));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingAsyncLines(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [container.historyStore, overlay.type]);
 
   useInput((input, key) => {
     if (commandMode) {
@@ -959,6 +998,7 @@ function RootOverlayShell({
           title,
           subtitle,
           lines,
+          loading: overlay.type === "history" ? loadingAsyncLines : undefined,
           scrollIndex,
         };
 
@@ -1291,7 +1331,7 @@ function PlaybackShell({
   settingsSeriesProviderOptions,
   settingsAnimeProviderOptions,
   onSaveSettings,
-  loadHistoryPanel,
+  loadHistoryPanel: _loadHistoryPanel,
   loadDiagnosticsPanel: _loadDiagnosticsPanel,
   loadHelpPanel: _loadHelpPanel,
   loadAboutPanel: _loadAboutPanel,
@@ -1406,54 +1446,6 @@ function PlaybackShell({
     state.subtitleStatus?.toLowerCase().includes("disabled")
       ? "warning"
       : "success";
-
-  const openInfoOverlay = async ({
-    type,
-    title,
-    subtitle,
-    loader,
-  }: {
-    type: "help" | "about" | "diagnostics" | "history";
-    title: string;
-    subtitle: string;
-    loader?: () => Promise<readonly ShellPanelLine[]>;
-  }) => {
-    setActiveOverlay({
-      type,
-      title,
-      subtitle,
-      lines: [],
-      loading: true,
-      scrollIndex: 0,
-    });
-
-    try {
-      const lines = loader ? await loader() : [];
-      setActiveOverlay({
-        type,
-        title,
-        subtitle,
-        lines,
-        loading: false,
-        scrollIndex: 0,
-      });
-    } catch (error) {
-      setActiveOverlay({
-        type,
-        title,
-        subtitle,
-        lines: [
-          {
-            label: "Unable to load this panel",
-            detail: String(error),
-            tone: "error",
-          },
-        ],
-        loading: false,
-        scrollIndex: 0,
-      });
-    }
-  };
 
   const openSettingsOverlay = (nextDraft: KitsuneConfig, selectedIndex = 0) => {
     const dirty = !settingsEqual(nextDraft, appliedSettings);
@@ -1598,15 +1590,6 @@ function PlaybackShell({
         filterQuery: "",
         selectedIndex: 0,
         busy: false,
-      });
-      return true;
-    }
-    if (action === "history" && loadHistoryPanel) {
-      void openInfoOverlay({
-        type: "history",
-        title: "History",
-        subtitle: "Recent playback positions without leaving playback",
-        loader: loadHistoryPanel,
       });
       return true;
     }
@@ -3287,7 +3270,7 @@ function BrowseShell<T>({
   placeholder,
   commands,
   providerOptions,
-  loadHistoryPanel,
+  loadHistoryPanel: _loadHistoryPanel,
   loadDiagnosticsPanel: _loadDiagnosticsPanel,
   loadHelpPanel: _loadHelpPanel,
   loadAboutPanel: _loadAboutPanel,
@@ -3476,55 +3459,6 @@ function BrowseShell<T>({
     setActiveOverlay(null);
   };
 
-  const openInfoOverlay = async ({
-    type,
-    title,
-    subtitle,
-    loader,
-  }: {
-    type: "help" | "about" | "diagnostics" | "history";
-    title: string;
-    subtitle: string;
-    loader?: () => Promise<readonly ShellPanelLine[]>;
-  }) => {
-    setCommandMode(false);
-    setActiveOverlay({
-      type,
-      title,
-      subtitle,
-      lines: [],
-      loading: true,
-      scrollIndex: 0,
-    });
-
-    try {
-      const lines = loader ? await loader() : [];
-      setActiveOverlay({
-        type,
-        title,
-        subtitle,
-        lines,
-        loading: false,
-        scrollIndex: 0,
-      });
-    } catch (error) {
-      setActiveOverlay({
-        type,
-        title,
-        subtitle,
-        lines: [
-          {
-            label: "Unable to load this panel",
-            detail: String(error),
-            tone: "error",
-          },
-        ],
-        loading: false,
-        scrollIndex: 0,
-      });
-    }
-  };
-
   const openDetailsOverlay = () => {
     const panel = buildBrowseDetailsPanel(selectedOption);
     setCommandMode(false);
@@ -3677,15 +3611,6 @@ function BrowseShell<T>({
     }
     if (action === "provider" && providerOptions && onChangeProvider) {
       openProviderOverlay();
-      return true;
-    }
-    if (action === "history" && loadHistoryPanel) {
-      void openInfoOverlay({
-        type: "history",
-        title: "History",
-        subtitle: "Recent playback positions without leaving browse",
-        loader: loadHistoryPanel,
-      });
       return true;
     }
     if (action === "details") {
