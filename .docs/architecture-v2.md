@@ -136,12 +136,13 @@ The daemon must be explicit and scoped:
 
 1. Finish current CLI stability work.
 2. Move repo to the minimal Turborepo shape without changing behavior.
-3. Extract shared contracts before extracting provider implementations.
-4. Move storage path and cache policy into shared packages.
-5. Extract one 0-RAM provider into `@kunai/scraper-core`.
-6. Add `ResolveTrace` and provider health as first-class outputs.
-7. Build daemon pairing only after cache and provider contracts are stable.
-8. Start web as static-first and capability-aware, not compute-first.
+3. Establish the true root shell in `apps/cli` so browse, picker, loading, playback, overlays, and post-playback are content states inside one mounted app.
+4. Extract shared contracts before extracting provider implementations.
+5. Move storage path and cache policy into shared packages.
+6. Extract one 0-RAM provider into `@kunai/scraper-core`.
+7. Add `ResolveTrace` and provider health as first-class outputs.
+8. Build daemon pairing only after cache and provider contracts are stable.
+9. Start web as static-first and capability-aware, not compute-first.
 
 ## Non-Goals For This Phase
 

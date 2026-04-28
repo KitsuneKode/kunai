@@ -19,6 +19,7 @@ The first migration is a packaging move, not a rewrite. We should preserve curre
 - Do not move scratchpads directly into `scraper-core` as if they are production-ready.
 - Do not introduce web/desktop apps until the CLI still builds and runs from `apps/cli`.
 - Do not change runtime behavior and folder topology in the same commit unless unavoidable.
+- Do not use package extraction as an excuse to defer the true shell. After the physical move, shell state and command ownership become the next architectural priority.
 - Do not use a heavy ORM for local SQLite unless repository classes become unmaintainable.
 
 ## Target Workspace
@@ -104,7 +105,44 @@ Acceptance:
 - `bun run typecheck` covers `apps/cli`.
 - Package/build metadata still points at the CLI entrypoint.
 
+## Phase 1.5: True Shell Foundation
+
+Do this immediately after the CLI successfully runs from `apps/cli`.
+
+Goal:
+
+- make the CLI architecture feel like one mounted terminal app before we extract long-lived packages around it
+- avoid freezing transitional helper-shell patterns into shared package APIs
+- keep workflow orchestration app-owned while extracting reusable UI primitives later
+
+Required shape:
+
+- one `AppRoot` owns the fullscreen frame, header, status context, content region, footer, command bar, and overlay host
+- browse, picker, loading, playback, diagnostics, history, settings, and post-playback are content states inside that root
+- one app-state model owns navigation and back-stack semantics
+- one command registry owns labels, enablement, disabled reasons, and handlers
+- `Esc` closes, clears, or goes back; it never confirms or starts playback
+- resize blockers replace scrollback-dependent overflow
+- source confidence and resolve trace have a visible home in the shell model, even if the first implementation is minimal
+
+Non-goals:
+
+- do not extract `packages/ui-cli` before the root shell stabilizes
+- do not redesign every visual component in the same pass
+- do not move provider internals while shell ownership is changing
+- do not make the shell depend on web/desktop concepts
+
+Acceptance:
+
+- `bun run dev` from the repo root still launches the CLI.
+- root shell remains mounted across browse, picker, loading, playback, and post-playback.
+- key global actions are routed through one command registry.
+- at least one overlay flow proves the shared overlay host.
+- tests cover command availability, one back-stack path, and one resize/collapse policy.
+
 ## Phase 2: Contracts Before Implementations
+
+Do this only after Phase 1.5 has defined the shell boundaries well enough that shared packages do not accidentally depend on transitional UI flows.
 
 Create `packages/types` and `packages/schemas` before extracting providers.
 
@@ -247,8 +285,9 @@ Recommended commits:
 2. `chore: add turbo workspace scaffold`
 3. `refactor: move cli into apps cli`
 4. `chore: move experiments into apps experiments`
-5. `feat: add shared contracts package`
-6. `feat: move cache paths into shared package`
-7. `feat: extract first provider into scraper core`
+5. `refactor: establish true root shell`
+6. `feat: add shared contracts package`
+7. `feat: move cache paths into shared package`
+8. `feat: extract first provider into scraper core`
 
 Keep each commit reviewable. This migration will be hard enough without mystery meat diffs.

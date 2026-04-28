@@ -39,7 +39,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 ### Active Follow-Ups
 
-- Mounted root `AppShell` migration so home, browse, and playback stop remounting as separate shells
+- Mounted true root shell migration inside `apps/cli` after the Turborepo move so home, browse, pickers, loading, playback, overlays, and post-playback are content states instead of separate shells
 - Fullscreen shell convergence so the UI stops reading like stacked full-width cards and stays inside the viewport
 - Fullscreen root-shell redesign spec is now tracked in [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)
 - Overlay-driven settings, provider, history, diagnostics, season, episode, and subtitle workflows
