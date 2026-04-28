@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
+import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
@@ -8,14 +9,21 @@ import type { SessionState } from "@/domain/session/SessionState";
 
 import { buildBrowseDetailsPanel } from "./details-panel";
 import {
+  buildAboutPanelLines,
+  buildDiagnosticsPanelLines,
+  buildHelpPanelLines,
+} from "./panel-data";
+import {
   fetchPoster,
   deleteAllKittyImages,
   deleteKittyImage,
   type PosterResult,
 } from "./image-pane";
+import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
 import {
   COMMANDS,
   parseCommand,
+  resolveCommands,
   suggestCommands,
   type AppCommandId,
   type ResolvedAppCommand,
@@ -781,7 +789,122 @@ export function useSessionState(stateManager: SessionStateManager) {
  * Persistent root of the state-driven UI.
  * Holds the identity logo and renders the appropriate shell based on state.
  */
-function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
+function RootOverlayShell({
+  overlay,
+  state,
+  container,
+}: {
+  overlay: { type: "help" | "about" | "diagnostics" };
+  state: SessionState;
+  container: Container;
+}) {
+  const { stdout } = useStdout();
+  const maxLines = Math.max(6, Math.min(12, (stdout.rows ?? 24) - 18));
+  const [scrollIndex, setScrollIndex] = useState(0);
+  const commands = resolveCommands(state, ["help", "about", "diagnostics"]);
+  const lines =
+    overlay.type === "help"
+      ? buildHelpPanelLines()
+      : overlay.type === "about"
+        ? buildAboutPanelLines({
+            config: container.config.getRaw(),
+            state,
+          })
+        : buildDiagnosticsPanelLines({
+            state,
+            recentEvents: container.diagnosticsStore.getRecent(10),
+          });
+  const title =
+    overlay.type === "help" ? "Help" : overlay.type === "about" ? "About" : "Diagnostics";
+  const subtitle =
+    overlay.type === "help"
+      ? "Global commands, editing, filtering, and shell behavior"
+      : overlay.type === "about"
+        ? "Kunai beta"
+        : "Current runtime snapshot and recent events";
+  const footerActions: readonly FooterAction[] = [
+    { key: "/", label: "commands", action: "command-mode" },
+    { key: "esc", label: "close", action: "quit" },
+  ];
+  const { commandMode, commandInput, highlightedIndex } = useShellInput({
+    footerActions,
+    commands,
+    escapeAction: null,
+    onResolve: (action) => {
+      if (action === "help" || action === "about" || action === "diagnostics") {
+        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: action } });
+      }
+    },
+  });
+
+  useEffect(() => {
+    setScrollIndex(0);
+  }, [overlay.type]);
+
+  useInput((_input, key) => {
+    if (commandMode) {
+      return;
+    }
+    if (key.escape || key.return) {
+      container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      return;
+    }
+    if (key.upArrow) {
+      setScrollIndex((current) => Math.max(0, current - 1));
+      return;
+    }
+    if (key.downArrow) {
+      setScrollIndex((current) => Math.min(Math.max(lines.length - maxLines, 0), current + 1));
+    }
+  });
+
+  const overlayPanel: BrowseOverlay = {
+    type: overlay.type,
+    title,
+    subtitle,
+    lines,
+    scrollIndex,
+  };
+
+  return (
+    <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
+      <Box flexDirection="column" flexGrow={1}>
+        <Box>
+          <InlineBadge label={`panel ${overlay.type}`} tone="success" />
+          <InlineBadge
+            label={`${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`}
+            tone="neutral"
+          />
+        </Box>
+        <OverlayPanel
+          overlay={overlayPanel}
+          width={Math.max(24, (stdout.columns ?? 80) - 8)}
+          maxLinesOverride={maxLines}
+        />
+      </Box>
+
+      <Box flexDirection="column">
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
+          />
+        ) : null}
+        <ShellFooter
+          taskLabel={`${title}  ·  Esc closes and returns to the previous shell state`}
+          actions={footerActions}
+          mode="detailed"
+          commandMode={commandMode}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+function AppRoot({ container }: { container: Container }) {
+  const { stateManager } = container;
   const state = useSessionState(stateManager);
   const screen = useRootShellScreen();
   const { stdout } = useStdout();
@@ -814,6 +937,8 @@ function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
     state.playbackStatus === "loading" || state.playbackStatus === "playing"
       ? "playback"
       : state.view;
+  const rootOverlay = getRootOwnedOverlay(state);
+  const rootSurface = resolveRootShellSurface(state, Boolean(screen));
 
   return (
     <Box flexDirection="column" width={shellWidth} height={shellHeight} paddingX={1} paddingY={0}>
@@ -837,14 +962,14 @@ function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
           {playbackSubtitle ? <InlineBadge label={playbackSubtitle} tone="neutral" /> : null}
         </Box>
         <Box marginTop={1} flexDirection="column" flexGrow={1}>
-          {state.playbackStatus === "error" ? (
+          {rootSurface === "error" ? (
             <ErrorShell
               message={state.playbackError || "An unknown error occurred"}
               onResolve={() =>
                 stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" })
               }
             />
-          ) : state.playbackStatus === "loading" || state.playbackStatus === "playing" ? (
+          ) : rootSurface === "playback" ? (
             <LoadingShell
               state={{
                 title: state.currentTitle?.name || "Resolving...",
@@ -861,6 +986,8 @@ function AppRoot({ stateManager }: { stateManager: SessionStateManager }) {
               }}
               onCancel={() => {}}
             />
+          ) : rootSurface === "root-overlay" && rootOverlay ? (
+            <RootOverlayShell overlay={rootOverlay} state={state} container={container} />
           ) : screen ? (
             <Box key={screen.id}>{screen.element}</Box>
           ) : (
@@ -959,7 +1086,7 @@ function ErrorShell({ message, onResolve }: { message: string; onResolve: () => 
 /**
  * Launches the persistent state-driven app shell.
  */
-export async function launchSessionApp(stateManager: SessionStateManager) {
+export async function launchSessionApp(container: Container) {
   if (rootShellInk) {
     return rootShellExitPromise!;
   }
@@ -967,7 +1094,7 @@ export async function launchSessionApp(stateManager: SessionStateManager) {
   stdinManager.enterShell();
   clearShellScreen();
 
-  rootShellInk = render(<AppRoot stateManager={stateManager} />, {
+  rootShellInk = render(<AppRoot container={container} />, {
     exitOnCtrlC: false,
     alternateScreen: true,
   });
@@ -1059,9 +1186,9 @@ function PlaybackShell({
   settingsAnimeProviderOptions,
   onSaveSettings,
   loadHistoryPanel,
-  loadDiagnosticsPanel,
-  loadHelpPanel,
-  loadAboutPanel,
+  loadDiagnosticsPanel: _loadDiagnosticsPanel,
+  loadHelpPanel: _loadHelpPanel,
+  loadAboutPanel: _loadAboutPanel,
   onChangeProvider,
   onResolve,
 }: {
@@ -1374,33 +1501,6 @@ function PlaybackShell({
         title: "History",
         subtitle: "Recent playback positions without leaving playback",
         loader: loadHistoryPanel,
-      });
-      return true;
-    }
-    if (action === "diagnostics" && loadDiagnosticsPanel) {
-      void openInfoOverlay({
-        type: "diagnostics",
-        title: "Diagnostics",
-        subtitle: "Current runtime snapshot and recent events",
-        loader: loadDiagnosticsPanel,
-      });
-      return true;
-    }
-    if (action === "help" && loadHelpPanel) {
-      void openInfoOverlay({
-        type: "help",
-        title: "Help",
-        subtitle: "Playback commands and shell behavior",
-        loader: loadHelpPanel,
-      });
-      return true;
-    }
-    if (action === "about" && loadAboutPanel) {
-      void openInfoOverlay({
-        type: "about",
-        title: "About",
-        subtitle: "Kunai beta",
-        loader: loadAboutPanel,
       });
       return true;
     }
@@ -3082,9 +3182,9 @@ function BrowseShell<T>({
   commands,
   providerOptions,
   loadHistoryPanel,
-  loadDiagnosticsPanel,
-  loadHelpPanel,
-  loadAboutPanel,
+  loadDiagnosticsPanel: _loadDiagnosticsPanel,
+  loadHelpPanel: _loadHelpPanel,
+  loadAboutPanel: _loadAboutPanel,
   onChangeProvider,
   onSearch,
   footerMode = "detailed",
@@ -3484,33 +3584,6 @@ function BrowseShell<T>({
     }
     if (action === "details") {
       openDetailsOverlay();
-      return true;
-    }
-    if (action === "diagnostics" && loadDiagnosticsPanel) {
-      void openInfoOverlay({
-        type: "diagnostics",
-        title: "Diagnostics",
-        subtitle: "Current runtime snapshot and recent events",
-        loader: loadDiagnosticsPanel,
-      });
-      return true;
-    }
-    if (action === "help" && loadHelpPanel) {
-      void openInfoOverlay({
-        type: "help",
-        title: "Help",
-        subtitle: "Commands, editing, filtering, and shell behavior",
-        loader: loadHelpPanel,
-      });
-      return true;
-    }
-    if (action === "about" && loadAboutPanel) {
-      void openInfoOverlay({
-        type: "about",
-        title: "About",
-        subtitle: "Kunai beta",
-        loader: loadAboutPanel,
-      });
       return true;
     }
     return false;

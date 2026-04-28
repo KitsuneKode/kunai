@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { resolveEscTransition, resolveRootShellSurface } from "@/app-shell/root-shell-state";
 import { resolveCommands } from "@/domain/session/command-registry";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
 
@@ -37,6 +38,21 @@ describe("SessionState overlays", () => {
     expect(state.defaultProviders.series).toBe("vidking");
     expect(state.defaultProviders.anime).toBe("anivibe");
     expect(state.provider).toBe("vidking");
+  });
+
+  test("Esc closes command entry before it closes the overlay stack", () => {
+    let state = createInitialState("vidking", "allanime");
+
+    state = reduceState(state, {
+      type: "OPEN_OVERLAY",
+      overlay: { type: "help" },
+    });
+    state = reduceState(state, { type: "OPEN_COMMAND_BAR" });
+
+    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_COMMAND_BAR" });
+
+    state = reduceState(state, { type: "CLOSE_COMMAND_BAR" });
+    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 });
 
@@ -153,5 +169,18 @@ describe("command availability", () => {
     expect(byId.get("quit")?.enabled).toBe(false);
     expect(byId.get("quit")?.reason).toContain("overlay");
     expect(byId.get("image-pane")?.enabled).toBe(true);
+  });
+});
+
+describe("root shell surface selection", () => {
+  test("prefers a root-owned overlay over a stale mounted helper shell", () => {
+    let state = createInitialState("vidking", "allanime");
+
+    state = reduceState(state, {
+      type: "OPEN_OVERLAY",
+      overlay: { type: "diagnostics" },
+    });
+
+    expect(resolveRootShellSurface(state, true)).toBe("root-overlay");
   });
 });

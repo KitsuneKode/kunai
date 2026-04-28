@@ -6,6 +6,7 @@
 // =============================================================================
 
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
+import { routePlaybackShellAction } from "@/app-shell/command-router";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -20,7 +21,6 @@ import {
 } from "@/app-shell/workflows";
 import { resolveCommands } from "@/app-shell/commands";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
-import { switchSessionMode } from "@/app/mode-switch";
 import {
   getAutoAdvanceEpisode,
   resolveEpisodeAvailability,
@@ -390,13 +390,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             break postPlayback;
           }
 
-          if (postAction === "quit") {
+          const routedAction = await routePlaybackShellAction({
+            action: postAction,
+            container,
+          });
+
+          if (routedAction === "quit") {
             return { status: "quit" };
-          } else if (postAction === "toggle-mode") {
-            switchSessionMode(stateManager);
+          } else if (routedAction === "mode-switch") {
             return { status: "success", value: "back_to_search" };
-          } else if (postAction === "replay") {
+          } else if (routedAction === "replay") {
             break postPlayback;
+          } else if (routedAction === "back-to-search") {
+            return { status: "success", value: "back_to_search" };
+          } else if (routedAction === "back-to-results") {
+            return { status: "success", value: "back_to_results" };
+          } else if (routedAction === "handled") {
+            continue postPlayback;
           } else if (postAction === "clear-cache" || postAction === "clear-history") {
             await handleShellAction({ action: postAction, container });
             continue postPlayback;
@@ -451,10 +461,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               break postPlayback;
             }
             continue postPlayback;
-          } else if (postAction === "search") {
-            return { status: "success", value: "back_to_search" };
-          } else if (postAction === "back-to-results") {
-            return { status: "success", value: "back_to_results" };
           } else {
             return { status: "success", value: "back_to_search" };
           }

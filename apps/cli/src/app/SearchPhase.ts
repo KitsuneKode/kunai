@@ -9,11 +9,10 @@ import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import type { TitleInfo } from "@/domain/types";
 import { toBrowseResultOption } from "@/app/browse-option-mappers";
 import { searchTitles } from "@/app/search-routing";
-import { switchSessionMode } from "@/app/mode-switch";
+import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
-import { handleShellAction } from "@/app-shell/workflows";
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -154,33 +153,15 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         if (outcome.type === "action") {
-          if (outcome.action === "quit") {
-            return { status: "quit" };
-          }
-
-          if (outcome.action === "toggle-mode") {
-            switchSessionMode(stateManager);
-            stateManager.dispatch({ type: "RESET_SEARCH" });
-            stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
-            continue;
-          }
-
-          if (outcome.action === "settings") {
-            await handleShellAction({
-              action: "settings",
-              container,
-            });
-            continue;
-          }
-
-          const actionResult = await handleShellAction({
+          const routedAction = await routeSearchShellAction({
             action: outcome.action,
             container,
           });
-          if (actionResult === "quit") {
-            return { status: "cancelled" };
+
+          if (routedAction === "quit") {
+            return { status: "quit" };
           }
-          if (actionResult === "handled") {
+          if (routedAction === "mode-switch" || routedAction === "handled") {
             continue;
           }
 

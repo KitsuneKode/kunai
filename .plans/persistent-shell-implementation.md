@@ -201,9 +201,16 @@ Status:
 - browse and playback now share one runtime shell binding helper for provider options, settings persistence, and info-panel loaders
 - post-playback no longer falls back to helper shells for provider, settings, history, diagnostics, help, or about because the playback shell handles those locally
 - browse-side and post-playback secondary panels are now mounted in-shell
+- help, about, and diagnostics now have a root-owned overlay path in the canonical runtime, which proves the shared overlay host without forcing provider, settings, or picker rewrites during Phase 1.5
 - playback still remains a separate shell session from browse, so the true root `AppShell` milestone is still open
 - playback navigation now resolves `next`, `previous`, `next season`, and autoplay from actual provider or metadata availability instead of blindly incrementing episode numbers
 - playback-side episode selection now stays inside that playback shell, reducing one more helper-shell handoff before the true root shell lands
+
+Transitional gaps still expected after Phase 1.5:
+
+- browse and post-playback still mount through helper-shell adapters, even though the root frame owns more status and overlay behavior
+- settings, provider, history, season, episode, and subtitle pickers still rely on mounted helper flows instead of a single root back-stack
+- playback completion and browse selection still re-enter content through phase loops rather than one always-mounted content state tree
 
 ### Pass B1: Fullscreen Layout Convergence
 

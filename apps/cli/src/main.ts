@@ -120,7 +120,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   // Launch the persistent state-driven UI
   const { launchSessionApp } = await import("./app-shell/ink-shell");
-  launchSessionApp(stateManager);
+  launchSessionApp(container);
 
   // Run the main session loop
   try {
