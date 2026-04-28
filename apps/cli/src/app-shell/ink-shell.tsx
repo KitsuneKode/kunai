@@ -23,6 +23,11 @@ import {
   type PosterResult,
 } from "./image-pane";
 import { hasPendingRootPicker, resolveRootPicker } from "./root-picker-bridge";
+import {
+  clearRootContentSession,
+  mountRootContent,
+  useRootContentSession,
+} from "./root-content-state";
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
 import {
   COMMANDS,
@@ -705,6 +710,7 @@ function ensureRootShell() {
     rootShellInk = null;
     rootShellExitPromise = null;
     rootShellScreen = null;
+    clearRootContentSession();
     stdinManager.exitShell();
   });
 
@@ -802,9 +808,20 @@ function RootOverlayShell({
     | { type: "help" | "about" | "diagnostics" }
     | { type: "history" }
     | { type: "settings" }
-    | { type: "season_picker"; currentSeason: number; options: readonly import("@/domain/session/SessionState").OverlayPickerOption[] }
-    | { type: "episode_picker"; season: number; options: readonly import("@/domain/session/SessionState").OverlayPickerOption[] }
-    | { type: "subtitle_picker"; options: readonly import("@/domain/session/SessionState").OverlayPickerOption[] }
+    | {
+        type: "season_picker";
+        currentSeason: number;
+        options: readonly import("@/domain/session/SessionState").OverlayPickerOption[];
+      }
+    | {
+        type: "episode_picker";
+        season: number;
+        options: readonly import("@/domain/session/SessionState").OverlayPickerOption[];
+      }
+    | {
+        type: "subtitle_picker";
+        options: readonly import("@/domain/session/SessionState").OverlayPickerOption[];
+      }
     | { type: "provider_picker"; currentProvider: string; isAnime: boolean };
   state: SessionState;
   container: Container;
@@ -924,33 +941,33 @@ function RootOverlayShell({
           ? "Diagnostics"
           : overlay.type === "history"
             ? "History"
-          : overlay.type === "settings"
-            ? "Settings"
-          : overlay.type === "season_picker"
-            ? "Choose season"
-          : overlay.type === "episode_picker"
-            ? "Choose episode"
-          : overlay.type === "subtitle_picker"
-            ? "Choose subtitles"
-          : "Provider";
+            : overlay.type === "settings"
+              ? "Settings"
+              : overlay.type === "season_picker"
+                ? "Choose season"
+                : overlay.type === "episode_picker"
+                  ? "Choose episode"
+                  : overlay.type === "subtitle_picker"
+                    ? "Choose subtitles"
+                    : "Provider";
   const subtitle =
     overlay.type === "help"
       ? "Global commands, editing, filtering, and shell behavior"
       : overlay.type === "about"
         ? "Kunai beta"
         : overlay.type === "diagnostics"
-        ? "Current runtime snapshot and recent events"
-        : overlay.type === "history"
-          ? "Recent playback positions without leaving the shell"
-          : overlay.type === "settings"
-            ? settingsError ?? buildSettingsSummary(settingsDraft ?? container.config.getRaw())
-          : overlay.type === "season_picker"
-            ? `Current season ${overlay.currentSeason}`
-          : overlay.type === "episode_picker"
-            ? `Season ${overlay.season}  ·  Choose an episode`
-          : overlay.type === "subtitle_picker"
-            ? `${overlay.options.length} tracks available`
-          : `Current provider ${state.provider}`;
+          ? "Current runtime snapshot and recent events"
+          : overlay.type === "history"
+            ? "Recent playback positions without leaving the shell"
+            : overlay.type === "settings"
+              ? (settingsError ?? buildSettingsSummary(settingsDraft ?? container.config.getRaw()))
+              : overlay.type === "season_picker"
+                ? `Current season ${overlay.currentSeason}`
+                : overlay.type === "episode_picker"
+                  ? `Season ${overlay.season}  ·  Choose an episode`
+                  : overlay.type === "subtitle_picker"
+                    ? `${overlay.options.length} tracks available`
+                    : `Current provider ${state.provider}`;
   const footerActions: readonly FooterAction[] = [
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
@@ -988,9 +1005,9 @@ function RootOverlayShell({
                 }
               : action === "history"
                 ? { type: "history" }
-              : action === "settings"
-                ? { type: "settings" }
-              : { type: action },
+                : action === "settings"
+                  ? { type: "settings" }
+                  : { type: action },
         });
       }
     },
@@ -1172,7 +1189,11 @@ function RootOverlayShell({
       overlay.type === "subtitle_picker"
     ) {
       if (overlay.type === "settings" && input.toLowerCase() === "s") {
-        if (!settingsDraft || settingsBusy || settingsEqual(settingsDraft, container.config.getRaw())) {
+        if (
+          !settingsDraft ||
+          settingsBusy ||
+          settingsEqual(settingsDraft, container.config.getRaw())
+        ) {
           return;
         }
         setSettingsBusy(true);
@@ -1228,40 +1249,40 @@ function RootOverlayShell({
             selectedIndex: Math.min(selectedIndex, Math.max(filteredSettingsOptions.length - 1, 0)),
             busy: settingsBusy,
           }
-      : overlay.type === "season_picker" ||
-          overlay.type === "episode_picker" ||
-          overlay.type === "subtitle_picker"
-        ? {
-            type: "episode-picker",
-            title,
-            subtitle,
-            options: filteredGenericPickerOptions,
-            filterQuery,
-            selectedIndex: Math.min(
-              selectedIndex,
-              Math.max(filteredGenericPickerOptions.length - 1, 0),
-            ),
-            busy: false,
-          }
-      : overlay.type === "help" ||
-          overlay.type === "about" ||
-          overlay.type === "diagnostics" ||
-          overlay.type === "history"
-        ? {
-          type: overlay.type,
-          title,
-          subtitle,
-          lines,
-          loading: overlay.type === "history" ? loadingAsyncLines : undefined,
-          scrollIndex,
-        }
-        : {
-            type: "help",
-            title: "Help",
-            subtitle: "Global commands, editing, filtering, and shell behavior",
-            lines: buildHelpPanelLines(),
-            scrollIndex: 0,
-          };
+        : overlay.type === "season_picker" ||
+            overlay.type === "episode_picker" ||
+            overlay.type === "subtitle_picker"
+          ? {
+              type: "episode-picker",
+              title,
+              subtitle,
+              options: filteredGenericPickerOptions,
+              filterQuery,
+              selectedIndex: Math.min(
+                selectedIndex,
+                Math.max(filteredGenericPickerOptions.length - 1, 0),
+              ),
+              busy: false,
+            }
+          : overlay.type === "help" ||
+              overlay.type === "about" ||
+              overlay.type === "diagnostics" ||
+              overlay.type === "history"
+            ? {
+                type: overlay.type,
+                title,
+                subtitle,
+                lines,
+                loading: overlay.type === "history" ? loadingAsyncLines : undefined,
+                scrollIndex,
+              }
+            : {
+                type: "help",
+                title: "Help",
+                subtitle: "Global commands, editing, filtering, and shell behavior",
+                lines: buildHelpPanelLines(),
+                scrollIndex: 0,
+              };
 
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
@@ -1281,8 +1302,8 @@ function RootOverlayShell({
               tone="neutral"
             />
           ) : overlay.type === "season_picker" ||
-              overlay.type === "episode_picker" ||
-              overlay.type === "subtitle_picker" ? (
+            overlay.type === "episode_picker" ||
+            overlay.type === "subtitle_picker" ? (
             <InlineBadge label={`${filteredGenericPickerOptions.length} options`} tone="neutral" />
           ) : (
             <InlineBadge
@@ -1314,11 +1335,11 @@ function RootOverlayShell({
                 ? settingsChoice
                   ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
                   : "Settings  ·  Type to filter, Enter to edit, S saves, Esc closes"
-              : overlay.type === "season_picker" ||
-                  overlay.type === "episode_picker" ||
-                  overlay.type === "subtitle_picker"
-                ? `${title}  ·  Type to filter, Enter to select, Esc closes`
-              : `${title}  ·  Esc closes and returns to the previous shell state`
+                : overlay.type === "season_picker" ||
+                    overlay.type === "episode_picker" ||
+                    overlay.type === "subtitle_picker"
+                  ? `${title}  ·  Type to filter, Enter to select, Esc closes`
+                  : `${title}  ·  Esc closes and returns to the previous shell state`
           }
           actions={footerActions}
           mode="detailed"
@@ -1333,6 +1354,7 @@ function AppRoot({ container }: { container: Container }) {
   const { stateManager } = container;
   const state = useSessionState(stateManager);
   const screen = useRootShellScreen();
+  const rootContent = useRootContentSession();
   const { stdout } = useStdout();
   const rootStatus =
     state.playbackStatus === "playing"
@@ -1364,7 +1386,10 @@ function AppRoot({ container }: { container: Container }) {
       ? "playback"
       : state.view;
   const rootOverlay = getRootOwnedOverlay(state);
-  const rootSurface = resolveRootShellSurface(state, Boolean(screen));
+  const rootSurface = resolveRootShellSurface(state, {
+    hasRootContent: Boolean(rootContent),
+    hasMountedScreen: Boolean(screen),
+  });
 
   return (
     <Box flexDirection="column" width={shellWidth} height={shellHeight} paddingX={1} paddingY={0}>
@@ -1387,38 +1412,50 @@ function AppRoot({ container }: { container: Container }) {
           <InlineBadge label={`view ${currentViewLabel}`} tone="success" />
           {playbackSubtitle ? <InlineBadge label={playbackSubtitle} tone="neutral" /> : null}
         </Box>
-        <Box marginTop={1} flexDirection="column" flexGrow={1}>
-          {rootSurface === "error" ? (
-            <ErrorShell
-              message={state.playbackError || "An unknown error occurred"}
-              onResolve={() =>
-                stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" })
-              }
-            />
-          ) : rootSurface === "playback" ? (
-            <LoadingShell
-              state={{
-                title: state.currentTitle?.name || "Resolving...",
-                subtitle: playbackSubtitle,
-                operation: state.playbackStatus === "playing" ? "playing" : "resolving",
-                details: `Provider: ${state.provider}`,
-                subtitleStatus:
-                  state.playbackStatus === "playing" ? playbackSubtitleStatus : undefined,
-                trace:
-                  state.playbackStatus === "playing"
-                    ? "mpv is open; Kunai is waiting for playback to finish"
-                    : undefined,
-                showMemory: state.playbackStatus === "playing",
-              }}
-              onCancel={() => {}}
-            />
-          ) : rootSurface === "root-overlay" && rootOverlay ? (
-            <RootOverlayShell overlay={rootOverlay} state={state} container={container} />
-          ) : screen ? (
-            <Box key={screen.id}>{screen.element}</Box>
-          ) : (
-            <RootIdleShell state={state} />
-          )}
+        <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="space-between">
+          <Box flexDirection="column" flexGrow={1}>
+            {rootSurface === "error" ? (
+              <ErrorShell
+                message={state.playbackError || "An unknown error occurred"}
+                onResolve={() =>
+                  stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" })
+                }
+              />
+            ) : rootSurface === "playback" ? (
+              <LoadingShell
+                state={{
+                  title: state.currentTitle?.name || "Resolving...",
+                  subtitle: playbackSubtitle,
+                  operation: state.playbackStatus === "playing" ? "playing" : "resolving",
+                  details: `Provider: ${state.provider}`,
+                  subtitleStatus:
+                    state.playbackStatus === "playing" ? playbackSubtitleStatus : undefined,
+                  trace:
+                    state.playbackStatus === "playing"
+                      ? "mpv is open; Kunai is waiting for playback to finish"
+                      : undefined,
+                  showMemory: state.playbackStatus === "playing",
+                }}
+                onCancel={() => {}}
+              />
+            ) : rootSurface === "root-content" && rootContent ? (
+              <Box key={rootContent.id} flexGrow={1}>
+                {rootContent.element}
+              </Box>
+            ) : rootSurface === "root-overlay" && rootOverlay ? (
+              <RootOverlayShell overlay={rootOverlay} state={state} container={container} />
+            ) : screen ? (
+              <Box key={screen.id}>{screen.element}</Box>
+            ) : (
+              <RootIdleShell state={state} />
+            )}
+          </Box>
+
+          {rootSurface === "root-content" && rootOverlay ? (
+            <Box marginTop={1}>
+              <RootOverlayShell overlay={rootOverlay} state={state} container={container} />
+            </Box>
+          ) : null}
         </Box>
       </Box>
     </Box>
@@ -1530,6 +1567,7 @@ export async function launchSessionApp(container: Container) {
     rootShellInk = null;
     rootShellExitPromise = null;
     rootShellScreen = null;
+    clearRootContentSession();
     stdinManager.exitShell();
   });
 
@@ -1977,7 +2015,10 @@ function PlaybackShell({
             ) : null}
           </Box>
           {activeOverlay ? (
-            <OverlayPanel overlay={activeOverlay} width={Math.max(24, process.stdout.columns - 8)} />
+            <OverlayPanel
+              overlay={activeOverlay}
+              width={Math.max(24, process.stdout.columns - 8)}
+            />
           ) : null}
         </>
       )}
@@ -2407,8 +2448,9 @@ export function openPlaybackShell({
   loadAboutPanel?: () => Promise<readonly ShellPanelLine[]>;
   onChangeProvider?: (providerId: string) => Promise<void>;
 }): Promise<PlaybackShellResult> {
-  const session = mountShell<PlaybackShellResult>({
-    renderShell: (finish) => (
+  const session = mountRootContent<PlaybackShellResult>({
+    kind: "playback",
+    renderContent: (finish) => (
       <PlaybackShell
         state={state}
         providerOptions={providerOptions}
@@ -2427,7 +2469,6 @@ export function openPlaybackShell({
       />
     ),
     fallbackValue: "quit",
-    clearOnResolve: false,
   });
 
   return session.result;
@@ -4086,8 +4127,9 @@ export function openBrowseShell<T>({
   settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
   onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
 }): Promise<BrowseShellResult<T>> {
-  const session = mountShell<BrowseShellResult<T>>({
-    renderShell: (finish) => (
+  const session = mountRootContent<BrowseShellResult<T>>({
+    kind: "browse",
+    renderContent: (finish) => (
       <BrowseShell
         mode={mode}
         provider={provider}
@@ -4115,7 +4157,6 @@ export function openBrowseShell<T>({
       />
     ),
     fallbackValue: { type: "cancelled" },
-    clearOnResolve: false,
   });
 
   return session.result;

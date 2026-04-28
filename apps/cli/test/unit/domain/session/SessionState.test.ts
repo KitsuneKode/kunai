@@ -181,7 +181,9 @@ describe("root shell surface selection", () => {
       overlay: { type: "diagnostics" },
     });
 
-    expect(resolveRootShellSurface(state, true)).toBe("root-overlay");
+    expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
+      "root-overlay",
+    );
   });
 
   test("treats provider picker as a root-owned overlay surface too", () => {
@@ -196,7 +198,9 @@ describe("root shell surface selection", () => {
       },
     });
 
-    expect(resolveRootShellSurface(state, true)).toBe("root-overlay");
+    expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
+      "root-overlay",
+    );
     expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 
@@ -208,7 +212,9 @@ describe("root shell surface selection", () => {
       overlay: { type: "settings" },
     });
 
-    expect(resolveRootShellSurface(state, true)).toBe("root-overlay");
+    expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
+      "root-overlay",
+    );
     expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 
@@ -227,7 +233,9 @@ describe("root shell surface selection", () => {
       },
     });
 
-    expect(resolveRootShellSurface(state, true)).toBe("root-overlay");
+    expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
+      "root-overlay",
+    );
     expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 
@@ -242,7 +250,9 @@ describe("root shell surface selection", () => {
       },
     });
 
-    expect(resolveRootShellSurface(state, true)).toBe("root-overlay");
+    expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
+      "root-overlay",
+    );
     expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 
@@ -258,7 +268,26 @@ describe("root shell surface selection", () => {
       },
     });
 
-    expect(resolveRootShellSurface(state, true)).toBe("root-overlay");
+    expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
+      "root-overlay",
+    );
     expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
+  });
+
+  test("prefers root content over mounted helper screens when browse or playback is active", () => {
+    const state = createInitialState("vidking", "allanime");
+
+    expect(resolveRootShellSurface(state, { hasRootContent: true, hasMountedScreen: true })).toBe(
+      "root-content",
+    );
+  });
+
+  test("keeps playback loading as the top surface even when root content exists", () => {
+    let state = createInitialState("vidking", "allanime");
+    state = reduceState(state, { type: "SET_PLAYBACK_STATUS", status: "loading" });
+
+    expect(resolveRootShellSurface(state, { hasRootContent: true, hasMountedScreen: true })).toBe(
+      "playback",
+    );
   });
 });

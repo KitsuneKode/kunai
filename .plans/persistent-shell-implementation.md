@@ -193,7 +193,7 @@ Tasks:
 Status:
 
 - not done yet
-- current code still launches separate shell sessions for browse and playback, even though they now share more state and action plumbing
+- browse and post-playback now use a root-owned content bridge instead of mounting through the normal helper-shell path
 - shell openings now render through one module-level Ink root host, so browse, playback, loading, and list surfaces swap root content instead of creating independent Ink roots
 - interactive shell screens now remain visible until the next screen replaces them, reducing blank gaps between browse, picker, and playback states
 - root-host screen replacements are keyed so local component state does not leak across mode/provider switches
@@ -202,14 +202,15 @@ Status:
 - post-playback no longer falls back to helper shells for provider, settings, history, diagnostics, help, or about because the playback shell handles those locally
 - browse-side and post-playback secondary panels are now mounted in-shell
 - help, about, diagnostics, provider, history, settings, season, episode, and subtitle pickers now have a root-owned overlay path in the canonical runtime
-- playback still remains a separate shell session from browse, so the true root `AppShell` milestone is still open
+- browse and playback content now render through the mounted root shell as content sessions instead of as the normal helper-screen path
 - playback navigation now resolves `next`, `previous`, `next season`, and autoplay from actual provider or metadata availability instead of blindly incrementing episode numbers
 - playback-side episode selection now stays inside that playback shell, reducing one more helper-shell handoff before the true root shell lands
 
 Transitional gaps still expected after Phase 1.5:
 
-- browse and post-playback still mount through helper-shell adapters, even though the root frame owns more status and overlay behavior
-- playback completion and browse selection still re-enter content through phase loops rather than one always-mounted content state tree
+- browse and playback still re-enter through controller phase loops rather than one reducer-driven always-mounted content state tree
+- list-shell fallback helpers still exist for non-container or narrow compatibility paths
+- root-owned overlays now coexist with root content, but still render as a separate shell region instead of a fully extracted overlay compositor
 
 ### Pass B1: Fullscreen Layout Convergence
 

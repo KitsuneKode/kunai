@@ -684,7 +684,8 @@ export async function openAnimeEpisodePicker(
         season: 1,
         options: episodes.map((episode) => ({
           value: String(episode),
-          label: episode === currentEpisode ? `Episode ${episode}  ·  current` : `Episode ${episode}`,
+          label:
+            episode === currentEpisode ? `Episode ${episode}  ·  current` : `Episode ${episode}`,
         })),
       },
     });

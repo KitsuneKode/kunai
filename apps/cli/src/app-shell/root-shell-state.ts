@@ -16,7 +16,13 @@ export type RootOwnedOverlay = Extract<
   }
 >;
 
-export type RootShellSurface = "error" | "playback" | "root-overlay" | "mounted-screen" | "idle";
+export type RootShellSurface =
+  | "error"
+  | "playback"
+  | "root-content"
+  | "root-overlay"
+  | "mounted-screen"
+  | "idle";
 
 export function isRootOwnedOverlay(
   overlay: OverlayState | null | undefined,
@@ -45,13 +51,22 @@ export function getRootOwnedOverlay(state: SessionState): RootOwnedOverlay | nul
 
 export function resolveRootShellSurface(
   state: SessionState,
-  hasMountedScreen: boolean,
+  {
+    hasRootContent,
+    hasMountedScreen,
+  }: {
+    hasRootContent: boolean;
+    hasMountedScreen: boolean;
+  },
 ): RootShellSurface {
   if (state.playbackStatus === "error") {
     return "error";
   }
   if (state.playbackStatus === "loading" || state.playbackStatus === "playing") {
     return "playback";
+  }
+  if (hasRootContent) {
+    return "root-content";
   }
   if (getRootOwnedOverlay(state)) {
     return "root-overlay";

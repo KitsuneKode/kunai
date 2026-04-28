@@ -33,6 +33,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Interactive shell handoffs now keep the outgoing screen visible until the next screen replaces it, reducing blank transitions
 - Browse and playback now share one runtime binding helper for provider options, settings persistence, and info-panel loaders
 - Post-playback helper fallbacks for provider, settings, history, diagnostics, help, and about were removed now that the playback shell owns those panels directly
+- Browse and post-playback now render through the mounted root shell content bridge instead of the normal helper-shell path
 - Fullscreen TUI convergence is now an explicit next milestone: viewport-contained layouts, resize blockers, and one dominant shell frame
 - Browse results now have an expanded title overview panel with poster availability, rating when provided by search metadata, and explicit placeholders for provider-native gaps
 - Subtitle status is surfaced before mpv launches so missing subtitles are visible during playback startup, not only after returning to the shell
@@ -66,7 +67,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Track                            | Status      | Doc                                                                                                  |
 | -------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
 | Fullscreen root shell redesign   | In Progress | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                 |
-| Phase 1.8 mounted content tree   | Planned     | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)   |
+| Phase 1.8 mounted content tree   | In Progress | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)   |
 | Kunai architecture hardening     | Planned     | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md) |
 | Kunai experience and growth moat | Planned     | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)             |
 | Kunai principal grill Q&A        | Planned     | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                             |
