@@ -145,10 +145,10 @@ Report:
 
 ## Prompt 2: Principal Contracts Package
 
-Use this for principal architecture work. This is a good task to give to Codex when you want the long-term shape protected.
+Use this for principal architecture work after Phase 1.8 is committed. This is a good task to give to Codex when you want the long-term shape protected.
 
 ```md
-You are working in Kunai after Phase 1 and Phase 1.5 are committed.
+You are working in Kunai after Phase 1, Phase 1.5, and Phase 1.8 are committed.
 
 Goal:
 Create `packages/types` and `packages/schemas` with package names `@kunai/types` and `@kunai/schemas`, without changing provider behavior.
@@ -194,6 +194,58 @@ Acceptance:
 - Shared contracts compile.
 - Zod is not used as hot-path internal validation.
 - Workspace imports work from `apps/cli`.
+```
+
+## Prompt 1.8: Day-1 Single Mounted Content Tree
+
+Use this for the Day-1/runtime-aware agent after root overlays and pickers are already migrated.
+
+```md
+You are working in Kunai after Phase 1.5 root shell foundation is committed.
+
+Goal:
+Execute Phase 1.8: make browse, loading, playback, and post-playback one mounted content tree in `apps/cli`.
+
+Read:
+1. `AGENTS.md`
+2. `.plans/phase-1.8-single-mounted-content-tree.md`
+3. `.plans/persistent-shell-implementation.md`
+4. `.plans/fullscreen-root-shell-redesign.md`
+5. `.docs/ux-architecture.md`
+6. `.docs/testing-strategy.md`
+
+Context assumption:
+You already know the broad product direction. Do not reread brainstorms or monetization docs unless blocked.
+
+Hard boundaries:
+- Do not extract shared packages.
+- Do not rewrite providers.
+- Do not start web/desktop.
+- Do not change playback policy, history persistence, subtitle resolution, or provider fallback semantics unless required by a failing test.
+- Do not redesign colors/theme in this phase; keep visual changes structural and minimal.
+
+Tasks:
+1. Add a pure root content-state union and adapter for home, browse, loading, playback, post-playback, and fallback states.
+2. Extract root overlay/picker rendering out of `ink-shell.tsx` where safe.
+3. Convert browse to root content without losing query, result list, selected index, details-first enter flow, or command palette behavior.
+4. Convert playback and post-playback to root content without changing provider resolution, autoplay, history save, subtitle state, or navigation semantics.
+5. Retire helper-shell launches as the normal path; document any remaining fallbacks.
+6. Add tests for:
+   - root content selection
+   - overlay priority over content
+   - browse state surviving content swaps
+   - playback -> post-playback -> search
+   - autoplay staying root-owned
+   - one resize/collapse transition across content states
+7. Run `bun run typecheck`, `bun run lint`, and `bun run test`.
+8. Commit in small phase-labeled commits.
+
+Acceptance:
+- The CLI feels like one mounted app whose content changes in place.
+- `SearchPhase` and `PlaybackPhase` behave as controllers/orchestrators, not UI shell launchers.
+- `apps/cli/src/app-shell/ink-shell.tsx` is materially smaller or clearly split by responsibility.
+- Existing root-owned overlays and pickers still work.
+- Remaining transitional paths are documented.
 ```
 
 ## Prompt 3: Fresh Agent Contract Tests

@@ -1,6 +1,6 @@
 # Kunai Turborepo And Package Boundaries Plan
 
-Status: Phase 1 complete; Phase 1.5 next
+Status: Phase 1 complete; Phase 1.8 next before package extraction
 
 Last updated: 2026-04-28
 
@@ -156,9 +156,29 @@ Acceptance:
 - at least one overlay flow proves the shared overlay host.
 - tests cover command availability, one back-stack path, and one resize/collapse policy.
 
+## Phase 1.8: Single Mounted Content Tree
+
+Status: Planned in [.plans/phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md).
+
+Do this after Phase 1.5 and before shared package extraction.
+
+Goal:
+
+- finish the CLI shell migration by making browse, loading, playback, and post-playback render as content states inside one mounted root shell
+- reduce `apps/cli/src/app-shell/ink-shell.tsx` and split shell responsibilities before package APIs harden around transitional UI flows
+- keep provider resolution, playback policy, history, diagnostics, subtitles, and config behavior stable
+
+Acceptance:
+
+- helper-shell adapters are no longer the normal browse/playback path
+- `SearchPhase` and `PlaybackPhase` stop launching UI shells and become orchestration/controllers
+- root overlays and root pickers keep working without remount assumptions
+- back, `Esc`, command routing, autoplay, history, and provider switching remain deterministic
+- remaining fallback helpers are documented if any survive
+
 ## Phase 2: Contracts Before Implementations
 
-Do this only after Phase 1.5 has defined the shell boundaries well enough that shared packages do not accidentally depend on transitional UI flows.
+Do this only after Phase 1.8 has defined the shell boundaries well enough that shared packages do not accidentally depend on transitional UI flows.
 
 Create `packages/types` and `packages/schemas` before extracting providers.
 
@@ -302,8 +322,9 @@ Recommended commits:
 3. `refactor: move cli into apps cli`
 4. `chore: move experiments into apps experiments`
 5. `refactor: establish true root shell`
-6. `feat: add shared contracts package`
-7. `feat: move cache paths into shared package`
-8. `feat: extract first provider into scraper core`
+6. `refactor: unify cli mounted content tree`
+7. `feat: add shared contracts package`
+8. `feat: move cache paths into shared package`
+9. `feat: extract first provider into scraper core`
 
 Keep each commit reviewable. This migration will be hard enough without mystery meat diffs.
