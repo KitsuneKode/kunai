@@ -155,7 +155,7 @@ describe("getAutoAdvanceEpisode", () => {
   test("does not auto-advance when playback does not end at eof", async () => {
     await expect(
       getAutoAdvanceEpisode(
-        { ...EOF_RESULT, endReason: "quit" },
+        { watchedSeconds: 811, duration: 1440, endReason: "quit" },
         SERIES_TITLE,
         CURRENT_EPISODE,
         true,
@@ -176,6 +176,22 @@ describe("getAutoAdvanceEpisode", () => {
         nextSeasonEpisode: null,
       }),
     ).resolves.toBeNull();
+  });
+
+  test("still auto-advances when playback exits near the natural end of the episode", async () => {
+    await expect(
+      getAutoAdvanceEpisode(
+        { watchedSeconds: 1742, duration: 1745, endReason: "quit" },
+        SERIES_TITLE,
+        CURRENT_EPISODE,
+        true,
+        {
+          previousEpisode: null,
+          nextEpisode: { season: 1, episode: 8 },
+          nextSeasonEpisode: null,
+        },
+      ),
+    ).resolves.toEqual({ season: 1, episode: 8 });
   });
 });
 

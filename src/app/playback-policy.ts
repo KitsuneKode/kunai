@@ -189,7 +189,16 @@ export async function getAutoAdvanceEpisode(
   autoNextEnabled: boolean,
   availability: EpisodeAvailability,
 ): Promise<EpisodeInfo | null> {
-  if (!autoNextEnabled || result.endReason !== "eof" || title.type !== "series") {
+  const nearNaturalEnd =
+    result.duration > 0 &&
+    result.watchedSeconds > 0 &&
+    result.watchedSeconds >= Math.max(result.duration - 8, Math.floor(result.duration * 0.97));
+
+  if (
+    !autoNextEnabled ||
+    title.type !== "series" ||
+    (result.endReason !== "eof" && !nearNaturalEnd)
+  ) {
     return null;
   }
 

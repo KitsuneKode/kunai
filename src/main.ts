@@ -47,6 +47,11 @@ function parseArgs(argv: string[]): {
 
 let globalController: SessionController | null = null;
 
+async function shutdownShell(): Promise<void> {
+  const { shutdownSessionApp } = await import("./app-shell/ink-shell");
+  await shutdownSessionApp();
+}
+
 async function main(): Promise<void> {
   // Parse CLI arguments
   const args = parseArgs(process.argv.slice(2));
@@ -121,11 +126,12 @@ async function main(): Promise<void> {
     });
 
     logger.info("Kunai exited normally");
-    // Ensure the shell is unmounted if the controller finishes
+    await shutdownShell();
     if (process.stdin.isTTY) process.stdin.unref();
     process.exit(0);
   } catch (e) {
     logger.error("Kunai crashed", { error: String(e) });
+    await shutdownShell();
     console.error("Fatal error:", e);
     process.exit(1);
   }
@@ -135,6 +141,7 @@ async function main(): Promise<void> {
 function setupSignalHandlers(): void {
   const shutdown = async (signal: string) => {
     console.log(`\nReceived ${signal}, shutting down cleanly...`);
+    await shutdownShell();
     if (process.stdin.isTTY) process.stdin.unref();
 
     if (globalController) {
@@ -153,12 +160,14 @@ function setupSignalHandlers(): void {
 // Handle uncaught errors
 process.on("uncaughtException", (e) => {
   console.error("Uncaught exception:", e);
+  void shutdownShell();
   if (process.stdin.isTTY) process.stdin.unref();
   process.exit(1);
 });
 
 process.on("unhandledRejection", (e) => {
   console.error("Unhandled rejection:", e);
+  void shutdownShell();
   if (process.stdin.isTTY) process.stdin.unref();
   process.exit(1);
 });

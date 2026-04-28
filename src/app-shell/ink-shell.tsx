@@ -88,11 +88,11 @@ stdinManager.setup();
 
 const palette = {
   amber: "#e63946", // Replacing amber with a sharp Kunai red
-  cyan: "#f1faee",  // Pure white/off-white for text
+  cyan: "#f1faee", // Pure white/off-white for text
   green: "#2a9d8f", // Keeping a muted green for success
   rose: "#f29ac2",
-  red: "#e63946",   // Deep red for errors/accents
-  gray: "#4a4e69",  // Stealthy dark gray
+  red: "#e63946", // Deep red for errors/accents
+  gray: "#4a4e69", // Stealthy dark gray
   muted: "#6c757d", // Muted text
 };
 
@@ -658,6 +658,7 @@ function ensureRootShell() {
 
   rootShellInk = render(<RootShellHost />, {
     exitOnCtrlC: false,
+    alternateScreen: true,
   });
   rootShellExitPromise = rootShellInk.waitUntilExit();
 
@@ -880,6 +881,7 @@ export async function launchSessionApp(stateManager: SessionStateManager) {
 
   rootShellInk = render(<AppRoot stateManager={stateManager} />, {
     exitOnCtrlC: false,
+    alternateScreen: true,
   });
   rootShellExitPromise = rootShellInk.waitUntilExit();
 
@@ -891,6 +893,17 @@ export async function launchSessionApp(stateManager: SessionStateManager) {
   });
 
   return rootShellExitPromise;
+}
+
+export async function shutdownSessionApp(): Promise<void> {
+  if (!rootShellInk || !rootShellExitPromise) {
+    return;
+  }
+
+  setRootShellScreen(null);
+  const exitPromise = rootShellExitPromise;
+  rootShellInk.unmount();
+  await exitPromise.catch(() => {});
 }
 
 function HomeShell({
@@ -983,6 +996,9 @@ function PlaybackShell({
   const [draftSettings, setDraftSettings] = useState<KitsuneConfig | null>(null);
   const [appliedSettings, setAppliedSettings] = useState<KitsuneConfig | null>(settings ?? null);
   const [poster, setPoster] = useState<PosterResult>({ kind: "none" });
+  const [posterState, setPosterState] = useState<"idle" | "loading" | "ready" | "unavailable">(
+    "idle",
+  );
   const { stdout } = useStdout();
   const playbackViewport = getShellViewportPolicy("playback", stdout.columns, stdout.rows);
   const playbackWide = (stdout.columns ?? 0) >= 150;
@@ -991,14 +1007,17 @@ function PlaybackShell({
   useEffect(() => {
     const url = state.posterUrl;
     if (!url) {
+      setPosterState("idle");
       setPoster((prev) => {
         if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
         return { kind: "none" };
       });
       return;
     }
+    setPosterState("loading");
     fetchPoster(url, { rows: 8, cols: 18 })
       .then((next) => {
+        setPosterState(next.kind === "none" ? "unavailable" : "ready");
         setPoster((prev) => {
           if (prev.kind === "kitty" && (next.kind !== "kitty" || prev.imageId !== next.imageId)) {
             deleteKittyImage(prev.imageId);
@@ -1006,7 +1025,9 @@ function PlaybackShell({
           return next;
         });
       })
-      .catch(() => {});
+      .catch(() => {
+        setPosterState("unavailable");
+      });
     return () => {
       setPoster((prev) => {
         if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
@@ -1500,12 +1521,25 @@ function PlaybackShell({
       ) : (
         <>
           <Box justifyContent="space-between">
+            <Box>
+              <Badge label={`provider ${activeProvider}`} tone="info" />
+              <Badge label={state.mode === "anime" ? "anime mode" : "series mode"} />
+              <Badge label={`episode ${location.toLowerCase()}`} tone="accent" />
+              {state.subtitleStatus ? (
+                <Badge
+                  label={state.subtitleStatus}
+                  tone={
+                    state.subtitleStatus.toLowerCase().includes("not found") ? "warning" : "success"
+                  }
+                />
+              ) : null}
+              {activeOverlay ? (
+                <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
+              ) : null}
+            </Box>
             <Text color={palette.gray} dimColor>
-              {`Provider ${activeProvider}  ·  ${state.mode === "anime" ? "anime mode" : "series mode"}`}
+              Playback controls stay visible and command-driven
             </Text>
-            {activeOverlay ? (
-              <Text color={palette.green}>{`${activeOverlay.title.toLowerCase()} panel`}</Text>
-            ) : null}
           </Box>
           <Box marginTop={1}>
             <Text color={palette.gray} dimColor>
@@ -1558,7 +1592,7 @@ function PlaybackShell({
                 <Box marginTop={1}>
                   {poster.kind === "kitty" ? (
                     <Text>{poster.placeholder}</Text>
-                  ) : (
+                  ) : poster.kind === "chafa" ? (
                     <Box flexDirection="column">
                       {poster.art
                         .split("\n")
@@ -1567,6 +1601,10 @@ function PlaybackShell({
                           <Text key={i}>{line}</Text>
                         ))}
                     </Box>
+                  ) : (
+                    <Text color={posterState === "loading" ? palette.cyan : palette.gray} dimColor>
+                      {posterState === "loading" ? "Loading poster…" : "Poster unavailable"}
+                    </Text>
                   )}
                 </Box>
               </Box>
@@ -1646,16 +1684,18 @@ function Badge({
   tone = "neutral",
 }: {
   label: string;
-  tone?: "neutral" | "info" | "success" | "warning";
+  tone?: "neutral" | "info" | "success" | "warning" | "accent";
 }) {
   const color =
     tone === "success"
       ? palette.green
       : tone === "info"
         ? palette.cyan
-        : tone === "warning"
-          ? palette.amber
-          : palette.gray;
+        : tone === "accent"
+          ? palette.rose
+          : tone === "warning"
+            ? palette.amber
+            : palette.gray;
 
   return (
     <Box borderStyle="round" borderColor={color} paddingX={1} marginRight={1}>
@@ -1794,6 +1834,7 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
   const leadIcon = isPlaying ? "▶" : spinner;
   const accentColor = isPlaying ? palette.green : pulse ? palette.cyan : "white";
   const separatorWidth = Math.min(44, (stdout.columns ?? 80) - 4);
+  const infoWidth = Math.min(72, Math.max(36, (stdout.columns ?? 80) - 12));
 
   const operationLabels: Record<LoadingShellState["operation"], string> = {
     searching: "Searching",
@@ -1805,99 +1846,113 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
 
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent="center" paddingX={2} paddingY={1}>
-      {/* Content title */}
-      <Box>
-        <Text color={accentColor}>{leadIcon} </Text>
-        <Text bold color="white">
-          {state.title}
-        </Text>
-      </Box>
-      {state.subtitle && (
-        <Box marginLeft={2}>
-          <Text color={palette.muted}>{state.subtitle}</Text>
+      <Box flexDirection="column" width={infoWidth}>
+        <Box>
+          <Badge
+            label={operationLabels[state.operation].toLowerCase()}
+            tone={isPlaying ? "success" : "info"}
+          />
+          {state.subtitleStatus ? (
+            <Badge
+              label={state.subtitleStatus}
+              tone={state.subtitleStatus.includes("attached") ? "success" : "warning"}
+            />
+          ) : null}
         </Box>
-      )}
-
-      {/* Separator */}
-      <Box marginY={1}>
-        <Text color={palette.muted} dimColor>
-          {"─".repeat(separatorWidth)}
-        </Text>
-      </Box>
-
-      {/* Operation status */}
-      <Box>
-        <Text color={accentColor}>{operationLabels[state.operation]}</Text>
-        {state.details && (
-          <Text color={palette.gray} dimColor>
-            {"  "}
-            {state.details}
+        {/* Content title */}
+        <Box marginTop={1}>
+          <Text color={accentColor}>{leadIcon} </Text>
+          <Text bold color="white">
+            {state.title}
           </Text>
+        </Box>
+        {state.subtitle && (
+          <Box marginLeft={2}>
+            <Text color={palette.muted}>{state.subtitle}</Text>
+          </Box>
+        )}
+
+        {/* Separator */}
+        <Box marginY={1}>
+          <Text color={palette.muted} dimColor>
+            {"─".repeat(separatorWidth)}
+          </Text>
+        </Box>
+
+        {/* Operation status */}
+        <Box>
+          <Text color={accentColor}>{operationLabels[state.operation]}</Text>
+          {state.details && (
+            <Text color={palette.gray} dimColor>
+              {"  "}
+              {state.details}
+            </Text>
+          )}
+        </Box>
+
+        {/* Subtitle status */}
+        {state.subtitleStatus && (
+          <Box marginTop={1}>
+            <Text color={state.subtitleStatus.includes("attached") ? palette.green : palette.amber}>
+              {state.subtitleStatus}
+            </Text>
+          </Box>
+        )}
+
+        {/* Trace */}
+        {state.trace && (
+          <Box marginTop={1}>
+            <Text color={palette.gray} dimColor>
+              {state.trace}
+            </Text>
+          </Box>
+        )}
+
+        {/* Elapsed — only while actively resolving, after 2s */}
+        {!isPlaying && elapsed >= 2 && (
+          <Box marginTop={1}>
+            <Text color={palette.gray} dimColor>
+              {formatElapsed(elapsed)} elapsed
+            </Text>
+          </Box>
+        )}
+
+        {/* Memory */}
+        {state.showMemory && (
+          <Box marginTop={1}>
+            <Text color={palette.gray} dimColor>
+              {formatMemoryUsage()}
+            </Text>
+          </Box>
+        )}
+
+        {/* Progress bar */}
+        {state.progress !== undefined && (
+          <Box marginTop={1}>
+            <Box
+              width={Math.min(40, (stdout.columns ?? 80) - 4)}
+              borderStyle="round"
+              borderColor={palette.cyan}
+              paddingX={1}
+            >
+              <Text>
+                {"█".repeat(Math.floor(state.progress / 2.5))}
+                {"░".repeat(40 - Math.floor(state.progress / 2.5))}
+              </Text>
+              <Text color={palette.cyan}> {Math.round(state.progress)}%</Text>
+            </Box>
+          </Box>
+        )}
+
+        {/* Cancel hint */}
+        {state.cancellable && (
+          <Box marginTop={1}>
+            <Text color={palette.gray} dimColor>
+              ESC to cancel
+            </Text>
+          </Box>
         )}
       </Box>
-
-      {/* Subtitle status */}
-      {state.subtitleStatus && (
-        <Box marginTop={1}>
-          <Text color={state.subtitleStatus.includes("attached") ? palette.green : palette.amber}>
-            {state.subtitleStatus}
-          </Text>
-        </Box>
-      )}
-
-      {/* Trace */}
-      {state.trace && (
-        <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
-            {state.trace}
-          </Text>
-        </Box>
-      )}
-
-      {/* Elapsed — only while actively resolving, after 2s */}
-      {!isPlaying && elapsed >= 2 && (
-        <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
-            {formatElapsed(elapsed)} elapsed
-          </Text>
-        </Box>
-      )}
-
-      {/* Memory */}
-      {state.showMemory && (
-        <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
-            {formatMemoryUsage()}
-          </Text>
-        </Box>
-      )}
-
-      {/* Progress bar */}
-      {state.progress !== undefined && (
-        <Box marginTop={1}>
-          <Box
-            width={Math.min(40, (stdout.columns ?? 80) - 4)}
-            borderStyle="round"
-            borderColor={palette.cyan}
-            paddingX={1}
-          >
-            <Text>
-              {"█".repeat(Math.floor(state.progress / 2.5))}
-              {"░".repeat(40 - Math.floor(state.progress / 2.5))}
-            </Text>
-            <Text color={palette.cyan}> {Math.round(state.progress)}%</Text>
-          </Box>
-        </Box>
-      )}
-
-      {/* Cancel hint */}
-      {state.cancellable && (
-        <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
-            ESC to cancel
-          </Text>
-        </Box>
-      )}
     </Box>
   );
 }
@@ -2214,13 +2269,19 @@ function ListShell<T>({
   const viewport = getShellViewportPolicy("picker", stdout.columns, stdout.rows);
   const { ultraCompact, tooSmall, minColumns, minRows, maxVisibleRows: maxVisible } = viewport;
   const innerWidth = Math.max(24, stdout.columns - 8);
-  const rowWidth = Math.max(20, innerWidth - 4);
+  const showSelectionCompanion = !tooSmall && !ultraCompact && (stdout.columns ?? 0) >= 152;
+  const companionWidth = showSelectionCompanion ? Math.max(34, Math.floor(innerWidth * 0.32)) : 0;
+  const listWidth = showSelectionCompanion
+    ? Math.max(42, innerWidth - companionWidth - 3)
+    : innerWidth;
+  const rowWidth = Math.max(20, listWidth - 4);
   const selectedLabel = selectedOption?.label ?? "Nothing selected";
   const selectedDetail =
     selectedOption?.detail ??
     (filteredOptions.length > 0
       ? "Use ↑↓ to move through results"
       : "No matching results. Keep typing or press Esc to clear the filter.");
+  const detailLines = wrapText(selectedDetail, Math.max(20, companionWidth - 2), 7);
 
   const windowStart = getWindowStart(index, filteredOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, filteredOptions.length);
@@ -2379,44 +2440,77 @@ function ListShell<T>({
             <Text color={palette.gray}>
               {`Selected ${filteredOptions.length > 0 ? index + 1 : 0} of ${filteredOptions.length}  ·  Showing ${filteredOptions.length} of ${options.length}`}
             </Text>
-            <Box flexDirection="column" marginTop={1}>
-              {windowStart > 0 && <Text color={palette.gray}> ▲ ...</Text>}
-              {visibleOptions.map((option, i) => {
-                const optionIndex = windowStart + i;
-                const selected = optionIndex === index;
-                const isConfirmed = confirmed && selected;
-                const itemPrefix = isConfirmed ? "✓" : selected ? "❯" : " ";
-                const itemTone = isConfirmed
-                  ? palette.green
-                  : selected
-                    ? palette.amber
-                    : palette.gray;
-                const secondary = option.detail ? `  ${truncateLine(option.detail, rowWidth)}` : "";
-                const rowText = truncateLine(`${option.label}${secondary}`, rowWidth);
-                return (
-                  <Box key={optionIndex}>
-                    <Text
-                      backgroundColor={selected ? palette.cyan : undefined}
-                      color={selected ? "black" : "white"}
-                      bold={selected || isConfirmed}
-                      dimColor={!selected && !isConfirmed}
-                    >
-                      <Text color={selected ? "black" : itemTone}>{`${itemPrefix} `}</Text>
-                      {rowText}
+            <Box
+              flexDirection={showSelectionCompanion ? "row" : "column"}
+              marginTop={1}
+              justifyContent="space-between"
+            >
+              <Box flexDirection="column" width={showSelectionCompanion ? listWidth : undefined}>
+                {windowStart > 0 && <Text color={palette.gray}> ▲ ...</Text>}
+                {visibleOptions.map((option, i) => {
+                  const optionIndex = windowStart + i;
+                  const selected = optionIndex === index;
+                  const isConfirmed = confirmed && selected;
+                  const itemPrefix = isConfirmed ? "✓" : selected ? "❯" : " ";
+                  const itemTone = isConfirmed
+                    ? palette.green
+                    : selected
+                      ? palette.amber
+                      : palette.gray;
+                  const secondary = option.detail
+                    ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 4))}`
+                    : "";
+                  const rowText = truncateLine(`${option.label}${secondary}`, rowWidth);
+                  return (
+                    <Box key={optionIndex}>
+                      <Text
+                        backgroundColor={selected ? palette.cyan : undefined}
+                        color={selected ? "black" : "white"}
+                        bold={selected || isConfirmed}
+                        dimColor={!selected && !isConfirmed}
+                      >
+                        <Text color={selected ? "black" : itemTone}>{`${itemPrefix} `}</Text>
+                        {rowText}
+                      </Text>
+                    </Box>
+                  );
+                })}
+                {windowEnd < filteredOptions.length && <Text color={palette.gray}> ▼ ...</Text>}
+              </Box>
+              {!ultraCompact ? (
+                <Box
+                  marginLeft={showSelectionCompanion ? 2 : 0}
+                  marginTop={showSelectionCompanion ? 0 : 1}
+                  flexDirection="column"
+                  width={showSelectionCompanion ? companionWidth : undefined}
+                >
+                  <LocalSection title="Current Selection" tone="success" marginTop={0}>
+                    <Box>
+                      <Badge label={confirmed ? "selected" : "highlighted"} tone="success" />
+                      {normalizedFilter.length > 0 ? (
+                        <Badge label={`filter ${normalizedFilter}`} tone="accent" />
+                      ) : null}
+                    </Box>
+                    <Text bold color="white">
+                      {truncateLine(
+                        selectedLabel,
+                        showSelectionCompanion ? companionWidth : innerWidth,
+                      )}
                     </Text>
-                  </Box>
-                );
-              })}
-              {windowEnd < filteredOptions.length && <Text color={palette.gray}> ▼ ...</Text>}
+                    <Box marginTop={1} flexDirection="column">
+                      {detailLines.map((line, lineIndex) => (
+                        <Text key={`${line}-${lineIndex}`} color={palette.muted}>
+                          {line}
+                        </Text>
+                      ))}
+                    </Box>
+                    <Box marginTop={1}>
+                      <Text color={palette.gray}>{subtitle}</Text>
+                    </Box>
+                  </LocalSection>
+                </Box>
+              ) : null}
             </Box>
-            {!ultraCompact ? (
-              <LocalSection title="Current Selection" tone="success">
-                <Text bold color="white">
-                  {truncateLine(selectedLabel, innerWidth)}
-                </Text>
-                <Text color={palette.muted}>{truncateLine(selectedDetail, innerWidth * 2)}</Text>
-              </LocalSection>
-            ) : null}
           </>
         )}
       </Box>
@@ -2871,6 +2965,9 @@ function BrowseShell<T>({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
   const [poster, setPoster] = useState<PosterResult>({ kind: "none" });
+  const [posterState, setPosterState] = useState<"idle" | "loading" | "ready" | "unavailable">(
+    "idle",
+  );
   const requestIdRef = useRef(0);
 
   // Debounced poster fetch so result navigation stays responsive while posters swap.
@@ -2878,6 +2975,7 @@ function BrowseShell<T>({
     const isWide = getShellViewportPolicy("browse", stdout.columns, stdout.rows).wideBrowse;
     const url = options[selectedIndex]?.previewImageUrl;
     if (!url || !isWide) {
+      setPosterState(url ? "unavailable" : "idle");
       setPoster((prev) => {
         if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
         return { kind: "none" };
@@ -2885,10 +2983,12 @@ function BrowseShell<T>({
       return;
     }
     let cancelled = false;
+    setPosterState("loading");
     const timer = setTimeout(() => {
       fetchPoster(url, { rows: 8, cols: 18 })
         .then((r) => {
           if (!cancelled) {
+            setPosterState(r.kind === "none" ? "unavailable" : "ready");
             setPoster((prev) => {
               if (prev.kind === "kitty" && (r.kind !== "kitty" || prev.imageId !== r.imageId)) {
                 deleteKittyImage(prev.imageId);
@@ -2897,7 +2997,9 @@ function BrowseShell<T>({
             });
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!cancelled) setPosterState("unavailable");
+        });
     }, 120);
     return () => {
       cancelled = true;
@@ -3304,8 +3406,6 @@ function BrowseShell<T>({
       previewBodyLines.some((line) => line.trim().length > 0) ||
       selectedOption?.previewNote,
     );
-  const browseContext = `Provider ${activeProvider}  ·  ${mode === "anime" ? "anime mode" : "series mode"}`;
-
   useInput((input, key) => {
     if (input === "\x03") {
       if (process.stdin.isTTY) process.stdin.unref();
@@ -3579,13 +3679,13 @@ function BrowseShell<T>({
         {!ultraCompact && resultSubtitle ? (
           <Text color={palette.muted}>{resultSubtitle}</Text>
         ) : null}
-        <Box marginTop={1} justifyContent="space-between">
-          <Text color={palette.gray} dimColor>
-            {browseContext}
-          </Text>
+        <Box marginTop={1}>
+          <Badge label={`provider ${activeProvider}`} tone="info" />
+          <Badge label={mode === "anime" ? "anime mode" : "series mode"} />
           {activeOverlay ? (
-            <Text color={palette.green}>{`${activeOverlay.title.toLowerCase()} panel`}</Text>
+            <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
           ) : null}
+          {queryDirty && options.length > 0 ? <Badge label="results stale" tone="warning" /> : null}
         </Box>
 
         <InputField
@@ -3645,9 +3745,7 @@ function BrowseShell<T>({
           >
             {/* Result list */}
             <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
-              <Text color={palette.gray} dimColor>
-                {`Results  ·  ${options.length} available${resultSubtitle ? `  ·  ${resultSubtitle}` : ""}`}
-              </Text>
+              <Text color={palette.gray} dimColor>{`Results  ·  ${options.length} available`}</Text>
               {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
               {visibleOptions.map((option, index) => {
                 const optionIndex = windowStart + index;
@@ -3707,6 +3805,12 @@ function BrowseShell<T>({
                         .map((line, i) => <Text key={i}>{line}</Text>)
                     )}
                   </Box>
+                ) : selectedOption?.previewImageUrl ? (
+                  <Box marginTop={1}>
+                    <Text color={posterState === "loading" ? palette.cyan : palette.gray} dimColor>
+                      {posterState === "loading" ? "Loading poster…" : "Poster unavailable"}
+                    </Text>
+                  </Box>
                 ) : null}
                 <Text bold color="white">
                   {truncateLine(
@@ -3715,9 +3819,15 @@ function BrowseShell<T>({
                   )}
                 </Text>
                 {previewMeta.length > 0 && !ultraCompact ? (
-                  <Text color={palette.gray} dimColor>
-                    {truncateLine(previewMeta.join("  ·  "), previewWidth)}
-                  </Text>
+                  <Box marginTop={1} flexWrap="wrap">
+                    {previewMeta.slice(0, 3).map((meta, index) => (
+                      <Badge
+                        key={`${meta}-${index}`}
+                        label={truncateLine(meta, Math.max(12, previewWidth - 8))}
+                        tone={index === 2 ? "accent" : index === 0 ? "info" : "neutral"}
+                      />
+                    ))}
+                  </Box>
                 ) : null}
                 {previewBodyLines.length > 0 ? (
                   <Box marginTop={1} flexDirection="column">
