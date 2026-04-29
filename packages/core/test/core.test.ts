@@ -9,6 +9,7 @@ import {
   cinebyAnimeManifest,
   cinebyManifest,
   createProviderCachePolicy,
+  resolveWithFallback,
   vidkingManifest,
 } from "../src/index";
 
@@ -107,4 +108,65 @@ test("cli stream adapter returns shared provider resolve result with trace evide
   expect(result.trace.cacheHit).toBe(true);
   expect(result.trace.runtime).toBe("playwright-lease");
   expect(result.trace.steps.map((step) => step.stage)).toContain("runtime");
+});
+
+test("resolveWithFallback returns the first successful provider and preserves attempts", async () => {
+  const resolved = await resolveWithFallback({
+    candidates: [
+      {
+        providerId: "first",
+        preferred: true,
+        async resolve() {
+          return null;
+        },
+      },
+      {
+        providerId: "second",
+        async resolve() {
+          return {
+            url: "https://cdn.example/master.m3u8",
+            providerResolveResult: adaptCliStreamResult({
+              providerId: "second",
+              title: { id: "1", kind: "movie", title: "Example" },
+              stream: { url: "https://cdn.example/master.m3u8" },
+              cachePolicy: createProviderCachePolicy({
+                providerId: "second",
+                title: { id: "1", kind: "movie" },
+              }),
+              runtime: "node-fetch",
+            }),
+          };
+        },
+      },
+    ],
+  });
+
+  expect(resolved.providerId).toBe("second");
+  expect(resolved.stream?.url).toContain("master.m3u8");
+  expect(resolved.result?.providerId).toBe("second");
+  expect(resolved.attempts.map((attempt) => attempt.providerId)).toEqual(["first", "second"]);
+});
+
+test("resolveWithFallback converts thrown provider errors into structured attempts", async () => {
+  const resolved = await resolveWithFallback({
+    now: () => "2026-04-30T00:00:00.000Z",
+    candidates: [
+      {
+        providerId: "broken",
+        preferred: true,
+        async resolve() {
+          throw new Error("provider exploded");
+        },
+      },
+    ],
+  });
+
+  expect(resolved.stream).toBeNull();
+  expect(resolved.attempts[0]?.failure).toMatchObject({
+    providerId: "broken",
+    code: "unknown",
+    message: "provider exploded",
+    retryable: true,
+    at: "2026-04-30T00:00:00.000Z",
+  });
 });

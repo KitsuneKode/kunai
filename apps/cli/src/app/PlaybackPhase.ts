@@ -31,6 +31,7 @@ import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history
 import { createResolveTraceStub } from "@/app/resolve-trace";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
+import { resolveWithFallback } from "@kunai/core";
 
 export type PlaybackOutcome =
   | "back_to_search"
@@ -201,65 +202,46 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             trace: resolveTrace,
           },
         });
-        try {
-          stream = await currentProvider.resolveStream({
-            title,
-            episode: currentEpisode,
-            subLang: stateManager.getState().subLang,
-          });
-        } catch (e) {
-          stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-          throw e;
-        }
-
-        if (!stream) {
-          logger.error("Stream not found", { provider: currentProvider.metadata.id });
-          diagnosticsStore.record({
-            category: "provider",
-            message: "Stream not found",
-            context: {
-              provider: currentProvider.metadata.id,
-              titleId: title.id,
-              season: currentEpisode.season,
-              episode: currentEpisode.episode,
-            },
-          });
-
-          // Try fallback provider — update loading in-place to avoid shell flicker
-          const compatible = providerRegistry
-            .getCompatible(title)
-            .filter(
-              (p: import("../services/providers/Provider").Provider) =>
-                p.metadata.id !== currentProvider.metadata.id,
-            );
-
-          const fallback = compatible[0];
-          if (fallback) {
-            logger.info("Trying fallback provider", { fallback: fallback.metadata.id });
-            diagnosticsStore.record({
-              category: "provider",
-              message: "Trying fallback provider",
-              context: {
-                from: currentProvider.metadata.id,
-                fallback: fallback.metadata.id,
-              },
-            });
-            stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
-            try {
-              const fallbackStream = await fallback.resolveStream({
+        const compatibleProviders = providerRegistry.getCompatible(title);
+        const resolveResult = await resolveWithFallback<StreamInfo>({
+          candidates: compatibleProviders.map((provider) => ({
+            providerId: provider.metadata.id,
+            preferred: provider.metadata.id === currentProvider.metadata.id,
+            resolve: () =>
+              provider.resolveStream({
                 title,
                 episode: currentEpisode,
                 subLang: stateManager.getState().subLang,
-              });
-              if (fallbackStream) {
-                stream = fallbackStream;
-                resolvedProviderId = fallback.metadata.id;
-              }
-            } catch (e) {
-              stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-              throw e;
-            }
-          }
+              }),
+          })),
+        });
+
+        stream = resolveResult.stream;
+        resolvedProviderId = resolveResult.providerId ?? currentProvider.metadata.id;
+
+        for (const attempt of resolveResult.attempts) {
+          diagnosticsStore.record({
+            category: "provider",
+            message: attempt.stream
+              ? "Provider resolve attempt succeeded"
+              : "Provider resolve attempt failed",
+            context: {
+              provider: attempt.providerId,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              hasTrace: Boolean(attempt.result?.trace),
+              failure: attempt.failure ?? null,
+            },
+          });
+        }
+
+        if (resolvedProviderId !== currentProvider.metadata.id) {
+          logger.info("Resolved stream with fallback provider", {
+            from: currentProvider.metadata.id,
+            fallback: resolvedProviderId,
+          });
+          stateManager.dispatch({ type: "SET_PROVIDER", provider: resolvedProviderId });
         }
 
         if (!stream) {
