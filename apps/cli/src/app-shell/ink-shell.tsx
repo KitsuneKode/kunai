@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, render, useInput, useStdout } from "ink";
-import TextInput from "ink-text-input";
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { SessionState } from "@/domain/session/SessionState";
+import { splitCursor, useLineEditor } from "@/app-shell/line-editor";
 
 import { buildBrowseDetailsPanel } from "./details-panel";
 import { applySettingsToRuntime, handleShellAction } from "./workflows";
@@ -252,10 +252,12 @@ function getHighlightedCommand(
 
 function CommandPalette({
   input,
+  cursor = input.length,
   commands,
   highlightedIndex,
 }: {
   input: string;
+  cursor?: number;
   commands: readonly ResolvedAppCommand[];
   highlightedIndex: number;
 }) {
@@ -271,7 +273,10 @@ function CommandPalette({
       marginTop={1}
     >
       <Text color={palette.amber}>Command</Text>
-      <Text color="white">{`/${input}`}</Text>
+      <Box>
+        <Text color="white">/</Text>
+        <LineEditorText value={input} cursor={cursor} focused placeholder="type a command" />
+      </Box>
       <Text color={palette.gray}>Tab autocomplete · ↑↓ choose · Enter run</Text>
       <Box flexDirection="column" marginTop={1}>
         {matches.length > 0 ? (
@@ -301,6 +306,50 @@ function CommandPalette({
   );
 }
 
+function LineEditorText({
+  value,
+  cursor,
+  focused,
+  placeholder,
+}: {
+  value: string;
+  cursor: number;
+  focused: boolean;
+  placeholder?: string;
+}) {
+  if (!focused) {
+    return value.length > 0 ? (
+      <Text color="white">{value}</Text>
+    ) : (
+      <Text color={palette.gray}>{placeholder ?? ""}</Text>
+    );
+  }
+
+  if (value.length === 0) {
+    return (
+      <>
+        <Text backgroundColor={palette.cyan} color="black">
+          {" "}
+        </Text>
+        {placeholder ? <Text color={palette.gray}>{placeholder}</Text> : null}
+      </>
+    );
+  }
+
+  const { before, cursorChar, after } = splitCursor(value, cursor);
+  const visibleCursor = cursorChar.length > 0 ? cursorChar : " ";
+
+  return (
+    <>
+      <Text color="white">{before}</Text>
+      <Text backgroundColor={palette.cyan} color="black">
+        {visibleCursor}
+      </Text>
+      <Text color="white">{after}</Text>
+    </>
+  );
+}
+
 function useShellInput({
   footerActions,
   commands,
@@ -317,6 +366,13 @@ function useShellInput({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const commandEditor = useLineEditor({
+    value: commandInput,
+    onChange: (nextValue) => {
+      setCommandInput(nextValue);
+      setHighlightedIndex(0);
+    },
+  });
 
   useEffect(() => {
     if (disabled) {
@@ -369,7 +425,7 @@ function useShellInput({
         const target = matches[nextIndex];
         if (target) {
           setHighlightedIndex(nextIndex);
-          setCommandInput(target.aliases[0] ?? target.id);
+          commandEditor.setValue(target.aliases[0] ?? target.id);
         }
         return;
       }
@@ -385,13 +441,8 @@ function useShellInput({
         }
         return;
       }
-      if (key.backspace || key.delete) {
-        setCommandInput((current) => current.slice(0, -1));
+      if (commandEditor.handleInput(input, key)) {
         return;
-      }
-      if (input && !key.ctrl && !key.meta) {
-        setCommandInput((current) => current + input);
-        setHighlightedIndex(0);
       }
       return;
     }
@@ -416,7 +467,7 @@ function useShellInput({
     }
   });
 
-  return { commandMode, commandInput, highlightedIndex };
+  return { commandMode, commandInput, commandCursor: commandEditor.cursor, highlightedIndex };
 }
 
 function ShellFrame({
@@ -455,7 +506,7 @@ function ShellFrame({
     }
   });
 
-  const { commandMode, commandInput, highlightedIndex } = useShellInput({
+  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
     footerActions,
     commands,
     disabled: inputLocked,
@@ -485,6 +536,7 @@ function ShellFrame({
         {commandMode ? (
           <CommandPalette
             input={commandInput}
+            cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
           />
@@ -587,6 +639,20 @@ function InputField({
 }) {
   const { stdout } = useStdout();
   const wideField = (stdout.columns ?? 0) >= 112;
+  const editor = useLineEditor({
+    value,
+    onChange,
+    onSubmit,
+    onRedraw: clearShellScreen,
+  });
+
+  useInput((input, key) => {
+    if (!focus) return;
+    if (input === "/" || key.escape || key.upArrow || key.downArrow || key.tab) {
+      return;
+    }
+    editor.handleInput(input, key);
+  });
 
   return (
     <Box marginTop={1} flexDirection="column">
@@ -605,13 +671,11 @@ function InputField({
         paddingX={1}
       >
         <Text color={focus ? palette.cyan : palette.gray}>{focus ? "⌕ " : "› "}</Text>
-        <TextInput
+        <LineEditorText
           value={value}
-          onChange={onChange}
-          onSubmit={onSubmit}
+          cursor={editor.cursor}
+          focused={focus}
           placeholder={placeholder}
-          focus={focus}
-          showCursor
         />
       </Box>
       {hint && !wideField ? (
@@ -831,6 +895,14 @@ function RootOverlayShell({
   const [scrollIndex, setScrollIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const filterEditor = useLineEditor({
+    value: filterQuery,
+    onChange: (nextValue) => {
+      setFilterQuery(nextValue);
+      setSelectedIndex(0);
+    },
+    onRedraw: clearShellScreen,
+  });
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
   const [loadingAsyncLines, setLoadingAsyncLines] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<KitsuneConfig | null>(null);
@@ -972,7 +1044,7 @@ function RootOverlayShell({
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
   ];
-  const { commandMode, commandInput, highlightedIndex } = useShellInput({
+  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
     footerActions,
     commands,
     escapeAction: null,
@@ -1212,19 +1284,11 @@ function RootOverlayShell({
           });
         return;
       }
-      if (key.backspace || key.delete) {
-        setFilterQuery((current) => current.slice(0, -1));
-        setSelectedIndex(0);
+      if (input === "/") {
         return;
       }
-      if (key.ctrl && input === "w") {
-        setFilterQuery((current) => current.replace(/\s*\S+\s*$/, ""));
-        setSelectedIndex(0);
+      if (filterEditor.handleInput(input, key)) {
         return;
-      }
-      if (input && !key.ctrl && !key.meta) {
-        setFilterQuery((current) => current + input);
-        setSelectedIndex(0);
       }
     }
   });
@@ -1323,6 +1387,7 @@ function RootOverlayShell({
         {commandMode ? (
           <CommandPalette
             input={commandInput}
+            cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
           />
@@ -1672,6 +1737,18 @@ function PlaybackShell({
   onResolve: (result: PlaybackShellResult) => void;
 }) {
   const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
+  const activeOverlayEditor = useLineEditor({
+    value:
+      activeOverlay && activeOverlay.type === "episode-picker" ? activeOverlay.filterQuery : "",
+    onChange: (nextValue) => {
+      setActiveOverlay((current) =>
+        current && current.type === "episode-picker"
+          ? { ...current, filterQuery: nextValue, selectedIndex: 0 }
+          : current,
+      );
+    },
+    onRedraw: clearShellScreen,
+  });
   const [poster, setPoster] = useState<PosterResult>({ kind: "none" });
   const [posterState, setPosterState] = useState<"idle" | "loading" | "ready" | "unavailable">(
     "idle",
@@ -1805,22 +1882,6 @@ function PlaybackShell({
       }
 
       if (activeOverlay.type === "episode-picker") {
-        if (key.ctrl && input.toLowerCase() === "w") {
-          setActiveOverlay({
-            ...activeOverlay,
-            filterQuery: deleteLastWord(activeOverlay.filterQuery),
-            selectedIndex: 0,
-          });
-          return;
-        }
-        if (key.backspace || key.delete) {
-          setActiveOverlay({
-            ...activeOverlay,
-            filterQuery: activeOverlay.filterQuery.slice(0, -1),
-            selectedIndex: 0,
-          });
-          return;
-        }
         if (key.upArrow && filteredOverlayOptions.length > 0) {
           setActiveOverlay({
             ...activeOverlay,
@@ -1849,12 +1910,8 @@ function PlaybackShell({
           });
           return;
         }
-        if (input && !key.ctrl && !key.meta) {
-          setActiveOverlay({
-            ...activeOverlay,
-            filterQuery: `${activeOverlay.filterQuery}${input}`,
-            selectedIndex: 0,
-          });
+        if (activeOverlayEditor.handleInput(input, key)) {
+          return;
         }
         return;
       }
@@ -2612,10 +2669,6 @@ function wrapText(value: string, width: number, maxLines: number): string[] {
     .map((line, index, all) => (index === all.length - 1 ? truncateLine(line, width) : line));
 }
 
-function deleteLastWord(value: string): string {
-  return value.replace(/\s*\S+\s*$/, "");
-}
-
 function normalizeReservedCommandInput(nextValue: string): {
   value: string;
   openCommandPalette: boolean;
@@ -2757,6 +2810,13 @@ function ListShell<T>({
       setHighlightedCommandIndex(0);
     }
   };
+  const commandEditor = useLineEditor({
+    value: commandInput,
+    onChange: (nextValue) => {
+      setCommandInput(nextValue);
+      setHighlightedCommandIndex(0);
+    },
+  });
 
   useInput((input, key) => {
     // Ctrl+C handling
@@ -2795,7 +2855,7 @@ function ListShell<T>({
         const target = matches[nextIndex];
         if (target) {
           setHighlightedCommandIndex(nextIndex);
-          setCommandInput(target.aliases[0] ?? target.id);
+          commandEditor.setValue(target.aliases[0] ?? target.id);
         }
         return;
       }
@@ -2811,13 +2871,8 @@ function ListShell<T>({
         }
         return;
       }
-      if (key.backspace || key.delete) {
-        setCommandInput((current) => current.slice(0, -1));
+      if (commandEditor.handleInput(input, key)) {
         return;
-      }
-      if (input && !key.ctrl && !key.meta) {
-        setCommandInput((current) => current + input);
-        setHighlightedCommandIndex(0);
       }
       return;
     }
@@ -2835,10 +2890,6 @@ function ListShell<T>({
         return;
       }
       onCancel();
-      return;
-    }
-    if (key.ctrl && input.toLowerCase() === "w") {
-      setFilterQuery((current) => deleteLastWord(current));
       return;
     }
     if (key.return) {
@@ -2960,6 +3011,7 @@ function ListShell<T>({
       {commandMode && actionContext ? (
         <CommandPalette
           input={commandInput}
+          cursor={commandEditor.cursor}
           commands={actionContext.commands}
           highlightedIndex={highlightedCommandIndex}
         />
@@ -3484,6 +3536,14 @@ function BrowseShell<T>({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const commandEditor = useLineEditor({
+    value: commandInput,
+    onChange: (nextValue) => {
+      setCommandInput(nextValue);
+      setHighlightedCommandIndex(0);
+    },
+    onRedraw: clearShellScreen,
+  });
   const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
@@ -3764,7 +3824,7 @@ function BrowseShell<T>({
         const target = matches[nextIndex];
         if (target) {
           setHighlightedCommandIndex(nextIndex);
-          setCommandInput(target.aliases[0] ?? target.id);
+          commandEditor.setValue(target.aliases[0] ?? target.id);
         }
         return;
       }
@@ -3780,13 +3840,8 @@ function BrowseShell<T>({
         }
         return;
       }
-      if (key.backspace || key.delete) {
-        setCommandInput((current) => current.slice(0, -1));
+      if (commandEditor.handleInput(input, key)) {
         return;
-      }
-      if (input && !key.ctrl && !key.meta) {
-        setCommandInput((current) => current + input);
-        setHighlightedCommandIndex(0);
       }
       return;
     }
@@ -3813,11 +3868,6 @@ function BrowseShell<T>({
         return;
       }
       onCancel();
-      return;
-    }
-
-    if (key.ctrl && input.toLowerCase() === "w") {
-      updateQuery(deleteLastWord(query));
       return;
     }
 
@@ -4055,6 +4105,7 @@ function BrowseShell<T>({
       {commandMode ? (
         <CommandPalette
           input={commandInput}
+          cursor={commandEditor.cursor}
           commands={commands}
           highlightedIndex={highlightedCommandIndex}
         />
