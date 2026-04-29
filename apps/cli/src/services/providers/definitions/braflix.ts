@@ -3,7 +3,12 @@
 // =============================================================================
 
 import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
+import { braflixManifest } from "@kunai/core";
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
+import {
+  manifestToProviderCapabilities,
+  manifestToProviderMetadata,
+} from "../core-manifest-adapter";
 
 const DEFAULT_BASE = "https://braflix.mov";
 
@@ -73,18 +78,9 @@ async function resolveSourceLink(serverId: string): Promise<string> {
 }
 
 export class BraflixProvider implements Provider {
-  readonly metadata: ProviderMetadata = {
-    id: "braflix",
-    name: "Braflix",
-    description: "Braflix (braflix.mov, no browser for metadata)",
-    recommended: false,
-    isAnimeProvider: false,
-    domain: "braflix.mov",
-  };
+  readonly metadata: ProviderMetadata = manifestToProviderMetadata(braflixManifest);
 
-  readonly capabilities: ProviderCapabilities = {
-    contentTypes: ["movie", "series"],
-  };
+  readonly capabilities: ProviderCapabilities = manifestToProviderCapabilities(braflixManifest);
 
   constructor(private deps: ProviderDeps) {}
 

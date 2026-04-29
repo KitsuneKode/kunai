@@ -11,27 +11,30 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import type { StreamData } from "@/scraper";
+import { allanimeManifest } from "@kunai/core";
 import { createAnimeProvider, fetchAnimeEpisodeCatalog } from "./allanime-family";
 
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
+import {
+  manifestToProviderCapabilities,
+  manifestToProviderMetadata,
+} from "../core-manifest-adapter";
 
 const ALLANIME_CONFIG = {
-  id: "allanime",
-  name: "AllAnime",
-  description: "AllAnime / AllManga (anime, sub & dub, no browser needed)",
-  domain: "allanime.day",
+  id: allanimeManifest.id,
+  name: allanimeManifest.displayName,
+  description: allanimeManifest.description,
+  domain: allanimeManifest.domain,
   apiUrl: "https://api.allanime.day/api",
   referer: "https://youtu-chan.com",
-  recommended: false,
+  recommended: allanimeManifest.recommended,
   isAnimeProvider: true,
 };
 
 export class AllAnimeProvider implements Provider {
-  readonly metadata: ProviderMetadata = ALLANIME_CONFIG;
+  readonly metadata: ProviderMetadata = manifestToProviderMetadata(allanimeManifest);
 
-  readonly capabilities: ProviderCapabilities = {
-    contentTypes: ["series"], // Anime is always series
-  };
+  readonly capabilities: ProviderCapabilities = manifestToProviderCapabilities(allanimeManifest);
 
   private legacyProvider = createAnimeProvider(ALLANIME_CONFIG);
 

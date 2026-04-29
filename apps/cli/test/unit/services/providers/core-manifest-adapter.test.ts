@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { vidkingManifest } from "@kunai/core";
+import { allanimeManifest, cinebyAnimeManifest, vidkingManifest } from "@kunai/core";
 import {
   episodeToCoreIdentity,
   manifestToProviderCapabilities,
@@ -36,4 +36,14 @@ test("cli title and episode identities map to shared provider identities", () =>
     title: "Pilot",
     airDate: undefined,
   });
+});
+
+test("anime core manifests remain anime providers but expose series-compatible CLI content type", () => {
+  const allanimeMetadata = manifestToProviderMetadata(allanimeManifest);
+  const cinebyAnimeMetadata = manifestToProviderMetadata(cinebyAnimeManifest);
+
+  expect(allanimeMetadata.isAnimeProvider).toBe(true);
+  expect(cinebyAnimeMetadata.isAnimeProvider).toBe(true);
+  expect(manifestToProviderCapabilities(allanimeManifest).contentTypes).toEqual(["series"]);
+  expect(manifestToProviderCapabilities(cinebyAnimeManifest).contentTypes).toEqual(["series"]);
 });

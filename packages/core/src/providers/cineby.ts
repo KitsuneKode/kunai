@@ -1,15 +1,15 @@
 import { defineProviderManifest } from "./factory";
 
-export const VIDKING_PROVIDER_ID = "vidking" as const;
+export const CINEBY_PROVIDER_ID = "cineby" as const;
 
-export const vidkingManifest = defineProviderManifest({
-  id: VIDKING_PROVIDER_ID,
-  displayName: "VidKing",
-  description: "VidKing (recommended)",
-  domain: "vidking.net",
-  recommended: true,
+export const cinebyManifest = defineProviderManifest({
+  id: CINEBY_PROVIDER_ID,
+  displayName: "Cineby",
+  description: "Cineby",
+  domain: "cineby.sc",
+  recommended: false,
   mediaKinds: ["movie", "series"],
-  capabilities: ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
+  capabilities: ["source-resolve", "subtitle-resolve", "multi-source"],
   runtimePorts: [
     {
       runtime: "playwright-lease",
@@ -24,7 +24,7 @@ export const vidkingManifest = defineProviderManifest({
     scope: "local",
     keyParts: [
       "provider",
-      VIDKING_PROVIDER_ID,
+      CINEBY_PROVIDER_ID,
       "media-kind",
       "title",
       "season",
@@ -36,7 +36,6 @@ export const vidkingManifest = defineProviderManifest({
   browserSafe: false,
   relaySafe: false,
   notes: [
-    "Current CLI implementation resolves VidKing through the browser scraper adapter.",
-    "Do not mark browser-safe until a real 0-RAM implementation is wired into production.",
+    "Current production path uses Playwright because Cineby requires interactive player scraping.",
   ],
 });

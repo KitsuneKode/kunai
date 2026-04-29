@@ -6,7 +6,14 @@
 // =============================================================================
 
 import type { ProviderDefinition } from "../Provider";
-import { vidkingManifest } from "@kunai/core";
+import {
+  allanimeManifest,
+  bitcineManifest,
+  braflixManifest,
+  cinebyAnimeManifest,
+  cinebyManifest,
+  vidkingManifest,
+} from "@kunai/core";
 import { createVidKingProvider } from "./vidking";
 import { createCinebyProvider } from "./cineby";
 import { createBitCineProvider } from "./bitcine";
@@ -26,68 +33,33 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     factory: createVidKingProvider,
   },
   {
-    id: "cineby",
-    metadata: {
-      id: "cineby",
-      name: "Cineby",
-      description: "Cineby",
-      recommended: false,
-      isAnimeProvider: false,
-      domain: "cineby.sc",
-    },
-    capabilities: { contentTypes: ["movie", "series"] },
+    id: cinebyManifest.id,
+    metadata: manifestToProviderMetadata(cinebyManifest),
+    capabilities: manifestToProviderCapabilities(cinebyManifest),
     factory: createCinebyProvider,
   },
   {
-    id: "bitcine",
-    metadata: {
-      id: "bitcine",
-      name: "BitCine",
-      description: "BitCine (Cineby mirror)",
-      recommended: false,
-      isAnimeProvider: false,
-      domain: "bitcine.net",
-    },
-    capabilities: { contentTypes: ["movie", "series"] },
+    id: bitcineManifest.id,
+    metadata: manifestToProviderMetadata(bitcineManifest),
+    capabilities: manifestToProviderCapabilities(bitcineManifest),
     factory: createBitCineProvider,
   },
   {
-    id: "braflix",
-    metadata: {
-      id: "braflix",
-      name: "Braflix",
-      description: "Braflix (braflix.mov, no browser for metadata)",
-      recommended: false,
-      isAnimeProvider: false,
-      domain: "braflix.mov",
-    },
-    capabilities: { contentTypes: ["movie", "series"] },
+    id: braflixManifest.id,
+    metadata: manifestToProviderMetadata(braflixManifest),
+    capabilities: manifestToProviderCapabilities(braflixManifest),
     factory: createBraflixProvider,
   },
   {
-    id: "allanime",
-    metadata: {
-      id: "allanime",
-      name: "AllAnime",
-      description: "AllAnime / AllManga (anime, sub & dub, no browser needed)",
-      recommended: false,
-      isAnimeProvider: true,
-      domain: "allanime.day",
-    },
-    capabilities: { contentTypes: ["series"] },
+    id: allanimeManifest.id,
+    metadata: manifestToProviderMetadata(allanimeManifest),
+    capabilities: manifestToProviderCapabilities(allanimeManifest),
     factory: createAllAnimeProvider,
   },
   {
-    id: "cineby-anime",
-    metadata: {
-      id: "cineby-anime",
-      name: "Cineby Anime",
-      description: "Cineby Anime (HiAnime search, Playwright stream, sub & dub)",
-      recommended: false,
-      isAnimeProvider: true,
-      domain: "cineby.sc",
-    },
-    capabilities: { contentTypes: ["series"] },
+    id: cinebyAnimeManifest.id,
+    metadata: manifestToProviderMetadata(cinebyAnimeManifest),
+    capabilities: manifestToProviderCapabilities(cinebyAnimeManifest),
     factory: createCinebyAnimeProvider,
   },
 ];

@@ -3,22 +3,18 @@
 // =============================================================================
 
 import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
+import { bitcineManifest } from "@kunai/core";
 
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
+import {
+  manifestToProviderCapabilities,
+  manifestToProviderMetadata,
+} from "../core-manifest-adapter";
 
 export class BitCineProvider implements Provider {
-  readonly metadata: ProviderMetadata = {
-    id: "bitcine",
-    name: "BitCine",
-    description: "BitCine (Cineby mirror)",
-    recommended: false,
-    isAnimeProvider: false,
-    domain: "bitcine.net",
-  };
+  readonly metadata: ProviderMetadata = manifestToProviderMetadata(bitcineManifest);
 
-  readonly capabilities: ProviderCapabilities = {
-    contentTypes: ["movie", "series"],
-  };
+  readonly capabilities: ProviderCapabilities = manifestToProviderCapabilities(bitcineManifest);
 
   constructor(private deps: ProviderDeps) {}
 

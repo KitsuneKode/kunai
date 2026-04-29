@@ -1,6 +1,6 @@
 # Kunai Turborepo And Package Boundaries Plan
 
-Status: Phase 4B provider trace wiring in progress
+Status: Phase 4C provider manifest coverage in progress
 
 Last updated: 2026-04-29
 
@@ -319,7 +319,7 @@ Phase 3B wiring, after the package foundation:
 
 Extract one simple provider path first. Prefer a 0-RAM or low-risk provider before Playwright-heavy providers.
 
-Status: Phase 4B started.
+Status: Phase 4C started.
 
 Phase 4A foundation:
 
@@ -336,14 +336,22 @@ Phase 4B trace wiring:
 - record the real provider trace in diagnostics when available
 - prove the adapter with mocked provider tests before touching fallback orchestration
 
+Phase 4C manifest coverage:
+
+- add core manifests for VidKing, Cineby, BitCine, Braflix, AllAnime, and Cineby Anime
+- make CLI provider metadata and capability declarations derive from the core manifests
+- keep all provider implementations inside `apps/cli` for now
+- explicitly mark every current provider as not browser-safe until a production browser-safe path exists
+- declare runtime ports honestly, including hybrid fetch plus Playwright fallback providers
+
 Provider move order:
 
-1. Manifest-only for each provider: id, domain, media kinds, capabilities, runtime ports, cache policy, browser/relay safety.
-2. Adapter wiring for each provider: attach `ProviderResolveResult` while preserving current `StreamInfo` callers.
-3. Resolver orchestration: introduce a core resolver that ranks providers, calls runtime ports, and returns `ProviderResolveResult`.
-4. Implementation extraction: move only pure/provider-local logic into `@kunai/core`; keep Playwright, `mpv`, config, history, and storage wiring in `apps/cli`.
-5. Runtime-port split: replace direct browser imports with injected ports so CLI, future daemon, and future web can safely choose allowed runtimes.
-6. Remove legacy provider shape only after every production provider emits core results and fallback/autoplay/history are green.
+1. Manifest-only for each provider: id, domain, media kinds, capabilities, runtime ports, cache policy, browser/relay safety. Phase 4C.
+2. Adapter wiring for each provider: attach `ProviderResolveResult` while preserving current `StreamInfo` callers. Phase 4D.
+3. Resolver orchestration: introduce a core resolver that ranks providers, calls runtime ports, and returns `ProviderResolveResult`. Phase 4E.
+4. Implementation extraction: move only pure/provider-local logic into `@kunai/core`; keep Playwright, `mpv`, config, history, and storage wiring in `apps/cli`. Phase 4F.
+5. Runtime-port split: replace direct browser imports with injected ports so CLI, future daemon, and future web can safely choose allowed runtimes. Phase 4G.
+6. Remove legacy provider shape only after every production provider emits core results and fallback/autoplay/history are green. Phase 4H.
 
 Do not move all providers at once. The first full implementation extraction should be a low-risk provider path after every provider has a manifest and at least VidKing has proven trace wiring in production flow.
 

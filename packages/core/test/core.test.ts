@@ -1,8 +1,13 @@
 import { expect, test } from "bun:test";
 
 import {
+  allanimeManifest,
   adaptCliStreamResult,
   assertManifestHasRuntimePort,
+  bitcineManifest,
+  braflixManifest,
+  cinebyAnimeManifest,
+  cinebyManifest,
   createProviderCachePolicy,
   vidkingManifest,
 } from "../src/index";
@@ -17,6 +22,40 @@ test("vidking manifest declares capability, cache, and runtime boundaries", () =
   const port = assertManifestHasRuntimePort(vidkingManifest, "playwright-lease");
   expect(port.localOnly).toBe(true);
   expect(port.browserSafe).toBe(false);
+});
+
+test("all production providers declare cache and runtime boundaries", () => {
+  const manifests = [
+    vidkingManifest,
+    cinebyManifest,
+    bitcineManifest,
+    braflixManifest,
+    allanimeManifest,
+    cinebyAnimeManifest,
+  ];
+
+  expect(manifests.map((manifest) => manifest.id)).toEqual([
+    "vidking",
+    "cineby",
+    "bitcine",
+    "braflix",
+    "allanime",
+    "cineby-anime",
+  ]);
+
+  for (const manifest of manifests) {
+    expect(manifest.cachePolicy.ttlClass).toBe("stream-manifest");
+    expect(manifest.cachePolicy.keyParts).toContain("provider");
+    expect(manifest.runtimePorts.length).toBeGreaterThan(0);
+    expect(manifest.browserSafe).toBe(false);
+  }
+});
+
+test("anime manifests stay visible to CLI series mode while marked as anime-capable", () => {
+  expect(allanimeManifest.mediaKinds).toContain("anime");
+  expect(allanimeManifest.mediaKinds).toContain("series");
+  expect(cinebyAnimeManifest.mediaKinds).toContain("anime");
+  expect(cinebyAnimeManifest.mediaKinds).toContain("series");
 });
 
 test("provider cache policy normalizes deterministic key parts", () => {

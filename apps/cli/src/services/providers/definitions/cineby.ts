@@ -3,21 +3,17 @@
 // =============================================================================
 
 import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
+import { cinebyManifest } from "@kunai/core";
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
+import {
+  manifestToProviderCapabilities,
+  manifestToProviderMetadata,
+} from "../core-manifest-adapter";
 
 export class CinebyProvider implements Provider {
-  readonly metadata: ProviderMetadata = {
-    id: "cineby",
-    name: "Cineby",
-    description: "Cineby",
-    recommended: false,
-    isAnimeProvider: false,
-    domain: "cineby.sc",
-  };
+  readonly metadata: ProviderMetadata = manifestToProviderMetadata(cinebyManifest);
 
-  readonly capabilities: ProviderCapabilities = {
-    contentTypes: ["movie", "series"],
-  };
+  readonly capabilities: ProviderCapabilities = manifestToProviderCapabilities(cinebyManifest);
 
   constructor(private deps: ProviderDeps) {}
 
