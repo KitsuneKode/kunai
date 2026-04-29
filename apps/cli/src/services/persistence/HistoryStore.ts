@@ -13,6 +13,7 @@ export interface HistoryEntry {
   episode: number;
   timestamp: number; // seconds
   duration: number;
+  completed: boolean;
   provider: string;
   watchedAt: string;
 }
@@ -20,6 +21,7 @@ export interface HistoryEntry {
 export interface HistoryStore {
   get(id: string): Promise<HistoryEntry | null>;
   getAll(): Promise<Record<string, HistoryEntry>>;
+  listByTitle(id: string): Promise<readonly HistoryEntry[]>;
   save(id: string, entry: HistoryEntry): Promise<void>;
   delete(id: string): Promise<void>;
   clear(): Promise<void>;
@@ -27,7 +29,7 @@ export interface HistoryStore {
 
 // Utility functions
 export function isFinished(entry: HistoryEntry, threshold = 0.9): boolean {
-  return entry.duration > 0 && entry.timestamp / entry.duration >= threshold;
+  return entry.completed || (entry.duration > 0 && entry.timestamp / entry.duration >= threshold);
 }
 
 export function formatTimestamp(seconds: number): string {

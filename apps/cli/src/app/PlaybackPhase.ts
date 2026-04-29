@@ -130,6 +130,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         if (!currentEpisode) break;
 
         const currentProvider = providerRegistry.get(stateManager.getState().provider);
+        const watchedEntries = await historyStore.listByTitle(title.id);
         const currentAnimeEpisodes = await this.getAnimeEpisodeOptions({
           title,
           mode: stateManager.getState().mode,
@@ -142,6 +143,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           isAnime: stateManager.getState().mode === "anime",
           animeEpisodeCount: title.episodeCount,
           animeEpisodes: currentAnimeEpisodes,
+          watchedEntries,
         });
         const episodeAvailability = await resolveEpisodeAvailability({
           title,
@@ -296,6 +298,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             episode: currentEpisode.episode,
             timestamp: historyTimestamp,
             duration: result.duration,
+            completed:
+              result.endReason === "eof" && result.duration > 0
+                ? true
+                : result.duration > 0 && historyTimestamp / result.duration >= 0.9,
             provider: resolvedProviderId,
             watchedAt: new Date().toISOString(),
           });

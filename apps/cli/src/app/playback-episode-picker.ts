@@ -1,5 +1,10 @@
 import type { ShellPickerOption } from "@/app-shell/types";
 import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
+import {
+  formatTimestamp,
+  isFinished,
+  type HistoryEntry,
+} from "@/services/persistence/HistoryStore";
 import { fetchEpisodes } from "@/tmdb";
 
 export type PlaybackEpisodePickerInput = {
@@ -8,6 +13,7 @@ export type PlaybackEpisodePickerInput = {
   isAnime: boolean;
   animeEpisodeCount?: number;
   animeEpisodes?: readonly EpisodePickerOption[];
+  watchedEntries?: readonly HistoryEntry[];
   loadEpisodes?: typeof fetchEpisodes;
 };
 
@@ -22,8 +28,13 @@ export async function buildPlaybackEpisodePickerOptions({
   isAnime,
   animeEpisodeCount,
   animeEpisodes,
+  watchedEntries = [],
   loadEpisodes = fetchEpisodes,
 }: PlaybackEpisodePickerInput): Promise<PlaybackEpisodePickerOptions> {
+  const watchedByEpisode = new Map(
+    watchedEntries.map((entry) => [`${entry.season}:${entry.episode}`, entry] as const),
+  );
+
   if (title.type !== "series") {
     return {
       options: [],
@@ -39,7 +50,10 @@ export async function buildPlaybackEpisodePickerOptions({
           value: `${1}:${entry.index}`,
           label:
             entry.index === currentEpisode.episode ? `${entry.label}  ·  current` : entry.label,
-          detail: entry.detail,
+          detail: mergeEpisodeDetail(
+            watchedByEpisode.get(`1:${entry.index}`),
+            entry.detail,
+          ),
         })),
       };
     }
@@ -56,6 +70,7 @@ export async function buildPlaybackEpisodePickerOptions({
           episode === currentEpisode.episode
             ? `Episode ${episode}  ·  current`
             : `Episode ${episode}`,
+        detail: mergeEpisodeDetail(watchedByEpisode.get(`1:${episode}`)),
       })),
     };
   }
@@ -69,7 +84,22 @@ export async function buildPlaybackEpisodePickerOptions({
         entry.number === currentEpisode.episode
           ? `Episode ${entry.number}  ·  ${entry.name}  ·  current`
           : `Episode ${entry.number}  ·  ${entry.name}`,
-      detail: `${entry.airDate || "unknown year"}${entry.overview ? `  ·  ${entry.overview}` : ""}`,
+      detail: mergeEpisodeDetail(
+        watchedByEpisode.get(`${currentEpisode.season}:${entry.number}`),
+        `${entry.airDate || "unknown year"}${entry.overview ? `  ·  ${entry.overview}` : ""}`,
+      ),
     })),
   };
+}
+
+function mergeEpisodeDetail(entry?: HistoryEntry, baseDetail?: string): string | undefined {
+  const watchedDetail = describeWatchDetail(entry);
+  if (watchedDetail && baseDetail) return `${watchedDetail}  ·  ${baseDetail}`;
+  return watchedDetail ?? baseDetail;
+}
+
+function describeWatchDetail(entry: HistoryEntry | undefined): string | undefined {
+  if (!entry) return undefined;
+  if (isFinished(entry)) return "watched";
+  return `resume ${formatTimestamp(entry.timestamp)}`;
 }

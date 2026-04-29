@@ -21,6 +21,10 @@ export class SqliteHistoryStoreImpl implements HistoryStore {
     return entries;
   }
 
+  async listByTitle(id: string): Promise<readonly HistoryEntry[]> {
+    return this.repository.listByTitle(id, 500).map(toHistoryEntry);
+  }
+
   async save(id: string, entry: HistoryEntry): Promise<void> {
     this.repository.upsertProgress({
       title: {
@@ -34,7 +38,7 @@ export class SqliteHistoryStoreImpl implements HistoryStore {
       },
       positionSeconds: entry.timestamp,
       durationSeconds: entry.duration,
-      completed: entry.duration > 0 && entry.timestamp / entry.duration >= 0.9,
+      completed: entry.completed || (entry.duration > 0 && entry.timestamp / entry.duration >= 0.9),
       providerId: entry.provider,
       updatedAt: entry.watchedAt,
     });
@@ -57,6 +61,7 @@ function toHistoryEntry(progress: HistoryProgress): HistoryEntry {
     episode: progress.episode ?? progress.absoluteEpisode ?? 1,
     timestamp: progress.positionSeconds,
     duration: progress.durationSeconds ?? 0,
+    completed: progress.completed,
     provider: progress.providerId ?? "unknown",
     watchedAt: progress.updatedAt,
   };

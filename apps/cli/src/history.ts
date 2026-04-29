@@ -9,6 +9,7 @@ export type HistoryEntry = {
   episode: number;
   timestamp: number; // seconds into the episode when user quit
   duration: number; // total episode duration in seconds
+  completed?: boolean;
   provider: string;
   watchedAt: string; // ISO date
 };
@@ -64,6 +65,7 @@ export async function clearAllHistory(): Promise<void> {
 
 // Returns true if the episode was essentially "finished" (watched >85%)
 export function isFinished(entry: HistoryEntry): boolean {
+  if (entry.completed) return true;
   if (!entry.duration) return false;
   return entry.timestamp / entry.duration > 0.85;
 }

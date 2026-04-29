@@ -2,12 +2,38 @@ import { describe, expect, test } from "bun:test";
 
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import type { EpisodePickerOption, TitleInfo } from "@/domain/types";
+import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 
 const seriesTitle: TitleInfo = {
   id: "series-1",
   name: "Example Series",
   type: "series",
 };
+
+const WATCHED_ENTRIES: HistoryEntry[] = [
+  {
+    title: "Example Series",
+    type: "series",
+    season: 2,
+    episode: 5,
+    timestamp: 3600,
+    duration: 3600,
+    completed: true,
+    provider: "vidking",
+    watchedAt: "2026-04-29T00:00:00.000Z",
+  },
+  {
+    title: "Example Series",
+    type: "series",
+    season: 2,
+    episode: 6,
+    timestamp: 600,
+    duration: 3600,
+    completed: false,
+    provider: "vidking",
+    watchedAt: "2026-04-29T01:00:00.000Z",
+  },
+];
 
 describe("buildPlaybackEpisodePickerOptions", () => {
   test("uses provider episode catalogs for anime and marks the current episode", async () => {
@@ -47,6 +73,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
       title: seriesTitle,
       currentEpisode: { season: 2, episode: 5 },
       isAnime: false,
+      watchedEntries: WATCHED_ENTRIES,
       loadEpisodes: async () => [
         {
           number: 5,
@@ -68,12 +95,12 @@ describe("buildPlaybackEpisodePickerOptions", () => {
       {
         value: "2:5",
         label: "Episode 5  ·  The Current One  ·  current",
-        detail: "2026-01-01  ·  A test overview",
+        detail: "watched  ·  2026-01-01  ·  A test overview",
       },
       {
         value: "2:6",
         label: "Episode 6  ·  The Next One",
-        detail: "unknown year",
+        detail: "resume 10:00  ·  unknown year",
       },
     ]);
   });

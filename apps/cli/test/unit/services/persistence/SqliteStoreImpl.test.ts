@@ -35,6 +35,7 @@ describe("SqliteHistoryStoreImpl", () => {
       episode: 2,
       timestamp: 120,
       duration: 1200,
+      completed: false,
       provider: "vidking",
       watchedAt: "2026-04-29T00:00:00.000Z",
     });
@@ -49,6 +50,24 @@ describe("SqliteHistoryStoreImpl", () => {
 
     const all = await store.getAll();
     expect(all["tmdb:1"]?.episode).toBe(2);
+    expect(all["tmdb:1"]?.completed).toBe(false);
+
+    await store.save("tmdb:1", {
+      title: "Example",
+      type: "series",
+      season: 1,
+      episode: 3,
+      timestamp: 1200,
+      duration: 1200,
+      completed: true,
+      provider: "vidking",
+      watchedAt: "2026-04-30T00:00:00.000Z",
+    });
+
+    await expect(store.listByTitle("tmdb:1")).resolves.toMatchObject([
+      { episode: 2, completed: false },
+      { episode: 3, completed: true },
+    ]);
 
     db.close();
   });

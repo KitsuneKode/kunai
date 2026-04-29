@@ -19,6 +19,11 @@ export class HistoryStoreImpl implements HistoryStore {
     return (await this.storage.read<Record<string, HistoryEntry>>(STORAGE_KEY)) ?? {};
   }
 
+  async listByTitle(id: string): Promise<readonly HistoryEntry[]> {
+    const entry = await this.get(id);
+    return entry ? [entry] : [];
+  }
+
   async save(id: string, entry: HistoryEntry): Promise<void> {
     const all = await this.getAll();
     all[id] = entry;

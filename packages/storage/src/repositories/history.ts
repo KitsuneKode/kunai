@@ -123,6 +123,23 @@ export class HistoryRepository {
       .map(mapHistoryRow);
   }
 
+  listByTitle(titleId: string, limit = 500): readonly HistoryProgress[] {
+    return this.db
+      .query<HistoryProgressRow, [string, number]>(
+        `
+          SELECT * FROM history_progress
+          WHERE title_id = ?
+          ORDER BY
+            COALESCE(season, 0) ASC,
+            COALESCE(episode, 0) ASC,
+            updated_at DESC
+          LIMIT ?
+        `,
+      )
+      .all(titleId, limit)
+      .map(mapHistoryRow);
+  }
+
   deleteTitle(titleId: string): void {
     this.db.query("DELETE FROM history_progress WHERE title_id = ?").run(titleId);
   }

@@ -121,6 +121,7 @@ test("history repository round trips latest progress", () => {
   expect(progress?.positionSeconds).toBe(42);
   expect(progress?.providerId).toBe("vidking");
   expect(repo.listRecent(1)[0]?.key).toContain("tmdb:1");
+  expect(repo.listByTitle("tmdb:1")).toHaveLength(1);
 
   db.close();
 });
