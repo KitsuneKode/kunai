@@ -22,13 +22,25 @@ import {
   deleteKittyImage,
   type PosterResult,
 } from "./image-pane";
+import { LoadingShell, useSpinner } from "./loading-shell";
 import { hasPendingRootPicker, resolveRootPicker } from "./root-picker-bridge";
 import {
   clearRootContentSession,
   mountRootContent,
   useRootContentSession,
 } from "./root-content-state";
+import { ErrorShell, RootIdleShell } from "./root-status-shells";
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
+import {
+  Badge,
+  BrowseTitle,
+  DetailLine,
+  InlineBadge,
+  LocalSection,
+  ResizeBlocker,
+  ShellFooter,
+} from "./shell-primitives";
+import { APP_LABEL, palette, statusColor } from "./shell-theme";
 import {
   COMMANDS,
   parseCommand,
@@ -103,126 +115,7 @@ const stdinManager = {
 // Initialize on module load
 stdinManager.setup();
 
-const palette = {
-  amber: "#f2c066",
-  cyan: "#7dd3fc",
-  green: "#8dd58a",
-  rose: "#f3a6c8",
-  red: "#ff7a7a",
-  gray: "#7f8696",
-  muted: "#a4a9b6",
-};
-
-const APP_LABEL = "🥷 Kunai beta";
 const SCREEN_CLEAR_GRACE_MS = 140;
-
-function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
-  switch (tone) {
-    case "success":
-      return palette.green;
-    case "warning":
-      return palette.amber;
-    case "error":
-      return palette.red;
-    default:
-      return palette.cyan;
-  }
-}
-
-function hotkeyLabel(key: string): string {
-  return `[${key}]`;
-}
-
-function InlineBadge({
-  label,
-  tone = "neutral",
-}: {
-  label: string;
-  tone?: "neutral" | "info" | "success" | "warning" | "error";
-}) {
-  const color =
-    tone === "info"
-      ? palette.cyan
-      : tone === "success"
-        ? palette.green
-        : tone === "warning"
-          ? palette.amber
-          : tone === "error"
-            ? palette.red
-            : palette.muted;
-
-  return (
-    <Box marginRight={1}>
-      <Text color={color}>{label}</Text>
-    </Box>
-  );
-}
-
-function Footer({
-  taskLabel,
-  actions,
-  mode = "detailed",
-  commandMode = false,
-}: {
-  taskLabel: string;
-  actions: readonly FooterAction[];
-  mode?: ShellFooterMode;
-  commandMode?: boolean;
-}) {
-  const visibleActions =
-    mode === "minimal"
-      ? actions.filter((action) => !action.disabled).slice(0, 3)
-      : actions.filter((action) => !action.disabled);
-
-  if (commandMode) {
-    return (
-      <Box flexDirection="column" marginTop={1}>
-        <Text color="white">{taskLabel}</Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text color={palette.amber}>Command palette</Text>
-          <Text color={palette.gray}>
-            {" "}
-            · Type to search · Tab autocomplete · ↑↓ choose · Enter run · Esc close
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text color="white">{taskLabel}</Text>
-      {visibleActions.length > 0 ? (
-        <Box flexWrap="wrap" marginTop={1}>
-          {visibleActions.map((action, index) => (
-            <Box
-              key={`${action.key}-${action.label}`}
-              marginRight={index === visibleActions.length - 1 ? 0 : 2}
-              marginBottom={1}
-            >
-              <Text color={palette.cyan}>{hotkeyLabel(action.key)}</Text>
-              <Text color="white"> {action.label}</Text>
-            </Box>
-          ))}
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
-
-function ShellFooter({
-  taskLabel,
-  actions,
-  mode = "detailed",
-  commandMode = false,
-}: {
-  taskLabel: string;
-  actions: readonly FooterAction[];
-  mode?: ShellFooterMode;
-  commandMode?: boolean;
-}) {
-  return <Footer taskLabel={taskLabel} actions={actions} mode={mode} commandMode={commandMode} />;
-}
 
 function getCommandMatches(
   input: string,
@@ -553,67 +446,6 @@ function ShellFrame({
           mode={footerMode}
           commandMode={commandMode && !inputLocked}
         />
-      </Box>
-    </Box>
-  );
-}
-
-function ResizeBlocker({
-  minColumns,
-  minRows,
-  message = "Resize terminal to continue",
-}: {
-  minColumns: number;
-  minRows: number;
-  message?: string;
-}) {
-  return (
-    <Box
-      marginTop={1}
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={palette.red}
-      paddingX={1}
-    >
-      <Text color={palette.red}>{message}</Text>
-      <Text color={palette.muted}>
-        {`Need at least ${minColumns} columns × ${minRows} rows for this view.`}
-      </Text>
-      <Text color={palette.gray}>Resize the terminal, then continue.</Text>
-    </Box>
-  );
-}
-
-function LocalSection({
-  title,
-  tone = "neutral",
-  children,
-  marginTop = 1,
-}: {
-  title: string;
-  tone?: "neutral" | "info" | "success" | "warning" | "error";
-  children: React.ReactNode;
-  marginTop?: number;
-}) {
-  return (
-    <Box marginTop={marginTop} flexDirection="column">
-      <Text
-        color={
-          tone === "info"
-            ? palette.cyan
-            : tone === "success"
-              ? palette.green
-              : tone === "warning"
-                ? palette.amber
-                : tone === "error"
-                  ? palette.red
-                  : palette.muted
-        }
-      >
-        {title}
-      </Text>
-      <Box marginTop={1} flexDirection="column">
-        {children}
       </Box>
     </Box>
   );
@@ -1526,89 +1358,6 @@ function AppRoot({ container }: { container: Container }) {
   );
 }
 
-function RootIdleShell({ state }: { state: SessionState }) {
-  const currentTitle = state.currentTitle?.name ?? "No title selected yet";
-  const currentEpisode = state.currentEpisode
-    ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
-        state.currentEpisode.episode,
-      ).padStart(2, "0")}`
-    : null;
-  const hasSearchResults = state.searchResults.length > 0;
-
-  return (
-    <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-      <Box flexDirection="column">
-        <Text bold color="white">
-          {state.mode === "anime"
-            ? "Browse anime and keep playback command-ready"
-            : "Browse your favorite movies and series"}
-        </Text>
-        <Text color={palette.muted}>
-          {hasSearchResults
-            ? `${state.searchResults.length} results are still loaded. Keep browsing or continue playback.`
-            : "The fullscreen shell is ready. Search, review details, and continue without dropping back to the terminal."}
-        </Text>
-
-        <LocalSection title="Current session" tone="info" marginTop={2}>
-          <Text color="white">{currentTitle}</Text>
-          <Text color={palette.muted}>
-            {currentEpisode
-              ? `${currentEpisode}  ·  Ready to resume episode flow`
-              : hasSearchResults
-                ? "Search results are available and ready to reopen"
-                : "Start with a title search or switch modes"}
-          </Text>
-        </LocalSection>
-
-        {state.searchQuery.trim().length > 0 ? (
-          <LocalSection title="Search context" tone="success">
-            <Text color="white">{state.searchQuery}</Text>
-            <Text color={palette.muted}>
-              {hasSearchResults
-                ? `${state.searchResults.length} results cached in this session`
-                : "Query is loaded and ready for the next browse pass"}
-            </Text>
-          </LocalSection>
-        ) : null}
-      </Box>
-
-      <Box marginTop={2}>
-        <Text color={palette.gray} dimColor italic>
-          Preparing the next fullscreen panel…
-        </Text>
-      </Box>
-    </Box>
-  );
-}
-
-/**
- * Error shell for displaying failures.
- */
-function ErrorShell({ message, onResolve }: { message: string; onResolve: () => void }) {
-  useInput((_input, key) => {
-    if (key.return || key.escape) {
-      onResolve();
-    }
-  });
-
-  return (
-    <Box flexDirection="column" borderStyle="round" borderColor={palette.red} paddingX={1}>
-      <Box marginBottom={1}>
-        <Text color={palette.red} bold>
-          ⚠ Error
-        </Text>
-      </Box>
-      <Box marginBottom={1}>
-        <Text color="white">{message}</Text>
-      </Box>
-      <Box>
-        <Text color={palette.gray} dimColor>
-          Press Enter or Esc to continue
-        </Text>
-      </Box>
-    </Box>
-  );
-}
 
 /**
  * Launches the persistent state-driven app shell.
@@ -2061,276 +1810,6 @@ function getCommandLabel(
   return commands.find((command) => command.id === id)?.label.toLowerCase() ?? fallback;
 }
 
-function Badge({
-  label,
-  tone = "neutral",
-}: {
-  label: string;
-  tone?: "neutral" | "info" | "success" | "warning" | "accent";
-}) {
-  const color =
-    tone === "success"
-      ? palette.green
-      : tone === "info"
-        ? palette.cyan
-        : tone === "accent"
-          ? palette.rose
-          : tone === "warning"
-            ? palette.amber
-            : palette.gray;
-
-  return (
-    <Box borderStyle="round" borderColor={color} paddingX={1} marginRight={1}>
-      <Text color={color} bold={tone !== "neutral"}>
-        {label}
-      </Text>
-    </Box>
-  );
-}
-
-function DetailLine({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  tone?: "neutral" | "info" | "success" | "warning" | "accent";
-}) {
-  const valueColor =
-    tone === "success"
-      ? palette.green
-      : tone === "info"
-        ? palette.cyan
-        : tone === "accent"
-          ? palette.rose
-          : tone === "warning"
-            ? palette.amber
-            : "white";
-
-  return (
-    <Box>
-      <Text color={palette.gray}>{label}</Text>
-      <Text color={palette.gray}> · </Text>
-      <Text color={valueColor}>{value}</Text>
-    </Box>
-  );
-}
-
-function BrowseTitle({ mode }: { mode: "series" | "anime" }) {
-  return (
-    <Text bold color="white">
-      {mode === "anime" ? "Browse your favorite anime" : "Browse your favorite movies and series"}
-    </Text>
-  );
-}
-
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-function useSpinner() {
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFrame((f) => (f + 1) % SPINNER_FRAMES.length);
-    }, 80);
-    return () => clearInterval(timer);
-  }, []);
-  return SPINNER_FRAMES[frame];
-}
-
-function useElapsed(): number {
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const start = Date.now();
-    const timer = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - start) / 1000));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-  return elapsed;
-}
-
-function usePulse(periodMs: number): boolean {
-  const [on, setOn] = useState(true);
-  useEffect(() => {
-    const start = Date.now();
-    const timer = setInterval(() => {
-      const phase = ((Date.now() - start) % periodMs) / periodMs;
-      setOn(phase < 0.5);
-    }, 80);
-    return () => clearInterval(timer);
-  }, [periodMs]);
-  return on;
-}
-
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${String(s)}s`;
-}
-
-function renderPhaseRail(active: LoadingShellState["operation"]): readonly {
-  label: string;
-  tone: "neutral" | "info" | "success";
-}[] {
-  const order: readonly LoadingShellState["operation"][] = [
-    "searching",
-    "scraping",
-    "resolving",
-    "playing",
-  ];
-  const activeIndex = order.indexOf(active);
-
-  return order.map((phase, index) => ({
-    label: phase === "playing" ? "play" : phase,
-    tone: index < activeIndex ? "success" : index === activeIndex ? "info" : "neutral",
-  }));
-}
-
-function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?: () => void }) {
-  const spinner = useSpinner();
-  const elapsed = useElapsed();
-  const pulse = usePulse(1400);
-  const { stdout } = useStdout();
-
-  useInput((input, key) => {
-    if (input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
-    }
-    if (key.escape && state.cancellable && onCancel) {
-      onCancel();
-    }
-  });
-
-  const isPlaying = state.operation === "playing";
-  const leadIcon = isPlaying ? "▶" : spinner;
-  const accentColor = isPlaying ? palette.green : pulse ? palette.cyan : "white";
-  const separatorWidth = Math.min(52, Math.max(24, (stdout.columns ?? 80) - 22));
-  const infoWidth = Math.min(76, Math.max(40, (stdout.columns ?? 80) - 12));
-  const subtitleTone =
-    state.subtitleStatus?.includes("attached") || state.subtitleStatus?.includes("available")
-      ? "success"
-      : "warning";
-
-  const operationLabels: Record<LoadingShellState["operation"], string> = {
-    searching: "Searching",
-    scraping: "Scraping",
-    resolving: "Resolving stream",
-    playing: "Now playing",
-    loading: "Loading",
-  };
-  const phaseRail =
-    state.operation === "loading"
-      ? [{ label: "loading", tone: "info" as const }]
-      : renderPhaseRail(state.operation);
-
-  return (
-    <Box flexDirection="column" flexGrow={1} justifyContent="center" paddingX={2} paddingY={1}>
-      <Box flexDirection="column" width={infoWidth}>
-        <Box>
-          <Badge
-            label={operationLabels[state.operation].toLowerCase()}
-            tone={isPlaying ? "success" : "info"}
-          />
-          {state.details ? <Badge label={state.details.toLowerCase()} tone="neutral" /> : null}
-          {state.subtitleStatus ? <Badge label={state.subtitleStatus} tone={subtitleTone} /> : null}
-        </Box>
-        <Box marginTop={1}>
-          <Text color={accentColor}>{leadIcon} </Text>
-          <Text bold color="white">
-            {state.title}
-          </Text>
-        </Box>
-        {state.subtitle && (
-          <Box marginLeft={2}>
-            <Text color={palette.muted}>{state.subtitle}</Text>
-          </Box>
-        )}
-
-        <Box marginY={1}>
-          <Text color={palette.muted} dimColor>
-            {"─".repeat(separatorWidth)}
-          </Text>
-        </Box>
-
-        <Box flexWrap="wrap">
-          {phaseRail.map((phase, index) => (
-            <Badge key={`${phase.label}-${index}`} label={phase.label} tone={phase.tone} />
-          ))}
-        </Box>
-
-        <Box>
-          <Text color={accentColor}>{operationLabels[state.operation]}</Text>
-          <Text color={palette.gray} dimColor>
-            {"  "}
-            {isPlaying ? "Playback shell stays alive in the background" : "Gathering stream data"}
-          </Text>
-        </Box>
-
-        <Box marginTop={1} flexDirection="column">
-          {state.subtitleStatus ? (
-            <DetailLine label="Subtitle state" value={state.subtitleStatus} tone={subtitleTone} />
-          ) : null}
-          <DetailLine
-            label="Status"
-            value={
-              isPlaying
-                ? "Handed off to mpv, the shell will return here when playback ends"
-                : "Resolving provider data, stream headers, and playback context"
-            }
-            tone={isPlaying ? "success" : "info"}
-          />
-          {!isPlaying && elapsed >= 2 ? (
-            <DetailLine label="Elapsed" value={formatElapsed(elapsed)} />
-          ) : null}
-          {state.showMemory ? <DetailLine label="Memory" value={formatMemoryUsage()} /> : null}
-        </Box>
-
-        {state.trace && (
-          <Box marginTop={1}>
-            <Text color={palette.gray} dimColor>
-              {state.trace}
-            </Text>
-          </Box>
-        )}
-
-        {state.progress !== undefined ? (
-          <Box marginTop={1}>
-            <Box
-              width={Math.min(40, (stdout.columns ?? 80) - 4)}
-              borderStyle="round"
-              borderColor={palette.cyan}
-              paddingX={1}
-            >
-              <Text>
-                {"█".repeat(Math.floor(state.progress / 2.5))}
-                {"░".repeat(40 - Math.floor(state.progress / 2.5))}
-              </Text>
-              <Text color={palette.cyan}> {Math.round(state.progress)}%</Text>
-            </Box>
-          </Box>
-        ) : (
-          !isPlaying && (
-            <Box marginTop={1}>
-              <Text color={pulse ? palette.cyan : palette.gray} dimColor>
-                {pulse ? "Preparing playback context…" : "Waiting on provider response…"}
-              </Text>
-            </Box>
-          )
-        )}
-
-        {state.cancellable && (
-          <Box marginTop={1}>
-            <Text color={palette.gray} dimColor>
-              ESC to cancel
-            </Text>
-          </Box>
-        )}
-      </Box>
-    </Box>
-  );
-}
 
 export function openPlaybackShell({
   state,
@@ -4093,10 +3572,4 @@ export function openListShell<T>({
   };
 
   return run();
-}
-
-export function formatMemoryUsage(): string {
-  const memory = process.memoryUsage();
-  const toMb = (bytes: number) => `${(bytes / 1_048_576).toFixed(1)} MB`;
-  return `Mem  RSS ${toMb(memory.rss)}  ·  Heap ${toMb(memory.heapUsed)}/${toMb(memory.heapTotal)}`;
 }
