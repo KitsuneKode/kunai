@@ -14,7 +14,7 @@
 - **Known failure modes:** HTML structure changes frequently.
 - **What is proven in production code:** HTML parsing for catalog.
 - **What is only proven in experiments:** N/A.
-- **Minimum tests/fixtures needed before @kunai/core extraction:** Regex stability tests for HTML parsing.
+- **Minimum tests/fixtures needed before Provider SDK promotion:** Regex stability tests for HTML parsing.
 
 ## Subtitle Resolution
 - **Current production subtitle behavior:** Network sniffing during Playwright session.

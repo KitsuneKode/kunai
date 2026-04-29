@@ -14,7 +14,7 @@
 - **Known failure modes:** Cloudflare blocks.
 - **What is proven in production code:** Playwright interception.
 - **What is only proven in experiments:** N/A.
-- **Minimum tests/fixtures needed before @kunai/core extraction:** Move to 0-RAM.
+- **Minimum tests/fixtures needed before Provider SDK promotion:** Move to 0-RAM.
 
 ## Subtitle Resolution
 - **Current production subtitle behavior:** Network sniffing.

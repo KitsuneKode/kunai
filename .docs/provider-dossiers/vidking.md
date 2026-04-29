@@ -14,7 +14,7 @@
 - **Known failure modes:** 504 Gateway Timeout if videasy backend is overloaded.
 - **What is proven in production code:** 0-RAM extraction using patched WASM module.
 - **What is only proven in experiments:** The decoy Hashids algorithm is a trap.
-- **Minimum tests/fixtures needed before @kunai/core extraction:** End-to-end tests for WASM loading.
+- **Minimum tests/fixtures needed before Provider SDK promotion:** End-to-end tests for WASM loading.
 
 ## Subtitle Resolution
 - **Current production subtitle behavior:** Direct fetch from sub.wyzie.io using static API key.

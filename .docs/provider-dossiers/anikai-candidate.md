@@ -14,7 +14,7 @@
 - **Known failure modes:** Cloudflare ERR_ABORTED during initial navigation.
 - **What is proven in production code:** N/A.
 - **What is only proven in experiments:** The entire iframe wrapper extraction flow and the server fallback loop.
-- **Minimum tests/fixtures needed before @kunai/core extraction:** Test the Client-Side Unpacker regex against mocked Dean Edwards packed strings.
+- **Minimum tests/fixtures needed before Provider SDK promotion:** Test the Client-Side Unpacker regex against mocked Dean Edwards packed strings.
 
 ## Subtitle Resolution
 - **Current production subtitle behavior:** Untested.

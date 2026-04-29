@@ -14,7 +14,7 @@
 - **Known failure modes:** Identical to Cineby (Cloudflare, DOM timeouts).
 - **What is proven in production code:** Works identically to Cineby.
 - **What is only proven in experiments:** Is a wrapper for Vidking.
-- **Minimum tests/fixtures needed before @kunai/core extraction:** Migrate to 0-RAM.
+- **Minimum tests/fixtures needed before Provider SDK promotion:** Migrate to 0-RAM.
 
 ## Subtitle Resolution
 - **Current production subtitle behavior:** Network sniffing during Playwright session.

@@ -35,7 +35,7 @@ Launching Playwright for every search or episode click is too slow (adding a 2-5
 Eventually, the `cf_clearance` cookie will expire, or Cloudflare will rotate their security keys.
 
 1.  **Detection:** The fast `fetch()` request will suddenly return a `403 Forbidden` or `503 Service Unavailable`.
-2.  **The Catch:** The `@kunai/scraper-core` engine catches this specific HTTP status code.
+2.  **The Catch:** The Provider SDK/runtime boundary catches this specific HTTP status code.
 3.  **The Heal:** It silently deletes the expired token from the local database, launches Playwright (Phase 1), harvests a fresh `cf_clearance` cookie, kills Playwright, and replays the user's original request. The user experiences a one-time 3-second delay, and then the fast lane is restored.
 
 ---

@@ -14,7 +14,7 @@
 - **Known failure modes:** Backend API could add auth headers or rate limits in the future.
 - **What is proven in production code:** N/A.
 - **What is only proven in experiments:** The backend database accepts raw AniList IDs directly, avoiding Cloudflare and scraping entirely.
-- **Minimum tests/fixtures needed before @kunai/core extraction:** E2E test hitting theanimecommunity.com.
+- **Minimum tests/fixtures needed before Provider SDK promotion:** E2E test hitting theanimecommunity.com.
 
 ## Subtitle Resolution
 - **Current production subtitle behavior:** Untested.

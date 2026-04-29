@@ -180,28 +180,38 @@ Recommended package shape:
 
 ```text
 packages/core/
-  src/providers/
   src/capabilities/
   src/resolve/
   src/cache-policy/
   src/tracing/
   src/ranking/
   src/runtime/
+
+packages/providers/
+  src/provider-modules/
+  src/extractors/
+  src/dossiers/
+
+packages/runtime-browser/
+  src/leases/
+  src/interceptors/
+  src/evidence/
 ```
 
 ### Q: Should we extract providers as a separate package?
 
 Recommended answer:
 
-Yes, but only after the shared contracts and cache policy exist. The package should be `@kunai/core`, not a narrow `@kunai/scraper-core`, because the moat is deterministic resolution, ranking, tracing, and recovery rather than simply scraping.
+Yes, but not inside `@kunai/core`. The package should be `@kunai/providers`, backed by `@kunai/core` contracts and resolver policy. The moat is deterministic resolution, ranking, tracing, recovery, and provider isolation rather than simply scraping.
 
 The safe order is:
 
 - define `@kunai/types` and `@kunai/schemas`
 - add current-provider compatibility adapters in the CLI
 - move storage paths, cache keys, TTL policy, and SQLite repositories into `@kunai/storage`
-- extract one low-risk 0-RAM provider first
-- migrate Playwright-heavy providers only after runtime ports are stable
+- define the Provider SDK contract and candidate model
+- create `@kunai/providers` and move one low-risk provider module first
+- create `@kunai/runtime-browser` before migrating Playwright-heavy provider behavior
 
 Do not big-bang move every provider. That would hide regressions in fallback behavior, history persistence, subtitles, and provider health.
 

@@ -14,7 +14,7 @@
 - **Known failure modes:** Upstream API changes the 64-string cArray salt or hashing math.
 - **What is proven in production code:** N/A.
 - **What is only proven in experiments:** The entire bitwise hashing algorithm ported to TypeScript.
-- **Minimum tests/fixtures needed before @kunai/core extraction:** Unit tests for generateSecretKey(tmdbId) verifying it matches the browser output.
+- **Minimum tests/fixtures needed before Provider SDK promotion:** Unit tests for generateSecretKey(tmdbId) verifying it matches the browser output.
 
 ## Subtitle Resolution
 - **Current production subtitle behavior:** Untested.

@@ -1,4 +1,4 @@
-# Kunai File Host Extractors (Forcing the Raw Video) 🥷✨
+# Kunai File Host Extractors
 
 This document outlines the strategy for forcing the raw, unadulterated `.mp4` or `.m3u8` video streams out of 3rd-party file hosts (like MegaUp, Streamtape, Mp4Upload, Vidstreaming) that are embedded by wrappers like Anikai.
 
@@ -18,7 +18,7 @@ You correctly noted: *"Everything ultimately comes here in the browser right?"*
 
 Yes. No matter how much math or obfuscation the file host uses, the browser *must* eventually resolve the raw `.mp4` string to feed it to the video player. We exploit this.
 
-Inside the `@kunai/scraper-core` package, we will build a dedicated `/extractors` module:
+Inside the future `@kunai/providers` package, we will build provider-local file-host extractors. Shared extractor contracts and ranking policy belong in `@kunai/core`; browser or daemon-only execution helpers belong behind runtime ports.
 
 1. **The Route:** When Anikai returns a `megaup.nl` link, the core engine passes it to the `MegaUpExtractor`.
 2. **The Proxy Fetch:** The Extractor uses the Cloudflare CORS Proxy (`proxy.kunai.app`) to download the raw HTML of the `megaup.nl` page to the user's local browser/CLI.

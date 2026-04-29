@@ -14,7 +14,7 @@
 - **Known failure modes:** Cloudflare blocks Playwright.
 - **What is proven in production code:** Interception of network requests via Playwright.
 - **What is only proven in experiments:** Cineby is just a UI wrapper for Vidking. A 0-RAM approach is possible by bypassing Cineby entirely and hitting api.videasy.net.
-- **Minimum tests/fixtures needed before @kunai/core extraction:** Migrate to 0-RAM Vidking logic to deprecate Playwright here.
+- **Minimum tests/fixtures needed before Provider SDK promotion:** Migrate to 0-RAM VidKing logic to deprecate Playwright here.
 
 ## Subtitle Resolution
 - **Current production subtitle behavior:** Intercepts .vtt, .srt, or sub.wyzie.io network requests during Playwright session.

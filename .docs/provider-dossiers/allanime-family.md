@@ -14,7 +14,7 @@
 - **Known failure modes:** GraphQL endpoint rotation, AES key rotation.
 - **What is proven in production code:** Reliable AES decryption and GraphQL querying.
 - **What is only proven in experiments:** N/A.
-- **Minimum tests/fixtures needed before @kunai/core extraction:** AES decryption unit tests.
+- **Minimum tests/fixtures needed before Provider SDK promotion:** AES decryption unit tests.
 
 ## Subtitle Resolution
 - **Current production subtitle behavior:** Subtitles are typically hard-coded (HardSub) or provided in the m3u8 playlist.

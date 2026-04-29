@@ -7,7 +7,7 @@ It is intentionally separate from `apps/cli` and future `packages/*` code:
 - scripts here may be noisy, interactive, provider-specific, or tied to one title
 - captured HTML, JS chunks, WASM, logs, and notes are allowed here when useful for reverse engineering
 - production code must not import from this workspace
-- stable findings should be ported into `apps/cli` first, then later into `@kunai/core` after contracts exist
+- stable findings should be promoted through a provider dossier and implementation handoff before they enter production code
 
 ## Layout
 
@@ -25,11 +25,19 @@ If a provider experiment becomes stable, promote it through this path:
 ```text
 scratchpads/provider-name
   -> provider dossier / docs
-  -> apps/cli provider implementation or hardening
-  -> @kunai/core extraction after shared contracts exist
+  -> Provider SDK handoff
+  -> apps/cli provider implementation or hardening while adapters remain
+  -> @kunai/providers module after SDK contracts exist
 ```
 
 Do not move scratchpad code directly into a shared package.
+
+Research naming:
+
+- keep raw labs under `scratchpads/provider-name`
+- keep durable findings in report or dossier files with explicit provider names
+- use `source`, `mirror`, and `variant` language in new notes so findings map cleanly to the Provider SDK model
+- note subtitle, audio, hard-sub, quality, header, expiry, and browser-runtime evidence separately when observed
 
 ## Commands
 

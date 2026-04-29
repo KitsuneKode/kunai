@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 Use this file as the planning index. It should stay short. Put implementation detail in the linked plan files, not here.
 
@@ -43,7 +43,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 - Current execution mode: full-fledged CLI first. Web, desktop, remote sync, paid cloud, premium dashboards, and account-required flows are parked.
 - Phase 3 storage foundation is implemented with `@kunai/storage`.
-- Phase 4F provider implementation extraction has started with pure embed-route builders owned by `@kunai/core` while CLI providers still own browser scraping.
+- Phase 4F is now a Provider SDK boundary redesign: `@kunai/core` owns policy, `@kunai/providers` will own provider modules, and `@kunai/runtime-browser` will own JIT Playwright.
 - CLI history and stream cache now use SQLite-backed stores.
 - Fullscreen shell convergence so the UI stops reading like stacked full-width cards and stays inside the viewport
 - Fullscreen root-shell redesign spec is now tracked in [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)
@@ -58,6 +58,9 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Developer-mode diagnostics surface for stream, subtitle, and provider resolution stages
 - Metadata-store and preview-service migration beyond the current in-memory caches
 - Image-pane service migration for safe Kitty/Ghostty poster rendering inside the persistent shell without Ink scroll flicker
+- Provider SDK candidate model: provider -> source/mirror -> variant, with selected stream plus discovered candidates, subtitles, trace, cache policy, and health deltas
+- Runtime-browser package plan for JIT Playwright leases, interception, cooldown, evidence capture, and teardown
+- Interactive resolution UX for cancel, skip source, retry fresh, force no-cache, fallback provider, and provider/source/quality/subtitle selection
 
 ### Recently Improved
 
@@ -73,7 +76,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Kunai architecture hardening     | Planned     | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md) |
 | Kunai experience and growth moat | Planned     | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)             |
 | Kunai principal grill Q&A        | Planned     | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                             |
-| Turborepo and package boundaries | Phase 4F     | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)             |
+| Turborepo and package boundaries | Phase 4F SDK | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)             |
 | Kunai V2 ecosystem and Debrid    | Planned     | [.plans/v2-ecosystem-and-debrid.md](.plans/v2-ecosystem-and-debrid.md)                               |
 | Kunai V3 metadata and sync       | Planned     | [.plans/v3-metadata-and-sync.md](.plans/v3-metadata-and-sync.md)                                     |
 | CLI UX overhaul                  | Planned     | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                               |

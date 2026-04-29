@@ -1,6 +1,6 @@
 # Kunai Turborepo And Package Boundaries Plan
 
-Status: Phase 4F provider implementation extraction started
+Status: Phase 4F provider SDK boundary redesign
 
 Last updated: 2026-04-29
 
@@ -58,7 +58,15 @@ packages/
 
   core/
     Future package name: `@kunai/core`.
-    Provider contracts, capabilities, resolver orchestration, cache-key policy, source ranking, runtime ports, and tracing.
+    Resolver orchestration, cache-key policy, source ranking, runtime-port contracts, health policy, and tracing.
+
+  providers/
+    Future package name: `@kunai/providers`.
+    Provider modules behind one SDK-style interface. Owns provider-specific route builders, parsers, mirror/source loops, subtitle extraction, and provider-local decryption logic.
+
+  runtime-browser/
+    Future package name: `@kunai/runtime-browser`.
+    JIT Playwright lease manager, browser lifecycle policy, interceptors, timeout/cooldown policy, request evidence capture, and safe teardown.
 
   storage/
     Future package name: `@kunai/storage`.
@@ -178,32 +186,67 @@ Acceptance:
 
 ## Provider Package Decision
 
-Grill verdict: yes, providers need a separate package boundary, but not as a raw `scraper-core` dumping ground.
+Grill verdict: yes, providers need a separate SDK-style package boundary, but not as a raw `scraper-core` dumping ground.
 
-Use `@kunai/core` as the long-term package name because the winning abstraction is resolution intelligence, not scraping. It will eventually own provider contracts, provider capability manifests, source ranking, cache-key policy, runtime ports, and `ResolveTrace` construction. It must not own UI, `mpv`, account billing, daemon transport, app-specific storage, or user-facing workflow state.
+Use `@kunai/core` for resolution policy and orchestration. Use `@kunai/providers` for provider-specific implementation modules. Use `@kunai/runtime-browser` for JIT Playwright and browser interception. This keeps `@kunai/core` from becoming a junk drawer.
 
-Do not move provider implementations in Phase 2. First define the data contracts and adapter seam that current `apps/cli` providers can satisfy. Then extract one low-risk provider path after cache policy exists.
+Do not move provider implementations wholesale until the SDK interface is sharp. First define the module contract that current `apps/cli` providers can satisfy. Then extract deterministic provider-local logic, then provider modules, then runtime ports.
 
 Hard rules for the provider boundary:
 
 - providers return data and evidence, not UI decisions
-- providers never write history, config, stream cache, or health stores directly
-- providers emit cache policy; `@kunai/storage` decides where and how it is stored
-- providers declare required runtime capabilities instead of importing Playwright, `yt-dlp`, daemon, or web APIs directly
-- providers return structured failure codes and a `ResolveTrace`, not only `null`
+- providers handle their own provider-local mess: mirror/source loops, provider-specific parsing, decryption, upstream server selection, and subtitle extraction
+- providers never write history, config, stream cache, trace stores, or health stores directly
+- providers emit cache policy and trace evidence; `@kunai/storage` decides where and how it is stored
+- providers declare required runtime capabilities instead of importing Playwright, `yt-dlp`, daemon, storage, or web APIs directly
+- providers return structured failure codes and trace events, not only `null`
 - providers expose browser-safety and relay-safety explicitly
+- providers return selected candidates plus all discovered candidates when possible
 - app surfaces choose UX, playback handoff, entitlement messaging, and recovery behavior
 - web may import only browser-safe pure provider logic, never local-compute providers by accident
+
+Candidate model:
+
+- conceptual hierarchy is `Provider -> Source/Mirror -> Variant`
+- do not force every provider into a rigid tree when the site only reveals quality/subtitle/audio after final resolution
+- represent hard-subbed streams, dub/sub audio, header requirements, expiry, confidence, protocol, quality, and subtitle compatibility as candidate metadata
+- attach all usable subtitle tracks to playback when possible, while config chooses the default track
 
 Target data flow:
 
 ```text
 apps/cli controller
   -> @kunai/core resolver
-  -> provider runtime ports
-  -> StreamCandidate[] + SubtitleCandidate[] + ResolveTrace + CachePolicy
+  -> @kunai/providers module
+  -> injected runtime ports from @kunai/runtime-browser / CLI fetch ports
+  -> selected stream + StreamCandidate[] + SubtitleCandidate[] + ResolveTrace + CachePolicy
   -> @kunai/storage persistence/cache policy
   -> app-specific playback / UI / diagnostics
+```
+
+Target package ownership:
+
+```text
+@kunai/types
+  Stable TypeScript contracts.
+
+@kunai/schemas
+  Zod validation for serialized, untrusted, IPC, cache, plugin, and sync boundaries.
+
+@kunai/core
+  Resolver orchestration, provider filtering, ranking, cache-key policy, health policy, trace model, retry/abort contracts.
+
+@kunai/providers
+  Provider modules with one SDK interface. Owns provider-local source/mirror/variant extraction and returns structured results.
+
+@kunai/runtime-browser
+  JIT Playwright lease manager, browser pool/launch policy, interception helpers, cooldowns, timeout policy, evidence collection, teardown.
+
+@kunai/storage
+  SQLite local history, cache, health, source inventory, trace persistence, pruning, migrations.
+
+apps/cli
+  User experience, Ink shell, commands, mpv IPC, local app flow, dependency guardrails.
 ```
 
 ## Phase 2: Contracts Before Implementations
@@ -315,11 +358,11 @@ Phase 3B wiring, after the package foundation:
 3. Add provider health and resolve trace persistence.
 4. Update cache/history/settings UI copy so users see the real local storage model.
 
-## Phase 4: First Provider Extraction
+## Phase 4: Provider SDK And Runtime Boundaries
 
-Extract one simple provider path first. Prefer a 0-RAM or low-risk provider before Playwright-heavy providers.
+Build the provider architecture like an internal SDK. The app calls one standard interface; providers own their internal mess; runtime ports provide environment-specific capabilities.
 
-Status: Phase 4F provider implementation extraction started.
+Status: Phase 4F provider SDK boundary redesign.
 
 Phase 4A foundation:
 
@@ -374,12 +417,50 @@ Phase 4E resolver orchestration:
 - preserve provider attempts, structured failures, and attached `ProviderResolveResult` evidence
 - keep PlaybackPhase responsible for app state, history, subtitles, mpv playback, and user-facing diagnostics
 
-Phase 4F implementation extraction:
+Phase 4F provider SDK contract:
 
-- move deterministic provider-local logic into `@kunai/core` before moving network/browser-heavy internals
-- keep Playwright scraping, app logging, config, storage, subtitles, and playback orchestration inside `apps/cli`
-- first slice extracts VidKing, Cineby, and BitCine embed-route builders into `@kunai/core`
-- preserve exact production playback URLs with package tests before extracting any higher-risk provider behavior
+- define `ProviderModule`, `ProviderManifest`, provider runtime-port requirements, provider-local retry policy, abort semantics, and trace event vocabulary
+- model `Provider -> Source/Mirror -> Variant` without forcing a rigid tree when upstream sites reveal data late
+- require selected stream plus discovered candidates when available
+- require providers to emit trace events for source attempts, mirror failures, subtitle discoveries, cache hints, retries, and provider exhaustion
+- keep current CLI providers working through adapters while the contract lands
+- treat the existing VidKing/Cineby/BitCine embed-route extraction as a temporary first slice; move those helpers to `@kunai/providers` once that package exists
+
+Phase 4G provider package:
+
+- create `@kunai/providers`
+- move provider-local pure logic from `@kunai/core` and `apps/cli` into provider modules
+- use research from `apps/experiments/scratchpads/provider-*` and reports as dossier input before moving behavior
+- keep Playwright, app logging, config, storage, mpv, and UI out of the provider package
+- expose one registry of provider modules with stable IDs, manifests, and capability declarations
+
+Phase 4H browser runtime package:
+
+- create `@kunai/runtime-browser`
+- move JIT Playwright lease management, browser lifecycle, interceptors, timeout/cooldown policy, and evidence capture out of `apps/cli`
+- providers receive a browser runtime port; they never import Playwright directly
+- CLI and future desktop daemon can use the runtime package; web can skip those providers or use paired daemon mode
+
+Phase 4I cache, health, and source intelligence:
+
+- formalize cache layers: metadata, provider inventory, stream manifest, subtitle list, browser evidence, health, and trace
+- keep local SQLite as the first implementation through `@kunai/storage`
+- let providers emit cache policy and cache hints; storage owns persistence and pruning
+- track provider and source/mirror health locally: latency, success rate, subtitle success, timeout spikes, and recent failure reasons
+- feed health into resolver ranking without making provider modules stateful
+
+Phase 4J interactive resolution UX:
+
+- stream resolution events into the TUI so users can see provider retry, mirror/source attempts, subtitle discovery, cache hits/stale hits, and browser runtime work
+- support cancel, skip current source/mirror, retry same provider fresh, force no-cache, and fallback provider
+- expose provider, source/mirror, quality/variant, audio, and subtitle selection when candidates are known
+- attach all usable subtitle tracks to mpv when possible while honoring configured default language
+
+Phase 4K remove legacy provider shape:
+
+- stop using `StreamInfo | null` as the primary provider output
+- providers return structured SDK results with selected stream, candidates, subtitles, trace, failures, cache policy, and health deltas
+- remove adapters only after fallback, autoplay, history, subtitles, and diagnostics are green
 
 Provider move order:
 
@@ -388,11 +469,14 @@ Provider move order:
 3. Playback control gate: prove active `mpv` stop/control from the TUI before moving more orchestration. Phase 4D.5.
 4. Playback refresh/fallback controls: route user control intents through playback policy without bypassing history or diagnostics. Phase 4D.6.
 5. Resolver orchestration: introduce a core resolver that ranks providers, calls runtime ports, and returns attempt evidence plus `ProviderResolveResult` when available. Phase 4E.
-6. Implementation extraction: move only pure/provider-local logic into `@kunai/core`; keep Playwright, `mpv`, config, history, and storage wiring in `apps/cli`. Phase 4F.
-7. Runtime-port split: replace direct browser imports with injected ports so CLI, future daemon, and future web can safely choose allowed runtimes. Phase 4G.
-8. Remove legacy provider shape only after every production provider emits core results and fallback/autoplay/history are green. Phase 4H.
+6. SDK contract: define provider modules, candidate model, retry/abort trace events, and selected-plus-discovered result shape. Phase 4F.
+7. Provider package: move provider-local pure logic into `@kunai/providers`, backed by dossiers from experiments. Phase 4G.
+8. Browser runtime package: move JIT Playwright lease/interception lifecycle into `@kunai/runtime-browser`. Phase 4H.
+9. Cache and health intelligence: wire provider/source health and cache policy into resolver ranking. Phase 4I.
+10. Interactive resolution UX: expose live retries, abort, skip, fallback, and candidate selection in the shell. Phase 4J.
+11. Remove legacy provider shape only after every production provider emits SDK results and fallback/autoplay/history are green. Phase 4K.
 
-Do not move all providers at once. The first full implementation extraction should be a low-risk provider path after every provider has a manifest and at least VidKing has proven trace wiring in production flow.
+Do not move all providers at once. Promote one provider at a time from research dossier to provider module to runtime-port integration.
 
 Actions:
 
