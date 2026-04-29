@@ -42,7 +42,7 @@ Maintaining 50 different scrapers as streaming sites constantly change their Clo
 
 **The Architecture:**
 
-1. The `@kunai/scraper-core` is just a standardized engine.
+1. The `@kunai/core` package is the standardized provider and resolution engine.
 2. We define a strict TypeScript interface (e.g., `interface KunaiPlugin { extract(id): Promise<Stream> }`).
 3. Advanced users can write a provider for a new site and install it locally.
 4. Kunai loads local plugins only after explicit user approval.

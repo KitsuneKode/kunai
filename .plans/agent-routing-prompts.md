@@ -47,7 +47,7 @@ Read only:
 
 Hard boundaries:
 - Do not start true shell refactor.
-- Do not extract `packages/types`, `packages/cache`, or `scraper-core`.
+- Do not extract `packages/types`, `packages/cache`, or `@kunai/core`.
 - Do not rewrite providers.
 - Do not start web/desktop.
 - Do not make visual redesign changes.
@@ -360,7 +360,7 @@ Report:
 - verification results
 ```
 
-## Prompt 6: Principal First Scraper-Core Extraction
+## Prompt 6: Principal First Core Provider Extraction
 
 Use this after contracts and cache policy exist.
 
@@ -368,7 +368,7 @@ Use this after contracts and cache policy exist.
 You are working in Kunai after contracts and cache helpers exist.
 
 Goal:
-Create the first core provider package, preferably `packages/core` as `@kunai/core` unless the current plan still requires `packages/scraper-core`, and extract one low-risk provider path or provider contract first.
+Create the first core provider package, `packages/core` as `@kunai/core`, and extract one low-risk provider path or provider contract first.
 
 Read:
 1. `AGENTS.md`
@@ -386,17 +386,18 @@ Hard boundaries:
 - Do not touch web/desktop.
 
 Tasks:
-1. Create `packages/core` as `@kunai/core`, or use `packages/scraper-core` only if the team intentionally keeps the narrower name for this phase.
-2. Define provider interface using shared types.
-3. Move capability declaration/cache policy for one low-risk provider.
-4. Return `StreamCandidate[]` plus `ResolveTrace` shape where practical.
-5. Keep `mpv`, UI, and app orchestration in `apps/cli`.
-6. Add tests for provider capability, cache key policy, and trace shape.
-7. Run verification and commit.
+1. Create `packages/core` as `@kunai/core`.
+2. Define provider interface and runtime-port contracts using shared types.
+3. Add a compatibility adapter for the current `apps/cli` provider shape before moving internals.
+4. Move capability declaration/cache policy for one low-risk provider.
+5. Return `ProviderResolveResult` with `StreamCandidate[]`, `SubtitleCandidate[]`, `ResolveTrace`, cache policy, and structured failures where practical.
+6. Keep `mpv`, UI, history/config storage, daemon transport, and app orchestration in `apps/cli`.
+7. Add tests for provider capability, cache key policy, runtime-port selection, and trace shape.
+8. Run verification and commit.
 
 Acceptance:
 - CLI still works.
-- One provider path imports through `@kunai/scraper-core` or one core contract is proven.
+- One provider path imports through `@kunai/core` or one core contract is proven.
 - No broad provider rewrite.
 ```
 

@@ -15,21 +15,53 @@ Kunai should become a local-first media runtime with three product surfaces:
 These surfaces should share contracts and provider intelligence, but they should not share UI code by accident.
 
 ```text
-apps/cli        -> Ink shell, mpv handoff, local-first runtime
-apps/web        -> Next.js app, browser cache, player UI, pairing client
+apps/cli        -> Ink shell, mpv handoff, local-first runtime, optional account sync
+apps/web        -> Next.js app, browser cache, player UI, pairing client, low-cost signed-in surface
 apps/desktop    -> later wrapper around web UI plus bundled daemon
-packages/*      -> contracts, schemas, cache, scraper core, CLI UI primitives
+packages/*      -> contracts, schemas, cache, provider core, CLI UI primitives
 ```
 
 ## Runtime Principles
 
 - The CLI remains the first-class product until playback reliability, cache correctness, and diagnostics are excellent.
 - Web must work without local pairing for browser-safe paths, but pairing unlocks heavy providers and local playback intelligence.
+- Sign-in should improve continuity, sync, budgets, and personalization; it must not be required for local CLI playback.
 - Cloud compute is a paid convenience layer, not the default product path.
 - Provider behavior must be capability-driven, not hardcoded into UI surfaces.
 - Every resolution should produce a `ResolveTrace`.
 - Cache policy should be explicit per data type and provider capability.
 - Legacy code can remain as reference, but it must be quarantined away from production imports.
+
+## Surface Capability Split
+
+Kunai should share intelligence across surfaces, but each surface has a different job.
+
+```text
+CLI / local runtime
+  - owns local-first power: Playwright leases, yt-dlp, mpv, local credentials, local stream cache
+  - can offer optional sign-in for sync, device list, encrypted backup, and account status
+  - should remain fully useful offline or signed out for local playback paths
+
+Web unpaired
+  - owns reach: static shell, fast browse, PWA, IndexedDB, browser-safe providers, narrow relay
+  - must be independently useful without CLI/Desktop running
+  - should minimize Kunai-side compute with static rendering, client cache, edge metadata, and strict budgets
+  - should degrade gracefully into "pair local compute" or "cloud convenience available" states
+
+Web paired
+  - uses local daemon for heavy providers, local credentials, stronger auto-heal, and optional player handoff
+  - never commands localhost without explicit pairing, scoped tokens, and visible connected-device state
+
+Signed-in sync
+  - owns continuity: history events, preferences, device list, theme/profile state, cloud budgets
+  - should sync durable user intent, not raw playable links or provider secrets
+
+Paid cloud convenience
+  - owns rare fallback convenience for mobile/TV users when local compute is unavailable
+  - must be entitlement-gated, budgeted, queued, observable, and optional
+```
+
+Rule of thumb: if a feature needs private credentials, raw playable URLs, browser automation, `mpv`, or heavy probing, it belongs in CLI/Desktop/local daemon first. If a feature needs discovery, onboarding, browse, player polish, lightweight source confidence, or sync visibility, it belongs in web. The unpaired web path should stand on its own; pairing should make it stronger, not make it valid.
 
 ## Package Boundaries
 
@@ -44,9 +76,9 @@ packages/schemas
   Future package name: `@kunai/schemas`.
   Zod schemas for config, cache rows, IPC payloads, relay payloads, sync events, and imported mapping data.
 
-packages/scraper-core
-  Future package name: `@kunai/core` or `@kunai/scraper-core`; prefer `@kunai/core` once it owns more than scraper contracts.
-  Provider contracts, capability manifests, cache-key policy, resolver orchestration, source ranking, and resolve tracing.
+packages/core
+  Future package name: `@kunai/core`.
+  Provider contracts, capability manifests, runtime ports, cache-key policy, resolver orchestration, source ranking, and resolve tracing.
 
 packages/cache
   Future package name: `@kunai/cache`.
@@ -104,19 +136,23 @@ kunai-cache.sqlite  -> disposable stream/source/provider/trace cache
 
 The web app should not depend on a local machine to be useful.
 
-Default web paths:
+Unpaired web paths:
 
 - static browse and metadata
 - IndexedDB cache
 - browser-safe provider modules
 - narrow provider RPC relay for CORS-limited but cheap providers
+- signed-in sync/home surfaces when available
+- clear source confidence, disabled reasons, and upgrade/pairing prompts
 
-Pairing paths:
+Paired web paths:
 
 - local daemon resolution
 - Playwright-backed providers
 - mpv or desktop player handoff
 - local credentials such as Debrid
+- stronger local auto-heal and provider fallback
+- local cache/source inventory reuse
 
 Paid paths:
 
@@ -124,6 +160,23 @@ Paid paths:
 - higher relay budget
 - limited cloud resolver convenience
 - TV/mobile convenience when local compute is unavailable
+
+Signed-in web should be better, not mandatory:
+
+- synced continue watching
+- synced settings and profiles
+- provider-health intelligence
+- device pairing history
+- premium budget dashboard
+- optional cloud convenience
+
+Signed-in web must not store:
+
+- raw playable links from untrusted clients
+- provider cookies
+- local daemon tokens
+- debrid-derived playback links
+- user-specific stream headers
 
 ## Daemon Direction
 

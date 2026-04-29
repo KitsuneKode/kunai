@@ -168,16 +168,16 @@ Every CLI, web, desktop, cache, provider, and premium decision should emit a tra
 
 This powers diagnostics, UX trust, provider health, support, and future ranking.
 
-### Q: What should `@kunai/scraper-core` contain?
+### Q: What should `@kunai/core` contain?
 
 Recommended answer:
 
-It should contain provider contracts, provider capability declarations, pure provider logic, cache key policy, result types, and resolver orchestration. It should not contain app UI, account billing, or platform-specific secrets.
+It should contain provider contracts, provider capability declarations, pure provider logic, runtime-port contracts, cache key policy, result types, resolver orchestration, source ranking, and resolve tracing. It should not contain app UI, `mpv`, account billing, daemon transport, history/config storage, or platform-specific secrets.
 
 Recommended package shape:
 
 ```text
-packages/scraper-core/
+packages/core/
   src/providers/
   src/capabilities/
   src/resolve/
@@ -186,6 +186,46 @@ packages/scraper-core/
   src/ranking/
   src/runtime/
 ```
+
+### Q: Should we extract providers as a separate package?
+
+Recommended answer:
+
+Yes, but only after the shared contracts and cache policy exist. The package should be `@kunai/core`, not a narrow `@kunai/scraper-core`, because the moat is deterministic resolution, ranking, tracing, and recovery rather than simply scraping.
+
+The safe order is:
+
+- define `@kunai/types` and `@kunai/schemas`
+- add current-provider compatibility adapters in the CLI
+- move cache keys and TTL policy into shared cache/core code
+- extract one low-risk 0-RAM provider first
+- migrate Playwright-heavy providers only after runtime ports are stable
+
+Do not big-bang move every provider. That would hide regressions in fallback behavior, history persistence, subtitles, and provider health.
+
+### Q: What is the provider spec we should force every source to follow?
+
+Recommended answer:
+
+Every provider must declare capability, runtime, cache, confidence, and failure behavior before it is treated as production.
+
+Minimum spec:
+
+- provider ID, version, display label, and supported media kinds
+- browser-safe, relay-safe, local-daemon-required, or Playwright-required runtime class
+- supported operations such as search, episode listing, source resolution, subtitles, and debrid lookup
+- normalized input identity requirements
+- deterministic cache-key inputs and TTL class
+- `StreamCandidate[]` and `SubtitleCandidate[]` output shape
+- structured error codes instead of silent `null`
+- `ResolveTrace` evidence for every attempt
+- provider health delta after success, timeout, parse failure, or upstream block
+
+### Q: Who owns storage and cache writes?
+
+Recommended answer:
+
+Not the provider. Providers emit cache policy and evidence. `@kunai/cache` and the active app surface decide persistence. This avoids corrupt cache ownership when the same core provider is used from CLI, web, desktop, daemon, or tests.
 
 ### Q: What should stay app-specific?
 
@@ -241,6 +281,31 @@ Recommended answer:
 - local daemon tokens
 - signed media URLs in shareable reports
 - capability tokens
+
+### Q: Is central geo-aware playable-link caching a good idea?
+
+Recommended answer:
+
+No, not as a default architecture. It sounds magical, but it creates cache-poisoning, legal, privacy, provider-ban, and regional correctness risks. The safer version is local SWR plus central provider-health intelligence.
+
+What we can centralize:
+
+- provider capability manifests
+- coarse regional provider health
+- catalog metadata
+- static mappings
+- non-sensitive source inventory when provider policy allows it
+
+What stays local:
+
+- raw `.m3u8` links
+- signed URLs
+- provider cookies
+- debrid-derived playback links
+- local daemon tokens
+- user-specific headers
+
+The user-facing magic should be "Kunai healed the stream instantly," not "Kunai has a global database of other users' playable links."
 
 ### Q: What makes the app feel fast even when providers are slow?
 

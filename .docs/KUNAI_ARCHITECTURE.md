@@ -1,6 +1,6 @@
 # Kunai: The Unified Master Architecture 🥷✨
 
-This document is the absolute source of truth for the Kunai ecosystem. It synthesizes the "Stremio Killer" distribution model, the "Everything Engine" performance mandate, and the "Priceless UX" product vision into a single, uncompromised master plan.
+This document is the high-level source of truth for the Kunai ecosystem. It synthesizes the "Stremio Killer" distribution model, the "Everything Engine" performance mandate, and the "Priceless UX" product vision into a single, uncompromised master plan.
 
 > Status note: this document is the high-level vision, but several security and scaling details have been superseded by [.plans/kunai-architecture-and-cache-hardening.md](../.plans/kunai-architecture-and-cache-hardening.md), [.plans/kunai-experience-and-growth-moat.md](../.plans/kunai-experience-and-growth-moat.md), and [.plans/kunai-principal-grill-qa.md](../.plans/kunai-principal-grill-qa.md). In particular: use a provider RPC relay instead of a generic CORS proxy, use explicit daemon pairing instead of raw `localhost:8080` detection, treat WASM signatures as clone friction rather than auth, and use provider-scoped Playwright leases instead of assuming pure kill-after-every-resolve JIT.
 
@@ -18,20 +18,20 @@ If we centralize the scraping (hosting Node.js servers to fetch streams for mill
 
 To reach millions of users without asking them to install complex desktop software, we must have a functional, serverless Web App (`kunai.app`) alongside our elite CLI.
 
-### A. The Web App (The CORS Proxy & Client-Side Scraping)
+### A. The Web App (Provider RPC Relay & Client-Side Resolution)
 
-Browsers block cross-origin requests (CORS). To allow the Web App to scrape providers for free:
+Browsers block cross-origin requests (CORS). To allow the Web App to use cheap browser-safe providers without becoming an open proxy:
 
-1. **The Cloudflare Worker (The Proxy):** We deploy a tiny, free serverless function on Cloudflare (e.g., `proxy.kunai.app`).
-2. **The Pass-Through:** When the user's browser wants to scrape Vidking, it calls `https://proxy.kunai.app/?url=https://videasy.net/api`.
-3. **Client-Side Decryption:** The proxy strips the CORS headers and returns the raw encrypted data. The user's iPhone or Laptop runs our 0-RAM TypeScript decryption logic entirely in their browser memory. We pay **$0** in compute.
+1. **The Cloudflare Worker / Pages Function:** We deploy narrow provider RPC endpoints such as `/rpc/provider/vidking/sources`.
+2. **The Allowlisted Relay:** The relay accepts fixed provider operations, fixed upstream hosts, fixed path templates, response limits, and per-session budgets. It never accepts arbitrary `?url=` fetches.
+3. **Client-Side Decryption:** The user's iPhone or laptop runs our browser-safe 0-RAM TypeScript logic in memory. The relay solves same-origin restrictions; it does not become Kunai's compute engine.
 
 ### B. The Local Daemon (Bring Your Own Compute)
 
-The CORS proxy only works for 0-RAM providers (Vidking, Rivestream). For providers that require a real browser to bypass Cloudflare TLS (Anikai, Miruro), the Web App cannot run them.
+The provider RPC relay only works for browser-safe 0-RAM providers (Vidking, Rivestream). For providers that require a real browser to bypass Cloudflare TLS (Anikai, Miruro), the Web App cannot run them directly.
 
 - Power users run the `kunai` CLI or Desktop App in the background.
-- The Web App detects `localhost:8080`. It instantly "unlocks" the heavy providers, routing the Playwright scraping requests through the user's own local machine instead of the CORS proxy.
+- The Web App pairs with the local daemon using an explicit QR/code flow, scoped tokens, and an origin allowlist. It never silently commands `localhost:8080`.
 
 ### C. Bring Your Own Provider (BYOP & Debrid)
 
@@ -41,30 +41,31 @@ Like Stremio, we don't host content. We provide a framework.
 
 ---
 
-## 3. The Performance Mandate: JIT Playwright (Zero Leaks)
+## 3. The Performance Mandate: Provider Leases Without Leaks
 
 To guarantee that the CLI and local daemon run flawlessly on low-spec laptops without memory leaks:
 
 - **The 0-RAM Default:** When browsing or using lightweight providers, Kunai uses exactly **0MB** of background browser memory.
-- **The JIT Trigger (Just-In-Time):** If a user selects an episode from Anikai or Miruro, Kunai launches a hidden Playwright instance _at that exact second_, bypasses the Cloudflare challenge, extracts the stream URL, passes it to `mpv`, and **instantly kills the Playwright process.**
-- **The Result:** A 1-2 second delay on heavy streams, but the machine's memory is immediately freed. Zero zombie processes.
+- **The Lease Trigger:** If a user selects or strongly warms a heavy provider such as Anikai or Miruro, Kunai opens a provider-scoped Playwright lease with strict idle TTL, hard TTL, memory caps, and process-group cleanup.
+- **The Result:** Pure 0-RAM providers stay browser-free, while heavy providers avoid repeated challenge costs without leaking zombie browser processes.
 
 ---
 
-## 4. The Intelligent Cache: Stale-While-Revalidate (SWR) & Geo-Routing
-To ensure we never spam streaming providers (which invites IP bans) while maintaining 0ms latency, we use an aggressive, self-healing cache layer.
+## 4. The Intelligent Cache: Local SWR & Geo-Aware Health
+To avoid provider spam while making playback feel instant, Kunai uses an aggressive, self-healing local cache layer and a conservative public metadata layer.
 
 ### A. The SWR Strategy
 We do not make users wait to verify if a cached link is alive. 
-*   **The Fast Route:** When a user clicks "Play", they are instantly handed the cached `.m3u8` link. The video player launches immediately.
-*   **The Silent Verification:** While the player is loading, the background daemon fires a microscopic `HEAD` request to the `.m3u8` link to verify it is still alive (costing ~50ms and 0 bandwidth).
-*   **Auto-Heal:** If the `HEAD` request returns `403 Forbidden` (link expired), the daemon launches the JIT scraper, fetches a fresh link, and uses `mpv` IPC sockets to hot-swap the video source before the user even realizes the first link was dead.
+*   **The Fast Route:** When a user clicks "Play", Kunai can optimistically try a short-lived local cached candidate if the provider policy allows it.
+*   **The Silent Verification:** While the player is loading, the daemon validates the manifest with the cheapest safe probe for that provider. It does not assume every host supports useful `HEAD` behavior.
+*   **Auto-Heal:** If the candidate is expired, blocked, or region-wrong, the daemon refreshes the same provider or switches to a ranked fallback and uses player IPC to resume without dumping the user back to search.
 
 ### B. Geo-Aware Cache Partitioning
 CDN links are geo-routed. A link generated for a user in London might buffer terribly for a user in Sydney.
-*   The central cache partitions stream links by region (e.g., `Anikai_OnePiece_Ep1_EU_WEST`).
-*   If an Australian user requests a stream and only US/EU links are cached, Kunai triggers their local BYOC daemon to scrape a fresh, Sydney-optimized CDN link and pushes it to the cache under `AP_SOUTH`. 
-*   The next 10,000 Australian users get the perfect, geo-optimized fast route. We act as a globally distributed peer-to-peer scraping network.
+*   Local caches partition stream candidates by region hint, provider version, runtime, auth mode, subtitle/audio preference, and TTL class.
+*   Public edge storage can hold non-sensitive provider health and metadata by region, such as "Anikai APAC degraded" or "Rivestream EU fast."
+*   Kunai does **not** centrally accept raw playable links from random clients. That invites cache poisoning, user tracking, provider blocks, and hard-to-debug regional failures.
+*   The magic is not a global pile of links. The magic is local SWR, provider health, source confidence, and deterministic fallback.
 
 ---
 
@@ -75,17 +76,17 @@ CDN links are geo-routed. A link generated for a user in London might buffer ter
 
 ---
 
-## 5. Solving the Iframe Problem (Maintaining the Premium UI)
+## 6. Solving the Iframe Problem (Maintaining the Premium UI)
 
 If a provider only gives us an iframe (like `mp4upload.com`), we cannot embed it on the Web App without ruining the UI with ads.
 
-1. **The Native Filter (Web Default):** The Web App simply ignores iframe-only servers. It aggressively filters for direct `.m3u8` links to feed into our custom `ArtPlayer` UI.
+1. **The Native Filter (Unpaired Web):** The Web App simply ignores iframe-only servers. It aggressively filters for direct `.m3u8` links to feed into our custom `ArtPlayer` UI.
 2. **The Local Extractor (CLI/Desktop):** If the user is running the local daemon, their machine invisibly rips the raw video from the iframe using bundled `yt-dlp` and feeds it to the player.
 3. **The Premium Cloud Extractor ($3/mo SaaS):** For mobile web users who _really_ want an obscure anime that only exists on `mp4upload`, we offer a premium subscription. This unlocks a backend microservice we host (`extract.kunai.app`) that runs `yt-dlp` on our servers, rips the link, and sends it to their phone.
 
 ---
 
-## 6. The Elite TUI Experience
+## 7. The Elite TUI Experience
 
 The terminal app (`kunai` CLI) must feel like a $1,000 developer tool.
 
@@ -96,7 +97,7 @@ The terminal app (`kunai` CLI) must feel like a $1,000 developer tool.
 
 ---
 
-## 7. The Monorepo Ecosystem
+## 8. The Monorepo Ecosystem
 
 We are abandoning the messy global script and building a strict Turborepo.
 
@@ -104,7 +105,7 @@ We are abandoning the messy global script and building a strict Turborepo.
 kunai/
 ├── apps/
 │   ├── cli/               # The Ink TUI (The Harvester & Local Daemon)
-│   ├── web/               # Next.js Web Player (The CORS Consumer)
+│   ├── web/               # Next.js Web Player (static shell + provider RPC/pairing client)
 │   └── experiments/       # (Formerly 'scratchpads/') The isolated reverse-engineering lab
 ├── packages/
 │   ├── core/              # The unified provider and resolution engine

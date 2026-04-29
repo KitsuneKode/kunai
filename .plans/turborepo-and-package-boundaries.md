@@ -24,7 +24,7 @@ Phase 1 result:
 
 - Do not big-bang rewrite providers during the workspace move.
 - Do not import production code from `packages/legacy`.
-- Do not move scratchpads directly into `scraper-core` as if they are production-ready.
+- Do not move scratchpads directly into `@kunai/core` as if they are production-ready.
 - Do not introduce web/desktop apps until the CLI still builds and runs from `apps/cli`.
 - Do not change runtime behavior and folder topology in the same commit unless unavoidable.
 - Do not use package extraction as an excuse to defer the true shell. After the physical move, shell state and command ownership become the next architectural priority.
@@ -56,9 +56,9 @@ packages/
     Future package name: `@kunai/schemas`.
     Zod schemas for untrusted or serialized data.
 
-  scraper-core/
-    Future package name: `@kunai/core` or `@kunai/scraper-core`; prefer `@kunai/core` once it owns provider orchestration beyond raw scraping.
-    Provider contracts, capabilities, resolver orchestration, cache-key policy, source ranking, and tracing.
+  core/
+    Future package name: `@kunai/core`.
+    Provider contracts, capabilities, resolver orchestration, cache-key policy, source ranking, runtime ports, and tracing.
 
   cache/
     Future package name: `@kunai/cache`.
@@ -176,6 +176,36 @@ Acceptance:
 - back, `Esc`, command routing, autoplay, history, and provider switching remain deterministic
 - remaining fallback helpers are documented if any survive
 
+## Provider Package Decision
+
+Grill verdict: yes, providers need a separate package boundary, but not as a raw `scraper-core` dumping ground.
+
+Use `@kunai/core` as the long-term package name because the winning abstraction is resolution intelligence, not scraping. It will eventually own provider contracts, provider capability manifests, source ranking, cache-key policy, runtime ports, and `ResolveTrace` construction. It must not own UI, `mpv`, account billing, daemon transport, app-specific storage, or user-facing workflow state.
+
+Do not move provider implementations in Phase 2. First define the data contracts and adapter seam that current `apps/cli` providers can satisfy. Then extract one low-risk provider path after cache policy exists.
+
+Hard rules for the provider boundary:
+
+- providers return data and evidence, not UI decisions
+- providers never write history, config, stream cache, or health stores directly
+- providers emit cache policy; cache packages decide where and how it is stored
+- providers declare required runtime capabilities instead of importing Playwright, `yt-dlp`, daemon, or web APIs directly
+- providers return structured failure codes and a `ResolveTrace`, not only `null`
+- providers expose browser-safety and relay-safety explicitly
+- app surfaces choose UX, playback handoff, entitlement messaging, and recovery behavior
+- web may import only browser-safe pure provider logic, never local-compute providers by accident
+
+Target data flow:
+
+```text
+apps/cli controller
+  -> @kunai/core resolver
+  -> provider runtime ports
+  -> StreamCandidate[] + SubtitleCandidate[] + ResolveTrace + CachePolicy
+  -> @kunai/cache storage policy
+  -> app-specific playback / UI / diagnostics
+```
+
 ## Phase 2: Contracts Before Implementations
 
 Do this only after Phase 1.8 has defined the shell boundaries well enough that shared packages do not accidentally depend on transitional UI flows.
@@ -197,12 +227,26 @@ Minimum contracts:
 - `CacheTtlClass`
 - `ProviderHealth`
 - `PlaybackRecoveryEvent`
+- `ProviderResolveInput`
+- `ProviderResolveResult`
+- `ProviderRuntimePort`
+- `ProviderOperation`
+- `ProviderFailure`
 
 Validation boundary:
 
 - TypeScript contracts live in `packages/types`.
 - Zod schemas live in `packages/schemas`.
 - Zod is used for serialized/untrusted data, not every internal function call.
+
+Provider contract requirements:
+
+- `ProviderResolveInput` must include normalized title identity, optional episode identity, requested media kind, preferred language/subtitle hints, user intent strength, and allowed runtime capabilities.
+- `ProviderResolveResult` must include stream candidates, subtitle candidates, cache policy, trace, structured errors, and optional health deltas.
+- `StreamCandidate` should include URL or deferred locator, quality evidence, container/protocol, headers policy, expiration hints, provider ID, and confidence score.
+- `SubtitleCandidate` should include language, label, source, format, confidence, sync evidence, and cache policy.
+- `ResolveTrace` should include timings, cache layer used, provider runtime used, fallback attempts, selected candidate, and failure causes.
+- `ProviderRuntimePort` should model runtime needs such as `fetch`, browser lease, iframe interception, `yt-dlp`, local credentials, and relay-safe fetch without tying contracts to the CLI implementation.
 
 Acceptance:
 
@@ -243,17 +287,19 @@ Extract one simple provider path first. Prefer a 0-RAM or low-risk provider befo
 
 Actions:
 
-1. Add provider interface to `packages/scraper-core`.
+1. Create `packages/core` with package name `@kunai/core`.
 2. Move capability declaration and cache policy for one provider.
-3. Keep app-specific UI and `mpv` behavior in `apps/cli`.
-4. Return `StreamCandidate[]` plus `ResolveTrace`, not raw URLs only.
-5. Add tests around cache key and trace shape.
+3. Add a compatibility adapter around the current `apps/cli` provider shape before moving implementation internals.
+4. Keep app-specific UI, history, config, daemon transport, and `mpv` behavior in `apps/cli`.
+5. Return `ProviderResolveResult`, not raw URLs only.
+6. Add tests around capability declaration, cache key, runtime-port selection, and trace shape.
 
 Acceptance:
 
-- CLI imports one provider through `@kunai/scraper-core`.
+- CLI imports one provider path or provider adapter through `@kunai/core`.
 - Existing provider fallback still works.
 - Trace output explains cache/provider/runtime path.
+- No provider writes app storage directly.
 
 ## Phase 5: CLI UI Package
 
@@ -325,6 +371,6 @@ Recommended commits:
 6. `refactor: unify cli mounted content tree`
 7. `feat: add shared contracts package`
 8. `feat: move cache paths into shared package`
-9. `feat: extract first provider into scraper core`
+9. `feat: extract first provider into kunai core`
 
 Keep each commit reviewable. This migration will be hard enough without mystery meat diffs.

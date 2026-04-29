@@ -58,7 +58,7 @@ The terminal app will not feel like a script; it will feel like a $1,000 develop
 
 If you want this to build your career and attract jobs/business, the codebase must be a masterpiece of modern engineering.
 
-1.  **The Monorepo (Turborepo):** Proves you understand enterprise-scale architecture. We share `@kunai/scraper-core`, `@kunai/types`, and `@kunai/ui-cli`.
+1.  **The Monorepo (Turborepo):** Proves you understand enterprise-scale architecture. We share `@kunai/core`, `@kunai/types`, and `@kunai/ui-cli`.
 2.  **State Machines (XState / Zustand):** Terminal apps usually suffer from "spaghetti state." We will use a strict state machine to handle the transitions between `Search -> Resolving -> Playback -> Post-Play`. It makes the UI bulletproof and highly testable.
 3.  **The WASM Cryptography:** Writing the API signature generator in Rust and compiling it to WebAssembly (`.wasm`) to run inside the Node/Bun CLI. This shows extreme technical depth and security awareness.
 4.  **The Background IPC Daemon:** Building the CLI so that `kunai serve` runs a detached background process communicating via Unix Domain Sockets.
@@ -68,7 +68,7 @@ If you want this to build your career and attract jobs/business, the codebase mu
 ## 4. Immediate Execution Plan
 
 1.  **Initialize Turborepo:** Create the monorepo structure.
-2.  **Migrate Scrapers:** Move the 0-RAM and Hybrid scrapers into the shared `@kunai/scraper-core` package.
+2.  **Migrate Scrapers:** Move the 0-RAM and Hybrid scrapers into the shared `@kunai/core` package.
 3.  **Build the V1 Ink Shell:**
     - Implement the Red/Gray Kunai design tokens.
     - Build the grid layout (Search Left, Bento Box Details Right).

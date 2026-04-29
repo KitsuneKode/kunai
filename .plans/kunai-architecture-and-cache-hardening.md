@@ -57,7 +57,7 @@ Recommended hosting shape:
 - Use a mostly static Next.js app first.
 - Prefer static rendering and client-side data hydration for browse surfaces.
 - Avoid Server Components for every interaction unless they materially reduce bundle or improve first load.
-- Keep provider scraping logic in `@kunai/scraper-core`, but expose only browser-safe 0-RAM modules to the web bundle.
+- Keep provider resolution logic in `@kunai/core`, but expose only browser-safe 0-RAM modules to the web bundle.
 - Use Cloudflare Workers or Pages Functions for narrow relay endpoints, not broad app logic.
 
 Why:
@@ -212,6 +212,37 @@ Recommended defaults:
 ## Cache Strategy
 
 Kunai should have one cache system with multiple layers, not scattered ad hoc caches.
+
+### SWR And Geo-Aware Resolution
+
+Stale-while-revalidate is a good product pattern only if it respects provider-specific cache policy.
+
+Allowed:
+
+- local SWR for short-lived stream candidates in CLI/Desktop/daemon
+- browser SWR for catalog metadata, posters, subtitles, and provider-safe source inventory
+- edge cache for public metadata, provider capability manifests, regional provider health, feature flags, and static catalog snapshots
+- geo-aware provider ranking based on coarse region and health signals
+
+Not allowed by default:
+
+- central raw playable-link cache from untrusted clients
+- crowdsourced `.m3u8` writes without validation, TTL, provenance, and abuse controls
+- assuming `HEAD` is always a safe or accurate liveness probe
+- sharing provider cookies, signed URLs, local daemon tokens, or debrid-derived links
+
+Auto-heal should prefer this order:
+
+```text
+1. try local fresh candidate
+2. probe according to provider policy
+3. refresh same provider if stale
+4. switch source inside the same provider inventory
+5. switch ranked compatible provider
+6. ask before paid cloud compute
+```
+
+Geo-aware cache keys must use coarse region hints only. Do not store exact IP, city, or user-identifying network metadata in stream/source cache rows.
 
 ### Cache Layers
 

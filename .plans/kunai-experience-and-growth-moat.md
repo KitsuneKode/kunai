@@ -43,6 +43,94 @@ Recommended sequence:
 
 The CLI creates credibility. The web creates reach. Premium creates sustainability.
 
+## Surface Consensus
+
+Some Kunai ideas are strongest in the CLI/local runtime, some are strongest on the web, and some should exist only as shared contracts. Do not force every feature onto every surface.
+
+### CLI / Local Runtime
+
+Best for:
+
+- local Playwright leases
+- `yt-dlp` and iframe extraction
+- `mpv` IPC, auto-heal, AniSkip, and player handoff
+- local credentials such as Debrid keys
+- local stream/source cache
+- cache inspector and flight recorder
+- provider hardening diagnostics
+- optional sign-in for sync and premium account status
+
+Why:
+
+The CLI can spend user-owned compute without creating Kunai server cost, shared IP bans, or broad abuse surfaces. It should feel like a private command center.
+
+### Web Unpaired
+
+Best for:
+
+- landing, onboarding, browse, and discovery
+- Continue Watching and home habit loops
+- IndexedDB metadata/poster/subtitle cache
+- browser-safe provider resolution through strict RPC relay
+- source confidence and graceful locked states
+- PWA install and mobile-first player polish
+- sign-in, sync visibility, and premium dashboard
+
+Why:
+
+The web wins by removing fear and friction. It should run independently without CLI/Desktop, avoid expensive compute by default, and use cache, static rendering, edge metadata, and capability-aware UI to feel fast.
+
+### Web Paired With CLI/Desktop
+
+Best for:
+
+- heavy provider resolution via local daemon
+- local credential usage without server storage
+- stronger auto-heal and fallback
+- private device mesh handoff
+- "use my laptop to play on my phone" magic
+
+Why:
+
+Pairing turns local compute into a consumer-friendly superpower. The web stays beautiful; the user's machine does the hard work. Paired mode is an upgrade path, not a requirement for the web app to be useful.
+
+### Shared Contracts
+
+Belongs in packages:
+
+- provider capability model
+- `ResolveTrace`
+- cache key and TTL classes
+- provider health events
+- sync event schema
+- source confidence vocabulary
+- relay and daemon IPC payload schemas
+
+Why:
+
+This is where Kunai becomes a real system instead of three separate apps. Shared intelligence, separate interfaces.
+
+### Sign-In Rule
+
+Sign-in should unlock continuity, device history, encrypted settings backup, sync, budgets, and personalization. It should not be required for the CLI to play through local providers.
+
+Do not sync:
+
+- raw playable links
+- provider cookies
+- debrid playback URLs
+- local daemon tokens
+- user-specific stream headers
+
+Sync:
+
+- watch progress events
+- bookmarks
+- preferences
+- profile/theme settings
+- paired-device metadata
+- redacted resolve health summaries
+
 ## Experience Principles
 
 - Speed is a feeling, not only latency.
@@ -325,6 +413,7 @@ Priority additions:
 - provider health overlay
 - cache inspector
 - first-run setup wizard
+- optional sign-in and sync status that never blocks local playback
 
 High-polish details:
 
@@ -366,6 +455,18 @@ The web app should feel native to web:
 
 The web app's job is to remove intimidation. Users should not need to understand providers, daemons, caches, relays, or Playwright. They should see a beautiful player, clear source confidence, and useful next actions.
 
+The web app has two valid modes:
+
+```text
+Unpaired Web
+  Works independently with static browse, IndexedDB, account sync, browser-safe providers, strict relay budgets, and clear locked states.
+
+Paired Web
+  Uses CLI/Desktop/local daemon for heavy providers, local credentials, stronger auto-heal, local source cache, and optional player handoff.
+```
+
+Unpaired web should never feel like a broken demo. Paired web should feel like the power-user unlock.
+
 ### Web Architecture UX
 
 The web UI should clearly distinguish:
@@ -397,6 +498,8 @@ Priority additions:
 - installable PWA
 - keyboard shortcuts for desktop web
 - mobile-first player controls
+- signed-in sync home that still works in degraded/cache-only mode
+- premium dashboard that explains budgets, pairing, and local-vs-cloud savings
 
 High-polish details:
 
