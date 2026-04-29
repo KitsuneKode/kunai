@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import { allanimeManifest, cinebyAnimeManifest, vidkingManifest } from "@kunai/core";
 import {
+  attachProviderResolveResult,
   episodeToCoreIdentity,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
@@ -46,4 +47,27 @@ test("anime core manifests remain anime providers but expose series-compatible C
   expect(cinebyAnimeMetadata.isAnimeProvider).toBe(true);
   expect(manifestToProviderCapabilities(allanimeManifest).contentTypes).toEqual(["series"]);
   expect(manifestToProviderCapabilities(cinebyAnimeManifest).contentTypes).toEqual(["series"]);
+});
+
+test("attachProviderResolveResult adds shared trace and cache policy to an existing stream", () => {
+  const stream = attachProviderResolveResult({
+    manifest: cinebyAnimeManifest,
+    request: {
+      title: { id: "demon-slayer", type: "series", name: "Demon Slayer" },
+      episode: { season: 1, episode: 1 },
+      subLang: "english",
+    },
+    stream: {
+      url: "https://cdn.example/master.m3u8",
+      headers: {},
+      timestamp: 1,
+    },
+    mode: "anime",
+    runtime: "playwright-lease",
+  });
+
+  expect(stream.providerResolveResult?.providerId).toBe("cineby-anime");
+  expect(stream.providerResolveResult?.trace.title.kind).toBe("anime");
+  expect(stream.providerResolveResult?.trace.runtime).toBe("playwright-lease");
+  expect(stream.providerResolveResult?.cachePolicy?.keyParts).toContain("english");
 });

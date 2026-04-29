@@ -1,6 +1,6 @@
 # Kunai Turborepo And Package Boundaries Plan
 
-Status: Phase 4C provider manifest coverage in progress
+Status: Phase 4D provider resolve-result wiring in progress
 
 Last updated: 2026-04-29
 
@@ -319,7 +319,7 @@ Phase 3B wiring, after the package foundation:
 
 Extract one simple provider path first. Prefer a 0-RAM or low-risk provider before Playwright-heavy providers.
 
-Status: Phase 4C started.
+Status: Phase 4D started.
 
 Phase 4A foundation:
 
@@ -343,6 +343,13 @@ Phase 4C manifest coverage:
 - keep all provider implementations inside `apps/cli` for now
 - explicitly mark every current provider as not browser-safe until a production browser-safe path exists
 - declare runtime ports honestly, including hybrid fetch plus Playwright fallback providers
+
+Phase 4D provider resolve-result wiring:
+
+- attach `ProviderResolveResult` to VidKing, Cineby, BitCine, Braflix, AllAnime, and Cineby Anime
+- keep the existing `StreamInfo | null` provider interface until fallback, history, and autoplay are proven against the richer result shape
+- preserve honest runtime attribution: Playwright providers use `playwright-lease`; Braflix direct media uses `node-fetch`; AllAnime is marked `node-fetch` until the hidden embed-scraper branch is split into an explicit runtime port
+- keep diagnostics reading attached resolve traces from streams instead of forcing app code to know provider internals
 
 Provider move order:
 

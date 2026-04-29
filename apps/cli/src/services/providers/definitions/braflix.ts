@@ -6,6 +6,7 @@ import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } fr
 import { braflixManifest } from "@kunai/core";
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import {
+  attachProviderResolveResult,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
@@ -110,22 +111,28 @@ export class BraflixProvider implements Provider {
       if (!embedUrl) return null;
 
       if (embedUrl.includes(".m3u8") || embedUrl.includes(".mp4")) {
-        return {
-          url: embedUrl,
-          headers: {},
-          subtitle: undefined,
-          subtitleList: [],
-          subtitleSource: "none",
-          subtitleEvidence: {
-            directSubtitleObserved: false,
-            wyzieSearchObserved: false,
-            reason: "not-observed",
+        return attachProviderResolveResult({
+          manifest: braflixManifest,
+          request,
+          mode: "series",
+          runtime: "node-fetch",
+          stream: {
+            url: embedUrl,
+            headers: {},
+            subtitle: undefined,
+            subtitleList: [],
+            subtitleSource: "none",
+            subtitleEvidence: {
+              directSubtitleObserved: false,
+              wyzieSearchObserved: false,
+              reason: "not-observed",
+            },
+            timestamp: Date.now(),
           },
-          timestamp: Date.now(),
-        };
+        });
       }
 
-      return this.deps.browser.scrape({
+      const stream = await this.deps.browser.scrape({
         url: embedUrl,
         subLang: request.subLang,
         signal,
@@ -135,6 +142,16 @@ export class BraflixProvider implements Provider {
         episode: request.episode?.episode,
         playerDomains: this.deps.playerDomains,
       });
+
+      return stream
+        ? attachProviderResolveResult({
+            manifest: braflixManifest,
+            request,
+            stream,
+            mode: "series",
+            runtime: "playwright-lease",
+          })
+        : null;
     } catch {
       this.deps.logger.error("braflix: resolveStream failed");
       return null;

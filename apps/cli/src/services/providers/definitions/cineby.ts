@@ -6,6 +6,7 @@ import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } fr
 import { cinebyManifest } from "@kunai/core";
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import {
+  attachProviderResolveResult,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
@@ -27,7 +28,7 @@ export class CinebyProvider implements Provider {
         ? `https://www.cineby.sc/movie/${request.title.id}?play=true`
         : `https://www.cineby.sc/tv/${request.title.id}/${request.episode!.season}/${request.episode!.episode}?play=true`;
 
-    return this.deps.browser.scrape({
+    const stream = await this.deps.browser.scrape({
       url,
       needsClick: true,
       subLang: request.subLang,
@@ -38,6 +39,16 @@ export class CinebyProvider implements Provider {
       episode: request.episode?.episode,
       playerDomains: this.deps.playerDomains,
     });
+
+    return stream
+      ? attachProviderResolveResult({
+          manifest: cinebyManifest,
+          request,
+          stream,
+          mode: "series",
+          runtime: "playwright-lease",
+        })
+      : null;
   }
 }
 

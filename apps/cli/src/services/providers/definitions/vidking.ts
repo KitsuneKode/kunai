@@ -3,13 +3,12 @@
 // =============================================================================
 
 import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
-import { adaptCliStreamResult, createProviderCachePolicy, vidkingManifest } from "@kunai/core";
+import { vidkingManifest } from "@kunai/core";
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import {
-  episodeToCoreIdentity,
+  attachProviderResolveResult,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
-  titleToCoreIdentity,
 } from "../core-manifest-adapter";
 
 export class VidKingProvider implements Provider {
@@ -45,26 +44,13 @@ export class VidKingProvider implements Provider {
       return null;
     }
 
-    const title = titleToCoreIdentity(request.title, "series");
-    const episode = episodeToCoreIdentity(request.episode);
-    const cachePolicy = createProviderCachePolicy({
-      providerId: vidkingManifest.id,
-      title,
-      episode,
-      subtitleLanguage: request.subLang,
+    return attachProviderResolveResult({
+      manifest: vidkingManifest,
+      request,
+      stream,
+      mode: "series",
+      runtime: "playwright-lease",
     });
-
-    return {
-      ...stream,
-      providerResolveResult: adaptCliStreamResult({
-        providerId: vidkingManifest.id,
-        title,
-        episode,
-        stream,
-        cachePolicy,
-        runtime: "playwright-lease",
-      }),
-    };
   }
 }
 

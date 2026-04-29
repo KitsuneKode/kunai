@@ -7,6 +7,7 @@ import { bitcineManifest } from "@kunai/core";
 
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import {
+  attachProviderResolveResult,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
@@ -28,7 +29,7 @@ export class BitCineProvider implements Provider {
         ? `https://www.bitcine.net/movie/${request.title.id}?play=true`
         : `https://www.bitcine.net/tv/${request.title.id}/${request.episode!.season}/${request.episode!.episode}?play=true`;
 
-    return this.deps.browser.scrape({
+    const stream = await this.deps.browser.scrape({
       url,
       needsClick: true,
       subLang: request.subLang,
@@ -39,6 +40,16 @@ export class BitCineProvider implements Provider {
       episode: request.episode?.episode,
       playerDomains: this.deps.playerDomains,
     });
+
+    return stream
+      ? attachProviderResolveResult({
+          manifest: bitcineManifest,
+          request,
+          stream,
+          mode: "series",
+          runtime: "playwright-lease",
+        })
+      : null;
   }
 }
 

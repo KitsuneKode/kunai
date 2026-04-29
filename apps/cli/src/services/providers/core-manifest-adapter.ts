@@ -1,13 +1,19 @@
-import type { CoreProviderManifest } from "@kunai/core";
-import type { EpisodeIdentity, TitleIdentity } from "@kunai/types";
+import {
+  adaptCliStreamResult,
+  createProviderCachePolicy,
+  type CoreProviderManifest,
+} from "@kunai/core";
+import type { EpisodeIdentity, ProviderRuntime, TitleIdentity } from "@kunai/types";
 import type {
   ContentType,
   EpisodeInfo,
   ProviderCapabilities,
   ProviderMetadata,
   ShellMode,
+  StreamInfo,
   TitleInfo,
 } from "@/domain/types";
+import type { StreamRequest } from "./Provider";
 
 export function manifestToProviderMetadata(
   manifest: CoreProviderManifest,
@@ -57,6 +63,41 @@ export function episodeToCoreIdentity(
     episode: episode.episode,
     title: episode.name,
     airDate: episode.airDate,
+  };
+}
+
+export function attachProviderResolveResult({
+  manifest,
+  request,
+  stream,
+  mode,
+  runtime,
+}: {
+  readonly manifest: CoreProviderManifest;
+  readonly request: StreamRequest;
+  readonly stream: StreamInfo;
+  readonly mode: ShellMode;
+  readonly runtime: ProviderRuntime;
+}): StreamInfo {
+  const title = titleToCoreIdentity(request.title, mode);
+  const episode = episodeToCoreIdentity(request.episode);
+  const cachePolicy = createProviderCachePolicy({
+    providerId: manifest.id,
+    title,
+    episode,
+    subtitleLanguage: request.subLang,
+  });
+
+  return {
+    ...stream,
+    providerResolveResult: adaptCliStreamResult({
+      providerId: manifest.id,
+      title,
+      episode,
+      stream,
+      cachePolicy,
+      runtime,
+    }),
   };
 }
 

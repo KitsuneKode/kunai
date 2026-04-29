@@ -7,6 +7,7 @@ import { cinebyAnimeManifest } from "@kunai/core";
 
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import {
+  attachProviderResolveResult,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
@@ -25,7 +26,7 @@ export class CinebyAnimeProvider implements Provider {
   async resolveStream(request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> {
     const url = `https://www.cineby.sc/anime/${request.title.id}?episode=${request.episode?.episode ?? 1}&play=true`;
 
-    return this.deps.browser.scrape({
+    const stream = await this.deps.browser.scrape({
       url,
       needsClick: true,
       subLang: request.subLang,
@@ -36,6 +37,16 @@ export class CinebyAnimeProvider implements Provider {
       season: request.episode?.season,
       episode: request.episode?.episode,
     });
+
+    return stream
+      ? attachProviderResolveResult({
+          manifest: cinebyAnimeManifest,
+          request,
+          stream,
+          mode: "anime",
+          runtime: "playwright-lease",
+        })
+      : null;
   }
 }
 

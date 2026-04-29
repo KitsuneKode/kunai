@@ -16,6 +16,7 @@ import { createAnimeProvider, fetchAnimeEpisodeCatalog } from "./allanime-family
 
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import {
+  attachProviderResolveResult,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
@@ -66,15 +67,21 @@ export class AllAnimeProvider implements Provider {
 
     if (!result) return null;
 
-    return {
-      url: result.url,
-      headers: result.headers,
-      subtitle: result.subtitle ?? undefined,
-      subtitleList: result.subtitleList as SubtitleTrack[] | undefined,
-      subtitleSource: result.subtitleSource,
-      subtitleEvidence: result.subtitleEvidence,
-      timestamp: result.timestamp,
-    };
+    return attachProviderResolveResult({
+      manifest: allanimeManifest,
+      request,
+      mode: "anime",
+      runtime: "node-fetch",
+      stream: {
+        url: result.url,
+        headers: result.headers,
+        subtitle: result.subtitle ?? undefined,
+        subtitleList: result.subtitleList as SubtitleTrack[] | undefined,
+        subtitleSource: result.subtitleSource,
+        subtitleEvidence: result.subtitleEvidence,
+        timestamp: result.timestamp,
+      },
+    });
   }
 
   async listEpisodes(
