@@ -60,6 +60,12 @@ export class PlayerServiceImpl implements PlayerService {
         watchedSeconds: result.watchedSeconds,
         duration: result.duration,
         endReason: result.endReason,
+        resultSource: result.resultSource ?? "unknown",
+        playerExitedCleanly: result.playerExitedCleanly ?? false,
+        playerExitCode: result.playerExitCode ?? null,
+        playerExitSignal: result.playerExitSignal ?? null,
+        lastNonZeroPositionSeconds: result.lastNonZeroPositionSeconds ?? 0,
+        lastNonZeroDurationSeconds: result.lastNonZeroDurationSeconds ?? 0,
       });
       this.deps.diagnosticsStore.record({
         category: "playback",
@@ -68,6 +74,13 @@ export class PlayerServiceImpl implements PlayerService {
           watchedSeconds: result.watchedSeconds,
           duration: result.duration,
           endReason: result.endReason,
+          resultSource: result.resultSource ?? "unknown",
+          playerExitedCleanly: result.playerExitedCleanly ?? false,
+          playerExitCode: result.playerExitCode ?? null,
+          playerExitSignal: result.playerExitSignal ?? null,
+          socketPathCleanedUp: result.socketPathCleanedUp ?? true,
+          lastNonZeroPositionSeconds: result.lastNonZeroPositionSeconds ?? 0,
+          lastNonZeroDurationSeconds: result.lastNonZeroDurationSeconds ?? 0,
         },
       });
 
@@ -83,6 +96,13 @@ export class PlayerServiceImpl implements PlayerService {
         watchedSeconds: 0,
         duration: 0,
         endReason: "error",
+        resultSource: "unknown",
+        playerExitedCleanly: false,
+        playerExitCode: 1,
+        playerExitSignal: null,
+        socketPathCleanedUp: true,
+        lastNonZeroPositionSeconds: 0,
+        lastNonZeroDurationSeconds: 0,
       };
     }
   }

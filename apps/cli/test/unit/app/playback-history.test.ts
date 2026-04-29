@@ -33,4 +33,15 @@ describe("playback-history", () => {
       }),
     ).toBe(false);
   });
+
+  test("does not persist zeroed eof results without duration evidence", () => {
+    expect(
+      shouldPersistHistory({
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "eof",
+        resultSource: "unknown",
+      }),
+    ).toBe(false);
+  });
 });

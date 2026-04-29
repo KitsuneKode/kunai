@@ -80,10 +80,20 @@ export interface SearchResult {
   readonly episodeCount?: number;
 }
 
+export type EndReason = "eof" | "quit" | "error" | "unknown";
+export type PlaybackTelemetrySource = "ipc" | "unknown";
+
 export interface PlaybackResult {
   readonly watchedSeconds: number;
   readonly duration: number;
-  readonly endReason: "eof" | "quit" | "error" | "unknown";
+  readonly endReason: EndReason;
+  readonly resultSource?: PlaybackTelemetrySource;
+  readonly playerExitedCleanly?: boolean;
+  readonly playerExitCode?: number | null;
+  readonly playerExitSignal?: string | null;
+  readonly socketPathCleanedUp?: boolean;
+  readonly lastNonZeroPositionSeconds?: number;
+  readonly lastNonZeroDurationSeconds?: number;
 }
 
 // Metadata for UI display
