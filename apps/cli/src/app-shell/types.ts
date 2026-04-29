@@ -68,6 +68,7 @@ export type LoadingShellState = {
   showMemory?: boolean;
   cancellable?: boolean;
   stopHint?: string;
+  controlHint?: string;
 };
 
 export type BrowseShellOption<T> = {

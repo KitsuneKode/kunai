@@ -20,6 +20,13 @@ describe("mpv-ipc", () => {
     );
   });
 
+  test("builds playback control ipc commands", () => {
+    expect(buildMpvIpcCommand(["quit"])).toBe(`${JSON.stringify({ command: ["quit"] })}\n`);
+    expect(buildMpvIpcCommand(["sub-reload"])).toBe(
+      `${JSON.stringify({ command: ["sub-reload"] })}\n`,
+    );
+  });
+
   test("parses valid newline-delimited ipc payloads", () => {
     expect(parseMpvIpcLine('{"event":"property-change","name":"duration","data":1440}\n')).toEqual({
       event: "property-change",

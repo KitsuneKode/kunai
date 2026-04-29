@@ -44,8 +44,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
   async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
     const { container } = context;
-    const { providerRegistry, stateManager, logger, historyStore, config, diagnosticsStore } =
-      container;
+    const {
+      providerRegistry,
+      stateManager,
+      logger,
+      historyStore,
+      config,
+      diagnosticsStore,
+      playerControl,
+    } = container;
     const animeEpisodeCatalogByProvider = new Map<
       string,
       readonly EpisodePickerOption[] | undefined
@@ -329,6 +336,58 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               watchedSeconds: result.watchedSeconds,
               duration: result.duration,
               endReason: result.endReason,
+            },
+          });
+        }
+
+        const playbackControlAction = playerControl.consumeLastAction();
+        if (playbackControlAction === "refresh") {
+          pendingStartAt = toHistoryTimestamp(result);
+          diagnosticsStore.record({
+            category: "playback",
+            message: "Refreshing current provider source",
+            context: {
+              provider: resolvedProviderId,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              resumeSeconds: pendingStartAt,
+            },
+          });
+          continue;
+        }
+
+        if (playbackControlAction === "fallback") {
+          pendingStartAt = toHistoryTimestamp(result);
+          const fallback = providerRegistry
+            .getCompatible(title)
+            .find((candidate) => candidate.metadata.id !== resolvedProviderId);
+
+          if (fallback) {
+            stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
+            diagnosticsStore.record({
+              category: "playback",
+              message: "Switching to fallback provider after playback control request",
+              context: {
+                from: resolvedProviderId,
+                fallback: fallback.metadata.id,
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+                resumeSeconds: pendingStartAt,
+              },
+            });
+            continue;
+          }
+
+          diagnosticsStore.record({
+            category: "playback",
+            message: "Fallback playback control requested but no compatible provider was available",
+            context: {
+              provider: resolvedProviderId,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
             },
           });
         }

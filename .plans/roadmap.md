@@ -43,7 +43,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 - Current execution mode: full-fledged CLI first. Web, desktop, remote sync, paid cloud, premium dashboards, and account-required flows are parked.
 - Phase 3 storage foundation is implemented with `@kunai/storage`.
-- Phase 4D.5 playback control gate is underway so the mounted shell can command active `mpv` playback before resolver orchestration moves deeper.
+- Phase 4D.6 playback refresh and fallback controls are underway so the shell can stop, refresh, fallback, and reload subtitles before resolver orchestration moves deeper.
 - CLI history and stream cache now use SQLite-backed stores.
 - Fullscreen shell convergence so the UI stops reading like stacked full-width cards and stays inside the viewport
 - Fullscreen root-shell redesign spec is now tracked in [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)
@@ -73,7 +73,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Kunai architecture hardening     | Planned     | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md) |
 | Kunai experience and growth moat | Planned     | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)             |
 | Kunai principal grill Q&A        | Planned     | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                             |
-| Turborepo and package boundaries | Phase 4D.5   | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)             |
+| Turborepo and package boundaries | Phase 4D.6   | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)             |
 | Kunai V2 ecosystem and Debrid    | Planned     | [.plans/v2-ecosystem-and-debrid.md](.plans/v2-ecosystem-and-debrid.md)                               |
 | Kunai V3 metadata and sync       | Planned     | [.plans/v3-metadata-and-sync.md](.plans/v3-metadata-and-sync.md)                                     |
 | CLI UX overhaul                  | Planned     | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                               |

@@ -77,10 +77,16 @@ export function LoadingShell({
   state,
   onCancel,
   onStop,
+  onRefresh,
+  onFallback,
+  onReloadSubtitles,
 }: {
   state: LoadingShellState;
   onCancel?: () => void;
   onStop?: () => void;
+  onRefresh?: () => void;
+  onFallback?: () => void;
+  onReloadSubtitles?: () => void;
 }) {
   const spinner = useSpinner();
   const elapsed = useElapsed();
@@ -97,6 +103,15 @@ export function LoadingShell({
     }
     if (input.toLowerCase() === "q" && state.operation === "playing" && onStop) {
       onStop();
+    }
+    if (input.toLowerCase() === "r" && state.operation === "playing" && onRefresh) {
+      onRefresh();
+    }
+    if (input.toLowerCase() === "f" && state.operation === "playing" && onFallback) {
+      onFallback();
+    }
+    if (input.toLowerCase() === "s" && state.operation === "playing" && onReloadSubtitles) {
+      onReloadSubtitles();
     }
   });
 
@@ -228,6 +243,13 @@ export function LoadingShell({
           <Box marginTop={1}>
             <Text color={palette.gray} dimColor>
               {state.stopHint}
+            </Text>
+          </Box>
+        ) : null}
+        {state.controlHint ? (
+          <Box>
+            <Text color={palette.gray} dimColor>
+              {state.controlHint}
             </Text>
           </Box>
         ) : null}

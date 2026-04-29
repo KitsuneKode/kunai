@@ -372,12 +372,25 @@ function AppRoot({ container }: { container: Container }) {
                   showMemory: state.playbackStatus === "playing",
                   stopHint:
                     state.playbackStatus === "playing"
-                      ? "q stop playback  ·  Ctrl+C hard exit"
+                      ? "q stop  ·  r refresh source  ·  f fallback provider"
+                      : undefined,
+                  controlHint:
+                    state.playbackStatus === "playing"
+                      ? "s reload subtitles  ·  Ctrl+C hard exit"
                       : undefined,
                 }}
                 onCancel={() => {}}
                 onStop={() => {
                   void container.playerControl.stopCurrentPlayback("playback-shell-q");
+                }}
+                onRefresh={() => {
+                  void container.playerControl.refreshCurrentPlayback("playback-shell-r");
+                }}
+                onFallback={() => {
+                  void container.playerControl.fallbackCurrentPlayback("playback-shell-f");
+                }}
+                onReloadSubtitles={() => {
+                  void container.playerControl.reloadCurrentSubtitles("playback-shell-s");
                 }}
               />
             ) : rootSurface === "root-content" && rootContent ? (

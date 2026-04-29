@@ -55,6 +55,9 @@ export async function launchMpv(opts: {
       }
       mpv.kill("SIGTERM");
     },
+    async reloadSubtitles() {
+      ipcSession?.send(["sub-reload"]);
+    },
   };
   opts.onControlReady?.(control);
 
