@@ -41,16 +41,6 @@ export type FooterAction = {
   reason?: string;
 };
 
-export type HomeShellState = {
-  mode: ShellMode;
-  provider: string;
-  subtitle: string;
-  animeLang: "sub" | "dub";
-  status?: ShellStatus;
-  commands?: readonly ResolvedAppCommand[];
-  footerMode?: ShellFooterMode;
-};
-
 export type PlaybackShellState = {
   mode: ShellMode;
   provider: string;

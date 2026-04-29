@@ -40,7 +40,6 @@ import {
 import {
   toShellAction,
   type FooterAction,
-  type HomeShellState,
   type PlaybackShellState,
   type LoadingShellState,
   type BrowseShellOption,
@@ -1651,60 +1650,6 @@ export async function shutdownSessionApp(): Promise<void> {
   deleteAllKittyImages();
 }
 
-function HomeShell({
-  state,
-  onResolve,
-}: {
-  state: HomeShellState;
-  onResolve: (action: ShellAction) => void;
-}) {
-  const commands =
-    state.commands ?? fallbackCommandState(["search", "settings", "toggle-mode", "help", "quit"]);
-  const footerActions: readonly FooterAction[] = [
-    { key: "/", label: "commands", action: "command-mode" },
-    { key: "enter", label: "search", action: "search" },
-    footerActionFromCommand(commands, "settings", { key: "c", label: "settings" }),
-    {
-      key: "a",
-      label: getCommandLabel(
-        commands,
-        "toggle-mode",
-        state.mode === "anime" ? "series mode" : "anime mode",
-      ),
-      action: "toggle-mode",
-      disabled: isCommandDisabled(commands, "toggle-mode"),
-      reason: getCommandReason(commands, "toggle-mode"),
-    },
-    footerActionFromCommand(commands, "help", { key: "?", label: "help" }),
-    footerActionFromCommand(commands, "quit", { key: "q", label: "quit" }),
-  ];
-
-  useInput((_input, key) => {
-    if (key.return) onResolve("search");
-  });
-
-  return (
-    <ShellFrame
-      eyebrow={APP_LABEL}
-      title="Fast stream search without prompt spaghetti"
-      subtitle={`Mode ${state.mode}  ·  Provider ${state.provider}  ·  Subs ${
-        state.subtitle
-      }${state.mode === "anime" ? `  ·  Audio ${state.animeLang}` : ""}`}
-      status={state.status}
-      footerTask="Start a search or open a nearby command"
-      footerActions={footerActions}
-      footerMode={state.footerMode}
-      commands={commands}
-      onResolve={onResolve}
-    >
-      <Text color={palette.muted}>
-        Press Enter to search, or use `/` for commands. Settings and mode switch stay reachable
-        before the first query.
-      </Text>
-    </ShellFrame>
-  );
-}
-
 function PlaybackShell({
   state,
   episodePickerOptions,
@@ -2108,17 +2053,6 @@ function footerActionFromCommand(
   };
 }
 
-function isCommandDisabled(commands: readonly ResolvedAppCommand[], id: AppCommandId): boolean {
-  return !commands.find((command) => command.id === id)?.enabled;
-}
-
-function getCommandReason(
-  commands: readonly ResolvedAppCommand[],
-  id: AppCommandId,
-): string | undefined {
-  return commands.find((command) => command.id === id)?.reason;
-}
-
 function getCommandLabel(
   commands: readonly ResolvedAppCommand[],
   id: AppCommandId,
@@ -2188,64 +2122,6 @@ function BrowseTitle({ mode }: { mode: "series" | "anime" }) {
     <Text bold color="white">
       {mode === "anime" ? "Browse your favorite anime" : "Browse your favorite movies and series"}
     </Text>
-  );
-}
-
-function SearchShell({
-  mode,
-  provider,
-  initialValue,
-  placeholder,
-  onSubmit,
-  onCancel,
-}: {
-  mode: "series" | "anime";
-  provider: string;
-  initialValue?: string;
-  placeholder: string;
-  onSubmit: (value: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initialValue ?? "");
-
-  useInput((input, key) => {
-    // Ctrl+C handling
-    if (input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
-    }
-    if (key.escape || input === "q") {
-      onCancel();
-      return;
-    }
-    if (key.return) {
-      const next = value.trim();
-      if (next.length > 0) onSubmit(next);
-    }
-  });
-
-  return (
-    <Box flexDirection="column" paddingX={1}>
-      <Box marginTop={0} flexDirection="column">
-        <Text bold color="white">
-          {mode === "anime" ? "Search anime" : "Search titles"}
-        </Text>
-        <Text
-          color={palette.muted}
-        >{`Provider ${provider}  ·  Enter submits  ·  Esc cancels`}</Text>
-      </Box>
-      <InputField
-        label="Search"
-        value={value}
-        onChange={setValue}
-        onSubmit={(next) => {
-          const trimmed = next.trim();
-          if (trimmed.length > 0) onSubmit(trimmed);
-        }}
-        placeholder={placeholder}
-        hint="Enter submits · / opens commands · Ctrl+W deletes a word"
-      />
-    </Box>
   );
 }
 
@@ -2456,26 +2332,6 @@ function LoadingShell({ state, onCancel }: { state: LoadingShellState; onCancel?
   );
 }
 
-export function openShell<TProps>({
-  Component,
-  props,
-}: {
-  Component: React.ComponentType<TProps & { onResolve: (action: ShellAction) => void }>;
-  props: TProps;
-}): Promise<ShellAction> {
-  const session = mountShell<ShellAction>({
-    renderShell: (finish) => <Component {...props} onResolve={finish} />,
-    fallbackValue: "quit",
-    clearOnResolve: false,
-  });
-
-  return session.result;
-}
-
-export function openHomeShell(state: HomeShellState): Promise<ShellAction> {
-  return openShell({ Component: HomeShell, props: { state } });
-}
-
 export function openPlaybackShell({
   state,
   providerOptions,
@@ -2569,37 +2425,6 @@ export function openLoadingShell({
     update: (state) => externalSetState?.(state),
     result: session.result,
   };
-}
-
-export function openSearchShell({
-  mode,
-  provider,
-  initialValue,
-  placeholder,
-}: {
-  mode: "series" | "anime";
-  provider: string;
-  initialValue?: string;
-  placeholder: string;
-}): Promise<string | null> {
-  const session = mountShell<string | null>({
-    renderShell: (finish) => {
-      return (
-        <SearchShell
-          mode={mode}
-          provider={provider}
-          initialValue={initialValue}
-          placeholder={placeholder}
-          onSubmit={(value) => finish(value.length > 0 ? value : null)}
-          onCancel={() => finish(null)}
-        />
-      );
-    },
-    fallbackValue: null,
-    clearOnResolve: false,
-  });
-
-  return session.result;
 }
 
 type ListOption<T> = {
