@@ -61,13 +61,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
   );
 }
 
-export function ErrorShell({
-  message,
-  onResolve,
-}: {
-  message: string;
-  onResolve: () => void;
-}) {
+export function ErrorShell({ message, onResolve }: { message: string; onResolve: () => void }) {
   useInput((_input, key) => {
     if (key.return || key.escape) {
       onResolve();

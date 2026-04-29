@@ -296,14 +296,7 @@ export function OverlayPanel({
   maxLinesOverride?: number;
 }) {
   const contentWidth = Math.max(24, width - 4);
-  const maxLines =
-    maxLinesOverride ??
-    (overlay.type === "provider" ||
-    overlay.type === "settings" ||
-    overlay.type === "settings-choice" ||
-    overlay.type === "episode-picker"
-      ? 8
-      : 6);
+  const maxLines = maxLinesOverride ?? (overlay.type === "episode-picker" ? 8 : 6);
   const optionWindowStart =
     overlay.type === "provider" ||
     overlay.type === "settings" ||

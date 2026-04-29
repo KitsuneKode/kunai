@@ -159,13 +159,7 @@ export function LocalSection({
   );
 }
 
-export function Badge({
-  label,
-  tone = "neutral",
-}: {
-  label: string;
-  tone?: BadgeTone;
-}) {
+export function Badge({ label, tone = "neutral" }: { label: string; tone?: BadgeTone }) {
   const color =
     tone === "success"
       ? palette.green

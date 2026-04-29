@@ -32,16 +32,17 @@ import {
   ShellFooter,
 } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
-import { APP_LABEL, palette, statusColor } from "./shell-theme";
-import { type AppCommandId, type ResolvedAppCommand } from "./commands";
+import { OverlayPanel } from "./overlay-panel";
+import type { BrowseOverlay } from "./overlay-panel";
+import { APP_LABEL, palette } from "./shell-theme";
+import { type ResolvedAppCommand } from "./commands";
 import {
   CommandPalette,
   fallbackCommandState,
   getCommandMatches,
   getHighlightedCommand,
-  LineEditorText,
-  useShellInput,
 } from "./shell-command-ui";
+import { footerActionFromCommand, getCommandLabel, InputField, ShellFrame } from "./shell-frame";
 import {
   toShellAction,
   type FooterAction,
@@ -54,7 +55,6 @@ import {
   type ShellPanelLine,
   type ShellPickerOption,
   type ShellAction,
-  type ShellStatus,
   type ShellFooterMode,
 } from "./types";
 
@@ -109,164 +109,6 @@ const stdinManager = {
 stdinManager.setup();
 
 const SCREEN_CLEAR_GRACE_MS = 140;
-
-function ShellFrame({
-  eyebrow: _eyebrow,
-  title,
-  subtitle,
-  status,
-  footerTask,
-  footerActions,
-  footerMode,
-  commands,
-  inputLocked = false,
-  escapeAction,
-  onResolve,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  subtitle: string;
-  status?: ShellStatus;
-  footerTask: string;
-  footerActions: readonly FooterAction[];
-  footerMode?: ShellFooterMode;
-  commands: readonly ResolvedAppCommand[];
-  inputLocked?: boolean;
-  escapeAction?: ShellAction | null;
-  onResolve: (action: ShellAction) => void;
-  children: React.ReactNode;
-}) {
-  // Global Ctrl+C handler for all shells
-  useInput((input, _key) => {
-    if (input === "\x03") {
-      // Ctrl+C - force immediate exit
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
-    }
-  });
-
-  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
-    footerActions,
-    commands,
-    disabled: inputLocked,
-    escapeAction,
-    onResolve,
-  });
-
-  const { stdout } = useStdout();
-  const sepWidth = Math.max(24, (stdout.columns ?? 80) - 4);
-
-  return (
-    <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-      <Box flexDirection="column" flexGrow={1} paddingX={1}>
-        <Box justifyContent="space-between">
-          <Text bold color="white">
-            {title}
-          </Text>
-          {status ? <Text color={statusColor(status.tone)}>{status.label}</Text> : null}
-        </Box>
-        <Text color={palette.muted}>{subtitle}</Text>
-        <Box marginTop={1} flexDirection="column" flexGrow={1}>
-          {children}
-        </Box>
-      </Box>
-
-      <Box flexDirection="column">
-        {commandMode ? (
-          <CommandPalette
-            input={commandInput}
-            cursor={commandCursor}
-            commands={commands}
-            highlightedIndex={highlightedIndex}
-          />
-        ) : null}
-
-        <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
-            {"─".repeat(sepWidth)}
-          </Text>
-        </Box>
-
-        <ShellFooter
-          taskLabel={footerTask}
-          actions={footerActions}
-          mode={footerMode}
-          commandMode={commandMode && !inputLocked}
-        />
-      </Box>
-    </Box>
-  );
-}
-
-function InputField({
-  label,
-  value,
-  onChange,
-  onSubmit,
-  placeholder,
-  focus = true,
-  hint,
-}: {
-  label: string;
-  value: string;
-  onChange: (next: string) => void;
-  onSubmit?: (value: string) => void;
-  placeholder?: string;
-  focus?: boolean;
-  hint?: string;
-}) {
-  const { stdout } = useStdout();
-  const wideField = (stdout.columns ?? 0) >= 112;
-  const editor = useLineEditor({
-    value,
-    onChange,
-    onSubmit,
-    onRedraw: clearShellScreen,
-  });
-
-  useInput((input, key) => {
-    if (!focus) return;
-    if (input === "/" || key.escape || key.upArrow || key.downArrow || key.tab) {
-      return;
-    }
-    editor.handleInput(input, key);
-  });
-
-  return (
-    <Box marginTop={1} flexDirection="column">
-      <Box justifyContent="space-between">
-        <Text color={palette.muted}>{label}</Text>
-        {hint && wideField ? (
-          <Text color={palette.gray} dimColor>
-            {hint}
-          </Text>
-        ) : null}
-      </Box>
-      <Box
-        marginTop={1}
-        borderStyle="round"
-        borderColor={focus ? palette.cyan : palette.gray}
-        paddingX={1}
-      >
-        <Text color={focus ? palette.cyan : palette.gray}>{focus ? "⌕ " : "› "}</Text>
-        <LineEditorText
-          value={value}
-          cursor={editor.cursor}
-          focused={focus}
-          placeholder={placeholder}
-        />
-      </Box>
-      {hint && !wideField ? (
-        <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
-            {hint}
-          </Text>
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
 
 type MountedShell<TResult> = {
   close: (value: TResult) => void;
@@ -715,18 +557,33 @@ function PlaybackShell({
     ]);
   const footerActions: readonly FooterAction[] = [
     { key: "/", label: "commands", action: "command-mode" },
-    footerActionFromCommand(commands, "replay", { key: "r", label: "replay" }),
-    footerActionFromCommand(commands, "search", { key: "f", label: "search" }),
-    footerActionFromCommand(commands, "pick-episode", { key: "e", label: "episodes" }),
-    footerActionFromCommand(commands, "next", {
-      key: "n",
-      label: getCommandLabel(commands, "next", "next"),
-    }),
-    footerActionFromCommand(commands, "previous", {
-      key: "p",
-      label: getCommandLabel(commands, "previous", "previous"),
-    }),
-    footerActionFromCommand(commands, "quit", { key: "q", label: "quit" }),
+    footerActionFromCommand(commands, "replay", { key: "r", label: "replay" }, toShellAction),
+    footerActionFromCommand(commands, "search", { key: "f", label: "search" }, toShellAction),
+    footerActionFromCommand(
+      commands,
+      "pick-episode",
+      { key: "e", label: "episodes" },
+      toShellAction,
+    ),
+    footerActionFromCommand(
+      commands,
+      "next",
+      {
+        key: "n",
+        label: getCommandLabel(commands, "next", "next"),
+      },
+      toShellAction,
+    ),
+    footerActionFromCommand(
+      commands,
+      "previous",
+      {
+        key: "p",
+        label: getCommandLabel(commands, "previous", "previous"),
+      },
+      toShellAction,
+    ),
+    footerActionFromCommand(commands, "quit", { key: "q", label: "quit" }, toShellAction),
   ];
 
   const location =
@@ -981,29 +838,6 @@ function PlaybackShell({
       )}
     </ShellFrame>
   );
-}
-
-function footerActionFromCommand(
-  commands: readonly ResolvedAppCommand[],
-  id: AppCommandId,
-  presentation: { key: string; label: string },
-): FooterAction {
-  const command = commands.find((candidate) => candidate.id === id);
-  return {
-    key: presentation.key,
-    label: presentation.label,
-    action: toShellAction(id),
-    disabled: command ? !command.enabled : false,
-    reason: command?.reason,
-  };
-}
-
-function getCommandLabel(
-  commands: readonly ResolvedAppCommand[],
-  id: AppCommandId,
-  fallback: string,
-): string {
-  return commands.find((command) => command.id === id)?.label.toLowerCase() ?? fallback;
 }
 
 export function openPlaybackShell({
@@ -1374,6 +1208,7 @@ function ListShell<T>({
           placeholder="Type to narrow this list"
           focus={!commandMode}
           hint={actionContext ? "Type to filter · / opens commands" : undefined}
+          onRedraw={clearShellScreen}
         />
         {tooSmall ? (
           <ResizeBlocker minColumns={minColumns} minRows={minRows} />
@@ -1471,166 +1306,6 @@ function ListShell<T>({
         mode={effectiveFooterMode}
         commandMode={commandMode}
       />
-    </Box>
-  );
-}
-
-type BrowseOverlay =
-  | {
-      type: "help" | "about" | "diagnostics" | "history" | "details";
-      title: string;
-      subtitle: string;
-      lines: readonly ShellPanelLine[];
-      imageUrl?: string;
-      loading?: boolean;
-      scrollIndex?: number;
-    }
-  | {
-      type: "episode-picker";
-      title: string;
-      subtitle: string;
-      options: readonly ShellPickerOption<string>[];
-      filterQuery: string;
-      selectedIndex: number;
-      busy?: boolean;
-    };
-
-function resolvePanelTone(tone: ShellPanelLine["tone"]): string {
-  switch (tone) {
-    case "success":
-      return palette.green;
-    case "warning":
-      return palette.amber;
-    case "error":
-      return palette.red;
-    case "neutral":
-    default:
-      return palette.muted;
-  }
-}
-
-function OverlayPanel({
-  overlay,
-  width,
-  maxLinesOverride,
-}: {
-  overlay: BrowseOverlay;
-  width: number;
-  maxLinesOverride?: number;
-}) {
-  const contentWidth = Math.max(24, width - 4);
-  const maxLines = maxLinesOverride ?? (overlay.type === "episode-picker" ? 8 : 6);
-  const optionWindowStart =
-    overlay.type === "episode-picker"
-      ? getWindowStart(overlay.selectedIndex, overlay.options.length, maxLines)
-      : 0;
-  const optionWindowEnd = optionWindowStart + maxLines;
-  const visibleOptions =
-    overlay.type === "episode-picker"
-      ? overlay.options.slice(optionWindowStart, optionWindowEnd)
-      : [];
-
-  return (
-    <Box
-      marginTop={1}
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={palette.cyan}
-      paddingX={1}
-    >
-      <Text color={palette.cyan}>{overlay.title}</Text>
-      <Text color={palette.gray}>{overlay.subtitle}</Text>
-      {overlay.type === "episode-picker" ? (
-        <>
-          <Box marginTop={1}>
-            <Text color={palette.gray}>
-              {overlay.filterQuery.length > 0
-                ? `Filter: ${overlay.filterQuery}`
-                : "Type to narrow episodes"}
-            </Text>
-          </Box>
-          <Box marginTop={1} flexDirection="column">
-            {optionWindowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
-            {visibleOptions.map((option, index) => {
-              const optionIndex = optionWindowStart + index;
-              const selected = optionIndex === overlay.selectedIndex;
-              const row = truncateLine(
-                `${option.label}${option.detail ? `  ${option.detail}` : ""}`,
-                contentWidth,
-              );
-              return (
-                <Text
-                  key={`${option.value}-${optionIndex}`}
-                  backgroundColor={selected ? palette.cyan : undefined}
-                  color={selected ? "black" : "white"}
-                  bold={selected}
-                  dimColor={!selected}
-                >
-                  <Text color={selected ? "black" : palette.gray}>{selected ? "❯ " : "  "}</Text>
-                  {row}
-                </Text>
-              );
-            })}
-            {optionWindowEnd < overlay.options.length ? (
-              <Text color={palette.gray}> ▼ ...</Text>
-            ) : null}
-          </Box>
-          <Box marginTop={1}>
-            <Text color={overlay.busy ? palette.amber : palette.gray}>
-              {overlay.busy
-                ? "Updating picker…"
-                : "Type to filter, ↑↓ to choose, Enter to jump, Esc to close"}
-            </Text>
-          </Box>
-        </>
-      ) : overlay.loading ? (
-        <Box marginTop={1}>
-          <Text color={palette.amber}>Loading panel…</Text>
-        </Box>
-      ) : (
-        <Box marginTop={1} flexDirection="column">
-          {overlay.type === "details" ? (
-            <Box marginBottom={1} flexDirection="column">
-              <Text color={overlay.imageUrl ? palette.green : palette.amber}>
-                {overlay.imageUrl ? "Poster image ready" : "Poster image missing"}
-              </Text>
-              <Text color={palette.gray}>
-                {overlay.imageUrl
-                  ? truncateLine(overlay.imageUrl, contentWidth)
-                  : "This provider did not expose artwork for the selected title."}
-              </Text>
-              <Text color={palette.gray}>
-                Inline Kitty/Ghostty rendering is kept behind the image-pane path to avoid Ink
-                scroll flicker.
-              </Text>
-            </Box>
-          ) : null}
-          {overlay.lines
-            .slice(overlay.scrollIndex ?? 0, (overlay.scrollIndex ?? 0) + maxLines)
-            .map((line, index) => (
-              <Box key={`${line.label}-${index}`} flexDirection="column" marginBottom={1}>
-                <Text color={resolvePanelTone(line.tone)}>
-                  {truncateLine(line.label, contentWidth)}
-                </Text>
-                {line.detail
-                  ? wrapText(line.detail, contentWidth, 2).map((detailLine, detailIndex) => (
-                      <Text key={`${line.label}-${detailIndex}`} color={palette.gray}>
-                        {detailLine}
-                      </Text>
-                    ))
-                  : null}
-              </Box>
-            ))}
-          <Text color={palette.gray}>
-            {overlay.lines.length > maxLines
-              ? `Showing ${(overlay.scrollIndex ?? 0) + 1}-${Math.min(
-                  (overlay.scrollIndex ?? 0) + maxLines,
-                  overlay.lines.length,
-                )} of ${overlay.lines.length}  ·  ↑↓ scroll  ·  Esc closes`
-              : "Esc closes this panel"}
-          </Text>
-        </Box>
-      )}
     </Box>
   );
 }
@@ -2071,6 +1746,7 @@ function BrowseShell<T>({
           placeholder={placeholder}
           focus={!commandMode}
           hint="Enter searches · / opens commands · Ctrl+W deletes a word"
+          onRedraw={clearShellScreen}
         />
 
         {queryDirty && options.length > 0 && !ultraCompact ? (
