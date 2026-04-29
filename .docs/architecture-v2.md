@@ -204,6 +204,8 @@ The daemon must be explicit and scoped:
 9. Build daemon pairing only after cache and provider contracts are stable.
 10. Start web as static-first and capability-aware, not compute-first.
 
+Phase 2 completion means shared contracts compile, schemas validate serialized forms, root verification includes the shared packages, and the CLI emits one typed `ResolveTrace` stub for diagnostics. It does not mean providers have moved into `@kunai/core`.
+
 ## Non-Goals For This Phase
 
 - No full desktop app before daemon protocol stabilizes.

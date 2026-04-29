@@ -151,7 +151,7 @@ Use this for principal architecture work after Phase 1.8 is committed. This is a
 You are working in Kunai after Phase 1, Phase 1.5, and Phase 1.8 are committed.
 
 Goal:
-Create `packages/types` and `packages/schemas` with package names `@kunai/types` and `@kunai/schemas`, without changing provider behavior.
+Complete Phase 2 by creating or hardening `packages/types` and `packages/schemas` with package names `@kunai/types` and `@kunai/schemas`, without changing provider behavior.
 
 Read:
 1. `AGENTS.md`
@@ -165,6 +165,8 @@ Hard boundaries:
 - Do not move cache storage yet.
 - Do not add web/desktop.
 - Do not add heavy ORM tooling.
+- Do not create `packages/core` in this phase.
+- Do not change stream resolution, cache path, provider fallback, history, or playback behavior.
 
 Tasks:
 1. Create `packages/types`.
@@ -183,17 +185,25 @@ Tasks:
    - `CacheTtlClass`
    - `ProviderHealth`
    - `PlaybackRecoveryEvent`
+   - `ProviderResolveInput`
+   - `ProviderResolveResult`
+   - `ProviderRuntimePort`
+   - `ProviderOperation`
+   - `ProviderFailure`
 4. Add Zod schemas only for serialized/untrusted forms.
 5. Wire package exports.
 6. Import one harmless type into `apps/cli` to prove workspace resolution.
-7. Add tests for schema/type boundary behavior.
-8. Run verification and commit.
+7. Emit one typed `ResolveTrace` stub from one small CLI runtime path, preferably diagnostics-only.
+8. Add tests for schema/type boundary behavior and trace-stub construction.
+9. Run verification and commit.
 
 Acceptance:
 - CLI behavior unchanged.
 - Shared contracts compile.
 - Zod is not used as hot-path internal validation.
 - Workspace imports work from `apps/cli`.
+- One runtime path records or emits a typed `ResolveTrace` stub.
+- Root `lint`, `typecheck`, and `test` include the shared packages.
 ```
 
 ## Prompt 1.8: Day-1 Single Mounted Content Tree

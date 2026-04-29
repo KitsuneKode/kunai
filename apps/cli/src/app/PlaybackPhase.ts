@@ -28,6 +28,7 @@ import {
 } from "@/app/playback-policy";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
+import { createResolveTraceStub } from "@/app/resolve-trace";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 
@@ -173,6 +174,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         let stream: StreamInfo | null = null;
         let resolvedProviderId = currentProvider.metadata.id;
+        const resolveTrace = createResolveTraceStub({
+          title,
+          episode: currentEpisode,
+          providerId: currentProvider.metadata.id,
+          mode: stateManager.getState().mode,
+        });
+        diagnosticsStore.record({
+          category: "provider",
+          message: "Resolve trace started",
+          context: {
+            trace: resolveTrace,
+          },
+        });
         try {
           stream = await currentProvider.resolveStream({
             title,

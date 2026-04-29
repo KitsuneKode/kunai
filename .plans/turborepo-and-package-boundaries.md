@@ -208,9 +208,16 @@ apps/cli controller
 
 ## Phase 2: Contracts Before Implementations
 
+Status: Complete.
+
 Do this only after Phase 1.8 has defined the shell boundaries well enough that shared packages do not accidentally depend on transitional UI flows.
 
 Create `packages/types` and `packages/schemas` before extracting providers.
+
+Phase 2 has two bounded slices:
+
+- Phase 2A: create `@kunai/types` and `@kunai/schemas`, exports, package tests, and a harmless CLI type import. Complete in `04fa266`.
+- Phase 2B: emit one typed `ResolveTrace` stub from an existing CLI runtime path without changing provider behavior. Complete in the follow-up Phase 2 completion commit.
 
 Minimum contracts:
 
@@ -253,6 +260,13 @@ Acceptance:
 - CLI compiles while importing shared contracts.
 - No provider behavior changes yet.
 - One small runtime path emits a typed `ResolveTrace` stub.
+- Root `lint`, `typecheck`, and `test` include `@kunai/types` and `@kunai/schemas`.
+- No `@kunai/core`, provider implementation extraction, or cache storage migration happens in Phase 2.
+
+Drift guard:
+
+- If a change moves provider implementations, creates provider adapters, changes cache paths, or changes stream resolution behavior, it belongs to Phase 3/4, not Phase 2.
+- If a shared type needs runtime validation, add it to `@kunai/schemas` only when it crosses storage, IPC, relay, provider-response, imported-data, sync, or plugin-manifest boundaries.
 
 ## Phase 3: Cache And Storage Package
 
