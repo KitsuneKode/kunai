@@ -6,6 +6,13 @@ import type { ConfigService, KitsuneConfig } from "./ConfigService";
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
 
+function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
+  if (!subLang || subLang === "none" || subLang === "fzf") {
+    return DEFAULT_CONFIG.subLang;
+  }
+  return subLang;
+}
+
 export class ConfigServiceImpl implements ConfigService {
   private config: KitsuneConfig;
 
@@ -16,7 +23,11 @@ export class ConfigServiceImpl implements ConfigService {
   static async load(store: ConfigStore): Promise<ConfigServiceImpl> {
     const service = new ConfigServiceImpl(store);
     const loaded = await store.load();
-    service.config = { ...DEFAULT_CONFIG, ...loaded };
+    service.config = {
+      ...DEFAULT_CONFIG,
+      ...loaded,
+      subLang: normalizeDefaultSubtitleLanguage(loaded.subLang),
+    };
     return service;
   }
 

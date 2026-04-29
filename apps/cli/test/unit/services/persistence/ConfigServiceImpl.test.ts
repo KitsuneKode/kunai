@@ -45,4 +45,20 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).subLang).toBe("fzf");
     expect((await store.load()).footerHints).toBe("minimal");
   });
+
+  test("normalizes legacy subtitle defaults back to english on load", async () => {
+    const noneService = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        subLang: "none",
+      }),
+    );
+    const fzfService = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        subLang: "fzf",
+      }),
+    );
+
+    expect(noneService.subLang).toBe("en");
+    expect(fzfService.subLang).toBe("en");
+  });
 });
