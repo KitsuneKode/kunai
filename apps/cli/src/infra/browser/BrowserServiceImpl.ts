@@ -14,6 +14,9 @@ import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import { scrapeStream, type ScrapeConfig } from "@/scraper";
 import { resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 
+type ScrapeStreamFn = typeof scrapeStream;
+type ResolveSubtitlesByTmdbIdFn = typeof resolveSubtitlesByTmdbId;
+
 export class BrowserServiceImpl implements BrowserService {
   constructor(
     private deps: {
@@ -22,11 +25,16 @@ export class BrowserServiceImpl implements BrowserService {
       config: ConfigService;
       cacheStore: CacheStore;
       diagnosticsStore: DiagnosticsStore;
+      scrapeStreamImpl?: ScrapeStreamFn;
+      resolveSubtitlesByTmdbIdImpl?: ResolveSubtitlesByTmdbIdFn;
     },
   ) {}
 
   async scrape(options: ScrapeOptions): Promise<StreamInfo | null> {
     const requestedSubLang = options.subLang ?? this.deps.config.subLang;
+    const scrapeStreamImpl = this.deps.scrapeStreamImpl ?? scrapeStream;
+    const resolveSubtitlesByTmdbIdImpl =
+      this.deps.resolveSubtitlesByTmdbIdImpl ?? resolveSubtitlesByTmdbId;
     const cached = await this.deps.cacheStore.get(options.url);
     if (cached) {
       let activeSubtitle = cached.subtitle;
@@ -63,6 +71,58 @@ export class BrowserServiceImpl implements BrowserService {
       if (!needsSubtitleRefresh) {
         return { ...cached, subtitle: activeSubtitle };
       }
+
+      if (options.tmdbId && options.titleType) {
+        this.deps.diagnosticsStore.record({
+          category: "subtitle",
+          message: "Refreshing cached subtitle metadata from active Wyzie without browser relaunch",
+          context: {
+            url: options.url,
+            tmdbId: options.tmdbId,
+            titleType: options.titleType,
+            season: options.season,
+            episode: options.episode,
+            requestedSubLang,
+          },
+        });
+
+        const wyzieResult = await resolveSubtitlesByTmdbIdImpl({
+          tmdbId: options.tmdbId,
+          type: options.titleType,
+          season: options.season,
+          episode: options.episode,
+          preferredLang: requestedSubLang,
+        });
+
+        if (wyzieResult.list.length > 0) {
+          const refreshedStream: StreamInfo = {
+            ...cached,
+            subtitle: wyzieResult.selected ?? undefined,
+            subtitleList: wyzieResult.list as unknown as SubtitleTrack[],
+            subtitleSource: wyzieResult.selected ? "wyzie" : "none",
+            subtitleEvidence: {
+              directSubtitleObserved: false,
+              wyzieSearchObserved: true,
+              reason: wyzieResult.selected ? "wyzie-selected" : "wyzie-empty",
+            },
+          };
+          await this.deps.cacheStore.set(options.url, refreshedStream);
+          return refreshedStream;
+        }
+
+        this.deps.diagnosticsStore.record({
+          category: "subtitle",
+          message: wyzieResult.failed
+            ? "Cached stream kept after active Wyzie refresh failed"
+            : "Cached stream kept after active Wyzie found no tracks",
+          context: {
+            url: options.url,
+            tmdbId: options.tmdbId,
+            requestedSubLang,
+          },
+        });
+        return { ...cached, subtitle: activeSubtitle };
+      }
     } else {
       this.deps.diagnosticsStore.record({
         category: "cache",
@@ -84,7 +144,7 @@ export class BrowserServiceImpl implements BrowserService {
       playerDomains: options.playerDomains,
     };
 
-    const result = await scrapeStream(
+    const result = await scrapeStreamImpl(
       syntheticConfig,
       options.url,
       options.subLang ?? this.deps.config.subLang,
@@ -121,7 +181,7 @@ export class BrowserServiceImpl implements BrowserService {
         },
       });
 
-      const wyzieResult = await resolveSubtitlesByTmdbId({
+      const wyzieResult = await resolveSubtitlesByTmdbIdImpl({
         tmdbId: options.tmdbId,
         type: options.titleType,
         season: options.season,
