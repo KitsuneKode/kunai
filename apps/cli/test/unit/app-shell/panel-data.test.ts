@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
+  buildHistoryPickerOptions,
   buildHelpPanelLines,
   buildHistoryPanelLines,
   buildProviderPickerOptions,
@@ -104,5 +105,40 @@ describe("panel-data", () => {
 
     expect(options[0]?.label).toContain("current");
     expect(options[1]?.label).not.toContain("current");
+  });
+
+  test("buildHistoryPickerOptions sorts newest entries first and keeps ids", () => {
+    const options = buildHistoryPickerOptions([
+      [
+        "older",
+        {
+          title: "Older Show",
+          type: "series",
+          season: 1,
+          episode: 2,
+          timestamp: 120,
+          duration: 300,
+          provider: "vidking",
+          watchedAt: "2026-04-01T00:00:00.000Z",
+        },
+      ],
+      [
+        "newer",
+        {
+          title: "Newer Show",
+          type: "series",
+          season: 2,
+          episode: 4,
+          timestamp: 180,
+          duration: 300,
+          provider: "allanime",
+          watchedAt: "2026-04-20T00:00:00.000Z",
+        },
+      ],
+    ]);
+
+    expect(options[0]?.value).toBe("newer");
+    expect(options[0]?.label).toContain("Newer Show");
+    expect(options[1]?.value).toBe("older");
   });
 });

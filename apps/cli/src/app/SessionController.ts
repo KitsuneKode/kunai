@@ -95,6 +95,12 @@ export class SessionController {
           // Playback completed (mode switch or back to search)
           const outcome = playbackResult.value;
           if (outcome === "quit") break;
+          if (typeof outcome === "object" && outcome.type === "history_entry") {
+            pendingInitialTitle = outcome.title;
+            preserveExistingSearch = false;
+            stateManager.dispatch({ type: "RESET_CONTENT" });
+            continue;
+          }
           if (outcome === "back_to_results") {
             stateManager.dispatch({ type: "RESET_CONTENT" });
             preserveExistingSearch = true;

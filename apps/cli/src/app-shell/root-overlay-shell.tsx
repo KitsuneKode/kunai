@@ -9,10 +9,16 @@ import { useLineEditor } from "@/app-shell/line-editor";
 import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
+  buildHistoryPickerOptions,
   buildHelpPanelLines,
   buildHistoryPanelLines,
   buildProviderPickerOptions,
 } from "./panel-data";
+import {
+  hasPendingRootHistorySelection,
+  resolveRootHistorySelection,
+  type RootHistorySelection,
+} from "./root-history-bridge";
 import {
   buildSettingsChoiceOverlay,
   buildSettingsOptions,
@@ -62,6 +68,7 @@ export function RootOverlayShell({
   const [settingsParentIndex, setSettingsParentIndex] = useState(0);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
   const commands = resolveCommands(state, [
     "settings",
     "provider",
@@ -129,6 +136,20 @@ export function RootOverlayShell({
     if (filter.length === 0) return true;
     return `${option.label} ${option.detail ?? ""}`.toLowerCase().includes(filter);
   });
+  const filteredHistoryOptions =
+    overlay.type === "history"
+      ? buildHistoryPickerOptions(
+          historySelections
+            .filter(({ entry }) => {
+              const filter = filterQuery.trim().toLowerCase();
+              if (filter.length === 0) return true;
+              return `${entry.title} ${entry.provider} s${entry.season}e${entry.episode}`
+                .toLowerCase()
+                .includes(filter);
+            })
+            .map(({ titleId, entry }) => [titleId, entry] as const),
+        )
+      : [];
   const settingsPanel =
     overlay.type === "settings" && settingsDraft
       ? settingsChoice
@@ -248,6 +269,7 @@ export function RootOverlayShell({
     setSettingsParentIndex(0);
     setSettingsBusy(false);
     setSettingsError(null);
+    setHistorySelections([]);
   }, [container.config, overlay.type]);
 
   useEffect(() => {
@@ -262,6 +284,12 @@ export function RootOverlayShell({
       .getAll()
       .then((entries) => {
         if (cancelled) return;
+        setHistorySelections(
+          Object.entries(entries).map(([titleId, entry]) => ({
+            titleId,
+            entry,
+          })),
+        );
         setAsyncLines(buildHistoryPanelLines(Object.entries(entries)));
       })
       .finally(() => {
@@ -293,6 +321,9 @@ export function RootOverlayShell({
           overlay.type === "subtitle_picker")
       ) {
         resolveRootPicker(null);
+      }
+      if (overlay.type === "history" && hasPendingRootHistorySelection()) {
+        resolveRootHistorySelection(null);
       }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
@@ -360,6 +391,10 @@ export function RootOverlayShell({
         if (picked && picked !== state.provider) {
           container.stateManager.dispatch({ type: "SET_PROVIDER", provider: picked });
         }
+      } else if (overlay.type === "history") {
+        const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
+        const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
+        resolveRootHistorySelection(selected);
       } else if (
         overlay.type === "season_picker" ||
         overlay.type === "episode_picker" ||
@@ -374,6 +409,7 @@ export function RootOverlayShell({
     if (key.upArrow) {
       if (
         overlay.type === "provider_picker" ||
+        overlay.type === "history" ||
         overlay.type === "settings" ||
         overlay.type === "season_picker" ||
         overlay.type === "episode_picker" ||
@@ -388,6 +424,7 @@ export function RootOverlayShell({
     if (key.downArrow) {
       if (
         overlay.type === "provider_picker" ||
+        overlay.type === "history" ||
         overlay.type === "settings" ||
         overlay.type === "season_picker" ||
         overlay.type === "episode_picker" ||
@@ -396,7 +433,9 @@ export function RootOverlayShell({
         const optionCount =
           overlay.type === "provider_picker"
             ? filteredProviderOptions.length
-            : overlay.type === "settings"
+            : overlay.type === "history"
+              ? filteredHistoryOptions.length
+              : overlay.type === "settings"
               ? filteredSettingsOptions.length
               : filteredGenericPickerOptions.length;
         setSelectedIndex((current) => Math.min(Math.max(optionCount - 1, 0), current + 1));
@@ -407,6 +446,7 @@ export function RootOverlayShell({
     }
     if (
       overlay.type === "provider_picker" ||
+      overlay.type === "history" ||
       overlay.type === "settings" ||
       overlay.type === "season_picker" ||
       overlay.type === "episode_picker" ||
@@ -456,7 +496,17 @@ export function RootOverlayShell({
           selectedIndex: Math.min(selectedIndex, Math.max(filteredProviderOptions.length - 1, 0)),
           busy: false,
         }
-      : overlay.type === "settings" && settingsPanel
+      : overlay.type === "history"
+        ? {
+            type: "history-picker",
+            title,
+            subtitle,
+            options: filteredHistoryOptions,
+            filterQuery,
+            selectedIndex: Math.min(selectedIndex, Math.max(filteredHistoryOptions.length - 1, 0)),
+            busy: loadingAsyncLines,
+          }
+        : overlay.type === "settings" && settingsPanel
         ? {
             ...settingsPanel,
             subtitle,
@@ -482,14 +532,12 @@ export function RootOverlayShell({
             }
           : overlay.type === "help" ||
               overlay.type === "about" ||
-              overlay.type === "diagnostics" ||
-              overlay.type === "history"
+              overlay.type === "diagnostics"
             ? {
                 type: overlay.type,
                 title,
                 subtitle,
                 lines,
-                loading: overlay.type === "history" ? loadingAsyncLines : undefined,
                 scrollIndex,
               }
             : {
@@ -508,11 +556,15 @@ export function RootOverlayShell({
             label={`panel ${overlay.type === "provider_picker" ? "provider" : overlay.type}`}
             tone="success"
           />
-          {overlay.type === "provider_picker" || overlay.type === "settings" ? (
+          {overlay.type === "provider_picker" ||
+          overlay.type === "history" ||
+          overlay.type === "settings" ? (
             <InlineBadge
               label={`${
                 overlay.type === "provider_picker"
                   ? filteredProviderOptions.length
+                  : overlay.type === "history"
+                    ? filteredHistoryOptions.length
                   : filteredSettingsOptions.length
               } options`}
               tone="neutral"
@@ -548,6 +600,8 @@ export function RootOverlayShell({
           taskLabel={
             overlay.type === "provider_picker"
               ? "Provider picker  ·  Type to filter, Enter to switch, Esc closes"
+              : overlay.type === "history"
+                ? "History picker  ·  Type to filter, Enter to resume, Esc closes"
               : overlay.type === "settings"
                 ? settingsChoice
                   ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"

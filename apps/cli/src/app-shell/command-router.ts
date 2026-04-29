@@ -1,5 +1,7 @@
 import type { Container } from "@/container";
 import { switchSessionMode } from "@/app/mode-switch";
+import type { TitleInfo } from "@/domain/types";
+import { waitForRootHistorySelection } from "./root-history-bridge";
 
 import type { ShellAction } from "./types";
 import { handleShellAction } from "./workflows";
@@ -11,6 +13,7 @@ type RoutedActionResult =
   | "back-to-search"
   | "back-to-results"
   | "replay"
+  | { type: "history-entry"; title: TitleInfo }
   | "unhandled";
 
 async function openRootOwnedOverlay(
@@ -72,8 +75,28 @@ export async function routeSearchShellAction({
     return "handled";
   }
   if (action === "history") {
+    const selectionPromise = waitForRootHistorySelection();
     await openRootOwnedOverlay(container, { type: "history" });
-    return "handled";
+    const selection = await selectionPromise;
+    if (!selection) return "handled";
+    const providerMetadata = container.providerRegistry.get(selection.entry.provider)?.metadata;
+    if (providerMetadata) {
+      stateManager.dispatch({
+        type: "SET_MODE",
+        mode: providerMetadata.isAnimeProvider ? "anime" : "series",
+        provider: providerMetadata.id,
+      });
+    } else {
+      stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
+    }
+    return {
+      type: "history-entry",
+      title: {
+        id: selection.titleId,
+        type: selection.entry.type,
+        name: selection.entry.title,
+      },
+    };
   }
   if (action === "settings") {
     await openRootOwnedOverlay(container, { type: "settings" });
@@ -123,8 +146,28 @@ export async function routePlaybackShellAction({
     return "handled";
   }
   if (action === "history") {
+    const selectionPromise = waitForRootHistorySelection();
     await openRootOwnedOverlay(container, { type: "history" });
-    return "handled";
+    const selection = await selectionPromise;
+    if (!selection) return "handled";
+    const providerMetadata = container.providerRegistry.get(selection.entry.provider)?.metadata;
+    if (providerMetadata) {
+      stateManager.dispatch({
+        type: "SET_MODE",
+        mode: providerMetadata.isAnimeProvider ? "anime" : "series",
+        provider: providerMetadata.id,
+      });
+    } else {
+      stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
+    }
+    return {
+      type: "history-entry",
+      title: {
+        id: selection.titleId,
+        type: selection.entry.type,
+        name: selection.entry.title,
+      },
+    };
   }
   if (action === "settings") {
     await openRootOwnedOverlay(container, { type: "settings" });

@@ -32,7 +32,12 @@ import { createResolveTraceStub } from "@/app/resolve-trace";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 
-export type PlaybackOutcome = "back_to_search" | "back_to_results" | "mode_switch" | "quit";
+export type PlaybackOutcome =
+  | "back_to_search"
+  | "back_to_results"
+  | "mode_switch"
+  | "quit"
+  | { type: "history_entry"; title: TitleInfo };
 
 export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
@@ -411,6 +416,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (routedAction === "quit") {
             return { status: "quit" };
+          } else if (typeof routedAction === "object" && routedAction.type === "history-entry") {
+            return {
+              status: "success",
+              value: { type: "history_entry", title: routedAction.title },
+            };
           } else if (routedAction === "mode-switch") {
             return { status: "success", value: "back_to_search" };
           } else if (routedAction === "replay") {

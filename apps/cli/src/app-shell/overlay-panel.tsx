@@ -19,7 +19,7 @@ export type BrowseOverlay =
       scrollIndex?: number;
     }
   | {
-      type: "provider";
+      type: "provider" | "history-picker";
       title: string;
       subtitle: string;
       options: readonly ShellPickerOption<string>[];
@@ -297,21 +297,25 @@ export function OverlayPanel({
 }) {
   const contentWidth = Math.max(24, width - 4);
   const maxLines = maxLinesOverride ?? (overlay.type === "episode-picker" ? 8 : 6);
-  const optionWindowStart =
+  const isPickerOverlay =
     overlay.type === "provider" ||
+    overlay.type === "history-picker" ||
     overlay.type === "settings" ||
     overlay.type === "settings-choice" ||
-    overlay.type === "episode-picker"
-      ? getWindowStart(overlay.selectedIndex, overlay.options.length, maxLines)
-      : 0;
+    overlay.type === "episode-picker";
+  const isLineOverlay =
+    overlay.type === "help" ||
+    overlay.type === "about" ||
+    overlay.type === "diagnostics" ||
+    overlay.type === "history" ||
+    overlay.type === "details";
+  const optionWindowStart = isPickerOverlay
+    ? getWindowStart(overlay.selectedIndex, overlay.options.length, maxLines)
+    : 0;
   const optionWindowEnd = optionWindowStart + maxLines;
-  const visibleOptions =
-    overlay.type === "provider" ||
-    overlay.type === "settings" ||
-    overlay.type === "settings-choice" ||
-    overlay.type === "episode-picker"
-      ? overlay.options.slice(optionWindowStart, optionWindowEnd)
-      : [];
+  const visibleOptions = isPickerOverlay
+    ? overlay.options.slice(optionWindowStart, optionWindowEnd)
+    : [];
 
   return (
     <Box
@@ -339,10 +343,7 @@ export function OverlayPanel({
         {overlay.title}
       </Text>
       <Text color={palette.gray}>{overlay.subtitle}</Text>
-      {overlay.type === "provider" ||
-      overlay.type === "settings" ||
-      overlay.type === "settings-choice" ||
-      overlay.type === "episode-picker" ? (
+      {isPickerOverlay ? (
         <>
           <Box marginTop={1}>
             <Text color={palette.gray}>
@@ -350,6 +351,8 @@ export function OverlayPanel({
                 ? `Filter: ${overlay.filterQuery}`
                 : overlay.type === "provider"
                   ? "Type to narrow providers"
+                  : overlay.type === "history-picker"
+                    ? "Type to narrow history"
                   : overlay.type === "episode-picker"
                     ? "Type to narrow episodes"
                     : "Type to narrow this list"}
@@ -386,9 +389,13 @@ export function OverlayPanel({
               {overlay.busy
                 ? overlay.type === "provider"
                   ? "Updating provider…"
+                  : overlay.type === "history-picker"
+                    ? "Loading history…"
                   : "Saving settings…"
                 : overlay.type === "provider"
                   ? "Type to filter, ↑↓ to choose, Enter to switch, Esc to close"
+                  : overlay.type === "history-picker"
+                    ? "Type to filter, ↑↓ to choose, Enter to resume, Esc to close"
                   : overlay.type === "episode-picker"
                     ? "Type to filter, ↑↓ to choose, Enter to jump, Esc to close"
                     : overlay.type === "settings"
@@ -406,11 +413,11 @@ export function OverlayPanel({
             </Box>
           ) : null}
         </>
-      ) : overlay.loading ? (
+      ) : isLineOverlay && overlay.loading ? (
         <Box marginTop={1}>
           <Text color={palette.amber}>Loading panel…</Text>
         </Box>
-      ) : (
+      ) : isLineOverlay ? (
         <Box marginTop={1} flexDirection="column">
           {overlay.type === "details" ? (
             <Box marginBottom={1} flexDirection="column">
@@ -430,7 +437,7 @@ export function OverlayPanel({
           ) : null}
           {overlay.lines
             .slice(overlay.scrollIndex ?? 0, (overlay.scrollIndex ?? 0) + maxLines)
-            .map((line, index) => (
+            .map((line: ShellPanelLine, index: number) => (
               <Box key={`${line.label}-${index}`} flexDirection="column" marginBottom={1}>
                 <Text color={resolvePanelTone(line.tone)}>
                   {truncateLine(line.label, contentWidth)}
@@ -453,7 +460,7 @@ export function OverlayPanel({
               : "Esc closes this panel"}
           </Text>
         </Box>
-      )}
+      ) : null}
     </Box>
   );
 }

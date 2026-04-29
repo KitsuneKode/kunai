@@ -198,6 +198,15 @@ function historyProgress(entry: HistoryEntry): string {
   return "position saved";
 }
 
+function sortHistoryEntries(
+  historyEntries: ReadonlyArray<[string, HistoryEntry]>,
+): readonly [string, HistoryEntry][] {
+  return [...historyEntries].sort(
+    (a: [string, HistoryEntry], b: [string, HistoryEntry]) =>
+      (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
+  );
+}
+
 export function buildHistoryPanelLines(
   historyEntries: ReadonlyArray<[string, HistoryEntry]>,
 ): readonly ShellPanelLine[] {
@@ -211,11 +220,7 @@ export function buildHistoryPanelLines(
     ];
   }
 
-  return [...historyEntries]
-    .sort(
-      (a: [string, HistoryEntry], b: [string, HistoryEntry]) =>
-        (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
-    )
+  return sortHistoryEntries(historyEntries)
     .slice(0, 10)
     .map(([, entry]: [string, HistoryEntry]) => ({
       label:
@@ -224,6 +229,19 @@ export function buildHistoryPanelLines(
           : `${entry.title}  ·  movie`,
       detail: `${historyProgress(entry)}  ·  provider ${entry.provider}  ·  ${new Date(entry.watchedAt).toLocaleDateString()}`,
     }));
+}
+
+export function buildHistoryPickerOptions(
+  historyEntries: ReadonlyArray<[string, HistoryEntry]>,
+): readonly ShellPickerOption<string>[] {
+  return sortHistoryEntries(historyEntries).map(([id, entry]: [string, HistoryEntry]) => ({
+    value: id,
+    label:
+      entry.type === "series"
+        ? `${entry.title}  ·  S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
+        : `${entry.title}  ·  movie`,
+    detail: `${historyProgress(entry)}  ·  provider ${entry.provider}  ·  ${new Date(entry.watchedAt).toLocaleDateString()}`,
+  }));
 }
 
 export function buildProviderPickerOptions({
