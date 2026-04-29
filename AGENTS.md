@@ -103,8 +103,9 @@ Unit tests live under `apps/cli/test/unit/`, integration tests under `apps/cli/t
 
 - Config: `~/.config/kunai/config.json`
 - Provider overrides: `~/.config/kunai/providers.json`
-- History: `~/.local/share/kunai/history.json`
-- Stream cache: `./stream_cache.json` currently; target default is the OS cache dir in [.plans/storage-hardening.md](.plans/storage-hardening.md)
+- Target data DB: OS app data dir `kunai-data.sqlite`
+- Target cache DB: OS cache dir `kunai-cache.sqlite`
+- Current JSON history/cache stores are temporary pre-release implementation details, not compatibility contracts
 - Logs: `./logs.txt`
 
 ## Active Planning Docs

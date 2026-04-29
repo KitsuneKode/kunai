@@ -2,7 +2,7 @@
 
 Status: Planned
 
-Last updated: 2026-04-28
+Last updated: 2026-04-29
 
 Use this document when converting Kunai from an exciting architecture into an investable, durable, premium product plan.
 
@@ -33,7 +33,7 @@ This matters because a $100M-feeling company is not one that refuses to spend mo
 
 Recommended answer:
 
-Kunai is a local-first media runtime with premium interfaces across CLI, web, and desktop. Its moat is not raw scraping. Its moat is fault-tolerant playback, provider intelligence, local compute pairing, cross-device continuity, and a level of user experience that makes chaotic sources feel calm.
+Kunai is a local-first media runtime that starts by making the CLI feel like the best possible terminal cinema cockpit. Its moat is not raw scraping. Its moat is fault-tolerant playback, provider intelligence, local storage correctness, subtitle/audio/source control, and a level of user experience that makes chaotic sources feel calm.
 
 ### Q: What should people remember after using Kunai once?
 
@@ -47,19 +47,19 @@ Not "it has many providers." Not "it has a cool terminal UI." The remembered fee
 - the next episode was obvious
 - subtitles behaved
 - failures recovered or explained themselves
-- local compute pairing felt magical
+- source switching felt under control
 - the product felt in control
 
 ### Q: What is the wedge?
 
 Recommended answer:
 
-Start with the elite CLI/local daemon because it proves the hardest runtime problems and attracts technical users. Then use web as the growth surface and desktop as the mainstream wrapper once daemon and cache contracts are stable.
+Start with the elite CLI because it proves the hardest runtime problems and attracts technical users. Add IPC or a daemon only when the CLI needs multi-process control, player control, or local pairing. Then use web as the growth surface and desktop as the mainstream wrapper once storage, provider, and cache contracts are stable.
 
 The order should be:
 
 ```text
-CLI/local runtime -> web pairing -> paid sync/convenience -> desktop -> broader social
+CLI/local runtime -> IPC/daemon only if needed -> web surface -> paid sync/convenience -> desktop -> broader social
 ```
 
 The CLI is the first flagship, not a side quest. It is the proof that Kunai is technically serious and experientially different. The website comes after as the mainstream doorway that translates the same power into a low-friction visual product.
@@ -73,7 +73,7 @@ Building breadth before reliability.
 The danger list:
 
 - many providers but no provider health model
-- web app before local daemon pairing is safe
+- web app before the CLI runtime is excellent
 - paid cloud compute before quotas and entitlements are strong
 - social/watch-party before sync is correct
 - gorgeous UI that cannot explain failures
@@ -86,13 +86,15 @@ The danger list:
 
 Recommended answer:
 
-Three cooperating tiers:
+Eventually, three cooperating tiers:
 
 - Free/local tier: CLI, daemon, desktop, local cache, local Playwright, local yt-dlp, local credentials.
 - Web tier: static app, browser cache, narrow provider RPC relay for browser-safe providers.
 - Premium cloud tier: sync, device management, account convenience, limited cloud resolver, premium relay budget.
 
 The product should degrade gracefully if any one tier is missing.
+
+Current execution caveat: the active phase is the CLI. Web, desktop, remote sync, paid cloud, account-required flows, and public plugin marketplaces are parked until local playback, storage, cache, subtitles, and diagnostics feel excellent.
 
 ### Q: Should the web app depend on cloud compute?
 
@@ -197,7 +199,7 @@ The safe order is:
 
 - define `@kunai/types` and `@kunai/schemas`
 - add current-provider compatibility adapters in the CLI
-- move cache keys and TTL policy into shared cache/core code
+- move storage paths, cache keys, TTL policy, and SQLite repositories into `@kunai/storage`
 - extract one low-risk 0-RAM provider first
 - migrate Playwright-heavy providers only after runtime ports are stable
 
@@ -225,7 +227,7 @@ Minimum spec:
 
 Recommended answer:
 
-Not the provider. Providers emit cache policy and evidence. `@kunai/cache` and the active app surface decide persistence. This avoids corrupt cache ownership when the same core provider is used from CLI, web, desktop, daemon, or tests.
+Not the provider. Providers emit cache policy and evidence. `@kunai/storage` and the active app surface decide persistence. This avoids corrupt cache ownership when the same core provider is used from CLI, web, desktop, daemon, or tests.
 
 ### Q: What should stay app-specific?
 
@@ -342,7 +344,7 @@ Rules:
 
 Recommended answer:
 
-Use SQLite for local daemon/desktop cache once the schema stabilizes. Keep JSON compatibility during migration. Use IndexedDB for web. Use edge KV only for public non-sensitive metadata and provider health, not raw streams.
+Use SQLite now for the CLI's history, stream cache, provider health, source inventory, and resolve traces. This is a pre-release repo, so do not preserve repo-local `stream_cache.json` or old JSON history as a compatibility contract unless external-user support is explicitly reintroduced. Use IndexedDB for web later. Use edge KV only for public non-sensitive metadata and provider health, not raw streams.
 
 ### Q: What should users see about cache?
 
@@ -418,13 +420,13 @@ Early safe version:
 
 ## Local Daemon
 
-### Q: Is the local daemon optional or core?
+### Q: Is the local daemon optional or core right now?
 
 Recommended answer:
 
-Core.
+Optional right now.
 
-The daemon is how Kunai avoids central cost, avoids central provider bans, unlocks Playwright/yt-dlp, protects user credentials, and creates the signature BYOC experience.
+The current flagship is the CLI. Add IPC first for direct `mpv` control, subtitle/audio/source switching, health reporting, and auto-heal. Introduce a daemon only when we need a separate long-lived local process for web pairing, background provider leases, multi-client control, or durable player orchestration.
 
 ### Q: How do we make daemon setup not scary?
 
@@ -457,7 +459,7 @@ Each paired device should have scoped permissions and revocation.
 
 Recommended answer:
 
-For desktop, yes, with tray visibility. For CLI, start explicitly or as part of `kunai serve`. For web, never silently start a daemon; web can only pair with one already installed/running.
+For desktop later, yes, with tray visibility. For CLI, prefer no daemon until a concrete multi-process need appears. If a daemon exists, start explicitly or as part of `kunai serve`. For web, never silently start a daemon; web can only pair with one already installed/running.
 
 Invisible is good only after trust has been established.
 
@@ -873,7 +875,7 @@ Pick one and optimize deeply. ArtPlayer is a reasonable starting point, but the 
 
 Recommended answer:
 
-SQLite for CLI/Desktop/daemon, IndexedDB for web. Keep JSON migration compatibility for existing users.
+SQLite for CLI history, cache, provider health, source inventory, resolve traces, and local playback events. IndexedDB for web later. Do not keep JSON migration compatibility by default during the current pre-release remodel.
 
 Use `bun:sqlite` plus typed repositories first. Do not add a heavy ORM until schema and query complexity prove it is worth the packaging cost.
 
@@ -895,7 +897,7 @@ Not early. PWA plus local pairing first. Native mobile only after web usage prov
 
 Recommended answer:
 
-CLI playback with source confidence, instant next episode, failure auto-heal, and a visible trace. Then web QR pairs with the CLI daemon and plays through local compute.
+CLI playback with source confidence, instant next episode, reliable subtitles/audio switching, failure auto-heal, and a visible trace. Then, only after the CLI earns it, web QR pairs with the local runtime and plays through local compute.
 
 That demo tells the whole company story.
 
@@ -907,14 +909,15 @@ If everything feels important, use this order:
 2. Provider capability and health
 3. Cache correctness
 4. Resolve trace and diagnostics
-5. Local daemon pairing
-6. CLI persistent shell polish
-7. Web static browse and player
-8. Sync event log
-9. Premium entitlement and budgets
-10. Desktop packaging
-11. Social and watch-party
-12. Premium personalization and decorative delights
+5. CLI persistent shell polish
+6. MPV IPC/player-control reliability
+7. Local daemon pairing only if needed
+8. Web static browse and player
+9. Sync event log
+10. Premium entitlement and budgets
+11. Desktop packaging
+12. Social and watch-party
+13. Premium personalization and decorative delights
 
 ## Final Staff-Level Recommendation
 

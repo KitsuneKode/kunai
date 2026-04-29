@@ -2,7 +2,7 @@
 
 Status: Active Reference
 
-Last updated: 2026-04-28
+Last updated: 2026-04-29
 
 Use this file to route work across multiple agents without reloading the whole Kunai vision into every session.
 
@@ -10,7 +10,7 @@ The rule is simple:
 
 - Day-1 agents own behavior-preserving runtime and shell work.
 - Fresh agents own bounded tests, docs, fixtures, audits, and narrow implementation slices.
-- Principal architecture work owns contracts, cache design, provider-core extraction, and integration review.
+- Principal architecture work owns contracts, storage/cache design, provider-core extraction, and integration review.
 
 Do not run two agents with overlapping write ownership at the same time.
 
@@ -22,7 +22,7 @@ Use these rules in every prompt unless a task explicitly says otherwise:
 - Do not revert unrelated changes.
 - Keep commits small and reviewable.
 - Do not rewrite providers during shell or workspace migration.
-- Do not start web/desktop until CLI/package contracts are stable.
+- Do not start web/desktop until CLI, storage, and provider/package contracts are stable.
 - Do not add Prisma or a heavy ORM.
 - Use TypeScript for internal contracts.
 - Use Zod only at trust, storage, IPC, relay, provider-response, sync, imported-dataset, or plugin-manifest boundaries.
@@ -47,7 +47,7 @@ Read only:
 
 Hard boundaries:
 - Do not start true shell refactor.
-- Do not extract `packages/types`, `packages/cache`, or `@kunai/core`.
+- Do not extract `packages/types`, `packages/storage`, or `@kunai/core`.
 - Do not rewrite providers.
 - Do not start web/desktop.
 - Do not make visual redesign changes.
@@ -162,7 +162,7 @@ Read:
 
 Hard boundaries:
 - Do not extract provider implementations.
-- Do not move cache storage yet.
+- Do not move cache/history storage yet.
 - Do not add web/desktop.
 - Do not add heavy ORM tooling.
 - Do not create `packages/core` in this phase.
@@ -258,7 +258,7 @@ Acceptance:
 - Remaining transitional paths are documented.
 ```
 
-## Prompt 3: Fresh Agent Contract Tests
+## Prompt 2A: Fresh Agent Contract Tests
 
 Use this for a fresh agent after Prompt 2.
 
@@ -292,90 +292,120 @@ Report:
 - any schema ambiguity found
 ```
 
-## Prompt 4: Principal Cache Package
+## Prompt 3: Principal Storage Package
 
-Use this for cache/storage architecture.
-
-```md
-You are working in Kunai after shared contracts exist.
-
-Goal:
-Create `packages/cache` with package name `@kunai/cache` and begin moving storage policy into shared code.
-
-Read:
-1. `AGENTS.md`
-2. `.plans/storage-hardening.md`
-3. `.docs/architecture-v2.md`
-4. `.plans/turborepo-and-package-boundaries.md`
-5. `packages/types`
-6. `packages/schemas`
-
-Hard boundaries:
-- Do not migrate to full SQLite yet unless explicitly requested.
-- Do not change provider extraction.
-- Do not rewrite history semantics.
-- Do not break existing cache compatibility.
-
-Tasks:
-1. Create `packages/cache`.
-2. Add OS-aware path resolver.
-3. Add cache key helpers using shared identity/provider/cache policy types.
-4. Add TTL class helpers.
-5. Add JSON compatibility read/write helpers if needed.
-6. Move default stream cache target toward OS cache dir.
-7. Keep repo-local `stream_cache.json` as legacy read fallback only.
-8. Add tests for Linux/macOS/Windows path resolution using mocked envs.
-9. Run verification and commit.
-
-Acceptance:
-- Cache write failure cannot crash playback.
-- Existing users have a compatibility path.
-- No full SQLite dependency unless separately approved.
-```
-
-## Prompt 5: Day-1 Cache Wiring
-
-Use this for an agent that knows the CLI runtime.
+Use this for principal architecture work after Phase 2 is committed.
 
 ```md
-You are working in Kunai after `packages/cache` exists.
+You are working in Kunai after Phase 2 shared contracts are committed.
 
 Goal:
-Wire the shared cache/path helpers into `apps/cli` without changing provider behavior.
+Complete Phase 3A by creating `packages/storage` with package name `@kunai/storage`, without changing CLI runtime behavior yet.
 
 Read:
 1. `AGENTS.md`
 2. `.docs/architecture.md`
-3. `.plans/storage-hardening.md`
-4. `packages/cache`
-5. current CLI cache/config/history stores
+3. `.docs/architecture-v2.md`
+4. `.plans/turborepo-and-package-boundaries.md`
+5. `.plans/storage-hardening.md`
+6. `.docs/testing-strategy.md`
 
 Hard boundaries:
 - Do not extract providers.
-- Do not change cache TTL semantics unless required by typed policy.
-- Do not migrate history to SQLite.
-- Preserve legacy cache read compatibility.
+- Do not wire the CLI from JSON history/cache into SQLite yet.
+- Do not build remote sync, accounts, web, desktop, or paid cloud.
+- Do not add Prisma or a heavy ORM.
+- Do not preserve repo-local `stream_cache.json` as a compatibility contract.
+- Do not change playback, provider fallback, subtitle behavior, or cache runtime behavior in this phase.
 
 Tasks:
-1. Replace ad hoc stream cache paths with shared path resolver.
-2. Preserve old cache migration/fallback.
-3. Update diagnostics/docs to show real cache path.
-4. Add tests for migration/fallback behavior.
-5. Run verification and commit.
+1. Create `packages/storage` as `@kunai/storage`.
+2. Add OS-aware path resolution for config, data DB, cache DB, logs, and temp files.
+3. Add `bun:sqlite` connection helpers for `kunai-data.sqlite` and `kunai-cache.sqlite`.
+4. Add an idempotent migration runner.
+5. Add initial migrations for:
+   - history latest-progress table
+   - stream cache table
+   - provider health table
+   - source inventory table
+   - resolve trace ring buffer table
+6. Add repository interfaces and basic implementations.
+7. Add TTL and cache-key helpers using `@kunai/types`.
+8. Validate SQLite row boundaries with `@kunai/schemas` where data leaves or enters storage.
+9. Add tests for path resolution, migrations, TTLs, cache keys, and basic repository round trips.
+10. Run `bun run lint`, `bun run fmt`, `bun run typecheck`, and `bun run test`.
+11. Commit Phase 3A only.
+
+Acceptance:
+- `@kunai/storage` compiles and is included in root checks.
+- Tests prove migrations are idempotent.
+- Linux, macOS, and Windows path behavior is deterministic.
+- Repository APIs do not expose raw SQL to app callers.
+- Cache writes can be treated as best-effort by later CLI wiring.
+- No runtime behavior changed in `apps/cli`.
 
 Report:
-- old path behavior
-- new path behavior
-- migration/fallback behavior
+- commit hash
+- package API summary
+- tests added
 - verification results
+- next prompt to use: `Prompt 3B: Day-1 CLI Storage Wiring`
 ```
 
-## Prompt 6: Principal First Core Provider Extraction
+## Prompt 3B: Day-1 CLI Storage Wiring
 
-Use this after contracts and cache policy exist.
+Use this for a runtime-aware Day-1 agent after `@kunai/storage` exists and is committed.
 
 ```md
-You are working in Kunai after contracts and cache helpers exist.
+You are working in Kunai after `@kunai/storage` Phase 3A is committed.
+
+Goal:
+Wire the CLI to SQLite-backed history and stream cache while preserving user-facing playback behavior.
+
+Read:
+1. `AGENTS.md`
+2. `.docs/architecture.md`
+3. `.docs/diagnostics-guide.md`
+4. `.plans/storage-hardening.md`
+5. `.plans/turborepo-and-package-boundaries.md`
+6. `.docs/testing-strategy.md`
+
+Hard boundaries:
+- Do not extract providers.
+- Do not add web/desktop/remote sync.
+- Do not add daemon pairing.
+- Do not preserve old JSON history/cache as a compatibility contract unless explicitly instructed.
+- Do not change provider fallback, subtitle selection, autoplay, or episode navigation semantics except to fix discovered storage bugs.
+
+Tasks:
+1. Replace JSON history reads/writes with `@kunai/storage` history repository.
+2. Replace repo-local stream cache reads/writes with `@kunai/storage` stream cache repository.
+3. Keep config and provider overrides JSON.
+4. Make cache writes best-effort and non-fatal.
+5. Update diagnostics/settings copy to show actual data/cache DB paths.
+6. Remove default repo-root `stream_cache.json` assumptions from CLI runtime.
+7. Add tests for:
+   - playback progress save/load
+   - completed episode semantics
+   - stream cache hit/miss/expiry
+   - cache write failure not crashing playback
+8. Run `bun run lint`, `bun run fmt`, `bun run typecheck`, and `bun run test`.
+9. Commit Phase 3B only.
+
+Acceptance:
+- Continue Watching works from SQLite.
+- Stream cache works from OS cache DB.
+- Repo root is not used for new default stream cache writes.
+- CLI playback behavior is otherwise unchanged.
+- Tests cover the previous history-not-showing risk.
+```
+
+## Prompt 4: Principal First Core Provider Extraction
+
+Use this after contracts and the storage/cache policy exist.
+
+```md
+You are working in Kunai after contracts and `@kunai/storage` exist.
 
 Goal:
 Create the first core provider package, `packages/core` as `@kunai/core`, and extract one low-risk provider path or provider contract first.
@@ -387,7 +417,7 @@ Read:
 4. `.plans/provider-hardening.md`
 5. `.plans/turborepo-and-package-boundaries.md`
 6. `packages/types`
-7. `packages/cache`
+7. `packages/storage`
 
 Hard boundaries:
 - Extract one provider or one contract slice only.
@@ -411,7 +441,7 @@ Acceptance:
 - No broad provider rewrite.
 ```
 
-## Prompt 7: Fresh Provider Dossier
+## Prompt 5: Fresh Provider Dossier
 
 Use this for fresh agents who can research one provider without touching production.
 
@@ -451,7 +481,7 @@ Report:
 - what needs principal review before implementation
 ```
 
-## Prompt 8: Day-1 ResolveTrace UI
+## Prompt 6: Day-1 ResolveTrace UI
 
 Use this after `ResolveTrace` exists.
 
@@ -487,7 +517,7 @@ Acceptance:
 - No sensitive URLs or credentials are exported in shareable text.
 ```
 
-## Prompt 9: Fresh Docs Sync
+## Prompt 7: Fresh Docs Sync
 
 Use this after any phase that changes paths or commands.
 

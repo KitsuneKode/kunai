@@ -18,8 +18,25 @@ These surfaces should share contracts and provider intelligence, but they should
 apps/cli        -> Ink shell, mpv handoff, local-first runtime, optional account sync
 apps/web        -> Next.js app, browser cache, player UI, pairing client, low-cost signed-in surface
 apps/desktop    -> later wrapper around web UI plus bundled daemon
-packages/*      -> contracts, schemas, cache, provider core, CLI UI primitives
+packages/*      -> contracts, schemas, storage, provider core, CLI UI primitives
 ```
+
+## Current Execution Mode
+
+The active product is the full-fledged CLI. Web, desktop, remote sync, paid cloud compute, premium dashboards, watch rooms, public plugin marketplaces, and account-required flows are parked until the CLI runtime feels excellent.
+
+Current CLI priorities:
+
+- reliable local playback through `mpv`
+- low-friction subtitle, dub/audio, provider, and episode switching
+- local SQLite history and playback progress
+- local SQLite stream/source cache
+- provider health, source confidence, and resolve traces
+- cache inspector and diagnostics
+- IPC only where it improves CLI or `mpv` control
+- daemon only when a real local multi-process need appears
+
+The CLI should not require sign-in, remote sync, cloud compute, or web pairing to feel complete.
 
 ## Runtime Principles
 
@@ -80,9 +97,9 @@ packages/core
   Future package name: `@kunai/core`.
   Provider contracts, capability manifests, runtime ports, cache-key policy, resolver orchestration, source ranking, and resolve tracing.
 
-packages/cache
-  Future package name: `@kunai/cache`.
-  OS path resolution, JSON compatibility stores, SQLite repositories, TTL classes, pruning, and migrations.
+packages/storage
+  Future package name: `@kunai/storage`.
+  OS path resolution, SQLite connections, migrations, typed repositories, TTL classes, pruning, and local data/cache ownership.
 
 packages/config
   Future package name: `@kunai/config`.
@@ -113,24 +130,22 @@ Do not Zod-parse every internal object in hot paths. Validate at the edge, then 
 
 ## Storage Direction
 
-Short term:
+CLI era:
 
-- Keep config and history JSON if single-process.
-- Move stream cache to OS cache paths.
-- Preserve repo-local `stream_cache.json` as legacy read-only compatibility during migration.
-
-Daemon/web era:
-
-- Use SQLite for stream cache, provider health, source inventory, resolve traces, and sync event logs.
+- Use SQLite now for history, stream cache, provider health, source inventory, resolve traces, and local playback events.
+- Keep config JSON unless it becomes complex enough to justify moving it.
+- Do not preserve repo-local `stream_cache.json` compatibility; this is a pre-release development repo.
 - Keep durable user state separate from disposable cache state.
 - Use WAL mode and repository classes, not a heavy ORM by default.
 
 Canonical split:
 
 ```text
-kunai-data.sqlite   -> durable user data and sync event log
+kunai-data.sqlite   -> durable user data, watch history, progress, local playback events
 kunai-cache.sqlite  -> disposable stream/source/provider/trace cache
 ```
+
+Remote sync is intentionally not scheduled for the current CLI phase. If it returns, it should build on the local SQLite playback event model rather than reshaping the CLI around accounts.
 
 ## Web Direction
 

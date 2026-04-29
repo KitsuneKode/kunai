@@ -1,10 +1,10 @@
 # Kunai Turborepo And Package Boundaries Plan
 
-Status: Phase 1 complete; Phase 1.8 next before package extraction
+Status: Phase 2 complete; Phase 3 storage next
 
-Last updated: 2026-04-28
+Last updated: 2026-04-29
 
-Use this plan for the first physical migration from the current single-package CLI into the Kunai monorepo. This is the execution bridge between the current runtime and the larger CLI, web, desktop, daemon, and premium ecosystem.
+Use this plan for the physical migration from the current CLI into the Kunai monorepo. The active execution target is the full-fledged CLI; web, desktop, remote sync, and paid cloud work are parked until the CLI runtime is excellent.
 
 ## Goal
 
@@ -60,9 +60,9 @@ packages/
     Future package name: `@kunai/core`.
     Provider contracts, capabilities, resolver orchestration, cache-key policy, source ranking, runtime ports, and tracing.
 
-  cache/
-    Future package name: `@kunai/cache`.
-    OS path resolver, cache repositories, SQLite stores, JSON compatibility migration, TTL classes.
+  storage/
+    Future package name: `@kunai/storage`.
+    OS path resolver, SQLite connections, migrations, typed repositories, TTL classes, pruning, history, stream cache, provider health, source inventory, and resolve traces.
 
   config/
     Future package name: `@kunai/config`.
@@ -188,7 +188,7 @@ Hard rules for the provider boundary:
 
 - providers return data and evidence, not UI decisions
 - providers never write history, config, stream cache, or health stores directly
-- providers emit cache policy; cache packages decide where and how it is stored
+- providers emit cache policy; `@kunai/storage` decides where and how it is stored
 - providers declare required runtime capabilities instead of importing Playwright, `yt-dlp`, daemon, or web APIs directly
 - providers return structured failure codes and a `ResolveTrace`, not only `null`
 - providers expose browser-safety and relay-safety explicitly
@@ -202,7 +202,7 @@ apps/cli controller
   -> @kunai/core resolver
   -> provider runtime ports
   -> StreamCandidate[] + SubtitleCandidate[] + ResolveTrace + CachePolicy
-  -> @kunai/cache storage policy
+  -> @kunai/storage persistence/cache policy
   -> app-specific playback / UI / diagnostics
 ```
 
@@ -268,32 +268,52 @@ Drift guard:
 - If a change moves provider implementations, creates provider adapters, changes cache paths, or changes stream resolution behavior, it belongs to Phase 3/4, not Phase 2.
 - If a shared type needs runtime validation, add it to `@kunai/schemas` only when it crosses storage, IPC, relay, provider-response, imported-data, sync, or plugin-manifest boundaries.
 
-## Phase 3: Cache And Storage Package
+## Phase 3: CLI Storage Package
 
-Extract storage foundations before provider extraction so all surfaces share the same policy.
+Extract storage foundations before provider extraction so the CLI has reliable local history, cache, diagnostics, and source intelligence.
+
+Status: Next.
+
+Current execution mode:
+
+- Build for the CLI first.
+- Use SQLite from the start for local history and cache.
+- Do not preserve repo-local `stream_cache.json` compatibility.
+- Do not build remote sync, web, desktop, paid cloud, or account flows in this phase.
 
 Actions:
 
-1. Create `packages/cache`.
-2. Move OS path resolution into it.
-3. Add JSON compatibility stores for current config/history/cache behavior.
-4. Move stream cache default path to OS cache directory.
-5. Add schema version and TTL class to stream cache entries.
-6. Keep repo-local `stream_cache.json` as legacy read fallback only.
+1. Create `packages/storage` with package name `@kunai/storage`.
+2. Add OS-aware data/cache path resolution.
+3. Add SQLite connection helpers for `kunai-data.sqlite` and `kunai-cache.sqlite`.
+4. Add migration runner and initial migrations.
+5. Add typed repository interfaces for history, stream cache, provider health, source inventory, and resolve traces.
+6. Add TTL and cache-key helpers using `@kunai/types`.
+7. Add tests for paths, migrations, TTLs, cache keys, and repository basics.
 
 SQLite decision:
 
 - Use `bun:sqlite` plus small typed repository classes.
 - Use migrations stored in code or SQL files.
-- Use WAL mode for daemon-era stores.
+- Use WAL mode for local stores.
 - Avoid Prisma for CLI/Desktop packaging.
 - Consider Drizzle later only if query complexity grows enough to justify it.
 
 Acceptance:
 
-- CLI no longer writes new default stream cache entries to repo root.
-- Old `stream_cache.json` can be migrated or read once.
-- Cache write failure does not crash playback.
+- `@kunai/storage` compiles and tests pass.
+- `kunai-data.sqlite` and `kunai-cache.sqlite` paths are deterministic on Linux, macOS, and Windows.
+- Migrations are idempotent.
+- Repositories do not expose raw SQL to CLI callers.
+- Cache write failure can be handled as non-fatal by the CLI wiring phase.
+- No provider behavior changes yet.
+
+Phase 3B wiring, after the package foundation:
+
+1. Replace CLI JSON history with SQLite history.
+2. Replace CLI JSON stream cache with SQLite stream cache.
+3. Add provider health and resolve trace persistence.
+4. Update cache/history/settings UI copy so users see the real local storage model.
 
 ## Phase 4: First Provider Extraction
 

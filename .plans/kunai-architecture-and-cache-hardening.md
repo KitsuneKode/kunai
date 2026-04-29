@@ -2,9 +2,11 @@
 
 Status: Planned
 
-Last updated: 2026-04-28
+Last updated: 2026-04-29
 
-Use this plan when shaping Kunai's web, CLI, desktop, local daemon, cloud proxy, cache, provider runtime, paid compute, sync, or security model.
+Use this plan when shaping Kunai's CLI, future web, future desktop, optional local daemon, cloud proxy, cache, provider runtime, paid compute, sync, or security model.
+
+Current execution note: the active build target is the full-fledged CLI. Web, desktop, remote sync, paid cloud compute, account-required flows, and public plugin marketplaces are parked until local playback, SQLite storage, subtitles/audio switching, provider health, cache correctness, and diagnostics are excellent.
 
 This plan fills the major holes identified in the Kunai master architecture:
 
@@ -21,7 +23,7 @@ This plan fills the major holes identified in the Kunai master architecture:
 
 Kunai should feel instant because the system predicts, caches, warms, and explains work intelligently. It should stay cheap because expensive work happens only after user intent is strong, on user-owned compute whenever possible, and behind hard quotas when cloud compute is used.
 
-The product should not depend on a single magical server. It should run as three cooperating tiers:
+The product should not depend on a single magical server. Long term, it should run as three cooperating tiers:
 
 ```text
 Tier 1: Static web + client cache
@@ -93,9 +95,19 @@ Relay rules:
 
 The relay exists to solve browser same-origin restrictions, not to become Kunai's compute engine.
 
-### 3. Local Daemon
+### 3. Local Runtime And Optional Daemon
 
-The local daemon is the real power product.
+The CLI is the real power product right now. A daemon is not required for the immediate CLI phase unless it solves a concrete multi-process problem.
+
+Prefer this order:
+
+```text
+CLI process -> mpv IPC -> short provider leases -> optional daemon
+```
+
+Use IPC first for player state, subtitle/audio/source switching, progress checkpoints, and auto-heal signals. Introduce a daemon later for web pairing, background provider leases, multi-client local control, or long-lived local services.
+
+Future daemon shape:
 
 Required shape:
 
@@ -251,9 +263,9 @@ L0: In-memory hot cache
   - active session only
   - selected title, episode catalog, current stream candidates
 
-L1: Local persistent cache
-  - CLI/Desktop/daemon
-  - SQLite preferred, JSON compatibility during migration
+L1: Local persistent storage/cache
+  - CLI now; Desktop/daemon later
+  - SQLite now for history, stream cache, provider health, source inventory, and resolve traces
 
 L2: Browser cache
   - IndexedDB
@@ -266,6 +278,7 @@ L3: Edge metadata cache
 L4: Paid account sync
   - history, bookmarks, preferences, device state
   - no raw user credentials
+  - parked until local SQLite event semantics are proven
 ```
 
 ### What To Cache
@@ -430,6 +443,8 @@ This is a user-love feature. People forgive failures when the app acts competent
 
 Replace last-write-wins for watch progress with an event log.
 
+Current execution note: remote sync is not scheduled in the CLI-first phase. Build the local SQLite playback event model first so sync can be added later without reshaping history.
+
 ### Event Types
 
 - `playback_started`
@@ -582,11 +597,11 @@ Pro:
 ### Phase 1: Local-First Runtime
 
 - migrate provider output to inventory-first stream candidates
-- centralize cache service around typed TTL classes
+- create `@kunai/storage` around OS paths, SQLite repositories, typed TTL classes, and cache keys
 - add resolve trace model
 - add local provider health store
 - implement prefetch budget manager
-- add daemon pairing skeleton
+- add mpv IPC/player-control improvements before any daemon pairing skeleton
 
 ### Phase 2: Web Safe Public Beta
 

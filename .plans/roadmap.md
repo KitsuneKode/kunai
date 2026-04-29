@@ -41,8 +41,9 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 ### Active Follow-Ups
 
-- Mounted true root shell migration inside `apps/cli` after the Turborepo move so home, browse, pickers, loading, playback, overlays, and post-playback are content states instead of separate shells
-- Phase 1.8 single mounted content tree plan is now tracked in [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md) and should complete before shared package extraction
+- Current execution mode: full-fledged CLI first. Web, desktop, remote sync, paid cloud, premium dashboards, and account-required flows are parked.
+- Phase 3 storage foundation: create `@kunai/storage` with SQLite paths, migrations, repositories, TTL helpers, and cache keys.
+- Wire CLI history and stream cache into SQLite after the storage package foundation is tested.
 - Fullscreen shell convergence so the UI stops reading like stacked full-width cards and stays inside the viewport
 - Fullscreen root-shell redesign spec is now tracked in [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)
 - Overlay-driven settings, provider, history, diagnostics, season, episode, and subtitle workflows
@@ -71,7 +72,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Kunai architecture hardening     | Planned     | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md) |
 | Kunai experience and growth moat | Planned     | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)             |
 | Kunai principal grill Q&A        | Planned     | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                             |
-| Turborepo and package boundaries | Phase 1.8    | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)             |
+| Turborepo and package boundaries | Phase 3      | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)             |
 | Kunai V2 ecosystem and Debrid    | Planned     | [.plans/v2-ecosystem-and-debrid.md](.plans/v2-ecosystem-and-debrid.md)                               |
 | Kunai V3 metadata and sync       | Planned     | [.plans/v3-metadata-and-sync.md](.plans/v3-metadata-and-sync.md)                                     |
 | CLI UX overhaul                  | Planned     | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                               |

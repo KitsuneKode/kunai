@@ -164,16 +164,17 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 | ------------------ | ------------------------------------------ | ---------------- |
 | Config             | `~/.config/kunai/config.json`              | `apps/cli/src/config.ts`  |
 | Provider overrides | `~/.config/kunai/providers.json`           | `apps/cli/src/config.ts`  |
-| Watch history      | `~/.local/share/kunai/history.json`        | `apps/cli/src/history.ts` |
-| Stream cache       | `./stream_cache.json` legacy default       | CLI cache store           |
+| Watch history      | Temporary JSON store; target `kunai-data.sqlite`   | `apps/cli/src/history.ts` |
+| Stream cache       | Temporary JSON store; target `kunai-cache.sqlite`  | CLI cache store           |
 | Debug logs         | `./logs.txt`                               | `apps/cli/src/logger.ts`  |
 
-Known caveat: the repo-local stream cache is a migration liability. The target path is the OS cache directory described in [.plans/storage-hardening.md](../.plans/storage-hardening.md).
+Known caveat: the current JSON history/cache stores are pre-release implementation details. The target is the SQLite storage model described in [.plans/storage-hardening.md](../.plans/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
 
-Migration note:
+Migration rule:
 
-- the legacy disk cache format in `stream_cache.json` is still the compatibility format
-- the new runtime cache store now reads and writes that same format for browser/embed scraping so cache behavior stays aligned while the migration is in progress
+- do not add new architecture around repo-local `stream_cache.json`
+- do not treat old JSON history/cache as a compatibility contract unless external-user support is explicitly reintroduced
+- keep config and provider overrides as JSON for now
 
 ## Migration Guidance
 

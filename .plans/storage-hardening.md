@@ -1,174 +1,131 @@
-# Storage Architecture & Hardening Plan
+# Kunai CLI Storage Plan
 
-This document breaks down the state of our flat-file JSON storage, identifies critical loopholes, and tracks our implementation decisions to harden the system.
+Status: CLI-first SQLite planned
 
-Status: Partially Implemented, Needs Daemon-Era Upgrade
+Use this plan when changing config, history, stream cache, provider health cache, source inventory, resolve traces, local playback events, or future sync persistence.
 
-Use this plan when changing config, history, stream cache, provider health cache, source inventory cache, or future sync persistence.
+## Current Decision
 
-## 1. Scale & Bloat: The Math (4 episodes/day)
+Kunai is pre-release and currently focused on the full-fledged CLI. Do not spend effort preserving repo-local `stream_cache.json` or old cache/history formats unless the project explicitly decides to support existing external users.
 
-If a user watches 4 episodes a day for a month, they generate **120 history entries**.
-If they keep that pace for an entire year, they generate **~1,460 entries**.
+Use SQLite now for local runtime state:
 
-A typical history entry is roughly 150-200 bytes of JSON.
+```text
+kunai-data.sqlite
+  durable user data:
+  - watch history
+  - playback progress
+  - local playback events
+  - bookmarks later
+  - subtitle/audio/provider preferences later
 
-- **1 Month (120 entries)** = ~24 Kilobytes
-- **1 Year (1,460 entries)** = ~292 Kilobytes
+kunai-cache.sqlite
+  disposable derived data:
+  - stream cache
+  - source inventory
+  - provider health
+  - resolve traces
+  - metadata cache when safe
+```
 
-For a modern CPU, parsing a 300KB JSON file takes less than **1 millisecond**.
-**Conclusion on Scale:** Flat JSON will _not_ bottleneck or bloat in any meaningful way for user history.
+Config can remain JSON for now because it is low-churn and user-facing. Remote sync is not part of the current CLI phase.
 
-## 2. The Real Loopholes: Corruption & Race Conditions
+## Why SQLite Now
 
-> **Loophole 1: Mid-Write Crashes (The Corruption Risk)**
-> We currently use `await writeFile(...)`. If the user hits `Ctrl+C` or the terminal crashes in the exact millisecond the file is being written, the OS writes an incomplete file. The next time they boot the app, `JSON.parse` will fail, and their **entire watch history is permanently destroyed**.
+JSON is acceptable for tiny single-process state, but Kunai is being remodeled before release. SQLite gives the CLI a better foundation now:
 
-> **Loophole 2: Concurrency Race Conditions**
-> We read the whole file, modify a key, and write the whole file back. If two async processes (e.g. background cache refresh and a history update) fire at the exact same time, the slower write will overwrite the faster write, causing silent data loss.
+- indexed watch history and continue-watching queries
+- appendable local playback events later
+- cache TTL and pruning queries
+- provider health aggregation
+- source inventory lookups
+- resolve trace ring buffers
+- transaction safety
+- WAL mode for future IPC/daemon pressure
 
-## 3. Implementation Decisions
+Use `bun:sqlite` plus small typed repository classes. Do not introduce Prisma. Consider Drizzle only if query composition becomes painful after the schema proves itself.
 
-### Decision 1: Architecture Path
+## Package Direction
 
-**Decision:** Use a staged storage path.
+Create `packages/storage` as `@kunai/storage`.
 
-1. **Now:** Harden JSON with atomic writes, corrupt backups, and write queueing.
-2. **Next:** Move cache/history to OS-aware app paths instead of repo-local files.
-3. **Daemon/Web era:** Migrate high-churn stores to SQLite.
+```text
+packages/storage/
+  src/paths.ts
+  src/sqlite.ts
+  src/migrations.ts
+  src/ttl.ts
+  src/cache-key.ts
+  src/repositories/history.ts
+  src/repositories/stream-cache.ts
+  src/repositories/provider-health.ts
+  src/repositories/source-inventory.ts
+  src/repositories/resolve-trace.ts
+```
 
-**Why:** JSON is fine for the single-process CLI today, but SQLite becomes the better foundation once a local daemon, paired web clients, provider health, source inventories, sync event logs, and multiple writers exist.
+Storage package rules:
 
-The new runtime `FileStorage` already implements temp-file writes, atomic rename, corrupt backup, and an in-process write queue. The remaining risks are legacy storage paths, repo-local `stream_cache.json`, missing size limits, missing schema/version markers, and lack of cross-process locking.
+- expose typed repository APIs, not raw SQL to app code
+- validate SQLite rows at the storage boundary with `@kunai/schemas`
+- keep cache writes best-effort for playback
+- never store raw signed media URLs in exportable reports
+- keep durable data and disposable cache in separate DBs
+- use idempotent migrations
+- use WAL mode
 
-### Decision 1.5: SQLite Access Pattern
+## Storage Locations
 
-**Decision:** Use `bun:sqlite` with small typed repository classes first. Do not introduce a heavy ORM for the CLI/daemon cache layer yet.
+Linux:
 
-Why:
+- Config JSON: `~/.config/kunai/config.json`
+- Data DB: `~/.local/share/kunai/kunai-data.sqlite`
+- Cache DB: `~/.cache/kunai/kunai-cache.sqlite`
 
-- SQLite is the right persistence engine for high-churn local cache, provider health, source inventory, resolve traces, and sync events.
-- A heavy ORM adds packaging, migration, startup, and binary complexity before the schema proves it needs that abstraction.
-- Repository classes keep queries explicit and easier to optimize for a CLI/Desktop binary.
+macOS:
 
-Allowed later:
+- Config JSON: `~/Library/Application Support/kunai/config.json`
+- Data DB: `~/Library/Application Support/kunai/kunai-data.sqlite`
+- Cache DB: `~/Library/Caches/kunai/kunai-cache.sqlite`
 
-- Consider Drizzle if schema breadth and query composition become painful.
-- Avoid Prisma for the local CLI/Desktop runtime unless the packaging and generated-client tradeoffs are explicitly accepted.
+Windows:
 
-Validation rule:
+- Config JSON: `%APPDATA%\kunai\config.json`
+- Data DB: `%LOCALAPPDATA%\kunai\kunai-data.sqlite`
+- Cache DB: `%LOCALAPPDATA%\kunai\kunai-cache.sqlite`
 
-- TypeScript owns internal contracts.
-- Zod validates data crossing trust or serialization boundaries: config files, JSON cache migration, SQLite rows, daemon IPC, relay payloads, sync events, provider responses, and imported mapping datasets.
-- Do not parse every hot-path internal object with Zod.
-
-### Decision 2: Storage Locations (Cross-Platform)
-
-We will implement an OS-aware path resolver so files land exactly where they belong natively.
-
-**Linux (XDG Base Directory Spec):**
-
-- **Config:** `~/.config/kunai/config.json`
-- **History:** `~/.local/share/kunai/history.json`
-- **Cache:** `~/.cache/kunai/stream_cache.json`
-
-**macOS:**
-
-- **Config:** `~/Library/Application Support/kunai/config.json`
-- **History:** `~/Library/Application Support/kunai/history.json`
-- **Cache:** `~/Library/Caches/kunai/stream_cache.json`
-
-**Windows:**
-
-- **Config:** `%APPDATA%\kunai\config.json` (Roaming)
-- **History:** `%LOCALAPPDATA%\kunai\history.json` (Local)
-- **Cache:** `%LOCALAPPDATA%\kunai\stream_cache.json` (Local)
-
-Legacy note:
-
-- Old KitsuneSnipe paths may exist for early users. A one-time migration should copy or move old config/history/cache into Kunai paths, then leave a `.migrated` marker.
-- Repo-local `./stream_cache.json` should be treated as legacy compatibility only.
-
-## 4. Store Classes
-
-### Config
-
-Properties:
-
-- low write frequency
-- user-authored or settings-authored
-- must survive crashes
-
-Recommended backend:
-
-- JSON is fine long-term.
-- Use atomic writes and corrupt backup.
-- Validate shape against defaults on load.
+## Durable Data
 
 ### History
 
-Properties:
+History belongs in `kunai-data.sqlite`.
 
-- medium write frequency
-- user valuable
-- sync-critical later
+Initial model:
 
-Recommended backend:
+- materialized latest progress per title/episode for fast Continue Watching
+- provider used
+- timestamps and duration
+- completed/partial state
 
-- JSON is fine for current CLI.
-- SQLite is preferred once event-log sync lands.
-- Future model should store append-only events, not only latest per-title state.
+Later model:
+
+- append-only local playback events
+- materialized latest-progress view
+- bookmarks
+- local preference memory per title
+
+Remote sync is much later and should build on the local event model.
+
+### Preferences
+
+Config remains JSON for now. Per-title subtitle/audio/provider preferences may move into SQLite when they become part of the CLI experience.
+
+## Disposable Cache
 
 ### Stream Cache
 
-Properties:
+Stream cache belongs in `kunai-cache.sqlite`.
 
-- high churn
-- short TTL
-- safe to lose
-- unsafe to trust forever
-- can grow unexpectedly if not capped
-
-Recommended backend:
-
-- move out of repo root immediately
-- use OS cache directory
-- cap by item count and total estimated bytes
-- prune on startup and after writes
-- use TTL classes per source type
-- use SQLite before daemon/web pairing because multiple clients may read/write
-
-### Provider Health Cache
-
-Properties:
-
-- small, derived, frequently updated
-- powers source confidence and fallback ranking
-
-Recommended backend:
-
-- SQLite or small JSON in cache dir.
-- Never block playback on provider health writes.
-
-### Resolve Trace Store
-
-Properties:
-
-- diagnostic ring buffer
-- privacy-sensitive
-- useful for support and UX
-
-Recommended backend:
-
-- in-memory ring buffer first
-- optional local persisted ring buffer with redaction
-- avoid storing raw signed media URLs in exportable reports
-
-## 5. Stream Cache Design
-
-Stream cache entries should not be keyed only by target URL forever. Cache correctness depends on context.
-
-Recommended cache key fields:
+Cache key fields should include:
 
 ```text
 providerId
@@ -185,24 +142,6 @@ authMode
 regionHint
 ```
 
-Recommended entry envelope:
-
-```ts
-type StreamCacheEntry = {
-  schemaVersion: 1;
-  cacheKey: string;
-  source: StreamInfo;
-  sourceKind: "hls" | "mp4" | "embed";
-  providerId: string;
-  resolverRuntime: "browser-safe-fetch" | "node-fetch" | "playwright-lease" | "yt-dlp" | "debrid";
-  cachedAt: number;
-  expiresAt: number;
-  lastAccessedAt: number;
-  hitCount: number;
-  confidence: "high" | "medium" | "low";
-};
-```
-
 TTL guidance:
 
 - direct signed media URL: 30 seconds-5 minutes
@@ -212,76 +151,77 @@ TTL guidance:
 - source inventory without final URL: 15-60 minutes
 - provider mapping: hours to days depending on source
 
-Cache writes should be best-effort for playback. A cache write failure must never crash playback.
+Cache writes should be best-effort. Playback must continue if a cache write fails.
 
-## 6. Corruption And Concurrency Requirements
+### Provider Health
 
-Minimum requirements for JSON stores:
+Provider health belongs in `kunai-cache.sqlite`.
 
-- write to `.tmp`
-- fsync if practical before rename for highly valuable history
-- atomic rename into place
-- corrupt file renamed to `.corrupt.bak`
-- in-process write queue
-- shape validation on read
-- default fallback on invalid data
+Track:
 
-Additional requirements for daemon era:
+- provider ID
+- status
+- last success/failure
+- median resolve time
+- recent failure rate
+- subtitle success rate
+- stream survival hints
 
-- cross-process safety
-- transaction support
-- no read-modify-write races
-- WAL mode if using SQLite
-- bounded cache pruning in transactions
+Provider health should inform source confidence and fallback ranking. It must never block playback.
 
-This is the point where SQLite becomes a practical simplification, not premature architecture.
+### Resolve Trace Store
 
-### Phase A: Atomic Writes & Safeguards (Backend)
+Resolve traces belong in `kunai-cache.sqlite` as a bounded ring buffer.
 
-1. **Atomic Saves**: Modify `FileStorage.ts` to write to `history.json.tmp` first, then use `fs.renameSync` to swap it with `history.json`. Renames are guaranteed atomic by the OS. It is impossible to corrupt the file during a crash this way.
-2. **Safe Parsing**: If `JSON.parse` fails, we should rename the broken file to `history.json.corrupt.bak` instead of just silently erasing the user's data.
-3. **Queueing**: Add a simple in-memory write-lock queue to `FileStorage` so overlapping saves are processed sequentially, fixing race conditions.
+Trace storage rules:
 
-### Phase B: Cache & History Management (UI)
+- redact headers and signed URLs
+- keep enough context for diagnostics
+- prune by count and age
+- export only through explicit user action later
 
-1. **Cache UI**: Add a `[C] Clear Cache` hotkey in the Settings menu that triggers `await container.cacheStore.clear()`.
-2. **History Pruning**: Add a `[P] Prune History (Older than 6 months)` command in the UI.
+## Implementation Phases
 
-### Phase C: App Path Migration
+### Phase 3A: Storage Foundation
 
-1. Stop using repo-local `stream_cache.json` for the default runtime.
-2. Keep legacy read fallback for one migration cycle.
-3. Copy legacy cache to OS cache dir when safe.
-4. Update docs and diagnostics to show the real cache path.
-5. Add a migration marker to avoid repeated copies.
+1. Create `@kunai/storage`.
+2. Add OS path resolver.
+3. Add SQLite connection helper.
+4. Add migration runner.
+5. Add initial `kunai-data.sqlite` and `kunai-cache.sqlite` migrations.
+6. Add TTL and cache-key helpers.
+7. Add repository interfaces and basic tests.
 
-### Phase D: SQLite Cache Store
+### Phase 3B: CLI Wiring
 
-1. Add `StorageService` support for SQLite-backed high-churn stores.
-2. Split durable data from disposable cache data:
-   - `kunai-data.sqlite`: watch events, materialized progress, paired devices, sync metadata.
-   - `kunai-cache.sqlite`: stream cache, provider health, source inventory, resolve traces, metadata cache when safe.
-3. Create tables for stream cache, provider health, source inventory, and resolve trace ring buffer.
-4. Use WAL mode.
-5. Add indexes on cache key, provider ID, expiry, and last accessed time.
-6. Prune expired rows on startup and opportunistically after writes.
-7. Keep config in JSON unless there is a strong reason to move it.
-8. Wrap all access in typed repository classes so app code never writes raw SQL inline.
+1. Replace JSON history with SQLite history.
+2. Replace JSON stream cache with SQLite stream cache.
+3. Remove repo-local cache assumptions.
+4. Update settings/copy/diagnostics to show the real local storage model.
+5. Keep config JSON.
 
-### Phase E: Sync Event Store
+### Phase 3C: CLI Intelligence Stores
 
-1. Model watch progress as append-only events.
-2. Store device ID and local monotonic sequence.
-3. Keep materialized latest-progress views for fast UI.
-4. Sync event log to paid backend later.
-5. Never let stale offline events erase completed episodes.
+1. Add provider health persistence.
+2. Add source inventory persistence.
+3. Add resolve trace ring buffer persistence.
+4. Surface these in diagnostics/cache inspector.
 
-## 7. Acceptance Criteria
+### Phase 3D: Local Playback Events
+
+1. Add append-only local playback event table.
+2. Keep materialized latest progress for fast UI.
+3. Use this for stronger history semantics and future sync readiness.
+
+Remote sync is not scheduled in the current CLI-first phase.
+
+## Acceptance Criteria
 
 - app no longer writes default stream cache to the repo root
-- corrupt config/history/cache files are backed up, not silently destroyed
+- history and stream cache use SQLite
+- DB paths are OS-correct
+- migrations are idempotent
 - cache entries carry expiry and schema version
 - cache pruning prevents unbounded growth
 - playback continues if cache writes fail
-- future daemon can read/write cache without whole-file JSON races
 - storage paths in README, AGENTS, quickstart, and diagnostics match runtime behavior
