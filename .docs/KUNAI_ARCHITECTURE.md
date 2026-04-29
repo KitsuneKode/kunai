@@ -51,7 +51,24 @@ To guarantee that the CLI and local daemon run flawlessly on low-spec laptops wi
 
 ---
 
-## 4. The Content Scope: Video First, Reader Later
+## 4. The Intelligent Cache: Stale-While-Revalidate (SWR) & Geo-Routing
+To ensure we never spam streaming providers (which invites IP bans) while maintaining 0ms latency, we use an aggressive, self-healing cache layer.
+
+### A. The SWR Strategy
+We do not make users wait to verify if a cached link is alive. 
+*   **The Fast Route:** When a user clicks "Play", they are instantly handed the cached `.m3u8` link. The video player launches immediately.
+*   **The Silent Verification:** While the player is loading, the background daemon fires a microscopic `HEAD` request to the `.m3u8` link to verify it is still alive (costing ~50ms and 0 bandwidth).
+*   **Auto-Heal:** If the `HEAD` request returns `403 Forbidden` (link expired), the daemon launches the JIT scraper, fetches a fresh link, and uses `mpv` IPC sockets to hot-swap the video source before the user even realizes the first link was dead.
+
+### B. Geo-Aware Cache Partitioning
+CDN links are geo-routed. A link generated for a user in London might buffer terribly for a user in Sydney.
+*   The central cache partitions stream links by region (e.g., `Anikai_OnePiece_Ep1_EU_WEST`).
+*   If an Australian user requests a stream and only US/EU links are cached, Kunai triggers their local BYOC daemon to scrape a fresh, Sydney-optimized CDN link and pushes it to the cache under `AP_SOUTH`. 
+*   The next 10,000 Australian users get the perfect, geo-optimized fast route. We act as a globally distributed peer-to-peer scraping network.
+
+---
+
+## 5. The Content Scope: Video First, Reader Later
 
 - **V1 Focus (Video Excellence):** We perfectly integrate Anime (AniList) alongside Movies and Series (TMDB). The user gets a unified, lightning-fast UI for all video content.
 - **V2 Expansion (The Manga Blueprint):** We will not force a bad reading experience into the terminal. When we add Manga, Kunai will act as the tracking engine (syncing progress with AniList), but will hand off the actual visual rendering to a dedicated, high-res external reader application built for the task.
@@ -90,7 +107,7 @@ kunai/
 │   ├── web/               # Next.js Web Player (The CORS Consumer)
 │   └── experiments/       # (Formerly 'scratchpads/') The isolated reverse-engineering lab
 ├── packages/
-│   ├── scraper-core/      # The unified engine (Vidking, Rivestream, Anikai, Miruro)
+│   ├── core/              # The unified provider and resolution engine
 │   ├── types/             # Shared TypeScript models
 │   └── ui-cli/            # Shared Ink components
 ```
