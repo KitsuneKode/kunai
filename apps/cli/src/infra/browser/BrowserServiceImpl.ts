@@ -44,10 +44,10 @@ export class BrowserServiceImpl implements BrowserService {
         if (cached.subtitleList && cached.subtitleList.length > 0) {
           const pick = selectSubtitle(cached.subtitleList as any, requestedSubLang);
           activeSubtitle = pick?.url ?? undefined;
-          if (!activeSubtitle && cached.subtitleSource !== "wyzie") {
+          if (!activeSubtitle) {
             needsSubtitleRefresh = true;
           }
-        } else if (!cached.subtitle) {
+        } else {
           needsSubtitleRefresh = true;
         }
       }
@@ -97,9 +97,9 @@ export class BrowserServiceImpl implements BrowserService {
         if (wyzieResult.list.length > 0) {
           const refreshedStream: StreamInfo = {
             ...cached,
-            subtitle: wyzieResult.selected ?? undefined,
+            subtitle: wyzieResult.selected ?? activeSubtitle ?? undefined,
             subtitleList: wyzieResult.list as unknown as SubtitleTrack[],
-            subtitleSource: wyzieResult.selected ? "wyzie" : "none",
+            subtitleSource: "wyzie",
             subtitleEvidence: {
               directSubtitleObserved: false,
               wyzieSearchObserved: true,
@@ -161,7 +161,12 @@ export class BrowserServiceImpl implements BrowserService {
     // Active Wyzie resolution: if the passive sniff found no subtitle and we
     // have a TMDB ID, query Wyzie directly. This covers the Vidking/lazy-load
     // case documented in .docs/subtitle-resolver-analysis.md.
-    if (!scrapeSubtitle && requestedSubLang !== "none" && options.tmdbId && options.titleType) {
+    if (
+      requestedSubLang !== "none" &&
+      options.tmdbId &&
+      options.titleType &&
+      (!scrapeSubtitle || !scrapeSubtitleList?.length)
+    ) {
       this.deps.logger.info("No subtitle from passive sniff — trying active Wyzie", {
         tmdbId: options.tmdbId,
         titleType: options.titleType,
@@ -190,9 +195,9 @@ export class BrowserServiceImpl implements BrowserService {
       });
 
       if (wyzieResult.list.length > 0) {
-        scrapeSubtitle = wyzieResult.selected ?? undefined;
+        scrapeSubtitle = wyzieResult.selected ?? scrapeSubtitle ?? undefined;
         scrapeSubtitleList = wyzieResult.list as unknown as SubtitleTrack[];
-        scrapeSubtitleSource = scrapeSubtitle ? "wyzie" : "none";
+        scrapeSubtitleSource = "wyzie";
         scrapeSubtitleEvidence = {
           directSubtitleObserved: false,
           wyzieSearchObserved: true,

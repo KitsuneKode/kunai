@@ -140,4 +140,71 @@ describe("BrowserServiceImpl", () => {
     expect(scrapeStreamImpl).toHaveBeenCalledTimes(0);
     expect(cacheSet).toHaveBeenCalledTimes(1);
   });
+
+  test("enriches scraped streams with the full wyzie subtitle list when passive sniff lacks tracks", async () => {
+    const cacheStore: CacheStore = {
+      ttl: 1000,
+      get: async () => null,
+      set: async () => {},
+      delete: async () => {},
+      clear: async () => {},
+      prune: async () => {},
+    };
+
+    const scrapeStreamImpl = mock(async () => ({
+      url: "https://cdn.example/master.m3u8",
+      headers: { referer: "https://www.vidking.net/" },
+      subtitle: null,
+      subtitleList: [],
+      subtitleSource: "none" as const,
+      subtitleEvidence: { reason: "not-observed" as const },
+      title: "Bloodhounds",
+      timestamp: Date.now(),
+    }));
+    const resolveSubtitlesByTmdbIdImpl = mock(async () => ({
+      list: [
+        {
+          id: "1",
+          url: "https://sub.wyzie.io/c/demo/id/1?format=srt",
+          language: "en",
+          display: "English",
+          release: "Demo.S01E02",
+        },
+        {
+          id: "2",
+          url: "https://sub.wyzie.io/c/demo/id/2?format=srt",
+          language: "ar",
+          display: "Arabic",
+          release: "Demo.S01E02",
+        },
+      ],
+      selected: "https://sub.wyzie.io/c/demo/id/1?format=srt",
+      failed: false,
+    }));
+
+    const service = new BrowserServiceImpl({
+      logger: createLogger(),
+      tracer: createTracer(),
+      config: createConfig(),
+      cacheStore,
+      diagnosticsStore: createDiagnosticsStore(),
+      scrapeStreamImpl,
+      resolveSubtitlesByTmdbIdImpl,
+    });
+
+    const result = await service.scrape({
+      url: "https://www.vidking.net/embed/tv/127529/1/2?autoPlay=true",
+      subLang: "en",
+      tmdbId: "127529",
+      titleType: "series",
+      season: 1,
+      episode: 2,
+    });
+
+    expect(result?.subtitle).toBe("https://sub.wyzie.io/c/demo/id/1?format=srt");
+    expect(result?.subtitleSource).toBe("wyzie");
+    expect(result?.subtitleList).toHaveLength(2);
+    expect(resolveSubtitlesByTmdbIdImpl).toHaveBeenCalledTimes(1);
+    expect(scrapeStreamImpl).toHaveBeenCalledTimes(1);
+  });
 });

@@ -106,51 +106,60 @@ export async function fetchSubtitlesFromWyzie(
   preferredLang: string,
   requestHeaders?: Record<string, string>,
 ): Promise<{ list: SubtitleEntry[]; selected: string | null; failed: boolean }> {
-  try {
-    const headers = buildWyzieHeaders(requestHeaders);
-    dbg("subtitle", "fetch wyzie subtitles", {
-      preferredLang,
-      url: redactWyzieKey(searchUrl),
-      headerKeys: Object.keys(headers),
-    });
+  const headers = buildWyzieHeaders(requestHeaders);
+  dbg("subtitle", "fetch wyzie subtitles", {
+    preferredLang,
+    url: redactWyzieKey(searchUrl),
+    headerKeys: Object.keys(headers),
+  });
 
-    const res = await fetch(searchUrl, {
-      signal: AbortSignal.timeout(8000),
-      headers,
-    });
-    dbg("subtitle", "wyzie response", {
-      status: res.status,
-      ok: res.ok,
-      contentType: res.headers.get("content-type"),
-    });
-
-    if (!res.ok) {
-      return { list: [], selected: null, failed: true };
-    }
-
-    const list = parseWyzieSubtitleList(await res.json());
-    if (list.length === 0) {
-      dbg("subtitle", "wyzie empty result", {
-        preferredLang,
-        url: redactWyzieKey(searchUrl),
+  for (const timeoutMs of [8_000, 12_000]) {
+    try {
+      const res = await fetch(searchUrl, {
+        signal: AbortSignal.timeout(timeoutMs),
+        headers,
       });
-      return { list: [], selected: null, failed: false };
+      dbg("subtitle", "wyzie response", {
+        status: res.status,
+        ok: res.ok,
+        contentType: res.headers.get("content-type"),
+        timeoutMs,
+      });
+
+      if (!res.ok) {
+        continue;
+      }
+
+      const list = parseWyzieSubtitleList(await res.json());
+      if (list.length === 0) {
+        dbg("subtitle", "wyzie empty result", {
+          preferredLang,
+          url: redactWyzieKey(searchUrl),
+          timeoutMs,
+        });
+        return { list: [], selected: null, failed: false };
+      }
+
+      const pick = selectSubtitle(list, preferredLang);
+
+      dbg("subtitle", "wyzie selected subtitle", {
+        preferredLang,
+        selectedLanguage: pick?.language ?? null,
+        selectedDisplay: pick?.display ?? null,
+        total: list.length,
+        timeoutMs,
+      });
+
+      return { list, selected: pick?.url ?? null, failed: false };
+    } catch (error) {
+      dbgErr("subtitle", "wyzie fetch attempt failed", { error, timeoutMs });
+      if (timeoutMs === 12_000) {
+        return { list: [], selected: null, failed: true };
+      }
     }
-
-    const pick = selectSubtitle(list, preferredLang);
-
-    dbg("subtitle", "wyzie selected subtitle", {
-      preferredLang,
-      selectedLanguage: pick?.language ?? null,
-      selectedDisplay: pick?.display ?? null,
-      total: list.length,
-    });
-
-    return { list, selected: pick?.url ?? null, failed: false };
-  } catch (error) {
-    dbgErr("subtitle", "wyzie fetch failed", error);
-    return { list: [], selected: null, failed: true };
   }
+
+  return { list: [], selected: null, failed: true };
 }
 
 function buildWyzieHeaders(requestHeaders?: Record<string, string>): Record<string, string> {
@@ -227,41 +236,11 @@ export async function resolveSubtitlesByTmdbId(opts: {
       url: redactWyzieKey(url),
     });
 
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(8000),
-      headers: {
-        accept: "application/json, text/plain, */*",
-        "user-agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-      },
+    return await fetchSubtitlesFromWyzie(url, preferredLang, {
+      referer: "https://www.vidking.net/",
+      origin: "https://www.vidking.net",
+      "accept-language": "en-US,en;q=0.9",
     });
-
-    dbg("subtitle", "active wyzie response", {
-      status: res.status,
-      ok: res.ok,
-      contentType: res.headers.get("content-type"),
-    });
-
-    if (!res.ok) {
-      dbgErr("subtitle", "active wyzie response not ok", { status: res.status });
-      return { list: [], selected: null, failed: true };
-    }
-
-    const list = parseWyzieSubtitleList(await res.json());
-    if (list.length === 0) {
-      dbg("subtitle", "active wyzie empty result", { tmdbId, preferredLang });
-      return { list: [], selected: null, failed: false };
-    }
-
-    const pick = selectSubtitle(list, preferredLang);
-    dbg("subtitle", "active wyzie selected", {
-      preferredLang,
-      selectedLanguage: pick?.language ?? null,
-      selectedDisplay: pick?.display ?? null,
-      total: list.length,
-    });
-
-    return { list, selected: pick?.url ?? null, failed: false };
   } catch (error) {
     dbgErr("subtitle", "active wyzie fetch failed", error);
     return { list: [], selected: null, failed: true };
