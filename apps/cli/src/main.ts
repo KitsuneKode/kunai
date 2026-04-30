@@ -58,6 +58,8 @@ async function shutdownShell(): Promise<void> {
 }
 
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
+  process.title = "kunai";
+
   // Parse CLI arguments
   const args = parseArgs(argv);
 

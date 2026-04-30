@@ -115,7 +115,7 @@ export async function launchMpv(opts: {
   return finalizePlaybackResult(telemetry, { socketPathCleanedUp });
 }
 
-function buildMpvArgs(
+export function buildMpvArgs(
   opts: {
     url: string;
     headers: Record<string, string>;
@@ -146,6 +146,9 @@ function buildMpvArgs(
 
   if (opts.startAt && opts.startAt > 5) args.push(`--start=${opts.startAt}`);
   args.push(`--force-media-title=${opts.displayTitle}`);
+  args.push("--keep-open=no");
+  args.push("--idle=no");
+  args.push("--force-window=no");
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
 
   return args;

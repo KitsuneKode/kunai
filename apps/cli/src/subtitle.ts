@@ -209,7 +209,7 @@ function isSubtitleEntry(value: unknown): value is SubtitleEntry {
 // Ref: .docs/subtitle-resolver-analysis.md
 // =============================================================================
 
-const WYZIE_KEY = "wyzie-9bafe78d95b0ae85e716d772b4d63ec4";
+const WYZIE_KEY = "wyzie-4e88cddcd20e4d3e9a390625e66a290c";
 const WYZIE_SEARCH = "https://sub.wyzie.io/search";
 
 export async function resolveSubtitlesByTmdbId(opts: {

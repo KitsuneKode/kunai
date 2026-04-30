@@ -38,29 +38,21 @@ export class BrowserServiceImpl implements BrowserService {
     const cached = await this.deps.cacheStore.get(options.url);
     if (cached) {
       let activeSubtitle = cached.subtitle;
-      let needsSubtitleRefresh = false;
 
       if (requestedSubLang !== "none") {
         if (cached.subtitleList && cached.subtitleList.length > 0) {
           const pick = selectSubtitle(cached.subtitleList as any, requestedSubLang);
           activeSubtitle = pick?.url ?? undefined;
-          if (!activeSubtitle) {
-            needsSubtitleRefresh = true;
-          }
-        } else {
-          needsSubtitleRefresh = true;
         }
       }
 
       this.deps.logger.info("Browser scrape cache hit", {
         url: options.url,
-        needsSubtitleRefresh,
+        needsSubtitleRefresh: false,
       });
       this.deps.diagnosticsStore.record({
         category: "cache",
-        message: needsSubtitleRefresh
-          ? "Browser scrape cache hit missing requested language; refreshing"
-          : "Browser scrape cache hit",
+        message: "Browser scrape cache hit",
         context: {
           url: options.url,
           requestedSubLang,
@@ -68,61 +60,7 @@ export class BrowserServiceImpl implements BrowserService {
           subtitleTrackCount: cached.subtitleList?.length ?? 0,
         },
       });
-      if (!needsSubtitleRefresh) {
-        return { ...cached, subtitle: activeSubtitle };
-      }
-
-      if (options.tmdbId && options.titleType) {
-        this.deps.diagnosticsStore.record({
-          category: "subtitle",
-          message: "Refreshing cached subtitle metadata from active Wyzie without browser relaunch",
-          context: {
-            url: options.url,
-            tmdbId: options.tmdbId,
-            titleType: options.titleType,
-            season: options.season,
-            episode: options.episode,
-            requestedSubLang,
-          },
-        });
-
-        const wyzieResult = await resolveSubtitlesByTmdbIdImpl({
-          tmdbId: options.tmdbId,
-          type: options.titleType,
-          season: options.season,
-          episode: options.episode,
-          preferredLang: requestedSubLang,
-        });
-
-        if (wyzieResult.list.length > 0) {
-          const refreshedStream: StreamInfo = {
-            ...cached,
-            subtitle: wyzieResult.selected ?? activeSubtitle ?? undefined,
-            subtitleList: wyzieResult.list as unknown as SubtitleTrack[],
-            subtitleSource: "wyzie",
-            subtitleEvidence: {
-              directSubtitleObserved: false,
-              wyzieSearchObserved: true,
-              reason: wyzieResult.selected ? "wyzie-selected" : "wyzie-empty",
-            },
-          };
-          await this.deps.cacheStore.set(options.url, refreshedStream);
-          return refreshedStream;
-        }
-
-        this.deps.diagnosticsStore.record({
-          category: "subtitle",
-          message: wyzieResult.failed
-            ? "Cached stream kept after active Wyzie refresh failed"
-            : "Cached stream kept after active Wyzie found no tracks",
-          context: {
-            url: options.url,
-            tmdbId: options.tmdbId,
-            requestedSubLang,
-          },
-        });
-        return { ...cached, subtitle: activeSubtitle };
-      }
+      return { ...cached, subtitle: activeSubtitle };
     } else {
       this.deps.diagnosticsStore.record({
         category: "cache",

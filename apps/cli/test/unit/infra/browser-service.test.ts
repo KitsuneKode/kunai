@@ -79,7 +79,7 @@ function createDiagnosticsStore(): DiagnosticsStore {
 }
 
 describe("BrowserServiceImpl", () => {
-  test("refreshes cached subtitles through wyzie without relaunching the browser", async () => {
+  test("returns cached streams directly without automatic subtitle refresh", async () => {
     const cachedStream = {
       url: "https://cdn.example/master.m3u8",
       headers: { referer: "https://www.vidking.net/" },
@@ -134,11 +134,11 @@ describe("BrowserServiceImpl", () => {
       episode: 2,
     });
 
-    expect(result?.subtitle).toBe("https://sub.wyzie.io/c/demo/id/1?format=srt");
-    expect(result?.subtitleSource).toBe("wyzie");
-    expect(resolveSubtitlesByTmdbIdImpl).toHaveBeenCalledTimes(1);
+    expect(result?.subtitle).toBeUndefined();
+    expect(result?.subtitleSource).toBe("none");
+    expect(resolveSubtitlesByTmdbIdImpl).toHaveBeenCalledTimes(0);
     expect(scrapeStreamImpl).toHaveBeenCalledTimes(0);
-    expect(cacheSet).toHaveBeenCalledTimes(1);
+    expect(cacheSet).toHaveBeenCalledTimes(0);
   });
 
   test("enriches scraped streams with the full wyzie subtitle list when passive sniff lacks tracks", async () => {
