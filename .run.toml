@@ -1,5 +1,5 @@
 version = 1
-default_profile = "kinox"
+default_profile = "kunai"
 
-[profiles.kinox]
+[profiles.kunai]
 command = "bun run start"

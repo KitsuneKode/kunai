@@ -150,6 +150,7 @@ async function main() {
 
   // 7. EXTRACT SUBTITLES (From the JSON directly, no extra API call needed!)
   let selectedSubUrl = null;
+  console.log(`\n[+] Available Subtitles:`, streamData.subtitles);
   if (streamData.subtitles && streamData.subtitles.length > 0) {
     const enSub = streamData.subtitles.find(
       (s: any) => s.lang === "eng" && !s.language.includes("SDH"),
