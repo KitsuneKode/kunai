@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import type { EpisodeInfo, PlaybackResult, TitleInfo } from "@/domain/types";
 
 import {
+  didPlaybackEndNearNaturalEnd,
+  getCompletionThresholdSeconds,
   getAutoAdvanceEpisode,
   resolveEpisodeAvailability,
   toEpisodeNavigationState,
@@ -29,6 +31,18 @@ const EOF_RESULT: PlaybackResult = {
   watchedSeconds: 1440,
   duration: 1440,
   endReason: "eof",
+};
+
+const CREDITS_TIMING = {
+  tmdbId: "1396",
+  type: "series" as const,
+  intro: [],
+  recap: [],
+  credits: [
+    { startMs: 0, endMs: 90_000 },
+    { startMs: 1_200_000, endMs: null },
+  ],
+  preview: [],
 };
 
 const SERIES_LOADERS = {
@@ -194,6 +208,23 @@ describe("getAutoAdvanceEpisode", () => {
     ).resolves.toEqual({ season: 1, episode: 8 });
   });
 
+  test("uses credits timing as the near-end threshold when available", async () => {
+    await expect(
+      getAutoAdvanceEpisode(
+        { watchedSeconds: 1201, duration: 1500, endReason: "quit" },
+        SERIES_TITLE,
+        CURRENT_EPISODE,
+        true,
+        {
+          previousEpisode: null,
+          nextEpisode: { season: 1, episode: 8 },
+          nextSeasonEpisode: null,
+        },
+        CREDITS_TIMING,
+      ),
+    ).resolves.toEqual({ season: 1, episode: 8 });
+  });
+
   test("auto-advances across a season boundary when playback ends near eof", async () => {
     const availability = await resolveEpisodeAvailability({
       title: SERIES_TITLE,
@@ -227,6 +258,23 @@ describe("getAutoAdvanceEpisode", () => {
         nextSeasonEpisode: null,
       }),
     ).resolves.toBeNull();
+  });
+});
+
+describe("completion thresholds", () => {
+  test("prefers the later credits start over opening credits", () => {
+    expect(getCompletionThresholdSeconds(1500, CREDITS_TIMING)).toBe(1200);
+  });
+
+  test("falls back to the last five seconds when timing metadata is absent", () => {
+    expect(getCompletionThresholdSeconds(1500)).toBe(1495);
+    expect(
+      didPlaybackEndNearNaturalEnd({
+        watchedSeconds: 1495,
+        duration: 1500,
+        endReason: "quit",
+      }),
+    ).toBe(true);
   });
 });
 

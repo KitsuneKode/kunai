@@ -21,7 +21,11 @@ import {
 } from "@/app-shell/workflows";
 import { resolveCommands } from "@/app-shell/commands";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
-import { resolveEpisodeAvailability, toEpisodeNavigationState } from "@/app/playback-policy";
+import {
+  didPlaybackReachCompletionThreshold,
+  resolveEpisodeAvailability,
+  toEpisodeNavigationState,
+} from "@/app/playback-policy";
 import {
   createPlaybackSessionState,
   resolveAutoplayAdvanceEpisode,
@@ -37,6 +41,7 @@ import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import { resolveWithFallback } from "@kunai/core";
+import { fetchPlaybackTimingMetadata } from "@/introdb";
 
 export type PlaybackOutcome =
   | "back_to_search"
@@ -62,6 +67,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const animeEpisodeCatalogByProvider = new Map<
       string,
       readonly EpisodePickerOption[] | undefined
+    >();
+    const playbackTimingByEpisode = new Map<
+      string,
+      Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>>
     >();
     let playbackSession: PlaybackSessionState = createPlaybackSessionState({
       autoNextEnabled: config.autoNext,
@@ -146,6 +155,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         if (!currentEpisode) break;
 
         const currentProvider = providerRegistry.get(stateManager.getState().provider);
+        const playbackTiming = await this.getPlaybackTimingMetadata(
+          title,
+          currentEpisode,
+          playbackTimingByEpisode,
+        );
         const watchedEntries = await historyStore.listByTitle(title.id);
         const currentAnimeEpisodes = await this.getAnimeEpisodeOptions({
           title,
@@ -299,8 +313,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         );
 
         // Save history
-        if (shouldPersistHistory(result)) {
-          const historyTimestamp = toHistoryTimestamp(result);
+        if (shouldPersistHistory(result, playbackTiming)) {
+          const historyTimestamp = toHistoryTimestamp(result, playbackTiming);
           await historyStore.save(title.id, {
             title: title.name,
             type: title.type,
@@ -308,10 +322,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             episode: currentEpisode.episode,
             timestamp: historyTimestamp,
             duration: result.duration,
-            completed:
-              result.endReason === "eof" && result.duration > 0
-                ? true
-                : result.duration > 0 && historyTimestamp / result.duration >= 0.9,
+            completed: didPlaybackReachCompletionThreshold(result, playbackTiming),
             provider: resolvedProviderId,
             watchedAt: new Date().toISOString(),
           });
@@ -339,6 +350,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           result,
           controlAction: playbackControlAction,
           session: playbackSession,
+          timing: playbackTiming,
         });
         playbackSession = playbackDecision.session;
         if (playbackDecision.shouldTreatAsInterrupted) {
@@ -435,6 +447,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           currentEpisode,
           session: playbackSession,
           availability: episodeAvailability,
+          timing: playbackTiming,
         });
         if (nextEpisode) {
           logger.info("Auto-next advancing to next episode", {
@@ -666,6 +679,30 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
     // Fallback return (should not reach here)
     return { status: "success", value: "back_to_search" };
+  }
+
+  private async getPlaybackTimingMetadata(
+    title: TitleInfo,
+    episode: EpisodeInfo,
+    cache: Map<string, Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>>>,
+  ) {
+    const cacheKey =
+      title.type === "movie"
+        ? `movie:${title.id}`
+        : `series:${title.id}:${episode.season}:${episode.episode}`;
+
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey) ?? null;
+    }
+
+    const timing = await fetchPlaybackTimingMetadata({
+      tmdbId: title.id,
+      type: title.type,
+      season: title.type === "series" ? episode.season : undefined,
+      episode: title.type === "series" ? episode.episode : undefined,
+    });
+    cache.set(cacheKey, timing);
+    return timing;
   }
 
   private async preparePlaybackStream(

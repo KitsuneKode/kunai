@@ -1,5 +1,10 @@
 import type { PlaybackControlAction } from "@/infra/player/PlayerControlService";
-import type { EpisodeInfo, PlaybackResult, TitleInfo } from "@/domain/types";
+import type {
+  EpisodeInfo,
+  PlaybackResult,
+  PlaybackTimingMetadata,
+  TitleInfo,
+} from "@/domain/types";
 import {
   didPlaybackEndNearNaturalEnd,
   getAutoAdvanceEpisode,
@@ -33,6 +38,7 @@ type PlaybackResultDecisionArgs = {
   result: PlaybackResult;
   controlAction: PlaybackControlAction | null;
   session: PlaybackSessionState;
+  timing?: PlaybackTimingMetadata | null;
 };
 
 type AutoAdvanceArgs = {
@@ -41,6 +47,7 @@ type AutoAdvanceArgs = {
   currentEpisode: EpisodeInfo;
   session: PlaybackSessionState;
   availability: EpisodeAvailability;
+  timing?: PlaybackTimingMetadata | null;
 };
 
 export function syncPlaybackSessionState(
@@ -88,8 +95,9 @@ export function resolvePlaybackResultDecision({
   result,
   controlAction,
   session,
+  timing,
 }: PlaybackResultDecisionArgs): PlaybackResultDecision {
-  const nearNaturalEnd = didPlaybackEndNearNaturalEnd(result);
+  const nearNaturalEnd = didPlaybackEndNearNaturalEnd(result, timing);
   const interruptedStop = result.endReason === "quit" || controlAction === "stop";
   const shouldTreatAsInterrupted = interruptedStop && !nearNaturalEnd;
   const nextPauseReason =
@@ -133,6 +141,7 @@ export async function resolveAutoplayAdvanceEpisode({
   currentEpisode,
   session,
   availability,
+  timing,
 }: AutoAdvanceArgs): Promise<EpisodeInfo | null> {
   return getAutoAdvanceEpisode(
     result,
@@ -140,5 +149,6 @@ export async function resolveAutoplayAdvanceEpisode({
     currentEpisode,
     session.mode === "autoplay-chain" && !session.autoplayPaused && !session.stopAfterCurrent,
     availability,
+    timing,
   );
 }

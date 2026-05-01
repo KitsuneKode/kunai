@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test";
 
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
+import type { PlaybackTimingMetadata } from "@/domain/types";
+
+const creditsTiming: PlaybackTimingMetadata = {
+  tmdbId: "1396",
+  type: "series",
+  intro: [],
+  recap: [],
+  credits: [{ startMs: 1_200_000, endMs: null }],
+  preview: [],
+};
 
 describe("playback-history", () => {
   test("persists normally when watched long enough", () => {
@@ -43,5 +53,16 @@ describe("playback-history", () => {
         resultSource: "unknown",
       }),
     ).toBe(false);
+  });
+
+  test("treats playback as complete once credits timing is reached", () => {
+    const result = {
+      watchedSeconds: 1201,
+      duration: 1500,
+      endReason: "quit" as const,
+    };
+
+    expect(shouldPersistHistory(result, creditsTiming)).toBe(true);
+    expect(toHistoryTimestamp(result, creditsTiming)).toBe(1500);
   });
 });

@@ -1,5 +1,11 @@
 import type { EpisodeNavigationState } from "@/domain/session/SessionState";
-import type { EpisodeInfo, EpisodePickerOption, PlaybackResult, TitleInfo } from "@/domain/types";
+import type {
+  EpisodeInfo,
+  EpisodePickerOption,
+  PlaybackResult,
+  PlaybackTimingMetadata,
+  TitleInfo,
+} from "@/domain/types";
 
 type CatalogEpisode = {
   number: number;
@@ -27,12 +33,36 @@ export type EpisodeAvailability = {
   nextSeasonEpisode: EpisodeInfo | null;
 };
 
-export function didPlaybackEndNearNaturalEnd(result: PlaybackResult): boolean {
+export function getCompletionThresholdSeconds(
+  duration: number,
+  timing?: PlaybackTimingMetadata | null,
+): number {
+  if (duration <= 0) return 0;
+
+  const creditsStartSeconds = getCreditsStartSeconds(duration, timing);
+  if (creditsStartSeconds !== null) {
+    return creditsStartSeconds;
+  }
+
+  return Math.max(0, duration - 5);
+}
+
+export function didPlaybackReachCompletionThreshold(
+  result: PlaybackResult,
+  timing?: PlaybackTimingMetadata | null,
+): boolean {
   return (
     result.duration > 0 &&
     result.watchedSeconds > 0 &&
-    result.watchedSeconds >= Math.max(result.duration - 8, Math.floor(result.duration * 0.97))
+    result.watchedSeconds >= getCompletionThresholdSeconds(result.duration, timing)
   );
+}
+
+export function didPlaybackEndNearNaturalEnd(
+  result: PlaybackResult,
+  timing?: PlaybackTimingMetadata | null,
+): boolean {
+  return didPlaybackReachCompletionThreshold(result, timing);
 }
 
 type AvailabilityArgs = {
@@ -196,8 +226,9 @@ export async function getAutoAdvanceEpisode(
   currentEpisode: EpisodeInfo,
   autoNextEnabled: boolean,
   availability: EpisodeAvailability,
+  timing?: PlaybackTimingMetadata | null,
 ): Promise<EpisodeInfo | null> {
-  const nearNaturalEnd = didPlaybackEndNearNaturalEnd(result);
+  const nearNaturalEnd = didPlaybackEndNearNaturalEnd(result, timing);
 
   if (
     !autoNextEnabled ||
@@ -216,4 +247,21 @@ export async function getAutoAdvanceEpisode(
   }
 
   return availability.nextEpisode;
+}
+
+function getCreditsStartSeconds(
+  duration: number,
+  timing?: PlaybackTimingMetadata | null,
+): number | null {
+  const candidates = (timing?.credits ?? [])
+    .map((segment) => segment.startMs)
+    .filter((startMs): startMs is number => typeof startMs === "number" && Number.isFinite(startMs))
+    .map((startMs) => startMs / 1000)
+    .filter((startSeconds) => startSeconds > 0 && startSeconds < duration)
+    .sort((left, right) => right - left);
+
+  return (
+    candidates.find((startSeconds) => startSeconds >= Math.max(duration * 0.5, duration - 600)) ??
+    null
+  );
 }

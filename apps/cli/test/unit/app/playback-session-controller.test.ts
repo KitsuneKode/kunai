@@ -8,7 +8,7 @@ import {
   syncPlaybackSessionState,
 } from "@/app/playback-session-controller";
 import type { EpisodeAvailability } from "@/app/playback-policy";
-import type { PlaybackResult, TitleInfo } from "@/domain/types";
+import type { PlaybackResult, PlaybackTimingMetadata, TitleInfo } from "@/domain/types";
 
 const seriesTitle: TitleInfo = {
   id: "1396",
@@ -26,6 +26,15 @@ const baseResult: PlaybackResult = {
   watchedSeconds: 1200,
   duration: 1210,
   endReason: "eof",
+};
+
+const creditsTiming: PlaybackTimingMetadata = {
+  tmdbId: "1396",
+  type: "series",
+  intro: [],
+  recap: [],
+  credits: [{ startMs: 1_200_000, endMs: null }],
+  preview: [],
 };
 
 describe("resolvePlaybackResultDecision", () => {
@@ -102,12 +111,34 @@ describe("resolvePlaybackResultDecision", () => {
     expect(
       resolvePlaybackResultDecision({
         result: {
-          watchedSeconds: 1204,
+          watchedSeconds: 1205,
           duration: 1210,
           endReason: "quit",
         },
         controlAction: "stop",
         session,
+      }),
+    ).toMatchObject({
+      session: {
+        autoplayPauseReason: null,
+        autoplayPaused: false,
+      },
+      shouldTreatAsInterrupted: false,
+    });
+  });
+
+  test("treats a quit after credits timing as complete instead of interrupted", () => {
+    const session = createPlaybackSessionState({ autoNextEnabled: true });
+    expect(
+      resolvePlaybackResultDecision({
+        result: {
+          watchedSeconds: 1201,
+          duration: 1500,
+          endReason: "quit",
+        },
+        controlAction: "stop",
+        session,
+        timing: creditsTiming,
       }),
     ).toMatchObject({
       session: {

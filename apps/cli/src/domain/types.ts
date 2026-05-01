@@ -103,6 +103,20 @@ export interface PlaybackResult {
   readonly lastNonZeroDurationSeconds?: number;
 }
 
+export interface PlaybackTimingSegment {
+  readonly startMs: number | null;
+  readonly endMs: number | null;
+}
+
+export interface PlaybackTimingMetadata {
+  readonly tmdbId: string;
+  readonly type: ContentType;
+  readonly intro: readonly PlaybackTimingSegment[];
+  readonly recap: readonly PlaybackTimingSegment[];
+  readonly credits: readonly PlaybackTimingSegment[];
+  readonly preview: readonly PlaybackTimingSegment[];
+}
+
 // Metadata for UI display
 export interface ProviderMetadata {
   readonly id: string;
