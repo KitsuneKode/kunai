@@ -11,7 +11,6 @@ import { buildBrowseDetailsPanel } from "./details-panel";
 import {
   fetchPoster,
   deleteAllKittyImages,
-  deleteKittyImage,
   isChafaAvailable,
   type PosterResult,
 } from "./image-pane";
@@ -550,31 +549,20 @@ function PlaybackShell({
     const url = state.posterUrl;
     if (!url) {
       setPosterState("idle");
-      setPoster((prev) => {
-        if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
-        return { kind: "none" };
-      });
+      setPoster({ kind: "none" });
       return;
     }
     setPosterState("loading");
     fetchPoster(url, { rows: 8, cols: 18 })
       .then((next) => {
         setPosterState(next.kind === "none" ? "unavailable" : "ready");
-        setPoster((prev) => {
-          if (prev.kind === "kitty" && (next.kind !== "kitty" || prev.imageId !== next.imageId)) {
-            deleteKittyImage(prev.imageId);
-          }
-          return next;
-        });
+        setPoster(next);
       })
       .catch(() => {
         setPosterState("unavailable");
       });
     return () => {
-      setPoster((prev) => {
-        if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
-        return { kind: "none" };
-      });
+      setPoster({ kind: "none" });
     };
   }, [state.posterUrl]);
   const commands =
@@ -1469,10 +1457,7 @@ function BrowseShell<T>({
     const url = options[selectedIndex]?.previewImageUrl;
     if (!url || !isWide) {
       setPosterState(url ? "unavailable" : "idle");
-      setPoster((prev) => {
-        if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
-        return { kind: "none" };
-      });
+      setPoster({ kind: "none" });
       return;
     }
     let cancelled = false;
@@ -1482,12 +1467,7 @@ function BrowseShell<T>({
         .then((r) => {
           if (!cancelled) {
             setPosterState(r.kind === "none" ? "unavailable" : "ready");
-            setPoster((prev) => {
-              if (prev.kind === "kitty" && (r.kind !== "kitty" || prev.imageId !== r.imageId)) {
-                deleteKittyImage(prev.imageId);
-              }
-              return r;
-            });
+            setPoster(r);
           }
         })
         .catch(() => {
@@ -1503,10 +1483,7 @@ function BrowseShell<T>({
   // Cleanup Kitty image on unmount
   useEffect(() => {
     return () => {
-      setPoster((prev) => {
-        if (prev.kind === "kitty") deleteKittyImage(prev.imageId);
-        return { kind: "none" };
-      });
+      setPoster({ kind: "none" });
     };
   }, []);
 

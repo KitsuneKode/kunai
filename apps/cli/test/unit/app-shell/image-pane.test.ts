@@ -5,7 +5,7 @@ import { isKittyCompatible } from "@/image";
 
 describe("poster image helpers", () => {
   test("resolves TMDB poster paths to fetchable image URLs", () => {
-    expect(resolvePosterUrl("/poster.jpg")).toBe("https://image.tmdb.org/t/p/w300/poster.jpg");
+    expect(resolvePosterUrl("/poster.jpg")).toBe("https://image.tmdb.org/t/p/original/poster.jpg");
   });
 
   test("preserves absolute poster URLs", () => {

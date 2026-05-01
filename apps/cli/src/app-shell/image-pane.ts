@@ -53,6 +53,8 @@ export function deleteKittyImage(imageId: number): void {
 
 export function deleteAllKittyImages(): void {
   process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
+  posterCache.clear();
+  posterInflight.clear();
 }
 
 function evictPosterCacheEntry(key: string): void {
@@ -97,19 +99,21 @@ function encodeByte(b: number): string {
 }
 
 // Build a Kitty unicode placeholder string for rows × cols cells.
-// Each placeholder char encodes the image ID (4 combining bytes) and row index (1 combining byte).
+// Kitty expects the image id in the foreground color and the row/column position
+// encoded in the placeholder diacritics.
 function buildPlaceholder(imageId: number, rows: number, cols: number): string {
   const CELL = "\u{10EEEE}";
-  const b0 = encodeByte((imageId >> 24) & 0xff);
-  const b1 = encodeByte((imageId >> 16) & 0xff);
-  const b2 = encodeByte((imageId >> 8) & 0xff);
-  const b3 = encodeByte(imageId & 0xff);
+  const color = `\x1b[38;2;${(imageId >> 16) & 0xff};${(imageId >> 8) & 0xff};${imageId & 0xff}m`;
+  const highIdByte = imageId > 0xffffff ? encodeByte((imageId >> 24) & 0xff) : "";
 
   const lines: string[] = [];
   for (let r = 0; r < rows; r++) {
-    const rowEnc = encodeByte(r & 0xff);
-    const cell = CELL + b0 + b1 + b2 + b3 + rowEnc;
-    lines.push(cell.repeat(cols));
+    const cells: string[] = [];
+    const rowEnc = encodeByte(r);
+    for (let c = 0; c < cols; c++) {
+      cells.push(CELL + rowEnc + encodeByte(c) + highIdByte);
+    }
+    lines.push(`${color}${cells.join("")}\x1b[39m`);
   }
   return lines.join("\n");
 }
@@ -175,7 +179,7 @@ async function ensureKittyPng(data: ArrayBuffer): Promise<ArrayBuffer | null> {
   }
 }
 
-const TMDB_IMG = "https://image.tmdb.org/t/p/w300";
+const TMDB_IMG = "https://image.tmdb.org/t/p/original";
 
 export function resolvePosterUrl(url: string): string {
   return url.startsWith("/") ? `${TMDB_IMG}${url}` : url;
