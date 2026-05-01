@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 
-import { buildMpvArgs } from "@/mpv";
+import { buildMpvArgs, collectAdditionalSubtitleUrls } from "@/mpv";
 
-test("buildMpvArgs forces mpv to exit cleanly at eof for autoplay flows", () => {
+test("buildMpvArgs only attaches the primary subtitle during initial launch", () => {
   const args = buildMpvArgs(
     {
       url: "https://cdn.example/master.m3u8",
@@ -19,5 +19,16 @@ test("buildMpvArgs forces mpv to exit cleanly at eof for autoplay flows", () => 
   expect(args).toContain("--force-window=no");
   expect(args).toContain("--input-ipc-server=/tmp/kunai-test.sock");
   expect(args).toContain("--sub-file=https://sub.example/en.srt");
-  expect(args).toContain("--sub-file=https://sub.example/ar.srt");
+  expect(args).not.toContain("--sub-file=https://sub.example/ar.srt");
+});
+
+test("collectAdditionalSubtitleUrls excludes the primary subtitle and dedupes extras", () => {
+  expect(
+    collectAdditionalSubtitleUrls("https://sub.example/en.srt", [
+      "https://sub.example/en.srt",
+      "https://sub.example/ar.srt",
+      "https://sub.example/ar.srt",
+      "https://sub.example/fr.srt",
+    ]),
+  ).toEqual(["https://sub.example/ar.srt", "https://sub.example/fr.srt"]);
 });

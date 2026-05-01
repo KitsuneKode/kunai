@@ -15,6 +15,7 @@ export interface PlayerOptions {
   startAt?: number;
   attach?: boolean;
   onProgress?: (seconds: number) => void;
+  onPlayerReady?: () => void;
 }
 
 export interface PlayerService {

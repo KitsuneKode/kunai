@@ -28,6 +28,8 @@ type VidkingSource = {
 type VidkingSubtitle = {
   url?: string;
   src?: string;
+  file?: string;
+  href?: string;
   lang?: string;
   language?: string;
   label?: string;
@@ -218,7 +220,7 @@ function normalizeSubtitleList(subtitles: VidkingSubtitle[] | undefined): Subtit
   const tracks: SubtitleTrack[] = [];
 
   for (const subtitle of subtitles) {
-    const url = subtitle.url ?? subtitle.src;
+    const url = subtitle.url ?? subtitle.src ?? subtitle.file ?? subtitle.href;
     if (!url || seen.has(url)) {
       continue;
     }
@@ -244,6 +246,11 @@ function normalizeLanguage(
     return undefined;
   }
 
+  const normalized = raw
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
   const map: Record<string, string> = {
     eng: "en",
     english: "en",
@@ -261,7 +268,17 @@ function normalizeLanguage(
     japanese: "ja",
   };
 
-  return map[raw] ?? raw;
+  if (map[normalized]) {
+    return map[normalized];
+  }
+
+  for (const [prefix, language] of Object.entries(map)) {
+    if (normalized.startsWith(prefix)) {
+      return language;
+    }
+  }
+
+  return normalized;
 }
 
 function pickSubtitleTrack(

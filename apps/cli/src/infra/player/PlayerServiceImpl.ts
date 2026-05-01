@@ -57,6 +57,7 @@ export class PlayerServiceImpl implements PlayerService {
         startAt: options.startAt,
         attach: options.attach,
         onControlReady: (control) => this.deps.playerControl.setActive(control),
+        onPlayerReady: options.onPlayerReady,
       });
 
       this.deps.logger.info("MPV playback complete", {

@@ -188,7 +188,7 @@ export function LoadingShell({
             label="Status"
             value={
               isPlaying
-                ? "Launching mpv and waiting for the player window to become active"
+                ? "mpv is active; the shell will return here when playback ends"
                 : "Resolving provider data, stream headers, and playback context"
             }
             tone={isPlaying ? "success" : "info"}

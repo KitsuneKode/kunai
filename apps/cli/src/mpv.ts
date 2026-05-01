@@ -25,6 +25,7 @@ export async function launchMpv(opts: {
   startAt?: number;
   attach?: boolean;
   onControlReady?: (control: ActivePlayerControl | null) => void;
+  onPlayerReady?: () => void;
 }): Promise<PlaybackResult> {
   const nonce = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const ipcPath = process.platform === "win32" ? null : join(tmpdir(), `kunai-mpv-${nonce}.sock`);
@@ -44,6 +45,12 @@ export async function launchMpv(opts: {
 
   let ipcSession: MpvIpcSession | null = null;
   let stopRequested = false;
+  let playerReadyNotified = false;
+  const notifyPlayerReady = () => {
+    if (playerReadyNotified) return;
+    playerReadyNotified = true;
+    opts.onPlayerReady?.();
+  };
   const control: ActivePlayerControl = {
     id: nonce,
     async stop() {
@@ -81,7 +88,10 @@ export async function launchMpv(opts: {
   const ipcBootstrap = (async () => {
     if (!ipcPath) return;
     const ready = await waitForMpvIpcSocket(ipcPath, 5_000);
-    if (!ready) return;
+    if (!ready) {
+      notifyPlayerReady();
+      return;
+    }
 
     ipcSession = await openMpvIpcSession({
       socketPath: ipcPath,
@@ -92,6 +102,9 @@ export async function launchMpv(opts: {
         applyEndFileEvent(telemetry, reason, observedAt);
       },
     });
+
+    notifyPlayerReady();
+    void attachAdditionalSubtitles(ipcSession, opts.subtitle, opts.subtitleUrls);
   })().catch(() => {});
 
   const exit = await exitPromise;
@@ -137,9 +150,6 @@ export function buildMpvArgs(
 
   const subtitleUrls: string[] = [];
   if (opts.subtitle) subtitleUrls.push(opts.subtitle);
-  for (const url of opts.subtitleUrls ?? []) {
-    if (!subtitleUrls.includes(url)) subtitleUrls.push(url);
-  }
   for (const url of subtitleUrls) {
     args.push(`--sub-file=${url}`);
   }
@@ -152,6 +162,20 @@ export function buildMpvArgs(
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
 
   return args;
+}
+
+export function collectAdditionalSubtitleUrls(
+  primarySubtitle: string | null,
+  subtitleUrls?: readonly string[],
+): string[] {
+  const collected: string[] = [];
+  for (const url of subtitleUrls ?? []) {
+    if (!url || url === primarySubtitle || collected.includes(url)) {
+      continue;
+    }
+    collected.push(url);
+  }
+  return collected;
 }
 
 async function unlinkIfExists(path: string): Promise<void> {
@@ -172,4 +196,19 @@ async function cleanupSocket(ipcPath: string): Promise<boolean> {
 async function closeIpcSession(ipcSession: MpvIpcSession | null): Promise<void> {
   if (ipcSession === null) return;
   await ipcSession.close().catch(() => {});
+}
+
+async function attachAdditionalSubtitles(
+  ipcSession: MpvIpcSession | null,
+  primarySubtitle: string | null,
+  subtitleUrls?: readonly string[],
+): Promise<void> {
+  if (!ipcSession) return;
+  for (const url of collectAdditionalSubtitleUrls(primarySubtitle, subtitleUrls)) {
+    try {
+      ipcSession.send(["sub-add", url]);
+    } catch {
+      return;
+    }
+  }
 }

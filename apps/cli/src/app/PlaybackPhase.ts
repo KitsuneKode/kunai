@@ -679,8 +679,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           ).padStart(2, "0")}`;
     const subtitleStatus = describeSubtitleStatus(stream, stateManager.getState().subLang);
 
-    stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
-
     try {
       const result = await player.play(stream, {
         url: stream.url,
@@ -690,6 +688,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         displayTitle,
         startAt,
         attach: false,
+        onPlayerReady: () => {
+          stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
+        },
       });
 
       stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "finished" });
