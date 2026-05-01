@@ -22,6 +22,22 @@ test("buildMpvArgs only attaches the primary subtitle during initial launch", ()
   expect(args).not.toContain("--sub-file=https://sub.example/ar.srt");
 });
 
+test("buildMpvArgs keeps mpv alive between files for persistent autoplay chains", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/master.m3u8",
+      headers: {},
+      subtitle: null,
+      displayTitle: "Breaking Bad - S02E05",
+    },
+    "/tmp/kunai-test.sock",
+    { persistent: true },
+  );
+
+  expect(args).toContain("--keep-open=yes");
+  expect(args).toContain("--idle=yes");
+});
+
 test("collectAdditionalSubtitleTracks excludes the primary subtitle and dedupes extras", () => {
   expect(
     collectAdditionalSubtitleTracks("https://sub.example/en.srt", [

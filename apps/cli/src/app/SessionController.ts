@@ -126,7 +126,10 @@ export class SessionController {
     const { tracer } = this.container;
 
     return tracer.span(phase.name, async () => {
-      const context: PhaseContext = { container: this.container };
+      const context: PhaseContext = {
+        container: this.container,
+        signal: this.abortController.signal,
+      };
       return phase.execute(input, context);
     });
   }

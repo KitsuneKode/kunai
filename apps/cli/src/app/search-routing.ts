@@ -6,6 +6,7 @@ export type SearchRoutingContext = {
   mode: ShellMode;
   providerId: string;
   animeLang: "sub" | "dub";
+  signal?: AbortSignal;
   searchRegistry: Pick<SearchRegistry, "getDefault" | "getForProvider">;
   providerRegistry: ProviderRegistry;
 };
@@ -24,9 +25,13 @@ export async function searchTitles(
   const provider = context.providerRegistry.get(context.providerId);
 
   if (provider && context.mode === "anime" && provider.search) {
-    const results = await provider.search(query, {
-      animeLang: context.animeLang,
-    });
+    const results = await provider.search(
+      query,
+      {
+        animeLang: context.animeLang,
+      },
+      context.signal,
+    );
 
     if (results) {
       return {
@@ -43,7 +48,7 @@ export async function searchTitles(
     context.searchRegistry.getDefault();
 
   return {
-    results: await searchService.search(query),
+    results: await searchService.search(query, context.signal),
     sourceId: searchService.metadata.id,
     sourceName: searchService.metadata.name,
     strategy: "registry",

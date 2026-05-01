@@ -38,12 +38,12 @@ export class PlayerControlServiceImpl implements PlayerControlService {
 
   async refreshCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "refresh";
-    return this.stopWithAction("refresh", reason);
+    return this.stopWithAction("refresh", reason, true);
   }
 
   async fallbackCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "fallback";
-    return this.stopWithAction("fallback", reason);
+    return this.stopWithAction("fallback", reason, true);
   }
 
   async reloadCurrentSubtitles(reason = "user-requested"): Promise<boolean> {
@@ -79,15 +79,19 @@ export class PlayerControlServiceImpl implements PlayerControlService {
 
   async nextCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "next";
-    return this.stopWithAction("next", reason);
+    return this.stopWithAction("next", reason, true);
   }
 
   async previousCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "previous";
-    return this.stopWithAction("previous", reason);
+    return this.stopWithAction("previous", reason, true);
   }
 
-  private async stopWithAction(action: PlaybackControlAction, reason: string): Promise<boolean> {
+  private async stopWithAction(
+    action: PlaybackControlAction,
+    reason: string,
+    stopCurrentFile = false,
+  ): Promise<boolean> {
     const active = this.active;
     if (!active) {
       this.deps.diagnosticsStore.record({
@@ -102,8 +106,12 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     this.deps.diagnosticsStore.record({
       category: "playback",
       message: "Stopping active playback",
-      context: { id: active.id, action, reason },
+      context: { id: active.id, action, reason, stopCurrentFile },
     });
+    if (stopCurrentFile && active.stopCurrentFile) {
+      await active.stopCurrentFile(reason);
+      return true;
+    }
     await active.stop(reason);
     return true;
   }

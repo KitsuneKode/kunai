@@ -14,11 +14,13 @@ export interface PlayerOptions {
   displayTitle: string;
   startAt?: number;
   attach?: boolean;
+  playbackMode?: "manual" | "autoplay-chain";
   onProgress?: (seconds: number) => void;
   onPlayerReady?: () => void;
 }
 
 export interface PlayerService {
   play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult>;
+  releasePersistentSession(): Promise<void>;
   isAvailable(): Promise<boolean>;
 }

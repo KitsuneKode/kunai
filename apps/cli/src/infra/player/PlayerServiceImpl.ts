@@ -11,8 +11,11 @@ import type { Tracer } from "@/infra/tracer/Tracer";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import { launchMpv } from "@/mpv";
 import type { PlayerControlService } from "./PlayerControlService";
+import { PersistentMpvSession } from "./PersistentMpvSession";
 
 export class PlayerServiceImpl implements PlayerService {
+  private persistentSession: PersistentMpvSession | null = null;
+
   constructor(
     private deps: {
       logger: Logger;
@@ -48,17 +51,10 @@ export class PlayerServiceImpl implements PlayerService {
     });
 
     try {
-      const result = await launchMpv({
-        url: stream.url,
-        headers: stream.headers ?? {},
-        subtitle: stream.subtitle ?? null,
-        subtitleTracks: stream.subtitleList,
-        displayTitle: options.displayTitle,
-        startAt: options.startAt,
-        attach: options.attach,
-        onControlReady: (control) => this.deps.playerControl.setActive(control),
-        onPlayerReady: options.onPlayerReady,
-      });
+      const result =
+        options.playbackMode === "autoplay-chain"
+          ? await this.playAutoplayChainStream(stream, options)
+          : await this.playOneShotStream(stream, options);
 
       this.deps.logger.info("MPV playback complete", {
         watchedSeconds: result.watchedSeconds,
@@ -111,6 +107,13 @@ export class PlayerServiceImpl implements PlayerService {
     }
   }
 
+  async releasePersistentSession(): Promise<void> {
+    if (!this.persistentSession) return;
+    await this.persistentSession.close();
+    this.persistentSession = null;
+    this.deps.playerControl.setActive(null);
+  }
+
   async isAvailable(): Promise<boolean> {
     try {
       const { spawn } = await import("child_process");
@@ -122,5 +125,72 @@ export class PlayerServiceImpl implements PlayerService {
     } catch {
       return false;
     }
+  }
+
+  private async playOneShotStream(
+    stream: StreamInfo,
+    options: PlayerOptions,
+  ): Promise<PlaybackResult> {
+    await this.releasePersistentSession();
+    return await launchMpv({
+      url: stream.url,
+      headers: stream.headers ?? {},
+      subtitle: stream.subtitle ?? null,
+      subtitleTracks: stream.subtitleList,
+      displayTitle: options.displayTitle,
+      startAt: options.startAt,
+      attach: options.attach,
+      onControlReady: (control) => this.deps.playerControl.setActive(control),
+      onPlayerReady: options.onPlayerReady,
+    });
+  }
+
+  private async playAutoplayChainStream(
+    stream: StreamInfo,
+    options: PlayerOptions,
+  ): Promise<PlaybackResult> {
+    if (this.persistentSession && !this.persistentSession.isAlive()) {
+      this.persistentSession = null;
+      this.deps.playerControl.setActive(null);
+    }
+
+    if (this.persistentSession && !this.persistentSession.matchesHeaders(stream.headers ?? {})) {
+      await this.releasePersistentSession();
+    }
+
+    if (!this.persistentSession) {
+      this.persistentSession = await PersistentMpvSession.create({
+        stream,
+        options: {
+          displayTitle: options.displayTitle,
+          primarySubtitle: stream.subtitle ?? null,
+          subtitleTracks: stream.subtitleList,
+          startAt: options.startAt,
+          onPlayerReady: options.onPlayerReady,
+        },
+        onControlReady: (control) => this.deps.playerControl.setActive(control),
+      });
+      const result = await this.persistentSession.waitForCurrentPlayback();
+      if (!this.persistentSession.isAlive()) {
+        this.persistentSession = null;
+        this.deps.playerControl.setActive(null);
+      }
+      return result;
+    }
+
+    const result = await this.persistentSession.play(stream, {
+      displayTitle: options.displayTitle,
+      primarySubtitle: stream.subtitle ?? null,
+      subtitleTracks: stream.subtitleList,
+      startAt: options.startAt,
+      onPlayerReady: options.onPlayerReady,
+    });
+
+    if (!this.persistentSession.isAlive()) {
+      this.persistentSession = null;
+      this.deps.playerControl.setActive(null);
+    }
+
+    return result;
   }
 }

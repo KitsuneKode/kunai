@@ -52,6 +52,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             mode: currentState.mode,
             providerId: currentState.provider,
             animeLang: currentState.animeLang,
+            signal: context.signal,
             searchRegistry,
             providerRegistry,
           });
@@ -116,6 +117,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               mode: stateManager.getState().mode,
               providerId: stateManager.getState().provider,
               animeLang: stateManager.getState().animeLang,
+              signal: context.signal,
               searchRegistry,
               providerRegistry,
             });
@@ -197,6 +199,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         return { status: "success", value: title };
       }
     } catch (e) {
+      if (context.signal.aborted) {
+        return { status: "cancelled" };
+      }
       logger.error("Search phase error", { error: String(e) });
       diagnosticsStore.record({
         category: "search",

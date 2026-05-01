@@ -9,6 +9,7 @@ export type PlaybackControlAction =
 export interface ActivePlayerControl {
   readonly id: string;
   stop(reason?: string): Promise<void>;
+  stopCurrentFile?(reason?: string): Promise<void>;
   reloadSubtitles?(): Promise<void>;
 }
 

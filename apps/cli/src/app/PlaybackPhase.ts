@@ -63,6 +63,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       config,
       diagnosticsStore,
       playerControl,
+      player,
     } = container;
     const animeEpisodeCatalogByProvider = new Map<
       string,
@@ -159,6 +160,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           title,
           currentEpisode,
           playbackTimingByEpisode,
+          context.signal,
         );
         const watchedEntries = await historyStore.listByTitle(title.id);
         const currentAnimeEpisodes = await this.getAnimeEpisodeOptions({
@@ -166,6 +168,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           mode: stateManager.getState().mode,
           provider: currentProvider,
           cache: animeEpisodeCatalogByProvider,
+          signal: context.signal,
         });
         const shellEpisodePicker = await buildPlaybackEpisodePickerOptions({
           title,
@@ -230,11 +233,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             providerId: provider.metadata.id,
             preferred: provider.metadata.id === currentProvider.metadata.id,
             resolve: () =>
-              provider.resolveStream({
-                title,
-                episode: currentEpisode,
-                subLang: stateManager.getState().subLang,
-              }),
+              provider.resolveStream(
+                {
+                  title,
+                  episode: currentEpisode,
+                  subLang: stateManager.getState().subLang,
+                },
+                context.signal,
+              ),
           })),
         });
 
@@ -310,6 +316,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           currentEpisode,
           context,
           startAt,
+          playbackSession.mode,
         );
 
         // Save history
@@ -487,6 +494,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stopAfterCurrent: false,
           };
         }
+
+        await player.releasePersistentSession();
 
         // Post-playback menu — inner loop so unavailable navigation
         // actions stay in the menu instead of re-resolving the stream.
@@ -666,6 +675,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         }
       }
     } catch (e) {
+      if (context.signal.aborted) {
+        return { status: "cancelled" };
+      }
       logger.error("Playback phase error", { error: String(e) });
       return {
         status: "error",
@@ -675,6 +687,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           retryable: false,
         },
       };
+    } finally {
+      await player.releasePersistentSession();
     }
 
     // Fallback return (should not reach here)
@@ -685,6 +699,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     title: TitleInfo,
     episode: EpisodeInfo,
     cache: Map<string, Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>>>,
+    signal?: AbortSignal,
   ) {
     const cacheKey =
       title.type === "movie"
@@ -700,6 +715,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       type: title.type,
       season: title.type === "series" ? episode.season : undefined,
       episode: title.type === "series" ? episode.episode : undefined,
+      signal,
     });
     cache.set(cacheKey, timing);
     return timing;
@@ -770,6 +786,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     episode: EpisodeInfo,
     context: PhaseContext,
     startAt = 0,
+    playbackMode: "manual" | "autoplay-chain" = "manual",
   ): Promise<PlaybackResult> {
     const { player, stateManager } = context.container;
 
@@ -790,6 +807,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         displayTitle,
         startAt,
         attach: false,
+        playbackMode,
         onPlayerReady: () => {
           stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
         },
@@ -807,18 +825,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     mode,
     provider,
     cache,
+    signal,
   }: {
     title: TitleInfo;
     mode: "series" | "anime";
     provider: import("../services/providers/Provider").Provider | undefined;
     cache: Map<string, readonly EpisodePickerOption[] | undefined>;
+    signal?: AbortSignal;
   }): Promise<readonly EpisodePickerOption[] | undefined> {
     const cacheKey = provider?.metadata.id;
     if (cacheKey && cache.has(cacheKey)) {
       return cache.get(cacheKey);
     }
 
-    const result = await this.loadAnimeEpisodeOptions(title, mode, provider);
+    const result = await this.loadAnimeEpisodeOptions(title, mode, provider, signal);
     if (cacheKey) {
       cache.set(cacheKey, result);
     }
@@ -829,13 +849,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     title: TitleInfo,
     mode: "series" | "anime",
     provider: import("../services/providers/Provider").Provider | undefined,
+    signal?: AbortSignal,
   ): Promise<readonly EpisodePickerOption[] | undefined> {
     if (mode !== "anime" || title.type !== "series" || !provider?.listEpisodes) {
       return undefined;
     }
 
     try {
-      return (await provider.listEpisodes({ title })) ?? undefined;
+      return (await provider.listEpisodes({ title }, signal)) ?? undefined;
     } catch {
       return undefined;
     }

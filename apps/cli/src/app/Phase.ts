@@ -15,6 +15,7 @@ export type PhaseResult<T> =
 
 export interface PhaseContext {
   container: Container;
+  signal: AbortSignal;
 }
 
 export interface Phase<TInput, TOutput> {

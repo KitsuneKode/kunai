@@ -139,6 +139,7 @@ export function buildMpvArgs(
     startAt?: number;
   },
   ipcPath: string | null,
+  config?: { persistent?: boolean },
 ): string[] {
   const args: string[] = [opts.url];
 
@@ -155,8 +156,13 @@ export function buildMpvArgs(
 
   if (opts.startAt && opts.startAt > 5) args.push(`--start=${opts.startAt}`);
   args.push(`--force-media-title=${opts.displayTitle}`);
-  args.push("--keep-open=no");
-  args.push("--idle=no");
+  if (config?.persistent) {
+    args.push("--keep-open=yes");
+    args.push("--idle=yes");
+  } else {
+    args.push("--keep-open=no");
+    args.push("--idle=no");
+  }
   args.push("--force-window=no");
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
 

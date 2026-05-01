@@ -58,7 +58,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Developer-mode diagnostics surface for stream, subtitle, and provider resolution stages
 - Metadata-store and preview-service migration beyond the current in-memory caches
 - Image-pane service migration for safe Kitty/Ghostty poster rendering inside the persistent shell without Ink scroll flicker
-- Phase 2 playback/media runtime plan now expands into a dedicated playback-session controller, persistent autoplay player session, quit-threshold policy, IntroDB timing support, and image backend cleanup
+- Phase 2 playback/media runtime now has the controller seam, persistent autoplay mpv session, built-in subtitle priority, and credits-aware completion timing; remaining work is the user-facing skip/cancel affordance layer
 - Provider SDK candidate model: provider -> source/mirror -> variant, with selected stream plus discovered candidates, subtitles, trace, cache policy, and health deltas
 - Runtime-browser package plan for JIT Playwright leases, interception, cooldown, evidence capture, and teardown
 - Interactive resolution UX for cancel, skip source, retry fresh, force no-cache, fallback provider, and provider/source/quality/subtitle selection
@@ -74,7 +74,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | -------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
 | Fullscreen root shell redesign   | In Progress | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                 |
 | Phase 1.8 mounted content tree   | In Progress | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)   |
-| Phase 2 playback/media runtime   | Active Design | [.plans/phase-2-playback-media-runtime.md](.plans/phase-2-playback-media-runtime.md)               |
+| Phase 2 playback/media runtime   | In Progress | [.plans/phase-2-playback-media-runtime.md](.plans/phase-2-playback-media-runtime.md)               |
 | Kunai architecture hardening     | Planned     | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md) |
 | Kunai experience and growth moat | Planned     | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)             |
 | Kunai principal grill Q&A        | Planned     | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                             |

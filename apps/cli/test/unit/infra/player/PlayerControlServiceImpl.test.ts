@@ -50,6 +50,7 @@ test("PlayerControlServiceImpl reports false when no player is active", async ()
 
 test("PlayerControlServiceImpl records refresh and fallback as stop-backed intents", async () => {
   const stoppedReasons: string[] = [];
+  const stoppedCurrentReasons: string[] = [];
   const service = makeService();
 
   service.setActive({
@@ -57,13 +58,17 @@ test("PlayerControlServiceImpl records refresh and fallback as stop-backed inten
     async stop(reason) {
       stoppedReasons.push(reason ?? "");
     },
+    async stopCurrentFile(reason) {
+      stoppedCurrentReasons.push(reason ?? "");
+    },
   });
 
   expect(await service.refreshCurrentPlayback("refresh-key")).toBe(true);
   expect(service.consumeLastAction()).toBe("refresh");
   expect(await service.fallbackCurrentPlayback("fallback-key")).toBe(true);
   expect(service.consumeLastAction()).toBe("fallback");
-  expect(stoppedReasons).toEqual(["refresh-key", "fallback-key"]);
+  expect(stoppedReasons).toEqual([]);
+  expect(stoppedCurrentReasons).toEqual(["refresh-key", "fallback-key"]);
 });
 
 test("PlayerControlServiceImpl reloads subtitles without stopping playback", async () => {
@@ -86,6 +91,27 @@ test("PlayerControlServiceImpl reloads subtitles without stopping playback", asy
 });
 
 test("PlayerControlServiceImpl records next and previous episode intents as stop-backed actions", async () => {
+  const stoppedCurrentReasons: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+    async stopCurrentFile(reason) {
+      stoppedCurrentReasons.push(reason ?? "");
+    },
+  });
+
+  expect(await service.nextCurrentPlayback("next-key")).toBe(true);
+  expect(service.consumeLastAction()).toBe("next");
+  expect(await service.previousCurrentPlayback("previous-key")).toBe(true);
+  expect(service.consumeLastAction()).toBe("previous");
+  expect(stoppedCurrentReasons).toEqual(["next-key", "previous-key"]);
+});
+
+test("PlayerControlServiceImpl falls back to full stop when file-stop control is unavailable", async () => {
   const stoppedReasons: string[] = [];
   const service = makeService();
 
@@ -98,7 +124,7 @@ test("PlayerControlServiceImpl records next and previous episode intents as stop
 
   expect(await service.nextCurrentPlayback("next-key")).toBe(true);
   expect(service.consumeLastAction()).toBe("next");
-  expect(await service.previousCurrentPlayback("previous-key")).toBe(true);
-  expect(service.consumeLastAction()).toBe("previous");
-  expect(stoppedReasons).toEqual(["next-key", "previous-key"]);
+  expect(await service.refreshCurrentPlayback("refresh-key")).toBe(true);
+  expect(service.consumeLastAction()).toBe("refresh");
+  expect(stoppedReasons).toEqual(["next-key", "refresh-key"]);
 });

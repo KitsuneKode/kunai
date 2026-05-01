@@ -1,6 +1,6 @@
 # Kunai Phase 2 — Playback, Media Preview, and Provider Subtitle Runtime
 
-Status: active implementation design
+Status: active implementation
 
 This plan is the next runtime-quality checkpoint after the root shell and overlay migration.
 It focuses on playback smoothness, provider-owned subtitle inventories, autoplay architecture,
@@ -143,6 +143,11 @@ Acceptance:
 - shell and `mpv` no longer each infer autoplay state independently
 - `PlaybackPhase` becomes thinner and delegates state decisions to the controller
 
+Progress:
+- pure controller decisions are extracted into `playback-session-controller.ts`
+- playback session state now explicitly models manual vs autoplay-chain mode
+- stop-after-current and session-local autoplay pause now flow through that controller seam
+
 ### Phase 2B — Persistent Autoplay Player Session
 
 Goal:
@@ -158,6 +163,11 @@ Deliverables:
 Acceptance:
 - autoplay chains stay inside one player process for normal episode-to-episode advance
 - shell next/previous while playing reuse the same active player session
+
+Progress:
+- autoplay-chain playback now reuses a persistent mpv session
+- shell `next` / `previous` / `refresh` / `fallback` stop the current file when possible instead of always killing the process
+- post-playback and phase teardown now explicitly release the persistent session so idle mpv processes do not linger
 
 ### Phase 2C — Quit Threshold and Manual Interruption Policy
 
@@ -183,6 +193,10 @@ Settings to add:
 Acceptance:
 - quit behavior is explainable from config + progress state alone
 
+Progress:
+- credits timing now overrides the old blunt near-end threshold when IntroDB metadata exists
+- fallback completion logic now uses the final 5 seconds instead of the older hardcoded window
+
 ### Phase 2D — Interactive Playback Controls
 
 Goal:
@@ -205,6 +219,9 @@ Recommended later action:
 Acceptance:
 - active playback shell remains useful without forcing users to wait for playback to end
 
+Progress:
+- playback shell live controls for next/previous/autoplay pause/stop-after-current are already wired through the shared control service
+
 ### Phase 2E — Abortable Resolve and Scrape Work
 
 Goal:
@@ -221,6 +238,11 @@ Required:
 
 Acceptance:
 - users can back out of expensive resolve paths without leaving zombie jobs
+
+Progress:
+- phase-level abort signals now flow through session controller -> phase context -> search/provider/timing calls
+- provider search, registry search, provider resolve, IntroDB timing fetch, and anime episode catalogs now receive the shared signal
+- full interactive shell cancel during loading is still the remaining sub-slice here
 
 ### Phase 2F — IntroDB Timing Metadata
 
@@ -248,6 +270,10 @@ Out of scope here:
 
 Acceptance:
 - timing metadata can affect quit threshold and skip logic without hard-coding title-specific branches
+
+Progress:
+- IntroDB timing is already used for completion/near-end decisions
+- recap/intro/preview skip affordances are still the remaining user-facing slice
 
 ## Track 1 — Fast Playback Startup
 
