@@ -10,9 +10,14 @@ import type { PlaybackSkipKind } from "./playback-skip";
 
 export type PlayerPlaybackEvent =
   | { type: "launching-player" }
+  | { type: "ipc-connected" }
+  | { type: "ipc-command-failed"; command: string; error: string }
   | { type: "opening-stream" }
   | { type: "subtitle-inventory-ready"; trackCount: number }
+  | { type: "subtitle-attached"; trackCount: number }
   | { type: "player-ready" }
+  | { type: "player-closing" }
+  | { type: "player-closed" }
   | { type: "segment-skipped"; kind: PlaybackSkipKind; automatic: boolean };
 
 export interface PlayerOptions {

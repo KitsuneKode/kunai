@@ -72,6 +72,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     switch (event.type) {
       case "launching-player":
         return { detail: "Launching player" };
+      case "ipc-connected":
+        return { detail: "Player control connected" };
+      case "ipc-command-failed":
+        return {
+          note: `Player command failed: ${event.command} (${event.error})`,
+        };
       case "opening-stream":
         return { detail: "Opening stream" };
       case "subtitle-inventory-ready":
@@ -82,8 +88,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               ? `${event.trackCount} alternate subtitle tracks are ready in mpv`
               : "Primary subtitle is ready",
         };
+      case "subtitle-attached":
+        return {
+          note:
+            event.trackCount > 0
+              ? `${event.trackCount} subtitle tracks attached`
+              : "Primary subtitle attached",
+        };
       case "player-ready":
         return { detail: "Player active" };
+      case "player-closing":
+        return { detail: "Closing player" };
+      case "player-closed":
+        return { detail: "Player closed" };
       case "segment-skipped":
         return {
           note: `${event.kind.charAt(0).toUpperCase()}${event.kind.slice(1)} ${event.automatic ? "skipped automatically" : "skipped"}`,

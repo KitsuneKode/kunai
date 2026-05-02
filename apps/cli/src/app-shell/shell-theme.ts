@@ -1,13 +1,18 @@
 import type { ShellStatus } from "./types";
 
 export const palette = {
-  amber: "#f2c066",
-  cyan: "#7dd3fc",
-  green: "#8dd58a",
-  rose: "#f3a6c8",
-  red: "#ff7a7a",
-  gray: "#7f8696",
-  muted: "#a4a9b6",
+  bg: "#17130f",
+  surface: "#211a14",
+  surfaceElevated: "#2b2219",
+  amber: "#f6a23a",
+  cyan: "#67d8d4",
+  green: "#8fd36a",
+  rose: "#d9a06f",
+  red: "#ff6b5f",
+  gray: "#8f8173",
+  muted: "#b6a696",
+  text: "#f4eadf",
+  dim: "#8f8173",
 } as const;
 
 export const APP_LABEL = "🥷 Kunai beta";

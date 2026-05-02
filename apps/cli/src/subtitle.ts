@@ -85,30 +85,54 @@ function subtitleHints(entry: SubtitleEntry): string[] {
   return Array.from(new Set(values));
 }
 
-function bestFrom(candidates: SubtitleEntry[]): SubtitleEntry | null {
-  if (candidates.length === 0) return null;
-  return candidates.reduce((best, candidate) =>
-    compareSubtitleEntries(candidate, best) > 0 ? candidate : best,
-  );
+export type SubtitleSourcePreference = "source-first" | "external-first" | "any";
+export type SubtitleAccessibilityPreference = "avoid-sdh" | "prefer-sdh" | "any";
+
+export type SubtitleSelectionOptions = {
+  preferredLang: string;
+  sourcePreference?: SubtitleSourcePreference;
+  accessibilityPreference?: SubtitleAccessibilityPreference;
+  fallbackLang?: string;
+};
+
+export type RankedSubtitleEntry = {
+  entry: SubtitleEntry;
+  score: number;
+  reasons: string[];
+};
+
+export function rankSubtitleCandidates(
+  list: readonly SubtitleEntry[],
+  options: SubtitleSelectionOptions,
+): RankedSubtitleEntry[] {
+  const preferredLang = options.preferredLang;
+  const sourcePreference = options.sourcePreference ?? "source-first";
+  const accessibilityPreference = options.accessibilityPreference ?? "avoid-sdh";
+  const fallbackLang = options.fallbackLang ?? "en";
+
+  return dedupeSubtitleEntries(list)
+    .map((entry) =>
+      scoreSubtitleEntry(entry, {
+        preferredLang,
+        sourcePreference,
+        accessibilityPreference,
+        fallbackLang,
+      }),
+    )
+    .sort((left, right) => {
+      const delta = right.score - left.score;
+      if (delta !== 0) return delta;
+      return compareSubtitleEntries(left.entry, right.entry) * -1;
+    });
 }
 
-export function selectSubtitle(list: SubtitleEntry[], preferredLang: string): SubtitleEntry | null {
-  // 1. Exact-language match (with locale variant tolerance)
-  const exactMatches = list.filter((subtitle) =>
-    subtitleHints(subtitle).some((hint) => langMatches(hint, preferredLang)),
-  );
-  if (exactMatches.length > 0) return bestFrom(exactMatches);
-
-  // 2. English fallback when a non-English language was requested
-  if (!langMatches(preferredLang, "en")) {
-    const englishMatches = list.filter((subtitle) =>
-      subtitleHints(subtitle).some((hint) => langMatches(hint, "en")),
-    );
-    if (englishMatches.length > 0) return bestFrom(englishMatches);
-  }
-
-  // 3. Last resort: best entry from whatever is available
-  return bestFrom(list);
+export function selectSubtitle(
+  list: SubtitleEntry[],
+  preferredLang: string,
+  options: Partial<Omit<SubtitleSelectionOptions, "preferredLang">> = {},
+): SubtitleEntry | null {
+  const ranked = rankSubtitleCandidates(list, { ...options, preferredLang });
+  return ranked[0]?.entry ?? null;
 }
 
 export function mergeSubtitleTracks<T extends { url: string }>(
@@ -177,12 +201,15 @@ export async function fetchSubtitlesFromWyzie(
         return { list: [], selected: null, failed: false };
       }
 
-      const pick = selectSubtitle(list, preferredLang);
+      const ranked = rankSubtitleCandidates(list, { preferredLang });
+      const pick = ranked[0]?.entry ?? null;
 
       dbg("subtitle", "wyzie selected subtitle", {
         preferredLang,
         selectedLanguage: pick?.language ?? null,
         selectedDisplay: pick?.display ?? null,
+        selectedScore: ranked[0]?.score ?? null,
+        selectedReasons: ranked[0]?.reasons ?? [],
         total: list.length,
         timeoutMs,
       });
@@ -281,6 +308,10 @@ function detectHearingImpaired(...values: Array<string | undefined>): boolean {
 }
 
 function sourcePriority(entry: SubtitleEntry): number {
+  const sourceName = entry.sourceName?.toLowerCase();
+  if (sourceName === "provider" || sourceName === "vidking" || sourceName === "allanime") {
+    return 4;
+  }
   switch (entry.sourceKind) {
     case "embedded":
       return 3;
@@ -291,6 +322,92 @@ function sourcePriority(entry: SubtitleEntry): number {
     default:
       return 0;
   }
+}
+
+function dedupeSubtitleEntries(list: readonly SubtitleEntry[]): SubtitleEntry[] {
+  const merged = new Map<string, SubtitleEntry>();
+  const order: string[] = [];
+  for (const entry of list) {
+    const key = normalizeSubtitleUrl(entry.url);
+    if (!key) continue;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, entry);
+      order.push(key);
+      continue;
+    }
+    merged.set(
+      key,
+      mergeTrackObjects(existing, entry, compareSubtitleEntries(existing, entry) >= 0),
+    );
+  }
+  return order.map((key) => merged.get(key)).filter((entry): entry is SubtitleEntry => !!entry);
+}
+
+function normalizeSubtitleUrl(url: string): string {
+  return url.trim();
+}
+
+function scoreSubtitleEntry(
+  entry: SubtitleEntry,
+  options: Required<SubtitleSelectionOptions>,
+): RankedSubtitleEntry {
+  let score = 0;
+  const reasons: string[] = [];
+  const hints = subtitleHints(entry);
+
+  if (hints.some((hint) => langMatches(hint, options.preferredLang))) {
+    score += 1_000;
+    reasons.push("preferred-language");
+  } else if (
+    options.fallbackLang &&
+    !langMatches(options.preferredLang, options.fallbackLang) &&
+    hints.some((hint) => langMatches(hint, options.fallbackLang))
+  ) {
+    score += 650;
+    reasons.push("fallback-language");
+  } else {
+    score += 100;
+    reasons.push("any-language");
+  }
+
+  const source = sourcePriority(entry);
+  const sourceScore =
+    options.sourcePreference === "source-first"
+      ? source * 90
+      : options.sourcePreference === "external-first"
+        ? (4 - source) * 90
+        : source * 20;
+  score += sourceScore;
+  if (source >= 3) reasons.push("source-subtitle");
+  else if (entry.sourceKind === "external") reasons.push("external-subtitle");
+
+  if (entry.isHearingImpaired) {
+    if (options.accessibilityPreference === "prefer-sdh") {
+      score += 80;
+      reasons.push("accessibility-preferred");
+    } else if (options.accessibilityPreference === "avoid-sdh") {
+      score -= 80;
+      reasons.push("accessibility-avoided");
+    }
+  } else if (options.accessibilityPreference === "avoid-sdh") {
+    score += 40;
+    reasons.push("non-sdh");
+  }
+
+  if (entry.release && /s\d{1,2}e\d{1,3}|\b\d{3,4}p\b|webrip|web-dl|bluray/i.test(entry.release)) {
+    score += 35;
+    reasons.push("sync-evidence");
+  }
+
+  if (/\.(vtt|srt|ass)(?:$|[?#])/i.test(entry.url)) {
+    score += 20;
+    reasons.push("known-format");
+  }
+
+  score += Math.min(entry.downloadCount ?? 0, 10_000) / 1_000;
+
+  return { entry, score, reasons };
 }
 
 function compareSubtitleEntries(left: SubtitleEntry, right: SubtitleEntry): number {

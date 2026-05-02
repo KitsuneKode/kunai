@@ -60,7 +60,7 @@ export class BrowserServiceImpl implements BrowserService {
           subtitleTrackCount: cached.subtitleList?.length ?? 0,
         },
       });
-      return { ...cached, subtitle: activeSubtitle };
+      return { ...cached, subtitle: activeSubtitle, cacheProvenance: "cached" };
     } else {
       this.deps.diagnosticsStore.record({
         category: "cache",
@@ -171,6 +171,7 @@ export class BrowserServiceImpl implements BrowserService {
       subtitleEvidence: scrapeSubtitleEvidence,
       title: result.title,
       timestamp: result.timestamp,
+      cacheProvenance: "fresh" as const,
     };
     await this.deps.cacheStore.set(options.url, stream);
     this.deps.diagnosticsStore.record({

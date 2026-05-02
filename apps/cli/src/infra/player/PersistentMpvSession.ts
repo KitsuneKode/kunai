@@ -74,13 +74,13 @@ export class PersistentMpvSession {
       id: this.id,
       stop: async () => {
         if (this.ipcSession) {
-          this.ipcSession.send(["quit"]);
+          void this.ipcSession.send(["quit"]);
           return;
         }
         this.mpv?.kill("SIGTERM");
       },
       stopCurrentFile: async () => {
-        this.ipcSession?.send(["stop"]);
+        void this.ipcSession?.send(["stop"]);
       },
       reloadSubtitles: async () => {
         await this.reloadSubtitles();
@@ -120,7 +120,7 @@ export class PersistentMpvSession {
     }
 
     await this.removeExternalSubtitles();
-    this.ipcSession?.send(["loadfile", stream.url, "replace"]);
+    void this.ipcSession?.send(["loadfile", stream.url, "replace"]);
     this.scheduleReadyWork(options);
     return await cycle.promise;
   }
@@ -151,8 +151,9 @@ export class PersistentMpvSession {
       return;
     }
 
+    this.currentCycleOptions().onPlaybackEvent?.({ type: "player-closing" });
     if (this.ipcSession) {
-      this.ipcSession.send(["quit"]);
+      void this.ipcSession.send(["quit"]);
     } else {
       this.mpv?.kill("SIGTERM");
     }
@@ -188,7 +189,7 @@ export class PersistentMpvSession {
     );
 
     this.mpv = spawn("mpv", args, {
-      detached: true,
+      detached: false,
       stdio: ["ignore", "ignore", "ignore"],
       env: process.env as Record<string, string>,
     });
@@ -209,6 +210,7 @@ export class PersistentMpvSession {
         active.resolve(result);
       }
       await this.cleanupSocket();
+      this.currentCycleOptions().onPlaybackEvent?.({ type: "player-closed" });
       this.onControlReady(null);
     });
     this.mpv.once("error", async () => {
@@ -223,6 +225,7 @@ export class PersistentMpvSession {
         active.resolve(result);
       }
       await this.cleanupSocket();
+      this.currentCycleOptions().onPlaybackEvent?.({ type: "player-closed" });
       this.onControlReady(null);
     });
 
@@ -263,7 +266,16 @@ export class PersistentMpvSession {
             this.activeCycle = null;
             active.resolve(result);
           },
+          onCommandResult: (result) => {
+            if (result.ok) return;
+            this.currentCycleOptions().onPlaybackEvent?.({
+              type: "ipc-command-failed",
+              command: String(result.command[0] ?? "unknown"),
+              error: result.error,
+            });
+          },
         });
+        this.currentCycleOptions().onPlaybackEvent?.({ type: "ipc-connected" });
         this.currentCycleOptions().onPlaybackEvent?.({ type: "opening-stream" });
       }
     }
@@ -307,7 +319,7 @@ export class PersistentMpvSession {
 
       if (!this.ipcSession) return;
       if (options.startAt && options.startAt > 5) {
-        this.ipcSession.send(["seek", options.startAt, "absolute"]);
+        void this.ipcSession.send(["seek", options.startAt, "absolute"]);
       }
 
       await this.replaceSubtitleInventory(
@@ -315,6 +327,7 @@ export class PersistentMpvSession {
         options.subtitleTracks,
         (trackCount) => {
           options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
+          options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
         },
       );
       await this.maybeAutoSkip(options, true);
@@ -335,18 +348,20 @@ export class PersistentMpvSession {
     await this.removeExternalSubtitles();
 
     if (primarySubtitle) {
-      this.ipcSession.send(["sub-add", primarySubtitle, "select"]);
+      const result = await this.ipcSession.send(["sub-add", primarySubtitle, "select"]);
+      if (!result.ok) return;
     }
 
     const additionalTracks = collectAdditionalSubtitleTracks(primarySubtitle, subtitleTracks);
     for (const track of additionalTracks) {
-      this.ipcSession.send([
+      const result = await this.ipcSession.send([
         "sub-add",
         track.url,
         "auto",
         track.display ?? "",
         track.language ?? "",
       ]);
+      if (!result.ok) return;
     }
     if (additionalTracks.length > 0) {
       onAttached?.(additionalTracks.length);
@@ -356,7 +371,7 @@ export class PersistentMpvSession {
   private async reloadSubtitles(): Promise<void> {
     const active = this.activeCycle;
     if (!active || !this.ipcSession) return;
-    this.ipcSession.send(["sub-reload"]);
+    void this.ipcSession.send(["sub-reload"]);
   }
 
   private currentCycleOptions(): PlayerCycleOptions {
@@ -381,7 +396,7 @@ export class PersistentMpvSession {
       return false;
     }
     this.skippedSegments.add(activeSkip.key);
-    this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"]);
+    void this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"]);
     options.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic });
     return true;
   }
@@ -394,7 +409,7 @@ export class PersistentMpvSession {
     if (!this.ipcSession) return;
 
     for (const trackId of extractExternalSubtitleIds(this.lastTrackList)) {
-      this.ipcSession.send(["sub-remove", trackId]);
+      void this.ipcSession.send(["sub-remove", trackId]);
     }
   }
 

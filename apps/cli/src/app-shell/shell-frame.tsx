@@ -55,10 +55,16 @@ export function ShellFrame({
   const sepWidth = Math.max(24, (stdout.columns ?? 80) - 4);
 
   return (
-    <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-      <Box flexDirection="column" flexGrow={1} paddingX={1}>
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      justifyContent="space-between"
+      backgroundColor={palette.bg}
+      paddingX={1}
+    >
+      <Box flexDirection="column" flexGrow={1}>
         <Box justifyContent="space-between">
-          <Text bold color="white">
+          <Text bold color={palette.text}>
             {title}
           </Text>
           {status ? <Text color={statusColor(status.tone)}>{status.label}</Text> : null}

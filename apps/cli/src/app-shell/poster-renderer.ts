@@ -9,24 +9,14 @@ import type { PosterResult } from "./poster-types";
 let _chafaAvailable: boolean | null = null;
 export async function isChafaAvailable(): Promise<boolean> {
   if (_chafaAvailable !== null) return _chafaAvailable;
-  try {
-    const proc = Bun.spawn(["which", "chafa"], { stdout: "pipe", stderr: "pipe" });
-    _chafaAvailable = (await proc.exited) === 0;
-  } catch {
-    _chafaAvailable = false;
-  }
+  _chafaAvailable = Boolean(Bun.which("chafa"));
   return _chafaAvailable;
 }
 
 let _magickAvailable: boolean | null = null;
 async function isMagickAvailable(): Promise<boolean> {
   if (_magickAvailable !== null) return _magickAvailable;
-  try {
-    const proc = Bun.spawn(["which", "magick"], { stdout: "pipe", stderr: "pipe" });
-    _magickAvailable = (await proc.exited) === 0;
-  } catch {
-    _magickAvailable = false;
-  }
+  _magickAvailable = Boolean(Bun.which("magick"));
   return _magickAvailable;
 }
 
@@ -35,6 +25,21 @@ function allocId(): number {
   const id = nextId;
   nextId = (nextId % 65534) + 1;
   return id;
+}
+
+const renderedChafaCache = new Map<string, string>();
+const MAX_RENDERED_CHAFA_CACHE = 32;
+
+function cacheKeyForRender(data: ArrayBuffer, rows: number, cols: number): string {
+  return `${Bun.hash(data)}:${rows}x${cols}`;
+}
+
+function rememberRenderedChafa(key: string, art: string): void {
+  if (renderedChafaCache.size >= MAX_RENDERED_CHAFA_CACHE) {
+    const first = renderedChafaCache.keys().next().value;
+    if (first) renderedChafaCache.delete(first);
+  }
+  renderedChafaCache.set(key, art);
 }
 
 export function deleteKittyImage(imageId: number): void {
@@ -166,6 +171,10 @@ async function renderKitty(data: ArrayBuffer, rows: number, cols: number): Promi
 }
 
 async function renderChafa(data: ArrayBuffer, rows: number, cols: number): Promise<PosterResult> {
+  const cacheKey = cacheKeyForRender(data, rows, cols);
+  const cached = renderedChafaCache.get(cacheKey);
+  if (cached) return { kind: "chafa", art: cached, rows, cols };
+
   const tmpPath = join(
     tmpdir(),
     `kunai-poster-${Date.now()}-${Math.random().toString(16).slice(2)}.img`,
@@ -179,6 +188,7 @@ async function renderChafa(data: ArrayBuffer, rows: number, cols: number): Promi
     const art = await new Response(proc.stdout).text();
     await proc.exited;
     if (!art.trim()) return { kind: "none" };
+    rememberRenderedChafa(cacheKey, art);
     return { kind: "chafa", art, rows, cols };
   } catch {
     return { kind: "none" };

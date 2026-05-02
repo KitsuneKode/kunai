@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-
-import * as loader from "@assemblyscript/loader";
 import {
   createProviderCachePolicy,
   createResolveTrace,
@@ -23,7 +20,6 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import CryptoJS from "crypto-js";
 
 export const VIDKING_PROVIDER_ID = vidkingManifest.id;
 export const VIDKING_REFERER = "https://www.vidking.net/";
@@ -411,7 +407,10 @@ async function loadWasmExports(): Promise<WasmExports> {
   }
 
   wasmExportsPromise = (async () => {
-    const wasmBuffer = await readFile(new URL("./assets/module1_patched.wasm", import.meta.url));
+    const loader = await import("@assemblyscript/loader");
+    const wasmBuffer = await Bun.file(
+      new URL("./assets/module1_patched.wasm", import.meta.url),
+    ).arrayBuffer();
     const module = await loader.instantiate(wasmBuffer, {
       env: {
         seed: () => Date.now(),
@@ -433,6 +432,7 @@ export async function decodeVidkingPayload(
   const payloadPtr = wasm.__newString(payload);
   const decryptedPtr = wasm.decrypt(payloadPtr, tmdbId);
   const wasmDecryptedBase64 = wasm.__getString(decryptedPtr);
+  const { default: CryptoJS } = await import("crypto-js");
   const decryptedBytes = CryptoJS.AES.decrypt(wasmDecryptedBase64, "");
   const finalJson = decryptedBytes.toString(CryptoJS.enc.Utf8);
   return JSON.parse(finalJson) as VidkingPayload;

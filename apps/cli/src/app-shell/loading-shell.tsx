@@ -201,7 +201,7 @@ export function LoadingShell({
           <Text color={accentColor}>{operationLabels[state.operation]}</Text>
           <Text color={palette.gray} dimColor>
             {"  "}
-            {isPlaying ? "Playback shell stays alive in the background" : "Gathering stream data"}
+            {isPlaying ? "Kunai is supervising playback" : "Gathering stream data"}
           </Text>
         </Box>
 

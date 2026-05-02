@@ -87,6 +87,7 @@ export class CacheStoreImpl implements CacheStore {
         subtitleEvidence: legacy.subtitleEvidence,
         title: legacy.title,
         timestamp: legacy.timestamp ?? 0,
+        cacheProvenance: legacy.cacheProvenance,
       },
       cachedAt,
     };

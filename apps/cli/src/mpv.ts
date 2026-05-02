@@ -46,7 +46,7 @@ export async function launchMpv(opts: {
   const telemetry = createPlayerTelemetryState(ipcPath ?? undefined);
 
   const mpv = spawn("mpv", args, {
-    detached: !opts.attach,
+    detached: false,
     stdio: opts.attach ? "inherit" : ["ignore", "ignore", "ignore"],
     env: process.env as Record<string, string>,
   });
@@ -73,7 +73,7 @@ export async function launchMpv(opts: {
       return false;
     }
     skippedSegments.add(activeSkip.key);
-    ipcSession.send(["seek", activeSkip.endSeconds, "absolute"]);
+    void ipcSession.send(["seek", activeSkip.endSeconds, "absolute"]);
     opts.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic });
     return true;
   };
@@ -83,13 +83,13 @@ export async function launchMpv(opts: {
       if (stopRequested) return;
       stopRequested = true;
       if (ipcSession) {
-        ipcSession.send(["quit"]);
+        void ipcSession.send(["quit"]);
         return;
       }
       mpv.kill("SIGTERM");
     },
     async reloadSubtitles() {
-      ipcSession?.send(["sub-reload"]);
+      void ipcSession?.send(["sub-reload"]);
     },
     async skipCurrentSegment() {
       return trySkipSegment(false);
@@ -134,12 +134,23 @@ export async function launchMpv(opts: {
       onEndFile: ({ reason, observedAt }) => {
         applyEndFileEvent(telemetry, reason, observedAt);
       },
+      onCommandResult: (result) => {
+        if (!result.ok) {
+          opts.onPlaybackEvent?.({
+            type: "ipc-command-failed",
+            command: String(result.command[0] ?? "unknown"),
+            error: result.error,
+          });
+        }
+      },
     });
 
+    opts.onPlaybackEvent?.({ type: "ipc-connected" });
     opts.onPlaybackEvent?.({ type: "opening-stream" });
     notifyPlayerReady();
     void attachAdditionalSubtitles(ipcSession, opts.subtitle, opts.subtitleTracks, (trackCount) => {
       opts.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
+      opts.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
     });
   })().catch(() => {});
 
@@ -157,6 +168,7 @@ export async function launchMpv(opts: {
   }
 
   await closeIpcSession(ipcSession);
+  opts.onPlaybackEvent?.({ type: "player-closed" });
   const socketPathCleanedUp = ipcPath ? await cleanupSocket(ipcPath) : true;
 
   opts.onControlReady?.(null);
@@ -198,7 +210,8 @@ export function buildMpvArgs(
     args.push("--keep-open=no");
     args.push("--idle=no");
   }
-  args.push("--force-window=no");
+  args.push("--force-window=immediate");
+  args.push("--autofit-larger=90%x90%");
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
 
   return args;
@@ -252,12 +265,19 @@ async function attachAdditionalSubtitles(
   const additionalTracks = collectAdditionalSubtitleTracks(primarySubtitle, subtitleTracks);
   for (const track of additionalTracks) {
     try {
-      ipcSession.send(["sub-add", track.url, "auto", track.display ?? "", track.language ?? ""]);
+      const result = await ipcSession.send([
+        "sub-add",
+        track.url,
+        "auto",
+        track.display ?? "",
+        track.language ?? "",
+      ]);
+      if (!result.ok) return;
     } catch {
       return;
     }
   }
-  if (additionalTracks.length > 0) {
+  if (additionalTracks.length > 0 || primarySubtitle) {
     onAttached?.(additionalTracks.length);
   }
 }

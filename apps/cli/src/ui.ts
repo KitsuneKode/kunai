@@ -1,4 +1,3 @@
-import { spawn } from "child_process";
 import { log } from "@clack/prompts";
 
 // ── Dependency check ───────────────────────────────────────────────────────
@@ -6,11 +5,7 @@ import { log } from "@clack/prompts";
 type DepStatus = { mpv: boolean };
 
 async function which(cmd: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const p = spawn("which", [cmd], { stdio: "pipe" });
-    p.on("close", (code) => resolve(code === 0));
-    p.on("error", () => resolve(false));
-  });
+  return Boolean(Bun.which(cmd));
 }
 
 export async function checkDeps(): Promise<DepStatus> {

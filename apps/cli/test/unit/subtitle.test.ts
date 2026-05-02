@@ -3,6 +3,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import {
   fetchSubtitlesFromWyzie,
   parseWyzieSubtitleList,
+  rankSubtitleCandidates,
   resolveSubtitlesByTmdbId,
   selectSubtitle,
 } from "@/subtitle";
@@ -109,6 +110,33 @@ describe("selectSubtitle", () => {
     };
 
     expect(selectSubtitle([external, builtIn], "en")?.url).toBe(builtIn.url);
+  });
+
+  test("exposes ranking reasons for source-first subtitle diagnostics", () => {
+    const ranked = rankSubtitleCandidates(
+      [
+        {
+          url: "https://sub.wyzie.io/external-en.srt",
+          language: "en",
+          display: "English SDH",
+          sourceKind: "external",
+          isHearingImpaired: true,
+          downloadCount: 5000,
+        },
+        {
+          url: "https://provider.example/source-en.vtt",
+          language: "en",
+          display: "English",
+          sourceKind: "embedded",
+          sourceName: "provider",
+        },
+      ],
+      { preferredLang: "en" },
+    );
+
+    expect(ranked[0]?.entry.url).toBe("https://provider.example/source-en.vtt");
+    expect(ranked[0]?.reasons).toContain("source-subtitle");
+    expect(ranked[0]?.reasons).toContain("non-sdh");
   });
 });
 

@@ -252,7 +252,7 @@ export async function scrapeStream(
           setTimeout(async () => {
             // Give Wyzie a little more time to emit its subtitle search request.
             if (!directSubUrl && !wyzieSearchUrl) {
-              await new Promise((r) => setTimeout(r, 3000));
+              await Bun.sleep(3000);
             }
 
             let subtitle: string | null = directSubUrl;
@@ -360,7 +360,7 @@ export async function scrapeStream(
       (async () => {
         for (let i = 0; i < 20; i++) {
           if (streamFound) return;
-          await new Promise((r) => setTimeout(r, 1000));
+          await Bun.sleep(1000);
         }
         if (!streamFound) {
           dbg("scraper", "timeout — no stream found");

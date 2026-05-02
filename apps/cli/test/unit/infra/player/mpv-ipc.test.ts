@@ -57,4 +57,12 @@ describe("mpv-ipc", () => {
       "track-list",
     ]);
   });
+
+  test("parses successful command responses with request ids", () => {
+    expect(parseMpvIpcLine('{"request_id":12,"error":"success","data":true}\n')).toEqual({
+      request_id: 12,
+      error: "success",
+      data: true,
+    });
+  });
 });

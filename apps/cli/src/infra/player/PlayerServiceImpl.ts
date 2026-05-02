@@ -116,16 +116,7 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   async isAvailable(): Promise<boolean> {
-    try {
-      const { spawn } = await import("child_process");
-      const mpv = spawn("mpv", ["--version"], { stdio: "ignore" });
-      return new Promise((resolve) => {
-        mpv.on("error", () => resolve(false));
-        mpv.on("close", (code) => resolve(code === 0));
-      });
-    } catch {
-      return false;
-    }
+    return Boolean(Bun.which("mpv"));
   }
 
   private async playOneShotStream(

@@ -161,7 +161,7 @@ function setupSignalHandlers(): void {
     if (globalController) {
       globalController.shutdown();
       // Wait a short tick for synchronous pending tasks to wind down
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await Bun.sleep(500);
     }
 
     process.exit(0);
