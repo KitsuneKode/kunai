@@ -37,6 +37,8 @@ type PlayerCycleOptions = {
   skipRecap?: boolean;
   skipIntro?: boolean;
   skipPreview?: boolean;
+  skipCredits?: boolean;
+  autoNextEnabled?: boolean;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
 };
@@ -101,6 +103,7 @@ export class PersistentMpvSession {
       },
       attachSubtitles: async (attachment) => await this.attachSubtitles(attachment),
       skipCurrentSegment: async () => this.skipCurrentSegment(),
+      updateTiming: (timing) => this.updateTiming(timing),
     };
   }
 
@@ -163,6 +166,12 @@ export class PersistentMpvSession {
 
   getControl(): ActivePlayerControl {
     return this.currentControl;
+  }
+
+  updateTiming(timing: PlaybackTimingMetadata | null): void {
+    if (!this.activeCycle) return;
+    this.currentOptions = { ...this.currentOptions, timing };
+    void this.maybeAutoSkip(this.currentOptions, true);
   }
 
   waitForCurrentPlayback(): Promise<PlaybackResult> {
@@ -441,7 +450,7 @@ export class PersistentMpvSession {
       ]);
       if (!result.ok) return;
     }
-    if (additionalTracks.length > 0) {
+    if (primarySubtitle || additionalTracks.length > 0) {
       onAttached?.(additionalTracks.length);
     }
   }
@@ -493,6 +502,8 @@ export class PersistentMpvSession {
       skipRecap: options.skipRecap ?? true,
       skipIntro: options.skipIntro ?? true,
       skipPreview: options.skipPreview ?? true,
+      skipCredits: options.skipCredits ?? true,
+      autoNextEnabled: options.autoNextEnabled ?? false,
     };
   }
 

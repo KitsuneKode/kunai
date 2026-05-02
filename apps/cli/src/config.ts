@@ -14,6 +14,7 @@ export type KitsuneConfig = {
   skipRecap: boolean;
   skipIntro: boolean;
   skipPreview: boolean;
+  skipCredits: boolean;
   footerHints: "detailed" | "minimal";
 };
 
@@ -29,6 +30,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   skipRecap: true,
   skipIntro: true,
   skipPreview: true,
+  skipCredits: true,
   footerHints: "detailed",
 };
 

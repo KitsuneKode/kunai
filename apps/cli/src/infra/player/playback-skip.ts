@@ -1,11 +1,13 @@
 import type { PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
 
-export type PlaybackSkipKind = "recap" | "intro" | "preview";
+export type PlaybackSkipKind = "recap" | "intro" | "preview" | "credits";
 
 export interface PlaybackSkipConfig {
   readonly skipRecap: boolean;
   readonly skipIntro: boolean;
   readonly skipPreview: boolean;
+  readonly skipCredits: boolean;
+  readonly autoNextEnabled: boolean;
 }
 
 export interface ActivePlaybackSkip {
@@ -33,6 +35,7 @@ function segmentGroups(timing: PlaybackTimingMetadata | null | undefined): reado
     ["recap", timing.recap],
     ["intro", timing.intro],
     ["preview", timing.preview],
+    ["credits", timing.credits],
   ] as const;
 }
 
@@ -44,6 +47,9 @@ function isSkipEnabled(kind: PlaybackSkipKind, config: PlaybackSkipConfig): bool
       return config.skipIntro;
     case "preview":
       return config.skipPreview;
+    case "credits":
+      // hybrid: skip credits when the toggle is on OR autoNext is active
+      return config.skipCredits || config.autoNextEnabled;
   }
 }
 

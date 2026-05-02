@@ -26,5 +26,6 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   skipRecap: true,
   skipIntro: true,
   skipPreview: true,
+  skipCredits: true,
   footerHints: "detailed",
 };

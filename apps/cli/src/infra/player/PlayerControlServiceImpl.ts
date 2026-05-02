@@ -1,3 +1,4 @@
+import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 
@@ -163,6 +164,20 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   async previousCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "previous";
     return this.stopWithAction("previous", reason, true);
+  }
+
+  updateCurrentPlaybackTiming(
+    timing: PlaybackTimingMetadata | null,
+    reason = "background-fetch",
+  ): void {
+    const active = this.active;
+    if (!active?.updateTiming) return;
+    this.deps.diagnosticsStore.record({
+      category: "playback",
+      message: "Injecting late timing metadata into active player",
+      context: { id: active.id, reason, hasCredits: Boolean((timing?.credits ?? []).length) },
+    });
+    active.updateTiming(timing);
   }
 
   private async stopWithAction(

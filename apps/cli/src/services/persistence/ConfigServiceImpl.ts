@@ -76,6 +76,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.skipPreview;
   }
 
+  get skipCredits(): boolean {
+    return this.config.skipCredits;
+  }
+
   get footerHints(): "detailed" | "minimal" {
     return this.config.footerHints;
   }

@@ -16,6 +16,7 @@ export interface KitsuneConfig {
   skipRecap: boolean;
   skipIntro: boolean;
   skipPreview: boolean;
+  skipCredits: boolean;
   footerHints: "detailed" | "minimal";
 }
 

@@ -48,6 +48,7 @@ export interface PlayerOptions {
   skipRecap?: boolean;
   skipIntro?: boolean;
   skipPreview?: boolean;
+  skipCredits?: boolean;
   onProgress?: (seconds: number) => void;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;

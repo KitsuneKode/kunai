@@ -267,16 +267,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         try {
           const currentProvider = providerRegistry.get(stateManager.getState().provider);
-          this.updatePlaybackFeedback(context, {
-            detail: "Checking episode timing",
-            note: null,
-          });
-          const playbackTiming = await this.getPlaybackTimingMetadata(
+
+          // Kick off timing fetch in parallel with everything else — IntroDB is a
+          // lightweight API call and should resolve well before the Playwright scrape.
+          const timingFetch = this.getPlaybackTimingMetadata(
             title,
             currentEpisode,
             playbackTimingByEpisode,
             resolveController.signal,
           );
+
           const watchedEntries = await historyStore.listByTitle(title.id);
           const currentAnimeEpisodes = await this.getAnimeEpisodeOptions({
             title,
@@ -414,6 +414,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 cachePolicy: stream.providerResolveResult.cachePolicy,
               },
             });
+          }
+
+          // Await timing — stream resolve takes much longer so this is nearly free.
+          // If IntroDB timed out and returned null, schedule a background retry that
+          // injects timing into the running player once it arrives.
+          const playbackTiming = await timingFetch;
+          if (!playbackTiming) {
+            void this.retryTimingInBackground(title, currentEpisode, container);
           }
 
           const preparedStream = await this.preparePlaybackStream(
@@ -840,6 +848,29 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     return { status: "success", value: "back_to_search" };
   }
 
+  private retryTimingInBackground(
+    title: TitleInfo,
+    episode: EpisodeInfo,
+    container: PhaseContext["container"],
+  ): Promise<void> {
+    return (async () => {
+      try {
+        const timing = await fetchPlaybackTimingMetadata({
+          tmdbId: title.id,
+          type: title.type,
+          season: title.type === "series" ? episode.season : undefined,
+          episode: title.type === "series" ? episode.episode : undefined,
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (timing) {
+          container.playerControl.updateCurrentPlaybackTiming(timing, "background-retry");
+        }
+      } catch {
+        // background retry failed silently
+      }
+    })();
+  }
+
   private async getPlaybackTimingMetadata(
     title: TitleInfo,
     episode: EpisodeInfo,
@@ -968,6 +999,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         skipRecap: config.skipRecap,
         skipIntro: config.skipIntro,
         skipPreview: config.skipPreview,
+        skipCredits: config.skipCredits,
         onPlaybackEvent: (event) => {
           this.updatePlaybackFeedback(context, this.describePlayerEvent(event));
           if (event.type === "network-buffering") {

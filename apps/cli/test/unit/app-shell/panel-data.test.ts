@@ -31,6 +31,7 @@ describe("panel-data", () => {
         skipRecap: true,
         skipIntro: true,
         skipPreview: true,
+        skipCredits: true,
         footerHints: "detailed",
       },
       state: createInitialState("vidking", "allanime"),

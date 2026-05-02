@@ -34,6 +34,7 @@ export async function launchMpv(opts: {
   skipRecap?: boolean;
   skipIntro?: boolean;
   skipPreview?: boolean;
+  skipCredits?: boolean;
   onControlReady?: (control: ActivePlayerControl | null) => void;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
@@ -61,12 +62,15 @@ export async function launchMpv(opts: {
   let playerReadyNotified = false;
   let playbackStartedNotified = false;
   let currentPositionSeconds = 0;
+  let mutableTiming = opts.timing ?? null;
   const watchdog = createPlaybackWatchdog(emitPlaybackEvent);
   const skippedSegments = new Set<string>();
   const skipConfig: PlaybackSkipConfig = {
     skipRecap: opts.skipRecap ?? true,
     skipIntro: opts.skipIntro ?? true,
     skipPreview: opts.skipPreview ?? true,
+    skipCredits: opts.skipCredits ?? true,
+    autoNextEnabled: false, // launchMpv is only used for one-shot/manual playback
   };
   const notifyPlayerReady = () => {
     if (playerReadyNotified) return;
@@ -80,7 +84,7 @@ export async function launchMpv(opts: {
     emitPlaybackEvent({ type: "playback-started" });
   };
   const trySkipSegment = (automatic: boolean) => {
-    const activeSkip = findActivePlaybackSkip(opts.timing, currentPositionSeconds, skipConfig);
+    const activeSkip = findActivePlaybackSkip(mutableTiming, currentPositionSeconds, skipConfig);
     if (!activeSkip || !ipcSession || skippedSegments.has(activeSkip.key)) {
       return false;
     }
@@ -110,6 +114,10 @@ export async function launchMpv(opts: {
     },
     async skipCurrentSegment() {
       return trySkipSegment(false);
+    },
+    updateTiming(timing) {
+      mutableTiming = timing;
+      trySkipSegment(true);
     },
   };
   opts.onControlReady?.(control);
@@ -192,9 +200,7 @@ export async function launchMpv(opts: {
 
   const flushDeadline = Date.now() + 1_500;
   while (Date.now() < flushDeadline) {
-    if (telemetry.latestIpcSample?.endReason || telemetry.lastNonZeroSample) {
-      break;
-    }
+    if (telemetry.latestIpcSample?.endReason) break;
     await Bun.sleep(50);
   }
 
@@ -249,9 +255,11 @@ export function buildMpvArgs(
   args.push("--autofit-larger=90%x90%");
   args.push("--cache=yes");
   args.push("--cache-pause=yes");
+  args.push("--cache-pause-initial=no");
   args.push("--cache-pause-wait=2");
-  args.push("--demuxer-readahead-secs=20");
-  args.push("--demuxer-max-bytes=128MiB");
+  args.push("--demuxer-readahead-secs=60");
+  args.push("--demuxer-max-bytes=200MiB");
+  args.push("--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=4");
   if (config?.mpv?.clean || config?.mpv?.noUserConfig) {
     args.push("--no-config");
   }

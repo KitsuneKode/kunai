@@ -9,10 +9,18 @@ import {
 } from "@/services/persistence/HistoryStore";
 import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
 
-import { resolveCommands } from "./commands";
-import { openListShell, type ListShellActionContext } from "./ink-shell";
+import { resolveCommands, type ResolvedAppCommand } from "./commands";
 import { waitForRootPicker } from "./root-picker-bridge";
 import type { ShellAction } from "./types";
+
+type ListShellActionContext = {
+  commands: readonly ResolvedAppCommand[];
+  onAction: (
+    action: ShellAction,
+  ) => Promise<"handled" | "quit" | "unhandled"> | "handled" | "quit" | "unhandled";
+  taskLabel?: string;
+  footerMode?: "detailed" | "minimal";
+};
 
 type HistoryAction =
   | { type: "entry"; id: string; title: string }
@@ -52,6 +60,7 @@ async function chooseOption<T>({
   options: readonly ShellOption<T>[];
   actionContext?: ListShellActionContext;
 }): Promise<T | null> {
+  const { openListShell } = await import("./ink-shell");
   return openListShell({ title, subtitle, options, actionContext });
 }
 
@@ -848,6 +857,11 @@ export async function openSettingsShell({
           detail: "Auto-skip preview segments when IntroDB timing exists",
         },
         {
+          value: "skipCredits" as const,
+          label: `Skip credits  ·  ${next.skipCredits ? "on" : "off"}`,
+          detail: "Skip to end of credits when detected; with autoNext on, advances immediately",
+        },
+        {
           value: "footerHints" as const,
           label: `Footer hints  ·  ${next.footerHints}`,
           detail: "Detailed keeps a two-line footer, minimal keeps only the task line",
@@ -1023,6 +1037,12 @@ export async function openSettingsShell({
 
     if (action === "skipPreview") {
       next.skipPreview = !next.skipPreview;
+      changed = true;
+      continue;
+    }
+
+    if (action === "skipCredits") {
+      next.skipCredits = !next.skipCredits;
       changed = true;
       continue;
     }

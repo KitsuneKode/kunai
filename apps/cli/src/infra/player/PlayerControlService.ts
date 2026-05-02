@@ -1,3 +1,5 @@
+import type { PlaybackTimingMetadata } from "@/domain/types";
+
 import type { LateSubtitleAttachment } from "./PlayerService";
 
 export type PlaybackControlAction =
@@ -15,6 +17,7 @@ export interface ActivePlayerControl {
   reloadSubtitles?(): Promise<void>;
   attachSubtitles?(attachment: LateSubtitleAttachment): Promise<number>;
   skipCurrentSegment?(): Promise<boolean>;
+  updateTiming?(timing: PlaybackTimingMetadata | null): void;
 }
 
 export interface PlayerControlService {
@@ -29,4 +32,5 @@ export interface PlayerControlService {
   skipCurrentSegment(reason?: string): Promise<boolean>;
   nextCurrentPlayback(reason?: string): Promise<boolean>;
   previousCurrentPlayback(reason?: string): Promise<boolean>;
+  updateCurrentPlaybackTiming(timing: PlaybackTimingMetadata | null, reason?: string): void;
 }
