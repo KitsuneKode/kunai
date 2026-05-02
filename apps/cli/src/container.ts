@@ -21,6 +21,7 @@ import type { CacheStore } from "./services/persistence/CacheStore";
 import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import type { SessionStateManager } from "./domain/session/SessionStateManager";
 import type { WorkControlService } from "./infra/work/WorkControlService";
+import type { MpvRuntimeOptions } from "./infra/player/mpv-runtime-options";
 import { initLogger } from "@/logger";
 import {
   getKunaiPaths,
@@ -90,6 +91,7 @@ export type ContainerDeps<T extends keyof Container> = Pick<Container, T>;
 
 export interface ContainerOptions {
   debug?: boolean;
+  mpv?: MpvRuntimeOptions;
 }
 
 /**
@@ -131,7 +133,13 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const browser = new BrowserServiceImpl({ logger, tracer, config, cacheStore, diagnosticsStore });
   const playerControl = new PlayerControlServiceImpl({ logger, diagnosticsStore });
   const workControl = new WorkControlServiceImpl({ logger, diagnosticsStore });
-  const player = new PlayerServiceImpl({ logger, tracer, diagnosticsStore, playerControl });
+  const player = new PlayerServiceImpl({
+    logger,
+    tracer,
+    diagnosticsStore,
+    playerControl,
+    mpv: options?.mpv,
+  });
 
   // Registries (depend on infrastructure)
   const providerRegistry = new ProviderRegistryImpl(

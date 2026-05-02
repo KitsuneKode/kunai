@@ -1,3 +1,5 @@
+import type { LateSubtitleAttachment } from "./PlayerService";
+
 export type PlaybackControlAction =
   | "stop"
   | "refresh"
@@ -11,6 +13,7 @@ export interface ActivePlayerControl {
   stop(reason?: string): Promise<void>;
   stopCurrentFile?(reason?: string): Promise<void>;
   reloadSubtitles?(): Promise<void>;
+  attachSubtitles?(attachment: LateSubtitleAttachment): Promise<number>;
   skipCurrentSegment?(): Promise<boolean>;
 }
 
@@ -22,6 +25,7 @@ export interface PlayerControlService {
   refreshCurrentPlayback(reason?: string): Promise<boolean>;
   fallbackCurrentPlayback(reason?: string): Promise<boolean>;
   reloadCurrentSubtitles(reason?: string): Promise<boolean>;
+  attachLateSubtitles(attachment: LateSubtitleAttachment, reason?: string): Promise<boolean>;
   skipCurrentSegment(reason?: string): Promise<boolean>;
   nextCurrentPlayback(reason?: string): Promise<boolean>;
   previousCurrentPlayback(reason?: string): Promise<boolean>;

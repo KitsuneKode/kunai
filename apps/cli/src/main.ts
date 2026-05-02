@@ -16,6 +16,7 @@
 import { createContainer } from "@/container";
 import { SessionController } from "@/app/SessionController";
 import type { TitleInfo } from "@/domain/types";
+import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 
 // Simple CLI arg parser
 export function parseArgs(argv: string[]): {
@@ -24,6 +25,7 @@ export function parseArgs(argv: string[]): {
   type?: string;
   anime: boolean;
   debug: boolean;
+  mpv: MpvRuntimeOptions;
 } {
   const args: {
     search?: string;
@@ -31,7 +33,8 @@ export function parseArgs(argv: string[]): {
     type?: string;
     anime: boolean;
     debug: boolean;
-  } = { anime: false, debug: false };
+    mpv: MpvRuntimeOptions;
+  } = { anime: false, debug: false, mpv: {} };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-S" || arg === "--search") {
@@ -44,6 +47,15 @@ export function parseArgs(argv: string[]): {
       args.anime = true;
     } else if (arg === "--debug") {
       args.debug = true;
+    } else if (arg === "--mpv-debug") {
+      args.mpv = { ...args.mpv, debug: true };
+    } else if (arg === "--mpv-clean") {
+      args.mpv = { ...args.mpv, clean: true };
+    } else if (arg === "--no-user-mpv-config") {
+      args.mpv = { ...args.mpv, noUserConfig: true };
+    } else if (arg === "--mpv-log-file") {
+      const value = argv[++i];
+      if (value) args.mpv = { ...args.mpv, logFile: value };
     }
   }
   return args;
@@ -65,7 +77,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const args = parseArgs(argv);
 
   // Bootstrap the DI container
-  const container = await createContainer({ debug: args.debug });
+  const container = await createContainer({ debug: args.debug, mpv: args.mpv });
   const { logger, config, stateManager, cacheStore } = container;
 
   // Prune expired cache entries at startup to prevent indefinite bloat

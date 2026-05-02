@@ -12,7 +12,8 @@ import type {
 } from "@/domain/types";
 import { buildMpvArgs, collectAdditionalSubtitleTracks } from "@/mpv";
 import type { ActivePlayerControl } from "./PlayerControlService";
-import type { PlayerPlaybackEvent } from "./PlayerService";
+import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
+import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcSocket } from "./mpv-ipc";
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "./playback-skip";
@@ -90,6 +91,7 @@ export class PersistentMpvSession {
       reloadSubtitles: async () => {
         await this.reloadSubtitles();
       },
+      attachSubtitles: async (attachment) => await this.attachSubtitles(attachment),
       skipCurrentSegment: async () => this.skipCurrentSegment(),
     };
   }
@@ -97,10 +99,11 @@ export class PersistentMpvSession {
   static async create(opts: {
     stream: StreamInfo;
     options: PlayerCycleOptions;
+    mpv?: MpvRuntimeOptions;
     onControlReady: (control: ActivePlayerControl | null) => void;
   }): Promise<PersistentMpvSession> {
     const session = new PersistentMpvSession(opts.stream, opts.options, opts.onControlReady);
-    await session.spawn();
+    await session.spawn(opts.mpv);
     return session;
   }
 
@@ -186,7 +189,7 @@ export class PersistentMpvSession {
     this.onControlReady(null);
   }
 
-  private async spawn(): Promise<void> {
+  private async spawn(mpvOptions?: MpvRuntimeOptions): Promise<void> {
     if (this.ipcPath) {
       await unlinkIfExists(this.ipcPath);
     }
@@ -203,7 +206,7 @@ export class PersistentMpvSession {
         startAt: this.initialOptions.startAt,
       },
       this.ipcPath,
-      { persistent: true, includeStartArg: false },
+      { persistent: true, includeStartArg: false, mpv: mpvOptions },
     );
 
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) =>
@@ -441,6 +444,38 @@ export class PersistentMpvSession {
     const active = this.activeCycle;
     if (!active || !this.ipcSession) return;
     await this.ipcSession.send(["sub-reload"], 1_000);
+  }
+
+  private async attachSubtitles(attachment: LateSubtitleAttachment): Promise<number> {
+    if (!this.ipcSession) return 0;
+    let attached = 0;
+
+    if (attachment.primarySubtitle) {
+      const result = await this.ipcSession.send(["sub-add", attachment.primarySubtitle, "select"]);
+      if (result.ok) attached += 1;
+    }
+
+    for (const track of collectAdditionalSubtitleTracks(
+      attachment.primarySubtitle ?? null,
+      attachment.subtitleTracks,
+    )) {
+      const result = await this.ipcSession.send([
+        "sub-add",
+        track.url,
+        "auto",
+        track.display ?? "",
+        track.language ?? "",
+      ]);
+      if (result.ok) attached += 1;
+    }
+
+    if (attached > 0) {
+      this.currentCycleOptions().onPlaybackEvent?.({
+        type: "late-subtitles-attached",
+        trackCount: attached,
+      });
+    }
+    return attached;
   }
 
   private currentCycleOptions(): PlayerCycleOptions {

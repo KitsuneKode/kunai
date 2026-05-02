@@ -351,6 +351,12 @@ function AppRoot({ container }: { container: Container }) {
   const canGoPrevious = Boolean(isSeriesPlayback && state.episodeNavigation.hasPrevious);
   const canToggleAutoplay = Boolean(isSeriesPlayback);
   const canStopAfterCurrent = Boolean(isSeriesPlayback);
+  const playbackCanCancel =
+    state.playbackStatus === "loading" ||
+    state.playbackStatus === "ready" ||
+    state.playbackStatus === "buffering" ||
+    state.playbackStatus === "seeking" ||
+    state.playbackStatus === "stalled";
 
   return (
     <Box flexDirection="column" width={shellWidth} height={shellHeight} paddingX={1} paddingY={0}>
@@ -406,8 +412,7 @@ function AppRoot({ container }: { container: Container }) {
                     state.playbackStatus === "stalled"
                       ? playbackSubtitleStatus
                       : undefined,
-                  cancellable:
-                    state.playbackStatus === "loading" || state.playbackStatus === "stalled",
+                  cancellable: playbackCanCancel,
                   trace: playbackTrace,
                   showMemory:
                     state.playbackStatus === "playing" ||
@@ -429,7 +434,10 @@ function AppRoot({ container }: { container: Container }) {
                       : undefined,
                 }}
                 onCancel={() => {
-                  void container.workControl.cancelActive("playback-loading-esc");
+                  const cancelledWork = container.workControl.cancelActive("playback-loading-esc");
+                  if (!cancelledWork) {
+                    void container.playerControl.stopCurrentPlayback("playback-loading-esc");
+                  }
                 }}
                 onStop={() => {
                   void container.playerControl.stopCurrentPlayback("playback-shell-q");

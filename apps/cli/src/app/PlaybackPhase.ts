@@ -13,6 +13,7 @@ import type {
   EpisodePickerOption,
   StreamInfo,
   PlaybackResult,
+  SubtitleTrack,
 } from "@/domain/types";
 import {
   buildPickerActionContext,
@@ -43,6 +44,11 @@ import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import { resolveWithFallback } from "@kunai/core";
 import { fetchPlaybackTimingMetadata } from "@/introdb";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
+import {
+  classifyPlaybackFailureFromEvent,
+  recoveryForPlaybackFailure,
+} from "@/infra/player/playback-failure-classifier";
+import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 
 export type PlaybackOutcome =
   | "back_to_search"
@@ -95,9 +101,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             ? `${event.cacheAheadSeconds.toFixed(1)}s cached ahead`
             : null;
         const percent = typeof event.percent === "number" ? `${Math.round(event.percent)}%` : null;
+        const recovery = recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event));
+        const status =
+          [percent, cacheAhead].filter(Boolean).join(" / ") || "mpv is filling HLS cache";
         return {
           detail: "Network buffering",
-          note: [percent, cacheAhead].filter(Boolean).join(" / ") || "mpv is filling HLS cache",
+          note: `${status} · ${recovery.label}`,
         };
       }
       case "subtitle-inventory-ready":
@@ -115,6 +124,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               ? `${event.trackCount} subtitle tracks attached`
               : "Primary subtitle attached",
         };
+      case "late-subtitles-attached":
+        return {
+          note: `${event.trackCount} late subtitle ${event.trackCount === 1 ? "track" : "tracks"} attached`,
+        };
       case "player-ready":
         return { detail: "Player controls ready" };
       case "playback-started":
@@ -122,12 +135,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       case "stream-stalled":
         return {
           detail: "Stream stalled",
-          note: `No playback progress for ${event.secondsWithoutProgress}s`,
+          note: `No playback progress for ${event.secondsWithoutProgress}s · ${recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event)).label}`,
         };
       case "seek-stalled":
         return {
           detail: "Seek stalled",
-          note: `mpv has been seeking for ${event.secondsSeeking}s`,
+          note: `mpv has been seeking for ${event.secondsSeeking}s · ${recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event)).label}`,
         };
       case "player-closing":
         return { detail: "Closing player" };
@@ -936,6 +949,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         detail: "Launching player",
         note: subtitleStatus,
       });
+      this.startLateSubtitleResolver({
+        stream,
+        title,
+        episode,
+        context,
+      });
       const result = await player.play(stream, {
         url: stream.url,
         headers: stream.headers,
@@ -974,6 +993,149 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     } finally {
       // resolved via status update
     }
+  }
+
+  private startLateSubtitleResolver({
+    stream,
+    title,
+    episode,
+    context,
+  }: {
+    stream: StreamInfo;
+    title: TitleInfo;
+    episode: EpisodeInfo;
+    context: PhaseContext;
+  }): void {
+    const { stateManager, diagnosticsStore, logger, playerControl } = context.container;
+    const requestedSubLang = stateManager.getState().subLang;
+    if (
+      requestedSubLang === "none" ||
+      stream.subtitle ||
+      stream.subtitleList?.length ||
+      !title.id
+    ) {
+      return;
+    }
+
+    diagnosticsStore.record({
+      category: "subtitle",
+      message: "Late subtitle lookup started",
+      context: {
+        titleId: title.id,
+        type: title.type,
+        season: episode.season,
+        episode: episode.episode,
+        requestedSubLang,
+      },
+    });
+
+    void (async () => {
+      try {
+        const result = await resolveSubtitlesByTmdbId({
+          tmdbId: title.id,
+          type: title.type,
+          season: title.type === "series" ? episode.season : undefined,
+          episode: title.type === "series" ? episode.episode : undefined,
+          preferredLang: requestedSubLang,
+        });
+
+        if (context.signal.aborted) return;
+        if (result.list.length === 0) {
+          diagnosticsStore.record({
+            category: "subtitle",
+            message: result.failed ? "Late subtitle lookup failed" : "Late subtitle lookup empty",
+            context: {
+              titleId: title.id,
+              requestedSubLang,
+              failed: result.failed,
+            },
+          });
+          return;
+        }
+
+        const mergedSubtitleList = mergeSubtitleTracks(
+          stream.subtitleList,
+          result.list as unknown as SubtitleTrack[],
+        );
+        const selected = selectSubtitle(mergedSubtitleList as never, requestedSubLang);
+        const selectedUrl = selected?.url ?? result.selected ?? null;
+        if (!selectedUrl) {
+          diagnosticsStore.record({
+            category: "subtitle",
+            message: "Late subtitle lookup found tracks but no selectable URL",
+            context: { titleId: title.id, trackCount: mergedSubtitleList.length },
+          });
+          return;
+        }
+
+        const attached = await this.attachLateSubtitlesWhenPlayerReady(context, {
+          primarySubtitle: selectedUrl,
+          subtitleTracks: mergedSubtitleList,
+        });
+        if (!attached) return;
+
+        const currentState = stateManager.getState();
+        if (
+          currentState.currentTitle?.id === title.id &&
+          currentState.currentEpisode?.season === episode.season &&
+          currentState.currentEpisode?.episode === episode.episode
+        ) {
+          stateManager.dispatch({
+            type: "SET_STREAM",
+            stream: {
+              ...stream,
+              subtitle: selectedUrl,
+              subtitleList: mergedSubtitleList,
+              subtitleSource: "wyzie",
+              subtitleEvidence: {
+                directSubtitleObserved: Boolean(stream.subtitleList?.length),
+                wyzieSearchObserved: true,
+                reason: "wyzie-selected",
+              },
+            },
+          });
+        }
+
+        diagnosticsStore.record({
+          category: "subtitle",
+          message: "Late subtitle lookup attached tracks",
+          context: {
+            titleId: title.id,
+            selected: selectedUrl,
+            trackCount: mergedSubtitleList.length,
+          },
+        });
+      } catch (error) {
+        if (context.signal.aborted) return;
+        logger.warn("Late subtitle lookup failed", { error: String(error) });
+        diagnosticsStore.record({
+          category: "subtitle",
+          message: "Late subtitle lookup failed",
+          context: { titleId: title.id, error: String(error) },
+        });
+      }
+    })();
+  }
+
+  private async attachLateSubtitlesWhenPlayerReady(
+    context: PhaseContext,
+    attachment: {
+      primarySubtitle: string;
+      subtitleTracks: readonly SubtitleTrack[];
+    },
+  ): Promise<boolean> {
+    const deadline = Date.now() + 30_000;
+    while (!context.signal.aborted && Date.now() < deadline) {
+      if (context.container.playerControl.getActive()) {
+        const attached = await context.container.playerControl.attachLateSubtitles(
+          attachment,
+          "late-subtitle-resolver",
+        );
+        if (attached) return true;
+      }
+      await Bun.sleep(250);
+    }
+    return false;
   }
 
   private async getAnimeEpisodeOptions({

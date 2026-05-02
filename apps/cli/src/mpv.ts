@@ -8,6 +8,8 @@ import type { PlaybackResult } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
+import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
+import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
 import {
   applyEndFileEvent,
@@ -35,6 +37,7 @@ export async function launchMpv(opts: {
   onControlReady?: (control: ActivePlayerControl | null) => void;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+  mpv?: MpvRuntimeOptions;
 }): Promise<PlaybackResult> {
   const nonce = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const ipcPath = process.platform === "win32" ? null : join(tmpdir(), `kunai-mpv-${nonce}.sock`);
@@ -43,7 +46,7 @@ export async function launchMpv(opts: {
     await unlinkIfExists(ipcPath);
   }
 
-  const args = buildMpvArgs(opts, ipcPath);
+  const args = buildMpvArgs(opts, ipcPath, { mpv: opts.mpv });
   const telemetry = createPlayerTelemetryState(ipcPath ?? undefined);
   const emitPlaybackEvent = opts.onPlaybackEvent ?? (() => {});
 
@@ -99,6 +102,11 @@ export async function launchMpv(opts: {
     },
     async reloadSubtitles() {
       void ipcSession?.send(["sub-reload"]);
+    },
+    async attachSubtitles(attachment: LateSubtitleAttachment) {
+      return await attachLateSubtitles(ipcSession, attachment, (trackCount) => {
+        emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
+      });
     },
     async skipCurrentSegment() {
       return trySkipSegment(false);
@@ -210,7 +218,7 @@ export function buildMpvArgs(
     startAt?: number;
   },
   ipcPath: string | null,
-  config?: { persistent?: boolean; includeStartArg?: boolean },
+  config?: { persistent?: boolean; includeStartArg?: boolean; mpv?: MpvRuntimeOptions },
 ): string[] {
   const args: string[] = [opts.url];
 
@@ -243,6 +251,16 @@ export function buildMpvArgs(
   args.push("--cache-pause-wait=2");
   args.push("--demuxer-readahead-secs=20");
   args.push("--demuxer-max-bytes=128MiB");
+  if (config?.mpv?.clean || config?.mpv?.noUserConfig) {
+    args.push("--no-config");
+  }
+  if (config?.mpv?.debug) {
+    args.push("--msg-level=all=v");
+    args.push("--term-msg-level=all=v");
+  }
+  if (config?.mpv?.logFile) {
+    args.push(`--log-file=${config.mpv.logFile}`);
+  }
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
 
   return args;
@@ -311,4 +329,34 @@ async function attachAdditionalSubtitles(
   if (additionalTracks.length > 0 || primarySubtitle) {
     onAttached?.(additionalTracks.length);
   }
+}
+
+async function attachLateSubtitles(
+  ipcSession: MpvIpcSession | null,
+  attachment: LateSubtitleAttachment,
+  onAttached?: (trackCount: number) => void,
+): Promise<number> {
+  if (!ipcSession) return 0;
+  let attached = 0;
+  if (attachment.primarySubtitle) {
+    const result = await ipcSession.send(["sub-add", attachment.primarySubtitle, "select"]);
+    if (result.ok) attached += 1;
+  }
+
+  for (const track of collectAdditionalSubtitleTracks(
+    attachment.primarySubtitle ?? null,
+    attachment.subtitleTracks,
+  )) {
+    const result = await ipcSession.send([
+      "sub-add",
+      track.url,
+      "auto",
+      track.display ?? "",
+      track.language ?? "",
+    ]);
+    if (result.ok) attached += 1;
+  }
+
+  if (attached > 0) onAttached?.(attached);
+  return attached;
 }

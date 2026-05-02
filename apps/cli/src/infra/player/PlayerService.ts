@@ -6,6 +6,7 @@
 
 import type { StreamInfo, PlaybackResult } from "@/domain/types";
 import type { PlaybackTimingMetadata } from "@/domain/types";
+import type { SubtitleTrack } from "@/domain/types";
 import type { PlaybackSkipKind } from "./playback-skip";
 
 export type PlayerPlaybackEvent =
@@ -24,6 +25,7 @@ export type PlayerPlaybackEvent =
     }
   | { type: "subtitle-inventory-ready"; trackCount: number }
   | { type: "subtitle-attached"; trackCount: number }
+  | { type: "late-subtitles-attached"; trackCount: number }
   | { type: "player-ready" }
   | { type: "playback-started" }
   | { type: "stream-stalled"; secondsWithoutProgress: number }
@@ -55,3 +57,8 @@ export interface PlayerService {
   releasePersistentSession(): Promise<void>;
   isAvailable(): Promise<boolean>;
 }
+
+export type LateSubtitleAttachment = {
+  readonly primarySubtitle?: string | null;
+  readonly subtitleTracks?: readonly SubtitleTrack[];
+};

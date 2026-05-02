@@ -4,7 +4,7 @@
 // Delegates to the existing mpv.ts for media playback.
 // =============================================================================
 
-import type { PlayerService, PlayerOptions } from "./PlayerService";
+import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./PlayerService";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
@@ -12,6 +12,12 @@ import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import { launchMpv } from "@/mpv";
 import type { PlayerControlService } from "./PlayerControlService";
 import { PersistentMpvSession } from "./PersistentMpvSession";
+import type { MpvRuntimeOptions } from "./mpv-runtime-options";
+import {
+  classifyPlaybackFailureFromEvent,
+  classifyPlaybackFailureFromResult,
+  recoveryForPlaybackFailure,
+} from "./playback-failure-classifier";
 
 export class PlayerServiceImpl implements PlayerService {
   private persistentSession: PersistentMpvSession | null = null;
@@ -22,6 +28,7 @@ export class PlayerServiceImpl implements PlayerService {
       tracer: Tracer;
       diagnosticsStore: DiagnosticsStore;
       playerControl: PlayerControlService;
+      mpv?: MpvRuntimeOptions;
     },
   ) {}
 
@@ -82,6 +89,8 @@ export class PlayerServiceImpl implements PlayerService {
           socketPathCleanedUp: result.socketPathCleanedUp ?? true,
           lastNonZeroPositionSeconds: result.lastNonZeroPositionSeconds ?? 0,
           lastNonZeroDurationSeconds: result.lastNonZeroDurationSeconds ?? 0,
+          failureClass: classifyPlaybackFailureFromResult(result),
+          recovery: recoveryForPlaybackFailure(classifyPlaybackFailureFromResult(result)),
         },
       });
 
@@ -138,7 +147,8 @@ export class PlayerServiceImpl implements PlayerService {
       skipPreview: options.skipPreview,
       onControlReady: (control) => this.deps.playerControl.setActive(control),
       onPlayerReady: options.onPlayerReady,
-      onPlaybackEvent: options.onPlaybackEvent,
+      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
+      mpv: this.deps.mpv,
     });
   }
 
@@ -168,8 +178,9 @@ export class PlayerServiceImpl implements PlayerService {
           skipIntro: options.skipIntro,
           skipPreview: options.skipPreview,
           onPlayerReady: options.onPlayerReady,
-          onPlaybackEvent: options.onPlaybackEvent,
+          onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
         },
+        mpv: this.deps.mpv,
         onControlReady: (control) => this.deps.playerControl.setActive(control),
       });
       const result = await this.persistentSession.waitForCurrentPlayback();
@@ -190,7 +201,7 @@ export class PlayerServiceImpl implements PlayerService {
       skipIntro: options.skipIntro,
       skipPreview: options.skipPreview,
       onPlayerReady: options.onPlayerReady,
-      onPlaybackEvent: options.onPlaybackEvent,
+      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
     });
 
     if (!this.persistentSession.isAlive()) {
@@ -199,5 +210,24 @@ export class PlayerServiceImpl implements PlayerService {
     }
 
     return result;
+  }
+
+  private wrapPlaybackEventHandler(
+    handler: ((event: PlayerPlaybackEvent) => void) | undefined,
+  ): (event: PlayerPlaybackEvent) => void {
+    return (event) => {
+      const failureClass = classifyPlaybackFailureFromEvent(event);
+      this.deps.diagnosticsStore.record({
+        category: "playback",
+        message: "MPV runtime event",
+        context: {
+          event: event.type,
+          ...event,
+          failureClass,
+          recovery: recoveryForPlaybackFailure(failureClass),
+        },
+      });
+      handler?.(event);
+    };
   }
 }

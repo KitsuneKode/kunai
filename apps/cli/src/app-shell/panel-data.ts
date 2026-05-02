@@ -30,6 +30,46 @@ function describeSubtitleState(state: SessionState): {
   return { label: "not found", tone: "warning" };
 }
 
+function findRecentMpvEvent(
+  recentEvents: readonly DiagnosticEvent[],
+  eventType: string,
+): DiagnosticEvent | undefined {
+  return recentEvents.find(
+    (event) => event.message === "MPV runtime event" && event.context?.event === eventType,
+  );
+}
+
+function formatMpvRuntimeDetail(event: DiagnosticEvent | undefined): string {
+  if (!event?.context) return "not observed yet";
+  const parts: string[] = [];
+  if (typeof event.context.percent === "number") {
+    parts.push(`${Math.round(event.context.percent)}%`);
+  }
+  if (typeof event.context.cacheAheadSeconds === "number") {
+    parts.push(`${event.context.cacheAheadSeconds.toFixed(1)}s cache ahead`);
+  }
+  if (typeof event.context.cacheSpeed === "number") {
+    parts.push(`${(event.context.cacheSpeed / 1024).toFixed(1)} KiB/s cache speed`);
+  }
+  if (typeof event.context.secondsWithoutProgress === "number") {
+    parts.push(`${event.context.secondsWithoutProgress}s without progress`);
+  }
+  if (typeof event.context.secondsSeeking === "number") {
+    parts.push(`${event.context.secondsSeeking}s seeking`);
+  }
+  if (event.context.failureClass && event.context.failureClass !== "none") {
+    parts.push(`class ${String(event.context.failureClass)}`);
+  }
+  if (
+    event.context.recovery &&
+    typeof event.context.recovery === "object" &&
+    "label" in event.context.recovery
+  ) {
+    parts.push(String(event.context.recovery.label));
+  }
+  return parts.length > 0 ? parts.join("  ·  ") : JSON.stringify(event.context);
+}
+
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
   return [
     {
@@ -124,6 +164,10 @@ export function buildDiagnosticsPanelLines({
   recentEvents: readonly DiagnosticEvent[];
 }): readonly ShellPanelLine[] {
   const subtitleState = describeSubtitleState(state);
+  const bufferingEvent = findRecentMpvEvent(recentEvents, "network-buffering");
+  const streamStallEvent = findRecentMpvEvent(recentEvents, "stream-stalled");
+  const seekStallEvent = findRecentMpvEvent(recentEvents, "seek-stalled");
+  const ipcStallEvent = findRecentMpvEvent(recentEvents, "ipc-stalled");
   return [
     {
       label: "Mode and provider",
@@ -181,6 +225,26 @@ export function buildDiagnosticsPanelLines({
     {
       label: "Memory",
       detail: `RSS ${(process.memoryUsage().rss / 1_048_576).toFixed(1)} MB`,
+    },
+    {
+      label: "mpv buffering",
+      detail: formatMpvRuntimeDetail(bufferingEvent),
+      tone: bufferingEvent ? "warning" : "neutral",
+    },
+    {
+      label: "mpv stream stall",
+      detail: formatMpvRuntimeDetail(streamStallEvent),
+      tone: streamStallEvent ? "warning" : "neutral",
+    },
+    {
+      label: "mpv seek stall",
+      detail: formatMpvRuntimeDetail(seekStallEvent),
+      tone: seekStallEvent ? "warning" : "neutral",
+    },
+    {
+      label: "mpv IPC stall",
+      detail: formatMpvRuntimeDetail(ipcStallEvent),
+      tone: ipcStallEvent ? "warning" : "neutral",
     },
     ...recentEvents.map((event) => ({
       label: `${new Date(event.timestamp).toLocaleTimeString()}  ·  ${event.category}`,

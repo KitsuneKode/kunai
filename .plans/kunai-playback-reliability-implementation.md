@@ -134,15 +134,17 @@ Add later debug flags:
 - Added conservative HLS mpv args.
 - Removed fixed subtitle waits after `.m3u8` interception in the scraper.
 - Changed browser scraping so active subtitle fallback is deferred instead of blocking stream return.
+- Added `--mpv-debug`, `--mpv-clean`, `--mpv-log-file`, and `--no-user-mpv-config`.
+- Added late subtitle lookup and runtime `sub-add` attachment.
+- Added diagnostics panel rows for mpv buffering, stream stalls, seek stalls, and IPC stalls.
+- Added playback failure classification and recovery guidance.
+- Added serialized playback control command execution.
 
 ## Remaining Follow-Up
 
-- Build the background subtitle resolver and late `sub-add` attachment pipeline.
-- Add user-facing mpv debug/clean flags.
-- Add a diagnostics overlay section for cache/buffering/seeking property history.
-- Add a dedicated command queue/state machine for `quit`, `stop`, `loadfile`, `seek`, and subtitle commands.
 - Add provider/source preference learning for subtitle quality and subtitle source success rate.
 - Benchmark HLS startup with the user config vs clean mpv config.
+- Promote the command queue into a fuller player actor if refresh/fallback/reload policies become more complex.
 
 ## Manual Verification Checklist
 
