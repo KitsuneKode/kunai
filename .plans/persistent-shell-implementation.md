@@ -298,7 +298,7 @@ Goal:
 
 Tasks:
 
-- rename `anime-base.ts` to `allanime-api-client.ts` and keep AllAnime API-client naming explicit
+- keep the AllManga-compatible API client in `packages/providers/src/allmanga/api-client.ts` so it is not mistaken for the generic anime base
 - update docs and references so it is not mistaken for a generic anime-provider base
 - reserve generic anime abstractions for shared concepts only
 

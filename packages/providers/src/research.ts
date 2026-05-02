@@ -51,11 +51,8 @@ export const providerResearchProfiles = [
     status: "production",
     migrationAction: "promote-direct-provider",
     migrationRank: 20,
-    dossierPath: ".docs/provider-dossiers/allanime-api-client.md",
-    evidencePaths: [
-      "apps/cli/src/services/providers/definitions/allanime-api-client.ts",
-      "~/Projects/osc/ani-cli",
-    ],
+    dossierPath: ".docs/provider-dossiers/allmanga-api-client.md",
+    evidencePaths: ["packages/providers/src/allmanga/api-client.ts", "~/Projects/osc/ani-cli"],
     runtimeClass: "node-fetch GraphQL + AES-256-CTR decode",
     implementationSource: "production-code",
     supportedContent: ["anime"],

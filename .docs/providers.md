@@ -135,7 +135,7 @@ Use `apps/experiments/scratchpads/provider-*` as the research lab. The reports a
 The current Provider SDK migration follows the updated dossiers, not the older legacy provider classes:
 
 1. `vidking` first: production direct Videasy payload/decryption path, with Playwright fallback only.
-2. `allanime` second: production GraphQL/AES client with ani-cli parity discipline.
+2. `allanime` / AllManga-compatible client second: production GraphQL/AES client with ani-cli parity discipline.
 3. `rivestream` and `miruro` next: candidate 0-RAM providers proven in scratchpads, pending fixtures.
 4. `anikai` after the runtime-browser package: it needs harvest-and-fetch/JIT Playwright boundaries.
 5. `braflix`, `cineby`, `bitcine`, and `cineby-anime` remain fallback/reference paths unless new research proves they are better than the direct routes.
@@ -195,25 +195,25 @@ export const MyApiProvider: ApiProvider = {
 };
 ```
 
-## Adding An AllAnime-API-Compatible Provider
+## Adding An AllManga-Compatible Provider
 
-AllAnime is one concrete anime provider/API client. It is not the base abstraction for anime providers.
+The AllManga-compatible client is one concrete anime provider/API client. It is not the base abstraction for anime providers.
 
-If a provider deliberately follows the same AllAnime/AllManga-style API contract as `allanime-api-client.ts`, use `createAllAnimeApiProvider()` instead of reimplementing that specific crypto and decoder path.
+If a provider deliberately follows the same AllManga/ani-cli-style API contract as `packages/providers/src/allmanga/api-client.ts`, use `createAllMangaApiProvider()` instead of reimplementing that specific crypto and decoder path.
 
 ```ts
-export const MyAllAnimeCompatible = createAllAnimeApiProvider({
+export const MyAllMangaCompatible = createAllMangaApiProvider({
   id: "myanime",
-  description: "Alternative AllAnime-compatible endpoint",
+  description: "Alternative AllManga-compatible endpoint",
   apiUrl: "https://example.com/api",
   referer: "https://example.com/",
   isAnimeProvider: true,
 });
 ```
 
-## AllAnime / AllManga Parity Policy
+## AllManga / Ani-CLI Parity Policy
 
-- `apps/cli/src/services/providers/definitions/allanime-api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired behavior it implements unless Kunai deliberately chooses a different contract
+- `packages/providers/src/allmanga/api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired behavior it implements unless Kunai deliberately chooses a different contract
 - when AllAnime or AllManga breaks, compare against ani-cli before guessing at a fix
 - on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli`
 - if ani-cli is also broken upstream, Kunai may carry a temporary local fix, but that divergence should be documented and easy to remove when parity can be restored
@@ -242,14 +242,14 @@ Recommended workflow:
 
 ## Current Providers
 
-| ID             | Kind       | Notes                                  |
-| -------------- | ---------- | -------------------------------------- |
+| ID             | Kind       | Notes                                            |
+| -------------- | ---------- | ------------------------------------------------ |
 | `vidking`      | API        | Direct Videasy resolver with Playwright fallback |
-| `cineby`       | Playwright | Needs click                            |
-| `bitcine`      | Playwright | Similar to Cineby                      |
-| `braflix`      | API        | HTTP metadata plus embed scrape        |
-| `allanime`     | API        | ani-cli parity logic                   |
-| `cineby-anime` | API        | HiAnime search plus anime embed scrape |
+| `cineby`       | Playwright | Needs click                                      |
+| `bitcine`      | Playwright | Similar to Cineby                                |
+| `braflix`      | API        | HTTP metadata plus embed scrape                  |
+| `allanime`     | API        | AllManga-compatible ani-cli parity logic         |
+| `cineby-anime` | API        | HiAnime search plus anime embed scrape           |
 
 ## User Overrides
 

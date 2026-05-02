@@ -1,15 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  buildStreamHeaders,
-  decodeTobeparsed,
-  resolveAnimeEpisodeString,
-} from "@/services/providers/definitions/allanime-api-client";
+import { buildStreamHeaders, decodeTobeparsed, resolveAnimeEpisodeString } from "../src/index";
 
 const TEST_KEY_RAW = "Xot36i3lK3:v1";
 
 describe("decodeTobeparsed", () => {
-  test("decodes the current versioned allanime blob layout", async () => {
+  test("decodes the current versioned allmanga blob layout", async () => {
     const plain =
       '{"sourceUrl":"--68656c6c6f","sourceName":"Default"}' +
       '{"sourceUrl":"--776f726c64","sourceName":"Yt-mp4"}';

@@ -4,9 +4,9 @@ export const ALLANIME_PROVIDER_ID = "allanime" as const;
 
 export const allanimeManifest = defineProviderManifest({
   id: ALLANIME_PROVIDER_ID,
-  displayName: "AllAnime",
-  description: "AllAnime / AllManga (anime, sub & dub, no browser needed)",
-  domain: "allanime.day",
+  displayName: "AllManga",
+  description: "AllManga-compatible anime API client (sub & dub, no browser needed)",
+  domain: "allmanga.to",
   recommended: false,
   mediaKinds: ["anime", "series"],
   capabilities: ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
@@ -41,7 +41,7 @@ export const allanimeManifest = defineProviderManifest({
   browserSafe: false,
   relaySafe: false,
   notes: [
-    "AllAnime uses local fetch/decode logic for search, catalog, and many source paths.",
+    "AllManga-compatible client uses local fetch/decode logic for search, catalog, and many source paths.",
     "Playwright remains declared because some extracted embed URLs can still require browser interception.",
   ],
 });

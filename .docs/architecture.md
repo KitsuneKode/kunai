@@ -56,17 +56,17 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 
 ## Runtime Modules
 
-| Area                  | Files                                             | Responsibility                                                                        |
-| --------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Area                  | Files                                                                     | Responsibility                                                                         |
+| --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`, `apps/cli/index.ts` wrapper | Default runtime orchestration in `apps/cli/src/main.ts`; wrapper is compatibility only |
-| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`               | Ink shell, commands, settings, history, and structured pickers                                  |
-| Search                | `apps/cli/src/search.ts`, `apps/cli/src/tmdb.ts`, `apps/cli/src/ui.ts`    | Search backends, metadata fetches, and dependency checks                                        |
-| Scraping              | `apps/cli/src/scraper.ts`                                                | Browser automation and network interception                                                     |
-| Playback              | `apps/cli/src/mpv.ts`                                                    | `mpv` launch and Lua-assisted progress tracking                                                 |
-| Persistence           | `apps/cli/src/config.ts`, `apps/cli/src/history.ts`                      | Config, watch progress, stream cache                                                            |
-| Providers             | `apps/cli/src/services/providers/*`                                      | Stream-source-specific resolution logic                                                         |
-| Terminal UI           | `apps/cli/src/design.ts`, `apps/cli/src/menu.ts`, `apps/cli/src/image.ts` | Shared styling tokens, ANSI helpers, posters                                                    |
-| Observability         | `apps/cli/src/logger.ts`                                                 | Structured debug logs                                                                           |
+| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                | Ink shell, commands, settings, history, and structured pickers                         |
+| Search                | `apps/cli/src/search.ts`, `apps/cli/src/tmdb.ts`, `apps/cli/src/ui.ts`    | Search backends, metadata fetches, and dependency checks                               |
+| Scraping              | `apps/cli/src/scraper.ts`                                                 | Browser automation and network interception                                            |
+| Playback              | `apps/cli/src/mpv.ts`                                                     | `mpv` launch and Lua-assisted progress tracking                                        |
+| Persistence           | `apps/cli/src/config.ts`, `apps/cli/src/history.ts`                       | Config, watch progress, stream cache                                                   |
+| Providers             | `apps/cli/src/services/providers/*`                                       | Stream-source-specific resolution logic                                                |
+| Terminal UI           | `apps/cli/src/design.ts`, `apps/cli/src/menu.ts`, `apps/cli/src/image.ts` | Shared styling tokens, ANSI helpers, posters                                           |
+| Observability         | `apps/cli/src/logger.ts`                                                  | Structured debug logs                                                                  |
 
 If your change is broad enough to blur these module boundaries, stop and check whether the work belongs in the v2 migration path instead.
 
@@ -116,9 +116,9 @@ For new providers or major provider hardening, do not jump straight from this do
 
 - `isAnimeProvider: true` is what includes a provider in anime mode
 - Episode numbering in the UI is always 1-based
-- `allanime-api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired API assumptions it implements unless the codebase deliberately chooses a new contract
+- `packages/providers/src/allmanga/api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired API assumptions it implements unless the codebase deliberately chooses a new contract
 
-### AllAnime API-client invariants
+### AllManga-Compatible API-client invariants
 
 - `KNOWN_SOURCES = ["Default", "Yt-mp4", "S-mp4", "Luf-Mp4"]`
 - `hexDecode` mirrors ani-cli provider decoding logic
@@ -160,13 +160,13 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 ## Persistence and Data Ownership
 
-| Data               | Path                                       | Owner            |
-| ------------------ | ------------------------------------------ | ---------------- |
-| Config             | `~/.config/kunai/config.json`              | `apps/cli/src/config.ts`  |
-| Provider overrides | `~/.config/kunai/providers.json`           | `apps/cli/src/config.ts`  |
-| Watch history      | OS app data dir `kunai-data.sqlite`         | `@kunai/storage` + CLI history store |
-| Stream cache       | OS cache dir `kunai-cache.sqlite`           | `@kunai/storage` + CLI cache store   |
-| Debug logs         | `./logs.txt`                               | `apps/cli/src/logger.ts`  |
+| Data               | Path                                | Owner                                |
+| ------------------ | ----------------------------------- | ------------------------------------ |
+| Config             | `~/.config/kunai/config.json`       | `apps/cli/src/config.ts`             |
+| Provider overrides | `~/.config/kunai/providers.json`    | `apps/cli/src/config.ts`             |
+| Watch history      | OS app data dir `kunai-data.sqlite` | `@kunai/storage` + CLI history store |
+| Stream cache       | OS cache dir `kunai-cache.sqlite`   | `@kunai/storage` + CLI cache store   |
+| Debug logs         | `./logs.txt`                        | `apps/cli/src/logger.ts`             |
 
 The SQLite storage model is described in [.plans/storage-hardening.md](../.plans/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
 

@@ -10,9 +10,8 @@ import type {
   SubtitleTrack,
   TitleInfo,
 } from "@/domain/types";
-import type { StreamData } from "@/scraper";
 import { allanimeManifest } from "@kunai/core";
-import { createAllAnimeApiProvider, fetchAllAnimeEpisodeCatalog } from "./allanime-api-client";
+import { createAllMangaApiProvider, fetchAllMangaEpisodeCatalog } from "@kunai/providers";
 
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import {
@@ -37,7 +36,7 @@ export class AllAnimeProvider implements Provider {
 
   readonly capabilities: ProviderCapabilities = manifestToProviderCapabilities(allanimeManifest);
 
-  private apiProvider = createAllAnimeApiProvider(ALLANIME_CONFIG);
+  private apiProvider = createAllMangaApiProvider(ALLANIME_CONFIG);
 
   constructor(private deps: ProviderDeps) {}
 
@@ -45,24 +44,15 @@ export class AllAnimeProvider implements Provider {
     return title.type === "series";
   }
 
-  async resolveStream(request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> {
-    const legacyOpts = {
-      subLang: request.subLang,
-      animeLang: this.deps.config.animeLang,
-      embedScraper: (embedUrl: string) =>
-        this.deps.browser.scrape({
-          url: embedUrl,
-          subLang: request.subLang,
-          signal,
-        }) as Promise<StreamData | null>,
-    };
-
+  async resolveStream(request: StreamRequest, _signal?: AbortSignal): Promise<StreamInfo | null> {
     const result = await this.apiProvider.resolveStream(
       request.title.id,
       request.title.type,
       request.episode?.season ?? 1,
       request.episode?.episode ?? 1,
-      legacyOpts,
+      {
+        animeLang: this.deps.config.animeLang,
+      },
     );
 
     if (!result) return null;
@@ -76,7 +66,9 @@ export class AllAnimeProvider implements Provider {
         url: result.url,
         headers: result.headers,
         subtitle: result.subtitle ?? undefined,
-        subtitleList: result.subtitleList as SubtitleTrack[] | undefined,
+        subtitleList: result.subtitleList.map(
+          (url): SubtitleTrack => ({ url, sourceName: "allmanga" }),
+        ),
         subtitleSource: result.subtitleSource,
         subtitleEvidence: result.subtitleEvidence,
         timestamp: result.timestamp,
@@ -88,7 +80,7 @@ export class AllAnimeProvider implements Provider {
     request: { title: TitleInfo },
     _signal?: AbortSignal,
   ): Promise<EpisodePickerOption[] | null> {
-    return fetchAllAnimeEpisodeCatalog({
+    return fetchAllMangaEpisodeCatalog({
       apiUrl: ALLANIME_CONFIG.apiUrl,
       referer: "https://allmanga.to",
       ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
