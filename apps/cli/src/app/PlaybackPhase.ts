@@ -5,23 +5,17 @@
 // Returns when user wants to go back to search or switch mode.
 // =============================================================================
 
-import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { routePlaybackShellAction } from "@/app-shell/command-router";
-import type {
-  TitleInfo,
-  EpisodeInfo,
-  EpisodePickerOption,
-  StreamInfo,
-  PlaybackResult,
-  SubtitleTrack,
-} from "@/domain/types";
+import { resolveCommands } from "@/app-shell/commands";
+import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import {
   buildPickerActionContext,
   openSubtitlePicker,
   handleShellAction,
 } from "@/app-shell/workflows";
-import { resolveCommands } from "@/app-shell/commands";
-import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
+import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
+import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
+import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
 import {
   didPlaybackReachCompletionThreshold,
   resolveEpisodeAvailability,
@@ -35,20 +29,26 @@ import {
   syncPlaybackSessionState,
   type PlaybackSessionState,
 } from "@/app/playback-session-controller";
-import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
-import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
 import { createResolveTraceStub } from "@/app/resolve-trace";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
-import { formatTimestamp } from "@/services/persistence/HistoryStore";
-import { fetchEpisodes, fetchSeasons } from "@/tmdb";
-import { resolveWithFallback } from "@kunai/core";
-import { fetchPlaybackTimingMetadata } from "@/introdb";
-import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
+import type {
+  TitleInfo,
+  EpisodeInfo,
+  EpisodePickerOption,
+  StreamInfo,
+  PlaybackResult,
+  SubtitleTrack,
+} from "@/domain/types";
 import {
   classifyPlaybackFailureFromEvent,
   recoveryForPlaybackFailure,
 } from "@/infra/player/playback-failure-classifier";
+import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
+import { fetchPlaybackTimingMetadata } from "@/introdb";
+import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
+import { fetchEpisodes, fetchSeasons } from "@/tmdb";
+import { resolveWithFallback } from "@kunai/core";
 
 export type PlaybackOutcome =
   | "back_to_search"

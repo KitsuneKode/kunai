@@ -1,6 +1,6 @@
 import type { SearchResult, ShellMode } from "../domain/types";
-import type { SearchRegistry } from "../services/search/SearchRegistry";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
+import type { SearchRegistry } from "../services/search/SearchRegistry";
 
 export type SearchRoutingContext = {
   mode: ShellMode;

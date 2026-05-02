@@ -1,9 +1,3 @@
-import {
-  adaptCliStreamResult,
-  createProviderCachePolicy,
-  type CoreProviderManifest,
-} from "@kunai/core";
-import type { EpisodeIdentity, ProviderRuntime, TitleIdentity } from "@kunai/types";
 import type {
   ContentType,
   EpisodeInfo,
@@ -13,6 +7,13 @@ import type {
   StreamInfo,
   TitleInfo,
 } from "@/domain/types";
+import {
+  adaptCliStreamResult,
+  createProviderCachePolicy,
+  type CoreProviderManifest,
+} from "@kunai/core";
+import type { EpisodeIdentity, ProviderRuntime, TitleIdentity } from "@kunai/types";
+
 import type { StreamRequest } from "./Provider";
 
 export function manifestToProviderMetadata(

@@ -1,5 +1,5 @@
-import type { SearchResult } from "@/domain/types";
 import type { BrowseShellOption } from "@/app-shell/types";
+import type { SearchResult } from "@/domain/types";
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
 

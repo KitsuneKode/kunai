@@ -1,11 +1,21 @@
-import React, { useEffect, useState } from "react";
-import { Box, useInput, useStdout } from "ink";
-
+import { useLineEditor } from "@/app-shell/line-editor";
 import type { Container } from "@/container";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { useLineEditor } from "@/app-shell/line-editor";
+import { Box, useInput, useStdout } from "ink";
+import React, { useEffect, useState } from "react";
 
+import { resolveCommands } from "./commands";
+import {
+  buildSettingsChoiceOverlay,
+  buildSettingsOptions,
+  buildSettingsProviderOptions,
+  buildSettingsSummary,
+  type BrowseOverlay,
+  OverlayPanel,
+  settingsEqual,
+  type SettingsChoiceValue,
+} from "./overlay-panel";
 import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
@@ -19,23 +29,12 @@ import {
   resolveRootHistorySelection,
   type RootHistorySelection,
 } from "./root-history-bridge";
-import {
-  buildSettingsChoiceOverlay,
-  buildSettingsOptions,
-  buildSettingsProviderOptions,
-  buildSettingsSummary,
-  type BrowseOverlay,
-  OverlayPanel,
-  settingsEqual,
-  type SettingsChoiceValue,
-} from "./overlay-panel";
 import { hasPendingRootPicker, resolveRootPicker } from "./root-picker-bridge";
 import { type RootOwnedOverlay } from "./root-shell-state";
 import { CommandPalette, useShellInput } from "./shell-command-ui";
 import { InlineBadge, ShellFooter } from "./shell-primitives";
 import type { FooterAction, ShellPanelLine } from "./types";
 import { applySettingsToRuntime, handleShellAction } from "./workflows";
-import { resolveCommands } from "./commands";
 
 export function RootOverlayShell({
   overlay,

@@ -1,13 +1,12 @@
-import React from "react";
-import { Box, Text, useInput, useStdout } from "ink";
-
 import { useLineEditor } from "@/app-shell/line-editor";
+import { Box, Text, useInput, useStdout } from "ink";
+import React from "react";
 
+import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { CommandPalette, LineEditorText, useShellInput } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
 import { palette, statusColor } from "./shell-theme";
 import type { FooterAction, ShellAction, ShellFooterMode, ShellStatus } from "./types";
-import type { AppCommandId, ResolvedAppCommand } from "./commands";
 
 export function ShellFrame({
   eyebrow: _eyebrow,

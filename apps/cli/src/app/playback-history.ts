@@ -1,5 +1,5 @@
-import type { PlaybackResult, PlaybackTimingMetadata } from "@/domain/types";
 import { didPlaybackReachCompletionThreshold } from "@/app/playback-policy";
+import type { PlaybackResult, PlaybackTimingMetadata } from "@/domain/types";
 
 export function shouldPersistHistory(
   result: PlaybackResult,

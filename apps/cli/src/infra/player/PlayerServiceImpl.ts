@@ -4,20 +4,21 @@
 // Delegates to the existing mpv.ts for media playback.
 // =============================================================================
 
-import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./PlayerService";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import { launchMpv } from "@/mpv";
-import type { PlayerControlService } from "./PlayerControlService";
-import { PersistentMpvSession } from "./PersistentMpvSession";
+import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
+import { PersistentMpvSession } from "./PersistentMpvSession";
 import {
   classifyPlaybackFailureFromEvent,
   classifyPlaybackFailureFromResult,
   recoveryForPlaybackFailure,
 } from "./playback-failure-classifier";
+import type { PlayerControlService } from "./PlayerControlService";
+import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./PlayerService";
 
 export class PlayerServiceImpl implements PlayerService {
   private persistentSession: PersistentMpvSession | null = null;

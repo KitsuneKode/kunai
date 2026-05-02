@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
-import { findActivePlaybackSkip } from "@/infra/player/playback-skip";
 import type { PlaybackTimingMetadata } from "@/domain/types";
+import { findActivePlaybackSkip } from "@/infra/player/playback-skip";
 
 const timing: PlaybackTimingMetadata = {
   tmdbId: "1396",

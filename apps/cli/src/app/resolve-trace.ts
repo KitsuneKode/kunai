@@ -1,6 +1,5 @@
-import type { ProviderId, ResolveTrace } from "@kunai/types";
-
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
+import type { ProviderId, ResolveTrace } from "@kunai/types";
 
 export function createResolveTraceStub({
   title,

@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import type { EpisodeInfo, PlaybackResult, TitleInfo } from "@/domain/types";
-
 import {
   didPlaybackEndNearNaturalEnd,
   getCompletionThresholdSeconds,
@@ -9,6 +7,7 @@ import {
   resolveEpisodeAvailability,
   toEpisodeNavigationState,
 } from "@/app/playback-policy";
+import type { EpisodeInfo, PlaybackResult, TitleInfo } from "@/domain/types";
 
 const SERIES_TITLE: TitleInfo = {
   id: "demo-series",

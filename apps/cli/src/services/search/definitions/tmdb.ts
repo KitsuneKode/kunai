@@ -4,8 +4,9 @@
 // Wraps the legacy searchVideasy() into the new SearchService interface.
 // =============================================================================
 
-import { searchVideasy } from "@/search";
 import type { SearchResult, TitleInfo, SearchMetadata } from "@/domain/types";
+import { searchVideasy } from "@/search";
+
 import type { SearchService, SearchDeps } from "../SearchService";
 
 export class TMDBSearchService implements SearchService {

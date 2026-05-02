@@ -1,5 +1,6 @@
-import type { ApiProvider, ApiSearchResult, ResolveOpts } from "./types";
 import { dbg, dbgErr } from "@/logger";
+
+import type { ApiProvider, ApiSearchResult, ResolveOpts } from "./types";
 
 // =============================================================================
 // Braflix  (braflix.mov — HTTP AJAX, no browser for metadata)

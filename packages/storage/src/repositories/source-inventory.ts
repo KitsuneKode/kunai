@@ -1,5 +1,5 @@
-import { isExpired } from "../ttl";
 import type { KunaiDatabase } from "../sqlite";
+import { isExpired } from "../ttl";
 
 export interface SourceInventoryEntry<TInventory = unknown> {
   readonly inventoryKey: string;

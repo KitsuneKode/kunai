@@ -5,10 +5,10 @@
 // Outer loop: Search → Playback → (repeat or quit)
 // =============================================================================
 
-import type { Container } from "@/container";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
-import type { TitleInfo } from "@/domain/types";
 import type { SearchPhaseInput } from "@/app/SearchPhase";
+import type { Container } from "@/container";
+import type { TitleInfo } from "@/domain/types";
 
 export type SessionOutcome = "quit" | "mode_switch";
 

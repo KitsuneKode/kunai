@@ -11,13 +11,10 @@ import type {
   SubtitleTrack,
 } from "@/domain/types";
 import { buildMpvArgs, collectAdditionalSubtitleTracks } from "@/mpv";
-import type { ActivePlayerControl } from "./PlayerControlService";
-import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
-import type { MpvRuntimeOptions } from "./mpv-runtime-options";
+
 import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcSocket } from "./mpv-ipc";
-import { findActivePlaybackSkip, type PlaybackSkipConfig } from "./playback-skip";
-import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
+import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -26,6 +23,10 @@ import {
   recordPlayerExit,
   type PlayerTelemetryState,
 } from "./mpv-telemetry";
+import { findActivePlaybackSkip, type PlaybackSkipConfig } from "./playback-skip";
+import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
+import type { ActivePlayerControl } from "./PlayerControlService";
+import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
 
 type PlayerCycleOptions = {
   displayTitle: string;
@@ -530,7 +531,10 @@ export class PersistentMpvSession {
     });
   }
 
-  private async waitForProcessClose(target: ChildProcess | null, timeoutMs: number): Promise<boolean> {
+  private async waitForProcessClose(
+    target: ChildProcess | null,
+    timeoutMs: number,
+  ): Promise<boolean> {
     if (!target) return true;
 
     return await new Promise<boolean>((resolve) => {

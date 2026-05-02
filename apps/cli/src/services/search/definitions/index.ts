@@ -5,8 +5,8 @@
 // =============================================================================
 
 import type { SearchServiceDefinition } from "../SearchService";
-import { createTMDBSearchService } from "./tmdb";
 import { createHiAnimeSearchService } from "./hianime";
+import { createTMDBSearchService } from "./tmdb";
 
 export const SEARCH_SERVICE_DEFINITIONS: SearchServiceDefinition[] = [
   {

@@ -1,7 +1,6 @@
-import React from "react";
-import { Box, Text } from "ink";
-
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { Box, Text } from "ink";
+import React from "react";
 
 import { Badge } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";

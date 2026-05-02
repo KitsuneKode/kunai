@@ -1,24 +1,33 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Box, Text, render, useInput, useStdout } from "ink";
+import { getShellViewportPolicy } from "@/app-shell/layout-policy";
+import { useLineEditor } from "@/app-shell/line-editor";
 import type { Container } from "@/container";
+import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { getShellViewportPolicy } from "@/app-shell/layout-policy";
-import type { SessionStateManager } from "@/domain/session/SessionStateManager";
-import { useLineEditor } from "@/app-shell/line-editor";
+import { Box, Text, render, useInput, useStdout } from "ink";
+import React, { useEffect, useRef, useState } from "react";
 
+import { type ResolvedAppCommand } from "./commands";
 import { buildBrowseDetailsPanel } from "./details-panel";
 import { deleteAllKittyImages, isChafaAvailable } from "./image-pane";
-import { usePosterPreview } from "./use-poster-preview";
 import { LoadingShell, useSpinner } from "./loading-shell";
-import { RootOverlayShell } from "./root-overlay-shell";
+import { OverlayPanel } from "./overlay-panel";
+import type { BrowseOverlay } from "./overlay-panel";
 import {
   clearRootContentSession,
   mountRootContent,
   useRootContentSession,
 } from "./root-content-state";
-import { ErrorShell, RootIdleShell } from "./root-status-shells";
+import { RootOverlayShell } from "./root-overlay-shell";
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
+import { ErrorShell, RootIdleShell } from "./root-status-shells";
+import {
+  CommandPalette,
+  fallbackCommandState,
+  getCommandMatches,
+  getHighlightedCommand,
+} from "./shell-command-ui";
+import { footerActionFromCommand, getCommandLabel, InputField, ShellFrame } from "./shell-frame";
 import {
   Badge,
   BrowseTitle,
@@ -29,17 +38,7 @@ import {
   ShellFooter,
 } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
-import { OverlayPanel } from "./overlay-panel";
-import type { BrowseOverlay } from "./overlay-panel";
 import { APP_LABEL, palette } from "./shell-theme";
-import { type ResolvedAppCommand } from "./commands";
-import {
-  CommandPalette,
-  fallbackCommandState,
-  getCommandMatches,
-  getHighlightedCommand,
-} from "./shell-command-ui";
-import { footerActionFromCommand, getCommandLabel, InputField, ShellFrame } from "./shell-frame";
 import {
   toShellAction,
   type FooterAction,
@@ -54,6 +53,7 @@ import {
   type ShellAction,
   type ShellFooterMode,
 } from "./types";
+import { usePosterPreview } from "./use-poster-preview";
 
 // =============================================================================
 // STDIN LIFECYCLE MANAGER

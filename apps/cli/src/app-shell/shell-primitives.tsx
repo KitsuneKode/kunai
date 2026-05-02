@@ -1,8 +1,8 @@
-import React from "react";
 import { Box, Text } from "ink";
+import React from "react";
 
-import type { FooterAction, ShellFooterMode } from "./types";
 import { hotkeyLabel, palette } from "./shell-theme";
+import type { FooterAction, ShellFooterMode } from "./types";
 
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "accent";

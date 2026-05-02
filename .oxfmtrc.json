@@ -1,9 +1,74 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": true,
+  "singleQuote": false,
+  "jsxSingleQuote": false,
+  "trailingComma": "all",
+  "bracketSpacing": true,
+  "bracketSameLine": false,
+  "arrowParens": "always",
+  "endOfLine": "lf",
+  "insertFinalNewline": true,
+  "objectWrap": "preserve",
+
+  "sortImports": {
+    "internalPattern": ["@/**", "@kunai/**"],
+    "groups": [
+      "builtin",
+      "external",
+      "internal",
+      ["parent", "sibling", "index"],
+      "style",
+      "unknown"
+    ],
+    "newlinesBetween": true,
+    "sortSideEffects": false
+  },
+
+  "sortPackageJson": {
+    "sortScripts": false
+  },
+
+  "sortTailwindcss": {
+    "functions": ["cn", "clsx", "cva", "twMerge"]
+  },
+
   "ignorePatterns": [
     "apps/experiments/**",
     "apps/cli/dist/**",
     "dist/**",
-    "node_modules/**"
+    "node_modules/**",
+
+    ".git/**",
+    ".turbo/**",
+    ".next/**",
+    ".cache/**",
+    "coverage/**",
+
+    "bun.lock",
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "yarn.lock",
+
+    "**/*.min.js",
+    "**/*.d.ts"
+  ],
+
+  "overrides": [
+    {
+      "files": ["*.json", "*.jsonc"],
+      "options": {
+        "printWidth": 120
+      }
+    },
+    {
+      "files": ["*.md"],
+      "options": {
+        "printWidth": 100
+      }
+    }
   ]
 }

@@ -5,7 +5,6 @@
 // Adding a provider = 1 file in this directory + 1 export here.
 // =============================================================================
 
-import type { ProviderDefinition } from "../Provider";
 import {
   allanimeManifest,
   bitcineManifest,
@@ -14,16 +13,18 @@ import {
   cinebyManifest,
   vidkingManifest,
 } from "@kunai/core";
-import { createVidKingProvider } from "./vidking";
-import { createCinebyProvider } from "./cineby";
-import { createBitCineProvider } from "./bitcine";
-import { createBraflixProvider } from "./braflix";
-import { createAllAnimeProvider } from "./allanime";
-import { createCinebyAnimeProvider } from "./cineby-anime";
+
 import {
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
+import type { ProviderDefinition } from "../Provider";
+import { createAllAnimeProvider } from "./allanime";
+import { createBitCineProvider } from "./bitcine";
+import { createBraflixProvider } from "./braflix";
+import { createCinebyProvider } from "./cineby";
+import { createCinebyAnimeProvider } from "./cineby-anime";
+import { createVidKingProvider } from "./vidking";
 
 export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
   {

@@ -2,8 +2,9 @@
 // Config Store Implementation (File-based)
 // =============================================================================
 
-import type { ConfigStore, KitsuneConfig } from "./ConfigStore";
 import type { StorageService } from "@/infra/storage/StorageService";
+
+import type { ConfigStore, KitsuneConfig } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
 
 const STORAGE_KEY = "config";

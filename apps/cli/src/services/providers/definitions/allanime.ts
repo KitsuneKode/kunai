@@ -13,12 +13,12 @@ import type {
 import { allanimeManifest } from "@kunai/core";
 import { createAllMangaApiProvider, fetchAllMangaEpisodeCatalog } from "@kunai/providers";
 
-import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import {
   attachProviderResolveResult,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
+import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
 const ALLANIME_CONFIG = {
   id: allanimeManifest.id,

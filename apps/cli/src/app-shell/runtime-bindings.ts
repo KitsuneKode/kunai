@@ -1,4 +1,3 @@
-import type { Container } from "@/container";
 import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
@@ -7,6 +6,7 @@ import {
   buildProviderPickerOptions,
 } from "@/app-shell/panel-data";
 import { applySettingsToRuntime } from "@/app-shell/workflows";
+import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 export function buildShellRuntimeBindings(container: Container) {

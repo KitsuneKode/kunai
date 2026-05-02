@@ -5,12 +5,12 @@
 import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
 import { cinebyAnimeManifest } from "@kunai/core";
 
-import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 import {
   attachProviderResolveResult,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
+import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
 export class CinebyAnimeProvider implements Provider {
   readonly metadata: ProviderMetadata = manifestToProviderMetadata(cinebyAnimeManifest);

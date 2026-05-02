@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
-import type { ProviderDeps } from "@/services/providers/Provider";
 import { createVidKingProvider } from "@/services/providers/definitions/vidking";
+import type { ProviderDeps } from "@/services/providers/Provider";
 import { createVidkingResultFromPayload } from "@kunai/providers";
 
 test("vidking resolves through the core provider result adapter", async () => {

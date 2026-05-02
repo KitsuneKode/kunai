@@ -9,11 +9,11 @@ import type {
   SubtitleTrack,
   TitleInfo,
 } from "@/domain/types";
-import { buildVidkingEmbedUrl, createProviderRuntimeContext, vidkingManifest } from "@kunai/core";
-import type { ProviderResolveInput, ProviderResolveResult, SubtitleCandidate } from "@kunai/types";
-import { resolveVidkingDirect } from "@kunai/providers";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
-import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
+import { buildVidkingEmbedUrl, createProviderRuntimeContext, vidkingManifest } from "@kunai/core";
+import { resolveVidkingDirect } from "@kunai/providers";
+import type { ProviderResolveInput, ProviderResolveResult, SubtitleCandidate } from "@kunai/types";
+
 import {
   attachProviderResolveResult,
   episodeToCoreIdentity,
@@ -21,6 +21,7 @@ import {
   manifestToProviderMetadata,
   titleToCoreIdentity,
 } from "../core-manifest-adapter";
+import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
 export class VidKingProvider implements Provider {
   readonly metadata: ProviderMetadata = manifestToProviderMetadata(vidkingManifest);

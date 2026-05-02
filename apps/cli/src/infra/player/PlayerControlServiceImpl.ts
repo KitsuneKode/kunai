@@ -1,5 +1,6 @@
 import type { Logger } from "@/infra/logger/Logger";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+
 import type {
   ActivePlayerControl,
   PlaybackControlAction,

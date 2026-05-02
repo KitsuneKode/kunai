@@ -1,5 +1,5 @@
-import type { PlayerPlaybackEvent } from "./PlayerService";
 import type { PlayerTelemetrySample } from "./mpv-telemetry";
+import type { PlayerPlaybackEvent } from "./PlayerService";
 
 export interface PlaybackWatchdog {
   observe(sample: PlayerTelemetrySample): void;

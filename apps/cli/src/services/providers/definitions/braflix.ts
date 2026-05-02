@@ -4,12 +4,13 @@
 
 import type { ProviderCapabilities, ProviderMetadata, StreamInfo, TitleInfo } from "@/domain/types";
 import { braflixManifest } from "@kunai/core";
-import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
+
 import {
   attachProviderResolveResult,
   manifestToProviderCapabilities,
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
+import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
 const DEFAULT_BASE = "https://braflix.mov";
 

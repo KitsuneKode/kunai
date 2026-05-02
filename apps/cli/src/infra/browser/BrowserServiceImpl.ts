@@ -4,15 +4,16 @@
 // Delegates to the existing scraper.ts for Playwright-based stream extraction.
 // =============================================================================
 
-import type { BrowserService, ScrapeOptions } from "./BrowserService";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
-import type { ConfigService } from "@/services/persistence/ConfigService";
-import type { CacheStore } from "@/services/persistence/CacheStore";
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import { scrapeStream, type ScrapeConfig } from "@/scraper";
+import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import type { CacheStore } from "@/services/persistence/CacheStore";
+import type { ConfigService } from "@/services/persistence/ConfigService";
 import { selectSubtitle } from "@/subtitle";
+
+import type { BrowserService, ScrapeOptions } from "./BrowserService";
 
 type ScrapeStreamFn = typeof scrapeStream;
 

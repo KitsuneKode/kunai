@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { Box, Text, useInput } from "ink";
-
 import { splitCursor, useLineEditor } from "@/app-shell/line-editor";
+import { Box, Text, useInput } from "ink";
+import React, { useEffect, useState } from "react";
 
 import {
   COMMANDS,

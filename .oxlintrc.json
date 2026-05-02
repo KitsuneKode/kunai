@@ -1,9 +1,109 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {
+    "builtin": true,
+    "node": true,
+    "browser": true,
+    "es2026": true
+  },
+  "plugins": [
+    "eslint",
+    "typescript",
+    "import",
+    "unicorn",
+    "promise",
+    "node",
+    "react",
+    "react-hooks",
+    "jsx-a11y"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "rules": {
+    "no-debugger": "error",
+    "no-console": "off",
+
+    "curly": "off",
+    "eqeqeq": "warn",
+
+    "no-await-in-loop": "off",
+    "no-underscore-dangle": "off",
+
+    "eslint/no-unused-vars": "off",
+    "typescript/no-unused-vars": "warn",
+
+    "typescript/no-explicit-any": "warn",
+    "typescript/no-non-null-assertion": "warn",
+
+    "import/no-cycle": "warn",
+    "promise/no-return-wrap": "warn",
+
+    "unicorn/prefer-node-protocol": "warn",
+    "unicorn/no-array-for-each": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/consistent-function-scoping": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "**/*.test.tsx",
+        "**/*.spec.tsx"
+      ],
+      "env": {
+        "vitest": true
+      },
+      "rules": {
+        "typescript/no-explicit-any": "off",
+        "typescript/no-non-null-assertion": "off",
+        "unicorn/consistent-function-scoping": "off"
+      }
+    },
+    {
+      "files": ["**/*.config.ts", "**/*.config.js", "scripts/**"],
+      "rules": {
+        "no-console": "off",
+        "typescript/no-explicit-any": "off"
+      }
+    },
+    {
+      "files": [
+        "packages/providers/**",
+        "apps/cli/src/services/providers/**",
+        "apps/cli/src/scraper.ts",
+        "apps/cli/src/search.ts",
+        "apps/cli/src/tmdb.ts"
+      ],
+      "rules": {
+        "no-await-in-loop": "off",
+        "typescript/no-explicit-any": "warn",
+        "typescript/no-non-null-assertion": "warn"
+      }
+    }
+  ],
   "ignorePatterns": [
     "apps/experiments/**",
     "apps/cli/dist/**",
     "dist/**",
-    "node_modules/**"
+    "node_modules/**",
+
+    ".git/**",
+    ".turbo/**",
+    ".next/**",
+    ".cache/**",
+    "coverage/**",
+
+    "bun.lock",
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "yarn.lock",
+
+    "**/*.min.js",
+    "**/*.d.ts"
   ]
 }

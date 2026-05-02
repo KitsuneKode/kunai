@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { Logger } from "@/infra/logger/Logger";
+
 import type { SessionState, StateTransition } from "./SessionState";
 import { createInitialState, reduceState } from "./SessionState";
 

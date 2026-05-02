@@ -1,5 +1,5 @@
-import { clearPosterSourceCache, fetchPosterSource, resolvePosterUrl } from "./poster-source-cache";
 import { deleteAllTerminalImages, deleteKittyImage, renderPoster } from "./poster-renderer";
+import { clearPosterSourceCache, fetchPosterSource, resolvePosterUrl } from "./poster-source-cache";
 import type { PosterResult } from "./poster-types";
 
 // LRU-style cache keyed by "url:WxH"

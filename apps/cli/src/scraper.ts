@@ -1,7 +1,7 @@
-import { chromium, type Browser, type Page, type Response } from "playwright";
 import type { StreamInfo, SubtitleEvidence } from "@/domain/types";
 import { dbg, dbgErr } from "@/logger";
 import { parseWyzieSubtitleList, selectSubtitle, type SubtitleEntry } from "@/subtitle";
+import { chromium, type Browser, type Page, type Response } from "playwright";
 
 // =============================================================================
 // TYPES

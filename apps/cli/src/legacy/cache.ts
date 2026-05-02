@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
 import { appendFile, readFile, writeFile } from "fs/promises";
+
 import type { StreamData } from "@/scraper";
 
 const CACHE_FILE = "stream_cache.json";

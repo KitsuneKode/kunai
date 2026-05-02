@@ -5,9 +5,11 @@
       "outputs": []
     },
     "lint": {
+      "cache": false,
       "outputs": []
     },
     "fmt": {
+      "cache": false,
       "outputs": []
     },
     "test": {

@@ -6,6 +6,7 @@ import type {
   ProviderRuntimeContext,
   ProviderTraceEvent,
 } from "@kunai/types";
+
 import type { CoreProviderManifest } from "./provider-manifest";
 
 export interface CoreProviderModule<

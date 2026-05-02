@@ -6,11 +6,9 @@ import { join } from "path";
 
 import type { PlaybackResult } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
-import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
-import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
-import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
-import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
+import { openMpvIpcSession, waitForMpvIpcSocket } from "@/infra/player/mpv-ipc";
+import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -18,9 +16,11 @@ import {
   finalizePlaybackResult,
   recordPlayerExit,
 } from "@/infra/player/mpv-telemetry";
-import { openMpvIpcSession, waitForMpvIpcSocket } from "@/infra/player/mpv-ipc";
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "@/infra/player/playback-skip";
 import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
+import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
+import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
+import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
 
 export async function launchMpv(opts: {
   url: string;
@@ -244,7 +244,8 @@ export function buildMpvArgs(
     args.push("--keep-open=no");
     args.push("--idle=no");
   }
-  args.push("--force-window=immediate");
+  args.push("--force-window=yes");
+  args.push("--autofit-smaller=1280x720");
   args.push("--autofit-larger=90%x90%");
   args.push("--cache=yes");
   args.push("--cache-pause=yes");

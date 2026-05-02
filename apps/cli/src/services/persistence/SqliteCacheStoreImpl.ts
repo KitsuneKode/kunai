@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
 
+import type { StreamInfo } from "@/domain/types";
 import { StreamCacheRepository } from "@kunai/storage";
 import type { StreamCandidate } from "@kunai/types";
-
-import type { StreamInfo } from "@/domain/types";
 
 import type { CacheStore } from "./CacheStore";
 import { DEFAULT_CACHE_TTL } from "./CacheStore";

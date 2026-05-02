@@ -5,23 +5,6 @@
 // and destructure only what they need.
 // =============================================================================
 
-import type { Logger } from "./infra/logger/Logger";
-import type { Tracer } from "./infra/tracer/Tracer";
-import type { ConfigService } from "./services/persistence/ConfigService";
-import type { ProviderRegistry } from "./services/providers/ProviderRegistry";
-import type { SearchRegistry } from "./services/search/SearchRegistry";
-import type { ShellService } from "./infra/shell/ShellService";
-import type { BrowserService } from "./infra/browser/BrowserService";
-import type { PlayerService } from "./infra/player/PlayerService";
-import type { PlayerControlService } from "./infra/player/PlayerControlService";
-import type { StorageService } from "./infra/storage/StorageService";
-import type { HistoryStore } from "./services/persistence/HistoryStore";
-import type { ConfigStore } from "./services/persistence/ConfigStore";
-import type { CacheStore } from "./services/persistence/CacheStore";
-import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
-import type { SessionStateManager } from "./domain/session/SessionStateManager";
-import type { WorkControlService } from "./infra/work/WorkControlService";
-import type { MpvRuntimeOptions } from "./infra/player/mpv-runtime-options";
 import { initLogger } from "@/logger";
 import {
   getKunaiPaths,
@@ -31,25 +14,42 @@ import {
   StreamCacheRepository,
 } from "@kunai/storage";
 
+import type { SessionStateManager } from "./domain/session/SessionStateManager";
+import { SessionStateManagerImpl } from "./domain/session/SessionStateManager";
+import type { BrowserService } from "./infra/browser/BrowserService";
+import { BrowserServiceImpl } from "./infra/browser/BrowserServiceImpl";
+import type { Logger } from "./infra/logger/Logger";
 // Import implementations
 import { StructuredLogger } from "./infra/logger/StructuredLogger";
-import { TracerImpl } from "./infra/tracer/TracerImpl";
-import { FileStorage } from "./infra/storage/FileStorage";
-import { ConfigServiceImpl } from "./services/persistence/ConfigServiceImpl";
-import { ConfigStoreImpl } from "./services/persistence/ConfigStoreImpl";
-import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
-import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
-import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
-import { SessionStateManagerImpl } from "./domain/session/SessionStateManager";
-import { WorkControlServiceImpl } from "./infra/work/WorkControlServiceImpl";
-import { ShellServiceImpl } from "./infra/shell/ShellServiceImpl";
-import { BrowserServiceImpl } from "./infra/browser/BrowserServiceImpl";
-import { PlayerServiceImpl } from "./infra/player/PlayerServiceImpl";
+import type { MpvRuntimeOptions } from "./infra/player/mpv-runtime-options";
+import type { PlayerControlService } from "./infra/player/PlayerControlService";
 import { PlayerControlServiceImpl } from "./infra/player/PlayerControlServiceImpl";
-import { ProviderRegistryImpl } from "./services/providers/ProviderRegistry";
+import type { PlayerService } from "./infra/player/PlayerService";
+import { PlayerServiceImpl } from "./infra/player/PlayerServiceImpl";
+import type { ShellService } from "./infra/shell/ShellService";
+import { ShellServiceImpl } from "./infra/shell/ShellServiceImpl";
+import { FileStorage } from "./infra/storage/FileStorage";
+import type { StorageService } from "./infra/storage/StorageService";
+import type { Tracer } from "./infra/tracer/Tracer";
+import { TracerImpl } from "./infra/tracer/TracerImpl";
+import type { WorkControlService } from "./infra/work/WorkControlService";
+import { WorkControlServiceImpl } from "./infra/work/WorkControlServiceImpl";
+import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
+import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
+import type { CacheStore } from "./services/persistence/CacheStore";
+import type { ConfigService } from "./services/persistence/ConfigService";
+import { ConfigServiceImpl } from "./services/persistence/ConfigServiceImpl";
+import type { ConfigStore } from "./services/persistence/ConfigStore";
+import { ConfigStoreImpl } from "./services/persistence/ConfigStoreImpl";
+import type { HistoryStore } from "./services/persistence/HistoryStore";
+import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
+import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
 import { PROVIDER_DEFINITIONS } from "./services/providers/definitions";
-import { SearchRegistryImpl } from "./services/search/SearchRegistry";
+import type { ProviderRegistry } from "./services/providers/ProviderRegistry";
+import { ProviderRegistryImpl } from "./services/providers/ProviderRegistry";
 import { SEARCH_SERVICE_DEFINITIONS } from "./services/search/definitions";
+import type { SearchRegistry } from "./services/search/SearchRegistry";
+import { SearchRegistryImpl } from "./services/search/SearchRegistry";
 
 /**
  * The container is the single source of truth for all dependencies.

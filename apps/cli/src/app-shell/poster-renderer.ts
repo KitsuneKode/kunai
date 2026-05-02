@@ -3,7 +3,6 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 import { isKittyCompatible } from "../image";
-
 import type { PosterResult } from "./poster-types";
 
 let _chafaAvailable: boolean | null = null;

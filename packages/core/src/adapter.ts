@@ -9,6 +9,7 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
+
 import { createResolveTrace, createTraceStep } from "./trace";
 
 export interface CliStreamInfoLike {

@@ -1,12 +1,4 @@
-import {
-  type HistoryEntry,
-  formatTimestamp,
-  isFinished,
-} from "@/services/persistence/HistoryStore";
-import type { Container } from "@/container";
-import { cyan, dim, yellow } from "@/menu";
-import { fetchEpisodes, fetchSeriesData } from "@/tmdb";
-import type { EpisodePickerOption } from "@/domain/types";
+import { openListShell } from "@/app-shell/ink-shell";
 import {
   buildPickerActionContext,
   chooseEpisodeFromOptions,
@@ -15,7 +7,15 @@ import {
   openAnimeEpisodeListPicker,
 } from "@/app-shell/workflows";
 import { resolveEpisodeAvailability } from "@/app/playback-policy";
-import { openListShell } from "@/app-shell/ink-shell";
+import type { Container } from "@/container";
+import type { EpisodePickerOption } from "@/domain/types";
+import { cyan, dim, yellow } from "@/menu";
+import {
+  type HistoryEntry,
+  formatTimestamp,
+  isFinished,
+} from "@/services/persistence/HistoryStore";
+import { fetchEpisodes, fetchSeriesData } from "@/tmdb";
 
 export type EpisodeSelection = {
   season: number;

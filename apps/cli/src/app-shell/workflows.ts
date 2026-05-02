@@ -1,18 +1,18 @@
 import type { KitsuneConfig } from "@/config";
-import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
-import type { EpisodePickerOption } from "@/domain/types";
 import type { Container } from "@/container";
+import type { EpisodePickerOption } from "@/domain/types";
 import {
   formatTimestamp,
   isFinished,
   type HistoryEntry,
   type HistoryStore,
 } from "@/services/persistence/HistoryStore";
-import type { ShellAction } from "./types";
-import { resolveCommands } from "./commands";
-import { waitForRootPicker } from "./root-picker-bridge";
+import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
 
+import { resolveCommands } from "./commands";
 import { openListShell, type ListShellActionContext } from "./ink-shell";
+import { waitForRootPicker } from "./root-picker-bridge";
+import type { ShellAction } from "./types";
 
 type HistoryAction =
   | { type: "entry"; id: string; title: string }

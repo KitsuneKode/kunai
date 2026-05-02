@@ -1,5 +1,5 @@
-import { createContainer } from "@/container";
 import { searchTitles } from "@/app/search-routing";
+import { createContainer } from "@/container";
 
 const container = await createContainer({ debug: true });
 const { searchRegistry, providerRegistry, config } = container;

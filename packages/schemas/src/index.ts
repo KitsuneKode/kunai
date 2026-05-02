@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type {
   CachePolicy,
   ProviderFailure,
@@ -10,6 +9,7 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
+import { z } from "zod";
 
 export const mediaKindSchema = z.enum(["movie", "series", "anime"]);
 export const providerRuntimeSchema = z.enum([

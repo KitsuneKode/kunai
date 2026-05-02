@@ -5,14 +5,14 @@
 // Returns the selected title or cancellation/quit signals.
 // =============================================================================
 
-import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
-import type { TitleInfo } from "@/domain/types";
-import { toBrowseResultOption } from "@/app/browse-option-mappers";
-import { searchTitles } from "@/app/search-routing";
 import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
+import { toBrowseResultOption } from "@/app/browse-option-mappers";
+import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
+import { searchTitles } from "@/app/search-routing";
+import type { TitleInfo } from "@/domain/types";
 
 export type SearchPhaseInput = {
   initialQuery?: string;

@@ -13,8 +13,8 @@
 // compatibility shim while migration residue is retired.
 // =============================================================================
 
-import { createContainer } from "@/container";
 import { SessionController } from "@/app/SessionController";
+import { createContainer } from "@/container";
 import type { TitleInfo } from "@/domain/types";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 

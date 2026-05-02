@@ -15,9 +15,9 @@
 // Nothing else needs to change.
 // =============================================================================
 
-import type { StreamData } from "@/scraper";
 import type { EpisodePickerOption } from "@/domain/types";
 import { dbg, dbgErr } from "@/logger";
+import type { StreamData } from "@/scraper";
 
 // ── Legacy Adapter Types (retained for this API client) ────────────────────────
 

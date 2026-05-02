@@ -7,6 +7,7 @@
 import type { StreamInfo, PlaybackResult } from "@/domain/types";
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
+
 import type { PlaybackSkipKind } from "./playback-skip";
 
 export type PlayerPlaybackEvent =

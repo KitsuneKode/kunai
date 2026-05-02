@@ -1,8 +1,8 @@
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
+import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
+import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 

@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { TitleInfo, ProviderMetadata } from "@/domain/types";
+
 import type { Provider, ProviderDefinition, ProviderDeps } from "./Provider";
 
 export interface ProviderRegistry {

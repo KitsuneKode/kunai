@@ -3,9 +3,9 @@ import { describe, expect, mock, test } from "bun:test";
 import { BrowserServiceImpl } from "@/infra/browser/BrowserServiceImpl";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
+import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 
 function createLogger(): Logger {
   const noop = () => {};

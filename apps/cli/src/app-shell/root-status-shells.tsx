@@ -1,7 +1,6 @@
-import React from "react";
-import { Box, Text, useInput } from "ink";
-
 import type { SessionState } from "@/domain/session/SessionState";
+import { Box, Text, useInput } from "ink";
+import React from "react";
 
 import { LocalSection } from "./shell-primitives";
 import { palette } from "./shell-theme";

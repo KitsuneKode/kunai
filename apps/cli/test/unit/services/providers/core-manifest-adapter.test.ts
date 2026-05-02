@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 
-import { allanimeManifest, cinebyAnimeManifest, vidkingManifest } from "@kunai/core";
 import {
   attachProviderResolveResult,
   episodeToCoreIdentity,
@@ -8,6 +7,7 @@ import {
   manifestToProviderMetadata,
   titleToCoreIdentity,
 } from "@/services/providers/core-manifest-adapter";
+import { allanimeManifest, cinebyAnimeManifest, vidkingManifest } from "@kunai/core";
 
 test("core provider manifest maps to the current CLI provider shape", () => {
   const metadata = manifestToProviderMetadata(vidkingManifest);

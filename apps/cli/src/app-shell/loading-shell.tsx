@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
+import React, { useEffect, useState } from "react";
 
-import type { LoadingShellState } from "./types";
 import { Badge, DetailLine } from "./shell-primitives";
 import { palette } from "./shell-theme";
+import type { LoadingShellState } from "./types";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 

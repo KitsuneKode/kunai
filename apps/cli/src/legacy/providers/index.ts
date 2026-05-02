@@ -7,12 +7,12 @@
 //   Nothing else needs to change.
 // =============================================================================
 
-import { VidKing } from "./vidking";
-import { Cineby } from "./cineby";
-import { BitCine } from "./bitcine";
 import { AllAnime } from "./allanime";
+import { BitCine } from "./bitcine";
 import { Braflix } from "./braflix";
+import { Cineby } from "./cineby";
 import { CinebyAnime } from "./cineby-anime";
+import { VidKing } from "./vidking";
 
 export type {
   Provider,

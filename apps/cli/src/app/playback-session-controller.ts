@@ -1,15 +1,15 @@
-import type { PlaybackControlAction } from "@/infra/player/PlayerControlService";
+import {
+  didPlaybackEndNearNaturalEnd,
+  getAutoAdvanceEpisode,
+  type EpisodeAvailability,
+} from "@/app/playback-policy";
 import type {
   EpisodeInfo,
   PlaybackResult,
   PlaybackTimingMetadata,
   TitleInfo,
 } from "@/domain/types";
-import {
-  didPlaybackEndNearNaturalEnd,
-  getAutoAdvanceEpisode,
-  type EpisodeAvailability,
-} from "@/app/playback-policy";
+import type { PlaybackControlAction } from "@/infra/player/PlayerControlService";
 
 export type PlaybackAutoplayPauseReason = "user" | "interrupted" | null;
 export type PlaybackSessionMode = "manual" | "autoplay-chain";

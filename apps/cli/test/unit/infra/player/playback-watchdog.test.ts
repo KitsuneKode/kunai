@@ -28,19 +28,19 @@ describe("playback-watchdog", () => {
     nowMs = 0;
     nextTimerId = 1;
 
-    globalThis.setInterval = (((callback: (...args: unknown[]) => void) => {
+    globalThis.setInterval = ((callback: (...args: unknown[]) => void) => {
       const id = nextTimerId++;
       timers.push({
         id,
         callback: callback as () => void,
       });
       return id as unknown as ReturnType<typeof setInterval>;
-    }) as unknown) as typeof setInterval;
+    }) as unknown as typeof setInterval;
 
-    globalThis.clearInterval = (((id: ReturnType<typeof setInterval>) => {
+    globalThis.clearInterval = ((id: ReturnType<typeof setInterval>) => {
       const resolvedId = Number(id as unknown as number);
       timers = timers.filter((timer) => timer.id !== resolvedId);
-    }) as unknown) as typeof clearInterval;
+    }) as unknown as typeof clearInterval;
 
     Date.now = () => nowMs;
   };
@@ -58,14 +58,17 @@ describe("playback-watchdog", () => {
 
   test("does not emit stream-stalled after long user pause then resume", () => {
     const events: PlayerPlaybackEvent[] = [];
-    const watchdog = createPlaybackWatchdog((event) => {
-      events.push(event);
-    }, {
-      intervalMs: 100,
-      stallAfterMs: 1_000,
-      seekStallAfterMs: 700,
-      cacheStallAfterMs: 1_500,
-    });
+    const watchdog = createPlaybackWatchdog(
+      (event) => {
+        events.push(event);
+      },
+      {
+        intervalMs: 100,
+        stallAfterMs: 1_000,
+        seekStallAfterMs: 700,
+        cacheStallAfterMs: 1_500,
+      },
+    );
 
     watchdog.observe({
       source: "ipc",
@@ -107,14 +110,17 @@ describe("playback-watchdog", () => {
 
   test("emits stream-stalled when paused-for-cache remains starved", () => {
     const events: PlayerPlaybackEvent[] = [];
-    const watchdog = createPlaybackWatchdog((event) => {
-      events.push(event);
-    }, {
-      intervalMs: 100,
-      stallAfterMs: 2_000,
-      seekStallAfterMs: 700,
-      cacheStallAfterMs: 500,
-    });
+    const watchdog = createPlaybackWatchdog(
+      (event) => {
+        events.push(event);
+      },
+      {
+        intervalMs: 100,
+        stallAfterMs: 2_000,
+        seekStallAfterMs: 700,
+        cacheStallAfterMs: 500,
+      },
+    );
 
     watchdog.observe({
       source: "ipc",

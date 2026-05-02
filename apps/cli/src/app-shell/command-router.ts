@@ -1,8 +1,8 @@
-import type { Container } from "@/container";
 import { switchSessionMode } from "@/app/mode-switch";
+import type { Container } from "@/container";
 import type { TitleInfo } from "@/domain/types";
-import { waitForRootHistorySelection } from "./root-history-bridge";
 
+import { waitForRootHistorySelection } from "./root-history-bridge";
 import type { ShellAction } from "./types";
 import { handleShellAction } from "./workflows";
 

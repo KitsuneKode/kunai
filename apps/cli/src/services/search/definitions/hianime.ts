@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { SearchResult, TitleInfo, SearchMetadata } from "@/domain/types";
+
 import type { SearchService, SearchDeps } from "../SearchService";
 
 const HIANIME_SEARCH = "https://anime-db.videasy.net/api/v2/hianime/search";

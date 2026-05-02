@@ -1,4 +1,5 @@
 import type { PlaybackResult } from "@/domain/types";
+
 import type { PlayerPlaybackEvent } from "./PlayerService";
 
 export type PlaybackFailureClass =

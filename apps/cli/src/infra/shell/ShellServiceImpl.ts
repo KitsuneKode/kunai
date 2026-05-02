@@ -2,10 +2,10 @@
 // Shell Service Implementation
 // =============================================================================
 
-import type { ShellService, ShellState, ModalType } from "./ShellService";
+import type { SessionStateManager } from "../../domain/session/SessionStateManager";
 import type { Logger } from "../logger/Logger";
 import type { Tracer } from "../tracer/Tracer";
-import type { SessionStateManager } from "../../domain/session/SessionStateManager";
+import type { ShellService, ShellState, ModalType } from "./ShellService";
 
 export class ShellServiceImpl implements ShellService {
   private state: ShellState = { mode: "searching", query: "", results: [], selectedIndex: 0 };

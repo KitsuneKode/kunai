@@ -2,8 +2,8 @@
 // History Store Implementation
 // =============================================================================
 
-import type { HistoryStore, HistoryEntry } from "./HistoryStore";
 import type { StorageService } from "../../infra/storage/StorageService";
+import type { HistoryStore, HistoryEntry } from "./HistoryStore";
 
 const STORAGE_KEY = "history";
 
