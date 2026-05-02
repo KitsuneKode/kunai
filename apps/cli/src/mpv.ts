@@ -18,6 +18,7 @@ import {
 } from "@/infra/player/mpv-telemetry";
 import { openMpvIpcSession, waitForMpvIpcSocket } from "@/infra/player/mpv-ipc";
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "@/infra/player/playback-skip";
+import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 
 export async function launchMpv(opts: {
   url: string;
@@ -44,6 +45,7 @@ export async function launchMpv(opts: {
 
   const args = buildMpvArgs(opts, ipcPath);
   const telemetry = createPlayerTelemetryState(ipcPath ?? undefined);
+  const emitPlaybackEvent = opts.onPlaybackEvent ?? (() => {});
 
   const mpv = spawn("mpv", args, {
     detached: false,
@@ -54,7 +56,9 @@ export async function launchMpv(opts: {
   let ipcSession: MpvIpcSession | null = null;
   let stopRequested = false;
   let playerReadyNotified = false;
+  let playbackStartedNotified = false;
   let currentPositionSeconds = 0;
+  const watchdog = createPlaybackWatchdog(emitPlaybackEvent);
   const skippedSegments = new Set<string>();
   const skipConfig: PlaybackSkipConfig = {
     skipRecap: opts.skipRecap ?? true,
@@ -64,8 +68,13 @@ export async function launchMpv(opts: {
   const notifyPlayerReady = () => {
     if (playerReadyNotified) return;
     playerReadyNotified = true;
-    opts.onPlaybackEvent?.({ type: "player-ready" });
+    emitPlaybackEvent({ type: "player-ready" });
     opts.onPlayerReady?.();
+  };
+  const notifyPlaybackStarted = () => {
+    if (playbackStartedNotified) return;
+    playbackStartedNotified = true;
+    emitPlaybackEvent({ type: "playback-started" });
   };
   const trySkipSegment = (automatic: boolean) => {
     const activeSkip = findActivePlaybackSkip(opts.timing, currentPositionSeconds, skipConfig);
@@ -74,7 +83,7 @@ export async function launchMpv(opts: {
     }
     skippedSegments.add(activeSkip.key);
     void ipcSession.send(["seek", activeSkip.endSeconds, "absolute"]);
-    opts.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic });
+    emitPlaybackEvent({ type: "segment-skipped", kind: activeSkip.kind, automatic });
     return true;
   };
   const control: ActivePlayerControl = {
@@ -83,7 +92,7 @@ export async function launchMpv(opts: {
       if (stopRequested) return;
       stopRequested = true;
       if (ipcSession) {
-        void ipcSession.send(["quit"]);
+        await ipcSession.send(["quit"], 1_000);
         return;
       }
       mpv.kill("SIGTERM");
@@ -96,6 +105,7 @@ export async function launchMpv(opts: {
     },
   };
   opts.onControlReady?.(control);
+  emitPlaybackEvent({ type: "mpv-process-started" });
 
   const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
     (resolve) => {
@@ -126,8 +136,14 @@ export async function launchMpv(opts: {
       socketPath: ipcPath,
       onPropertyUpdate: ({ name, value, observedAt }) => {
         applyObservedPropertySample(telemetry, { name, value, observedAt });
+        if (telemetry.latestIpcSample) {
+          watchdog.observe(telemetry.latestIpcSample);
+        }
         if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
           currentPositionSeconds = value;
+          if (value > 0) {
+            notifyPlaybackStarted();
+          }
           trySkipSegment(true);
         }
       },
@@ -136,21 +152,28 @@ export async function launchMpv(opts: {
       },
       onCommandResult: (result) => {
         if (!result.ok) {
-          opts.onPlaybackEvent?.({
+          emitPlaybackEvent({
             type: "ipc-command-failed",
             command: String(result.command[0] ?? "unknown"),
             error: result.error,
           });
+          if (result.error === "timeout") {
+            emitPlaybackEvent({
+              type: "ipc-stalled",
+              command: String(result.command[0] ?? "unknown"),
+              error: result.error,
+            });
+          }
         }
       },
     });
 
-    opts.onPlaybackEvent?.({ type: "ipc-connected" });
-    opts.onPlaybackEvent?.({ type: "opening-stream" });
+    emitPlaybackEvent({ type: "ipc-connected" });
+    emitPlaybackEvent({ type: "opening-stream" });
     notifyPlayerReady();
     void attachAdditionalSubtitles(ipcSession, opts.subtitle, opts.subtitleTracks, (trackCount) => {
-      opts.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
-      opts.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
+      emitPlaybackEvent({ type: "subtitle-inventory-ready", trackCount });
+      emitPlaybackEvent({ type: "subtitle-attached", trackCount });
     });
   })().catch(() => {});
 
@@ -168,7 +191,8 @@ export async function launchMpv(opts: {
   }
 
   await closeIpcSession(ipcSession);
-  opts.onPlaybackEvent?.({ type: "player-closed" });
+  watchdog.stop();
+  emitPlaybackEvent({ type: "player-closed" });
   const socketPathCleanedUp = ipcPath ? await cleanupSocket(ipcPath) : true;
 
   opts.onControlReady?.(null);
@@ -186,7 +210,7 @@ export function buildMpvArgs(
     startAt?: number;
   },
   ipcPath: string | null,
-  config?: { persistent?: boolean },
+  config?: { persistent?: boolean; includeStartArg?: boolean },
 ): string[] {
   const args: string[] = [opts.url];
 
@@ -201,7 +225,9 @@ export function buildMpvArgs(
     args.push(`--sub-file=${opts.subtitle}`);
   }
 
-  if (opts.startAt && opts.startAt > 5) args.push(`--start=${opts.startAt}`);
+  if ((config?.includeStartArg ?? true) && opts.startAt && opts.startAt > 5) {
+    args.push(`--start=${opts.startAt}`);
+  }
   args.push(`--force-media-title=${opts.displayTitle}`);
   if (config?.persistent) {
     args.push("--keep-open=yes");
@@ -212,6 +238,11 @@ export function buildMpvArgs(
   }
   args.push("--force-window=immediate");
   args.push("--autofit-larger=90%x90%");
+  args.push("--cache=yes");
+  args.push("--cache-pause=yes");
+  args.push("--cache-pause-wait=2");
+  args.push("--demuxer-readahead-secs=20");
+  args.push("--demuxer-max-bytes=128MiB");
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
 
   return args;

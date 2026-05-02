@@ -107,20 +107,6 @@ describe("BrowserServiceImpl", () => {
     const scrapeStreamImpl = mock(async () => {
       throw new Error("browser scrape should not be called");
     });
-    const resolveSubtitlesByTmdbIdImpl = mock(async () => ({
-      list: [
-        {
-          id: "1",
-          url: "https://sub.wyzie.io/c/demo/id/1?format=srt",
-          language: "en",
-          display: "English",
-          release: "Demo.S01E02",
-        },
-      ],
-      selected: "https://sub.wyzie.io/c/demo/id/1?format=srt",
-      failed: false,
-    }));
-
     const service = new BrowserServiceImpl({
       logger: createLogger(),
       tracer: createTracer(),
@@ -128,7 +114,6 @@ describe("BrowserServiceImpl", () => {
       cacheStore,
       diagnosticsStore: createDiagnosticsStore(),
       scrapeStreamImpl,
-      resolveSubtitlesByTmdbIdImpl,
     });
 
     const result = await service.scrape({
@@ -142,12 +127,11 @@ describe("BrowserServiceImpl", () => {
 
     expect(result?.subtitle).toBeUndefined();
     expect(result?.subtitleSource).toBe("none");
-    expect(resolveSubtitlesByTmdbIdImpl).toHaveBeenCalledTimes(0);
     expect(scrapeStreamImpl).toHaveBeenCalledTimes(0);
     expect(cacheSet).toHaveBeenCalledTimes(0);
   });
 
-  test("enriches scraped streams with the full wyzie subtitle list when passive sniff lacks tracks", async () => {
+  test("returns scraped streams without blocking on active subtitle lookup", async () => {
     const cacheStore: CacheStore = {
       ttl: 1000,
       get: async () => null,
@@ -167,27 +151,6 @@ describe("BrowserServiceImpl", () => {
       title: "Bloodhounds",
       timestamp: Date.now(),
     }));
-    const resolveSubtitlesByTmdbIdImpl = mock(async () => ({
-      list: [
-        {
-          id: "1",
-          url: "https://sub.wyzie.io/c/demo/id/1?format=srt",
-          language: "en",
-          display: "English",
-          release: "Demo.S01E02",
-        },
-        {
-          id: "2",
-          url: "https://sub.wyzie.io/c/demo/id/2?format=srt",
-          language: "ar",
-          display: "Arabic",
-          release: "Demo.S01E02",
-        },
-      ],
-      selected: "https://sub.wyzie.io/c/demo/id/1?format=srt",
-      failed: false,
-    }));
-
     const service = new BrowserServiceImpl({
       logger: createLogger(),
       tracer: createTracer(),
@@ -195,7 +158,6 @@ describe("BrowserServiceImpl", () => {
       cacheStore,
       diagnosticsStore: createDiagnosticsStore(),
       scrapeStreamImpl,
-      resolveSubtitlesByTmdbIdImpl,
     });
 
     const result = await service.scrape({
@@ -207,10 +169,9 @@ describe("BrowserServiceImpl", () => {
       episode: 2,
     });
 
-    expect(result?.subtitle).toBe("https://sub.wyzie.io/c/demo/id/1?format=srt");
-    expect(result?.subtitleSource).toBe("wyzie");
-    expect(result?.subtitleList).toHaveLength(2);
-    expect(resolveSubtitlesByTmdbIdImpl).toHaveBeenCalledTimes(1);
+    expect(result?.subtitle).toBeUndefined();
+    expect(result?.subtitleSource).toBe("none");
+    expect(result?.subtitleList).toHaveLength(0);
     expect(scrapeStreamImpl).toHaveBeenCalledTimes(1);
   });
 });

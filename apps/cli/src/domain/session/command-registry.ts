@@ -233,7 +233,12 @@ function resolveCommandState(
 ): { enabled: boolean; reason?: string } {
   const hasEpisode = state.currentEpisode !== null;
   const inSeriesContext = state.currentTitle?.type === "series" && hasEpisode;
-  const resolving = state.playbackStatus === "loading";
+  const resolving =
+    state.playbackStatus === "loading" ||
+    state.playbackStatus === "ready" ||
+    state.playbackStatus === "buffering" ||
+    state.playbackStatus === "seeking" ||
+    state.playbackStatus === "stalled";
   const hasOverlay = state.activeModals.length > 0;
 
   switch (id) {

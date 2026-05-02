@@ -169,4 +169,39 @@ describe("mpv-telemetry", () => {
     expect(result.duration).toBe(600);
     expect(result.endReason).toBe("quit");
   });
+
+  test("tracks mpv buffering and seeking diagnostics without changing progress", () => {
+    const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
+    applyObservedPropertySample(telemetry, {
+      name: "playback-time",
+      value: 32,
+      observedAt: 100,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "paused-for-cache",
+      value: true,
+      observedAt: 110,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "demuxer-cache-duration",
+      value: 5.25,
+      observedAt: 111,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "cache-speed",
+      value: 1_000_000,
+      observedAt: 112,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "seeking",
+      value: true,
+      observedAt: 113,
+    });
+
+    expect(telemetry.latestIpcSample?.positionSeconds).toBe(32);
+    expect(telemetry.latestIpcSample?.pausedForCache).toBe(true);
+    expect(telemetry.latestIpcSample?.demuxerCacheDurationSeconds).toBe(5.25);
+    expect(telemetry.latestIpcSample?.cacheSpeedBytesPerSecond).toBe(1_000_000);
+    expect(telemetry.latestIpcSample?.seeking).toBe(true);
+  });
 });

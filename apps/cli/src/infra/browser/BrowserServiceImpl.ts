@@ -12,10 +12,9 @@ import type { ConfigService } from "@/services/persistence/ConfigService";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import { scrapeStream, type ScrapeConfig } from "@/scraper";
-import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
+import { selectSubtitle } from "@/subtitle";
 
 type ScrapeStreamFn = typeof scrapeStream;
-type ResolveSubtitlesByTmdbIdFn = typeof resolveSubtitlesByTmdbId;
 
 export class BrowserServiceImpl implements BrowserService {
   constructor(
@@ -26,15 +25,12 @@ export class BrowserServiceImpl implements BrowserService {
       cacheStore: CacheStore;
       diagnosticsStore: DiagnosticsStore;
       scrapeStreamImpl?: ScrapeStreamFn;
-      resolveSubtitlesByTmdbIdImpl?: ResolveSubtitlesByTmdbIdFn;
     },
   ) {}
 
   async scrape(options: ScrapeOptions): Promise<StreamInfo | null> {
     const requestedSubLang = options.subLang ?? this.deps.config.subLang;
     const scrapeStreamImpl = this.deps.scrapeStreamImpl ?? scrapeStream;
-    const resolveSubtitlesByTmdbIdImpl =
-      this.deps.resolveSubtitlesByTmdbIdImpl ?? resolveSubtitlesByTmdbId;
     const cached = await this.deps.cacheStore.get(options.url);
     if (cached) {
       let activeSubtitle = cached.subtitle;
@@ -91,21 +87,18 @@ export class BrowserServiceImpl implements BrowserService {
 
     if (!result) return null;
 
-    let scrapeSubtitle = result.subtitle ?? undefined;
-    let scrapeSubtitleList = result.subtitleList as SubtitleTrack[] | undefined;
-    let scrapeSubtitleSource = result.subtitleSource;
-    let scrapeSubtitleEvidence = result.subtitleEvidence;
+    const scrapeSubtitle = result.subtitle ?? undefined;
+    const scrapeSubtitleList = result.subtitleList as SubtitleTrack[] | undefined;
+    const scrapeSubtitleSource = result.subtitleSource;
+    const scrapeSubtitleEvidence = result.subtitleEvidence;
 
-    // Active Wyzie resolution: if the passive sniff found no subtitle and we
-    // have a TMDB ID, query Wyzie directly. This covers the Vidking/lazy-load
-    // case documented in .docs/subtitle-resolver-analysis.md.
     if (
       requestedSubLang !== "none" &&
       options.tmdbId &&
       options.titleType &&
       (!scrapeSubtitle || !scrapeSubtitleList?.length)
     ) {
-      this.deps.logger.info("No subtitle from passive sniff — trying active Wyzie", {
+      this.deps.logger.info("No subtitle from passive sniff; deferring active subtitle lookup", {
         tmdbId: options.tmdbId,
         titleType: options.titleType,
         season: options.season,
@@ -114,52 +107,17 @@ export class BrowserServiceImpl implements BrowserService {
       });
       this.deps.diagnosticsStore.record({
         category: "subtitle",
-        message: "Passive sniff found no subtitle — falling back to active Wyzie fetch",
+        message:
+          "Passive sniff found no subtitle; playback will not wait for active subtitle lookup",
         context: {
           tmdbId: options.tmdbId,
           titleType: options.titleType,
           season: options.season,
           episode: options.episode,
           requestedSubLang,
+          reason: "subtitle-resolution-deferred",
         },
       });
-
-      const wyzieResult = await resolveSubtitlesByTmdbIdImpl({
-        tmdbId: options.tmdbId,
-        type: options.titleType,
-        season: options.season,
-        episode: options.episode,
-        preferredLang: requestedSubLang,
-      });
-
-      if (wyzieResult.list.length > 0) {
-        const mergedSubtitleList = mergeSubtitleTracks(
-          scrapeSubtitleList,
-          wyzieResult.list as unknown as SubtitleTrack[],
-        );
-        const mergedPick = selectSubtitle(mergedSubtitleList as never, requestedSubLang);
-        scrapeSubtitle = mergedPick?.url ?? wyzieResult.selected ?? scrapeSubtitle ?? undefined;
-        scrapeSubtitleList = mergedSubtitleList;
-        scrapeSubtitleSource =
-          scrapeSubtitleList.length > wyzieResult.list.length ? "direct" : "wyzie";
-        scrapeSubtitleEvidence = {
-          directSubtitleObserved: Boolean(result.subtitleList?.length),
-          wyzieSearchObserved: true,
-          reason: scrapeSubtitle ? "wyzie-selected" : "wyzie-empty",
-        };
-        this.deps.logger.info("Active Wyzie resolved subtitles", {
-          selected: scrapeSubtitle ?? null,
-          total: wyzieResult.list.length,
-        });
-      } else {
-        this.deps.diagnosticsStore.record({
-          category: "subtitle",
-          message: wyzieResult.failed
-            ? "Active Wyzie fetch failed"
-            : "Active Wyzie found no tracks",
-          context: { tmdbId: options.tmdbId, requestedSubLang },
-        });
-      }
     }
 
     const stream = {

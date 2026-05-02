@@ -62,6 +62,7 @@ export interface SubtitleEvidence {
     | "wyzie-selected"
     | "wyzie-empty"
     | "wyzie-failed"
+    | "search-observed"
     | "not-observed"
     | "cache-refresh-needed";
 }

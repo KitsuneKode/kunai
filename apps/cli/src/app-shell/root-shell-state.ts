@@ -62,7 +62,14 @@ export function resolveRootShellSurface(
   if (state.playbackStatus === "error") {
     return "error";
   }
-  if (state.playbackStatus === "loading" || state.playbackStatus === "playing") {
+  if (
+    state.playbackStatus === "loading" ||
+    state.playbackStatus === "ready" ||
+    state.playbackStatus === "buffering" ||
+    state.playbackStatus === "seeking" ||
+    state.playbackStatus === "stalled" ||
+    state.playbackStatus === "playing"
+  ) {
     return "playback";
   }
   if (hasRootContent) {

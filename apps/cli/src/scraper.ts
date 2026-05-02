@@ -1,12 +1,7 @@
 import { chromium, type Browser, type Page, type Response } from "playwright";
 import type { StreamInfo, SubtitleEvidence } from "@/domain/types";
 import { dbg, dbgErr } from "@/logger";
-import {
-  fetchSubtitlesFromWyzie,
-  parseWyzieSubtitleList,
-  selectSubtitle,
-  type SubtitleEntry,
-} from "@/subtitle";
+import { parseWyzieSubtitleList, selectSubtitle, type SubtitleEntry } from "@/subtitle";
 
 // =============================================================================
 // TYPES
@@ -162,28 +157,8 @@ export async function scrapeStream(
 
     let directSubUrl: string | null = null;
     let wyzieSearchUrl: string | null = null;
-    let wyzieSearchHeaders: Record<string, string> | undefined;
     let wyzieBrowserList: SubtitleEntry[] | null = null;
-    let wyzieBrowserFailed = false;
-    const wyzieBrowserWaiters: Array<() => void> = [];
     let scrapedTitle = "Unknown";
-
-    const notifyWyzieBrowserWaiters = () => {
-      while (wyzieBrowserWaiters.length > 0) {
-        wyzieBrowserWaiters.shift()?.();
-      }
-    };
-
-    const waitForWyzieBrowserResponse = async (timeoutMs: number) => {
-      if (wyzieBrowserList || wyzieBrowserFailed) return;
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(resolve, timeoutMs);
-        wyzieBrowserWaiters.push(() => {
-          clearTimeout(timeout);
-          resolve();
-        });
-      });
-    };
 
     const streamData = await new Promise<StreamData | null>((resolve) => {
       let streamFound = false;
@@ -201,8 +176,6 @@ export async function scrapeStream(
           });
 
           if (!response.ok()) {
-            wyzieBrowserFailed = true;
-            notifyWyzieBrowserWaiters();
             return;
           }
 
@@ -212,10 +185,7 @@ export async function scrapeStream(
             subtitleCount: wyzieBrowserList.length,
           });
         } catch (error) {
-          wyzieBrowserFailed = true;
           dbgErr("scraper", "wyzie browser response parse failed", error);
-        } finally {
-          notifyWyzieBrowserWaiters();
         }
       };
 
@@ -235,10 +205,9 @@ export async function scrapeStream(
         // Wyzie subtitle search — capture the full URL (contains embedded API key)
         if (!wyzieSearchUrl && url.includes("sub.wyzie.io/search")) {
           wyzieSearchUrl = url;
-          wyzieSearchHeaders = req.headers();
           dbg("scraper", "wyzie search URL captured", {
             url,
-            headerKeys: Object.keys(wyzieSearchHeaders),
+            headerKeys: Object.keys(req.headers()),
           });
         }
 
@@ -249,69 +218,45 @@ export async function scrapeStream(
           const streamHeaders = req.headers();
           dbg("scraper", "m3u8 intercepted", { streamUrl });
 
-          setTimeout(async () => {
-            // Give Wyzie a little more time to emit its subtitle search request.
-            if (!directSubUrl && !wyzieSearchUrl) {
-              await Bun.sleep(3000);
-            }
+          const browserPick = wyzieBrowserList ? selectSubtitle(wyzieBrowserList, subLang) : null;
+          const subtitle = directSubUrl ?? browserPick?.url ?? null;
+          const subtitleList: unknown[] = wyzieBrowserList ?? [];
+          const subtitleSource: StreamData["subtitleSource"] = directSubUrl
+            ? "direct"
+            : subtitle
+              ? "wyzie"
+              : "none";
+          const subtitleReason: StreamData["subtitleEvidence"]["reason"] = directSubUrl
+            ? "direct-file"
+            : subtitle
+              ? "wyzie-selected"
+              : wyzieSearchUrl
+                ? "search-observed"
+                : "not-observed";
 
-            let subtitle: string | null = directSubUrl;
-            let subtitleList: unknown[] = [];
-            let subtitleSource: StreamData["subtitleSource"] = directSubUrl ? "direct" : "none";
-            let subtitleReason: StreamData["subtitleEvidence"]["reason"] = directSubUrl
-              ? "direct-file"
-              : "not-observed";
-
-            if (!subtitle && wyzieSearchUrl) {
-              await waitForWyzieBrowserResponse(3500);
-              const browserPick = wyzieBrowserList
-                ? selectSubtitle(wyzieBrowserList, subLang)
-                : null;
-              if (browserPick || (wyzieBrowserList && wyzieBrowserList.length > 0)) {
-                subtitle = browserPick?.url ?? null;
-                subtitleList = wyzieBrowserList ?? [];
-              } else {
-                const result = await fetchSubtitlesFromWyzie(
-                  wyzieSearchUrl,
-                  subLang,
-                  wyzieSearchHeaders,
-                );
-                subtitle = result.selected;
-                subtitleList = result.list;
-                wyzieBrowserFailed = wyzieBrowserFailed || result.failed;
-              }
-              subtitleSource = subtitle ? "wyzie" : "none";
-              subtitleReason = subtitle
-                ? "wyzie-selected"
-                : wyzieBrowserFailed
-                  ? "wyzie-failed"
-                  : "wyzie-empty";
-            }
-
-            const result = {
-              url: streamUrl,
-              headers: streamHeaders,
-              subtitle,
-              subtitleList,
-              subtitleSource,
-              subtitleEvidence: {
-                directSubtitleObserved: Boolean(directSubUrl),
-                wyzieSearchObserved: Boolean(wyzieSearchUrl),
-                reason: subtitleReason,
-              },
-              title: scrapedTitle,
-              timestamp: Date.now(),
-            };
-            dbg("scraper", "resolved", {
-              subtitle,
-              subtitleCount: subtitleList.length,
-              subtitleSource,
-              subtitleReason,
+          const result = {
+            url: streamUrl,
+            headers: streamHeaders,
+            subtitle,
+            subtitleList,
+            subtitleSource,
+            subtitleEvidence: {
               directSubtitleObserved: Boolean(directSubUrl),
               wyzieSearchObserved: Boolean(wyzieSearchUrl),
-            });
-            resolve(result);
-          }, 2000);
+              reason: subtitleReason,
+            },
+            title: scrapedTitle,
+            timestamp: Date.now(),
+          };
+          dbg("scraper", "resolved", {
+            subtitle,
+            subtitleCount: subtitleList.length,
+            subtitleSource,
+            subtitleReason,
+            directSubtitleObserved: Boolean(directSubUrl),
+            wyzieSearchObserved: Boolean(wyzieSearchUrl),
+          });
+          resolve(result);
         }
       };
 

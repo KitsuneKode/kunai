@@ -23,8 +23,10 @@ export class SessionController {
 
   constructor(private container: Container) {}
 
-  public shutdown(): void {
+  public async shutdown(): Promise<void> {
     this.abortController.abort();
+    this.container.workControl.setActive(null);
+    await this.container.player.releasePersistentSession();
   }
 
   async run(bootstrap: SessionBootstrap = {}): Promise<void> {

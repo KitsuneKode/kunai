@@ -31,6 +31,9 @@ export type PlaybackStatus =
   | "idle"
   | "loading"
   | "ready"
+  | "buffering"
+  | "seeking"
+  | "stalled"
   | "playing"
   | "paused"
   | "finished"
@@ -317,6 +320,9 @@ export function reduceState(state: SessionState, transition: StateTransition): S
     case "SET_PLAYBACK_STATUS":
       const keepPlaybackFeedback =
         transition.status === "loading" ||
+        transition.status === "buffering" ||
+        transition.status === "seeking" ||
+        transition.status === "stalled" ||
         transition.status === "playing" ||
         transition.status === "paused";
       return {

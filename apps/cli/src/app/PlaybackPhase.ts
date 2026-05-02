@@ -72,14 +72,34 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     switch (event.type) {
       case "launching-player":
         return { detail: "Launching player" };
+      case "mpv-process-started":
+        return { detail: "mpv launched" };
       case "ipc-connected":
         return { detail: "Player control connected" };
       case "ipc-command-failed":
         return {
           note: `Player command failed: ${event.command} (${event.error})`,
         };
+      case "ipc-stalled":
+        return {
+          detail: "Player control stalled",
+          note: `mpv did not answer ${event.command}; playback may still be alive`,
+        };
       case "opening-stream":
-        return { detail: "Opening stream" };
+        return { detail: "Opening provider stream" };
+      case "resolving-playback":
+        return { detail: "Resolving playback" };
+      case "network-buffering": {
+        const cacheAhead =
+          typeof event.cacheAheadSeconds === "number"
+            ? `${event.cacheAheadSeconds.toFixed(1)}s cached ahead`
+            : null;
+        const percent = typeof event.percent === "number" ? `${Math.round(event.percent)}%` : null;
+        return {
+          detail: "Network buffering",
+          note: [percent, cacheAhead].filter(Boolean).join(" / ") || "mpv is filling HLS cache",
+        };
+      }
       case "subtitle-inventory-ready":
         return {
           detail: "Attaching subtitles",
@@ -96,7 +116,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               : "Primary subtitle attached",
         };
       case "player-ready":
-        return { detail: "Player active" };
+        return { detail: "Player controls ready" };
+      case "playback-started":
+        return { detail: "Playing" };
+      case "stream-stalled":
+        return {
+          detail: "Stream stalled",
+          note: `No playback progress for ${event.secondsWithoutProgress}s`,
+        };
+      case "seek-stalled":
+        return {
+          detail: "Seek stalled",
+          note: `mpv has been seeking for ${event.secondsSeeking}s`,
+        };
       case "player-closing":
         return { detail: "Closing player" };
       case "player-closed":
@@ -919,12 +951,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         skipPreview: config.skipPreview,
         onPlaybackEvent: (event) => {
           this.updatePlaybackFeedback(context, this.describePlayerEvent(event));
+          if (event.type === "network-buffering") {
+            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "buffering" });
+          } else if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
+            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "stalled" });
+          } else if (event.type === "seek-stalled") {
+            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "seeking" });
+          } else if (event.type === "playback-started") {
+            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
+          }
         },
         onPlayerReady: () => {
           this.updatePlaybackFeedback(context, {
-            detail: "Player active",
+            detail: "Player controls ready",
           });
-          stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
+          stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "ready" });
         },
       });
 

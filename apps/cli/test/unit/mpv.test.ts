@@ -18,9 +18,32 @@ test("buildMpvArgs only attaches the primary subtitle during initial launch", ()
   expect(args).toContain("--idle=no");
   expect(args).toContain("--force-window=immediate");
   expect(args).toContain("--autofit-larger=90%x90%");
+  expect(args).toContain("--cache=yes");
+  expect(args).toContain("--cache-pause=yes");
+  expect(args).toContain("--cache-pause-wait=2");
+  expect(args).toContain("--demuxer-readahead-secs=20");
+  expect(args).toContain("--demuxer-max-bytes=128MiB");
   expect(args).toContain("--input-ipc-server=/tmp/kunai-test.sock");
   expect(args).toContain("--sub-file=https://sub.example/en.srt");
   expect(args).not.toContain("--sub-file=https://sub.example/ar.srt");
+});
+
+test("buildMpvArgs can defer resume seeking to IPC for persistent playback", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/master.m3u8",
+      headers: {},
+      subtitle: null,
+      displayTitle: "Frieren - S01E09",
+      startAt: 128,
+    },
+    "/tmp/kunai-test.sock",
+    { persistent: true, includeStartArg: false },
+  );
+
+  expect(args).toContain("--keep-open=yes");
+  expect(args).toContain("--idle=yes");
+  expect(args).not.toContain("--start=128");
 });
 
 test("buildMpvArgs keeps mpv alive between files for persistent autoplay chains", () => {

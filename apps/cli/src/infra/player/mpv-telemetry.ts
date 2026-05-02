@@ -7,6 +7,13 @@ export interface PlayerTelemetrySample {
   durationSeconds: number;
   percentPos?: number;
   paused?: boolean;
+  seeking?: boolean;
+  pausedForCache?: boolean;
+  cacheBufferingState?: number;
+  demuxerCacheDurationSeconds?: number;
+  demuxerCacheState?: unknown;
+  cacheSpeedBytesPerSecond?: number;
+  voConfigured?: boolean;
   eofReached?: boolean;
   idleActive?: boolean;
   coreIdle?: boolean;
@@ -120,6 +127,31 @@ export function applyObservedPropertySample(
       break;
     case "pause":
       next.paused = Boolean(update.value);
+      break;
+    case "seeking":
+      next.seeking = Boolean(update.value);
+      break;
+    case "paused-for-cache":
+      next.pausedForCache = Boolean(update.value);
+      break;
+    case "cache-buffering-state":
+      if (typeof update.value === "number" && Number.isFinite(update.value)) {
+        next.cacheBufferingState = update.value;
+      }
+      break;
+    case "demuxer-cache-duration":
+      next.demuxerCacheDurationSeconds = normalizeNumber(update.value);
+      break;
+    case "demuxer-cache-state":
+      next.demuxerCacheState = update.value;
+      break;
+    case "cache-speed":
+      if (typeof update.value === "number" && Number.isFinite(update.value)) {
+        next.cacheSpeedBytesPerSecond = update.value;
+      }
+      break;
+    case "vo-configured":
+      next.voConfigured = Boolean(update.value);
       break;
     case "eof-reached":
       next.eofReached = Boolean(update.value);

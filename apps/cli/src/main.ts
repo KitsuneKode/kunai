@@ -51,6 +51,7 @@ export function parseArgs(argv: string[]): {
 
 let globalController: SessionController | null = null;
 let processHandlersInitialized = false;
+let shutdownInProgress = false;
 
 async function shutdownShell(): Promise<void> {
   const { shutdownSessionApp } = await import("./app-shell/ink-shell");
@@ -135,11 +136,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     });
 
     logger.info("Kunai exited normally");
+    await globalController.shutdown();
     await shutdownShell();
     if (process.stdin.isTTY) process.stdin.unref();
     process.exit(0);
   } catch (e) {
     logger.error("Kunai crashed", { error: String(e) });
+    await globalController?.shutdown().catch(() => {});
     await shutdownShell();
     console.error("Fatal error:", e);
     process.exit(1);
@@ -154,21 +157,21 @@ function setupSignalHandlers(): void {
   processHandlersInitialized = true;
 
   const shutdown = async (signal: string) => {
+    if (shutdownInProgress) return;
+    shutdownInProgress = true;
     console.log(`\nReceived ${signal}, shutting down cleanly...`);
+    if (globalController) {
+      await globalController.shutdown();
+    }
     await shutdownShell();
     if (process.stdin.isTTY) process.stdin.unref();
-
-    if (globalController) {
-      globalController.shutdown();
-      // Wait a short tick for synchronous pending tasks to wind down
-      await Bun.sleep(500);
-    }
 
     process.exit(0);
   };
 
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGHUP", () => shutdown("SIGHUP"));
 
   process.on("uncaughtException", (e) => {
     console.error("Uncaught exception:", e);

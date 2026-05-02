@@ -6,6 +6,13 @@ export const MPV_OBSERVED_PROPERTIES = [
   "duration",
   "percent-pos",
   "pause",
+  "seeking",
+  "paused-for-cache",
+  "cache-buffering-state",
+  "demuxer-cache-duration",
+  "demuxer-cache-state",
+  "cache-speed",
+  "vo-configured",
   "eof-reached",
   "idle-active",
   "core-idle",
@@ -32,11 +39,13 @@ type PropertyUpdateHandler = (message: {
 }) => void;
 
 type EndFileHandler = (message: { reason?: string; observedAt: number }) => void;
+type FileLoadedHandler = (message: { observedAt: number }) => void;
 
 type SessionOptions = {
   socketPath: string;
   onPropertyUpdate: PropertyUpdateHandler;
   onEndFile: EndFileHandler;
+  onFileLoaded?: FileLoadedHandler;
   onCommandResult?: (result: MpvIpcCommandResult) => void;
 };
 
@@ -120,6 +129,7 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
   const requestIds = new Map<number, string>();
   const pendingCommands = new Map<number, PendingCommand>();
   let nextRequestId = 1;
+  let closed = false;
 
   const bufferState = { value: "" };
   socket.setEncoding("utf8");
@@ -137,6 +147,7 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
           pendingCommands,
           options.onPropertyUpdate,
           options.onEndFile,
+          options.onFileLoaded,
         );
       }
       newlineIndex = bufferState.value.indexOf("\n");
@@ -144,6 +155,9 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
   });
 
   const writeCommand = (command: readonly unknown[], requestId?: number) => {
+    if (closed || socket.destroyed) {
+      throw new Error("mpv IPC session is closed");
+    }
     socket.write(buildMpvIpcCommand(command, requestId));
   };
 
@@ -162,6 +176,17 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
     send(command, timeoutMs = 1_000) {
       const requestId = nextRequestId++;
       return new Promise<MpvIpcCommandResult>((resolve) => {
+        if (closed || socket.destroyed) {
+          const result: MpvIpcCommandResult = {
+            ok: false,
+            command,
+            requestId,
+            error: "session closed",
+          };
+          options.onCommandResult?.(result);
+          resolve(result);
+          return;
+        }
         const finish = (result: MpvIpcCommandResult) => {
           const pending = pendingCommands.get(requestId);
           if (pending) {
@@ -174,7 +199,6 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
         const timeout = setTimeout(() => {
           finish({ ok: false, command, requestId, error: "timeout" });
         }, timeoutMs);
-        timeout.unref?.();
         pendingCommands.set(requestId, { command, resolve: finish, timeout });
         try {
           writeCommand(command, requestId);
@@ -192,6 +216,7 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
       writeCommand(command);
     },
     async close() {
+      closed = true;
       for (const [requestId, pending] of pendingCommands) {
         clearTimeout(pending.timeout);
         pendingCommands.delete(requestId);
@@ -238,7 +263,7 @@ async function closeSocket(socket: Socket): Promise<void> {
     setTimeout(() => {
       socket.destroy();
       finish();
-    }, 200).unref?.();
+    }, 200);
   });
 }
 
@@ -248,6 +273,7 @@ function dispatchMessage(
   pendingCommands: Map<number, PendingCommand>,
   onPropertyUpdate: PropertyUpdateHandler,
   onEndFile: EndFileHandler,
+  onFileLoaded?: FileLoadedHandler,
 ) {
   const observedAt = Date.now();
 
@@ -258,6 +284,11 @@ function dispatchMessage(
 
   if (message.event === "end-file") {
     onEndFile({ reason: message.reason, observedAt });
+    return;
+  }
+
+  if (message.event === "file-loaded") {
+    onFileLoaded?.({ observedAt });
     return;
   }
 

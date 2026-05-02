@@ -305,16 +305,17 @@ function AppRoot({ container }: { container: Container }) {
     };
   }, [stateManager]);
 
-  const rootStatus =
-    state.playbackStatus === "playing"
-      ? "playing"
-      : state.playbackStatus === "loading"
-        ? "loading"
-        : state.searchState === "loading"
-          ? "searching"
-          : state.playbackStatus === "error"
-            ? "error"
-            : "ready";
+  const activePlaybackStatuses = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
+  const playbackIsActive = activePlaybackStatuses.some((status) => status === state.playbackStatus);
+  const rootStatus = playbackIsActive
+    ? state.playbackStatus
+    : state.playbackStatus === "loading"
+      ? "loading"
+      : state.searchState === "loading"
+        ? "searching"
+        : state.playbackStatus === "error"
+          ? "error"
+          : "ready";
   const playbackSubtitle = state.currentEpisode
     ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
         state.currentEpisode.episode,
@@ -331,9 +332,7 @@ function AppRoot({ container }: { container: Container }) {
   const shellWidth = Math.max(80, (stdout.columns ?? 80) - 2);
   const shellHeight = Math.max(24, (stdout.rows ?? 24) - 1);
   const currentViewLabel =
-    state.playbackStatus === "loading" || state.playbackStatus === "playing"
-      ? "playback"
-      : state.view;
+    state.playbackStatus === "loading" || playbackIsActive ? "playback" : state.view;
   const rootOverlay = getRootOwnedOverlay(state);
   const rootSurface = resolveRootShellSurface(state, {
     hasRootContent: Boolean(rootContent),
@@ -397,23 +396,35 @@ function AppRoot({ container }: { container: Container }) {
                   operation:
                     state.playbackStatus === "playing"
                       ? "playing"
-                      : state.playbackStatus === "loading"
+                      : state.playbackStatus === "loading" || state.playbackStatus === "buffering"
                         ? "loading"
                         : "resolving",
                   details: state.playbackDetail ?? `Provider: ${state.provider}`,
                   subtitleStatus:
-                    state.playbackStatus === "playing" ? playbackSubtitleStatus : undefined,
-                  cancellable: state.playbackStatus === "loading",
+                    state.playbackStatus === "playing" ||
+                    state.playbackStatus === "buffering" ||
+                    state.playbackStatus === "stalled"
+                      ? playbackSubtitleStatus
+                      : undefined,
+                  cancellable:
+                    state.playbackStatus === "loading" || state.playbackStatus === "stalled",
                   trace: playbackTrace,
-                  showMemory: state.playbackStatus === "playing",
+                  showMemory:
+                    state.playbackStatus === "playing" ||
+                    state.playbackStatus === "buffering" ||
+                    state.playbackStatus === "stalled",
                   stopHint:
-                    state.playbackStatus === "playing"
+                    state.playbackStatus === "playing" ||
+                    state.playbackStatus === "buffering" ||
+                    state.playbackStatus === "stalled"
                       ? state.currentTitle?.type === "series"
                         ? `q stop  ·  ${canGoNext ? "n next" : "n unavailable"}  ·  ${canGoPrevious ? "p previous" : "p unavailable"}  ·  ${state.stopAfterCurrent ? "x resume chain" : "x stop after current"}`
                         : "q stop"
                       : undefined,
                   controlHint:
-                    state.playbackStatus === "playing"
+                    state.playbackStatus === "playing" ||
+                    state.playbackStatus === "buffering" ||
+                    state.playbackStatus === "stalled"
                       ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  i skip segment  ·  s reload subtitles  ·  r refresh  ·  f fallback  ·  Ctrl+C hard exit`
                       : undefined,
                 }}

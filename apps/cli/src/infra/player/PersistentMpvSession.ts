@@ -16,6 +16,7 @@ import type { PlayerPlaybackEvent } from "./PlayerService";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcSocket } from "./mpv-ipc";
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "./playback-skip";
+import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -43,6 +44,7 @@ type PlayerCycleState = {
   resolve: (result: PlaybackResult) => void;
   promise: Promise<PlaybackResult>;
   playerReadyNotified: boolean;
+  playerStartedNotified: boolean;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
 };
@@ -62,6 +64,9 @@ export class PersistentMpvSession {
   private currentPositionSeconds = 0;
   private skippedSegments = new Set<string>();
   private currentOptions: PlayerCycleOptions;
+  private watchdog: PlaybackWatchdog | null = null;
+  private pendingReadyWork: PlayerCycleOptions | null = null;
+  private readyWorkFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
   private constructor(
     private readonly initialStream: StreamInfo,
@@ -74,13 +79,13 @@ export class PersistentMpvSession {
       id: this.id,
       stop: async () => {
         if (this.ipcSession) {
-          void this.ipcSession.send(["quit"]);
+          await this.ipcSession.send(["quit"], 1_000);
           return;
         }
         this.mpv?.kill("SIGTERM");
       },
       stopCurrentFile: async () => {
-        void this.ipcSession?.send(["stop"]);
+        await this.ipcSession?.send(["stop"], 1_000);
       },
       reloadSubtitles: async () => {
         await this.reloadSubtitles();
@@ -115,13 +120,21 @@ export class PersistentMpvSession {
 
     if (!this.hasLoadedFile) {
       this.hasLoadedFile = true;
-      this.scheduleReadyWork(options);
+      this.queueReadyWork(options);
       return await cycle.promise;
     }
 
     await this.removeExternalSubtitles();
-    void this.ipcSession?.send(["loadfile", stream.url, "replace"]);
-    this.scheduleReadyWork(options);
+    options.onPlaybackEvent?.({ type: "resolving-playback" });
+    this.queueReadyWork(options);
+    const loadResult = await this.ipcSession?.send(["loadfile", stream.url, "replace"], 3_000);
+    if (!loadResult?.ok) {
+      options.onPlaybackEvent?.({
+        type: "ipc-command-failed",
+        command: "loadfile",
+        error: loadResult?.error ?? "ipc unavailable",
+      });
+    }
     return await cycle.promise;
   }
 
@@ -152,8 +165,9 @@ export class PersistentMpvSession {
     }
 
     this.currentCycleOptions().onPlaybackEvent?.({ type: "player-closing" });
+    this.clearReadyWorkFallback();
     if (this.ipcSession) {
-      void this.ipcSession.send(["quit"]);
+      await this.ipcSession.send(["quit"], 1_000);
     } else {
       this.mpv?.kill("SIGTERM");
     }
@@ -162,8 +176,12 @@ export class PersistentMpvSession {
       const target = this.mpv;
       if (!target) return resolve();
       target.once("close", () => resolve());
-      setTimeout(resolve, 1500).unref?.();
+      setTimeout(resolve, 1500);
     });
+    this.watchdog?.stop();
+    this.watchdog = null;
+    await this.ipcSession?.close().catch(() => {});
+    this.ipcSession = null;
     await this.cleanupSocket();
     this.onControlReady(null);
   }
@@ -185,8 +203,12 @@ export class PersistentMpvSession {
         startAt: this.initialOptions.startAt,
       },
       this.ipcPath,
-      { persistent: true },
+      { persistent: true, includeStartArg: false },
     );
+
+    const emitPlaybackEvent = (event: PlayerPlaybackEvent) =>
+      this.currentCycleOptions().onPlaybackEvent?.(event);
+    this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
 
     this.mpv = spawn("mpv", args, {
       detached: false,
@@ -194,12 +216,16 @@ export class PersistentMpvSession {
       env: process.env as Record<string, string>,
     });
     this.alive = true;
+    this.initialOptions.onPlaybackEvent?.({ type: "mpv-process-started" });
     this.hasLoadedFile = true;
     this.resetCycleState();
     this.onControlReady(this.currentControl);
 
     this.mpv.once("close", async (code, signal) => {
       this.alive = false;
+      this.clearReadyWorkFallback();
+      this.watchdog?.stop();
+      this.watchdog = null;
       const active = this.activeCycle;
       if (active) {
         recordPlayerExit(active.telemetry, { code, signal });
@@ -215,6 +241,9 @@ export class PersistentMpvSession {
     });
     this.mpv.once("error", async () => {
       this.alive = false;
+      this.clearReadyWorkFallback();
+      this.watchdog?.stop();
+      this.watchdog = null;
       const active = this.activeCycle;
       if (active) {
         recordPlayerExit(active.telemetry, { code: 1, signal: null });
@@ -238,11 +267,18 @@ export class PersistentMpvSession {
             const active = this.activeCycle;
             if (!active) return;
             applyObservedPropertySample(active.telemetry, { name, value, observedAt });
+            if (active.telemetry.latestIpcSample) {
+              this.watchdog?.observe(active.telemetry.latestIpcSample);
+            }
             if (name === "track-list") {
               this.lastTrackList = value;
             }
             if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
               this.currentPositionSeconds = value;
+              if (value > 0 && !active.playerStartedNotified) {
+                active.playerStartedNotified = true;
+                active.onPlaybackEvent?.({ type: "playback-started" });
+              }
               void this.maybeAutoSkip(this.currentCycleOptions(), true);
             }
             if (
@@ -266,6 +302,13 @@ export class PersistentMpvSession {
             this.activeCycle = null;
             active.resolve(result);
           },
+          onFileLoaded: () => {
+            const pending = this.pendingReadyWork;
+            if (!pending) return;
+            this.pendingReadyWork = null;
+            this.clearReadyWorkFallback();
+            void this.runReadyWork(pending);
+          },
           onCommandResult: (result) => {
             if (result.ok) return;
             this.currentCycleOptions().onPlaybackEvent?.({
@@ -273,13 +316,20 @@ export class PersistentMpvSession {
               command: String(result.command[0] ?? "unknown"),
               error: result.error,
             });
+            if (result.error === "timeout") {
+              this.currentCycleOptions().onPlaybackEvent?.({
+                type: "ipc-stalled",
+                command: String(result.command[0] ?? "unknown"),
+                error: result.error,
+              });
+            }
           },
         });
         this.currentCycleOptions().onPlaybackEvent?.({ type: "ipc-connected" });
         this.currentCycleOptions().onPlaybackEvent?.({ type: "opening-stream" });
       }
     }
-    this.scheduleReadyWork(this.initialOptions);
+    this.queueReadyWork(this.initialOptions);
   }
 
   private beginCycle(options: PlayerCycleOptions): PlayerCycleState {
@@ -295,6 +345,7 @@ export class PersistentMpvSession {
       playerReadyNotified: false,
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: options.onPlaybackEvent,
+      playerStartedNotified: false,
     };
     this.activeCycle = cycle;
     this.currentOptions = options;
@@ -306,36 +357,54 @@ export class PersistentMpvSession {
     this.skippedSegments = new Set<string>();
   }
 
-  private scheduleReadyWork(options: PlayerCycleOptions): void {
+  private queueReadyWork(options: PlayerCycleOptions): void {
+    this.pendingReadyWork = options;
+    if (this.readyWorkFallbackTimer) {
+      this.clearReadyWorkFallback();
+    }
+    if (!this.ipcSession) {
+      void this.runReadyWork(options);
+      return;
+    }
+    this.readyWorkFallbackTimer = setTimeout(() => {
+      if (this.pendingReadyWork !== options) return;
+      this.pendingReadyWork = null;
+      this.readyWorkFallbackTimer = null;
+      void this.runReadyWork(options);
+    }, 750);
+  }
+
+  private async runReadyWork(options: PlayerCycleOptions): Promise<void> {
     const cycle = this.activeCycle;
     if (!cycle) return;
 
-    const run = async () => {
-      if (!cycle.playerReadyNotified) {
-        cycle.playerReadyNotified = true;
-        cycle.onPlaybackEvent?.({ type: "player-ready" });
-        cycle.onPlayerReady?.();
-      }
+    if (!cycle.playerReadyNotified) {
+      cycle.playerReadyNotified = true;
+      cycle.onPlaybackEvent?.({ type: "player-ready" });
+      cycle.onPlayerReady?.();
+    }
 
-      if (!this.ipcSession) return;
-      if (options.startAt && options.startAt > 5) {
-        void this.ipcSession.send(["seek", options.startAt, "absolute"]);
-      }
+    if (!this.ipcSession) return;
+    if (options.startAt && options.startAt > 5) {
+      options.onPlaybackEvent?.({ type: "resolving-playback" });
+      await this.ipcSession.send(["seek", options.startAt, "absolute"], 2_000);
+    }
 
-      await this.replaceSubtitleInventory(
-        options.primarySubtitle,
-        options.subtitleTracks,
-        (trackCount) => {
-          options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
-          options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
-        },
-      );
-      await this.maybeAutoSkip(options, true);
-    };
+    await this.replaceSubtitleInventory(
+      options.primarySubtitle,
+      options.subtitleTracks,
+      (trackCount) => {
+        options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
+        options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
+      },
+    );
+    await this.maybeAutoSkip(options, true);
+  }
 
-    setTimeout(() => {
-      void run();
-    }, 250).unref?.();
+  private clearReadyWorkFallback(): void {
+    if (!this.readyWorkFallbackTimer) return;
+    clearTimeout(this.readyWorkFallbackTimer);
+    this.readyWorkFallbackTimer = null;
   }
 
   private async replaceSubtitleInventory(
@@ -371,7 +440,7 @@ export class PersistentMpvSession {
   private async reloadSubtitles(): Promise<void> {
     const active = this.activeCycle;
     if (!active || !this.ipcSession) return;
-    void this.ipcSession.send(["sub-reload"]);
+    await this.ipcSession.send(["sub-reload"], 1_000);
   }
 
   private currentCycleOptions(): PlayerCycleOptions {
@@ -396,7 +465,7 @@ export class PersistentMpvSession {
       return false;
     }
     this.skippedSegments.add(activeSkip.key);
-    void this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"]);
+    await this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"], 1_000);
     options.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic });
     return true;
   }
@@ -409,7 +478,7 @@ export class PersistentMpvSession {
     if (!this.ipcSession) return;
 
     for (const trackId of extractExternalSubtitleIds(this.lastTrackList)) {
-      void this.ipcSession.send(["sub-remove", trackId]);
+      await this.ipcSession.send(["sub-remove", trackId], 1_000);
     }
   }
 
