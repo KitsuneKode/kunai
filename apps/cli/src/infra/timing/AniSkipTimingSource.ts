@@ -19,6 +19,7 @@ export const AniSkipTimingSource: PlaybackTimingSource = {
     if (title.type !== "series") return null;
     return fetchAniSkipTimingMetadata({
       anilistId: title.id,
+      titleName: title.name,
       episode: episode.episode ?? 1,
       signal,
     });

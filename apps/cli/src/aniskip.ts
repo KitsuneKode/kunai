@@ -27,6 +27,44 @@ type ArmResponse = {
 };
 
 const malIdCache = new Map<string, number | null>();
+const anilistIdByNameCache = new Map<string, string | null>();
+
+// AniList IDs are purely numeric. AllAnime and other providers return non-numeric
+// internal IDs (e.g. AllAnime uses base62 MongoDB ObjectIDs). Only a numeric string
+// can be passed directly to arm.haglund.dev as an AniList source ID.
+function isNumericAniListId(id: string): boolean {
+  return /^\d+$/.test(id);
+}
+
+async function resolveAniListIdByName(
+  name: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const key = name.toLowerCase();
+  if (anilistIdByNameCache.has(key)) return anilistIdByNameCache.get(key) ?? null;
+
+  try {
+    const query = `query ($s: String) { Media(search: $s, type: ANIME) { id } }`;
+    const res = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ query, variables: { s: name } }),
+      signal: signal ?? AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) {
+      anilistIdByNameCache.set(key, null);
+      return null;
+    }
+    const data = (await res.json()) as { data?: { Media?: { id?: number } } };
+    const id = data?.data?.Media?.id;
+    const result = typeof id === "number" ? String(id) : null;
+    anilistIdByNameCache.set(key, result);
+    return result;
+  } catch {
+    anilistIdByNameCache.set(key, null);
+    return null;
+  }
+}
 
 async function resolveMALId(anilistId: string, signal?: AbortSignal): Promise<number | null> {
   if (malIdCache.has(anilistId)) return malIdCache.get(anilistId) ?? null;
@@ -74,13 +112,25 @@ function toSegment(interval: AniSkipInterval): PlaybackTimingSegment {
 
 export async function fetchAniSkipTimingMetadata(opts: {
   anilistId: string;
+  titleName?: string;
   episode: number;
   episodeLength?: number;
   signal?: AbortSignal;
 }): Promise<PlaybackTimingMetadata | null> {
-  const { anilistId, episode, episodeLength, signal } = opts;
+  const { anilistId, titleName, episode, episodeLength, signal } = opts;
 
-  const malId = await resolveMALId(anilistId, signal);
+  // Resolve a numeric AniList ID. If the provider's title.id is a non-numeric
+  // internal ID (e.g. AllAnime's base62 ObjectID), fall back to a title-name
+  // lookup via the AniList GraphQL API.
+  const resolvedAnilistId = isNumericAniListId(anilistId)
+    ? anilistId
+    : titleName
+      ? await resolveAniListIdByName(titleName, signal)
+      : null;
+
+  if (!resolvedAnilistId) return null;
+
+  const malId = await resolveMALId(resolvedAnilistId, signal);
   if (!malId) return null;
 
   const types = ["op", "ed", "recap"];
