@@ -34,7 +34,6 @@ import { type RootOwnedOverlay } from "./root-shell-state";
 import { CommandPalette, useShellInput } from "./shell-command-ui";
 import { InlineBadge, ShellFooter } from "./shell-primitives";
 import type { FooterAction, ShellPanelLine } from "./types";
-import { applySettingsToRuntime, handleShellAction } from "./workflows";
 
 export function RootOverlayShell({
   overlay,
@@ -386,11 +385,17 @@ export function RootOverlayShell({
           return;
         }
         if (picked.value === "clearCache") {
-          void handleShellAction({ action: "clear-cache", container });
+          void (async () => {
+            const { handleShellAction } = await import("./workflows");
+            await handleShellAction({ action: "clear-cache", container });
+          })();
           return;
         }
         if (picked.value === "clearHistory") {
-          void handleShellAction({ action: "clear-history", container });
+          void (async () => {
+            const { handleShellAction } = await import("./workflows");
+            await handleShellAction({ action: "clear-history", container });
+          })();
           return;
         }
         setSettingsChoice(picked.value as SettingsChoiceValue);
@@ -420,22 +425,7 @@ export function RootOverlayShell({
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
     }
-    if (key.upArrow) {
-      if (
-        overlay.type === "provider_picker" ||
-        overlay.type === "history" ||
-        overlay.type === "settings" ||
-        overlay.type === "season_picker" ||
-        overlay.type === "episode_picker" ||
-        overlay.type === "subtitle_picker"
-      ) {
-        setSelectedIndex((current) => Math.max(0, current - 1));
-      } else {
-        setScrollIndex((current) => Math.max(0, current - 1));
-      }
-      return;
-    }
-    if (key.downArrow) {
+    if (key.upArrow || key.downArrow) {
       if (
         overlay.type === "provider_picker" ||
         overlay.type === "history" ||
@@ -452,9 +442,17 @@ export function RootOverlayShell({
               : overlay.type === "settings"
                 ? filteredSettingsOptions.length
                 : filteredGenericPickerOptions.length;
-        setSelectedIndex((current) => Math.min(Math.max(optionCount - 1, 0), current + 1));
+        if (optionCount > 0) {
+          setSelectedIndex((current) =>
+            key.upArrow ? (current - 1 + optionCount) % optionCount : (current + 1) % optionCount,
+          );
+        }
       } else {
-        setScrollIndex((current) => Math.min(Math.max(lines.length - maxLines, 0), current + 1));
+        if (key.upArrow) {
+          setScrollIndex((current) => Math.max(0, current - 1));
+        } else {
+          setScrollIndex((current) => Math.min(Math.max(lines.length - maxLines, 0), current + 1));
+        }
       }
       return;
     }
@@ -476,18 +474,20 @@ export function RootOverlayShell({
         }
         setSettingsBusy(true);
         setSettingsError(null);
-        void applySettingsToRuntime({
-          container,
-          next: settingsDraft,
-          previous: container.config.getRaw(),
-        })
-          .then(() => {
+        void (async () => {
+          try {
+            const { applySettingsToRuntime } = await import("./workflows");
+            await applySettingsToRuntime({
+              container,
+              next: settingsDraft,
+              previous: container.config.getRaw(),
+            });
             container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-          })
-          .catch((error) => {
+          } catch (error) {
             setSettingsBusy(false);
             setSettingsError(`Failed to save settings: ${String(error)}`);
-          });
+          }
+        })();
         return;
       }
       if (input === "/") {

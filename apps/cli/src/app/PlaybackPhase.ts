@@ -420,8 +420,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // If IntroDB timed out and returned null, schedule a background retry that
           // injects timing into the running player once it arrives.
           const playbackTiming = await timingFetch;
+          // effectiveTiming.current tracks the best timing we have — updated in-place
+          // if the background retry resolves while the episode is playing, so all
+          // post-playback decisions (history, autoNext, result classification) use it.
+          const effectiveTiming = { current: playbackTiming };
           if (!playbackTiming) {
-            void this.retryTimingInBackground(title, currentEpisode, container);
+            void this.retryTimingInBackground(title, currentEpisode, container, effectiveTiming);
           }
 
           const preparedStream = await this.preparePlaybackStream(
@@ -447,9 +451,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             playbackTiming,
           );
 
-          // Save history
-          if (shouldPersistHistory(result, playbackTiming)) {
-            const historyTimestamp = toHistoryTimestamp(result, playbackTiming);
+          // Save history — use effectiveTiming.current so that a background retry
+          // that completed during playback is reflected in completion status.
+          if (shouldPersistHistory(result, effectiveTiming.current)) {
+            const historyTimestamp = toHistoryTimestamp(result, effectiveTiming.current);
             await historyStore.save(title.id, {
               title: title.name,
               type: title.type,
@@ -457,7 +462,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               episode: currentEpisode.episode,
               timestamp: historyTimestamp,
               duration: result.duration,
-              completed: didPlaybackReachCompletionThreshold(result, playbackTiming),
+              completed: didPlaybackReachCompletionThreshold(result, effectiveTiming.current),
               provider: resolvedProviderId,
               watchedAt: new Date().toISOString(),
             });
@@ -485,7 +490,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             result,
             controlAction: playbackControlAction,
             session: playbackSession,
-            timing: playbackTiming,
+            timing: effectiveTiming.current,
           });
           playbackSession = playbackDecision.session;
           if (playbackDecision.shouldTreatAsInterrupted) {
@@ -583,7 +588,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             currentEpisode,
             session: playbackSession,
             availability: episodeAvailability,
-            timing: playbackTiming,
+            timing: effectiveTiming.current,
           });
           if (nextEpisode) {
             logger.info("Auto-next advancing to next episode", {
@@ -852,6 +857,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     title: TitleInfo,
     episode: EpisodeInfo,
     container: PhaseContext["container"],
+    timingRef?: { current: Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>> },
   ): Promise<void> {
     return (async () => {
       try {
@@ -863,6 +869,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           signal: AbortSignal.timeout(10_000),
         });
         if (timing) {
+          if (timingRef) timingRef.current = timing;
           container.playerControl.updateCurrentPlaybackTiming(timing, "background-retry");
         }
       } catch {
