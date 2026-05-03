@@ -12,19 +12,6 @@ import { join, dirname } from "path";
 import type { StorageService } from "./StorageService";
 
 // OS-aware path resolution
-function getAppDataDir(appName: string): string {
-  const platform = process.platform;
-  const home = os.homedir();
-
-  if (platform === "win32") {
-    return join(process.env.APPDATA || join(home, "AppData", "Roaming"), appName);
-  }
-  if (platform === "darwin") {
-    return join(home, "Library", "Application Support", appName);
-  }
-  return join(home, ".local", "share", appName);
-}
-
 function getConfigDir(appName: string): string {
   const platform = process.platform;
   const home = os.homedir();
@@ -38,26 +25,11 @@ function getConfigDir(appName: string): string {
   return join(process.env.XDG_CONFIG_HOME || join(home, ".config"), appName);
 }
 
-function getCacheDir(appName: string): string {
-  const platform = process.platform;
-  const home = os.homedir();
-
-  if (platform === "win32") {
-    return join(process.env.LOCALAPPDATA || join(home, "AppData", "Local"), appName);
-  }
-  if (platform === "darwin") {
-    return join(home, "Library", "Caches", appName);
-  }
-  return join(process.env.XDG_CACHE_HOME || join(home, ".cache"), appName);
-}
-
 const APP_NAME = "kunai";
 
-// Key → file path mapping
+// Key → file path mapping (history and cache are SQLite — no JSON paths here)
 const PATHS: Record<string, string> = {
   config: join(getConfigDir(APP_NAME), "config.json"),
-  history: join(getAppDataDir(APP_NAME), "history.json"),
-  cache: join(getCacheDir(APP_NAME), "stream_cache.json"),
 };
 
 function ensureDir(filePath: string) {

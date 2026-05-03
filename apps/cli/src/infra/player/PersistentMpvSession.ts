@@ -241,6 +241,16 @@ export class PersistentMpvSession {
       this.currentCycleOptions().onPlaybackEvent?.(event);
     this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
 
+    if (!Bun.which("mpv")) {
+      this.currentCycleOptions().onPlaybackEvent?.({
+        type: "ipc-command-failed",
+        command: "spawn",
+        error: "mpv is not installed or not found on PATH",
+      });
+      await this.handleProcessTermination({ code: 1, signal: null });
+      return;
+    }
+
     const proc = Bun.spawn(["mpv", ...args], {
       stdin: "ignore",
       stdout: "ignore",

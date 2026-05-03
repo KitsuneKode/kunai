@@ -50,6 +50,10 @@ export async function launchMpv(opts: {
   const telemetry = createPlayerTelemetryState(ipcPath ?? undefined);
   const emitPlaybackEvent = opts.onPlaybackEvent ?? (() => {});
 
+  if (!Bun.which("mpv")) {
+    throw new Error("mpv is not installed or not found on PATH");
+  }
+
   const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
   const mpv = Bun.spawn(["mpv", ...args], {
     stdin: stdio,

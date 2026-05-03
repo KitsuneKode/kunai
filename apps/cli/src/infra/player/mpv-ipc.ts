@@ -96,6 +96,7 @@ export function parseMpvIpcLine(raw: string): MpvIpcMessage | null {
 // Probe the socket by attempting a connection and closing immediately on success.
 export async function waitForMpvIpcSocket(socketPath: string, timeoutMs = 3_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
+  let delay = 10;
   while (Date.now() < deadline) {
     try {
       const s = await Bun.connect<SocketState>({
@@ -116,7 +117,8 @@ export async function waitForMpvIpcSocket(socketPath: string, timeoutMs = 3_000)
     } catch {
       // Socket not ready yet — retry after backoff.
     }
-    await Bun.sleep(50);
+    await Bun.sleep(delay);
+    delay = Math.min(delay * 2, 100);
   }
   return false;
 }
@@ -136,7 +138,7 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
   let bufferValue = "";
 
   const drainPending = (error: string) => {
-    for (const [requestId, pending] of pendingCommands.entries()) {
+    for (const [requestId, pending] of Array.from(pendingCommands)) {
       clearTimeout(pending.timeout);
       pendingCommands.delete(requestId);
       pending.resolve({ ok: false, command: pending.command, requestId, error });
@@ -188,16 +190,18 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
     },
   });
 
-  // Subscribe to all observed properties and request initial values.
+  // Subscribe to all observed properties and request initial values in a single write.
+  let initPayload = "";
   for (const name of MPV_OBSERVED_PROPERTIES) {
-    socket.write(buildMpvIpcCommand(["observe_property", nextRequestId, name], nextRequestId));
+    initPayload += buildMpvIpcCommand(["observe_property", nextRequestId, name], nextRequestId);
     nextRequestId++;
   }
   for (const name of MPV_INITIAL_PROPERTIES) {
     const id = nextRequestId++;
     requestIds.set(id, name);
-    socket.write(buildMpvIpcCommand(["get_property", name], id));
+    initPayload += buildMpvIpcCommand(["get_property", name], id);
   }
+  socket.write(initPayload);
 
   const writeCommand = (command: readonly unknown[], requestId?: number) => {
     if (closed || socket.readyState !== 1) {
@@ -217,8 +221,8 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
             requestId,
             error: "session closed",
           };
-          options.onCommandResult?.(result);
           resolve(result);
+          options.onCommandResult?.(result);
           return;
         }
         const finish = (result: MpvIpcCommandResult) => {
@@ -227,8 +231,8 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
             clearTimeout(pending.timeout);
             pendingCommands.delete(requestId);
           }
-          options.onCommandResult?.(result);
           resolve(result);
+          options.onCommandResult?.(result);
         };
         const timeout = setTimeout(() => {
           finish({ ok: false, command, requestId, error: "timeout" });

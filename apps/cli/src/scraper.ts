@@ -288,7 +288,7 @@ export async function scrapeStream(
       });
 
       page
-        .goto(targetUrl, { waitUntil: "domcontentloaded" })
+        .goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 20_000 })
         .then(async () => {
           try {
             await page.waitForTimeout(500);
