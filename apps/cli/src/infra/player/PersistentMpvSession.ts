@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import { unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -27,6 +26,13 @@ import { findActivePlaybackSkip, type PlaybackSkipConfig } from "./playback-skip
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
 import type { ActivePlayerControl } from "./PlayerControlService";
 import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
+
+type MpvProcess = {
+  readonly exited: Promise<number>;
+  readonly killed: boolean;
+  readonly exitCode: number | null;
+  kill(signal?: string | number): void;
+};
 
 type PlayerCycleOptions = {
   displayTitle: string;
@@ -57,7 +63,7 @@ export class PersistentMpvSession {
   private readonly id = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   private readonly ipcPath =
     process.platform === "win32" ? null : join(tmpdir(), `kunai-mpv-${this.id}.sock`);
-  private mpv: ChildProcess | null = null;
+  private mpv: MpvProcess | null = null;
   private ipcSession: MpvIpcSession | null = null;
   private activeCycle: PlayerCycleState | null = null;
   private lastTrackList: unknown = null;
@@ -205,7 +211,7 @@ export class PersistentMpvSession {
 
     await this.handleProcessTermination({
       code: target?.exitCode ?? (closed ? 0 : null),
-      signal: target?.signalCode ?? (closed ? null : "SIGTERM"),
+      signal: target?.killed ? ("SIGTERM" as NodeJS.Signals) : closed ? null : "SIGTERM",
     });
   }
 
@@ -235,22 +241,24 @@ export class PersistentMpvSession {
       this.currentCycleOptions().onPlaybackEvent?.(event);
     this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
 
-    this.mpv = spawn("mpv", args, {
-      detached: false,
-      stdio: ["ignore", "ignore", "ignore"],
+    const proc = Bun.spawn(["mpv", ...args], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
       env: process.env as Record<string, string>,
     });
+    this.mpv = proc;
     this.alive = true;
     this.initialOptions.onPlaybackEvent?.({ type: "mpv-process-started" });
     this.hasLoadedFile = true;
     this.resetCycleState();
     this.onControlReady(this.currentControl);
 
-    this.mpv.once("close", (code, signal) => {
-      void this.handleProcessTermination({ code, signal });
-    });
-    this.mpv.once("error", () => {
-      void this.handleProcessTermination({ code: 1, signal: null });
+    proc.exited.then((code) => {
+      void this.handleProcessTermination({
+        code,
+        signal: proc.killed ? ("SIGTERM" as NodeJS.Signals) : null,
+      });
     });
 
     if (this.ipcPath) {
@@ -261,7 +269,7 @@ export class PersistentMpvSession {
           command: "ipc-bootstrap",
           error: `IPC socket was not ready at ${this.ipcPath}`,
         });
-        this.mpv.kill("SIGTERM");
+        proc.kill("SIGTERM");
         await this.handleProcessTermination({ code: 1, signal: null });
         return;
       }
@@ -339,7 +347,7 @@ export class PersistentMpvSession {
           command: "ipc-bootstrap",
           error: error instanceof Error ? error.message : String(error),
         });
-        this.mpv.kill("SIGTERM");
+        proc.kill("SIGTERM");
         await this.handleProcessTermination({ code: 1, signal: null });
         return;
       }
@@ -543,24 +551,11 @@ export class PersistentMpvSession {
   }
 
   private async waitForProcessClose(
-    target: ChildProcess | null,
+    target: MpvProcess | null,
     timeoutMs: number,
   ): Promise<boolean> {
     if (!target) return true;
-
-    return await new Promise<boolean>((resolve) => {
-      let settled = false;
-      const finish = (closed: boolean) => {
-        if (settled) return;
-        settled = true;
-        target.off("close", onClose);
-        resolve(closed);
-      };
-      const onClose = () => finish(true);
-
-      target.once("close", onClose);
-      setTimeout(() => finish(false), timeoutMs);
-    });
+    return Promise.race([target.exited.then(() => true), Bun.sleep(timeoutMs).then(() => false)]);
   }
 
   private async closeIpcSession(): Promise<void> {

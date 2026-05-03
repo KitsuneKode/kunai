@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { existsSync, mkdirSync } from "fs";
-import { readFile, writeFile, unlink, rename } from "fs/promises";
+import { unlink } from "fs/promises";
 import os from "os";
 import { join, dirname } from "path";
 
@@ -73,16 +73,14 @@ export class FileStorage implements StorageService {
     const path = PATHS[key];
     if (!path) throw new Error(`Unknown storage key: ${key}`);
 
-    if (!existsSync(path)) return null;
+    const file = Bun.file(path);
+    if (!(await file.exists())) return null;
     try {
-      const raw = await readFile(path, "utf-8");
-      return JSON.parse(raw) as T;
+      return (await file.json()) as T;
     } catch {
-      // Safe fallback on corrupt parse: back it up so we don't nuke it permanently
+      // Corrupt JSON — back it up so we don't nuke it permanently
       const corruptPath = `${path}.corrupt.bak`;
-      try {
-        await rename(path, corruptPath);
-      } catch {}
+      await Bun.write(corruptPath, await file.text().catch(() => "")).catch(() => {});
       return null;
     }
   }
@@ -93,11 +91,7 @@ export class FileStorage implements StorageService {
 
     const task = this.writeLock.then(async () => {
       ensureDir(path);
-      const tmpPath = `${path}.tmp`;
-      const str = JSON.stringify(data, null, 2);
-      // Write to .tmp first, then atomic rename
-      await writeFile(tmpPath, str, "utf-8");
-      await rename(tmpPath, path);
+      await Bun.write(path, JSON.stringify(data, null, 2));
     });
 
     this.writeLock = task.catch(() => {});
@@ -109,7 +103,7 @@ export class FileStorage implements StorageService {
     if (!path) throw new Error(`Unknown storage key: ${key}`);
 
     const task = this.writeLock.then(async () => {
-      if (existsSync(path)) await unlink(path);
+      if (await Bun.file(path).exists()) await unlink(path);
     });
 
     this.writeLock = task.catch(() => {});
@@ -119,6 +113,6 @@ export class FileStorage implements StorageService {
   async exists(key: string): Promise<boolean> {
     const path = PATHS[key];
     if (!path) return false;
-    return existsSync(path);
+    return Bun.file(path).exists();
   }
 }

@@ -162,6 +162,7 @@ export async function scrapeStream(
 
     const streamData = await new Promise<StreamData | null>((resolve) => {
       let streamFound = false;
+      let scraperTimeout: ReturnType<typeof setTimeout> | undefined;
 
       const onResponse = async (response: Response) => {
         const url = response.url();
@@ -256,6 +257,7 @@ export async function scrapeStream(
             directSubtitleObserved: Boolean(directSubUrl),
             wyzieSearchObserved: Boolean(wyzieSearchUrl),
           });
+          clearTimeout(scraperTimeout);
           resolve(result);
         }
       };
@@ -302,16 +304,12 @@ export async function scrapeStream(
         .catch(() => {});
 
       // Hard 20-second timeout
-      (async () => {
-        for (let i = 0; i < 20; i++) {
-          if (streamFound) return;
-          await Bun.sleep(1000);
-        }
+      scraperTimeout = setTimeout(() => {
         if (!streamFound) {
           dbg("scraper", "timeout — no stream found");
           resolve(null);
         }
-      })();
+      }, 20_000);
     });
 
     await browser.close().catch(() => {});

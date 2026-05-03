@@ -1,6 +1,6 @@
-import { switchSessionMode } from "@/app/mode-switch";
 import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
+import { switchSessionMode } from "@/app/mode-switch";
 import type { Container } from "@/container";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
@@ -8,7 +8,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import React, { useEffect, useRef, useState } from "react";
 
-import { type ResolvedAppCommand } from "./commands";
+import type { ResolvedAppCommand } from "./commands";
 import { buildBrowseDetailsPanel } from "./details-panel";
 import { deleteAllKittyImages, isChafaAvailable } from "./image-pane";
 import { LoadingShell, useSpinner } from "./loading-shell";
@@ -295,13 +295,14 @@ function AppRoot({ container }: { container: Container }) {
   useEffect(() => {
     let cancelled = false;
 
-    void isChafaAvailable().then((chafaAvailable) => {
+    void (async () => {
+      const chafaAvailable = await isChafaAvailable();
       if (cancelled) return;
       stateManager.dispatch({
         type: "SET_IMAGE_SUPPORT",
         supported: isKittyCompatible() || chafaAvailable,
       });
-    });
+    })();
 
     return () => {
       cancelled = true;
@@ -473,7 +474,9 @@ function AppRoot({ container }: { container: Container }) {
                       return;
                     }
                     if (action === "quit") {
-                      void container.playerControl.stopCurrentPlayback("playback-loading-command-stop");
+                      void container.playerControl.stopCurrentPlayback(
+                        "playback-loading-command-stop",
+                      );
                       return;
                     }
                     if (action === "toggle-mode") {
@@ -1397,9 +1400,8 @@ function ListShell<T>({
             >
               <Box flexDirection="column" width={showSelectionCompanion ? listWidth : undefined}>
                 {windowStart > 0 && <Text color={palette.gray}> ▲ ...</Text>}
-                {visibleOptions.map((option, i) => {
-                  const optionIndex = windowStart + i;
-                  const selected = optionIndex === index;
+                {visibleOptions.map((option) => {
+                  const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
                   const itemPrefix = isConfirmed ? "✓" : selected ? "❯" : " ";
                   const itemTone = isConfirmed
@@ -1412,7 +1414,7 @@ function ListShell<T>({
                     : "";
                   const rowText = truncateLine(`${option.label}${secondary}`, rowWidth);
                   return (
-                    <Box key={`${option.label}-${optionIndex}`}>
+                    <Box key={`${option.label}-${option.detail ?? ""}`}>
                       <Text
                         backgroundColor={selected ? palette.cyan : undefined}
                         color={selected ? "black" : "white"}
@@ -1919,7 +1921,7 @@ function BrowseShell<T>({
                 const metaText = option.previewMeta?.[0];
 
                 return (
-                  <Box key={`${option.label}-${optionIndex}`} flexDirection="column">
+                  <Box key={`${option.label}-${option.detail ?? ""}`} flexDirection="column">
                     <Box width={rowWidth} justifyContent="space-between">
                       <Box>
                         <Text
@@ -2007,7 +2009,7 @@ function BrowseShell<T>({
                   <Box marginTop={1} flexWrap="wrap">
                     {previewMeta.slice(0, 3).map((meta) => (
                       <Badge
-                        key={`${meta}-${selectedOption?.label ?? "selected"}`}
+                        key={`${selectedOption?.label ?? "selected"}-${meta}`}
                         label={truncateLine(meta, Math.max(12, previewWidth - 8))}
                         tone="neutral"
                       />
@@ -2017,7 +2019,10 @@ function BrowseShell<T>({
                 {previewBodyLines.length > 0 ? (
                   <Box marginTop={1} flexDirection="column">
                     {previewBodyLines.map((line) => (
-                      <Text key={`${selectedOption?.label ?? "selected"}-${line}`} color={palette.muted}>
+                      <Text
+                        key={`${selectedOption?.label ?? "selected"}-${line}`}
+                        color={palette.muted}
+                      >
                         {line}
                       </Text>
                     ))}

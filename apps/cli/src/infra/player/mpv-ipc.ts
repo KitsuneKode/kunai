@@ -1,5 +1,3 @@
-import { createConnection, type Socket } from "node:net";
-
 export const MPV_OBSERVED_PROPERTIES = [
   "time-pos",
   "playback-time",
@@ -69,6 +67,10 @@ type PendingCommand = {
   timeout: ReturnType<typeof setTimeout>;
 };
 
+// Per-socket state threaded through Bun's data field so the close handler
+// can resolve an in-flight close() call.
+type SocketState = { onClose: (() => void) | null };
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -91,30 +93,31 @@ export function parseMpvIpcLine(raw: string): MpvIpcMessage | null {
   }
 }
 
+// Probe the socket by attempting a connection and closing immediately on success.
 export async function waitForMpvIpcSocket(socketPath: string, timeoutMs = 3_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const socket = createConnection(socketPath);
-      const ready = await new Promise<boolean>((resolve) => {
-        let settled = false;
-        const finish = (value: boolean) => {
-          if (settled) return;
-          settled = true;
-          socket.destroy();
-          resolve(value);
-        };
-        socket.once("connect", () => finish(true));
-        socket.once("error", () => finish(false));
+      const s = await Bun.connect<SocketState>({
+        unix: socketPath,
+        data: { onClose: null },
+        socket: {
+          open(sock) {
+            sock.end();
+          },
+          data() {},
+          close() {},
+          error() {},
+        },
       });
-      if (ready) return true;
+      // Probe succeeded — s.readyState may already be closing, but connection was established.
+      void s;
+      return true;
     } catch {
-      // wait and retry
+      // Socket not ready yet — retry after backoff.
     }
-
     await Bun.sleep(50);
   }
-
   return false;
 }
 
@@ -125,24 +128,18 @@ export interface MpvIpcSession {
 }
 
 export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpcSession> {
-  const socket = await connectSocket(options.socketPath);
   const requestIds = new Map<number, string>();
   const pendingCommands = new Map<number, PendingCommand>();
   let nextRequestId = 1;
   let closed = false;
   let closePromise: Promise<void> | null = null;
+  let bufferValue = "";
 
   const drainPending = (error: string) => {
-    const entries = [...pendingCommands.entries()];
-    for (const [requestId, pending] of entries) {
+    for (const [requestId, pending] of pendingCommands.entries()) {
       clearTimeout(pending.timeout);
       pendingCommands.delete(requestId);
-      pending.resolve({
-        ok: false,
-        command: pending.command,
-        requestId,
-        error,
-      });
+      pending.resolve({ ok: false, command: pending.command, requestId, error });
     }
   };
 
@@ -152,56 +149,68 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
     drainPending(error);
   };
 
-  socket.on("close", () => markClosed("session closed"));
-  socket.on("error", () => markClosed("session closed"));
-
-  const bufferState = { value: "" };
-  socket.setEncoding("utf8");
-  socket.on("data", (chunk: string) => {
-    if (closed) return;
-    bufferState.value += chunk;
-    let newlineIndex = bufferState.value.indexOf("\n");
-    while (newlineIndex !== -1) {
-      const line = bufferState.value.slice(0, newlineIndex);
-      bufferState.value = bufferState.value.slice(newlineIndex + 1);
-      const parsed = parseMpvIpcLine(line);
-      if (parsed) {
-        dispatchMessage(
-          parsed,
-          requestIds,
-          pendingCommands,
-          options.onPropertyUpdate,
-          options.onEndFile,
-          options.onFileLoaded,
-        );
-      }
-      newlineIndex = bufferState.value.indexOf("\n");
-    }
+  const socket = await Bun.connect<SocketState>({
+    unix: options.socketPath,
+    data: { onClose: null },
+    socket: {
+      open() {},
+      data(_socket, data) {
+        if (closed) return;
+        bufferValue += data.toString();
+        let nl = bufferValue.indexOf("\n");
+        while (nl !== -1) {
+          const line = bufferValue.slice(0, nl);
+          bufferValue = bufferValue.slice(nl + 1);
+          const parsed = parseMpvIpcLine(line);
+          if (parsed) {
+            dispatchMessage(
+              parsed,
+              requestIds,
+              pendingCommands,
+              options.onPropertyUpdate,
+              options.onEndFile,
+              options.onFileLoaded,
+            );
+          }
+          nl = bufferValue.indexOf("\n");
+        }
+      },
+      close(sock) {
+        sock.data.onClose?.();
+        sock.data.onClose = null;
+        markClosed("session closed");
+      },
+      error(sock, _error) {
+        sock.data.onClose?.();
+        sock.data.onClose = null;
+        markClosed("socket error");
+      },
+    },
   });
 
+  // Subscribe to all observed properties and request initial values.
+  for (const name of MPV_OBSERVED_PROPERTIES) {
+    socket.write(buildMpvIpcCommand(["observe_property", nextRequestId, name], nextRequestId));
+    nextRequestId++;
+  }
+  for (const name of MPV_INITIAL_PROPERTIES) {
+    const id = nextRequestId++;
+    requestIds.set(id, name);
+    socket.write(buildMpvIpcCommand(["get_property", name], id));
+  }
+
   const writeCommand = (command: readonly unknown[], requestId?: number) => {
-    if (closed || socket.destroyed) {
+    if (closed || socket.readyState !== 1) {
       throw new Error("mpv IPC session is closed");
     }
     socket.write(buildMpvIpcCommand(command, requestId));
   };
 
-  for (const name of MPV_OBSERVED_PROPERTIES) {
-    writeCommand(["observe_property", nextRequestId, name], nextRequestId);
-    nextRequestId += 1;
-  }
-
-  for (const name of MPV_INITIAL_PROPERTIES) {
-    const requestId = nextRequestId++;
-    requestIds.set(requestId, name);
-    writeCommand(["get_property", name], requestId);
-  }
-
   return {
     send(command, timeoutMs = 1_000) {
       const requestId = nextRequestId++;
       return new Promise<MpvIpcCommandResult>((resolve) => {
-        if (closed || socket.destroyed) {
+        if (closed || socket.readyState !== 1) {
           const result: MpvIpcCommandResult = {
             ok: false,
             command,
@@ -237,9 +246,15 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
         }
       });
     },
+
     sendUnchecked(command) {
-      writeCommand(command);
+      try {
+        writeCommand(command);
+      } catch {
+        // best-effort — session may already be closing
+      }
     },
+
     async close() {
       if (closePromise) {
         await closePromise;
@@ -248,47 +263,20 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
 
       closePromise = (async () => {
         markClosed("session closed");
-        await closeSocket(socket);
+        if (socket.readyState !== 1) return;
+        await new Promise<void>((resolve) => {
+          socket.data.onClose = resolve;
+          socket.end();
+          setTimeout(() => {
+            socket.terminate();
+            resolve();
+          }, 200);
+        });
       })();
 
       await closePromise;
     },
   };
-}
-
-async function connectSocket(socketPath: string): Promise<Socket> {
-  return await new Promise<Socket>((resolve, reject) => {
-    const socket = createConnection(socketPath);
-    const onError = (error: Error) => {
-      socket.destroy();
-      reject(error);
-    };
-
-    socket.once("error", onError);
-    socket.once("connect", () => {
-      socket.off("error", onError);
-      resolve(socket);
-    });
-  });
-}
-
-async function closeSocket(socket: Socket): Promise<void> {
-  if (socket.destroyed) return;
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      resolve();
-    };
-    socket.once("close", finish);
-    socket.once("error", finish);
-    socket.end();
-    setTimeout(() => {
-      socket.destroy();
-      finish();
-    }, 200);
-  });
 }
 
 function dispatchMessage(

@@ -1,6 +1,6 @@
-import type { KitsuneConfig } from "@/config";
 import type { Container } from "@/container";
 import type { EpisodePickerOption } from "@/domain/types";
+import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   formatTimestamp,
   isFinished,

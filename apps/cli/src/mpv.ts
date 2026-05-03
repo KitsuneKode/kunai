@@ -1,4 +1,3 @@
-import { spawn } from "child_process";
 import { existsSync } from "fs";
 import { unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -51,9 +50,11 @@ export async function launchMpv(opts: {
   const telemetry = createPlayerTelemetryState(ipcPath ?? undefined);
   const emitPlaybackEvent = opts.onPlaybackEvent ?? (() => {});
 
-  const mpv = spawn("mpv", args, {
-    detached: false,
-    stdio: opts.attach ? "inherit" : ["ignore", "ignore", "ignore"],
+  const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
+  const mpv = Bun.spawn(["mpv", ...args], {
+    stdin: stdio,
+    stdout: stdio,
+    stderr: stdio,
     env: process.env as Record<string, string>,
   });
 
@@ -123,22 +124,10 @@ export async function launchMpv(opts: {
   opts.onControlReady?.(control);
   emitPlaybackEvent({ type: "mpv-process-started" });
 
-  const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
-    (resolve) => {
-      let settled = false;
-      const finish = (code: number | null, signal: NodeJS.Signals | null) => {
-        if (settled) return;
-        settled = true;
-        resolve({ code, signal });
-      };
-
-      mpv.once("close", (code, signal) => finish(code, signal));
-      mpv.once("error", (error) => {
-        console.error(`\n[!] mpv: ${error.message}`);
-        finish(1, null);
-      });
-    },
-  );
+  const exitPromise = mpv.exited.then((code) => ({
+    code,
+    signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
+  }));
 
   const ipcBootstrap = (async () => {
     if (!ipcPath) return;

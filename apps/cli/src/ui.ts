@@ -4,12 +4,8 @@ import { log } from "@clack/prompts";
 
 type DepStatus = { mpv: boolean };
 
-async function which(cmd: string): Promise<boolean> {
-  return Boolean(Bun.which(cmd));
-}
-
 export async function checkDeps(): Promise<DepStatus> {
-  const mpv = await which("mpv");
+  const mpv = Boolean(Bun.which("mpv"));
 
   if (!mpv) {
     log.error("mpv not found — required for playback.");
