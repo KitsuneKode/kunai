@@ -98,7 +98,11 @@ export function resolvePlaybackResultDecision({
   timing,
 }: PlaybackResultDecisionArgs): PlaybackResultDecision {
   const nearNaturalEnd = didPlaybackEndNearNaturalEnd(result, timing);
-  const interruptedStop = result.endReason === "quit" || controlAction === "stop";
+  // N/P navigation carries explicit user intent — don't treat the resulting
+  // "stop" end-reason as an interrupted session even if position was mid-episode.
+  const isNavigationAction = controlAction === "next" || controlAction === "previous";
+  const interruptedStop =
+    !isNavigationAction && (result.endReason === "quit" || controlAction === "stop");
   const shouldTreatAsInterrupted = interruptedStop && !nearNaturalEnd;
   const nextPauseReason =
     shouldTreatAsInterrupted && session.autoplayPauseReason !== "user"

@@ -333,8 +333,8 @@ function AppRoot({ container }: { container: Container }) {
         : state.stream?.subtitleList?.length
           ? `${state.stream.subtitleList.length} subtitle tracks available`
           : "subtitles not found";
-  const shellWidth = Math.max(80, (stdout.columns ?? 80) - 2);
-  const shellHeight = Math.max(24, (stdout.rows ?? 24) - 1);
+  const shellWidth = stdout.columns ?? 80;
+  const shellHeight = stdout.rows ?? 24;
   const currentViewLabel =
     state.playbackStatus === "loading" || playbackIsActive
       ? "playback"

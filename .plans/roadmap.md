@@ -68,11 +68,18 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 - Diagnostics overlay now includes recent runtime events for search, provider resolution, subtitle decisions, playback, and cache hits
 - Anime episode fallback no longer silently drops into episode 1 when metadata is missing
+- Autoplay end-reason hardened with position-ratio fallback for HLS sources (AllAnime)
+- Timing sources unified under `PlaybackTimingAggregator` — IntroDB + AniSkip in parallel
+- AniSkip integrated for anime intro/credits skip using AniList → MAL ID mapping
+- mpv N/P/I keys, OSD episode transitions, near-EOF prefetch, and window title sync landed
+- Shell now fills full terminal viewport (fullscreen gap fixed)
+- Anime episode cache scoped per title+provider (was provider-only, caused wrong availability across titles)
 
 ## Planned Tracks
 
 | Track                            | Status        | Doc                                                                                                  |
 | -------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------- |
+| **Beta readiness**               | **Active**    | [.plans/beta-readiness.md](.plans/beta-readiness.md)                                                 |
 | Fullscreen root shell redesign   | In Progress   | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                 |
 | Phase 1.8 mounted content tree   | In Progress   | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)   |
 | Phase 2 playback/media runtime   | In Progress   | [.plans/phase-2-playback-media-runtime.md](.plans/phase-2-playback-media-runtime.md)                 |

@@ -361,6 +361,12 @@ export class PersistentMpvSession {
             if (!active) return;
             this.clearReadyWorkFallback();
             this.pendingReadyWork = null;
+            // Fire onNearEof if it was never triggered (e.g. no duration reported).
+            // This gives the prefetch a chance to start even if it will be late.
+            if (!this.nearEofFired) {
+              this.nearEofFired = true;
+              this.currentCycleOptions().onNearEof?.();
+            }
             applyEndFileEvent(active.telemetry, reason, observedAt);
             const result = finalizePlaybackResult(active.telemetry, {
               socketPathCleanedUp: false,

@@ -1,0 +1,146 @@
+import type { PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
+
+const ANISKIP_API = "https://api.aniskip.com/v1/skip-times";
+const ARM_API = "https://arm.haglund.dev/api/v2/ids";
+
+type AniSkipInterval = {
+  startTime: number;
+  endTime: number;
+};
+
+type AniSkipResult = {
+  interval: AniSkipInterval;
+  skipType: string;
+  skipId: string;
+  episodeLength: number;
+};
+
+type AniSkipResponse = {
+  found: boolean;
+  results: AniSkipResult[];
+};
+
+type ArmResponse = {
+  myanimelist?: number | null;
+  anilist?: number | null;
+  [key: string]: unknown;
+};
+
+const malIdCache = new Map<string, number | null>();
+
+async function resolveMALId(anilistId: string, signal?: AbortSignal): Promise<number | null> {
+  if (malIdCache.has(anilistId)) return malIdCache.get(anilistId) ?? null;
+
+  try {
+    const res = await fetch(`${ARM_API}?source=anilist&id=${encodeURIComponent(anilistId)}`, {
+      signal: signal ?? AbortSignal.timeout(4_000),
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) {
+      malIdCache.set(anilistId, null);
+      return null;
+    }
+    const data = (await res.json()) as ArmResponse;
+    const malId = typeof data.myanimelist === "number" ? data.myanimelist : null;
+    malIdCache.set(anilistId, malId);
+    return malId;
+  } catch {
+    malIdCache.set(anilistId, null);
+    return null;
+  }
+}
+
+function skipTypeToField(skipType: string): "intro" | "recap" | "credits" | "preview" | null {
+  switch (skipType) {
+    case "op":
+    case "mixed-op":
+      return "intro";
+    case "ed":
+    case "mixed-ed":
+      return "credits";
+    case "recap":
+      return "recap";
+    default:
+      return null;
+  }
+}
+
+function toSegment(interval: AniSkipInterval): PlaybackTimingSegment {
+  return {
+    startMs: Math.round(interval.startTime * 1000),
+    endMs: Math.round(interval.endTime * 1000),
+  };
+}
+
+export async function fetchAniSkipTimingMetadata(opts: {
+  anilistId: string;
+  episode: number;
+  episodeLength?: number;
+  signal?: AbortSignal;
+}): Promise<PlaybackTimingMetadata | null> {
+  const { anilistId, episode, episodeLength, signal } = opts;
+
+  const malId = await resolveMALId(anilistId, signal);
+  if (!malId) return null;
+
+  const types = ["op", "ed", "recap"];
+  const params = new URLSearchParams(types.map((t) => ["types", t] as [string, string]));
+  if (episodeLength != null) params.set("episode_length", String(episodeLength));
+
+  try {
+    const res = await fetch(`${ANISKIP_API}/${malId}/${episode}?${params.toString()}`, {
+      signal: signal ?? AbortSignal.timeout(5_000),
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as AniSkipResponse;
+    if (!data.found || !data.results?.length) return null;
+
+    const intro: PlaybackTimingSegment[] = [];
+    const recap: PlaybackTimingSegment[] = [];
+    const credits: PlaybackTimingSegment[] = [];
+    const preview: PlaybackTimingSegment[] = [];
+
+    for (const result of data.results) {
+      const field = skipTypeToField(result.skipType);
+      if (!field) continue;
+      const seg = toSegment(result.interval);
+      if (field === "intro") intro.push(seg);
+      else if (field === "recap") recap.push(seg);
+      else if (field === "credits") credits.push(seg);
+      else if (field === "preview") preview.push(seg);
+    }
+
+    if (!intro.length && !recap.length && !credits.length && !preview.length) return null;
+
+    return {
+      tmdbId: anilistId,
+      type: "series",
+      intro,
+      recap,
+      credits,
+      preview,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function mergeTimingMetadata(
+  primary: PlaybackTimingMetadata | null,
+  secondary: PlaybackTimingMetadata | null,
+): PlaybackTimingMetadata | null {
+  if (!primary && !secondary) return null;
+  if (!primary) return secondary;
+  if (!secondary) return primary;
+
+  return {
+    tmdbId: primary.tmdbId,
+    type: primary.type,
+    intro: primary.intro.length ? primary.intro : secondary.intro,
+    recap: primary.recap.length ? primary.recap : secondary.recap,
+    credits: primary.credits.length ? primary.credits : secondary.credits,
+    preview: primary.preview.length ? primary.preview : secondary.preview,
+  };
+}

@@ -62,7 +62,16 @@ export function didPlaybackEndNearNaturalEnd(
   result: PlaybackResult,
   timing?: PlaybackTimingMetadata | null,
 ): boolean {
-  return didPlaybackReachCompletionThreshold(result, timing);
+  if (didPlaybackReachCompletionThreshold(result, timing)) return true;
+
+  // Fallback for sources where mpv never reports a reliable duration (HLS/m3u8).
+  // If the last known non-zero position is ≥ 95% of the last known non-zero duration,
+  // treat playback as having ended near the natural end.
+  const pos = result.lastNonZeroPositionSeconds ?? 0;
+  const dur = result.lastNonZeroDurationSeconds ?? 0;
+  if (dur > 30 && pos / dur >= 0.95) return true;
+
+  return false;
 }
 
 type AvailabilityArgs = {
@@ -110,8 +119,13 @@ export async function resolveEpisodeAvailability({
       .reverse()
       .find((option) => option.index < currentEpisode.episode);
     const nextOption = orderedEpisodes.find((option) => option.index > currentEpisode.episode);
+    // If we have no episode list AND no count, be optimistic — assume there's
+    // at least one more episode. Provider will naturally fail if the episode
+    // doesn't exist, which is a better outcome than silently blocking autoplay.
     const fallbackMax =
-      animeEpisodeCount ?? orderedEpisodes[orderedEpisodes.length - 1]?.index ?? 0;
+      animeEpisodeCount ??
+      orderedEpisodes[orderedEpisodes.length - 1]?.index ??
+      currentEpisode.episode + 1;
     const nextFallbackEpisode =
       !nextOption && currentEpisode.episode < fallbackMax
         ? { season: 1, episode: currentEpisode.episode + 1 }

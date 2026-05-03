@@ -5,6 +5,11 @@
 // Returns when user wants to go back to search or switch mode.
 // =============================================================================
 
+import {
+  AniSkipTimingSource,
+  IntroDbTimingSource,
+  PlaybackTimingAggregator,
+} from "@/infra/timing";
 import { routePlaybackShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
@@ -35,6 +40,7 @@ import type {
   TitleInfo,
   EpisodeInfo,
   EpisodePickerOption,
+  PlaybackTimingMetadata,
   StreamInfo,
   PlaybackResult,
   SubtitleTrack,
@@ -44,11 +50,15 @@ import {
   recoveryForPlaybackFailure,
 } from "@/infra/player/playback-failure-classifier";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
-import { fetchPlaybackTimingMetadata } from "@/introdb";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import { resolveWithFallback } from "@kunai/core";
+
+const timingAggregator = new PlaybackTimingAggregator([
+  IntroDbTimingSource,
+  AniSkipTimingSource,
+]);
 
 export type PlaybackOutcome =
   | "back_to_search"
@@ -170,10 +180,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       string,
       readonly EpisodePickerOption[] | undefined
     >();
-    const playbackTimingByEpisode = new Map<
-      string,
-      Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>>
-    >();
+    const playbackTimingByEpisode = new Map<string, PlaybackTimingMetadata | null>();
     let playbackSession: PlaybackSessionState = createPlaybackSessionState({
       autoNextEnabled: config.autoNext,
     });
@@ -278,6 +285,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             currentEpisode,
             playbackTimingByEpisode,
             resolveController.signal,
+            stateManager.getState().mode === "anime",
           );
 
           const watchedEntries = await historyStore.listByTitle(title.id);
@@ -469,6 +477,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               container,
               effectiveTiming,
               playbackTimingByEpisode,
+              stateManager.getState().mode === "anime",
             );
           }
 
@@ -634,10 +643,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: episodeAvailability.nextEpisode,
               });
               stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
-              playbackSession = {
-                ...playbackSession,
-                stopAfterCurrent: false,
-              };
+              // Explicit navigation resumes autoplay if it was only interrupted (not user-paused).
+              if (playbackSession.autoplayPauseReason === "interrupted") {
+                stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
+                playbackSession = {
+                  ...playbackSession,
+                  stopAfterCurrent: false,
+                  autoplayPaused: false,
+                  autoplayPauseReason: null,
+                };
+              } else {
+                playbackSession = { ...playbackSession, stopAfterCurrent: false };
+              }
               continue;
             }
           }
@@ -649,15 +666,37 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: episodeAvailability.previousEpisode,
               });
               stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
-              playbackSession = {
-                ...playbackSession,
-                stopAfterCurrent: false,
-              };
+              if (playbackSession.autoplayPauseReason === "interrupted") {
+                stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
+                playbackSession = {
+                  ...playbackSession,
+                  stopAfterCurrent: false,
+                  autoplayPaused: false,
+                  autoplayPauseReason: null,
+                };
+              } else {
+                playbackSession = { ...playbackSession, stopAfterCurrent: false };
+              }
               continue;
             }
           }
 
           // Handle post-playback
+          diagnosticsStore.record({
+            category: "playback",
+            message: "Evaluating autoplay advance",
+            context: {
+              endReason: result.endReason,
+              watchedSeconds: result.watchedSeconds,
+              duration: result.duration,
+              lastNonZeroPos: result.lastNonZeroPositionSeconds,
+              lastNonZeroDur: result.lastNonZeroDurationSeconds,
+              sessionMode: playbackSession.mode,
+              autoplayPaused: playbackSession.autoplayPaused,
+              stopAfterCurrent: playbackSession.stopAfterCurrent,
+              hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
+            },
+          });
           const nextEpisode = await resolveAutoplayAdvanceEpisode({
             result,
             title,
@@ -947,18 +986,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     title: TitleInfo,
     episode: EpisodeInfo,
     container: PhaseContext["container"],
-    timingRef?: { current: Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>> },
-    cache?: Map<string, Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>>>,
+    timingRef?: { current: PlaybackTimingMetadata | null },
+    cache?: Map<string, PlaybackTimingMetadata | null>,
+    isAnime?: boolean,
   ): Promise<void> {
     return (async () => {
       try {
-        const timing = await fetchPlaybackTimingMetadata({
-          tmdbId: title.id,
-          type: title.type,
-          season: title.type === "series" ? episode.season : undefined,
-          episode: title.type === "series" ? episode.episode : undefined,
-          signal: AbortSignal.timeout(10_000),
-        });
+        const mode = isAnime ? "anime" : title.type === "movie" ? "movie" : "series";
+        const timing = await timingAggregator.resolve(
+          title,
+          episode,
+          mode,
+          AbortSignal.timeout(10_000),
+        );
         if (timing) {
           if (timingRef) timingRef.current = timing;
           if (cache) {
@@ -979,8 +1019,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   private async getPlaybackTimingMetadata(
     title: TitleInfo,
     episode: EpisodeInfo,
-    cache: Map<string, Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>>>,
+    cache: Map<string, PlaybackTimingMetadata | null>,
     signal?: AbortSignal,
+    isAnime?: boolean,
   ) {
     const cacheKey =
       title.type === "movie"
@@ -991,13 +1032,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       return cache.get(cacheKey) ?? null;
     }
 
-    const timing = await fetchPlaybackTimingMetadata({
-      tmdbId: title.id,
-      type: title.type,
-      season: title.type === "series" ? episode.season : undefined,
-      episode: title.type === "series" ? episode.episode : undefined,
-      signal,
-    });
+    const mode = isAnime ? "anime" : title.type === "movie" ? "movie" : "series";
+    const timing = await timingAggregator.resolve(title, episode, mode, signal);
     cache.set(cacheKey, timing);
     return timing;
   }
@@ -1068,7 +1104,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     context: PhaseContext,
     startAt = 0,
     playbackMode: "manual" | "autoplay-chain" = "manual",
-    timing: Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>> = null,
+    timing: PlaybackTimingMetadata | null = null,
     onNearEof?: () => void,
   ): Promise<PlaybackResult> {
     const { player, stateManager, config } = context.container;
@@ -1290,7 +1326,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     cache: Map<string, readonly EpisodePickerOption[] | undefined>;
     signal?: AbortSignal;
   }): Promise<readonly EpisodePickerOption[] | undefined> {
-    const cacheKey = provider?.metadata.id;
+    const cacheKey =
+      provider && title ? `${provider.metadata.id}:${title.id}` : provider?.metadata.id;
     if (cacheKey && cache.has(cacheKey)) {
       return cache.get(cacheKey);
     }
