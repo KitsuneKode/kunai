@@ -107,6 +107,8 @@ export type ShellPickerOption<T> = {
   value: T;
   label: string;
   detail?: string;
+  tone?: ShellStatusTone;
+  badge?: string;
 };
 
 export type BrowseShellResult<T> =

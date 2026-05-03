@@ -62,6 +62,8 @@ export interface OverlayPickerOption {
   readonly value: string;
   readonly label: string;
   readonly detail?: string;
+  readonly tone?: "success" | "warning";
+  readonly badge?: string;
 }
 
 export type OverlayState =

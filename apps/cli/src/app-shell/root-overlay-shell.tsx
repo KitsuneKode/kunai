@@ -122,6 +122,8 @@ export function RootOverlayShell({
           value: option.value,
           label: option.label,
           detail: option.detail,
+          tone: option.tone,
+          badge: option.badge,
         }))
       : [];
   const filteredProviderOptions = providerOptions.filter((option) => {
@@ -207,7 +209,12 @@ export function RootOverlayShell({
               : overlay.type === "season_picker"
                 ? `Current season ${overlay.currentSeason}`
                 : overlay.type === "episode_picker"
-                  ? `Season ${overlay.season}  ·  Choose an episode`
+                  ? (() => {
+                      const watched = overlay.options.filter((o) => o.tone === "success").length;
+                      return watched > 0
+                        ? `Season ${overlay.season}  ·  ${watched}/${overlay.options.length} watched`
+                        : `Season ${overlay.season}  ·  Choose an episode`;
+                    })()
                   : overlay.type === "subtitle_picker"
                     ? `${overlay.options.length} tracks available`
                     : `Current provider ${state.provider}`;

@@ -380,20 +380,38 @@ export function OverlayPanel({
             {visibleOptions.map((option, index) => {
               const optionIndex = optionWindowStart + index;
               const selected = optionIndex === overlay.selectedIndex;
+              const badgeSuffix = option.badge ? `  ${option.badge}` : "";
               const row = truncateLine(
                 `${option.label}${option.detail ? `  ${option.detail}` : ""}`,
-                contentWidth,
+                contentWidth - badgeSuffix.length,
               );
+              const accentColor =
+                option.tone === "success"
+                  ? palette.green
+                  : option.tone === "warning"
+                    ? palette.amber
+                    : null;
               return (
                 <Text
                   key={`${option.value}-${optionIndex}`}
                   backgroundColor={selected ? palette.cyan : undefined}
-                  color={selected ? "black" : "white"}
                   bold={selected}
-                  dimColor={!selected}
                 >
                   <Text color={selected ? "black" : palette.gray}>{selected ? "❯ " : "  "}</Text>
-                  {row}
+                  <Text
+                    color={selected ? "black" : (accentColor ?? "white")}
+                    dimColor={!selected && !accentColor}
+                  >
+                    {row}
+                  </Text>
+                  {badgeSuffix ? (
+                    <Text
+                      color={selected ? "black" : (accentColor ?? palette.gray)}
+                      dimColor={!selected && !accentColor}
+                    >
+                      {badgeSuffix}
+                    </Text>
+                  ) : null}
                 </Text>
               );
             })}

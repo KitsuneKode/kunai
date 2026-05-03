@@ -119,6 +119,7 @@ async function pickEpisodeSelection(
       initEpisode,
       createPickerActionContext(opts.container, "Choose episode"),
       opts.container,
+      opts.currentId,
     );
     if (!episode) return null;
     return { season, episode: episode.number };

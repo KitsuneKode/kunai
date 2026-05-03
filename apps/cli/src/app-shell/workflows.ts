@@ -106,8 +106,20 @@ export async function chooseEpisodeFromOptions(
   currentEpisode: number,
   actionContext?: ListShellActionContext,
   container?: Container,
+  titleId?: string,
 ): Promise<EpisodeInfo | null> {
   if (episodes.length === 0) return null;
+
+  // Load per-episode watch status from history when context is available.
+  const episodeStatus = await buildEpisodeStatusMap(container, titleId, season, episodes);
+
+  let watchedSubtitle: string | null = null;
+  if (episodeStatus.size > 0) {
+    const finishedCount = [...episodeStatus.values()].filter((s) => s.tone === "success").length;
+    if (finishedCount > 0) {
+      watchedSubtitle = `${finishedCount}/${episodes.length} watched`;
+    }
+  }
 
   if (container) {
     container.stateManager.dispatch({
@@ -115,14 +127,19 @@ export async function chooseEpisodeFromOptions(
       overlay: {
         type: "episode_picker",
         season,
-        options: episodes.map((episode) => ({
-          value: String(episode.number),
-          label:
-            episode.number === currentEpisode
-              ? `Episode ${episode.number}  ·  ${episode.name}  ·  current`
-              : `Episode ${episode.number}  ·  ${episode.name}`,
-          detail: `${episode.airDate || "unknown year"}${episode.overview ? `  ·  ${episode.overview}` : ""}`,
-        })),
+        options: episodes.map((episode) => {
+          const status = episodeStatus.get(episode.number);
+          return {
+            value: String(episode.number),
+            label:
+              episode.number === currentEpisode
+                ? `Episode ${episode.number}  ·  ${episode.name}  ·  current`
+                : `Episode ${episode.number}  ·  ${episode.name}`,
+            detail: `${episode.airDate || "unknown year"}${episode.overview ? `  ·  ${episode.overview}` : ""}`,
+            tone: status?.tone,
+            badge: status?.badge,
+          };
+        }),
       },
     });
     const picked = await waitForRootPicker();
@@ -132,7 +149,7 @@ export async function chooseEpisodeFromOptions(
 
   return chooseOption({
     title: "Choose episode",
-    subtitle: `Season ${season}  ·  Current episode ${currentEpisode}`,
+    subtitle: `Season ${season}  ·  ${watchedSubtitle ?? `Current episode ${currentEpisode}`}`,
     actionContext,
     options: episodes.map((episode) => ({
       value: episode,
@@ -143,6 +160,44 @@ export async function chooseEpisodeFromOptions(
       detail: `${episode.airDate || "unknown year"}${episode.overview ? `  ·  ${episode.overview}` : ""}`,
     })),
   });
+}
+
+type EpisodeStatusEntry = { tone: "success" | "warning"; badge: string };
+
+async function buildEpisodeStatusMap(
+  container: Container | undefined,
+  titleId: string | undefined,
+  season: number,
+  episodes: readonly EpisodeInfo[],
+): Promise<Map<number, EpisodeStatusEntry>> {
+  const map = new Map<number, EpisodeStatusEntry>();
+  if (!container || !titleId) return map;
+
+  const allEntries = await container.historyStore.listByTitle(titleId);
+  const seasonEntries = allEntries.filter((e) => e.season === season);
+  if (seasonEntries.length === 0) return map;
+
+  // Direct status from history — take most recent entry per episode.
+  for (const entry of seasonEntries) {
+    if (!map.has(entry.episode)) {
+      if (isFinished(entry)) {
+        map.set(entry.episode, { tone: "success", badge: "✓" });
+      } else if (entry.timestamp > 0 && entry.duration > 0) {
+        const pct = Math.round((entry.timestamp / entry.duration) * 100);
+        map.set(entry.episode, { tone: "warning", badge: `${pct}%` });
+      }
+    }
+  }
+
+  // Mark episodes before the furthest-watched as implicitly finished.
+  const maxWatched = Math.max(...seasonEntries.map((e) => e.episode));
+  for (const ep of episodes) {
+    if (ep.number < maxWatched && !map.has(ep.number)) {
+      map.set(ep.number, { tone: "success", badge: "✓" });
+    }
+  }
+
+  return map;
 }
 
 function formatHistoryLabel(entry: HistoryEntry): string {
