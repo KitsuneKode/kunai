@@ -47,6 +47,11 @@ type PlayerCycleOptions = {
   autoNextEnabled?: boolean;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+  /** Called when the user presses N or P inside the mpv window. The mpv process
+   *  handles the stop itself; the app only needs to record the intent. */
+  onMpvActionRequest?: (action: "next" | "previous") => void;
+  /** Called once when playback position is within ~30 s of the end. */
+  onNearEof?: () => void;
 };
 
 type PlayerCycleState = {
@@ -63,6 +68,7 @@ export class PersistentMpvSession {
   private readonly id = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   private readonly ipcPath =
     process.platform === "win32" ? null : join(tmpdir(), `kunai-mpv-${this.id}.sock`);
+  private luaScriptPath: string | null = null;
   private mpv: MpvProcess | null = null;
   private ipcSession: MpvIpcSession | null = null;
   private activeCycle: PlayerCycleState | null = null;
@@ -79,6 +85,8 @@ export class PersistentMpvSession {
   private readyWorkFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private terminationPromise: Promise<void> | null = null;
   private terminated = false;
+  private lastSkipTo = -1;
+  private nearEofFired = false;
 
   private constructor(
     private readonly initialStream: StreamInfo,
@@ -110,6 +118,9 @@ export class PersistentMpvSession {
       attachSubtitles: async (attachment) => await this.attachSubtitles(attachment),
       skipCurrentSegment: async () => this.skipCurrentSegment(),
       updateTiming: (timing) => this.updateTiming(timing),
+      showOsdMessage: async (text, durationMs) => {
+        await this.ipcSession?.send(["show-text", text, durationMs], 1_000);
+      },
     };
   }
 
@@ -224,6 +235,9 @@ export class PersistentMpvSession {
     this.terminated = false;
     this.beginCycle(this.initialOptions);
     this.initialOptions.onPlaybackEvent?.({ type: "launching-player" });
+
+    this.luaScriptPath = await writeLuaScript(this.id);
+
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -234,7 +248,12 @@ export class PersistentMpvSession {
         startAt: this.initialOptions.startAt,
       },
       this.ipcPath,
-      { persistent: true, includeStartArg: false, mpv: mpvOptions },
+      {
+        persistent: true,
+        includeStartArg: false,
+        mpv: mpvOptions,
+        scriptPath: this.luaScriptPath ?? undefined,
+      },
     );
 
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) =>
@@ -289,6 +308,18 @@ export class PersistentMpvSession {
           socketPath: this.ipcPath,
           onPropertyUpdate: ({ name, value, observedAt }) => {
             const active = this.activeCycle;
+
+            // user-data/kunai-request is written by the Lua script when the user
+            // presses N/P inside mpv. Handle it regardless of activeCycle state.
+            if (name === "user-data/kunai-request") {
+              const req = typeof value === "string" ? value : null;
+              if (req === "next" || req === "previous") {
+                this.currentCycleOptions().onMpvActionRequest?.(req);
+                void this.ipcSession?.send(["set_property", "user-data/kunai-request", ""], 500);
+              }
+              return;
+            }
+
             if (!active) return;
             applyObservedPropertySample(active.telemetry, { name, value, observedAt });
             if (active.telemetry.latestIpcSample) {
@@ -304,6 +335,15 @@ export class PersistentMpvSession {
                 active.onPlaybackEvent?.({ type: "playback-started" });
               }
               void this.maybeAutoSkip(this.currentCycleOptions(), true);
+
+              // Near-EOF detection for prefetch — fire once per cycle when within 30s of end.
+              if (!this.nearEofFired) {
+                const duration = active.telemetry.latestIpcSample?.durationSeconds ?? 0;
+                if (duration > 30 && duration - value < 30) {
+                  this.nearEofFired = true;
+                  this.currentCycleOptions().onNearEof?.();
+                }
+              }
             }
             if (
               !active.playerReadyNotified &&
@@ -364,6 +404,10 @@ export class PersistentMpvSession {
 
       this.currentCycleOptions().onPlaybackEvent?.({ type: "ipc-connected" });
       this.currentCycleOptions().onPlaybackEvent?.({ type: "opening-stream" });
+
+      // Observe user-data properties written by the kunai Lua script so that
+      // key presses inside the mpv window are routed back to the app.
+      void this.ipcSession.send(["observe_property", 200, "user-data/kunai-request"], 1_000);
     }
     this.queueReadyWork(this.initialOptions);
   }
@@ -391,6 +435,8 @@ export class PersistentMpvSession {
   private resetCycleState(): void {
     this.currentPositionSeconds = 0;
     this.skippedSegments = new Set<string>();
+    this.lastSkipTo = -1;
+    this.nearEofFired = false;
   }
 
   private queueReadyWork(options: PlayerCycleOptions): void {
@@ -421,6 +467,11 @@ export class PersistentMpvSession {
     }
 
     if (!this.ipcSession) return;
+
+    // Always push the display title for this episode so the mpv window title and
+    // OSD stay correct across persistent-session episode transitions.
+    await this.ipcSession.send(["set_property", "force-media-title", options.displayTitle], 1_000);
+
     if (options.startAt && options.startAt > 5) {
       options.onPlaybackEvent?.({ type: "resolving-playback" });
       await this.ipcSession.send(["seek", options.startAt, "absolute"], 2_000);
@@ -531,6 +582,15 @@ export class PersistentMpvSession {
       this.currentPositionSeconds,
       this.skipConfig(options),
     );
+
+    // Keep user-data/kunai-skip-to in sync so the Lua I-key binding can seek
+    // without a round-trip through the app.
+    const newSkipTo = activeSkip ? activeSkip.endSeconds : -1;
+    if (newSkipTo !== this.lastSkipTo && this.ipcSession) {
+      this.lastSkipTo = newSkipTo;
+      this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-to", newSkipTo]);
+    }
+
     if (!activeSkip || !this.ipcSession || this.skippedSegments.has(activeSkip.key)) {
       return false;
     }
@@ -596,6 +656,7 @@ export class PersistentMpvSession {
 
       await this.closeIpcSession();
       await this.cleanupSocket();
+      await this.cleanupLuaScript();
 
       this.mpv = null;
       this.hasLoadedFile = false;
@@ -624,6 +685,55 @@ export class PersistentMpvSession {
     if (!this.ipcPath || !existsSync(this.ipcPath)) return;
     await unlink(this.ipcPath).catch(() => {});
   }
+
+  private async cleanupLuaScript(): Promise<void> {
+    if (!this.luaScriptPath) return;
+    const path = this.luaScriptPath;
+    this.luaScriptPath = null;
+    if (existsSync(path)) await unlink(path).catch(() => {});
+  }
+}
+
+async function writeLuaScript(id: string): Promise<string | null> {
+  if (process.platform === "win32") return null;
+  const path = join(tmpdir(), `kunai-mpv-keys-${id}.lua`);
+  const content = `
+-- kunai mpv keybinding bridge
+-- Sets user-data properties that the app observes via IPC.
+-- N / n  → next episode    P / p → previous episode
+-- I / i  → skip segment (position written to user-data/kunai-skip-to by app)
+
+local function signal(action)
+  mp.set_property("user-data/kunai-request", action)
+end
+
+local function do_next()
+  signal("next")
+  mp.commandv("stop")
+end
+
+local function do_previous()
+  signal("previous")
+  mp.commandv("stop")
+end
+
+local function do_skip()
+  local skip_to = mp.get_property_number("user-data/kunai-skip-to", -1)
+  if skip_to and skip_to > 0 then
+    mp.commandv("seek", tostring(skip_to), "absolute")
+    mp.osd_message("Skipped", 1)
+  end
+end
+
+mp.add_key_binding("n", "kunai-next",           do_next,     {repeatable=false})
+mp.add_key_binding("N", "kunai-next-shift",     do_next,     {repeatable=false})
+mp.add_key_binding("p", "kunai-prev",           do_previous, {repeatable=false})
+mp.add_key_binding("P", "kunai-prev-shift",     do_previous, {repeatable=false})
+mp.add_key_binding("i", "kunai-skip",           do_skip,     {repeatable=false})
+mp.add_key_binding("I", "kunai-skip-shift",     do_skip,     {repeatable=false})
+`;
+  await Bun.write(path, content);
+  return path;
 }
 
 function extractExternalSubtitleIds(trackList: unknown): number[] {

@@ -187,7 +187,16 @@ export function applyEndFileEvent(
   reason: string | null | undefined,
   observedAt = Date.now(),
 ) {
-  const mapped = mapMpvEndReason(reason);
+  let mapped = mapMpvEndReason(reason);
+  // With --keep-open=yes some mpv builds emit end-file without a clear eof reason.
+  // Promote to "eof" when eof-reached was previously observed so autoplay isn't
+  // incorrectly blocked by an ambiguous reason string.
+  if (
+    mapped === "unknown" &&
+    (state.latestIpcSample?.eofReached || state.lastNonZeroSample?.eofReached)
+  ) {
+    mapped = "eof";
+  }
   state.endReason = mapped;
 
   const base = state.latestIpcSample ?? state.lastNonZeroSample;

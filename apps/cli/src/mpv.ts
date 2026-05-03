@@ -217,7 +217,12 @@ export function buildMpvArgs(
     startAt?: number;
   },
   ipcPath: string | null,
-  config?: { persistent?: boolean; includeStartArg?: boolean; mpv?: MpvRuntimeOptions },
+  config?: {
+    persistent?: boolean;
+    includeStartArg?: boolean;
+    mpv?: MpvRuntimeOptions;
+    scriptPath?: string;
+  },
 ): string[] {
   const args: string[] = [opts.url];
 
@@ -264,6 +269,7 @@ export function buildMpvArgs(
     args.push(`--log-file=${config.mpv.logFile}`);
   }
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
+  if (config?.scriptPath) args.push(`--script=${config.scriptPath}`);
 
   return args;
 }

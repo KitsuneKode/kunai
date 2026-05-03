@@ -166,34 +166,7 @@ export class PlayerServiceImpl implements PlayerService {
       await this.releasePersistentSession();
     }
 
-    if (!this.persistentSession) {
-      this.persistentSession = await PersistentMpvSession.create({
-        stream,
-        options: {
-          displayTitle: options.displayTitle,
-          primarySubtitle: stream.subtitle ?? null,
-          subtitleTracks: stream.subtitleList,
-          startAt: options.startAt,
-          timing: options.timing,
-          skipRecap: options.skipRecap,
-          skipIntro: options.skipIntro,
-          skipPreview: options.skipPreview,
-          skipCredits: options.skipCredits,
-          autoNextEnabled: true,
-          onPlayerReady: options.onPlayerReady,
-          onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
-        },
-        mpv: this.deps.mpv,
-        onControlReady: (control) => this.deps.playerControl.setActive(control),
-      });
-      const result = await this.persistentSession.waitForCurrentPlayback();
-      if (this.persistentSession && !this.persistentSession.isReusable()) {
-        await this.releasePersistentSession();
-      }
-      return result;
-    }
-
-    const result = await this.persistentSession.play(stream, {
+    const sharedOptions = {
       displayTitle: options.displayTitle,
       primarySubtitle: stream.subtitle ?? null,
       subtitleTracks: stream.subtitleList,
@@ -206,7 +179,27 @@ export class PlayerServiceImpl implements PlayerService {
       autoNextEnabled: true,
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
-    });
+      onMpvActionRequest: (action: "next" | "previous") => {
+        this.deps.playerControl.signalPlaybackAction(action);
+      },
+      onNearEof: options.onNearEof,
+    };
+
+    if (!this.persistentSession) {
+      this.persistentSession = await PersistentMpvSession.create({
+        stream,
+        options: sharedOptions,
+        mpv: this.deps.mpv,
+        onControlReady: (control) => this.deps.playerControl.setActive(control),
+      });
+      const result = await this.persistentSession.waitForCurrentPlayback();
+      if (this.persistentSession && !this.persistentSession.isReusable()) {
+        await this.releasePersistentSession();
+      }
+      return result;
+    }
+
+    const result = await this.persistentSession.play(stream, sharedOptions);
 
     if (this.persistentSession && !this.persistentSession.isReusable()) {
       await this.releasePersistentSession();

@@ -35,6 +35,10 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     return action;
   }
 
+  signalPlaybackAction(action: PlaybackControlAction): void {
+    this.lastAction = action;
+  }
+
   async stopCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "stop";
     return this.stopWithAction("stop", reason);

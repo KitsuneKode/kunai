@@ -18,12 +18,16 @@ export interface ActivePlayerControl {
   attachSubtitles?(attachment: LateSubtitleAttachment): Promise<number>;
   skipCurrentSegment?(): Promise<boolean>;
   updateTiming?(timing: PlaybackTimingMetadata | null): void;
+  showOsdMessage?(text: string, durationMs: number): Promise<void>;
 }
 
 export interface PlayerControlService {
   setActive(control: ActivePlayerControl | null): void;
   getActive(): ActivePlayerControl | null;
   consumeLastAction(): PlaybackControlAction | null;
+  /** Signal that a playback action was initiated from inside mpv (e.g. N/P key),
+   *  without sending a stop command (mpv handles that itself). */
+  signalPlaybackAction(action: PlaybackControlAction): void;
   stopCurrentPlayback(reason?: string): Promise<boolean>;
   refreshCurrentPlayback(reason?: string): Promise<boolean>;
   fallbackCurrentPlayback(reason?: string): Promise<boolean>;

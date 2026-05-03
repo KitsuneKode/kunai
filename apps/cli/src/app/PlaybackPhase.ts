@@ -251,6 +251,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       stateManager.dispatch({ type: "SELECT_EPISODE", episode });
 
+      // Holds a prefetched stream for the upcoming episode (set during near-EOF).
+      let pendingPrefetchedStream: import("@/domain/types").StreamInfo | null = null;
+
       // Inner playback loop
       while (true) {
         const currentEpisode = stateManager.getState().currentEpisode;
@@ -331,8 +334,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             note: "Esc cancels this resolve and returns to results",
           });
 
-          let stream: StreamInfo | null = null;
+          // Use a prefetched stream (prepared during the previous episode's near-EOF
+          // window) or fall back to a full provider resolve.
+          const consumedPrefetch = pendingPrefetchedStream;
+          pendingPrefetchedStream = null;
+
+          let stream: StreamInfo | null = consumedPrefetch ?? null;
           let resolvedProviderId = currentProvider.metadata.id;
+
           const resolveTrace = createResolveTraceStub({
             title,
             episode: currentEpisode,
@@ -342,55 +351,97 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           diagnosticsStore.record({
             category: "provider",
             message: "Resolve trace started",
-            context: {
-              trace: resolveTrace,
-            },
-          });
-          const compatibleProviders = providerRegistry.getCompatible(title);
-          const resolveResult = await resolveWithFallback<StreamInfo>({
-            candidates: compatibleProviders.map((p) => ({
-              providerId: p.metadata.id,
-              preferred: p.metadata.id === currentProvider.metadata.id,
-              resolve: () =>
-                p.resolveStream(
-                  {
-                    title,
-                    episode: currentEpisode,
-                    subLang: stateManager.getState().subLang,
-                  },
-                  resolveController.signal,
-                ),
-            })),
+            context: { trace: resolveTrace },
           });
 
-          stream = resolveResult.stream;
-          resolvedProviderId = resolveResult.providerId ?? currentProvider.metadata.id;
-
-          for (const attempt of resolveResult.attempts) {
+          if (consumedPrefetch) {
+            logger.info("Using prefetched stream for episode", {
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+            });
             diagnosticsStore.record({
               category: "provider",
-              message: attempt.stream
-                ? "Provider resolve attempt succeeded"
-                : "Provider resolve attempt failed",
+              message: "Using prefetched stream",
               context: {
-                provider: attempt.providerId,
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
-                hasTrace: Boolean(attempt.result?.trace),
-                failure: attempt.failure ?? null,
               },
             });
-          }
-
-          if (resolvedProviderId !== currentProvider.metadata.id) {
-            logger.info("Resolved stream with fallback provider", {
-              from: currentProvider.metadata.id,
-              fallback: resolvedProviderId,
+          } else {
+            const compatibleProviders = providerRegistry.getCompatible(title);
+            const resolveResult = await resolveWithFallback<StreamInfo>({
+              candidates: compatibleProviders.map((p) => ({
+                providerId: p.metadata.id,
+                preferred: p.metadata.id === currentProvider.metadata.id,
+                resolve: () =>
+                  p.resolveStream(
+                    {
+                      title,
+                      episode: currentEpisode,
+                      subLang: stateManager.getState().subLang,
+                    },
+                    resolveController.signal,
+                  ),
+              })),
             });
-            stateManager.dispatch({ type: "SET_PROVIDER", provider: resolvedProviderId });
+
+            stream = resolveResult.stream;
+            resolvedProviderId = resolveResult.providerId ?? currentProvider.metadata.id;
+
+            for (const attempt of resolveResult.attempts) {
+              diagnosticsStore.record({
+                category: "provider",
+                message: attempt.stream
+                  ? "Provider resolve attempt succeeded"
+                  : "Provider resolve attempt failed",
+                context: {
+                  provider: attempt.providerId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  hasTrace: Boolean(attempt.result?.trace),
+                  failure: attempt.failure ?? null,
+                },
+              });
+            }
+
+            if (resolvedProviderId !== currentProvider.metadata.id) {
+              logger.info("Resolved stream with fallback provider", {
+                from: currentProvider.metadata.id,
+                fallback: resolvedProviderId,
+              });
+              stateManager.dispatch({ type: "SET_PROVIDER", provider: resolvedProviderId });
+            }
+
+            if (!stream) {
+              return {
+                status: "error",
+                error: {
+                  code: "STREAM_NOT_FOUND",
+                  message: "Could not resolve stream from any provider",
+                  retryable: true,
+                  provider: currentProvider.metadata.id,
+                },
+              };
+            }
+
+            if (stream.providerResolveResult) {
+              diagnosticsStore.record({
+                category: "provider",
+                message: "Provider resolve trace completed",
+                context: {
+                  trace: stream.providerResolveResult.trace,
+                  streamCandidates: stream.providerResolveResult.streams.length,
+                  subtitleCandidates: stream.providerResolveResult.subtitles.length,
+                  cachePolicy: stream.providerResolveResult.cachePolicy,
+                },
+              });
+            }
           }
 
+          // TypeScript cannot narrow `stream` across the conditional mutation above.
           if (!stream) {
             return {
               status: "error",
@@ -401,19 +452,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 provider: currentProvider.metadata.id,
               },
             };
-          }
-
-          if (stream.providerResolveResult) {
-            diagnosticsStore.record({
-              category: "provider",
-              message: "Provider resolve trace completed",
-              context: {
-                trace: stream.providerResolveResult.trace,
-                streamCandidates: stream.providerResolveResult.streams.length,
-                subtitleCandidates: stream.providerResolveResult.subtitles.length,
-                cachePolicy: stream.providerResolveResult.cachePolicy,
-              },
-            });
           }
 
           // Await timing — stream resolve takes much longer so this is nearly free.
@@ -447,6 +485,37 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Pass loading handle so playStream can update it in-place (no shell flicker).
           const startAt = pendingStartAt;
           pendingStartAt = 0;
+
+          // Prefetch: start resolving the next episode's stream in the background
+          // when we enter the last ~30 s, so autoplay feels instant.
+          let prefetchedNextStream: import("@/domain/types").StreamInfo | null = null;
+          const maybePrefetchNext = () => {
+            if (
+              playbackSession.mode !== "autoplay-chain" ||
+              playbackSession.autoplayPaused ||
+              !episodeAvailability.nextEpisode ||
+              title.type !== "series"
+            ) {
+              return;
+            }
+            const nextEp = episodeAvailability.nextEpisode;
+            const prefetchProvider = providerRegistry.get(stateManager.getState().provider);
+            if (!prefetchProvider) return;
+            void prefetchProvider
+              .resolveStream(
+                {
+                  title,
+                  episode: nextEp,
+                  subLang: stateManager.getState().subLang,
+                },
+                AbortSignal.timeout(30_000),
+              )
+              .then((s) => {
+                if (s) prefetchedNextStream = s;
+              })
+              .catch(() => {});
+          };
+
           const result = await this.playStream(
             preparedStream,
             title,
@@ -455,6 +524,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             startAt,
             playbackSession.mode,
             playbackTiming,
+            maybePrefetchNext,
           );
 
           // Save history — use effectiveTiming.current so that a background retry
@@ -603,6 +673,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               episode: currentEpisode.episode,
               nextSeason: nextEpisode.season,
               nextEpisode: nextEpisode.episode,
+              hasPrefetch: prefetchedNextStream !== null,
             });
             diagnosticsStore.record({
               category: "playback",
@@ -613,8 +684,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: currentEpisode.episode,
                 nextSeason: nextEpisode.season,
                 nextEpisode: nextEpisode.episode,
+                hasPrefetch: prefetchedNextStream !== null,
               },
             });
+
+            // Show OSD in the still-open mpv window so the user sees progress.
+            const osdLabel = `Loading S${String(nextEpisode.season).padStart(2, "0")}E${String(nextEpisode.episode).padStart(2, "0")}…`;
+            void playerControl.getActive()?.showOsdMessage?.(osdLabel, 12_000);
+
             stateManager.dispatch({
               type: "SELECT_EPISODE",
               episode: nextEpisode,
@@ -624,6 +701,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               ...playbackSession,
               stopAfterCurrent: false,
             };
+
+            // If we prefetched the stream, inject it directly so the loop can
+            // skip the provider scrape and call loadfile immediately.
+            if (prefetchedNextStream) {
+              pendingPrefetchedStream = prefetchedNextStream;
+            }
+
             continue;
           }
 
@@ -985,6 +1069,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     startAt = 0,
     playbackMode: "manual" | "autoplay-chain" = "manual",
     timing: Awaited<ReturnType<typeof fetchPlaybackTimingMetadata>> = null,
+    onNearEof?: () => void,
   ): Promise<PlaybackResult> {
     const { player, stateManager, config } = context.container;
 
@@ -1021,6 +1106,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         skipIntro: config.skipIntro,
         skipPreview: config.skipPreview,
         skipCredits: config.skipCredits,
+        onNearEof,
         onPlaybackEvent: (event) => {
           this.updatePlaybackFeedback(context, this.describePlayerEvent(event));
           if (event.type === "network-buffering") {

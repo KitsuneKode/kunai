@@ -52,6 +52,8 @@ export interface PlayerOptions {
   onProgress?: (seconds: number) => void;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+  /** Called once when playback enters the last ~30 s (autoplay-chain mode only). */
+  onNearEof?: () => void;
 }
 
 export interface PlayerService {
