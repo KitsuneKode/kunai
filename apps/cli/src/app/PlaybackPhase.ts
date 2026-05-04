@@ -165,6 +165,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       logger,
       historyStore,
       config,
+      cacheStore,
       diagnosticsStore,
       playerControl,
       player,
@@ -372,74 +373,129 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               },
             });
           } else {
-            const compatibleProviders = providerRegistry.getCompatible(title);
-            const resolveResult = await resolveWithFallback<StreamInfo>({
-              candidates: compatibleProviders.map((p) => ({
-                providerId: p.metadata.id,
-                preferred: p.metadata.id === currentProvider.metadata.id,
-                resolve: () =>
-                  p.resolveStream(
-                    {
-                      title,
-                      episode: currentEpisode,
-                      subLang: stateManager.getState().subLang,
-                    },
-                    resolveController.signal,
-                  ),
-              })),
-            });
-
-            stream = resolveResult.stream;
-            resolvedProviderId = resolveResult.providerId ?? currentProvider.metadata.id;
-
-            for (const attempt of resolveResult.attempts) {
+            const subLang = stateManager.getState().subLang;
+            const resolveCacheKey = this.buildProviderResolveCacheKey(
+              currentProvider.metadata.id,
+              title,
+              currentEpisode,
+              stateManager.getState().mode,
+              subLang,
+              config.animeLang,
+            );
+            const cachedStream = await cacheStore.get(resolveCacheKey);
+            if (cachedStream) {
+              stream = { ...cachedStream, cacheProvenance: "cached" };
+              resolvedProviderId = currentProvider.metadata.id;
+              logger.info("Provider resolve cache hit", {
+                provider: currentProvider.metadata.id,
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+              });
               diagnosticsStore.record({
-                category: "provider",
-                message: attempt.stream
-                  ? "Provider resolve attempt succeeded"
-                  : "Provider resolve attempt failed",
+                category: "cache",
+                message: "Provider resolve cache hit",
                 context: {
-                  provider: attempt.providerId,
+                  provider: currentProvider.metadata.id,
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  hasTrace: Boolean(attempt.result?.trace),
-                  failure: attempt.failure ?? null,
                 },
               });
-            }
-
-            if (resolvedProviderId !== currentProvider.metadata.id) {
-              logger.info("Resolved stream with fallback provider", {
-                from: currentProvider.metadata.id,
-                fallback: resolvedProviderId,
-              });
-              stateManager.dispatch({ type: "SET_PROVIDER", provider: resolvedProviderId });
-            }
-
-            if (!stream) {
-              return {
-                status: "error",
-                error: {
-                  code: "STREAM_NOT_FOUND",
-                  message: "Could not resolve stream from any provider",
-                  retryable: true,
-                  provider: currentProvider.metadata.id,
-                },
-              };
-            }
-
-            if (stream.providerResolveResult) {
+            } else {
               diagnosticsStore.record({
-                category: "provider",
-                message: "Provider resolve trace completed",
+                category: "cache",
+                message: "Provider resolve cache miss",
                 context: {
-                  trace: stream.providerResolveResult.trace,
-                  streamCandidates: stream.providerResolveResult.streams.length,
-                  subtitleCandidates: stream.providerResolveResult.subtitles.length,
-                  cachePolicy: stream.providerResolveResult.cachePolicy,
+                  provider: currentProvider.metadata.id,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
                 },
               });
+              const compatibleProviders = providerRegistry.getCompatible(title);
+              const resolveResult = await resolveWithFallback<StreamInfo>({
+                candidates: compatibleProviders.map((p) => ({
+                  providerId: p.metadata.id,
+                  preferred: p.metadata.id === currentProvider.metadata.id,
+                  resolve: () =>
+                    p.resolveStream(
+                      {
+                        title,
+                        episode: currentEpisode,
+                        subLang,
+                      },
+                      resolveController.signal,
+                    ),
+                })),
+              });
+
+              stream = resolveResult.stream;
+              resolvedProviderId = resolveResult.providerId ?? currentProvider.metadata.id;
+
+              for (const attempt of resolveResult.attempts) {
+                diagnosticsStore.record({
+                  category: "provider",
+                  message: attempt.stream
+                    ? "Provider resolve attempt succeeded"
+                    : "Provider resolve attempt failed",
+                  context: {
+                    provider: attempt.providerId,
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                    hasTrace: Boolean(attempt.result?.trace),
+                    failure: attempt.failure ?? null,
+                  },
+                });
+              }
+
+              if (resolvedProviderId !== currentProvider.metadata.id) {
+                logger.info("Resolved stream with fallback provider", {
+                  from: currentProvider.metadata.id,
+                  fallback: resolvedProviderId,
+                });
+                stateManager.dispatch({ type: "SET_PROVIDER", provider: resolvedProviderId });
+              }
+
+              if (!stream) {
+                return {
+                  status: "error",
+                  error: {
+                    code: "STREAM_NOT_FOUND",
+                    message: "Could not resolve stream from any provider",
+                    retryable: true,
+                    provider: currentProvider.metadata.id,
+                  },
+                };
+              }
+
+              if (stream.providerResolveResult) {
+                diagnosticsStore.record({
+                  category: "provider",
+                  message: "Provider resolve trace completed",
+                  context: {
+                    trace: stream.providerResolveResult.trace,
+                    streamCandidates: stream.providerResolveResult.streams.length,
+                    subtitleCandidates: stream.providerResolveResult.subtitles.length,
+                    cachePolicy: stream.providerResolveResult.cachePolicy,
+                  },
+                });
+              }
+
+              const persistKey = this.buildProviderResolveCacheKey(
+                resolvedProviderId,
+                title,
+                currentEpisode,
+                stateManager.getState().mode,
+                subLang,
+                config.animeLang,
+              );
+              try {
+                await cacheStore.set(persistKey, stream);
+              } catch {
+                // Cache persistence is best-effort; playback already succeeded.
+              }
             }
           }
 
@@ -504,6 +560,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const nextEp = episodeAvailability.nextEpisode;
             const prefetchProvider = providerRegistry.get(stateManager.getState().provider);
             if (!prefetchProvider) return;
+            const prefetchCacheKey = this.buildProviderResolveCacheKey(
+              prefetchProvider.metadata.id,
+              title,
+              nextEp,
+              stateManager.getState().mode,
+              stateManager.getState().subLang,
+              config.animeLang,
+            );
             void prefetchProvider
               .resolveStream(
                 {
@@ -513,8 +577,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 },
                 AbortSignal.timeout(30_000),
               )
-              .then((s) => {
-                if (s) prefetchedNextStream = s;
+              .then(async (s) => {
+                if (s) {
+                  prefetchedNextStream = s;
+                  try {
+                    await cacheStore.set(prefetchCacheKey, s);
+                  } catch {
+                    // best-effort
+                  }
+                }
                 return undefined;
               })
               .catch(() => {});
@@ -581,6 +652,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
           if (playbackDecision.shouldRefreshSource) {
             pendingStartAt = toHistoryTimestamp(result);
+            const refreshCacheKey = this.buildProviderResolveCacheKey(
+              resolvedProviderId,
+              title,
+              currentEpisode,
+              stateManager.getState().mode,
+              stateManager.getState().subLang,
+              config.animeLang,
+            );
+            try {
+              await cacheStore.delete(refreshCacheKey);
+            } catch {
+              // best-effort
+            }
             diagnosticsStore.record({
               category: "playback",
               message: "Refreshing current provider source",
@@ -1330,6 +1414,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       await Bun.sleep(250);
     }
     return false;
+  }
+
+  private buildProviderResolveCacheKey(
+    providerId: string,
+    title: TitleInfo,
+    episode: EpisodeInfo,
+    mode: "series" | "anime",
+    subLang: string,
+    animeLang: "sub" | "dub",
+  ): string {
+    return `api-resolve:${providerId}:${title.type}:${title.id}:${episode.season}:${episode.episode}:${mode}:${subLang}:${animeLang}`;
   }
 
   private async getAnimeEpisodeOptions({

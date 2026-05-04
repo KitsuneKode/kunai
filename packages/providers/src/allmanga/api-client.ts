@@ -227,6 +227,41 @@ export function resolveAnimeEpisodeString(
   return exact ?? episodeStrings[requestedEpisode - 1] ?? String(requestedEpisode);
 }
 
+/** listEpisodes + resolveStream both query this; dedupe within a short window to avoid double network per play. */
+const AVAILABLE_EPISODES_DETAIL_TTL_MS = 45_000;
+const availableEpisodesDetailCache = new Map<
+  string,
+  { readonly expiresAt: number; readonly detail: Record<string, unknown[]> }
+>();
+
+function availableEpisodesDetailCacheKey(apiUrl: string, showId: string): string {
+  return `${apiUrl}\n${showId}`;
+}
+
+async function loadAvailableEpisodesDetail(
+  apiUrl: string,
+  referer: string,
+  ua: string,
+  showId: string,
+): Promise<Record<string, unknown[]>> {
+  const key = availableEpisodesDetailCacheKey(apiUrl, showId);
+  const now = Date.now();
+  const hit = availableEpisodesDetailCache.get(key);
+  if (hit && now < hit.expiresAt) {
+    return hit.detail;
+  }
+  const listQuery = `query($id:String!){show(_id:$id){availableEpisodesDetail}}`;
+  const listData = (await gqlPost(apiUrl, referer, ua, listQuery, { id: showId })) as {
+    data: { show: { availableEpisodesDetail: Record<string, unknown[]> } };
+  };
+  const detail = listData.data.show.availableEpisodesDetail;
+  availableEpisodesDetailCache.set(key, {
+    expiresAt: now + AVAILABLE_EPISODES_DETAIL_TTL_MS,
+    detail,
+  });
+  return detail;
+}
+
 export async function gqlPost(
   apiUrl: string,
   referer: string,
@@ -332,11 +367,8 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
   readonly mode: "sub" | "dub";
 }): Promise<AllMangaEpisodeOption[]> {
   const { apiUrl, referer, ua, showId, mode } = opts;
-  const listQuery = `query($id:String!){show(_id:$id){availableEpisodesDetail}}`;
-  const listData = (await gqlPost(apiUrl, referer, ua, listQuery, { id: showId })) as {
-    data: { show: { availableEpisodesDetail: Record<string, unknown[]> } };
-  };
-  const episodeStrings = (listData.data.show.availableEpisodesDetail[mode] ?? []) as string[];
+  const detail = await loadAvailableEpisodesDetail(apiUrl, referer, ua, showId);
+  const episodeStrings = (detail[mode] ?? []) as string[];
 
   return [...episodeStrings].sort(compareEpisodeStrings).map((episodeString, index) => ({
     index: index + 1,
@@ -387,12 +419,8 @@ export function createAllMangaApiProvider(cfg: AllMangaApiProviderConfig): AllMa
 
     async resolveStream(id, _type, _season, episode, opts) {
       try {
-        const listQuery = `query($id:String!){show(_id:$id){availableEpisodesDetail}}`;
-        const listData = (await gqlPost(cfg.apiUrl, cfg.referer, ua, listQuery, { id })) as {
-          data: { show: { availableEpisodesDetail: Record<string, unknown[]> } };
-        };
-        const episodes = (listData.data.show.availableEpisodesDetail[opts.animeLang] ??
-          []) as string[];
+        const detail = await loadAvailableEpisodesDetail(cfg.apiUrl, cfg.referer, ua, id);
+        const episodes = (detail[opts.animeLang] ?? []) as string[];
         const epStr = resolveAnimeEpisodeString(episodes, episode);
         const links = await resolveEpisodeSources({
           apiUrl: cfg.apiUrl,
