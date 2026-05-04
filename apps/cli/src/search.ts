@@ -36,7 +36,8 @@ const cache = new Map<string, SearchResult[]>();
 
 export async function searchVideasy(query: string): Promise<SearchResult[]> {
   const key = query.toLowerCase().trim();
-  if (cache.has(key)) return cache.get(key)!;
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
 
   const url = `https://db.videasy.net/3/search/multi?language=en&page=1&query=${encodeURIComponent(query)}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(8000) });

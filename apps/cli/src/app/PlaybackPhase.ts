@@ -515,6 +515,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               )
               .then((s) => {
                 if (s) prefetchedNextStream = s;
+                return undefined;
               })
               .catch(() => {});
           };

@@ -288,7 +288,7 @@ export function RootOverlayShell({
     void container.historyStore
       .getAll()
       .then((entries) => {
-        if (cancelled) return;
+        if (cancelled) return undefined;
         setHistorySelections(
           Object.entries(entries).map(([titleId, entry]) => ({
             titleId,
@@ -296,6 +296,7 @@ export function RootOverlayShell({
           })),
         );
         setAsyncLines(buildHistoryPanelLines(Object.entries(entries)));
+        return undefined;
       })
       .finally(() => {
         if (!cancelled) {

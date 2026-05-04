@@ -172,18 +172,17 @@ export async function resolveEpisodeAvailability({
         .sort((a, b) => a.number - b.number)
     : [];
 
+  const lastPreviousEp = previousSeasonEpisodes[previousSeasonEpisodes.length - 1];
   const previousEpisode = previousInSeason
     ? toEpisodeInfo(previousInSeason, currentEpisode.season)
-    : previousSeasonNumber && previousSeasonEpisodes.length > 0
-      ? toEpisodeInfo(
-          previousSeasonEpisodes[previousSeasonEpisodes.length - 1]!,
-          previousSeasonNumber,
-        )
+    : previousSeasonNumber && lastPreviousEp
+      ? toEpisodeInfo(lastPreviousEp, previousSeasonNumber)
       : null;
 
+  const firstNextSeasonEp = nextSeasonEpisodes[0];
   const nextSeasonEpisode =
-    nextSeasonNumber && nextSeasonEpisodes.length > 0
-      ? toEpisodeInfo(nextSeasonEpisodes[0]!, nextSeasonNumber)
+    nextSeasonNumber && firstNextSeasonEp
+      ? toEpisodeInfo(firstNextSeasonEp, nextSeasonNumber)
       : null;
 
   const nextEpisode = nextInSeason

@@ -1,7 +1,7 @@
-import { existsSync } from "fs";
-import { unlink } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type {
   PlaybackResult,
@@ -288,6 +288,7 @@ export class PersistentMpvSession {
         code,
         signal: proc.killed ? ("SIGTERM" as NodeJS.Signals) : null,
       });
+      return undefined;
     });
 
     if (this.ipcPath) {
@@ -473,6 +474,11 @@ export class PersistentMpvSession {
     }
 
     if (!this.ipcSession) return;
+
+    // Ensure playback is not paused when a new file loads. With --keep-open=no this is
+    // normally a no-op, but guards against pause=yes persisting from a previous cycle
+    // (e.g. user paused mid-episode then pressed N, or a keep-open edge case).
+    await this.ipcSession.send(["set_property", "pause", false], 500);
 
     // Always push the display title for this episode so the mpv window title and
     // OSD stay correct across persistent-session episode transitions.

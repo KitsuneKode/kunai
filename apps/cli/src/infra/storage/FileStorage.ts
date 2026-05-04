@@ -4,10 +4,10 @@
 // JSON file persistence using the existing file paths from the legacy code.
 // =============================================================================
 
-import { existsSync, mkdirSync } from "fs";
-import { unlink } from "fs/promises";
-import os from "os";
-import { join, dirname } from "path";
+import { existsSync, mkdirSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import os from "node:os";
+import { join, dirname } from "node:path";
 
 import type { StorageService } from "./StorageService";
 
@@ -64,6 +64,7 @@ export class FileStorage implements StorageService {
     const task = this.writeLock.then(async () => {
       ensureDir(path);
       await Bun.write(path, JSON.stringify(data, null, 2));
+      return undefined;
     });
 
     this.writeLock = task.catch(() => {});
@@ -76,6 +77,7 @@ export class FileStorage implements StorageService {
 
     const task = this.writeLock.then(async () => {
       if (await Bun.file(path).exists()) await unlink(path);
+      return undefined;
     });
 
     this.writeLock = task.catch(() => {});

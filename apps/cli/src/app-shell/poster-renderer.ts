@@ -1,6 +1,6 @@
-import { unlink } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+import { unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { isKittyCompatible } from "../image";
 import type { PosterResult } from "./poster-types";

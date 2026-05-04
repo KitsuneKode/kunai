@@ -84,7 +84,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     await this.enqueueCommand(
       "reload-subtitles",
       reason,
-      async () => await active.reloadSubtitles!(),
+      async () => await active.reloadSubtitles?.(),
     );
     return true;
   }
@@ -115,7 +115,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     const attached = await this.enqueueCommand(
       "attach-subtitles",
       reason,
-      async () => await active.attachSubtitles!(attachment),
+      async () => await active.attachSubtitles?.(attachment),
     );
     if (attached <= 0) return false;
     this.deps.logger.info("Attached late subtitles", { id: active.id, reason, attached });
@@ -156,7 +156,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     return await this.enqueueCommand(
       "skip-segment",
       reason,
-      async () => await active.skipCurrentSegment!(),
+      async () => await active.skipCurrentSegment?.(),
     );
   }
 
@@ -209,7 +209,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       await this.runPriorityCommand(
         action,
         reason,
-        async () => await active.stopCurrentFile!(reason),
+        async () => await active.stopCurrentFile?.(reason),
       );
       return true;
     }

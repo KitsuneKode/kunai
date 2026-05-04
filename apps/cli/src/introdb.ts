@@ -20,8 +20,8 @@ export async function fetchPlaybackTimingMetadata(opts: {
 }): Promise<PlaybackTimingMetadata | null> {
   const { tmdbId, type, season, episode, signal } = opts;
   const params = new URLSearchParams({ tmdb_id: tmdbId });
-  if (type === "series" && season != null) params.set("season", String(season));
-  if (type === "series" && episode != null) params.set("episode", String(episode));
+  if (type === "series" && season !== undefined) params.set("season", String(season));
+  if (type === "series" && episode !== undefined) params.set("episode", String(episode));
 
   try {
     const response = await fetch(`${INTRODB_API}?${params.toString()}`, {

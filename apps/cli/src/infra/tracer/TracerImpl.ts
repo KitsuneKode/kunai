@@ -46,8 +46,8 @@ export class TracerImpl implements Tracer {
       setAttribute: (_key: string, _value: unknown) => {
         // Attributes would be stored here
       },
-      addEvent: (name: string, attributes?: Record<string, unknown>) => {
-        this.options.logger?.debug(`[${name}]`, attributes);
+      addEvent: (eventName: string, attributes?: Record<string, unknown>) => {
+        this.options.logger?.debug(`[${eventName}]`, attributes);
       },
       end: () => {
         // End span

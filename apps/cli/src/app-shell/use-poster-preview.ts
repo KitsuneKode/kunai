@@ -34,9 +34,10 @@ export function usePosterPreview(
     const timer = setTimeout(() => {
       fetchPoster(url, { rows, cols, variant })
         .then((result) => {
-          if (cancelled) return;
+          if (cancelled) return undefined;
           setPosterState(result.kind === "none" ? "unavailable" : "ready");
           setPoster(result);
+          return undefined;
         })
         .catch(() => {
           if (cancelled) return;

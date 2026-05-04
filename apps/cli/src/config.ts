@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync } from "fs";
-import { readFile, writeFile } from "fs/promises";
-import { join } from "path";
+import { existsSync, mkdirSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export type KitsuneConfig = {
   defaultMode: "series" | "anime";

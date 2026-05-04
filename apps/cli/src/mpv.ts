@@ -1,7 +1,7 @@
-import { existsSync } from "fs";
-import { unlink } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { PlaybackResult } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
@@ -242,7 +242,11 @@ export function buildMpvArgs(
   }
   args.push(`--force-media-title=${opts.displayTitle}`);
   if (config?.persistent) {
-    args.push("--keep-open=yes");
+    // keep-open=no is intentional: with keep-open=yes, mpv silently pauses at the last
+    // frame on natural EOF and never fires the end-file IPC event, so play() hangs and
+    // auto-advance is unreachable. keep-open=no fires end-file with reason "eof" reliably.
+    // idle=yes + force-window=yes keep the process and window alive between episodes.
+    args.push("--keep-open=no");
     args.push("--idle=yes");
   } else {
     args.push("--keep-open=no");

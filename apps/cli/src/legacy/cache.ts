@@ -1,5 +1,5 @@
-import { existsSync } from "fs";
-import { appendFile, readFile, writeFile } from "fs/promises";
+import { existsSync } from "node:fs";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 
 import type { StreamData } from "@/scraper";
 

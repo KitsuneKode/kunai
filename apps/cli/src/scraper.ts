@@ -300,6 +300,7 @@ export async function scrapeStream(
             scrapedTitle = await extractTitle(page, config);
             dbg("scraper", "title extracted", { scrapedTitle, strategy: config.titleSource });
           } catch {}
+          return undefined;
         })
         .catch(() => {});
 

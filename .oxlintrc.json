@@ -41,6 +41,7 @@
     "import/no-cycle": "warn",
     "promise/no-return-wrap": "warn",
 
+    "react/react-in-jsx-scope": "off",
     "unicorn/prefer-node-protocol": "warn",
     "unicorn/no-array-for-each": "off",
     "unicorn/no-array-sort": "off",

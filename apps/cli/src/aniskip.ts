@@ -132,7 +132,7 @@ export async function fetchAniSkipTimingMetadata(opts: {
 
   const types = ["op", "ed", "recap"];
   const params = new URLSearchParams(types.map((t) => ["types", t] as [string, string]));
-  if (episodeLength != null) params.set("episode_length", String(episodeLength));
+  if (episodeLength !== undefined) params.set("episode_length", String(episodeLength));
 
   try {
     const res = await fetch(`${ANISKIP_API}/${malId}/${episode}?${params.toString()}`, {
