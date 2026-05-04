@@ -51,10 +51,14 @@ test("path resolver is deterministic across supported platforms", () => {
 
   expect(linux.dataDbPath).toBe("/xdg/data/kunai/kunai-data.sqlite");
   expect(linux.cacheDbPath).toBe("/xdg/cache/kunai/kunai-cache.sqlite");
+  expect(linux.mpvBridgePath).toBe("/xdg/config/kunai/mpv/kunai-bridge.lua");
   expect(mac.configPath).toBe("/Users/k/Library/Application Support/kunai/config.json");
   expect(mac.cacheDbPath).toBe("/Users/k/Library/Caches/kunai/kunai-cache.sqlite");
+  expect(mac.mpvBridgePath).toBe("/Users/k/Library/Application Support/kunai/mpv/kunai-bridge.lua");
   expect(win.configPath).toContain("C:\\Roaming");
   expect(win.dataDbPath).toContain("kunai-data.sqlite");
+  expect(win.mpvBridgePath).toContain("kunai-bridge.lua");
+  expect(win.mpvBridgePath.toLowerCase()).toContain("roaming");
 });
 
 test("migrations are idempotent and create expected storage tables", () => {
