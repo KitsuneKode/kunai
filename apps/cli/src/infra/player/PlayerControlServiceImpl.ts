@@ -13,6 +13,25 @@ type ActiveWait = {
   finish: (value: ActivePlayerControl | null) => void;
 };
 
+function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | null {
+  switch (action) {
+    case "next":
+      return "Kunai · Loading next episode…";
+    case "previous":
+      return "Kunai · Loading previous episode…";
+    case "refresh":
+      return "Kunai · Refreshing stream…";
+    case "fallback":
+      return "Kunai · Trying another source…";
+    case "pick-source":
+      return "Kunai · Select a source in the terminal…";
+    case "pick-quality":
+      return "Kunai · Select quality in the terminal…";
+    default:
+      return null;
+  }
+}
+
 export class PlayerControlServiceImpl implements PlayerControlService {
   private active: ActivePlayerControl | null = null;
   private lastAction: PlaybackControlAction | null = null;
@@ -257,11 +276,17 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       context: { id: active.id, action, reason, stopCurrentFile },
     });
     if (stopCurrentFile && active.stopCurrentFile) {
-      await this.runPriorityCommand(
-        action,
-        reason,
-        async () => await active.stopCurrentFile?.(reason),
-      );
+      await this.runPriorityCommand(action, reason, async () => {
+        const label = episodeTransitionLoadingLabel(action);
+        if (label) {
+          if (active.setEpisodeTransitionLoading) {
+            await active.setEpisodeTransitionLoading(label);
+          } else if (active.showOsdMessage) {
+            await active.showOsdMessage(label, 120_000);
+          }
+        }
+        await active.stopCurrentFile?.(reason);
+      });
       return true;
     }
     await this.runPriorityCommand(action, reason, async () => await active.stop(reason));

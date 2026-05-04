@@ -42,6 +42,11 @@ export interface PlayerOptions {
   subtitleStatus?: string;
   displayTitle: string;
   startAt?: number;
+  /**
+   * When false, skips the mpv “resume here vs start over” prompt for this play (persistent
+   * autoplay only, when startAt is positive). Default true.
+   */
+  resumeStartChoicePrompt?: boolean;
   attach?: boolean;
   playbackMode?: "manual" | "autoplay-chain";
   timing?: PlaybackTimingMetadata | null;

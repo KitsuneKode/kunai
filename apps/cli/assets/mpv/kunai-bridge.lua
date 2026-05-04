@@ -2,6 +2,8 @@
 -- user-data: kunai-skip-to, kunai-skip-auto, kunai-skip-kind, kunai-skip-label, kunai-skip-rev,
 --             kunai-skip-prompt-ms (countdown + Bun auto-skip alignment)
 -- kunai-request: next | previous | skip | auto-skip | quality
+-- kunai-loading: non-empty → full-window “loading episode” overlay (set by Bun or Lua before stop).
+-- kunai-resume-at: seconds > 0 → resume vs start-over prompt (kunai-resume-choice: resume|start).
 --
 -- Script-opts id `kunai-bridge`: margin_bottom, margin_right, chip_width, chip_height, prompt_seconds (Lua-only fallback if prompt-ms unset)
 
@@ -50,6 +52,205 @@ local function esc_ass(s)
 	s = s:gsub("}", "\\}")
 	return s
 end
+
+-- Full-window loading pane between episodes (survives stop → idle → loadfile gaps).
+local loading_overlay = mp.create_osd_overlay("ass-events")
+loading_overlay.z = 1700
+
+local kunai_loading_text = ""
+
+local function sync_kunai_loading_text(raw)
+	if type(raw) == "string" then
+		kunai_loading_text = raw
+	elseif raw ~= nil and raw ~= false then
+		kunai_loading_text = tostring(raw)
+	else
+		kunai_loading_text = ""
+	end
+end
+
+local function draw_kunai_loading_overlay()
+	if kunai_loading_text == "" then
+		loading_overlay.data = ""
+		loading_overlay:remove()
+		return
+	end
+
+	local dim = mp.get_property_native("osd-dimensions", {})
+	local w = dim.w or 1280
+	local h = dim.h or 720
+	local fs = clamp(math.floor(h * 0.046), 26, 48)
+	local cx = math.floor(w / 2)
+	local cy = math.floor(h / 2)
+
+	local line = esc_ass(kunai_loading_text)
+	local hint_fs = clamp(math.floor(h * 0.022), 12, 20)
+	local hint_line = esc_ass("Resolving stream — playback will start automatically.")
+
+	loading_overlay.res_x = w
+	loading_overlay.res_y = h
+	local ass_nl = "\\N"
+	loading_overlay.data = string.format(
+		"{\\an5\\bord5\\blur4\\shadow1\\shadowcolor&H40000000&\\fnSans\\fs%d\\pos(%d,%d)\\c&HF8F8F8&}%s"
+			.. ass_nl
+			.. "{\\alpha&HB0&\\fs%d}%s",
+		fs,
+		cx,
+		cy - math.floor(fs * 0.15),
+		line,
+		hint_fs,
+		hint_line
+	)
+	loading_overlay:update()
+end
+
+mp.observe_property("user-data/kunai-loading", "native", function(_, val)
+	sync_kunai_loading_text(val)
+	draw_kunai_loading_overlay()
+end)
+
+mp.observe_property("osd-dimensions", "native", function()
+	if kunai_loading_text ~= "" then
+		draw_kunai_loading_overlay()
+	end
+end)
+
+pcall(function()
+	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
+	draw_kunai_loading_overlay()
+end)
+
+mp.register_event("file-loaded", function()
+	mp.set_property("user-data/kunai-loading", "")
+	mp.set_property("user-data/kunai-resume-at", 0)
+	mp.set_property("user-data/kunai-resume-choice", "")
+end)
+
+-- Resume vs start-over (persistent session; Bun sets kunai-resume-at > 0).
+local resume_overlay = mp.create_osd_overlay("ass-events")
+resume_overlay.z = 1650
+
+local resume_prompt_timer = nil
+
+local function clear_resume_prompt_bindings()
+	pcall(function()
+		mp.remove_key_binding("kunai-resume-r")
+	end)
+	pcall(function()
+		mp.remove_key_binding("kunai-resume-o")
+	end)
+	pcall(function()
+		mp.remove_key_binding("kunai-resume-enter")
+	end)
+end
+
+local function hide_resume_prompt()
+	if resume_prompt_timer ~= nil then
+		resume_prompt_timer:kill()
+		resume_prompt_timer = nil
+	end
+	clear_resume_prompt_bindings()
+	resume_overlay.data = ""
+	resume_overlay:remove()
+end
+
+local function format_hms(total_sec)
+	local s = math.max(0, math.floor(total_sec or 0))
+	local h = math.floor(s / 3600)
+	local m = math.floor((s % 3600) / 60)
+	local r = s % 60
+	if h > 0 then
+		return string.format("%d:%02d:%02d", h, m, r)
+	end
+	return string.format("%d:%02d", m, r)
+end
+
+local function draw_resume_prompt(at_sec)
+	local dim = mp.get_property_native("osd-dimensions", {})
+	local w = dim.w or 1280
+	local h = dim.h or 720
+	local cx = math.floor(w / 2)
+	local cy = math.floor(h / 2)
+	local fs = clamp(math.floor(h * 0.042), 24, 42)
+	local sub_fs = clamp(math.floor(h * 0.022), 13, 20)
+
+	local label = mp.get_property("user-data/kunai-resume-label", "")
+	if label == "" then
+		label = format_hms(at_sec)
+	end
+	local title = mp.get_property("user-data/kunai-resume-title", "Kunai")
+
+	local line1 = esc_ass(title)
+	local line2 = esc_ass("Resume at " .. label .. "  ·  or start from the beginning")
+	local line3 = esc_ass("[R] resume   [O] start over   (auto-resume in 8s)")
+
+	local ass_nl = "\\N"
+	resume_overlay.res_x = w
+	resume_overlay.res_y = h
+	resume_overlay.data = string.format(
+		"{\\an5\\bord4\\blur3\\fnSans\\fs%d\\pos(%d,%d)\\c&HF0F0F0&}%s",
+		fs,
+		cx,
+		cy - math.floor(fs * 0.9),
+		line1
+	)
+		.. ass_nl
+		.. string.format(
+			"{\\an5\\alpha&HC0&\\fs%d\\pos(%d,%d)\\c&HDDDDDD&}%s",
+			sub_fs,
+			cx,
+			cy + math.floor(fs * 0.15),
+			line2
+		)
+		.. ass_nl
+		.. string.format(
+			"{\\an5\\alpha&HB0&\\fs%d\\pos(%d,%d)\\c&HBBBBBB&}%s",
+			sub_fs,
+			cx,
+			cy + math.floor(fs * 0.55),
+			line3
+		)
+	resume_overlay:update()
+end
+
+local function commit_resume_choice(which)
+	hide_resume_prompt()
+	mp.set_property("user-data/kunai-resume-choice", which)
+end
+
+local function show_resume_prompt(at_sec)
+	hide_resume_prompt()
+	draw_resume_prompt(at_sec)
+	clear_resume_prompt_bindings()
+	mp.add_forced_key_binding("r", "kunai-resume-r", function()
+		commit_resume_choice("resume")
+	end)
+	mp.add_forced_key_binding("o", "kunai-resume-o", function()
+		commit_resume_choice("start")
+	end)
+	mp.add_forced_key_binding("ENTER", "kunai-resume-enter", function()
+		commit_resume_choice("resume")
+	end)
+
+	resume_prompt_timer = mp.add_timeout(8, function()
+		resume_prompt_timer = nil
+		commit_resume_choice("resume")
+	end)
+end
+
+mp.observe_property("user-data/kunai-resume-at", "native", function(_, val)
+	local n = 0
+	if type(val) == "number" then
+		n = val
+	elseif type(val) == "string" and val ~= "" then
+		n = tonumber(val) or 0
+	end
+	if n > 0 then
+		show_resume_prompt(n)
+	else
+		hide_resume_prompt()
+	end
+end)
 
 local function round_rect_path(w, h, r)
 	r = math.floor(clamp(r, 1, math.min(w, h) / 2))
@@ -405,11 +606,17 @@ mp.observe_property("user-data/kunai-skip-rev", "native", function()
 end)
 
 local function do_next()
+	mp.set_property("user-data/kunai-loading", "Kunai · Loading next episode…")
+	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
+	draw_kunai_loading_overlay()
 	signal("next")
 	mp.commandv("stop")
 end
 
 local function do_previous()
+	mp.set_property("user-data/kunai-loading", "Kunai · Loading previous episode…")
+	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
+	draw_kunai_loading_overlay()
 	signal("previous")
 	mp.commandv("stop")
 end
@@ -421,6 +628,9 @@ local function do_skip()
 end
 
 local function do_quality()
+	mp.set_property("user-data/kunai-loading", "Kunai · Opening quality picker…")
+	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
+	draw_kunai_loading_overlay()
 	signal("quality")
 	mp.commandv("stop")
 end

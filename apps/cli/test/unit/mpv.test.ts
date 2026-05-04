@@ -17,6 +17,7 @@ test("buildMpvArgs only attaches the primary subtitle during initial launch", ()
   expect(args).toContain("--keep-open=no");
   expect(args).toContain("--idle=no");
   expect(args).toContain("--force-window=yes");
+  expect(args).toContain("--resume-playback=no");
   expect(args).toContain("--autofit-larger=90%x90%");
   expect(args).toContain("--cache=yes");
   expect(args).toContain("--cache-pause=yes");
@@ -79,6 +80,7 @@ test("buildMpvArgs can defer resume seeking to IPC for persistent playback", () 
 
   expect(args).toContain("--keep-open=no");
   expect(args).toContain("--idle=yes");
+  expect(args).toContain("--resume-playback=no");
   expect(args).not.toContain("--start=128");
 });
 

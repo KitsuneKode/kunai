@@ -21,6 +21,8 @@ export interface ActivePlayerControl {
   skipCurrentSegment?(): Promise<boolean>;
   updateTiming?(timing: PlaybackTimingMetadata | null): void;
   showOsdMessage?(text: string, durationMs: number): Promise<void>;
+  /** Full-window loading overlay via Lua (`user-data/kunai-loading`); survives idle between files. */
+  setEpisodeTransitionLoading?(message: string | null): Promise<void>;
 }
 
 export interface PlayerControlService {

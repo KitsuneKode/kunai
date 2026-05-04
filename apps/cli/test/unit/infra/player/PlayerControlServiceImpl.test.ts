@@ -133,6 +133,25 @@ test("PlayerControlServiceImpl records next and previous episode intents as stop
   expect(stoppedCurrentReasons).toEqual(["next-key", "previous-key"]);
 });
 
+test("PlayerControlServiceImpl shows persistent loading overlay before stopCurrentFile when supported", async () => {
+  const ordering: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async setEpisodeTransitionLoading(message) {
+      ordering.push(message ?? "");
+    },
+    async stopCurrentFile(reason) {
+      ordering.push(`stop:${reason ?? ""}`);
+    },
+  });
+
+  expect(await service.nextCurrentPlayback("k")).toBe(true);
+  expect(ordering).toEqual(["Kunai · Loading next episode…", "stop:k"]);
+});
+
 test("PlayerControlServiceImpl falls back to full stop when file-stop control is unavailable", async () => {
   const stoppedReasons: string[] = [];
   const service = makeService();

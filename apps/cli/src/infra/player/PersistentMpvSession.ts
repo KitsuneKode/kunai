@@ -61,6 +61,10 @@ type PlayerCycleOptions = {
   primarySubtitle: string | null;
   subtitleTracks?: readonly SubtitleTrack[];
   startAt?: number;
+  /** When true, mpv shows resume vs start-over before the initial resume seek. */
+  offerResumeStartChoice?: boolean;
+  /** Human-readable offset for the prompt (e.g. "12:34"). */
+  resumeChoiceTimeLabel?: string;
   timing?: PlaybackTimingMetadata | null;
   skipRecap?: boolean;
   skipIntro?: boolean;
@@ -119,6 +123,13 @@ export class PersistentMpvSession {
   /** Bun delayed auto-skip timer; must match Lua chip countdown (`user-data/kunai-skip-prompt-ms`). */
   private skipPromptDurationMs = 3000;
 
+  private static readonly resumeChoiceTimeoutMs = 8_000;
+
+  private resumeChoiceWait: {
+    resolve: (choice: "resume" | "start") => void;
+    timeoutId: ReturnType<typeof setTimeout>;
+  } | null = null;
+
   private constructor(
     private readonly initialStream: StreamInfo,
     private readonly initialOptions: PlayerCycleOptions,
@@ -151,6 +162,12 @@ export class PersistentMpvSession {
       updateTiming: (timing) => this.updateTiming(timing),
       showOsdMessage: async (text, durationMs) => {
         await this.ipcSession?.send(["show-text", text, durationMs], 1_000);
+      },
+      setEpisodeTransitionLoading: async (message) => {
+        await this.ipcSession?.send(
+          ["set_property", "user-data/kunai-loading", message ?? ""],
+          1_000,
+        );
       },
     };
   }
@@ -196,6 +213,7 @@ export class PersistentMpvSession {
     this.queueReadyWork(options);
     const loadResult = await this.ipcSession?.send(["loadfile", stream.url, "replace"], 3_000);
     if (!loadResult?.ok) {
+      void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 500);
       options.onPlaybackEvent?.({
         type: "ipc-command-failed",
         command: "loadfile",
@@ -243,6 +261,8 @@ export class PersistentMpvSession {
     const target = this.mpv;
 
     if (this.ipcSession) {
+      this.abortResumeChoiceWaitForCycleEnd();
+      void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 500);
       const result = await this.ipcSession.send(["quit"], 1_000);
       if (!result.ok) {
         target?.kill("SIGTERM");
@@ -275,6 +295,10 @@ export class PersistentMpvSession {
     // Pass --start= so mpv seeks at launch — same as launchMpv. Without this, resume
     // relies solely on a post-file-loaded IPC seek, which races the 750 ms fallback
     // timer and fails silently when the stream takes longer to open.
+    // When offering the resume/start prompt, open at 0 so the user can choose before IPC seek.
+    const deferSpawnStartForResumePrompt =
+      this.initialOptions.offerResumeStartChoice === true &&
+      shouldApplyStartAtSeek(this.initialOptions.startAt);
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -282,7 +306,7 @@ export class PersistentMpvSession {
         subtitle: this.initialOptions.primarySubtitle,
         subtitleTracks: this.initialOptions.subtitleTracks,
         displayTitle: this.initialOptions.displayTitle,
-        startAt: this.initialOptions.startAt,
+        startAt: deferSpawnStartForResumePrompt ? 0 : this.initialOptions.startAt,
       },
       ipcServerCliArg(this.ipcEndpoint),
       {
@@ -366,6 +390,14 @@ export class PersistentMpvSession {
               return;
             }
 
+            if (name === "user-data/kunai-resume-choice") {
+              const v = typeof value === "string" ? value : "";
+              if ((v === "resume" || v === "start") && this.resumeChoiceWait) {
+                this.finishResumeChoiceWait(v);
+              }
+              return;
+            }
+
             if (!active) return;
             applyObservedPropertySample(active.telemetry, { name, value, observedAt });
             if (active.telemetry.latestIpcSample) {
@@ -411,6 +443,7 @@ export class PersistentMpvSession {
           onEndFile: ({ reason, observedAt }) => {
             const active = this.activeCycle;
             if (!active) return;
+            this.abortResumeChoiceWaitForCycleEnd();
             this.clearReadyWorkFallback();
             this.pendingReadyWork = null;
             // Fire onNearEof if it was never triggered (e.g. no duration reported).
@@ -427,6 +460,7 @@ export class PersistentMpvSession {
             active.resolve(result);
           },
           onFileLoaded: () => {
+            void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 300);
             const pending = this.pendingReadyWork;
             if (!pending) return;
             this.pendingReadyWork = null;
@@ -475,10 +509,14 @@ export class PersistentMpvSession {
       // Observe user-data properties written by the kunai Lua script so that
       // key presses inside the mpv window are routed back to the app.
       void this.ipcSession.send(["observe_property", 200, "user-data/kunai-request"], 1_000);
+      void this.ipcSession.send(["observe_property", 201, "user-data/kunai-resume-choice"], 1_000);
     }
     // startAt was already applied via --start= CLI arg above; zero it out here so
     // runReadyWork does not fire a redundant IPC seek on top of the CLI seek.
-    const initialReadyWorkOptions = shouldApplyStartAtSeek(this.initialOptions.startAt)
+    const cliStartAlreadyApplied =
+      shouldApplyStartAtSeek(this.initialOptions.startAt) &&
+      !this.initialOptions.offerResumeStartChoice;
+    const initialReadyWorkOptions = cliStartAlreadyApplied
       ? { ...this.initialOptions, startAt: 0 }
       : this.initialOptions;
     this.queueReadyWork(initialReadyWorkOptions);
@@ -502,6 +540,59 @@ export class PersistentMpvSession {
     this.activeCycle = cycle;
     this.currentOptions = options;
     return cycle;
+  }
+
+  private finishResumeChoiceWait(choice: "resume" | "start"): void {
+    const w = this.resumeChoiceWait;
+    if (!w) return;
+    clearTimeout(w.timeoutId);
+    this.resumeChoiceWait = null;
+    w.resolve(choice);
+    void this.ipcSession?.send(["set_property", "user-data/kunai-resume-at", 0], 300);
+    void this.ipcSession?.send(["set_property", "user-data/kunai-resume-choice", ""], 300);
+  }
+
+  /** If playback ends while the resume prompt is open, skip the resume seek. */
+  private abortResumeChoiceWaitForCycleEnd(): void {
+    if (this.resumeChoiceWait) {
+      this.finishResumeChoiceWait("start");
+    }
+  }
+
+  private waitResumeOrStartOverChoice(
+    seconds: number,
+    displayTitle: string,
+    timeLabel: string | undefined,
+  ): Promise<"resume" | "start"> {
+    if (!this.ipcSession) return Promise.resolve("resume");
+
+    return new Promise<"resume" | "start">((resolve) => {
+      const timeoutId = setTimeout(() => {
+        this.finishResumeChoiceWait("resume");
+      }, PersistentMpvSession.resumeChoiceTimeoutMs);
+
+      this.resumeChoiceWait = {
+        resolve,
+        timeoutId,
+      };
+
+      void (async () => {
+        await this.ipcSession?.send(["set_property", "user-data/kunai-resume-choice", ""], 300);
+        await this.ipcSession?.send(
+          ["set_property", "user-data/kunai-resume-title", displayTitle],
+          500,
+        );
+        if (timeLabel) {
+          await this.ipcSession?.send(
+            ["set_property", "user-data/kunai-resume-label", timeLabel],
+            500,
+          );
+        } else {
+          await this.ipcSession?.send(["set_property", "user-data/kunai-resume-label", ""], 300);
+        }
+        await this.ipcSession?.send(["set_property", "user-data/kunai-resume-at", seconds], 500);
+      })();
+    });
   }
 
   private resetCycleState(): void {
@@ -559,17 +650,28 @@ export class PersistentMpvSession {
         1_000,
       );
 
+      let seekTarget: number | undefined;
       if (shouldApplyStartAtSeek(options.startAt)) {
+        if (options.offerResumeStartChoice) {
+          const choice = await this.waitResumeOrStartOverChoice(
+            options.startAt!,
+            options.displayTitle,
+            options.resumeChoiceTimeLabel,
+          );
+          seekTarget = choice === "start" ? undefined : options.startAt;
+        } else {
+          seekTarget = options.startAt;
+        }
+      }
+
+      if (shouldApplyStartAtSeek(seekTarget)) {
         options.onPlaybackEvent?.({ type: "resolving-playback" });
-        const seekResult = await this.ipcSession.send(
-          ["seek", options.startAt!, "absolute"],
-          2_000,
-        );
+        const seekResult = await this.ipcSession.send(["seek", seekTarget!, "absolute"], 2_000);
         // IPC time-pos may lag behind the seek; autoskip uses currentPositionSeconds — sync so
         // recap/intro windows are evaluated from the resume point, not from 0 (which would
         // incorrectly skip earlier segments after a mid-episode resume).
         if (seekResult.ok) {
-          this.currentPositionSeconds = options.startAt!;
+          this.currentPositionSeconds = seekTarget!;
         }
       }
     } finally {

@@ -7,9 +7,10 @@
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
-import { launchMpv } from "@/mpv";
+import { launchMpv, shouldApplyStartAtSeek } from "@/mpv";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService } from "@/services/persistence/ConfigService";
+import { formatTimestamp } from "@/services/persistence/HistoryStore";
 
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { PersistentMpvSession } from "./PersistentMpvSession";
@@ -172,11 +173,19 @@ export class PlayerServiceImpl implements PlayerService {
       await this.releasePersistentSession();
     }
 
+    const offerResumeStartChoice =
+      shouldApplyStartAtSeek(options.startAt) && options.resumeStartChoicePrompt !== false;
+
     const sharedOptions = {
       displayTitle: options.displayTitle,
       primarySubtitle: stream.subtitle ?? null,
       subtitleTracks: stream.subtitleList,
       startAt: options.startAt,
+      offerResumeStartChoice,
+      resumeChoiceTimeLabel:
+        offerResumeStartChoice && typeof options.startAt === "number"
+          ? formatTimestamp(Math.floor(options.startAt))
+          : undefined,
       timing: options.timing,
       skipRecap: options.skipRecap,
       skipIntro: options.skipIntro,
