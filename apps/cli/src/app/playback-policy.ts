@@ -41,10 +41,25 @@ function isReleased(episode: CatalogEpisode): boolean {
   return airTime <= Date.now();
 }
 
+/** First strictly-after-current catalog slot that is not released (TMDB series path only; otherwise null). */
+export type CatalogUpcomingEpisode = {
+  readonly season: number;
+  readonly episode: number;
+  /** ISO-ish TMDB string when present; null when metadata has no usable date. */
+  readonly airDate: string | null;
+  readonly name?: string;
+};
+
 export type EpisodeAvailability = {
   previousEpisode: EpisodeInfo | null;
   nextEpisode: EpisodeInfo | null;
   nextSeasonEpisode: EpisodeInfo | null;
+  upcomingNext: CatalogUpcomingEpisode | null;
+  /**
+   * Anime: no explicit next list index after current while the title is not provably
+   * at the catalog end (episode count and/or max listed index). Autoplay stays off.
+   */
+  animeNextReleaseUnknown: boolean;
 };
 
 export function getCompletionThresholdSeconds(
@@ -121,6 +136,72 @@ function formatEpisodeLabel(episode: EpisodeInfo): string {
   return `S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`;
 }
 
+function seasonEpisodeTag(season: number, episode: number): string {
+  return `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
+}
+
+function normalizedCatalogAirDate(airDate: string | undefined): string | null {
+  const trimmed = airDate?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function formatCatalogAirDateLabel(airDate: string): string {
+  const t = new Date(airDate).getTime();
+  if (Number.isNaN(t)) return airDate;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(t);
+}
+
+async function resolveCatalogUpcomingNext(
+  titleId: string,
+  currentEpisode: EpisodeInfo,
+  seasons: readonly number[],
+  loaders: EpisodeCatalogLoaders,
+): Promise<CatalogUpcomingEpisode | null> {
+  const seasonsAsc = [...seasons].sort((a, b) => a - b);
+  for (const season of seasonsAsc) {
+    if (season < currentEpisode.season) continue;
+    const episodes = [...(await loaders.loadEpisodes(titleId, season))].sort(
+      (a, b) => a.number - b.number,
+    );
+    for (const ep of episodes) {
+      if (season === currentEpisode.season && ep.number <= currentEpisode.episode) continue;
+      if (!isReleased(ep)) {
+        return {
+          season,
+          episode: ep.number,
+          airDate: normalizedCatalogAirDate(ep.airDate),
+          name: ep.name || undefined,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/** Short banner when autoplay stops because there is no released `nextEpisode`. */
+export function describeAutoplayCatalogCaughtUpBanner(
+  availability: EpisodeAvailability,
+  isAnime: boolean,
+): string | null {
+  if (availability.nextEpisode !== null) return null;
+  if (isAnime) {
+    if (availability.animeNextReleaseUnknown) {
+      return "Autoplay paused: next episode is not confirmed in the catalog yet (release timing unknown).";
+    }
+    return "Autoplay paused: last playable episode in this catalog. Anime release schedules are not shown ahead of streams here.";
+  }
+  const upcoming = availability.upcomingNext;
+  if (upcoming?.airDate) {
+    const tag = seasonEpisodeTag(upcoming.season, upcoming.episode);
+    return `Autoplay paused: caught up through released episodes. ${tag} airs ${formatCatalogAirDateLabel(upcoming.airDate)}.`;
+  }
+  if (upcoming) {
+    const tag = seasonEpisodeTag(upcoming.season, upcoming.episode);
+    return `Autoplay paused: caught up through released episodes. Next listed ${tag} — air date unknown in metadata.`;
+  }
+  return "Autoplay paused: no further released episodes; catalog does not list a future instalment.";
+}
+
 export async function resolveEpisodeAvailability({
   title,
   currentEpisode,
@@ -134,6 +215,8 @@ export async function resolveEpisodeAvailability({
       previousEpisode: null,
       nextEpisode: null,
       nextSeasonEpisode: null,
+      upcomingNext: null,
+      animeNextReleaseUnknown: false,
     };
   }
 
@@ -143,17 +226,13 @@ export async function resolveEpisodeAvailability({
       .reverse()
       .find((option) => option.index < currentEpisode.episode);
     const nextOption = orderedEpisodes.find((option) => option.index > currentEpisode.episode);
-    // If we have no episode list AND no count, be optimistic — assume there's
-    // at least one more episode. Provider will naturally fail if the episode
-    // doesn't exist, which is a better outcome than silently blocking autoplay.
-    const fallbackMax =
-      animeEpisodeCount ??
-      orderedEpisodes[orderedEpisodes.length - 1]?.index ??
-      currentEpisode.episode + 1;
-    const nextFallbackEpisode =
-      !nextOption && currentEpisode.episode < fallbackMax
-        ? { season: 1, episode: currentEpisode.episode + 1 }
-        : null;
+    const maxListedIndex =
+      orderedEpisodes.length > 0 ? Math.max(...orderedEpisodes.map((o) => o.index)) : null;
+    const impliedCountCap = animeEpisodeCount ?? maxListedIndex;
+    const atKnownCatalogEnd =
+      typeof impliedCountCap === "number" && currentEpisode.episode >= impliedCountCap;
+    const animeNextReleaseUnknown = nextOption === undefined && !atKnownCatalogEnd;
+
     const previousFallbackEpisode =
       !previousOption && currentEpisode.episode > 1
         ? { season: 1, episode: currentEpisode.episode - 1 }
@@ -163,8 +242,10 @@ export async function resolveEpisodeAvailability({
       previousEpisode: previousOption
         ? { season: 1, episode: previousOption.index }
         : previousFallbackEpisode,
-      nextEpisode: nextOption ? { season: 1, episode: nextOption.index } : nextFallbackEpisode,
+      nextEpisode: nextOption ? { season: 1, episode: nextOption.index } : null,
       nextSeasonEpisode: null,
+      upcomingNext: null,
+      animeNextReleaseUnknown,
     };
   }
 
@@ -213,32 +294,66 @@ export async function resolveEpisodeAvailability({
     ? toEpisodeInfo(nextInSeason, currentEpisode.season)
     : nextSeasonEpisode;
 
+  const upcomingNext =
+    nextEpisode === null
+      ? await resolveCatalogUpcomingNext(title.id, currentEpisode, seasons, loaders)
+      : null;
+
   return {
     previousEpisode,
     nextEpisode,
     nextSeasonEpisode,
+    upcomingNext,
+    animeNextReleaseUnknown: false,
   };
+}
+
+function describeSeriesNextUnavailableReason(
+  availability: EpisodeAvailability,
+  isAnime?: boolean,
+): string {
+  if (!isAnime) {
+    const upcoming = availability.upcomingNext;
+    if (upcoming) {
+      const tag = seasonEpisodeTag(upcoming.season, upcoming.episode);
+      const titleSuffix = upcoming.name ? ` "${upcoming.name}"` : "";
+      if (upcoming.airDate) {
+        return `Caught up through released episodes. ${tag}${titleSuffix} is not out yet (${formatCatalogAirDateLabel(upcoming.airDate)}).`;
+      }
+      return `Caught up through released episodes. ${tag}${titleSuffix} is listed but has no air date in metadata.`;
+    }
+    return "Already at the latest released episode.";
+  }
+  if (availability.animeNextReleaseUnknown) {
+    return "Next episode is not listed in the catalog yet (release timing is unknown). Try Refresh after the provider updates.";
+  }
+  return "You're at the last episode in this provider catalog. Anime release timing is rarely listed ahead of playable sources.";
 }
 
 export function toEpisodeNavigationState(
   type: TitleInfo["type"],
   availability: EpisodeAvailability,
+  options?: { isAnime?: boolean },
 ): EpisodeNavigationState {
   if (type !== "series") {
     return {
       hasPrevious: false,
       hasNext: false,
       hasNextSeason: false,
+      hasUpcomingNext: false,
       previousUnavailableReason: "Previous episode is only available for episodic playback.",
       nextUnavailableReason: "Next episode is only available for episodic playback.",
       nextSeasonUnavailableReason: "Season jump is only available for episodic playback.",
     };
   }
 
+  const hasUpcomingNext = availability.upcomingNext !== null;
+
   return {
     hasPrevious: availability.previousEpisode !== null,
     hasNext: availability.nextEpisode !== null,
     hasNextSeason: availability.nextSeasonEpisode !== null,
+    hasUpcomingNext,
     previousLabel: availability.previousEpisode
       ? formatEpisodeLabel(availability.previousEpisode)
       : undefined,
@@ -246,10 +361,15 @@ export function toEpisodeNavigationState(
     nextSeasonLabel: availability.nextSeasonEpisode
       ? formatEpisodeLabel(availability.nextSeasonEpisode)
       : undefined,
+    upcomingNextLabel: availability.upcomingNext
+      ? seasonEpisodeTag(availability.upcomingNext.season, availability.upcomingNext.episode)
+      : undefined,
     previousUnavailableReason:
       availability.previousEpisode === null ? "Already at the first released episode." : undefined,
     nextUnavailableReason:
-      availability.nextEpisode === null ? "Already at the latest released episode." : undefined,
+      availability.nextEpisode === null
+        ? describeSeriesNextUnavailableReason(availability, options?.isAnime)
+        : undefined,
     nextSeasonUnavailableReason:
       availability.nextSeasonEpisode === null
         ? "No later released season is available."

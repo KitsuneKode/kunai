@@ -24,6 +24,7 @@ import {
 import {
   createPlaybackSessionState,
   explainAutoplayBlockReason,
+  explainAutoplayNoNextEpisodeCatalogHint,
   resolveAutoplayAdvanceEpisode,
   resolvePlaybackResultDecision,
   resolvePostPlaybackSessionAction,
@@ -318,7 +319,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           stateManager.dispatch({
             type: "SET_EPISODE_NAVIGATION",
-            navigation: toEpisodeNavigationState(title.type, episodeAvailability),
+            navigation: toEpisodeNavigationState(title.type, episodeAvailability, {
+              isAnime: stateManager.getState().mode === "anime",
+            }),
           });
 
           // Resolve stream with loading UI
@@ -796,9 +799,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               autoplayPaused: playbackSession.autoplayPaused,
               stopAfterCurrent: playbackSession.stopAfterCurrent,
               hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
+              upcomingNext: episodeAvailability.upcomingNext,
+              animeNextReleaseUnknown: episodeAvailability.animeNextReleaseUnknown,
             },
           });
-          const nextEpisode = await resolveAutoplayAdvanceEpisode({
+          const autoplayAdvanceArgs = {
             result,
             title,
             currentEpisode,
@@ -809,19 +814,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               quitNearEndBehavior: config.quitNearEndBehavior,
               quitNearEndThresholdMode: config.quitNearEndThresholdMode,
             },
-          });
+          };
+          const nextEpisode = await resolveAutoplayAdvanceEpisode(autoplayAdvanceArgs);
+          let catalogAutoplayEndBanner: string | undefined;
           if (!nextEpisode) {
-            const blockedBy = explainAutoplayBlockReason({
-              result,
-              title,
-              currentEpisode,
-              session: playbackSession,
-              availability: episodeAvailability,
-              timing: effectiveTiming.current,
-              endPolicy: {
-                quitNearEndBehavior: config.quitNearEndBehavior,
-                quitNearEndThresholdMode: config.quitNearEndThresholdMode,
-              },
+            const blockedBy = explainAutoplayBlockReason(autoplayAdvanceArgs);
+            catalogAutoplayEndBanner = explainAutoplayNoNextEpisodeCatalogHint({
+              ...autoplayAdvanceArgs,
+              isAnime: stateManager.getState().mode === "anime",
             });
             diagnosticsStore.record({
               category: "playback",
@@ -835,6 +835,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 autoplayPaused: playbackSession.autoplayPaused,
                 stopAfterCurrent: playbackSession.stopAfterCurrent,
                 hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
+                upcomingNext: episodeAvailability.upcomingNext,
+                animeNextReleaseUnknown: episodeAvailability.animeNextReleaseUnknown,
+                catalogBanner: catalogAutoplayEndBanner ?? null,
               },
             });
           }
@@ -933,7 +936,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 resumeLabel: canResumePlayback
                   ? `resume ${formatTimestamp(resumeSeconds)}`
                   : undefined,
-                status: { label: "Ready for next action", tone: "success" },
+                status: catalogAutoplayEndBanner
+                  ? { label: catalogAutoplayEndBanner, tone: "neutral" }
+                  : { label: "Ready for next action", tone: "success" },
                 footerMode: effectiveFooterHints(container),
                 commands: resolveCommands(stateManager.getState(), [
                   "search",

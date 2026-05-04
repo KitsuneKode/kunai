@@ -44,9 +44,11 @@ export interface EpisodeNavigationState {
   readonly hasPrevious: boolean;
   readonly hasNext: boolean;
   readonly hasNextSeason: boolean;
+  readonly hasUpcomingNext: boolean;
   readonly previousLabel?: string;
   readonly nextLabel?: string;
   readonly nextSeasonLabel?: string;
+  readonly upcomingNextLabel?: string;
   readonly previousUnavailableReason?: string;
   readonly nextUnavailableReason?: string;
   readonly nextSeasonUnavailableReason?: string;
@@ -166,6 +168,7 @@ const DEFAULT_EPISODE_NAVIGATION: EpisodeNavigationState = {
   hasPrevious: false,
   hasNext: false,
   hasNextSeason: false,
+  hasUpcomingNext: false,
 };
 
 export function createInitialState(

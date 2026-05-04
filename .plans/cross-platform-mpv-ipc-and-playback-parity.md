@@ -4,7 +4,7 @@ Status: **in progress** — core IPC + callers landed (`mpv-ipc-endpoint.ts`, `m
 Owner: runtime / playback / platform  
 Scope: Windows (and other non-Unix) **mpv JSON IPC** parity with today’s Unix-domain-socket path, persistent autoplay-chain behavior, bridge script loading, packaging story, and user-facing clarity so the product **feels the same quality everywhere** it is supported.
 
-Related plans: [.plans/mpv-lifecycle-and-history-hardening.md](mpv-lifecycle-and-history-hardening.md) (teardown / reliability), [.plans/phase-2-playback-media-runtime.md](phase-2-playback-media-runtime.md) (media runtime direction), [.plans/kunai-playback-reliability-implementation.md](kunai-playback-reliability-implementation.md) (playback hardening).
+Related plans: [.plans/mpv-lifecycle-and-history-hardening.md](mpv-lifecycle-and-history-hardening.md) (teardown / reliability), [.plans/phase-2-playback-media-runtime.md](phase-2-playback-media-runtime.md) (media runtime direction), [.plans/kunai-playback-reliability-implementation.md](kunai-playback-reliability-implementation.md) (playback hardening), [.plans/series-catalog-end-state-and-upcoming-episode-ux.md](series-catalog-end-state-and-upcoming-episode-ux.md) (catalog end-state, upcoming TMDB episodes, honest anime-next, autoplay/prefetch on released only).
 
 ---
 

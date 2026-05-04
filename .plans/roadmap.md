@@ -52,6 +52,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - `Esc` and back-stack correctness for the remaining shell helpers
 - `mpv` reopen reliability bug investigation
 - **Windows / cross-platform mpv IPC parity** (named pipes, bridge, docs, packaging clarity): [.plans/cross-platform-mpv-ipc-and-playback-parity.md](.plans/cross-platform-mpv-ipc-and-playback-parity.md)
+- **Series catalog end-state & upcoming episode UX** (TMDB “coming soon”, honest anime next, autoplay/prefetch safety): [.plans/series-catalog-end-state-and-upcoming-episode-ux.md](.plans/series-catalog-end-state-and-upcoming-episode-ux.md)
 - `cineby-anime` click handling parity
 - Final compatibility wrapper cleanup once `apps/cli/index.ts` is no longer useful
 - Phase 1.5 true root shell foundation after the scoped Turborepo move
@@ -64,6 +65,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Provider SDK candidate model: provider -> source/mirror -> variant, with selected stream plus discovered candidates, subtitles, trace, cache policy, and health deltas
 - Runtime-browser package plan for JIT Playwright leases, interception, cooldown, evidence capture, and teardown
 - Interactive resolution UX follow-up is now mostly narrowed to richer non-playback cancel surfaces plus later source/quality/subtitle chooser polish
+- Series catalog end-state, upcoming-episode copy, and autoplay boundary clarity: [.plans/series-catalog-end-state-and-upcoming-episode-ux.md](series-catalog-end-state-and-upcoming-episode-ux.md)
 
 ### Recently Improved
 

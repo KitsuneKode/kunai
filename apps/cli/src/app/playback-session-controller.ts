@@ -1,5 +1,6 @@
 import {
   didPlaybackEndNearNaturalEnd,
+  describeAutoplayCatalogCaughtUpBanner,
   getAutoAdvanceEpisode,
   type EpisodeAvailability,
   type PlaybackEndPolicy,
@@ -61,6 +62,8 @@ export type AutoAdvanceBlockReason =
   | "not-series"
   | "not-near-end"
   | "quit-stops-autoplay"
+  | "next-episode-not-released-yet"
+  | "anime-next-uncertain"
   | "no-next-episode";
 
 export function syncPlaybackSessionState(
@@ -201,6 +204,25 @@ export function explainAutoplayBlockReason(args: AutoAdvanceArgs): AutoAdvanceBl
     return "not-near-end";
   }
   if (!endAllowsAutoplayAdvance) return "not-near-end";
-  if (!availability.nextEpisode) return "no-next-episode";
+  if (!availability.nextEpisode) {
+    if (availability.upcomingNext) return "next-episode-not-released-yet";
+    if (availability.animeNextReleaseUnknown) return "anime-next-uncertain";
+    return "no-next-episode";
+  }
   return null;
+}
+
+const catalogAutoplayHints: ReadonlySet<AutoAdvanceBlockReason> = new Set([
+  "no-next-episode",
+  "next-episode-not-released-yet",
+  "anime-next-uncertain",
+]);
+
+/** Human copy when autoplay stopped on catalog end / upcoming / uncertain; pairs with {@link explainAutoplayBlockReason}. */
+export function explainAutoplayNoNextEpisodeCatalogHint(
+  args: AutoAdvanceArgs & { isAnime: boolean },
+): string | undefined {
+  const reason = explainAutoplayBlockReason(args);
+  if (!reason || !catalogAutoplayHints.has(reason)) return undefined;
+  return describeAutoplayCatalogCaughtUpBanner(args.availability, args.isAnime) ?? undefined;
 }

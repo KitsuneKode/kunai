@@ -4,6 +4,7 @@ import type { EpisodeAvailability } from "@/app/playback-policy";
 import {
   createPlaybackSessionState,
   explainAutoplayBlockReason,
+  explainAutoplayNoNextEpisodeCatalogHint,
   resolveAutoplayAdvanceEpisode,
   resolvePlaybackResultDecision,
   resolvePostPlaybackSessionAction,
@@ -21,6 +22,8 @@ const nextSeasonAvailability: EpisodeAvailability = {
   previousEpisode: { season: 2, episode: 4 },
   nextEpisode: { season: 3, episode: 1 },
   nextSeasonEpisode: { season: 3, episode: 1 },
+  upcomingNext: null,
+  animeNextReleaseUnknown: false,
 };
 
 const baseResult: PlaybackResult = {
@@ -309,6 +312,102 @@ describe("explainAutoplayBlockReason", () => {
         },
       }),
     ).toBe("quit-stops-autoplay");
+  });
+
+  test("explains unreleased catalogue successor blocker", () => {
+    expect(
+      explainAutoplayBlockReason({
+        result: baseResult,
+        title: seriesTitle,
+        currentEpisode: { season: 1, episode: 7 },
+        session: createPlaybackSessionState({ autoNextEnabled: true }),
+        availability: {
+          previousEpisode: null,
+          nextEpisode: null,
+          nextSeasonEpisode: null,
+          upcomingNext: { season: 1, episode: 8, airDate: "3099-01-01", name: "Soon" },
+          animeNextReleaseUnknown: false,
+        },
+      }),
+    ).toBe("next-episode-not-released-yet");
+  });
+
+  test("explains anime uncertain-next blocker", () => {
+    expect(
+      explainAutoplayBlockReason({
+        result: baseResult,
+        title: seriesTitle,
+        currentEpisode: { season: 1, episode: 11 },
+        session: createPlaybackSessionState({ autoNextEnabled: true }),
+        availability: {
+          previousEpisode: null,
+          nextEpisode: null,
+          nextSeasonEpisode: null,
+          upcomingNext: null,
+          animeNextReleaseUnknown: true,
+        },
+      }),
+    ).toBe("anime-next-uncertain");
+  });
+
+  test("falls back to no-next when the catalogue reports a true tail", () => {
+    expect(
+      explainAutoplayBlockReason({
+        result: baseResult,
+        title: seriesTitle,
+        currentEpisode: { season: 1, episode: 8 },
+        session: createPlaybackSessionState({ autoNextEnabled: true }),
+        availability: {
+          previousEpisode: null,
+          nextEpisode: null,
+          nextSeasonEpisode: null,
+          upcomingNext: null,
+          animeNextReleaseUnknown: false,
+        },
+      }),
+    ).toBe("no-next-episode");
+  });
+});
+
+describe("explainAutoplayNoNextEpisodeCatalogHint", () => {
+  const caughtUpAvailability: EpisodeAvailability = {
+    previousEpisode: { season: 1, episode: 2 },
+    nextEpisode: null,
+    nextSeasonEpisode: null,
+    upcomingNext: { season: 1, episode: 3, airDate: "2099-03-15", name: "Later" },
+    animeNextReleaseUnknown: false,
+  };
+
+  test("returns a TMDB upcoming banner when autoplay is blocked only by missing next", () => {
+    const args = {
+      result: baseResult,
+      title: seriesTitle,
+      currentEpisode: { season: 1, episode: 2 },
+      session: createPlaybackSessionState({ autoNextEnabled: true }),
+      availability: caughtUpAvailability,
+      isAnime: false,
+    };
+    expect(explainAutoplayBlockReason(args)).toBe("next-episode-not-released-yet");
+    const hint = explainAutoplayNoNextEpisodeCatalogHint(args);
+    expect(hint).toContain("S01E03");
+    expect(hint).toContain("2099");
+  });
+
+  test("returns undefined when autoplay is blocked for a non-catalog reason", () => {
+    const args = {
+      result: baseResult,
+      title: seriesTitle,
+      currentEpisode: { season: 1, episode: 2 },
+      session: {
+        ...createPlaybackSessionState({ autoNextEnabled: true }),
+        autoplayPaused: true,
+        autoplayPauseReason: "user" as const,
+      },
+      availability: caughtUpAvailability,
+      isAnime: false,
+    };
+    expect(explainAutoplayBlockReason(args)).toBe("autoplay-paused");
+    expect(explainAutoplayNoNextEpisodeCatalogHint(args)).toBeUndefined();
   });
 });
 
