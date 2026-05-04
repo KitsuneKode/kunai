@@ -13,6 +13,14 @@ describe("DiagnosticsStoreImpl", () => {
     expect(events[1]?.message).toBe("First");
   });
 
+  test("getSnapshot returns chronological order", () => {
+    const store = new DiagnosticsStoreImpl();
+    store.record({ category: "search", message: "First" });
+    store.record({ category: "playback", message: "Second" });
+    const snap = store.getSnapshot();
+    expect(snap.map((e) => e.message)).toEqual(["First", "Second"]);
+  });
+
   test("caps the internal buffer", () => {
     const store = new DiagnosticsStoreImpl();
     for (let index = 0; index < 250; index += 1) {

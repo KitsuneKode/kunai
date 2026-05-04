@@ -62,6 +62,8 @@ test("vidking resolves through the core provider result adapter", async () => {
       skipPreview: true,
       skipCredits: true,
       footerHints: "minimal",
+      quitNearEndBehavior: "continue",
+      quitNearEndThresholdMode: "credits-or-90-percent",
       getRaw() {
         return this;
       },
@@ -81,7 +83,7 @@ test("vidking resolves through the core provider result adapter", async () => {
   expect(stream?.providerResolveResult?.providerId).toBe("vidking");
   expect(stream?.providerResolveResult?.streams[0]?.protocol).toBe("hls");
   expect(stream?.providerResolveResult?.subtitles[0]?.language).toBe("en");
-  expect(stream?.providerResolveResult?.trace.runtime).toBe("playwright-lease");
+  expect(stream?.providerResolveResult?.trace.runtime).toBe("node-fetch");
   expect(stream?.providerResolveResult?.cachePolicy?.keyParts).toContain("english");
 });
 
@@ -139,6 +141,8 @@ test("vidking prefers the direct decode path before browser scraping", async () 
       skipPreview: true,
       skipCredits: true,
       footerHints: "minimal",
+      quitNearEndBehavior: "continue",
+      quitNearEndThresholdMode: "credits-or-90-percent",
       getRaw() {
         return this;
       },

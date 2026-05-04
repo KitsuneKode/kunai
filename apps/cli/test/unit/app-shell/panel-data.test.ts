@@ -33,6 +33,8 @@ describe("panel-data", () => {
         skipPreview: true,
         skipCredits: true,
         footerHints: "detailed",
+        quitNearEndBehavior: "continue",
+        quitNearEndThresholdMode: "credits-or-90-percent",
       },
       state: createInitialState("vidking", "allanime"),
     });

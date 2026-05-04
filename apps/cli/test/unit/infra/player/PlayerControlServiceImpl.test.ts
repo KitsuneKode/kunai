@@ -19,6 +19,9 @@ function makeService() {
       getRecent() {
         return [];
       },
+      getSnapshot() {
+        return [];
+      },
       clear() {},
     },
   });

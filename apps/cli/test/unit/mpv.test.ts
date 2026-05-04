@@ -41,7 +41,7 @@ test("buildMpvArgs can defer resume seeking to IPC for persistent playback", () 
     { persistent: true, includeStartArg: false },
   );
 
-  expect(args).toContain("--keep-open=yes");
+  expect(args).toContain("--keep-open=no");
   expect(args).toContain("--idle=yes");
   expect(args).not.toContain("--start=128");
 });
@@ -58,7 +58,7 @@ test("buildMpvArgs keeps mpv alive between files for persistent autoplay chains"
     { persistent: true },
   );
 
-  expect(args).toContain("--keep-open=yes");
+  expect(args).toContain("--keep-open=no");
   expect(args).toContain("--idle=yes");
 });
 

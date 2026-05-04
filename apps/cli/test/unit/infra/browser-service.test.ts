@@ -54,6 +54,8 @@ function createConfig(overrides: Partial<KitsuneConfig> = {}): ConfigService {
     skipPreview: true,
     skipCredits: true,
     footerHints: "detailed",
+    quitNearEndBehavior: "continue",
+    quitNearEndThresholdMode: "credits-or-90-percent",
     ...overrides,
   };
 
@@ -73,6 +75,13 @@ function createDiagnosticsStore(): DiagnosticsStore {
       events.push({ message: event.message });
     },
     getRecent() {
+      return events.map((event, index) => ({
+        timestamp: index,
+        category: "cache" as const,
+        message: event.message,
+      }));
+    },
+    getSnapshot() {
       return events.map((event, index) => ({
         timestamp: index,
         category: "cache" as const,
