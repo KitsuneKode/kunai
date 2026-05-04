@@ -1,3 +1,5 @@
+import type { MpvIpcEndpoint } from "./mpv-ipc-endpoint";
+
 export const MPV_OBSERVED_PROPERTIES = [
   "time-pos",
   "playback-time",
@@ -40,7 +42,7 @@ type EndFileHandler = (message: { reason?: string; observedAt: number }) => void
 type FileLoadedHandler = (message: { observedAt: number }) => void;
 
 type SessionOptions = {
-  socketPath: string;
+  endpoint: MpvIpcEndpoint;
   onPropertyUpdate: PropertyUpdateHandler;
   onEndFile: EndFileHandler;
   onFileLoaded?: FileLoadedHandler;
@@ -93,14 +95,17 @@ export function parseMpvIpcLine(raw: string): MpvIpcMessage | null {
   }
 }
 
-// Probe the socket by attempting a connection and closing immediately on success.
-export async function waitForMpvIpcSocket(socketPath: string, timeoutMs = 3_000): Promise<boolean> {
+/** Probe IPC by connecting and closing immediately on success (Unix UDS or Windows pipe via `unix:` path). */
+export async function waitForMpvIpcEndpoint(
+  endpoint: MpvIpcEndpoint,
+  timeoutMs = 3_000,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let delay = 10;
   while (Date.now() < deadline) {
     try {
       const s = await Bun.connect<SocketState>({
-        unix: socketPath,
+        unix: endpoint.path,
         data: { onClose: null },
         socket: {
           open(sock) {
@@ -111,16 +116,20 @@ export async function waitForMpvIpcSocket(socketPath: string, timeoutMs = 3_000)
           error() {},
         },
       });
-      // Probe succeeded — s.readyState may already be closing, but connection was established.
       void s;
       return true;
     } catch {
-      // Socket not ready yet — retry after backoff.
+      // Pipe/socket not ready yet — retry after backoff.
     }
     await Bun.sleep(delay);
     delay = Math.min(delay * 2, 100);
   }
   return false;
+}
+
+/** @deprecated Prefer `waitForMpvIpcEndpoint` + `createMpvIpcEndpoint`; kept for tests and legacy callers. */
+export async function waitForMpvIpcSocket(socketPath: string, timeoutMs = 3_000): Promise<boolean> {
+  return waitForMpvIpcEndpoint({ kind: "unix_socket", path: socketPath }, timeoutMs);
 }
 
 export interface MpvIpcSession {
@@ -152,7 +161,7 @@ export async function openMpvIpcSession(options: SessionOptions): Promise<MpvIpc
   };
 
   const socket = await Bun.connect<SocketState>({
-    unix: options.socketPath,
+    unix: options.endpoint.path,
     data: { onClose: null },
     socket: {
       open() {},

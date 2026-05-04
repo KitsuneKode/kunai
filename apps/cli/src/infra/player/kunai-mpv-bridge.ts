@@ -50,17 +50,14 @@ export async function ensureUserKunaiMpvBridge(bundledPath: string): Promise<voi
 }
 
 /**
- * Persistent autoplay wires the bridge to Bun through mpv IPC on a Unix domain socket.
- * `PersistentMpvSession` disables that socket path on Windows (`ipcPath === null`), so the
- * default bundled/user mirror path is not used there; an explicit `mpvKunaiScriptPath` still resolves.
+ * Persistent autoplay wires the bridge to Bun through mpv IPC (Unix socket or Windows named pipe).
+ * Custom `mpvKunaiScriptPath` wins when it exists on disk.
  */
 export async function resolveKunaiMpvBridgeScriptPath(
   config: KitsuneConfig,
 ): Promise<string | null> {
   const custom = config.mpvKunaiScriptPath?.trim();
   if (custom && existsSync(custom)) return custom;
-
-  if (process.platform === "win32") return null;
 
   const bundled = bundledKunaiMpvBridgePath();
   await ensureUserKunaiMpvBridge(bundled);

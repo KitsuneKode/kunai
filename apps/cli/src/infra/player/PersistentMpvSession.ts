@@ -1,7 +1,5 @@
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import type {
   PlaybackResult,
@@ -19,7 +17,8 @@ import {
   resolveKunaiMpvBridgeScriptPath,
 } from "./kunai-mpv-bridge";
 import type { MpvIpcSession } from "./mpv-ipc";
-import { openMpvIpcSession, waitForMpvIpcSocket } from "./mpv-ipc";
+import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
+import { createMpvIpcEndpoint, ipcServerCliArg, shouldUnlinkUnixSocket } from "./mpv-ipc-endpoint";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import {
   applyEndFileEvent,
@@ -80,8 +79,7 @@ type PlayerCycleState = {
 
 export class PersistentMpvSession {
   private readonly id = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  private readonly ipcPath =
-    process.platform === "win32" ? null : join(tmpdir(), `kunai-mpv-${this.id}.sock`);
+  private readonly ipcEndpoint = createMpvIpcEndpoint(this.id);
   private luaScriptPath: string | null = null;
   private mpv: MpvProcess | null = null;
   private ipcSession: MpvIpcSession | null = null;
@@ -256,8 +254,8 @@ export class PersistentMpvSession {
   }
 
   private async spawn(mpvOptions?: MpvRuntimeOptions): Promise<void> {
-    if (this.ipcPath) {
-      await unlinkIfExists(this.ipcPath);
+    if (shouldUnlinkUnixSocket(this.ipcEndpoint)) {
+      await unlinkIfExists(this.ipcEndpoint.path);
     }
 
     this.terminationPromise = null;
@@ -274,7 +272,7 @@ export class PersistentMpvSession {
         displayTitle: this.initialOptions.displayTitle,
         startAt: this.initialOptions.startAt,
       },
-      this.ipcPath,
+      ipcServerCliArg(this.ipcEndpoint),
       {
         persistent: true,
         includeStartArg: false,
@@ -319,13 +317,13 @@ export class PersistentMpvSession {
       return undefined;
     });
 
-    if (this.ipcPath) {
-      const ready = await waitForMpvIpcSocket(this.ipcPath, 5_000);
+    {
+      const ready = await waitForMpvIpcEndpoint(this.ipcEndpoint, 5_000);
       if (!ready) {
         this.currentCycleOptions().onPlaybackEvent?.({
           type: "ipc-command-failed",
           command: "ipc-bootstrap",
-          error: `IPC socket was not ready at ${this.ipcPath}`,
+          error: `IPC endpoint was not ready at ${ipcServerCliArg(this.ipcEndpoint)}`,
         });
         proc.kill("SIGTERM");
         await this.handleProcessTermination({ code: 1, signal: null });
@@ -334,7 +332,7 @@ export class PersistentMpvSession {
 
       try {
         this.ipcSession = await openMpvIpcSession({
-          socketPath: this.ipcPath,
+          endpoint: this.ipcEndpoint,
           onPropertyUpdate: ({ name, value, observedAt }) => {
             const active = this.activeCycle;
 
@@ -452,7 +450,7 @@ export class PersistentMpvSession {
   }
 
   private beginCycle(options: PlayerCycleOptions): PlayerCycleState {
-    const telemetry = createPlayerTelemetryState(this.ipcPath ?? undefined);
+    const telemetry = createPlayerTelemetryState(this.ipcEndpoint.path);
     let resolve!: (result: PlaybackResult) => void;
     const promise = new Promise<PlaybackResult>((res) => {
       resolve = res;
@@ -872,7 +870,9 @@ export class PersistentMpvSession {
       if (active) {
         recordPlayerExit(active.telemetry, exit);
         const result = finalizePlaybackResult(active.telemetry, {
-          socketPathCleanedUp: this.ipcPath ? !existsSync(this.ipcPath) : true,
+          socketPathCleanedUp: shouldUnlinkUnixSocket(this.ipcEndpoint)
+            ? !existsSync(this.ipcEndpoint.path)
+            : true,
         });
         active.resolve(result);
       }
@@ -890,8 +890,9 @@ export class PersistentMpvSession {
   }
 
   private async cleanupSocket(): Promise<void> {
-    if (!this.ipcPath || !existsSync(this.ipcPath)) return;
-    await unlink(this.ipcPath).catch(() => {});
+    if (!shouldUnlinkUnixSocket(this.ipcEndpoint)) return;
+    if (!existsSync(this.ipcEndpoint.path)) return;
+    await unlink(this.ipcEndpoint.path).catch(() => {});
   }
 
   private async cleanupLuaScript(): Promise<void> {

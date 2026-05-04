@@ -1,12 +1,15 @@
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import type { PlaybackResult } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
-import { openMpvIpcSession, waitForMpvIpcSocket } from "@/infra/player/mpv-ipc";
+import { openMpvIpcSession, waitForMpvIpcEndpoint } from "@/infra/player/mpv-ipc";
+import {
+  createMpvIpcEndpoint,
+  ipcServerCliArg,
+  shouldUnlinkUnixSocket,
+} from "@/infra/player/mpv-ipc-endpoint";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import {
   applyEndFileEvent,
@@ -40,14 +43,14 @@ export async function launchMpv(opts: {
   mpv?: MpvRuntimeOptions;
 }): Promise<PlaybackResult> {
   const nonce = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  const ipcPath = process.platform === "win32" ? null : join(tmpdir(), `kunai-mpv-${nonce}.sock`);
+  const ipcEndpoint = createMpvIpcEndpoint(nonce);
 
-  if (ipcPath) {
-    await unlinkIfExists(ipcPath);
+  if (shouldUnlinkUnixSocket(ipcEndpoint)) {
+    await unlinkIfExists(ipcEndpoint.path);
   }
 
-  const args = buildMpvArgs(opts, ipcPath, { mpv: opts.mpv });
-  const telemetry = createPlayerTelemetryState(ipcPath ?? undefined);
+  const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), { mpv: opts.mpv });
+  const telemetry = createPlayerTelemetryState(ipcEndpoint.path);
   const emitPlaybackEvent = opts.onPlaybackEvent ?? (() => {});
 
   if (!Bun.which("mpv")) {
@@ -134,15 +137,14 @@ export async function launchMpv(opts: {
   }));
 
   const ipcBootstrap = (async () => {
-    if (!ipcPath) return;
-    const ready = await waitForMpvIpcSocket(ipcPath, 5_000);
+    const ready = await waitForMpvIpcEndpoint(ipcEndpoint, 5_000);
     if (!ready) {
       notifyPlayerReady();
       return;
     }
 
     ipcSession = await openMpvIpcSession({
-      socketPath: ipcPath,
+      endpoint: ipcEndpoint,
       onPropertyUpdate: ({ name, value, observedAt }) => {
         applyObservedPropertySample(telemetry, { name, value, observedAt });
         if (telemetry.latestIpcSample) {
@@ -200,7 +202,9 @@ export async function launchMpv(opts: {
   await closeIpcSession(ipcSession);
   watchdog.stop();
   emitPlaybackEvent({ type: "player-closed" });
-  const socketPathCleanedUp = ipcPath ? await cleanupSocket(ipcPath) : true;
+  const socketPathCleanedUp = shouldUnlinkUnixSocket(ipcEndpoint)
+    ? await cleanupUnixSocketFile(ipcEndpoint.path)
+    : true;
 
   opts.onControlReady?.(null);
 
@@ -309,10 +313,10 @@ async function unlinkIfExists(path: string): Promise<void> {
   await unlink(path).catch(() => {});
 }
 
-async function cleanupSocket(ipcPath: string): Promise<boolean> {
-  if (!existsSync(ipcPath)) return true;
+async function cleanupUnixSocketFile(socketPath: string): Promise<boolean> {
+  if (!existsSync(socketPath)) return true;
   try {
-    await unlink(ipcPath);
+    await unlink(socketPath);
     return true;
   } catch {
     return false;
