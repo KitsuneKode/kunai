@@ -22,7 +22,14 @@ import {
   recordPlayerExit,
   type PlayerTelemetryState,
 } from "./mpv-telemetry";
-import { findActivePlaybackSkip, type PlaybackSkipConfig } from "./playback-skip";
+import {
+  type ActivePlaybackSkip,
+  findActivePlaybackSkip,
+  findPlaybackSegmentAtPosition,
+  isPlaybackAutoSkipEnabled,
+  playbackSkipKindLabel,
+  type PlaybackSkipConfig,
+} from "./playback-skip";
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
 import type { ActivePlayerControl } from "./PlayerControlService";
 import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
@@ -87,6 +94,11 @@ export class PersistentMpvSession {
   private terminated = false;
   private lastSkipTo = -1;
   private nearEofFired = false;
+  /** Segment key for the active mpv skip prompt (Lua overlay + delayed auto-skip). */
+  private skipPromptSegmentKey: string | null = null;
+  private skipAutoTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Bumped whenever skip user-data changes so mpv Lua resets its 3s prompt timer. */
+  private skipUserDataRev = 0;
 
   private constructor(
     private readonly initialStream: StreamInfo,
@@ -188,7 +200,7 @@ export class PersistentMpvSession {
   updateTiming(timing: PlaybackTimingMetadata | null): void {
     if (!this.activeCycle) return;
     this.currentOptions = { ...this.currentOptions, timing };
-    void this.maybeAutoSkip(this.currentOptions, true);
+    void this.handleSegmentSkipProgress(this.currentOptions);
   }
 
   waitForCurrentPlayback(): Promise<PlaybackResult> {
@@ -317,6 +329,10 @@ export class PersistentMpvSession {
               if (req === "next" || req === "previous") {
                 this.currentCycleOptions().onMpvActionRequest?.(req);
                 void this.ipcSession?.send(["set_property", "user-data/kunai-request", ""], 500);
+              } else if (req === "skip" || req === "auto-skip") {
+                const automatic = req === "auto-skip";
+                void this.onSkipRequestFromMpv(automatic);
+                void this.ipcSession?.send(["set_property", "user-data/kunai-request", ""], 500);
               }
               return;
             }
@@ -335,7 +351,7 @@ export class PersistentMpvSession {
                 active.playerStartedNotified = true;
                 active.onPlaybackEvent?.({ type: "playback-started" });
               }
-              void this.maybeAutoSkip(this.currentCycleOptions(), true);
+              void this.handleSegmentSkipProgress(this.currentCycleOptions());
 
               // Near-EOF detection for prefetch — fire once per cycle when within 30s of end.
               if (!this.nearEofFired) {
@@ -444,6 +460,11 @@ export class PersistentMpvSession {
     this.skippedSegments = new Set<string>();
     this.lastSkipTo = -1;
     this.nearEofFired = false;
+    this.clearSkipAutoTimer();
+    this.skipPromptSegmentKey = null;
+    if (this.ipcSession) {
+      this.publishSkipPromptCleared();
+    }
   }
 
   private queueReadyWork(options: PlayerCycleOptions): void {
@@ -486,10 +507,7 @@ export class PersistentMpvSession {
 
     if (options.startAt && options.startAt > 5) {
       options.onPlaybackEvent?.({ type: "resolving-playback" });
-      const seekResult = await this.ipcSession.send(
-        ["seek", options.startAt, "absolute"],
-        2_000,
-      );
+      const seekResult = await this.ipcSession.send(["seek", options.startAt, "absolute"], 2_000);
       // IPC time-pos may lag behind the seek; autoskip uses currentPositionSeconds — sync so
       // recap/intro windows are evaluated from the resume point, not from 0 (which would
       // incorrectly skip earlier segments after a mid-episode resume).
@@ -506,7 +524,7 @@ export class PersistentMpvSession {
         options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
       },
     );
-    await this.maybeAutoSkip(options, true);
+    await this.handleSegmentSkipProgress(options);
   }
 
   private clearReadyWorkFallback(): void {
@@ -597,32 +615,167 @@ export class PersistentMpvSession {
     };
   }
 
-  private async maybeAutoSkip(options: PlayerCycleOptions, automatic: boolean): Promise<boolean> {
+  private clearSkipAutoTimer(): void {
+    if (this.skipAutoTimer) {
+      clearTimeout(this.skipAutoTimer);
+      this.skipAutoTimer = null;
+    }
+  }
+
+  private bumpSkipUserDataRev(): void {
+    this.skipUserDataRev += 1;
+    this.ipcSession?.sendUnchecked([
+      "set_property",
+      "user-data/kunai-skip-rev",
+      this.skipUserDataRev,
+    ]);
+  }
+
+  /** Clears skip prompt user-data and notifies mpv Lua to hide the overlay. */
+  private publishSkipPromptCleared(): void {
+    if (!this.ipcSession) return;
+    this.lastSkipTo = -1;
+    this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-to", -1]);
+    this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-auto", "0"]);
+    this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-kind", ""]);
+    this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-label", ""]);
+    this.bumpSkipUserDataRev();
+  }
+
+  private publishSkipPromptActive(segment: ActivePlaybackSkip, autoExecute: boolean): void {
+    if (!this.ipcSession) return;
+    const skipTo = segment.endSeconds;
+    if (skipTo !== this.lastSkipTo) {
+      this.lastSkipTo = skipTo;
+      this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-to", skipTo]);
+    }
+    this.ipcSession.sendUnchecked([
+      "set_property",
+      "user-data/kunai-skip-auto",
+      autoExecute ? "1" : "0",
+    ]);
+    this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-kind", segment.kind]);
+    this.ipcSession.sendUnchecked([
+      "set_property",
+      "user-data/kunai-skip-label",
+      playbackSkipKindLabel(segment.kind),
+    ]);
+    this.bumpSkipUserDataRev();
+  }
+
+  private clearSkipPromptState(): void {
+    this.clearSkipAutoTimer();
+    this.skipPromptSegmentKey = null;
+    this.publishSkipPromptCleared();
+  }
+
+  /** Windows / no Lua: preserve instant auto-skip when toggles are on. */
+  private async maybeAutoSkipLegacy(options: PlayerCycleOptions): Promise<boolean> {
     const activeSkip = findActivePlaybackSkip(
       options.timing,
       this.currentPositionSeconds,
       this.skipConfig(options),
     );
-
-    // Keep user-data/kunai-skip-to in sync so the Lua I-key binding can seek
-    // without a round-trip through the app.
     const newSkipTo = activeSkip ? activeSkip.endSeconds : -1;
     if (newSkipTo !== this.lastSkipTo && this.ipcSession) {
       this.lastSkipTo = newSkipTo;
       this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-to", newSkipTo]);
     }
-
     if (!activeSkip || !this.ipcSession || this.skippedSegments.has(activeSkip.key)) {
       return false;
     }
     this.skippedSegments.add(activeSkip.key);
     await this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"], 1_000);
-    options.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic });
+    options.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic: true });
     return true;
   }
 
+  private async performSeekSkip(
+    options: PlayerCycleOptions,
+    segment: ActivePlaybackSkip,
+    automatic: boolean,
+  ): Promise<boolean> {
+    if (!this.ipcSession || this.skippedSegments.has(segment.key)) {
+      return false;
+    }
+    this.skippedSegments.add(segment.key);
+    this.clearSkipPromptState();
+    await this.ipcSession.send(["seek", segment.endSeconds, "absolute"], 1_000);
+    options.onPlaybackEvent?.({ type: "segment-skipped", kind: segment.kind, automatic });
+    return true;
+  }
+
+  private async fireScheduledAutoSkip(
+    options: PlayerCycleOptions,
+    expectedKey: string,
+  ): Promise<void> {
+    this.skipAutoTimer = null;
+    if (!this.activeCycle || !this.ipcSession) return;
+    const seg = findPlaybackSegmentAtPosition(options.timing, this.currentPositionSeconds);
+    if (!seg || seg.key !== expectedKey) return;
+    if (this.skippedSegments.has(seg.key)) return;
+    if (!isPlaybackAutoSkipEnabled(seg.kind, this.skipConfig(options))) return;
+    await this.performSeekSkip(options, seg, true);
+  }
+
+  private async onSkipRequestFromMpv(automatic: boolean): Promise<void> {
+    const options = this.currentCycleOptions();
+    if (!this.ipcSession) return;
+    const segment = findPlaybackSegmentAtPosition(options.timing, this.currentPositionSeconds);
+    if (!segment || this.skippedSegments.has(segment.key)) return;
+    this.clearSkipAutoTimer();
+    await this.performSeekSkip(options, segment, automatic);
+  }
+
+  private async handleSegmentSkipProgress(options: PlayerCycleOptions): Promise<void> {
+    if (!this.ipcSession) return;
+
+    if (!this.luaScriptPath) {
+      await this.maybeAutoSkipLegacy(options);
+      return;
+    }
+
+    const segment = findPlaybackSegmentAtPosition(options.timing, this.currentPositionSeconds);
+    if (!segment) {
+      if (this.skipPromptSegmentKey !== null) {
+        this.clearSkipPromptState();
+      } else if (this.lastSkipTo !== -1) {
+        this.lastSkipTo = -1;
+        this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-to", -1]);
+      }
+      return;
+    }
+
+    if (this.skippedSegments.has(segment.key)) {
+      return;
+    }
+
+    if (this.skipPromptSegmentKey === segment.key) {
+      return;
+    }
+
+    this.skipPromptSegmentKey = segment.key;
+    this.clearSkipAutoTimer();
+
+    const autoExecute = isPlaybackAutoSkipEnabled(segment.kind, this.skipConfig(options));
+    this.publishSkipPromptActive(segment, autoExecute);
+
+    if (autoExecute) {
+      const expectedKey = segment.key;
+      this.skipAutoTimer = setTimeout(() => {
+        void this.fireScheduledAutoSkip(options, expectedKey);
+      }, 3_000);
+    }
+  }
+
   private async skipCurrentSegment(): Promise<boolean> {
-    return await this.maybeAutoSkip(this.currentCycleOptions(), false);
+    const options = this.currentCycleOptions();
+    const segment = findPlaybackSegmentAtPosition(options.timing, this.currentPositionSeconds);
+    if (!segment || !this.ipcSession || this.skippedSegments.has(segment.key)) {
+      return false;
+    }
+    this.clearSkipAutoTimer();
+    return await this.performSeekSkip(options, segment, false);
   }
 
   private async removeExternalSubtitles(): Promise<void> {
@@ -719,14 +872,122 @@ async function writeLuaScript(id: string): Promise<string | null> {
   if (process.platform === "win32") return null;
   const path = join(tmpdir(), `kunai-mpv-keys-${id}.lua`);
   const content = `
--- kunai mpv keybinding bridge
--- Sets user-data properties that the app observes via IPC.
--- N / n  → next episode    P / p → previous episode
--- I / i  → skip segment (position written to user-data/kunai-skip-to by app)
+-- kunai mpv bridge: N/P episode nav, I / click skip, Netflix-style skip chip (3s)
+local overlay = mp.create_osd_overlay("ass-events")
+overlay.z = 1600
+
+local prompt_redraw_timer = nil
+local prompt_deadline_wall = nil
+local prompt_is_auto = false
+local prompt_label = ""
 
 local function signal(action)
   mp.set_property("user-data/kunai-request", action)
 end
+
+local function clear_prompt_timers()
+  if prompt_redraw_timer ~= nil then
+    prompt_redraw_timer:kill()
+    prompt_redraw_timer = nil
+  end
+  prompt_deadline_wall = nil
+  pcall(function() mp.remove_key_binding("kunai-skip-click") end)
+end
+
+local function hide_prompt_visual()
+  clear_prompt_timers()
+  overlay.data = ""
+  overlay:remove()
+end
+
+local function hit_skip_chip(mx, my)
+  local dim = mp.get_property_native("osd-dimensions", {})
+  local w = dim.w or 0
+  local h = dim.h or 0
+  if w < 1 or h < 1 then return false end
+  local bw, bh = 260, 52
+  local padx, pady = 48, 128
+  local x0 = w - bw - padx
+  local y0 = h - bh - pady
+  return mx >= x0 and mx <= x0 + bw and my >= y0 and my <= y0 + bh
+end
+
+local function draw_prompt_frame()
+  if not prompt_deadline_wall then return end
+  local skip_to = mp.get_property_number("user-data/kunai-skip-to", -1)
+  if skip_to <= 0 then
+    hide_prompt_visual()
+    return
+  end
+  local dim = mp.get_property_native("osd-dimensions", {})
+  local w = dim.w or 1280
+  local h = dim.h or 720
+  local remaining = prompt_deadline_wall - mp.get_time()
+  if remaining < 0 then remaining = 0 end
+  local sec = math.max(0, math.ceil(remaining))
+  local subline
+  if prompt_is_auto then
+    subline = "Auto-skip in " .. tostring(sec) .. "s  ·  i / click now"
+  else
+    subline = (sec > 0) and (tostring(sec) .. "s  ·  i / click") or "i / click to skip"
+  end
+  local ax = w - 24
+  local ay = h - 36
+  overlay.res_x = w
+  overlay.res_y = h
+  overlay.data = string.format(
+    "{\\an3\\pos(%d,%d)\\fs26\\b1\\bord1\\3c&HFFFFFF&\\1c&H181818&}%s\\N{\\fs17\\b0\\1c&HDDDDDD&}%s",
+    ax, ay, prompt_label, subline
+  )
+  overlay:update()
+end
+
+local function on_skip_click(e)
+  if e and e.event ~= "up" then return end
+  local pos = mp.get_property_native("mouse-pos", {})
+  if not pos or not pos.x then return end
+  if hit_skip_chip(pos.x, pos.y) and mp.get_property_number("user-data/kunai-skip-to", -1) > 0 then
+    signal("skip")
+  end
+end
+
+local function restart_skip_prompt()
+  hide_prompt_visual()
+  local skip_to = mp.get_property_number("user-data/kunai-skip-to", -1)
+  if skip_to <= 0 then return end
+  prompt_is_auto = mp.get_property("user-data/kunai-skip-auto") == "1"
+  prompt_label = mp.get_property("user-data/kunai-skip-label", "SKIP")
+  if prompt_label == "" then prompt_label = "SKIP" end
+  prompt_deadline_wall = mp.get_time() + 3.0
+  overlay.hidden = false
+  draw_prompt_frame()
+  prompt_redraw_timer = mp.add_periodic_timer(0.05, function()
+    local st = mp.get_property_number("user-data/kunai-skip-to", -1)
+    if st <= 0 then
+      hide_prompt_visual()
+      return
+    end
+    local remaining = prompt_deadline_wall - mp.get_time()
+    draw_prompt_frame()
+    if remaining <= 0 then
+      if prompt_redraw_timer ~= nil then
+        prompt_redraw_timer:kill()
+        prompt_redraw_timer = nil
+      end
+      pcall(function() mp.remove_key_binding("kunai-skip-click") end)
+      overlay.data = ""
+      overlay:remove()
+      if prompt_is_auto then
+        signal("auto-skip")
+      end
+    end
+  end)
+  mp.add_forced_key_binding("MBTN_LEFT", "kunai-skip-click", on_skip_click, { complex = true })
+end
+
+mp.observe_property("user-data/kunai-skip-rev", "native", function()
+  restart_skip_prompt()
+end)
 
 local function do_next()
   signal("next")
@@ -739,10 +1000,8 @@ local function do_previous()
 end
 
 local function do_skip()
-  local skip_to = mp.get_property_number("user-data/kunai-skip-to", -1)
-  if skip_to and skip_to > 0 then
-    mp.commandv("seek", tostring(skip_to), "absolute")
-    mp.osd_message("Skipped", 1)
+  if mp.get_property_number("user-data/kunai-skip-to", -1) > 0 then
+    signal("skip")
   end
 end
 

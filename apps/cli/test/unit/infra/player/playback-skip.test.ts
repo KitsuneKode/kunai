@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 
 import type { PlaybackTimingMetadata } from "@/domain/types";
-import { findActivePlaybackSkip } from "@/infra/player/playback-skip";
+import {
+  findActivePlaybackSkip,
+  findPlaybackSegmentAtPosition,
+  playbackSkipKindLabel,
+} from "@/infra/player/playback-skip";
 
 const timing: PlaybackTimingMetadata = {
   tmdbId: "1396",
@@ -19,6 +23,16 @@ const BASE_CONFIG = {
   skipCredits: true,
   autoNextEnabled: false,
 } as const;
+
+test("findPlaybackSegmentAtPosition ignores user toggles", () => {
+  expect(findPlaybackSegmentAtPosition(timing, 70)).toMatchObject({
+    kind: "intro",
+    startSeconds: 60,
+    endSeconds: 120,
+  });
+  expect(findPlaybackSegmentAtPosition(timing, 70)).not.toBeNull();
+  expect(playbackSkipKindLabel("intro")).toBe("SKIP INTRO");
+});
 
 test("findActivePlaybackSkip prefers recap, intro, preview, and credits windows only when enabled", () => {
   expect(findActivePlaybackSkip(timing, 10, BASE_CONFIG)).toMatchObject({

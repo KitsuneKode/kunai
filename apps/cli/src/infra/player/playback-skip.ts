@@ -39,7 +39,10 @@ function segmentGroups(timing: PlaybackTimingMetadata | null | undefined): reado
   ] as const;
 }
 
-function isSkipEnabled(kind: PlaybackSkipKind, config: PlaybackSkipConfig): boolean {
+export function isPlaybackAutoSkipEnabled(
+  kind: PlaybackSkipKind,
+  config: PlaybackSkipConfig,
+): boolean {
   switch (kind) {
     case "recap":
       return config.skipRecap;
@@ -53,20 +56,19 @@ function isSkipEnabled(kind: PlaybackSkipKind, config: PlaybackSkipConfig): bool
   }
 }
 
-export function findActivePlaybackSkip(
+/**
+ * First timed segment that contains `positionSeconds`, ignoring user skip toggles.
+ * Used for mpv skip prompts (manual offer + `i` / click target) even when auto-skip is off.
+ */
+export function findPlaybackSegmentAtPosition(
   timing: PlaybackTimingMetadata | null | undefined,
   positionSeconds: number,
-  config: PlaybackSkipConfig,
 ): ActivePlaybackSkip | null {
   if (!timing || !Number.isFinite(positionSeconds) || positionSeconds < 0) {
     return null;
   }
 
   for (const [kind, segments] of segmentGroups(timing)) {
-    if (!isSkipEnabled(kind, config)) {
-      continue;
-    }
-
     for (const segment of segments) {
       const startSeconds = normalizeStartSeconds(segment.startMs);
       const endSeconds = normalizeEndSeconds(segment.endMs);
@@ -85,4 +87,28 @@ export function findActivePlaybackSkip(
   }
 
   return null;
+}
+
+export function playbackSkipKindLabel(kind: PlaybackSkipKind): string {
+  switch (kind) {
+    case "intro":
+      return "SKIP INTRO";
+    case "recap":
+      return "SKIP RECAP";
+    case "credits":
+      return "SKIP CREDITS";
+    case "preview":
+      return "SKIP PREVIEW";
+  }
+}
+
+export function findActivePlaybackSkip(
+  timing: PlaybackTimingMetadata | null | undefined,
+  positionSeconds: number,
+  config: PlaybackSkipConfig,
+): ActivePlaybackSkip | null {
+  const segment = findPlaybackSegmentAtPosition(timing, positionSeconds);
+  if (!segment) return null;
+  if (!isPlaybackAutoSkipEnabled(segment.kind, config)) return null;
+  return segment;
 }

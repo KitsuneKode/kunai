@@ -101,6 +101,8 @@ The main flow stays inside the same shell:
 - `n` / `p` / `s` handle episode navigation for series
 - `q` cancels the current shell or exits where appropriate
 
+During **mpv** playback (persistent session, non-Windows), AniSkip-style segments show a bottom-right **skip chip** for ~3 seconds: with **Skip intros** (etc.) on, it counts down and **auto-skips** after 3s; with it off, the chip **auto-hides** while you can still press **`i`** or **click** the chip to skip. `N` / `P` in the player window request next/previous episode from the shell.
+
 ## 📼 Watch History
 
 History is stored in the OS app data directory as `kunai-data.sqlite`.
