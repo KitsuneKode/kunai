@@ -12,6 +12,12 @@ import type {
 import { buildMpvArgs, collectAdditionalSubtitleTracks, shouldApplyStartAtSeek } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
+import {
+  buildKunaiBridgeScriptOptsArg,
+  isEphemeralKunaiLuaScript,
+  parseSkipPromptDurationMs,
+  resolveKunaiMpvBridgeScriptPath,
+} from "./kunai-mpv-bridge";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcSocket } from "./mpv-ipc";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
@@ -34,12 +40,6 @@ import {
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
 import type { ActivePlayerControl } from "./PlayerControlService";
 import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
-import {
-  buildKunaiBridgeScriptOptsArg,
-  isEphemeralKunaiLuaScript,
-  parseSkipPromptDurationMs,
-  resolveKunaiMpvBridgeScriptPath,
-} from "./kunai-mpv-bridge";
 
 type MpvProcess = {
   readonly exited: Promise<number>;
@@ -521,11 +521,17 @@ export class PersistentMpvSession {
 
       // Always push the display title for this episode so the mpv window title and
       // OSD stay correct across persistent-session episode transitions.
-      await this.ipcSession.send(["set_property", "force-media-title", options.displayTitle], 1_000);
+      await this.ipcSession.send(
+        ["set_property", "force-media-title", options.displayTitle],
+        1_000,
+      );
 
       if (shouldApplyStartAtSeek(options.startAt)) {
         options.onPlaybackEvent?.({ type: "resolving-playback" });
-        const seekResult = await this.ipcSession.send(["seek", options.startAt!, "absolute"], 2_000);
+        const seekResult = await this.ipcSession.send(
+          ["seek", options.startAt!, "absolute"],
+          2_000,
+        );
         // IPC time-pos may lag behind the seek; autoskip uses currentPositionSeconds — sync so
         // recap/intro windows are evaluated from the resume point, not from 0 (which would
         // incorrectly skip earlier segments after a mid-episode resume).

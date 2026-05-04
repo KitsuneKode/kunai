@@ -1,12 +1,11 @@
-import { copyFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { copyFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getKunaiPaths } from "@kunai/storage";
-
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { getKunaiPaths } from "@kunai/storage";
 
 const BRIDGE_FILENAME = "kunai-bridge.lua";
 const SCRIPT_OPTS_ID = "kunai-bridge";
@@ -55,7 +54,9 @@ export async function ensureUserKunaiMpvBridge(bundledPath: string): Promise<voi
  * `PersistentMpvSession` disables that socket path on Windows (`ipcPath === null`), so the
  * default bundled/user mirror path is not used there; an explicit `mpvKunaiScriptPath` still resolves.
  */
-export async function resolveKunaiMpvBridgeScriptPath(config: KitsuneConfig): Promise<string | null> {
+export async function resolveKunaiMpvBridgeScriptPath(
+  config: KitsuneConfig,
+): Promise<string | null> {
   const custom = config.mpvKunaiScriptPath?.trim();
   if (custom && existsSync(custom)) return custom;
 
@@ -70,7 +71,9 @@ export async function resolveKunaiMpvBridgeScriptPath(config: KitsuneConfig): Pr
   return null;
 }
 
-export function buildKunaiBridgeScriptOptsArg(opts: Record<string, string> | undefined): string | undefined {
+export function buildKunaiBridgeScriptOptsArg(
+  opts: Record<string, string> | undefined,
+): string | undefined {
   if (!opts) return undefined;
   const parts: string[] = [];
   for (const [k, v] of Object.entries(opts)) {
