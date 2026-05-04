@@ -12,11 +12,14 @@ import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import { toBrowseResultOption } from "@/app/browse-option-mappers";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { searchTitles } from "@/app/search-routing";
+import { effectiveFooterHints } from "@/container";
 import type { TitleInfo } from "@/domain/types";
 
 export type SearchPhaseInput = {
   initialQuery?: string;
   preserveExistingSearch?: boolean;
+  /** 1-based index into search results; skips the browse shell when in range (use with bootstrap search). */
+  autoPickSearchResultIndex?: number;
 };
 
 export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
@@ -84,6 +87,37 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           view: currentState.searchResults.length > 0 ? "results" : "search",
         });
 
+        const jumpIndex =
+          input && typeof input === "object" && "autoPickSearchResultIndex" in input
+            ? input.autoPickSearchResultIndex
+            : undefined;
+        if (
+          typeof jumpIndex === "number" &&
+          Number.isFinite(jumpIndex) &&
+          jumpIndex >= 1 &&
+          stateManager.getState().searchResults.length > 0
+        ) {
+          const idx = Math.trunc(jumpIndex) - 1;
+          const results = stateManager.getState().searchResults;
+          if (idx >= 0 && idx < results.length) {
+            const selected = results[idx];
+            if (selected) {
+              stateManager.dispatch({ type: "SELECT_RESULT", index: idx });
+              const title: TitleInfo = {
+                id: selected.id,
+                type: selected.type,
+                name: selected.title,
+                year: selected.year,
+                overview: selected.overview,
+                posterUrl: selected.posterPath ?? undefined,
+                episodeCount: selected.episodeCount,
+              };
+              stateManager.dispatch({ type: "SELECT_TITLE", title });
+              return { status: "success", value: title };
+            }
+          }
+        }
+
         const shellRuntime = buildShellRuntimeBindings(container);
         const outcome = await openBrowseShell({
           mode: currentState.mode,
@@ -97,7 +131,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               : undefined,
           initialSelectedIndex: currentState.selectedResultIndex,
           placeholder: currentState.mode === "anime" ? "Demon Slayer" : "Breaking Bad",
-          footerMode: shellRuntime.settings.footerHints,
+          footerMode: effectiveFooterHints(container),
           commands: resolveCommands(currentState, [
             "settings",
             "toggle-mode",
@@ -105,6 +139,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             "history",
             "details",
             "diagnostics",
+            "export-diagnostics",
             "help",
             "about",
             "quit",

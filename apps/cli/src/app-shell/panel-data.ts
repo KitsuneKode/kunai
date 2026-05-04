@@ -170,6 +170,12 @@ export function buildDiagnosticsPanelLines({
   const ipcStallEvent = findRecentMpvEvent(recentEvents, "ipc-stalled");
   return [
     {
+      label: "Export support bundle",
+      detail:
+        "Run / export-diagnostics (or the Export Diagnostics command) to write a redacted JSON snapshot of recent events next to the working directory.",
+      tone: "neutral",
+    },
+    {
       label: "Mode and provider",
       detail: `${state.mode}  ·  ${state.provider}`,
     },
@@ -286,12 +292,12 @@ export function buildHistoryPanelLines(
 
   return sortHistoryEntries(historyEntries)
     .slice(0, 10)
-    .map(([, entry]: [string, HistoryEntry]) => ({
+    .map(([titleId, entry]: [string, HistoryEntry]) => ({
       label:
         entry.type === "series"
           ? `${entry.title}  ·  S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
           : `${entry.title}  ·  movie`,
-      detail: `${historyProgress(entry)}  ·  provider ${entry.provider}  ·  ${new Date(entry.watchedAt).toLocaleDateString()}`,
+      detail: `${historyProgress(entry)}  ·  provider ${entry.provider}  ·  id ${titleId}  ·  ${new Date(entry.watchedAt).toLocaleDateString()}`,
     }));
 }
 

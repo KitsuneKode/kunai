@@ -2,6 +2,7 @@ import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { switchSessionMode } from "@/app/mode-switch";
 import type { Container } from "@/container";
+import { effectiveFooterHints } from "@/container";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -418,6 +419,7 @@ function AppRoot({ container }: { container: Container }) {
               />
             ) : rootSurface === "playback" ? (
               <LoadingShell
+                key={`playback-ep-${state.currentTitle?.id ?? "none"}:${state.currentEpisode?.season ?? 0}:${state.currentEpisode?.episode ?? 0}`}
                 state={{
                   title: state.currentTitle?.name || "Resolving...",
                   subtitle: playbackSubtitle,
@@ -463,7 +465,7 @@ function AppRoot({ container }: { container: Container }) {
                     "about",
                     "quit",
                   ]),
-                  footerMode: container.config.getRaw().footerHints,
+                  footerMode: effectiveFooterHints(container),
                   onCommandAction: (action) => {
                     if (action === "command-mode") return;
                     if (action === "search") {

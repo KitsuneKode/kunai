@@ -1,4 +1,8 @@
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type {
+  KitsuneConfig,
+  QuitNearEndBehavior,
+  QuitNearEndThresholdMode,
+} from "@/services/persistence/ConfigService";
 import { Box, Text } from "ink";
 
 import { Badge } from "./shell-primitives";
@@ -65,6 +69,8 @@ type SettingsAction =
   | "headless"
   | "showMemory"
   | "autoNext"
+  | "quitNearEndBehavior"
+  | "quitNearEndThresholdMode"
   | "skipRecap"
   | "skipIntro"
   | "skipCredits"
@@ -89,6 +95,37 @@ const SUBTITLE_SETTINGS_OPTIONS: readonly ShellPickerOption<string>[] = [
 const ANIME_AUDIO_SETTINGS_OPTIONS: readonly ShellPickerOption<"sub" | "dub">[] = [
   { value: "sub", label: "Sub", detail: "Original audio with subtitles" },
   { value: "dub", label: "Dub", detail: "Dubbed audio when available" },
+];
+
+const QUIT_NEAR_END_BEHAVIOR_OPTIONS: readonly ShellPickerOption<QuitNearEndBehavior>[] = [
+  {
+    value: "continue",
+    label: "Continue",
+    detail: "Quitting mpv near the end still allows auto-next when enabled",
+  },
+  {
+    value: "pause",
+    label: "Pause chain",
+    detail: "Quitting mpv always stops the auto-next chain (EOF still advances)",
+  },
+];
+
+const QUIT_THRESHOLD_MODE_OPTIONS: readonly ShellPickerOption<QuitNearEndThresholdMode>[] = [
+  {
+    value: "credits-or-90-percent",
+    label: "Credits or last 5s",
+    detail: "Prefer AniSkip/IntroDB credits start, else last five seconds",
+  },
+  {
+    value: "percent-only",
+    label: "95% watched",
+    detail: "Treat as near-end when watched ≥ 95% of reported duration",
+  },
+  {
+    value: "seconds-only",
+    label: "Last 5 seconds",
+    detail: "Ignore segment timing; only last five seconds count as near-end",
+  },
 ];
 
 const FOOTER_HINT_OPTIONS: readonly ShellPickerOption<"detailed" | "minimal">[] = [
@@ -151,6 +188,16 @@ export function buildSettingsOptions(
       value: "autoNext",
       label: `Autoplay next  ·  ${config.autoNext ? "on" : "off"}`,
       detail: "Close mpv on EOF and continue through the next available released episode",
+    },
+    {
+      value: "quitNearEndBehavior",
+      label: `Quit near end  ·  ${config.quitNearEndBehavior}`,
+      detail: "Whether quitting mpv near the natural end can still trigger auto-next",
+    },
+    {
+      value: "quitNearEndThresholdMode",
+      label: `Near-end detection  ·  ${config.quitNearEndThresholdMode}`,
+      detail: "How Kunai decides you were “close enough” to the end for quit + completion",
     },
     {
       value: "skipRecap",
@@ -271,6 +318,24 @@ export function buildSettingsChoiceOverlay({
     options = FOOTER_HINT_OPTIONS.map((option) => ({
       ...option,
       label: option.value === config.footerHints ? `${option.label}  ·  current` : option.label,
+    })) as readonly ShellPickerOption<string>[];
+  } else if (setting === "quitNearEndBehavior") {
+    title = "Quit near end";
+    subtitle = `Current ${config.quitNearEndBehavior}`;
+    options = QUIT_NEAR_END_BEHAVIOR_OPTIONS.map((option) => ({
+      ...option,
+      label:
+        option.value === config.quitNearEndBehavior ? `${option.label}  ·  current` : option.label,
+    })) as readonly ShellPickerOption<string>[];
+  } else if (setting === "quitNearEndThresholdMode") {
+    title = "Near-end detection";
+    subtitle = `Current ${config.quitNearEndThresholdMode}`;
+    options = QUIT_THRESHOLD_MODE_OPTIONS.map((option) => ({
+      ...option,
+      label:
+        option.value === config.quitNearEndThresholdMode
+          ? `${option.label}  ·  current`
+          : option.label,
     })) as readonly ShellPickerOption<string>[];
   }
 

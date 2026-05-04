@@ -1,7 +1,11 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { Container } from "@/container";
 import type { SessionState } from "@/domain/session/SessionState";
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type {
+  KitsuneConfig,
+  QuitNearEndBehavior,
+  QuitNearEndThresholdMode,
+} from "@/services/persistence/ConfigService";
 import { Box, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 
@@ -74,6 +78,7 @@ export function RootOverlayShell({
     "help",
     "about",
     "diagnostics",
+    "export-diagnostics",
   ]);
   const settingsSeriesProviderOptions = buildSettingsProviderOptions({
     providers: container.providerRegistry
@@ -354,6 +359,10 @@ export function RootOverlayShell({
             next.animeLang = picked.value as "sub" | "dub";
           } else if (settingsChoice === "footerHints") {
             next.footerHints = picked.value as "detailed" | "minimal";
+          } else if (settingsChoice === "quitNearEndBehavior") {
+            next.quitNearEndBehavior = picked.value as QuitNearEndBehavior;
+          } else if (settingsChoice === "quitNearEndThresholdMode") {
+            next.quitNearEndThresholdMode = picked.value as QuitNearEndThresholdMode;
           }
           setSettingsDraft(next);
           setSettingsChoice(null);

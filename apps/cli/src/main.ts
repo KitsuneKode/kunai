@@ -7,6 +7,9 @@
 //   bun run dev -- -S "Breaking Bad"       # Search directly
 //   bun run dev -- -i 438631 -t movie      # By ID
 //   bun run dev -- -a                      # Anime mode
+//   bun run dev -- -S "Dune" --jump 1      # Pick first search result without browse UI
+//   bun run dev -- -S "Dune" -q            # Quick: same as --jump 1 when searching
+//   bun run dev -- -m                      # Minimal footer for this session
 //
 // This file owns the current fullscreen session runtime.
 // Keep new architecture work here. apps/cli/index.ts is only a temporary
@@ -14,7 +17,7 @@
 // =============================================================================
 
 import { SessionController } from "@/app/SessionController";
-import { createContainer } from "@/container";
+import { createContainer, type ShellChrome } from "@/container";
 import type { TitleInfo } from "@/domain/types";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { checkDeps } from "@/ui";
@@ -27,6 +30,10 @@ export function parseArgs(argv: string[]): {
   anime: boolean;
   debug: boolean;
   mpv: MpvRuntimeOptions;
+  minimal: boolean;
+  quick: boolean;
+  jump?: number;
+  shellChrome: ShellChrome;
 } {
   const args: {
     search?: string;
@@ -35,7 +42,10 @@ export function parseArgs(argv: string[]): {
     anime: boolean;
     debug: boolean;
     mpv: MpvRuntimeOptions;
-  } = { anime: false, debug: false, mpv: {} };
+    minimal: boolean;
+    quick: boolean;
+    jump?: number;
+  } = { anime: false, debug: false, mpv: {}, minimal: false, quick: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-S" || arg === "--search") {
@@ -46,6 +56,16 @@ export function parseArgs(argv: string[]): {
       args.type = argv[++i];
     } else if (arg === "-a" || arg === "--anime") {
       args.anime = true;
+    } else if (arg === "-m" || arg === "--minimal") {
+      args.minimal = true;
+    } else if (arg === "-q" || arg === "--quick") {
+      args.quick = true;
+    } else if (arg === "--jump") {
+      const raw = argv[++i];
+      const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+      if (Number.isFinite(parsed) && parsed >= 1) {
+        args.jump = parsed;
+      }
     } else if (arg === "--debug") {
       args.debug = true;
     } else if (arg === "--mpv-debug") {
@@ -59,7 +79,8 @@ export function parseArgs(argv: string[]): {
       if (value) args.mpv = { ...args.mpv, logFile: value };
     }
   }
-  return args;
+  const shellChrome: ShellChrome = args.minimal ? "minimal" : args.quick ? "quick" : "default";
+  return { ...args, shellChrome };
 }
 
 let globalController: SessionController | null = null;
@@ -81,7 +102,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   await checkDeps();
 
   // Bootstrap the DI container
-  const container = await createContainer({ debug: args.debug, mpv: args.mpv });
+  const container = await createContainer({
+    debug: args.debug,
+    mpv: args.mpv,
+    shellChrome: args.shellChrome,
+  });
   const { logger, config, stateManager, cacheStore } = container;
 
   // Prune expired cache entries at startup to prevent indefinite bloat
@@ -146,9 +171,15 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // Run the main session loop
   try {
     globalController = new SessionController(container);
+    let autoPickSearchResultIndex: number | undefined = args.jump;
+    if (autoPickSearchResultIndex === undefined && args.quick && bootstrapQuery) {
+      autoPickSearchResultIndex = 1;
+    }
+
     await globalController.run({
       initialQuery: bootstrapQuery,
       initialTitle: bootstrapTitle,
+      autoPickSearchResultIndex,
     });
 
     logger.info("Kunai exited normally");

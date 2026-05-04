@@ -19,7 +19,8 @@ export type AppCommandId =
   | "previous"
   | "next-season"
   | "clear-cache"
-  | "clear-history";
+  | "clear-history"
+  | "export-diagnostics";
 
 export type AppCommand = {
   readonly id: AppCommandId;
@@ -148,6 +149,12 @@ export const COMMANDS: readonly AppCommand[] = [
     aliases: ["clear-history", "reset-history", "wipe-history"],
     description: "Remove all watch history and progress",
   },
+  {
+    id: "export-diagnostics",
+    label: "Export Diagnostics",
+    aliases: ["export-diagnostics", "export-logs", "diag-export"],
+    description: "Write recent diagnostics events to a redacted JSON file in the working directory",
+  },
 ] as const;
 
 export function parseCommand(input: string): AppCommand | null {
@@ -251,6 +258,7 @@ function resolveCommandState(
     case "about":
     case "clear-cache":
     case "clear-history":
+    case "export-diagnostics":
       return { enabled: true };
 
     case "toggle-mode":

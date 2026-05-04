@@ -1,4 +1,5 @@
 import type { Container } from "@/container";
+import { effectiveFooterHints } from "@/container";
 import type { EpisodePickerOption } from "@/domain/types";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
@@ -312,7 +313,7 @@ async function openStaticInfoShell({
 export function buildPickerActionContext({
   container,
   taskLabel,
-  footerMode = container.config.getRaw().footerHints,
+  footerMode = effectiveFooterHints(container),
   allowed = ["settings", "history", "diagnostics", "help", "about", "quit"],
 }: {
   container: Container;
@@ -651,6 +652,35 @@ export async function handleShellAction({
     return "handled";
   }
 
+  if (action === "export-diagnostics") {
+    const { join } = await import("node:path");
+    const { writeFile } = await import("node:fs/promises");
+    const snapshot = diagnosticsStore.getSnapshot();
+    const redacted = JSON.parse(JSON.stringify(snapshot), (_key, value) => {
+      if (typeof value === "string" && /^https?:\/\//i.test(value)) {
+        return "[redacted-url]";
+      }
+      return value;
+    }) as typeof snapshot;
+    const fileName = `kunai-diagnostics-export-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    const path = join(process.cwd(), fileName);
+    await writeFile(
+      path,
+      JSON.stringify(
+        { exportedAt: new Date().toISOString(), eventCount: redacted.length, events: redacted },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+    diagnosticsStore.record({
+      category: "ui",
+      message: "Diagnostics exported to file",
+      context: { path: fileName },
+    });
+    return "handled";
+  }
+
   return "unhandled";
 }
 
@@ -828,7 +858,7 @@ export async function openAnimeEpisodeListPicker(
 }
 
 function configSummary(config: KitsuneConfig): string {
-  return `default ${config.defaultMode}  ·  provider ${config.provider}  ·  anime ${config.animeProvider}  ·  footer ${config.footerHints}`;
+  return `default ${config.defaultMode}  ·  provider ${config.provider}  ·  anime ${config.animeProvider}  ·  quit ${config.quitNearEndBehavior}  ·  footer ${config.footerHints}`;
 }
 
 export async function openSettingsShell({
@@ -895,6 +925,16 @@ export async function openSettingsShell({
           label: `Autoplay next  ·  ${next.autoNext ? "on" : "off"}`,
           detail:
             "Close mpv on episode EOF, then continue through the next available released episode automatically",
+        },
+        {
+          value: "quitNearEndBehavior" as const,
+          label: `Quit near end  ·  ${next.quitNearEndBehavior}`,
+          detail: "Whether quitting mpv near the natural end can still trigger auto-next",
+        },
+        {
+          value: "quitNearEndThresholdMode" as const,
+          label: `Near-end detection  ·  ${next.quitNearEndThresholdMode}`,
+          detail: "How Kunai decides you were close enough to the end for quit + completion",
         },
         {
           value: "skipRecap" as const,
@@ -1075,6 +1115,70 @@ export async function openSettingsShell({
     if (action === "autoNext") {
       next.autoNext = !next.autoNext;
       changed = true;
+      continue;
+    }
+
+    if (action === "quitNearEndBehavior") {
+      const picked = await chooseOption({
+        title: "Quit near end",
+        subtitle: `Current ${next.quitNearEndBehavior}`,
+        actionContext,
+        options: [
+          {
+            value: "continue" as const,
+            label: next.quitNearEndBehavior === "continue" ? "Continue  ·  current" : "Continue",
+            detail: "Quitting mpv near the end still allows auto-next when enabled",
+          },
+          {
+            value: "pause" as const,
+            label: next.quitNearEndBehavior === "pause" ? "Pause chain  ·  current" : "Pause chain",
+            detail: "Quitting mpv always stops the auto-next chain (EOF still advances)",
+          },
+        ],
+      });
+      if (picked && picked !== next.quitNearEndBehavior) {
+        next.quitNearEndBehavior = picked;
+        changed = true;
+      }
+      continue;
+    }
+
+    if (action === "quitNearEndThresholdMode") {
+      const picked = await chooseOption({
+        title: "Near-end detection",
+        subtitle: `Current ${next.quitNearEndThresholdMode}`,
+        actionContext,
+        options: [
+          {
+            value: "credits-or-90-percent" as const,
+            label:
+              next.quitNearEndThresholdMode === "credits-or-90-percent"
+                ? "Credits or last 5s  ·  current"
+                : "Credits or last 5s",
+            detail: "Prefer AniSkip/IntroDB credits start, else last five seconds",
+          },
+          {
+            value: "percent-only" as const,
+            label:
+              next.quitNearEndThresholdMode === "percent-only"
+                ? "95% watched  ·  current"
+                : "95% watched",
+            detail: "Treat as near-end when watched ≥ 95% of reported duration",
+          },
+          {
+            value: "seconds-only" as const,
+            label:
+              next.quitNearEndThresholdMode === "seconds-only"
+                ? "Last 5 seconds  ·  current"
+                : "Last 5 seconds",
+            detail: "Ignore segment timing; only last five seconds count as near-end",
+          },
+        ],
+      });
+      if (picked && picked !== next.quitNearEndThresholdMode) {
+        next.quitNearEndThresholdMode = picked;
+        changed = true;
+      }
       continue;
     }
 

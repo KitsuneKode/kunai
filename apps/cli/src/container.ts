@@ -55,6 +55,8 @@ import { SearchRegistryImpl } from "./services/search/SearchRegistry";
  * The container is the single source of truth for all dependencies.
  * No service should import concrete implementations - only interfaces from here.
  */
+export type ShellChrome = "default" | "minimal" | "quick";
+
 export interface Container {
   // Core services
   readonly logger: Logger;
@@ -81,6 +83,16 @@ export interface Container {
 
   // Session
   readonly stateManager: SessionStateManager;
+
+  /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
+  readonly shellChrome: ShellChrome;
+}
+
+export function effectiveFooterHints(
+  container: Pick<Container, "config" | "shellChrome">,
+): "detailed" | "minimal" {
+  if (container.shellChrome === "minimal") return "minimal";
+  return container.config.getRaw().footerHints;
 }
 
 /**
@@ -92,6 +104,7 @@ export type ContainerDeps<T extends keyof Container> = Pick<Container, T>;
 export interface ContainerOptions {
   debug?: boolean;
   mpv?: MpvRuntimeOptions;
+  shellChrome?: ShellChrome;
 }
 
 /**
@@ -149,6 +162,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
 
+  const shellChrome: ShellChrome = options?.shellChrome ?? "default";
+
   const container: Container = {
     logger,
     tracer,
@@ -166,6 +181,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     cacheStore,
     diagnosticsStore,
     stateManager,
+    shellChrome,
   };
 
   logger.info("Container initialized", {

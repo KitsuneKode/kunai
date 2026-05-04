@@ -16,6 +16,8 @@ export interface SessionBootstrap {
   initialQuery?: string;
   initialTitle?: TitleInfo | null;
   preserveExistingSearch?: boolean;
+  /** 1-based search result index for the first bootstrap query (`--jump` / `--quick`). */
+  autoPickSearchResultIndex?: number;
 }
 
 export class SessionController {
@@ -34,6 +36,7 @@ export class SessionController {
     let pendingInitialTitle = bootstrap.initialTitle ?? null;
     let pendingInitialQuery = bootstrap.initialQuery;
     let preserveExistingSearch = bootstrap.preserveExistingSearch ?? false;
+    let pendingAutoPick = bootstrap.autoPickSearchResultIndex;
 
     await tracer.span("session", async () => {
       try {
@@ -57,10 +60,12 @@ export class SessionController {
               {
                 initialQuery: pendingInitialQuery,
                 preserveExistingSearch,
+                autoPickSearchResultIndex: pendingAutoPick,
               } satisfies SearchPhaseInput,
               new (await import("./SearchPhase")).SearchPhase(),
             );
             pendingInitialQuery = undefined;
+            pendingAutoPick = undefined;
             preserveExistingSearch = false;
 
             if (this.abortController.signal.aborted) break;
