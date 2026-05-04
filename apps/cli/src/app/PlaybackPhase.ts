@@ -423,6 +423,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               const compatibleProviders = providerRegistry.getCompatible(title);
               const resolveResult = await resolveWithFallback<StreamInfo>({
+                signal: resolveController.signal,
                 candidates: compatibleProviders.map((p) => ({
                   providerId: p.metadata.id,
                   preferred: p.metadata.id === currentProvider.metadata.id,

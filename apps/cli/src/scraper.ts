@@ -127,7 +127,9 @@ export async function scrapeStream(
   targetUrl: string,
   subLang: string,
   headless = true,
+  signal?: AbortSignal,
 ): Promise<StreamData | null> {
+  if (signal?.aborted) return null;
   dbg("scraper", "start", { provider: config.id, targetUrl, subLang, headless });
   let browser: Browser | null = null;
   try {
@@ -163,6 +165,21 @@ export async function scrapeStream(
     const streamData = await new Promise<StreamData | null>((resolve) => {
       let streamFound = false;
       let scraperTimeout: ReturnType<typeof setTimeout> | undefined;
+
+      const onAbort = () => {
+        clearTimeout(scraperTimeout);
+        if (!streamFound) {
+          dbg("scraper", "aborted via signal");
+          resolve(null);
+        }
+      };
+      if (signal) {
+        if (signal.aborted) {
+          onAbort();
+        } else {
+          signal.addEventListener("abort", onAbort, { once: true });
+        }
+      }
 
       const onResponse = async (response: Response) => {
         const url = response.url();

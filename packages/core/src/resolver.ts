@@ -24,15 +24,18 @@ export async function resolveWithFallback<
   TStream extends { providerResolveResult?: ProviderResolveResult },
 >({
   candidates,
+  signal,
   now = () => new Date().toISOString(),
 }: {
   readonly candidates: readonly ResolveCandidate<TStream>[];
+  readonly signal?: AbortSignal;
   readonly now?: () => string;
 }): Promise<ResolveWithFallbackResult<TStream>> {
   const ordered = orderCandidates(candidates);
   const attempts: ResolveAttempt<TStream>[] = [];
 
   for (const candidate of ordered) {
+    if (signal?.aborted) break;
     try {
       const stream = await candidate.resolve();
       const attempt: ResolveAttempt<TStream> = {
@@ -51,6 +54,7 @@ export async function resolveWithFallback<
         };
       }
     } catch (error) {
+      if (signal?.aborted) break;
       attempts.push({
         providerId: candidate.providerId,
         stream: null,

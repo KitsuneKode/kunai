@@ -113,8 +113,12 @@ export function LoadingShell({
       onCancel();
       return;
     }
-    if (input.toLowerCase() === "q" && state.operation === "playing" && onStop) {
-      onStop();
+    if (input.toLowerCase() === "q") {
+      if (state.operation === "playing" && onStop) {
+        onStop();
+      } else if (state.cancellable && onCancel) {
+        onCancel();
+      }
     }
     if (input.toLowerCase() === "r" && state.operation === "playing" && onRefresh) {
       onRefresh();
@@ -131,7 +135,7 @@ export function LoadingShell({
     if (input.toLowerCase() === "p" && state.operation === "playing" && onPrevious) {
       onPrevious();
     }
-    if (input.toLowerCase() === "i" && state.operation === "playing" && onSkipSegment) {
+    if (input.toLowerCase() === "b" && state.operation === "playing" && onSkipSegment) {
       onSkipSegment();
     }
     if (input.toLowerCase() === "a" && state.operation === "playing" && onToggleAutoplay) {
@@ -184,7 +188,9 @@ export function LoadingShell({
       footerTask={
         state.operation === "playing"
           ? "Playback  ·  q stop · r refresh · f fallback"
-          : "Playback bootstrap  ·  Esc cancel · / commands"
+          : state.cancellable
+            ? "Playback bootstrap  ·  q / Esc cancel"
+            : "Playback bootstrap"
       }
       footerActions={footerActions}
       footerMode={state.footerMode ?? "detailed"}
@@ -249,7 +255,7 @@ export function LoadingShell({
             }
             tone={isPlaying ? "success" : "info"}
           />
-          {!isPlaying && elapsed >= 2 ? (
+          {!isPlaying && elapsed >= 10 ? (
             <DetailLine label="Elapsed" value={formatElapsed(elapsed)} />
           ) : null}
           {state.showMemory ? <DetailLine label="Memory" value={formatMemoryUsage()} /> : null}
@@ -288,13 +294,6 @@ export function LoadingShell({
           )
         )}
 
-        {state.cancellable && (
-          <Box marginTop={1}>
-            <Text color={palette.gray} dimColor>
-              ESC to cancel
-            </Text>
-          </Box>
-        )}
         {state.stopHint ? (
           <Box marginTop={1}>
             <Text color={palette.gray} dimColor>

@@ -86,6 +86,7 @@ export class BrowserServiceImpl implements BrowserService {
       options.url,
       options.subLang ?? this.deps.config.subLang,
       this.deps.config.headless,
+      options.signal,
     );
 
     if (!result) return null;
