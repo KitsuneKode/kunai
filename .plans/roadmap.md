@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-05-02
+Last updated: 2026-05-04
 
 Use this file as the planning index. It should stay short. Put implementation detail in the linked plan files, not here.
 
@@ -51,6 +51,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Settings, season, starting episode, and subtitle overlay migration so those flows stop falling back to helper shells
 - `Esc` and back-stack correctness for the remaining shell helpers
 - `mpv` reopen reliability bug investigation
+- **Windows / cross-platform mpv IPC parity** (named pipes, bridge, docs, packaging clarity): [.plans/cross-platform-mpv-ipc-and-playback-parity.md](.plans/cross-platform-mpv-ipc-and-playback-parity.md)
 - `cineby-anime` click handling parity
 - Final compatibility wrapper cleanup once `apps/cli/index.ts` is no longer useful
 - Phase 1.5 true root shell foundation after the scoped Turborepo move
@@ -85,6 +86,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Fullscreen root shell redesign   | In Progress   | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                 |
 | Phase 1.8 mounted content tree   | In Progress   | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)   |
 | Phase 2 playback/media runtime   | In Progress   | [.plans/phase-2-playback-media-runtime.md](.plans/phase-2-playback-media-runtime.md)                 |
+| Cross-platform mpv IPC parity    | Planned       | [.plans/cross-platform-mpv-ipc-and-playback-parity.md](.plans/cross-platform-mpv-ipc-and-playback-parity.md) |
 | Kunai architecture hardening     | Planned       | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md) |
 | Kunai experience and growth moat | Planned       | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)             |
 | Kunai principal grill Q&A        | Planned       | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                             |
