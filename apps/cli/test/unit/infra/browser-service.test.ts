@@ -40,12 +40,12 @@ function createTracer(): Tracer {
 }
 
 function createConfig(overrides: Partial<KitsuneConfig> = {}): ConfigService {
-  const config: KitsuneConfig = {
-    defaultMode: "series",
+  const merged = {
+    defaultMode: "series" as const,
     provider: "vidking",
     animeProvider: "allanime",
     subLang: "en",
-    animeLang: "sub",
+    animeLang: "sub" as const,
     headless: true,
     showMemory: false,
     autoNext: false,
@@ -53,10 +53,17 @@ function createConfig(overrides: Partial<KitsuneConfig> = {}): ConfigService {
     skipIntro: true,
     skipPreview: true,
     skipCredits: true,
-    footerHints: "detailed",
-    quitNearEndBehavior: "continue",
-    quitNearEndThresholdMode: "credits-or-90-percent",
+    footerHints: "detailed" as const,
+    quitNearEndBehavior: "continue" as const,
+    quitNearEndThresholdMode: "credits-or-90-percent" as const,
+    mpvKunaiScriptPath: "",
+    mpvKunaiScriptOpts: {} as Record<string, string>,
     ...overrides,
+  };
+  const config: KitsuneConfig = {
+    ...merged,
+    mpvKunaiScriptPath: merged.mpvKunaiScriptPath ?? "",
+    mpvKunaiScriptOpts: merged.mpvKunaiScriptOpts ?? {},
   };
 
   return {

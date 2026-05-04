@@ -64,6 +64,8 @@ test("vidking resolves through the core provider result adapter", async () => {
       footerHints: "minimal",
       quitNearEndBehavior: "continue",
       quitNearEndThresholdMode: "credits-or-90-percent",
+      mpvKunaiScriptPath: "",
+      mpvKunaiScriptOpts: {},
       getRaw() {
         return this;
       },
@@ -143,6 +145,8 @@ test("vidking prefers the direct decode path before browser scraping", async () 
       footerHints: "minimal",
       quitNearEndBehavior: "continue",
       quitNearEndThresholdMode: "credits-or-90-percent",
+      mpvKunaiScriptPath: "",
+      mpvKunaiScriptOpts: {},
       getRaw() {
         return this;
       },

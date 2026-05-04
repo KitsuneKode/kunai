@@ -18,6 +18,8 @@ export type KitsuneConfig = {
   footerHints: "detailed" | "minimal";
   quitNearEndBehavior: "continue" | "pause";
   quitNearEndThresholdMode: "credits-or-90-percent" | "percent-only" | "seconds-only";
+  mpvKunaiScriptPath: string;
+  mpvKunaiScriptOpts: Record<string, string>;
 };
 
 export const DEFAULT_CONFIG: KitsuneConfig = {
@@ -36,6 +38,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   footerHints: "detailed",
   quitNearEndBehavior: "continue",
   quitNearEndThresholdMode: "credits-or-90-percent",
+  mpvKunaiScriptPath: "",
+  mpvKunaiScriptOpts: {},
 };
 
 const CONFIG_DIR = join(process.env.HOME ?? "~", ".config", "kunai");

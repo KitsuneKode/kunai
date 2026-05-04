@@ -30,4 +30,6 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   footerHints: "detailed",
   quitNearEndBehavior: "continue",
   quitNearEndThresholdMode: "credits-or-90-percent",
+  mpvKunaiScriptPath: "",
+  mpvKunaiScriptOpts: {},
 };

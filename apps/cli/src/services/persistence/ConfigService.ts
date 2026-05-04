@@ -26,6 +26,16 @@ export interface KitsuneConfig {
   quitNearEndBehavior: QuitNearEndBehavior;
   /** How “near the end” is detected for quit + completion thresholds. */
   quitNearEndThresholdMode: QuitNearEndThresholdMode;
+  /**
+   * Absolute path to the Kunai mpv bridge Lua script. Empty string = auto-resolve to
+   * `getKunaiPaths().mpvBridgePath` (platform Kunai config dir + `mpv/kunai-bridge.lua`) or bundled copy.
+   */
+  mpvKunaiScriptPath: string;
+  /**
+   * mpv `--script-opts` entries for the `kunai-bridge` script (e.g. margin_bottom=130).
+   * Merged with built-in defaults in the script via mp.read_options.
+   */
+  mpvKunaiScriptOpts: Record<string, string>;
 }
 
 export interface ConfigService extends KitsuneConfig {

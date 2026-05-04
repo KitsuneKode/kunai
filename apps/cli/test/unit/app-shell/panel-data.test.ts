@@ -35,6 +35,8 @@ describe("panel-data", () => {
         footerHints: "detailed",
         quitNearEndBehavior: "continue",
         quitNearEndThresholdMode: "credits-or-90-percent",
+        mpvKunaiScriptPath: "",
+        mpvKunaiScriptOpts: {},
       },
       state: createInitialState("vidking", "allanime"),
     });

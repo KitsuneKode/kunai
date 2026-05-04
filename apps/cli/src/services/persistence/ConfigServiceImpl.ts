@@ -97,6 +97,14 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.quitNearEndThresholdMode;
   }
 
+  get mpvKunaiScriptPath(): string {
+    return this.config.mpvKunaiScriptPath;
+  }
+
+  get mpvKunaiScriptOpts(): Record<string, string> {
+    return { ...this.config.mpvKunaiScriptOpts };
+  }
+
   getRaw(): KitsuneConfig {
     return { ...this.config };
   }
