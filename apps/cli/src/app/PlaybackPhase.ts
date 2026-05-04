@@ -1458,15 +1458,22 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       subtitleTracks: readonly SubtitleTrack[];
     },
   ): Promise<boolean> {
+    const player = context.container.playerControl;
     const deadline = Date.now() + 30_000;
+
     while (!context.signal.aborted && Date.now() < deadline) {
-      if (context.container.playerControl.getActive()) {
-        const attached = await context.container.playerControl.attachLateSubtitles(
-          attachment,
-          "late-subtitle-resolver",
-        );
-        if (attached) return true;
+      let active = player.getActive();
+      if (!active) {
+        active = await player.waitForActivePlayer({
+          signal: context.signal,
+          timeoutMs: Math.max(0, deadline - Date.now()),
+        });
+        if (!active) return false;
       }
+
+      const attached = await player.attachLateSubtitles(attachment, "late-subtitle-resolver");
+      if (attached) return true;
+
       await Bun.sleep(250);
     }
     return false;

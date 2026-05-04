@@ -183,3 +183,23 @@ test("PlayerControlServiceImpl prioritizes stop controls over queued subtitle co
   resolveAttach(1);
   expect(await attachPromise).toBe(true);
 });
+
+test("PlayerControlServiceImpl waitForActivePlayer resolves immediately when active", async () => {
+  const service = makeService();
+  const ctrl = { id: "p", async stop() {} };
+  service.setActive(ctrl);
+  await expect(service.waitForActivePlayer({ timeoutMs: 1000 })).resolves.toBe(ctrl);
+});
+
+test("PlayerControlServiceImpl waitForActivePlayer resolves when control appears", async () => {
+  const service = makeService();
+  const ctrl = { id: "p", async stop() {} };
+  const p = service.waitForActivePlayer({ timeoutMs: 2000 });
+  queueMicrotask(() => service.setActive(ctrl));
+  await expect(p).resolves.toBe(ctrl);
+});
+
+test("PlayerControlServiceImpl waitForActivePlayer times out with null", async () => {
+  const service = makeService();
+  await expect(service.waitForActivePlayer({ timeoutMs: 5 })).resolves.toBeNull();
+});

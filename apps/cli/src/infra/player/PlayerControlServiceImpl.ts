@@ -9,10 +9,15 @@ import type {
 } from "./PlayerControlService";
 import type { LateSubtitleAttachment } from "./PlayerService";
 
+type ActiveWait = {
+  finish: (value: ActivePlayerControl | null) => void;
+};
+
 export class PlayerControlServiceImpl implements PlayerControlService {
   private active: ActivePlayerControl | null = null;
   private lastAction: PlaybackControlAction | null = null;
   private commandQueue: Promise<unknown> = Promise.resolve();
+  private waitsForActive: ActiveWait[] = [];
 
   constructor(
     private readonly deps: {
@@ -23,10 +28,43 @@ export class PlayerControlServiceImpl implements PlayerControlService {
 
   setActive(control: ActivePlayerControl | null): void {
     this.active = control;
+    if (control && this.waitsForActive.length) {
+      const pending = this.waitsForActive.splice(0);
+      for (const w of pending) w.finish(control);
+    }
   }
 
   getActive(): ActivePlayerControl | null {
     return this.active;
+  }
+
+  waitForActivePlayer(options: {
+    signal?: AbortSignal;
+    timeoutMs: number;
+  }): Promise<ActivePlayerControl | null> {
+    if (this.active) return Promise.resolve(this.active);
+    if (options.signal?.aborted) return Promise.resolve(null);
+
+    /* eslint-disable promise/no-multiple-resolved -- single-shot via `settled`; timer/abort/setActive are mutually exclusive */
+    return new Promise((resolve) => {
+      let settled = false;
+      const wait: ActiveWait = { finish: () => {} };
+      const finish = (value: ActivePlayerControl | null) => {
+        if (settled) return;
+        settled = true;
+        const idx = this.waitsForActive.indexOf(wait);
+        if (idx >= 0) this.waitsForActive.splice(idx, 1);
+        clearTimeout(timer);
+        options.signal?.removeEventListener("abort", onAbort);
+        resolve(value);
+      };
+      wait.finish = finish;
+      const onAbort = () => finish(null);
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      const timer = setTimeout(() => finish(null), options.timeoutMs);
+      this.waitsForActive.push(wait);
+    });
+    /* eslint-enable promise/no-multiple-resolved */
   }
 
   consumeLastAction(): PlaybackControlAction | null {

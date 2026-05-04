@@ -24,6 +24,11 @@ export interface ActivePlayerControl {
 export interface PlayerControlService {
   setActive(control: ActivePlayerControl | null): void;
   getActive(): ActivePlayerControl | null;
+  /** Resolves when a non-null control is registered, or null on timeout/abort. */
+  waitForActivePlayer(options: {
+    signal?: AbortSignal;
+    timeoutMs: number;
+  }): Promise<ActivePlayerControl | null>;
   consumeLastAction(): PlaybackControlAction | null;
   /** Signal that a playback action was initiated from inside mpv (e.g. N/P key),
    *  without sending a stop command (mpv handles that itself). */
