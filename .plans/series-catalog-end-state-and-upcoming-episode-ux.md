@@ -1,6 +1,6 @@
 # Series catalog end-state, upcoming episodes, and autoplay clarity
 
-Status: **active** — runtime policy and navigation copy; complements TMDB-backed series metadata and anime provider catalogs.  
+Status: **active** — `upcomingNext` + mutual exclusion vs released `nextEpisode`, `animeNextReleaseUnknown` + no synthetic anime `+1` next; navigation / autoplay banner / diagnostics / `explainAutoplayBlockReason` wired; docs cross-link in [.plans/roadmap.md](roadmap.md).  
 Owner: playback / session UX  
 Scope: Honest **catalog end-state**, **“coming soon”** (unreleased TMDB episodes), **autoplay** that never targets unknown or unreleased episodes, and **prefetch** that only warms the next **released** episode.
 

@@ -1,6 +1,6 @@
 # Cross-platform mpv IPC and playback parity
 
-Status: **in progress** — core IPC + callers landed (`mpv-ipc-endpoint.ts`, `mpv-ipc.ts`, `PersistentMpvSession`, `launchMpv`, default bridge on Windows). Remaining: user-facing docs polish, optional CI on `windows-latest`, telemetry naming follow-ups.  
+Status: **in progress** — core IPC + callers landed (`mpv-ipc-endpoint.ts`, `mpv-ipc.ts`, `PersistentMpvSession`, `launchMpv`, default bridge on Windows); structured debug `ipc-bootstrap-complete` logs (`ipcTransport`, `endpoint`, `bootstrapMs`, `mode`) and ipc-bootstrap failure hints landed. Remaining: optional CI on `windows-latest`, telemetry naming polish.  
 Owner: runtime / playback / platform  
 Scope: Windows (and other non-Unix) **mpv JSON IPC** parity with today’s Unix-domain-socket path, persistent autoplay-chain behavior, bridge script loading, packaging story, and user-facing clarity so the product **feels the same quality everywhere** it is supported.
 
@@ -175,4 +175,10 @@ Once transport exists, consider enabling IPC for **one-shot** playback on Window
 
 Revisit **optional** enhancements: lower-latency observe batching, shared memory (not in mpv JSON IPC), or **daemon** model from architecture v2 docs—only if product direction requires it.
 
-When active work begins on this plan, add a short “Implementation log” section at the bottom (date, decision, link to PR) the same way other `.plans/`* files evolve.
+## Implementation log
+
+- **2026-05-04** — Structured debug line for IPC bootstrap (`mpv-ipc` / `ipc-bootstrap-complete` with `ipcTransport`, `endpoint`, `bootstrapMs`); richer `ipc-bootstrap` error strings with Windows vs Unix hints; cli-reference/quickstart synced for named-pipe parity and PATH vs IPC distinction.
+
+---
+
+When extending this track, append dated bullets here like other `.plans/*` docs.
