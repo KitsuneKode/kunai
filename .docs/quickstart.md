@@ -6,6 +6,7 @@ Use this doc for setup, local execution, and common environment issues. Architec
 
 - Bun `v1.1+`
 - `mpv` in `PATH`
+- Playwright Chromium for **embedded** providers (browser scrape); API-only anime sources may still work without it — Kunai warns at startup if the browser is missing
 - Kitty graphics protocol support if you want inline posters
 
 ## Setup
@@ -26,6 +27,9 @@ bun run dev -- -S "Attack on Titan"
 bun run dev -- -i 1429 -t series
 bun run dev -- -i 438631 -t movie
 bun run dev -- -a
+bun run dev -- -m
+bun run dev -- -S "Dune" --jump 1
+bun run dev -- -S "Dune" -q
 bun run dev -- --debug
 kunai -S "Dune"   # after bun run link:global
 ```
@@ -53,6 +57,11 @@ Do not use `bun test` directly.
 | `--episode`  |       | Initial episode           |
 | `--provider` | `-p`  | Override provider         |
 | `--debug`    |       | JSON debug logs to stderr |
+| `--minimal`  | `-m`  | Minimal footer density for this session (runtime override) |
+| `--quick`    | `-q`  | With `-S`, auto-pick the first search result (same as `--jump 1`) |
+| `--jump`     |       | With `-S`, auto-pick the *n*th search result (1-based) |
+
+Use `/ export-diagnostics` in the shell (or the command palette) to write a **redacted** JSON snapshot of recent diagnostics next to the process working directory for bug reports.
 
 ## Environment
 

@@ -75,7 +75,7 @@ For a fuller product and scope overview, see [.docs/experience-overview.md](.doc
 
 ### Skip prompts with flags
 
-All flags are optional — mix and match to pre-fill any step:
+All flags are optional — mix and match to pre-fill any step. See [.docs/quickstart.md](.docs/quickstart.md) for the full flag table (`-m`, `-q`, `--jump`, mpv overrides, diagnostics export).
 
 ```bash
 bun run dev -- -S "Breaking Bad"            # pre-fill search query

@@ -2,7 +2,7 @@
 
 Status: Active
 
-Last updated: 2026-05-03
+Last updated: 2026-05-04
 
 This plan tracks the work needed to ship a releasable public beta. It is the operational companion to the roadmap.
 Everything here is concrete and ordered. Each item is either done, in progress, or explicitly deferred.
@@ -41,8 +41,8 @@ Sequencing, CLI minimal/quick flags, autoskip behavior notes: [kunai-execution-p
 
 - [x] N/P navigation no longer sets `autoplayPaused` — pressing N in mpv mid-episode no longer blocks autoplay for all subsequent episodes
 - [x] Anime episode fallback is optimistic when count and list are both unknown (uses `episode + 1` instead of 0 as `fallbackMax`)
-- [ ] Verify autoplay works end-to-end for AllAnime (run a real session, check diagnostics overlay)
-- [ ] `quitNearEndBehavior` config knob (policy exists, setting not exposed in settings overlay)
+- [ ] Verify autoplay works end-to-end for AllAnime (run a real session, check diagnostics overlay) — procedure: play a series episode with auto-next on; confirm diagnostics shows “Evaluating autoplay advance” then “Auto-next advancing…”; EOF or near-end quit with **continue** policy should advance without pressing N
+- [x] `quitNearEndBehavior` + `quitNearEndThresholdMode` in persisted config, list settings, and Ink settings overlay
 - [x] Stream cache for API resolves: `PlaybackPhase` reads/writes `CacheStore` on resolve (plus prefetch); refresh clears entry. Embed scrapes still keyed by embed URL in `BrowserServiceImpl`. AllManga episode-detail GraphQL deduped in `@kunai/providers` (short TTL).
 - [ ] Optional hardening: single cache-key builder driven by manifest `cachePolicy` (orchestration still split across callers today)
 
@@ -60,7 +60,7 @@ Sequencing, CLI minimal/quick flags, autoskip behavior notes: [kunai-execution-p
 
 ### Remaining
 
-- [ ] Extract `mergeTimingMetadata` from `aniskip.ts` into `src/infra/timing/` (currently imported from aniskip module)
+- [x] `mergeTimingMetadata` lives in `apps/cli/src/infra/timing/merge-timing.ts` (Track 2 extraction done)
 
 ---
 
@@ -80,7 +80,7 @@ Sequencing, CLI minimal/quick flags, autoskip behavior notes: [kunai-execution-p
 
 ### Remaining
 
-- [ ] **Slice 4**: Playback/loading/post-playback visual continuity (verify no blank intermediate states)
+- [x] **Slice 4**: Playback/loading/post-playback visual continuity — `LoadingShell` keyed by title+episode to reset spinner state on autonext; “Loading next episode” playback feedback during advance
 
 ---
 
@@ -121,7 +121,7 @@ Sequencing, CLI minimal/quick flags, autoskip behavior notes: [kunai-execution-p
 
 ### Remaining
 
-- [ ] Check for Playwright/browser availability (needed for stream scraping)
+- [x] Startup warns when Playwright Chromium is missing (embedded providers); see [.docs/quickstart.md](../.docs/quickstart.md)
 - [ ] Ideally: friendly guided setup flow in the shell itself
 
 ---
@@ -137,7 +137,7 @@ Before calling this a releasable public beta, ALL of the following must be true:
 - [x] Skip-credits setting exposed in settings overlay
 - [x] First-run guardrail for missing mpv
 - [x] History UI shows enough detail to be useful
-- [ ] `bun run typecheck && bun run lint` pass clean — typecheck ✓, lint has 91 warnings (0 errors)
+- [x] `bun run typecheck` clean; `bun run lint` — **0 errors**, warnings allowed under [.docs/lint-policy.md](../.docs/lint-policy.md) until burn-down batches land
 
 ---
 

@@ -99,6 +99,10 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Search/catalog service           | Active Design | [.plans/search-service.md](.plans/search-service.md)                                                 |
 | YouTube provider research        | Idea          | [.plans/yt-provider.md](.plans/yt-provider.md)                                                       |
 
+## Milestone notes
+
+- **2026-05-04** — Beta readiness checkpoint: near-end quit policy in config + Ink/list settings, Playwright Chromium guardrail at startup, `--minimal` / `--quick` / `--jump` wired through `SessionController`, redacted diagnostics export command, `StreamResolveCache` helpers + `StreamRequest.animeLang`, shell playback `LoadingShell` remount key for episode transitions, history panel shows TMDB id. Details: [beta-readiness.md](beta-readiness.md), [.docs/lint-policy.md](../.docs/lint-policy.md).
+
 ## Rules For This Folder
 
 - Keep `roadmap.md` high-level and current

@@ -93,3 +93,9 @@ Beyond your beta pillars, these pay rent on maintainability:
 - [beta-readiness.md](beta-readiness.md)  
 - [roadmap.md](roadmap.md)  
 - [.docs/diagnostics-guide.md](../.docs/diagnostics-guide.md)
+
+---
+
+## Milestone log
+
+- **2026-05-04** — Pass A–E ship prep batch: CLI `--minimal` / `--quick` / `--jump`, `shellChrome` + `effectiveFooterHints`, diagnostics export (`export-diagnostics`), `quitNearEnd*` settings, Playwright Chromium warning in `checkDeps`, stream resolve cache module + `StreamRequest.animeLang`, provider resolve diagnostics `stage`/`attempt`, late subtitle single-flight guard, history panel TMDB id, `PACKAGING.md` + quickstart updates. Autoplay live verify remains a manual checkbox in `beta-readiness.md`.
