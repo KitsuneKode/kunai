@@ -27,6 +27,15 @@ Kunai is a terminal-first Bun CLI that finds playable video streams by intercept
 - Do not solve problems with isolated local patches when the cleaner fix is a shared abstraction
 - Do not be afraid to reshape existing code when it improves the long-term design
 
+## Bun-first runtime (CLI)
+
+- Prefer `Bun.spawn`, `Bun.which`, `Bun.connect` (Unix sockets), and `Bun.sleep` for deliberate delays on Bun-only code paths.
+- Prefer `Bun.file` / `Bun.write`, or shared helpers such as [`apps/cli/src/infra/fs/atomic-write.ts`](apps/cli/src/infra/fs/atomic-write.ts) (`writeAtomicJson`), for whole-file JSON when you do not need append semantics or special permission flags.
+- Prefer Node `fs` when you need append (`appendFile`), crash-safe atomic replace (temp file in the target directory + `rename`), `copyFile` with mtime checks, sync `mkdir` next to SQLite bootstrap, or tight `existsSync` / `unlink` sequences on mpv Unix socket paths.
+- Prefer `setTimeout` when you need cancellable deadlines (for example mpv IPC per-command timeouts with `clearTimeout`).
+- Prefer `node:crypto` synchronous hashing for small hot-path keys when async Web Crypto would add complexity without benefit.
+- Do not change APIs for style alone; keep Node where behavior or cross-platform semantics are clearer.
+
 ## Read This First
 
 - Start here for commands, routing, and repo-wide invariants
