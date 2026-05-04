@@ -40,7 +40,8 @@ Everything here is concrete and ordered. Each item is either done, in progress, 
 - [x] Anime episode fallback is optimistic when count and list are both unknown (uses `episode + 1` instead of 0 as `fallbackMax`)
 - [ ] Verify autoplay works end-to-end for AllAnime (run a real session, check diagnostics overlay)
 - [ ] `quitNearEndBehavior` config knob (policy exists, setting not exposed in settings overlay)
-- [ ] Stream cache write after resolve (currently `cachePolicy` object is built but never written to `CacheStore`)
+- [x] Stream cache for API resolves: `PlaybackPhase` reads/writes `CacheStore` on resolve (plus prefetch); refresh clears entry. Embed scrapes still keyed by embed URL in `BrowserServiceImpl`. AllManga episode-detail GraphQL deduped in `@kunai/providers` (short TTL).
+- [ ] Optional hardening: single cache-key builder driven by manifest `cachePolicy` (orchestration still split across callers today)
 
 ---
 
@@ -139,7 +140,7 @@ Before calling this a releasable public beta, ALL of the following must be true:
 
 ## Deferred (not blocking beta)
 
-- AllAnime stream cache write (prefetch covers the important case)
+- Unified stream-cache policy layer (manifest `cachePolicy` → one orchestration helper; today persistence is correct but keying rules live in multiple modules)
 - Image/poster backend extraction
 - Full Phase 4G provider package migration (rest of providers)
 - Search service refactor
