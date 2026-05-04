@@ -271,6 +271,9 @@ export class PersistentMpvSession {
     this.beginCycle(this.initialOptions);
     this.initialOptions.onPlaybackEvent?.({ type: "launching-player" });
 
+    // Pass --start= so mpv seeks at launch — same as launchMpv. Without this, resume
+    // relies solely on a post-file-loaded IPC seek, which races the 750 ms fallback
+    // timer and fails silently when the stream takes longer to open.
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -283,7 +286,6 @@ export class PersistentMpvSession {
       ipcServerCliArg(this.ipcEndpoint),
       {
         persistent: true,
-        includeStartArg: false,
         mpv: mpvOptions,
         scriptPath: this.luaScriptPath ?? undefined,
         scriptOpts: this.scriptOptsArg,
@@ -465,7 +467,12 @@ export class PersistentMpvSession {
       // key presses inside the mpv window are routed back to the app.
       void this.ipcSession.send(["observe_property", 200, "user-data/kunai-request"], 1_000);
     }
-    this.queueReadyWork(this.initialOptions);
+    // startAt was already applied via --start= CLI arg above; zero it out here so
+    // runReadyWork does not fire a redundant IPC seek on top of the CLI seek.
+    const initialReadyWorkOptions = shouldApplyStartAtSeek(this.initialOptions.startAt)
+      ? { ...this.initialOptions, startAt: 0 }
+      : this.initialOptions;
+    this.queueReadyWork(initialReadyWorkOptions);
   }
 
   private beginCycle(options: PlayerCycleOptions): PlayerCycleState {
