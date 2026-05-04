@@ -43,6 +43,7 @@ import {
   isPlaybackAutoSkipEnabled,
   playbackSkipKindLabel,
   type PlaybackSkipConfig,
+  pruneSkippedPlaybackSegmentKeys,
 } from "./playback-skip";
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
 import type { ActivePlayerControl } from "./PlayerControlService";
@@ -372,7 +373,13 @@ export class PersistentMpvSession {
               this.lastTrackList = value;
             }
             if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
+              const previousPositionSeconds = this.currentPositionSeconds;
               this.currentPositionSeconds = value;
+              this.maybeRearmSkippedSegmentsOnBackwardSeek(
+                this.currentCycleOptions(),
+                previousPositionSeconds,
+                value,
+              );
               if (value > 0 && !active.playerStartedNotified) {
                 active.playerStartedNotified = true;
                 active.onPlaybackEvent?.({ type: "playback-started" });
@@ -782,6 +789,22 @@ export class PersistentMpvSession {
     if (!segment || this.skippedSegments.has(segment.key)) return;
     this.clearSkipAutoTimer();
     await this.performSeekSkip(options, segment, automatic);
+  }
+
+  private maybeRearmSkippedSegmentsOnBackwardSeek(
+    options: PlayerCycleOptions,
+    previousPositionSeconds: number,
+    nextPositionSeconds: number,
+  ): void {
+    // Ignore normal jitter; only treat meaningful backward seeks as re-arm events.
+    if (nextPositionSeconds + 0.5 >= previousPositionSeconds) {
+      return;
+    }
+    this.skippedSegments = pruneSkippedPlaybackSegmentKeys(
+      this.skippedSegments,
+      options.timing,
+      nextPositionSeconds,
+    );
   }
 
   private async handleSegmentSkipProgress(options: PlayerCycleOptions): Promise<void> {

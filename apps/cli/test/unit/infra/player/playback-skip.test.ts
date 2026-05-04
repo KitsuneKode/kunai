@@ -5,6 +5,7 @@ import {
   findActivePlaybackSkip,
   findPlaybackSegmentAtPosition,
   playbackSkipKindLabel,
+  pruneSkippedPlaybackSegmentKeys,
 } from "@/infra/player/playback-skip";
 
 const timing: PlaybackTimingMetadata = {
@@ -81,4 +82,21 @@ test("findActivePlaybackSkip prefers recap, intro, preview, and credits windows 
       { ...BASE_CONFIG, skipCredits: false, autoNextEnabled: false },
     ),
   ).toBeNull();
+});
+
+test("pruneSkippedPlaybackSegmentKeys re-arms segments when seeking backward", () => {
+  const skipped = new Set<string>([
+    "recap:0:60",
+    "intro:60:120",
+    "preview:1250:1290",
+    "custom:1:2",
+  ]);
+  const pruned = pruneSkippedPlaybackSegmentKeys(skipped, timing, 0);
+  expect([...pruned]).toEqual(["custom:1:2"]);
+});
+
+test("pruneSkippedPlaybackSegmentKeys keeps only segments that start before the rewound position", () => {
+  const skipped = new Set<string>(["recap:0:60", "intro:60:120", "preview:1250:1290"]);
+  const pruned = pruneSkippedPlaybackSegmentKeys(skipped, timing, 100);
+  expect([...pruned]).toEqual(["recap:0:60", "intro:60:120"]);
 });

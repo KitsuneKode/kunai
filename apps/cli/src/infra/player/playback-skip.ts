@@ -112,3 +112,41 @@ export function findActivePlaybackSkip(
   if (!isPlaybackAutoSkipEnabled(segment.kind, config)) return null;
   return segment;
 }
+
+/**
+ * Rearms previously skipped segment keys when playback moves backwards.
+ * Any segment that starts at or after the new position can be skipped again.
+ */
+export function pruneSkippedPlaybackSegmentKeys(
+  skippedSegmentKeys: ReadonlySet<string>,
+  timing: PlaybackTimingMetadata | null | undefined,
+  positionSeconds: number,
+): Set<string> {
+  if (!timing || !Number.isFinite(positionSeconds) || positionSeconds < 0) {
+    return new Set(skippedSegmentKeys);
+  }
+
+  const rearmableKeys = new Set<string>();
+  for (const [kind, segments] of segmentGroups(timing)) {
+    for (const segment of segments) {
+      const startSeconds = normalizeStartSeconds(segment.startMs);
+      const endSeconds = normalizeEndSeconds(segment.endMs);
+      if (endSeconds === null || endSeconds <= startSeconds) continue;
+      if (startSeconds >= positionSeconds) {
+        rearmableKeys.add(`${kind}:${startSeconds}:${endSeconds}`);
+      }
+    }
+  }
+
+  if (rearmableKeys.size === 0) {
+    return new Set(skippedSegmentKeys);
+  }
+
+  const next = new Set<string>();
+  for (const key of skippedSegmentKeys) {
+    if (!rearmableKeys.has(key)) {
+      next.add(key);
+    }
+  }
+  return next;
+}
