@@ -285,6 +285,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             playbackTimingByEpisode,
             resolveController.signal,
             stateManager.getState().mode === "anime",
+            currentProvider?.metadata.id,
           );
 
           const watchedEntries = await historyStore.listByTitle(title.id);
@@ -1135,11 +1136,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     return (async () => {
       try {
         const mode = isAnime ? "anime" : title.type === "movie" ? "movie" : "series";
+        const providerId = container.stateManager.getState().provider;
         const timing = await timingAggregator.resolve(
           title,
           episode,
           mode,
           AbortSignal.timeout(10_000),
+          { providerId },
         );
         if (timing) {
           if (timingRef) timingRef.current = timing;
@@ -1164,6 +1167,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     cache: Map<string, PlaybackTimingMetadata | null>,
     signal?: AbortSignal,
     isAnime?: boolean,
+    providerId?: string,
   ) {
     const cacheKey =
       title.type === "movie"
@@ -1175,7 +1179,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     }
 
     const mode = isAnime ? "anime" : title.type === "movie" ? "movie" : "series";
-    const timing = await timingAggregator.resolve(title, episode, mode, signal);
+    const timing = await timingAggregator.resolve(title, episode, mode, signal, { providerId });
     cache.set(cacheKey, timing);
     return timing;
   }

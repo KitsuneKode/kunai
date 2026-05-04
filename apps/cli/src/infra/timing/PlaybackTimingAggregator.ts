@@ -1,7 +1,11 @@
-import { mergeTimingMetadata } from "./merge-timing";
 import type { EpisodeInfo, PlaybackTimingMetadata, TitleInfo } from "@/domain/types";
 
-import type { PlaybackTimingSource, TimingContentMode } from "./PlaybackTimingSource";
+import { mergeTimingMetadata } from "./merge-timing";
+import type {
+  PlaybackTimingFetchContext,
+  PlaybackTimingSource,
+  TimingContentMode,
+} from "./PlaybackTimingSource";
 
 export class PlaybackTimingAggregator {
   constructor(private readonly sources: readonly PlaybackTimingSource[]) {}
@@ -11,11 +15,14 @@ export class PlaybackTimingAggregator {
     episode: EpisodeInfo,
     mode: TimingContentMode,
     signal?: AbortSignal,
+    context?: PlaybackTimingFetchContext,
   ): Promise<PlaybackTimingMetadata | null> {
     const applicable = this.sources.filter((s) => s.canHandle(title, mode));
     if (applicable.length === 0) return null;
 
-    const results = await Promise.all(applicable.map((s) => s.fetch({ title, episode, signal })));
+    const results = await Promise.all(
+      applicable.map((s) => s.fetch({ title, episode, signal, context })),
+    );
 
     return results.reduce(
       (acc, result) => mergeTimingMetadata(acc, result),

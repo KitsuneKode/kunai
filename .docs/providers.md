@@ -6,6 +6,8 @@ For new providers and major provider rewrites, start with the intake workflow in
 
 For concrete example patterns and demo provider shapes, use [.docs/provider-examples.md](./provider-examples.md).
 
+For **auto-skip timing** (IntroDB + AniSkip), **MAL / catalog identity** for anime, and **templates for wiring new anime providers** into that pipeline, read [.docs/playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md).
+
 ## Direction: Provider SDK
 
 Kunai is moving toward a Provider SDK shape:
