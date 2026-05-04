@@ -45,21 +45,20 @@ bun run test
 
 Do not use `bun test` directly.
 
-## CLI Flags
+## CLI flags
 
-| Flag         | Short | Description               |
-| ------------ | ----- | ------------------------- |
-| `--search`   | `-S`  | Pre-fill search query     |
-| `--id`       | `-i`  | TMDB ID bootstrap         |
-| `--type`     | `-t`  | `movie` or `series`       |
-| `--anime`    | `-a`  | Start in anime mode       |
-| `--season`   |       | Initial season            |
-| `--episode`  |       | Initial episode           |
-| `--provider` | `-p`  | Override provider         |
-| `--debug`    |       | JSON debug logs to stderr |
-| `--minimal`  | `-m`  | Minimal footer density for this session (runtime override) |
-| `--quick`    | `-q`  | With `-S`, auto-pick the first search result (same as `--jump 1`) |
-| `--jump`     |       | With `-S`, auto-pick the *n*th search result (1-based) |
+Full tables, mpv passthrough flags, and “in-shell only” behavior are documented in **[cli-reference.md](./cli-reference.md)** (canonical for MDX sites).
+
+Summary:
+
+| Flag | Short | Notes |
+| ---- | ----- | ----- |
+| `--search` | `-S` | Pre-fill query |
+| `--id` / `--type` | `-i` / `-t` | TMDB bootstrap: `-t` is `movie` or `series` |
+| `--anime` | `-a` | Anime mode |
+| `--minimal` / `--quick` | `-m` / `-q` | Session shell chrome; `-q` with `-S` also auto-picks first result |
+| `--jump` | | With `-S`, auto-pick *n*th result (1-based) |
+| `--debug` | | Verbose logging |
 
 Use `/ export-diagnostics` in the shell (or the command palette) to write a **redacted** JSON snapshot of recent diagnostics next to the process working directory for bug reports.
 

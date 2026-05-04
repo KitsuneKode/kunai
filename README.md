@@ -73,27 +73,22 @@ You'll be guided through:
 
 For a fuller product and scope overview, see [.docs/experience-overview.md](.docs/experience-overview.md).
 
-### Skip prompts with flags
+### Flags and automation
 
-All flags are optional — mix and match to pre-fill any step. See [.docs/quickstart.md](.docs/quickstart.md) for the full flag table (`-m`, `-q`, `--jump`, mpv overrides, diagnostics export).
+All flags are optional. The **canonical** flag list (including `-m`, `-q`, `--jump`, mpv passthrough, and what is shell-only) is in [.docs/cli-reference.md](.docs/cli-reference.md) — use that file as the source for an MDX “Usage” section.
 
 ```bash
 bun run dev -- -S "Breaking Bad"            # pre-fill search query
-bun run dev -- -i 1396 -t series            # jump by TMDB ID in the new runtime
-bun run dev -- -i 438631 -t movie           # direct movie bootstrap
-bun run dev -- -a                           # start in anime mode
-bun run dev -- --debug                      # debug logging
+bun run dev -- -S "Dune" --jump 1          # auto-pick first search result
+bun run dev -- -S "Dune" -q                # same as --jump 1 when using -S
+bun run dev -- -m                          # minimal shell chrome this session
+bun run dev -- -i 1396 -t series           # bootstrap TMDB series id
+bun run dev -- -i 438631 -t movie          # bootstrap TMDB movie id
+bun run dev -- -a                          # start in anime mode
+bun run dev -- --debug                     # debug logging
 ```
 
-### All flags
-
-| Short | Long       | Description                                  |
-| ----- | ---------- | -------------------------------------------- |
-| `-S`  | `--search` | Pre-fill the search query                    |
-| `-i`  | `--id`     | Bootstrap a known TMDB ID in the new runtime |
-| `-t`  | `--type`   | `movie` or `series` (used with `--id`)       |
-| `-a`  | `--anime`  | Start in anime mode                          |
-|       | `--debug`  | Enable debug logging                         |
+**Note:** resume, history, season/episode, and default provider are chosen **inside the Ink shell** (not separate CLI flags today). Diagnostics export: `/ export-diagnostics` in the shell.
 
 ## 🧭 Shell controls
 
