@@ -11,12 +11,14 @@ export function usePosterPreview(
     enabled = true,
     debounceMs = 120,
     variant = "preview",
+    allowKitty = true,
   }: {
     rows: number;
     cols: number;
     enabled?: boolean;
     debounceMs?: number;
     variant?: "preview" | "detail";
+    allowKitty?: boolean;
   },
 ): { poster: PosterResult; posterState: PosterState } {
   const [poster, setPoster] = useState<PosterResult>({ kind: "none" });
@@ -32,7 +34,7 @@ export function usePosterPreview(
     let cancelled = false;
     setPosterState("loading");
     const timer = setTimeout(() => {
-      fetchPoster(url, { rows, cols, variant })
+      fetchPoster(url, { rows, cols, variant, allowKitty })
         .then((result) => {
           if (cancelled) return undefined;
           setPosterState(result.kind === "none" ? "unavailable" : "ready");
@@ -50,7 +52,7 @@ export function usePosterPreview(
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [cols, debounceMs, enabled, rows, url, variant]);
+  }, [allowKitty, cols, debounceMs, enabled, rows, url, variant]);
 
   return { poster, posterState };
 }

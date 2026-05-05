@@ -28,11 +28,12 @@ export async function fetchPoster(
     rows,
     cols,
     variant = "preview",
-  }: { rows: number; cols: number; variant?: "preview" | "detail" },
+    allowKitty = true,
+  }: { rows: number; cols: number; variant?: "preview" | "detail"; allowKitty?: boolean },
 ): Promise<PosterResult> {
   if (!url) return { kind: "none" };
   const resolved = resolvePosterUrl(url, { cols, variant });
-  const key = `${resolved}:${rows}x${cols}`;
+  const key = `${resolved}:${rows}x${cols}:${allowKitty ? "kitty" : "text"}`;
 
   const cached = posterCache.get(key);
   if (cached) return cached;
@@ -46,7 +47,9 @@ export async function fetchPoster(
     let result: PosterResult;
     try {
       const source = await fetchPosterSource(resolved, { cols, variant });
-      result = source ? await renderPoster(source.data, { rows, cols }) : { kind: "none" };
+      result = source
+        ? await renderPoster(source.data, { rows, cols, allowKitty })
+        : { kind: "none" };
     } catch {
       result = { kind: "none" };
     }

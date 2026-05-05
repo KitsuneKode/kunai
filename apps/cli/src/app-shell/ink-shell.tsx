@@ -712,6 +712,7 @@ function PlaybackShell({
     rows: 8,
     cols: 18,
     enabled: true,
+    allowKitty: false,
   });
   const showPosterCompanion =
     playbackWide &&
@@ -1613,6 +1614,7 @@ function BrowseShell<T>({
     cols: 18,
     enabled: getShellViewportPolicy("browse", stdout.columns, stdout.rows).wideBrowse,
     debounceMs: 120,
+    allowKitty: false,
   });
 
   const clearResults = () => {

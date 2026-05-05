@@ -46,6 +46,9 @@ export interface PlayerTelemetryState {
   trustedProgressBootstrapDone: boolean;
   /** Last `stream-stalled` / `ipc-stalled` observation (ms) for premature-EOF heuristics. */
   lastStreamStallAtMs: number | null;
+  /** Pause timing, used to distinguish dropped network streams from genuine EOF after long pauses. */
+  lastPausedAtMs: number | null;
+  lastUnpausedAtMs: number | null;
   /** True when eof was demoted to unknown because progress looked inconsistent with a full watch. */
   eofDemotedByPrematureGuard: boolean;
 }
@@ -93,6 +96,8 @@ export function createPlayerTelemetryState(socketPath?: string): PlayerTelemetry
     maxTrustedProgressSeconds: 0,
     trustedProgressBootstrapDone: false,
     lastStreamStallAtMs: null,
+    lastPausedAtMs: null,
+    lastUnpausedAtMs: null,
     eofDemotedByPrematureGuard: false,
   };
 }
@@ -182,6 +187,26 @@ function shouldDemotePrematureEof(
   return false;
 }
 
+function shouldDemotePauseDroppedEof(
+  state: PlayerTelemetryState,
+  sample: PlayerTelemetrySample | null | undefined,
+  durationSeconds: number,
+  maxTrusted: number,
+  observedAtMs: number,
+): boolean {
+  if (durationSeconds <= 180) return false;
+  if (sample?.eofReached === true) return false;
+  if (maxTrusted >= durationSeconds - 5) return false;
+
+  const pausedNow = sample?.paused === true;
+  const pausedAt = state.lastPausedAtMs;
+  const unpausedAt = state.lastUnpausedAtMs;
+  const stillPaused = pausedAt !== null && (unpausedAt === null || unpausedAt < pausedAt);
+  const justResumed = unpausedAt !== null && observedAtMs - unpausedAt <= 30_000;
+
+  return pausedNow || stillPaused || justResumed;
+}
+
 export function mapMpvEndReason(reason: string | null | undefined): EndReason {
   switch ((reason ?? "").trim()) {
     case "eof":
@@ -233,6 +258,11 @@ export function applyObservedPropertySample(
       break;
     case "pause":
       next.paused = Boolean(update.value);
+      if (next.paused) {
+        state.lastPausedAtMs = observedAt;
+      } else {
+        state.lastUnpausedAtMs = observedAt;
+      }
       break;
     case "seeking":
       next.seeking = Boolean(update.value);
@@ -326,6 +356,20 @@ export function applyEndFileEvent(
         state.maxTrustedProgressSeconds,
         observedAt,
         base?.demuxerViaNetwork,
+      )
+    ) {
+      mapped = "unknown";
+      demotedPrematureEof = true;
+      state.eofDemotedByPrematureGuard = true;
+    }
+    if (
+      !demotedPrematureEof &&
+      shouldDemotePauseDroppedEof(
+        state,
+        base,
+        durationForGuard,
+        state.maxTrustedProgressSeconds,
+        observedAt,
       )
     ) {
       mapped = "unknown";

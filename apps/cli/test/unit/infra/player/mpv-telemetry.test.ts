@@ -273,6 +273,67 @@ describe("mpv-telemetry", () => {
     expect(result.watchedSeconds).toBe(200);
   });
 
+  test("demotes eof after a paused network stream disconnects without eof-reached evidence", () => {
+    const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
+    applyObservedPropertySample(telemetry, {
+      name: "playback-time",
+      value: 2_400,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "duration",
+      value: 2_820,
+      observedAt: 1_010,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "demuxer-via-network",
+      value: true,
+      observedAt: 1_020,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "pause",
+      value: true,
+      observedAt: 1_100,
+    });
+    applyEndFileEvent(telemetry, "eof", 901_100);
+    recordPlayerExit(telemetry, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(telemetry, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("unknown");
+    expect(result.watchedSeconds).toBe(2_400);
+    expect(result.duration).toBe(2_820);
+  });
+
+  test("trusts eof after pause when mpv explicitly reports eof-reached", () => {
+    const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
+    applyObservedPropertySample(telemetry, {
+      name: "playback-time",
+      value: 2_815,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "duration",
+      value: 2_820,
+      observedAt: 1_010,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "pause",
+      value: true,
+      observedAt: 1_100,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "eof-reached",
+      value: true,
+      observedAt: 1_200,
+    });
+    applyEndFileEvent(telemetry, "eof", 1_210);
+    recordPlayerExit(telemetry, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(telemetry, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("eof");
+    expect(result.watchedSeconds).toBe(2_820);
+  });
+
   test("tracks mpv buffering and seeking diagnostics without changing progress", () => {
     const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
     applyObservedPropertySample(telemetry, {

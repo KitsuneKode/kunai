@@ -140,7 +140,6 @@ local function draw_kunai_loading_overlay()
 	loading_overlay.res_x = w
 	loading_overlay.res_y = h
 
-	local ass_nl = "\\N"
 	local parts = {}
 
 	-- 5×5 snake dot-matrix loader (mirrors DotmSquare2 React component).
@@ -231,7 +230,7 @@ local function draw_kunai_loading_overlay()
 		brand_fs, cx, brand_y
 	))
 
-	loading_overlay.data = table.concat(parts, ass_nl)
+	loading_overlay.data = table.concat(parts, "\n")
 	loading_overlay:update()
 end
 
@@ -422,47 +421,9 @@ mp.observe_property("user-data/kunai-resume-at", "native", function(_, val)
 	end
 end)
 
-local function round_rect_path(w, h, r)
-	r = math.floor(clamp(r, 1, math.min(w, h) / 2))
-	local c = math.floor(r * 0.55228475 + 0.5)
-
-	return string.format(
-		"m %d 0 "
-			.. "l %d 0 "
-			.. "b %d 0 %d %d %d %d "
-			.. "l %d %d "
-			.. "b %d %d %d %d %d %d "
-			.. "l %d %d "
-			.. "b %d %d 0 %d 0 %d "
-			.. "l 0 %d "
-			.. "b 0 %d %d 0 %d 0",
-		r,
-		w - r,
-		w - r + c,
-		0,
-		w,
-		r - c,
-		w,
-		r,
-		w,
-		h - r,
-		w,
-		h - r + c,
-		w - r + c,
-		h,
-		w - r,
-		h,
-		r,
-		h,
-		r - c,
-		h,
-		h - r + c,
-		h - r,
-		r,
-		r - c,
-		r - c,
-		r
-	)
+local function trapezoid_path(w, h, slant)
+	slant = clamp(math.floor(slant), 0, math.floor(w * 0.45))
+	return string.format("m 0 0 l %d 0 l %d %d l 0 %d l 0 0", w, w - slant, h, h)
 end
 
 local function skip_icon_path(size)
@@ -553,7 +514,64 @@ local function chip_hovered()
 	return hit_skip_chip(pos.x, pos.y)
 end
 
-local function draw_prompt_frame()
+local draw_prompt_frame
+local on_skip_click
+
+local function arm_prompt_hover_check()
+	if prompt_hover_check_timer ~= nil then
+		return
+	end
+
+	prompt_hover_armed = true
+	prompt_hover_check_timer = mp.add_periodic_timer(0.1, function()
+		local skip_to = mp.get_property_number("user-data/kunai-skip-to", -1)
+		if skip_to <= 0 then
+			if prompt_hover_check_timer ~= nil then
+				prompt_hover_check_timer:kill()
+				prompt_hover_check_timer = nil
+			end
+			prompt_hover_armed = false
+			return
+		end
+
+		if not prompt_hover_armed or not chip_hovered() then
+			return
+		end
+
+		prompt_hover_armed = false
+		if prompt_hover_check_timer ~= nil then
+			prompt_hover_check_timer:kill()
+			prompt_hover_check_timer = nil
+		end
+
+		prompt_deadline_wall = mp.get_time() + prompt_total_sec
+		overlay.hidden = false
+		draw_prompt_frame()
+		prompt_redraw_timer = mp.add_periodic_timer(0.05, function()
+			local st = mp.get_property_number("user-data/kunai-skip-to", -1)
+			if st <= 0 then
+				hide_prompt_visual()
+				return
+			end
+			local rem = prompt_deadline_wall - mp.get_time()
+			draw_prompt_frame()
+			if rem <= 0 then
+				if prompt_redraw_timer ~= nil then
+					prompt_redraw_timer:kill()
+					prompt_redraw_timer = nil
+				end
+				pcall(function() mp.remove_key_binding("kunai-skip-click") end)
+				overlay.data = ""
+				overlay:remove()
+				prompt_deadline_wall = nil
+				arm_prompt_hover_check()
+			end
+		end)
+		mp.add_forced_key_binding("MBTN_LEFT", "kunai-skip-click", on_skip_click, { complex = true })
+	end)
+end
+
+function draw_prompt_frame()
 	if not prompt_deadline_wall then
 		return
 	end
@@ -578,7 +596,7 @@ local function draw_prompt_frame()
 	local hovered = chip_hovered()
 
 	local pad = math.floor(chip_h * 0.16)
-	local radius = math.floor(chip_h * 0.36)
+	local slant = math.floor(chip_h * 0.52)
 
 	local icon_size = clamp(math.floor(chip_h * 0.30), 22, 34)
 
@@ -586,9 +604,8 @@ local function draw_prompt_frame()
 	local sub_fs = clamp(math.floor(chip_h * 0.17), 13, 20)
 
 	local bar_h = clamp(math.floor(chip_h * 0.10), 6, 10)
-	local bar_w = chip_w - (pad * 2)
-	-- Clamp fill_w to at least bar_h so round_rect_path gets valid (non-degenerate) dimensions.
-	local fill_w = math.max(bar_h, math.floor(bar_w * p))
+	local bar_w = chip_w - (pad * 2) - slant
+	local fill_w = math.max(0, math.floor(bar_w * p))
 
 	local label = prompt_label
 	if label == "" or label == "SKIP" then
@@ -604,9 +621,9 @@ local function draw_prompt_frame()
 	end
 	subline = esc_ass(subline)
 
-	local bg_path = round_rect_path(chip_w, chip_h, radius)
-	local bar_bg_path = round_rect_path(bar_w, bar_h, math.floor(bar_h / 2))
-	local bar_fill_path = round_rect_path(fill_w, bar_h, math.floor(bar_h / 2))
+	local bg_path = trapezoid_path(chip_w, chip_h, slant)
+	local bar_bg_path = trapezoid_path(bar_w, bar_h, math.floor(bar_h * 0.65))
+	local bar_fill_path = fill_w > 0 and trapezoid_path(fill_w, bar_h, math.min(math.floor(bar_h * 0.65), fill_w)) or ""
 	local icon_path = skip_icon_path(icon_size)
 
 	local bg_alpha = hovered and "06" or "18"
@@ -660,14 +677,13 @@ local function draw_prompt_frame()
 			bar_bg_path
 		),
 
-		-- Progress fill.
-		string.format(
+		fill_w > 0 and string.format(
 			"{\\an7\\pos(%d,%d)\\bord0\\shad0\\1c&HFFFFFF&\\1a&H%s&\\p1}%s{\\p0}",
 			x0 + pad,
 			bar_y,
 			fill_alpha,
 			bar_fill_path
-		),
+		) or "",
 
 		-- Vector skip icon.
 		string.format("{\\an7\\pos(%d,%d)\\bord0\\shad0\\1c&HFFFFFF&\\1a&H08&\\p1}%s{\\p0}", icon_x, icon_y, icon_path),
@@ -699,7 +715,7 @@ local function draw_prompt_frame()
 	overlay:update()
 end
 
-local function on_skip_click(e)
+function on_skip_click(e)
 	if e and e.event ~= "up" then
 		return
 	end
@@ -772,52 +788,9 @@ local function restart_skip_prompt()
 			if prompt_is_auto then
 				signal("auto-skip")
 			else
-				-- Netflix behaviour: chip faded; re-arm hover so it reappears when
-				-- the user moves the mouse to that corner.
-				prompt_hover_armed = true
-				prompt_hover_check_timer = mp.add_periodic_timer(0.1, function()
-					local skip_to = mp.get_property_number("user-data/kunai-skip-to", -1)
-					if skip_to <= 0 then
-						if prompt_hover_check_timer ~= nil then
-							prompt_hover_check_timer:kill()
-							prompt_hover_check_timer = nil
-						end
-						prompt_hover_armed = false
-						return
-					end
-					if prompt_hover_armed and chip_hovered() then
-						prompt_hover_armed = false
-						if prompt_hover_check_timer ~= nil then
-							prompt_hover_check_timer:kill()
-							prompt_hover_check_timer = nil
-						end
-						-- Re-show chip for another 3 s.
-						prompt_deadline_wall = mp.get_time() + prompt_total_sec
-						overlay.hidden = false
-						draw_prompt_frame()
-						prompt_redraw_timer = mp.add_periodic_timer(0.05, function()
-							local st2 = mp.get_property_number("user-data/kunai-skip-to", -1)
-							if st2 <= 0 then
-								hide_prompt_visual()
-								return
-							end
-							local rem2 = prompt_deadline_wall - mp.get_time()
-							draw_prompt_frame()
-							if rem2 <= 0 then
-								if prompt_redraw_timer ~= nil then
-									prompt_redraw_timer:kill()
-									prompt_redraw_timer = nil
-								end
-								pcall(function() mp.remove_key_binding("kunai-skip-click") end)
-								overlay.data = ""
-								overlay:remove()
-								prompt_deadline_wall = nil
-								prompt_hover_armed = true
-							end
-						end)
-						mp.add_forced_key_binding("MBTN_LEFT", "kunai-skip-click", on_skip_click, { complex = true })
-					end
-				end)
+				-- Netflix behaviour: chip faded; keep a cheap hover poll so it
+				-- reappears from the hidden state while the skip zone is still active.
+				arm_prompt_hover_check()
 			end
 		end
 	end)

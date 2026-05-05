@@ -202,10 +202,10 @@ async function renderChafa(data: ArrayBuffer, rows: number, cols: number): Promi
 
 export async function renderPoster(
   data: ArrayBuffer,
-  { rows, cols }: { rows: number; cols: number },
+  { rows, cols, allowKitty = true }: { rows: number; cols: number; allowKitty?: boolean },
 ): Promise<PosterResult> {
   try {
-    if (isKittyCompatible()) {
+    if (allowKitty && isKittyCompatible()) {
       const kitty = await renderKitty(data, rows, cols);
       if (kitty.kind !== "none") return kitty;
       if (await isChafaAvailable()) {
