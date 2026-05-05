@@ -12,7 +12,7 @@ export type PlaybackFailureClass =
   | "unknown";
 
 export interface PlaybackRecoveryGuidance {
-  readonly action: "none" | "wait" | "refresh" | "fallback" | "relaunch" | "inspect";
+  readonly action: "none" | "wait" | "refresh" | "pick-stream" | "relaunch" | "inspect";
   readonly label: string;
 }
 
@@ -76,8 +76,8 @@ export function recoveryForPlaybackFailure(
       };
     case "player-exited":
       return {
-        action: "fallback",
-        label: "Try fallback provider if relaunching the same source fails.",
+        action: "relaunch",
+        label: "Relaunch mpv from the last trusted position; try another provider only if relaunch fails.",
       };
     case "unknown":
       return {
