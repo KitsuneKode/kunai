@@ -25,7 +25,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   autoNext: true,
   resumeStartChoicePrompt: true,
   skipRecap: true,
-  skipIntro: true,
+  skipIntro: false,
   skipPreview: true,
   skipCredits: true,
   footerHints: "detailed",

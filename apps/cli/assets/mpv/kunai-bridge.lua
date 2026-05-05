@@ -33,6 +33,10 @@ local prompt_deadline_wall = nil
 local prompt_is_auto = false
 local prompt_label = ""
 local prompt_total_sec = 3
+-- True when segment is still active but the manual-mode chip has faded out.
+-- Hover over the chip area re-arms the chip for another 3 s.
+local prompt_hover_armed = false
+local prompt_hover_check_timer = nil
 
 local function signal(action)
 	mp.set_property("user-data/kunai-request", action)
@@ -378,6 +382,13 @@ local function commit_resume_choice(which)
 end
 
 local function show_resume_prompt(at_sec)
+	-- Dismiss the loading overlay so it doesn't overlap the resume prompt.
+	if kunai_loading_text ~= "" then
+		kunai_loading_text = ""
+		loading_overlay.data = ""
+		loading_overlay:remove()
+		stop_loading_animation()
+	end
 	hide_resume_prompt()
 	draw_resume_prompt(at_sec)
 	clear_resume_prompt_bindings()
@@ -490,7 +501,11 @@ local function clear_prompt_timers()
 		prompt_redraw_timer:kill()
 		prompt_redraw_timer = nil
 	end
-
+	if prompt_hover_check_timer ~= nil then
+		prompt_hover_check_timer:kill()
+		prompt_hover_check_timer = nil
+	end
+	prompt_hover_armed = false
 	prompt_deadline_wall = nil
 
 	pcall(function()
@@ -572,7 +587,8 @@ local function draw_prompt_frame()
 
 	local bar_h = clamp(math.floor(chip_h * 0.10), 6, 10)
 	local bar_w = chip_w - (pad * 2)
-	local fill_w = math.max(1, math.floor(bar_w * p))
+	-- Clamp fill_w to at least bar_h so round_rect_path gets valid (non-degenerate) dimensions.
+	local fill_w = math.max(bar_h, math.floor(bar_w * p))
 
 	local label = prompt_label
 	if label == "" or label == "SKIP" then
@@ -595,7 +611,8 @@ local function draw_prompt_frame()
 
 	local bg_alpha = hovered and "06" or "18"
 	local border_alpha = hovered and "38" or "78"
-	local fill_alpha = hovered and "00" or "10"
+	-- Fill bar is only meaningful when auto-skip is counting down; hide it in manual mode.
+	local fill_alpha = (prompt_is_auto and (hovered and "00" or "18")) or "FF"
 
 	local title_color = hovered and "HFFFFFF&" or "HF4F4F4&"
 	local sub_color = hovered and "HE8E8E8&" or "HCFCFCF&"
@@ -750,9 +767,57 @@ local function restart_skip_prompt()
 
 			overlay.data = ""
 			overlay:remove()
+			prompt_deadline_wall = nil
 
 			if prompt_is_auto then
 				signal("auto-skip")
+			else
+				-- Netflix behaviour: chip faded; re-arm hover so it reappears when
+				-- the user moves the mouse to that corner.
+				prompt_hover_armed = true
+				prompt_hover_check_timer = mp.add_periodic_timer(0.1, function()
+					local skip_to = mp.get_property_number("user-data/kunai-skip-to", -1)
+					if skip_to <= 0 then
+						if prompt_hover_check_timer ~= nil then
+							prompt_hover_check_timer:kill()
+							prompt_hover_check_timer = nil
+						end
+						prompt_hover_armed = false
+						return
+					end
+					if prompt_hover_armed and chip_hovered() then
+						prompt_hover_armed = false
+						if prompt_hover_check_timer ~= nil then
+							prompt_hover_check_timer:kill()
+							prompt_hover_check_timer = nil
+						end
+						-- Re-show chip for another 3 s.
+						prompt_deadline_wall = mp.get_time() + prompt_total_sec
+						overlay.hidden = false
+						draw_prompt_frame()
+						prompt_redraw_timer = mp.add_periodic_timer(0.05, function()
+							local st2 = mp.get_property_number("user-data/kunai-skip-to", -1)
+							if st2 <= 0 then
+								hide_prompt_visual()
+								return
+							end
+							local rem2 = prompt_deadline_wall - mp.get_time()
+							draw_prompt_frame()
+							if rem2 <= 0 then
+								if prompt_redraw_timer ~= nil then
+									prompt_redraw_timer:kill()
+									prompt_redraw_timer = nil
+								end
+								pcall(function() mp.remove_key_binding("kunai-skip-click") end)
+								overlay.data = ""
+								overlay:remove()
+								prompt_deadline_wall = nil
+								prompt_hover_armed = true
+							end
+						end)
+						mp.add_forced_key_binding("MBTN_LEFT", "kunai-skip-click", on_skip_click, { complex = true })
+					end
+				end)
 			end
 		end
 	end)

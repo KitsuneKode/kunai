@@ -938,11 +938,27 @@ export class PersistentMpvSession {
     if (nextPositionSeconds + 0.5 >= previousPositionSeconds) {
       return;
     }
+    const prev = this.skippedSegments;
     this.skippedSegments = pruneSkippedPlaybackSegmentKeys(
       this.skippedSegments,
       options.timing,
       nextPositionSeconds,
     );
+    // If the current prompt segment was re-armed (or we're now inside a segment whose
+    // prompt had faded), clear skipPromptSegmentKey so handleSegmentSkipProgress
+    // re-publishes the chip instead of returning early at the identity check.
+    if (this.skipPromptSegmentKey !== null) {
+      const segmentAtNewPos = findPlaybackSegmentAtPosition(
+        options.timing,
+        nextPositionSeconds,
+      );
+      if (
+        segmentAtNewPos?.key === this.skipPromptSegmentKey &&
+        !this.skippedSegments.has(this.skipPromptSegmentKey)
+      ) {
+        this.skipPromptSegmentKey = null;
+      }
+    }
   }
 
   private async handleSegmentSkipProgress(options: PlayerCycleOptions): Promise<void> {

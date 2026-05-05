@@ -356,6 +356,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       let pendingPrefetchedStream: import("@/domain/types").StreamInfo | null = null;
       /** One stack frame per forward advance (N / auto-next) so P can restore the left episode. */
       const undoAdvanceStack: UndoAdvanceFrame[] = [];
+      // Set when user explicitly chose to resume from the post-playback shell (c key).
+      // Suppresses the in-mpv resume/start-over prompt so we don't ask twice.
+      let pendingSuppressResumePrompt = false;
 
       // Inner playback loop
       while (true) {
@@ -713,6 +716,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Pass loading handle so playStream can update it in-place (no shell flicker).
           const startAt = pendingStartAt;
           pendingStartAt = 0;
+          const suppressResumePrompt = pendingSuppressResumePrompt;
+          pendingSuppressResumePrompt = false;
 
           // Prefetch: start resolving the next episode's stream in the background
           // when we enter the last ~30 s, so autoplay feels instant.
@@ -770,6 +775,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             playbackSession.mode,
             playbackTiming,
             maybePrefetchNext,
+            suppressResumePrompt,
           );
 
           // Save history — use effectiveTiming.current so that a background retry
@@ -1287,6 +1293,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               continue postPlayback;
             } else if (routedAction === "resume") {
               pendingStartAt = resumeSeconds;
+              pendingSuppressResumePrompt = true;
               const playbackAction = resolvePostPlaybackSessionAction("resume", playbackSession);
               playbackSession = playbackAction.session;
               if (!playbackAction.session.autoplayPaused) {
@@ -1575,6 +1582,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     playbackMode: "manual" | "autoplay-chain" = "manual",
     timing: PlaybackTimingMetadata | null = null,
     onNearEof?: () => void,
+    suppressResumePrompt = false,
   ): Promise<PlaybackResult> {
     const { player, stateManager, config } = context.container;
 
@@ -1607,7 +1615,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         attach: false,
         playbackMode,
         timing,
-        resumeStartChoicePrompt: config.resumeStartChoicePrompt,
+        resumeStartChoicePrompt: suppressResumePrompt ? false : config.resumeStartChoicePrompt,
         skipRecap: config.skipRecap,
         skipIntro: config.skipIntro,
         skipPreview: config.skipPreview,

@@ -132,7 +132,9 @@ export function pruneSkippedPlaybackSegmentKeys(
       const startSeconds = normalizeStartSeconds(segment.startMs);
       const endSeconds = normalizeEndSeconds(segment.endMs);
       if (endSeconds === null || endSeconds <= startSeconds) continue;
-      if (startSeconds >= positionSeconds) {
+      // Re-arm if the segment's end is still ahead — covers both "before the segment"
+      // and "seeking into the middle of it" (startSeconds < positionSeconds < endSeconds).
+      if (endSeconds > positionSeconds) {
         rearmableKeys.add(`${kind}:${startSeconds}:${endSeconds}`);
       }
     }
