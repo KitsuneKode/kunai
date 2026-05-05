@@ -416,12 +416,14 @@ function AppRoot({ container }: { container: Container }) {
             {rootSurface === "error" ? (
               <ErrorShell
                 message={state.playbackError || "An unknown error occurred"}
-                onResolve={() =>
-                  stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" })
-                }
-                onRetry={() =>
-                  stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" })
-                }
+                onResolve={() => {
+                  stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
+                  stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+                }}
+                onRetry={() => {
+                  stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
+                  stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+                }}
               />
             ) : rootSurface === "playback" ? (
               <LoadingShell
@@ -463,11 +465,12 @@ function AppRoot({ container }: { container: Container }) {
                     state.playbackStatus === "buffering" ||
                     state.playbackStatus === "seeking" ||
                     state.playbackStatus === "stalled"
-                      ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  b skip segment  ·  o source  ·  k quality  ·  s reload subtitles  ·  r refresh  ·  f fallback  ·  Ctrl+C hard exit`
+                      ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  b skip  ·  k streams  ·  r recover  ·  / commands`
                       : undefined,
                   commands: fallbackCommandState([
                     "settings",
-                    "provider",
+                    "recover",
+                    "streams",
                     "history",
                     "diagnostics",
                     "report-issue",
@@ -486,9 +489,15 @@ function AppRoot({ container }: { container: Container }) {
                       );
                       return;
                     }
-                    if (action === "provider") {
-                      void container.playerControl.fallbackCurrentPlayback(
-                        "playback-loading-command-fallback",
+                    if (action === "recover") {
+                      void container.playerControl.recoverCurrentPlayback(
+                        "playback-loading-command-recover",
+                      );
+                      return;
+                    }
+                    if (action === "streams") {
+                      void container.playerControl.pickStreamCurrentPlayback(
+                        "playback-loading-command-streams",
                       );
                       return;
                     }
@@ -547,11 +556,11 @@ function AppRoot({ container }: { container: Container }) {
                       }
                     : undefined
                 }
-                onRefresh={() => {
-                  void container.playerControl.refreshCurrentPlayback("playback-shell-r");
+                onRecover={() => {
+                  void container.playerControl.recoverCurrentPlayback("playback-shell-r");
                 }}
-                onFallback={() => {
-                  void container.playerControl.fallbackCurrentPlayback("playback-shell-f");
+                onPickStreams={() => {
+                  void container.playerControl.pickStreamCurrentPlayback("playback-shell-k");
                 }}
                 onReloadSubtitles={() => {
                   void container.playerControl.reloadCurrentSubtitles("playback-shell-s");
@@ -733,6 +742,7 @@ function PlaybackShell({
       "history",
       "toggle-autoplay",
       "replay",
+      "streams",
       "source",
       "quality",
       "pick-episode",
@@ -758,8 +768,7 @@ function PlaybackShell({
       toShellAction,
     ),
     footerActionFromCommand(commands, "replay", { key: "r", label: "replay" }, toShellAction),
-    footerActionFromCommand(commands, "source", { key: "o", label: "sources" }, toShellAction),
-    footerActionFromCommand(commands, "quality", { key: "k", label: "quality" }, toShellAction),
+    footerActionFromCommand(commands, "streams", { key: "k", label: "streams" }, toShellAction),
     footerActionFromCommand(commands, "search", { key: "f", label: "search" }, toShellAction),
     footerActionFromCommand(
       commands,

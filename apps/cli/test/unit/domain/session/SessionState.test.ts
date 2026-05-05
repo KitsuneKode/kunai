@@ -5,6 +5,41 @@ import { parseCommand, resolveCommands } from "@/domain/session/command-registry
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
 
 describe("SessionState overlays", () => {
+  test("stores clears and resets playback problem state", () => {
+    let state = createInitialState("vidking", "allanime");
+    state = reduceState(state, {
+      type: "SET_PLAYBACK_PROBLEM",
+      problem: {
+        stage: "mpv",
+        severity: "recoverable",
+        cause: "expired-stream",
+        userMessage: "The stream expired.",
+        recommendedAction: "refresh",
+        secondaryActions: ["diagnostics"],
+      },
+    });
+
+    expect(state.playbackProblem?.cause).toBe("expired-stream");
+
+    state = reduceState(state, { type: "CLEAR_PLAYBACK_PROBLEM" });
+    expect(state.playbackProblem).toBeNull();
+
+    state = reduceState(state, {
+      type: "SET_PLAYBACK_PROBLEM",
+      problem: {
+        stage: "provider-resolve",
+        severity: "recoverable",
+        cause: "no-stream",
+        userMessage: "No stream.",
+        recommendedAction: "pick-stream",
+        secondaryActions: ["try-next-provider"],
+      },
+    });
+    state = reduceState(state, { type: "SET_PLAYBACK_STATUS", status: "loading" });
+
+    expect(state.playbackProblem).toBeNull();
+  });
+
   test("keeps a shallow overlay stack and closes the top overlay first", () => {
     let state = createInitialState("vidking", "allanime");
 

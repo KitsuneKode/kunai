@@ -15,6 +15,7 @@ type RoutedActionResult =
   | "toggle-autoplay"
   | "resume"
   | "replay"
+  | "recover"
   | "streams"
   | "source"
   | "quality"
@@ -131,6 +132,7 @@ export async function routePlaybackShellAction({
   if (action === "toggle-autoplay") return "toggle-autoplay";
   if (action === "resume") return "resume";
   if (action === "replay") return "replay";
+  if (action === "recover") return "recover";
   if (action === "streams") return "streams";
   if (action === "source") return "source";
   if (action === "quality") return "quality";

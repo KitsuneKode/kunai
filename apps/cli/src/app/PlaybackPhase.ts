@@ -48,6 +48,10 @@ import {
 } from "@/app/source-quality";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 import { effectiveFooterHints } from "@/container";
+import {
+  buildProviderResolveProblem,
+  type PlaybackProblem,
+} from "@/domain/playback/playback-problem";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -124,6 +128,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         }
       });
     });
+  }
+
+  private showPlaybackProblem(context: PhaseContext, problem: PlaybackProblem): Promise<void> {
+    const { diagnosticsStore, stateManager } = context.container;
+    stateManager.dispatch({
+      type: "SET_PLAYBACK_PROBLEM",
+      problem,
+    });
+    diagnosticsStore.record({
+      category: "playback",
+      message: problem.userMessage,
+      context: {
+        stage: problem.stage,
+        severity: problem.severity,
+        cause: problem.cause,
+        recommendedAction: problem.recommendedAction,
+        secondaryActions: problem.secondaryActions,
+      },
+    });
+    return this.showPlaybackError(context, problem.userMessage);
   }
 
   private describePlayerEvent(event: PlayerPlaybackEvent): {
@@ -222,37 +246,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         };
       }
     }
-  }
-
-  private buildProviderFailureHint({
-    attempts,
-    capabilitySnapshot,
-  }: {
-    attempts: readonly {
-      readonly failure?: { readonly code?: string; readonly message?: string } | undefined;
-    }[];
-    capabilitySnapshot: { readonly chromiumForEmbeds: boolean } | null;
-  }): string {
-    if (!capabilitySnapshot?.chromiumForEmbeds) {
-      return "Playwright Chromium is not installed. Install with: bunx playwright install chromium";
-    }
-    if (hasRuntimeMissingFailure(attempts)) {
-      return "A provider runtime dependency is missing. Open Diagnostics for details.";
-    }
-    const failureMessages = attempts
-      .map((a) => a.failure?.message ?? "")
-      .filter(Boolean)
-      .join(" ");
-    if (/net::|ERR_INTERNET|network|ECONNREFUSED|ETIMEDOUT/i.test(failureMessages)) {
-      return "Network error — check your internet connection and try again.";
-    }
-    if (/timeout|timed out/i.test(failureMessages)) {
-      return "Provider timed out. The site may be slow or temporarily down. Try again shortly.";
-    }
-    if (/403|401|auth|forbidden|unauthorized/i.test(failureMessages)) {
-      return "Provider returned an auth or access error. The content may be region-locked or unavailable.";
-    }
-    return "Stream not found. Press R to retry, F to switch provider, or open Diagnostics for details.";
   }
 
   async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
@@ -612,7 +605,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   this.updatePlaybackFeedback(context, { detail: null, note: null });
                   return { status: "success", value: "back_to_results" };
                 }
-                const failureHint = this.buildProviderFailureHint({
+                const problem = buildProviderResolveProblem({
                   attempts: resolveResult.attempts,
                   capabilitySnapshot: container.capabilitySnapshot,
                 });
@@ -621,14 +614,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   message: "Stream resolution failed — all providers exhausted",
                   context: {
                     provider: currentProvider.metadata.id,
-                    failureHint,
+                    problem,
                     attempts: resolveResult.attempts.map((a) => ({
                       providerId: a.providerId,
                       failure: a.failure,
                     })),
                   },
                 });
-                await this.showPlaybackError(context, failureHint);
+                await this.showPlaybackProblem(context, problem);
                 stateManager.dispatch({ type: "SET_STREAM", stream: null });
                 return { status: "success", value: "back_to_results" };
               }
@@ -671,11 +664,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               this.updatePlaybackFeedback(context, { detail: null, note: null });
               return { status: "success", value: "back_to_results" };
             }
-            const failureHint = this.buildProviderFailureHint({
+            const problem = buildProviderResolveProblem({
               attempts: [],
               capabilitySnapshot: container.capabilitySnapshot,
             });
-            await this.showPlaybackError(context, failureHint);
+            await this.showPlaybackProblem(context, problem);
             stateManager.dispatch({ type: "SET_STREAM", stream: null });
             return { status: "success", value: "back_to_results" };
           }
@@ -1908,18 +1901,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       return undefined;
     }
   }
-}
-
-function hasRuntimeMissingFailure(
-  attempts: readonly {
-    readonly failure?: { readonly code?: string; readonly message?: string } | undefined;
-  }[],
-): boolean {
-  return attempts.some((attempt) => {
-    const code = attempt.failure?.code?.toLowerCase();
-    const message = attempt.failure?.message?.toLowerCase() ?? "";
-    return code === "runtime-missing" || message.includes("runtime-missing");
-  });
 }
 
 function describeSubtitleStatus(stream: StreamInfo, subLang: string): string {

@@ -6,6 +6,7 @@
 // =============================================================================
 
 import type { EpisodeInfo, SearchResult, StreamInfo, TitleInfo } from "../types";
+import type { PlaybackProblem } from "../playback/playback-problem";
 import type { AppCommandId } from "./command-registry";
 import {
   DEFAULT_LAYOUT_PREFERENCES,
@@ -107,6 +108,7 @@ export interface SessionState {
   readonly playbackError: string | null;
   readonly playbackDetail: string | null;
   readonly playbackNote: string | null;
+  readonly playbackProblem: PlaybackProblem | null;
 
   readonly searchQuery: string;
   readonly searchResults: SearchResult[];
@@ -144,6 +146,8 @@ export type StateTransition =
   | { type: "SET_STREAM"; stream: StreamInfo | null }
   | { type: "SET_PLAYBACK_STATUS"; status: PlaybackStatus; error?: string }
   | { type: "SET_PLAYBACK_FEEDBACK"; detail?: string | null; note?: string | null }
+  | { type: "SET_PLAYBACK_PROBLEM"; problem: PlaybackProblem }
+  | { type: "CLEAR_PLAYBACK_PROBLEM" }
   | { type: "OPEN_OVERLAY"; overlay: OverlayState }
   | { type: "CLOSE_TOP_OVERLAY" }
   | { type: "CLOSE_ALL_OVERLAYS" }
@@ -198,6 +202,7 @@ export function createInitialState(
     playbackError: null,
     playbackDetail: null,
     playbackNote: null,
+    playbackProblem: null,
     searchQuery: "",
     searchResults: [],
     searchState: "idle",
@@ -291,6 +296,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         stopAfterCurrent: false,
         stream: null,
         playbackStatus: "idle",
+        playbackProblem: null,
       };
 
     case "SELECT_EPISODE":
@@ -338,6 +344,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         playbackError: transition.error ?? null,
         playbackDetail: keepPlaybackFeedback ? state.playbackDetail : null,
         playbackNote: keepPlaybackFeedback ? state.playbackNote : null,
+        playbackProblem: transition.status === "loading" ? null : state.playbackProblem,
       };
 
     case "SET_PLAYBACK_FEEDBACK":
@@ -347,6 +354,18 @@ export function reduceState(state: SessionState, transition: StateTransition): S
           transition.detail === undefined ? state.playbackDetail : (transition.detail ?? null),
         playbackNote:
           transition.note === undefined ? state.playbackNote : (transition.note ?? null),
+      };
+
+    case "SET_PLAYBACK_PROBLEM":
+      return {
+        ...state,
+        playbackProblem: transition.problem,
+      };
+
+    case "CLEAR_PLAYBACK_PROBLEM":
+      return {
+        ...state,
+        playbackProblem: null,
       };
 
     case "OPEN_OVERLAY":

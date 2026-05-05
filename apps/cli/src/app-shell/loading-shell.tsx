@@ -78,12 +78,12 @@ export function LoadingShell({
   state,
   onCancel,
   onStop,
-  onRefresh,
-  onFallback,
+  onRecover,
   onReloadSubtitles,
   onNext,
   onPrevious,
   onSkipSegment,
+  onPickStreams,
   onPickSource,
   onPickQuality,
   onToggleAutoplay,
@@ -92,12 +92,12 @@ export function LoadingShell({
   state: LoadingShellState;
   onCancel?: () => void;
   onStop?: () => void;
-  onRefresh?: () => void;
-  onFallback?: () => void;
+  onRecover?: () => void;
   onReloadSubtitles?: () => void;
   onNext?: () => void;
   onPrevious?: () => void;
   onSkipSegment?: () => void;
+  onPickStreams?: () => void;
   onPickSource?: () => void;
   onPickQuality?: () => void;
   onToggleAutoplay?: () => void;
@@ -124,11 +124,8 @@ export function LoadingShell({
         onCancel();
       }
     }
-    if (input.toLowerCase() === "r" && state.operation === "playing" && onRefresh) {
-      onRefresh();
-    }
-    if (input.toLowerCase() === "f" && state.operation === "playing" && onFallback) {
-      onFallback();
+    if (input.toLowerCase() === "r" && state.operation === "playing" && onRecover) {
+      onRecover();
     }
     if (input.toLowerCase() === "s" && state.operation === "playing" && onReloadSubtitles) {
       onReloadSubtitles();
@@ -141,6 +138,10 @@ export function LoadingShell({
     }
     if (input.toLowerCase() === "b" && state.operation === "playing" && onSkipSegment) {
       onSkipSegment();
+    }
+    if (input.toLowerCase() === "k" && state.operation === "playing" && onPickStreams) {
+      onPickStreams();
+      return;
     }
     if (input.toLowerCase() === "o" && state.operation === "playing" && onPickSource) {
       onPickSource();
@@ -197,7 +198,7 @@ export function LoadingShell({
       }}
       footerTask={
         state.operation === "playing"
-          ? "Playback  ·  q stop · r refresh · f fallback"
+          ? "Playback  ·  q stop · r recover · k streams"
           : state.cancellable
             ? "Playback bootstrap  ·  q / Esc cancel"
             : "Playback bootstrap"

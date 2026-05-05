@@ -60,6 +60,29 @@ describe("panel-data", () => {
     expect(lines.find((line) => line.label === "Subtitle diagnosis")?.tone).toBe("warning");
   });
 
+  test("buildDiagnosticsPanelLines surfaces the latest playback problem", () => {
+    const state = {
+      ...createInitialState("vidking", "allanime"),
+      playbackProblem: {
+        stage: "mpv",
+        severity: "recoverable",
+        cause: "expired-stream",
+        userMessage: "The stream expired.",
+        recommendedAction: "refresh",
+        secondaryActions: ["diagnostics"],
+      },
+    } as const;
+    const lines = buildDiagnosticsPanelLines({
+      state,
+      recentEvents: [],
+    });
+
+    const problem = lines.find((line) => line.label === "Playback problem");
+    expect(problem?.detail).toContain("expired-stream");
+    expect(problem?.detail).toContain("refresh");
+    expect(problem?.tone).toBe("warning");
+  });
+
   test("buildHistoryPanelLines sorts newest entries first", () => {
     const lines = buildHistoryPanelLines([
       [

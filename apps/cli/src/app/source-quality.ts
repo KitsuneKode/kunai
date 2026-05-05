@@ -136,7 +136,6 @@ export function applyPreferredStreamSelection(
     providerResolveResult: {
       ...result,
       selectedStreamId: selected.id,
-      selectedSourceId: selected.sourceId ?? result.selectedSourceId,
     },
   };
 }

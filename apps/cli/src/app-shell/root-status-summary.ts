@@ -77,6 +77,12 @@ export function buildRootStatusSummary({
   if (subtitle) {
     badges.push(subtitle);
   }
+  if (state.playbackProblem) {
+    badges.push({
+      label: `issue ${state.playbackProblem.cause}`,
+      tone: state.playbackProblem.severity === "blocking" ? "error" : "warning",
+    });
+  }
   if (state.autoplaySessionPaused) {
     badges.push({ label: "autoplay paused", tone: "warning" });
   }

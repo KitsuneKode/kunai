@@ -212,6 +212,18 @@ export function buildDiagnosticsPanelLines({
       detail: `${state.view}  ·  ${state.playbackStatus}`,
     },
     {
+      label: "Playback problem",
+      detail: state.playbackProblem
+        ? `${state.playbackProblem.stage}  ·  ${state.playbackProblem.cause}  ·  ${state.playbackProblem.recommendedAction}`
+        : "none recorded",
+      tone:
+        state.playbackProblem?.severity === "blocking"
+          ? "error"
+          : state.playbackProblem
+            ? "warning"
+            : "success",
+    },
+    {
       label: "Subtitle state",
       detail: subtitleState.label,
       tone: subtitleState.tone,

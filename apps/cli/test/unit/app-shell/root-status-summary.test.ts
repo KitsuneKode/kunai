@@ -62,4 +62,27 @@ describe("buildRootStatusSummary", () => {
     expect(summary.header.tone).toBe("neutral");
     expect(summary.badges.map((badge) => badge.label)).toEqual(["series", "vidking", "search"]);
   });
+
+  test("surfaces playback problem state as a compact badge", () => {
+    const base = createInitialState("vidking", "hianime");
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        playbackProblem: {
+          stage: "mpv",
+          severity: "recoverable",
+          cause: "expired-stream",
+          userMessage: "The stream expired.",
+          recommendedAction: "refresh",
+          secondaryActions: ["diagnostics"],
+        },
+      },
+      currentViewLabel: "playback",
+      rootStatus: "error",
+    });
+
+    expect(summary.badges.find((badge) => badge.label === "issue expired-stream")?.tone).toBe(
+      "warning",
+    );
+  });
 });
