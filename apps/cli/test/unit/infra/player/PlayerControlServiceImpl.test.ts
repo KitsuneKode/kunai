@@ -51,7 +51,7 @@ test("PlayerControlServiceImpl reports false when no player is active", async ()
   expect(await service.stopCurrentPlayback("nothing-active")).toBe(false);
 });
 
-test("PlayerControlServiceImpl records refresh and fallback as stop-backed intents", async () => {
+test("PlayerControlServiceImpl records refresh recover and fallback as stop-backed intents", async () => {
   const stoppedReasons: string[] = [];
   const stoppedCurrentReasons: string[] = [];
   const service = makeService();
@@ -68,10 +68,12 @@ test("PlayerControlServiceImpl records refresh and fallback as stop-backed inten
 
   expect(await service.refreshCurrentPlayback("refresh-key")).toBe(true);
   expect(service.consumeLastAction()).toBe("refresh");
+  expect(await service.recoverCurrentPlayback("recover-key")).toBe(true);
+  expect(service.consumeLastAction()).toBe("recover");
   expect(await service.fallbackCurrentPlayback("fallback-key")).toBe(true);
   expect(service.consumeLastAction()).toBe("fallback");
   expect(stoppedReasons).toEqual([]);
-  expect(stoppedCurrentReasons).toEqual(["refresh-key", "fallback-key"]);
+  expect(stoppedCurrentReasons).toEqual(["refresh-key", "recover-key", "fallback-key"]);
 });
 
 test("PlayerControlServiceImpl reloads subtitles without stopping playback", async () => {

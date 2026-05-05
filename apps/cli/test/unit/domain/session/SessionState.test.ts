@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { resolveEscTransition, resolveRootShellSurface } from "@/app-shell/root-shell-state";
-import { resolveCommands } from "@/domain/session/command-registry";
+import { parseCommand, resolveCommands } from "@/domain/session/command-registry";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
 
 describe("SessionState overlays", () => {
@@ -161,6 +161,68 @@ describe("SessionState responsive layout", () => {
 });
 
 describe("command availability", () => {
+  test("parses playback recovery and streams commands without exposing fallback as a command", () => {
+    expect(parseCommand("/recover")?.id).toBe("recover");
+    expect(parseCommand("/fix")?.id).toBe("recover");
+    expect(parseCommand("/streams")?.id).toBe("streams");
+    expect(parseCommand("/fallback")).toBeNull();
+    expect(parseCommand("/provider")?.id).toBe("provider");
+  });
+
+  test("enables streams only when provider stream candidates exist", () => {
+    let state = createInitialState("vidking", "allanime");
+    state = reduceState(state, {
+      type: "SELECT_TITLE",
+      title: {
+        id: "1396",
+        type: "series",
+        name: "Breaking Bad",
+      },
+    });
+    state = reduceState(state, {
+      type: "SELECT_EPISODE",
+      episode: { season: 1, episode: 2 },
+    });
+
+    const emptyCommands = resolveCommands(state, ["streams"]);
+    expect(emptyCommands[0]?.enabled).toBe(false);
+    expect(emptyCommands[0]?.reason).toContain("No stream choices");
+
+    state = reduceState(state, {
+      type: "SET_STREAM",
+      stream: {
+        url: "https://cdn.example/1080.m3u8",
+        timestamp: Date.now(),
+        providerResolveResult: {
+          providerId: "vidking",
+          selectedStreamId: "stream-1080",
+          streams: [{ id: "stream-1080" }],
+        },
+      } as never,
+    });
+
+    const streamCommands = resolveCommands(state, ["streams"]);
+    expect(streamCommands[0]?.enabled).toBe(true);
+  });
+
+  test("recovery is available only during active or failed playback states", () => {
+    let state = createInitialState("vidking", "allanime");
+    expect(resolveCommands(state, ["recover"])[0]?.enabled).toBe(false);
+
+    state = reduceState(state, {
+      type: "SET_PLAYBACK_STATUS",
+      status: "stalled",
+    });
+    expect(resolveCommands(state, ["recover"])[0]?.enabled).toBe(true);
+
+    state = reduceState(state, {
+      type: "SET_PLAYBACK_STATUS",
+      status: "error",
+      error: "Stream expired",
+    });
+    expect(resolveCommands(state, ["recover"])[0]?.enabled).toBe(true);
+  });
+
   test("explains unavailable commands instead of hiding them", () => {
     let state = createInitialState("vidking", "allanime");
     state = reduceState(state, { type: "SET_IMAGE_SUPPORT", supported: true });

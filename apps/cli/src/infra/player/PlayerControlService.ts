@@ -5,6 +5,7 @@ import type { LateSubtitleAttachment } from "./PlayerService";
 export type PlaybackControlAction =
   | "stop"
   | "refresh"
+  | "recover"
   | "fallback"
   | "pick-source"
   | "pick-quality"
@@ -39,6 +40,7 @@ export interface PlayerControlService {
   signalPlaybackAction(action: PlaybackControlAction): void;
   stopCurrentPlayback(reason?: string): Promise<boolean>;
   refreshCurrentPlayback(reason?: string): Promise<boolean>;
+  recoverCurrentPlayback(reason?: string): Promise<boolean>;
   fallbackCurrentPlayback(reason?: string): Promise<boolean>;
   reloadCurrentSubtitles(reason?: string): Promise<boolean>;
   attachLateSubtitles(attachment: LateSubtitleAttachment, reason?: string): Promise<boolean>;

@@ -21,6 +21,8 @@ function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | 
       return "Kunai · Loading previous episode…";
     case "refresh":
       return "Kunai · Refreshing stream…";
+    case "recover":
+      return "Kunai · Recovering playback…";
     case "fallback":
       return "Kunai · Trying another source…";
     case "pick-source":
@@ -104,6 +106,11 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   async refreshCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "refresh";
     return this.stopWithAction("refresh", reason, true);
+  }
+
+  async recoverCurrentPlayback(reason = "user-requested"): Promise<boolean> {
+    this.lastAction = "recover";
+    return this.stopWithAction("recover", reason, true);
   }
 
   async fallbackCurrentPlayback(reason = "user-requested"): Promise<boolean> {

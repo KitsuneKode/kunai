@@ -14,6 +14,8 @@ export type AppCommandId =
   | "image-pane"
   | "toggle-autoplay"
   | "replay"
+  | "recover"
+  | "streams"
   | "source"
   | "quality"
   | "pick-episode"
@@ -115,6 +117,18 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Replay",
     aliases: ["replay", "restart"],
     description: "Replay the current item",
+  },
+  {
+    id: "recover",
+    label: "Recover Playback",
+    aliases: ["recover", "fix", "repair", "retry-playback"],
+    description: "Run the safest recovery action for the current playback problem",
+  },
+  {
+    id: "streams",
+    label: "Streams",
+    aliases: ["streams", "stream", "variants"],
+    description: "Choose source, quality, audio, or subtitle stream details",
   },
   {
     id: "source",
@@ -268,6 +282,15 @@ function resolveCommandState(
     state.playbackStatus === "seeking" ||
     state.playbackStatus === "stalled";
   const hasOverlay = state.activeModals.length > 0;
+  const hasStreamCandidates = Boolean(state.stream?.providerResolveResult?.streams.length);
+  const playbackCanRecover =
+    state.playbackStatus === "loading" ||
+    state.playbackStatus === "ready" ||
+    state.playbackStatus === "buffering" ||
+    state.playbackStatus === "seeking" ||
+    state.playbackStatus === "stalled" ||
+    state.playbackStatus === "playing" ||
+    state.playbackStatus === "error";
 
   switch (id) {
     case "search":
@@ -354,6 +377,29 @@ function resolveCommandState(
       }
       return { enabled: true };
 
+    case "recover":
+      if (!playbackCanRecover) {
+        return {
+          enabled: false,
+          reason: "Start playback before recovery controls are available.",
+        };
+      }
+      return { enabled: true };
+
+    case "streams":
+      if (!hasEpisode) {
+        return {
+          enabled: false,
+          reason: "Start playback before stream selection is available.",
+        };
+      }
+      return hasStreamCandidates
+        ? { enabled: true }
+        : {
+            enabled: false,
+            reason: "No stream choices were exposed for this playback.",
+          };
+
     case "source":
       if (!hasEpisode) {
         return {
@@ -367,7 +413,7 @@ function resolveCommandState(
           reason: "Wait for stream resolution to finish first.",
         };
       }
-      return state.stream?.providerResolveResult?.streams.length
+      return hasStreamCandidates
         ? { enabled: true }
         : {
             enabled: false,
@@ -387,7 +433,7 @@ function resolveCommandState(
           reason: "Wait for stream resolution to finish first.",
         };
       }
-      return state.stream?.providerResolveResult?.streams.length
+      return hasStreamCandidates
         ? { enabled: true }
         : {
             enabled: false,
