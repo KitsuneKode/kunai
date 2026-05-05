@@ -721,7 +721,6 @@ function PlaybackShell({
     rows: 8,
     cols: 18,
     enabled: true,
-    allowKitty: false,
   });
   const showPosterCompanion =
     playbackWide &&
@@ -1623,7 +1622,6 @@ function BrowseShell<T>({
     cols: 24,
     enabled: getShellViewportPolicy("browse", stdout.columns, stdout.rows).wideBrowse,
     debounceMs: 120,
-    allowKitty: false,
   });
 
   const clearResults = () => {
@@ -2034,7 +2032,12 @@ function BrowseShell<T>({
 
             {/* Companion pane */}
             {showCompanion ? (
-              <Box marginLeft={2} flexDirection="column" width={previewWidth}>
+              <Box
+                key={`browse-companion-${selectedIndex}-${selectedOption?.label ?? "none"}`}
+                marginLeft={2}
+                flexDirection="column"
+                width={previewWidth}
+              >
                 <Box>
                   <Badge label="selection preview" />
                   {selectedOption?.previewImageUrl ? (
@@ -2080,14 +2083,13 @@ function BrowseShell<T>({
                   {truncateLine(companionPanel.title, previewWidth)}
                 </Text>
                 {companionPanel.badges.length > 0 && !ultraCompact ? (
-                  <Box marginTop={1} flexWrap="wrap">
-                    {companionPanel.badges.map((badge) => (
-                      <Badge
-                        key={`${selectedOption?.label ?? "selected"}-${badge.label}`}
-                        label={truncateLine(badge.label, Math.max(12, previewWidth - 8))}
-                        tone={badge.tone}
-                      />
-                    ))}
+                  <Box marginTop={1}>
+                    <Text color={palette.gray}>
+                      {truncateLine(
+                        companionPanel.badges.map((badge) => badge.label).join("  ·  "),
+                        previewWidth,
+                      )}
+                    </Text>
                   </Box>
                 ) : null}
                 {previewBodyLines.length > 0 ? (

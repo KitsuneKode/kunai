@@ -123,6 +123,29 @@ function replaceRange(value: string, start: number, end: number, replacement = "
   return `${value.slice(0, start)}${replacement}${value.slice(end)}`;
 }
 
+function sanitizePrintableInput(input: string): string {
+  return stripCsiSequences(input).replace(/^\[[:?>]?\d+(?:;\d+)*c$/u, "");
+}
+
+function stripCsiSequences(input: string): string {
+  const escape = String.fromCharCode(27);
+  let output = "";
+  for (let index = 0; index < input.length; index++) {
+    if (input[index] !== escape || input[index + 1] !== "[") {
+      output += input[index];
+      continue;
+    }
+
+    index += 2;
+    while (index < input.length) {
+      const code = input.charCodeAt(index);
+      if (code >= 0x40 && code <= 0x7e) break;
+      index++;
+    }
+  }
+  return output;
+}
+
 export function createLineEditorState(value = ""): LineEditorState {
   return {
     value,
@@ -138,7 +161,8 @@ export function applyLineEditorInput(
 ): LineEditorResult {
   const cursor = clampCursor(state.value, state.cursor);
   const current: LineEditorState = { ...state, cursor };
-  const lowerInput = input.toLowerCase();
+  const safeInput = sanitizePrintableInput(input);
+  const lowerInput = safeInput.toLowerCase();
 
   if (key.return) {
     return { state: current, handled: true, submitted: true, redrew: false };
@@ -289,11 +313,14 @@ export function applyLineEditorInput(
     !key.tab &&
     !key.escape
   ) {
+    if (!safeInput) {
+      return { state: current, handled: true, submitted: false, redrew: false };
+    }
     return {
       state: {
         ...current,
-        value: replaceRange(current.value, cursor, cursor, input),
-        cursor: cursor + input.length,
+        value: replaceRange(current.value, cursor, cursor, safeInput),
+        cursor: cursor + safeInput.length,
       },
       handled: true,
       submitted: false,

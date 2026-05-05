@@ -180,10 +180,10 @@ async function renderChafa(data: ArrayBuffer, rows: number, cols: number): Promi
   );
   await Bun.write(tmpPath, data);
   try {
-    const proc = Bun.spawn(
-      ["chafa", "--size", `${cols}x${rows}`, "--format", "symbols", "--colors", "full", tmpPath],
-      { stdout: "pipe", stderr: "pipe" },
-    );
+    const proc = Bun.spawn(buildChafaArgs(tmpPath, rows, cols), {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const art = await new Response(proc.stdout).text();
     await proc.exited;
     if (!art.trim()) return { kind: "none" };
@@ -198,6 +198,28 @@ async function renderChafa(data: ArrayBuffer, rows: number, cols: number): Promi
       // best-effort cleanup
     }
   }
+}
+
+export function buildChafaArgs(tmpPath: string, rows: number, cols: number): string[] {
+  return [
+    "chafa",
+    "--probe=off",
+    "--polite=on",
+    "--passthrough=none",
+    "--animate=off",
+    "--exact-size=on",
+    "--stretch",
+    "--work=9",
+    "--symbols",
+    "block+border+braille",
+    "--size",
+    `${cols}x${rows}`,
+    "--format",
+    "symbols",
+    "--colors",
+    "full",
+    tmpPath,
+  ];
 }
 
 export async function renderPoster(

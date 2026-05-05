@@ -33,6 +33,7 @@ export function usePosterPreview(
 
     let cancelled = false;
     setPosterState("loading");
+    setPoster({ kind: "none" });
     const timer = setTimeout(() => {
       fetchPoster(url, { rows, cols, variant, allowKitty })
         .then((result) => {

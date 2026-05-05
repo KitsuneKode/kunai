@@ -76,4 +76,14 @@ describe("line editor", () => {
     expect(result.handled).toBe(false);
     expect(result.state.value).toBe("query");
   });
+
+  test("ignores terminal device-attribute replies leaked into stdin", () => {
+    let state = createLineEditorState("Breaking bad");
+
+    state = edit(state, "\x1b[?62;22;52c", {});
+    expect(state.value).toBe("Breaking bad");
+
+    state = edit(state, "[:62;22;52c", {});
+    expect(state.value).toBe("Breaking bad");
+  });
 });
