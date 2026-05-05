@@ -1,0 +1,72 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in Kunai
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Before submitting, please run `/ export-diagnostics` inside the Kunai shell — the output is the single most helpful thing you can include.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected to happen instead.
+      placeholder: "When I do X, Y happens. I expected Z."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps to reproduce the issue.
+      placeholder: |
+        1. Run `kunai -S "Show Name"`
+        2. Select result
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics output
+      description: |
+        Run `/ export-diagnostics` inside the Kunai shell and paste the output here.
+        If the shell won't start, include the terminal output and any `logs.txt` content.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "e.g. Arch Linux, Ubuntu 24.04, macOS 14, Windows 11"
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal emulator
+      placeholder: "e.g. Kitty 0.35, Ghostty 1.0, Alacritty, WezTerm, iTerm2"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Kunai version
+      placeholder: "e.g. 0.3.1 or git SHA"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant — screenshots, `--debug` output, related issues.
+    validations:
+      required: false

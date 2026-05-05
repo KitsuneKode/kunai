@@ -1,0 +1,58 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Kunai
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are welcome. The more clearly you describe the problem you're trying to solve, the easier it is to act on.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation that prompted this request. What can't you do today, or what's frustrating about how it currently works?
+      placeholder: "When I try to do X, I have to Y, which is annoying because Z."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to see? A new command, a different shell behavior, a new provider, a flag — be as specific as you can.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Are there workarounds you've tried? Other tools that handle this well?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area does this touch?
+      options:
+        - Shell / UI
+        - Playback (mpv, stream, quality)
+        - Providers
+        - Subtitles
+        - Watch history
+        - Install / setup
+        - Platform parity (macOS / Windows)
+        - CLI flags
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, mockups, links to similar tools, or anything else helpful.
+    validations:
+      required: false

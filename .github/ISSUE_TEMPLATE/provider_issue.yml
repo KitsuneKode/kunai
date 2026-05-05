@@ -1,0 +1,85 @@
+name: Provider Issue
+description: Report a broken provider or stream that isn't playing
+labels: ["provider", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Provider issues are usually caused by upstream site changes. A report with diagnostics output and exact reproduction steps makes the fix much faster.
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider ID
+      description: The provider ID shown in the source picker (e.g. `vidking`, `cineby`, `allanime`).
+      placeholder: "e.g. vidking"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: content_type
+    attributes:
+      label: Content type
+      options:
+        - Movie
+        - Series
+        - Anime
+    validations:
+      required: true
+
+  - type: input
+    id: title
+    attributes:
+      label: Title
+      description: The movie or series title you were trying to watch.
+      placeholder: "e.g. Breaking Bad S02E04"
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Exact command used
+      placeholder: 'e.g. kunai -S "Breaking Bad" or kunai -i 1396 -t series'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What went wrong?
+      options:
+        - Stream never loaded (spinner hung)
+        - Stream loaded but mpv showed a black screen
+        - Stream played but immediately stopped
+        - Provider was skipped / fell back automatically
+        - Wrong episode / wrong content played
+        - Subtitles missing or broken
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics output
+      description: Run `/ export-diagnostics` inside the shell and paste here. This is the most important field.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and terminal
+      placeholder: "e.g. Arch Linux / Kitty 0.35"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else relevant — `--debug` output, network conditions, VPN, etc.
+    validations:
+      required: false

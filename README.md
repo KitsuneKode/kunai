@@ -1,47 +1,65 @@
-# Kunai Beta 🥷
+<div align="center">
 
-A terminal-first Bun CLI for finding playable streams, capturing `.m3u8` URLs with Playwright, and launching them in `mpv`.
+# 🥷 Kunai
 
-Supports movie, series, and anime flows through a unified Ink shell. No API keys required.
+**Watch movies, series, and anime — without leaving your terminal.**
 
-Kunai is currently in beta: usable, but still actively being hardened across UI flow, provider support, subtitles, and diagnostics.
+Search anything. Stream in mpv. Auto-skip intros. Resume where you left off.
 
-Kunai does not host, store, upload, mirror, or distribute any video files on its own servers. All playable media, manifests, subtitles, posters, and related assets are provided by non-affiliated third-party services and infrastructure.
+[![License](https://img.shields.io/github/license/kitsunekode/kunai?style=flat-square&color=black)](LICENSE)
+[![Bun](https://img.shields.io/badge/runtime-bun-f472b6?style=flat-square)](https://bun.sh)
+[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-555?style=flat-square)](#prerequisites)
+[![Beta](https://img.shields.io/badge/status-beta-orange?style=flat-square)](#known-issues-beta)
+
+</div>
+
+---
+
+Kunai is a terminal-first CLI that intercepts `.m3u8` streams from embed players using Playwright and hands them off to mpv — giving you a full watch experience in a persistent Ink shell, with no browser tabs, no accounts, and no bloat.
+
+Movies, TV series, and anime. All in one place. All in your terminal.
+
+> Kunai does not host, store, or distribute any video content. All streams are served by non-affiliated third-party providers.
+
+---
 
 ## ✨ Features
 
-- **Ink shell UI** — command-aware terminal app flow instead of stacked prompts
-- **Capability-aware startup checks** — always verifies required tools, but only re-shows full install guidance on first run, upgrade, or when your system state regresses
-- **Watch history** — remembers where you stopped, offers to resume or jump to next episode
-- **Background pre-fetch** — next episode scrapes while you watch the current one; `[n]` is instant
-- **Poster preview** — shows the TMDB poster inline (Kitty / Ghostty only, no extra tools needed)
-- **Structured pickers** — search results, providers, subtitles, seasons, episodes, and settings stay inside the shell
-- **Subtitle support** — wyzie subtitle API with in-shell subtitle track picking
-- **Ad blocking** — 20+ ad/tracker domains blocked at the network level via Playwright `route()`
-- **Headless by default** — runs the browser invisibly; use `--no-headless` if a provider blocks it
-- **Auto-provider fallback** — if the primary provider fails, silently tries the other
-- **1-hour stream cache** — re-watching or resuming skips the scraper entirely
-- **npm/package ready** — build, pack, and global-link scripts for local and release workflows
+### Core experience
+- **Persistent Ink shell** — search, browse, pick, and play without leaving the terminal
+- **Watch history** — remembers exactly where you stopped; offers to resume or jump to the next episode
+- **Background pre-fetch** — next episode is scraped while you watch; pressing `n` is instant
+- **1-hour stream cache** — resuming or rewatching skips the scraper entirely
+- **Poster preview** — TMDB poster rendered inline (Kitty / Ghostty terminals, no extra tools)
 
-## ✅ Supported now
+### Playback
+- **mpv integration** — hands streams off to mpv with a persistent IPC bridge
+- **Source + quality switching** — `o` / `k` mid-playback to change stream source or quality
+- **Subtitle support** — Wyzie subtitle API with in-shell track picker and late attach
+- **Auto-provider fallback** — silently tries the next provider when one fails
 
-Use this as the current "works today" contract for beta users.
+### Anime
+- **Auto-skip intro/credits** — AniSkip chip with 3-second countdown, press `b` to override
+- **Anime mode** — `a` to toggle; dedicated provider registry for anime flows
+- **Dub/sub support** — in-shell language picker per title
 
-- **Runtime**: Bun-based CLI on Linux (primary), macOS/Windows supported with caveats
-- **Playback**: `mpv` required and fail-fast checked at startup
-- **Providers**: series/movie + anime flows through current provider registry
-- **Subtitles**: provider + Wyzie merge path with in-shell picker and late attach
-- **Controls**: replay, next/previous, source picker, quality picker, refresh/fallback
-- **Diagnostics**: local diagnostics buffer + export + issue reporting command path
+### Developer-friendly
+- **Ad blocking** — 20+ ad/tracker domains blocked at the network level via `playwright.route()`
+- **Headless by default** — `--no-headless` if a provider needs it
+- **Built-in diagnostics** — `/ export-diagnostics` + `/ report-issue` from the shell
+- **Debug logging** — `--debug` flag for full scrape trace
+- **Structured test tree** — unit, integration, live provider checks, and VHS tapes
 
-## 🛠️ Prerequisites
+---
 
-| Tool                                       | Required | Notes                       |
-| ------------------------------------------ | -------- | --------------------------- |
-| [Bun](https://bun.sh/)                     | ✅       | Runtime and package manager |
-| [mpv](https://mpv.io/)                     | ✅       | Media player                |
-| Playwright Chromium                         | Optional | Needed for browser/embed providers |
-| Kitty / Ghostty terminal                   | Optional | Poster image preview        |
+## Prerequisites
+
+| Tool | Required | Notes |
+|------|----------|-------|
+| [Bun](https://bun.sh) | ✅ | Runtime and package manager |
+| [mpv](https://mpv.io) | ✅ | Media player |
+| Playwright Chromium | Optional | Required for browser/embed providers |
+| Kitty or Ghostty | Optional | Poster image preview |
 
 Install mpv:
 
@@ -49,14 +67,16 @@ Install mpv:
 # Arch
 sudo pacman -S mpv
 
-# Debian/Ubuntu
+# Debian / Ubuntu
 sudo apt install mpv
 
 # macOS
 brew install mpv
 ```
 
-## 📦 Installation
+---
+
+## Quick Start
 
 ```bash
 git clone https://github.com/kitsunekode/kunai.git
@@ -66,175 +86,181 @@ bunx playwright install chromium
 bun run link:global
 ```
 
-### Verify your setup
+Then launch:
 
 ```bash
-# quick confidence checks before first real run
-bun run typecheck
-bun run lint
-bun run test
-```
-
-If those pass, launch:
-
-```bash
+kunai
+# or
 bun run dev
 ```
 
-## 💻 Usage
+You'll land in the persistent shell. Search for anything, pick a result, choose a provider, and stream.
 
-### Fully interactive (recommended)
+---
+
+## Usage
+
+### Interactive (recommended)
 
 ```bash
-bun run dev
 kunai
 ```
 
-You'll be guided through:
+The shell guides you through search → result → provider → season/episode → playback, all without leaving the terminal.
 
-1. Search by title inside the Ink shell
-2. Pick the exact result from an in-shell list
-3. Choose provider, settings, subtitles, season, and episode from shell pickers
-4. Launch playback in `mpv`
-5. Return to the same shell for replay, provider changes, settings, and next actions
-
-For a fuller product and scope overview, see [.docs/experience-overview.md](.docs/experience-overview.md).
-
-### Flags and automation
-
-All flags are optional. The **canonical** flag list (including `-m`, `-q`, `--jump`, mpv passthrough, and what is shell-only) is in [.docs/cli-reference.md](.docs/cli-reference.md) — use that file as the source for an MDX “Usage” section.
+### CLI flags
 
 ```bash
-bun run dev -- -S "Breaking Bad"            # pre-fill search query
-bun run dev -- -S "Dune" --jump 1          # auto-pick first search result
-bun run dev -- -S "Dune" -q                # same as --jump 1 when using -S
-bun run dev -- -m                          # minimal shell chrome this session
-bun run dev -- -i 1396 -t series           # bootstrap TMDB series id
-bun run dev -- -i 438631 -t movie          # bootstrap TMDB movie id
-bun run dev -- -a                          # start in anime mode
-bun run dev -- --debug                     # debug logging
+kunai -S "Breaking Bad"           # pre-fill the search query
+kunai -S "Dune" -q                # search + auto-pick first result
+kunai -S "Dune" --jump 1          # same as -q
+kunai -a                          # start in anime mode
+kunai -m                          # minimal shell chrome
+kunai -i 1396 -t series           # bootstrap with a TMDB series ID
+kunai -i 438631 -t movie          # bootstrap with a TMDB movie ID
+kunai --debug                     # debug logging
 ```
 
-**Note:** resume, history, season/episode, and default provider are chosen **inside the Ink shell** (not separate CLI flags today). Diagnostics export: `/ export-diagnostics` in the shell.
+> Season, episode, subtitles, history, and resume are all handled **inside the shell**, not via flags.
 
-## 🧭 Shell controls
+---
 
-The main flow stays inside the same shell:
+## Shell Controls
 
-- `/` opens command mode
-- `c` opens settings
-- `a` switches anime/series mode
-- `o` opens source selection from playback
-- `k` opens quality selection from playback
-- `n` / `p` / `s` handle episode navigation for series
-- `q` cancels the current shell or exits where appropriate
+### Browse / playback shell
 
-During **mpv** playback (persistent session, non-Windows), AniSkip-style segments show a bottom-right **skip chip** for ~3 seconds: with **Skip intros** (etc.) on, it counts down and **auto-skips** after 3s; with it off, the chip **auto-hides** while you can still press **`b`** or **click** the chip to skip. `N` / `P` in the player window request next/previous episode from the shell, and `K` opens quality switching.
+| Key | Action |
+|-----|--------|
+| `/` | Open command mode |
+| `c` | Settings |
+| `a` | Toggle anime / series mode |
+| `n` / `p` | Next / previous episode |
+| `o` | Source picker (mid-playback) |
+| `k` | Quality picker (mid-playback) |
+| `s` | Reload subtitles |
+| `b` | Skip active intro/credits segment |
+| `r` | Refresh stream |
+| `f` | Fallback to next provider |
+| `q` | Cancel / exit |
 
-Issue reporting: run `/ export-diagnostics` then `/ report-issue` from the shell.
+### mpv bridge (inside mpv window)
 
-### Playback controls quick map
+| Key | Action |
+|-----|--------|
+| `N` / `P` | Request next / previous episode from shell |
+| `K` | Open quality picker |
+| `B` | Skip active segment when chip is visible |
 
-- Shell playback hotkeys: `q` stop, `r` refresh, `f` fallback, `o` source picker, `k` quality picker, `s` subtitle reload, `b` skip active segment
-- mpv bridge hotkeys: `N` next episode, `P` previous episode, `K` quality picker intent, `B` skip active segment when chip is visible
+### AniSkip chip
 
-## 📼 Watch History
+During anime playback a **skip chip** appears in the bottom-right corner at intro/credits segments. With **Skip intros** on, it auto-skips after a 3-second countdown. With it off, the chip auto-hides — press `b` to skip manually anytime.
 
-History is stored in the OS app data directory as `kunai-data.sqlite`.
+---
 
-- **Unfinished episode** → prompted to resume from exact timestamp or restart
-- **Finished episode** (>85% watched) → prompted to jump to next episode
-- **No history** → starts from S1E1
+## Watch History
+
+History lives in `kunai-data.sqlite` (OS app data dir).
+
+| Situation | Behaviour |
+|-----------|-----------|
+| Unfinished episode | Offer to resume from exact timestamp or restart |
+| Finished episode (>85% watched) | Offer to jump to next episode |
+| No history | Start from S1E1 |
+
+---
+
+## Roadmap
+
+### Now (beta hardening)
+
+- [x] Persistent Ink shell with fullscreen viewport
+- [x] Watch history with SQLite backend
+- [x] Background pre-fetch for instant next episode
+- [x] AniSkip intro/credits chip with auto-skip
+- [x] Source + quality switching mid-playback
+- [x] Wyzie subtitle API with in-shell picker
+- [x] Built-in diagnostics export + issue report command
+- [x] Stream cache (1-hour TTL, SQLite)
+- [x] Playwright ad blocking (20+ domains)
+- [ ] Improve macOS / Windows parity and publish OS-specific caveats
+- [ ] Clearer first-run guidance for Playwright-backed providers
+- [ ] Broader smoke automation for source/quality and diagnostics flows
+
+### Next (open-source usability)
+
+- [ ] Compatibility matrix for terminals, OS, and player runtimes
+- [ ] Release notes template and changelog discipline per beta cut
+- [ ] Contributor onboarding docs for provider debugging and test fixtures
+
+### Later (V2 / V3)
+
+- [ ] Debrid integration (Real-Debrid, AllDebrid)
+- [ ] Web companion and desktop app
+- [ ] Remote sync for watch history
+- [ ] YouTube provider (yt-dlp + Invidious)
+- [ ] More provider coverage and hardening
+
+---
+
+## Project Structure
+
+```
+apps/cli/src/main.ts            canonical runtime entrypoint
+apps/cli/src/app-shell/         Ink shell, command bar, pickers, settings, history
+apps/cli/src/search.ts          TMDB-backed search service
+apps/cli/src/scraper.ts         Playwright stream + subtitle interception
+apps/cli/src/mpv.ts             mpv launcher with Lua position IPC
+apps/cli/src/history.ts         watch history persistence
+apps/cli/src/subtitle.ts        Wyzie subtitle API
+apps/cli/src/tmdb.ts            TMDB season/episode metadata
+apps/cli/src/session-flow.ts    provider/session helpers
+apps/experiments/               private provider research lab (not production)
+```
+
+---
 
 ## Known Issues (Beta)
 
-- Some providers only expose a single stream candidate, so source/quality pickers may show one option.
-- Browser-backed providers require Playwright Chromium; startup warns and runs in degraded mode without it.
-- If playback diagnostics are unclear, use `/ export-diagnostics` then `/ report-issue`.
-- macOS/Windows behavior can differ from Linux on provider reliability and terminal rendering; please include OS + terminal details in issue reports.
+- Some providers only expose one stream candidate — source/quality pickers may show a single option.
+- Playwright Chromium is required for browser-backed providers; startup warns and degrades gracefully without it.
+- macOS / Windows behavior can differ from Linux on provider reliability and terminal rendering. Include your OS and terminal in bug reports.
 
-## 🗺️ Roadmap / TODO
+If playback breaks: run `/ export-diagnostics` then `/ report-issue` from inside the shell.
 
-This section tracks future work in plain language for users and contributors.
+---
 
-### Near-term TODO (beta hardening)
+## Contributing
 
-- [ ] Broaden Linux smoke automation for source/quality and diagnostics flows
-- [ ] Improve macOS/Windows parity coverage and publish OS-specific caveats
-- [ ] Expand provider health telemetry surfaced in diagnostics panels
-- [ ] Add more deterministic tests around provider fallback + stream reselection
-- [ ] Ship clearer first-run guidance for optional browser-backed providers
+Contributions are welcome — especially provider fixes, test coverage, and platform parity work.
 
-### Mid-term TODO (open-source usability)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, PR expectations, and how to add changesets.
 
-- [ ] Add contributor onboarding docs for provider debugging and test fixtures
-- [ ] Add release notes template and changelog discipline for each beta cut
-- [ ] Add reproducible bug report template with diagnostics attachment checklist
-- [ ] Publish a compatibility matrix for terminals, OS, and player runtime behavior
+**Good first areas:**
+- Reproduce and fix a known issue from the [issue tracker](https://github.com/kitsunekode/kunai/issues)
+- Add test coverage for pure functions (formatters, URL builders, cache TTL logic)
+- Improve macOS or Windows install / runtime documentation
+- Fix a provider reporting breakage
 
-## 🗂️ Project Structure
+---
 
-```text
-apps/cli/src/main.ts             canonical runtime entrypoint
-apps/cli/index.ts                temporary compatibility wrapper into apps/cli/src/main.ts
-apps/cli/src/app-shell/*         Ink shell, command UI, settings/history/picker workflows
-apps/cli/src/search.ts           db.videasy/TMDB-backed search
-apps/cli/src/scraper.ts          Playwright stream + subtitle interception
-apps/cli/src/mpv.ts              mpv launcher with Lua position IPC
-apps/cli/src/history.ts          watch history persistence
-apps/cli/src/image.ts            Kitty/Ghostty poster preview
-apps/cli/src/subtitle.ts         wyzie subtitle API
-apps/cli/src/tmdb.ts             season/episode metadata
-apps/cli/src/session-flow.ts     start-episode and provider/session helpers
-apps/experiments/*               private provider research lab
-apps/experiments/scratchpads/*   raw provider probes and reverse-engineering notes
-kunai-cache.sqlite               local stream cache in the OS cache directory
-logs.txt                         scrape log
-```
+## Disclaimer
 
-## 📦 Release workflow
+Kunai is a client-side playback tool. It does not host, store, upload, mirror, or distribute video content. All streams, manifests, subtitles, posters, and metadata are served by non-affiliated third-party providers.
 
-```bash
-bun run check
-bun run build
-bun run pkg:check
-```
+If you believe specific content is infringing, direct DMCA notices to the actual hosting provider, not this repository.
 
-Useful local scripts:
+Use responsibly and in accordance with the laws and terms applicable in your jurisdiction.
 
-```bash
-bun run link:global
-bun run unlink:global
-bun run relink:global
-```
+---
 
-## 🤝 Open-source workflow
+## License
 
-If you want this repo to stay usable for everyone, this is the expected loop:
+[MIT](LICENSE) — Manash Pratim Bhuyan (kitsunekode)
 
-1. Open an issue with `/ export-diagnostics` output when reporting runtime bugs.
-2. Keep PRs focused and include test evidence (`bun run typecheck`, `bun run lint`, `bun run test`).
-3. Prefer additive docs updates when behavior changes (especially startup checks, hotkeys, or provider caveats).
-4. For provider breakages, include the provider id, exact command, OS, and terminal in reports.
+---
 
-## 🌐 Provider URL Patterns
+<div align="center">
 
-| Provider | Type   | Pattern                                                                                               |
-| -------- | ------ | ----------------------------------------------------------------------------------------------------- |
-| VidKing  | Movie  | `https://www.vidking.net/embed/movie/{id}?autoPlay=true`                                              |
-| VidKing  | Series | `https://www.vidking.net/embed/tv/{id}/{s}/{e}?autoPlay=true&episodeSelector=false&nextEpisode=false` |
-| Cineby   | Movie  | `https://www.cineby.sc/movie/{id}?play=true`                                                          |
-| Cineby   | Series | `https://www.cineby.sc/tv/{id}/{s}/{e}?play=true`                                                     |
+Built with [Bun](https://bun.sh) · [Ink](https://github.com/vadimdemedes/ink) · [Playwright](https://playwright.dev) · [mpv](https://mpv.io)
 
-## ⚠️ Disclaimer
-
-Kunai is a client-side tool for research, automation, and playback handoff.
-
-- This app does not store any video files on its server.
-- This project does not host, store, upload, mirror, or distribute video content itself.
-- All playable content, streams, manifests, subtitles, posters, metadata, and related assets are provided by non-affiliated third-party sites and infrastructure.
-- Provider names, media titles, posters, metadata, and playback endpoints remain the property and responsibility of their respective owners and providers.
-- If you believe specific content is infringing, copyright or DMCA-style notices should be directed to the actual hosting or serving provider, not this repository.
-- The project maintainers are not the content host and do not control the third-party media servers that upstream providers expose.
-
-Use the project responsibly and in accordance with the laws and terms that apply in your jurisdiction.
+</div>
