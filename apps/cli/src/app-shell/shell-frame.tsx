@@ -35,8 +35,8 @@ export function ShellFrame({
   onResolve: (action: ShellAction) => void;
   children: React.ReactNode;
 }) {
-  useInput((input) => {
-    if (input === "\x03") {
+  useInput((input, key) => {
+    if ((input === "c" && key.ctrl) || input === "\x03") {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(0);
     }
@@ -131,6 +131,10 @@ export function InputField({
 
   useInput((input, key) => {
     if (!focus) return;
+    if ((input === "c" && key.ctrl) || input === "\x03") {
+      if (process.stdin.isTTY) process.stdin.unref();
+      process.exit(0);
+    }
     if (input === "/" || key.escape || key.upArrow || key.downArrow || key.tab) {
       return;
     }

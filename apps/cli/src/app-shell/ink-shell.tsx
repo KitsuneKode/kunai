@@ -288,11 +288,15 @@ function AppRoot({ container }: { container: Container }) {
   const rootContent = useRootContentSession();
   const { stdout } = useStdout();
 
-  // Global Ctrl+C handler — raw mode suppresses SIGINT, so we catch \x03 here.
-  // This must live in the always-mounted root so it fires regardless of which
-  // sub-shell is active.
-  useInput((input) => {
-    if (input === "\x03" || input === "\x04") {
+  // Global Ctrl+C / Ctrl+D handler. Ink normalizes control characters to their
+  // letter name with key.ctrl=true, so we check both forms for safety.
+  useInput((input, key) => {
+    if (
+      (input === "c" && key.ctrl) ||
+      (input === "d" && key.ctrl) ||
+      input === "\x03" ||
+      input === "\x04"
+    ) {
       stdinManager.cleanup();
       process.exit(0);
     }
@@ -1316,8 +1320,7 @@ function ListShell<T>({
   });
 
   useInput((input, key) => {
-    // Ctrl+C handling
-    if (input === "\x03") {
+    if ((input === "c" && key.ctrl) || input === "\x03") {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(0);
     }
@@ -1766,7 +1769,7 @@ function BrowseShell<T>({
       companionPanel.note,
     );
   useInput((input, key) => {
-    if (input === "\x03") {
+    if ((input === "c" && key.ctrl) || input === "\x03") {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(0);
     }

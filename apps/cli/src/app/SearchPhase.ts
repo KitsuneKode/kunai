@@ -30,7 +30,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
     context: PhaseContext,
   ): Promise<PhaseResult<TitleInfo>> {
     const { container } = context;
-    const { searchRegistry, providerRegistry, stateManager, logger, diagnosticsStore } = container;
+    const {
+      searchRegistry,
+      providerRegistry,
+      stateManager,
+      logger,
+      diagnosticsStore,
+      historyStore,
+    } = container;
 
     try {
       const preserveExistingSearch =
@@ -119,12 +126,20 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         const shellRuntime = buildShellRuntimeBindings(container);
+        const historyMap = await historyStore
+          .getAll()
+          .catch(
+            () =>
+              ({}) as Record<string, import("@/services/persistence/HistoryStore").HistoryEntry>,
+          );
         const outcome = await openBrowseShell({
           mode: currentState.mode,
           provider: currentState.provider,
           ...shellRuntime,
           initialQuery: currentState.searchQuery,
-          initialResults: currentState.searchResults.map(toBrowseResultOption),
+          initialResults: currentState.searchResults.map((r) =>
+            toBrowseResultOption(r, historyMap[r.id] ?? null),
+          ),
           initialResultSubtitle:
             currentState.searchResults.length > 0
               ? `${currentState.searchResults.length} results · previous search`
@@ -177,8 +192,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
             stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
 
+            const freshHistoryMap = await historyStore
+              .getAll()
+              .catch(
+                () =>
+                  ({}) as Record<
+                    string,
+                    import("@/services/persistence/HistoryStore").HistoryEntry
+                  >,
+              );
             return {
-              options: results.map(toBrowseResultOption),
+              options: results.map((r) => toBrowseResultOption(r, freshHistoryMap[r.id] ?? null)),
               subtitle: `${results.length} results · ${search.sourceName}`,
               emptyMessage: "No results found. Adjust the query and try again.",
             };

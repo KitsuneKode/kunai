@@ -109,7 +109,7 @@ export function LoadingShell({
   const { stdout } = useStdout();
 
   useInput((input, key) => {
-    if (input === "\x03") {
+    if ((input === "c" && key.ctrl) || input === "\x03") {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(0);
     }

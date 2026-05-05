@@ -1,5 +1,10 @@
 import type { BrowseShellOption } from "@/app-shell/types";
 import type { SearchResult } from "@/domain/types";
+import {
+  formatTimestamp,
+  isFinished,
+  type HistoryEntry,
+} from "@/services/persistence/HistoryStore";
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
 
@@ -14,12 +19,32 @@ function formatRating(rating: number | null | undefined): string | undefined {
   return `${rating.toFixed(1)}/10 TMDB`;
 }
 
-export function toBrowseResultOption(result: SearchResult): BrowseShellOption<SearchResult> {
+function buildHistoryBadge(entry: HistoryEntry | null | undefined): string | undefined {
+  if (!entry) return undefined;
+  const ep =
+    entry.type === "series"
+      ? `S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
+      : null;
+  if (isFinished(entry)) {
+    return ep ? `Watched · ${ep}` : "Watched";
+  }
+  const ts = entry.timestamp > 10 ? formatTimestamp(entry.timestamp) : null;
+  if (ep && ts) return `Resume · ${ep} · ${ts}`;
+  if (ep) return `Started · ${ep}`;
+  return "In progress";
+}
+
+export function toBrowseResultOption(
+  result: SearchResult,
+  historyEntry?: HistoryEntry | null,
+): BrowseShellOption<SearchResult> {
+  const historyBadge = buildHistoryBadge(historyEntry);
   const meta = [
     result.type === "series" ? "Series" : "Movie",
     result.year || undefined,
     result.episodeCount ? `${result.episodeCount} episodes` : undefined,
     formatRating(result.rating),
+    historyBadge,
   ].filter((value): value is string => Boolean(value));
   const posterUrl = toPosterUrl(result.posterPath);
 
@@ -27,20 +52,29 @@ export function toBrowseResultOption(result: SearchResult): BrowseShellOption<Se
     value: result,
     label: result.year ? `${result.title} (${result.year})` : result.title,
     detail: `${result.type === "series" ? "Series" : "Movie"}${
-      result.overview ? ` · ${result.overview}` : ""
-    }`,
+      historyBadge ? ` · ${historyBadge}` : ""
+    }${result.overview ? ` · ${result.overview}` : ""}`,
     previewTitle: result.title,
     previewMeta: meta,
     previewFacts: [
+      ...(historyEntry
+        ? [
+            {
+              label: "Watch history",
+              detail: historyBadge ?? "Watched",
+              tone: isFinished(historyEntry) ? ("success" as const) : ("neutral" as const),
+            },
+          ]
+        : []),
       {
         label: "Provider detail page",
         detail: result.overview ? "Overview available" : "Provider did not return overview text",
-        tone: result.overview ? "success" : "warning",
+        tone: result.overview ? ("success" as const) : ("warning" as const),
       },
       {
         label: "Image source",
         detail: posterUrl ? "Poster URL available" : "No poster URL returned",
-        tone: posterUrl ? "success" : "warning",
+        tone: posterUrl ? ("success" as const) : ("warning" as const),
       },
       ...(typeof result.popularity === "number" && result.popularity > 0
         ? [
