@@ -13,6 +13,40 @@ type QualityOption = {
   readonly detail?: string;
 };
 
+type StreamOption = {
+  readonly value: string;
+  readonly label: string;
+  readonly detail?: string;
+};
+
+export function buildStreamPickerOptions(stream: StreamInfo): readonly StreamOption[] {
+  const result = stream.providerResolveResult;
+  if (!result) return [];
+
+  const sourcesById = new Map((result.sources ?? []).map((source) => [source.id, source]));
+
+  const options = result.streams
+    .filter((candidate) => typeof candidate.url === "string" && candidate.url.length > 0)
+    .map((candidate) => {
+      const source = candidate.sourceId ? sourcesById.get(candidate.sourceId) : undefined;
+      const sourceLabel = source?.label ?? source?.host ?? candidate.sourceId ?? result.providerId;
+      const qualityLabel = candidate.qualityLabel ?? candidate.container ?? candidate.id;
+      const selected = candidate.id === result.selectedStreamId;
+      return {
+        value: candidate.id,
+        label: selected
+          ? `${sourceLabel}  ·  ${qualityLabel}  ·  current`
+          : `${sourceLabel}  ·  ${qualityLabel}`,
+        detail: describeStreamCandidateDetail(candidate),
+        selected,
+        rank: candidate.qualityRank ?? 0,
+      };
+    })
+    .sort((left, right) => Number(right.selected) - Number(left.selected) || right.rank - left.rank);
+
+  return options.map(({ selected: _selected, rank: _rank, ...option }) => option);
+}
+
 export function buildSourcePickerOptions(stream: StreamInfo): readonly SourceOption[] {
   const result = stream.providerResolveResult;
   if (!result) return [];
@@ -102,6 +136,7 @@ export function applyPreferredStreamSelection(
     providerResolveResult: {
       ...result,
       selectedStreamId: selected.id,
+      selectedSourceId: selected.sourceId ?? result.selectedSourceId,
     },
   };
 }

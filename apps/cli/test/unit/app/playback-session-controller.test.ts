@@ -76,12 +76,28 @@ describe("resolvePlaybackResultDecision", () => {
     ).toBe("user");
   });
 
-  test("keeps refresh and fallback decisions explicit without forcing interruption", () => {
+  test("keeps refresh recover and fallback decisions explicit without forcing interruption", () => {
     const session = createPlaybackSessionState({ autoNextEnabled: true });
     expect(
       resolvePlaybackResultDecision({
         result: baseResult,
         controlAction: "refresh",
+        session,
+      }),
+    ).toMatchObject({
+      session: {
+        autoplayPauseReason: null,
+        autoplayPaused: false,
+      },
+      shouldRefreshSource: true,
+      shouldFallbackProvider: false,
+      shouldTreatAsInterrupted: false,
+    });
+
+    expect(
+      resolvePlaybackResultDecision({
+        result: baseResult,
+        controlAction: "recover",
         session,
       }),
     ).toMatchObject({

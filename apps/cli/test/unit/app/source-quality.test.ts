@@ -4,6 +4,7 @@ import {
   applyPreferredStreamSelection,
   buildQualityPickerOptions,
   buildSourcePickerOptions,
+  buildStreamPickerOptions,
 } from "@/app/source-quality";
 import type { StreamInfo } from "@/domain/types";
 
@@ -127,6 +128,20 @@ test("buildQualityPickerOptions sorts by highest quality first", () => {
 test("buildQualityPickerOptions exposes audio and hard-subtitle language details", () => {
   const options = buildQualityPickerOptions(streamWithCandidates);
   expect(options[0]?.detail).toBe("hls  ·  m3u8  ·  audio ja  ·  hardsub en");
+  expect(options[1]?.detail).toBe("hls  ·  m3u8  ·  audio en");
+});
+
+test("buildStreamPickerOptions combines source quality audio and subtitle details", () => {
+  const options = buildStreamPickerOptions(streamWithCandidates);
+
+  expect(options.map((option) => option.value)).toEqual([
+    "stream-1080",
+    "stream-720",
+    "stream-480-source-b",
+  ]);
+  expect(options[0]?.label).toBe("source-a  ·  1080p  ·  current");
+  expect(options[0]?.detail).toBe("hls  ·  m3u8  ·  audio ja  ·  hardsub en");
+  expect(options[1]?.label).toBe("source-a  ·  720p");
   expect(options[1]?.detail).toBe("hls  ·  m3u8  ·  audio en");
 });
 

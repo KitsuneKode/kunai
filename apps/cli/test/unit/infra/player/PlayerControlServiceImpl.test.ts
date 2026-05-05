@@ -135,6 +135,25 @@ test("PlayerControlServiceImpl records next and previous episode intents as stop
   expect(stoppedCurrentReasons).toEqual(["next-key", "previous-key"]);
 });
 
+test("PlayerControlServiceImpl records stream picker intent as a stop-backed action", async () => {
+  const stoppedCurrentReasons: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+    async stopCurrentFile(reason) {
+      stoppedCurrentReasons.push(reason ?? "");
+    },
+  });
+
+  expect(await service.pickStreamCurrentPlayback("streams-key")).toBe(true);
+  expect(service.consumeLastAction()).toBe("pick-stream");
+  expect(stoppedCurrentReasons).toEqual(["streams-key"]);
+});
+
 test("PlayerControlServiceImpl shows persistent loading overlay before stopCurrentFile when supported", async () => {
   const ordering: string[] = [];
   const service = makeService();

@@ -132,7 +132,7 @@ export function resolvePlaybackResultDecision({
 
   return {
     session: withPauseReason(session, nextPauseReason),
-    shouldRefreshSource: controlAction === "refresh",
+    shouldRefreshSource: controlAction === "refresh" || controlAction === "recover",
     shouldFallbackProvider: controlAction === "fallback",
     shouldTreatAsInterrupted,
   };

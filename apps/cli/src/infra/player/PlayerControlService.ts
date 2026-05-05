@@ -7,6 +7,7 @@ export type PlaybackControlAction =
   | "refresh"
   | "recover"
   | "fallback"
+  | "pick-stream"
   | "pick-source"
   | "pick-quality"
   | "reload-subtitles"
@@ -42,6 +43,7 @@ export interface PlayerControlService {
   refreshCurrentPlayback(reason?: string): Promise<boolean>;
   recoverCurrentPlayback(reason?: string): Promise<boolean>;
   fallbackCurrentPlayback(reason?: string): Promise<boolean>;
+  pickStreamCurrentPlayback(reason?: string): Promise<boolean>;
   reloadCurrentSubtitles(reason?: string): Promise<boolean>;
   attachLateSubtitles(attachment: LateSubtitleAttachment, reason?: string): Promise<boolean>;
   skipCurrentSegment(reason?: string): Promise<boolean>;

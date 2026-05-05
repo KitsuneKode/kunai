@@ -25,6 +25,8 @@ function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | 
       return "Kunai · Recovering playback…";
     case "fallback":
       return "Kunai · Trying another source…";
+    case "pick-stream":
+      return "Kunai · Select a stream in the terminal…";
     case "pick-source":
       return "Kunai · Select a source in the terminal…";
     case "pick-quality":
@@ -235,6 +237,11 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   async pickSourceCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "pick-source";
     return this.stopWithAction("pick-source", reason, true);
+  }
+
+  async pickStreamCurrentPlayback(reason = "user-requested"): Promise<boolean> {
+    this.lastAction = "pick-stream";
+    return this.stopWithAction("pick-stream", reason, true);
   }
 
   async pickQualityCurrentPlayback(reason = "user-requested"): Promise<boolean> {

@@ -16,6 +16,8 @@ export type ShellAction =
   | "toggle-autoplay"
   | "resume"
   | "replay"
+  | "recover"
+  | "streams"
   | "source"
   | "quality"
   | "pick-episode"
@@ -143,6 +145,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "toggle-autoplay":
     case "provider":
     case "replay":
+    case "recover":
+    case "streams":
     case "source":
     case "quality":
     case "pick-episode":

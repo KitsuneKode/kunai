@@ -44,6 +44,7 @@ import {
   applyPreferredStreamSelection,
   buildQualityPickerOptions,
   buildSourcePickerOptions,
+  buildStreamPickerOptions,
 } from "@/app/source-quality";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 import { effectiveFooterHints } from "@/container";
@@ -1021,6 +1022,40 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           }
 
+          if (playbackControlAction === "pick-stream") {
+            const streamOptions = buildStreamPickerOptions(preparedStream);
+            if (streamOptions.length > 0) {
+              const pickedStreamId = await openQualityPicker(
+                streamOptions,
+                buildPickerActionContext({
+                  container,
+                  taskLabel: "Choose stream",
+                }),
+                container,
+              );
+              if (pickedStreamId) {
+                preferredStreamId = pickedStreamId;
+                pendingStartAt = toHistoryTimestamp(
+                  result,
+                  effectiveTiming.current,
+                  config.quitNearEndThresholdMode,
+                );
+                diagnosticsStore.record({
+                  category: "playback",
+                  message: "Stream override selected",
+                  context: {
+                    streamId: pickedStreamId,
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                    resumeSeconds: pendingStartAt,
+                  },
+                });
+                continue;
+              }
+            }
+          }
+
           if (playbackControlAction === "pick-quality") {
             const qualityOptions = buildQualityPickerOptions(preparedStream);
             if (qualityOptions.length > 0) {
@@ -1230,6 +1265,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   "history",
                   "toggle-autoplay",
                   "replay",
+                  "streams",
                   "source",
                   "quality",
                   "pick-episode",
@@ -1344,6 +1380,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 continue postPlayback;
               }
               preferredStreamId = pickedQualityStreamId;
+              pendingStartAt = resumeSeconds;
+              break postPlayback;
+            } else if (routedAction === "streams") {
+              const streamOptions = buildStreamPickerOptions(preparedStream);
+              if (streamOptions.length === 0) {
+                continue postPlayback;
+              }
+              const pickedStreamId = await openQualityPicker(
+                streamOptions,
+                buildPickerActionContext({
+                  container,
+                  taskLabel: "Choose stream",
+                }),
+                container,
+              );
+              if (!pickedStreamId) {
+                continue postPlayback;
+              }
+              preferredStreamId = pickedStreamId;
               pendingStartAt = resumeSeconds;
               break postPlayback;
             } else if (routedAction === "back-to-search") {
