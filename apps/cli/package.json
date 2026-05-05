@@ -48,7 +48,7 @@
     "fmt:check": "oxfmt --check .",
     "check": "bun run typecheck && bun run lint && bun run fmt",
     "clean": "rm -rf dist",
-    "build": "bun run clean && bun build src/main.ts --target bun --packages external --outfile dist/kunai.js && mkdir -p dist/assets/mpv && cp ../../packages/providers/src/vidking/assets/module1_patched.wasm dist/assets/module1_patched.wasm && cp assets/mpv/kunai-bridge.lua dist/assets/mpv/kunai-bridge.lua && chmod 755 dist/kunai.js",
+    "build": "bun run scripts/build.ts",
     "build:prod": "bun run check && bun run build",
     "pkg:check": "bun run build && npm pack --dry-run --ignore-scripts",
     "release:dry-run": "bun run build:prod && bun run pkg:check",
@@ -72,7 +72,8 @@
   "devDependencies": {
     "@types/bun": "latest",
     "oxfmt": "^0.47.0",
-    "oxlint": "^1.60.0"
+    "oxlint": "^1.60.0",
+    "react-devtools-core": "^7.0.1"
   },
   "peerDependencies": {
     "typescript": "^6.0.3"
