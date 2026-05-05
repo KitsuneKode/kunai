@@ -1,5 +1,6 @@
 import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
+import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { switchSessionMode } from "@/app/mode-switch";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
@@ -1599,6 +1600,8 @@ function BrowseShell<T>({
   const [lastSearchedQuery, setLastSearchedQuery] = useState(
     initialResults && initialResults.length > 0 ? (initialQuery ?? "") : "",
   );
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [draftQuery, setDraftQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
   const requestIdRef = useRef(0);
@@ -1623,6 +1626,7 @@ function BrowseShell<T>({
   const updateQuery = (nextValue: string) => {
     const normalized = normalizeReservedCommandInput(nextValue);
     setQuery(normalized.value);
+    setHistoryIndex(-1);
     if (normalized.openCommandPalette) {
       setCommandMode(true);
       setCommandInput("");
@@ -1657,6 +1661,7 @@ function BrowseShell<T>({
       if (requestIdRef.current !== requestId) return;
 
       setLastSearchedQuery(trimmed);
+      addSearchQuery(trimmed);
       setOptions(response.options);
       setSelectedIndex(0);
       setResultSubtitle(response.subtitle);
@@ -1871,6 +1876,30 @@ function BrowseShell<T>({
 
     if (key.downArrow && options.length > 0) {
       setSelectedIndex((current) => (current + 1) % options.length);
+      return;
+    }
+
+    if (key.upArrow && options.length === 0) {
+      const history = getSearchHistory();
+      if (history.length === 0) return;
+      const nextIndex = historyIndex + 1;
+      if (nextIndex >= history.length) return;
+      if (historyIndex === -1) setDraftQuery(query);
+      setHistoryIndex(nextIndex);
+      setQuery(history[nextIndex] ?? "");
+      return;
+    }
+
+    if (key.downArrow && options.length === 0) {
+      if (historyIndex <= 0) {
+        setHistoryIndex(-1);
+        setQuery(draftQuery);
+        return;
+      }
+      const history = getSearchHistory();
+      const nextIndex = historyIndex - 1;
+      setHistoryIndex(nextIndex);
+      setQuery(history[nextIndex] ?? "");
       return;
     }
   });

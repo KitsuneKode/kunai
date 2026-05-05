@@ -24,13 +24,6 @@ export interface TitleInfo {
   readonly posterUrl?: string;
   readonly genreIds?: number[];
   readonly episodeCount?: number;
-  /** Runtime-only hint carrying the last-watched position from the history panel.
-   *  PlaybackPhase uses this to auto-resume without showing the start picker. */
-  readonly historyResume?: {
-    readonly season: number;
-    readonly episode: number;
-    readonly timestamp: number;
-  };
 }
 
 export interface EpisodeInfo {

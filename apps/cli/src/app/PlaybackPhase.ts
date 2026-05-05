@@ -64,7 +64,7 @@ import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { AniSkipTimingSource, IntroDbTimingSource, PlaybackTimingAggregator } from "@/infra/timing";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
-import { formatTimestamp, isFinished } from "@/services/persistence/HistoryStore";
+import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import { resolveWithFallback } from "@kunai/core";
@@ -310,58 +310,42 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       });
 
       if (title.type === "series") {
-        // When the title came from the history panel, auto-resume at the saved
-        // position without showing the start picker.
-        if (title.historyResume) {
-          const hint = title.historyResume;
-          const historyEntry = await historyStore.get(title.id);
-          const resumeTimestamp =
-            historyEntry && !isFinished(historyEntry) && hint.timestamp > 10 ? hint.timestamp : 0;
-          episode = { season: hint.season, episode: hint.episode };
-          pendingStartAt = resumeTimestamp;
-          logger.info("Auto-resuming from history panel", {
-            season: hint.season,
-            episode: hint.episode,
-            timestamp: resumeTimestamp,
+        // Check history for resume
+        const history = await historyStore.get(title.id);
+        if (history) {
+          logger.info("History found", {
+            season: history.season,
+            episode: history.episode,
+            timestamp: history.timestamp,
           });
-        } else {
-          // Check history for resume
-          const history = await historyStore.get(title.id);
-          if (history) {
-            logger.info("History found", {
-              season: history.season,
-              episode: history.episode,
-              timestamp: history.timestamp,
-            });
-          }
-
-          // Session-flow owns the current season/episode selection rules until the
-          // mounted root shell fully absorbs the picker stack.
-          const { chooseStartingEpisode } = await import("@/session-flow");
-          const selection = await chooseStartingEpisode({
-            currentId: title.id,
-            isAnime: stateManager.getState().mode === "anime",
-            animeEpisodeCount: title.episodeCount,
-            animeEpisodes: initialAnimeEpisodes,
-            flags: {},
-            getHistoryEntry: () => Promise.resolve(history),
-            container,
-          });
-
-          if (!selection) {
-            logger.info("Episode selection cancelled before playback", {
-              titleId: title.id,
-              mode: stateManager.getState().mode,
-            });
-            return { status: "success", value: "back_to_results" };
-          }
-
-          episode = {
-            season: selection.season,
-            episode: selection.episode,
-          };
-          pendingStartAt = selection.startAt ?? 0;
         }
+
+        // Session-flow owns the current season/episode selection rules until the
+        // mounted root shell fully absorbs the picker stack.
+        const { chooseStartingEpisode } = await import("@/session-flow");
+        const selection = await chooseStartingEpisode({
+          currentId: title.id,
+          isAnime: stateManager.getState().mode === "anime",
+          animeEpisodeCount: title.episodeCount,
+          animeEpisodes: initialAnimeEpisodes,
+          flags: {},
+          getHistoryEntry: () => Promise.resolve(history),
+          container,
+        });
+
+        if (!selection) {
+          logger.info("Episode selection cancelled before playback", {
+            titleId: title.id,
+            mode: stateManager.getState().mode,
+          });
+          return { status: "success", value: "back_to_results" };
+        }
+
+        episode = {
+          season: selection.season,
+          episode: selection.episode,
+        };
+        pendingStartAt = selection.startAt ?? 0;
       } else {
         episode = { season: 1, episode: 1 };
       }
