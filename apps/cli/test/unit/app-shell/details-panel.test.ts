@@ -47,7 +47,7 @@ describe("buildBrowseDetailsPanel", () => {
       previewBody: "A young swordsman joins the demon slayer corps.",
       previewImageUrl: "https://image.tmdb.org/t/p/w342/demo.jpg",
       previewRating: "8.5/10 TMDB",
-      previewMeta: ["Series", "2019", "26 episodes"],
+      previewMeta: ["Series", "2019", "8.5/10 TMDB"],
       previewNote: "Press Enter to open this title.",
     };
 
@@ -56,18 +56,9 @@ describe("buildBrowseDetailsPanel", () => {
     });
 
     expect(panel.title).toBe("Demon Slayer");
-    expect(panel.badges.map((badge) => badge.label)).toEqual([
-      "Series",
-      "2019",
-      "26 episodes",
-      "8.5/10 TMDB",
-    ]);
-    expect(panel.facts.map((fact) => fact.label)).toEqual([
-      "Poster",
-      "Rating",
-      "Provider data",
-      "Next step",
-    ]);
-    expect(panel.facts.find((fact) => fact.label === "Poster")?.tone).toBe("success");
+    expect(panel.badges.map((badge) => badge.label)).toEqual(["Series", "2019", "8.5/10 TMDB"]);
+    expect(panel.badges.find((badge) => badge.label === "8.5/10 TMDB")?.tone).toBe("success");
+    expect(panel.facts.map((fact) => fact.label)).toEqual(["Provider data", "Next step"]);
+    expect(panel.facts.find((fact) => fact.label === "Provider data")?.tone).toBe("success");
   });
 });

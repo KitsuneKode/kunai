@@ -1619,8 +1619,8 @@ function BrowseShell<T>({
   const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
   const requestIdRef = useRef(0);
   const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
-    rows: 8,
-    cols: 18,
+    rows: 10,
+    cols: 24,
     enabled: getShellViewportPolicy("browse", stdout.columns, stdout.rows).wideBrowse,
     debounceMs: 120,
     allowKitty: false,
@@ -1767,7 +1767,7 @@ function BrowseShell<T>({
   const previewBodyLines = wrapText(
     companionPanel.body,
     Math.max(previewWidth - 2, 24),
-    ultraCompact ? 1 : compact ? 2 : 3,
+    ultraCompact ? 1 : 2,
   );
   const showCompanion =
     wideBrowse &&

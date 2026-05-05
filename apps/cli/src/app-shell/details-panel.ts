@@ -115,11 +115,13 @@ export function buildBrowseCompanionPanel<T>(
     };
   }
 
-  const badges: BrowseCompanionBadge[] = (option.previewMeta ?? []).slice(0, 3).map((meta) => ({
-    label: meta,
-    tone: "neutral",
-  }));
-  if (option.previewRating) {
+  const badges: BrowseCompanionBadge[] = uniqueBadges(
+    (option.previewMeta ?? []).slice(0, 4).map((meta) => ({
+      label: meta,
+      tone: meta === option.previewRating ? ("success" as const) : ("neutral" as const),
+    })),
+  );
+  if (option.previewRating && !badges.some((badge) => badge.label === option.previewRating)) {
     badges.push({
       label: option.previewRating,
       tone: "success",
@@ -131,16 +133,6 @@ export function buildBrowseCompanionPanel<T>(
     badges,
     body: option.previewBody || "No overview available yet.",
     facts: [
-      {
-        label: "Poster",
-        detail: option.previewImageUrl ? POSTER_AVAILABLE : POSTER_MISSING,
-        tone: option.previewImageUrl ? "success" : "warning",
-      },
-      {
-        label: "Rating",
-        detail: option.previewRating ?? "Unavailable from this provider response",
-        tone: option.previewRating ? "success" : "neutral",
-      },
       {
         label: "Provider data",
         detail:
@@ -159,4 +151,15 @@ export function buildBrowseCompanionPanel<T>(
     ],
     note: option.previewNote ?? selectedDetail,
   };
+}
+
+function uniqueBadges(badges: readonly BrowseCompanionBadge[]): BrowseCompanionBadge[] {
+  const seen = new Set<string>();
+  const result: BrowseCompanionBadge[] = [];
+  for (const badge of badges) {
+    if (seen.has(badge.label)) continue;
+    seen.add(badge.label);
+    result.push(badge);
+  }
+  return result;
 }
