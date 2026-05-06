@@ -69,7 +69,7 @@ test("provider embed URL builders reject incomplete series inputs", () => {
   );
 });
 
-test("all production providers declare cache and runtime boundaries", () => {
+test("active direct providers declare cache and runtime boundaries", () => {
   const manifests = [rivestreamManifest, vidkingManifest, allanimeManifest, miruroManifest];
 
   expect(manifests.map((manifest) => manifest.id)).toEqual([
@@ -84,6 +84,11 @@ test("all production providers declare cache and runtime boundaries", () => {
     expect(manifest.cachePolicy.keyParts).toContain("provider");
     expect(manifest.runtimePorts.length).toBeGreaterThan(0);
   }
+
+  expect(vidkingManifest.status).toBe("production");
+  expect(allanimeManifest.status).toBe("production");
+  expect(rivestreamManifest.status).toBe("candidate");
+  expect(miruroManifest.status).toBe("candidate");
 });
 
 test("anime manifests stay visible to CLI series mode while marked as anime-capable", () => {

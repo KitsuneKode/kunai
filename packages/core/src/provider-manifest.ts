@@ -18,9 +18,11 @@ export interface CoreProviderManifest {
   readonly cachePolicy: CachePolicy;
   readonly browserSafe: boolean;
   readonly relaySafe: boolean;
-  readonly status: "production" | "experimental" | "research";
+  readonly status: ProviderManifestStatus;
   readonly notes?: readonly string[];
 }
+
+export type ProviderManifestStatus = "production" | "candidate" | "experimental" | "research";
 
 export function assertManifestHasRuntimePort(
   manifest: CoreProviderManifest,

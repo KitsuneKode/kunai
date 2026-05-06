@@ -35,7 +35,7 @@ export const miruroManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: true,
-  status: "production",
+  status: "candidate",
   notes: [
     "Completely bypasses Miruro frontend Cloudflare by hitting theanimecommunity.com with raw AniList IDs.",
   ],

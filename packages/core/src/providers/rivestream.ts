@@ -35,7 +35,7 @@ export const rivestreamManifest = defineProviderManifest({
   },
   browserSafe: false,
   relaySafe: true,
-  status: "production",
+  status: "candidate",
   notes: [
     "Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js.",
   ],

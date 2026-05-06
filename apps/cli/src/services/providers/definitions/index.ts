@@ -12,7 +12,7 @@ import {
   manifestToProviderMetadata,
 } from "../core-manifest-adapter";
 import type { ProviderDefinition } from "../Provider";
-import { createAllAnimeProvider } from "./allanime";
+import { createAllMangaCompatProvider } from "./allanime";
 import { createMiruroProvider } from "./miruro";
 import { createRivestreamProvider } from "./rivestream";
 import { createVidKingProvider } from "./vidking";
@@ -34,7 +34,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     id: allanimeManifest.id,
     metadata: manifestToProviderMetadata(allanimeManifest),
     capabilities: manifestToProviderCapabilities(allanimeManifest),
-    factory: createAllAnimeProvider,
+    factory: createAllMangaCompatProvider,
   },
   {
     id: miruroManifest.id,

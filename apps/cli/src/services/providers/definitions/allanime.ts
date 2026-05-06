@@ -1,5 +1,5 @@
 // =============================================================================
-// AllAnime Provider Adapter
+// AllManga-compatible Provider Adapter
 // =============================================================================
 
 import type {
@@ -20,7 +20,7 @@ import {
 } from "../core-manifest-adapter";
 import type { Provider, ProviderDeps, StreamRequest } from "../Provider";
 
-const ALLANIME_CONFIG = {
+const ALLMANGA_COMPAT_CONFIG = {
   id: allanimeManifest.id,
   name: allanimeManifest.displayName,
   description: allanimeManifest.description,
@@ -31,12 +31,12 @@ const ALLANIME_CONFIG = {
   isAnimeProvider: true,
 };
 
-export class AllAnimeProvider implements Provider {
+export class AllMangaCompatProvider implements Provider {
   readonly metadata: ProviderMetadata = manifestToProviderMetadata(allanimeManifest);
 
   readonly capabilities: ProviderCapabilities = manifestToProviderCapabilities(allanimeManifest);
 
-  private apiProvider = createAllMangaApiProvider(ALLANIME_CONFIG);
+  private apiProvider = createAllMangaApiProvider(ALLMANGA_COMPAT_CONFIG);
 
   constructor(private deps: ProviderDeps) {}
 
@@ -84,7 +84,7 @@ export class AllAnimeProvider implements Provider {
     _signal?: AbortSignal,
   ): Promise<EpisodePickerOption[] | null> {
     return fetchAllMangaEpisodeCatalog({
-      apiUrl: ALLANIME_CONFIG.apiUrl,
+      apiUrl: ALLMANGA_COMPAT_CONFIG.apiUrl,
       referer: "https://allmanga.to",
       ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
       showId: request.title.id,
@@ -114,6 +114,6 @@ export class AllAnimeProvider implements Provider {
   }
 }
 
-export function createAllAnimeProvider(deps: ProviderDeps): Provider {
-  return new AllAnimeProvider(deps);
+export function createAllMangaCompatProvider(deps: ProviderDeps): Provider {
+  return new AllMangaCompatProvider(deps);
 }
