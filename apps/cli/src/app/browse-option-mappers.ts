@@ -1,5 +1,5 @@
 import type { BrowseShellOption } from "@/app-shell/types";
-import type { SearchResult } from "@/domain/types";
+import type { SearchResult, TitleAliasKind } from "@/domain/types";
 import {
   formatTimestamp,
   isFinished,
@@ -37,8 +37,11 @@ function buildHistoryBadge(entry: HistoryEntry | null | undefined): string | und
 export function toBrowseResultOption(
   result: SearchResult,
   historyEntry?: HistoryEntry | null,
+  titlePreference: TitleAliasKind | "provider" = "provider",
 ): BrowseShellOption<SearchResult> {
   const historyBadge = buildHistoryBadge(historyEntry);
+  const displayTitle = chooseSearchResultTitle(result, titlePreference);
+  const alternateTitles = formatAlternateTitles(result, displayTitle);
   const meta = [
     result.type === "series" ? "Series" : "Movie",
     result.year || undefined,
@@ -50,11 +53,11 @@ export function toBrowseResultOption(
 
   return {
     value: result,
-    label: result.year ? `${result.title} (${result.year})` : result.title,
+    label: result.year ? `${displayTitle} (${result.year})` : displayTitle,
     detail: `${result.type === "series" ? "Series" : "Movie"}${
       historyBadge ? ` · ${historyBadge}` : ""
     }${result.overview ? ` · ${result.overview}` : ""}`,
-    previewTitle: result.title,
+    previewTitle: displayTitle,
     previewMeta: meta,
     previewFacts: [
       ...(historyEntry
@@ -67,13 +70,25 @@ export function toBrowseResultOption(
           ]
         : []),
       {
+        label: "Metadata source",
+        detail: result.metadataSource ?? "provider response",
+        tone: result.metadataSource ? ("success" as const) : ("neutral" as const),
+      },
+      {
+        label: "Title aliases",
+        detail: alternateTitles || "No alternate title aliases returned",
+        tone: alternateTitles ? ("success" as const) : ("neutral" as const),
+      },
+      {
         label: "Provider detail page",
         detail: result.overview ? "Overview available" : "Provider did not return overview text",
         tone: result.overview ? ("success" as const) : ("warning" as const),
       },
       {
         label: "Image source",
-        detail: posterUrl ? "Poster URL available" : "No poster URL returned",
+        detail: posterUrl
+          ? `Poster URL available${result.posterSource ? ` from ${result.posterSource}` : ""}`
+          : "No poster URL returned",
         tone: posterUrl ? ("success" as const) : ("warning" as const),
       },
       ...(typeof result.popularity === "number" && result.popularity > 0
@@ -94,4 +109,20 @@ export function toBrowseResultOption(
         ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
         : "Press Enter to open this title and continue to playback. Use / details for the overview.",
   };
+}
+
+export function chooseSearchResultTitle(
+  result: SearchResult,
+  preference: TitleAliasKind | "provider" = "provider",
+): string {
+  if (preference === "provider") return result.title;
+  const preferred = result.titleAliases?.find((alias) => alias.kind === preference)?.value;
+  return preferred || result.title;
+}
+
+function formatAlternateTitles(result: SearchResult, displayTitle: string): string {
+  const aliases = (result.titleAliases ?? [])
+    .filter((alias) => alias.value !== displayTitle)
+    .map((alias) => `${alias.kind}: ${alias.value}`);
+  return aliases.slice(0, 3).join("  ·  ");
 }

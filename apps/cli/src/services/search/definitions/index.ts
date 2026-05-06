@@ -5,7 +5,6 @@
 // =============================================================================
 
 import type { SearchServiceDefinition } from "../SearchService";
-import { createHiAnimeSearchService } from "./hianime";
 import { createTMDBSearchService } from "./tmdb";
 
 export const SEARCH_SERVICE_DEFINITIONS: SearchServiceDefinition[] = [
@@ -18,15 +17,5 @@ export const SEARCH_SERVICE_DEFINITIONS: SearchServiceDefinition[] = [
     },
     compatibleProviders: ["vidking"],
     factory: createTMDBSearchService,
-  },
-  {
-    id: "hianime",
-    metadata: {
-      id: "hianime",
-      name: "HiAnime (Cineby Anime)",
-      description: "HiAnime search (anime-db.videasy.net)",
-    },
-    compatibleProviders: ["cineby-anime"],
-    factory: createHiAnimeSearchService,
   },
 ];

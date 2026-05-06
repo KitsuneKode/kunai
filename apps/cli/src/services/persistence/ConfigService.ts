@@ -14,6 +14,7 @@ export interface KitsuneConfig {
   animeProvider: string;
   subLang: string;
   animeLang: "sub" | "dub";
+  animeTitlePreference: "english" | "romaji" | "native" | "provider";
   headless: boolean;
   showMemory: boolean;
   autoNext: boolean;

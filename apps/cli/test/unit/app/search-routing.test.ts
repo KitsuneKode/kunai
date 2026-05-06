@@ -40,6 +40,7 @@ describe("searchTitles", () => {
       animeLang: "sub",
       searchRegistry: searchRegistry as any,
       providerRegistry,
+      enrichAnimeMetadata: false,
     });
 
     expect(result.strategy).toBe("provider-native");

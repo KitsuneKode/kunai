@@ -1,6 +1,7 @@
 import type { SearchResult, ShellMode } from "../domain/types";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
+import { enrichAnimeSearchResultsWithAniList } from "./anime-metadata";
 
 export type SearchRoutingContext = {
   mode: ShellMode;
@@ -9,6 +10,7 @@ export type SearchRoutingContext = {
   signal?: AbortSignal;
   searchRegistry: Pick<SearchRegistry, "getDefault" | "getForProvider">;
   providerRegistry: ProviderRegistry;
+  enrichAnimeMetadata?: boolean;
 };
 
 export type SearchRoutingResult = {
@@ -34,8 +36,14 @@ export async function searchTitles(
     );
 
     if (results) {
+      const normalized = results.map(normalizeProviderSearchResult);
+      const enriched =
+        context.enrichAnimeMetadata === false
+          ? normalized
+          : await enrichAnimeSearchResultsWithAniList(query, normalized, context.signal);
+
       return {
-        results: results.map(normalizeProviderSearchResult),
+        results: enriched,
         sourceId: provider.metadata.id,
         sourceName: provider.metadata.name,
         strategy: "provider-native",
@@ -67,9 +75,12 @@ function normalizeProviderSearchResult(result: SearchResult): SearchResult {
     id: candidate.id,
     type: candidate.type,
     title: candidate.title,
+    titleAliases: candidate.titleAliases,
     year: candidate.year ?? "",
     overview: candidate.overview ?? "",
     posterPath: candidate.posterPath ?? null,
+    posterSource: candidate.posterSource,
+    metadataSource: candidate.metadataSource,
     rating: candidate.rating ?? null,
     popularity: candidate.popularity ?? null,
     episodeCount: candidate.episodeCount ?? candidate.epCount,

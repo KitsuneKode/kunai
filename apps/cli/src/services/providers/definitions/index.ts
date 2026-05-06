@@ -7,10 +7,6 @@
 
 import { allanimeManifest, miruroManifest, rivestreamManifest, vidkingManifest } from "@kunai/core";
 
-import {
-  manifestToProviderCapabilities,
-  manifestToProviderMetadata,
-} from "../core-manifest-adapter";
 import type { ProviderDefinition } from "../Provider";
 import { createAllMangaCompatProvider } from "./allanime";
 import { createMiruroProvider } from "./miruro";
@@ -20,26 +16,22 @@ import { createVidKingProvider } from "./vidking";
 export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
   {
     id: rivestreamManifest.id,
-    metadata: manifestToProviderMetadata(rivestreamManifest),
-    capabilities: manifestToProviderCapabilities(rivestreamManifest),
+    manifest: rivestreamManifest,
     factory: createRivestreamProvider,
   },
   {
     id: vidkingManifest.id,
-    metadata: manifestToProviderMetadata(vidkingManifest),
-    capabilities: manifestToProviderCapabilities(vidkingManifest),
+    manifest: vidkingManifest,
     factory: createVidKingProvider,
   },
   {
     id: allanimeManifest.id,
-    metadata: manifestToProviderMetadata(allanimeManifest),
-    capabilities: manifestToProviderCapabilities(allanimeManifest),
+    manifest: allanimeManifest,
     factory: createAllMangaCompatProvider,
   },
   {
     id: miruroManifest.id,
-    metadata: manifestToProviderMetadata(miruroManifest),
-    capabilities: manifestToProviderCapabilities(miruroManifest),
+    manifest: miruroManifest,
     factory: createMiruroProvider,
   },
 ];

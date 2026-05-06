@@ -13,7 +13,7 @@
 // Adding a provider = one file in src/providers/ + one line in PROVIDERS map.
 // =============================================================================
 
-import type { StreamData } from "@/scraper";
+import type { StreamData } from "../browser/scraper";
 
 // ── Shared base ───────────────────────────────────────────────────────────────
 

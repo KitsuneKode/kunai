@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { toBrowseResultOption } from "@/app/browse-option-mappers";
+import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
 import type { SearchResult } from "@/domain/types";
 
 describe("toBrowseResultOption", () => {
@@ -25,6 +25,16 @@ describe("toBrowseResultOption", () => {
       previewMeta: ["Series", "2019", "26 episodes", "8.5/10 TMDB"],
       previewFacts: [
         {
+          label: "Metadata source",
+          detail: "provider response",
+          tone: "neutral",
+        },
+        {
+          label: "Title aliases",
+          detail: "No alternate title aliases returned",
+          tone: "neutral",
+        },
+        {
           label: "Provider detail page",
           detail: "Overview available",
           tone: "success",
@@ -45,6 +55,45 @@ describe("toBrowseResultOption", () => {
       previewBody: "A young swordsman joins the demon slayer corps.",
       previewNote:
         "Press Enter to open this title and continue to episode selection. Use / details for the overview.",
+    });
+  });
+
+  test("prefers configured anime title aliases without losing provider title context", () => {
+    const result: SearchResult = {
+      id: "anime-demo",
+      type: "series",
+      title: "Kimetsu no Yaiba",
+      titleAliases: [
+        { kind: "provider", value: "Kimetsu no Yaiba" },
+        { kind: "english", value: "Demon Slayer" },
+        { kind: "native", value: "鬼滅の刃" },
+      ],
+      year: "2019",
+      overview: "",
+      posterPath: "https://img.example/demon.jpg",
+      posterSource: "AniList",
+      metadataSource: "AniList",
+    };
+
+    expect(chooseSearchResultTitle(result, "english")).toBe("Demon Slayer");
+    expect(toBrowseResultOption(result, null, "english")).toMatchObject({
+      label: "Demon Slayer (2019)",
+      previewTitle: "Demon Slayer",
+      previewImageUrl: "https://img.example/demon.jpg",
+      previewFacts: [
+        { label: "Metadata source", detail: "AniList", tone: "success" },
+        {
+          label: "Title aliases",
+          detail: "provider: Kimetsu no Yaiba  ·  native: 鬼滅の刃",
+          tone: "success",
+        },
+        {
+          label: "Provider detail page",
+          detail: "Provider did not return overview text",
+          tone: "warning",
+        },
+        { label: "Image source", detail: "Poster URL available from AniList", tone: "success" },
+      ],
     });
   });
 });

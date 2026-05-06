@@ -1,13 +1,12 @@
 // =============================================================================
 // Browser Service Implementation
 //
-// Delegates to the existing scraper.ts for Playwright-based stream extraction.
+// Legacy-only wrapper for Playwright-based stream extraction.
 // =============================================================================
 
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
-import { scrapeStream, type ScrapeConfig } from "@/scraper";
 import { buildEmbedStreamCacheKey } from "@/services/cache/stream-resolve-cache";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { CacheStore } from "@/services/persistence/CacheStore";
@@ -15,6 +14,7 @@ import type { ConfigService } from "@/services/persistence/ConfigService";
 import { selectSubtitle } from "@/subtitle";
 
 import type { BrowserService, ScrapeOptions } from "./BrowserService";
+import { scrapeStream, type ScrapeConfig } from "./scraper";
 
 type ScrapeStreamFn = typeof scrapeStream;
 

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 
-import type { StreamData } from "@/scraper";
+import type { StreamData } from "./browser/scraper";
 
 const CACHE_FILE = "stream_cache.json";
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour

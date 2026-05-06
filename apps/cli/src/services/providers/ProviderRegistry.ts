@@ -6,6 +6,7 @@
 
 import type { TitleInfo, ProviderMetadata, ShellMode } from "@/domain/types";
 
+import { manifestToProviderMetadata } from "./core-manifest-adapter";
 import type { Provider, ProviderDefinition, ProviderDeps } from "./Provider";
 
 export interface ProviderRegistry {
@@ -71,6 +72,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   getMetadata(id: string): ProviderMetadata | undefined {
-    return this.definitions.get(id)?.metadata;
+    const definition = this.definitions.get(id);
+    return definition ? manifestToProviderMetadata(definition.manifest) : undefined;
   }
 }

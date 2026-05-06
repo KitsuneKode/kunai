@@ -5,6 +5,7 @@ export const ALLANIME_PROVIDER_ID = "allanime" as const;
 export const allanimeManifest = defineProviderManifest({
   id: ALLANIME_PROVIDER_ID,
   displayName: "AllManga",
+  aliases: ["AllAnime"],
   description: "AllManga-compatible anime API client (sub & dub, no browser needed)",
   domain: "allmanga.to",
   recommended: false,

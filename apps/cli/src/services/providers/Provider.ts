@@ -12,6 +12,7 @@ import type {
   ProviderMetadata,
   ProviderCapabilities,
 } from "@/domain/types";
+import type { CoreProviderManifest } from "@kunai/core";
 
 export interface StreamRequest {
   title: TitleInfo;
@@ -61,7 +62,6 @@ export type ProviderFactory = (deps: ProviderDeps) => Provider;
 // Definition for registration
 export interface ProviderDefinition {
   readonly id: string;
-  readonly metadata: ProviderMetadata;
-  readonly capabilities: ProviderCapabilities;
+  readonly manifest: CoreProviderManifest;
   readonly factory: ProviderFactory;
 }

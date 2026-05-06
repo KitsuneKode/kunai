@@ -17,7 +17,8 @@
 
 import type { EpisodePickerOption } from "@/domain/types";
 import { dbg, dbgErr } from "@/logger";
-import type { StreamData } from "@/scraper";
+
+import type { StreamData } from "../browser/scraper";
 
 // ── Legacy Adapter Types (retained for this API client) ────────────────────────
 

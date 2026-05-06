@@ -57,6 +57,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.animeLang;
   }
 
+  get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
+    return this.config.animeTitlePreference;
+  }
+
   get headless(): boolean {
     return this.config.headless;
   }

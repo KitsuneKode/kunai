@@ -334,6 +334,8 @@ export function RootOverlayShell({
             next.subLang = picked.value;
           } else if (settingsChoice === "animeLang") {
             next.animeLang = picked.value as "sub" | "dub";
+          } else if (settingsChoice === "animeTitlePreference") {
+            next.animeTitlePreference = picked.value as typeof next.animeTitlePreference;
           } else if (settingsChoice === "footerHints") {
             next.footerHints = picked.value as "detailed" | "minimal";
           } else if (settingsChoice === "quitNearEndBehavior") {

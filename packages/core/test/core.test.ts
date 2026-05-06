@@ -5,8 +5,6 @@ import {
   adaptCliStreamResult,
   assertRuntimeAllowed,
   assertManifestHasRuntimePort,
-  buildBitcineEmbedUrl,
-  buildCinebyEmbedUrl,
   buildVidkingEmbedUrl,
   createProviderCachePolicy,
   createProviderRuntimeContext,
@@ -34,38 +32,18 @@ test("vidking manifest declares capability, cache, and runtime boundaries", () =
   expect(vidkingManifest.runtimePorts.map((port) => port.runtime)).toEqual(["direct-http"]);
 });
 
-test("provider embed URL builders preserve production playback routes", () => {
+test("vidking embed URL builder preserves direct-provider route shape", () => {
   expect(buildVidkingEmbedUrl({ id: "438631", mediaKind: "movie" })).toBe(
     "https://www.vidking.net/embed/movie/438631?autoPlay=true",
   );
   expect(buildVidkingEmbedUrl({ id: "1396", mediaKind: "series", season: 1, episode: 5 })).toBe(
     "https://www.vidking.net/embed/tv/1396/1/5?autoPlay=true&episodeSelector=false&nextEpisode=false",
   );
-
-  expect(buildCinebyEmbedUrl({ id: "438631", mediaKind: "movie" })).toBe(
-    "https://www.cineby.sc/movie/438631?play=true",
-  );
-  expect(buildCinebyEmbedUrl({ id: "1396", mediaKind: "series", season: 1, episode: 5 })).toBe(
-    "https://www.cineby.sc/tv/1396/1/5?play=true",
-  );
-
-  expect(buildBitcineEmbedUrl({ id: "438631", mediaKind: "movie" })).toBe(
-    "https://www.bitcine.net/movie/438631?play=true",
-  );
-  expect(buildBitcineEmbedUrl({ id: "1396", mediaKind: "series", season: 1, episode: 5 })).toBe(
-    "https://www.bitcine.net/tv/1396/1/5?play=true",
-  );
 });
 
-test("provider embed URL builders reject incomplete series inputs", () => {
+test("vidking embed URL builder rejects incomplete series inputs", () => {
   expect(() => buildVidkingEmbedUrl({ id: "1396", mediaKind: "series", season: 1 })).toThrow(
     "VidKing requires season and episode",
-  );
-  expect(() => buildCinebyEmbedUrl({ id: "1396", mediaKind: "series", episode: 5 })).toThrow(
-    "Cineby requires season and episode",
-  );
-  expect(() => buildBitcineEmbedUrl({ id: "1396", mediaKind: "series" })).toThrow(
-    "BitCine requires season and episode",
   );
 });
 

@@ -20,6 +20,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   animeProvider: "allanime",
   subLang: "en",
   animeLang: "sub",
+  animeTitlePreference: "english",
   headless: true,
   showMemory: false,
   autoNext: true,

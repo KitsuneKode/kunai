@@ -23,9 +23,11 @@ export function manifestToProviderMetadata(
   return {
     id: manifest.id,
     name: manifest.displayName,
+    aliases: manifest.aliases,
     description: manifest.description,
     recommended: manifest.recommended,
     isAnimeProvider: manifest.mediaKinds.includes("anime"),
+    status: manifest.status,
     domain: manifest.domain,
     ...overrides,
   };

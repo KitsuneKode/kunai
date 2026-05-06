@@ -31,25 +31,3 @@ export function buildVidkingEmbedUrl(input: ProviderEmbedUrlInput): string {
 
   return `${base}/embed/tv/${input.id}/${seriesEpisode.season}/${seriesEpisode.episode}?autoPlay=true&episodeSelector=false&nextEpisode=false`;
 }
-
-export function buildCinebyEmbedUrl(input: ProviderEmbedUrlInput): string {
-  const base = "https://www.cineby.sc";
-  const seriesEpisode = requireSeriesEpisode(input, "Cineby");
-
-  if (!seriesEpisode) {
-    return `${base}/movie/${input.id}?play=true`;
-  }
-
-  return `${base}/tv/${input.id}/${seriesEpisode.season}/${seriesEpisode.episode}?play=true`;
-}
-
-export function buildBitcineEmbedUrl(input: ProviderEmbedUrlInput): string {
-  const base = "https://www.bitcine.net";
-  const seriesEpisode = requireSeriesEpisode(input, "BitCine");
-
-  if (!seriesEpisode) {
-    return `${base}/movie/${input.id}?play=true`;
-  }
-
-  return `${base}/tv/${input.id}/${seriesEpisode.season}/${seriesEpisode.episode}?play=true`;
-}

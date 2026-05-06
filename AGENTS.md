@@ -1,6 +1,6 @@
 # Kunai — Agent Entry Point
 
-Kunai is a terminal-first Bun CLI that finds playable video streams by intercepting `.m3u8` requests from embed players with Playwright and handing them off to `mpv`.
+Kunai is a terminal-first Bun CLI that finds playable direct-provider video streams and hands them off to `mpv`.
 
 ## Documentation Philosophy
 
@@ -62,8 +62,7 @@ Kunai is a terminal-first Bun CLI that finds playable video streams by intercept
 apps/cli/src/main.ts                 canonical runtime entrypoint and refactored session controller
 apps/cli/index.ts                    temporary compatibility wrapper into apps/cli/src/main.ts
 apps/cli/src/app-shell/*             Ink shell, command bar, list pickers, settings/history workflows
-apps/cli/src/search.ts               search service registry and TMDB-backed search
-apps/cli/src/scraper.ts              Playwright interception for stream/subtitle capture
+apps/cli/src/search.ts               legacy TMDB/Videasy search helper; new search routing lives in app/services
 apps/cli/src/mpv.ts                  mpv launch + Lua position reporting
 apps/cli/src/menu.ts                 ANSI color helpers used by logs and terminal output
 apps/cli/src/ui.ts                   dependency checks
@@ -71,7 +70,9 @@ apps/cli/src/tmdb.ts                 TMDB season/episode data with proxy fallbac
 apps/cli/src/session-flow.ts         start-episode selection and provider/session flow helpers
 apps/cli/src/history.ts              watch history persistence
 apps/cli/src/config.ts               persisted user config + provider overrides
-apps/cli/src/services/providers/*    provider implementations and registry
+apps/cli/src/services/providers/*    active direct-provider adapters and registry
+apps/cli/src/legacy/browser/*        quarantined Playwright interception path; not active beta runtime
+apps/cli/src/legacy/providers/*      quarantined browser/legacy providers; not active beta runtime
 apps/experiments/*                   private provider research lab, not production runtime
 apps/experiments/scratchpads/*       raw provider probes, captures, and reverse-engineering scratch work
 ```
@@ -107,7 +108,7 @@ Unit tests live under `apps/cli/test/unit/`, integration tests under `apps/cli/t
 - `packages/providers/src/allmanga/api-client.ts` contains ani-cli parity logic; check external parity before changing crypto or decoder constants
 - On this machine, the local canonical ani-cli checkout for AllAnime or AllManga parity checks is `~/Projects/osc/ani-cli`
 - If AllAnime or AllManga issues arise, compare against that local ani-cli checkout first, treat it as the reference behavior until upstream is clearly unmaintained, and document any temporary local divergence in provider docs or plans
-- `embedScraper` is injected to avoid circular imports between providers and `scraper.ts`
+- Browser/Playwright provider behavior belongs in `apps/cli/src/legacy/browser/*` until a future optional `@kunai/runtime-browser` package exists
 
 ## User Data
 
@@ -132,4 +133,3 @@ Unit tests live under `apps/cli/test/unit/`, integration tests under `apps/cli/t
 - [.plans/search-service.md](.plans/search-service.md): deferred search/provider decoupling
 - [.plans/yt-provider.md](.plans/yt-provider.md): deferred YouTube provider research
 - [.plans/provider-hardening.md](.plans/provider-hardening.md): provider research, hardening, and scraper capability roadmap
-

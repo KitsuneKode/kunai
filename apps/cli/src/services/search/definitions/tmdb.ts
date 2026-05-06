@@ -1,7 +1,7 @@
 // =============================================================================
 // TMDB Search Service Adapter
 //
-// Wraps the legacy searchVideasy() into the new SearchService interface.
+// Wraps the Videasy-backed TMDB search helper into the SearchService interface.
 // =============================================================================
 
 import type { SearchResult, TitleInfo, SearchMetadata } from "@/domain/types";

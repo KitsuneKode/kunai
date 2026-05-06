@@ -5,7 +5,7 @@
 //   • which providers can consume its results
 //   • which service name to show in error messages
 //
-// API providers (AllAnime, CinebyAnime) own their own search() — they don't
+// API providers own their own search() — they don't
 // appear here. This layer is for providers that delegate search to a shared
 // HTTP endpoint (TMDB proxy today; HiAnime as a future SearchService).
 // =============================================================================
@@ -77,7 +77,7 @@ function readString(value: unknown): string {
 // ── Search service registry ───────────────────────────────────────────────────
 //
 // Named service objects so the UI and error messages know which endpoint
-// failed. API providers (AllAnime, CinebyAnime) own their own search() and
+// failed. API providers own their own search() and
 // don't appear here — this registry is for shared-endpoint providers only.
 
 export const TMDB_SERVICE: SearchService = {
@@ -88,11 +88,7 @@ export const TMDB_SERVICE: SearchService = {
   search: searchVideasy,
 };
 
-export const SEARCH_SERVICES: readonly SearchService[] = [
-  TMDB_SERVICE,
-  // Future: HIANIME_SERVICE when HiAnime is promoted to a standalone service
-  // rather than owned by the cineby-anime provider.
-];
+export const SEARCH_SERVICES: readonly SearchService[] = [TMDB_SERVICE];
 
 export const SEARCH_SERVICE_MAP: Readonly<Record<string, SearchService>> = Object.fromEntries(
   SEARCH_SERVICES.map((s) => [s.id, s]),

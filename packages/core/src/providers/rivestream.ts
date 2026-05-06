@@ -5,7 +5,7 @@ export const RIVESTREAM_PROVIDER_ID = "rivestream" as const;
 export const rivestreamManifest = defineProviderManifest({
   id: RIVESTREAM_PROVIDER_ID,
   displayName: "Rivestream",
-  description: "Rivestream 0-RAM Native (MurmurHash)",
+  description: "Rivestream direct resolver candidate (MurmurHash)",
   domain: "rivestream.app",
   recommended: true,
   mediaKinds: ["movie", "series"],

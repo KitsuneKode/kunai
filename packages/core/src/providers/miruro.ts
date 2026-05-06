@@ -5,7 +5,7 @@ export const MIRURO_PROVIDER_ID = "miruro" as const;
 export const miruroManifest = defineProviderManifest({
   id: MIRURO_PROVIDER_ID,
   displayName: "Miruro",
-  description: "Miruro 0-RAM backend resolver (theanimecommunity.com)",
+  description: "Miruro anime direct resolver candidate (theanimecommunity.com)",
   domain: "miruro.tv",
   recommended: true,
   mediaKinds: ["anime"],

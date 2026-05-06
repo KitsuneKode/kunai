@@ -380,7 +380,20 @@ export function buildProviderPickerOptions({
 }): readonly ShellPickerOption<string>[] {
   return providers.map((provider) => ({
     value: provider.id,
-    label: provider.id === currentProvider ? `${provider.name}  ·  current` : provider.name,
-    detail: provider.description,
+    label:
+      provider.id === currentProvider
+        ? `${formatProviderName(provider)}  ·  current`
+        : formatProviderName(provider),
+    detail: formatProviderDetail(provider),
   }));
+}
+
+function formatProviderName(provider: ProviderMetadata): string {
+  const status = provider.status === "candidate" ? "candidate" : null;
+  return status ? `${provider.name}  ·  ${status}` : provider.name;
+}
+
+function formatProviderDetail(provider: ProviderMetadata): string {
+  const aliases = provider.aliases?.length ? `Known as ${provider.aliases.join(", ")}` : null;
+  return [provider.description, aliases].filter(Boolean).join("  ·  ");
 }

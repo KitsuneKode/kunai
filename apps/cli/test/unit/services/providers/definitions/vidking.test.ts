@@ -40,6 +40,7 @@ function createProviderDeps(): ProviderDeps {
       animeProvider: "allanime",
       subLang: "en",
       animeLang: "sub",
+      animeTitlePreference: "english",
       headless: true,
       showMemory: false,
       autoNext: true,

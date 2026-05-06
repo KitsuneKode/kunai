@@ -9,7 +9,7 @@ import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
-import { toBrowseResultOption } from "@/app/browse-option-mappers";
+import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { searchTitles } from "@/app/search-routing";
 import { effectiveFooterHints } from "@/container";
@@ -65,6 +65,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             signal: context.signal,
             searchRegistry,
             providerRegistry,
+            enrichAnimeMetadata: true,
           });
           const results = search.results;
 
@@ -113,10 +114,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               const title: TitleInfo = {
                 id: selected.id,
                 type: selected.type,
-                name: selected.title,
+                name: chooseSearchResultTitle(selected, container.config.animeTitlePreference),
                 year: selected.year,
                 overview: selected.overview,
                 posterUrl: selected.posterPath ?? undefined,
+                titleAliases: selected.titleAliases,
                 episodeCount: selected.episodeCount,
               };
               stateManager.dispatch({ type: "SELECT_TITLE", title });
@@ -138,7 +140,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           ...shellRuntime,
           initialQuery: currentState.searchQuery,
           initialResults: currentState.searchResults.map((r) =>
-            toBrowseResultOption(r, historyMap[r.id] ?? null),
+            toBrowseResultOption(
+              r,
+              historyMap[r.id] ?? null,
+              container.config.animeTitlePreference,
+            ),
           ),
           initialResultSubtitle:
             currentState.searchResults.length > 0
@@ -170,6 +176,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               signal: context.signal,
               searchRegistry,
               providerRegistry,
+              enrichAnimeMetadata: true,
             });
             const results = search.results;
 
@@ -202,7 +209,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   >,
               );
             return {
-              options: results.map((r) => toBrowseResultOption(r, freshHistoryMap[r.id] ?? null)),
+              options: results.map((r) =>
+                toBrowseResultOption(
+                  r,
+                  freshHistoryMap[r.id] ?? null,
+                  container.config.animeTitlePreference,
+                ),
+              ),
               subtitle: `${results.length} results · ${search.sourceName}`,
               emptyMessage: "No results found. Adjust the query and try again.",
             };
@@ -246,7 +259,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         const title: TitleInfo = {
           id: selected.id,
           type: selected.type,
-          name: selected.title,
+          name: chooseSearchResultTitle(selected, container.config.animeTitlePreference),
+          titleAliases: selected.titleAliases,
           year: selected.year,
           overview: selected.overview,
           posterUrl: selected.posterPath ?? undefined,

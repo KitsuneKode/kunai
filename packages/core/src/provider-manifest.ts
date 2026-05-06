@@ -9,6 +9,7 @@ import type {
 export interface CoreProviderManifest {
   readonly id: ProviderId;
   readonly displayName: string;
+  readonly aliases?: readonly string[];
   readonly description: string;
   readonly domain: string;
   readonly recommended: boolean;

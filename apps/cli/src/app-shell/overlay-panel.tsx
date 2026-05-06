@@ -73,6 +73,7 @@ type SettingsAction =
   | "animeProvider"
   | "subLang"
   | "animeLang"
+  | "animeTitlePreference"
   | "showMemory"
   | "autoNext"
   | "resumeStartChoicePrompt"
@@ -102,6 +103,15 @@ const SUBTITLE_SETTINGS_OPTIONS: readonly ShellPickerOption<string>[] = [
 const ANIME_AUDIO_SETTINGS_OPTIONS: readonly ShellPickerOption<"sub" | "dub">[] = [
   { value: "sub", label: "Sub", detail: "Original audio with subtitles" },
   { value: "dub", label: "Dub", detail: "Dubbed audio when available" },
+];
+
+const ANIME_TITLE_SETTINGS_OPTIONS: readonly ShellPickerOption<
+  KitsuneConfig["animeTitlePreference"]
+>[] = [
+  { value: "english", label: "English", detail: "Prefer localized English titles when known" },
+  { value: "romaji", label: "Romaji", detail: "Prefer romanized Japanese titles" },
+  { value: "native", label: "Native", detail: "Prefer native Japanese titles" },
+  { value: "provider", label: "Provider", detail: "Use the title returned by the active provider" },
 ];
 
 const QUIT_NEAR_END_BEHAVIOR_OPTIONS: readonly ShellPickerOption<QuitNearEndBehavior>[] = [
@@ -180,6 +190,11 @@ export function buildSettingsOptions(
       value: "animeLang",
       label: `Anime audio  ·  ${config.animeLang}`,
       detail: "Sub or dub preference",
+    },
+    {
+      value: "animeTitlePreference",
+      label: `Anime title names  ·  ${config.animeTitlePreference}`,
+      detail: "Choose English, Romaji, native, or provider titles in anime search",
     },
     {
       value: "showMemory",
@@ -319,6 +334,14 @@ export function buildSettingsChoiceOverlay({
     options = ANIME_AUDIO_SETTINGS_OPTIONS.map((option) => ({
       ...option,
       label: option.value === config.animeLang ? `${option.label}  ·  current` : option.label,
+    })) as readonly ShellPickerOption<string>[];
+  } else if (setting === "animeTitlePreference") {
+    title = "Anime title names";
+    subtitle = `Current ${config.animeTitlePreference}`;
+    options = ANIME_TITLE_SETTINGS_OPTIONS.map((option) => ({
+      ...option,
+      label:
+        option.value === config.animeTitlePreference ? `${option.label}  ·  current` : option.label,
     })) as readonly ShellPickerOption<string>[];
   } else if (setting === "footerHints") {
     title = "Footer hint density";

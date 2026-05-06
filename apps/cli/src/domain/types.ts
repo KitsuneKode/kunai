@@ -19,6 +19,7 @@ export interface TitleInfo {
   readonly id: string;
   readonly type: ContentType;
   readonly name: string;
+  readonly titleAliases?: readonly TitleAlias[];
   readonly year?: string;
   readonly overview?: string;
   readonly posterUrl?: string;
@@ -83,12 +84,22 @@ export interface SearchResult {
   readonly id: string;
   readonly type: ContentType;
   readonly title: string;
+  readonly titleAliases?: readonly TitleAlias[];
   readonly year: string;
   readonly overview: string;
   readonly posterPath: string | null;
+  readonly posterSource?: string;
+  readonly metadataSource?: string;
   readonly rating?: number | null;
   readonly popularity?: number | null;
   readonly episodeCount?: number;
+}
+
+export type TitleAliasKind = "english" | "romaji" | "native" | "provider" | "synonym";
+
+export interface TitleAlias {
+  readonly kind: TitleAliasKind;
+  readonly value: string;
 }
 
 export type EndReason = "eof" | "quit" | "error" | "unknown";
@@ -126,9 +137,11 @@ export interface PlaybackTimingMetadata {
 export interface ProviderMetadata {
   readonly id: string;
   readonly name: string;
+  readonly aliases?: readonly string[];
   readonly description: string;
   readonly recommended: boolean;
   readonly isAnimeProvider: boolean;
+  readonly status?: "production" | "candidate" | "experimental" | "research";
   readonly domain?: string;
 }
 
