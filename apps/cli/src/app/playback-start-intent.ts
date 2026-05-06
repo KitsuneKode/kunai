@@ -9,7 +9,9 @@ export function startFromBeginning(): PlaybackStartIntent {
   return { startAt: 0, suppressResumePrompt: false };
 }
 
-export function startForwardNavigation(_opts: { targetResumeSeconds?: number } = {}): PlaybackStartIntent {
+export function startEpisodeNavigation(
+  _opts: { targetResumeSeconds?: number } = {},
+): PlaybackStartIntent {
   return startFromBeginning();
 }
 

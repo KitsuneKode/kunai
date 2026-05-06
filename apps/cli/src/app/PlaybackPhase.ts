@@ -23,7 +23,6 @@ import {
   resolveEpisodeAvailability,
   toEpisodeNavigationState,
 } from "@/app/playback-policy";
-import { resumeSecondsFromHistoryForEpisode } from "@/app/playback-resume-from-history";
 import {
   createPlaybackSessionState,
   explainAutoplayBlockReason,
@@ -36,14 +35,10 @@ import {
 } from "@/app/playback-session-controller";
 import {
   startAtResumePoint,
+  startEpisodeNavigation,
   startFromBeginning,
   startFromEpisodeSelection,
 } from "@/app/playback-start-intent";
-import {
-  consumeUndoAdvanceResume,
-  pushUndoAdvanceFrame,
-  type UndoAdvanceFrame,
-} from "@/app/playback-undo-advance";
 import { resolveProviderStreamWithRetries } from "@/app/provider-resolve-retry";
 import { createResolveTraceStub } from "@/app/resolve-trace";
 import {
@@ -361,8 +356,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       // Holds a prefetched stream for the upcoming episode (set during near-EOF).
       let pendingPrefetchedStream: import("@/domain/types").StreamInfo | null = null;
-      /** One stack frame per forward advance (N / auto-next) so P can restore the left episode. */
-      const undoAdvanceStack: UndoAdvanceFrame[] = [];
 
       // Inner playback loop
       while (true) {
@@ -1000,14 +993,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "next" && title.type === "series") {
             if (episodeAvailability.nextEpisode) {
-              pendingStart = startAtResumePoint(
-                await resumeSecondsFromHistoryForEpisode(
-                  historyStore,
-                  title.id,
-                  episodeAvailability.nextEpisode,
-                  config.quitNearEndThresholdMode,
-                ),
-              );
+              pendingStart = startEpisodeNavigation();
               await applyMpvEpisodeLoadingOverlay(
                 playerControl.getActive(),
                 episodeAvailability.nextEpisode,
@@ -1029,32 +1015,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               } else {
                 playbackSession = { ...playbackSession, stopAfterCurrent: false };
               }
-              pushUndoAdvanceFrame(undoAdvanceStack, {
-                leftEpisode: currentEpisode,
-                result,
-                timing: effectiveTiming.current,
-                thresholdMode: config.quitNearEndThresholdMode,
-              });
               continue;
             }
           }
 
           if (playbackControlAction === "previous" && title.type === "series") {
             if (episodeAvailability.previousEpisode) {
-              let resumeSeconds = consumeUndoAdvanceResume(
-                undoAdvanceStack,
-                episodeAvailability.previousEpisode,
-                config.quitNearEndThresholdMode,
-              );
-              if (resumeSeconds <= 0) {
-                resumeSeconds = await resumeSecondsFromHistoryForEpisode(
-                  historyStore,
-                  title.id,
-                  episodeAvailability.previousEpisode,
-                  config.quitNearEndThresholdMode,
-                );
-              }
-              pendingStart = startAtResumePoint(resumeSeconds);
+              pendingStart = startEpisodeNavigation();
               await applyMpvEpisodeLoadingOverlay(
                 playerControl.getActive(),
                 episodeAvailability.previousEpisode,
@@ -1270,14 +1237,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               note: `S${String(nextEpisode.season).padStart(2, "0")}E${String(nextEpisode.episode).padStart(2, "0")}`,
             });
 
-            pendingStart = startAtResumePoint(
-              await resumeSecondsFromHistoryForEpisode(
-                historyStore,
-                title.id,
-                nextEpisode,
-                config.quitNearEndThresholdMode,
-              ),
-            );
+            pendingStart = startEpisodeNavigation();
 
             await applyMpvEpisodeLoadingOverlay(playerControl.getActive(), nextEpisode);
 
@@ -1297,12 +1257,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               pendingPrefetchedStream = prefetchedNextStream;
             }
 
-            pushUndoAdvanceFrame(undoAdvanceStack, {
-              leftEpisode: currentEpisode,
-              result,
-              timing: effectiveTiming.current,
-              thresholdMode: config.quitNearEndThresholdMode,
-            });
             continue;
           }
 
@@ -1315,7 +1269,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           await player.releasePersistentSession();
-          undoAdvanceStack.length = 0;
           this.updatePlaybackFeedback(context, { detail: null, note: null });
 
           // Post-playback menu — inner loop so unavailable navigation
