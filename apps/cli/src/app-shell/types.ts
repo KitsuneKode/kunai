@@ -32,7 +32,7 @@ export type ShellAction =
 
 export type ShellMode = "series" | "anime";
 
-export type ShellStatusTone = "neutral" | "success" | "warning" | "error";
+export type ShellStatusTone = "neutral" | "info" | "success" | "warning" | "error";
 
 export type ShellStatus = {
   label: string;
@@ -62,6 +62,8 @@ export type PlaybackShellState = {
   resumeLabel?: string;
   showMemory: boolean;
   memoryUsage?: string;
+  providerHealth?: ShellPanelLine;
+  networkHealth?: ShellPanelLine;
   status?: ShellStatus;
   commands?: readonly ResolvedAppCommand[];
   footerMode?: ShellFooterMode;
@@ -76,6 +78,7 @@ export type LoadingShellState = {
   trace?: string;
   subtitleStatus?: string;
   showMemory?: boolean;
+  getRuntimeHealth?: () => ShellPanelLine | undefined;
   cancellable?: boolean;
   stopHint?: string;
   controlHint?: string;

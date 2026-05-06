@@ -382,6 +382,8 @@ function resolvePanelTone(tone: ShellPanelLine["tone"]): string {
   switch (tone) {
     case "success":
       return palette.green;
+    case "info":
+      return palette.cyan;
     case "warning":
       return palette.amber;
     case "error":

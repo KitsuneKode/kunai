@@ -20,18 +20,21 @@ describe("loading shell runtime policy", () => {
     expect(policy.animate).toBe(false);
     expect(policy.trackElapsed).toBe(false);
     expect(policy.memoryRefreshMs).toBeNull();
+    expect(policy.runtimeHealthRefreshMs).toBeNull();
     expect(shouldShowLoadingElapsed("playing", 600)).toBe(false);
   });
 
-  test("visible memory panel refreshes while playback remains otherwise static", () => {
+  test("visible memory panel refreshes runtime panels while playback remains otherwise static", () => {
     const policy = getLoadingShellTimerPolicy({
       operation: "playing",
       memoryPanelVisible: true,
+      runtimeHealthVisible: true,
     });
 
     expect(policy.animate).toBe(false);
     expect(policy.trackElapsed).toBe(false);
     expect(policy.memoryRefreshMs).toBe(2_000);
+    expect(policy.runtimeHealthRefreshMs).toBe(2_000);
   });
 
   test("loading keeps short-lived animation and elapsed timers", () => {
@@ -43,6 +46,7 @@ describe("loading shell runtime policy", () => {
     expect(policy.animate).toBe(true);
     expect(policy.trackElapsed).toBe(true);
     expect(policy.memoryRefreshMs).toBeNull();
+    expect(policy.runtimeHealthRefreshMs).toBeNull();
     expect(shouldShowLoadingElapsed("loading", 12)).toBe(true);
   });
 });

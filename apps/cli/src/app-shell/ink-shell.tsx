@@ -6,6 +6,7 @@ import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
+import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import React, { useEffect, useRef, useState } from "react";
@@ -441,6 +442,11 @@ function AppRoot({ container }: { container: Container }) {
                   cancellable: playbackCanCancel,
                   trace: playbackTrace,
                   showMemory: container.config.showMemory,
+                  getRuntimeHealth: () =>
+                    buildRuntimeHealthSnapshot({
+                      recentEvents: container.diagnosticsStore.getRecent(25),
+                      currentProvider: state.provider,
+                    }).network,
                   stopHint:
                     state.playbackStatus === "playing" ||
                     state.playbackStatus === "buffering" ||
@@ -983,6 +989,26 @@ function PlaybackShell({
                 />
                 {state.showMemory && state.memoryUsage ? (
                   <DetailLine label="Memory" value={state.memoryUsage} />
+                ) : null}
+                {state.providerHealth ? (
+                  <DetailLine
+                    label={state.providerHealth.label}
+                    value={state.providerHealth.detail ?? ""}
+                    tone={
+                      state.providerHealth.tone === "neutral"
+                        ? undefined
+                        : state.providerHealth.tone
+                    }
+                  />
+                ) : null}
+                {state.networkHealth ? (
+                  <DetailLine
+                    label={state.networkHealth.label}
+                    value={state.networkHealth.detail ?? ""}
+                    tone={
+                      state.networkHealth.tone === "neutral" ? undefined : state.networkHealth.tone
+                    }
+                  />
                 ) : null}
               </Box>
               <Box marginTop={1}>

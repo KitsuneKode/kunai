@@ -188,4 +188,49 @@ describe("playback-watchdog", () => {
 
     watchdog.stop();
   });
+
+  test("emits throttled network samples for passive speed diagnostics", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      networkSampleEveryMs: 2_500,
+    });
+
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 10_000,
+      positionSeconds: 10,
+      durationSeconds: 600,
+      demuxerViaNetwork: true,
+      demuxerCacheDurationSeconds: 14,
+      cacheSpeedBytesPerSecond: 2_000_000,
+    });
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 11_000,
+      positionSeconds: 11,
+      durationSeconds: 600,
+      demuxerViaNetwork: true,
+      demuxerCacheDurationSeconds: 15,
+      cacheSpeedBytesPerSecond: 2_100_000,
+    });
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 13_000,
+      positionSeconds: 13,
+      durationSeconds: 600,
+      demuxerViaNetwork: true,
+      demuxerCacheDurationSeconds: 17,
+      cacheSpeedBytesPerSecond: 2_200_000,
+    });
+    watchdog.stop();
+
+    const samples = events.filter((event) => event.type === "network-sample");
+    expect(samples).toHaveLength(2);
+    expect(samples[0]).toMatchObject({
+      type: "network-sample",
+      cacheAheadSeconds: 14,
+      cacheSpeed: 2_000_000,
+      demuxerViaNetwork: true,
+    });
+  });
 });

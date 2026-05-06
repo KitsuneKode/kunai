@@ -77,6 +77,7 @@ import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { AniSkipTimingSource, IntroDbTimingSource, PlaybackTimingAggregator } from "@/infra/timing";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
+import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
@@ -196,6 +197,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           note: `${status} · ${recovery.label}`,
         };
       }
+      case "network-sample":
+        return {};
       case "subtitle-inventory-ready":
         return {
           detail: "Attaching subtitles",
@@ -1240,6 +1243,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               result.endReason !== "eof" &&
               resumeSeconds > 10 &&
               (result.duration <= 0 || resumeSeconds < Math.max(0, result.duration - 5));
+            const runtimeHealth = buildRuntimeHealthSnapshot({
+              recentEvents: diagnosticsStore.getRecent(25),
+              currentProvider: resolvedProviderId,
+            });
             const postAction = await openPlaybackShell({
               state: {
                 type: title.type,
@@ -1254,6 +1261,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 ),
                 autoplayPaused: autoplaySessionPaused,
                 showMemory: config.showMemory,
+                providerHealth: runtimeHealth.provider,
+                networkHealth: runtimeHealth.network,
                 mode: stateManager.getState().mode,
                 resumeLabel: canResumePlayback
                   ? `resume ${formatTimestamp(resumeSeconds)}`
@@ -1680,7 +1689,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         skipCredits: config.skipCredits,
         onNearEof,
         onPlaybackEvent: (event) => {
-          this.updatePlaybackFeedback(context, this.describePlayerEvent(event));
+          if (event.type !== "network-sample") {
+            this.updatePlaybackFeedback(context, this.describePlayerEvent(event));
+          }
           if (event.type === "network-buffering") {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "buffering" });
           } else if (event.type === "stream-stalled" || event.type === "ipc-stalled") {

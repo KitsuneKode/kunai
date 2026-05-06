@@ -1,6 +1,7 @@
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
+import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import type { CapabilitySnapshot } from "@/ui";
@@ -190,6 +191,10 @@ export function buildDiagnosticsPanelLines({
   const streamStallEvent = findRecentMpvEvent(recentEvents, "stream-stalled");
   const seekStallEvent = findRecentMpvEvent(recentEvents, "seek-stalled");
   const ipcStallEvent = findRecentMpvEvent(recentEvents, "ipc-stalled");
+  const runtimeHealth = buildRuntimeHealthSnapshot({
+    recentEvents,
+    currentProvider: state.provider,
+  });
   return [
     {
       label: "Export support bundle",
@@ -211,6 +216,8 @@ export function buildDiagnosticsPanelLines({
       label: "View and playback",
       detail: `${state.view}  ·  ${state.playbackStatus}`,
     },
+    runtimeHealth.provider,
+    runtimeHealth.network,
     {
       label: "Playback problem",
       detail: state.playbackProblem

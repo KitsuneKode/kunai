@@ -6,7 +6,7 @@ import { getRuntimeMemoryLine } from "./runtime-memory";
 import { ShellFrame } from "./shell-frame";
 import { Badge, DetailLine } from "./shell-primitives";
 import { palette } from "./shell-theme";
-import type { FooterAction, LoadingShellState } from "./types";
+import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
@@ -77,6 +77,30 @@ function useRuntimeMemoryLine(refreshMs: number | null): string {
   return memoryLine;
 }
 
+function useRuntimeHealthLine(
+  refreshMs: number | null,
+  getRuntimeHealth: (() => ShellPanelLine | undefined) | undefined,
+): ShellPanelLine | undefined {
+  const [healthLine, setHealthLine] = React.useState<ShellPanelLine | undefined>(() =>
+    refreshMs === null ? undefined : getRuntimeHealth?.(),
+  );
+
+  React.useEffect(() => {
+    if (refreshMs === null || !getRuntimeHealth) {
+      setHealthLine(undefined);
+      return undefined;
+    }
+
+    setHealthLine(getRuntimeHealth());
+    const timer = setInterval(() => {
+      setHealthLine(getRuntimeHealth());
+    }, refreshMs);
+    return () => clearInterval(timer);
+  }, [getRuntimeHealth, refreshMs]);
+
+  return healthLine;
+}
+
 function renderPhaseRail(active: LoadingShellState["operation"]): readonly {
   label: string;
   tone: "neutral" | "info" | "success";
@@ -130,11 +154,16 @@ export function LoadingShell({
   const timerPolicy = getLoadingShellTimerPolicy({
     operation: state.operation,
     memoryPanelVisible,
+    runtimeHealthVisible: memoryPanelVisible || state.operation !== "playing",
   });
   const spinner = useSpinner(timerPolicy.animate);
   const elapsed = useElapsed(timerPolicy.trackElapsed);
   const pulse = usePulse(1400, timerPolicy.animate);
   const memoryLine = useRuntimeMemoryLine(timerPolicy.memoryRefreshMs);
+  const runtimeHealthLine = useRuntimeHealthLine(
+    timerPolicy.runtimeHealthRefreshMs,
+    state.getRuntimeHealth,
+  );
   const { stdout } = useStdout();
 
   React.useEffect(() => {
@@ -311,6 +340,13 @@ export function LoadingShell({
           ) : null}
           {memoryPanelVisible && memoryLine ? (
             <DetailLine label="Memory" value={memoryLine} />
+          ) : null}
+          {runtimeHealthLine ? (
+            <DetailLine
+              label={runtimeHealthLine.label}
+              value={runtimeHealthLine.detail ?? ""}
+              tone={runtimeHealthLine.tone === "neutral" ? undefined : runtimeHealthLine.tone}
+            />
           ) : null}
         </Box>
 

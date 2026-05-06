@@ -5,7 +5,7 @@ import { hotkeyLabel, palette } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
 
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
-type BadgeTone = "neutral" | "info" | "success" | "warning" | "accent";
+type BadgeTone = "neutral" | "info" | "success" | "warning" | "error" | "accent";
 
 export function InlineBadge({
   label,
@@ -167,9 +167,11 @@ export function Badge({ label, tone = "neutral" }: { label: string; tone?: Badge
         ? palette.cyan
         : tone === "accent"
           ? palette.rose
-          : tone === "warning"
-            ? palette.amber
-            : palette.gray;
+          : tone === "error"
+            ? palette.red
+            : tone === "warning"
+              ? palette.amber
+              : palette.gray;
 
   return (
     <Box borderStyle="round" borderColor={color} paddingX={1} marginRight={1}>
@@ -196,9 +198,11 @@ export function DetailLine({
         ? palette.cyan
         : tone === "accent"
           ? palette.rose
-          : tone === "warning"
-            ? palette.amber
-            : "white";
+          : tone === "error"
+            ? palette.red
+            : tone === "warning"
+              ? palette.amber
+              : "white";
 
   return (
     <Box>

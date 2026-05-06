@@ -14,6 +14,7 @@ export function createPlaybackWatchdog(
     seekStallAfterMs?: number;
     cacheStallAfterMs?: number;
     networkReadDeadAfterMs?: number;
+    networkSampleEveryMs?: number;
   },
 ): PlaybackWatchdog {
   const intervalMs = options?.intervalMs ?? 2_500;
@@ -22,6 +23,7 @@ export function createPlaybackWatchdog(
   const cacheStallAfterMs = options?.cacheStallAfterMs ?? 20_000;
   /** Demuxer reports underrun + zero read rate while waiting for cache (see mpv demuxer-cache-state). */
   const networkReadDeadAfterMs = options?.networkReadDeadAfterMs ?? 8_000;
+  const networkSampleEveryMs = options?.networkSampleEveryMs ?? 2_500;
   let latest: PlayerTelemetrySample | null = null;
   let lastPosition = 0;
   let lastProgressAt = Date.now();
@@ -33,6 +35,7 @@ export function createPlaybackWatchdog(
   let pausedOrIdle = false;
   let networkReadDeadSince: number | null = null;
   let emittedNetworkReadDead = false;
+  let lastNetworkSampleAt = 0;
 
   const resetProgressClock = (observedAt: number, positionSeconds: number) => {
     lastPosition = positionSeconds;
@@ -136,6 +139,22 @@ export function createPlaybackWatchdog(
   return {
     observe(sample) {
       latest = sample;
+      if (
+        sample.demuxerViaNetwork === true &&
+        sample.observedAt - lastNetworkSampleAt >= networkSampleEveryMs
+      ) {
+        lastNetworkSampleAt = sample.observedAt;
+        emit({
+          type: "network-sample",
+          cacheAheadSeconds: sample.demuxerCacheDurationSeconds,
+          cacheSpeed: sample.cacheSpeedBytesPerSecond,
+          rawInputRate: sample.demuxerRawInputRate,
+          demuxerViaNetwork: sample.demuxerViaNetwork,
+          pausedForCache: sample.pausedForCache,
+          underrun: sample.demuxerCacheUnderrun,
+        });
+      }
+
       if (sample.positionSeconds > lastPosition + 0.25) {
         lastPosition = sample.positionSeconds;
         lastProgressAt = sample.observedAt;

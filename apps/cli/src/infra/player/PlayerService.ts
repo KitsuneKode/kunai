@@ -24,6 +24,15 @@ export type PlayerPlaybackEvent =
       cacheAheadSeconds?: number;
       cacheSpeed?: number;
     }
+  | {
+      type: "network-sample";
+      cacheAheadSeconds?: number;
+      cacheSpeed?: number;
+      rawInputRate?: number;
+      demuxerViaNetwork?: boolean;
+      pausedForCache?: boolean;
+      underrun?: boolean;
+    }
   | { type: "subtitle-inventory-ready"; trackCount: number }
   | { type: "subtitle-attached"; trackCount: number }
   | { type: "late-subtitles-attached"; trackCount: number }
