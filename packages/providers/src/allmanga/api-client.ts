@@ -241,7 +241,7 @@ function availableEpisodesDetailCacheKey(apiUrl: string, showId: string): string
   return `${apiUrl}\n${showId}`;
 }
 
-async function loadAvailableEpisodesDetail(
+export async function loadAvailableEpisodesDetail(
   apiUrl: string,
   referer: string,
   ua: string,
