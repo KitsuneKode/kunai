@@ -2,7 +2,9 @@ import type { CoreProviderModule } from "@kunai/core";
 import type { ProviderId } from "@kunai/types";
 
 export * from "./allmanga";
+export * from "./miruro/direct";
 export * from "./research";
+export * from "./rivestream/direct";
 export * from "./vidking";
 
 export interface ProviderModuleRegistry {

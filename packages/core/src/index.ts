@@ -10,6 +10,7 @@ export * from "./providers/cineby";
 export * from "./providers/cineby-anime";
 export * from "./providers/factory";
 export * from "./providers/miruro";
+export * from "./providers/rivestream";
 export * from "./providers/vidking";
 export * from "./resolver";
 export * from "./trace";
