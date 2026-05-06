@@ -10,8 +10,6 @@ export interface StreamCacheKeyInput {
   readonly subtitleLanguage?: string;
   readonly qualityPreference?: string;
   readonly resolverRuntime?: ProviderRuntime;
-  readonly authMode?: string;
-  readonly regionHint?: string;
 }
 
 export function createStreamCacheKey(input: StreamCacheKeyInput): string {
@@ -26,9 +24,7 @@ export function createStreamCacheKey(input: StreamCacheKeyInput): string {
     normalizeKeyPart(input.audioLanguage),
     normalizeKeyPart(input.subtitleLanguage),
     normalizeKeyPart(input.qualityPreference),
-    input.resolverRuntime ?? "unknown-runtime",
-    normalizeKeyPart(input.authMode),
-    normalizeKeyPart(input.regionHint),
+    input.resolverRuntime ?? "unknown-runtime"
   ]);
 }
 
