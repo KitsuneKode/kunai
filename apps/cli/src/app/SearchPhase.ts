@@ -10,6 +10,7 @@ import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
+import { loadDiscoveryList } from "@/app/discovery-lists";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { searchTitles } from "@/app/search-routing";
 import { effectiveFooterHints } from "@/container";
@@ -55,6 +56,34 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
       while (true) {
         const currentState = stateManager.getState();
+        if (
+          currentState.searchQuery.trim().length === 0 &&
+          currentState.searchResults.length === 0 &&
+          currentState.searchState === "idle"
+        ) {
+          stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
+          const results = await loadDiscoveryList(currentState.mode, context.signal);
+          if (results.length > 0) {
+            logger.info("Discovery list loaded", {
+              mode: currentState.mode,
+              count: results.length,
+            });
+            diagnosticsStore.record({
+              category: "search",
+              message: "Discovery list loaded",
+              context: {
+                mode: currentState.mode,
+                count: results.length,
+              },
+            });
+            stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
+            stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
+            continue;
+          } else {
+            stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
+          }
+        }
+
         if (currentState.searchQuery.trim().length > 0 && currentState.searchResults.length === 0) {
           stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
