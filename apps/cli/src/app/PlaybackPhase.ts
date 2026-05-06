@@ -35,6 +35,11 @@ import {
   type PlaybackSessionState,
 } from "@/app/playback-session-controller";
 import {
+  startAtResumePoint,
+  startFromBeginning,
+  startFromEpisodeSelection,
+} from "@/app/playback-start-intent";
+import {
   consumeUndoAdvanceResume,
   pushUndoAdvanceFrame,
   type UndoAdvanceFrame,
@@ -276,10 +281,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     try {
       // Episode selection (for series)
       let episode: EpisodeInfo | undefined;
-      let pendingStartAt = 0;
-      // Set when user already chose a resume action in the shell.
-      // Suppresses the in-mpv resume/start-over prompt so we don't ask twice.
-      let pendingSuppressResumePrompt = false;
+      let pendingStart = startFromBeginning();
       const provider = providerRegistry.get(stateManager.getState().provider);
       const initialAnimeEpisodes = await this.getAnimeEpisodeOptions({
         title,
@@ -342,8 +344,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           season: selection.season,
           episode: selection.episode,
         };
-        pendingStartAt = selection.startAt ?? 0;
-        pendingSuppressResumePrompt = selection.suppressResumePrompt === true;
+        pendingStart = startFromEpisodeSelection(selection);
       } else {
         episode = { season: 1, episode: 1 };
       }
@@ -709,10 +710,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           // Play in MPV — consume the pending resume position on the first play only.
           // Pass loading handle so playStream can update it in-place (no shell flicker).
-          const startAt = pendingStartAt;
-          pendingStartAt = 0;
-          const suppressResumePrompt = pendingSuppressResumePrompt;
-          pendingSuppressResumePrompt = false;
+          const startIntent = pendingStart;
+          pendingStart = startFromBeginning();
 
           // Prefetch: start resolving the next episode's stream in the background
           // when we enter the last ~30 s, so autoplay feels instant.
@@ -766,11 +765,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             title,
             currentEpisode,
             context,
-            startAt,
+            startIntent.startAt,
             playbackSession.mode,
             playbackTiming,
             maybePrefetchNext,
-            suppressResumePrompt,
+            startIntent.suppressResumePrompt,
           );
 
           // Save history — use effectiveTiming.current so that a background retry
@@ -835,7 +834,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
           if (playbackDecision.shouldRefreshSource) {
-            pendingStartAt = toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode);
+            pendingStart = startAtResumePoint(
+              toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
+            );
             const refreshCacheKey = buildApiStreamResolveCacheKey({
               providerId: resolvedProviderId,
               title,
@@ -857,14 +858,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
-                resumeSeconds: pendingStartAt,
+                resumeSeconds: pendingStart.startAt,
               },
             });
             continue;
           }
 
           if (playbackDecision.shouldFallbackProvider) {
-            pendingStartAt = toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode);
+            pendingStart = startAtResumePoint(
+              toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
+            );
             const fallback = providerRegistry
               .getCompatible(title)
               .find((candidate) => candidate.metadata.id !== resolvedProviderId);
@@ -880,7 +883,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  resumeSeconds: pendingStartAt,
+                  resumeSeconds: pendingStart.startAt,
                 },
               });
               continue;
@@ -897,18 +900,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: currentEpisode.episode,
               },
             });
-            // Keep `pendingStartAt` for this episode; re-resolve instead of falling through
-            // to auto-advance / post-playback with a poisoned resume offset.
+            // Keep the pending start intent for this episode; re-resolve instead of falling
+            // through to auto-advance / post-playback with a poisoned resume offset.
             continue;
           }
 
           if (playbackControlAction === "next" && title.type === "series") {
             if (episodeAvailability.nextEpisode) {
-              pendingStartAt = await resumeSecondsFromHistoryForEpisode(
-                historyStore,
-                title.id,
-                episodeAvailability.nextEpisode,
-                config.quitNearEndThresholdMode,
+              pendingStart = startAtResumePoint(
+                await resumeSecondsFromHistoryForEpisode(
+                  historyStore,
+                  title.id,
+                  episodeAvailability.nextEpisode,
+                  config.quitNearEndThresholdMode,
+                ),
               );
               await applyMpvEpisodeLoadingOverlay(
                 playerControl.getActive(),
@@ -956,7 +961,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   config.quitNearEndThresholdMode,
                 );
               }
-              pendingStartAt = resumeSeconds;
+              pendingStart = startAtResumePoint(resumeSeconds);
               await applyMpvEpisodeLoadingOverlay(
                 playerControl.getActive(),
                 episodeAvailability.previousEpisode,
@@ -995,10 +1000,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (pickedSource) {
                 preferredSourceId = pickedSource;
                 preferredStreamId = null;
-                pendingStartAt = toHistoryTimestamp(
-                  result,
-                  effectiveTiming.current,
-                  config.quitNearEndThresholdMode,
+                pendingStart = startAtResumePoint(
+                  toHistoryTimestamp(
+                    result,
+                    effectiveTiming.current,
+                    config.quitNearEndThresholdMode,
+                  ),
                 );
                 diagnosticsStore.record({
                   category: "playback",
@@ -1008,7 +1015,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     titleId: title.id,
                     season: currentEpisode.season,
                     episode: currentEpisode.episode,
-                    resumeSeconds: pendingStartAt,
+                    resumeSeconds: pendingStart.startAt,
                   },
                 });
                 continue;
@@ -1029,10 +1036,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (pickedStreamId) {
                 preferredStreamId = pickedStreamId;
-                pendingStartAt = toHistoryTimestamp(
-                  result,
-                  effectiveTiming.current,
-                  config.quitNearEndThresholdMode,
+                pendingStart = startAtResumePoint(
+                  toHistoryTimestamp(
+                    result,
+                    effectiveTiming.current,
+                    config.quitNearEndThresholdMode,
+                  ),
                 );
                 diagnosticsStore.record({
                   category: "playback",
@@ -1042,7 +1051,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     titleId: title.id,
                     season: currentEpisode.season,
                     episode: currentEpisode.episode,
-                    resumeSeconds: pendingStartAt,
+                    resumeSeconds: pendingStart.startAt,
                   },
                 });
                 continue;
@@ -1063,10 +1072,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (pickedQualityStreamId) {
                 preferredStreamId = pickedQualityStreamId;
-                pendingStartAt = toHistoryTimestamp(
-                  result,
-                  effectiveTiming.current,
-                  config.quitNearEndThresholdMode,
+                pendingStart = startAtResumePoint(
+                  toHistoryTimestamp(
+                    result,
+                    effectiveTiming.current,
+                    config.quitNearEndThresholdMode,
+                  ),
                 );
                 diagnosticsStore.record({
                   category: "playback",
@@ -1076,7 +1087,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     titleId: title.id,
                     season: currentEpisode.season,
                     episode: currentEpisode.episode,
-                    resumeSeconds: pendingStartAt,
+                    resumeSeconds: pendingStart.startAt,
                   },
                 });
                 continue;
@@ -1167,11 +1178,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               note: `S${String(nextEpisode.season).padStart(2, "0")}E${String(nextEpisode.episode).padStart(2, "0")}`,
             });
 
-            pendingStartAt = await resumeSecondsFromHistoryForEpisode(
-              historyStore,
-              title.id,
-              nextEpisode,
-              config.quitNearEndThresholdMode,
+            pendingStart = startAtResumePoint(
+              await resumeSecondsFromHistoryForEpisode(
+                historyStore,
+                title.id,
+                nextEpisode,
+                config.quitNearEndThresholdMode,
+              ),
             );
 
             await applyMpvEpisodeLoadingOverlay(playerControl.getActive(), nextEpisode);
@@ -1322,8 +1335,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               continue postPlayback;
             } else if (routedAction === "resume") {
-              pendingStartAt = resumeSeconds;
-              pendingSuppressResumePrompt = true;
+              pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
               const playbackAction = resolvePostPlaybackSessionAction("resume", playbackSession);
               playbackSession = playbackAction.session;
               if (!playbackAction.session.autoplayPaused) {
@@ -1355,7 +1367,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               preferredSourceId = pickedSource;
               preferredStreamId = null;
-              pendingStartAt = resumeSeconds;
+              pendingStart = startAtResumePoint(resumeSeconds);
               break postPlayback;
             } else if (routedAction === "quality") {
               const qualityOptions = buildQualityPickerOptions(preparedStream);
@@ -1374,7 +1386,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 continue postPlayback;
               }
               preferredStreamId = pickedQualityStreamId;
-              pendingStartAt = resumeSeconds;
+              pendingStart = startAtResumePoint(resumeSeconds);
               break postPlayback;
             } else if (routedAction === "streams") {
               const streamOptions = buildStreamPickerOptions(preparedStream);
@@ -1393,7 +1405,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 continue postPlayback;
               }
               preferredStreamId = pickedStreamId;
-              pendingStartAt = resumeSeconds;
+              pendingStart = startAtResumePoint(resumeSeconds);
               break postPlayback;
             } else if (routedAction === "back-to-search") {
               return { status: "success", value: "back_to_search" };
