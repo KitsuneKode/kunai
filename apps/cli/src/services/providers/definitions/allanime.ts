@@ -56,6 +56,7 @@ export class AllAnimeProvider implements Provider {
     );
 
     if (!result) return null;
+    const animeLang = request.animeLang ?? this.deps.config.animeLang;
 
     return attachProviderResolveResult({
       manifest: allanimeManifest,
@@ -65,6 +66,8 @@ export class AllAnimeProvider implements Provider {
       stream: {
         url: result.url,
         headers: result.headers,
+        audioLanguage: animeLang,
+        hardSubLanguage: animeLang === "sub" ? "en" : undefined,
         subtitle: result.subtitle ?? undefined,
         subtitleList: result.subtitleList.map(
           (url): SubtitleTrack => ({ url, sourceName: "allmanga" }),

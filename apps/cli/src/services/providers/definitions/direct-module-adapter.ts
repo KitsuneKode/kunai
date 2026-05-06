@@ -6,7 +6,11 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import { selectSubtitle } from "@/subtitle";
-import { createProviderRuntimeContext, type CoreProviderManifest } from "@kunai/core";
+import {
+  createProviderResolveFailureError,
+  createProviderRuntimeContext,
+  type CoreProviderManifest,
+} from "@kunai/core";
 import type { CoreProviderModule } from "@kunai/core";
 import type { ProviderResolveResult, SubtitleCandidate } from "@kunai/types";
 
@@ -60,7 +64,12 @@ export class DirectModuleProvider implements Provider {
       createProviderRuntimeContext({ signal }),
     );
 
-    return providerResolveResultToStream(result, request);
+    const stream = providerResolveResultToStream(result, request);
+    if (!stream) {
+      throw createProviderResolveFailureError(result);
+    }
+
+    return stream;
   }
 }
 

@@ -20,6 +20,28 @@ export interface ResolveWithFallbackResult<TStream> {
   readonly attempts: readonly ResolveAttempt<TStream>[];
 }
 
+export class ProviderResolveFailureError extends Error {
+  constructor(readonly failure: ProviderFailure) {
+    super(failure.message);
+    this.name = "ProviderResolveFailureError";
+  }
+}
+
+export function createProviderResolveFailureError(
+  result: ProviderResolveResult,
+  message = "Provider returned no playable stream candidates",
+): ProviderResolveFailureError {
+  return new ProviderResolveFailureError(
+    result.failures[0] ?? {
+      providerId: result.providerId,
+      code: "not-found",
+      message,
+      retryable: true,
+      at: new Date().toISOString(),
+    },
+  );
+}
+
 export async function resolveWithFallback<
   TStream extends { providerResolveResult?: ProviderResolveResult },
 >({
@@ -58,13 +80,16 @@ export async function resolveWithFallback<
       attempts.push({
         providerId: candidate.providerId,
         stream: null,
-        failure: {
-          providerId: candidate.providerId,
-          code: "unknown",
-          message: error instanceof Error ? error.message : String(error),
-          retryable: true,
-          at: now(),
-        },
+        failure:
+          error instanceof ProviderResolveFailureError
+            ? error.failure
+            : {
+                providerId: candidate.providerId,
+                code: "unknown",
+                message: error instanceof Error ? error.message : String(error),
+                retryable: true,
+                at: now(),
+              },
       });
     }
   }

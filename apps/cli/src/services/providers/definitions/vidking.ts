@@ -10,7 +10,12 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
-import { createProviderRuntimeContext, vidkingManifest } from "@kunai/core";
+import {
+  createProviderResolveFailureError,
+  createProviderRuntimeContext,
+  ProviderResolveFailureError,
+  vidkingManifest,
+} from "@kunai/core";
 import { resolveVidkingDirect } from "@kunai/providers";
 import type { ProviderResolveInput, ProviderResolveResult, SubtitleCandidate } from "@kunai/types";
 
@@ -43,13 +48,22 @@ export class VidKingProvider implements Provider {
     const resolveDirect = this.internals.resolveDirect ?? resolveVidkingDirect;
     const resolveWyzie = this.internals.resolveWyzie ?? resolveSubtitlesByTmdbId;
 
-    let stream = providerResolveResultToStream(
-      await resolveDirect(
-        createVidkingResolveInput(request),
-        createProviderRuntimeContext({ signal }),
-      ),
-      request,
+    const directResult = await resolveDirect(
+      createVidkingResolveInput(request),
+      createProviderRuntimeContext({ signal }),
     );
+    let stream = providerResolveResultToStream(directResult, request);
+    if (!stream) {
+      throw directResult
+        ? createProviderResolveFailureError(directResult)
+        : new ProviderResolveFailureError({
+            providerId: vidkingManifest.id,
+            code: "not-found",
+            message: "VidKing returned no direct resolve result",
+            retryable: true,
+            at: new Date().toISOString(),
+          });
+    }
     const resolvedDirect = Boolean(stream);
 
     if (

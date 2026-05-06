@@ -60,6 +60,8 @@ test("attachProviderResolveResult adds shared trace and cache policy to an exist
     stream: {
       url: "https://cdn.example/master.m3u8",
       headers: {},
+      audioLanguage: "sub",
+      hardSubLanguage: "en",
       timestamp: 1,
     },
     mode: "anime",
@@ -69,5 +71,6 @@ test("attachProviderResolveResult adds shared trace and cache policy to an exist
   expect(stream.providerResolveResult?.providerId).toBe("miruro");
   expect(stream.providerResolveResult?.trace.title.kind).toBe("anime");
   expect(stream.providerResolveResult?.trace.runtime).toBe("direct-http");
+  expect(stream.providerResolveResult?.streams[0]?.hardSubLanguage).toBe("en");
   expect(stream.providerResolveResult?.cachePolicy?.keyParts).toContain("english");
 });

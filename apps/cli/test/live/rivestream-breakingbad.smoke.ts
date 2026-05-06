@@ -4,14 +4,14 @@ import type { TitleInfo } from "@/domain/types";
 import { buildProviderSmokePayload, providerSmokeError } from "./provider-smoke";
 
 const season = Number(process.argv[2] ?? "1");
-const episode = Number(process.argv[3] ?? "2");
+const episode = Number(process.argv[3] ?? "1");
 const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const container = await createContainer({ debug: true });
-const provider = container.providerRegistry.get("vidking");
+const provider = container.providerRegistry.get("rivestream");
 
 if (!provider) {
-  console.error(JSON.stringify({ ok: false, stage: "provider", reason: "missing_vidking" }));
+  console.error(JSON.stringify({ ok: false, stage: "provider", reason: "missing_rivestream" }));
   process.exit(1);
 }
 
@@ -20,9 +20,9 @@ if (clearCache) {
 }
 
 const title: TitleInfo = {
-  id: "127529",
+  id: "1396",
   type: "series",
-  name: "Bloodhounds",
+  name: "Breaking Bad",
 };
 
 let resolveError: unknown = null;
@@ -39,17 +39,13 @@ const stream = await provider
 
 const payload = {
   ...buildProviderSmokePayload({
-    provider: "vidking",
+    provider: "rivestream",
     title,
     season,
     episode,
     stream,
   }),
   ...(resolveError ? providerSmokeError(resolveError) : {}),
-  provider: "vidking",
-  subtitleUrl: stream?.subtitle ?? null,
-  subtitleSource: stream?.subtitleSource ?? null,
-  subtitleEvidence: stream?.subtitleEvidence ?? null,
   cacheCleared: clearCache,
 };
 

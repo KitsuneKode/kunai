@@ -83,6 +83,53 @@ describe("panel-data", () => {
     expect(problem?.tone).toBe("warning");
   });
 
+  test("buildDiagnosticsPanelLines surfaces direct provider trace summary", () => {
+    const state = {
+      ...createInitialState("vidking", "allanime"),
+      provider: "rivestream",
+    } as const;
+    const lines = buildDiagnosticsPanelLines({
+      state,
+      recentEvents: [
+        {
+          timestamp: 3000,
+          category: "provider",
+          message: "Provider resolve trace completed",
+          context: {
+            trace: {
+              id: "trace-1",
+              startedAt: "2026-05-06T00:00:00.000Z",
+              endedAt: "2026-05-06T00:00:01.100Z",
+              title: { id: "1396", name: "Breaking Bad", type: "series" },
+              selectedProviderId: "rivestream",
+              selectedStreamId: "stream-1",
+              cacheHit: false,
+              runtime: "direct-http",
+              steps: [
+                {
+                  at: "2026-05-06T00:00:01.100Z",
+                  stage: "provider",
+                  message: "Resolved Rivestream through local MurmurHash",
+                  providerId: "rivestream",
+                  attributes: { streams: 2 },
+                },
+              ],
+              failures: [],
+            },
+            streamCandidates: 2,
+            subtitleCandidates: 3,
+          },
+        },
+      ],
+    });
+
+    const provider = lines.find((line) => line.label === "Provider");
+    expect(provider?.detail).toContain("rivestream · direct-http");
+    expect(provider?.detail).toContain("cache miss");
+    expect(provider?.detail).toContain("2 streams");
+    expect(provider?.tone).toBe("success");
+  });
+
   test("buildHistoryPanelLines sorts newest entries first", () => {
     const lines = buildHistoryPanelLines([
       [

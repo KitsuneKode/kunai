@@ -15,6 +15,8 @@ import { createResolveTrace, createTraceStep } from "./trace";
 export interface CliStreamInfoLike {
   readonly url: string;
   readonly headers?: Record<string, string>;
+  readonly audioLanguage?: string;
+  readonly hardSubLanguage?: string;
   readonly subtitle?: string;
   readonly subtitleList?: readonly CliSubtitleTrackLike[];
   readonly subtitleSource?: "direct" | "wyzie" | "provider" | "none";
@@ -90,6 +92,8 @@ export function streamInfoToCandidate(
     url: stream.url,
     protocol,
     container: protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "unknown",
+    audioLanguage: stream.audioLanguage,
+    hardSubLanguage: stream.hardSubLanguage,
     headers: stream.headers,
     confidence: 0.9,
     cachePolicy,

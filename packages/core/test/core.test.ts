@@ -13,6 +13,7 @@ import {
   createProviderTraceEvent,
   DEFAULT_PROVIDER_RETRY_POLICY,
   miruroManifest,
+  ProviderResolveFailureError,
   rivestreamManifest,
   resolveWithFallback,
   vidkingManifest,
@@ -162,6 +163,8 @@ test("cli stream adapter returns shared provider resolve result with trace evide
     stream: {
       url: "https://cdn.example/master.m3u8",
       headers: { referer: "https://vidking.net" },
+      audioLanguage: "ja",
+      hardSubLanguage: "en",
       subtitle: "https://cdn.example/en.vtt",
       subtitleList: [{ url: "https://cdn.example/en.vtt", language: "en", display: "English" }],
       subtitleSource: "provider",
@@ -173,6 +176,8 @@ test("cli stream adapter returns shared provider resolve result with trace evide
 
   expect(result.providerId).toBe("vidking");
   expect(result.streams[0]?.protocol).toBe("hls");
+  expect(result.streams[0]?.audioLanguage).toBe("ja");
+  expect(result.streams[0]?.hardSubLanguage).toBe("en");
   expect(result.subtitles[0]?.language).toBe("en");
   expect(result.trace.cacheHit).toBe(true);
   expect(result.trace.runtime).toBe("direct-http");
@@ -237,5 +242,33 @@ test("resolveWithFallback converts thrown provider errors into structured attemp
     message: "provider exploded",
     retryable: true,
     at: "2026-04-30T00:00:00.000Z",
+  });
+});
+
+test("resolveWithFallback preserves typed provider failure errors", async () => {
+  const resolved = await resolveWithFallback({
+    candidates: [
+      {
+        providerId: "direct",
+        preferred: true,
+        async resolve() {
+          throw new ProviderResolveFailureError({
+            providerId: "direct",
+            code: "provider-unavailable",
+            message: "Direct provider returned no stream candidates",
+            retryable: true,
+            at: "2026-05-06T00:00:00.000Z",
+          });
+        },
+      },
+    ],
+  });
+
+  expect(resolved.stream).toBeNull();
+  expect(resolved.attempts[0]?.failure).toMatchObject({
+    providerId: "direct",
+    code: "provider-unavailable",
+    message: "Direct provider returned no stream candidates",
+    retryable: true,
   });
 });

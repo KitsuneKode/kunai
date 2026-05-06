@@ -3,15 +3,14 @@ import type { TitleInfo } from "@/domain/types";
 
 import { buildProviderSmokePayload, providerSmokeError } from "./provider-smoke";
 
-const season = Number(process.argv[2] ?? "1");
-const episode = Number(process.argv[3] ?? "2");
+const episode = Number(process.argv[2] ?? "1");
 const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const container = await createContainer({ debug: true });
-const provider = container.providerRegistry.get("vidking");
+const provider = container.providerRegistry.get("miruro");
 
 if (!provider) {
-  console.error(JSON.stringify({ ok: false, stage: "provider", reason: "missing_vidking" }));
+  console.error(JSON.stringify({ ok: false, stage: "provider", reason: "missing_miruro" }));
   process.exit(1);
 }
 
@@ -20,17 +19,18 @@ if (clearCache) {
 }
 
 const title: TitleInfo = {
-  id: "127529",
+  id: "101922",
   type: "series",
-  name: "Bloodhounds",
+  name: "Demon Slayer: Kimetsu no Yaiba",
 };
 
 let resolveError: unknown = null;
 const stream = await provider
   .resolveStream({
     title,
-    episode: { season, episode },
+    episode: { season: 1, episode },
     subLang: container.config.subLang,
+    animeLang: container.config.animeLang,
   })
   .catch((error) => {
     resolveError = error;
@@ -39,17 +39,14 @@ const stream = await provider
 
 const payload = {
   ...buildProviderSmokePayload({
-    provider: "vidking",
+    provider: "miruro",
     title,
-    season,
+    season: 1,
     episode,
     stream,
   }),
   ...(resolveError ? providerSmokeError(resolveError) : {}),
-  provider: "vidking",
-  subtitleUrl: stream?.subtitle ?? null,
-  subtitleSource: stream?.subtitleSource ?? null,
-  subtitleEvidence: stream?.subtitleEvidence ?? null,
+  animeLang: container.config.animeLang,
   cacheCleared: clearCache,
 };
 

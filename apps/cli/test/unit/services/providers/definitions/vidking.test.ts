@@ -70,12 +70,12 @@ test("vidking fails fast when the direct resolver has no playable stream", async
     resolveDirect: async () => null,
   });
 
-  const stream = await provider.resolveStream({
-    title: { id: "438631", type: "movie", name: "Dune" },
-    subLang: "english",
-  });
-
-  expect(stream).toBeNull();
+  await expect(
+    provider.resolveStream({
+      title: { id: "438631", type: "movie", name: "Dune" },
+      subLang: "english",
+    }),
+  ).rejects.toThrow("VidKing returned no direct resolve result");
 });
 
 test("vidking resolves through the direct decode path", async () => {

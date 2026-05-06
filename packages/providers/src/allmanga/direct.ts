@@ -139,12 +139,12 @@ export const allmangaProviderModule: CoreProviderModule = {
           protocol,
           container: protocol === "hls" ? "m3u8" : "mp4",
           audioLanguage: mode,
+          hardSubLanguage: mode === "sub" ? "en" : undefined,
           qualityLabel: qualityStr,
           qualityRank: parseInt(qualityStr) || 0,
           headers,
           confidence: protocol === "hls" ? 0.95 : 0.85,
           cachePolicy,
-          metadata: { hardSubLanguage: mode === "sub" ? "en" : undefined },
         });
 
         variants.push({

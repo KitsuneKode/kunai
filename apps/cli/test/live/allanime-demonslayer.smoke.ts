@@ -1,6 +1,8 @@
 import { searchTitles } from "@/app/search-routing";
 import { createContainer } from "@/container";
 
+import { buildProviderSmokePayload, providerSmokeError } from "./provider-smoke";
+
 const container = await createContainer({ debug: true });
 const { searchRegistry, providerRegistry, config } = container;
 
@@ -12,6 +14,21 @@ const search = await searchTitles(query, {
   animeLang: config.animeLang,
   searchRegistry,
   providerRegistry,
+}).catch((error) => {
+  console.error(
+    JSON.stringify(
+      {
+        ok: false,
+        stage: "search",
+        query,
+        provider: config.animeProvider,
+        ...providerSmokeError(error),
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(1);
 });
 
 const selected =
@@ -54,26 +71,33 @@ const title = {
 };
 
 const episodes = provider.listEpisodes ? await provider.listEpisodes({ title }) : null;
-const stream = await provider.resolveStream({
-  title,
-  episode: { season: 1, episode: 1 },
-  subLang: config.subLang,
-});
+let resolveError: unknown = null;
+const stream = await provider
+  .resolveStream({
+    title,
+    episode: { season: 1, episode: 1 },
+    subLang: config.subLang,
+  })
+  .catch((error) => {
+    resolveError = error;
+    return null;
+  });
 
 const payload = {
-  ok: true,
+  ...buildProviderSmokePayload({
+    provider: provider.metadata.id,
+    title,
+    season: 1,
+    episode: 1,
+    stream,
+  }),
   query,
   sourceName: search.sourceName,
-  title: title.name,
-  titleId: title.id,
   episodeCount: title.episodeCount ?? null,
   episodeOptions: episodes?.length ?? 0,
   firstEpisodes: episodes?.slice(0, 3).map((episode) => episode.label) ?? [],
-  streamResolved: Boolean(stream?.url),
+  ...(resolveError ? providerSmokeError(resolveError) : {}),
   subtitleUrl: stream?.subtitle ?? null,
-  subtitleTracks: stream?.subtitleList?.length ?? 0,
-  headerKeys: Object.keys(stream?.headers ?? {}),
-  streamHost: stream?.url ? new URL(stream.url).host : null,
 };
 
 console.log(JSON.stringify(payload, null, 2));

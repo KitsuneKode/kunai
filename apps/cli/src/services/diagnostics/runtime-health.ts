@@ -31,6 +31,57 @@ function asFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function asBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function formatFailureCode(failure: Record<string, unknown> | null): string | null {
+  if (!failure) return null;
+
+  const code = typeof failure.code === "string" ? failure.code : null;
+  if (!code) return null;
+
+  const retryable = asBoolean(failure.retryable);
+  const message = typeof failure.message === "string" ? failure.message : null;
+  const parts = [
+    code,
+    retryable === true ? "retryable" : retryable === false ? "not retryable" : null,
+  ];
+  if (message) parts.push(message);
+
+  return parts.filter((part): part is string => Boolean(part)).join(" · ");
+}
+
+function summarizeTraceContext(context: Record<string, unknown>): string | null {
+  const trace = asRecord(context.trace);
+  if (!trace) return null;
+
+  const runtime = typeof trace.runtime === "string" ? trace.runtime : null;
+  const selectedProvider =
+    (typeof trace.selectedProviderId === "string" ? trace.selectedProviderId : null) ??
+    (typeof context.provider === "string" ? context.provider : null) ??
+    (typeof context.providerId === "string" ? context.providerId : null);
+  const cacheHit = asBoolean(trace.cacheHit);
+  const streamCandidates = asFiniteNumber(context.streamCandidates);
+  const subtitleCandidates = asFiniteNumber(context.subtitleCandidates);
+  const steps = Array.isArray(trace.steps) ? trace.steps : [];
+  const latestStep = steps
+    .map((step) => asRecord(step))
+    .find((step): step is Record<string, unknown> => Boolean(step));
+  const stage = typeof latestStep?.stage === "string" ? latestStep.stage : null;
+
+  const parts = [
+    selectedProvider,
+    runtime,
+    stage,
+    cacheHit === null ? null : cacheHit ? "cache hit" : "cache miss",
+    streamCandidates !== null ? `${streamCandidates} streams` : null,
+    subtitleCandidates !== null ? `${subtitleCandidates} subtitles` : null,
+  ];
+
+  return parts.filter((part): part is string => Boolean(part)).join(" · ");
+}
+
 export function formatNetworkRate(bytesPerSecond: number | null | undefined): string {
   if (typeof bytesPerSecond !== "number" || !Number.isFinite(bytesPerSecond)) {
     return "unknown speed";
@@ -146,9 +197,13 @@ export function summarizeProviderHealth(
     );
   });
   const context = asRecord(providerEvent?.context);
+  const traceSummary = context ? summarizeTraceContext(context) : null;
   const provider =
     (typeof context?.provider === "string" ? context.provider : null) ??
     (typeof context?.providerId === "string" ? context.providerId : null) ??
+    (typeof asRecord(context?.trace)?.selectedProviderId === "string"
+      ? asRecord(context?.trace)?.selectedProviderId
+      : null) ??
     currentProvider ??
     "provider";
 
@@ -164,10 +219,11 @@ export function summarizeProviderHealth(
   const duration = sinceStartMs === null ? null : `${(sinceStartMs / 1000).toFixed(1)}s`;
 
   if (providerEvent.message.includes("failed") || providerEvent.message.includes("exhausted")) {
-    const failure = context?.failure ? ` · ${String(context.failure)}` : "";
+    const failure = formatFailureCode(asRecord(context?.failure));
+    const stage = typeof context?.stage === "string" ? ` at ${context.stage}` : "";
     return {
       label: "Provider",
-      detail: `${provider} · failed${duration ? ` after ${duration}` : ""}${failure}`,
+      detail: `${provider} · failed${stage}${duration ? ` after ${duration}` : ""}${failure ? ` · ${failure}` : ""}`,
       tone: "error",
     };
   }
@@ -181,6 +237,14 @@ export function summarizeProviderHealth(
   }
 
   if (providerEvent.message.includes("succeeded") || providerEvent.message.includes("completed")) {
+    if (traceSummary) {
+      return {
+        label: "Provider",
+        detail: traceSummary,
+        tone: "success",
+      };
+    }
+
     const streamCandidates = asFiniteNumber(context?.streamCandidates);
     const subtitleCandidates = asFiniteNumber(context?.subtitleCandidates);
     const inventory =
