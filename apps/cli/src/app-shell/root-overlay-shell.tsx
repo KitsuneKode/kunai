@@ -163,11 +163,11 @@ export function RootOverlayShell({
             .filter(({ entry }) => {
               const filter = filterQuery.trim().toLowerCase();
               if (filter.length === 0) return true;
-              
-              const isCompleted = entry.duration > 0 && (entry.timestamp / entry.duration) >= 0.95;
+
+              const isCompleted = entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
               if (filter === "completed" && isCompleted) return true;
               if (filter === "watching" && !isCompleted) return true;
-              
+
               return `${entry.title} ${entry.provider} s${entry.season}e${entry.episode}`
                 .toLowerCase()
                 .includes(filter);

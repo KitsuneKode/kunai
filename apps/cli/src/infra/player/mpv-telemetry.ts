@@ -53,6 +53,10 @@ export interface PlayerTelemetryState {
   eofDemotedByPrematureGuard: boolean;
 }
 
+type ObservedPropertySampleOptions = {
+  readonly acceptPlaybackProperties?: boolean;
+};
+
 type CleanupStatus = {
   socketPathCleanedUp: boolean;
 };
@@ -228,7 +232,12 @@ export function applyObservedPropertySample(
     value: unknown;
     observedAt?: number;
   },
+  options: ObservedPropertySampleOptions = {},
 ) {
+  if (options.acceptPlaybackProperties === false && isPlaybackProgressProperty(update.name)) {
+    return;
+  }
+
   const observedAt = update.observedAt ?? Date.now();
   const base = state.latestIpcSample ?? {
     source: "ipc" as const,
@@ -327,6 +336,32 @@ export function applyObservedPropertySample(
   }
 
   state.latestIpcSample = next;
+}
+
+function isPlaybackProgressProperty(name: string): boolean {
+  switch (name) {
+    case "time-pos":
+    case "playback-time":
+    case "duration":
+    case "percent-pos":
+    case "seeking":
+    case "paused-for-cache":
+    case "cache-buffering-state":
+    case "demuxer-cache-duration":
+    case "demuxer-cache-state":
+    case "demuxer-via-network":
+    case "cache-speed":
+    case "vo-configured":
+    case "eof-reached":
+    case "idle-active":
+    case "core-idle":
+    case "filename":
+    case "media-title":
+    case "track-list":
+      return true;
+    default:
+      return false;
+  }
 }
 
 export function applyEndFileEvent(

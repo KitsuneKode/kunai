@@ -93,6 +93,7 @@ type PlayerCycleState = {
   promise: Promise<PlaybackResult>;
   playerReadyNotified: boolean;
   playerStartedNotified: boolean;
+  acceptPlaybackProperties: boolean;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
 };
@@ -225,7 +226,7 @@ export class PersistentMpvSession {
 
     this.playbackStream = stream;
     this.currentHeadersKey = this.buildHeadersKey(stream.headers ?? {});
-    const cycle = this.beginCycle(options);
+    const cycle = this.beginCycle(options, { acceptPlaybackProperties: false });
     this.resetCycleState();
     options.onPlaybackEvent?.({ type: "opening-stream" });
 
@@ -439,7 +440,12 @@ export class PersistentMpvSession {
             }
 
             if (!active) return;
-            applyObservedPropertySample(active.telemetry, { name, value, observedAt });
+            applyObservedPropertySample(
+              active.telemetry,
+              { name, value, observedAt },
+              { acceptPlaybackProperties: active.acceptPlaybackProperties },
+            );
+            if (!active.acceptPlaybackProperties) return;
             if (active.telemetry.latestIpcSample) {
               this.watchdog?.observe(active.telemetry.latestIpcSample);
             }
@@ -495,6 +501,7 @@ export class PersistentMpvSession {
             if (!pending) return;
             this.pendingReadyWork = null;
             this.clearReadyWorkFallback();
+            this.acceptPlaybackPropertiesForActiveCycle();
             void this.runReadyWork(pending);
           },
           onCommandResult: (result) => {
@@ -552,7 +559,10 @@ export class PersistentMpvSession {
     this.queueReadyWork(initialReadyWorkOptions);
   }
 
-  private beginCycle(options: PlayerCycleOptions): PlayerCycleState {
+  private beginCycle(
+    options: PlayerCycleOptions,
+    cycleOptions: { acceptPlaybackProperties?: boolean } = {},
+  ): PlayerCycleState {
     const telemetry = createPlayerTelemetryState(this.ipcEndpoint.path);
     let resolve!: (result: PlaybackResult) => void;
     const promise = new Promise<PlaybackResult>((res) => {
@@ -566,6 +576,7 @@ export class PersistentMpvSession {
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: options.onPlaybackEvent,
       playerStartedNotified: false,
+      acceptPlaybackProperties: cycleOptions.acceptPlaybackProperties ?? true,
     };
     this.activeCycle = cycle;
     this.currentOptions = options;
@@ -654,8 +665,15 @@ export class PersistentMpvSession {
       if (this.pendingReadyWork !== options) return;
       this.pendingReadyWork = null;
       this.readyWorkFallbackTimer = null;
+      this.acceptPlaybackPropertiesForActiveCycle();
       void this.runReadyWork(options);
     }, 750);
+  }
+
+  private acceptPlaybackPropertiesForActiveCycle(): void {
+    if (this.activeCycle) {
+      this.activeCycle.acceptPlaybackProperties = true;
+    }
   }
 
   private async runReadyWork(options: PlayerCycleOptions): Promise<void> {

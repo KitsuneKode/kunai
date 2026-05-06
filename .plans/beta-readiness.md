@@ -89,7 +89,9 @@ Sequencing, CLI minimal/quick flags, autoskip behavior notes: [kunai-execution-p
 ### Done
 
 - [x] History panel shows title, episode marker, progress %, provider, and date per entry
+- [x] Netflix-style visual progress bars (`[██████░░░░]`) and color-coded status badges for completed vs. watching
 - [x] History panel supports filtering (by title/provider/episode in `RootOverlayShell`)
+- [x] Smart filtering for 'completed' (>= 95% watched) and 'watching' states directly in the search bar
 - [x] Continue-watching from history entry: `chooseStartingEpisode` reads history timestamp and pre-selects episode + resume position
 
 ---

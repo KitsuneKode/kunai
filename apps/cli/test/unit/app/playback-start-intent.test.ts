@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   startAtResumePoint,
+  startForwardNavigation,
   startFromBeginning,
   startFromEpisodeSelection,
 } from "@/app/playback-start-intent";
@@ -26,6 +27,13 @@ describe("playback start intent", () => {
     expect(startAtResumePoint(-1, { suppressResumePrompt: true })).toEqual({
       startAt: 0,
       suppressResumePrompt: true,
+    });
+  });
+
+  test("starts forward navigation from the beginning even when target history exists", () => {
+    expect(startForwardNavigation({ targetResumeSeconds: 612 })).toEqual({
+      startAt: 0,
+      suppressResumePrompt: false,
     });
   });
 });

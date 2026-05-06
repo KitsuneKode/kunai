@@ -125,6 +125,34 @@ describe("mpv-telemetry", () => {
     expect(result.endReason).toBe("quit");
   });
 
+  test("can ignore stale playback samples while mpv is replacing files", () => {
+    const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
+    applyObservedPropertySample(
+      telemetry,
+      {
+        name: "playback-time",
+        value: 612,
+        observedAt: 100,
+      },
+      { acceptPlaybackProperties: false },
+    );
+    applyObservedPropertySample(
+      telemetry,
+      {
+        name: "duration",
+        value: 1440,
+        observedAt: 110,
+      },
+      { acceptPlaybackProperties: false },
+    );
+    recordPlayerExit(telemetry, { code: 0, signal: "SIGTERM" });
+
+    const result = finalizePlaybackResult(telemetry, { socketPathCleanedUp: true });
+    expect(result.watchedSeconds).toBe(0);
+    expect(result.duration).toBe(0);
+    expect(result.lastNonZeroPositionSeconds).toBe(0);
+  });
+
   test("maps clean instant exits without eof evidence to quit", () => {
     const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
     recordPlayerExit(telemetry, { code: 0, signal: null });

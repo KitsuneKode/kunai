@@ -82,24 +82,28 @@ Rule of thumb: if a feature needs private credentials, raw playable URLs, browse
 
 ## Package Boundaries
 
-Target package split:
+Current package split (implemented via Turborepo workspaces):
 
 ```text
 packages/types
-  Future package name: `@kunai/types`.
+  NPM package name: `@kunai/types`.
   Pure TypeScript contracts and shared enums.
 
 packages/schemas
-  Future package name: `@kunai/schemas`.
+  NPM package name: `@kunai/schemas`.
   Zod schemas for config, cache rows, IPC payloads, relay payloads, sync events, and imported mapping data.
 
 packages/core
-  Future package name: `@kunai/core`.
+  NPM package name: `@kunai/core`.
   Provider contracts, capability manifests, runtime ports, cache-key policy, resolver orchestration, source ranking, and resolve tracing.
 
 packages/storage
-  Future package name: `@kunai/storage`.
+  NPM package name: `@kunai/storage`.
   OS path resolution, SQLite connections, migrations, typed repositories, TTL classes, pruning, and local data/cache ownership.
+
+packages/providers
+  NPM package name: `@kunai/providers`.
+  Concrete provider implementations (e.g., Vidking, Braflix) and API clients.
 
 packages/config
   Future package name: `@kunai/config`.
@@ -208,18 +212,21 @@ The daemon must be explicit and scoped:
 
 ## Execution Order
 
-1. Finish current CLI stability work.
-2. Move repo to the minimal Turborepo shape without changing behavior.
-3. Establish the true root shell in `apps/cli` so browse, picker, loading, playback, overlays, and post-playback are content states inside one mounted app.
-4. Complete Phase 1.8 so browse, loading, playback, and post-playback share one mounted content tree instead of helper-shell sessions.
-5. Extract shared contracts before extracting provider implementations.
-6. Move storage path and cache policy into shared packages.
-7. Extract one 0-RAM provider into `@kunai/core`.
-8. Add `ResolveTrace` and provider health as first-class outputs.
+**Completed (Beta Scope):**
+1. Move repo to the minimal Turborepo shape without changing behavior.
+2. Establish the true root shell in `apps/cli` so browse, picker, loading, playback, overlays, and post-playback are content states inside one mounted app.
+3. Complete Phase 1.8 so browse, loading, playback, and post-playback share one mounted content tree instead of helper-shell sessions.
+4. Extract shared contracts before extracting provider implementations (`@kunai/types`, `@kunai/schemas`).
+5. Move storage path and cache policy into shared packages (`@kunai/storage`).
+6. Extract providers into their own package (`@kunai/providers`).
+7. Add `ResolveTrace` and provider health as first-class outputs, accessible via diagnostics overlay.
+8. Harden Ink shell performance (O(1) list rendering, strict minimal footer) to ensure a premium TUI feel.
+
+**Future (Post-Beta):**
 9. Build daemon pairing only after cache and provider contracts are stable.
 10. Start web as static-first and capability-aware, not compute-first.
 
-Phase 2 completion means shared contracts compile, schemas validate serialized forms, root verification includes the shared packages, and the CLI emits one typed `ResolveTrace` stub for diagnostics. It does not mean providers have moved into `@kunai/core`.
+Phase 2 completion means shared contracts compile, schemas validate serialized forms, root verification includes the shared packages, and the CLI emits one typed `ResolveTrace` stub for diagnostics. Providers have successfully moved into `@kunai/providers`.
 
 ## Non-Goals For This Phase
 

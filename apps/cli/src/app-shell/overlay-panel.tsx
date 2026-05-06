@@ -481,7 +481,7 @@ export function OverlayPanel({
                 ? `Filter: ${overlay.filterQuery}`
                 : overlay.type === "provider"
                   ? "Type to narrow providers"
-                  : overlay.type === "history"
+                  : overlay.type === "history-picker"
                     ? "Type to narrow history (or filter by 'completed', 'watching')"
                     : overlay.type === "episode-picker"
                       ? "Type to narrow episodes"
@@ -527,12 +527,12 @@ export function OverlayPanel({
               {overlay.busy
                 ? overlay.type === "provider"
                   ? "Updating provider…"
-                  : overlay.type === "history"
+                  : overlay.type === "history-picker"
                     ? "Loading history…"
                     : "Saving settings…"
                 : overlay.type === "provider"
                   ? "Type to filter, ↑↓ to choose, Enter to switch, Esc to close"
-                  : overlay.type === "history"
+                  : overlay.type === "history-picker"
                     ? "Type to filter, ↑↓ to choose, Enter to resume, Esc to close"
                     : overlay.type === "episode-picker"
                       ? "Type to filter, ↑↓ to choose, Enter to jump, Esc to close"

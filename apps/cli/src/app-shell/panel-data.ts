@@ -325,12 +325,19 @@ export function buildDiagnosticsPanelLines({
 
 function renderProgressBar(percentage: number): string {
   const totalBlocks = 10;
-  const filledBlocks = Math.max(0, Math.min(totalBlocks, Math.round((percentage / 100) * totalBlocks)));
+  const filledBlocks = Math.max(
+    0,
+    Math.min(totalBlocks, Math.round((percentage / 100) * totalBlocks)),
+  );
   const emptyBlocks = totalBlocks - filledBlocks;
   return `[${"█".repeat(filledBlocks)}${"░".repeat(emptyBlocks)}]`;
 }
 
-function historyProgressDetails(entry: HistoryEntry): { percentage: number | null; text: string; bar: string | null } {
+function historyProgressDetails(entry: HistoryEntry): {
+  percentage: number | null;
+  text: string;
+  bar: string | null;
+} {
   if (entry.duration > 0) {
     const percentage = Math.round((entry.timestamp / entry.duration) * 100);
     return {
@@ -384,7 +391,7 @@ export function buildHistoryPickerOptions(
   return sortHistoryEntries(historyEntries).map(([id, entry]: [string, HistoryEntry]) => {
     const details = historyProgressDetails(entry);
     const isCompleted = details.percentage !== null && details.percentage >= 95;
-    
+
     return {
       value: id,
       label:

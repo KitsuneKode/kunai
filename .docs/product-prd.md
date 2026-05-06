@@ -69,6 +69,13 @@ The app should feel like one cockpit, not a sequence of separate mini-tools.
 - high-frequency actions get direct keys
 - lower-frequency actions can live behind an explicit leader mode if needed
 
+### Minimal Footer and UI Density
+
+- The UI defaults to a "minimal" footer strictly to train users to rely on the `/` command bar.
+- Avoid overcrowding the screen with hotkey hints or polling timers that drop frames.
+- Focus on density and content rather than visual noise.
+- Large lists (1000+ items) must be strictly virtualized for O(1) performance.
+
 ### Overlays
 
 - settings, provider picker, history, diagnostics, season picker, episode picker, subtitle picker, and confirmations are overlays or large panels in the same shell
