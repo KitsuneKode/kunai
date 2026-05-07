@@ -14,7 +14,8 @@ describe("panel-data", () => {
   test("buildHelpPanelLines returns stable guidance", () => {
     const lines = buildHelpPanelLines();
     expect(lines.length).toBeGreaterThan(4);
-    expect(lines.some((line) => line.label.includes("Command bar"))).toBe(true);
+    expect(lines.some((line) => line.label === "Commands")).toBe(true);
+    expect(lines.some((line) => line.detail?.includes("Ctrl+W"))).toBe(true);
   });
 
   test("buildAboutPanelLines includes default mode summary", () => {

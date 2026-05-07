@@ -121,7 +121,8 @@ export function resolvePlaybackResultDecision({
   );
   // N/P navigation carries explicit user intent — don't treat the resulting
   // "stop" end-reason as an interrupted session even if position was mid-episode.
-  const isNavigationAction = controlAction === "next" || controlAction === "previous";
+  const isNavigationAction =
+    controlAction === "next" || controlAction === "previous" || controlAction === "pick-episode";
   const interruptedStop =
     !isNavigationAction && (result.endReason === "quit" || controlAction === "stop");
   const shouldTreatAsInterrupted = interruptedStop && !nearNaturalEnd;

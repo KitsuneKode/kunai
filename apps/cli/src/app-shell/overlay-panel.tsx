@@ -472,17 +472,24 @@ export function OverlayPanel({
       {isPickerOverlay ? (
         <>
           <Box marginTop={1}>
-            <Text color={palette.gray}>
-              {overlay.filterQuery.length > 0
-                ? `Filter: ${overlay.filterQuery}`
-                : overlay.type === "provider"
+            {overlay.filterQuery.length > 0 ? (
+              <>
+                <Text color={pickerAccent}>Filter: </Text>
+                <Text color={palette.text} bold>
+                  {overlay.filterQuery}
+                </Text>
+              </>
+            ) : (
+              <Text color={palette.gray}>
+                {overlay.type === "provider"
                   ? "Type to narrow providers"
                   : overlay.type === "history-picker"
                     ? "Type to narrow history (or filter by 'completed', 'watching')"
                     : overlay.type === "episode-picker"
                       ? "Type to narrow episodes"
                       : "Type to narrow this list"}
-            </Text>
+              </Text>
+            )}
           </Box>
           <Box marginTop={1} flexDirection="column">
             {optionWindowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}

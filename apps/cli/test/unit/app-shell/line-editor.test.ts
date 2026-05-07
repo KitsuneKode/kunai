@@ -46,6 +46,18 @@ describe("line editor", () => {
     expect(state.killRing).toBe("beta ");
   });
 
+  test("supports ctrl-arrow word movement", () => {
+    let state = createLineEditorState("alpha beta gamma");
+    state = edit(state, "", { leftArrow: true, ctrl: true });
+    expect(state.cursor).toBe("alpha beta ".length);
+
+    state = edit(state, "", { leftArrow: true, ctrl: true });
+    expect(state.cursor).toBe("alpha ".length);
+
+    state = edit(state, "", { rightArrow: true, ctrl: true });
+    expect(state.cursor).toBe("alpha beta ".length);
+  });
+
   test("supports kill and yank around the cursor", () => {
     let state = createLineEditorState("alpha beta");
     state = edit(state, "b", { meta: true });

@@ -133,6 +133,7 @@ export function LoadingShell({
   onPrevious,
   onSkipSegment,
   onPickStreams,
+  onPickEpisode,
   onPickSource,
   onPickQuality,
   onToggleAutoplay,
@@ -148,6 +149,7 @@ export function LoadingShell({
   onPrevious?: () => void;
   onSkipSegment?: () => void;
   onPickStreams?: () => void;
+  onPickEpisode?: () => void;
   onPickSource?: () => void;
   onPickQuality?: () => void;
   onToggleAutoplay?: () => void;
@@ -230,6 +232,14 @@ export function LoadingShell({
       setMemoryPanelVisible(true);
     }
     if (
+      input.toLowerCase() === "e" &&
+      state.operation === "playing" &&
+      onPickEpisode &&
+      !state.onCommandAction
+    ) {
+      onPickEpisode();
+    }
+    if (
       input.toLowerCase() === "k" &&
       state.operation === "playing" &&
       onPickStreams &&
@@ -308,7 +318,6 @@ export function LoadingShell({
   const footerActions: readonly FooterAction[] =
     state.operation === "playing"
       ? [
-          { key: "/", label: "commands", action: "command-mode" },
           { key: "q", label: "stop", action: "quit" },
           {
             key: "n",
@@ -330,6 +339,13 @@ export function LoadingShell({
             action: "toggle-autoplay",
             disabled: !onToggleAutoplay,
             reason: "Autoplay is unavailable for this title.",
+          },
+          {
+            key: "e",
+            label: "episodes",
+            action: "pick-episode",
+            disabled: !onPickEpisode,
+            reason: "Episode picker is unavailable for this title.",
           },
           {
             key: "k",
@@ -402,7 +418,7 @@ export function LoadingShell({
       }
       footerActions={footerActions}
       footerMode={state.footerMode ?? "detailed"}
-      commands={state.commands ?? []}
+      commands={state.operation === "playing" ? [] : (state.commands ?? [])}
       inputLocked={!state.onCommandAction}
       escapeAction={null}
       onResolve={(action) => state.onCommandAction?.(action)}

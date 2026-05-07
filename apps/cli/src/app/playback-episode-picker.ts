@@ -93,7 +93,7 @@ export async function buildPlaybackEpisodePickerOptions({
       season: currentEpisode.season,
       episode: entry.number,
       label: `Episode ${entry.number}  ·  ${entry.name}`,
-      baseDetail: `${entry.airDate || "unknown year"}${entry.overview ? `  ·  ${entry.overview}` : ""}`,
+      baseDetail: entry.airDate || "unknown year",
       current: entry.number === currentEpisode.episode,
       history: watchedByEpisode.get(`${currentEpisode.season}:${entry.number}`),
     }),

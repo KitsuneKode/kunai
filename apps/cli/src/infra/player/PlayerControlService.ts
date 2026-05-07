@@ -1,4 +1,4 @@
-import type { PlaybackTimingMetadata } from "@/domain/types";
+import type { EpisodeInfo, PlaybackTimingMetadata } from "@/domain/types";
 
 import type { LateSubtitleAttachment } from "./PlayerService";
 
@@ -10,6 +10,7 @@ export type PlaybackControlAction =
   | "pick-stream"
   | "pick-source"
   | "pick-quality"
+  | "pick-episode"
   | "reload-subtitles"
   | "next"
   | "previous";
@@ -51,11 +52,13 @@ export interface PlayerControlService {
   signalPlaybackAction(action: PlaybackControlAction): void;
   subscribePickerRequest(listener: (action: PlaybackPickerAction) => void): () => void;
   consumePendingStreamSelection(): PlaybackStreamSelection | null;
+  consumePendingEpisodeSelection(): EpisodeInfo | null;
   selectCurrentPlaybackStream(
     action: PlaybackPickerAction,
     selection: PlaybackStreamSelection,
     reason?: string,
   ): Promise<boolean>;
+  selectCurrentPlaybackEpisode(episode: EpisodeInfo, reason?: string): Promise<boolean>;
   stopCurrentPlayback(reason?: string): Promise<boolean>;
   refreshCurrentPlayback(reason?: string): Promise<boolean>;
   recoverCurrentPlayback(reason?: string): Promise<boolean>;

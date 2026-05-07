@@ -181,6 +181,24 @@ export function applyLineEditorInput(
     };
   }
 
+  if ((key.leftArrow && key.ctrl) || (key.meta && lowerInput === "b")) {
+    return {
+      state: { ...current, cursor: previousWordBoundary(current.value, cursor) },
+      handled: true,
+      submitted: false,
+      redrew: false,
+    };
+  }
+
+  if ((key.rightArrow && key.ctrl) || (key.meta && lowerInput === "f")) {
+    return {
+      state: { ...current, cursor: nextWordBoundary(current.value, cursor) },
+      handled: true,
+      submitted: false,
+      redrew: false,
+    };
+  }
+
   if (key.leftArrow || (key.ctrl && lowerInput === "b")) {
     return {
       state: { ...current, cursor: previousGrapheme(current.value, cursor) },
@@ -193,24 +211,6 @@ export function applyLineEditorInput(
   if (key.rightArrow || (key.ctrl && lowerInput === "f")) {
     return {
       state: { ...current, cursor: nextGrapheme(current.value, cursor) },
-      handled: true,
-      submitted: false,
-      redrew: false,
-    };
-  }
-
-  if (key.meta && lowerInput === "b") {
-    return {
-      state: { ...current, cursor: previousWordBoundary(current.value, cursor) },
-      handled: true,
-      submitted: false,
-      redrew: false,
-    };
-  }
-
-  if (key.meta && lowerInput === "f") {
-    return {
-      state: { ...current, cursor: nextWordBoundary(current.value, cursor) },
       handled: true,
       submitted: false,
       redrew: false,

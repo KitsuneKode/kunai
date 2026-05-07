@@ -136,7 +136,7 @@ export async function chooseEpisodeFromOptions(
         return {
           value: String(episode.number),
           label: `Episode ${episode.number}  ·  ${episode.name}`,
-          detail: `${episode.airDate || "unknown year"}${episode.overview ? `  ·  ${episode.overview}` : ""}`,
+          detail: episode.airDate || "unknown year",
           tone: status?.tone ?? (episode.number === currentEpisode ? "info" : undefined),
           badge: episode.number === currentEpisode ? "current" : status?.badge,
         };
@@ -156,7 +156,7 @@ export async function chooseEpisodeFromOptions(
         episode.number === currentEpisode
           ? `Episode ${episode.number}  ·  ${episode.name}  ·  current`
           : `Episode ${episode.number}  ·  ${episode.name}`,
-      detail: `${episode.airDate || "unknown year"}${episode.overview ? `  ·  ${episode.overview}` : ""}`,
+      detail: episode.airDate || "unknown year",
     })),
   });
 }

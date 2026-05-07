@@ -809,6 +809,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             playbackControlAction === "pick-quality"
               ? playerControl.consumePendingStreamSelection()
               : null;
+          const confirmedEpisodeSelection =
+            playbackControlAction === "pick-episode"
+              ? playerControl.consumePendingEpisodeSelection()
+              : null;
           playbackSession = syncPlaybackSessionState(playbackSession, {
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             stopAfterCurrent: stateManager.getState().stopAfterCurrent,
@@ -960,6 +964,31 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               continue;
             }
+          }
+
+          if (playbackControlAction === "pick-episode" && confirmedEpisodeSelection) {
+            pendingStart = await startNavigationToEpisode(confirmedEpisodeSelection);
+            await applyMpvEpisodeLoadingOverlay(
+              playerControl.getActive(),
+              confirmedEpisodeSelection,
+            );
+            stateManager.dispatch({
+              type: "SELECT_EPISODE",
+              episode: confirmedEpisodeSelection,
+            });
+            stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
+            if (playbackSession.autoplayPauseReason === "interrupted") {
+              stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
+              playbackSession = {
+                ...playbackSession,
+                stopAfterCurrent: false,
+                autoplayPaused: false,
+                autoplayPauseReason: null,
+              };
+            } else {
+              playbackSession = { ...playbackSession, stopAfterCurrent: false };
+            }
+            continue;
           }
 
           if (playbackControlAction === "pick-source") {

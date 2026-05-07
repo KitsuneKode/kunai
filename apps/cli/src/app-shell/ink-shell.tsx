@@ -2,6 +2,7 @@ import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { switchSessionMode } from "@/app/mode-switch";
+import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import {
   buildQualityPickerOptions,
   buildSourcePickerOptions,
@@ -221,6 +222,42 @@ async function openPlaybackStreamSelectionPicker(
     selection,
     reason,
   );
+}
+
+async function openActivePlaybackEpisodePicker(
+  container: Container,
+  reason: string,
+): Promise<void> {
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  const currentEpisode = state.currentEpisode;
+  if (!title || title.type !== "series" || !currentEpisode) return;
+
+  const watchedEntries = await container.historyStore.listByTitle(title.id);
+  const picker = await buildPlaybackEpisodePickerOptions({
+    title,
+    currentEpisode,
+    isAnime: state.mode === "anime",
+    animeEpisodeCount: title.episodeCount,
+    watchedEntries,
+  });
+  if (picker.options.length === 0) return;
+
+  const picked = await openSessionPicker(container.stateManager, {
+    type: "episode_picker",
+    season: currentEpisode.season,
+    initialIndex: picker.initialIndex,
+    options: picker.options,
+  });
+  if (!picked) return;
+
+  const selection = decodeEpisodeSelectionValue(picked);
+  if (!selection) return;
+  if (selection.season === currentEpisode.season && selection.episode === currentEpisode.episode) {
+    return;
+  }
+
+  await container.playerControl.selectCurrentPlaybackEpisode(selection, reason);
 }
 
 function useRootShellScreen(): RootShellScreen | null {
@@ -541,13 +578,14 @@ function AppRoot({ container }: { container: Container }) {
                     state.playbackStatus === "buffering" ||
                     state.playbackStatus === "seeking" ||
                     state.playbackStatus === "stalled"
-                      ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  b skip  ·  m memory  ·  k streams  ·  r recover  ·  / commands`
+                      ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  e episodes  ·  k streams  ·  r recover`
                       : undefined,
                   commands: fallbackCommandState([
                     "toggle-autoplay",
                     "settings",
                     "recover",
                     "fallback",
+                    "pick-episode",
                     "streams",
                     "next",
                     "previous",
@@ -610,6 +648,13 @@ function AppRoot({ container }: { container: Container }) {
                         container,
                         "streams",
                         "playback-loading-command-streams",
+                      );
+                      return;
+                    }
+                    if (action === "pick-episode") {
+                      void openActivePlaybackEpisodePicker(
+                        container,
+                        "playback-loading-command-episode",
                       );
                       return;
                     }
@@ -685,6 +730,13 @@ function AppRoot({ container }: { container: Container }) {
                 onPickStreams={() => {
                   void openPlaybackStreamSelectionPicker(container, "streams", "playback-shell-k");
                 }}
+                onPickEpisode={
+                  state.currentTitle?.type === "series"
+                    ? () => {
+                        void openActivePlaybackEpisodePicker(container, "playback-shell-e");
+                      }
+                    : undefined
+                }
                 onReloadSubtitles={() => {
                   void container.playerControl.reloadCurrentSubtitles("playback-shell-s");
                 }}
@@ -2226,17 +2278,10 @@ function BrowseShell<T>({
                       </Box>
                       {metaText ? (
                         <Text color={selected ? palette.cyan : palette.gray} dimColor={!selected}>
-                          {metaText}
+                          {truncateLine(metaText, Math.min(18, Math.max(8, rowWidth / 4)))}
                         </Text>
                       ) : null}
                     </Box>
-                    {selected && option.detail ? (
-                      <Box marginLeft={2}>
-                        <Text color={palette.gray}>
-                          {truncateLine(option.detail, rowWidth - 2)}
-                        </Text>
-                      </Box>
-                    ) : null}
                   </Box>
                 );
               })}

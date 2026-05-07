@@ -10,7 +10,7 @@ import {
   type ResolvedAppCommand,
 } from "./commands";
 import { routeShellInput } from "./input-router";
-import { getWindowStart } from "./shell-text";
+import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { toShellAction, type FooterAction, type ShellAction } from "./types";
 
@@ -88,18 +88,21 @@ export function CommandPalette({
   commands,
   highlightedIndex,
   maxVisible = 7,
+  width,
 }: {
   input: string;
   cursor?: number;
   commands: readonly ResolvedAppCommand[];
   highlightedIndex: number;
   maxVisible?: number;
+  width?: number;
 }) {
   const matches = getCommandMatches(input, commands);
   const visibleCount = Math.max(3, maxVisible);
   const windowStart = getWindowStart(highlightedIndex, matches.length, visibleCount);
   const windowEnd = Math.min(windowStart + visibleCount, matches.length);
   const visibleMatches = matches.slice(windowStart, windowEnd);
+  const contentWidth = Math.max(28, (width ?? 84) - 4);
 
   return (
     <Box
@@ -109,6 +112,7 @@ export function CommandPalette({
       paddingX={1}
       paddingY={0}
       marginTop={1}
+      width={width}
     >
       <Text color={palette.amber}>Command</Text>
       <Box>
@@ -134,10 +138,12 @@ export function CommandPalette({
                     bold={selected}
                   >
                     <Text color={selected ? "black" : palette.gray}>{selected ? "❯ " : "  "}</Text>/
-                    {command.aliases[0]} {command.description}
+                    {truncateLine(`${command.aliases[0]} ${command.description}`, contentWidth - 4)}
                   </Text>
                   {!command.enabled && command.reason ? (
-                    <Text color={palette.gray}>{`  ·  ${command.reason}`}</Text>
+                    <Text color={palette.gray}>
+                      {truncateLine(`  ·  ${command.reason}`, contentWidth)}
+                    </Text>
                   ) : null}
                 </Box>
               );
@@ -252,7 +258,7 @@ export function useShellInput({
       return;
     }
 
-    if (route.command === "open-command-palette") {
+    if (route.command === "open-command-palette" && commands.length > 0) {
       setCommandMode(true);
       setCommandInput("");
       return;

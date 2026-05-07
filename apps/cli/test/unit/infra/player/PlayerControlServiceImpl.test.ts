@@ -189,6 +189,29 @@ test("PlayerControlServiceImpl stops only after a confirmed stream selection", a
   expect(stoppedCurrentReasons).toEqual(["confirmed-stream"]);
 });
 
+test("PlayerControlServiceImpl stops only after a confirmed episode selection", async () => {
+  const stoppedCurrentReasons: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+    async stopCurrentFile(reason) {
+      stoppedCurrentReasons.push(reason ?? "");
+    },
+  });
+
+  expect(
+    await service.selectCurrentPlaybackEpisode({ season: 4, episode: 10 }, "confirmed-episode"),
+  ).toBe(true);
+  expect(service.consumeLastAction()).toBe("pick-episode");
+  expect(service.consumePendingEpisodeSelection()).toEqual({ season: 4, episode: 10 });
+  expect(service.consumePendingEpisodeSelection()).toBeNull();
+  expect(stoppedCurrentReasons).toEqual(["confirmed-episode"]);
+});
+
 test("PlayerControlServiceImpl routes mpv picker requests without marking playback ended", () => {
   const service = makeService();
   const requests: string[] = [];

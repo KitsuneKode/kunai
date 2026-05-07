@@ -148,6 +148,23 @@ describe("resolvePlaybackResultDecision", () => {
     });
   });
 
+  test("does not treat explicit episode picker navigation as an interruption", () => {
+    const session = createPlaybackSessionState({ autoNextEnabled: true });
+    expect(
+      resolvePlaybackResultDecision({
+        result: { watchedSeconds: 300, duration: 1200, endReason: "quit" },
+        controlAction: "pick-episode",
+        session,
+      }),
+    ).toMatchObject({
+      session: {
+        autoplayPauseReason: null,
+        autoplayPaused: false,
+      },
+      shouldTreatAsInterrupted: false,
+    });
+  });
+
   test("treats a quit after credits timing as complete instead of interrupted", () => {
     const session = createPlaybackSessionState({ autoNextEnabled: true });
     expect(

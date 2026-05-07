@@ -53,6 +53,7 @@ export function ShellFrame({
 
   const { stdout } = useStdout();
   const sepWidth = Math.max(24, (stdout.columns ?? 80) - 4);
+  const commandWidth = Math.min(92, Math.max(36, Math.floor((stdout.columns ?? 80) * 0.62)));
 
   return (
     <Box
@@ -82,6 +83,8 @@ export function ShellFrame({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
+            maxVisible={5}
+            width={commandWidth}
           />
         ) : null}
 

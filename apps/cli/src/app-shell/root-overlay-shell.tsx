@@ -146,6 +146,13 @@ export function RootOverlayShell({
           currentProvider: overlay.currentProvider,
         })
       : [];
+  const providerInitialIndex =
+    overlay.type === "provider_picker"
+      ? Math.max(
+          0,
+          providerOptions.findIndex((option) => option.value === overlay.currentProvider),
+        )
+      : 0;
   const genericPickerOptions =
     overlay.type === "season_picker" ||
     overlay.type === "episode_picker" ||
@@ -270,7 +277,9 @@ export function RootOverlayShell({
   useEffect(() => {
     setScrollIndex(0);
     setFilterQuery("");
-    setSelectedIndex(overlayInitialIndex);
+    setSelectedIndex(
+      overlay.type === "provider_picker" ? providerInitialIndex : overlayInitialIndex,
+    );
     setAsyncLines(null);
     setLoadingAsyncLines(false);
     setSettingsDraft(overlay.type === "settings" ? container.config.getRaw() : null);
@@ -279,7 +288,7 @@ export function RootOverlayShell({
     setSettingsBusy(false);
     setSettingsError(null);
     setHistorySelections([]);
-  }, [container.config, overlay.type, overlayResetKey, overlayInitialIndex]);
+  }, [container.config, overlay.type, overlayResetKey, overlayInitialIndex, providerInitialIndex]);
 
   useEffect(() => {
     if (overlay.type !== "history") {

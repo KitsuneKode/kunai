@@ -1,4 +1,4 @@
-import type { PlaybackTimingMetadata } from "@/domain/types";
+import type { EpisodeInfo, PlaybackTimingMetadata } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 
@@ -33,6 +33,8 @@ function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | 
       return "Kunai · Select a source in the terminal…";
     case "pick-quality":
       return "Kunai · Select quality in the terminal…";
+    case "pick-episode":
+      return "Kunai · Select an episode in the terminal…";
     default:
       return null;
   }
@@ -42,6 +44,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   private active: ActivePlayerControl | null = null;
   private lastAction: PlaybackControlAction | null = null;
   private pendingStreamSelection: PlaybackStreamSelection | null = null;
+  private pendingEpisodeSelection: EpisodeInfo | null = null;
   private commandQueue: Promise<unknown> = Promise.resolve();
   private waitsForActive: ActiveWait[] = [];
   private pickerRequestListeners = new Set<(action: PlaybackPickerAction) => void>();
@@ -121,6 +124,12 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     return selection;
   }
 
+  consumePendingEpisodeSelection(): EpisodeInfo | null {
+    const selection = this.pendingEpisodeSelection;
+    this.pendingEpisodeSelection = null;
+    return selection;
+  }
+
   async selectCurrentPlaybackStream(
     action: PlaybackPickerAction,
     selection: PlaybackStreamSelection,
@@ -131,6 +140,19 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     const stopped = await this.stopWithAction(action, reason, true);
     if (!stopped) {
       this.pendingStreamSelection = null;
+    }
+    return stopped;
+  }
+
+  async selectCurrentPlaybackEpisode(
+    episode: EpisodeInfo,
+    reason = "user-requested",
+  ): Promise<boolean> {
+    this.pendingEpisodeSelection = episode;
+    this.lastAction = "pick-episode";
+    const stopped = await this.stopWithAction("pick-episode", reason, true);
+    if (!stopped) {
+      this.pendingEpisodeSelection = null;
     }
     return stopped;
   }

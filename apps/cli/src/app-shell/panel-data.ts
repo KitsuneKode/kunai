@@ -78,64 +78,40 @@ function formatMpvRuntimeDetail(event: DiagnosticEvent | undefined): string {
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
   return [
     {
-      label: "/ Command bar",
-      detail:
-        "Open global actions from anywhere in the shell. Use Tab to autocomplete, ↑↓ to choose, and Enter to run the highlighted command.",
+      label: "Commands",
+      detail: "/ opens the command palette when the current surface supports extra actions.",
     },
     {
-      label: "Esc Clear or close",
-      detail:
-        "Clear transient state first, then close the top panel or go back one level. Esc should never imply confirm or playback start.",
+      label: "Close",
+      detail: "Esc clears a filter first, then closes the top panel. It never confirms playback.",
     },
     {
-      label: "Enter Search or confirm",
-      detail:
-        "Searches when the query changed, otherwise confirms the selected result or the focused picker option.",
+      label: "Confirm",
+      detail: "Enter searches changed queries or confirms the highlighted picker/result row.",
     },
     {
-      label: "/ details Title overview",
-      detail:
-        "Open the expanded overview panel for the selected title, including poster status, rating when available, and provider metadata gaps.",
+      label: "Browse",
+      detail: "↑↓ moves results. Tab switches destination mode. Ctrl+T reloads trending.",
     },
     {
-      label: "↑↓ Navigate",
-      detail:
-        "Move through results, provider options, episodes, seasons, and command suggestions without leaving the shell.",
+      label: "Pickers",
+      detail: "Type to filter providers, episodes, seasons, subtitles, history, and settings.",
     },
     {
-      label: "Type to filter pickers",
-      detail:
-        "Season, episode, provider, subtitle, and history flows should stay filterable instead of asking for raw values.",
+      label: "Editing",
+      detail: "Ctrl+A/E jumps to start/end. Ctrl+W deletes a word. Ctrl+←/→ moves by word.",
     },
     {
-      label: "Ctrl+W Delete previous word",
-      detail:
-        "Supported in the browse input and shell-hosted picker filters so terminal-native editing keeps working.",
+      label: "Playback",
+      detail: "n/p navigate episodes. k/o/v choose streams. r recovers. f tries fallback.",
     },
     {
-      label: "Tab Destination mode",
-      detail:
-        "In browse, Tab jumps straight to the destination mode shown in the footer, like anime mode or series mode.",
+      label: "Diagnostics",
+      detail: "/diagnostics inspects state. /export-diagnostics writes a redacted support bundle.",
     },
     {
-      label: "Ctrl+T Trending",
-      detail:
-        "Loads the cached discovery list on demand, instead of fetching trending titles during startup.",
-    },
-    {
-      label: "Playback continuity",
-      detail:
-        "Replay, provider switch, history, diagnostics, and episode actions should stay reachable after playback returns.",
-    },
-    {
-      label: "Disabled actions explain themselves",
-      detail:
-        "If a command is unavailable, the footer and command palette show the reason instead of silently ignoring the keypress.",
-    },
-    {
-      label: "/ report-issue",
-      detail:
-        "Open GitHub issue reporting and attach exported diagnostics, provider, OS, and the exact command you ran.",
+      label: "Report issue",
+      detail: "/report-issue opens GitHub issue reporting. Attach the exported diagnostics file.",
     },
   ];
 }
@@ -202,15 +178,13 @@ export function buildDiagnosticsPanelLines({
   });
   return [
     {
-      label: "Export support bundle",
-      detail:
-        "Run / export-diagnostics (or the Export Diagnostics command) to write a redacted JSON snapshot of recent events next to the working directory.",
+      label: "Support bundle",
+      detail: "/export-diagnostics writes redacted recent events into the current directory.",
       tone: "neutral",
     },
     {
       label: "Report issue",
-      detail:
-        "Run / report-issue after exporting diagnostics to open GitHub issue reporting with the right triage fields.",
+      detail: "/report-issue opens GitHub. Attach the exported bundle, provider, OS, and command.",
       tone: "neutral",
     },
     {
@@ -242,7 +216,7 @@ export function buildDiagnosticsPanelLines({
     },
     {
       label: "Selected subtitle URL",
-      detail: state.stream?.subtitle ?? subtitleState.label,
+      detail: state.stream?.subtitle ? "[redacted-url attached]" : subtitleState.label,
     },
     {
       label: "Subtitle tracks",
@@ -255,7 +229,7 @@ export function buildDiagnosticsPanelLines({
     {
       label: "Subtitle evidence",
       detail: state.stream?.subtitleEvidence
-        ? JSON.stringify(state.stream.subtitleEvidence)
+        ? summarizeJson(state.stream.subtitleEvidence)
         : "no subtitle evidence recorded yet",
       tone: state.stream?.subtitleEvidence ? "neutral" : "warning",
     },
@@ -270,7 +244,7 @@ export function buildDiagnosticsPanelLines({
     },
     {
       label: "Stream URL",
-      detail: state.stream?.url ?? "not resolved yet",
+      detail: state.stream?.url ? "[redacted-url resolved]" : "not resolved yet",
     },
     {
       label: "Header keys",
@@ -317,10 +291,16 @@ export function buildDiagnosticsPanelLines({
     ...recentEvents.map((event) => ({
       label: `${new Date(event.timestamp).toLocaleTimeString()}  ·  ${event.category}`,
       detail: event.context
-        ? `${event.message}  ·  ${JSON.stringify(event.context)}`
+        ? `${event.message}  ·  ${summarizeJson(event.context)}`
         : event.message,
     })),
   ];
+}
+
+function summarizeJson(value: unknown): string {
+  return JSON.stringify(value, (_key, nested) =>
+    typeof nested === "string" && /^https?:\/\//i.test(nested) ? "[redacted-url]" : nested,
+  );
 }
 
 function renderProgressBar(percentage: number): string {

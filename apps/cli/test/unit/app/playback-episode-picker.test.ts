@@ -108,7 +108,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
       {
         value: "2:5",
         label: "Episode 5  ·  The Current One",
-        detail: "watched 100%  ·  2026-01-01  ·  A test overview",
+        detail: "watched 100%  ·  2026-01-01",
         tone: "success",
         badge: "current",
       },
