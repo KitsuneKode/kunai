@@ -110,6 +110,8 @@ export class AllMangaCompatProvider implements Provider {
       rating: null,
       popularity: null,
       episodeCount: r.epCount,
+      availableAudioModes: r.availableAudioModes,
+      subtitleAvailability: r.availableAudioModes?.includes("sub") ? "hardsub" : "unknown",
     }));
   }
 }

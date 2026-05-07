@@ -56,6 +56,7 @@ import {
   buildProviderResolveProblem,
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
+import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -1769,6 +1770,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         detail: "Launching player",
         note: subtitleStatus,
       });
+      void context.container.presence.updatePlayback({
+        mode: stateManager.getState().mode,
+        title,
+        episode,
+        providerId: stateManager.getState().provider,
+        stream,
+        startedAtMs: Date.now(),
+      });
       this.startLateSubtitleResolver({
         stream,
         title,
@@ -1817,7 +1826,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "finished" });
       return result;
     } finally {
-      // resolved via status update
+      void context.container.presence.clearPlayback("playback-ended");
     }
   }
 
@@ -1838,6 +1847,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       requestedSubLang === "none" ||
       stream.subtitle ||
       stream.subtitleList?.length ||
+      hardSubSatisfiesSubtitlePreference(stream, requestedSubLang) ||
       !title.id
     ) {
       return;

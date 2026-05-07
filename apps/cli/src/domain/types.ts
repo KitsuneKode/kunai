@@ -93,6 +93,8 @@ export interface SearchResult {
   readonly rating?: number | null;
   readonly popularity?: number | null;
   readonly episodeCount?: number;
+  readonly availableAudioModes?: readonly ("sub" | "dub")[];
+  readonly subtitleAvailability?: "hardsub" | "softsub" | "unknown";
 }
 
 export type TitleAliasKind = "english" | "romaji" | "native" | "provider" | "synonym";

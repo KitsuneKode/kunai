@@ -33,7 +33,7 @@ export function parseWyzieSubtitleList(payload: unknown): SubtitleEntry[] {
 
 // True when an entry's language code matches the requested code.
 // Handles: exact match, locale variants (en === en-US), and full-name strings.
-function langMatches(entryLang: string, preferred: string): boolean {
+export function langMatches(entryLang: string, preferred: string): boolean {
   const el = entryLang.toLowerCase().trim();
   const pl = preferred.toLowerCase().trim();
   if (!el || !pl) return false;

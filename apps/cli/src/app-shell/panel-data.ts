@@ -1,9 +1,10 @@
+import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import { formatTimestamp, type HistoryEntry } from "@/services/persistence/HistoryStore";
 import type { CapabilitySnapshot } from "@/ui";
 
 import type { ShellPanelLine, ShellPickerOption } from "./types";
@@ -23,8 +24,12 @@ function describeSubtitleState(state: SessionState): {
   if (!state.stream) {
     return { label: "not resolved yet", tone: "neutral" };
   }
+  const label = describePlaybackSubtitleStatus(state.stream, state.subLang);
   if (state.stream.subtitle) {
     return { label: "attached", tone: "success" };
+  }
+  if (label.startsWith("hardsub")) {
+    return { label, tone: "success" };
   }
   if (state.stream.subtitleList?.length) {
     return { label: `${state.stream.subtitleList.length} tracks available`, tone: "warning" };
@@ -110,6 +115,10 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
       detail: "/diagnostics inspects state. /export-diagnostics writes a redacted support bundle.",
     },
     {
+      label: "Presence",
+      detail: "Optional Discord presence is off by default and controlled from Settings.",
+    },
+    {
       label: "Report issue",
       detail: "/report-issue opens GitHub issue reporting. Attach the exported diagnostics file.",
     },
@@ -147,6 +156,13 @@ export function buildAboutPanelLines({
       detail: `${config.defaultMode}  ·  Series ${config.provider}  ·  Anime ${config.animeProvider}`,
     },
     {
+      label: "Presence",
+      detail:
+        config.presenceProvider === "off"
+          ? "off"
+          : `${config.presenceProvider}  ·  privacy ${config.presencePrivacy}`,
+    },
+    {
       label: "Capabilities",
       detail: capabilityLine,
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
@@ -172,6 +188,7 @@ export function buildDiagnosticsPanelLines({
   const streamStallEvent = findRecentMpvEvent(recentEvents, "stream-stalled");
   const seekStallEvent = findRecentMpvEvent(recentEvents, "seek-stalled");
   const ipcStallEvent = findRecentMpvEvent(recentEvents, "ipc-stalled");
+  const presenceEvent = recentEvents.find((event) => event.category === "presence");
   const runtimeHealth = buildRuntimeHealthSnapshot({
     recentEvents,
     currentProvider: state.provider,
@@ -257,6 +274,13 @@ export function buildDiagnosticsPanelLines({
     {
       label: "Memory",
       detail: `RSS ${(process.memoryUsage().rss / 1_048_576).toFixed(1)} MB`,
+    },
+    {
+      label: "Presence",
+      detail: presenceEvent
+        ? `${presenceEvent.message}${presenceEvent.context ? `  ·  ${summarizeJson(presenceEvent.context)}` : ""}`
+        : "off or not used this session",
+      tone: presenceEvent ? "neutral" : "success",
     },
     {
       label: "Startup capabilities",
@@ -371,14 +395,20 @@ export function buildHistoryPickerOptions(
   return sortHistoryEntries(historyEntries).map(([id, entry]: [string, HistoryEntry]) => {
     const details = historyProgressDetails(entry);
     const isCompleted = details.percentage !== null && details.percentage >= 95;
+    const episode =
+      entry.type === "series"
+        ? `S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
+        : "movie";
+    const resumeState = isCompleted
+      ? "replay starts from beginning"
+      : entry.timestamp > 10
+        ? `resume ${formatTimestamp(entry.timestamp)}`
+        : "start from beginning";
 
     return {
       value: id,
-      label:
-        entry.type === "series"
-          ? `${entry.title}  ·  S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
-          : `${entry.title}  ·  movie`,
-      detail: `provider ${entry.provider}  ·  ${new Date(entry.watchedAt).toLocaleDateString()}`,
+      label: entry.type === "series" ? `${entry.title}  ·  ${episode}` : `${entry.title}  ·  movie`,
+      detail: `${resumeState}  ·  provider ${entry.provider}  ·  ${new Date(entry.watchedAt).toLocaleDateString()}`,
       badge: details.bar ? `${details.bar} ${details.percentage}%` : "saved",
       tone: isCompleted ? "success" : "neutral",
     };

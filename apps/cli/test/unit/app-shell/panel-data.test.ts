@@ -44,6 +44,9 @@ describe("panel-data", () => {
         mpvInProcessStreamReconnectMaxAttempts: 3,
         discoverShowOnStartup: false,
         minimalMode: false,
+        presenceProvider: "off",
+        presencePrivacy: "full",
+        presenceDiscordClientId: "",
       },
       state: createInitialState("vidking", "allanime"),
     });

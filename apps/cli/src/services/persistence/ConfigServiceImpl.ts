@@ -7,6 +7,8 @@ import type {
   KitsuneConfig,
   QuitNearEndBehavior,
   QuitNearEndThresholdMode,
+  PresencePrivacy,
+  PresenceProvider,
 } from "./ConfigService";
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
@@ -119,6 +121,18 @@ export class ConfigServiceImpl implements ConfigService {
 
   get mpvInProcessStreamReconnectMaxAttempts(): number {
     return this.config.mpvInProcessStreamReconnectMaxAttempts;
+  }
+
+  get presenceProvider(): PresenceProvider {
+    return this.config.presenceProvider;
+  }
+
+  get presencePrivacy(): PresencePrivacy {
+    return this.config.presencePrivacy;
+  }
+
+  get presenceDiscordClientId(): string {
+    return this.config.presenceDiscordClientId;
   }
 
   get discoverShowOnStartup(): boolean {

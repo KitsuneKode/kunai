@@ -44,6 +44,8 @@ import type { HistoryStore } from "./services/persistence/HistoryStore";
 import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
 import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
+import type { PresenceService } from "./services/presence/PresenceService";
+import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
 import { PROVIDER_DEFINITIONS } from "./services/providers/definitions";
 import type { ProviderRegistry } from "./services/providers/ProviderRegistry";
 import { ProviderRegistryImpl } from "./services/providers/ProviderRegistry";
@@ -83,6 +85,7 @@ export interface Container {
   readonly cacheStore: CacheStore;
   readonly diagnosticsStore: DiagnosticsStore;
   readonly sourceInventory: SourceInventoryService;
+  readonly presence: PresenceService;
 
   // Session
   readonly stateManager: SessionStateManager;
@@ -164,6 +167,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     config,
     mpv: options?.mpv,
   });
+  const presence = new PresenceServiceImpl({ config, diagnosticsStore });
 
   // Registries (depend on infrastructure)
   const providerRegistry = new ProviderRegistryImpl(
@@ -194,6 +198,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     cacheStore,
     diagnosticsStore,
     sourceInventory,
+    presence,
     stateManager,
     recommendationService,
     shellChrome,

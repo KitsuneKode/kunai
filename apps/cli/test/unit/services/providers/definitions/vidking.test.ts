@@ -58,6 +58,9 @@ function createProviderDeps(): ProviderDeps {
       mpvInProcessStreamReconnectMaxAttempts: 3,
       discoverShowOnStartup: false,
       minimalMode: false,
+      presenceProvider: "off",
+      presencePrivacy: "full",
+      presenceDiscordClientId: "",
       getRaw() {
         return this;
       },

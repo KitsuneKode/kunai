@@ -80,6 +80,8 @@ type SettingsAction =
   | "skipCredits"
   | "skipPreview"
   | "footerHints"
+  | "presenceProvider"
+  | "presencePrivacy"
   | "clearCache"
   | "clearHistory";
 
@@ -154,8 +156,34 @@ const FOOTER_HINT_OPTIONS: readonly ShellPickerOption<"detailed" | "minimal">[] 
   },
 ];
 
+const PRESENCE_PROVIDER_OPTIONS: readonly ShellPickerOption<KitsuneConfig["presenceProvider"]>[] = [
+  {
+    value: "off",
+    label: "Off",
+    detail: "Do not publish local playback state anywhere",
+  },
+  {
+    value: "discord",
+    label: "Discord",
+    detail: "Use optional local Discord Rich Presence when discord-rpc is installed",
+  },
+];
+
+const PRESENCE_PRIVACY_OPTIONS: readonly ShellPickerOption<KitsuneConfig["presencePrivacy"]>[] = [
+  {
+    value: "full",
+    label: "Full",
+    detail: "Show title and episode in supported presence integrations",
+  },
+  {
+    value: "private",
+    label: "Private",
+    detail: "Show only that Kunai playback is active",
+  },
+];
+
 export function buildSettingsSummary(config: KitsuneConfig): string {
-  return `${config.defaultMode} default  ·  series ${config.provider}  ·  anime ${config.animeProvider}  ·  footer ${config.footerHints}`;
+  return `${config.defaultMode} default  ·  series ${config.provider}  ·  anime ${config.animeProvider}  ·  presence ${config.presenceProvider}`;
 }
 
 export function buildSettingsOptions(
@@ -242,6 +270,16 @@ export function buildSettingsOptions(
       value: "footerHints",
       label: `Footer hints  ·  ${config.footerHints}`,
       detail: "Detailed keeps two lines, minimal keeps only the task line",
+    },
+    {
+      value: "presenceProvider",
+      label: `Presence  ·  ${config.presenceProvider}`,
+      detail: "Optional local social presence integration. Off by default.",
+    },
+    {
+      value: "presencePrivacy",
+      label: `Presence privacy  ·  ${config.presencePrivacy}`,
+      detail: "Controls how much title detail presence integrations may expose",
     },
     {
       value: "clearCache",
@@ -345,6 +383,21 @@ export function buildSettingsChoiceOverlay({
     options = FOOTER_HINT_OPTIONS.map((option) => ({
       ...option,
       label: option.value === config.footerHints ? `${option.label}  ·  current` : option.label,
+    })) as readonly ShellPickerOption<string>[];
+  } else if (setting === "presenceProvider") {
+    title = "Presence integration";
+    subtitle = `Current ${config.presenceProvider}`;
+    options = PRESENCE_PROVIDER_OPTIONS.map((option) => ({
+      ...option,
+      label:
+        option.value === config.presenceProvider ? `${option.label}  ·  current` : option.label,
+    })) as readonly ShellPickerOption<string>[];
+  } else if (setting === "presencePrivacy") {
+    title = "Presence privacy";
+    subtitle = `Current ${config.presencePrivacy}`;
+    options = PRESENCE_PRIVACY_OPTIONS.map((option) => ({
+      ...option,
+      label: option.value === config.presencePrivacy ? `${option.label}  ·  current` : option.label,
     })) as readonly ShellPickerOption<string>[];
   } else if (setting === "quitNearEndBehavior") {
     title = "Quit near end";

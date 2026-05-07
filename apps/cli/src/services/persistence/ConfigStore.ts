@@ -38,4 +38,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   mpvInProcessStreamReconnectMaxAttempts: 3,
   discoverShowOnStartup: false,
   minimalMode: false,
+  presenceProvider: "off",
+  presencePrivacy: "full",
+  presenceDiscordClientId: "",
 };

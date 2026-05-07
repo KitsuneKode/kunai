@@ -46,6 +46,7 @@ export function toBrowseResultOption(
     result.type === "series" ? "Series" : "Movie",
     result.year || undefined,
     result.episodeCount ? `${result.episodeCount} episodes` : undefined,
+    formatAnimeAvailability(result),
     formatRating(result.rating),
     historyBadge,
   ].filter((value): value is string => Boolean(value));
@@ -80,6 +81,14 @@ export function toBrowseResultOption(
         tone: alternateTitles ? ("success" as const) : ("neutral" as const),
       },
       {
+        label: "Audio and subtitles",
+        detail: describeSearchResultAvailability(result),
+        tone:
+          result.availableAudioModes?.length || result.subtitleAvailability
+            ? ("success" as const)
+            : ("neutral" as const),
+      },
+      {
         label: "Provider detail page",
         detail: result.overview ? "Overview available" : "Provider did not return overview text",
         tone: result.overview ? ("success" as const) : ("warning" as const),
@@ -109,6 +118,33 @@ export function toBrowseResultOption(
         ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
         : "Press Enter to open this title and continue to playback. Use / details for the overview.",
   };
+}
+
+function formatAnimeAvailability(result: SearchResult): string | undefined {
+  if (result.type !== "series") return undefined;
+  const audio = result.availableAudioModes?.length
+    ? `${result.availableAudioModes.join("/")} audio`
+    : null;
+  const subtitles =
+    result.subtitleAvailability === "hardsub"
+      ? "hardsub available"
+      : result.subtitleAvailability === "softsub"
+        ? "soft subs available"
+        : null;
+  return [audio, subtitles].filter(Boolean).join(" · ") || undefined;
+}
+
+function describeSearchResultAvailability(result: SearchResult): string {
+  const audio = result.availableAudioModes?.length
+    ? `${result.availableAudioModes.join("/")} audio available`
+    : "audio availability unknown until resolve";
+  const subtitles =
+    result.subtitleAvailability === "hardsub"
+      ? "hardsub evidence from provider search"
+      : result.subtitleAvailability === "softsub"
+        ? "soft subtitle evidence from provider search"
+        : "subtitle availability unknown until resolve";
+  return `${audio}  ·  ${subtitles}`;
 }
 
 export function chooseSearchResultTitle(

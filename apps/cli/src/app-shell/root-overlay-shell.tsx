@@ -373,6 +373,10 @@ export function RootOverlayShell({
             next.animeTitlePreference = picked.value as typeof next.animeTitlePreference;
           } else if (settingsChoice === "footerHints") {
             next.footerHints = picked.value as "detailed" | "minimal";
+          } else if (settingsChoice === "presenceProvider") {
+            next.presenceProvider = picked.value as typeof next.presenceProvider;
+          } else if (settingsChoice === "presencePrivacy") {
+            next.presencePrivacy = picked.value as typeof next.presencePrivacy;
           } else if (settingsChoice === "quitNearEndBehavior") {
             next.quitNearEndBehavior = picked.value as QuitNearEndBehavior;
           } else if (settingsChoice === "quitNearEndThresholdMode") {

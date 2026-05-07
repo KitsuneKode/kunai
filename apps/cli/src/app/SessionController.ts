@@ -28,6 +28,7 @@ export class SessionController {
   public async shutdown(): Promise<void> {
     this.abortController.abort();
     this.container.workControl.setActive(null);
+    await this.container.presence.shutdown();
     await this.container.player.releasePersistentSession();
   }
 

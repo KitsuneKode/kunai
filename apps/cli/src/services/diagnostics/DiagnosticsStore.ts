@@ -6,7 +6,15 @@
 
 export interface DiagnosticEvent {
   readonly timestamp: number;
-  readonly category: "session" | "search" | "provider" | "subtitle" | "playback" | "cache" | "ui";
+  readonly category:
+    | "session"
+    | "search"
+    | "provider"
+    | "subtitle"
+    | "playback"
+    | "cache"
+    | "ui"
+    | "presence";
   readonly message: string;
   readonly context?: Record<string, unknown>;
 }

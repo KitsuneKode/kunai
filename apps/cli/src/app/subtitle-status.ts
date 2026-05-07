@@ -1,3 +1,4 @@
+import { hardSubInventory, selectedHardSubLanguage } from "@/domain/subtitle-policy";
 import type { StreamInfo } from "@/domain/types";
 
 export function describePlaybackSubtitleStatus(
@@ -31,21 +32,4 @@ export function describePlaybackSubtitleStatus(
   }
 
   return "subtitles not found";
-}
-
-function selectedHardSubLanguage(stream: StreamInfo): string | null {
-  if (stream.hardSubLanguage) return stream.hardSubLanguage;
-
-  const result = stream.providerResolveResult;
-  if (!result?.selectedStreamId) return null;
-  const selected = result.streams.find((candidate) => candidate.id === result.selectedStreamId);
-  return selected?.hardSubLanguage ?? null;
-}
-
-function hardSubInventory(stream: StreamInfo): readonly string[] {
-  const values = [
-    stream.hardSubLanguage,
-    ...(stream.providerResolveResult?.streams.map((candidate) => candidate.hardSubLanguage) ?? []),
-  ];
-  return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }

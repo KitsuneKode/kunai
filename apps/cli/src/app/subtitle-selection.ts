@@ -1,3 +1,4 @@
+import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { selectSubtitle } from "@/subtitle";
 import type { SubtitleEntry } from "@/subtitle";
@@ -10,6 +11,7 @@ export type SubtitleDecision = {
     | "auto-selected"
     | "interactive-picked"
     | "interactive-cancelled"
+    | "hardsub-satisfied"
     | "no-tracks";
   availableTracks: number;
 };
@@ -28,6 +30,14 @@ export async function choosePlaybackSubtitle({
       subtitle: null,
       reason: "disabled",
       availableTracks: stream.subtitleList?.length ?? 0,
+    };
+  }
+
+  if (hardSubSatisfiesSubtitlePreference(stream, subLang) && !stream.subtitleList?.length) {
+    return {
+      subtitle: null,
+      reason: "hardsub-satisfied",
+      availableTracks: 0,
     };
   }
 

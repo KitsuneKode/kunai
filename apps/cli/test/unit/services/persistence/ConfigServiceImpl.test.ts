@@ -46,6 +46,20 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).footerHints).toBe("minimal");
   });
 
+  test("defaults presence integrations off and persists explicit privacy choices", async () => {
+    const store = new MemoryConfigStore();
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.presenceProvider).toBe("off");
+    expect(service.presencePrivacy).toBe("full");
+
+    await service.update({ presenceProvider: "discord", presencePrivacy: "private" });
+    await service.save();
+
+    expect((await store.load()).presenceProvider).toBe("discord");
+    expect((await store.load()).presencePrivacy).toBe("private");
+  });
+
   test("normalizes legacy subtitle defaults back to english on load", async () => {
     const noneService = await ConfigServiceImpl.load(
       new MemoryConfigStore({

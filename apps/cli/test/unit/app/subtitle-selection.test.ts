@@ -108,4 +108,59 @@ describe("choosePlaybackSubtitle", () => {
     expect(result.reason).toBe("no-tracks");
     expect(result.availableTracks).toBe(0);
   });
+
+  test("does not ask for external subtitles when selected hardsub satisfies the preference", async () => {
+    let pickerCalls = 0;
+    const result = await choosePlaybackSubtitle({
+      stream: {
+        url: "https://cdn.example/hardsub.m3u8",
+        headers: {},
+        timestamp: Date.now(),
+        providerResolveResult: {
+          providerId: "allanime",
+          selectedStreamId: "sub-en",
+          streams: [
+            {
+              id: "sub-en",
+              providerId: "allanime",
+              sourceId: "source-a",
+              protocol: "hls",
+              qualityLabel: "1080p",
+              qualityRank: 1080,
+              audioLanguage: "ja",
+              hardSubLanguage: "English",
+              url: "https://cdn.example/hardsub.m3u8",
+              headers: {},
+              confidence: 0.9,
+              cachePolicy: {
+                ttlClass: "stream-manifest",
+                scope: "local",
+                keyParts: [],
+              },
+            },
+          ],
+          sources: [],
+          subtitles: [],
+          trace: {
+            id: "trace-1",
+            startedAt: new Date().toISOString(),
+            cacheHit: false,
+            title: { id: "1", kind: "series", title: "Demo" },
+            steps: [],
+            failures: [],
+          },
+          failures: [],
+        },
+      },
+      subLang: "en",
+      pickSubtitle: async () => {
+        pickerCalls += 1;
+        return null;
+      },
+    });
+
+    expect(result.subtitle).toBeNull();
+    expect(result.reason).toBe("hardsub-satisfied");
+    expect(pickerCalls).toBe(0);
+  });
 });

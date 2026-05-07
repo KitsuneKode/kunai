@@ -2,6 +2,7 @@
 // VidKing Provider Adapter
 // =============================================================================
 
+import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type {
   ProviderCapabilities,
   ProviderMetadata,
@@ -69,6 +70,7 @@ export class VidKingProvider implements Provider {
     if (
       stream &&
       request.subLang !== "none" &&
+      !hardSubSatisfiesSubtitlePreference(stream, request.subLang) &&
       (!stream.subtitleList?.length || !stream.subtitle)
     ) {
       const wyzie = await resolveWyzie({

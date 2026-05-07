@@ -10,11 +10,11 @@ Setup, Playwright, and troubleshooting live in [quickstart.md](./quickstart.md).
 
 ## Run targets
 
-| Command | When to use |
-| ------- | ----------- |
-| `bun run dev` | From a clone of the repo after `bun install` |
+| Command                     | When to use                                              |
+| --------------------------- | -------------------------------------------------------- |
+| `bun run dev`               | From a clone of the repo after `bun install`             |
 | `bun run dev -- <flags...>` | Pass flags to the CLI through Bun (the `--` is required) |
-| `kunai <flags...>` | After `bun run link:global` installs the local binary |
+| `kunai <flags...>`          | After `bun run link:global` installs the local binary    |
 
 Examples below use `bun run dev --` for copy-paste safety in development.
 
@@ -39,31 +39,31 @@ All flags are optional. Values that take an argument consume the **next** argv t
 
 ### Core
 
-| Long | Short | Argument | Description |
-| ---- | ----- | -------- | ----------- |
-| `--search` | `-S` | string | Pre-fill the first search query when the shell opens. |
-| `--id` | `-i` | string | TMDB numeric id for direct title bootstrap (non-anime). |
-| `--type` | `-t` | `movie` \| `series` | Required with `-i` for a supported bootstrap (other values are ignored with a warning). |
-| `--anime` | `-a` | — | Start session in anime mode. |
-| `--debug` | | — | Enable structured debug logging (stderr / logger). |
+| Long       | Short | Argument            | Description                                                                             |
+| ---------- | ----- | ------------------- | --------------------------------------------------------------------------------------- |
+| `--search` | `-S`  | string              | Pre-fill the first search query when the shell opens.                                   |
+| `--id`     | `-i`  | string              | TMDB numeric id for direct title bootstrap (non-anime).                                 |
+| `--type`   | `-t`  | `movie` \| `series` | Required with `-i` for a supported bootstrap (other values are ignored with a warning). |
+| `--anime`  | `-a`  | —                   | Start session in anime mode.                                                            |
+| `--debug`  |       | —                   | Enable structured debug logging (stderr / logger).                                      |
 
 ### Session UI density (shell chrome)
 
 Parsed flags feed `shellChrome` for this run (see `parseArgs` in `main.ts`):
 
-| Long | Short | Description |
-| ---- | ----- | ----------- |
-| `--minimal` | `-m` | **Minimal** footer / chrome for this session. If set, wins over `--quick`. |
-| `--quick` | `-q` | **Quick** shell chrome for this session. Also used with `-S` for [search auto-pick](#search-auto-pick). |
+| Long        | Short | Description                                                                                             |
+| ----------- | ----- | ------------------------------------------------------------------------------------------------------- |
+| `--minimal` | `-m`  | **Minimal** footer / chrome for this session. If set, wins over `--quick`.                              |
+| `--quick`   | `-q`  | **Quick** shell chrome for this session. Also used with `-S` for [search auto-pick](#search-auto-pick). |
 
 ### Search auto-pick
 
 Only applies when a **bootstrap search query** is present (`-S`).
 
-| Long | Short | Argument | Description |
-| ---- | ----- | -------- | ----------- |
-| `--jump` | | integer ≥ 1 | After search results load, automatically select the **n**th result (1-based). |
-| `--quick` | `-q` | — | With `-S` only: same as `--jump 1` (first result). Without `-S`, `-q` only affects shell chrome (see above). |
+| Long      | Short | Argument    | Description                                                                                                  |
+| --------- | ----- | ----------- | ------------------------------------------------------------------------------------------------------------ |
+| `--jump`  |       | integer ≥ 1 | After search results load, automatically select the **n**th result (1-based).                                |
+| `--quick` | `-q`  | —           | With `-S` only: same as `--jump 1` (first result). Without `-S`, `-q` only affects shell chrome (see above). |
 
 If auto-pick fails (empty results, index out of range), you remain in the shell to choose manually.
 
@@ -71,24 +71,24 @@ If auto-pick fails (empty results, index out of range), you remain in the shell 
 
 Forwarded into the player service for this process (see `MpvRuntimeOptions`):
 
-| Flag | Argument | Description |
-| ---- | -------- | ----------- |
-| `--mpv-debug` | — | Enable mpv debug behavior for this run. |
-| `--mpv-clean` | — | Prefer a clean mpv invocation for this run. |
-| `--no-user-mpv-config` | — | Do not load the user mpv config for this run. |
-| `--mpv-log-file` | path | Write mpv logs to the given file path. |
+| Flag                   | Argument | Description                                   |
+| ---------------------- | -------- | --------------------------------------------- |
+| `--mpv-debug`          | —        | Enable mpv debug behavior for this run.       |
+| `--mpv-clean`          | —        | Prefer a clean mpv invocation for this run.   |
+| `--no-user-mpv-config` | —        | Do not load the user mpv config for this run. |
+| `--mpv-log-file`       | path     | Write mpv logs to the given file path.        |
 
 ### mpv bridge script (persistent autoplay)
 
 For **autoplay-chain** playback, Kunai loads the bundled **`kunai-bridge.lua`** and mirrors it to **`getKunaiPaths().mpvBridgePath`** (Kunai config directory + **`mpv/kunai-bridge.lua`**), updated when the bundled copy is newer.
 
-| OS | Typical `mpvBridgePath` |
-| -- | ----------------------- |
-| Linux | `$XDG_CONFIG_HOME/kunai/mpv/kunai-bridge.lua` (fallback under `~/.config/kunai/`) |
-| macOS | `~/Library/Application Support/kunai/mpv/kunai-bridge.lua` |
+| OS      | Typical `mpvBridgePath`                                                                                              |
+| ------- | -------------------------------------------------------------------------------------------------------------------- |
+| Linux   | `$XDG_CONFIG_HOME/kunai/mpv/kunai-bridge.lua` (fallback under `~/.config/kunai/`)                                    |
+| macOS   | `~/Library/Application Support/kunai/mpv/kunai-bridge.lua`                                                           |
 | Windows | `%APPDATA%/kunai/mpv/kunai-bridge.lua` (same Kunai config layout as other platforms; bridge loads when IPC is alive) |
 
-**mpv JSON IPC (all platforms Kunai launches on):** one-shot `launchMpv` and persistent autoplay sessions open JSON IPC via a **Unix domain socket** (`TMPDIR`/`TMP`) on Linux/macOS/WSL Linux, or a **Windows named pipe** path such as ``//./pipe/kunai-mpv-<session>`` matching mpv `--input-ipc-server` (Bun duplex connect). Installing mpv via Scoop/winget/Chocolatey only affects **PATH**—it does not replace this IPC handshake.
+**mpv JSON IPC (all platforms Kunai launches on):** one-shot `launchMpv` and persistent autoplay sessions open JSON IPC via a **Unix domain socket** (`TMPDIR`/`TMP`) on Linux/macOS/WSL Linux, or a **Windows named pipe** path such as `//./pipe/kunai-mpv-<session>` matching mpv `--input-ipc-server` (Bun duplex connect). Installing mpv via Scoop/winget/Chocolatey only affects **PATH**—it does not replace this IPC handshake.
 
 Override the bridge script path with **`mpvKunaiScriptPath`** in Kunai **`config.json`** for a custom build (checked on all platforms before the mirrored default path).
 
@@ -100,9 +100,10 @@ Override the bridge script path with **`mpvKunaiScriptPath`** in Kunai **`config
 
 ## Environment
 
-| Variable | Effect |
-| -------- | ------ |
-| `KITSUNE_DEBUG=1` | Debug logging enabled (same general intent as `--debug`; see logger wiring in the app). |
+| Variable                  | Effect                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `KITSUNE_DEBUG=1`         | Debug logging enabled (same general intent as `--debug`; see logger wiring in the app).       |
+| `KUNAI_DISCORD_CLIENT_ID` | Discord application id for optional local Rich Presence when `presenceProvider` is `discord`. |
 
 ---
 
@@ -110,16 +111,28 @@ Override the bridge script path with **`mpvKunaiScriptPath`** in Kunai **`config
 
 These are useful for docs parity so users do not search for a `--history` flag.
 
-| Action | How |
-| ------ | --- |
-| Resume / history | Command palette (`/`) and history flows in the Ink shell |
-| Export diagnostics | `/ export-diagnostics` or command palette — writes **redacted** JSON next to the process cwd |
-| Provider / subtitles / episode | Shell pickers and hotkeys (see README “Shell controls”) |
-| Next / previous | `n` / `p` during playback; starts the target episode from the beginning and leaves manual mpv resume available when history exists |
-| Replay | Shell playback action; starts from the beginning and leaves manual mpv resume available |
-| Reload / recover | `r`; keeps the current playback position |
-| Source / quality | Source changes restart the selected source; quality changes keep the current playback position |
-| Provider fallback | `f`; skips to the next compatible provider during resolve or recovery |
+| Action                         | How                                                                                                                                |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Resume / history               | Command palette (`/`) and history flows in the Ink shell                                                                           |
+| Export diagnostics             | `/ export-diagnostics` or command palette — writes **redacted** JSON next to the process cwd                                       |
+| Provider / subtitles / episode | Shell pickers and hotkeys (see README “Shell controls”)                                                                            |
+| Next / previous                | `n` / `p` during playback; starts the target episode from the beginning and leaves manual mpv resume available when history exists |
+| Replay                         | Shell playback action; starts from the beginning and leaves manual mpv resume available                                            |
+| Reload / recover               | `r`; keeps the current playback position                                                                                           |
+| Source / quality               | Source changes restart the selected source; quality changes keep the current playback position                                     |
+| Provider fallback              | `f`; skips to the next compatible provider during resolve or recovery                                                              |
+
+### Optional presence settings
+
+Presence is configured in the shell settings/config, not argv flags:
+
+| Setting                   | Values             | Notes                                                                         |
+| ------------------------- | ------------------ | ----------------------------------------------------------------------------- |
+| `presenceProvider`        | `off` / `discord`  | Off by default. Discord uses optional local `discord-rpc` if installed.       |
+| `presencePrivacy`         | `full` / `private` | Full shows title/episode; private only says Kunai playback is active.         |
+| `presenceDiscordClientId` | string             | Discord application id. Empty string falls back to `KUNAI_DISCORD_CLIENT_ID`. |
+
+Presence integrations never receive stream URLs, provider URLs, request headers, subtitle URLs, or diagnostics bundles.
 
 ---
 

@@ -968,7 +968,7 @@ export async function openAnimeEpisodeListPicker(
 }
 
 function configSummary(config: KitsuneConfig): string {
-  return `default ${config.defaultMode}  ·  provider ${config.provider}  ·  anime ${config.animeProvider}  ·  quit ${config.quitNearEndBehavior}  ·  footer ${config.footerHints}`;
+  return `default ${config.defaultMode}  ·  provider ${config.provider}  ·  anime ${config.animeProvider}  ·  presence ${config.presenceProvider}`;
 }
 
 export async function openSettingsShell({
@@ -1071,6 +1071,16 @@ export async function openSettingsShell({
           value: "footerHints" as const,
           label: `Footer hints  ·  ${next.footerHints}`,
           detail: "Detailed keeps a two-line footer, minimal keeps only the task line",
+        },
+        {
+          value: "presenceProvider" as const,
+          label: `Presence  ·  ${next.presenceProvider}`,
+          detail: "Optional local Discord Rich Presence integration. Off by default.",
+        },
+        {
+          value: "presencePrivacy" as const,
+          label: `Presence privacy  ·  ${next.presencePrivacy}`,
+          detail: "Controls how much title detail presence integrations may expose",
         },
         {
           value: "history" as const,
@@ -1337,6 +1347,56 @@ export async function openSettingsShell({
       });
       if (picked && picked !== next.footerHints) {
         next.footerHints = picked;
+        changed = true;
+      }
+      continue;
+    }
+
+    if (action === "presenceProvider") {
+      const picked = await chooseOption({
+        title: "Presence integration",
+        subtitle: `Current ${next.presenceProvider}`,
+        actionContext,
+        options: [
+          {
+            value: "off" as const,
+            label: next.presenceProvider === "off" ? "Off  ·  current" : "Off",
+            detail: "Do not publish local playback state anywhere",
+          },
+          {
+            value: "discord" as const,
+            label: next.presenceProvider === "discord" ? "Discord  ·  current" : "Discord",
+            detail: "Use optional local Discord Rich Presence when discord-rpc is installed",
+          },
+        ],
+      });
+      if (picked && picked !== next.presenceProvider) {
+        next.presenceProvider = picked;
+        changed = true;
+      }
+      continue;
+    }
+
+    if (action === "presencePrivacy") {
+      const picked = await chooseOption({
+        title: "Presence privacy",
+        subtitle: `Current ${next.presencePrivacy}`,
+        actionContext,
+        options: [
+          {
+            value: "full" as const,
+            label: next.presencePrivacy === "full" ? "Full  ·  current" : "Full",
+            detail: "Show title and episode in supported presence integrations",
+          },
+          {
+            value: "private" as const,
+            label: next.presencePrivacy === "private" ? "Private  ·  current" : "Private",
+            detail: "Show only that Kunai playback is active",
+          },
+        ],
+      });
+      if (picked && picked !== next.presencePrivacy) {
+        next.presencePrivacy = picked;
         changed = true;
       }
     }

@@ -53,23 +53,24 @@ Full tables, mpv passthrough flags, and “in-shell only” behavior are documen
 
 Summary:
 
-| Flag | Short | Notes |
-| ---- | ----- | ----- |
-| `--search` | `-S` | Pre-fill query |
-| `--id` / `--type` | `-i` / `-t` | TMDB bootstrap: `-t` is `movie` or `series` |
-| `--anime` | `-a` | Anime mode |
+| Flag                    | Short       | Notes                                                             |
+| ----------------------- | ----------- | ----------------------------------------------------------------- |
+| `--search`              | `-S`        | Pre-fill query                                                    |
+| `--id` / `--type`       | `-i` / `-t` | TMDB bootstrap: `-t` is `movie` or `series`                       |
+| `--anime`               | `-a`        | Anime mode                                                        |
 | `--minimal` / `--quick` | `-m` / `-q` | Session shell chrome; `-q` with `-S` also auto-picks first result |
-| `--jump` | | With `-S`, auto-pick *n*th result (1-based) |
-| `--debug` | | Verbose logging |
+| `--jump`                |             | With `-S`, auto-pick *n*th result (1-based)                       |
+| `--debug`               |             | Verbose logging                                                   |
 
 Use `/ export-diagnostics` in the shell (or the command palette) to write a **redacted** JSON snapshot of recent diagnostics next to the process working directory for bug reports.
 Then run `/ report-issue` to open the GitHub issue form with triage guidance.
 
 ## Environment
 
-| Var               | Effect                           |
-| ----------------- | -------------------------------- |
-| `KITSUNE_DEBUG=1` | Enable debug JSON logs to stderr |
+| Var                       | Effect                                                            |
+| ------------------------- | ----------------------------------------------------------------- |
+| `KITSUNE_DEBUG=1`         | Enable debug JSON logs to stderr                                  |
+| `KUNAI_DISCORD_CLIENT_ID` | Discord application id for optional `presenceProvider: "discord"` |
 
 ## Common Issues
 
@@ -91,6 +92,10 @@ If Playwright Chromium is missing, install it and retry browser-backed providers
 **Subtitles are missing or not selectable**
 
 Open the subtitle picker and check whether the stream is hard-sub-only, has soft-sub inventory for your language, or has unknown subtitle availability. Provider hard-subs and external soft subtitles are tracked separately.
+
+**Discord presence does not appear**
+
+Presence is off by default. Enable `presenceProvider: "discord"` in settings/config, provide `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID`, and install the optional `discord-rpc` package in source checkouts. If any piece is missing, Kunai records one diagnostics event and avoids repeated retries until restart.
 
 **Playback position feels wrong**
 

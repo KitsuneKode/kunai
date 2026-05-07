@@ -8,6 +8,10 @@ export type QuitNearEndBehavior = "continue" | "pause";
 
 export type QuitNearEndThresholdMode = "credits-or-90-percent" | "percent-only" | "seconds-only";
 
+export type PresenceProvider = "off" | "discord";
+
+export type PresencePrivacy = "full" | "private";
+
 export interface KitsuneConfig {
   defaultMode: "series" | "anime";
   provider: string;
@@ -53,6 +57,12 @@ export interface KitsuneConfig {
   mpvInProcessStreamReconnect: boolean;
   /** Max same-URL reload attempts per playback cycle; `0` disables in-process reconnect. */
   mpvInProcessStreamReconnectMaxAttempts: number;
+  /** Optional local-first social presence integration. Default off. */
+  presenceProvider: PresenceProvider;
+  /** How much title/episode detail presence integrations may expose. */
+  presencePrivacy: PresencePrivacy;
+  /** Discord application client id. Empty string = read KUNAI_DISCORD_CLIENT_ID when needed. */
+  presenceDiscordClientId: string;
 }
 
 export interface ConfigService extends KitsuneConfig {

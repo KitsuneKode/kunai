@@ -35,6 +35,12 @@ describe("toBrowseResultOption", () => {
           tone: "neutral",
         },
         {
+          label: "Audio and subtitles",
+          detail:
+            "audio availability unknown until resolve  ·  subtitle availability unknown until resolve",
+          tone: "neutral",
+        },
+        {
           label: "Provider detail page",
           detail: "Overview available",
           tone: "success",
@@ -88,6 +94,12 @@ describe("toBrowseResultOption", () => {
           tone: "success",
         },
         {
+          label: "Audio and subtitles",
+          detail:
+            "audio availability unknown until resolve  ·  subtitle availability unknown until resolve",
+          tone: "neutral",
+        },
+        {
           label: "Provider detail page",
           detail: "Provider did not return overview text",
           tone: "warning",
@@ -95,5 +107,28 @@ describe("toBrowseResultOption", () => {
         { label: "Image source", detail: "Poster URL available from AniList", tone: "success" },
       ],
     });
+  });
+
+  test("shows provider search audio and hardsub availability only when it has evidence", () => {
+    const result: SearchResult = {
+      id: "anime-demo",
+      type: "series",
+      title: "Anime Demo",
+      year: "",
+      overview: "",
+      posterPath: null,
+      availableAudioModes: ["sub", "dub"],
+      subtitleAvailability: "hardsub",
+    };
+
+    const option = toBrowseResultOption(result);
+
+    expect(option.previewMeta).toContain("sub/dub audio · hardsub available");
+    expect(option.previewFacts?.find((fact) => fact.label === "Audio and subtitles")).toMatchObject(
+      {
+        detail: "sub/dub audio available  ·  hardsub evidence from provider search",
+        tone: "success",
+      },
+    );
   });
 });

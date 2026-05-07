@@ -5,6 +5,7 @@ export type AllMangaSearchResult = {
   readonly year?: string;
   readonly posterUrl?: string;
   readonly epCount?: number;
+  readonly availableAudioModes?: readonly ("sub" | "dub")[];
 };
 
 export type AllMangaEpisodeOption = {
@@ -416,7 +417,17 @@ export function createAllMangaApiProvider(cfg: AllMangaApiProviderConfig): AllMa
       return data.data.shows.edges.map((edge): AllMangaSearchResult => {
         const epRaw = edge.availableEpisodes[opts.animeLang];
         const epCount = typeof epRaw === "number" ? epRaw : undefined;
-        return { id: edge._id, title: edge.name, type: "series", epCount };
+        const availableAudioModes = (["sub", "dub"] as const).filter((mode) => {
+          const count = edge.availableEpisodes[mode];
+          return typeof count === "number" && count > 0;
+        });
+        return {
+          id: edge._id,
+          title: edge.name,
+          type: "series",
+          epCount,
+          availableAudioModes,
+        };
       });
     },
 
