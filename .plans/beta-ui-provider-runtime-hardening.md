@@ -144,7 +144,7 @@ Implement pure helpers for filter changes, selection movement, `Esc` clear-filte
 
 Build `PickerOverlay` with bounded rows from `getShellViewportPolicy`, optional companion detail, and footer actions from the shared command model.
 
-- [ ] **Step 4: Migrate one picker path**
+- [x] **Step 4: Migrate one picker path**
 
 Migrate `openSourcePicker` first because it is playback-critical and already uses normalized inventory.
 
@@ -280,14 +280,14 @@ bun run test -- apps/cli/test/unit/services/playback/source-inventory-service.te
 
 Move cache lookup, provider ordering, resolve attempts, provider fallback, and diagnostics event creation into `PlaybackResolveService`.
 
-- [ ] **Step 2: Implement abort semantics**
+- [x] **Step 2: Implement abort semantics**
 
 Represent:
 
 - hard abort: no cache mutation after abort
 - soft abandon: current playback does not switch back, but healthy finished inventory may be cached
 
-- [ ] **Step 3: Preserve existing playback start-intent semantics**
+- [x] **Step 3: Preserve existing playback start-intent semantics**
 
 Do not regress:
 
@@ -362,7 +362,7 @@ Build display rows that distinguish:
 
 If provider hard-sub satisfies the configured mode and `subLang` does not request soft subtitles, do not call unrelated external subtitle services.
 
-- [ ] **Step 3: Keep source and quality changes inventory-only**
+- [x] **Step 3: Keep source and quality changes inventory-only**
 
 Changing source/quality must select a candidate from inventory unless the candidate is explicitly deferred or expired.
 
