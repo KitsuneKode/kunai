@@ -276,7 +276,7 @@ bun run test -- apps/cli/test/unit/services/playback/source-inventory-service.te
 - Modify: `apps/cli/src/app/PlaybackPhase.ts`
 - Test: `apps/cli/test/unit/services/playback/playback-resolve-service.test.ts`
 
-- [ ] **Step 1: Extract resolve orchestration from `PlaybackPhase`**
+- [x] **Step 1: Extract resolve orchestration from `PlaybackPhase`**
 
 Move cache lookup, provider ordering, resolve attempts, provider fallback, and diagnostics event creation into `PlaybackResolveService`.
 
@@ -296,7 +296,7 @@ Do not regress:
 - source change restarts with Ctrl+R prompt
 - reload continues
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run existing playback golden tests plus new resolve-service tests:
 

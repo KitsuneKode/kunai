@@ -40,7 +40,6 @@ import {
   startFromBeginning,
   startFromEpisodeSelection,
 } from "@/app/playback-start-intent";
-import { resolveProviderStreamWithRetries } from "@/app/provider-resolve-retry";
 import { createResolveTraceStub } from "@/app/resolve-trace";
 import {
   applyPreferredStreamSelection,
@@ -75,13 +74,12 @@ import { AniSkipTimingSource, IntroDbTimingSource, PlaybackTimingAggregator } fr
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
+import { PlaybackResolveService } from "@/services/playback/PlaybackResolveService";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
-import { resolveWithFallback } from "@kunai/core";
+import type { ResolveAttempt } from "@kunai/core";
 
 const timingAggregator = new PlaybackTimingAggregator([IntroDbTimingSource, AniSkipTimingSource]);
-const PROVIDER_RESOLVE_MAX_ATTEMPTS = 3;
-const PROVIDER_RESOLVE_ATTEMPT_TIMEOUT_MS = 30_000;
 
 async function applyMpvEpisodeLoadingOverlay(
   control: ActivePlayerControl | null,
@@ -492,6 +490,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           let stream: StreamInfo | null = consumedPrefetch ?? null;
           let resolvedProviderId = currentProvider.metadata.id;
+          let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
 
           const resolveTrace = createResolveTraceStub({
             title,
@@ -520,217 +519,109 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: currentEpisode.episode,
               },
             });
-          } else {
+          }
+
+          if (!consumedPrefetch) {
             const subLang = stateManager.getState().subLang;
-            const resolveCacheKey = buildApiStreamResolveCacheKey({
-              providerId: currentProvider.metadata.id,
+            const playbackResolver = new PlaybackResolveService({
+              providerRegistry,
+              cacheStore,
+            });
+            const resolveResult = await playbackResolver.resolve({
               title,
               episode: currentEpisode,
               mode: stateManager.getState().mode,
+              providerId: currentProvider.metadata.id,
               subLang,
               animeLang: config.animeLang,
-            });
-            const cachedStream = await cacheStore.get(resolveCacheKey);
-            if (cachedStream) {
-              stream = { ...cachedStream, cacheProvenance: "cached" };
-              resolvedProviderId = currentProvider.metadata.id;
-              logger.info("Provider resolve cache hit", {
-                provider: currentProvider.metadata.id,
-                titleId: title.id,
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-              });
-              diagnosticsStore.record({
-                category: "cache",
-                message: "Provider resolve cache hit",
-                context: {
-                  provider: currentProvider.metadata.id,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                },
-              });
-            } else {
-              diagnosticsStore.record({
-                category: "cache",
-                message: "Provider resolve cache miss",
-                context: {
-                  provider: currentProvider.metadata.id,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                },
-              });
-              const compatibleProviders = providerRegistry.getCompatible(
-                title,
-                stateManager.getState().mode,
-              );
-              let providerAttemptCount = 0;
-              const resolveResult = await resolveWithFallback<StreamInfo>({
-                signal: resolveController.signal,
-                candidates: compatibleProviders.map((p) => ({
-                  providerId: p.metadata.id,
-                  preferred: p.metadata.id === currentProvider.metadata.id,
-                  resolve: () => {
-                    providerAttemptCount++;
-                    const isRetry = providerAttemptCount > 1;
-                    const providerName = p.metadata.name ?? p.metadata.id;
-                    this.updatePlaybackFeedback(context, {
-                      detail: isRetry
-                        ? `Trying fallback provider ${providerName}…`
-                        : `Resolving via ${providerName}`,
-                      note: "Recoverable failures retry up to 3 times; f skips to fallback",
+              signal: resolveController.signal,
+              onFeedback: (feedback) => this.updatePlaybackFeedback(context, feedback),
+              onEvent: (event) => {
+                if (event.type === "cache-hit" || event.type === "cache-miss") {
+                  const hit = event.type === "cache-hit";
+                  if (hit) {
+                    logger.info("Provider resolve cache hit", {
+                      provider: event.providerId,
+                      titleId: title.id,
+                      season: currentEpisode.season,
+                      episode: currentEpisode.episode,
                     });
-                    return resolveProviderStreamWithRetries({
-                      providerId: p.metadata.id,
-                      providerName,
-                      maxAttempts: PROVIDER_RESOLVE_MAX_ATTEMPTS,
-                      timeoutMs: PROVIDER_RESOLVE_ATTEMPT_TIMEOUT_MS,
-                      signal: resolveController.signal,
-                      onAttempt: ({ attempt, maxAttempts }) => {
-                        this.updatePlaybackFeedback(context, {
-                          detail:
-                            attempt === 1
-                              ? `Resolving via ${providerName} (${attempt}/${maxAttempts})`
-                              : `Retrying ${providerName} (${attempt}/${maxAttempts})`,
-                          note: "f skips remaining retries and tries the next provider",
-                        });
-                      },
-                      onFailure: ({ issue, retryable, attempt, maxAttempts }) => {
-                        this.updatePlaybackFeedback(context, {
-                          detail: retryable
-                            ? `Recoverable provider issue (${attempt}/${maxAttempts})`
-                            : "Provider returned a non-recoverable issue",
-                          note: issue,
-                        });
-                      },
-                      resolve: (attemptSignal) =>
-                        p.resolveStream(
-                          {
-                            title,
-                            episode: currentEpisode,
-                            subLang,
-                            animeLang: config.animeLang,
-                          },
-                          attemptSignal,
-                        ),
-                    });
-                  },
-                })),
-              });
-
-              stream = resolveResult.stream;
-              resolvedProviderId = resolveResult.providerId ?? currentProvider.metadata.id;
-
-              for (const [attemptIndex, attempt] of resolveResult.attempts.entries()) {
-                diagnosticsStore.record({
-                  category: "provider",
-                  message: attempt.stream
-                    ? "Provider resolve attempt succeeded"
-                    : "Provider resolve attempt failed",
-                  context: {
-                    stage: "provider-resolve",
-                    attempt: attemptIndex + 1,
-                    provider: attempt.providerId,
-                    titleId: title.id,
-                    season: currentEpisode.season,
-                    episode: currentEpisode.episode,
-                    hasTrace: Boolean(attempt.result?.trace),
-                    failure: attempt.failure ?? null,
-                  },
-                });
-              }
-
-              if (resolvedProviderId !== currentProvider.metadata.id) {
-                logger.info("Resolved stream with fallback provider", {
-                  from: currentProvider.metadata.id,
-                  fallback: resolvedProviderId,
-                });
-                stateManager.dispatch({ type: "SET_PROVIDER", provider: resolvedProviderId });
-              }
-
-              if (!stream) {
-                workControl.setActive(null);
-                if (resolveController.signal.aborted && !context.signal.aborted) {
-                  if (resolveAbortIntent === "fallback") {
-                    const fallback = providerRegistry
-                      .getCompatible(title, stateManager.getState().mode)
-                      .find((candidate) => candidate.metadata.id !== currentProvider.metadata.id);
-                    if (fallback) {
-                      stateManager.dispatch({
-                        type: "SET_PROVIDER",
-                        provider: fallback.metadata.id,
-                      });
-                      this.updatePlaybackFeedback(context, {
-                        detail: `Trying ${fallback.metadata.name ?? fallback.metadata.id}…`,
-                        note: "Fallback provider selected for the rest of this session",
-                      });
-                      diagnosticsStore.record({
-                        category: "provider",
-                        message: "Skipping current provider during playback bootstrap",
-                        context: {
-                          from: currentProvider.metadata.id,
-                          fallback: fallback.metadata.id,
-                          titleId: title.id,
-                          season: currentEpisode.season,
-                          episode: currentEpisode.episode,
-                        },
-                      });
-                      continue;
-                    }
                   }
-                  stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-                  stateManager.dispatch({ type: "SET_STREAM", stream: null });
-                  this.updatePlaybackFeedback(context, { detail: null, note: null });
-                  return { status: "success", value: "back_to_results" };
+                  diagnosticsStore.record({
+                    category: "cache",
+                    message: hit ? "Provider resolve cache hit" : "Provider resolve cache miss",
+                    context: {
+                      provider: event.providerId,
+                      titleId: title.id,
+                      season: currentEpisode.season,
+                      episode: currentEpisode.episode,
+                    },
+                  });
+                  return;
                 }
-                const problem = buildProviderResolveProblem({
-                  attempts: resolveResult.attempts,
-                  capabilitySnapshot: container.capabilitySnapshot,
-                });
-                diagnosticsStore.record({
-                  category: "provider",
-                  message: "Stream resolution failed — all providers exhausted",
-                  context: {
-                    provider: currentProvider.metadata.id,
-                    problem,
-                    attempts: resolveResult.attempts.map((a) => ({
-                      providerId: a.providerId,
-                      failure: a.failure,
-                    })),
-                  },
-                });
-                await this.showPlaybackProblem(context, problem);
-                stateManager.dispatch({ type: "SET_STREAM", stream: null });
-                return { status: "success", value: "back_to_results" };
-              }
 
-              if (stream.providerResolveResult) {
-                diagnosticsStore.record({
-                  category: "provider",
-                  message: "Provider resolve trace completed",
-                  context: {
-                    trace: stream.providerResolveResult.trace,
-                    streamCandidates: stream.providerResolveResult.streams.length,
-                    subtitleCandidates: stream.providerResolveResult.subtitles.length,
-                    cachePolicy: stream.providerResolveResult.cachePolicy,
-                  },
-                });
-              }
+                if (event.type === "attempt") {
+                  this.updatePlaybackFeedback(context, {
+                    detail:
+                      event.attempt === 1
+                        ? `Resolving via ${event.providerName} (${event.attempt}/${event.maxAttempts})`
+                        : `Retrying ${event.providerName} (${event.attempt}/${event.maxAttempts})`,
+                    note: "f skips remaining retries and tries the next provider",
+                  });
+                  return;
+                }
 
-              const persistKey = buildApiStreamResolveCacheKey({
-                providerId: resolvedProviderId,
-                title,
-                episode: currentEpisode,
-                mode: stateManager.getState().mode,
-                subLang,
-                animeLang: config.animeLang,
+                this.updatePlaybackFeedback(context, {
+                  detail: event.retryable
+                    ? `Recoverable provider issue (${event.attempt}/${event.maxAttempts})`
+                    : "Provider returned a non-recoverable issue",
+                  note: event.issue,
+                });
+              },
+            });
+
+            stream = resolveResult.stream;
+            resolvedProviderId = resolveResult.providerId;
+            resolveAttempts = resolveResult.attempts;
+
+            for (const [attemptIndex, attempt] of resolveAttempts.entries()) {
+              diagnosticsStore.record({
+                category: "provider",
+                message: attempt.stream
+                  ? "Provider resolve attempt succeeded"
+                  : "Provider resolve attempt failed",
+                context: {
+                  stage: "provider-resolve",
+                  attempt: attemptIndex + 1,
+                  provider: attempt.providerId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  hasTrace: Boolean(attempt.result?.trace),
+                  failure: attempt.failure ?? null,
+                },
               });
-              try {
-                await cacheStore.set(persistKey, stream);
-              } catch {
-                // Cache persistence is best-effort; playback already succeeded.
-              }
+            }
+
+            if (resolvedProviderId !== currentProvider.metadata.id) {
+              logger.info("Resolved stream with fallback provider", {
+                from: currentProvider.metadata.id,
+                fallback: resolvedProviderId,
+              });
+              stateManager.dispatch({ type: "SET_PROVIDER", provider: resolvedProviderId });
+            }
+
+            if (stream?.providerResolveResult) {
+              diagnosticsStore.record({
+                category: "provider",
+                message: "Provider resolve trace completed",
+                context: {
+                  trace: stream.providerResolveResult.trace,
+                  streamCandidates: stream.providerResolveResult.streams.length,
+                  subtitleCandidates: stream.providerResolveResult.subtitles.length,
+                  cachePolicy: stream.providerResolveResult.cachePolicy,
+                },
+              });
             }
           }
 
@@ -768,7 +659,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               return { status: "success", value: "back_to_results" };
             }
             const problem = buildProviderResolveProblem({
-              attempts: [],
+              attempts: resolveAttempts,
               capabilitySnapshot: container.capabilitySnapshot,
             });
             await this.showPlaybackProblem(context, problem);
