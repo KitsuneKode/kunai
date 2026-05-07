@@ -31,11 +31,18 @@
     "release": "bunx changeset publish",
     "link:global": "bun run --cwd apps/cli link:global",
     "unlink:global": "bun run --cwd apps/cli unlink:global",
-    "relink:global": "bun run --cwd apps/cli relink:global"
+    "relink:global": "bun run --cwd apps/cli relink:global",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "**/*.{ts,tsx}": ["oxlint", "oxfmt --write"],
+    "**/*.{json,md}": ["oxfmt --write"]
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.1",
     "@changesets/cli": "^2.31.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.2",
     "oxfmt": "^0.47.0",
     "oxlint": "^1.62.0",
     "turbo": "^2.9.8"
