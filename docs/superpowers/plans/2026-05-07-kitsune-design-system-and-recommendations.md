@@ -1401,6 +1401,142 @@ git commit -m "feat: minimal mode — forceCompact layout, minimal footer, no he
 
 ---
 
+---
+
+### Task 14: Fullscreen TUI resilience — viewport hook + resize safety in DiscoverShell
+
+**Files:**
+- Create: `apps/cli/src/app-shell/use-viewport-policy.ts`
+- Modify: `apps/cli/src/app-shell/discover-shell.tsx`
+
+**Context:** `ResizeBlocker`, `getShellViewportPolicy`, and the `tooSmall` guard are already used consistently in the browse, playback, and picker shells. This task closes the gap for `DiscoverShell` (which lacks resize protection) and extracts the `useStdout() + getShellViewportPolicy` boilerplate into a single shared hook so all shells — including new ones — don't repeat it.
+
+- [ ] **Step 1: Create `useViewportPolicy` hook**
+
+```ts
+// apps/cli/src/app-shell/use-viewport-policy.ts
+import { useStdout } from "ink";
+
+import {
+  getShellViewportPolicy,
+  type ShellViewportKind,
+  type ShellViewportPolicy,
+} from "./layout-policy";
+
+/**
+ * Returns a live viewport policy that re-evaluates on every terminal resize.
+ * Ink re-renders components that call useStdout() when the terminal size changes,
+ * so this hook is automatically reactive.
+ */
+export function useViewportPolicy(
+  kind: ShellViewportKind,
+  options: { forceCompact?: boolean } = {},
+): ShellViewportPolicy {
+  const { stdout } = useStdout();
+  return getShellViewportPolicy(
+    kind,
+    stdout.columns ?? 80,
+    stdout.rows ?? 24,
+    options,
+  );
+}
+```
+
+- [ ] **Step 2: Update `DiscoverShell` to use the hook and show `ResizeBlocker`**
+
+Replace the `useStdout()` call at the top of `DiscoverShell` in `discover-shell.tsx` with `useViewportPolicy`, and add the resize guard before rendering any content:
+
+```tsx
+// Add to imports
+import { useViewportPolicy } from "./use-viewport-policy";
+import { ResizeBlocker } from "./shell-primitives";
+
+// Inside DiscoverShell component, replace:
+//   const { stdout } = useStdout();
+//   const sepWidth = Math.max(24, (stdout.columns ?? 80) - 4);
+// with:
+
+export function DiscoverShell({ sections, onResult }: {
+  sections: RecommendationSection[];
+  onResult: (result: DiscoverShellResult) => void;
+}) {
+  const [sectionIdx, setSectionIdx] = useState(0);
+  const [itemIdx, setItemIdx] = useState(0);
+  const viewport = useViewportPolicy("browse");
+  const sepWidth = Math.max(24, viewport.minColumns - 4);
+
+  // ... existing useInput hook unchanged ...
+
+  if (viewport.tooSmall) {
+    return (
+      <ResizeBlocker
+        minColumns={viewport.minColumns}
+        minRows={viewport.minRows}
+      />
+    );
+  }
+
+  // ... rest of JSX unchanged ...
+}
+```
+
+- [ ] **Step 3: Add `truncateLabel` helper to `design.ts`**
+
+Text in dense list rows can overflow and cause line-wrap on resize. Add a single helper for row label clamping — callers use this instead of inline `.slice()`:
+
+```ts
+// apps/cli/src/design.ts
+// ── Label truncation ──────────────────────────────────────────────────────────
+//
+// Clamps a label to maxWidth with an ellipsis so list rows never wrap.
+
+export function truncateLabel(text: string, maxWidth: number): string {
+  if (text.length <= maxWidth) return text;
+  return `${text.slice(0, maxWidth - 1)}…`;
+}
+```
+
+Then update the row rendering inside `DiscoverSectionView` to use it:
+
+```ts
+// Before:
+`  ${isActive ? "▶" : " "} ${item.title.padEnd(28).slice(0, 28)} ${rating.padEnd(7)} ${item.year}`
+
+// After:
+`  ${isActive ? "▶" : " "} ${truncateLabel(item.title, 28).padEnd(28)} ${rating.padEnd(7)} ${item.year}`
+```
+
+- [ ] **Step 4: Audit existing callers of `useStdout` + `getShellViewportPolicy` in `ink-shell.tsx`**
+
+Search `ink-shell.tsx` for the pattern:
+
+```ts
+const { stdout } = useStdout();
+// ...
+getShellViewportPolicy(kind, stdout.columns, stdout.rows)
+```
+
+For each occurrence, replace with `useViewportPolicy(kind)`. This eliminates the repeated boilerplate while keeping behaviour identical — Ink's `useStdout()` reactive update path is preserved inside the hook.
+
+> **Note:** Don't replace `useStdout()` calls that are used for other purposes (e.g. reading `stdout.columns` for separator widths unrelated to viewport policy). Only replace the `useStdout + getShellViewportPolicy` pairing.
+
+- [ ] **Step 5: Typecheck**
+
+```bash
+cd apps/cli && bun run typecheck
+```
+
+Expected: no errors.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/cli/src/app-shell/use-viewport-policy.ts apps/cli/src/app-shell/discover-shell.tsx apps/cli/src/design.ts apps/cli/src/app-shell/ink-shell.tsx
+git commit -m "feat: useViewportPolicy hook + ResizeBlocker in DiscoverShell + truncateLabel"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage check:**
@@ -1424,5 +1560,6 @@ git commit -m "feat: minimal mode — forceCompact layout, minimal footer, no he
 | Flat `KitsuneConfig` fields (`discoverShowOnStartup`, `minimalMode`) | Task 11 |
 | Startup hint behind `discoverShowOnStartup` | Task 12 |
 | Minimal mode: `forceCompact` layout, `effectiveFooterHints`, no header status | Task 13 |
+| `useViewportPolicy` hook, `ResizeBlocker` in `DiscoverShell`, `truncateLabel` | Task 14 |
 
 All spec requirements covered. No TBDs. All new config fields are flat in `KitsuneConfig`. `buildDiscoverSections` is defined once. `DiscoverSectionView` replaces the generic `SectionList` name. `effectiveFooterHints` is fixed rather than bypassed.
