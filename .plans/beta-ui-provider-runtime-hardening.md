@@ -383,7 +383,7 @@ bun run test -- apps/cli/test/unit/app/source-quality.test.ts
 - Modify: `apps/cli/src/app/SearchPhase.ts`
 - Test: `apps/cli/test/unit/services/catalog/catalog-discovery-service.test.ts`
 
-- [ ] **Step 1: Wrap discovery in a service**
+- [x] **Step 1: Wrap discovery in a service**
 
 Keep current TMDB/AniList implementation, but expose deterministic service methods:
 
@@ -392,7 +392,7 @@ loadTrending(mode, signal)
 clearTrendingCache()
 ```
 
-- [ ] **Step 2: Preserve in-flight dedupe**
+- [x] **Step 2: Preserve in-flight dedupe**
 
 Current `discoveryInflight` behavior should move into the service or remain as a private implementation detail.
 
@@ -404,7 +404,7 @@ Switching English/Romaji/native/provider display must use cached `titleAliases`.
 
 Search result details may show available/unavailable/unknown, but should not assume provider playability without evidence.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
