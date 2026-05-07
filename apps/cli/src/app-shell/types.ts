@@ -4,6 +4,7 @@ export type ShellAction =
   | "command-mode"
   | "search"
   | "trending"
+  | "discover"
   | "back-to-results"
   | "settings"
   | "toggle-mode"
@@ -142,6 +143,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
   switch (commandId) {
     case "search":
     case "trending":
+    case "discover":
     case "settings":
     case "toggle-mode":
     case "quit":
