@@ -63,6 +63,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Phase 2 playback/media runtime now has the controller seam, persistent autoplay mpv session, built-in subtitle priority, credits-aware completion timing, loading cancel, and player-side skip controls
 - Manual runtime verification is now tracked in [VERIFICATION.md](../VERIFICATION.md)
 - Provider SDK candidate model: provider -> source/mirror -> variant, with selected stream plus discovered candidates, subtitles, trace, cache policy, and health deltas
+- Beta UI/provider runtime hardening now has an execution plan for modal pickers, source inventory cache, provider-internal retry, fallback policy, hardsub/source/quality display, and deterministic trending: [.plans/beta-ui-provider-runtime-hardening.md](.plans/beta-ui-provider-runtime-hardening.md)
 - Runtime-browser package plan for JIT Playwright leases, interception, cooldown, evidence capture, and teardown
 - Interactive resolution UX follow-up is now mostly narrowed to richer non-playback cancel surfaces plus later source/quality/subtitle chooser polish
 - Deferred resolve UX items (provider-level Playwright abort, episode memory after cancel, per-provider timeout config, provider health indicator) tracked in [.plans/resolve-ux-and-playwright-lifecycle.md](.plans/resolve-ux-and-playwright-lifecycle.md)
@@ -85,6 +86,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | **Beta v1 scope & contracts**    | **Active**    | [.plans/kunai-beta-v1-scope-and-contracts.md](.plans/kunai-beta-v1-scope-and-contracts.md)          |
 | **Execution passes & CLI modes** | **Active**  | [.plans/kunai-execution-passes-and-cli-modes.md](.plans/kunai-execution-passes-and-cli-modes.md)     |
 | **Beta readiness**               | **Active**    | [.plans/beta-readiness.md](.plans/beta-readiness.md)                                                 |
+| Beta UI/provider hardening       | Planned       | [.plans/beta-ui-provider-runtime-hardening.md](.plans/beta-ui-provider-runtime-hardening.md)          |
 | Fullscreen root shell redesign   | In Progress   | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                 |
 | Phase 1.8 mounted content tree   | In Progress   | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)   |
 | Phase 2 playback/media runtime   | In Progress   | [.plans/phase-2-playback-media-runtime.md](.plans/phase-2-playback-media-runtime.md)                 |

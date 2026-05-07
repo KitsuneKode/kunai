@@ -58,6 +58,7 @@ import {
   type ShellFooterMode,
 } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
+import { useSessionSelector } from "./use-session-selector";
 
 // =============================================================================
 // STDIN LIFECYCLE MANAGER
@@ -265,15 +266,7 @@ function mountShell<TResult>({
  * Hook to subscribe to the global session state.
  */
 export function useSessionState(stateManager: SessionStateManager) {
-  const [state, setState] = useState(stateManager.getState());
-
-  useEffect(() => {
-    return stateManager.subscribe((nextState) => {
-      setState(nextState);
-    });
-  }, [stateManager]);
-
-  return state;
+  return useSessionSelector(stateManager, (state) => state);
 }
 
 /**
