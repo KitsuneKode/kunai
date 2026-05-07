@@ -9,6 +9,7 @@ import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
+import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
 import { loadDiscoveryList } from "@/app/discovery-lists";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
@@ -112,15 +113,22 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const selected = results[idx];
             if (selected) {
               stateManager.dispatch({ type: "SELECT_RESULT", index: idx });
+              const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
+                mode: stateManager.getState().mode,
+                providerId: stateManager.getState().provider,
+                animeLang: stateManager.getState().animeLang,
+                providerRegistry,
+                signal: context.signal,
+              });
               const title: TitleInfo = {
-                id: selected.id,
-                type: selected.type,
-                name: chooseSearchResultTitle(selected, container.config.animeTitlePreference),
-                year: selected.year,
-                overview: selected.overview,
-                posterUrl: selected.posterPath ?? undefined,
-                titleAliases: selected.titleAliases,
-                episodeCount: selected.episodeCount,
+                id: mapped.id,
+                type: mapped.type,
+                name: chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+                year: mapped.year,
+                overview: mapped.overview,
+                posterUrl: mapped.posterPath ?? undefined,
+                titleAliases: mapped.titleAliases,
+                episodeCount: mapped.episodeCount,
               };
               stateManager.dispatch({ type: "SELECT_TITLE", title });
               return { status: "success", value: title };
@@ -281,15 +289,22 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               const selected = discoverResult.result;
               stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results: [selected] });
               stateManager.dispatch({ type: "SELECT_RESULT", index: 0 });
+              const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
+                mode: stateManager.getState().mode,
+                providerId: stateManager.getState().provider,
+                animeLang: stateManager.getState().animeLang,
+                providerRegistry,
+                signal: context.signal,
+              });
               const title: TitleInfo = {
-                id: selected.id,
-                type: selected.type,
-                name: chooseSearchResultTitle(selected, container.config.animeTitlePreference),
-                titleAliases: selected.titleAliases,
-                year: selected.year,
-                overview: selected.overview,
-                posterUrl: selected.posterPath ?? undefined,
-                episodeCount: selected.episodeCount,
+                id: mapped.id,
+                type: mapped.type,
+                name: chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+                titleAliases: mapped.titleAliases,
+                year: mapped.year,
+                overview: mapped.overview,
+                posterUrl: mapped.posterPath ?? undefined,
+                episodeCount: mapped.episodeCount,
               };
               stateManager.dispatch({ type: "SELECT_TITLE", title });
               return { status: "success", value: title };
@@ -318,10 +333,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           continue;
         }
 
-        const selected = outcome.value;
+        const originalSelected = outcome.value;
+        const selected = await mapAnimeDiscoveryResultToProviderNative(originalSelected, {
+          mode: stateManager.getState().mode,
+          providerId: stateManager.getState().provider,
+          animeLang: stateManager.getState().animeLang,
+          providerRegistry,
+          signal: context.signal,
+        });
         const selectedIndex = stateManager
           .getState()
-          .searchResults.findIndex((result) => result.id === selected.id);
+          .searchResults.findIndex((result) => result.id === originalSelected.id);
         if (selectedIndex >= 0) {
           stateManager.dispatch({ type: "SELECT_RESULT", index: selectedIndex });
         }
