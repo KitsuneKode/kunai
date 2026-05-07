@@ -21,6 +21,11 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  applyBrowseResultFilters,
+  describeBrowseResultFilters,
+  parseBrowseFilterQuery,
+} from "./browse-filters";
 import type { ResolvedAppCommand } from "./commands";
 import { buildBrowseCompanionPanel, buildBrowseDetailsPanel } from "./details-panel";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
@@ -1831,6 +1836,7 @@ function BrowseShell<T>({
   const [draftQuery, setDraftQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
+  const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const requestIdRef = useRef(0);
   const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
     rows: 10,
@@ -1850,6 +1856,7 @@ function BrowseShell<T>({
     setEmptyMessage("Type a title and press Enter to search.");
     setResultSubtitle("");
     setSelectedDetail("Type a title and press Enter to search.");
+    setActiveFilterBadges([]);
   };
 
   const updateQuery = (nextValue: string) => {
@@ -1875,8 +1882,10 @@ function BrowseShell<T>({
   };
 
   const runSearch = async () => {
-    const trimmed = query.trim();
+    const parsedQuery = parseBrowseFilterQuery(query);
+    const trimmed = parsedQuery.searchQuery.trim();
     if (trimmed.length === 0 || searchState === "loading") return;
+    const filterBadges = describeBrowseResultFilters(parsedQuery.filters);
 
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
@@ -1888,16 +1897,23 @@ function BrowseShell<T>({
     try {
       const response = await onSearch(trimmed);
       if (requestIdRef.current !== requestId) return;
+      const filteredOptions = applyBrowseResultFilters(response.options, parsedQuery.filters);
+      const filterSuffix = filterBadges.length > 0 ? `  ·  filters ${filterBadges.join(", ")}` : "";
 
       setLastSearchedQuery(trimmed);
       addSearchQuery(trimmed);
-      setOptions(response.options);
+      setOptions(filteredOptions);
       setSelectedIndex(0);
-      setResultSubtitle(response.subtitle);
-      setEmptyMessage(response.emptyMessage ?? "No results found.");
+      setResultSubtitle(`${response.subtitle}${filterSuffix}`);
+      setEmptyMessage(
+        filterBadges.length > 0
+          ? "No results matched those filters."
+          : (response.emptyMessage ?? "No results found."),
+      );
+      setActiveFilterBadges(filterBadges);
       setSearchState("ready");
       setSelectedDetail(
-        response.options[0]?.detail ?? "Use ↑↓ to move through results, then press Enter.",
+        filteredOptions[0]?.detail ?? "Use ↑↓ to move through results, then press Enter.",
       );
     } catch (error) {
       if (requestIdRef.current !== requestId) return;
@@ -1931,6 +1947,7 @@ function BrowseShell<T>({
       setSelectedIndex(0);
       setResultSubtitle(response.subtitle);
       setEmptyMessage(response.emptyMessage ?? "Trending is unavailable right now.");
+      setActiveFilterBadges([]);
       setSearchState("ready");
       setSelectedDetail(response.options[0]?.detail ?? "Use ↑↓ to move through trending titles.");
     } catch (error) {
@@ -2206,6 +2223,9 @@ function BrowseShell<T>({
             <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
           ) : null}
           {queryDirty && options.length > 0 ? <Badge label="results stale" tone="warning" /> : null}
+          {activeFilterBadges.map((filter) => (
+            <Badge key={filter} label={filter} tone="accent" />
+          ))}
         </Box>
 
         <InputField
@@ -2215,7 +2235,7 @@ function BrowseShell<T>({
           onSubmit={handleQuerySubmit}
           placeholder={placeholder}
           focus={!commandMode}
-          hint="Enter searches · / opens commands · Ctrl+W deletes a word"
+          hint="Tokens: type:series year:2008 rating:8 · Ctrl+W deletes a word"
           onRedraw={clearShellScreen}
         />
 

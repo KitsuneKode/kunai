@@ -1,6 +1,6 @@
 import type { BrowseShellOption, ShellPanelLine } from "@/app-shell/types";
 
-const POSTER_AVAILABLE = "Poster available for terminal image preview";
+const POSTER_AVAILABLE = "Poster available for companion preview";
 const POSTER_MISSING = "Poster unavailable from this provider";
 
 export type BrowseDetailsPanel = {
@@ -44,15 +44,33 @@ export function buildBrowseDetailsPanel<T>(
   const facts = getStructuredPreviewFacts(option);
   const lines: ShellPanelLine[] = [
     {
+      label: "Title",
+      detail: title,
+      tone: "success",
+    },
+    ...(option.previewMeta?.length
+      ? [
+          {
+            label: "Quick facts",
+            detail: option.previewMeta.join("  ·  "),
+          },
+        ]
+      : []),
+    {
       label: "Overview",
       detail: option.previewBody || "No overview available yet.",
     },
-    ...facts,
     {
-      label: "Poster preview",
+      label: "Artwork",
       detail: option.previewImageUrl ? POSTER_AVAILABLE : POSTER_MISSING,
       tone: option.previewImageUrl ? "success" : "warning",
     },
+    {
+      label: "Trailer",
+      detail: "Trailer links are not part of the current search contract yet.",
+      tone: "neutral",
+    },
+    ...facts.filter((fact) => fact.label !== "Poster" && fact.label !== "Rating"),
   ];
 
   if (option.previewRating) {
@@ -66,13 +84,6 @@ export function buildBrowseDetailsPanel<T>(
       label: "Rating",
       detail: "Rating unavailable from this provider response",
       tone: "neutral",
-    });
-  }
-
-  if (option.previewMeta?.length) {
-    lines.push({
-      label: "Metadata",
-      detail: option.previewMeta.join("  ·  "),
     });
   }
 

@@ -567,16 +567,12 @@ export function OverlayPanel({
           {overlay.type === "details" ? (
             <Box marginBottom={1} flexDirection="column">
               <Text color={overlay.imageUrl ? palette.green : palette.amber}>
-                {overlay.imageUrl ? "Poster image ready" : "Poster image missing"}
+                {overlay.imageUrl ? "Artwork available" : "Artwork unavailable"}
               </Text>
               <Text color={palette.gray}>
                 {overlay.imageUrl
-                  ? truncateLine(overlay.imageUrl, contentWidth)
+                  ? "Companion preview can show this artwork when the terminal supports it."
                   : "This provider did not expose artwork for the selected title."}
-              </Text>
-              <Text color={palette.gray}>
-                Inline Kitty/Ghostty rendering is kept behind the image-pane path to avoid Ink
-                scroll flicker.
               </Text>
             </Box>
           ) : null}
