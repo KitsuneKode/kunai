@@ -389,7 +389,9 @@ function AppRoot({ container }: { container: Container }) {
         <Box justifyContent="space-between">
           <Text color={palette.amber}>{APP_LABEL}</Text>
           <Text color={statusColor(rootStatusSummary.header.tone)}>
-            {rootStatusSummary.header.label}
+            {container.config.minimalMode && currentViewLabel === "browse"
+              ? undefined
+              : rootStatusSummary.header.label}
           </Text>
         </Box>
         <Box marginTop={0} flexWrap="wrap">
@@ -1687,7 +1689,9 @@ function BrowseShell<T>({
   const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
     rows: 10,
     cols: 24,
-    enabled: getShellViewportPolicy("browse", stdout.columns, stdout.rows).wideBrowse,
+    enabled: getShellViewportPolicy("browse", stdout.columns, stdout.rows, {
+      forceCompact: _settings?.minimalMode,
+    }).wideBrowse,
     debounceMs: 120,
   });
 
@@ -1852,7 +1856,9 @@ function BrowseShell<T>({
   const queryDirty = query.trim() !== lastSearchedQuery;
   const selectedOption = options[selectedIndex];
   const companionPanel = buildBrowseCompanionPanel(selectedOption, { selectedDetail });
-  const viewport = getShellViewportPolicy("browse", stdout.columns, stdout.rows);
+  const viewport = getShellViewportPolicy("browse", stdout.columns, stdout.rows, {
+    forceCompact: _settings?.minimalMode,
+  });
   const {
     compact,
     ultraCompact,

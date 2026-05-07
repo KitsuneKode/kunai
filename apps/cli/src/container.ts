@@ -97,9 +97,11 @@ export interface Container {
 }
 
 export function effectiveFooterHints(
-  _container: Pick<Container, "config" | "shellChrome">,
+  container: Pick<Container, "config" | "shellChrome">,
 ): "detailed" | "minimal" {
-  return "minimal";
+  if (container.config.minimalMode) return "minimal";
+  if (container.shellChrome === "minimal" || container.shellChrome === "quick") return "minimal";
+  return container.config.footerHints;
 }
 
 /**

@@ -14,10 +14,12 @@ export function getShellViewportPolicy(
   kind: ShellViewportKind,
   columns: number,
   rows: number,
+  options: { forceCompact?: boolean } = {},
 ): ShellViewportPolicy {
-  const compact = columns < 110 || rows < 34;
-  const ultraCompact = columns < 92 || rows < 28;
-  const wideBrowse = kind === "browse" && columns >= 164 && rows >= 30;
+  const forceCompact = options.forceCompact ?? false;
+  const compact = forceCompact || columns < 110 || rows < 34;
+  const ultraCompact = forceCompact || columns < 92 || rows < 28;
+  const wideBrowse = !forceCompact && kind === "browse" && columns >= 164 && rows >= 30;
 
   if (kind === "picker") {
     const minColumns = 84;
