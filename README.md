@@ -74,13 +74,15 @@ kunai
 
 ### Prerequisites
 
-- Bun `>=1.3.9`
+- Bun `>=1.3.9` for source installs during beta
 - `mpv` on your `PATH`
 - Optional: Playwright Chromium for browser-backed providers
 
 ```bash
 bunx playwright install chromium
 ```
+
+Kunai currently uses Bun APIs directly in the CLI runtime, including process, socket, and install flows. A plain Node/npm-only source checkout is not a supported beta path. The intended future onboarding path for non-developers is a packaged binary so users do not need to install Bun by hand.
 
 ## Common Commands
 
@@ -111,11 +113,28 @@ When `mpv` is open, Kunai keeps a bridge alive so playback can still talk back t
 | Key | Action |
 | --- | --- |
 | `n` / `p` | Request next or previous episode |
+| `c` | Continue from saved progress when the shell is waiting after playback |
+| `a` | Resume autoplay from the saved point when available |
 | `k` | Open stream or quality picker |
 | `o` | Open provider picker |
 | `b` | Skip the active intro/recap/credit segment manually |
-| `r` | Refresh or recover a stalled stream |
+| `r` | Reload or recover the current stream and continue playback |
 | `f` | Fallback to the next provider |
+| `Ctrl+R` in mpv | Manually resume from saved progress when Kunai starts an episode from the beginning |
+
+Navigation and manual replay start episodes from the beginning by default when a saved resume point exists; the mpv overlay offers the resume prompt instead of Kunai seeking automatically. Reload and quality changes keep the current playback position. Source changes restart the selected source and leave manual resume available.
+
+Source, quality, subtitle, and provider availability comes from the resolved provider inventory. Hard-sub languages, soft-sub tracks, audio language, and unknown availability are shown separately where the provider exposes enough evidence.
+
+## Troubleshooting
+
+| Symptom | What to try |
+| --- | --- |
+| `mpv` missing | Install `mpv` and make sure it is on `PATH`, then rerun Kunai. |
+| Provider exhausted | Use fallback/provider picker, retry later, or export diagnostics if every compatible provider fails. |
+| Subtitle unavailable | Check the subtitle picker; some streams are hardsub-only or expose no soft subtitles. |
+| Hardsub-only playback | Switch anime sub/dub preference or provider if you need a different language and the provider offers one. |
+| Hard-to-debug playback issue | Run with `--debug`, then use `/ export-diagnostics` for a redacted JSON snapshot. |
 
 ## Developer Workflow
 

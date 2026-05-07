@@ -4,10 +4,12 @@ Use this doc for setup, local execution, and common environment issues. Architec
 
 ## Prerequisites
 
-- Bun `v1.1+`
+- Bun `>=1.3.9` for source installs during beta
 - `mpv` in `PATH`
 - Playwright Chromium for **embedded** providers (browser scrape); API-only anime sources may still work without it — Kunai warns at startup if the browser is missing
 - Kitty graphics protocol support if you want inline posters
+
+Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Packaged binaries are the preferred future path for users who should not need to install Bun manually.
 
 ## Setup
 
@@ -83,8 +85,16 @@ bunx playwright install chromium
 
 **No stream resolved**
 
-Try a different provider from the shell picker or change the default provider in settings.
+Try a different provider from the shell picker, use provider fallback, or change the default provider in settings.
 If Playwright Chromium is missing, install it and retry browser-backed providers.
+
+**Subtitles are missing or not selectable**
+
+Open the subtitle picker and check whether the stream is hard-sub-only, has soft-sub inventory for your language, or has unknown subtitle availability. Provider hard-subs and external soft subtitles are tracked separately.
+
+**Playback position feels wrong**
+
+Next, previous, replay, source change, and picker-launched unwatched episodes should start from the beginning and leave the manual `Ctrl+R` resume prompt available in mpv when history exists. Continue, reload/recover, and quality change should keep the current position.
 
 **Anime playback broke after an upstream change**
 

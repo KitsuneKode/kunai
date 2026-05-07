@@ -18,6 +18,8 @@ Setup, Playwright, and troubleshooting live in [quickstart.md](./quickstart.md).
 
 Examples below use `bun run dev --` for copy-paste safety in development.
 
+Source installs require Bun during beta. The CLI uses Bun runtime APIs directly, so installing dependencies with npm and running under plain Node is not a supported source path. The preferred future path for non-developer onboarding is a packaged binary.
+
 ---
 
 ## Flows (what starts after launch)
@@ -113,6 +115,11 @@ These are useful for docs parity so users do not search for a `--history` flag.
 | Resume / history | Command palette (`/`) and history flows in the Ink shell |
 | Export diagnostics | `/ export-diagnostics` or command palette — writes **redacted** JSON next to the process cwd |
 | Provider / subtitles / episode | Shell pickers and hotkeys (see README “Shell controls”) |
+| Next / previous | `n` / `p` during playback; starts the target episode from the beginning and leaves manual mpv resume available when history exists |
+| Replay | Shell playback action; starts from the beginning and leaves manual mpv resume available |
+| Reload / recover | `r`; keeps the current playback position |
+| Source / quality | Source changes restart the selected source; quality changes keep the current playback position |
+| Provider fallback | `f`; skips to the next compatible provider during resolve or recovery |
 
 ---
 

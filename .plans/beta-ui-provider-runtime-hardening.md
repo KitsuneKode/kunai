@@ -467,11 +467,11 @@ bun run --cwd apps/cli test:vhs:help
 - Modify: `.docs/quickstart.md`
 - Modify: `.docs/cli-reference.md`
 
-- [ ] **Step 1: Document Bun stance**
+- [x] **Step 1: Document Bun stance**
 
 State that source installs require Bun for beta. Note that packaged binaries are the preferred future path for users who should not need to install Bun manually.
 
-- [ ] **Step 2: Document playback controls**
+- [x] **Step 2: Document playback controls**
 
 Controls must match actual behavior after Tasks 2-10:
 
@@ -484,7 +484,7 @@ Controls must match actual behavior after Tasks 2-10:
 - subtitles/audio where available
 - command palette
 
-- [ ] **Step 3: Document troubleshooting**
+- [x] **Step 3: Document troubleshooting**
 
 Include mpv missing, provider exhausted, subtitle unavailable, hardsub-only, and diagnostics export.
 
