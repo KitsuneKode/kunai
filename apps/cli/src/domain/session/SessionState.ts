@@ -69,19 +69,22 @@ export interface OverlayPickerOption {
   readonly badge?: string;
 }
 
+export type PickerOverlayState = {
+  readonly id?: string;
+  readonly options: readonly OverlayPickerOption[];
+  readonly selectedIndex?: number;
+  readonly filterQuery?: string;
+  readonly emptyMessage?: string;
+};
+
 export type OverlayState =
   | { type: "settings" }
   | { type: "provider_picker"; currentProvider: string; isAnime: boolean }
-  | { type: "subtitle_picker"; options: readonly OverlayPickerOption[] }
-  | { type: "source_picker"; options: readonly OverlayPickerOption[] }
-  | { type: "quality_picker"; options: readonly OverlayPickerOption[] }
-  | { type: "season_picker"; currentSeason: number; options: readonly OverlayPickerOption[] }
-  | {
-      type: "episode_picker";
-      season: number;
-      options: readonly OverlayPickerOption[];
-      initialIndex?: number;
-    }
+  | ({ type: "subtitle_picker" } & PickerOverlayState)
+  | ({ type: "source_picker" } & PickerOverlayState)
+  | ({ type: "quality_picker" } & PickerOverlayState)
+  | ({ type: "season_picker"; currentSeason: number } & PickerOverlayState)
+  | ({ type: "episode_picker"; season: number; initialIndex?: number } & PickerOverlayState)
   | { type: "history" }
   | { type: "diagnostics" }
   | { type: "help" }
@@ -90,6 +93,19 @@ export type OverlayState =
   | { type: "confirm"; message: string; confirmLabel?: string };
 
 export type ModalState = OverlayState;
+
+export type PickerModalOverlayState = Extract<
+  OverlayState,
+  | { type: "subtitle_picker" }
+  | { type: "source_picker" }
+  | { type: "quality_picker" }
+  | { type: "season_picker" }
+  | { type: "episode_picker" }
+> & { readonly id: string };
+
+export type PickerModalResult =
+  | { readonly type: "selected"; readonly id: string; readonly value: string }
+  | { readonly type: "cancelled"; readonly id: string };
 
 export interface SessionState {
   readonly mode: ShellMode;
@@ -122,6 +138,7 @@ export interface SessionState {
   readonly selectedResultId: string | null;
 
   readonly activeModals: OverlayState[];
+  readonly pickerResult: PickerModalResult | null;
   readonly commandBar: CommandBarState;
 
   readonly viewport: ViewportSize;
@@ -156,6 +173,11 @@ export type StateTransition =
   | { type: "OPEN_OVERLAY"; overlay: OverlayState }
   | { type: "CLOSE_TOP_OVERLAY" }
   | { type: "CLOSE_ALL_OVERLAYS" }
+  | { type: "OPEN_PICKER"; picker: PickerModalOverlayState }
+  | { type: "UPDATE_PICKER_FILTER"; id: string; filterQuery: string }
+  | { type: "MOVE_PICKER_SELECTION"; id: string; delta: number }
+  | { type: "RESOLVE_PICKER"; id: string; value: string }
+  | { type: "CANCEL_PICKER"; id: string }
   | { type: "PUSH_MODAL"; modal: OverlayState }
   | { type: "POP_MODAL" }
   | { type: "CLOSE_ALL_MODALS" }
@@ -214,6 +236,7 @@ export function createInitialState(
     selectedResultIndex: 0,
     selectedResultId: null,
     activeModals: [],
+    pickerResult: null,
     commandBar: {
       open: false,
       query: "",
@@ -388,6 +411,71 @@ export function reduceState(state: SessionState, transition: StateTransition): S
     case "CLOSE_ALL_OVERLAYS":
       return { ...state, activeModals: [] };
 
+    case "OPEN_PICKER":
+      return {
+        ...state,
+        pickerResult: null,
+        activeModals: [
+          ...state.activeModals,
+          {
+            ...transition.picker,
+            selectedIndex: normalizePickerIndex(
+              transition.picker.selectedIndex ??
+                (transition.picker.type === "episode_picker"
+                  ? transition.picker.initialIndex
+                  : 0) ??
+                0,
+              transition.picker.options.length,
+            ),
+            filterQuery: transition.picker.filterQuery ?? "",
+          },
+        ],
+      };
+
+    case "UPDATE_PICKER_FILTER":
+      return {
+        ...state,
+        activeModals: state.activeModals.map((modal, index) =>
+          index === state.activeModals.length - 1 && isPickerOverlay(modal, transition.id)
+            ? { ...modal, filterQuery: transition.filterQuery, selectedIndex: 0 }
+            : modal,
+        ),
+      };
+
+    case "MOVE_PICKER_SELECTION": {
+      const top = state.activeModals.at(-1);
+      if (!isPickerOverlay(top, transition.id)) return state;
+      const filteredLength = filterPickerOptions(top.options, top.filterQuery ?? "").length;
+      const selectedIndex =
+        filteredLength > 0
+          ? wrapPickerIndex((top.selectedIndex ?? 0) + transition.delta, filteredLength)
+          : 0;
+      return {
+        ...state,
+        activeModals: [
+          ...state.activeModals.slice(0, -1),
+          {
+            ...top,
+            selectedIndex,
+          },
+        ],
+      };
+    }
+
+    case "RESOLVE_PICKER":
+      return {
+        ...state,
+        pickerResult: { type: "selected", id: transition.id, value: transition.value },
+        activeModals: popPickerOverlay(state.activeModals, transition.id),
+      };
+
+    case "CANCEL_PICKER":
+      return {
+        ...state,
+        pickerResult: { type: "cancelled", id: transition.id },
+        activeModals: popPickerOverlay(state.activeModals, transition.id),
+      };
+
     case "PUSH_MODAL":
       return {
         ...state,
@@ -557,4 +645,46 @@ function deriveSearchSelection(
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function isPickerOverlay(
+  overlay: OverlayState | undefined,
+  id?: string,
+): overlay is Extract<OverlayState, PickerOverlayState> {
+  if (!overlay) return false;
+  const picker =
+    overlay.type === "season_picker" ||
+    overlay.type === "episode_picker" ||
+    overlay.type === "subtitle_picker" ||
+    overlay.type === "source_picker" ||
+    overlay.type === "quality_picker";
+  return picker && (id === undefined || overlay.id === id);
+}
+
+function normalizePickerIndex(index: number, length: number): number {
+  if (length <= 0) return 0;
+  return clamp(index, 0, length - 1);
+}
+
+function wrapPickerIndex(index: number, length: number): number {
+  return ((index % length) + length) % length;
+}
+
+function filterPickerOptions(
+  options: readonly OverlayPickerOption[],
+  filterQuery: string,
+): readonly OverlayPickerOption[] {
+  const normalized = filterQuery.trim().toLowerCase();
+  if (!normalized) return options;
+  return options.filter((option) =>
+    `${option.label} ${option.detail ?? ""} ${option.badge ?? ""}`
+      .toLowerCase()
+      .includes(normalized),
+  );
+}
+
+function popPickerOverlay(modals: readonly OverlayState[], id: string): OverlayState[] {
+  const top = modals.at(-1);
+  if (isPickerOverlay(top, id)) return modals.slice(0, -1);
+  return [...modals];
 }

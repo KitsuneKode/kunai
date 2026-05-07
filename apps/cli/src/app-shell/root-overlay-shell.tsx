@@ -41,7 +41,6 @@ import {
   isRootChoiceOverlay,
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
-import { hasPendingRootPicker, resolveRootPicker } from "./root-picker-bridge";
 import { type RootOwnedOverlay } from "./root-shell-state";
 import { CommandPalette, useShellInput } from "./shell-command-ui";
 import { InlineBadge, ShellFooter } from "./shell-primitives";
@@ -63,9 +62,24 @@ export function RootOverlayShell({
   const [scrollIndex, setScrollIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const pickerFilterQuery = isRootMediaPickerOverlay(overlay)
+    ? (overlay.filterQuery ?? "")
+    : filterQuery;
+  const pickerSelectedIndex = isRootMediaPickerOverlay(overlay)
+    ? (overlay.selectedIndex ?? (overlay.type === "episode_picker" ? overlay.initialIndex : 0) ?? 0)
+    : selectedIndex;
   const filterEditor = useLineEditor({
-    value: filterQuery,
+    value: pickerFilterQuery,
     onChange: (nextValue) => {
+      if (isRootMediaPickerOverlay(overlay)) {
+        if (!overlay.id) return;
+        container.stateManager.dispatch({
+          type: "UPDATE_PICKER_FILTER",
+          id: overlay.id,
+          filterQuery: nextValue,
+        });
+        return;
+      }
       setFilterQuery(nextValue);
       setSelectedIndex(0);
     },
@@ -152,7 +166,7 @@ export function RootOverlayShell({
     return `${option.label} ${option.detail ?? ""}`.toLowerCase().includes(filter);
   });
   const filteredGenericPickerOptions = genericPickerOptions.filter((option) => {
-    const filter = filterQuery.trim().toLowerCase();
+    const filter = pickerFilterQuery.trim().toLowerCase();
     if (filter.length === 0) return true;
     return `${option.label} ${option.detail ?? ""}`.toLowerCase().includes(filter);
   });
@@ -227,10 +241,11 @@ export function RootOverlayShell({
         action === "history" ||
         action === "provider"
       ) {
-        if (hasPendingRootPicker() && isRootMediaPickerOverlay(overlay)) {
-          resolveRootPicker(null);
+        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+        } else {
+          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
         }
-        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
         container.stateManager.dispatch({
           type: "OPEN_OVERLAY",
           overlay:
@@ -307,13 +322,17 @@ export function RootOverlayShell({
         setSelectedIndex(settingsParentIndex);
         return;
       }
-      if (
-        hasPendingRootPicker() &&
-        (overlay.type === "season_picker" ||
-          overlay.type === "episode_picker" ||
-          overlay.type === "subtitle_picker")
-      ) {
-        resolveRootPicker(null);
+      if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+        if ((overlay.filterQuery ?? "").length > 0) {
+          container.stateManager.dispatch({
+            type: "UPDATE_PICKER_FILTER",
+            id: overlay.id,
+            filterQuery: "",
+          });
+          return;
+        }
+        container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+        return;
       }
       if (overlay.type === "history" && hasPendingRootHistorySelection()) {
         resolveRootHistorySelection(null);
@@ -430,14 +449,28 @@ export function RootOverlayShell({
         overlay.type === "source_picker" ||
         overlay.type === "quality_picker"
       ) {
-        const picked = filteredGenericPickerOptions[selectedIndex]?.value ?? null;
-        resolveRootPicker(picked);
+        const picked = filteredGenericPickerOptions[pickerSelectedIndex]?.value ?? null;
+        if (!picked || !overlay.id) return;
+        container.stateManager.dispatch({
+          type: "RESOLVE_PICKER",
+          id: overlay.id,
+          value: picked,
+        });
+        return;
       }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
     }
     if (key.upArrow || key.downArrow) {
       if (isRootChoiceOverlay(overlay)) {
+        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+          container.stateManager.dispatch({
+            type: "MOVE_PICKER_SELECTION",
+            id: overlay.id,
+            delta: key.upArrow ? -1 : 1,
+          });
+          return;
+        }
         const optionCount =
           overlay.type === "provider_picker"
             ? filteredProviderOptions.length
@@ -531,15 +564,17 @@ export function RootOverlayShell({
             }
           : overlay.type === "season_picker" ||
               overlay.type === "episode_picker" ||
-              overlay.type === "subtitle_picker"
+              overlay.type === "subtitle_picker" ||
+              overlay.type === "source_picker" ||
+              overlay.type === "quality_picker"
             ? {
                 type: "episode-picker",
                 title,
                 subtitle,
                 options: filteredGenericPickerOptions,
-                filterQuery,
+                filterQuery: pickerFilterQuery,
                 selectedIndex: Math.min(
-                  selectedIndex,
+                  pickerSelectedIndex,
                   Math.max(filteredGenericPickerOptions.length - 1, 0),
                 ),
                 busy: false,

@@ -165,7 +165,7 @@ bun run test -- apps/cli/test/unit/app-shell/picker-controller.test.ts
 - Modify: `apps/cli/src/app-shell/root-overlay-shell.tsx`
 - Modify: `apps/cli/src/domain/session/SessionState.ts`
 
-- [ ] **Step 1: Add typed picker modal transitions**
+- [x] **Step 1: Add typed picker modal transitions**
 
 Add state transitions equivalent to:
 
@@ -179,15 +179,15 @@ CANCEL_PICKER
 
 Use existing `activeModals` if possible; do not add a second overlay stack.
 
-- [ ] **Step 2: Replace `waitForRootPicker()` call sites**
+- [x] **Step 2: Replace `waitForRootPicker()` call sites**
 
 Replace season, episode, subtitle, source, quality, and anime episode picker waits with typed modal requests and command results.
 
-- [ ] **Step 3: Delete or quarantine `root-picker-bridge.ts`**
+- [x] **Step 3: Delete or quarantine `root-picker-bridge.ts`**
 
 After call sites are gone, remove the module or leave a deprecated wrapper only if tests still need it.
 
-- [ ] **Step 4: Verify cancel behavior**
+- [x] **Step 4: Verify cancel behavior**
 
 Add tests for:
 

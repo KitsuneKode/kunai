@@ -61,6 +61,64 @@ describe("SessionState overlays", () => {
     expect(state.activeModals).toHaveLength(0);
   });
 
+  test("stores picker state result and closes only the resolved picker", () => {
+    let state = createInitialState("vidking", "allanime");
+
+    state = reduceState(state, {
+      type: "OPEN_PICKER",
+      picker: {
+        id: "source:1",
+        type: "source_picker",
+        options: [
+          { value: "a", label: "Source A" },
+          { value: "b", label: "Source B" },
+        ],
+      },
+    });
+    state = reduceState(state, {
+      type: "UPDATE_PICKER_FILTER",
+      id: "source:1",
+      filterQuery: "b",
+    });
+    state = reduceState(state, {
+      type: "MOVE_PICKER_SELECTION",
+      id: "source:1",
+      delta: 1,
+    });
+
+    const picker = state.activeModals.at(-1);
+    expect(picker?.type).toBe("source_picker");
+    if (picker?.type === "source_picker") {
+      expect(picker.filterQuery).toBe("b");
+      expect(picker.selectedIndex).toBe(0);
+    }
+
+    state = reduceState(state, {
+      type: "RESOLVE_PICKER",
+      id: "source:1",
+      value: "b",
+    });
+
+    expect(state.activeModals).toHaveLength(0);
+    expect(state.pickerResult).toEqual({ type: "selected", id: "source:1", value: "b" });
+  });
+
+  test("cancels picker into an inspectable result", () => {
+    let state = createInitialState("vidking", "allanime");
+    state = reduceState(state, {
+      type: "OPEN_PICKER",
+      picker: {
+        id: "quality:1",
+        type: "quality_picker",
+        options: [{ value: "1080", label: "1080p" }],
+      },
+    });
+    state = reduceState(state, { type: "CANCEL_PICKER", id: "quality:1" });
+
+    expect(state.activeModals).toHaveLength(0);
+    expect(state.pickerResult).toEqual({ type: "cancelled", id: "quality:1" });
+  });
+
   test("updates default providers without mutating the current provider directly", () => {
     let state = createInitialState("vidking", "allanime");
 

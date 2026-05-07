@@ -14,7 +14,7 @@ import {
 import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
 
 import { resolveCommands, type ResolvedAppCommand } from "./commands";
-import { waitForRootPicker } from "./root-picker-bridge";
+import { openSessionPicker } from "./session-picker";
 import type { ShellAction } from "./types";
 
 type ListShellActionContext = {
@@ -78,18 +78,14 @@ export async function chooseSeasonFromOptions(
   if (seasons.length === 1) return seasons[0] ?? currentSeason;
 
   if (container) {
-    container.stateManager.dispatch({
-      type: "OPEN_OVERLAY",
-      overlay: {
-        type: "season_picker",
-        currentSeason,
-        options: seasons.map((season) => ({
-          value: String(season),
-          label: season === currentSeason ? `Season ${season}  ·  current` : `Season ${season}`,
-        })),
-      },
+    const picked = await openSessionPicker(container.stateManager, {
+      type: "season_picker",
+      currentSeason,
+      options: seasons.map((season) => ({
+        value: String(season),
+        label: season === currentSeason ? `Season ${season}  ·  current` : `Season ${season}`,
+      })),
     });
-    const picked = await waitForRootPicker();
     return picked ? Number.parseInt(picked, 10) : null;
   }
 
@@ -126,31 +122,27 @@ export async function chooseEpisodeFromOptions(
   }
 
   if (container) {
-    container.stateManager.dispatch({
-      type: "OPEN_OVERLAY",
-      overlay: {
-        type: "episode_picker",
-        season,
-        initialIndex: Math.max(
-          0,
-          episodes.findIndex((episode) => episode.number === currentEpisode),
-        ),
-        options: episodes.map((episode) => {
-          const status = episodeStatus.get(episode.number);
-          return {
-            value: String(episode.number),
-            label:
-              episode.number === currentEpisode
-                ? `Episode ${episode.number}  ·  ${episode.name}  ·  current`
-                : `Episode ${episode.number}  ·  ${episode.name}`,
-            detail: `${episode.airDate || "unknown year"}${episode.overview ? `  ·  ${episode.overview}` : ""}`,
-            tone: status?.tone,
-            badge: status?.badge,
-          };
-        }),
-      },
+    const picked = await openSessionPicker(container.stateManager, {
+      type: "episode_picker",
+      season,
+      initialIndex: Math.max(
+        0,
+        episodes.findIndex((episode) => episode.number === currentEpisode),
+      ),
+      options: episodes.map((episode) => {
+        const status = episodeStatus.get(episode.number);
+        return {
+          value: String(episode.number),
+          label:
+            episode.number === currentEpisode
+              ? `Episode ${episode.number}  ·  ${episode.name}  ·  current`
+              : `Episode ${episode.number}  ·  ${episode.name}`,
+          detail: `${episode.airDate || "unknown year"}${episode.overview ? `  ·  ${episode.overview}` : ""}`,
+          tone: status?.tone,
+          badge: status?.badge,
+        };
+      }),
     });
-    const picked = await waitForRootPicker();
     if (!picked) return null;
     return episodes.find((episode) => String(episode.number) === picked) ?? null;
   }
@@ -795,18 +787,14 @@ export async function openSubtitlePicker(
   };
 
   if (container) {
-    container.stateManager.dispatch({
-      type: "OPEN_OVERLAY",
-      overlay: {
-        type: "subtitle_picker",
-        options: entries.map((entry) => ({
-          value: entry.url,
-          label: entry.display ?? entry.language ?? "Unknown track",
-          detail: describeSubtitleEntry(entry),
-        })),
-      },
+    return await openSessionPicker(container.stateManager, {
+      type: "subtitle_picker",
+      options: entries.map((entry) => ({
+        value: entry.url,
+        label: entry.display ?? entry.language ?? "Unknown track",
+        detail: describeSubtitleEntry(entry),
+      })),
     });
-    return await waitForRootPicker();
   }
 
   return chooseOption({
@@ -831,18 +819,14 @@ export async function openSourcePicker(
   container?: Container,
 ): Promise<string | null> {
   if (container) {
-    container.stateManager.dispatch({
-      type: "OPEN_OVERLAY",
-      overlay: {
-        type: "source_picker",
-        options: entries.map((entry) => ({
-          value: entry.value,
-          label: entry.label,
-          detail: entry.detail,
-        })),
-      },
+    return await openSessionPicker(container.stateManager, {
+      type: "source_picker",
+      options: entries.map((entry) => ({
+        value: entry.value,
+        label: entry.label,
+        detail: entry.detail,
+      })),
     });
-    return await waitForRootPicker();
   }
 
   return chooseOption({
@@ -867,18 +851,14 @@ export async function openQualityPicker(
   container?: Container,
 ): Promise<string | null> {
   if (container) {
-    container.stateManager.dispatch({
-      type: "OPEN_OVERLAY",
-      overlay: {
-        type: "quality_picker",
-        options: entries.map((entry) => ({
-          value: entry.value,
-          label: entry.label,
-          detail: entry.detail,
-        })),
-      },
+    return await openSessionPicker(container.stateManager, {
+      type: "quality_picker",
+      options: entries.map((entry) => ({
+        value: entry.value,
+        label: entry.label,
+        detail: entry.detail,
+      })),
     });
-    return await waitForRootPicker();
   }
 
   return chooseOption({
@@ -923,19 +903,14 @@ export async function openAnimeEpisodePicker(
 ): Promise<number | null> {
   const episodes = Array.from({ length: count }, (_, index) => index + 1);
   if (container) {
-    container.stateManager.dispatch({
-      type: "OPEN_OVERLAY",
-      overlay: {
-        type: "episode_picker",
-        season: 1,
-        options: episodes.map((episode) => ({
-          value: String(episode),
-          label:
-            episode === currentEpisode ? `Episode ${episode}  ·  current` : `Episode ${episode}`,
-        })),
-      },
+    const picked = await openSessionPicker(container.stateManager, {
+      type: "episode_picker",
+      season: 1,
+      options: episodes.map((episode) => ({
+        value: String(episode),
+        label: episode === currentEpisode ? `Episode ${episode}  ·  current` : `Episode ${episode}`,
+      })),
     });
-    const picked = await waitForRootPicker();
     return picked ? Number.parseInt(picked, 10) : null;
   }
   return chooseOption({
@@ -958,19 +933,15 @@ export async function openAnimeEpisodeListPicker(
   if (episodes.length === 0) return null;
 
   if (container) {
-    container.stateManager.dispatch({
-      type: "OPEN_OVERLAY",
-      overlay: {
-        type: "episode_picker",
-        season: 1,
-        options: episodes.map((episode) => ({
-          value: String(episode.index),
-          label: episode.index === currentEpisode ? `${episode.label}  ·  current` : episode.label,
-          detail: episode.detail,
-        })),
-      },
+    const picked = await openSessionPicker(container.stateManager, {
+      type: "episode_picker",
+      season: 1,
+      options: episodes.map((episode) => ({
+        value: String(episode.index),
+        label: episode.index === currentEpisode ? `${episode.label}  ·  current` : episode.label,
+        detail: episode.detail,
+      })),
     });
-    const picked = await waitForRootPicker();
     return picked ? Number.parseInt(picked, 10) : null;
   }
 
