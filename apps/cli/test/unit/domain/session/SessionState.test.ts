@@ -504,4 +504,21 @@ describe("root shell surface selection", () => {
       "playback",
     );
   });
+
+  test("prefers a picker overlay over playback while mpv keeps running", () => {
+    let state = createInitialState("vidking", "allanime");
+    state = reduceState(state, { type: "SET_PLAYBACK_STATUS", status: "playing" });
+    state = reduceState(state, {
+      type: "OPEN_PICKER",
+      picker: {
+        id: "quality:1",
+        type: "quality_picker",
+        options: [{ value: "stream-720", label: "720p" }],
+      },
+    });
+
+    expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
+      "root-overlay",
+    );
+  });
 });

@@ -886,11 +886,8 @@ local function do_skip()
 end
 
 local function do_quality()
-	mp.set_property("user-data/kunai-loading", "Kunai · Opening quality picker…")
-	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
-	draw_kunai_loading_overlay()
+	mp.osd_message("Kunai · Select quality in the terminal", 2.5)
 	signal("quality")
-	mp.commandv("stop")
 end
 
 local function do_refresh()

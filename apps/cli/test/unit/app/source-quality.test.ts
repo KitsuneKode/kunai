@@ -5,6 +5,7 @@ import {
   buildQualityPickerOptions,
   buildSourcePickerOptions,
   buildStreamPickerOptions,
+  isCurrentStreamSelection,
   streamSelectionFromSource,
   streamSelectionFromStream,
 } from "@/app/source-quality";
@@ -206,6 +207,21 @@ test("applyPreferredStreamSelection prefers explicit stream id override", () => 
   );
   expect(next.url).toBe("https://cdn.example/720.m3u8");
   expect(next.providerResolveResult?.selectedStreamId).toBe("stream-720");
+});
+
+test("isCurrentStreamSelection detects no-op stream and source selections", () => {
+  expect(
+    isCurrentStreamSelection(streamWithCandidates, streamSelectionFromStream("stream-1080")),
+  ).toBe(true);
+  expect(
+    isCurrentStreamSelection(streamWithCandidates, streamSelectionFromStream("stream-720")),
+  ).toBe(false);
+  expect(
+    isCurrentStreamSelection(streamWithCandidates, streamSelectionFromSource("source-a")),
+  ).toBe(true);
+  expect(
+    isCurrentStreamSelection(streamWithCandidates, streamSelectionFromSource("source-b")),
+  ).toBe(false);
 });
 
 test("applyPreferredStreamSelection falls back to best quality in preferred source", () => {

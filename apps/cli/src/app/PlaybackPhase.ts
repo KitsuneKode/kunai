@@ -51,6 +51,7 @@ import {
   streamSelectionFromStream,
 } from "@/app/source-quality";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
+import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import {
   buildProviderResolveProblem,
   type PlaybackProblem,
@@ -802,6 +803,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           const playbackControlAction = playerControl.consumeLastAction();
+          const confirmedStreamSelection =
+            playbackControlAction === "pick-source" ||
+            playbackControlAction === "pick-stream" ||
+            playbackControlAction === "pick-quality"
+              ? playerControl.consumePendingStreamSelection()
+              : null;
           playbackSession = syncPlaybackSessionState(playbackSession, {
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             stopAfterCurrent: stateManager.getState().stopAfterCurrent,
@@ -956,6 +963,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           if (playbackControlAction === "pick-source") {
+            if (confirmedStreamSelection) {
+              preferredStreamSelection = confirmedStreamSelection;
+              pendingStart = startEpisodeNavigation({
+                targetResumeSeconds: toHistoryTimestamp(
+                  result,
+                  effectiveTiming.current,
+                  config.quitNearEndThresholdMode,
+                ),
+              });
+              diagnosticsStore.record({
+                category: "playback",
+                message: "Source override selected",
+                context: {
+                  sourceId: confirmedStreamSelection.sourceId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  resumeSeconds: pendingStart.resumePromptAt,
+                },
+              });
+              continue;
+            }
             const sourceOptions = buildSourcePickerOptions(preparedStream);
             if (sourceOptions.length > 0) {
               const pickedSource = await openSourcePicker(
@@ -992,6 +1021,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           if (playbackControlAction === "pick-stream") {
+            if (confirmedStreamSelection) {
+              preferredStreamSelection = confirmedStreamSelection;
+              pendingStart = startEpisodeNavigation({
+                targetResumeSeconds: toHistoryTimestamp(
+                  result,
+                  effectiveTiming.current,
+                  config.quitNearEndThresholdMode,
+                ),
+              });
+              diagnosticsStore.record({
+                category: "playback",
+                message: "Stream override selected",
+                context: {
+                  streamId: confirmedStreamSelection.streamId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  resumeSeconds: pendingStart.resumePromptAt,
+                },
+              });
+              continue;
+            }
             const streamOptions = buildStreamPickerOptions(preparedStream);
             if (streamOptions.length > 0) {
               const pickedStreamId = await openQualityPicker(
@@ -1028,6 +1079,29 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           if (playbackControlAction === "pick-quality") {
+            if (confirmedStreamSelection) {
+              preferredStreamSelection = confirmedStreamSelection;
+              pendingStart = startAtResumePoint(
+                toHistoryTimestamp(
+                  result,
+                  effectiveTiming.current,
+                  config.quitNearEndThresholdMode,
+                ),
+                { suppressResumePrompt: true },
+              );
+              diagnosticsStore.record({
+                category: "playback",
+                message: "Quality override selected",
+                context: {
+                  streamId: confirmedStreamSelection.streamId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  resumeSeconds: pendingStart.startAt,
+                },
+              });
+              continue;
+            }
             const qualityOptions = buildQualityPickerOptions(preparedStream);
             if (qualityOptions.length > 0) {
               const pickedQualityStreamId = await openQualityPicker(
@@ -1925,17 +1999,5 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 }
 
 function describeSubtitleStatus(stream: StreamInfo, subLang: string): string {
-  if (subLang === "none") {
-    return "subtitles disabled";
-  }
-
-  if (stream.subtitle) {
-    return `subtitle attached`;
-  }
-
-  if (stream.subtitleList?.length) {
-    return `${stream.subtitleList.length} subtitle tracks available`;
-  }
-
-  return "subtitles not found";
+  return describePlaybackSubtitleStatus(stream, subLang);
 }

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import type { EpisodePickerOption } from "@/domain/types";
@@ -550,9 +551,7 @@ export async function handleShellAction({
           },
           {
             label: "Subtitle state",
-            detail: state.stream?.subtitle
-              ? `resolved  ·  ${state.stream.subtitle}`
-              : "not found or disabled",
+            detail: describePlaybackSubtitleStatus(state.stream, state.subLang),
           },
           {
             label: "Selected subtitle URL",

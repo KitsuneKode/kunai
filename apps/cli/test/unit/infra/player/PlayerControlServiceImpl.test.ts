@@ -135,7 +135,31 @@ test("PlayerControlServiceImpl records next and previous episode intents as stop
   expect(stoppedCurrentReasons).toEqual(["next-key", "previous-key"]);
 });
 
-test("PlayerControlServiceImpl records stream picker intent as a stop-backed action", async () => {
+test("PlayerControlServiceImpl opens stream picker requests without stopping playback", async () => {
+  const stoppedCurrentReasons: string[] = [];
+  const messages: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+    async stopCurrentFile(reason) {
+      stoppedCurrentReasons.push(reason ?? "");
+    },
+    async showOsdMessage(text) {
+      messages.push(text);
+    },
+  });
+
+  expect(await service.pickStreamCurrentPlayback("streams-key")).toBe(true);
+  expect(service.consumeLastAction()).toBeNull();
+  expect(stoppedCurrentReasons).toEqual([]);
+  expect(messages).toEqual(["Kunai · Select a stream in the terminal…"]);
+});
+
+test("PlayerControlServiceImpl stops only after a confirmed stream selection", async () => {
   const stoppedCurrentReasons: string[] = [];
   const service = makeService();
 
@@ -149,9 +173,31 @@ test("PlayerControlServiceImpl records stream picker intent as a stop-backed act
     },
   });
 
-  expect(await service.pickStreamCurrentPlayback("streams-key")).toBe(true);
+  expect(
+    await service.selectCurrentPlaybackStream(
+      "pick-stream",
+      { sourceId: null, streamId: "stream-720" },
+      "confirmed-stream",
+    ),
+  ).toBe(true);
   expect(service.consumeLastAction()).toBe("pick-stream");
-  expect(stoppedCurrentReasons).toEqual(["streams-key"]);
+  expect(service.consumePendingStreamSelection()).toEqual({
+    sourceId: null,
+    streamId: "stream-720",
+  });
+  expect(service.consumePendingStreamSelection()).toBeNull();
+  expect(stoppedCurrentReasons).toEqual(["confirmed-stream"]);
+});
+
+test("PlayerControlServiceImpl routes mpv picker requests without marking playback ended", () => {
+  const service = makeService();
+  const requests: string[] = [];
+  service.subscribePickerRequest((action) => requests.push(action));
+
+  service.signalPlaybackAction("pick-quality");
+
+  expect(requests).toEqual(["pick-quality"]);
+  expect(service.consumeLastAction()).toBeNull();
 });
 
 test("PlayerControlServiceImpl shows persistent loading overlay before stopCurrentFile when supported", async () => {

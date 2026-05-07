@@ -36,6 +36,20 @@ export function streamSelectionFromStream(streamId: string): StreamSelectionInte
   return { sourceId: null, streamId };
 }
 
+export function isCurrentStreamSelection(
+  stream: StreamInfo | null,
+  selection: StreamSelectionIntent,
+): boolean {
+  const result = stream?.providerResolveResult;
+  if (!result) return false;
+  const selectedStream = result.streams.find(
+    (candidate) => candidate.id === result.selectedStreamId,
+  );
+  if (selection.streamId) return selection.streamId === result.selectedStreamId;
+  if (selection.sourceId) return selection.sourceId === selectedStream?.sourceId;
+  return false;
+}
+
 export function buildStreamPickerOptions(stream: StreamInfo): readonly StreamOption[] {
   const result = stream.providerResolveResult;
   if (!result) return [];

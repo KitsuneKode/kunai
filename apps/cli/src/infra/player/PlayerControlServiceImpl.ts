@@ -5,6 +5,8 @@ import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type {
   ActivePlayerControl,
   PlaybackControlAction,
+  PlaybackPickerAction,
+  PlaybackStreamSelection,
   PlayerControlService,
 } from "./PlayerControlService";
 import type { LateSubtitleAttachment } from "./PlayerService";
@@ -39,8 +41,10 @@ function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | 
 export class PlayerControlServiceImpl implements PlayerControlService {
   private active: ActivePlayerControl | null = null;
   private lastAction: PlaybackControlAction | null = null;
+  private pendingStreamSelection: PlaybackStreamSelection | null = null;
   private commandQueue: Promise<unknown> = Promise.resolve();
   private waitsForActive: ActiveWait[] = [];
+  private pickerRequestListeners = new Set<(action: PlaybackPickerAction) => void>();
 
   constructor(
     private readonly deps: {
@@ -97,7 +101,38 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   }
 
   signalPlaybackAction(action: PlaybackControlAction): void {
+    if (isPlaybackPickerAction(action)) {
+      this.notifyPickerRequest(action);
+      return;
+    }
     this.lastAction = action;
+  }
+
+  subscribePickerRequest(listener: (action: PlaybackPickerAction) => void): () => void {
+    this.pickerRequestListeners.add(listener);
+    return () => {
+      this.pickerRequestListeners.delete(listener);
+    };
+  }
+
+  consumePendingStreamSelection(): PlaybackStreamSelection | null {
+    const selection = this.pendingStreamSelection;
+    this.pendingStreamSelection = null;
+    return selection;
+  }
+
+  async selectCurrentPlaybackStream(
+    action: PlaybackPickerAction,
+    selection: PlaybackStreamSelection,
+    reason = "user-requested",
+  ): Promise<boolean> {
+    this.pendingStreamSelection = selection;
+    this.lastAction = action;
+    const stopped = await this.stopWithAction(action, reason, true);
+    if (!stopped) {
+      this.pendingStreamSelection = null;
+    }
+    return stopped;
   }
 
   async stopCurrentPlayback(reason = "user-requested"): Promise<boolean> {
@@ -235,18 +270,15 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   }
 
   async pickSourceCurrentPlayback(reason = "user-requested"): Promise<boolean> {
-    this.lastAction = "pick-source";
-    return this.stopWithAction("pick-source", reason, true);
+    return this.showPickerRequest("pick-source", reason);
   }
 
   async pickStreamCurrentPlayback(reason = "user-requested"): Promise<boolean> {
-    this.lastAction = "pick-stream";
-    return this.stopWithAction("pick-stream", reason, true);
+    return this.showPickerRequest("pick-stream", reason);
   }
 
   async pickQualityCurrentPlayback(reason = "user-requested"): Promise<boolean> {
-    this.lastAction = "pick-quality";
-    return this.stopWithAction("pick-quality", reason, true);
+    return this.showPickerRequest("pick-quality", reason);
   }
 
   async previousCurrentPlayback(reason = "user-requested"): Promise<boolean> {
@@ -307,6 +339,38 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     return true;
   }
 
+  private async showPickerRequest(action: PlaybackControlAction, reason: string): Promise<boolean> {
+    const active = this.active;
+    if (!active) {
+      this.deps.diagnosticsStore.record({
+        category: "playback",
+        message: "Playback picker requested without active player",
+        context: { action, reason },
+      });
+      return false;
+    }
+
+    const label = episodeTransitionLoadingLabel(action);
+    if (label && active.showOsdMessage) {
+      await active.showOsdMessage(label, 2_500);
+    }
+    this.deps.diagnosticsStore.record({
+      category: "playback",
+      message: "Playback picker requested",
+      context: { id: active.id, action, reason },
+    });
+    if (isPlaybackPickerAction(action)) {
+      this.notifyPickerRequest(action);
+    }
+    return true;
+  }
+
+  private notifyPickerRequest(action: PlaybackPickerAction): void {
+    for (const listener of this.pickerRequestListeners) {
+      listener(action);
+    }
+  }
+
   private async runPriorityCommand<T>(
     action: string,
     reason: string,
@@ -365,4 +429,8 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     this.commandQueue = next.catch(() => {});
     return next;
   }
+}
+
+function isPlaybackPickerAction(action: PlaybackControlAction): action is PlaybackPickerAction {
+  return action === "pick-stream" || action === "pick-source" || action === "pick-quality";
 }

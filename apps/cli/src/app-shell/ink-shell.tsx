@@ -2,6 +2,16 @@ import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { switchSessionMode } from "@/app/mode-switch";
+import {
+  buildQualityPickerOptions,
+  buildSourcePickerOptions,
+  buildStreamPickerOptions,
+  isCurrentStreamSelection,
+  streamSelectionFromSource,
+  streamSelectionFromStream,
+  type StreamSelectionIntent,
+} from "@/app/source-quality";
+import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { Container } from "@/container";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
@@ -26,6 +36,7 @@ import { RootOverlayShell } from "./root-overlay-shell";
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
 import { buildRootStatusSummary } from "./root-status-summary";
+import { openSessionPicker } from "./session-picker";
 import {
   CommandPalette,
   fallbackCommandState,
@@ -157,6 +168,59 @@ function RootShellHost() {
   return rootShellScreen ? (
     <React.Fragment key={rootShellScreen.id}>{rootShellScreen.element}</React.Fragment>
   ) : null;
+}
+
+async function openPlaybackStreamSelectionPicker(
+  container: Container,
+  action: "streams" | "source" | "quality",
+  reason: string,
+): Promise<void> {
+  const stream = container.stateManager.getState().stream;
+  if (!stream) return;
+
+  const picker =
+    action === "source"
+      ? {
+          type: "source_picker" as const,
+          options: buildSourcePickerOptions(stream),
+          toSelection: streamSelectionFromSource,
+          controlAction: "pick-source" as const,
+        }
+      : action === "quality"
+        ? {
+            type: "quality_picker" as const,
+            options: buildQualityPickerOptions(stream),
+            toSelection: streamSelectionFromStream,
+            controlAction: "pick-quality" as const,
+          }
+        : {
+            type: "quality_picker" as const,
+            options: buildStreamPickerOptions(stream),
+            toSelection: streamSelectionFromStream,
+            controlAction: "pick-stream" as const,
+          };
+
+  if (picker.options.length === 0) return;
+  const value = await openSessionPicker(container.stateManager, {
+    type: picker.type,
+    options: picker.options.map((option) => ({
+      value: option.value,
+      label: option.label,
+      detail: option.detail,
+    })),
+  });
+  if (!value) return;
+
+  const selection: StreamSelectionIntent = picker.toSelection(value);
+  if (isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {
+    return;
+  }
+
+  await container.playerControl.selectCurrentPlaybackStream(
+    picker.controlAction,
+    selection,
+    reason,
+  );
 }
 
 function useRootShellScreen(): RootShellScreen | null {
@@ -303,6 +367,16 @@ function AppRoot({ container }: { container: Container }) {
     });
   }, [stateManager]);
 
+  useEffect(
+    () =>
+      container.playerControl.subscribePickerRequest((action) => {
+        const shellAction =
+          action === "pick-source" ? "source" : action === "pick-quality" ? "quality" : "streams";
+        void openPlaybackStreamSelectionPicker(container, shellAction, "mpv-picker-request");
+      }),
+    [container],
+  );
+
   const activePlaybackStatuses = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
   const playbackIsActive = activePlaybackStatuses.some((status) => status === state.playbackStatus);
   const rootStatus = playbackIsActive
@@ -319,14 +393,7 @@ function AppRoot({ container }: { container: Container }) {
         state.currentEpisode.episode,
       ).padStart(2, "0")}`
     : undefined;
-  const playbackSubtitleStatus =
-    state.subLang === "none"
-      ? "subtitles disabled"
-      : state.stream?.subtitle
-        ? "subtitle attached"
-        : state.stream?.subtitleList?.length
-          ? `${state.stream.subtitleList.length} subtitle tracks available`
-          : "subtitles not found";
+  const playbackSubtitleStatus = describePlaybackSubtitleStatus(state.stream, state.subLang);
   const shellWidth = stdout.columns ?? 80;
   const shellHeight = stdout.rows ?? 24;
   const currentViewLabel =
@@ -539,19 +606,25 @@ function AppRoot({ container }: { container: Container }) {
                       return;
                     }
                     if (action === "streams") {
-                      void container.playerControl.pickStreamCurrentPlayback(
+                      void openPlaybackStreamSelectionPicker(
+                        container,
+                        "streams",
                         "playback-loading-command-streams",
                       );
                       return;
                     }
                     if (action === "source") {
-                      void container.playerControl.pickSourceCurrentPlayback(
+                      void openPlaybackStreamSelectionPicker(
+                        container,
+                        "source",
                         "playback-loading-command-source",
                       );
                       return;
                     }
                     if (action === "quality") {
-                      void container.playerControl.pickQualityCurrentPlayback(
+                      void openPlaybackStreamSelectionPicker(
+                        container,
+                        "quality",
                         "playback-loading-command-quality",
                       );
                       return;
@@ -610,7 +683,7 @@ function AppRoot({ container }: { container: Container }) {
                   }
                 }}
                 onPickStreams={() => {
-                  void container.playerControl.pickStreamCurrentPlayback("playback-shell-k");
+                  void openPlaybackStreamSelectionPicker(container, "streams", "playback-shell-k");
                 }}
                 onReloadSubtitles={() => {
                   void container.playerControl.reloadCurrentSubtitles("playback-shell-s");
@@ -639,10 +712,10 @@ function AppRoot({ container }: { container: Container }) {
                     : undefined
                 }
                 onPickSource={() => {
-                  void container.playerControl.pickSourceCurrentPlayback("playback-shell-o");
+                  void openPlaybackStreamSelectionPicker(container, "source", "playback-shell-o");
                 }}
                 onPickQuality={() => {
-                  void container.playerControl.pickQualityCurrentPlayback("playback-shell-v");
+                  void openPlaybackStreamSelectionPicker(container, "quality", "playback-shell-v");
                 }}
               />
             ) : rootSurface === "root-content" && rootContent ? (

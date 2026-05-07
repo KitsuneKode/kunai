@@ -14,6 +14,16 @@ export type PlaybackControlAction =
   | "next"
   | "previous";
 
+export type PlaybackPickerAction = Extract<
+  PlaybackControlAction,
+  "pick-stream" | "pick-source" | "pick-quality"
+>;
+
+export type PlaybackStreamSelection = {
+  readonly sourceId: string | null;
+  readonly streamId: string | null;
+};
+
 export interface ActivePlayerControl {
   readonly id: string;
   stop(reason?: string): Promise<void>;
@@ -39,6 +49,13 @@ export interface PlayerControlService {
   /** Signal that a playback action was initiated from inside mpv (e.g. N/P key),
    *  without sending a stop command (mpv handles that itself). */
   signalPlaybackAction(action: PlaybackControlAction): void;
+  subscribePickerRequest(listener: (action: PlaybackPickerAction) => void): () => void;
+  consumePendingStreamSelection(): PlaybackStreamSelection | null;
+  selectCurrentPlaybackStream(
+    action: PlaybackPickerAction,
+    selection: PlaybackStreamSelection,
+    reason?: string,
+  ): Promise<boolean>;
   stopCurrentPlayback(reason?: string): Promise<boolean>;
   refreshCurrentPlayback(reason?: string): Promise<boolean>;
   recoverCurrentPlayback(reason?: string): Promise<boolean>;

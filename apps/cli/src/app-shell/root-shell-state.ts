@@ -66,6 +66,7 @@ export function resolveRootShellSurface(
   if (state.playbackStatus === "error") {
     return "error";
   }
+  const rootOverlay = getRootOwnedOverlay(state);
   if (
     state.playbackStatus === "loading" ||
     state.playbackStatus === "ready" ||
@@ -74,12 +75,15 @@ export function resolveRootShellSurface(
     state.playbackStatus === "stalled" ||
     state.playbackStatus === "playing"
   ) {
+    if (rootOverlay) {
+      return "root-overlay";
+    }
     return "playback";
   }
   if (hasRootContent) {
     return "root-content";
   }
-  if (getRootOwnedOverlay(state)) {
+  if (rootOverlay) {
     return "root-overlay";
   }
   if (hasMountedScreen) {
