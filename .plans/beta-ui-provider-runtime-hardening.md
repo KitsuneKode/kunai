@@ -140,7 +140,7 @@ type PickerResult =
 
 Implement pure helpers for filter changes, selection movement, `Esc` clear-filter vs cancel, and confirm.
 
-- [ ] **Step 3: Render one modal picker**
+- [x] **Step 3: Render one modal picker**
 
 Build `PickerOverlay` with bounded rows from `getShellViewportPolicy`, optional companion detail, and footer actions from the shared command model.
 
@@ -148,7 +148,7 @@ Build `PickerOverlay` with bounded rows from `getShellViewportPolicy`, optional 
 
 Migrate `openSourcePicker` first because it is playback-critical and already uses normalized inventory.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
