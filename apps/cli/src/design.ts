@@ -14,6 +14,10 @@ const ESC = "\x1b[";
 export const clr = {
   // Fox amber — brand primary
   fox: (s: string) => `\x1b[38;5;222m${s}\x1b[0m`,
+  // Hot pink — anime badge, discover highlight
+  pink: (s: string) => `\x1b[38;2;255;61;130m${s}\x1b[0m`,
+  // Teal — status, input cursor, info
+  teal: (s: string) => `\x1b[38;2;61;224;196m${s}\x1b[0m`,
   // Accents
   cyan: (s: string) => `${ESC}36m${s}${ESC}0m`,
   green: (s: string) => `${ESC}32m${s}${ESC}0m`,
@@ -48,10 +52,10 @@ export const screen = {
 // Clean, sharp corners for a mechanical feel.
 
 export const box = {
-  tl: "┌",
-  tr: "┐",
-  bl: "└",
-  br: "┘",
+  tl: "╭",
+  tr: "╮",
+  bl: "╰",
+  br: "╯",
   h: "─",
   v: "│",
   ml: "├",
