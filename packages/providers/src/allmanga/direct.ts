@@ -9,6 +9,7 @@ import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
+  ProviderSourceCandidate,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
@@ -188,6 +189,11 @@ export const allmangaProviderModule: CoreProviderModule = {
       if (!selectedStream) {
         throw new Error("No selectable AllManga streams were mapped.");
       }
+      const sourceCandidates = buildAllmangaSourceCandidates(
+        streams,
+        selectedStream.sourceId,
+        cachePolicy,
+      );
 
       emit(events, context, {
         type: "provider:success",
@@ -200,19 +206,7 @@ export const allmangaProviderModule: CoreProviderModule = {
       return {
         providerId: ALLANIME_PROVIDER_ID,
         selectedStreamId: selectedStream.id,
-        sources: [
-          {
-            id: `source:${ALLANIME_PROVIDER_ID}:allmanga`,
-            providerId: ALLANIME_PROVIDER_ID,
-            kind: "provider-api",
-            label: "AllManga",
-            host: "api.allanime.day",
-            status: "selected",
-            confidence: 0.95,
-            requiresRuntime: "direct-http",
-            cachePolicy,
-          },
-        ],
+        sources: sourceCandidates,
         streams,
         variants,
         subtitles,
@@ -303,6 +297,43 @@ function createExhaustedResult(
     }),
     failures: [providerFailure],
   };
+}
+
+export function buildAllmangaSourceCandidates(
+  streams: readonly StreamCandidate[],
+  selectedSourceId: string | undefined,
+  cachePolicy: StreamCandidate["cachePolicy"],
+): ProviderSourceCandidate[] {
+  const streamsBySource = new Map<string, StreamCandidate[]>();
+  for (const stream of streams) {
+    if (!stream.sourceId) continue;
+    streamsBySource.set(stream.sourceId, [...(streamsBySource.get(stream.sourceId) ?? []), stream]);
+  }
+
+  return [...streamsBySource.entries()].map(([sourceId, sourceStreams]) => ({
+    id: sourceId,
+    providerId: ALLANIME_PROVIDER_ID,
+    kind: "provider-api",
+    label: formatAllmangaSourceLabel(sourceId),
+    host: "api.allanime.day",
+    status: sourceId === selectedSourceId ? "selected" : "available",
+    confidence: Math.max(...sourceStreams.map((stream) => stream.confidence)),
+    requiresRuntime: "direct-http",
+    cachePolicy,
+    metadata: {
+      sourceFamily: sourceId.split(":").at(-1) ?? sourceId,
+      streamIds: sourceStreams.map((stream) => stream.id).join(","),
+    },
+  }));
+}
+
+function formatAllmangaSourceLabel(sourceId: string): string {
+  const family = sourceId.split(":").at(-1) ?? sourceId;
+  return family
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("-");
 }
 
 function emit(

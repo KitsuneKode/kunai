@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   allmangaProviderModule,
+  buildAllmangaSourceCandidates,
   createVidkingResultFromPayload,
   createProviderModuleRegistry,
   getProviderMigrationQueue,
@@ -164,4 +165,50 @@ test("vidking direct resolver retries a failing source and preserves trace evide
       attempt: 2,
     }),
   );
+});
+
+test("allmanga source candidates preserve separate source families", () => {
+  const sources = buildAllmangaSourceCandidates(
+    [
+      {
+        id: "stream:hls:1080",
+        providerId: "allanime",
+        sourceId: "source:allanime:fm-hls",
+        url: "https://cdn.example/hls.m3u8",
+        protocol: "hls",
+        confidence: 0.95,
+        cachePolicy: {
+          ttlClass: "stream-manifest",
+          scope: "local",
+          keyParts: [],
+        },
+      },
+      {
+        id: "stream:mp4:720",
+        providerId: "allanime",
+        sourceId: "source:allanime:vid-mp4",
+        url: "https://cdn.example/720.mp4",
+        protocol: "mp4",
+        confidence: 0.85,
+        cachePolicy: {
+          ttlClass: "stream-manifest",
+          scope: "local",
+          keyParts: [],
+        },
+      },
+    ],
+    "source:allanime:fm-hls",
+    {
+      ttlClass: "stream-manifest",
+      scope: "local",
+      keyParts: [],
+    },
+  );
+
+  expect(sources.map((source) => source.id)).toEqual([
+    "source:allanime:fm-hls",
+    "source:allanime:vid-mp4",
+  ]);
+  expect(sources.map((source) => source.status)).toEqual(["selected", "available"]);
+  expect(sources[0]?.metadata?.streamIds).toBe("stream:hls:1080");
 });

@@ -323,11 +323,11 @@ Use existing `ProviderRetryPolicy` and trace event types. Do not add a second re
 
 VidKing should retry retryable source failures per `VIDKING_SERVERS`, record `source:start`, `source:failed`, `retry:scheduled`, and `provider:exhausted`.
 
-- [ ] **Step 3: AllManga source handling**
+- [x] **Step 3: AllManga source handling**
 
 AllManga should preserve all raw source-derived streams and variants. It should not collapse separate source families into one fake source when evidence exists.
 
-- [ ] **Step 4: Verify provider traces**
+- [x] **Step 4: Verify provider traces**
 
 Tests must assert trace events include source id, attempt number, selected stream id, hard-sub language where relevant, and failures.
 
