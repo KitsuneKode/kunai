@@ -56,6 +56,8 @@ function createProviderDeps(): ProviderDeps {
       mpvKunaiScriptOpts: {},
       mpvInProcessStreamReconnect: true,
       mpvInProcessStreamReconnectMaxAttempts: 3,
+      discoverShowOnStartup: false,
+      minimalMode: false,
       getRaw() {
         return this;
       },

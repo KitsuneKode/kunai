@@ -41,6 +41,8 @@ describe("panel-data", () => {
         mpvKunaiScriptOpts: {},
         mpvInProcessStreamReconnect: true,
         mpvInProcessStreamReconnectMaxAttempts: 3,
+        discoverShowOnStartup: false,
+        minimalMode: false,
       },
       state: createInitialState("vidking", "allanime"),
     });

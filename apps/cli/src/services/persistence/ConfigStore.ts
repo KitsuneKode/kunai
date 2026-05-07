@@ -36,4 +36,6 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   mpvKunaiScriptOpts: {},
   mpvInProcessStreamReconnect: true,
   mpvInProcessStreamReconnectMaxAttempts: 3,
+  discoverShowOnStartup: false,
+  minimalMode: false,
 };

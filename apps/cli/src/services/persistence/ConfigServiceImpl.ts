@@ -121,6 +121,14 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.mpvInProcessStreamReconnectMaxAttempts;
   }
 
+  get discoverShowOnStartup(): boolean {
+    return this.config.discoverShowOnStartup;
+  }
+
+  get minimalMode(): boolean {
+    return this.config.minimalMode;
+  }
+
   getRaw(): KitsuneConfig {
     return { ...this.config };
   }
