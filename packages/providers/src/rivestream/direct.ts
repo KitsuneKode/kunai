@@ -40,17 +40,18 @@ type RivestreamRawSource = {
 type RivestreamSourceResponse = {
   readonly data?:
     | readonly RivestreamRawSource[]
-    | { readonly sources?: readonly RivestreamRawSource[] };
+    | {
+        readonly sources?: readonly RivestreamRawSource[];
+        readonly captions?: readonly RivestreamRawSubtitle[];
+      };
 };
 
 type RivestreamRawSubtitle = {
   readonly url?: string;
   readonly lang?: string;
   readonly language?: string;
-};
-
-type RivestreamSubtitleResponse = {
-  readonly data?: readonly RivestreamRawSubtitle[];
+  readonly file?: string;
+  readonly label?: string;
 };
 
 type AbortSignalConstructorWithAny = typeof AbortSignal & {
@@ -349,6 +350,33 @@ export const rivestreamProviderModule: CoreProviderModule = {
               });
             });
 
+            // Extract embedded captions if present
+            const responseData = sourceData.data as any;
+            if (
+              responseData &&
+              typeof responseData === "object" &&
+              !Array.isArray(responseData) &&
+              Array.isArray(responseData.captions)
+            ) {
+              responseData.captions.forEach((sub: any) => {
+                const subUrl = sub.url || sub.file;
+                const lang = sub.lang || sub.language || sub.label || "unknown";
+                if (!subUrl) return;
+                subtitles.push({
+                  id: `subtitle:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(subUrl).toString(36)}`,
+                  providerId: RIVESTREAM_PROVIDER_ID,
+                  sourceId,
+                  url: subUrl,
+                  language: lang.split(" - ")[0].trim(), // e.g. "English - FlowCast" -> "English"
+                  label: lang,
+                  format: subUrl.endsWith(".vtt") ? "vtt" : "srt",
+                  source: "provider",
+                  confidence: 0.95,
+                  cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+                });
+              });
+            }
+
             // We found sources, break the loop
             break;
           }
@@ -366,45 +394,6 @@ export const rivestreamProviderModule: CoreProviderModule = {
 
       if (streams.length === 0) {
         throw new Error("All internal servers exhausted without returning streams.");
-      }
-
-      // Subtitles Fetch
-      try {
-        let subUrl = `${RIVESTREAM_API_BASE}?requestID=${typeStr}OnlineSubtitles&id=${tmdbId}`;
-        if (input.mediaKind === "series") subUrl += `&season=${season}&episode=${episode}`;
-        subUrl += `&secretKey=${secretKey}&proxyMode=undefined`;
-
-        const subSignal = createTimeoutSignal(context.signal, 8000);
-
-        const subData = await providerJson<RivestreamSubtitleResponse>(
-          context,
-          subUrl,
-          {
-            headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
-            signal: subSignal,
-          },
-          { providerId: RIVESTREAM_PROVIDER_ID, stage: "subtitle:start" },
-        );
-
-        if (subData.data && subData.data.length > 0) {
-          subData.data.forEach((sub) => {
-            if (!sub.url) return;
-            subtitles.push({
-              id: `subtitle:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(sub.url).toString(36)}`,
-              providerId: RIVESTREAM_PROVIDER_ID,
-              sourceId,
-              url: sub.url,
-              language: sub.lang || sub.language,
-              label: sub.language || sub.lang,
-              format: "vtt",
-              source: "provider",
-              confidence: 0.9,
-              cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
-            });
-          });
-        }
-      } catch {
-        // Non-fatal if subs fail
       }
 
       streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
