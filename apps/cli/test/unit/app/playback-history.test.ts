@@ -90,4 +90,31 @@ describe("playback-history", () => {
     expect(shouldPersistHistory(result)).toBe(true);
     expect(toHistoryTimestamp(result)).toBe(420);
   });
+
+  test("does not complete weird error ends and keeps the last trusted timestamp", () => {
+    const result = {
+      watchedSeconds: 1499,
+      duration: 1500,
+      endReason: "error" as const,
+      lastNonZeroPositionSeconds: 1499,
+      lastNonZeroDurationSeconds: 1500,
+      lastTrustedProgressSeconds: 420,
+    };
+
+    expect(shouldPersistHistory(result)).toBe(true);
+    expect(toHistoryTimestamp(result)).toBe(420);
+  });
+
+  test("does not turn near-end error exits into completed history", () => {
+    const result = {
+      watchedSeconds: 1499,
+      duration: 1500,
+      endReason: "error" as const,
+      lastNonZeroPositionSeconds: 1499,
+      lastNonZeroDurationSeconds: 1500,
+    };
+
+    expect(shouldPersistHistory(result)).toBe(true);
+    expect(toHistoryTimestamp(result)).toBe(1499);
+  });
 });

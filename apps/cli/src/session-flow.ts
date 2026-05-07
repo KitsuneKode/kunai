@@ -69,7 +69,10 @@ export function resolveStartingEpisodeChoice(args: {
     };
   }
   if (args.choice === "restart") {
-    return historyEpisode;
+    return {
+      ...historyEpisode,
+      startAt: args.history.timestamp,
+    };
   }
   if (args.choice === "next") {
     return args.nextEpisode;

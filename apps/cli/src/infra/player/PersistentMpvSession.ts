@@ -68,7 +68,9 @@ type PlayerCycleOptions = {
   primarySubtitle: string | null;
   subtitleTracks?: readonly SubtitleTrack[];
   startAt?: number;
-  /** When true, mpv shows resume vs start-over before the initial resume seek. */
+  /** Optional resume offer shown in mpv without automatically seeking. */
+  resumePromptAt?: number;
+  /** When true, mpv shows resume vs start-over before a manual resume seek. */
   offerResumeStartChoice?: boolean;
   /** Human-readable offset for the prompt (e.g. "12:34"). */
   resumeChoiceTimeLabel?: string;
@@ -680,7 +682,8 @@ export class PersistentMpvSession {
 
     if (!this.ipcSession) return;
 
-    this.resumeSeekPending = shouldApplyStartAtSeek(options.startAt);
+    this.resumeSeekPending =
+      shouldApplyStartAtSeek(options.startAt) || shouldApplyStartAtSeek(options.resumePromptAt);
     try {
       // Ensure playback is not paused when a new file loads. With --keep-open=no this is
       // normally a no-op, but guards against pause=yes persisting from a previous cycle
@@ -695,18 +698,16 @@ export class PersistentMpvSession {
       );
 
       let seekTarget: number | undefined;
-      if (typeof options.startAt === "number" && shouldApplyStartAtSeek(options.startAt)) {
-        const startAt = options.startAt;
-        if (options.offerResumeStartChoice) {
-          const choice = await this.waitResumeOrStartOverChoice(
-            startAt,
-            options.displayTitle,
-            options.resumeChoiceTimeLabel,
-          );
-          seekTarget = choice === "start" ? undefined : startAt;
-        } else {
-          seekTarget = startAt;
-        }
+      const resumePromptAt = options.resumePromptAt ?? 0;
+      if (options.offerResumeStartChoice && shouldApplyStartAtSeek(resumePromptAt)) {
+        const choice = await this.waitResumeOrStartOverChoice(
+          resumePromptAt,
+          options.displayTitle,
+          options.resumeChoiceTimeLabel,
+        );
+        seekTarget = choice === "start" ? undefined : resumePromptAt;
+      } else if (typeof options.startAt === "number" && shouldApplyStartAtSeek(options.startAt)) {
+        seekTarget = options.startAt;
       }
 
       if (shouldApplyStartAtSeek(seekTarget) && seekTarget !== undefined) {

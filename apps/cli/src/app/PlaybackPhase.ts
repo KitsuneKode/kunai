@@ -23,6 +23,7 @@ import {
   resolveEpisodeAvailability,
   toEpisodeNavigationState,
 } from "@/app/playback-policy";
+import { resumeSecondsFromHistoryForEpisode } from "@/app/playback-resume-from-history";
 import {
   createPlaybackSessionState,
   explainAutoplayBlockReason,
@@ -284,6 +285,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       // Episode selection (for series)
       let episode: EpisodeInfo | undefined;
       let pendingStart = startFromBeginning();
+      const startNavigationToEpisode = async (target: EpisodeInfo) =>
+        startEpisodeNavigation({
+          targetResumeSeconds: await resumeSecondsFromHistoryForEpisode(
+            historyStore,
+            title.id,
+            target,
+            config.quitNearEndThresholdMode,
+          ),
+        });
       const provider = providerRegistry.get(stateManager.getState().provider);
       const initialAnimeEpisodes = await this.getAnimeEpisodeOptions({
         title,
@@ -346,7 +356,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           season: selection.season,
           episode: selection.episode,
         };
-        pendingStart = startFromEpisodeSelection(selection);
+        pendingStart =
+          selection.startAt !== undefined || selection.suppressResumePrompt
+            ? startFromEpisodeSelection(selection)
+            : await startNavigationToEpisode(episode);
       } else {
         episode = { season: 1, episode: 1 };
       }
@@ -851,6 +864,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             currentEpisode,
             context,
             startIntent.startAt,
+            startIntent.resumePromptAt,
             playbackSession.mode,
             playbackTiming,
             maybePrefetchNext,
@@ -921,6 +935,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (playbackDecision.shouldRefreshSource) {
             pendingStart = startAtResumePoint(
               toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
+              { suppressResumePrompt: true },
             );
             const refreshCacheKey = buildApiStreamResolveCacheKey({
               providerId: resolvedProviderId,
@@ -950,9 +965,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           if (playbackDecision.shouldFallbackProvider) {
-            pendingStart = startAtResumePoint(
-              toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
-            );
+            pendingStart = startEpisodeNavigation({
+              targetResumeSeconds: toHistoryTimestamp(
+                result,
+                effectiveTiming.current,
+                quitThresholdMode,
+              ),
+            });
             const fallback = providerRegistry
               .getCompatible(title, stateManager.getState().mode)
               .find((candidate) => candidate.metadata.id !== resolvedProviderId);
@@ -968,7 +987,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  resumeSeconds: pendingStart.startAt,
+                  resumeSeconds: pendingStart.resumePromptAt,
                 },
               });
               continue;
@@ -992,7 +1011,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "next" && title.type === "series") {
             if (episodeAvailability.nextEpisode) {
-              pendingStart = startEpisodeNavigation();
+              pendingStart = await startNavigationToEpisode(episodeAvailability.nextEpisode);
               await applyMpvEpisodeLoadingOverlay(
                 playerControl.getActive(),
                 episodeAvailability.nextEpisode,
@@ -1020,7 +1039,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "previous" && title.type === "series") {
             if (episodeAvailability.previousEpisode) {
-              pendingStart = startEpisodeNavigation();
+              pendingStart = await startNavigationToEpisode(episodeAvailability.previousEpisode);
               await applyMpvEpisodeLoadingOverlay(
                 playerControl.getActive(),
                 episodeAvailability.previousEpisode,
@@ -1058,13 +1077,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (pickedSource) {
                 preferredStreamSelection = streamSelectionFromSource(pickedSource);
-                pendingStart = startAtResumePoint(
-                  toHistoryTimestamp(
+                pendingStart = startEpisodeNavigation({
+                  targetResumeSeconds: toHistoryTimestamp(
                     result,
                     effectiveTiming.current,
                     config.quitNearEndThresholdMode,
                   ),
-                );
+                });
                 diagnosticsStore.record({
                   category: "playback",
                   message: "Source override selected",
@@ -1073,7 +1092,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     titleId: title.id,
                     season: currentEpisode.season,
                     episode: currentEpisode.episode,
-                    resumeSeconds: pendingStart.startAt,
+                    resumeSeconds: pendingStart.resumePromptAt,
                   },
                 });
                 continue;
@@ -1094,13 +1113,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (pickedStreamId) {
                 preferredStreamSelection = streamSelectionFromStream(pickedStreamId);
-                pendingStart = startAtResumePoint(
-                  toHistoryTimestamp(
+                pendingStart = startEpisodeNavigation({
+                  targetResumeSeconds: toHistoryTimestamp(
                     result,
                     effectiveTiming.current,
                     config.quitNearEndThresholdMode,
                   ),
-                );
+                });
                 diagnosticsStore.record({
                   category: "playback",
                   message: "Stream override selected",
@@ -1109,7 +1128,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     titleId: title.id,
                     season: currentEpisode.season,
                     episode: currentEpisode.episode,
-                    resumeSeconds: pendingStart.startAt,
+                    resumeSeconds: pendingStart.resumePromptAt,
                   },
                 });
                 continue;
@@ -1136,6 +1155,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     effectiveTiming.current,
                     config.quitNearEndThresholdMode,
                   ),
+                  { suppressResumePrompt: true },
                 );
                 diagnosticsStore.record({
                   category: "playback",
@@ -1236,7 +1256,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               note: `S${String(nextEpisode.season).padStart(2, "0")}E${String(nextEpisode.episode).padStart(2, "0")}`,
             });
 
-            pendingStart = startEpisodeNavigation();
+            pendingStart = await startNavigationToEpisode(nextEpisode);
 
             await applyMpvEpisodeLoadingOverlay(playerControl.getActive(), nextEpisode);
 
@@ -1394,6 +1414,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               break postPlayback;
             } else if (routedAction === "replay") {
+              pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
               const playbackAction = resolvePostPlaybackSessionAction("replay", playbackSession);
               playbackSession = playbackAction.session;
               if (!playbackAction.session.autoplayPaused) {
@@ -1408,7 +1429,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 continue postPlayback;
               }
               stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
-              pendingStart = startAtResumePoint(resumeSeconds);
+              pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
               diagnosticsStore.record({
                 category: "playback",
                 message: "Switching to fallback provider after shell command",
@@ -1439,7 +1460,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 continue postPlayback;
               }
               preferredStreamSelection = streamSelectionFromSource(pickedSource);
-              pendingStart = startAtResumePoint(resumeSeconds);
+              pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
               break postPlayback;
             } else if (routedAction === "quality") {
               const qualityOptions = buildQualityPickerOptions(preparedStream);
@@ -1458,7 +1479,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 continue postPlayback;
               }
               preferredStreamSelection = streamSelectionFromStream(pickedQualityStreamId);
-              pendingStart = startAtResumePoint(resumeSeconds);
+              pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
               break postPlayback;
             } else if (routedAction === "streams") {
               const streamOptions = buildStreamPickerOptions(preparedStream);
@@ -1477,7 +1498,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 continue postPlayback;
               }
               preferredStreamSelection = streamSelectionFromStream(pickedStreamId);
-              pendingStart = startAtResumePoint(resumeSeconds);
+              pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
               break postPlayback;
             } else if (routedAction === "back-to-search") {
               return { status: "success", value: "back_to_search" };
@@ -1511,9 +1532,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 type: "SELECT_EPISODE",
                 episode: { season: selection.season, episode: selection.episode },
               });
+              pendingStart = await startNavigationToEpisode({
+                season: selection.season,
+                episode: selection.episode,
+              });
               break postPlayback;
             } else if (postAction === "next" && title.type === "series") {
               if (episodeAvailability.nextEpisode) {
+                pendingStart = await startNavigationToEpisode(episodeAvailability.nextEpisode);
                 stateManager.dispatch({
                   type: "SELECT_EPISODE",
                   episode: episodeAvailability.nextEpisode,
@@ -1523,6 +1549,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               continue postPlayback;
             } else if (postAction === "previous" && title.type === "series") {
               if (episodeAvailability.previousEpisode) {
+                pendingStart = await startNavigationToEpisode(episodeAvailability.previousEpisode);
                 stateManager.dispatch({
                   type: "SELECT_EPISODE",
                   episode: episodeAvailability.previousEpisode,
@@ -1532,6 +1559,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               continue postPlayback;
             } else if (postAction === "next-season" && title.type === "series") {
               if (episodeAvailability.nextSeasonEpisode) {
+                pendingStart = await startNavigationToEpisode(
+                  episodeAvailability.nextSeasonEpisode,
+                );
                 stateManager.dispatch({
                   type: "SELECT_EPISODE",
                   episode: episodeAvailability.nextSeasonEpisode,
@@ -1712,6 +1742,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     episode: EpisodeInfo,
     context: PhaseContext,
     startAt = 0,
+    resumePromptAt = 0,
     playbackMode: "manual" | "autoplay-chain" = "manual",
     timing: PlaybackTimingMetadata | null = null,
     onNearEof?: () => void,
@@ -1745,6 +1776,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         subtitleStatus,
         displayTitle,
         startAt,
+        resumePromptAt,
         attach: false,
         playbackMode,
         timing,

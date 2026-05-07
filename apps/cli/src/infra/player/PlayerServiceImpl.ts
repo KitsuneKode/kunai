@@ -49,6 +49,7 @@ export class PlayerServiceImpl implements PlayerService {
       title: options.displayTitle,
       url: stream.url,
       startAt: options.startAt,
+      resumePromptAt: options.resumePromptAt ?? 0,
     });
     this.deps.diagnosticsStore.record({
       category: "playback",
@@ -59,6 +60,7 @@ export class PlayerServiceImpl implements PlayerService {
         subtitleUrl: stream.subtitle ?? null,
         subtitleStatus: options.subtitleStatus ?? null,
         startAt: options.startAt ?? 0,
+        resumePromptAt: options.resumePromptAt ?? 0,
       },
     });
 
@@ -175,18 +177,20 @@ export class PlayerServiceImpl implements PlayerService {
       await this.releasePersistentSession();
     }
 
+    const resumePromptAt = options.resumePromptAt ?? 0;
     const offerResumeStartChoice =
-      shouldApplyStartAtSeek(options.startAt) && options.resumeStartChoicePrompt !== false;
+      shouldApplyStartAtSeek(resumePromptAt) && options.resumeStartChoicePrompt !== false;
 
     const sharedOptions = {
       displayTitle: options.displayTitle,
       primarySubtitle: stream.subtitle ?? null,
       subtitleTracks: stream.subtitleList,
       startAt: options.startAt,
+      resumePromptAt,
       offerResumeStartChoice,
       resumeChoiceTimeLabel:
-        offerResumeStartChoice && typeof options.startAt === "number"
-          ? formatTimestamp(Math.floor(options.startAt))
+        offerResumeStartChoice && typeof resumePromptAt === "number"
+          ? formatTimestamp(Math.floor(resumePromptAt))
           : undefined,
       timing: options.timing,
       skipRecap: options.skipRecap,

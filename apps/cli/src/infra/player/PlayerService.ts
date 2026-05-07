@@ -61,10 +61,13 @@ export interface PlayerOptions {
   subtitle?: string;
   subtitleStatus?: string;
   displayTitle: string;
+  /** Automatic seek target for this launch. */
   startAt?: number;
+  /** Optional resume offer shown in mpv without automatically seeking. */
+  resumePromptAt?: number;
   /**
-   * When false, skips the mpv “resume here vs start over” prompt for this play (persistent
-   * autoplay only, when startAt is positive). Default true.
+   * When false, skips the mpv “resume here vs start over” prompt for this play.
+   * Persistent playback only, when resumePromptAt is positive. Default true.
    */
   resumeStartChoicePrompt?: boolean;
   attach?: boolean;

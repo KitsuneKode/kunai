@@ -331,10 +331,12 @@ local function draw_resume_prompt(at_sec)
 	local dim = mp.get_property_native("osd-dimensions", {})
 	local w = dim.w or 1280
 	local h = dim.h or 720
-	local cx = math.floor(w / 2)
-	local cy = math.floor(h / 2)
-	local fs = clamp(math.floor(h * 0.042), 24, 42)
-	local sub_fs = clamp(math.floor(h * 0.022), 13, 20)
+	local margin = clamp(math.floor(w * 0.035), 28, 72)
+	local top = clamp(math.floor(h * 0.055), 28, 58)
+	local x = w - margin
+	local y = top
+	local fs = clamp(math.floor(h * 0.026), 18, 30)
+	local sub_fs = clamp(math.floor(h * 0.018), 12, 17)
 
 	local label = mp.get_property("user-data/kunai-resume-label", "")
 	if label == "" then
@@ -344,32 +346,32 @@ local function draw_resume_prompt(at_sec)
 
 	local line1 = esc_ass(title)
 	local line2 = esc_ass("Resume at " .. label .. "  ·  or start from the beginning")
-	local line3 = esc_ass("[R] resume   [O] start over   (auto-resume in 8s)")
+	local line3 = esc_ass("[Ctrl+R] resume   [O] start over")
 
 	local ass_nl = "\\N"
 	resume_overlay.res_x = w
 	resume_overlay.res_y = h
 	resume_overlay.data = string.format(
-		"{\\an5\\bord4\\blur3\\fnSans\\fs%d\\pos(%d,%d)\\c&HF0F0F0&}%s",
+		"{\\an7\\bord3\\blur2\\fnSans\\b1\\fs%d\\pos(%d,%d)\\c&HF0F0F0&}%s",
 		fs,
-		cx,
-		cy - math.floor(fs * 0.9),
+		x,
+		y,
 		line1
 	)
 		.. ass_nl
 		.. string.format(
-			"{\\an5\\alpha&HC0&\\fs%d\\pos(%d,%d)\\c&HDDDDDD&}%s",
+			"{\\an7\\alpha&HC0&\\fs%d\\pos(%d,%d)\\c&HDDDDDD&}%s",
 			sub_fs,
-			cx,
-			cy + math.floor(fs * 0.15),
+			x,
+			y + math.floor(fs * 1.25),
 			line2
 		)
 		.. ass_nl
 		.. string.format(
-			"{\\an5\\alpha&HB0&\\fs%d\\pos(%d,%d)\\c&HBBBBBB&}%s",
+			"{\\an7\\alpha&HB0&\\fs%d\\pos(%d,%d)\\c&HBBBBBB&}%s",
 			sub_fs,
-			cx,
-			cy + math.floor(fs * 0.55),
+			x,
+			y + math.floor(fs * 2.2),
 			line3
 		)
 	resume_overlay:update()
@@ -391,7 +393,7 @@ local function show_resume_prompt(at_sec)
 	hide_resume_prompt()
 	draw_resume_prompt(at_sec)
 	clear_resume_prompt_bindings()
-	mp.add_forced_key_binding("r", "kunai-resume-r", function()
+	mp.add_forced_key_binding("Ctrl+r", "kunai-resume-r", function()
 		commit_resume_choice("resume")
 	end)
 	mp.add_forced_key_binding("o", "kunai-resume-o", function()
@@ -403,7 +405,7 @@ local function show_resume_prompt(at_sec)
 
 	resume_prompt_timer = mp.add_timeout(8, function()
 		resume_prompt_timer = nil
-		commit_resume_choice("resume")
+		commit_resume_choice("start")
 	end)
 end
 
