@@ -53,6 +53,16 @@ type RivestreamSubtitleResponse = {
   readonly data?: readonly RivestreamRawSubtitle[];
 };
 
+type AbortSignalConstructorWithAny = typeof AbortSignal & {
+  readonly any?: (signals: readonly AbortSignal[]) => AbortSignal;
+};
+
+function createTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const abortSignal = AbortSignal as AbortSignalConstructorWithAny;
+  if (!signal) return AbortSignal.timeout(timeoutMs);
+  return abortSignal.any ? abortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : signal;
+}
+
 function getRivestreamRawSources(
   data: RivestreamSourceResponse["data"],
 ): readonly RivestreamRawSource[] {
@@ -255,10 +265,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
       const episode = input.episode?.episode ?? 1;
 
       // 1. Get Providers
-      const servicesSignal =
-        "any" in AbortSignal
-          ? (AbortSignal as any).any([context.signal, AbortSignal.timeout(8000)])
-          : context.signal;
+      const servicesSignal = createTimeoutSignal(context.signal, 8000);
 
       const provData = await providerJson<RivestreamProviderServicesResponse>(
         context,
@@ -293,10 +300,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         url += `&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
 
         try {
-          const fetchSignal =
-            "any" in AbortSignal
-              ? (AbortSignal as any).any([context.signal, AbortSignal.timeout(8000)])
-              : context.signal;
+          const fetchSignal = createTimeoutSignal(context.signal, 8000);
 
           const sourceData = await providerJson<RivestreamSourceResponse>(
             context,
@@ -370,10 +374,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         if (input.mediaKind === "series") subUrl += `&season=${season}&episode=${episode}`;
         subUrl += `&secretKey=${secretKey}&proxyMode=undefined`;
 
-        const subSignal =
-          "any" in AbortSignal
-            ? (AbortSignal as any).any([context.signal, AbortSignal.timeout(8000)])
-            : context.signal;
+        const subSignal = createTimeoutSignal(context.signal, 8000);
 
         const subData = await providerJson<RivestreamSubtitleResponse>(
           context,
