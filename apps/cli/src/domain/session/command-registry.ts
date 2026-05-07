@@ -73,6 +73,7 @@ export const COMMAND_CONTEXTS = {
   ],
   postPlayback: [
     "search",
+    "discover",
     "settings",
     "toggle-mode",
     "provider",
@@ -88,8 +89,10 @@ export const COMMAND_CONTEXTS = {
     "previous",
     "next-season",
     "diagnostics",
+    "export-diagnostics",
     "report-issue",
     "help",
+    "about",
     "quit",
   ],
 } as const satisfies Record<string, readonly AppCommandId[]>;

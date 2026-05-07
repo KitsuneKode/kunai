@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { routePlaybackShellAction } from "@/app-shell/command-router";
-import { resolveCommands } from "@/app-shell/commands";
+import { resolveCommandContext } from "@/app-shell/commands";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import {
   openQualityPicker,
@@ -1330,30 +1330,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   : { label: "Ready for next action", tone: "success" },
                 footerMode: "detailed",
                 showDiscoverNudge: title.type === "series" && !episodeAvailability.nextEpisode,
-                commands: resolveCommands(stateManager.getState(), [
-                  "search",
-                  "discover",
-                  "settings",
-                  "toggle-mode",
-                  "provider",
-                  "history",
-                  "toggle-autoplay",
-                  "replay",
-                  "fallback",
-                  "streams",
-                  "source",
-                  "quality",
-                  "pick-episode",
-                  "next",
-                  "previous",
-                  "next-season",
-                  "diagnostics",
-                  "export-diagnostics",
-                  "report-issue",
-                  "help",
-                  "about",
-                  "quit",
-                ]),
+                commands: resolveCommandContext(stateManager.getState(), "postPlayback"),
               },
               providerOptions: shellRuntime.providerOptions,
               episodePickerOptions: shellEpisodePicker.options,

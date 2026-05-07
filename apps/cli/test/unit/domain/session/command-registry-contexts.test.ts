@@ -53,4 +53,31 @@ describe("command registry contexts", () => {
     expect(commands.find((command) => command.id === "next")?.enabled).toBe(true);
     expect(commands.find((command) => command.id === "pick-episode")?.enabled).toBe(true);
   });
+
+  test("keeps post-playback commands as the broader safe menu", () => {
+    expect([...COMMAND_CONTEXTS.postPlayback]).toEqual([
+      "search",
+      "discover",
+      "settings",
+      "toggle-mode",
+      "provider",
+      "history",
+      "toggle-autoplay",
+      "replay",
+      "fallback",
+      "streams",
+      "source",
+      "quality",
+      "pick-episode",
+      "next",
+      "previous",
+      "next-season",
+      "diagnostics",
+      "export-diagnostics",
+      "report-issue",
+      "help",
+      "about",
+      "quit",
+    ] satisfies AppCommandId[]);
+  });
 });
