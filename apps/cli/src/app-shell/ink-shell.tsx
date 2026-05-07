@@ -27,6 +27,7 @@ import {
   parseBrowseFilterQuery,
 } from "./browse-filters";
 import type { ResolvedAppCommand } from "./commands";
+import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { buildBrowseCompanionPanel, buildBrowseDetailsPanel } from "./details-panel";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { deleteAllKittyImages } from "./image-pane";
@@ -585,24 +586,7 @@ function AppRoot({ container }: { container: Container }) {
                     state.playbackStatus === "stalled"
                       ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  e episodes  ·  k streams  ·  r recover`
                       : undefined,
-                  commands: fallbackCommandState([
-                    "toggle-autoplay",
-                    "settings",
-                    "recover",
-                    "fallback",
-                    "pick-episode",
-                    "streams",
-                    "next",
-                    "previous",
-                    "history",
-                    "diagnostics",
-                    "report-issue",
-                    "help",
-                    "about",
-                    "source",
-                    "quality",
-                    "quit",
-                  ]),
+                  commands: resolveCommandContext(state, "activePlayback"),
                   footerMode: "detailed",
                   onCommandAction: (action) => {
                     if (action === "command-mode") return;
@@ -913,29 +897,7 @@ function PlaybackShell({
       posterState === "unavailable",
     );
 
-  const commands =
-    state.commands ??
-    fallbackCommandState([
-      "search",
-      "settings",
-      "toggle-mode",
-      "provider",
-      "history",
-      "toggle-autoplay",
-      "replay",
-      "fallback",
-      "streams",
-      "source",
-      "quality",
-      "pick-episode",
-      "next",
-      "previous",
-      "next-season",
-      "diagnostics",
-      "report-issue",
-      "help",
-      "quit",
-    ]);
+  const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
   const footerActions: readonly FooterAction[] = [
     { key: "/", label: "commands", action: "command-mode" },
     footerActionFromCommand(

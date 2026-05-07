@@ -42,6 +42,60 @@ export type ResolvedAppCommand = AppCommand & {
   readonly reason?: string;
 };
 
+export const COMMAND_CONTEXTS = {
+  rootOverlay: [
+    "settings",
+    "provider",
+    "history",
+    "help",
+    "about",
+    "diagnostics",
+    "export-diagnostics",
+    "report-issue",
+  ],
+  activePlayback: [
+    "toggle-autoplay",
+    "settings",
+    "recover",
+    "fallback",
+    "pick-episode",
+    "streams",
+    "source",
+    "quality",
+    "next",
+    "previous",
+    "history",
+    "diagnostics",
+    "report-issue",
+    "help",
+    "about",
+    "quit",
+  ],
+  postPlayback: [
+    "search",
+    "settings",
+    "toggle-mode",
+    "provider",
+    "history",
+    "toggle-autoplay",
+    "replay",
+    "fallback",
+    "streams",
+    "source",
+    "quality",
+    "pick-episode",
+    "next",
+    "previous",
+    "next-season",
+    "diagnostics",
+    "report-issue",
+    "help",
+    "quit",
+  ],
+} as const satisfies Record<string, readonly AppCommandId[]>;
+
+export type CommandContextId = keyof typeof COMMAND_CONTEXTS;
+
 export const COMMANDS: readonly AppCommand[] = [
   {
     id: "search",
@@ -237,10 +291,24 @@ export function resolveCommands(
   state: SessionState,
   allowed: readonly AppCommandId[] = COMMANDS.map((command) => command.id),
 ): readonly ResolvedAppCommand[] {
-  return COMMANDS.filter((command) => allowed.includes(command.id)).map((command) => ({
-    ...resolveCommandPresentation(command, state),
-    ...resolveCommandState(command.id, state),
-  }));
+  return allowed.flatMap((id) => {
+    const command = COMMANDS.find((candidate) => candidate.id === id);
+    return command
+      ? [
+          {
+            ...resolveCommandPresentation(command, state),
+            ...resolveCommandState(command.id, state),
+          },
+        ]
+      : [];
+  });
+}
+
+export function resolveCommandContext(
+  state: SessionState,
+  context: CommandContextId,
+): readonly ResolvedAppCommand[] {
+  return resolveCommands(state, COMMAND_CONTEXTS[context]);
 }
 
 function resolveCommandPresentation(command: AppCommand, state: SessionState): AppCommand {

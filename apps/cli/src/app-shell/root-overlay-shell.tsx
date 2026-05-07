@@ -9,7 +9,7 @@ import type {
 import { Box, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 
-import { resolveCommands } from "./commands";
+import { resolveCommandContext } from "./commands";
 import {
   buildSettingsChoiceOverlay,
   buildSettingsOptions,
@@ -95,16 +95,7 @@ export function RootOverlayShell({
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
   const overlayResetKey = getRootOverlayResetKey(overlay);
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
-  const commands = resolveCommands(state, [
-    "settings",
-    "provider",
-    "history",
-    "help",
-    "about",
-    "diagnostics",
-    "export-diagnostics",
-    "report-issue",
-  ]);
+  const commands = resolveCommandContext(state, "rootOverlay");
   const settingsSeriesProviderOptions = buildSettingsProviderOptions({
     providers: container.providerRegistry
       .getAll()
