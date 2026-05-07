@@ -57,3 +57,6 @@ stream_cache.json
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Brainstorm session files
+.superpowers/
