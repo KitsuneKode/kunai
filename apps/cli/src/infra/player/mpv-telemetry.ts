@@ -107,6 +107,8 @@ export function createPlayerTelemetryState(socketPath?: string): PlayerTelemetry
 }
 
 const TRUSTED_FORWARD_JUMP_SEC = 55;
+const SUSPICIOUS_FIRST_SAMPLE_MIN_DURATION_SEC = 300;
+const SUSPICIOUS_FIRST_SAMPLE_END_FRACTION = 0.95;
 
 /** Called when the playback watchdog reports stream/ipc stall (correlate with spurious EOF). */
 export function noteStreamStall(state: PlayerTelemetryState, observedAtMs: number): void {
@@ -121,10 +123,17 @@ function advanceTrustedProgressSeconds(
   state: PlayerTelemetryState,
   prevPositionSeconds: number,
   newPositionSeconds: number,
+  durationSeconds: number,
 ): void {
   if (newPositionSeconds <= state.maxTrustedProgressSeconds) return;
 
   if (!state.trustedProgressBootstrapDone && prevPositionSeconds === 0 && newPositionSeconds > 0) {
+    if (
+      durationSeconds >= SUSPICIOUS_FIRST_SAMPLE_MIN_DURATION_SEC &&
+      newPositionSeconds >= durationSeconds * SUSPICIOUS_FIRST_SAMPLE_END_FRACTION
+    ) {
+      return;
+    }
     state.maxTrustedProgressSeconds = newPositionSeconds;
     state.trustedProgressBootstrapDone = true;
     return;
@@ -138,6 +147,12 @@ function advanceTrustedProgressSeconds(
   if (delta <= TRUSTED_FORWARD_JUMP_SEC) {
     state.maxTrustedProgressSeconds = newPositionSeconds;
   }
+}
+
+export function noteTrustedSeek(state: PlayerTelemetryState, positionSeconds: number): void {
+  if (!Number.isFinite(positionSeconds) || positionSeconds <= 0) return;
+  state.maxTrustedProgressSeconds = Math.max(state.maxTrustedProgressSeconds, positionSeconds);
+  state.trustedProgressBootstrapDone = true;
 }
 
 function parseDemuxerCacheDiagnostics(value: unknown): {
@@ -328,7 +343,12 @@ export function applyObservedPropertySample(
   }
 
   if (update.name === "time-pos" || update.name === "playback-time") {
-    advanceTrustedProgressSeconds(state, base.positionSeconds, next.positionSeconds);
+    advanceTrustedProgressSeconds(
+      state,
+      base.positionSeconds,
+      next.positionSeconds,
+      next.durationSeconds,
+    );
   }
 
   if (isMeaningful(next)) {
@@ -496,6 +516,7 @@ export function finalizePlaybackResult(
   if (
     watchedSeconds <= 0 &&
     lastNonZeroPos > 0 &&
+    !(state.eofDemotedByPrematureGuard && lastTrustedProgressSeconds <= 0) &&
     (endReason === "quit" || endReason === "error" || endReason === "unknown")
   ) {
     watchedSeconds = lastNonZeroPos;

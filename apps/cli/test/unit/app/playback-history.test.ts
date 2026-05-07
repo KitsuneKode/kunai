@@ -91,6 +91,19 @@ describe("playback-history", () => {
     expect(toHistoryTimestamp(result)).toBe(420);
   });
 
+  test("does not persist a demoted eof with no trusted progress", () => {
+    const result = {
+      watchedSeconds: 0,
+      duration: 1500,
+      endReason: "unknown" as const,
+      lastNonZeroPositionSeconds: 1500,
+      lastNonZeroDurationSeconds: 1500,
+      lastTrustedProgressSeconds: 0,
+    };
+
+    expect(shouldPersistHistory(result)).toBe(false);
+  });
+
   test("does not complete weird error ends and keeps the last trusted timestamp", () => {
     const result = {
       watchedSeconds: 1499,

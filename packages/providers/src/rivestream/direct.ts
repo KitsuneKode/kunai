@@ -351,14 +351,16 @@ export const rivestreamProviderModule: CoreProviderModule = {
             });
 
             // Extract embedded captions if present
-            const responseData = sourceData.data as any;
-            if (
+            const responseData = sourceData.data;
+            const embeddedCaptions =
               responseData &&
               typeof responseData === "object" &&
               !Array.isArray(responseData) &&
-              Array.isArray(responseData.captions)
-            ) {
-              responseData.captions.forEach((sub: any) => {
+              "captions" in responseData
+                ? responseData.captions
+                : undefined;
+            if (Array.isArray(embeddedCaptions)) {
+              embeddedCaptions.forEach((sub) => {
                 const subUrl = sub.url || sub.file;
                 const lang = sub.lang || sub.language || sub.label || "unknown";
                 if (!subUrl) return;

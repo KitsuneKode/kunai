@@ -306,6 +306,32 @@ describe("mpv-telemetry", () => {
     expect(result.watchedSeconds).toBe(200);
   });
 
+  test("does not trust a first playback sample that jumps straight to network eof", () => {
+    const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
+    applyObservedPropertySample(telemetry, {
+      name: "duration",
+      value: 2_000,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "demuxer-via-network",
+      value: true,
+      observedAt: 1_010,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "playback-time",
+      value: 2_000,
+      observedAt: 1_020,
+    });
+    applyEndFileEvent(telemetry, "eof", 1_030);
+    recordPlayerExit(telemetry, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(telemetry, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("unknown");
+    expect(result.watchedSeconds).toBe(0);
+    expect(result.lastTrustedProgressSeconds).toBe(0);
+  });
+
   test("demotes eof after a paused network stream disconnects without eof-reached evidence", () => {
     const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
     applyObservedPropertySample(telemetry, {

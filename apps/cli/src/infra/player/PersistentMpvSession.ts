@@ -35,6 +35,7 @@ import {
   createPlayerTelemetryState,
   finalizePlaybackResult,
   noteStreamStall,
+  noteTrustedSeek,
   recordPlayerExit,
   type PlayerTelemetryState,
 } from "./mpv-telemetry";
@@ -749,6 +750,7 @@ export class PersistentMpvSession {
         // incorrectly skip earlier segments after a mid-episode resume).
         if (seekResult.ok) {
           this.currentPositionSeconds = target;
+          noteTrustedSeek(cycle.telemetry, target);
         }
       }
     } finally {

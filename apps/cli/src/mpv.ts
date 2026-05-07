@@ -19,6 +19,7 @@ import {
   createPlayerTelemetryState,
   finalizePlaybackResult,
   noteStreamStall,
+  noteTrustedSeek,
   recordPlayerExit,
 } from "@/infra/player/mpv-telemetry";
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "@/infra/player/playback-skip";
@@ -55,6 +56,7 @@ export async function launchMpv(opts: {
 
   const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), { mpv: opts.mpv });
   const telemetry = createPlayerTelemetryState(ipcEndpoint.path);
+  noteTrustedSeek(telemetry, opts.startAt ?? 0);
   const baseEmit = opts.onPlaybackEvent ?? (() => {});
   const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
     if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
