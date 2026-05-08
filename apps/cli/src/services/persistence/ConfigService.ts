@@ -28,12 +28,14 @@ export interface KitsuneConfig {
    * to choose resume vs start over before seeking.
    */
   resumeStartChoicePrompt: boolean;
-  /** Show a faint "/ discover" hint in the browse footer when history is non-empty. Default false. */
+  /** Show a faint "/ recommendation" hint in the browse footer when history is non-empty. Default false. */
   discoverShowOnStartup: boolean;
   /** Discover result mode policy. auto = follow current shell mode. */
   discoverMode: DiscoverMode;
   /** Max number of discover results shown in browse shell. */
   discoverItemLimit: number;
+  /** Show compact recommendation rail after playback completion. Default true. */
+  recommendationRailEnabled: boolean;
   /** Collapse companion pane, minimal footer, and dim header status regardless of terminal size. Default false. */
   minimalMode: boolean;
   skipRecap: boolean;

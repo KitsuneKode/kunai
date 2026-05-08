@@ -4,7 +4,7 @@ export type AppCommandId =
   | "setup"
   | "search"
   | "trending"
-  | "discover"
+  | "recommendation"
   | "settings"
   | "presence"
   | "toggle-mode"
@@ -82,7 +82,7 @@ export const COMMAND_CONTEXTS = {
   postPlayback: [
     "setup",
     "search",
-    "discover",
+    "recommendation",
     "settings",
     "presence",
     "toggle-mode",
@@ -136,10 +136,10 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Load the cached trending discovery list",
   },
   {
-    id: "discover",
-    label: "Discover",
-    aliases: ["discover", "recommendations", "recs", "suggest"],
-    description: "Open personalised recommendations and trending content",
+    id: "recommendation",
+    label: "Recommendation",
+    aliases: ["recommendation", "recommendations", "recs", "suggest", "discover"],
+    description: "Open personalized recommendations and trending content",
   },
   {
     id: "settings",
@@ -418,7 +418,7 @@ function resolveCommandState(
     case "setup":
     case "search":
     case "trending":
-    case "discover":
+    case "recommendation":
     case "settings":
     case "presence":
     case "history":

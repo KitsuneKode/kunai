@@ -59,6 +59,7 @@ function createProviderDeps(): ProviderDeps {
       discoverShowOnStartup: false,
       discoverMode: "auto",
       discoverItemLimit: 24,
+      recommendationRailEnabled: true,
       minimalMode: false,
       presenceProvider: "off",
       presencePrivacy: "full",

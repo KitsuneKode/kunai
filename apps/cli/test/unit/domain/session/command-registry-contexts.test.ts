@@ -63,7 +63,7 @@ describe("command registry contexts", () => {
     expect([...COMMAND_CONTEXTS.postPlayback]).toEqual([
       "setup",
       "search",
-      "discover",
+      "recommendation",
       "settings",
       "presence",
       "toggle-mode",

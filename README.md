@@ -94,11 +94,11 @@ kunai
   -> return to shell for next/replay/provider/diagnostics/history
 ```
 
-## Discover And Recommendations
+## Recommendations
 
-- Run `/ discover` to open recommendation + trending sections
-- Press `Ctrl+T` in browse mode to reload trending discovery lists
-- Discover uses cached recommendation/catalog responses for deterministic UX
+- Run `/ recommendation` to open recommendation + trending sections
+- Press `Ctrl+T` in browse mode to reload trending recommendation lists
+- Recommendation lists use cached catalog responses for deterministic UX
 
 ## Provider Reality
 

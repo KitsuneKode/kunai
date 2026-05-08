@@ -159,7 +159,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           initialResultSubtitle:
             currentState.searchResults.length > 0
               ? currentState.searchQuery.trim().length === 0
-                ? `${currentState.searchResults.length} discover picks · loaded`
+                ? `${currentState.searchResults.length} recommendation picks · loaded`
                 : `${currentState.searchResults.length} results · previous search`
               : undefined,
           initialSelectedIndex: currentState.selectedResultIndex,
@@ -169,7 +169,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             "setup",
             "settings",
             "trending",
-            "discover",
+            "recommendation",
             "toggle-mode",
             "provider",
             "history",
@@ -315,12 +315,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                     options: currentResults.map((r) =>
                       toBrowseResultOption(r, null, container.config.animeTitlePreference),
                     ),
-                    subtitle: `${currentResults.length} discover picks · cached`,
+                    subtitle: `${currentResults.length} recommendation picks · cached`,
                     emptyMessage: "No recommendations available.",
                   }
                 : {
                     options: [],
-                    subtitle: "Refreshing discover picks…",
+                    subtitle: "Refreshing recommendation picks…",
                     emptyMessage: "Recommendations are loading in the background.",
                   };
 
@@ -339,7 +339,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         if (outcome.type === "action") {
-          if (outcome.action === "discover") {
+          if (outcome.action === "recommendation") {
             const discover = await loadDiscoverResults(container);
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
             stateManager.dispatch({

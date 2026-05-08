@@ -1,11 +1,11 @@
 # Kunai — Recommendations And Discover
 
-This is the canonical product and architecture reference for the `/discover` recommendation surface.
+This is the canonical product and architecture reference for the `/recommendation` surface.
 
 ## Goals
 
 - Recommendations are lazy-loaded and never slow startup.
-- Discovery is explicit: the user opens `/discover`, chooses a post-playback nudge, or enables an optional startup hint.
+- Recommendations are explicit: the user opens `/recommendation`, chooses a post-playback nudge, or enables an optional startup hint.
 - Recommendation code stays outside provider adapters. Providers resolve streams; catalog/recommendation services provide browseable metadata.
 
 ## Current Implementation

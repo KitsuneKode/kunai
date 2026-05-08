@@ -267,9 +267,9 @@ export async function runSetupWizard({
           detail: "Open global actions from anywhere in the TUI",
         },
         {
-          value: "tips-discover" as const,
+          value: "tips-recommendation" as const,
           label: "Ctrl+T refresh trending",
-          detail: "Reload discover lists in browse mode",
+          detail: "Reload recommendation lists in browse mode",
         },
         {
           value: "tips-download" as const,
@@ -1438,6 +1438,11 @@ export async function openSettingsShell({
           detail: "Detailed keeps a two-line footer, minimal keeps only the task line",
         },
         {
+          value: "recommendationRailEnabled" as const,
+          label: `Post-playback recommendation rail  ·  ${next.recommendationRailEnabled ? "on" : "off"}`,
+          detail: "Show compact recommendation picks after playback ends",
+        },
+        {
           value: "presenceProvider" as const,
           label: `Presence  ·  ${next.presenceProvider}`,
           detail: "Optional local Discord Rich Presence integration. Off by default.",
@@ -1708,6 +1713,12 @@ export async function openSettingsShell({
         next.footerHints = picked;
         changed = true;
       }
+      continue;
+    }
+
+    if (action === "recommendationRailEnabled") {
+      next.recommendationRailEnabled = !next.recommendationRailEnabled;
+      changed = true;
       continue;
     }
 

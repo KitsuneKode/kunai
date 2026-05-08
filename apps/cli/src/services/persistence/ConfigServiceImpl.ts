@@ -163,6 +163,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.discoverItemLimit;
   }
 
+  get recommendationRailEnabled(): boolean {
+    return this.config.recommendationRailEnabled;
+  }
+
   get minimalMode(): boolean {
     return this.config.minimalMode;
   }

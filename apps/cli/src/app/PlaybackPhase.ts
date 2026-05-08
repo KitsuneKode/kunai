@@ -485,6 +485,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             type: "SET_PLAYBACK_STATUS",
             status: "loading",
           });
+          stateManager.dispatch({ type: "SET_RESOLVE_RETRY_COUNT", count: 0 });
           this.updatePlaybackFeedback(context, {
             detail: "Resolving provider stream",
             note: "Esc cancels this resolve and returns to results",
@@ -568,6 +569,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 }
 
                 if (event.type === "attempt") {
+                  stateManager.dispatch({
+                    type: "SET_RESOLVE_RETRY_COUNT",
+                    count: Math.max(0, event.attempt - 1),
+                  });
                   this.updatePlaybackFeedback(context, {
                     detail: describeProviderResolveAttemptDetail(event),
                     note: describeProviderResolveAttemptNote(event),
@@ -709,6 +714,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Prefetch: start resolving the next episode's stream in the background
           // when we enter the last ~30 s, so autoplay feels instant.
           let prefetchedNextStream: import("@/domain/types").StreamInfo | null = null;
+          let prefetchedRecommendationNames: readonly string[] | null = null;
           const maybePrefetchNext = () => {
             if (
               playbackSession.mode !== "autoplay-chain" ||
@@ -751,6 +757,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 return undefined;
               })
               .catch(() => {});
+
+            if (
+              container.config.recommendationRailEnabled &&
+              prefetchedRecommendationNames === null
+            ) {
+              void container.recommendationService
+                .getForTitle(title.id, title.type)
+                .then((section) => {
+                  prefetchedRecommendationNames = section.items
+                    .map((item) => item.title)
+                    .filter((name) => name.trim().length > 0);
+                  return undefined;
+                })
+                .catch(() => {
+                  // best-effort prefetch
+                  return undefined;
+                });
+            }
           };
 
           const result = await this.playStream(
@@ -1320,6 +1344,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   : "movie";
               return `${latest.titleName} ${episodeLabel}  ·  ${latest.status}`;
             })();
+            let recommendationRailNames: readonly string[] = [];
+            if (container.config.recommendationRailEnabled) {
+              if (prefetchedRecommendationNames !== null) {
+                recommendationRailNames = prefetchedRecommendationNames;
+              } else {
+                recommendationRailNames = await container.recommendationService
+                  .getForTitle(title.id, title.type)
+                  .then((section) =>
+                    section.items
+                      .map((item) => item.title)
+                      .filter((name) => name.trim().length > 0),
+                  )
+                  .catch(() => []);
+              }
+            }
             const postAction = await openPlaybackShell({
               state: {
                 type: title.type,
@@ -1345,7 +1384,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   ? { label: catalogAutoplayEndBanner, tone: "neutral" }
                   : { label: "Ready for next action", tone: "success" },
                 footerMode: "detailed",
-                showDiscoverNudge: title.type === "series" && !episodeAvailability.nextEpisode,
+                showRecommendationNudge:
+                  recommendationRailNames.length > 0 &&
+                  title.type === "series" &&
+                  !episodeAvailability.nextEpisode,
+                recommendationRailItems: recommendationRailNames.slice(0, 3),
+                recommendationRailMoreCount: Math.max(0, recommendationRailNames.length - 3),
                 commands: resolveCommandContext(stateManager.getState(), "postPlayback"),
               },
               providerOptions: shellRuntime.providerOptions,
@@ -1363,15 +1407,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               loadHistoryPanel: shellRuntime.loadHistoryPanel,
             });
 
-            if (postAction === "discover") {
+            if (postAction === "recommendation") {
               const { loadDiscoverResults } = await import("./discover-results");
-              const discover = await loadDiscoverResults(container);
+              const recommendation = await loadDiscoverResults(container);
               stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
               stateManager.dispatch({
                 type: "SET_SEARCH_RESULTS",
-                results: [...discover.results],
+                results: [...recommendation.results],
               });
-              if (discover.results.length > 0) {
+              if (recommendation.results.length > 0) {
                 stateManager.dispatch({ type: "SELECT_RESULT", index: 0 });
               }
               return { status: "success", value: "back_to_search" };

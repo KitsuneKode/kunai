@@ -6,7 +6,7 @@ export type ShellAction =
   | "search"
   | "back-to-search"
   | "trending"
-  | "discover"
+  | "recommendation"
   | "back-to-results"
   | "settings"
   | "presence"
@@ -76,7 +76,9 @@ export type PlaybackShellState = {
   status?: ShellStatus;
   commands?: readonly ResolvedAppCommand[];
   footerMode?: ShellFooterMode;
-  readonly showDiscoverNudge?: boolean;
+  readonly showRecommendationNudge?: boolean;
+  readonly recommendationRailItems?: readonly string[];
+  readonly recommendationRailMoreCount?: number;
 };
 
 export type LoadingShellState = {
@@ -147,7 +149,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "search":
     case "setup":
     case "trending":
-    case "discover":
+    case "recommendation":
     case "settings":
     case "presence":
     case "toggle-mode":

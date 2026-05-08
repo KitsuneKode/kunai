@@ -60,11 +60,11 @@ Default download path (when downloads are enabled):
 - macOS: `~/Library/Application Support/kunai/downloads`
 - Windows: `%LOCALAPPDATA%\kunai\downloads`
 
-Discover shortcuts:
+Recommendation shortcuts:
 
 ```bash
 # inside Kunai command palette
-/ discover
+/ recommendation
 ```
 
 ## Diagnostics

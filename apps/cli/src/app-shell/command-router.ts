@@ -59,7 +59,7 @@ export async function routeSearchShellAction({
   if (action === "quit")
     return (await resolveQuitWithDownloadQueue(container)) === "quit" ? "quit" : "handled";
   if (action === "trending") return "handled";
-  if (action === "discover") return "handled";
+  if (action === "recommendation") return "handled";
   if (action === "toggle-mode") {
     switchSessionMode(stateManager);
     stateManager.dispatch({ type: "RESET_SEARCH" });

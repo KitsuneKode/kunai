@@ -566,7 +566,7 @@ function AppRoot({ container }: { container: Container }) {
                           recentEvents: container.diagnosticsStore.getRecent(25),
                           currentProvider: state.provider,
                         }).provider,
-                  fallbackAvailable: Boolean(fallbackProvider),
+                  fallbackAvailable: state.resolveRetryCount > 0 && Boolean(fallbackProvider),
                   fallbackProviderName:
                     fallbackProvider?.metadata.name ?? fallbackProvider?.metadata.id,
                   autoskipPaused: state.autoskipSessionPaused,
@@ -944,12 +944,12 @@ function PlaybackShell({
         ] satisfies readonly FooterAction[])
       : []),
     footerActionFromCommand(commands, "replay", { key: "r", label: "replay" }, toShellAction),
-    ...(state.showDiscoverNudge
+    ...(state.showRecommendationNudge
       ? ([
           footerActionFromCommand(
             commands,
-            "discover",
-            { key: "g", label: "discover picks" },
+            "recommendation",
+            { key: "g", label: "recommendation picks" },
             toShellAction,
           ),
         ] satisfies readonly FooterAction[])
@@ -1012,8 +1012,8 @@ function PlaybackShell({
               <Badge label={`provider ${state.provider}`} tone="info" />
               <Badge label={state.mode === "anime" ? "anime mode" : "series mode"} />
               <Badge label={`episode ${location.toLowerCase()}`} tone="accent" />
-              {state.showDiscoverNudge ? (
-                <Badge label="discover recommended next" tone="accent" />
+              {state.showRecommendationNudge ? (
+                <Badge label="recommended next" tone="accent" />
               ) : null}
               {state.subtitleStatus ? (
                 <Badge
@@ -1070,6 +1070,20 @@ function PlaybackShell({
                       : "Replay, move episodes, or start a fresh search"
                   }
                 />
+                {state.recommendationRailItems && state.recommendationRailItems.length > 0 ? (
+                  <DetailLine
+                    label="Recommended next"
+                    value={state.recommendationRailItems.join("  ·  ")}
+                    tone="info"
+                  />
+                ) : null}
+                {state.recommendationRailMoreCount && state.recommendationRailMoreCount > 0 ? (
+                  <DetailLine
+                    label="More picks"
+                    value={`${state.recommendationRailMoreCount} more available in /recommendation`}
+                    tone="neutral"
+                  />
+                ) : null}
                 <DetailLine
                   label="Autoplay"
                   value={
@@ -1901,7 +1915,7 @@ function BrowseShell<T>({
       setSelectedIndex(0);
       setErrorMessage(String(error));
       setEmptyMessage("Recommendations failed.");
-      setSelectedDetail("Recommendation loading failed. Try /discover again.");
+      setSelectedDetail("Recommendation loading failed. Try /recommendation again.");
     }
   };
 
@@ -1935,7 +1949,7 @@ function BrowseShell<T>({
       void loadDiscovery();
       return true;
     }
-    if (action === "discover") {
+    if (action === "recommendation") {
       setCommandMode(false);
       setCommandInput("");
       setHighlightedCommandIndex(0);
@@ -2374,7 +2388,7 @@ function BrowseShell<T>({
       ) : null}
 
       {_settings?.discoverShowOnStartup && (
-        <Text color={palette.dim}>/ discover · based on your history</Text>
+        <Text color={palette.dim}>/ recommendation · based on your history</Text>
       )}
       <ShellFooter
         taskLabel={options.length > 0 && !queryDirty ? "Browse" : "Search"}

@@ -50,12 +50,12 @@ export async function loadDiscoverResults(
     results: flatten,
     subtitle:
       flatten.length > 0
-        ? `${flatten.length} discover picks · ${discoverModeLabel}`
-        : "No discover picks yet",
+        ? `${flatten.length} recommendation picks · ${discoverModeLabel}`
+        : "No recommendation picks yet",
     emptyMessage:
       discoverMode === "anime-only" || (discoverMode === "auto" && mode === "anime")
-        ? "No anime recommendations right now. Finish a few episodes, then retry /discover."
-        : "No recommendations right now. Finish something from history, then retry /discover.",
+        ? "No anime recommendations right now. Finish a few episodes, then retry /recommendation."
+        : "No recommendations right now. Finish something from history, then retry /recommendation.",
   };
 }
 

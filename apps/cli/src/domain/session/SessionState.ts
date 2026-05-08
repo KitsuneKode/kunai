@@ -131,6 +131,7 @@ export interface SessionState {
   readonly playbackDetail: string | null;
   readonly playbackNote: string | null;
   readonly playbackProblem: PlaybackProblem | null;
+  readonly resolveRetryCount: number;
 
   readonly searchQuery: string;
   readonly searchResults: SearchResult[];
@@ -172,6 +173,7 @@ export type StateTransition =
   | { type: "SET_PLAYBACK_FEEDBACK"; detail?: string | null; note?: string | null }
   | { type: "SET_PLAYBACK_PROBLEM"; problem: PlaybackProblem }
   | { type: "CLEAR_PLAYBACK_PROBLEM" }
+  | { type: "SET_RESOLVE_RETRY_COUNT"; count: number }
   | { type: "OPEN_OVERLAY"; overlay: OverlayState }
   | { type: "CLOSE_TOP_OVERLAY" }
   | { type: "CLOSE_ALL_OVERLAYS" }
@@ -233,6 +235,7 @@ export function createInitialState(
     playbackDetail: null,
     playbackNote: null,
     playbackProblem: null,
+    resolveRetryCount: 0,
     searchQuery: "",
     searchResults: [],
     searchState: "idle",
@@ -404,6 +407,12 @@ export function reduceState(state: SessionState, transition: StateTransition): S
       return {
         ...state,
         playbackProblem: null,
+      };
+
+    case "SET_RESOLVE_RETRY_COUNT":
+      return {
+        ...state,
+        resolveRetryCount: Math.max(0, transition.count),
       };
 
     case "OPEN_OVERLAY":
