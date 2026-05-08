@@ -73,6 +73,11 @@
     "react": "^19.2.6"
   },
   "devDependencies": {
+    "@kunai/core": "workspace:*",
+    "@kunai/design": "workspace:*",
+    "@kunai/providers": "workspace:*",
+    "@kunai/storage": "workspace:*",
+    "@kunai/types": "workspace:*",
     "@types/bun": "latest",
     "oxfmt": "^0.48.0",
     "oxlint": "^1.63.0",
