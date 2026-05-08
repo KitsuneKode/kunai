@@ -4,8 +4,10 @@ Use this doc when changing terminal styling, ANSI helpers, or interaction presen
 
 ## Source of Truth
 
-- `src/design.ts` owns shared visual primitives
-- `src/menu.ts` owns ANSI helpers tied to interactive flows
+- `packages/design/src/tokens.ts` owns shared token values
+- `apps/cli/src/app-shell/shell-theme.ts` adapts tokens for Ink shell surfaces
+- `apps/cli/src/design.ts` owns CLI-facing visual helpers such as badges, truncation, and ANSI-adjacent primitives
+- `apps/cli/src/menu.ts` owns legacy ANSI helpers tied to interactive flows
 
 ## Design Goals
 
@@ -17,6 +19,12 @@ Use this doc when changing terminal styling, ANSI helpers, or interaction presen
 ## Core Tokens
 
 ```ts
+tokens.amber;
+tokens.pink;
+tokens.teal;
+tokens.green;
+tokens.red;
+
 clr.amber;
 clr.cyan;
 clr.green;
@@ -26,8 +34,9 @@ clr.bold;
 clr.reset;
 ```
 
-- `amber`: primary brand color
-- `cyan`: key prompts and interactive hints
+- `amber`: primary brand/action color and key prompts
+- `pink`: anime and discovery accent
+- `teal`: status, cursor, and informational accent
 - `dim`: secondary information
 - `green` / `red`: success and failure states
 
@@ -58,10 +67,11 @@ These functions are meant to stay composable. Screen-specific policy should usua
 
 ## Migration Note
 
-If the repo moves to Ink later, keep the semantic layer intact:
+The active CLI shell is Ink-based. If future web or desktop surfaces consume the same visual identity, keep the semantic layer intact:
 
 - color/token naming should carry forward
 - spacing and box conventions should remain recognizable
 - terminal behavior should still optimize for fast scanning and low breakage
+- do not duplicate raw hex values outside `packages/design` unless the value is a deliberate one-off media/runtime constraint
 
 See [.plans/ink-migration.md](../.plans/ink-migration.md) for the larger UI migration track.

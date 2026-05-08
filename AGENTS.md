@@ -54,6 +54,10 @@ Kunai is a terminal-first Bun CLI that finds playable direct-provider video stre
 - Read [.docs/design-system.md](.docs/design-system.md) before changing terminal UI styling or interaction patterns
 - Read [.docs/ui-redesign-playbook.md](.docs/ui-redesign-playbook.md) when doing a major shell polish or redesign pass
 - Read [.docs/testing-strategy.md](.docs/testing-strategy.md) before adding tests, changing test seams, or introducing new provider/runtime behaviors
+- Read [.docs/repo-infrastructure.md](.docs/repo-infrastructure.md) before changing CI, Husky, lint-staged, issue templates, or PR templates
+- Read [.docs/recommendations-and-discover.md](.docs/recommendations-and-discover.md) before changing `/discover`, recommendation services, or recommendation UI
+- Read [.docs/presence-integrations.md](.docs/presence-integrations.md) before changing Discord Rich Presence or other social status integrations
+- Read [.docs/download-offline-onboarding.md](.docs/download-offline-onboarding.md) before changing download, offline library, setup, or onboarding behavior
 - Read [.docs/quickstart.md](.docs/quickstart.md) only for setup, local run flow, and troubleshooting
 - Read `.plans/*` only when you are actively working on that tracked change
 
@@ -134,3 +138,8 @@ Unit tests live under `apps/cli/test/unit/`, integration tests under `apps/cli/t
 - [.plans/search-service.md](.plans/search-service.md): deferred search/provider decoupling
 - [.plans/yt-provider.md](.plans/yt-provider.md): deferred YouTube provider research
 - [.plans/provider-hardening.md](.plans/provider-hardening.md): provider research, hardening, and scraper capability roadmap
+- [.plans/repo-infrastructure.md](.plans/repo-infrastructure.md): completed CI, Husky, lint-staged, and template guardrail status
+- [.plans/kitsune-design-system-and-recommendations.md](.plans/kitsune-design-system-and-recommendations.md): implemented design-token and `/discover` status plus remaining polish
+- [.plans/presence-integrations.md](.plans/presence-integrations.md): Discord presence setup, diagnostics, and activity polish
+- [.plans/catalog-release-schedule-service.md](.plans/catalog-release-schedule-service.md): anime/TV release dates, releasing-today, and shared schedule cache
+- [.plans/download-offline-onboarding.md](.plans/download-offline-onboarding.md): planned download, offline library, and setup wizard slices
