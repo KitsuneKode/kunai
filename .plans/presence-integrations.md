@@ -1,6 +1,6 @@
 # Presence Integrations Plan
 
-Status: partially implemented; setup and UX polish remaining
+Status: partially implemented; client-id entry flow and runtime smoke remaining
 
 ## Current Behavior
 
@@ -9,13 +9,13 @@ Status: partially implemented; setup and UX polish remaining
 - `presencePrivacy` controls full versus private activity detail.
 - `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID` provides the Discord app id.
 - Missing client id, package, IPC, or update failure records diagnostics and disables retries until process restart.
+- About/diagnostics copy shows whether the Discord client id comes from config, environment, or is missing.
 
 ## Remaining Implementation
 
 ### Slice 1: Setup And Settings
 
 - Add a settings flow for entering or clearing `presenceDiscordClientId`.
-- Show the effective source: config value, environment variable, or missing.
 - Add `/presence` or settings detail copy that explains required Discord setup.
 - Keep `discord-rpc` optional; do not force it into core install unless packaging proves that is simpler.
 

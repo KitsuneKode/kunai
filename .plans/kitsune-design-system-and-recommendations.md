@@ -19,6 +19,7 @@ This plan supersedes the previous generated execution plan, which was created be
 - Added search-phase and post-playback Discover entry points.
 - Added post-playback discover nudge.
 - Added recommendation and discover-related unit coverage.
+- Added `/discover` refresh with scoped recommendation-cache invalidation.
 
 ## Remaining Work
 
@@ -30,7 +31,6 @@ This plan supersedes the previous generated execution plan, which was created be
 
 ## Recommendation Follow-Up
 
-- Add a refresh action that invalidates only recommendation cache entries, not unrelated search/catalog caches.
 - Add graceful empty states for missing history, TMDB failures, and no similar titles.
 - Feed schedule-aware sections from the future catalog schedule service:
   - anime airing today

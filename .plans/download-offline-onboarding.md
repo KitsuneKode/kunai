@@ -1,6 +1,6 @@
 # Download, Offline Library, And Onboarding Plan
 
-Status: planned
+Status: in progress
 
 This plan carries forward the approved download/offline/onboarding design into the canonical `.plans` tree.
 
@@ -27,6 +27,8 @@ Add local downloads, an offline library, and a first-run/setup flow without slow
 - Add a pure `FeatureGate` service for `downloads` and `autoSkip`.
 - Extend dependency checks to detect `ffmpeg` without blocking playback.
 - Add unit tests for config normalization and feature-gate decisions.
+
+Current progress: download config fields, non-blocking `ffmpeg` capability detection, and a pure download feature gate are implemented. The persisted download job table and worker service are not started yet.
 
 ## Slice 2: Download Persistence
 
