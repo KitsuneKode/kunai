@@ -1,6 +1,6 @@
 # Catalog Release Schedule Service Plan
 
-Status: planned
+Status: in progress
 
 ## Goal
 
@@ -70,6 +70,8 @@ interface CatalogScheduleService {
 - Add `CatalogScheduleService` under `apps/cli/src/services/catalog`.
 - Add deterministic tests for released, upcoming, unknown, and cache isolation.
 - Keep the service UI-free.
+
+Completed in `CatalogScheduleService` with deterministic cache/in-flight tests.
 
 ### Slice 2: TMDB Adapter
 
