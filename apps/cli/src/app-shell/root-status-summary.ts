@@ -1,3 +1,8 @@
+import {
+  compactPlaybackSubtitleStatus,
+  describePlaybackSubtitleStatus,
+  playbackSubtitleStatusTone,
+} from "@/app/subtitle-status";
 import type { SessionState } from "@/domain/session/SessionState";
 
 import type { ShellStatusTone } from "./types";
@@ -23,17 +28,17 @@ function formatEpisode(state: SessionState): string | null {
 }
 
 function subtitleBadge(state: SessionState): RootStatusBadge | null {
-  if (state.subLang === "none") {
-    return { label: "subs off", tone: "warning" };
-  }
-  if (state.stream?.subtitle) {
-    return { label: "subs ready", tone: "success" };
-  }
-  if (state.stream?.subtitleList?.length) {
-    return { label: `${state.stream.subtitleList.length} subs`, tone: "info" };
-  }
-  if (state.playbackStatus === "playing" || state.playbackStatus === "buffering") {
-    return { label: "subs missing", tone: "warning" };
+  const isActivePlayback =
+    state.playbackStatus === "playing" ||
+    state.playbackStatus === "buffering" ||
+    state.playbackStatus === "stalled" ||
+    state.playbackStatus === "seeking";
+  if (state.stream || state.subLang === "none" || isActivePlayback) {
+    const status = describePlaybackSubtitleStatus(state.stream, state.subLang);
+    return {
+      label: compactPlaybackSubtitleStatus(status),
+      tone: playbackSubtitleStatusTone(status),
+    };
   }
   return null;
 }

@@ -1,6 +1,8 @@
 import { hardSubInventory, selectedHardSubLanguage } from "@/domain/subtitle-policy";
 import type { StreamInfo } from "@/domain/types";
 
+export type PlaybackSubtitleStatusTone = "success" | "info" | "warning";
+
 export function describePlaybackSubtitleStatus(
   stream: StreamInfo | null | undefined,
   subLang: string,
@@ -32,4 +34,27 @@ export function describePlaybackSubtitleStatus(
   }
 
   return "subtitles not found";
+}
+
+export function playbackSubtitleStatusTone(status: string): PlaybackSubtitleStatusTone {
+  const normalized = status.toLowerCase();
+  if (
+    normalized.includes("attached") ||
+    normalized.startsWith("hardsub") ||
+    normalized.includes("available")
+  ) {
+    return "success";
+  }
+  if (normalized.includes("not resolved")) return "info";
+  return "warning";
+}
+
+export function compactPlaybackSubtitleStatus(status: string): string {
+  if (status === "subtitle attached") return "subs ready";
+  if (status === "subtitles disabled") return "subs off";
+  if (status === "subtitles not found") return "subs missing";
+  if (status.endsWith(" subtitle tracks available")) {
+    return status.replace(" subtitle tracks available", " subs");
+  }
+  return status;
 }

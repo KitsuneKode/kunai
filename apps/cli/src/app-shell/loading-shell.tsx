@@ -1,3 +1,4 @@
+import { playbackSubtitleStatusTone } from "@/app/subtitle-status";
 import { Box, Text, useInput, useStdout } from "ink";
 import React from "react";
 
@@ -305,10 +306,9 @@ export function LoadingShell({
   const accentColor = isPlaying ? palette.green : pulse ? palette.cyan : "white";
   const separatorWidth = Math.min(52, Math.max(24, (stdout.columns ?? 80) - 22));
   const infoWidth = Math.min(76, Math.max(40, (stdout.columns ?? 80) - 12));
-  const subtitleTone =
-    state.subtitleStatus?.includes("attached") || state.subtitleStatus?.includes("available")
-      ? "success"
-      : "warning";
+  const subtitleTone = state.subtitleStatus
+    ? playbackSubtitleStatusTone(state.subtitleStatus)
+    : "warning";
 
   const operationLabels: Record<LoadingShellState["operation"], string> = {
     searching: "Searching",

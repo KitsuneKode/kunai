@@ -47,6 +47,74 @@ describe("buildRootStatusSummary", () => {
     ]);
   });
 
+  test("uses hardsub inventory in the root playback subtitle badge", () => {
+    const base = createInitialState("vidking", "allanime");
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        mode: "anime",
+        provider: "allanime",
+        view: "playback",
+        playbackStatus: "playing",
+        currentTitle: {
+          id: "demo",
+          name: "The Ramparts of Ice",
+          type: "series",
+        },
+        currentEpisode: {
+          season: 1,
+          episode: 6,
+        },
+        stream: {
+          url: "https://example.com/master.m3u8",
+          headers: {},
+          timestamp: 1,
+          providerResolveResult: {
+            providerId: "allanime",
+            selectedStreamId: "sub-en",
+            streams: [
+              {
+                id: "sub-en",
+                providerId: "allanime",
+                sourceId: "source-a",
+                protocol: "hls",
+                qualityLabel: "1080p",
+                qualityRank: 1080,
+                audioLanguage: "ja",
+                hardSubLanguage: "en",
+                url: "https://example.com/master.m3u8",
+                headers: {},
+                confidence: 0.9,
+                cachePolicy: {
+                  ttlClass: "stream-manifest",
+                  scope: "local",
+                  keyParts: [],
+                },
+              },
+            ],
+            sources: [],
+            subtitles: [],
+            trace: {
+              id: "trace-1",
+              startedAt: new Date().toISOString(),
+              cacheHit: false,
+              title: { id: "demo", kind: "series", title: "The Ramparts of Ice" },
+              steps: [],
+              failures: [],
+            },
+            failures: [],
+          },
+        },
+      },
+      currentViewLabel: "playback",
+      rootStatus: "playing",
+    });
+
+    expect(summary.header.label).toBe("playing · hardsub en");
+    expect(summary.header.tone).toBe("success");
+    expect(summary.badges.map((badge) => badge.label)).toContain("hardsub en");
+  });
+
   test("keeps idle search state compact when no title is selected", () => {
     const base = createInitialState("vidking", "hianime");
     const summary = buildRootStatusSummary({
