@@ -8,13 +8,13 @@ Kunai is a community-maintained terminal CLI for watching movies, series, and an
 
 Not sure what to pick up? Here are the highest-value areas:
 
-| Area                       | What's needed                                                                                     |
-| -------------------------- | ------------------------------------------------------------------------------------------------- |
-| **Provider fixes**         | Providers break when upstream sites change. Reports with diagnostics output help the most.        |
-| **macOS / Windows parity** | Testing and documenting platform-specific gotchas around mpv, Playwright, and terminal rendering. |
-| **Test coverage**          | Pure functions (formatters, URL builders, cache TTL logic) are undertested.                       |
-| **Documentation**          | Clearer first-run guidance, install troubleshooting, and terminal compatibility notes.            |
-| **Performance / UX**       | Shell rendering polish, load time improvements, hotkey edge cases.                                |
+| Area                       | What's needed                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------ |
+| **Provider fixes**         | Providers break when upstream sites change. Reports with diagnostics output help the most. |
+| **macOS / Windows parity** | Testing and documenting platform-specific gotchas around mpv and terminal rendering.       |
+| **Test coverage**          | Pure functions (formatters, URL builders, cache TTL logic) are undertested.                |
+| **Documentation**          | Clearer first-run guidance, install troubleshooting, and terminal compatibility notes.     |
+| **Performance / UX**       | Shell rendering polish, load time improvements, hotkey edge cases.                         |
 
 Browse [open issues](https://github.com/kitsunekode/kunai/issues) for specific tasks tagged `good first issue` or `help wanted`.
 
@@ -28,7 +28,6 @@ Browse [open issues](https://github.com/kitsunekode/kunai/issues) for specific t
 git clone https://github.com/kitsunekode/kunai.git
 cd kunai
 bun install
-bunx playwright install chromium  # optional, only needed for future browser-runtime provider work
 ```
 
 Run in dev mode:

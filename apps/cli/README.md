@@ -7,13 +7,28 @@ Kunai is a terminal-first media tool that resolves provider streams and launches
 ## Requirements
 
 - `mpv` on your `PATH` (required)
-- Playwright Chromium is not required for the current active provider set (optional for future browser-runtime providers)
 - Kitty or Ghostty terminal for inline poster previews (optional)
 - ImageMagick (`magick`) for broader poster format support in Kitty/Ghostty (optional)
+- `ffmpeg` for download/offline queue support (optional)
+
+Install core tools:
 
 ```bash
-bunx playwright install chromium
+# Linux (Arch)
+sudo pacman -S mpv ffmpeg imagemagick
+
+# Linux (Debian/Ubuntu)
+sudo apt install mpv ffmpeg imagemagick
+
+# macOS (Homebrew)
+brew install mpv ffmpeg imagemagick
 ```
+
+Windows options:
+
+- `winget` (recommended): install `mpv`, `ffmpeg`, and `ImageMagick`
+- Chocolatey: `choco install mpv ffmpeg imagemagick`
+- Scoop: `scoop install mpv ffmpeg imagemagick`
 
 ## Install
 
@@ -38,6 +53,12 @@ kunai --debug
 kunai --setup
 kunai --offline
 ```
+
+Default download path (when downloads are enabled):
+
+- Linux: `~/.local/share/kunai/downloads` (or `XDG_DATA_HOME/kunai/downloads`)
+- macOS: `~/Library/Application Support/kunai/downloads`
+- Windows: `%LOCALAPPDATA%\kunai\downloads`
 
 Discover shortcuts:
 

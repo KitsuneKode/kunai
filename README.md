@@ -14,19 +14,36 @@ Kunai lets you browse in a fullscreen TUI, resolve provider streams, and hand pl
 
 ## What You Need
 
-- Bun `>=1.3.9`
-- `mpv` on your `PATH` (**required**)
-- Playwright Chromium (**optional**, only needed if browser-runtime providers return in future phases)
-- Kitty/Ghostty terminal (**optional**, for inline poster previews in browse/discover)
-- ImageMagick `magick` (**optional**, improves poster compatibility for non-PNG sources)
-- Discord + `discord-rpc` (**optional**, only for presence)
-- `ffmpeg` (**optional**, currently for planned download/offline flows)
+### Required
 
-Install browser runtime if needed:
+- Bun `>=1.3.9`
+- `mpv` on your `PATH` (required for playback)
+
+### Optional (recommended)
+
+- `ffmpeg` for downloads/offline queue
+- Kitty/Ghostty for inline poster previews
+- ImageMagick (`magick`) for broader poster compatibility (especially non-PNG)
+- Discord + `discord-rpc` for Rich Presence
+
+### Install core tools by platform
 
 ```bash
-bunx playwright install chromium
+# Linux (Arch)
+sudo pacman -S mpv ffmpeg imagemagick
+
+# Linux (Debian/Ubuntu)
+sudo apt install mpv ffmpeg imagemagick
+
+# macOS (Homebrew)
+brew install mpv ffmpeg imagemagick
 ```
+
+Windows options:
+
+- `winget` (recommended): install `mpv`, `ffmpeg`, and `ImageMagick`
+- Chocolatey: `choco install mpv ffmpeg imagemagick`
+- Scoop: `scoop install mpv ffmpeg imagemagick`
 
 ## Install And Run
 
@@ -59,6 +76,12 @@ kunai --debug
 kunai --setup
 kunai --offline
 ```
+
+### Default download path (when enabled)
+
+- Linux: `~/.local/share/kunai/downloads` (or `XDG_DATA_HOME/kunai/downloads`)
+- macOS: `~/Library/Application Support/kunai/downloads`
+- Windows: `%LOCALAPPDATA%\kunai\downloads`
 
 ## Core Flow
 

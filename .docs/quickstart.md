@@ -6,8 +6,28 @@ Use this doc for setup, local execution, and common environment issues. Architec
 
 - Bun `>=1.3.9` for source installs during beta
 - `mpv` in `PATH`
-- Playwright Chromium is optional for the current beta provider set; install only for future browser-runtime provider work
 - Kitty graphics protocol support if you want inline posters
+- `ffmpeg` if you want downloads/offline queue
+- `magick` (ImageMagick) if you want broader poster compatibility
+
+Install runtime tools:
+
+```sh
+# Linux (Arch)
+sudo pacman -S mpv ffmpeg imagemagick
+
+# Linux (Debian/Ubuntu)
+sudo apt install mpv ffmpeg imagemagick
+
+# macOS (Homebrew)
+brew install mpv ffmpeg imagemagick
+```
+
+Windows options:
+
+- `winget` (recommended): install `mpv`, `ffmpeg`, and `ImageMagick`
+- Chocolatey: `choco install mpv ffmpeg imagemagick`
+- Scoop: `scoop install mpv ffmpeg imagemagick`
 
 Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Packaged binaries are the preferred future path for users who should not need to install Bun manually.
 
@@ -18,12 +38,6 @@ git clone <repo>
 cd kunai
 bun install
 bun run link:global   # optional: installs local CLI command
-```
-
-Optional browser runtime dependency:
-
-```sh
-bunx playwright install chromium
 ```
 
 ## Run
@@ -93,16 +107,13 @@ Then run `/ report-issue` to open the GitHub issue form with triage guidance.
 
 Kunai must drive the **same** native `mpv.exe` binary it spawned: IPC uses a Bun duplex **named pipe** (`//./pipe/kunai-mpv-…`), not your WSL Linux socket unless you run Kunai **inside** WSL. Player diagnostics will mention `ipc-bootstrap` with extra hints (`--debug` / `KITSUNE_DEBUG=1` logs structured `ipcTransport` / `bootstrapMs`). See [.docs/cli-reference.md](./cli-reference.md#mpv-bridge-script-persistent-autoplay).
 
-**Playwright cannot find Chromium (future browser-runtime providers only)**
-
-```sh
-bunx playwright install chromium
-```
-
 **No stream resolved**
 
 Try a different provider from the shell picker, use provider fallback, or change the default provider in settings.
-If an experimental browser-runtime provider path is enabled in the future, install Playwright Chromium and retry.
+
+**Downloads are enabled but jobs do not start**
+
+Install `ffmpeg`, rerun `kunai --setup`, and confirm downloads are enabled.
 
 **Subtitles are missing or not selectable**
 
