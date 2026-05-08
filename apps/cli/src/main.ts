@@ -237,6 +237,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const { launchSessionApp } = await import("./app-shell/ink-shell");
   launchSessionApp(container);
   await maybeRunSetupWizard(args, container);
+  if (!capabilitySnapshot.mpv) {
+    console.error("\nmpv is required for playback. Install mpv and rerun Kunai.");
+    await shutdownShell();
+    if (process.stdin.isTTY) process.stdin.unref();
+    process.exit(1);
+  }
 
   // Run the main session loop
   try {

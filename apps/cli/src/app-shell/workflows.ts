@@ -73,6 +73,19 @@ async function chooseOption<T>({
   return openListShell({ title, subtitle, options, actionContext });
 }
 
+function packageInstallHint(pkg: "mpv" | "ffmpeg" | "imagemagick"): string {
+  if (process.platform === "darwin") {
+    return `brew install ${pkg}`;
+  }
+  if (process.platform === "linux") {
+    if (pkg === "imagemagick") {
+      return "sudo pacman -S imagemagick  ·  or  sudo apt install imagemagick";
+    }
+    return `sudo pacman -S ${pkg}  ·  or  sudo apt install ${pkg}`;
+  }
+  return `${pkg}: install via your system package manager`;
+}
+
 export async function runSetupWizard({
   container,
   force = false,
@@ -86,15 +99,16 @@ export async function runSetupWizard({
     return "skipped";
   }
 
-  const setupStepTitle = (step: number, title: string) => `[${step}/3] ${title}`;
+  const setupStepTitle = (step: number, title: string) => `[${step}/5] ${title}`;
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const capabilitySnapshot = container.capabilitySnapshot;
   const ffmpegAvailable = capabilitySnapshot?.ffmpeg ?? Boolean(Bun.which("ffmpeg"));
+  const magickAvailable = capabilitySnapshot?.magick ?? Boolean(Bun.which("magick"));
   const capabilityCard = [
     `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}`,
     `ffmpeg ${ffmpegAvailable ? "ready" : "missing"}`,
     `posters ${capabilitySnapshot?.kittyCompatible ? "enabled" : "limited"}`,
-    `magick ${capabilitySnapshot?.magick ? "ready" : "optional"}`,
+    `magick ${magickAvailable ? "ready" : "optional"}`,
   ].join("  ·  ");
 
   const startChoice = await chooseOption({
@@ -128,8 +142,51 @@ export async function runSetupWizard({
     return startChoice ? "skipped" : "cancelled";
   }
 
+  while (true) {
+    const dependencyReview = await chooseOption({
+      title: setupStepTitle(2, "Dependency Guide"),
+      subtitle:
+        capabilitySnapshot?.mpv === false
+          ? "mpv is missing and required. Install it, then rerun Kunai. Other items are optional."
+          : "Kunai works with mpv only. Downloads and richer posters are optional add-ons.",
+      options: [
+        {
+          value: "mpv" as const,
+          label: capabilitySnapshot?.mpv ? "mpv detected (required)" : "Install mpv (required)",
+          detail: packageInstallHint("mpv"),
+        },
+        {
+          value: "ffmpeg" as const,
+          label: ffmpegAvailable
+            ? "ffmpeg detected (downloads ready)"
+            : "Install ffmpeg for downloads",
+          detail: packageInstallHint("ffmpeg"),
+        },
+        {
+          value: "magick" as const,
+          label: magickAvailable
+            ? "ImageMagick detected"
+            : "Install ImageMagick for broader posters",
+          detail: packageInstallHint("imagemagick"),
+        },
+        {
+          value: "continue" as const,
+          label: "Continue setup",
+          detail: "Apply download preferences and finish onboarding",
+        },
+      ],
+    });
+
+    if (!dependencyReview) {
+      return "cancelled";
+    }
+    if (dependencyReview === "continue") {
+      break;
+    }
+  }
+
   const downloadChoice = await chooseOption({
-    title: setupStepTitle(2, "Offline Downloads"),
+    title: setupStepTitle(3, "Offline Downloads"),
     subtitle: ffmpegAvailable
       ? "ffmpeg detected — download queue can run immediately"
       : "ffmpeg not found — playback still works; downloads stay disabled until ffmpeg is installed",
@@ -154,28 +211,39 @@ export async function runSetupWizard({
   }
 
   let downloadPath = current.downloadPath;
-  if (downloadChoice === "enable") {
-    const pathChoice = await chooseOption({
-      title: setupStepTitle(3, "Download Location"),
-      subtitle: `Current: ${current.downloadPath || defaultDownloadPath}`,
-      options: [
-        {
-          value: "default" as const,
-          label: "Use default Kunai path",
-          detail: `${defaultDownloadPath}  ·  reliable fallback across sessions`,
-        },
-        {
-          value: "keep" as const,
-          label: "Keep current configured path",
-          detail: current.downloadPath || "No custom path configured yet",
-        },
-      ],
-    });
+  const pathChoice = await chooseOption({
+    title: setupStepTitle(4, "Download Location"),
+    subtitle:
+      downloadChoice === "enable"
+        ? `Current: ${current.downloadPath || defaultDownloadPath}`
+        : "Downloads are disabled, so location setup is optional for now",
+    options: [
+      {
+        value: "default" as const,
+        label: "Use default Kunai path",
+        detail: `${defaultDownloadPath}  ·  reliable fallback across sessions`,
+      },
+      {
+        value: "keep" as const,
+        label: "Keep current configured path",
+        detail: current.downloadPath || "No custom path configured yet",
+      },
+      {
+        value: "skip" as const,
+        label: "Skip path setup",
+        detail: "Keep current location without making changes",
+      },
+    ],
+  });
 
-    if (!pathChoice) {
-      return "cancelled";
-    }
-    downloadPath = pathChoice === "default" ? defaultDownloadPath : current.downloadPath;
+  if (!pathChoice) {
+    return "cancelled";
+  }
+  if (pathChoice === "default") {
+    downloadPath = defaultDownloadPath;
+  }
+  if (pathChoice === "keep") {
+    downloadPath = current.downloadPath;
   }
 
   await container.config.update({
@@ -188,17 +256,45 @@ export async function runSetupWizard({
 
   const finalDownloadPath =
     downloadChoice === "enable" ? downloadPath || defaultDownloadPath : "disabled";
-  await chooseOption({
-    title: "Setup Complete",
-    subtitle: `Downloads ${downloadChoice === "enable" ? "enabled" : "disabled"}  ·  Path ${finalDownloadPath}`,
-    options: [
-      {
-        value: "done" as const,
-        label: "Start using Kunai",
-        detail: "Tip: run /setup anytime to revisit this flow",
-      },
-    ],
-  });
+  while (true) {
+    const finalChoice = await chooseOption({
+      title: setupStepTitle(5, "Setup Complete"),
+      subtitle: `Downloads ${downloadChoice === "enable" ? "enabled" : "disabled"}  ·  Path ${finalDownloadPath}`,
+      options: [
+        {
+          value: "tips-command" as const,
+          label: "/ command palette",
+          detail: "Open global actions from anywhere in the TUI",
+        },
+        {
+          value: "tips-discover" as const,
+          label: "Ctrl+T refresh trending",
+          detail: "Reload discover lists in browse mode",
+        },
+        {
+          value: "tips-download" as const,
+          label: "d queue download during playback",
+          detail: "Use playback controls to queue offline jobs quickly",
+        },
+        {
+          value: "tips-rerun" as const,
+          label: "/setup reruns onboarding",
+          detail: "Change onboarding decisions anytime",
+        },
+        {
+          value: "done" as const,
+          label: "Start using Kunai",
+          detail: "Jump into search and start watching",
+        },
+      ],
+    });
+    if (!finalChoice) {
+      return "cancelled";
+    }
+    if (finalChoice === "done") {
+      break;
+    }
+  }
 
   container.diagnosticsStore.record({
     category: "session",

@@ -1,8 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { log } from "@clack/prompts";
-
 // ── Dependency check ───────────────────────────────────────────────────────
 
 export type CapabilitySeverity = "fatal" | "degraded";
@@ -78,7 +76,7 @@ export async function checkDeps(appVersion = "0.1.0"): Promise<CapabilitySnapsho
       message: "mpv not found — required for playback.",
       remediation,
     });
-    log.error("mpv not found — required for playback.");
+    console.error("mpv not found — required for playback.");
   }
 
   if (kittyCompatible && !magick) {
@@ -103,16 +101,12 @@ export async function checkDeps(appVersion = "0.1.0"): Promise<CapabilitySnapsho
 
   if (shouldShowRemediation) {
     for (const issue of snapshot.issues) {
-      log.message(`${issue.message}\nFix:\n  ${issue.remediation.join("\n  ")}`);
+      console.log(`${issue.message}\nFix:\n  ${issue.remediation.join("\n  ")}`);
     }
     await saveCapabilityNoticeState({
       version: appVersion,
       fingerprint,
     });
-  }
-
-  if (!mpv) {
-    process.exit(1);
   }
 
   return snapshot;
