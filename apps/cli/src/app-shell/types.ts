@@ -25,6 +25,7 @@ export type ShellAction =
   | "streams"
   | "source"
   | "quality"
+  | "download"
   | "pick-episode"
   | "next"
   | "previous"
@@ -167,6 +168,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "clear-history":
     case "export-diagnostics":
     case "report-issue":
+    case "download":
       return commandId;
   }
 }

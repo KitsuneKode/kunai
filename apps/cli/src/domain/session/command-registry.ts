@@ -28,7 +28,8 @@ export type AppCommandId =
   | "clear-cache"
   | "clear-history"
   | "export-diagnostics"
-  | "report-issue";
+  | "report-issue"
+  | "download";
 
 export type AppCommand = {
   readonly id: AppCommandId;
@@ -62,6 +63,7 @@ export const COMMAND_CONTEXTS = {
     "streams",
     "source",
     "quality",
+    "download",
     "next",
     "previous",
     "history",
@@ -84,6 +86,7 @@ export const COMMAND_CONTEXTS = {
     "streams",
     "source",
     "quality",
+    "download",
     "pick-episode",
     "next",
     "previous",
@@ -100,6 +103,12 @@ export const COMMAND_CONTEXTS = {
 export type CommandContextId = keyof typeof COMMAND_CONTEXTS;
 
 export const COMMANDS: readonly AppCommand[] = [
+  {
+    id: "download",
+    label: "Download Current Episode",
+    aliases: ["download", "offline", "save"],
+    description: "Queue the current resolved stream for offline download",
+  },
   {
     id: "search",
     label: "Search",
@@ -375,6 +384,7 @@ function resolveCommandState(
     state.playbackStatus === "stalled";
   const hasOverlay = state.activeModals.length > 0;
   const hasStreamCandidates = Boolean(state.stream?.providerResolveResult?.streams.length);
+  const hasResolvedStream = Boolean(state.stream?.url);
   const playbackCanRecover =
     state.playbackStatus === "loading" ||
     state.playbackStatus === "ready" ||
@@ -541,6 +551,20 @@ function resolveCommandState(
         : {
             enabled: false,
             reason: "No quality candidates were exposed for this stream.",
+          };
+
+    case "download":
+      if (!hasEpisode) {
+        return {
+          enabled: false,
+          reason: "Start playback before downloads are available.",
+        };
+      }
+      return hasResolvedStream
+        ? { enabled: true }
+        : {
+            enabled: false,
+            reason: "No resolved stream is available to download yet.",
           };
 
     case "pick-episode":

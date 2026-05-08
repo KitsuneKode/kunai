@@ -5,6 +5,7 @@ import type { TitleInfo } from "@/domain/types";
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import type { ShellAction } from "./types";
 import { handleShellAction } from "./workflows";
+import { resolveQuitWithDownloadQueue } from "./workflows";
 
 type RoutedActionResult =
   | "handled"
@@ -20,6 +21,7 @@ type RoutedActionResult =
   | "streams"
   | "source"
   | "quality"
+  | "download"
   | "pick-episode"
   | { type: "history-entry"; title: TitleInfo }
   | "unhandled";
@@ -54,7 +56,8 @@ export async function routeSearchShellAction({
 }): Promise<RoutedActionResult> {
   const { stateManager } = container;
 
-  if (action === "quit") return "quit";
+  if (action === "quit")
+    return (await resolveQuitWithDownloadQueue(container)) === "quit" ? "quit" : "handled";
   if (action === "trending") return "handled";
   if (action === "discover") return "handled";
   if (action === "toggle-mode") {
@@ -126,7 +129,8 @@ export async function routePlaybackShellAction({
 }): Promise<RoutedActionResult> {
   const { stateManager } = container;
 
-  if (action === "quit") return "quit";
+  if (action === "quit")
+    return (await resolveQuitWithDownloadQueue(container)) === "quit" ? "quit" : "handled";
   if (action === "toggle-mode") {
     switchSessionMode(stateManager);
     return "mode-switch";
@@ -141,6 +145,7 @@ export async function routePlaybackShellAction({
   if (action === "streams") return "streams";
   if (action === "source") return "source";
   if (action === "quality") return "quality";
+  if (action === "download") return "download";
   if (action === "pick-episode") return "pick-episode";
   if (action === "help") {
     await openRootOwnedOverlay(container, { type: "help" });

@@ -193,10 +193,12 @@ export function buildDiagnosticsPanelLines({
   state,
   recentEvents,
   capabilitySnapshot,
+  downloadSummary,
 }: {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
   capabilitySnapshot?: CapabilitySnapshot | null;
+  downloadSummary?: { active: number; completed: number } | null;
 }): readonly ShellPanelLine[] {
   const subtitleState = describeSubtitleState(state);
   const bufferingEvent = findRecentMpvEvent(recentEvents, "network-buffering");
@@ -306,6 +308,13 @@ export function buildDiagnosticsPanelLines({
               .join("  ·  ")
           : `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}  ·  ffmpeg ${capabilitySnapshot?.ffmpeg ? "ready" : "missing"}  ·  kitty ${capabilitySnapshot?.kittyCompatible ? "ready" : "off"}  ·  magick ${capabilitySnapshot?.magick ? "ready" : "missing"}`,
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
+    },
+    {
+      label: "Download queue",
+      detail: downloadSummary
+        ? `${downloadSummary.active} active  ·  ${downloadSummary.completed} completed`
+        : "queue status unavailable",
+      tone: downloadSummary && downloadSummary.active > 0 ? "info" : "neutral",
     },
     {
       label: "mpv buffering",

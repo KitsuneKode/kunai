@@ -14,7 +14,8 @@ export interface DiagnosticEvent {
     | "playback"
     | "cache"
     | "ui"
-    | "presence";
+    | "presence"
+    | "download";
   readonly message: string;
   readonly context?: Record<string, unknown>;
 }

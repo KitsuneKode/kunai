@@ -152,6 +152,20 @@ export class DownloadJobsRepository {
       .all(limit)
       .map(mapRow);
   }
+
+  listActive(limit = 100): readonly DownloadJobRecord[] {
+    return this.db
+      .query<DownloadJobRow, [number]>(
+        `
+          SELECT * FROM download_jobs
+          WHERE status IN ('queued', 'running')
+          ORDER BY created_at ASC
+          LIMIT ?
+        `,
+      )
+      .all(limit)
+      .map(mapRow);
+  }
 }
 
 function mapRow(row: DownloadJobRow): DownloadJobRecord {

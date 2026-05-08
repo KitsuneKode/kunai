@@ -677,6 +677,16 @@ function AppRoot({ container }: { container: Container }) {
                       );
                       return;
                     }
+                    if (action === "download") {
+                      void (async () => {
+                        const { enqueueCurrentPlaybackDownload } = await import("./workflows");
+                        await enqueueCurrentPlaybackDownload({
+                          container,
+                          reason: "active-playback-command",
+                        });
+                      })();
+                      return;
+                    }
                     if (action === "quit") {
                       void container.playerControl.stopCurrentPlayback(
                         "playback-loading-command-stop",
@@ -943,6 +953,7 @@ function PlaybackShell({
     footerActionFromCommand(commands, "streams", { key: "k", label: "streams" }, toShellAction),
     footerActionFromCommand(commands, "source", { key: "o", label: "source" }, toShellAction),
     footerActionFromCommand(commands, "quality", { key: "v", label: "quality" }, toShellAction),
+    footerActionFromCommand(commands, "download", { key: "d", label: "download" }, toShellAction),
     footerActionFromCommand(commands, "fallback", { key: "f", label: "fallback" }, toShellAction),
     footerActionFromCommand(
       commands,

@@ -14,6 +14,7 @@ import {
   buildPickerActionContext,
   openSubtitlePicker,
   handleShellAction,
+  enqueueCurrentPlaybackDownload,
 } from "@/app-shell/workflows";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
@@ -1484,6 +1485,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               preferredStreamSelection = streamSelectionFromStream(pickedStreamId);
               pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
               break postPlayback;
+            } else if (routedAction === "download") {
+              await enqueueCurrentPlaybackDownload({
+                container,
+                reason: "post-playback-command",
+              });
+              continue postPlayback;
             } else if (routedAction === "back-to-search") {
               return { status: "success", value: "back_to_search" };
             } else if (routedAction === "back-to-results") {

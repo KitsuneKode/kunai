@@ -19,6 +19,8 @@ export type EnqueueDownloadInput = {
 };
 
 export class DownloadService {
+  private queueWorkerRunning = false;
+
   constructor(
     private readonly deps: {
       readonly repo: DownloadJobsRepository;
@@ -63,6 +65,14 @@ export class DownloadService {
     return this.deps.repo.listCompleted(limit);
   }
 
+  listActive(limit = 100): readonly DownloadJobRecord[] {
+    return this.deps.repo.listActive(limit);
+  }
+
+  hasActiveJobs(): boolean {
+    return this.listActive(1).length > 0;
+  }
+
   async processNextQueued(): Promise<DownloadJobRecord | null> {
     const feature = resolveDownloadFeatureState({
       config: this.deps.config,
@@ -91,6 +101,33 @@ export class DownloadService {
       await rm(next.tempPath, { force: true }).catch(() => {});
       this.deps.logger.warn("Download failed", { jobId: next.id, error: message });
       return this.deps.repo.get(next.id) ?? null;
+    }
+  }
+
+  async processQueue(): Promise<void> {
+    if (this.queueWorkerRunning) {
+      return;
+    }
+    this.queueWorkerRunning = true;
+    try {
+      while (true) {
+        const processed = await this.processNextQueued();
+        if (!processed) {
+          break;
+        }
+      }
+    } finally {
+      this.queueWorkerRunning = false;
+    }
+  }
+
+  async drainQueue(maxWaitMs = 60_000): Promise<void> {
+    const deadline = Date.now() + maxWaitMs;
+    while (this.hasActiveJobs() && Date.now() < deadline) {
+      await this.processQueue();
+      if (this.hasActiveJobs()) {
+        await Bun.sleep(250);
+      }
     }
   }
 

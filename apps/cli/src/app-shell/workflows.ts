@@ -421,7 +421,7 @@ export async function handleShellAction({
   };
 
   if (action === "quit") {
-    return "quit";
+    return await resolveQuitWithDownloadQueue(container);
   }
 
   if (action === "history") {
@@ -731,6 +731,94 @@ export async function handleShellAction({
   }
 
   return "unhandled";
+}
+
+export async function enqueueCurrentPlaybackDownload({
+  container,
+  reason,
+}: {
+  container: Container;
+  reason: string;
+}): Promise<boolean> {
+  const state = container.stateManager.getState();
+  if (!state.currentTitle || !state.currentEpisode || !state.stream) {
+    return false;
+  }
+
+  const job = await container.downloadService.enqueue({
+    title: state.currentTitle,
+    episode: state.currentEpisode,
+    stream: state.stream,
+    providerId: state.provider,
+  });
+  container.diagnosticsStore.record({
+    category: "download",
+    message: "Download queued",
+    context: {
+      reason,
+      jobId: job.id,
+      titleId: job.titleId,
+      season: job.season,
+      episode: job.episode,
+      provider: job.providerId,
+      outputPath: job.outputPath,
+    },
+  });
+  void container.downloadService.processQueue();
+  return true;
+}
+
+export async function resolveQuitWithDownloadQueue(
+  container: Container,
+): Promise<"handled" | "quit" | "unhandled"> {
+  if (!container.downloadService.hasActiveJobs()) {
+    return "quit";
+  }
+
+  const { openListShell } = await import("./ink-shell");
+  const choice = await openListShell({
+    title: "Active downloads running",
+    subtitle: "Choose whether to keep, wait, or cancel downloads before quitting",
+    options: [
+      {
+        value: "keep" as const,
+        label: "Quit and keep downloads queued",
+        detail: "Download queue stays in SQLite; processing resumes when Kunai runs again",
+      },
+      {
+        value: "wait" as const,
+        label: "Wait for downloads to finish, then quit",
+        detail: "Process queued and running jobs before exiting",
+      },
+      {
+        value: "cancel" as const,
+        label: "Cancel active downloads, then quit",
+        detail: "Abort queued/running jobs and remove temp files",
+      },
+      {
+        value: "stay" as const,
+        label: "Stay in Kunai",
+      },
+    ],
+  });
+
+  if (!choice || choice === "stay") {
+    return "handled";
+  }
+
+  if (choice === "wait") {
+    await container.downloadService.drainQueue();
+    return "quit";
+  }
+
+  if (choice === "cancel") {
+    for (const job of container.downloadService.listActive(200)) {
+      await container.downloadService.abort(job.id);
+    }
+    return "quit";
+  }
+
+  return "quit";
 }
 
 export async function openProviderPicker({

@@ -62,6 +62,10 @@ export function buildShellRuntimeBindings(container: Container) {
         state: stateManager.getState(),
         recentEvents: diagnosticsStore.getRecent(10),
         capabilitySnapshot: container.capabilitySnapshot,
+        downloadSummary: {
+          active: container.downloadService.listActive(200).length,
+          completed: container.downloadService.listCompleted(200).length,
+        },
       }),
     loadHistoryPanel: async () =>
       buildHistoryPanelLines(Object.entries(await historyStore.getAll())),
