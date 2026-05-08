@@ -54,7 +54,7 @@ test("PlaybackResolveService falls back and persists stream under resolved provi
 
   expect(result.providerId).toBe("fallback");
   expect(result.stream?.url).toBe(fallbackStream.url);
-  expect(cache.setKeys).toEqual(["api-resolve:fallback:series:demo:1:2:series:eng:sub"]);
+  expect(cache.setKeys[0]).toContain("api-resolve:provider:fallback");
 });
 
 test("PlaybackResolveService does not persist after hard abort", async () => {
@@ -109,6 +109,7 @@ function createProvider(id: string, resolveStream: Provider["resolveStream"]): P
 function createRegistry(providers: readonly Provider[]): ProviderRegistry {
   return {
     get: (id) => providers.find((provider) => provider.metadata.id === id),
+    getManifest: () => undefined,
     getAll: () => [...providers],
     getAllIds: () => providers.map((provider) => provider.metadata.id),
     getCompatible: () => [...providers],

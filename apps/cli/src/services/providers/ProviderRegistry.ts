@@ -5,12 +5,14 @@
 // =============================================================================
 
 import type { TitleInfo, ProviderMetadata, ShellMode } from "@/domain/types";
+import type { CoreProviderManifest } from "@kunai/core";
 
 import { manifestToProviderMetadata } from "./core-manifest-adapter";
 import type { Provider, ProviderDefinition, ProviderDeps } from "./Provider";
 
 export interface ProviderRegistry {
   get(id: string): Provider | undefined;
+  getManifest(id: string): CoreProviderManifest | undefined;
   getAll(): Provider[];
   getAllIds(): string[];
   getCompatible(title: TitleInfo, mode?: ShellMode): Provider[];
@@ -35,6 +37,10 @@ export class ProviderRegistryImpl implements ProviderRegistry {
 
   get(id: string): Provider | undefined {
     return this.providers.get(id);
+  }
+
+  getManifest(id: string): CoreProviderManifest | undefined {
+    return this.definitions.get(id)?.manifest;
   }
 
   getAll(): Provider[] {

@@ -178,8 +178,10 @@ export class PlaybackResolveService {
   }
 
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {
+    const providerManifest = this.deps.providerRegistry.getManifest(providerId);
     return buildApiStreamResolveCacheKey({
       providerId,
+      providerManifest,
       title: input.title,
       episode: input.episode,
       mode: input.mode,
