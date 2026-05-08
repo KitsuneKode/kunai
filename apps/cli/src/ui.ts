@@ -8,7 +8,7 @@ import { log } from "@clack/prompts";
 export type CapabilitySeverity = "fatal" | "degraded";
 
 export interface CapabilityIssue {
-  readonly id: "mpv-missing" | "ffmpeg-missing";
+  readonly id: "mpv-missing" | "ffmpeg-missing" | "poster-rendering-limited";
   readonly severity: CapabilitySeverity;
   readonly message: string;
   readonly remediation: readonly string[];
@@ -17,6 +17,8 @@ export interface CapabilityIssue {
 export interface CapabilitySnapshot {
   readonly mpv: boolean;
   readonly ffmpeg: boolean;
+  readonly kittyCompatible: boolean;
+  readonly magick: boolean;
   readonly issues: readonly CapabilityIssue[];
 }
 
@@ -33,7 +35,7 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
     .map((issue) => `${issue.id}:${issue.severity}`)
     .sort()
     .join(",");
-  return `mpv:${snapshot.mpv ? "1" : "0"}|ffmpeg:${snapshot.ffmpeg ? "1" : "0"}|issues:${issueBits}`;
+  return `mpv:${snapshot.mpv ? "1" : "0"}|ffmpeg:${snapshot.ffmpeg ? "1" : "0"}|kitty:${snapshot.kittyCompatible ? "1" : "0"}|magick:${snapshot.magick ? "1" : "0"}|issues:${issueBits}`;
 }
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
@@ -59,6 +61,10 @@ export async function checkDeps(appVersion = "2.0.0-beta"): Promise<CapabilitySn
   const issues: CapabilityIssue[] = [];
   const mpv = Boolean(Bun.which("mpv"));
   const ffmpeg = Boolean(Bun.which("ffmpeg"));
+  const magick = Boolean(Bun.which("magick"));
+  const kittyCompatible = Boolean(
+    process.env.KITTY_WINDOW_ID || process.env.TERM_PROGRAM?.toLowerCase() === "ghostty",
+  );
 
   if (!mpv) {
     const remediation = [
@@ -75,7 +81,21 @@ export async function checkDeps(appVersion = "2.0.0-beta"): Promise<CapabilitySn
     log.error("mpv not found — required for playback.");
   }
 
-  const snapshot: CapabilitySnapshot = { mpv, ffmpeg, issues };
+  if (kittyCompatible && !magick) {
+    issues.push({
+      id: "poster-rendering-limited",
+      severity: "degraded",
+      message:
+        "Kitty/Ghostty detected, but ImageMagick is missing. Poster previews may be unavailable for non-PNG images.",
+      remediation: [
+        "Arch:   sudo pacman -S imagemagick",
+        "Debian: sudo apt install imagemagick",
+        "macOS:  brew install imagemagick",
+      ],
+    });
+  }
+
+  const snapshot: CapabilitySnapshot = { mpv, ffmpeg, kittyCompatible, magick, issues };
   const fingerprint = capabilityFingerprint(snapshot);
   const previous = await loadCapabilityNoticeState();
   const shouldShowRemediation =

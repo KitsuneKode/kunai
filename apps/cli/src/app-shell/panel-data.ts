@@ -304,7 +304,7 @@ export function buildDiagnosticsPanelLines({
           ? capabilitySnapshot.issues
               .map((issue) => `${issue.id} (${issue.severity})`)
               .join("  ·  ")
-          : `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}  ·  ffmpeg ${capabilitySnapshot?.ffmpeg ? "ready" : "missing"}`,
+          : `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}  ·  ffmpeg ${capabilitySnapshot?.ffmpeg ? "ready" : "missing"}  ·  kitty ${capabilitySnapshot?.kittyCompatible ? "ready" : "off"}  ·  magick ${capabilitySnapshot?.magick ? "ready" : "missing"}`,
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
     },
     {

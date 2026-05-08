@@ -1,7 +1,7 @@
 {
   "name": "kunai-cli",
   "version": "0.1.0-beta.0",
-  "description": "Elite terminal-first streaming engine. Resolves direct provider streams and launches mpv.",
+  "description": "Terminal-first media streaming CLI that resolves provider streams and launches mpv.",
   "keywords": [
     "anime",
     "bun",
@@ -24,10 +24,15 @@
     "kunai": "./dist/kunai.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "type": "module",
   "module": "./dist/kunai.js",
+  "exports": {
+    "./package.json": "./package.json"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -63,11 +68,6 @@
   "dependencies": {
     "@clack/prompts": "^1.3.0",
     "@kitsunekode/run-cli": "^0.1.0",
-    "@kunai/core": "workspace:*",
-    "@kunai/design": "workspace:*",
-    "@kunai/providers": "workspace:*",
-    "@kunai/storage": "workspace:*",
-    "@kunai/types": "workspace:*",
     "@types/react": "^19.2.14",
     "ink": "^7.0.2",
     "react": "^19.2.6"
