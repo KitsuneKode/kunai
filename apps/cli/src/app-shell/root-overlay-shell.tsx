@@ -46,6 +46,15 @@ import { CommandPalette, useShellInput } from "./shell-command-ui";
 import { InlineBadge, ShellFooter } from "./shell-primitives";
 import type { FooterAction, ShellPanelLine } from "./types";
 
+function getLatestPresenceErrorDetail(container: Container): string | null {
+  const event = container.diagnosticsStore
+    .getRecent(20)
+    .find((entry) => entry.category === "presence" && entry.context?.error);
+  const raw = event?.context?.error;
+  if (typeof raw !== "string" || raw.trim().length === 0) return null;
+  return raw.trim();
+}
+
 export function RootOverlayShell({
   overlay,
   state,
@@ -204,7 +213,7 @@ export function RootOverlayShell({
             type: "settings",
             title: "Settings",
             subtitle: buildSettingsSummary(settingsDraft),
-            options: buildSettingsOptions(settingsDraft),
+            options: buildSettingsOptions(settingsDraft, container.presence.getSnapshot()),
             filterQuery: "",
             selectedIndex,
             dirty: !settingsEqual(settingsDraft, container.config.getRaw()),
@@ -444,37 +453,44 @@ export function RootOverlayShell({
           setSettingsError(null);
           return;
         }
-        if (picked.value === "presenceConnect") {
+        if (picked.value === "presenceConnection") {
+          if (settingsDraft.presenceProvider !== "discord") {
+            setSettingsError("Set Presence to Discord first, then retry this action.");
+            return;
+          }
+          const currentSnapshot = container.presence.getSnapshot();
+          const shouldDisconnect = currentSnapshot.status === "ready";
           setSettingsBusy(true);
           setSettingsError(null);
           void (async () => {
             try {
-              const { applySettingsToRuntime } = await import("./workflows");
-              await applySettingsToRuntime({
-                container,
-                next: settingsDraft,
-                previous: container.config.getRaw(),
-              });
-              const snapshot = await container.presence.connect();
-              setSettingsDraft(container.config.getRaw());
-              setSettingsError(`Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`);
+              if (shouldDisconnect) {
+                const snapshot = await container.presence.disconnect("settings-disconnect");
+                setSettingsError(`Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`);
+              } else {
+                const { applySettingsToRuntime } = await import("./workflows");
+                await applySettingsToRuntime({
+                  container,
+                  next: settingsDraft,
+                  previous: container.config.getRaw(),
+                });
+                const snapshot = await container.presence.connect();
+                setSettingsDraft(container.config.getRaw());
+                if (snapshot.status === "ready") {
+                  setSettingsError(`Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`);
+                } else {
+                  const errorDetail = getLatestPresenceErrorDetail(container);
+                  setSettingsError(
+                    errorDetail
+                      ? `Discord presence: ${snapshot.status}  ·  ${snapshot.detail}  ·  ${errorDetail}`
+                      : `Discord presence: ${snapshot.status}  ·  ${snapshot.detail}  ·  Make sure Discord desktop is running, then retry connect.`,
+                  );
+                }
+              }
             } catch (error) {
-              setSettingsError(`Failed to connect Discord presence: ${String(error)}`);
-            } finally {
-              setSettingsBusy(false);
-            }
-          })();
-          return;
-        }
-        if (picked.value === "presenceDisconnect") {
-          setSettingsBusy(true);
-          setSettingsError(null);
-          void (async () => {
-            try {
-              const snapshot = await container.presence.disconnect("settings-disconnect");
-              setSettingsError(`Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`);
-            } catch (error) {
-              setSettingsError(`Failed to disconnect Discord presence: ${String(error)}`);
+              setSettingsError(
+                `Failed to ${shouldDisconnect ? "disconnect" : "connect"} Discord presence: ${String(error)}`,
+              );
             } finally {
               setSettingsBusy(false);
             }
@@ -493,6 +509,12 @@ export function RootOverlayShell({
             const { handleShellAction } = await import("./workflows");
             await handleShellAction({ action: "clear-history", container });
           })();
+          return;
+        }
+        if (picked.value === "presenceStatus") {
+          setSettingsError(
+            `Discord presence: ${container.presence.getSnapshot().status}  ·  ${container.presence.getSnapshot().detail}`,
+          );
           return;
         }
         setSettingsChoice(picked.value as SettingsChoiceValue);

@@ -17,6 +17,18 @@ type DiscordRpcClient = {
   on(event: "ready", callback: () => void): void;
 };
 
+type NodeBridgeRequest = {
+  readonly id: number;
+  readonly method: "login" | "setActivity" | "clearActivity" | "destroy";
+  readonly params?: Record<string, unknown>;
+};
+
+type NodeBridgeResponse = {
+  readonly id: number;
+  readonly ok: boolean;
+  readonly error?: string;
+};
+
 const DEFAULT_DISCORD_CLIENT_ID = "1502307419047461025";
 
 export class PresenceServiceImpl implements PresenceService {
@@ -24,6 +36,7 @@ export class PresenceServiceImpl implements PresenceService {
   private discordClient: DiscordRpcClient | null = null;
   private connectPromise: Promise<DiscordRpcClient | null> | null = null;
   private unavailableUntilRestart = false;
+  private unavailableReason: string | null = null;
 
   constructor(
     private readonly deps: {
@@ -47,6 +60,7 @@ export class PresenceServiceImpl implements PresenceService {
       privacy: this.deps.config.presencePrivacy,
       clientIdSource: resolvePresenceClientIdSource(this.deps.config),
       unavailableUntilRestart: this.unavailableUntilRestart,
+      unavailableReason: this.unavailableReason,
     });
   }
 
@@ -58,6 +72,7 @@ export class PresenceServiceImpl implements PresenceService {
     if (this.deps.config.presenceProvider !== "discord") return this.getSnapshot();
 
     this.unavailableUntilRestart = false;
+    this.unavailableReason = null;
     await this.ensureDiscordClient();
     return this.getSnapshot();
   }
@@ -68,6 +83,7 @@ export class PresenceServiceImpl implements PresenceService {
     this.discordClient = null;
     this.connectPromise = null;
     this.unavailableUntilRestart = false;
+    this.unavailableReason = null;
     if (client) {
       await client.destroy().catch(() => undefined);
       this.deps.diagnosticsStore.record({
@@ -118,6 +134,7 @@ export class PresenceServiceImpl implements PresenceService {
     this.discordClient = null;
     this.connectPromise = null;
     this.unavailableUntilRestart = false;
+    this.unavailableReason = null;
     if (!client) return;
     await client.destroy().catch(() => undefined);
     this.status = this.deps.config.presenceProvider === "off" ? "disabled" : "idle";
@@ -142,6 +159,19 @@ export class PresenceServiceImpl implements PresenceService {
 
   private async createDiscordClient(clientId: string): Promise<DiscordRpcClient | null> {
     try {
+      if (typeof Bun !== "undefined") {
+        const bridgeClient = await createNodeBridgeDiscordClient(clientId);
+        this.discordClient = bridgeClient;
+        this.status = "ready";
+        this.unavailableReason = null;
+        this.deps.diagnosticsStore.record({
+          category: "presence",
+          message: "Discord presence connected",
+          context: { provider: "discord", transport: "node-bridge" },
+        });
+        return bridgeClient;
+      }
+
       const packageName = "discord-rpc";
       const mod = (await import(packageName)) as {
         default?: { Client: new (opts: { transport: "ipc" }) => DiscordRpcClient };
@@ -156,6 +186,7 @@ export class PresenceServiceImpl implements PresenceService {
       await client.login({ clientId });
       this.discordClient = client;
       this.status = "ready";
+      this.unavailableReason = null;
       this.deps.diagnosticsStore.record({
         category: "presence",
         message: "Discord presence connected",
@@ -171,16 +202,220 @@ export class PresenceServiceImpl implements PresenceService {
   private markUnavailable(message: string, error: unknown): void {
     this.status = "unavailable";
     this.unavailableUntilRestart = true;
+    this.unavailableReason = normalizePresenceError(error);
     this.deps.diagnosticsStore.record({
       category: "presence",
       message,
       context: {
         provider: "discord",
-        error: String(error),
+        error: this.unavailableReason ?? String(error),
         retry: "disabled-until-restart",
       },
     });
   }
+}
+
+function normalizePresenceError(error: unknown): string {
+  const raw = String(error).trim();
+  if (raw.startsWith("Error: ")) return raw.slice("Error: ".length);
+  return raw;
+}
+
+class NodeBridgeDiscordRpcClient implements DiscordRpcClient {
+  private nextId = 1;
+  private readonly pending = new Map<
+    number,
+    { resolve: () => void; reject: (error: Error) => void }
+  >();
+  private closed = false;
+  private readyCallback: (() => void) | null = null;
+  private readonly child: ReturnType<typeof Bun.spawn>;
+
+  constructor(child: ReturnType<typeof Bun.spawn>) {
+    this.child = child;
+    if (child.stdout instanceof ReadableStream) {
+      this.readStream(child.stdout, (line) => this.handleStdoutLine(line));
+    }
+    if (child.stderr instanceof ReadableStream) {
+      this.readStream(child.stderr, () => undefined);
+    }
+    void child.exited.then((exitCode) => {
+      if (this.closed) return;
+      this.closed = true;
+      for (const [, pending] of this.pending) {
+        pending.reject(new Error(`Discord RPC bridge exited (${exitCode})`));
+      }
+      this.pending.clear();
+      return undefined;
+    });
+  }
+
+  on(event: "ready", callback: () => void): void {
+    if (event === "ready") this.readyCallback = callback;
+  }
+
+  async login(input: { clientId: string }): Promise<void> {
+    await this.request("login", { clientId: input.clientId });
+    this.readyCallback?.();
+  }
+
+  async setActivity(activity: Record<string, unknown>): Promise<void> {
+    await this.request("setActivity", { activity });
+  }
+
+  async clearActivity(): Promise<void> {
+    await this.request("clearActivity");
+  }
+
+  async destroy(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    try {
+      await this.request("destroy");
+    } finally {
+      this.child.kill();
+      const stdin = this.child.stdin;
+      if (stdin && typeof stdin !== "number" && "end" in stdin && typeof stdin.end === "function") {
+        stdin.end();
+      }
+    }
+  }
+
+  private request(
+    method: NodeBridgeRequest["method"],
+    params?: Record<string, unknown>,
+  ): Promise<void> {
+    if (this.closed) return Promise.reject(new Error("Discord RPC bridge closed"));
+
+    const id = this.nextId++;
+    const payload: NodeBridgeRequest = { id, method, params };
+    const serialized = `${JSON.stringify(payload)}\n`;
+    const promise = new Promise<void>((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+    });
+    const stdin = this.child.stdin;
+    if (!stdin || typeof stdin === "number" || typeof stdin.write !== "function") {
+      this.pending.delete(id);
+      return Promise.reject(new Error("Discord RPC bridge stdin is unavailable"));
+    }
+    const wrote = stdin.write(serialized);
+    if (wrote === 0) {
+      this.pending.delete(id);
+      return Promise.reject(new Error("Discord RPC bridge stdin is not writable"));
+    }
+
+    return promise;
+  }
+
+  private handleStdoutLine(line: string): void {
+    let message: NodeBridgeResponse | null = null;
+    try {
+      message = JSON.parse(line) as NodeBridgeResponse;
+    } catch {
+      return;
+    }
+    if (!message || typeof message.id !== "number") return;
+    const pending = this.pending.get(message.id);
+    if (!pending) return;
+    this.pending.delete(message.id);
+    if (message.ok) {
+      pending.resolve();
+      return;
+    }
+    pending.reject(new Error(message.error ?? "Discord RPC bridge request failed"));
+  }
+
+  private readStream(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void): void {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const pump = async (): Promise<void> => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (buffer.trim().length > 0) onLine(buffer.trim());
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex = buffer.indexOf("\n");
+        while (newlineIndex >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          if (line.length > 0) onLine(line);
+          newlineIndex = buffer.indexOf("\n");
+        }
+      }
+    };
+
+    void pump();
+  }
+}
+
+async function createNodeBridgeDiscordClient(clientId: string): Promise<DiscordRpcClient> {
+  const nodePath = Bun.which("node");
+  if (!nodePath) {
+    throw new Error("node binary not found for Discord RPC bridge");
+  }
+
+  const bridgeScript = [
+    "const RPC = require('discord-rpc');",
+    "const readline = require('node:readline');",
+    "let client = null;",
+    "const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\\n');",
+    "const destroyClient = async () => {",
+    "  if (!client) return;",
+    "  try { await client.destroy(); } catch {}",
+    "  client = null;",
+    "};",
+    "const handle = async (line) => {",
+    "  let req;",
+    "  try { req = JSON.parse(line); } catch { return; }",
+    "  const id = req && typeof req.id === 'number' ? req.id : -1;",
+    "  try {",
+    "    if (req.method === 'login') {",
+    "      await destroyClient();",
+    "      client = new RPC.Client({ transport: 'ipc' });",
+    "      await client.login({ clientId: String(req.params?.clientId || '') });",
+    "      send({ id, ok: true });",
+    "      return;",
+    "    }",
+    "    if (req.method === 'setActivity') {",
+    "      if (!client) throw new Error('not-connected');",
+    "      await client.setActivity(req.params?.activity || {});",
+    "      send({ id, ok: true });",
+    "      return;",
+    "    }",
+    "    if (req.method === 'clearActivity') {",
+    "      if (client) await client.clearActivity();",
+    "      send({ id, ok: true });",
+    "      return;",
+    "    }",
+    "    if (req.method === 'destroy') {",
+    "      await destroyClient();",
+    "      send({ id, ok: true });",
+    "      return;",
+    "    }",
+    "    throw new Error('unsupported-method');",
+    "  } catch (error) {",
+    "    send({ id, ok: false, error: String(error && error.message ? error.message : error) });",
+    "  }",
+    "};",
+    "const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });",
+    "rl.on('line', (line) => { void handle(line); });",
+    "process.on('SIGINT', async () => { await destroyClient(); process.exit(0); });",
+    "process.on('SIGTERM', async () => { await destroyClient(); process.exit(0); });",
+  ].join("");
+
+  const child = Bun.spawn([nodePath, "-e", bridgeScript], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const client = new NodeBridgeDiscordRpcClient(child);
+  await client.login({ clientId });
+  return client;
 }
 
 export function buildDiscordActivity(
@@ -254,7 +489,7 @@ export function resolvePresenceClientIdSource(
   if ((env?.KUNAI_DISCORD_CLIENT_ID ?? process.env.KUNAI_DISCORD_CLIENT_ID)?.trim()) {
     return "environment";
   }
-  return "missing";
+  return "config";
 }
 
 export function buildPresenceSnapshot({
@@ -263,12 +498,14 @@ export function buildPresenceSnapshot({
   privacy,
   clientIdSource,
   unavailableUntilRestart,
+  unavailableReason,
 }: {
   readonly status: PresenceStatus;
   readonly provider: "off" | "discord";
   readonly privacy: "full" | "private";
   readonly clientIdSource: PresenceClientIdSource;
   readonly unavailableUntilRestart: boolean;
+  readonly unavailableReason?: string | null;
 }): PresenceSnapshot {
   if (provider === "off") {
     return {
@@ -299,7 +536,9 @@ export function buildPresenceSnapshot({
       privacy,
       clientIdSource,
       canConnect: false,
-      detail: "unavailable until settings reconnect",
+      detail: unavailableReason
+        ? `unavailable  ·  ${unavailableReason}  ·  reconnect from settings`
+        : "unavailable until settings reconnect",
     };
   }
 

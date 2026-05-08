@@ -56,10 +56,21 @@ test("settings expose Discord presence onboarding actions", () => {
   const options = buildSettingsOptions(config);
 
   expect(options.map((option) => option.value)).toContain("presenceDiscordClientId");
-  expect(options.map((option) => option.value)).toContain("presenceConnect");
-  expect(options.map((option) => option.value)).toContain("presenceDisconnect");
+  expect(options.map((option) => option.value)).toContain("presenceConnection");
   expect(options.find((option) => option.value === "presenceDiscordClientId")?.label).toContain(
     "configured",
+  );
+});
+
+test("settings show bundled default client id source when no explicit id is set", () => {
+  const options = buildSettingsOptions({
+    ...DEFAULT_CONFIG,
+    presenceProvider: "discord",
+    presenceDiscordClientId: "",
+  });
+
+  expect(options.find((option) => option.value === "presenceDiscordClientId")?.label).toContain(
+    "bundled default",
   );
 });
 

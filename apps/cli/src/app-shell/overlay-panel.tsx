@@ -3,6 +3,8 @@ import type {
   QuitNearEndBehavior,
   QuitNearEndThresholdMode,
 } from "@/services/persistence/ConfigService";
+import type { PresenceSnapshot } from "@/services/presence/PresenceService";
+import { resolvePresenceClientIdSource } from "@/services/presence/PresenceServiceImpl";
 import { Box, Text } from "ink";
 
 import { PickerOptionRow } from "./overlay-picker-row";
@@ -82,9 +84,9 @@ type SettingsAction =
   | "footerHints"
   | "presenceProvider"
   | "presencePrivacy"
+  | "presenceStatus"
   | "presenceDiscordClientId"
-  | "presenceConnect"
-  | "presenceDisconnect"
+  | "presenceConnection"
   | "clearCache"
   | "clearHistory";
 
@@ -190,14 +192,41 @@ export function buildSettingsSummary(config: KitsuneConfig): string {
 }
 
 function describeDiscordClientId(config: KitsuneConfig): string {
+  const source = resolvePresenceClientIdSource(config);
+  if (source === "environment") return "env";
   if (config.presenceDiscordClientId.trim()) return "configured";
-  if (process.env.KUNAI_DISCORD_CLIENT_ID?.trim()) return "env";
-  return "missing";
+  return "bundled default";
 }
 
 export function buildSettingsOptions(
   config: KitsuneConfig,
+  presenceSnapshot?: PresenceSnapshot | null,
 ): readonly ShellPickerOption<SettingsAction>[] {
+  const presenceStatus =
+    presenceSnapshot?.status ?? (config.presenceProvider === "off" ? "disabled" : "idle");
+  const presenceConnected = config.presenceProvider === "discord" && presenceStatus === "ready";
+  const presenceConnectionLabel =
+    config.presenceProvider !== "discord"
+      ? "Connect Discord now"
+      : presenceConnected
+        ? "Disconnect Discord"
+        : presenceStatus === "unavailable" || presenceStatus === "error"
+          ? "Reconnect Discord now"
+          : "Connect Discord now";
+  const presenceConnectionDetail =
+    config.presenceProvider !== "discord"
+      ? "Set Presence to Discord first, then connect local Discord IPC"
+      : presenceConnected
+        ? "Clear Rich Presence and close the local Discord IPC client"
+        : presenceStatus === "unavailable" || presenceStatus === "error"
+          ? "Retry local Discord IPC connection after a failed attempt"
+          : "Save pending settings and verify local Discord IPC without starting playback";
+  const presenceStatusDetail =
+    presenceSnapshot?.detail ??
+    (config.presenceProvider === "off"
+      ? "off"
+      : "ready to connect. Connect now to verify local Discord IPC.");
+
   return [
     {
       value: "defaultMode",
@@ -286,19 +315,25 @@ export function buildSettingsOptions(
       detail: "Controls how much title detail presence integrations may expose",
     },
     {
+      value: "presenceStatus",
+      label: `Discord status  ·  ${presenceStatus}`,
+      detail: presenceStatusDetail,
+      tone:
+        presenceStatus === "ready"
+          ? "success"
+          : presenceStatus === "unavailable" || presenceStatus === "error"
+            ? "warning"
+            : "info",
+    },
+    {
       value: "presenceDiscordClientId",
       label: `Discord client ID  ·  ${describeDiscordClientId(config)}`,
       detail: "Type a Discord application client id, or use KUNAI_DISCORD_CLIENT_ID",
     },
     {
-      value: "presenceConnect",
-      label: "Connect Discord now",
-      detail: "Save pending settings and verify local Discord IPC without starting playback",
-    },
-    {
-      value: "presenceDisconnect",
-      label: "Disconnect Discord",
-      detail: "Clear Rich Presence and close the local Discord IPC client",
+      value: "presenceConnection",
+      label: presenceConnectionLabel,
+      detail: presenceConnectionDetail,
     },
     {
       value: "clearCache",
