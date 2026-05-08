@@ -70,6 +70,7 @@ export type PlaybackShellState = {
   memoryUsage?: string;
   providerHealth?: ShellPanelLine;
   networkHealth?: ShellPanelLine;
+  lastQueuedDownload?: string;
   status?: ShellStatus;
   commands?: readonly ResolvedAppCommand[];
   footerMode?: ShellFooterMode;

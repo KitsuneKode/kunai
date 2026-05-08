@@ -1311,6 +1311,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               recentEvents: diagnosticsStore.getRecent(25),
               currentProvider: resolvedProviderId,
             });
+            const lastQueuedDownload = (() => {
+              const latest = container.downloadService.listActive(200).at(-1);
+              if (!latest) return undefined;
+              const episodeLabel =
+                latest.season !== undefined && latest.episode !== undefined
+                  ? `S${String(latest.season).padStart(2, "0")}E${String(latest.episode).padStart(2, "0")}`
+                  : "movie";
+              return `${latest.titleName} ${episodeLabel}  ·  ${latest.status}`;
+            })();
             const postAction = await openPlaybackShell({
               state: {
                 type: title.type,
@@ -1327,6 +1336,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 showMemory: config.showMemory,
                 providerHealth: runtimeHealth.provider,
                 networkHealth: runtimeHealth.network,
+                lastQueuedDownload,
                 mode: stateManager.getState().mode,
                 resumeLabel: canResumePlayback
                   ? `resume ${formatTimestamp(resumeSeconds)}`

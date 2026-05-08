@@ -585,7 +585,7 @@ function AppRoot({ container }: { container: Container }) {
                     state.playbackStatus === "buffering" ||
                     state.playbackStatus === "seeking" ||
                     state.playbackStatus === "stalled"
-                      ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  u ${state.autoskipSessionPaused ? "resume autoskip" : "pause autoskip"}  ·  e episodes  ·  k streams  ·  r recover`
+                      ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  u ${state.autoskipSessionPaused ? "resume autoskip" : "pause autoskip"}  ·  e episodes  ·  k streams  ·  d download  ·  r recover`
                       : undefined,
                   commands: resolveCommandContext(state, "activePlayback"),
                   footerMode: "detailed",
@@ -1066,6 +1066,9 @@ function PlaybackShell({
                   }
                   tone={state.autoplayPaused ? "warning" : "success"}
                 />
+                {state.lastQueuedDownload ? (
+                  <DetailLine label="Downloads" value={state.lastQueuedDownload} tone="info" />
+                ) : null}
                 {state.showMemory && state.memoryUsage ? (
                   <DetailLine label="Memory" value={state.memoryUsage} />
                 ) : null}
