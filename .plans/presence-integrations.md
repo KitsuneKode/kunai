@@ -1,6 +1,6 @@
 # Presence Integrations Plan
 
-Status: partially implemented; client-id entry flow and runtime smoke remaining
+Status: partially implemented; client-id entry flow and richer setup UX remaining
 
 ## Current Behavior
 
@@ -17,7 +17,7 @@ Status: partially implemented; client-id entry flow and runtime smoke remaining
 
 - Add a settings flow for entering or clearing `presenceDiscordClientId`.
 - Add `/presence` or settings detail copy that explains required Discord setup.
-- Keep `discord-rpc` optional; do not force it into core install unless packaging proves that is simpler.
+- Keep `discord-rpc` optional at runtime (now shipped as an optional dependency in CLI package).
 
 ### Slice 2: Diagnostics And Help
 

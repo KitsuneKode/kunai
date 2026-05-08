@@ -60,7 +60,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - `cineby-anime` click handling parity
 - Final compatibility wrapper cleanup once `apps/cli/index.ts` is no longer useful
 - Phase 1.5 true root shell foundation after the scoped Turborepo move
-- First-run dependency guardrails for `mpv` and Playwright
+- First-run dependency guardrails for `mpv`, `ffmpeg`, and terminal image support
 - Developer-mode diagnostics surface for stream, subtitle, and provider resolution stages
 - Metadata-store and preview-service migration beyond the current in-memory caches
 - Image-pane service migration for safe Kitty/Ghostty poster rendering inside the persistent shell without Ink scroll flicker
