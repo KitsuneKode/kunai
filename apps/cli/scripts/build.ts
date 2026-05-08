@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Build script for kunai-cli.
+// Build script for @kitsunekode/kunai.
 //
 // Bundles src/main.ts into a single dist/kunai.js.
 // Workspace packages (@kunai/*) are inlined for a compact direct-provider CLI.
