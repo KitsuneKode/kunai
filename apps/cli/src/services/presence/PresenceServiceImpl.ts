@@ -17,6 +17,8 @@ type DiscordRpcClient = {
   on(event: "ready", callback: () => void): void;
 };
 
+const DEFAULT_DISCORD_CLIENT_ID = "1502307419047461025";
+
 export class PresenceServiceImpl implements PresenceService {
   private status: PresenceStatus = "idle";
   private discordClient: DiscordRpcClient | null = null;
@@ -239,7 +241,7 @@ export function resolvePresenceClientId(
     config.presenceDiscordClientId.trim() ||
     env?.KUNAI_DISCORD_CLIENT_ID?.trim() ||
     process.env.KUNAI_DISCORD_CLIENT_ID?.trim() ||
-    ""
+    DEFAULT_DISCORD_CLIENT_ID
   );
 }
 

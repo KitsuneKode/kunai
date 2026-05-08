@@ -58,38 +58,6 @@ describe("PresenceServiceImpl", () => {
     expect(diagnostics.messages).toEqual([]);
   });
 
-  test("marks discord unavailable once when no client id is configured", async () => {
-    const diagnostics = createDiagnostics();
-    const service = new PresenceServiceImpl({
-      config: createConfig({ presenceProvider: "discord", presenceDiscordClientId: "" }),
-      diagnosticsStore: diagnostics,
-    });
-
-    await service.updatePlayback({
-      mode: "series",
-      title: { id: "1", type: "series", name: "Demo" },
-      episode: { season: 1, episode: 2 },
-      providerId: "vidking",
-      startedAtMs: 1000,
-    });
-    await service.updatePlayback({
-      mode: "series",
-      title: { id: "1", type: "series", name: "Demo" },
-      episode: { season: 1, episode: 3 },
-      providerId: "vidking",
-      startedAtMs: 2000,
-    });
-
-    expect(service.getStatus()).toBe("unavailable");
-    expect(diagnostics.messages).toEqual(["Discord presence needs a client id"]);
-    expect(service.getSnapshot()).toMatchObject({
-      provider: "discord",
-      status: "unavailable",
-      clientIdSource: "missing",
-      canConnect: false,
-    });
-  });
-
   test("builds privacy-safe discord activity", () => {
     const activity = {
       mode: "series" as const,
@@ -139,6 +107,9 @@ describe("PresenceServiceImpl", () => {
         KUNAI_DISCORD_CLIENT_ID: " env-id ",
       }),
     ).toBe("env-id");
+    expect(resolvePresenceClientId(createConfig({ presenceDiscordClientId: "" }), {})).toBe(
+      "1502307419047461025",
+    );
     expect(
       resolvePresenceClientIdSource(
         createConfig({ presenceProvider: "discord", presenceDiscordClientId: "config-id" }),
