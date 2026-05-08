@@ -155,6 +155,14 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.discoverShowOnStartup;
   }
 
+  get discoverMode(): "auto" | "unified" | "anime-only" | "series-only" {
+    return this.config.discoverMode;
+  }
+
+  get discoverItemLimit(): number {
+    return this.config.discoverItemLimit;
+  }
+
   get minimalMode(): boolean {
     return this.config.minimalMode;
   }

@@ -279,30 +279,57 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           onLoadRecommendations: async () => {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
-
-            const discover = await loadDiscoverResults(container, { refresh: true });
-            const results = [...discover.results];
-            stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
-
-            const freshHistoryMap = await historyStore
-              .getAll()
-              .catch(
-                () =>
-                  ({}) as Record<
-                    string,
-                    import("@/services/persistence/HistoryStore").HistoryEntry
-                  >,
-              );
-            return {
-              options: results.map((r) =>
-                toBrowseResultOption(
-                  r,
-                  freshHistoryMap[r.id] ?? null,
-                  container.config.animeTitlePreference,
+            const toBrowseResponse = async (
+              discover: Awaited<ReturnType<typeof loadDiscoverResults>>,
+            ) => {
+              const results = [...discover.results];
+              stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
+              const freshHistoryMap = await historyStore
+                .getAll()
+                .catch(
+                  () =>
+                    ({}) as Record<
+                      string,
+                      import("@/services/persistence/HistoryStore").HistoryEntry
+                    >,
+                );
+              return {
+                options: results.map((r) =>
+                  toBrowseResultOption(
+                    r,
+                    freshHistoryMap[r.id] ?? null,
+                    container.config.animeTitlePreference,
+                  ),
                 ),
-              ),
-              subtitle: discover.subtitle,
-              emptyMessage: discover.emptyMessage,
+                subtitle: discover.subtitle,
+                emptyMessage: discover.emptyMessage,
+              };
+            };
+
+            // SWR: immediately return cached/in-memory discover list if present, then refresh in background.
+            const currentResults = stateManager.getState().searchResults;
+            const hasDiscoverLoaded = stateManager.getState().searchQuery.trim().length === 0;
+            const warmResponse =
+              hasDiscoverLoaded && currentResults.length > 0
+                ? {
+                    options: currentResults.map((r) =>
+                      toBrowseResultOption(r, null, container.config.animeTitlePreference),
+                    ),
+                    subtitle: `${currentResults.length} discover picks · cached`,
+                    emptyMessage: "No recommendations available.",
+                  }
+                : {
+                    options: [],
+                    subtitle: "Refreshing discover picks…",
+                    emptyMessage: "Recommendations are loading in the background.",
+                  };
+
+            return {
+              ...warmResponse,
+              revalidate: (async () => {
+                const discover = await loadDiscoverResults(container, { refresh: true });
+                return toBrowseResponse(discover);
+              })(),
             };
           },
         });

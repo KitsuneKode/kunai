@@ -43,6 +43,8 @@ describe("panel-data", () => {
         mpvInProcessStreamReconnect: true,
         mpvInProcessStreamReconnectMaxAttempts: 3,
         discoverShowOnStartup: false,
+        discoverMode: "auto",
+        discoverItemLimit: 24,
         minimalMode: false,
         presenceProvider: "off",
         presencePrivacy: "full",

@@ -117,6 +117,7 @@ export type BrowseShellSearchResponse<T> = {
   options: readonly BrowseShellOption<T>[];
   subtitle: string;
   emptyMessage?: string;
+  revalidate?: Promise<BrowseShellSearchResponse<T>>;
 };
 
 export type ShellPanelLine = {

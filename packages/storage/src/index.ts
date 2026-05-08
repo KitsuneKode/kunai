@@ -13,6 +13,7 @@ export { DownloadJobsRepository } from "./repositories/download-jobs";
 export type { DownloadJobRecord, DownloadJobStatus } from "./repositories/download-jobs";
 export { ProviderHealthRepository } from "./repositories/provider-health";
 export { ResolveTraceRepository } from "./repositories/resolve-trace";
+export { RecommendationCacheRepository } from "./repositories/recommendation-cache";
 export { SourceInventoryRepository } from "./repositories/source-inventory";
 export type { SourceInventoryEntry } from "./repositories/source-inventory";
 export { StreamCacheRepository } from "./repositories/stream-cache";

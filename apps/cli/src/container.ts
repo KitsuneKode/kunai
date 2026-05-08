@@ -11,6 +11,7 @@ import {
   getKunaiPaths,
   HistoryRepository,
   openKunaiDatabase,
+  RecommendationCacheRepository,
   runMigrations,
   SourceInventoryRepository,
   StreamCacheRepository,
@@ -150,6 +151,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const historyStore = new SqliteHistoryStoreImpl(new HistoryRepository(dataDb));
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb));
+  const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
   const diagnosticsStore = new DiagnosticsStoreImpl();
 
@@ -190,7 +192,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const shellChrome: ShellChrome = options?.shellChrome ?? "default";
   const capabilitySnapshot = options?.capabilitySnapshot ?? null;
 
-  const recommendationService = new RecommendationServiceImpl();
+  const recommendationService = new RecommendationServiceImpl(recommendationCache);
 
   const container: Container = {
     logger,

@@ -11,6 +11,7 @@ export type QuitNearEndThresholdMode = "credits-or-90-percent" | "percent-only" 
 export type PresenceProvider = "off" | "discord";
 
 export type PresencePrivacy = "full" | "private";
+export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
 
 export interface KitsuneConfig {
   defaultMode: "series" | "anime";
@@ -29,6 +30,10 @@ export interface KitsuneConfig {
   resumeStartChoicePrompt: boolean;
   /** Show a faint "/ discover" hint in the browse footer when history is non-empty. Default false. */
   discoverShowOnStartup: boolean;
+  /** Discover result mode policy. auto = follow current shell mode. */
+  discoverMode: DiscoverMode;
+  /** Max number of discover results shown in browse shell. */
+  discoverItemLimit: number;
   /** Collapse companion pane, minimal footer, and dim header status regardless of terminal size. Default false. */
   minimalMode: boolean;
   skipRecap: boolean;

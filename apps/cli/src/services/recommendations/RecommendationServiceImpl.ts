@@ -1,15 +1,12 @@
 // =============================================================================
 // RecommendationServiceImpl
 //
-// TMDB-backed recommendation service with JSON file cache.
+// TMDB-backed recommendation service with SQLite cache.
 // Falls back from videasy proxy to direct TMDB API on failure.
 // =============================================================================
 
-import { join } from "node:path";
-
 import type { ContentType, SearchResult } from "@/domain/types";
-import { writeAtomicJson } from "@/infra/fs/atomic-write";
-import { getKunaiPaths } from "@kunai/storage";
+import { RecommendationCacheRepository } from "@kunai/storage";
 
 import type {
   RecommendationHistorySeed,
@@ -50,25 +47,9 @@ async function tmdbFetch(path: string): Promise<unknown> {
   }
 }
 
-// ── File cache ────────────────────────────────────────────────────────────────
+// ── SQLite cache helpers ──────────────────────────────────────────────────────
 
-type CacheFile = Record<string, { cachedAt: number; items: readonly SearchResult[] }>;
-
-function cachePath(): string {
-  return join(getKunaiPaths().configDir, "recommendations-cache.json");
-}
-
-async function readCache(): Promise<CacheFile> {
-  try {
-    return (await Bun.file(cachePath()).json()) as CacheFile;
-  } catch {
-    return {};
-  }
-}
-
-async function writeCache(cache: CacheFile): Promise<void> {
-  await writeAtomicJson(cachePath(), cache);
-}
+type CacheValue = { cachedAt: number; items: readonly SearchResult[] };
 
 // ── TMDB result → SearchResult ────────────────────────────────────────────────
 
@@ -99,15 +80,36 @@ function toSearchResult(
 // ── Implementation ────────────────────────────────────────────────────────────
 
 export class RecommendationServiceImpl implements RecommendationService {
+  constructor(private readonly cacheRepository: RecommendationCacheRepository) {}
+
   async clearCache(): Promise<void> {
-    await writeCache({});
+    this.cacheRepository.clear();
+  }
+
+  private readCacheEntry(key: string, ttlMs: number): CacheValue | null {
+    const entry = this.cacheRepository.get(key);
+    if (!entry) return null;
+    try {
+      const parsed = JSON.parse(entry.payloadJson) as CacheValue;
+      if (!parsed || typeof parsed.cachedAt !== "number" || !Array.isArray(parsed.items)) {
+        return null;
+      }
+      return isCacheExpired(parsed.cachedAt, ttlMs) ? null : parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCacheEntry(key: string, value: CacheValue, ttlMs: number): void {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+    this.cacheRepository.set(key, JSON.stringify(value), expiresAt, now.toISOString());
   }
 
   async getForTitle(tmdbId: string, type: ContentType): Promise<RecommendationSection> {
     const key = buildRecommendCacheKey(tmdbId, type);
-    const cache = await readCache();
-    const entry = cache[key];
-    if (entry && !isCacheExpired(entry.cachedAt, TTL_SIMILAR)) {
+    const entry = this.readCacheEntry(key, TTL_SIMILAR);
+    if (entry) {
       return { label: "", reason: "similar", items: entry.items };
     }
     const segment = type === "movie" ? "movie" : "tv";
@@ -118,16 +120,14 @@ export class RecommendationServiceImpl implements RecommendationService {
       .map((r) => toSearchResult(r, segment === "movie" ? "movie" : "tv"))
       .filter((r): r is SearchResult => r !== null)
       .slice(0, 10);
-    cache[key] = { cachedAt: Date.now(), items };
-    await writeCache(cache);
+    this.writeCacheEntry(key, { cachedAt: Date.now(), items }, TTL_SIMILAR);
     return { label: "", reason: "similar", items };
   }
 
   async getTrending(): Promise<RecommendationSection> {
     const key = buildRecommendCacheKey("trending", "trending");
-    const cache = await readCache();
-    const entry = cache[key];
-    if (entry && !isCacheExpired(entry.cachedAt, TTL_TRENDING)) {
+    const entry = this.readCacheEntry(key, TTL_TRENDING);
+    if (entry) {
       return { label: "", reason: "trending", items: entry.items };
     }
     const data = (await tmdbFetch("/trending/all/week").catch(() => null)) as {
@@ -137,8 +137,7 @@ export class RecommendationServiceImpl implements RecommendationService {
       .map((r) => toSearchResult(r))
       .filter((r): r is SearchResult => r !== null)
       .slice(0, 10);
-    cache[key] = { cachedAt: Date.now(), items };
-    await writeCache(cache);
+    this.writeCacheEntry(key, { cachedAt: Date.now(), items }, TTL_TRENDING);
     return { label: "", reason: "trending", items };
   }
 
@@ -159,13 +158,12 @@ export class RecommendationServiceImpl implements RecommendationService {
       return { label: "", reason: "genre-affinity", items: [] };
     }
 
-    const cache = await readCache();
     const profileKey = buildRecommendCacheKey(
       recentUnique.map((entry) => `${entry.type}:${entry.title}`).join("|"),
       "genre-affinity" as ContentType,
     );
-    const cached = cache[profileKey];
-    if (cached && !isCacheExpired(cached.cachedAt, TTL_SIMILAR)) {
+    const cached = this.readCacheEntry(profileKey, TTL_SIMILAR);
+    if (cached) {
       return { label: "", reason: "genre-affinity", items: cached.items };
     }
 
@@ -217,17 +215,15 @@ export class RecommendationServiceImpl implements RecommendationService {
       .slice(0, 10)
       .map((entry) => entry.item);
     const items = best.length > 0 ? best : scored.slice(0, 10).map((entry) => entry.item);
-    cache[profileKey] = { cachedAt: Date.now(), items };
-    await writeCache(cache);
+    this.writeCacheEntry(profileKey, { cachedAt: Date.now(), items }, TTL_SIMILAR);
     return { label: "", reason: "genre-affinity", items };
   }
 
   async getGenreAffinity(topGenreIds: number[]): Promise<RecommendationSection> {
     if (topGenreIds.length === 0) return { label: "", reason: "genre-affinity", items: [] };
     const key = buildRecommendCacheKey(topGenreIds.join("-"), "genre-affinity" as ContentType);
-    const cache = await readCache();
-    const entry = cache[key];
-    if (entry && !isCacheExpired(entry.cachedAt, TTL_SIMILAR)) {
+    const entry = this.readCacheEntry(key, TTL_SIMILAR);
+    if (entry) {
       return { label: "", reason: "genre-affinity", items: entry.items };
     }
     const genres = topGenreIds.slice(0, 3).join(",");
@@ -251,8 +247,7 @@ export class RecommendationServiceImpl implements RecommendationService {
         return true;
       })
       .slice(0, 10);
-    cache[key] = { cachedAt: Date.now(), items };
-    await writeCache(cache);
+    this.writeCacheEntry(key, { cachedAt: Date.now(), items }, TTL_SIMILAR);
     return { label: "", reason: "genre-affinity", items };
   }
 }

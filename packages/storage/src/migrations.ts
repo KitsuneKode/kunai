@@ -156,6 +156,23 @@ export const cacheMigrations: readonly Migration[] = [
         ON resolve_traces(started_at DESC);
     `,
   },
+  {
+    id: "005_cache_recommendation_cache",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS recommendation_cache (
+        cache_key TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_accessed_at TEXT NOT NULL,
+        hit_count INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_recommendation_cache_expires_at
+        ON recommendation_cache(expires_at);
+    `,
+  },
 ];
 
 export function runMigrations(

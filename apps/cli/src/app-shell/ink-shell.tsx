@@ -944,6 +944,16 @@ function PlaybackShell({
         ] satisfies readonly FooterAction[])
       : []),
     footerActionFromCommand(commands, "replay", { key: "r", label: "replay" }, toShellAction),
+    ...(state.showDiscoverNudge
+      ? ([
+          footerActionFromCommand(
+            commands,
+            "discover",
+            { key: "g", label: "discover picks" },
+            toShellAction,
+          ),
+        ] satisfies readonly FooterAction[])
+      : []),
     footerActionFromCommand(
       commands,
       "pick-episode",
@@ -1002,6 +1012,9 @@ function PlaybackShell({
               <Badge label={`provider ${state.provider}`} tone="info" />
               <Badge label={state.mode === "anime" ? "anime mode" : "series mode"} />
               <Badge label={`episode ${location.toLowerCase()}`} tone="accent" />
+              {state.showDiscoverNudge ? (
+                <Badge label="discover recommended next" tone="accent" />
+              ) : null}
               {state.subtitleStatus ? (
                 <Badge
                   label={state.subtitleStatus}
@@ -1859,6 +1872,27 @@ function BrowseShell<T>({
       setSelectedDetail(
         response.options[0]?.detail ?? "Use ↑↓ to move through recommendation picks.",
       );
+
+      if (response.revalidate) {
+        void response.revalidate
+          .then((nextResponse) => {
+            if (requestIdRef.current !== requestId) return undefined;
+            setOptions(nextResponse.options);
+            setSelectedIndex(0);
+            setResultSubtitle(nextResponse.subtitle);
+            setEmptyMessage(
+              nextResponse.emptyMessage ?? "Recommendations are unavailable right now.",
+            );
+            setSelectedDetail(
+              nextResponse.options[0]?.detail ?? "Use ↑↓ to move through recommendation picks.",
+            );
+            return undefined;
+          })
+          .catch(() => {
+            // keep current recommendation results; background revalidation is best-effort
+            return undefined;
+          });
+      }
     } catch (error) {
       if (requestIdRef.current !== requestId) return;
 
