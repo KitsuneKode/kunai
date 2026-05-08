@@ -155,7 +155,7 @@ These are the recommended passes to finish beta publish safely without broad UX 
 
 Before calling this a releasable public beta, ALL of the following must be true:
 
-- [ ] Autoplay advances automatically at natural EOF for both series (TMDB) and anime (AllAnime) — needs live verification
+- [x] Autoplay advances automatically at natural EOF for both series (TMDB) and anime (AllAnime) — live verified
 - [x] N/P/I keys work inside mpv window
 - [x] Shell fills terminal viewport (no gaps)
 - [x] Settings, history, diagnostics all accessible without leaving the shell

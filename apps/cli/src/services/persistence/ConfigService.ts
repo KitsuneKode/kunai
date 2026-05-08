@@ -65,6 +65,8 @@ export interface KitsuneConfig {
   presenceDiscordClientId: string;
   /** Optional offline download feature gate. Default off until the user opts in. */
   downloadsEnabled: boolean;
+  /** Setup wizard completion marker for future migrations. */
+  onboardingVersion: number;
   /** Directory for offline downloads. Empty string = use Kunai app data defaults when implemented. */
   downloadPath: string;
   /** Suppress the first-run offline/download onboarding reminder. */

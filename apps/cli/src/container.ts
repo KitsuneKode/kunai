@@ -7,6 +7,7 @@
 
 import { initLogger } from "@/logger";
 import {
+  DownloadJobsRepository,
   getKunaiPaths,
   HistoryRepository,
   openKunaiDatabase,
@@ -35,6 +36,7 @@ import type { WorkControlService } from "./infra/work/WorkControlService";
 import { WorkControlServiceImpl } from "./infra/work/WorkControlServiceImpl";
 import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
+import { DownloadService } from "./services/download/DownloadService";
 import type { CacheStore } from "./services/persistence/CacheStore";
 import type { ConfigService } from "./services/persistence/ConfigService";
 import { ConfigServiceImpl } from "./services/persistence/ConfigServiceImpl";
@@ -85,6 +87,7 @@ export interface Container {
   readonly cacheStore: CacheStore;
   readonly diagnosticsStore: DiagnosticsStore;
   readonly sourceInventory: SourceInventoryService;
+  readonly downloadService: DownloadService;
   readonly presence: PresenceService;
 
   // Session
@@ -147,6 +150,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const historyStore = new SqliteHistoryStoreImpl(new HistoryRepository(dataDb));
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb));
+  const downloadJobs = new DownloadJobsRepository(dataDb);
   const diagnosticsStore = new DiagnosticsStoreImpl();
 
   // Load config
@@ -168,6 +172,12 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     mpv: options?.mpv,
   });
   const presence = new PresenceServiceImpl({ config, diagnosticsStore });
+  const downloadService = new DownloadService({
+    repo: downloadJobs,
+    config,
+    logger,
+    ffmpegAvailable: options?.capabilitySnapshot?.ffmpeg ?? false,
+  });
 
   // Registries (depend on infrastructure)
   const providerRegistry = new ProviderRegistryImpl(
@@ -198,6 +208,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     cacheStore,
     diagnosticsStore,
     sourceInventory,
+    downloadService,
     presence,
     stateManager,
     recommendationService,

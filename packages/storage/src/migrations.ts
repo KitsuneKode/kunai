@@ -55,6 +55,38 @@ export const dataMigrations: readonly Migration[] = [
         ON playback_events(title_id, at DESC);
     `,
   },
+  {
+    id: "003_data_download_jobs",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS download_jobs (
+        id TEXT PRIMARY KEY,
+        title_id TEXT NOT NULL,
+        title_name TEXT NOT NULL,
+        media_kind TEXT NOT NULL,
+        season INTEGER,
+        episode INTEGER,
+        provider_id TEXT NOT NULL,
+        stream_url TEXT NOT NULL,
+        headers_json TEXT NOT NULL,
+        status TEXT NOT NULL,
+        progress_percent INTEGER NOT NULL DEFAULT 0,
+        output_path TEXT NOT NULL,
+        temp_path TEXT NOT NULL,
+        error_message TEXT,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_download_jobs_status_created
+        ON download_jobs(status, created_at ASC);
+
+      CREATE INDEX IF NOT EXISTS idx_download_jobs_title_created
+        ON download_jobs(title_id, created_at DESC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

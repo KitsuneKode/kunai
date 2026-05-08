@@ -48,6 +48,7 @@ describe("panel-data", () => {
         presencePrivacy: "full",
         presenceDiscordClientId: "",
         downloadsEnabled: false,
+        onboardingVersion: 0,
         downloadPath: "",
         downloadOnboardingDismissed: false,
       },

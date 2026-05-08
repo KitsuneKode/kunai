@@ -62,6 +62,7 @@ function createProviderDeps(): ProviderDeps {
       presencePrivacy: "full",
       presenceDiscordClientId: "",
       downloadsEnabled: false,
+      onboardingVersion: 0,
       downloadPath: "",
       downloadOnboardingDismissed: false,
       getRaw() {

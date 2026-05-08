@@ -7,6 +7,7 @@ import type { StreamCandidate } from "@kunai/types";
 
 import {
   createStreamCacheKey,
+  DownloadJobsRepository,
   getDefaultTtlMs,
   getExpiresAt,
   getKunaiPaths,
@@ -76,6 +77,7 @@ test("migrations are idempotent and create expected storage tables", () => {
 
   expect(dataTables).toContain("history_progress");
   expect(dataTables).toContain("playback_events");
+  expect(dataTables).toContain("download_jobs");
   expect(cacheTables).toContain("stream_cache");
   expect(cacheTables).toContain("provider_health");
   expect(cacheTables).toContain("source_inventory");
@@ -183,6 +185,41 @@ test("provider health, inventory, and trace repositories round trip typed data",
   });
   expect(traceRepo.get("trace-1")?.title.title).toBe("Example");
   expect(traceRepo.listRecent(1)).toHaveLength(1);
+
+  db.close();
+});
+
+test("download jobs repository supports queue lifecycle", () => {
+  const db = migratedDataDb();
+  const repo = new DownloadJobsRepository(db);
+  const now = "2026-04-29T00:00:00.000Z";
+
+  repo.enqueue({
+    id: "job-1",
+    titleId: "tmdb:1",
+    titleName: "Example",
+    mediaKind: "series",
+    season: 1,
+    episode: 1,
+    providerId: "vidking",
+    streamUrl: "https://example.com/master.m3u8",
+    headers: { Referer: "https://example.com" },
+    outputPath: "/tmp/example.mp4",
+    tempPath: "/tmp/example.mp4.tmp.job-1",
+    createdAt: now,
+    updatedAt: now,
+    completedAt: undefined,
+  });
+  expect(repo.listQueued(10)).toHaveLength(1);
+
+  repo.markRunning("job-1", "2026-04-29T00:01:00.000Z");
+  repo.updateProgress("job-1", 42, "2026-04-29T00:02:00.000Z");
+  expect(repo.get("job-1")?.progressPercent).toBe(42);
+
+  repo.complete("job-1", "2026-04-29T00:03:00.000Z");
+  const done = repo.listCompleted(10)[0];
+  expect(done?.status).toBe("completed");
+  expect(done?.completedAt).toBe("2026-04-29T00:03:00.000Z");
 
   db.close();
 });

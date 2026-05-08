@@ -139,6 +139,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.downloadsEnabled;
   }
 
+  get onboardingVersion(): number {
+    return this.config.onboardingVersion;
+  }
+
   get downloadPath(): string {
     return this.config.downloadPath;
   }

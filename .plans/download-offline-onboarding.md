@@ -28,7 +28,7 @@ Add local downloads, an offline library, and a first-run/setup flow without slow
 - Extend dependency checks to detect `ffmpeg` without blocking playback.
 - Add unit tests for config normalization and feature-gate decisions.
 
-Current progress: download config fields, non-blocking `ffmpeg` capability detection, and a pure download feature gate are implemented. The persisted download job table and worker service are not started yet.
+Current progress: download config fields (`onboardingVersion` included), non-blocking `ffmpeg` capability detection, pure download feature gate, persisted `download_jobs` table/repository, initial `DownloadService`, and CLI `--setup` + `--offline` entrypoints are implemented.
 
 ## Slice 2: Download Persistence
 

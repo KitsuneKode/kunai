@@ -49,6 +49,8 @@ kunai -S "Dune"
 kunai -S "Breaking Bad"
 kunai -i 438631 -t movie
 kunai --debug
+kunai --setup
+kunai --offline
 ```
 
 ## Core Flow

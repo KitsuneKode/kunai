@@ -35,6 +35,8 @@ kunai -a
 kunai -S "Dune"
 kunai -i 438631 -t movie
 kunai --debug
+kunai --setup
+kunai --offline
 ```
 
 Discover shortcuts:

@@ -16,6 +16,9 @@
 // compatibility shim while migration residue is retired.
 // =============================================================================
 
+import { stdin as input, stdout as output } from "node:process";
+import { createInterface } from "node:readline/promises";
+
 import { SessionController } from "@/app/SessionController";
 import { createContainer, type ShellChrome } from "@/container";
 import type { TitleInfo } from "@/domain/types";
@@ -35,6 +38,8 @@ export function parseArgs(argv: string[]): {
   minimal: boolean;
   quick: boolean;
   jump?: number;
+  setup: boolean;
+  offline: boolean;
   shellChrome: ShellChrome;
 } {
   const args: {
@@ -47,7 +52,17 @@ export function parseArgs(argv: string[]): {
     minimal: boolean;
     quick: boolean;
     jump?: number;
-  } = { anime: false, debug: false, mpv: {}, minimal: false, quick: false };
+    setup: boolean;
+    offline: boolean;
+  } = {
+    anime: false,
+    debug: false,
+    mpv: {},
+    minimal: false,
+    quick: false,
+    setup: false,
+    offline: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-S" || arg === "--search") {
@@ -70,6 +85,10 @@ export function parseArgs(argv: string[]): {
       }
     } else if (arg === "--debug") {
       args.debug = true;
+    } else if (arg === "--setup") {
+      args.setup = true;
+    } else if (arg === "--offline") {
+      args.offline = true;
     } else if (arg === "--mpv-debug") {
       args.mpv = { ...args.mpv, debug: true };
     } else if (arg === "--mpv-clean") {
@@ -94,6 +113,65 @@ async function shutdownShell(): Promise<void> {
   await shutdownSessionApp();
 }
 
+async function maybeRunSetupWizard(
+  args: { setup: boolean },
+  container: Awaited<ReturnType<typeof createContainer>>,
+) {
+  if (!args.setup) {
+    return;
+  }
+
+  const rl = createInterface({ input, output });
+  try {
+    const shouldEnableDownloads = (
+      await rl.question("Enable downloads (requires ffmpeg)? [y/N] ")
+    ).trim();
+    const enableDownloads = shouldEnableDownloads.toLowerCase().startsWith("y");
+    let downloadPath = container.config.downloadPath;
+    if (enableDownloads) {
+      const customPath = (await rl.question("Download path (leave blank for default): ")).trim();
+      if (customPath.length > 0) {
+        downloadPath = customPath;
+      }
+    }
+    await container.config.update({
+      onboardingVersion: 1,
+      downloadsEnabled: enableDownloads,
+      downloadPath,
+      downloadOnboardingDismissed: true,
+    });
+    await container.config.save();
+    console.log("Setup saved.");
+  } finally {
+    rl.close();
+  }
+}
+
+async function maybeRunOfflineMode(
+  args: { offline: boolean },
+  container: Awaited<ReturnType<typeof createContainer>>,
+): Promise<boolean> {
+  if (!args.offline) {
+    return false;
+  }
+
+  const completed = container.downloadService.listCompleted(100);
+  if (completed.length === 0) {
+    console.log("No completed downloads found.");
+    return true;
+  }
+
+  console.log("Offline library:");
+  for (const job of completed) {
+    const episodeLabel =
+      job.season !== undefined && job.episode !== undefined
+        ? ` S${String(job.season).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`
+        : "";
+    console.log(`- ${job.titleName}${episodeLabel} -> ${job.outputPath}`);
+  }
+  return true;
+}
+
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   process.title = "kunai";
 
@@ -111,6 +189,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     capabilitySnapshot,
   });
   const { logger, config, stateManager, cacheStore } = container;
+  await maybeRunSetupWizard(args, container);
+  if (await maybeRunOfflineMode(args, container)) {
+    return;
+  }
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsStore.record({
       category: "session",
