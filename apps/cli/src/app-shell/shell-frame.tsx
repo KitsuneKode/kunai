@@ -113,6 +113,7 @@ export function InputField({
   placeholder,
   focus = true,
   hint,
+  maxWidth,
   onRedraw,
 }: {
   label: string;
@@ -122,10 +123,13 @@ export function InputField({
   placeholder?: string;
   focus?: boolean;
   hint?: string;
+  maxWidth?: number;
   onRedraw?: () => void;
 }) {
   const { stdout } = useStdout();
   const wideField = (stdout.columns ?? 0) >= 112;
+  const fieldWidth = Math.max(20, maxWidth ?? (stdout.columns ?? 80) - 8);
+  const textWidth = Math.max(4, fieldWidth - 8);
   const editor = useLineEditor({
     value,
     onChange,
@@ -167,6 +171,7 @@ export function InputField({
         borderStyle="round"
         borderColor={focus ? palette.cyan : palette.gray}
         paddingX={1}
+        width={fieldWidth}
       >
         <Text color={focus ? palette.cyan : palette.gray}>{focus ? "⌕ " : "› "}</Text>
         <LineEditorText
@@ -174,6 +179,7 @@ export function InputField({
           cursor={editor.cursor}
           focused={focus}
           placeholder={placeholder}
+          maxWidth={textWidth}
         />
       </Box>
       {hint && !wideField ? (

@@ -2092,6 +2092,7 @@ function BrowseShell<T>({
           placeholder={placeholder}
           focus={!commandMode}
           hint="Tokens: type:series year:2008 rating:8 · Ctrl+W deletes a word"
+          maxWidth={innerWidth}
           onRedraw={clearShellScreen}
         />
 

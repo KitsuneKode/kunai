@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyLineEditorInput,
   createLineEditorState,
+  getLineEditorViewport,
   type LineEditorState,
 } from "@/app-shell/line-editor";
 
@@ -97,5 +98,17 @@ describe("line editor", () => {
 
     state = edit(state, "[:62;22;52c", {});
     expect(state.value).toBe("Breaking bad");
+  });
+
+  test("keeps the cursor visible inside a bounded text viewport", () => {
+    expect(getLineEditorViewport("Demon Slayer", "Demon Slayer".length, 6)).toEqual({
+      value: "Slayer",
+      cursor: 6,
+    });
+
+    expect(getLineEditorViewport("Demon Slayer", 2, 6)).toEqual({
+      value: "Demon ",
+      cursor: 2,
+    });
   });
 });

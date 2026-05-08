@@ -30,6 +30,11 @@ export type LineEditorResult = {
   redrew: boolean;
 };
 
+export type LineEditorViewport = {
+  value: string;
+  cursor: number;
+};
+
 type SegmenterSegment = {
   index: number;
   segment: string;
@@ -346,6 +351,29 @@ export function splitCursor(
     before: value.slice(0, safeCursor),
     cursorChar: value.slice(safeCursor, end),
     after: value.slice(end),
+  };
+}
+
+export function getLineEditorViewport(
+  value: string,
+  cursor: number,
+  maxWidth?: number,
+): LineEditorViewport {
+  const safeCursor = clampCursor(value, cursor);
+  if (!maxWidth || maxWidth <= 0 || value.length <= maxWidth) {
+    return { value, cursor: safeCursor };
+  }
+
+  const width = Math.max(1, Math.trunc(maxWidth));
+  let start = 0;
+  if (safeCursor >= width) {
+    start = safeCursor - width + 1;
+  }
+  start = Math.min(start, Math.max(0, value.length - width));
+
+  return {
+    value: value.slice(start, start + width),
+    cursor: safeCursor - start,
   };
 }
 

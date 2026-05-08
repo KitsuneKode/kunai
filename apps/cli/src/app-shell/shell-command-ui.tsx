@@ -1,4 +1,4 @@
-import { splitCursor, useLineEditor } from "@/app-shell/line-editor";
+import { getLineEditorViewport, splitCursor, useLineEditor } from "@/app-shell/line-editor";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useState } from "react";
 
@@ -43,17 +43,25 @@ export function LineEditorText({
   cursor,
   focused,
   placeholder,
+  maxWidth,
 }: {
   value: string;
   cursor: number;
   focused: boolean;
   placeholder?: string;
+  maxWidth?: number;
 }) {
+  const viewport = getLineEditorViewport(value, cursor, maxWidth);
+  const visiblePlaceholder =
+    placeholder && maxWidth ? truncateLine(placeholder, Math.max(1, maxWidth - 1)) : placeholder;
+
   if (!focused) {
-    return value.length > 0 ? (
-      <Text color="white">{value}</Text>
+    const displayValue =
+      value.length > 0 && maxWidth ? truncateLine(value, Math.max(1, maxWidth)) : value;
+    return displayValue.length > 0 ? (
+      <Text color="white">{displayValue}</Text>
     ) : (
-      <Text color={palette.gray}>{placeholder ?? ""}</Text>
+      <Text color={palette.gray}>{visiblePlaceholder ?? ""}</Text>
     );
   }
 
@@ -63,12 +71,12 @@ export function LineEditorText({
         <Text backgroundColor={palette.cyan} color="black">
           {" "}
         </Text>
-        {placeholder ? <Text color={palette.gray}>{placeholder}</Text> : null}
+        {visiblePlaceholder ? <Text color={palette.gray}>{visiblePlaceholder}</Text> : null}
       </>
     );
   }
 
-  const { before, cursorChar, after } = splitCursor(value, cursor);
+  const { before, cursorChar, after } = splitCursor(viewport.value, viewport.cursor);
   const visibleCursor = cursorChar.length > 0 ? cursorChar : " ";
 
   return (
