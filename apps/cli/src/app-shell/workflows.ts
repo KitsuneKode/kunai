@@ -86,22 +86,30 @@ export async function runSetupWizard({
     return "skipped";
   }
 
+  const setupStepTitle = (step: number, title: string) => `[${step}/3] ${title}`;
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
-  const ffmpegAvailable = container.capabilitySnapshot?.ffmpeg ?? Boolean(Bun.which("ffmpeg"));
+  const capabilitySnapshot = container.capabilitySnapshot;
+  const ffmpegAvailable = capabilitySnapshot?.ffmpeg ?? Boolean(Bun.which("ffmpeg"));
+  const capabilityCard = [
+    `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}`,
+    `ffmpeg ${ffmpegAvailable ? "ready" : "missing"}`,
+    `posters ${capabilitySnapshot?.kittyCompatible ? "enabled" : "limited"}`,
+    `magick ${capabilitySnapshot?.magick ? "ready" : "optional"}`,
+  ].join("  ·  ");
 
   const startChoice = await chooseOption({
-    title: "Setup Wizard",
-    subtitle: "Configure downloads and offline defaults without leaving the TUI",
+    title: setupStepTitle(1, "Setup Wizard"),
+    subtitle: `Configure downloads and offline defaults without leaving the TUI  ·  ${capabilityCard}`,
     options: [
       {
         value: "continue" as const,
-        label: "Continue setup",
-        detail: "Pick download defaults and save onboarding preferences",
+        label: "Continue guided setup",
+        detail: "We will configure downloads, pick a save path, and store onboarding preferences",
       },
       {
         value: "skip" as const,
         label: "Skip for now",
-        detail: "Dismiss setup and continue straight to search",
+        detail: "Keep default behavior and continue straight to search",
       },
     ],
   });
@@ -121,22 +129,22 @@ export async function runSetupWizard({
   }
 
   const downloadChoice = await chooseOption({
-    title: "Offline Downloads",
+    title: setupStepTitle(2, "Offline Downloads"),
     subtitle: ffmpegAvailable
-      ? "ffmpeg detected — downloads can run immediately"
-      : "ffmpeg not found — playback works, downloads stay disabled until ffmpeg is installed",
+      ? "ffmpeg detected — download queue can run immediately"
+      : "ffmpeg not found — playback still works; downloads stay disabled until ffmpeg is installed",
     options: [
       {
         value: "enable" as const,
         label: "Enable downloads",
         detail: ffmpegAvailable
-          ? "Queue downloads from active playback and manage them in-shell"
-          : "Saves the preference now; downloads become usable after ffmpeg is installed",
+          ? "Queue downloads from active playback and monitor status in-shell"
+          : "Save the preference now; downloads become usable after ffmpeg is available",
       },
       {
         value: "disable" as const,
         label: "Keep downloads disabled",
-        detail: "You can rerun setup anytime with /setup",
+        detail: "You can rerun setup anytime with /setup from the command palette",
       },
     ],
   });
@@ -148,13 +156,13 @@ export async function runSetupWizard({
   let downloadPath = current.downloadPath;
   if (downloadChoice === "enable") {
     const pathChoice = await chooseOption({
-      title: "Download Location",
+      title: setupStepTitle(3, "Download Location"),
       subtitle: `Current: ${current.downloadPath || defaultDownloadPath}`,
       options: [
         {
           value: "default" as const,
-          label: "Use default path",
-          detail: defaultDownloadPath,
+          label: "Use default Kunai path",
+          detail: `${defaultDownloadPath}  ·  reliable fallback across sessions`,
         },
         {
           value: "keep" as const,
@@ -178,12 +186,26 @@ export async function runSetupWizard({
   });
   await container.config.save();
 
+  const finalDownloadPath =
+    downloadChoice === "enable" ? downloadPath || defaultDownloadPath : "disabled";
+  await chooseOption({
+    title: "Setup Complete",
+    subtitle: `Downloads ${downloadChoice === "enable" ? "enabled" : "disabled"}  ·  Path ${finalDownloadPath}`,
+    options: [
+      {
+        value: "done" as const,
+        label: "Start using Kunai",
+        detail: "Tip: run /setup anytime to revisit this flow",
+      },
+    ],
+  });
+
   container.diagnosticsStore.record({
     category: "session",
     message: "Setup wizard completed",
     context: {
       downloadsEnabled: downloadChoice === "enable",
-      downloadPath: downloadChoice === "enable" ? downloadPath || defaultDownloadPath : null,
+      downloadPath: downloadChoice === "enable" ? finalDownloadPath : null,
       ffmpegAvailable,
       force,
     },
