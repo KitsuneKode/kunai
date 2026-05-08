@@ -6,6 +6,22 @@ import type { FooterAction, ShellFooterMode } from "./types";
 
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "error" | "accent";
+const MINIMAL_FOOTER_ACTION_LIMIT = 4;
+
+export function selectFooterActions(
+  actions: readonly FooterAction[],
+  mode: ShellFooterMode,
+): readonly FooterAction[] {
+  const enabledActions = actions.filter((action) => !action.disabled);
+  if (mode !== "minimal") return enabledActions;
+
+  const commandAction = enabledActions.find((action) => action.action === "command-mode");
+  const primaryActions = enabledActions
+    .filter((action) => action.action !== "command-mode")
+    .slice(0, commandAction ? MINIMAL_FOOTER_ACTION_LIMIT - 1 : MINIMAL_FOOTER_ACTION_LIMIT);
+
+  return commandAction ? [...primaryActions, commandAction] : primaryActions;
+}
 
 export function InlineBadge({
   label,
@@ -43,10 +59,7 @@ export function Footer({
   mode?: ShellFooterMode;
   commandMode?: boolean;
 }) {
-  const visibleActions =
-    mode === "minimal"
-      ? actions.filter((action) => !action.disabled).slice(0, 3)
-      : actions.filter((action) => !action.disabled);
+  const visibleActions = selectFooterActions(actions, mode);
 
   if (commandMode) {
     return (

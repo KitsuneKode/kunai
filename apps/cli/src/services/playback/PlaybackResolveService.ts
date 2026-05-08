@@ -1,3 +1,4 @@
+import { describeProviderResolveProviderNote } from "@/app/provider-resolve-copy";
 import { resolveProviderStreamWithRetries } from "@/app/provider-resolve-retry";
 import type { EpisodeInfo, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
@@ -159,7 +160,7 @@ export class PlaybackResolveService {
       detail: isFallback
         ? `Trying fallback provider ${providerName}…`
         : `Resolving via ${providerName}`,
-      note: "Recoverable failures retry up to 3 times; f skips to fallback",
+      note: describeProviderResolveProviderNote(isFallback),
     });
   }
 

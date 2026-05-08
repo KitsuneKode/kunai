@@ -40,6 +40,10 @@ import {
   startFromBeginning,
   startFromEpisodeSelection,
 } from "@/app/playback-start-intent";
+import {
+  describeProviderResolveAttemptDetail,
+  describeProviderResolveAttemptNote,
+} from "@/app/provider-resolve-copy";
 import { createResolveTraceStub } from "@/app/resolve-trace";
 import {
   applyPreferredStreamSelection,
@@ -564,11 +568,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
                 if (event.type === "attempt") {
                   this.updatePlaybackFeedback(context, {
-                    detail:
-                      event.attempt === 1
-                        ? `Resolving via ${event.providerName} (${event.attempt}/${event.maxAttempts})`
-                        : `Retrying ${event.providerName} (${event.attempt}/${event.maxAttempts})`,
-                    note: "f skips remaining retries and tries the next provider",
+                    detail: describeProviderResolveAttemptDetail(event),
+                    note: describeProviderResolveAttemptNote(event),
                   });
                   return;
                 }
