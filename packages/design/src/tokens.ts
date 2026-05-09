@@ -27,6 +27,14 @@ export const tokens = {
   red: "#ff5a5a",
   yellow: "#f5c842",
 
+  // Informational — soft blue for badges, counts, and status text
+  info: "#5a9cf5",
+  infoDim: "#2a4070",
+
+  // Discovery / recommendation accent — soft violet
+  lavender: "#b8a9e8",
+  lavenderDim: "#4a3d6a",
+
   // Text scale — 5 steps for hierarchy
   text: "#f0e6d9",
   textDim: "#c4b5a5",

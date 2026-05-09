@@ -56,7 +56,7 @@ export function PickerOverlay({
         <Text color={palette.muted}>{state.subtitle}</Text>
 
         <Box marginTop={1}>
-          <Text color={palette.cyan}>/ </Text>
+          <Text color={palette.teal}>/ </Text>
           <LineEditorText value={state.filterQuery} cursor={cursor} focused placeholder="filter" />
         </Box>
 
@@ -74,10 +74,10 @@ export function PickerOverlay({
                   <Box key={option.value} justifyContent="space-between">
                     <Text
                       color={isSelected ? "black" : toneColor}
-                      backgroundColor={isSelected ? palette.cyan : undefined}
+                      backgroundColor={isSelected ? palette.teal : undefined}
                       bold={isSelected}
                     >
-                      {isSelected ? "> " : "  "}
+                      {isSelected ? "❯ " : "  "}
                       {truncateLine(option.label, labelWidth)}
                     </Text>
                     <Text color={option.tone ? toneColor : palette.gray}>

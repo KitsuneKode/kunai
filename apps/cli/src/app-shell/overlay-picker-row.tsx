@@ -22,7 +22,7 @@ export function formatPickerDisplayRow(input: {
   readonly width: number;
   readonly selected: boolean;
 }): { readonly prefix: string; readonly text: string; readonly badgeSuffix: string } {
-  const prefix = input.selected ? "> " : "  ";
+  const prefix = input.selected ? "❯ " : "  ";
   const row = formatPickerOptionRow({
     label: input.label,
     detail: input.detail,

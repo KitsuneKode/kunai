@@ -4,42 +4,70 @@ import type { RecommendationSection } from "@/services/recommendations/Recommend
 import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 
-import { ResizeBlocker } from "./shell-primitives";
+import { EmptyState, ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import { useViewportPolicy } from "./use-viewport-policy";
 
 export type DiscoverShellResult = { type: "open"; result: SearchResult } | { type: "back" };
 
+/**
+ * Single recommendation section rendered as a horizontal "rail" with a label header.
+ *
+ * Items are displayed as compact rows with active selection highlighting.
+ * The focused section shows the ❯ cursor indicator. Rating and year are rendered
+ * as right-aligned metadata when available.
+ */
 function DiscoverSectionView({
   section,
   isFocused,
   focusedIndex,
+  compact,
+  maxWidth,
 }: {
   section: RecommendationSection;
   isFocused: boolean;
   focusedIndex: number;
+  compact: boolean;
+  maxWidth: number;
 }) {
+  const titleBudget = Math.max(16, maxWidth - 18);
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text color={palette.amber} bold>
+    <Box flexDirection="column" marginBottom={compact ? 0 : 1}>
+      <Text color={isFocused ? palette.amber : palette.muted} bold={isFocused}>
+        {isFocused ? "▸ " : "  "}
         {section.label}
+        <Text color={palette.gray} dimColor>
+          {" "}
+          · {section.items.length}
+        </Text>
       </Text>
-      <Text color={palette.dim}>{"─".repeat(40)}</Text>
       {section.items.length === 0 ? (
-        <Text color={palette.dim}> No results</Text>
+        <Text color={palette.gray} dimColor>
+          {"    "}No results
+        </Text>
       ) : (
         section.items.map((item, idx) => {
           const isActive = isFocused && idx === focusedIndex;
           const rating =
             item.rating !== null && item.rating !== undefined ? `★ ${item.rating.toFixed(1)}` : "";
           return (
-            <Box key={item.id}>
-              <Text
-                backgroundColor={isActive ? palette.surfaceActive : undefined}
-                color={isActive ? palette.text : palette.muted}
-              >
-                {`  ${isActive ? "▶" : " "} ${truncateLabel(item.title, 28).padEnd(28)} ${rating.padEnd(7)} ${item.year}`}
-              </Text>
+            <Box key={item.id} width={maxWidth}>
+              <Box flexShrink={1} flexGrow={1}>
+                <Text
+                  backgroundColor={isActive ? palette.teal : undefined}
+                  color={isActive ? "black" : palette.muted}
+                  bold={isActive}
+                  wrap="truncate"
+                >
+                  {isActive ? "  ❯ " : "    "}
+                  {truncateLabel(item.title, titleBudget)}
+                </Text>
+              </Box>
+              <Box flexShrink={0}>
+                <Text color={isActive ? palette.teal : palette.gray} dimColor={!isActive}>
+                  {` ${rating.padEnd(7)} ${item.year}`}
+                </Text>
+              </Box>
             </Box>
           );
         })
@@ -63,10 +91,10 @@ export function DiscoverShell({
   const [itemIdx, setItemIdx] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const viewport = useViewportPolicy("browse");
-  const sepWidth = Math.max(24, (viewport.minColumns ?? 80) - 4);
 
   const currentSection = visibleSections[sectionIdx];
   const currentItems = currentSection?.items ?? [];
+  const innerWidth = Math.max(36, viewport.minColumns - 8);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -129,12 +157,16 @@ export function DiscoverShell({
           <Text bold color={palette.amber}>
             ⬡ Discover
           </Text>
-          {refreshing ? <Text color={palette.cyan}>refreshing</Text> : null}
+          {refreshing ? <Text color={palette.info}>refreshing</Text> : null}
         </Box>
-        <Text color={palette.dim}>{"─".repeat(sepWidth)}</Text>
         <Box marginTop={1} flexDirection="column" flexGrow={1}>
           {visibleSections.length === 0 ? (
-            <Text color={palette.dim}> Loading recommendations…</Text>
+            <EmptyState
+              icon="⬡"
+              title="Loading recommendations"
+              subtitle="Fetching personalized suggestions from your watch history"
+              hint="Press r to refresh manually"
+            />
           ) : (
             visibleSections.map((section, idx) => (
               <DiscoverSectionView
@@ -142,28 +174,23 @@ export function DiscoverShell({
                 section={section}
                 isFocused={idx === sectionIdx}
                 focusedIndex={itemIdx}
+                compact={viewport.compact}
+                maxWidth={innerWidth}
               />
             ))
           )}
         </Box>
       </Box>
-      <Box flexDirection="column">
-        <Text color={palette.dim}>{"─".repeat(sepWidth)}</Text>
-        <Text>
-          <Text color={palette.amber}>↵</Text>
-          <Text color={palette.muted}> open </Text>
-          <Text color={palette.amber}>tab</Text>
-          <Text color={palette.muted}> next section </Text>
-          {onRefresh ? (
-            <>
-              <Text color={palette.amber}>r</Text>
-              <Text color={palette.muted}> refresh </Text>
-            </>
-          ) : null}
-          <Text color={palette.amber}>esc</Text>
-          <Text color={palette.muted}> back</Text>
-        </Text>
-      </Box>
+      <ShellFooter
+        taskLabel="Discover"
+        actions={[
+          { key: "↵", label: "open", action: "search" },
+          { key: "↑↓", label: "navigate", action: "search" },
+          { key: "tab", label: "next section", action: "search" },
+          ...(onRefresh ? [{ key: "r", label: "refresh", action: "search" as const }] : []),
+          { key: "esc", label: "back", action: "quit" },
+        ]}
+      />
     </Box>
   );
 }

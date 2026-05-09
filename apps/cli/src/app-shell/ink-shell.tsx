@@ -126,7 +126,7 @@ const stdinManager = {
 // Initialize on module load
 stdinManager.setup();
 
-const SCREEN_CLEAR_GRACE_MS = 140;
+const SCREEN_CLEAR_GRACE_MS = 0;
 
 type MountedShell<TResult> = {
   close: (value: TResult) => void;
@@ -145,12 +145,14 @@ let rootShellExitPromise: Promise<unknown> | null = null;
 let rootShellNextId = 1;
 
 /**
- * Clears the terminal screen using ANSI escape codes.
+ * Clears terminal image artifacts. With alternateScreen: true, Ink owns the
+ * screen buffer so we only need to clean up Kitty/Ghostty image placements.
+ * The raw ANSI clear (\x1b[2J\x1b[H) is intentionally omitted to avoid
+ * flicker — Ink's reconciler handles repaint.
  */
 export function clearShellScreen() {
   if (process.stdout.isTTY) {
     deleteAllKittyImages();
-    process.stdout.write("\x1b[2J\x1b[H");
   }
 }
 
@@ -343,13 +345,9 @@ function mountShell<TResult>({
     resolveResult(value);
   };
 
-  // When mounting a new shell, if it's a "major" transition (clearOnResolve was true for previous),
-  // we might want to clear. But usually ensureRootShell handles the first clear.
-  // To make transitions "really good", we ensure the screen is cleared if we're swapping
-  // from null to a component.
-  if (!rootShellScreen && clearOnResolve) {
-    clearShellScreen();
-  }
+  // With alternateScreen: true and SCREEN_CLEAR_GRACE_MS = 0, the previous
+  // shell is removed immediately when the next mounts, preventing flicker.
+  // The raw screen clear was removed to let Ink handle reconciliation.
 
   setRootShellScreen({
     id: screenId,
@@ -1213,7 +1211,7 @@ function PlaybackShell({
                   ) : (
                     <Box flexDirection="column">
                       <Text
-                        color={posterState === "loading" ? palette.cyan : palette.gray}
+                        color={posterState === "loading" ? palette.info : palette.gray}
                         dimColor
                       >
                         {posterState === "loading" ? "Loading poster…" : "Poster unavailable"}
@@ -1579,7 +1577,7 @@ function ListShell<T>({
     <Box flexDirection="column" paddingX={1}>
       <Box flexDirection="column">
         <Box flexDirection="column">
-          <Text color={confirmed ? palette.green : palette.cyan}>
+          <Text color={confirmed ? palette.green : palette.teal}>
             {confirmed ? "Selected" : title}
           </Text>
           <Text color={palette.muted}>{confirmed ? selectedLabel : subtitle}</Text>
@@ -1623,7 +1621,7 @@ function ListShell<T>({
                   return (
                     <Box key={`${option.label}-${option.detail ?? ""}`}>
                       <Text
-                        backgroundColor={selected ? palette.cyan : undefined}
+                        backgroundColor={selected ? palette.teal : undefined}
                         color={selected ? "black" : "white"}
                         bold={selected || isConfirmed}
                         dimColor={!selected && !isConfirmed}
@@ -1658,7 +1656,7 @@ function ListShell<T>({
                     </Text>
                     <Box marginTop={1} flexDirection="column">
                       {detailLines.map((line) => (
-                        <Text key={`detail-${selectedLabel}-${line}`} color={palette.cyan}>
+                        <Text key={`detail-${selectedLabel}-${line}`} color={palette.info}>
                           {line}
                         </Text>
                       ))}
@@ -2208,7 +2206,7 @@ function BrowseShell<T>({
       <Box flexDirection="column" flexGrow={1}>
         <Box justifyContent="space-between">
           <BrowseTitle mode={mode} />
-          <Text color={searchState === "error" ? palette.red : palette.cyan}>
+          <Text color={searchState === "error" ? palette.red : palette.info}>
             {searchState === "loading"
               ? `${spinner} searching`
               : searchState === "error"
@@ -2288,31 +2286,34 @@ function BrowseShell<T>({
               {visibleOptions.map((option, index) => {
                 const optionIndex = windowStart + index;
                 const selected = optionIndex === selectedIndex;
-                const titleText = truncateLine(option.label, rowWidth - 4);
                 const metaText = option.previewMeta?.[0];
+                const metaWidth = metaText ? Math.min(12, Math.max(6, metaText.length)) : 0;
+                const titleBudget = Math.max(12, rowWidth - metaWidth - 6);
+                const titleText = truncateLine(option.label, titleBudget);
 
                 return (
-                  <Box key={`${option.label}-${option.detail ?? ""}`} flexDirection="column">
-                    <Box width={rowWidth} justifyContent="space-between">
-                      <Box>
-                        <Text
-                          backgroundColor={selected ? palette.cyan : undefined}
-                          color={selected ? "black" : "white"}
-                          bold={selected}
-                          dimColor={!selected}
-                        >
-                          <Text color={selected ? "black" : palette.gray}>
-                            {selected ? "❯ " : "  "}
-                          </Text>
-                          {titleText}
+                  <Box key={`${option.label}-${option.detail ?? ""}`} width={rowWidth}>
+                    <Box flexShrink={1} flexGrow={1}>
+                      <Text
+                        backgroundColor={selected ? palette.teal : undefined}
+                        color={selected ? "black" : "white"}
+                        bold={selected}
+                        dimColor={!selected}
+                        wrap="truncate"
+                      >
+                        <Text color={selected ? "black" : palette.gray}>
+                          {selected ? "❯ " : "  "}
+                        </Text>
+                        {titleText}
+                      </Text>
+                    </Box>
+                    {metaText ? (
+                      <Box flexShrink={0} width={metaWidth + 1} justifyContent="flex-end">
+                        <Text color={selected ? palette.teal : palette.gray} dimColor={!selected}>
+                          {truncateLine(metaText, metaWidth)}
                         </Text>
                       </Box>
-                      {metaText ? (
-                        <Text color={selected ? palette.cyan : palette.gray} dimColor={!selected}>
-                          {truncateLine(metaText, Math.min(18, Math.max(8, rowWidth / 4)))}
-                        </Text>
-                      ) : null}
-                    </Box>
+                    ) : null}
                   </Box>
                 );
               })}
@@ -2333,7 +2334,7 @@ function BrowseShell<T>({
                   </Box>
                 ) : selectedOption?.previewImageUrl ? (
                   <Box marginBottom={1}>
-                    <Text color={posterState === "loading" ? palette.cyan : palette.gray} dimColor>
+                    <Text color={posterState === "loading" ? palette.info : palette.gray} dimColor>
                       {posterState === "loading" ? "Loading artwork…" : "Artwork unavailable"}
                     </Text>
                   </Box>

@@ -53,7 +53,6 @@ export function ShellFrame({
   });
 
   const { stdout } = useStdout();
-  const sepWidth = Math.max(24, (stdout.columns ?? 80) - 4);
   const commandWidth = Math.min(92, Math.max(36, Math.floor((stdout.columns ?? 80) * 0.62)));
 
   return (
@@ -88,12 +87,6 @@ export function ShellFrame({
             width={commandWidth}
           />
         ) : null}
-
-        <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
-            {"─".repeat(sepWidth)}
-          </Text>
-        </Box>
 
         <ShellFooter
           taskLabel={footerTask}
@@ -168,21 +161,22 @@ export function InputField({
           </Text>
         ) : null}
       </Box>
-      <Box
-        marginTop={1}
-        borderStyle="round"
-        borderColor={focus ? palette.cyan : palette.gray}
-        paddingX={1}
-        width={fieldWidth}
-      >
-        <Text color={focus ? palette.cyan : palette.gray}>{focus ? "⌕ " : "› "}</Text>
-        <LineEditorText
-          value={value}
-          cursor={editor.cursor}
-          focused={focus}
-          placeholder={placeholder}
-          maxWidth={textWidth}
-        />
+      <Box marginTop={1} flexDirection="column">
+        <Box paddingX={1}>
+          <Text color={focus ? palette.teal : palette.gray}>{focus ? "⌕ " : "› "}</Text>
+          <LineEditorText
+            value={value}
+            cursor={editor.cursor}
+            focused={focus}
+            placeholder={placeholder}
+            maxWidth={textWidth}
+          />
+        </Box>
+        <Box>
+          <Text color={focus ? palette.teal : palette.gray} dimColor>
+            {"─".repeat(Math.max(4, fieldWidth))}
+          </Text>
+        </Box>
       </Box>
       {renderedHint && !wideField ? (
         <Box marginTop={1}>

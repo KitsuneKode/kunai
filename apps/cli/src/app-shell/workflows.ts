@@ -1,6 +1,5 @@
 import { basename, dirname, join } from "node:path";
 
-import { openDownloadManagerShell } from "@/app-shell/download-manager-shell";
 import {
   chooseEpisodeFromOptions,
   chooseFromListShell,
@@ -487,7 +486,7 @@ async function openHistoryShell(
   }
 }
 
-async function openCompletedDownloadsPicker(
+async function _openCompletedDownloadsPicker(
   container: Container,
   actionContext?: ListShellActionContext,
 ): Promise<void> {
@@ -596,42 +595,6 @@ async function openCompletedDownloadsPicker(
   }
 }
 
-async function openDownloadsShell(
-  container: Container,
-  actionContext?: ListShellActionContext,
-): Promise<void> {
-  while (true) {
-    const queuedRunning = container.downloadService.listActive(120).length;
-    const failed = container.downloadService.listFailed(120).length;
-    const completed = container.downloadService.listCompleted(120).length;
-
-    const gate = await chooseFromListShell<"live" | "completed" | "back" | null>({
-      title: "Downloads",
-      subtitle: `${queuedRunning} queued/running · ${failed} failed · ${completed} completed`,
-      actionContext,
-      options: [
-        {
-          value: "live",
-          label: "Live queue & failures",
-          detail: "Progress, cancel queued/running, retry failures (Ink)",
-        },
-        {
-          value: "completed",
-          label: "Completed downloads",
-          detail: "Play locally, open folder, re-download, delete artifacts",
-        },
-        { value: "back", label: "Back" },
-      ],
-    });
-    if (!gate || gate === "back") return;
-    if (gate === "live") {
-      await openDownloadManagerShell(container);
-      continue;
-    }
-    await openCompletedDownloadsPicker(container, actionContext);
-  }
-}
-
 type OfflineBrowsePick = { readonly type: "job"; readonly id: string } | { readonly type: "back" };
 
 type OfflineJobMenuChoice = "play" | "open-folder" | "jobs" | "recheck" | "back";
@@ -729,7 +692,19 @@ export async function openOfflineLibraryShell(
       }
 
       if (action === "jobs") {
-        await openDownloadsShell(container, actionContext);
+        container.stateManager.dispatch({
+          type: "OPEN_OVERLAY",
+          overlay: { type: "downloads" },
+        });
+        await new Promise<void>((resolve) => {
+          const unsubscribe = container.stateManager.subscribe((state) => {
+            const top = state.activeModals.at(-1);
+            if (!top || top.type !== "downloads") {
+              unsubscribe();
+              resolve();
+            }
+          });
+        });
         continue;
       }
 
@@ -960,12 +935,16 @@ export async function handleShellAction({
   }
 
   if (action === "downloads") {
-    await withOverlay({ type: "history" }, () =>
-      openDownloadsShell(
-        container,
-        buildPickerActionContext({ container, taskLabel: "Inspect download jobs" }),
-      ),
-    );
+    stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "downloads" } });
+    await new Promise<void>((resolve) => {
+      const unsubscribe = stateManager.subscribe((state) => {
+        const top = state.activeModals.at(-1);
+        if (!top || top.type !== "downloads") {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
     return "handled";
   }
 

@@ -597,7 +597,7 @@ function resolvePanelTone(tone: ShellPanelLine["tone"]): string {
     case "success":
       return palette.green;
     case "info":
-      return palette.cyan;
+      return palette.info;
     case "warning":
       return palette.amber;
     case "error":
@@ -612,7 +612,7 @@ function resolvePanelTone(tone: ShellPanelLine["tone"]): string {
 function pickerFocusAccent(type: Extract<BrowseOverlay, { filterQuery: string }>["type"]): string {
   if (type === "settings" || type === "settings-choice") return palette.green;
   if (type === "provider") return palette.amber;
-  return palette.cyan;
+  return palette.teal;
 }
 
 export function OverlayPanel({
@@ -647,7 +647,7 @@ export function OverlayPanel({
     : [];
   const pickerAccent = isPickerOverlay
     ? pickerFocusAccent((overlay as Extract<BrowseOverlay, { filterQuery: string }>).type)
-    : palette.cyan;
+    : palette.teal;
 
   return (
     <Box
@@ -659,7 +659,7 @@ export function OverlayPanel({
           ? palette.green
           : overlay.type === "provider"
             ? palette.amber
-            : palette.cyan
+            : palette.teal
       }
       paddingX={1}
     >
@@ -669,7 +669,7 @@ export function OverlayPanel({
             ? palette.green
             : overlay.type === "provider"
               ? palette.amber
-              : palette.cyan
+              : palette.teal
         }
       >
         {overlay.title}
@@ -708,14 +708,14 @@ export function OverlayPanel({
                   : option.tone === "warning"
                     ? palette.amber
                     : option.tone === "info"
-                      ? palette.cyan
+                      ? palette.info
                       : option.tone === "error"
                         ? palette.red
                         : null;
               return (
                 <Text
                   key={`${option.value}-${optionIndex}`}
-                  backgroundColor={selected ? palette.surfaceElevated : undefined}
+                  backgroundColor={selected ? palette.surfaceActive : undefined}
                   bold={selected}
                   wrap="truncate-end"
                 >
@@ -743,15 +743,7 @@ export function OverlayPanel({
                   : overlay.type === "history-picker"
                     ? "Loading history…"
                     : "Saving settings…"
-                : overlay.type === "provider"
-                  ? "Type to filter, ↑↓ to choose, Enter to switch, Esc to close"
-                  : overlay.type === "history-picker"
-                    ? "Type to filter, ↑↓ to choose, Enter to resume, Esc to close"
-                    : overlay.type === "episode-picker"
-                      ? "Type to filter, ↑↓ to choose, Enter to jump, Esc to close"
-                      : overlay.type === "settings"
-                        ? "Type to filter, ↑↓ to choose, Enter to edit"
-                        : "Type to filter, ↑↓ to choose, Enter to apply, Esc to go back"}
+                : `${overlay.options.length} items  ·  ↑↓ choose · Enter select · Esc close`}
             </Text>
           </Box>
           {overlay.type === "settings" ? (

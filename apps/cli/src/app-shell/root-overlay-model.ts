@@ -58,6 +58,7 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay): string {
   if (overlay.type === "help") return "Help";
   if (overlay.type === "about") return "About";
   if (overlay.type === "diagnostics") return "Diagnostics";
+  if (overlay.type === "downloads") return "Downloads";
   if (overlay.type === "history") return "History";
   if (overlay.type === "settings") return "Settings";
   if (overlay.type === "season_picker") return "Choose season";
@@ -84,6 +85,8 @@ export function getRootOverlaySubtitle({
   if (overlay.type === "help") return "Global commands, editing, filtering, and shell behavior";
   if (overlay.type === "about") return "Kunai";
   if (overlay.type === "diagnostics") return "Current runtime snapshot and recent events";
+  if (overlay.type === "downloads")
+    return "Live download queue, failed retries, and completed jobs";
   if (overlay.type === "history") return "Recent playback positions without leaving the shell";
   if (overlay.type === "settings")
     return settingsError ?? buildSettingsSummary(settingsDraft ?? config);

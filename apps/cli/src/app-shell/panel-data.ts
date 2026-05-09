@@ -94,47 +94,54 @@ function formatMpvRuntimeDetail(event: DiagnosticEvent | undefined): string {
 
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
   return [
-    {
-      label: "Commands",
-      detail: "/ opens the command palette when the current surface supports extra actions.",
-    },
-    {
-      label: "Close",
-      detail: "Esc clears a filter first, then closes the top panel. It never confirms playback.",
-    },
-    {
-      label: "Confirm",
-      detail: "Enter searches changed queries or confirms the highlighted picker/result row.",
-    },
-    {
-      label: "Browse",
-      detail: "↑↓ moves results. Tab switches destination mode. Ctrl+T reloads trending.",
-    },
-    {
-      label: "Pickers",
-      detail: "Type to filter providers, episodes, seasons, subtitles, history, and settings.",
-    },
-    {
-      label: "Editing",
-      detail: "Ctrl+A/E jumps to start/end. Ctrl+W deletes a word. Ctrl+←/→ moves by word.",
-    },
-    {
-      label: "Playback",
-      detail: "n/p navigate episodes. k/o/v choose streams. r recovers. f tries fallback.",
-    },
-    {
-      label: "Diagnostics",
-      detail: "/diagnostics inspects state. /export-diagnostics writes a redacted support bundle.",
-    },
-    {
-      label: "Presence",
-      detail:
-        "/presence opens Discord setup. It uses local IPC only; no stream URLs or headers are sent.",
-    },
-    {
-      label: "Report issue",
-      detail: "/report-issue opens GitHub issue reporting. Attach the exported diagnostics file.",
-    },
+    // ── Navigation ──
+    { label: "─── Navigation", detail: "", tone: "info" },
+    { label: "↑↓", detail: "Browse results, navigate pickers" },
+    { label: "Enter", detail: "Select result, confirm highlighted item" },
+    { label: "Esc", detail: "Clear filter first, then close panel" },
+    { label: "Tab", detail: "Switch between series and anime mode" },
+    { label: "Ctrl+A/E", detail: "Jump to start/end of input" },
+    { label: "Ctrl+W", detail: "Delete word backward" },
+    { label: "Ctrl+←/→", detail: "Move cursor by word" },
+
+    // ── Playback ──
+    { label: "─── Playback", detail: "", tone: "info" },
+    { label: "n", detail: "Next episode" },
+    { label: "p", detail: "Previous episode" },
+    { label: "r", detail: "Replay current episode" },
+    { label: "a", detail: "Toggle autoplay" },
+    { label: "u", detail: "Toggle auto-skip intros" },
+    { label: "f", detail: "Try fallback provider" },
+
+    // ── Media ──
+    { label: "─── Media", detail: "", tone: "info" },
+    { label: "e", detail: "Open episode picker" },
+    { label: "o", detail: "Switch stream source" },
+    { label: "v", detail: "Change quality" },
+    { label: "k", detail: "View available streams" },
+
+    // ── Panels ──
+    { label: "─── Panels", detail: "", tone: "info" },
+    { label: "/", detail: "Open command palette" },
+    { label: "h", detail: "Watch history" },
+    { label: "?", detail: "This help panel" },
+    { label: "i", detail: "Diagnostics panel" },
+    { label: "g", detail: "Recommendations" },
+
+    // ── Settings & Tools ──
+    { label: "─── Settings", detail: "", tone: "info" },
+    { label: "/settings", detail: "Open settings editor" },
+    { label: "/setup", detail: "Run dependency setup wizard" },
+    { label: "/presence", detail: "Discord presence configuration" },
+    { label: "Ctrl+T", detail: "Reload trending results" },
+
+    // ── Downloads ──
+    { label: "─── Downloads", detail: "", tone: "info" },
+    { label: "Ctrl+D", detail: "Download highlighted title from browse" },
+    { label: "/downloads", detail: "Open download manager" },
+    { label: "/library", detail: "Browse completed downloads" },
+    { label: "/export-diagnostics", detail: "Write redacted support bundle" },
+    { label: "/report-issue", detail: "Open GitHub issue reporting" },
   ];
 }
 
@@ -223,25 +230,16 @@ export function buildDiagnosticsPanelLines({
     recentEvents,
     currentProvider: state.provider,
   });
+
   return [
-    {
-      label: "Support bundle",
-      detail: "/export-diagnostics writes redacted recent events into the current directory.",
-      tone: "neutral",
-    },
-    {
-      label: "Report issue",
-      detail: "/report-issue opens GitHub. Attach the exported bundle, provider, OS, and command.",
-      tone: "neutral",
-    },
-    {
-      label: "Mode and provider",
-      detail: `${state.mode}  ·  ${state.provider}`,
-    },
-    {
-      label: "View and playback",
-      detail: `${state.view}  ·  ${state.playbackStatus}`,
-    },
+    // ── Session ──
+    { label: "─── Session", detail: "", tone: "info" },
+    { label: "Mode", detail: `${state.mode}  ·  ${state.provider}` },
+    { label: "View", detail: `${state.view}  ·  ${state.playbackStatus}` },
+    { label: "Search", detail: `${state.searchState}  ·  ${state.searchResults.length} results` },
+
+    // ── Provider ──
+    { label: "─── Provider", detail: "", tone: "info" },
     runtimeHealth.provider,
     runtimeHealth.network,
     {
@@ -256,59 +254,69 @@ export function buildDiagnosticsPanelLines({
             ? "warning"
             : "success",
     },
-    {
-      label: "Subtitle state",
-      detail: subtitleState.label,
-      tone: subtitleState.tone,
-    },
-    {
-      label: "Selected subtitle URL",
-      detail: state.stream?.subtitle ? "[redacted-url attached]" : subtitleState.label,
-    },
-    {
-      label: "Subtitle tracks",
-      detail: String(state.stream?.subtitleList?.length ?? 0),
-    },
-    {
-      label: "Subtitle source",
-      detail: state.stream?.subtitleSource ?? "none",
-    },
-    {
-      label: "Subtitle evidence",
-      detail: state.stream?.subtitleEvidence
-        ? summarizeJson(state.stream.subtitleEvidence)
-        : "no subtitle evidence recorded yet",
-      tone: state.stream?.subtitleEvidence ? "neutral" : "warning",
-    },
-    {
-      label: "Subtitle diagnosis",
-      detail: state.stream?.subtitle
-        ? "A subtitle URL was attached before mpv launched."
-        : (state.mode === "anime"
-              ? state.animeLanguageProfile.subtitle
-              : state.seriesLanguageProfile.subtitle) === "none"
-          ? "Subtitle preference is set to none, so mpv launches without a subtitle file by design."
-          : "For Vidking, this usually means the embed did not request a direct subtitle file or Wyzie search before the stream was captured, or the subtitle provider had no match.",
-      tone: state.stream?.subtitle ? "success" : "warning",
-    },
+
+    // ── Stream ──
+    { label: "─── Stream", detail: "", tone: "info" },
     {
       label: "Stream URL",
       detail: state.stream?.url ? "[redacted-url resolved]" : "not resolved yet",
     },
+    { label: "Header keys", detail: summarizeHeaderKeys(state.stream?.headers) },
+
+    // ── Subtitles ──
+    { label: "─── Subtitles", detail: "", tone: "info" },
+    { label: "State", detail: subtitleState.label, tone: subtitleState.tone },
     {
-      label: "Header keys",
-      detail: summarizeHeaderKeys(state.stream?.headers),
+      label: "URL",
+      detail: state.stream?.subtitle ? "[redacted-url attached]" : subtitleState.label,
+    },
+    { label: "Tracks", detail: String(state.stream?.subtitleList?.length ?? 0) },
+    { label: "Source", detail: state.stream?.subtitleSource ?? "none" },
+    {
+      label: "Evidence",
+      detail: state.stream?.subtitleEvidence
+        ? summarizeJson(state.stream.subtitleEvidence)
+        : "no evidence yet",
+      tone: state.stream?.subtitleEvidence ? "neutral" : "warning",
+    },
+
+    // ── Network ──
+    { label: "─── Network", detail: "", tone: "info" },
+    {
+      label: "Buffering",
+      detail: formatMpvRuntimeDetail(bufferingEvent),
+      tone: bufferingEvent ? "warning" : "neutral",
     },
     {
-      label: "Search state",
-      detail: `${state.searchState}  ·  ${state.searchResults.length} results`,
+      label: "Stream stall",
+      detail: formatMpvRuntimeDetail(streamStallEvent),
+      tone: streamStallEvent ? "warning" : "neutral",
     },
     {
-      label: "Memory",
-      detail: `RSS ${(process.memoryUsage().rss / 1_048_576).toFixed(1)} MB`,
+      label: "Seek stall",
+      detail: formatMpvRuntimeDetail(seekStallEvent),
+      tone: seekStallEvent ? "warning" : "neutral",
     },
     {
-      label: "Presence",
+      label: "IPC stall",
+      detail: formatMpvRuntimeDetail(ipcStallEvent),
+      tone: ipcStallEvent ? "warning" : "neutral",
+    },
+
+    // ── Downloads ──
+    { label: "─── Downloads", detail: "", tone: "info" },
+    {
+      label: "Queue",
+      detail: downloadSummary
+        ? `${downloadSummary.active} active  ·  ${downloadSummary.failed ?? 0} failed  ·  ${downloadSummary.completed} completed`
+        : "queue status unavailable",
+      tone: downloadSummary && downloadSummary.active > 0 ? "info" : "neutral",
+    },
+
+    // ── Presence ──
+    { label: "─── Presence", detail: "", tone: "info" },
+    {
+      label: "Status",
       detail: presenceEvent
         ? `${presenceEvent.message}${presenceEvent.context ? `  ·  ${summarizeJson(presenceEvent.context)}` : ""}`
         : presenceSnapshot
@@ -321,43 +329,27 @@ export function buildDiagnosticsPanelLines({
             ? "neutral"
             : "success",
     },
+
+    // ── Runtime ──
+    { label: "─── Runtime", detail: "", tone: "info" },
     {
-      label: "Startup capabilities",
+      label: "Capabilities",
       detail:
         capabilitySnapshot?.issues.length && capabilitySnapshot.issues.length > 0
           ? capabilitySnapshot.issues
               .map((issue) => `${issue.id} (${issue.severity})`)
               .join("  ·  ")
-          : `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}  ·  yt-dlp ${capabilitySnapshot?.ytDlp ? "ready" : "missing"}  ·  ffprobe ${capabilitySnapshot?.ffprobe ? "ready" : "optional"}  ·  chafa ${capabilitySnapshot?.chafa ? "ready" : "missing"}  ·  magick ${capabilitySnapshot?.magick ? "ready" : "missing"}  ·  image ${capabilitySnapshot?.image.renderer ?? "unknown"} (${capabilitySnapshot?.image.terminal ?? "unknown"})`,
+          : `mpv ${capabilitySnapshot?.mpv ? "✓" : "✗"}  ·  yt-dlp ${capabilitySnapshot?.ytDlp ? "✓" : "✗"}  ·  chafa ${capabilitySnapshot?.chafa ? "✓" : "✗"}  ·  magick ${capabilitySnapshot?.magick ? "✓" : "✗"}`,
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
     },
-    {
-      label: "Download queue",
-      detail: downloadSummary
-        ? `${downloadSummary.active} active  ·  ${downloadSummary.failed ?? 0} failed  ·  ${downloadSummary.completed} completed`
-        : "queue status unavailable",
-      tone: downloadSummary && downloadSummary.active > 0 ? "info" : "neutral",
-    },
-    {
-      label: "mpv buffering",
-      detail: formatMpvRuntimeDetail(bufferingEvent),
-      tone: bufferingEvent ? "warning" : "neutral",
-    },
-    {
-      label: "mpv stream stall",
-      detail: formatMpvRuntimeDetail(streamStallEvent),
-      tone: streamStallEvent ? "warning" : "neutral",
-    },
-    {
-      label: "mpv seek stall",
-      detail: formatMpvRuntimeDetail(seekStallEvent),
-      tone: seekStallEvent ? "warning" : "neutral",
-    },
-    {
-      label: "mpv IPC stall",
-      detail: formatMpvRuntimeDetail(ipcStallEvent),
-      tone: ipcStallEvent ? "warning" : "neutral",
-    },
+    { label: "Memory", detail: `RSS ${(process.memoryUsage().rss / 1_048_576).toFixed(1)} MB` },
+
+    // ── Support ──
+    { label: "─── Support", detail: "", tone: "info" },
+    { label: "/export-diagnostics", detail: "Write redacted support bundle" },
+    { label: "/report-issue", detail: "Open GitHub issue reporting" },
+
+    // ── Event Log ──
     ...recentEvents.map((event) => ({
       label: `${new Date(event.timestamp).toLocaleTimeString()}  ·  ${event.category}`,
       detail: event.context
@@ -435,6 +427,22 @@ export function buildHistoryPanelLines(
     });
 }
 
+function relativeTime(date: Date): string {
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
+
 export function buildHistoryPickerOptions(
   historyEntries: ReadonlyArray<[string, HistoryEntry]>,
 ): readonly ShellPickerOption<string>[] {
@@ -445,17 +453,18 @@ export function buildHistoryPickerOptions(
       entry.type === "series"
         ? `S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
         : "movie";
-    const resumeState = isCompleted
-      ? "replay starts from beginning"
+    const statusGlyph = isCompleted
+      ? "✓ complete"
       : entry.timestamp > 10
-        ? `resume ${formatTimestamp(entry.timestamp)}`
-        : "start from beginning";
+        ? `⏸ ${formatTimestamp(entry.timestamp)}`
+        : "▶ start";
+    const timeAgo = relativeTime(new Date(entry.watchedAt));
 
     return {
       value: id,
       label: entry.type === "series" ? `${entry.title}  ·  ${episode}` : `${entry.title}  ·  movie`,
-      detail: `${resumeState}  ·  provider ${entry.provider}  ·  ${new Date(entry.watchedAt).toLocaleDateString()}`,
-      badge: details.bar ? `${details.bar} ${details.percentage}%` : "saved",
+      detail: `${statusGlyph}  ·  ${entry.provider}  ·  ${timeAgo}`,
+      badge: details.bar ? `${details.bar} ${details.percentage}%` : undefined,
       tone: isCompleted ? "success" : "neutral",
     };
   });

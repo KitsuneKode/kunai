@@ -68,7 +68,7 @@ export function LineEditorText({
   if (value.length === 0) {
     return (
       <>
-        <Text backgroundColor={palette.cyan} color="black">
+        <Text backgroundColor={palette.teal} color="black">
           {" "}
         </Text>
         {visiblePlaceholder ? <Text color={palette.gray}>{visiblePlaceholder}</Text> : null}
@@ -82,7 +82,7 @@ export function LineEditorText({
   return (
     <>
       <Text color="white">{before}</Text>
-      <Text backgroundColor={palette.cyan} color="black">
+      <Text backgroundColor={palette.teal} color="black">
         {visibleCursor}
       </Text>
       <Text color="white">{after}</Text>
@@ -90,12 +90,28 @@ export function LineEditorText({
   );
 }
 
+/** Commands that appear under the "Context" group header in the palette. */
+const CONTEXT_COMMAND_IDS = new Set<AppCommandId>([
+  "toggle-autoplay",
+  "replay",
+  "recover",
+  "fallback",
+  "streams",
+  "source",
+  "quality",
+  "pick-episode",
+  "next",
+  "previous",
+  "next-season",
+  "download",
+]);
+
 export function CommandPalette({
   input,
   cursor = input.length,
   commands,
   highlightedIndex,
-  maxVisible = 7,
+  maxVisible = 5,
   width,
 }: {
   input: string;
@@ -111,6 +127,28 @@ export function CommandPalette({
   const windowEnd = Math.min(windowStart + visibleCount, matches.length);
   const visibleMatches = matches.slice(windowStart, windowEnd);
   const contentWidth = Math.max(28, (width ?? 84) - 4);
+
+  // Determine if we're showing ungrouped (filtered) or grouped (unfiltered) view
+  const showGrouped = input.trim().length === 0 && matches.length > 0;
+
+  const renderCommand = (command: ResolvedAppCommand, absoluteIndex: number) => {
+    const selected = absoluteIndex === highlightedIndex;
+    return (
+      <Box key={command.id} flexDirection="column">
+        <Text
+          backgroundColor={selected ? palette.teal : undefined}
+          color={selected ? "black" : command.enabled ? palette.muted : palette.gray}
+          bold={selected}
+        >
+          <Text color={selected ? "black" : palette.gray}>{selected ? "❯ " : "  "}</Text>/
+          {truncateLine(`${command.aliases[0]} ${command.description}`, contentWidth - 4)}
+        </Text>
+        {!command.enabled && command.reason ? (
+          <Text color={palette.gray}>{truncateLine(`  ·  ${command.reason}`, contentWidth)}</Text>
+        ) : null}
+      </Box>
+    );
+  };
 
   return (
     <Box
@@ -135,27 +173,47 @@ export function CommandPalette({
         {matches.length > 0 ? (
           <>
             {windowStart > 0 ? <Text color={palette.gray}> ▲ more</Text> : null}
-            {visibleMatches.map((command, index) => {
-              const absoluteIndex = windowStart + index;
-              const selected = absoluteIndex === highlightedIndex;
-              return (
-                <Box key={command.id} flexDirection="column">
-                  <Text
-                    backgroundColor={selected ? palette.cyan : undefined}
-                    color={selected ? "black" : command.enabled ? palette.muted : palette.gray}
-                    bold={selected}
-                  >
-                    <Text color={selected ? "black" : palette.gray}>{selected ? "❯ " : "  "}</Text>/
-                    {truncateLine(`${command.aliases[0]} ${command.description}`, contentWidth - 4)}
-                  </Text>
-                  {!command.enabled && command.reason ? (
-                    <Text color={palette.gray}>
-                      {truncateLine(`  ·  ${command.reason}`, contentWidth)}
-                    </Text>
-                  ) : null}
-                </Box>
-              );
-            })}
+            {showGrouped ? (
+              <>
+                {(() => {
+                  const contextMatches = visibleMatches.filter((c) =>
+                    CONTEXT_COMMAND_IDS.has(c.id),
+                  );
+                  const globalMatches = visibleMatches.filter(
+                    (c) => !CONTEXT_COMMAND_IDS.has(c.id),
+                  );
+                  return (
+                    <>
+                      {contextMatches.length > 0 ? (
+                        <>
+                          <Text color={palette.gray} dimColor>
+                            Context
+                          </Text>
+                          {contextMatches.map((command) =>
+                            renderCommand(command, matches.indexOf(command)),
+                          )}
+                        </>
+                      ) : null}
+                      {globalMatches.length > 0 ? (
+                        <>
+                          <Text color={palette.gray} dimColor>
+                            Global
+                          </Text>
+                          {globalMatches.map((command) =>
+                            renderCommand(command, matches.indexOf(command)),
+                          )}
+                        </>
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </>
+            ) : (
+              visibleMatches.map((command, index) => {
+                const absoluteIndex = windowStart + index;
+                return renderCommand(command, absoluteIndex);
+              })
+            )}
             {windowEnd < matches.length ? <Text color={palette.gray}> ▼ more</Text> : null}
           </>
         ) : (

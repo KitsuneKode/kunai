@@ -1,6 +1,5 @@
 import { getShellViewportPolicy } from "@/app-shell/layout-policy";
-import { mountRootContent } from "@/app-shell/root-content-state";
-import { ResizeBlocker, ShellFooter } from "@/app-shell/shell-primitives";
+import { EmptyState, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import type { Container } from "@/container";
@@ -8,7 +7,15 @@ import type { DownloadJobRecord } from "@kunai/storage";
 import { Box, Text, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 
-function DownloadManagerShell({
+/**
+ * Inline download manager content for rendering inside RootOverlayShell.
+ * Replaces the old mountRootContent-based DownloadManagerShell.
+ *
+ * This component does NOT own chrome — it renders job lists and handles
+ * download-specific input. The parent overlay shell owns the header, footer,
+ * and frame.
+ */
+export function DownloadManagerContent({
   container,
   onClose,
 }: {
@@ -41,9 +48,6 @@ function DownloadManagerShell({
   }, [allJobs.length, selectedIndex]);
 
   useInput((input, key) => {
-    if ((input === "c" && key.ctrl) || input === "\x03") {
-      process.exit(0);
-    }
     if (key.escape) {
       onClose();
       return;
@@ -88,109 +92,97 @@ function DownloadManagerShell({
 
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
+    const totalBlocks = 10;
+    const filled =
+      job.status === "running" && typeof job.progressPercent === "number"
+        ? Math.max(0, Math.min(totalBlocks, Math.round((job.progressPercent / 100) * totalBlocks)))
+        : 0;
     const progressStr =
       job.status === "running" && typeof job.progressPercent === "number"
-        ? `[${"#".repeat(Math.floor(job.progressPercent / 10)).padEnd(10, "-")}] ${job.progressPercent}%`
+        ? `${"█".repeat(filled)}${"░".repeat(totalBlocks - filled)} ${job.progressPercent}%`
         : job.status === "queued"
-          ? "[Queued]"
-          : "[—]";
+          ? "⏳ queued"
+          : job.status === "completed"
+            ? "✓ done"
+            : job.status === "failed"
+              ? "✗ failed"
+              : "— aborted";
     const nameStr = `${job.titleName}${job.episode ? ` S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}` : ""}`;
     const statusColor =
       job.status === "running"
         ? palette.green
-        : job.status === "failed"
-          ? palette.red
-          : job.status === "aborted"
-            ? palette.muted
-            : palette.amber;
-
+        : job.status === "completed"
+          ? palette.green
+          : job.status === "failed"
+            ? palette.red
+            : job.status === "aborted"
+              ? palette.muted
+              : palette.amber;
     return (
       <Box key={job.id} flexDirection="row">
-        <Text color={isSelected ? palette.cyan : palette.gray}>{isSelected ? "❯ " : "  "}</Text>
+        <Text color={isSelected ? palette.teal : palette.gray}>{isSelected ? "❯ " : "  "}</Text>
         <Box width={shellWidth > 80 ? 40 : 25}>
           <Text color={isSelected ? "white" : undefined} bold={isSelected}>
             {truncateLine(nameStr, shellWidth > 80 ? 38 : 23)}
           </Text>
         </Box>
-        <Box width={20}>
+        <Box width={22}>
           <Text color={statusColor}>{progressStr}</Text>
         </Box>
         <Box flexGrow={1}>
-          <Text color={palette.muted}>
+          <Text color={palette.muted} dimColor>
             {job.status === "failed" ? truncateLine(job.errorMessage ?? "Failed", 30) : job.status}
           </Text>
         </Box>
       </Box>
     );
   };
+
   return (
-    <Box flexDirection="column" paddingX={1} flexGrow={1}>
-      <Box flexDirection="column" flexGrow={1}>
-        <Box marginBottom={1}>
-          <Text bold color={palette.cyan}>
-            Download Manager
-          </Text>
+    <Box flexDirection="column" flexGrow={1}>
+      {allJobs.length === 0 ? (
+        <EmptyState
+          icon="⬇"
+          title="No active or recent downloads"
+          subtitle="Queue episodes from playback with / → Download current episode"
+          hint="Completed downloads appear in / → Offline Library"
+        />
+      ) : (
+        <Box flexDirection="column">
+          {activeJobs.length > 0 && (
+            <Box flexDirection="column" marginBottom={1}>
+              <Text color={palette.info}>
+                {"─── "}▶ Active ({activeJobs.length})
+              </Text>
+              {activeJobs.map((j, i) => renderJob(j, i))}
+            </Box>
+          )}
+
+          {queuedJobs.length > 0 && (
+            <Box flexDirection="column" marginBottom={1}>
+              <Text color={palette.info}>
+                {"─── "}⏳ Queued ({queuedJobs.length})
+              </Text>
+              {queuedJobs.map((j, i) => renderJob(j, activeJobs.length + i))}
+            </Box>
+          )}
+
+          {failedJobs.length > 0 && (
+            <Box flexDirection="column" marginBottom={1}>
+              <Text color={palette.red}>
+                {"─── "}✗ Failed ({failedJobs.length})
+              </Text>
+              {failedJobs.map((j, i) => renderJob(j, activeJobs.length + queuedJobs.length + i))}
+            </Box>
+          )}
         </Box>
+      )}
 
-        {allJobs.length === 0 ? (
-          <Box paddingY={2}>
-            <Text color={palette.muted}>No active or recent downloads.</Text>
-          </Box>
-        ) : (
-          <Box flexDirection="column">
-            {activeJobs.length > 0 && (
-              <Box flexDirection="column" marginBottom={1}>
-                <Text color={palette.gray} underline>
-                  ACTIVE DOWNLOADS
-                </Text>
-                {activeJobs.map((j, i) => renderJob(j, i))}
-              </Box>
-            )}
-
-            {queuedJobs.length > 0 && (
-              <Box flexDirection="column" marginBottom={1}>
-                <Text color={palette.gray} underline>
-                  QUEUED
-                </Text>
-                {queuedJobs.map((j, i) => renderJob(j, activeJobs.length + i))}
-              </Box>
-            )}
-
-            {failedJobs.length > 0 && (
-              <Box flexDirection="column" marginBottom={1}>
-                <Text color={palette.gray} underline>
-                  FAILED
-                </Text>
-                {failedJobs.map((j, i) => renderJob(j, activeJobs.length + queuedJobs.length + i))}
-              </Box>
-            )}
-          </Box>
-        )}
+      <Box marginTop={1}>
+        <Text color={palette.gray} dimColor>
+          ✕ cancel/remove · ↻ retry · ↑↓ navigate · Esc close
+        </Text>
       </Box>
-
-      <ShellFooter
-        taskLabel="Live queue · failed retries"
-        actions={[
-          { key: "x", label: "cancel / remove", action: "quit" },
-          { key: "r", label: "retry failed", action: "search" },
-          { key: "esc", label: "back", action: "quit" },
-        ]}
-        mode="minimal"
-      />
     </Box>
   );
-}
-
-export function openDownloadManagerShell(container: Container): Promise<void> {
-  return new Promise((resolve) => {
-    const session = mountRootContent<{ type: "closed" }>({
-      kind: "picker",
-      renderContent: (finish) => (
-        <DownloadManagerShell container={container} onClose={() => finish({ type: "closed" })} />
-      ),
-      fallbackValue: { type: "closed" },
-    });
-
-    session.result.then(() => resolve());
-  });
 }

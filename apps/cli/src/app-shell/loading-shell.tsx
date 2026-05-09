@@ -303,7 +303,7 @@ export function LoadingShell({
 
   const isPlaying = state.operation === "playing";
   const leadIcon = isPlaying ? "▶" : spinner;
-  const accentColor = isPlaying ? palette.green : pulse ? palette.cyan : "white";
+  const accentColor = isPlaying ? palette.green : pulse ? palette.teal : "white";
   const separatorWidth = Math.min(52, Math.max(24, (stdout.columns ?? 80) - 22));
   const infoWidth = Math.min(76, Math.max(40, (stdout.columns ?? 80) - 12));
   const subtitleTone = state.subtitleStatus
@@ -539,20 +539,20 @@ export function LoadingShell({
             <Box
               width={Math.min(40, (stdout.columns ?? 80) - 4)}
               borderStyle="round"
-              borderColor={palette.cyan}
+              borderColor={palette.info}
               paddingX={1}
             >
               <Text>
                 {"█".repeat(Math.floor(state.progress / 2.5))}
                 {"░".repeat(40 - Math.floor(state.progress / 2.5))}
               </Text>
-              <Text color={palette.cyan}> {Math.round(state.progress)}%</Text>
+              <Text color={palette.info}> {Math.round(state.progress)}%</Text>
             </Box>
           </Box>
         ) : (
           !isPlaying && (
             <Box marginTop={1}>
-              <Text color={pulse ? palette.cyan : palette.gray} dimColor>
+              <Text color={pulse ? palette.info : palette.gray} dimColor>
                 {pulse ? waitPresentation.message : "Waiting on provider response..."}
               </Text>
             </Box>

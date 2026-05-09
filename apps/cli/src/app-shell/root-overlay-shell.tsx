@@ -7,9 +7,10 @@ import type {
   QuitNearEndThresholdMode,
 } from "@/services/persistence/ConfigService";
 import { Box, useInput, useStdout } from "ink";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { resolveCommandContext } from "./commands";
+import { DownloadManagerContent } from "./download-manager-shell";
 import {
   buildSettingsChoiceOverlay,
   buildSettingsOptions,
@@ -249,6 +250,7 @@ export function RootOverlayShell({
         action === "help" ||
         action === "about" ||
         action === "diagnostics" ||
+        action === "downloads" ||
         action === "history" ||
         action === "provider"
       ) {
@@ -268,9 +270,11 @@ export function RootOverlayShell({
                 }
               : action === "history"
                 ? { type: "history" }
-                : action === "settings" || action === "presence"
-                  ? { type: "settings" }
-                  : { type: action },
+                : action === "downloads"
+                  ? { type: "downloads" }
+                  : action === "settings" || action === "presence"
+                    ? { type: "settings" }
+                    : { type: action },
         });
       }
     },
@@ -711,6 +715,39 @@ export function RootOverlayShell({
                   lines: buildHelpPanelLines(),
                   scrollIndex: 0,
                 };
+
+  if (overlay.type === "downloads") {
+    return (
+      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
+        <Box flexDirection="column" flexGrow={1}>
+          <Box>
+            <InlineBadge label="panel downloads" tone="success" />
+          </Box>
+          <DownloadManagerContent
+            container={container}
+            onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+          />
+        </Box>
+
+        <Box flexDirection="column">
+          {commandMode ? (
+            <CommandPalette
+              input={commandInput}
+              cursor={commandCursor}
+              commands={commands}
+              highlightedIndex={highlightedIndex}
+            />
+          ) : null}
+          <ShellFooter
+            taskLabel="Download queue  ·  x cancel/remove, r retry, Esc closes"
+            actions={footerActions}
+            mode="detailed"
+            commandMode={commandMode}
+          />
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between">

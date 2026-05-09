@@ -11,15 +11,22 @@ export const palette = {
   surfaceActive: tokens.surfaceActive,
 
   amber: tokens.amber,
+  amberSoft: tokens.amberSoft,
   pink: tokens.pink,
 
   // teal replaces cyan — callers using palette.cyan still work via alias
   cyan: tokens.teal,
   teal: tokens.teal,
 
+  // Informational blue — for badges, counts, and status display text
+  info: tokens.info,
+  infoDim: tokens.infoDim,
+
+  // Discovery / recommendation accent
+  lavender: tokens.lavender,
+
   green: tokens.green,
   red: tokens.red,
-  rose: tokens.amberSoft,
 
   // gray kept as alias for dim — callers using palette.gray still work
   gray: tokens.dim,
@@ -39,6 +46,8 @@ export function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
       return palette.amber;
     case "error":
       return palette.red;
+    case "info":
+      return palette.info;
     default:
       return palette.teal;
   }

@@ -144,7 +144,7 @@ function ChecklistShell<T>({
     <Box flexDirection="column" paddingX={1}>
       <Box flexDirection="column">
         <Box flexDirection="column">
-          <Text color={confirmed ? palette.green : palette.cyan}>
+          <Text color={confirmed ? palette.green : palette.teal}>
             {confirmed ? "Selected" : title}
           </Text>
           <Text color={palette.muted}>
@@ -152,7 +152,7 @@ function ChecklistShell<T>({
           </Text>
         </Box>
         <Box paddingY={1}>
-          <Text color="cyan">Filter: </Text>
+          <Text color={palette.teal}>Filter: </Text>
           <Text>{filterQuery || <Text color={palette.gray}>Type to search...</Text>}</Text>
         </Box>
         {tooSmall ? (
@@ -173,13 +173,13 @@ function ChecklistShell<T>({
                   const highlighted = option === selectedOption;
                   const isChecked = selectedSet.has(option.value);
                   const isConfirmed = confirmed && isChecked;
-                  const itemPrefix = isChecked ? "[x]" : "[ ]";
+                  const itemPrefix = isChecked ? "☑" : "☐";
                   const itemTone = isConfirmed
                     ? palette.green
                     : highlighted
                       ? palette.amber
                       : isChecked
-                        ? palette.cyan
+                        ? palette.teal
                         : palette.gray;
                   const secondary = option.detail
                     ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 6))}`
@@ -188,7 +188,7 @@ function ChecklistShell<T>({
                   return (
                     <Box key={`${option.label}-${option.detail ?? ""}`}>
                       <Text
-                        backgroundColor={highlighted ? palette.cyan : undefined}
+                        backgroundColor={highlighted ? palette.teal : undefined}
                         color={highlighted ? "black" : "white"}
                         bold={highlighted || isChecked}
                         dimColor={!highlighted && !isChecked}

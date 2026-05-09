@@ -30,7 +30,16 @@ async function openRootOwnedOverlay(
   container: Container,
   overlay: Extract<
     import("@/domain/session/SessionState").OverlayState,
-    { type: "help" | "about" | "diagnostics" | "provider_picker" | "history" | "settings" }
+    {
+      type:
+        | "help"
+        | "about"
+        | "diagnostics"
+        | "downloads"
+        | "provider_picker"
+        | "history"
+        | "settings";
+    }
   >,
 ): Promise<void> {
   const { stateManager } = container;
