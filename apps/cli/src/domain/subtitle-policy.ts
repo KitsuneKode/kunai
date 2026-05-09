@@ -23,7 +23,12 @@ export function hardSubSatisfiesSubtitlePreference(
   stream: StreamInfo,
   preferredSubtitleLanguage: string,
 ): boolean {
-  if (preferredSubtitleLanguage === "none" || preferredSubtitleLanguage === "fzf") return false;
+  if (
+    preferredSubtitleLanguage === "none" ||
+    preferredSubtitleLanguage === "interactive" ||
+    preferredSubtitleLanguage === "fzf"
+  )
+    return false;
   const hardSubLanguage = selectedHardSubLanguage(stream);
   return hardSubLanguage ? langMatches(hardSubLanguage, preferredSubtitleLanguage) : false;
 }

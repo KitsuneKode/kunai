@@ -117,6 +117,40 @@ test("buildMpvArgs keeps mpv alive between files for persistent autoplay chains"
   expect(args).toContain("--idle=yes");
 });
 
+test("buildMpvArgs maps language preferences to mpv alang/slang", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/master.m3u8",
+      headers: {},
+      subtitle: null,
+      audioPreference: "original",
+      subtitlePreference: "none",
+      displayTitle: "Language wiring",
+    },
+    "/tmp/kunai-test.sock",
+  );
+
+  expect(args).toContain("--alang=orig");
+  expect(args).toContain("--slang=no");
+});
+
+test("buildMpvArgs skips slang for interactive subtitle mode", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/master.m3u8",
+      headers: {},
+      subtitle: null,
+      audioPreference: "ja",
+      subtitlePreference: "interactive",
+      displayTitle: "Interactive subtitle picker",
+    },
+    "/tmp/kunai-test.sock",
+  );
+
+  expect(args).toContain("--alang=ja");
+  expect(args.some((arg) => arg.startsWith("--slang="))).toBe(false);
+});
+
 test("collectAdditionalSubtitleTracks excludes the primary subtitle and dedupes extras", () => {
   expect(
     collectAdditionalSubtitleTracks("https://sub.example/en.srt", [

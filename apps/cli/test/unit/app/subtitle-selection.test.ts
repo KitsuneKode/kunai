@@ -82,10 +82,10 @@ describe("choosePlaybackSubtitle", () => {
     expect(result.reason).toBe("auto-selected");
   });
 
-  test("uses interactive picking when fzf mode is enabled", async () => {
+  test("uses interactive picking when interactive mode is enabled", async () => {
     const result = await choosePlaybackSubtitle({
       stream: BASE_STREAM,
-      subLang: "fzf",
+      subLang: "interactive",
       pickSubtitle: async (tracks) => tracks[1]?.url ?? null,
     });
 
@@ -100,7 +100,7 @@ describe("choosePlaybackSubtitle", () => {
         ...BASE_STREAM,
         subtitleList: undefined,
       },
-      subLang: "fzf",
+      subLang: "interactive",
       pickSubtitle: async () => null,
     });
 

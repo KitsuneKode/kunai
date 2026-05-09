@@ -41,7 +41,7 @@ export async function choosePlaybackSubtitle({
     };
   }
 
-  if (subLang === "fzf") {
+  if (subLang === "interactive" || subLang === "fzf") {
     if (!stream.subtitleList?.length) {
       return {
         subtitle: stream.subtitle ?? null,

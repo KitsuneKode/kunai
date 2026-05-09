@@ -475,7 +475,12 @@ export async function resolveSubtitlesByTmdbId(opts: {
     const params = new URLSearchParams({ id: tmdbId, key: WYZIE_KEY });
     if (type === "series" && season !== undefined) params.set("season", String(season));
     if (type === "series" && episode !== undefined) params.set("episode", String(episode));
-    if (preferredLang && preferredLang !== "none" && preferredLang !== "fzf") {
+    if (
+      preferredLang &&
+      preferredLang !== "none" &&
+      preferredLang !== "interactive" &&
+      preferredLang !== "fzf"
+    ) {
       params.set("language", preferredLang);
     }
 

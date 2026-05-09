@@ -38,11 +38,11 @@ describe("ConfigServiceImpl", () => {
     const store = new MemoryConfigStore();
     const service = await ConfigServiceImpl.load(store);
 
-    await service.update({ defaultMode: "anime", subLang: "fzf", footerHints: "minimal" });
+    await service.update({ defaultMode: "anime", subLang: "interactive", footerHints: "minimal" });
     await service.save();
 
     expect((await store.load()).defaultMode).toBe("anime");
-    expect((await store.load()).subLang).toBe("fzf");
+    expect((await store.load()).subLang).toBe("en");
     expect((await store.load()).footerHints).toBe("minimal");
   });
 
@@ -94,5 +94,15 @@ describe("ConfigServiceImpl", () => {
 
     expect(noneService.subLang).toBe("en");
     expect(fzfService.subLang).toBe("en");
+  });
+
+  test("migrates legacy profile subtitle preference fzf to interactive", async () => {
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        animeLanguageProfile: { audio: "original", subtitle: "fzf" },
+      }),
+    );
+
+    expect(service.animeLanguageProfile.subtitle).toBe("interactive");
   });
 });

@@ -116,7 +116,7 @@ export async function fetchSeriesData(
 }
 
 // Format an EpisodeInfo for display in a picker.
-// Returns a consistent-width string suitable for fzf.
+// Returns a consistent-width string suitable for interactive list pickers.
 export function formatEpisode(ep: EpisodeInfo): string {
   const num = `Ep ${String(ep.number).padStart(3, " ")}`;
   const name = ep.name.slice(0, 44).padEnd(44, " ");

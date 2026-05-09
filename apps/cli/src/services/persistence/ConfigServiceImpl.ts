@@ -14,10 +14,26 @@ import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
 
 function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
-  if (!subLang || subLang === "none" || subLang === "fzf") {
+  if (!subLang || subLang === "none" || subLang === "fzf" || subLang === "interactive") {
     return DEFAULT_CONFIG.subLang;
   }
   return subLang;
+}
+
+function normalizeSubtitlePreference(value: string | undefined): string {
+  if (!value) return "none";
+  if (value === "fzf") return "interactive";
+  return value;
+}
+
+function normalizeLanguageProfile(
+  profile: KitsuneConfig["animeLanguageProfile"] | undefined,
+): KitsuneConfig["animeLanguageProfile"] {
+  if (!profile) return { audio: "original", subtitle: "none" };
+  return {
+    audio: profile.audio,
+    subtitle: normalizeSubtitlePreference(profile.subtitle),
+  };
 }
 
 export class ConfigServiceImpl implements ConfigService {
@@ -34,6 +50,9 @@ export class ConfigServiceImpl implements ConfigService {
       ...DEFAULT_CONFIG,
       ...loaded,
       subLang: normalizeDefaultSubtitleLanguage(loaded.subLang),
+      animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
+      seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
+      movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
     };
     return service;
   }
@@ -188,7 +207,22 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   async update(partial: Partial<KitsuneConfig>): Promise<void> {
-    this.config = { ...this.config, ...partial };
+    this.config = {
+      ...this.config,
+      ...partial,
+      ...(partial.subLang !== undefined
+        ? { subLang: normalizeDefaultSubtitleLanguage(partial.subLang) }
+        : null),
+      ...(partial.animeLanguageProfile
+        ? { animeLanguageProfile: normalizeLanguageProfile(partial.animeLanguageProfile) }
+        : null),
+      ...(partial.seriesLanguageProfile
+        ? { seriesLanguageProfile: normalizeLanguageProfile(partial.seriesLanguageProfile) }
+        : null),
+      ...(partial.movieLanguageProfile
+        ? { movieLanguageProfile: normalizeLanguageProfile(partial.movieLanguageProfile) }
+        : null),
+    };
   }
 
   async save(): Promise<void> {
