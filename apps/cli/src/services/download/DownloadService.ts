@@ -14,6 +14,7 @@ import {
   type PlaybackDownloadMatchInput,
 } from "./playback-download-match";
 import { buildDownloadStreamPolicy } from "./stream-policy";
+import { resolveSubtitleArtifactPath } from "./subtitle-artifact-path";
 
 const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -142,6 +143,10 @@ export class DownloadService {
 
   listFailed(limit = 100): readonly DownloadJobRecord[] {
     return this.deps.repo.listFailed(limit);
+  }
+
+  getJob(id: string): DownloadJobRecord | undefined {
+    return this.deps.repo.get(id);
   }
 
   /** Non-blocking playback surface: one-line summary for the active download matching the current title/episode. */
@@ -340,7 +345,6 @@ export class DownloadService {
   private async downloadSubtitleIfAvailable(job: DownloadJobRecord): Promise<void> {
     if (!job.subtitleUrl) return;
     try {
-      const targetPath = resolveSubtitlePath(job);
       const policy = buildDownloadStreamPolicy(job.headers);
       const res = await fetch(job.subtitleUrl, {
         headers: policy.headers,
@@ -349,6 +353,11 @@ export class DownloadService {
       if (!res.ok) {
         return;
       }
+      const targetPath = resolveSubtitleArtifactPath({
+        videoOutputPath: job.outputPath,
+        subtitleUrl: job.subtitleUrl,
+        contentType: res.headers.get("content-type"),
+      });
       const buffer = new Uint8Array(await res.arrayBuffer());
       await Bun.write(targetPath, buffer);
       this.deps.repo.updateOfflineMetadata(
@@ -545,9 +554,4 @@ function resolveSubtitleLanguage(stream: StreamInfo): string | null {
   if (candidate?.language) return candidate.language;
   if (stream.hardSubLanguage) return stream.hardSubLanguage;
   return null;
-}
-
-function resolveSubtitlePath(job: DownloadJobRecord): string {
-  const base = job.outputPath.replace(/\.[^./]+$/, "");
-  return `${base}.srt`;
 }

@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { describeEpisodeWatchPresentation } from "@/app/playback-episode-picker";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
@@ -7,7 +7,16 @@ import { effectiveFooterHints } from "@/container";
 import type { EpisodePickerOption } from "@/domain/types";
 import { isChafaAvailable } from "@/image";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
+import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
+import {
+  formatOfflineJobListingTitle,
+  formatOfflineSecondaryLine,
+  hydrateCompletedOfflineJobs,
+  offlineStatusIcon,
+  parseIntroSkipTiming,
+  resolveOfflineArtifactStatus,
+} from "@/services/offline/offline-library";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   formatTimestamp,
@@ -478,11 +487,7 @@ function summarizeHeaderKeys(headers: Record<string, string> | undefined): strin
 }
 
 function describeDownloadJob(job: import("@kunai/storage").DownloadJobRecord): string {
-  const episodeLabel =
-    job.season !== undefined && job.episode !== undefined
-      ? `S${String(job.season).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`
-      : "movie";
-  return `${job.titleName}  ·  ${episodeLabel}`;
+  return formatOfflineJobListingTitle(job);
 }
 
 function detailDownloadJob(job: import("@kunai/storage").DownloadJobRecord): string {
@@ -717,6 +722,168 @@ async function openDownloadsShell(
   }
 }
 
+type OfflineBrowsePick = { readonly type: "job"; readonly id: string } | { readonly type: "back" };
+
+type OfflineJobMenuChoice = "play" | "open-folder" | "jobs" | "recheck" | "back";
+
+export async function openOfflineLibraryShell(
+  container: Container,
+  actionContext?: ListShellActionContext,
+  playbackOptions?: { attachPlaybackStdioToMpv?: boolean },
+): Promise<void> {
+  const attachStdio = playbackOptions?.attachPlaybackStdioToMpv ?? false;
+  while (true) {
+    const completed = container.downloadService.listCompleted(120);
+    if (completed.length === 0) {
+      await chooseOption({
+        title: "Offline Library",
+        subtitle:
+          "No completed downloads yet  ·  enqueue during playback (/ → Download current episode)",
+        actionContext,
+        options: [{ value: "back-empty" as const, label: "Back" }],
+      });
+      return;
+    }
+
+    const rows = await hydrateCompletedOfflineJobs(completed);
+    const picked = await chooseOption<OfflineBrowsePick>({
+      title: "Offline Library",
+      subtitle: `${rows.length} completed  ·  browse and play downloaded files`,
+      actionContext,
+      options: [
+        ...rows.map(({ job, status }) => ({
+          value: { type: "job" as const, id: job.id },
+          label: `${offlineStatusIcon(status)} ${formatOfflineJobListingTitle(job)}`,
+          detail: formatOfflineSecondaryLine(job, status),
+        })),
+        { value: { type: "back" as const }, label: "Back" },
+      ],
+    });
+
+    if (!picked || picked.type === "back") {
+      return;
+    }
+
+    let jobSnapshot =
+      rows.find((r) => r.job.id === picked.id)?.job ??
+      completed.find((entry) => entry.id === picked.id);
+    if (!jobSnapshot) {
+      continue;
+    }
+
+    while (true) {
+      const artifactStatus = await resolveOfflineArtifactStatus(jobSnapshot);
+      const action = await chooseOption<OfflineJobMenuChoice>({
+        title: formatOfflineJobListingTitle(jobSnapshot),
+        subtitle: `${formatOfflineSecondaryLine(jobSnapshot, artifactStatus)}  ·  ${jobSnapshot.outputPath}`,
+        actionContext,
+        options: [
+          {
+            value: "play",
+            label: "Play now",
+            detail:
+              artifactStatus === "ready" ? "Open in mpv" : "Unavailable until artifact is readable",
+          },
+          {
+            value: "open-folder",
+            label: "Open download folder",
+            detail: "Reveal folder in Finder, Explorer, or xdg-open",
+          },
+          {
+            value: "jobs",
+            label: "Download jobs",
+            detail: "Open /downloads lifecycle panel",
+          },
+          {
+            value: "recheck",
+            label: "Refresh artifact status",
+            detail: artifactStatus !== "ready" ? "Recommended" : undefined,
+          },
+          { value: "back", label: "Back" },
+        ],
+      });
+
+      if (!action || action === "back") {
+        break;
+      }
+
+      if (action === "recheck") {
+        container.diagnosticsStore.record({
+          category: "download",
+          message: "Offline artifact rechecked",
+          context: { jobId: jobSnapshot.id, outcome: artifactStatus, path: jobSnapshot.outputPath },
+        });
+        const refreshed = container.downloadService.getJob(jobSnapshot.id);
+        if (refreshed) jobSnapshot = refreshed;
+        continue;
+      }
+
+      if (action === "jobs") {
+        await openDownloadsShell(container, actionContext);
+        continue;
+      }
+
+      if (action === "open-folder") {
+        const reveal = await revealPathInOsFileManager(jobSnapshot.outputPath);
+        if (!reveal.ok) {
+          await openStaticInfoShell({
+            title: "Could not open folder automatically",
+            subtitle: basename(dirname(jobSnapshot.outputPath)),
+            lines: [
+              { label: "Folder path", detail: dirname(jobSnapshot.outputPath) },
+              {
+                label: "Error",
+                detail: reveal.stderr ?? "System helper exited with an error.",
+              },
+            ],
+          });
+        }
+        continue;
+      }
+
+      if (action !== "play") {
+        continue;
+      }
+
+      if (artifactStatus !== "ready") {
+        await openStaticInfoShell({
+          title: "Playback blocked",
+          subtitle: formatOfflineJobListingTitle(jobSnapshot),
+          lines: [
+            { label: "Artifact status", detail: artifactStatus },
+            {
+              label: "Suggested next steps",
+              detail:
+                artifactStatus === "missing"
+                  ? "Re-queue from playback or inspect failed jobs via Download jobs."
+                  : "Replace the corrupt file — delete locally and enqueue a fresh download.",
+            },
+            { label: "Path", detail: jobSnapshot.outputPath },
+          ],
+        });
+        continue;
+      }
+
+      await container.player.playLocal({
+        filePath: jobSnapshot.outputPath,
+        displayTitle: formatOfflineJobListingTitle(jobSnapshot),
+        subtitlePath: jobSnapshot.subtitlePath ?? null,
+        timing: parseIntroSkipTiming(jobSnapshot.introSkipJson),
+        attach: attachStdio,
+      });
+
+      container.diagnosticsStore.record({
+        category: "playback",
+        message: "Offline playback started",
+        context: {
+          jobId: jobSnapshot.id,
+          outputPath: jobSnapshot.outputPath,
+        },
+      });
+    }
+  }
+}
+
 async function openStaticInfoShell({
   title,
   subtitle,
@@ -763,7 +930,7 @@ export function buildPickerActionContext({
   container,
   taskLabel,
   footerMode = effectiveFooterHints(container),
-  allowed = ["settings", "history", "diagnostics", "help", "about", "quit"],
+  allowed = ["settings", "history", "diagnostics", "help", "about", "quit", "downloads", "library"],
 }: {
   container: Container;
   taskLabel: string;
@@ -879,6 +1046,17 @@ export async function handleShellAction({
     return "handled";
   }
 
+  if (action === "library") {
+    await withOverlay({ type: "history" }, () =>
+      openOfflineLibraryShell(
+        container,
+        buildPickerActionContext({ container, taskLabel: "Offline library" }),
+        { attachPlaybackStdioToMpv: false },
+      ),
+    );
+    return "handled";
+  }
+
   if (action === "help") {
     await withOverlay({ type: "help" }, () =>
       openStaticInfoShell({
@@ -927,7 +1105,7 @@ export async function handleShellAction({
           {
             label: "Playback actions",
             detail:
-              "Replay, episode picker, provider switch, history, diagnostics, and next/previous actions stay reachable after playback ends.",
+              "Replay, episode picker, provider switch, history, diagnostics, downloads, offline library, and next/previous actions stay reachable after playback ends.",
           },
           {
             label: "Why commands are disabled",

@@ -2,7 +2,7 @@
 
 This is the canonical design reference for future download/offline/onboarding work.
 
-Status: in progress (feature gate + config fields + `download_jobs` persistence + retry/reconcile worker + `/downloads` shell panel + validated `--offline` listing landed; full offline playback library UX and daemon extraction still pending).
+Status: in progress (`/library` shell panel + validated `--offline` share the offline flow; daemon extraction still pending).
 
 ## Product Shape
 

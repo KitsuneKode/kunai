@@ -32,7 +32,8 @@ export type AppCommandId =
   | "export-diagnostics"
   | "report-issue"
   | "download"
-  | "downloads";
+  | "downloads"
+  | "library";
 
 export type AppCommand = {
   readonly id: AppCommandId;
@@ -54,6 +55,7 @@ export const COMMAND_CONTEXTS = {
     "provider",
     "history",
     "downloads",
+    "library",
     "help",
     "about",
     "diagnostics",
@@ -73,6 +75,7 @@ export const COMMAND_CONTEXTS = {
     "quality",
     "download",
     "downloads",
+    "library",
     "next",
     "previous",
     "history",
@@ -99,6 +102,7 @@ export const COMMAND_CONTEXTS = {
     "quality",
     "download",
     "downloads",
+    "library",
     "pick-episode",
     "next",
     "previous",
@@ -132,6 +136,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Download Jobs",
     aliases: ["downloads", "download-jobs", "jobs"],
     description: "Inspect and control queued/running/failed download jobs",
+  },
+  {
+    id: "library",
+    label: "Offline Library",
+    aliases: ["library", "offline-library", "my-downloads"],
+    description: "Browse completed downloads and play local files",
   },
   {
     id: "search",
@@ -631,6 +641,9 @@ function resolveCommandState(
           };
 
     case "downloads":
+      return { enabled: true };
+
+    case "library":
       return { enabled: true };
 
     case "previous":

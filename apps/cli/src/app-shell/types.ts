@@ -29,6 +29,7 @@ export type ShellAction =
   | "quality"
   | "download"
   | "downloads"
+  | "library"
   | "pick-episode"
   | "next"
   | "previous"
@@ -180,6 +181,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "report-issue":
     case "download":
     case "downloads":
+    case "library":
       return commandId;
   }
 }
