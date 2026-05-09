@@ -1,16 +1,15 @@
-import { unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { detectImageCapability } from "@/image";
+import { ensurePngBytes } from "@/image/convert";
+import { debugImage } from "@/image/debug";
 
-import { isKittyCompatible } from "../image";
 import type { PosterResult } from "./poster-types";
 
-let _magickAvailable: boolean | null = null;
-async function isMagickAvailable(): Promise<boolean> {
-  if (_magickAvailable !== null) return _magickAvailable;
-  _magickAvailable = Boolean(Bun.which("magick"));
-  return _magickAvailable;
-}
+const runtime = {
+  detectImageCapability,
+  which: (command: string): string | null => Bun.which(command),
+  spawn: (command: string[], options?: Bun.SpawnOptions.OptionsObject<any, "pipe", "pipe">) =>
+    Bun.spawn(command, options as Bun.SpawnOptions.OptionsObject<any, "pipe", "pipe">),
+};
 
 let nextId = 1;
 function allocId(): number {
@@ -20,12 +19,14 @@ function allocId(): number {
 }
 
 export function deleteKittyImage(imageId: number): void {
-  if (!isKittyCompatible()) return;
+  const capability = runtime.detectImageCapability();
+  if (capability.renderer !== "kitty-native") return;
   process.stdout.write(`\x1b_Ga=d,d=I,i=${imageId};\x1b\\`);
 }
 
 export function deleteAllTerminalImages(): void {
-  if (!isKittyCompatible()) return;
+  const capability = runtime.detectImageCapability();
+  if (capability.renderer !== "kitty-native") return;
   process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
 }
 
@@ -83,8 +84,9 @@ async function uploadKitty(
   cols: number,
 ): Promise<void> {
   const b64 = Buffer.from(data).toString("base64");
+  if (b64.length === 0) return;
   const chunkSize = 4096;
-  for (let i = 0; i < b64.length || i === 0; i += chunkSize) {
+  for (let i = 0; i < b64.length; i += chunkSize) {
     const chunk = b64.slice(i, i + chunkSize);
     const more = i + chunkSize < b64.length ? 1 : 0;
     const ctrl =
@@ -93,53 +95,13 @@ async function uploadKitty(
   }
 }
 
-function isPng(data: ArrayBuffer): boolean {
-  const bytes = new Uint8Array(data, 0, Math.min(data.byteLength, 8));
-  return (
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47 &&
-    bytes[4] === 0x0d &&
-    bytes[5] === 0x0a &&
-    bytes[6] === 0x1a &&
-    bytes[7] === 0x0a
-  );
-}
-
-async function ensureKittyPng(data: ArrayBuffer): Promise<ArrayBuffer | null> {
-  if (isPng(data)) return data;
-  if (!(await isMagickAvailable())) return null;
-
-  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const inputPath = join(tmpdir(), `kunai-poster-${id}.image`);
-  const outputPath = join(tmpdir(), `kunai-poster-${id}.png`);
-  try {
-    await Bun.write(inputPath, data);
-    const proc = Bun.spawn(["magick", inputPath, `png:${outputPath}`], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    if ((await proc.exited) !== 0) return null;
-    return await Bun.file(outputPath).arrayBuffer();
-  } catch {
-    return null;
-  } finally {
-    for (const path of [inputPath, outputPath]) {
-      try {
-        await unlink(path);
-      } catch {
-        // best-effort cleanup
-      }
-    }
-  }
-}
-
 async function renderKitty(data: ArrayBuffer, rows: number, cols: number): Promise<PosterResult> {
-  const png = await ensureKittyPng(data);
+  if (data.byteLength === 0) return { kind: "none" };
+  const png = await ensurePngBytes(new Uint8Array(data));
   if (!png) return { kind: "none" };
   const imageId = allocId();
-  await uploadKitty(png, imageId, rows, cols);
+  const pngBuffer = Uint8Array.from(png).buffer;
+  await uploadKitty(pngBuffer, imageId, rows, cols);
   return {
     kind: "kitty",
     placeholder: buildPlaceholder(imageId, rows, cols),
@@ -149,16 +111,68 @@ async function renderKitty(data: ArrayBuffer, rows: number, cols: number): Promi
   };
 }
 
+async function renderSymbols(data: ArrayBuffer, rows: number, cols: number): Promise<PosterResult> {
+  const proc = runtime.spawn(
+    [
+      "chafa",
+      "--format",
+      "symbols",
+      "--size",
+      `${cols}x${rows}`,
+      "--animate",
+      "off",
+      "--polite",
+      "on",
+      "--colors",
+      "full",
+      "-",
+    ],
+    {
+      stdin: new Uint8Array(data),
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (exitCode !== 0) {
+    debugImage(`chafa symbols render failed (${exitCode}): ${stderr.trim()}`);
+    return { kind: "none" };
+  }
+  const placeholder = stdout.trimEnd();
+  if (placeholder.length === 0) return { kind: "none" };
+  return {
+    kind: "text",
+    placeholder,
+    rows,
+    cols,
+  };
+}
+
 export async function renderPoster(
   data: ArrayBuffer,
   { rows, cols, allowKitty = true }: { rows: number; cols: number; allowKitty?: boolean },
 ): Promise<PosterResult> {
   try {
-    if (allowKitty && isKittyCompatible()) {
+    if (!allowKitty) return { kind: "none" };
+    const capability = runtime.detectImageCapability();
+    if (!capability.available || capability.renderer === "none") return { kind: "none" };
+    if (capability.renderer === "kitty-native") {
       return await renderKitty(data, rows, cols);
+    }
+    if (capability.renderer === "chafa-sixel" || capability.renderer === "chafa-symbols") {
+      if (!runtime.which("chafa")) return { kind: "none" };
+      return await renderSymbols(data, rows, cols);
     }
     return { kind: "none" };
   } catch {
     return { kind: "none" };
   }
 }
+
+export const __testing = {
+  runtime,
+};

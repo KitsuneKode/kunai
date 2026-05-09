@@ -201,7 +201,7 @@ export function buildDiagnosticsPanelLines({
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
   capabilitySnapshot?: CapabilitySnapshot | null;
-  downloadSummary?: { active: number; completed: number } | null;
+  downloadSummary?: { active: number; completed: number; failed?: number } | null;
   presenceSnapshot?: PresenceSnapshot | null;
 }): readonly ShellPanelLine[] {
   const subtitleState = describeSubtitleState(state);
@@ -317,13 +317,13 @@ export function buildDiagnosticsPanelLines({
           ? capabilitySnapshot.issues
               .map((issue) => `${issue.id} (${issue.severity})`)
               .join("  ·  ")
-          : `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}  ·  ffmpeg ${capabilitySnapshot?.ffmpeg ? "ready" : "missing"}  ·  kitty ${capabilitySnapshot?.kittyCompatible ? "ready" : "off"}  ·  magick ${capabilitySnapshot?.magick ? "ready" : "missing"}`,
+          : `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}  ·  ffmpeg ${capabilitySnapshot?.ffmpeg ? "ready" : "missing"}  ·  chafa ${capabilitySnapshot?.chafa ? "ready" : "missing"}  ·  magick ${capabilitySnapshot?.magick ? "ready" : "missing"}  ·  image ${capabilitySnapshot?.image.renderer ?? "unknown"} (${capabilitySnapshot?.image.terminal ?? "unknown"})`,
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
     },
     {
       label: "Download queue",
       detail: downloadSummary
-        ? `${downloadSummary.active} active  ·  ${downloadSummary.completed} completed`
+        ? `${downloadSummary.active} active  ·  ${downloadSummary.failed ?? 0} failed  ·  ${downloadSummary.completed} completed`
         : "queue status unavailable",
       tone: downloadSummary && downloadSummary.active > 0 ? "info" : "neutral",
     },

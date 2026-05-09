@@ -7,29 +7,32 @@ Kunai is a terminal-first media tool that resolves provider streams and launches
 ## Requirements
 
 - `mpv` on your `PATH` (required)
-- Kitty or Ghostty terminal for inline poster previews (optional)
-- ImageMagick (`magick`) for broader poster format support in Kitty/Ghostty (optional)
 - `ffmpeg` for download/offline queue support (optional)
+- `chafa` for poster previews (Sixel/ANSI fallback in non-Kitty terminals)
+- Kitty/Ghostty terminal for native Kitty poster previews (optional)
+- ImageMagick (`magick`) for Kitty/Ghostty non-PNG poster conversion (optional)
 - Discord desktop app for Rich Presence (optional; `node` is required when Presence is enabled)
+
+Poster subsystem and testing: repo root [.docs/poster-image-rendering.md](../../.docs/poster-image-rendering.md).
 
 Install core tools:
 
 ```bash
 # Linux (Arch)
-sudo pacman -S mpv ffmpeg imagemagick
+sudo pacman -S mpv ffmpeg chafa imagemagick
 
 # Linux (Debian/Ubuntu)
-sudo apt install mpv ffmpeg imagemagick
+sudo apt install mpv ffmpeg chafa imagemagick
 
 # macOS (Homebrew)
-brew install mpv ffmpeg imagemagick
+brew install mpv ffmpeg chafa imagemagick
 ```
 
 Windows options:
 
-- `winget` (recommended): install `mpv`, `ffmpeg`, and `ImageMagick`
-- Chocolatey: `choco install mpv ffmpeg imagemagick`
-- Scoop: `scoop install mpv ffmpeg imagemagick`
+- `winget` (recommended): install `mpv`, `ffmpeg`, `chafa` (`winget install hpjansson.Chafa`), and ImageMagick (`winget install ImageMagick.ImageMagick`)
+- Chocolatey: `choco install mpv ffmpeg chafa imagemagick`
+- Scoop: `scoop install mpv ffmpeg chafa imagemagick`
 
 ## Install
 
@@ -66,7 +69,13 @@ Recommendation shortcuts:
 ```bash
 # inside Kunai command palette
 / recommendation
+/ downloads
 ```
+
+Download workflow shortcuts:
+
+- During playback or post-playback, use `d` / `/download` to queue the current stream.
+- Use `/downloads` to inspect active/failed/completed jobs and retry or cancel entries.
 
 ## Diagnostics
 

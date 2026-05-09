@@ -22,28 +22,49 @@ Kunai lets you browse in a fullscreen TUI, resolve provider streams, and hand pl
 ### Optional (recommended)
 
 - `ffmpeg` for downloads/offline queue
-- Kitty/Ghostty for inline poster previews
-- ImageMagick (`magick`) for broader poster compatibility (especially non-PNG)
+- `chafa` for poster previews (Sixel/ANSI fallback in non-Kitty terminals)
+- Kitty/Ghostty for native Kitty poster previews
+- `magick` (ImageMagick) for Kitty/Ghostty non-PNG poster conversion
 - Discord desktop app + local IPC support for Rich Presence (`node` is required when Presence is enabled)
+
+### Poster previews
+
+Kunai renders posters when the terminal and runtime support it:
+
+- Kitty: native Kitty graphics protocol
+- Ghostty: Kitty-compatible protocol
+- Windows Terminal 1.22+: Sixel via `chafa`
+- WezTerm: Sixel via `chafa`
+- Other terminals: `chafa` symbols fallback
+- Non-TTY/unsupported: no poster preview
+
+Environment overrides:
+
+- `KUNAI_POSTER=0`
+- `KUNAI_IMAGE_PROTOCOL=auto|kitty|sixel|symbols|none`
+- `KUNAI_IMAGE_SIZE=30x18`
+- `KUNAI_IMAGE_DEBUG=1`
+
+Details, code map, and how to test: [.docs/poster-image-rendering.md](.docs/poster-image-rendering.md).
 
 ### Install core tools by platform
 
 ```bash
 # Linux (Arch)
-sudo pacman -S mpv ffmpeg imagemagick
+sudo pacman -S mpv ffmpeg chafa imagemagick
 
 # Linux (Debian/Ubuntu)
-sudo apt install mpv ffmpeg imagemagick
+sudo apt install mpv ffmpeg chafa imagemagick
 
 # macOS (Homebrew)
-brew install mpv ffmpeg imagemagick
+brew install mpv ffmpeg chafa imagemagick
 ```
 
 Windows options:
 
-- `winget` (recommended): install `mpv`, `ffmpeg`, and `ImageMagick`
-- Chocolatey: `choco install mpv ffmpeg imagemagick`
-- Scoop: `scoop install mpv ffmpeg imagemagick`
+- `winget` (recommended): install `mpv`, `ffmpeg`, `chafa` (`winget install hpjansson.Chafa`), and ImageMagick (`winget install ImageMagick.ImageMagick`)
+- Chocolatey: `choco install mpv ffmpeg chafa imagemagick`
+- Scoop: `scoop install mpv ffmpeg chafa imagemagick`
 
 ## Install And Run
 
@@ -130,7 +151,7 @@ kunai
 - Run with `--debug` for verbose traces
 - Use `/ export-diagnostics` to generate a redacted local JSON snapshot
 - Use `/ report-issue` to open issue triage guidance
-- Open Diagnostics/About panels to confirm startup capabilities (`mpv`, `ffmpeg`, Kitty, `magick`)
+- Open Diagnostics/About panels to confirm startup capabilities (`mpv`, `ffmpeg`, `chafa`, image renderer)
 
 ## Provider Caveats
 
@@ -157,7 +178,7 @@ apps/cli/src/infra/*      -> player/ipc/filesystem/runtime mechanics
 - Typecheck, lint, tests, package checks, and release dry-run are green
 - Canonical runtime is `apps/cli/src/main.ts` with deterministic shell flow
 - Watch history, diagnostics, provider fallback, and discover/recommendation are integrated
-- Optional capability guardrails now cover `mpv`, `ffmpeg`, Kitty/Ghostty, and `magick`
+- Optional capability guardrails now cover `mpv`, `ffmpeg`, `chafa`, and image renderer/terminal support
 
 ### Remaining improvements (non-blocking)
 

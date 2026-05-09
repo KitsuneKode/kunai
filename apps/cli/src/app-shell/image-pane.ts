@@ -1,3 +1,5 @@
+import { detectImageCapability } from "@/image";
+
 import { deleteAllTerminalImages, deleteKittyImage, renderPoster } from "./poster-renderer";
 import { clearPosterSourceCache, fetchPosterSource, resolvePosterUrl } from "./poster-source-cache";
 import type { PosterResult } from "./poster-types";
@@ -6,6 +8,9 @@ import type { PosterResult } from "./poster-types";
 const posterCache = new Map<string, PosterResult>();
 const posterInflight = new Map<string, Promise<PosterResult>>();
 const MAX_CACHE = 12;
+const runtime = {
+  detectImageCapability,
+};
 
 export function deleteAllKittyImages(): void {
   clearRenderedPosterImages();
@@ -17,6 +22,10 @@ export function clearRenderedPosterImages(): void {
   posterCache.clear();
   posterInflight.clear();
 }
+
+export const __testing = {
+  runtime,
+};
 
 function evictPosterCacheEntry(key: string): void {
   const cached = posterCache.get(key);
@@ -36,8 +45,10 @@ export async function fetchPoster(
   }: { rows: number; cols: number; variant?: "preview" | "detail"; allowKitty?: boolean },
 ): Promise<PosterResult> {
   if (!url) return { kind: "none" };
+  if (!allowKitty) return { kind: "none" };
+  const capability = runtime.detectImageCapability();
   const resolved = resolvePosterUrl(url, { cols, variant });
-  const key = `${resolved}:${rows}x${cols}:${allowKitty ? "kitty" : "text"}`;
+  const key = `${resolved}:${rows}x${cols}:${allowKitty ? capability.renderer : "none"}`;
 
   const cached = posterCache.get(key);
   if (cached) return cached;

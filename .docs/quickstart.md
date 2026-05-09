@@ -6,28 +6,31 @@ Use this doc for setup, local execution, and common environment issues. Architec
 
 - Bun `>=1.3.9` for source installs during beta
 - `mpv` in `PATH`
-- Kitty graphics protocol support if you want inline posters
+- Kitty/Ghostty for native Kitty poster previews
+- `chafa` for poster previews in Windows Terminal/WezTerm/other terminals
+- ImageMagick (`magick`) if you want Kitty/Ghostty non-PNG poster conversion
 - `ffmpeg` if you want downloads/offline queue
-- `magick` (ImageMagick) if you want broader poster compatibility
+
+Deeper reference for terminal graphics, env overrides, and testing: [.docs/poster-image-rendering.md](poster-image-rendering.md).
 
 Install runtime tools:
 
 ```sh
 # Linux (Arch)
-sudo pacman -S mpv ffmpeg imagemagick
+sudo pacman -S mpv ffmpeg chafa imagemagick
 
 # Linux (Debian/Ubuntu)
-sudo apt install mpv ffmpeg imagemagick
+sudo apt install mpv ffmpeg chafa imagemagick
 
 # macOS (Homebrew)
-brew install mpv ffmpeg imagemagick
+brew install mpv ffmpeg chafa imagemagick
 ```
 
 Windows options:
 
-- `winget` (recommended): install `mpv`, `ffmpeg`, and `ImageMagick`
-- Chocolatey: `choco install mpv ffmpeg imagemagick`
-- Scoop: `scoop install mpv ffmpeg imagemagick`
+- `winget` (recommended): install `mpv`, `ffmpeg`, `chafa` (`winget install hpjansson.Chafa`), and ImageMagick (`winget install ImageMagick.ImageMagick`)
+- Chocolatey: `choco install mpv ffmpeg chafa imagemagick`
+- Scoop: `scoop install mpv ffmpeg chafa imagemagick`
 
 Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Packaged binaries are the preferred future path for users who should not need to install Bun manually.
 
