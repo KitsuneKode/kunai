@@ -135,6 +135,7 @@ describe("DownloadService", () => {
       downloadsEnabled: true,
       ffmpegAvailable: true,
       downloadPath: tempDir,
+      abortGraceMs: 1,
     });
     spawnSpy.mockImplementation((command: string[]) => {
       const outputPath = command[command.length - 1];
@@ -223,13 +224,17 @@ describe("DownloadService", () => {
     const exited = new Promise<number>((resolve) => {
       resolveExit = resolve;
     });
+    const killSignals: unknown[] = [];
     spawnSpy.mockImplementation(
       () =>
         ({
           stdout: streamOf(""),
           stderr: streamOf(""),
           exited,
-          kill: () => resolveExit?.(1),
+          kill: (signal?: unknown) => {
+            killSignals.push(signal);
+            if (signal === "SIGKILL") resolveExit?.(1);
+          },
         }) as never,
     );
 
@@ -246,6 +251,50 @@ describe("DownloadService", () => {
     await running;
 
     expect(repo.get(job.id)?.status).toBe("aborted");
+    expect(killSignals).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
+  test("pauses active downloads for shutdown and leaves them retryable", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ffmpegAvailable: true,
+      downloadPath: tempDir,
+      abortGraceMs: 1,
+    });
+
+    let resolveExit: ((code: number) => void) | null = null;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+    spawnSpy.mockImplementation(
+      () =>
+        ({
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited,
+          kill: (signal?: unknown) => {
+            if (signal === "SIGKILL") resolveExit?.(1);
+          },
+        }) as never,
+    );
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+
+    const running = service.processQueue();
+    await Bun.sleep(10);
+    await service.pauseActiveJobsForShutdown("download paused by test shutdown");
+    await running;
+
+    const reloaded = repo.get(job.id);
+    expect(reloaded?.status).toBe("queued");
+    expect(reloaded?.errorMessage).toBe("download paused by test shutdown");
+    expect(reloaded?.nextRetryAt).toBeDefined();
   });
 
   test("does not schedule retry for terminal failures", async () => {
@@ -285,12 +334,14 @@ function buildService({
   ffmpegAvailable,
   downloadPath,
   resolveDownloadStream,
+  abortGraceMs,
 }: {
   repo: DownloadJobsRepository;
   downloadsEnabled: boolean;
   ffmpegAvailable: boolean;
   downloadPath: string;
   resolveDownloadStream?: ConstructorParameters<typeof DownloadService>[0]["resolveDownloadStream"];
+  abortGraceMs?: number;
 }): DownloadService {
   return new DownloadService({
     repo,
@@ -310,6 +361,7 @@ function buildService({
       },
     },
     resolveDownloadStream,
+    abortGraceMs,
   });
 }
 

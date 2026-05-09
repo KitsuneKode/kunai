@@ -303,6 +303,22 @@ export class DownloadJobsRepository {
       .run(message, retryAt, updatedAt, id);
   }
 
+  pause(id: string, message: string, retryAt: string, updatedAt: string): void {
+    this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET status = 'queued',
+              error_message = ?,
+              failure_kind = 'interrupted',
+              next_retry_at = ?,
+              updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(message, retryAt, updatedAt, id);
+  }
+
   requeue(id: string, updatedAt: string): void {
     this.db
       .query(

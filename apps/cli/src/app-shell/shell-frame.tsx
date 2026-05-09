@@ -3,6 +3,7 @@ import { Box, Text, useInput, useStdout } from "ink";
 import React from "react";
 
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
+import { requestHardExit } from "./graceful-exit";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
 import { CommandPalette, LineEditorText, useShellInput } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
@@ -39,8 +40,7 @@ export function ShellFrame({
 }) {
   useInput((input, key) => {
     if (isHardGlobalQuit(input, key)) {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
+      requestHardExit(0);
     }
   });
 
@@ -144,8 +144,7 @@ export function InputField({
     if (!focus) return;
     const route = routeShellInput(input, key, { textInputFocused: focus });
     if (route.owner === "hard-global") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
+      requestHardExit(0);
     }
     if (
       route.command === "open-command-palette" ||

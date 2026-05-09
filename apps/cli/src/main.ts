@@ -111,6 +111,7 @@ export function parseArgs(argv: string[]): {
 }
 
 let globalController: SessionController | null = null;
+let globalContainer: Awaited<ReturnType<typeof createContainer>> | null = null;
 let processHandlersInitialized = false;
 let shutdownInProgress = false;
 
@@ -214,6 +215,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     shellChrome: args.shellChrome,
     capabilitySnapshot,
   });
+  globalContainer = container;
   const { logger, config, stateManager, cacheStore } = container;
 
   // Initialize session state with CLI overrides
@@ -347,6 +349,9 @@ function setupSignalHandlers(): void {
     }, 4000);
     if (forceExit.unref) forceExit.unref();
     try {
+      await globalContainer?.downloadService.pauseActiveJobsForShutdown(
+        `download paused by ${signal}`,
+      );
       if (globalController) {
         await globalController.shutdown();
       }

@@ -30,6 +30,7 @@ import type { ResolvedAppCommand } from "./commands";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { buildBrowseCompanionPanel, buildBrowseDetailsPanel } from "./details-panel";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
+import { registerBeforeHardExit, requestHardExit } from "./graceful-exit";
 import { deleteAllKittyImages } from "./image-pane";
 import { LoadingShell, useSpinner } from "./loading-shell";
 import { OverlayPanel } from "./overlay-panel";
@@ -400,9 +401,17 @@ function AppRoot({ container }: { container: Container }) {
       input === "\x04"
     ) {
       stdinManager.cleanup();
-      process.exit(0);
+      requestHardExit(0);
     }
   });
+
+  useEffect(
+    () =>
+      registerBeforeHardExit(async () => {
+        await container.downloadService.pauseActiveJobsForShutdown("download paused by exit");
+      }),
+    [container],
+  );
 
   useEffect(() => {
     stateManager.dispatch({
@@ -426,7 +435,7 @@ function AppRoot({ container }: { container: Container }) {
       const snapshot = stateManager.getState();
       const currentTitle = snapshot.currentTitle;
       if (!currentTitle) {
-        setDownloadStatus(null);
+        setDownloadStatus(container.downloadService.describeQueueSummary());
         return;
       }
       const line = container.downloadService.describeActiveDownloadForPlayback({
@@ -435,7 +444,7 @@ function AppRoot({ container }: { container: Container }) {
         season: snapshot.currentEpisode?.season,
         episode: snapshot.currentEpisode?.episode,
       });
-      setDownloadStatus(line);
+      setDownloadStatus(line ?? container.downloadService.describeQueueSummary());
     };
 
     resolveStatus();
@@ -732,8 +741,7 @@ function AppRoot({ container }: { container: Container }) {
                       const { routeSearchShellAction } = await import("./command-router");
                       const routed = await routeSearchShellAction({ action, container });
                       if (routed === "quit") {
-                        if (process.stdin.isTTY) process.stdin.unref();
-                        process.exit(0);
+                        requestHardExit(0);
                       }
                     })();
                   },
@@ -1476,8 +1484,7 @@ function ListShell<T>({
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
+      requestHardExit(0);
     }
 
     if (commandMode) {
@@ -2051,8 +2058,7 @@ function BrowseShell<T>({
     );
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
+      requestHardExit(0);
     }
 
     if (activeOverlay) {
@@ -2578,8 +2584,7 @@ export function openListShell<T>({
         actionContext?.onAction(result.action) ?? "unhandled",
       );
       if (actionResult === "quit") {
-        if (process.stdin.isTTY) process.stdin.unref();
-        process.exit(0);
+        requestHardExit(0);
       }
       filterQuery = result.filterQuery;
       selectedIndex = result.selectedIndex;

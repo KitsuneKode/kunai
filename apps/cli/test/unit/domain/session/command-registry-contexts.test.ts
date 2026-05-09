@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   COMMAND_CONTEXTS,
+  parseCommand,
   resolveCommandContext,
   type AppCommandId,
 } from "@/domain/session/command-registry";
@@ -91,5 +92,10 @@ describe("command registry contexts", () => {
       "about",
       "quit",
     ] satisfies AppCommandId[]);
+  });
+
+  test("keeps offline as the completed library command, not enqueue", () => {
+    expect(parseCommand("/offline")?.id).toBe("library");
+    expect(parseCommand("/download")?.id).toBe("download");
   });
 });

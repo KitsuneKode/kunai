@@ -2,6 +2,7 @@ import { playbackSubtitleStatusTone } from "@/app/subtitle-status";
 import { Box, Text, useInput, useStdout } from "ink";
 import React from "react";
 
+import { requestHardExit } from "./graceful-exit";
 import {
   getLoadingShellTimerPolicy,
   getProviderResolveWaitPresentation,
@@ -189,8 +190,7 @@ export function LoadingShell({
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
+      requestHardExit(0);
     }
     if (key.escape && state.cancellable && onCancel) {
       onCancel();

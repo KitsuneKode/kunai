@@ -26,6 +26,8 @@ const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
+const DEFAULT_ABORT_GRACE_MS = 2_500;
+const DEFAULT_INACTIVE_WAIT_MS = 5_000;
 
 export type DownloadEnqueueEligibility =
   | { readonly allowed: true }
@@ -77,13 +79,21 @@ export type DownloadResolveResult = {
   readonly selectionChanged?: boolean;
 };
 
+type ActiveDownloadProcess = {
+  readonly process: Bun.Subprocess;
+  cancelRequested: boolean;
+  cancelMode: "abort" | "pause";
+  cancelReason?: string;
+};
+
 export class DownloadService {
   private queueWorkerRunning = false;
   private reconciledStartupJobs = false;
-  private readonly activeProcesses = new Map<
+  private readonly cancellationRequests = new Map<
     string,
-    { process: Bun.Subprocess; cancelRequested: boolean }
+    { readonly mode: "abort" | "pause"; readonly reason: string }
   >();
+  private readonly activeProcesses = new Map<string, ActiveDownloadProcess>();
 
   constructor(
     private readonly deps: {
@@ -95,6 +105,7 @@ export class DownloadService {
         intent: DownloadResolveIntent,
       ) => Promise<DownloadResolveResult | null>;
       readonly ffprobeAvailable?: boolean;
+      readonly abortGraceMs?: number;
     },
   ) {}
 
@@ -196,6 +207,18 @@ export class DownloadService {
     return job ? formatPlaybackDownloadStripe(job) : null;
   }
 
+  describeQueueSummary(): string | null {
+    const active = this.listActive(120);
+    const failed = this.listFailed(20);
+    const running = active.filter((job) => job.status === "running").length;
+    const queued = active.filter((job) => job.status === "queued").length;
+    const parts: string[] = [];
+    if (running > 0) parts.push(`${running} running`);
+    if (queued > 0) parts.push(`${queued} queued`);
+    if (failed.length > 0) parts.push(`${failed.length} failed`);
+    return parts.length > 0 ? parts.join(" / ") : null;
+  }
+
   hasActiveJobs(): boolean {
     return this.listActive(1).length > 0;
   }
@@ -226,11 +249,21 @@ export class DownloadService {
       return this.deps.repo.get(next.id) ?? null;
     } catch (error) {
       const active = this.activeProcesses.get(next.id);
-      const cancelled = active?.cancelRequested ?? false;
+      const cancellation = this.cancellationRequests.get(next.id);
+      const cancelled = active?.cancelRequested === true || cancellation !== undefined;
       const message = error instanceof Error ? error.message : String(error);
       const failedAt = new Date().toISOString();
       if (cancelled) {
-        this.deps.repo.abort(next.id, failedAt);
+        if (active?.cancelMode === "pause" || cancellation?.mode === "pause") {
+          this.deps.repo.pause(
+            next.id,
+            active?.cancelReason ?? cancellation?.reason ?? "download paused by shutdown",
+            failedAt,
+            failedAt,
+          );
+        } else {
+          this.deps.repo.abort(next.id, failedAt);
+        }
       } else {
         const analysis = analyzeDownloadFailure(message);
         const retriesLeft = next.retryCount + 1 < next.maxAttempts;
@@ -246,6 +279,7 @@ export class DownloadService {
       return this.deps.repo.get(next.id) ?? null;
     } finally {
       this.activeProcesses.delete(next.id);
+      this.cancellationRequests.delete(next.id);
     }
   }
 
@@ -287,13 +321,45 @@ export class DownloadService {
       return;
     }
     const active = this.activeProcesses.get(jobId);
+    this.cancellationRequests.set(jobId, {
+      mode: "abort",
+      reason: "download aborted by user",
+    });
     if (active) {
       active.cancelRequested = true;
-      active.process.kill();
+      active.cancelMode = "abort";
+      active.cancelReason = "download aborted by user";
+      await this.terminateProcess(active.process);
       return;
     }
     await rm(job.tempPath, { force: true }).catch(() => {});
     this.deps.repo.abort(jobId, new Date().toISOString());
+  }
+
+  async pauseActiveJobsForShutdown(reason = "download paused by shutdown"): Promise<void> {
+    const runningJobIds = this.deps.repo.listRunning(200).map((job) => job.id);
+    for (const jobId of runningJobIds) {
+      this.cancellationRequests.set(jobId, { mode: "pause", reason });
+    }
+    const activeEntries = await this.collectActiveProcesses(runningJobIds, 250);
+    if (activeEntries.length === 0) return;
+    for (const [, active] of activeEntries) {
+      active.cancelRequested = true;
+      active.cancelMode = "pause";
+      active.cancelReason = reason;
+    }
+    await Promise.all(activeEntries.map(([, active]) => this.terminateProcess(active.process)));
+    await this.waitForInactive(
+      activeEntries.map(([jobId]) => jobId),
+      DEFAULT_INACTIVE_WAIT_MS,
+    );
+    const pausedAt = new Date().toISOString();
+    for (const [jobId] of activeEntries) {
+      const job = this.deps.repo.get(jobId);
+      if (job && job.status !== "completed" && job.status !== "aborted") {
+        this.deps.repo.pause(jobId, reason, pausedAt, pausedAt);
+      }
+    }
   }
 
   async deleteJob(jobId: string, opts: { deleteArtifact?: boolean } = {}): Promise<void> {
@@ -338,7 +404,13 @@ export class DownloadService {
       stdout: "pipe",
       stderr: "pipe",
     });
-    this.activeProcesses.set(job.id, { process: proc, cancelRequested: false });
+    const cancellation = this.cancellationRequests.get(job.id);
+    this.activeProcesses.set(job.id, {
+      process: proc,
+      cancelRequested: cancellation !== undefined,
+      cancelMode: cancellation?.mode ?? "abort",
+      cancelReason: cancellation?.reason,
+    });
 
     const stopHeartbeat = this.startHeartbeat(job.id);
 
@@ -387,11 +459,18 @@ export class DownloadService {
       const exitCode = await proc.exited;
       await Promise.all([readStdout, readStderr]);
 
-      if (exitCode !== 0 && !this.activeProcesses.get(job.id)?.cancelRequested) {
+      if (
+        exitCode !== 0 &&
+        !this.activeProcesses.get(job.id)?.cancelRequested &&
+        !this.cancellationRequests.has(job.id)
+      ) {
         throw new Error(stderr.trim() || `ffmpeg exited with code ${exitCode}`);
       }
 
-      if (this.activeProcesses.get(job.id)?.cancelRequested) {
+      if (
+        this.activeProcesses.get(job.id)?.cancelRequested ||
+        this.cancellationRequests.has(job.id)
+      ) {
         throw new Error("download aborted");
       }
 
@@ -452,6 +531,58 @@ export class DownloadService {
     }
     if (fallbackStream) return fallbackStream;
     throw new Error("download stream resolve failed");
+  }
+
+  private async terminateProcess(proc: Bun.Subprocess): Promise<void> {
+    const graceMs = this.deps.abortGraceMs ?? DEFAULT_ABORT_GRACE_MS;
+    try {
+      proc.kill("SIGTERM");
+    } catch {
+      return;
+    }
+
+    const exitedAfterTerm = await waitForExit(proc.exited, graceMs);
+    if (exitedAfterTerm) {
+      return;
+    }
+
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      return;
+    }
+    await waitForExit(proc.exited, graceMs).catch(() => {});
+  }
+
+  private async waitForInactive(jobIds: readonly string[], timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (jobIds.every((jobId) => !this.activeProcesses.has(jobId))) {
+        return;
+      }
+      await Bun.sleep(25);
+    }
+  }
+
+  private async collectActiveProcesses(
+    jobIds: readonly string[],
+    timeoutMs: number,
+  ): Promise<readonly [string, ActiveDownloadProcess][]> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const entries = jobIds.flatMap((jobId) => {
+        const active = this.activeProcesses.get(jobId);
+        return active ? [[jobId, active] as [string, ActiveDownloadProcess]] : [];
+      });
+      if (entries.length > 0 || !this.queueWorkerRunning) {
+        return entries;
+      }
+      await Bun.sleep(10);
+    }
+    return jobIds.flatMap((jobId) => {
+      const active = this.activeProcesses.get(jobId);
+      return active ? [[jobId, active] as [string, ActiveDownloadProcess]] : [];
+    });
   }
 
   private async validateCompletedArtifact(outputPath: string): Promise<void> {
@@ -667,6 +798,12 @@ async function readLines(
 function retryDelayMs(retryCount: number): number {
   const table = [2_000, 5_000, 15_000, 30_000];
   return table[Math.min(retryCount, table.length - 1)] ?? 30_000;
+}
+
+async function waitForExit(exited: Promise<number>, timeoutMs: number): Promise<boolean> {
+  const marker = Symbol("timeout");
+  const result = await Promise.race([exited, Bun.sleep(timeoutMs).then(() => marker)]);
+  return result !== marker;
 }
 
 function analyzeDownloadFailure(message: string): { failureKind: string; retryable: boolean } {

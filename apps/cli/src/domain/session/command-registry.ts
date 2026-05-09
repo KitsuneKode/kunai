@@ -127,9 +127,9 @@ export const COMMANDS: readonly AppCommand[] = [
   },
   {
     id: "download",
-    label: "Download Current Episode",
-    aliases: ["download", "offline", "save"],
-    description: "Queue the current resolved stream for offline download",
+    label: "Download",
+    aliases: ["download", "save"],
+    description: "Queue the selected title or current episode for offline download",
   },
   {
     id: "downloads",
@@ -140,7 +140,7 @@ export const COMMANDS: readonly AppCommand[] = [
   {
     id: "library",
     label: "Offline Library",
-    aliases: ["library", "offline-library", "my-downloads"],
+    aliases: ["library", "offline", "offline-library", "my-downloads"],
     description: "Browse completed downloads and play local files",
   },
   {
