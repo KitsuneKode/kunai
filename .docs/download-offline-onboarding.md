@@ -2,7 +2,8 @@
 
 This is the canonical design reference for future download/offline/onboarding work.
 
-Status: in progress (`/library` shell panel + validated `--offline` share the offline flow; daemon extraction still pending).
+Status: in progress (`--download`, `/download`, `/downloads`, `/library`, and validated
+`--offline` are implemented; daemon extraction and batch downloads are still pending).
 
 ## Product Shape
 
@@ -34,15 +35,17 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - HLS size is reported honestly as unknown when content length cannot be known.
 - Temporary files use a `.tmp.*` suffix and are renamed only after a clean exit.
 - Abort terminates active ffmpeg processes, deletes temporary files, and persists an aborted job state.
+- App shutdown pauses active downloads, cleans temporary workers, and leaves jobs retryable.
 - Failed jobs retry with bounded backoff and then surface as failed when retry limits are exhausted.
-- Quit with active downloads asks whether to keep, wait, or cancel.
+- Quit with active downloads asks whether to keep, wait, or cancel; Ctrl+C and signals use the same cleanup path.
 - Progress is parsed from ffmpeg progress output and persisted for shell diagnostics/UI.
+- Download-only mode resolves a playable stream without launching mpv.
 
 ## Desired Offline Behavior
 
 - No aggressive startup network probe.
 - Offline prompt appears only after a real network failure.
-- `--offline` lists completed `download_jobs` and validates artifact readability.
+- `--offline` and `/library` list completed `download_jobs` and validate artifact readability.
 - Local files should validate before playback; corrupt or missing files should offer re-download, not crash.
 
 ## Config Fields (current + planned)

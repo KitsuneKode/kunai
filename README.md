@@ -95,8 +95,13 @@ kunai -S "Breaking Bad"
 kunai -i 438631 -t movie
 kunai --debug
 kunai --setup
+kunai --download -S "Dune"
+kunai --download -S "Dune" --download-path ~/Videos/Kunai
 kunai --offline
 ```
+
+In the shell, use `/download` to enqueue the selected/current item, `/downloads` to inspect,
+retry, abort, or delete jobs, and `/library` or `/offline` for completed local files.
 
 ### Default download path (when enabled)
 
