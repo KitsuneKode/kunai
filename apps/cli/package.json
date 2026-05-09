@@ -6,19 +6,24 @@
     "anime",
     "bun",
     "cli",
+    "discord-rpc",
+    "history",
+    "intro-skip",
+    "movies",
     "mpv",
+    "series",
     "streaming",
     "terminal"
   ],
-  "homepage": "https://github.com/kitsunekode/kunai#readme",
+  "homepage": "https://github.com/KitsuneKode/kunai#readme",
   "bugs": {
-    "url": "https://github.com/kitsunekode/kunai/issues"
+    "url": "https://github.com/KitsuneKode/kunai/issues"
   },
   "license": "MIT",
   "author": "kitsunekode",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kitsunekode/kunai.git"
+    "url": "https://github.com/KitsuneKode/kunai"
   },
   "bin": {
     "kunai": "dist/kunai.js"
