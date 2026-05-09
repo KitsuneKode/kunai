@@ -596,11 +596,14 @@ function resolveCommandState(
           };
 
     case "download":
-      if (!hasEpisode) {
+      if (!hasEpisode && state.view !== "results") {
         return {
           enabled: false,
-          reason: "Start playback before downloads are available.",
+          reason: "Select a search result or start playback before downloads are available.",
         };
+      }
+      if (!hasEpisode && state.searchResults.length > 0) {
+        return { enabled: true };
       }
       return hasResolvedStream
         ? { enabled: true }

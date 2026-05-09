@@ -173,6 +173,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             "toggle-mode",
             "provider",
             "history",
+            "download",
             "details",
             "diagnostics",
             "export-diagnostics",
@@ -339,6 +340,38 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         if (outcome.type === "action") {
+          if (outcome.action === "download") {
+            const selected =
+              stateManager.getState().searchResults[stateManager.getState().selectedResultIndex];
+            if (!selected) {
+              stateManager.dispatch({
+                type: "SET_PLAYBACK_FEEDBACK",
+                note: "Choose a title before queueing a download.",
+              });
+              continue;
+            }
+            const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
+              mode: stateManager.getState().mode,
+              providerId: stateManager.getState().provider,
+              animeLang: stateManager.getState().animeLang,
+              providerRegistry,
+              signal: context.signal,
+            });
+            const title: TitleInfo = {
+              id: mapped.id,
+              type: mapped.type,
+              name: chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+              titleAliases: mapped.titleAliases,
+              year: mapped.year,
+              overview: mapped.overview,
+              posterUrl: mapped.posterPath ?? undefined,
+              episodeCount: mapped.episodeCount,
+            };
+            const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
+            await new DownloadOnlyPhase().execute({ title }, context);
+            continue;
+          }
+
           if (outcome.action === "recommendation") {
             const discover = await loadDiscoverResults(container);
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });

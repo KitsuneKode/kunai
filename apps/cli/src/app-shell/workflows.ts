@@ -47,6 +47,13 @@ type HistoryAction =
 
 type DownloadJobAction = { type: "job"; id: string } | { type: "back" };
 type DownloadJobFilter = "active" | "failed" | "completed" | "all";
+type CompletedDownloadAction =
+  | "play"
+  | "reveal"
+  | "retry"
+  | "delete-job"
+  | "delete-artifact"
+  | "back";
 
 type ShellOption<T> = {
   value: T;
@@ -718,6 +725,88 @@ async function openDownloadsShell(
         void container.downloadService.processQueue();
       }
       continue;
+    }
+
+    if (job.status === "completed") {
+      const artifactStatus = await resolveOfflineArtifactStatus(job);
+      const action = await chooseOption<CompletedDownloadAction>({
+        title: describeDownloadJob(job),
+        subtitle: `${formatOfflineSecondaryLine(job, artifactStatus)}  ·  ${job.outputPath}`,
+        actionContext,
+        options: [
+          {
+            value: "play",
+            label: artifactStatus === "ready" ? "Play downloaded file" : "Play unavailable",
+            detail: artifactStatus === "ready" ? "Open local artifact in mpv" : artifactStatus,
+          },
+          { value: "reveal", label: "Reveal folder", detail: dirname(job.outputPath) },
+          {
+            value: "retry",
+            label: "Re-download",
+            detail: "Queue a fresh attempt from stored download intent",
+          },
+          {
+            value: "delete-artifact",
+            label: "Delete artifact and job",
+            detail: "Remove local media, subtitle artifact, and queue record",
+          },
+          {
+            value: "delete-job",
+            label: "Delete job only",
+            detail: "Keep files on disk but remove this queue record",
+          },
+          { value: "back", label: "Back" },
+        ],
+      });
+      if (!action || action === "back") continue;
+      if (action === "play") {
+        if (artifactStatus !== "ready") {
+          container.stateManager.dispatch({
+            type: "SET_PLAYBACK_FEEDBACK",
+            note: `Offline file unavailable: ${artifactStatus}`,
+          });
+          container.diagnosticsStore.record({
+            category: "download",
+            message: "Completed download playback blocked",
+            context: { jobId: job.id, artifactStatus, outputPath: job.outputPath },
+          });
+          continue;
+        }
+        await container.player.playLocal({
+          filePath: job.outputPath,
+          displayTitle: formatOfflineJobListingTitle(job),
+          subtitlePath: job.subtitlePath ?? null,
+          timing: parseIntroSkipTiming(job.introSkipJson),
+          attach: false,
+        });
+        continue;
+      }
+      if (action === "reveal") {
+        const reveal = await revealPathInOsFileManager(job.outputPath);
+        if (!reveal.ok) {
+          container.stateManager.dispatch({
+            type: "SET_PLAYBACK_FEEDBACK",
+            note: `Could not open folder: ${reveal.stderr ?? "system helper failed"}`,
+          });
+        }
+        continue;
+      }
+      if (action === "retry") {
+        container.downloadService.retry(job.id);
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: `Re-download queued: ${formatOfflineJobListingTitle(job)}`,
+        });
+        void container.downloadService.processQueue();
+        continue;
+      }
+      await container.downloadService.deleteJob(job.id, {
+        deleteArtifact: action === "delete-artifact",
+      });
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: action === "delete-artifact" ? "Download artifact deleted" : "Download job deleted",
+      });
     }
   }
 }

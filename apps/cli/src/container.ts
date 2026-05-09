@@ -46,6 +46,7 @@ import { ConfigStoreImpl } from "./services/persistence/ConfigStoreImpl";
 import type { HistoryStore } from "./services/persistence/HistoryStore";
 import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
 import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
+import { PlaybackResolveService } from "./services/playback/PlaybackResolveService";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
@@ -179,6 +180,26 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     config,
     logger,
     ffmpegAvailable: options?.capabilitySnapshot?.ffmpeg ?? false,
+    ffprobeAvailable: Boolean(Bun.which("ffprobe")),
+    resolveDownloadStream: async (intent) => {
+      const resolver = new PlaybackResolveService({ providerRegistry, cacheStore });
+      const controller = new AbortController();
+      const result = await resolver.resolve({
+        title: intent.title,
+        episode: intent.episode ?? { season: 1, episode: 1 },
+        mode: intent.mode,
+        providerId: intent.providerId,
+        subLang: intent.subLang,
+        animeLang: intent.animeLang,
+        signal: controller.signal,
+      });
+      if (!result.stream) return null;
+      return {
+        stream: result.stream,
+        providerId: result.providerId,
+        selectionChanged: result.providerId !== intent.providerId,
+      };
+    },
   });
 
   // Registries (depend on infrastructure)

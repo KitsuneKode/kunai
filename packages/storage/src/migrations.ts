@@ -114,6 +114,23 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE download_jobs ADD COLUMN file_size INTEGER;
     `,
   },
+  {
+    id: "006_data_download_jobs_intent",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN mode TEXT;
+      ALTER TABLE download_jobs ADD COLUMN sub_lang TEXT;
+      ALTER TABLE download_jobs ADD COLUMN anime_lang TEXT;
+      ALTER TABLE download_jobs ADD COLUMN selected_source_id TEXT;
+      ALTER TABLE download_jobs ADD COLUMN selected_stream_id TEXT;
+      ALTER TABLE download_jobs ADD COLUMN selected_quality_label TEXT;
+      ALTER TABLE download_jobs ADD COLUMN artifact_status TEXT NOT NULL DEFAULT 'pending';
+      ALTER TABLE download_jobs ADD COLUMN last_resolved_provider_id TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_download_jobs_artifact_status
+        ON download_jobs(artifact_status, updated_at DESC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

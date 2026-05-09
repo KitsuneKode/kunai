@@ -37,6 +37,8 @@ export function parseArgs(argv: string[]): {
   jump?: number;
   setup: boolean;
   offline: boolean;
+  download: boolean;
+  downloadPath?: string;
   shellChrome: ShellChrome;
 } {
   const args: {
@@ -51,6 +53,8 @@ export function parseArgs(argv: string[]): {
     jump?: number;
     setup: boolean;
     offline: boolean;
+    download: boolean;
+    downloadPath?: string;
   } = {
     anime: false,
     debug: false,
@@ -59,6 +63,7 @@ export function parseArgs(argv: string[]): {
     quick: false,
     setup: false,
     offline: false,
+    download: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -86,6 +91,10 @@ export function parseArgs(argv: string[]): {
       args.setup = true;
     } else if (arg === "--offline") {
       args.offline = true;
+    } else if (arg === "--download") {
+      args.download = true;
+    } else if (arg === "--download-path") {
+      args.downloadPath = argv[++i];
     } else if (arg === "--mpv-debug") {
       args.mpv = { ...args.mpv, debug: true };
     } else if (arg === "--mpv-clean") {
@@ -141,6 +150,54 @@ async function maybeRunOfflineMode(
   return true;
 }
 
+async function maybeRunDownloadMode(
+  args: {
+    download: boolean;
+    search?: string;
+    id?: string;
+    type?: string;
+    anime: boolean;
+    quick: boolean;
+    jump?: number;
+    downloadPath?: string;
+  },
+  container: Awaited<ReturnType<typeof createContainer>>,
+  bootstrapTitle: TitleInfo | null,
+): Promise<boolean> {
+  if (!args.download) {
+    return false;
+  }
+
+  const searchResult = bootstrapTitle
+    ? ({ status: "success", value: bootstrapTitle } as const)
+    : await new (
+        await import("@/app/SearchPhase")
+      ).SearchPhase().execute(
+        {
+          initialQuery: args.search,
+          autoPickSearchResultIndex: args.jump ?? (args.quick && args.search ? 1 : undefined),
+        },
+        { container, signal: new AbortController().signal },
+      );
+
+  if (searchResult.status !== "success") {
+    console.log("Download cancelled before a title was selected.");
+    return true;
+  }
+
+  const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
+  const result = await new DownloadOnlyPhase().execute(
+    { title: searchResult.value, outputDirectory: args.downloadPath },
+    { container, signal: new AbortController().signal },
+  );
+  if (result.status === "error") {
+    console.log(`Download queue failed: ${result.error.message}`);
+  } else if (result.status === "success" && result.value === "queued") {
+    await container.downloadService.drainQueue(24 * 60 * 60 * 1000);
+  }
+  return true;
+}
+
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   process.title = "kunai";
 
@@ -158,33 +215,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     capabilitySnapshot,
   });
   const { logger, config, stateManager, cacheStore } = container;
-  if (await maybeRunOfflineMode(args, container)) {
-    return;
-  }
-  void container.downloadService.processQueue();
-  if (capabilitySnapshot.issues.length > 0) {
-    container.diagnosticsStore.record({
-      category: "session",
-      message: "Startup capability checks",
-      context: {
-        issues: capabilitySnapshot.issues,
-      },
-    });
-  }
-
-  // Prune expired cache entries at startup to prevent indefinite bloat
-  await cacheStore.prune();
-
-  if (args.debug) {
-    const initialMode = args.anime ? "anime" : config.defaultMode;
-    logger.info("Kunai started", {
-      version: KUNAI_VERSION,
-      mode: initialMode,
-      provider: initialMode === "anime" ? config.animeProvider : config.provider,
-      stdinIsTTY: process.stdin.isTTY,
-      stdoutIsTTY: process.stdout.isTTY,
-    });
-  }
 
   // Initialize session state with CLI overrides
   stateManager.initialize(config.provider, config.animeProvider);
@@ -229,10 +259,42 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   }
 
+  if (await maybeRunOfflineMode(args, container)) {
+    return;
+  }
+  void container.downloadService.processQueue();
+  if (capabilitySnapshot.issues.length > 0) {
+    container.diagnosticsStore.record({
+      category: "session",
+      message: "Startup capability checks",
+      context: {
+        issues: capabilitySnapshot.issues,
+      },
+    });
+  }
+
+  // Prune expired cache entries at startup to prevent indefinite bloat
+  await cacheStore.prune();
+
+  if (args.debug) {
+    logger.info("Kunai started", {
+      version: KUNAI_VERSION,
+      mode: initialMode,
+      provider: initialMode === "anime" ? config.animeProvider : config.provider,
+      stdinIsTTY: process.stdin.isTTY,
+      stdoutIsTTY: process.stdout.isTTY,
+    });
+  }
+
   // Launch the persistent state-driven UI
   const { launchSessionApp } = await import("./app-shell/ink-shell");
   launchSessionApp(container);
   await maybeRunSetupWizard(args, container);
+  if (await maybeRunDownloadMode(args, container, bootstrapTitle)) {
+    await shutdownShell();
+    if (process.stdin.isTTY) process.stdin.unref();
+    return;
+  }
   if (!capabilitySnapshot.mpv) {
     console.error("\nmpv is required for playback. Install mpv and rerun Kunai.");
     await shutdownShell();

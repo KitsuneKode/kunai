@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import type { EpisodeInfo, PlaybackTimingMetadata, StreamInfo, TitleInfo } from "@/domain/types";
+import type {
+  EpisodeInfo,
+  PlaybackTimingMetadata,
+  ShellMode,
+  StreamInfo,
+  TitleInfo,
+} from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { getKunaiPaths, type DownloadJobRecord, type DownloadJobsRepository } from "@kunai/storage";
@@ -41,9 +47,34 @@ export class DownloadEnqueueRejectedError extends Error {
 export type EnqueueDownloadInput = {
   readonly title: TitleInfo;
   readonly episode?: EpisodeInfo;
+  readonly stream?: StreamInfo;
+  readonly providerId: string;
+  readonly mode?: ShellMode;
+  readonly subLang?: string;
+  readonly animeLang?: "sub" | "dub";
+  readonly selectedSourceId?: string;
+  readonly selectedStreamId?: string;
+  readonly selectedQualityLabel?: string;
+  readonly outputDirectory?: string;
+  readonly timing?: PlaybackTimingMetadata | null;
+};
+
+export type DownloadResolveIntent = {
+  readonly title: TitleInfo;
+  readonly episode?: EpisodeInfo;
+  readonly providerId: string;
+  readonly mode: ShellMode;
+  readonly subLang: string;
+  readonly animeLang: "sub" | "dub";
+  readonly selectedSourceId?: string;
+  readonly selectedStreamId?: string;
+  readonly selectedQualityLabel?: string;
+};
+
+export type DownloadResolveResult = {
   readonly stream: StreamInfo;
   readonly providerId: string;
-  readonly timing?: PlaybackTimingMetadata | null;
+  readonly selectionChanged?: boolean;
 };
 
 export class DownloadService {
@@ -60,6 +91,10 @@ export class DownloadService {
       readonly config: ConfigService;
       readonly logger: Logger;
       readonly ffmpegAvailable: boolean;
+      readonly resolveDownloadStream?: (
+        intent: DownloadResolveIntent,
+      ) => Promise<DownloadResolveResult | null>;
+      readonly ffprobeAvailable?: boolean;
     },
   ) {}
 
@@ -104,8 +139,14 @@ export class DownloadService {
       season: input.episode?.season,
       episode: input.episode?.episode,
       providerId: input.providerId,
-      streamUrl: input.stream.url,
-      headers: input.stream.headers,
+      mode: input.mode,
+      subLang: input.subLang,
+      animeLang: input.animeLang,
+      selectedSourceId: input.selectedSourceId,
+      selectedStreamId: input.selectedStreamId,
+      selectedQualityLabel: input.selectedQualityLabel,
+      streamUrl: input.stream?.url ?? "",
+      headers: input.stream?.headers ?? {},
       outputPath,
       tempPath,
       createdAt: now,
@@ -113,12 +154,12 @@ export class DownloadService {
       completedAt: undefined,
     });
 
-    const subtitleLanguage = resolveSubtitleLanguage(input.stream);
-    if (input.stream.subtitle || input.timing || subtitleLanguage) {
+    const subtitleLanguage = input.stream ? resolveSubtitleLanguage(input.stream) : null;
+    if (input.stream?.subtitle || input.timing || subtitleLanguage) {
       this.deps.repo.updateOfflineMetadata(
         id,
         {
-          subtitleUrl: input.stream.subtitle ?? null,
+          subtitleUrl: input.stream?.subtitle ?? null,
           subtitleLanguage,
           introSkipJson: input.timing ? JSON.stringify(input.timing) : null,
         },
@@ -255,7 +296,38 @@ export class DownloadService {
     this.deps.repo.abort(jobId, new Date().toISOString());
   }
 
+  async deleteJob(jobId: string, opts: { deleteArtifact?: boolean } = {}): Promise<void> {
+    const job = this.deps.repo.get(jobId);
+    if (!job) return;
+    if (job.status === "running" || this.activeProcesses.has(jobId)) {
+      await this.abort(jobId);
+    }
+    await rm(job.tempPath, { force: true }).catch(() => {});
+    if (opts.deleteArtifact) {
+      await rm(job.outputPath, { force: true }).catch(() => {});
+      if (job.subtitlePath) await rm(job.subtitlePath, { force: true }).catch(() => {});
+    }
+    this.deps.repo.delete(jobId);
+  }
+
   private async executeFfmpegDownload(job: DownloadJobRecord): Promise<void> {
+    const resolved = await this.resolveStreamForJob(job);
+    this.deps.repo.updateResolvedStream(
+      job.id,
+      {
+        streamUrl: resolved.stream.url,
+        headers: resolved.stream.headers,
+        providerId: resolved.providerId,
+      },
+      new Date().toISOString(),
+    );
+    job = this.deps.repo.get(job.id) ?? {
+      ...job,
+      streamUrl: resolved.stream.url,
+      headers: resolved.stream.headers,
+      lastResolvedProviderId: resolved.providerId as never,
+    };
+
     const args = ["-y", "-progress", "pipe:1", "-nostats"];
     const policy = buildDownloadStreamPolicy(job.headers);
     args.push(...policy.ffmpegArgs);
@@ -324,8 +396,92 @@ export class DownloadService {
       }
 
       await rename(job.tempPath, job.outputPath);
+      await this.validateCompletedArtifact(job.outputPath);
     } finally {
       stopHeartbeat();
+    }
+  }
+
+  private async resolveStreamForJob(job: DownloadJobRecord): Promise<DownloadResolveResult> {
+    const fallbackStream =
+      job.streamUrl.trim().length > 0
+        ? {
+            stream: {
+              url: job.streamUrl,
+              headers: job.headers,
+              timestamp: Date.now(),
+              subtitle: job.subtitleUrl,
+            },
+            providerId: job.providerId,
+            selectionChanged: false,
+          }
+        : null;
+
+    if (!this.deps.resolveDownloadStream) {
+      if (fallbackStream) return fallbackStream;
+      throw new Error("download stream resolver unavailable");
+    }
+
+    const resolved = await this.deps.resolveDownloadStream({
+      title: {
+        id: job.titleId,
+        type: job.mediaKind === "movie" ? "movie" : "series",
+        name: job.titleName,
+      },
+      episode:
+        job.season !== undefined && job.episode !== undefined
+          ? { season: job.season, episode: job.episode }
+          : undefined,
+      providerId: job.providerId,
+      mode: job.mode ?? (job.mediaKind === "anime" ? "anime" : "series"),
+      subLang: job.subLang ?? "eng",
+      animeLang: job.animeLang ?? "sub",
+      selectedSourceId: job.selectedSourceId,
+      selectedStreamId: job.selectedStreamId,
+      selectedQualityLabel: job.selectedQualityLabel,
+    });
+
+    if (resolved) {
+      if (resolved.selectionChanged) {
+        this.deps.logger.warn("Download stream selection changed during re-resolve", {
+          jobId: job.id,
+          providerId: resolved.providerId,
+        });
+      }
+      return resolved;
+    }
+    if (fallbackStream) return fallbackStream;
+    throw new Error("download stream resolve failed");
+  }
+
+  private async validateCompletedArtifact(outputPath: string): Promise<void> {
+    const fileStat = await stat(outputPath);
+    if (!fileStat.isFile() || fileStat.size <= 0) {
+      throw new Error("artifact-invalid: downloaded file is empty or not a regular file");
+    }
+    if (!this.deps.ffprobeAvailable || !Bun.which("ffprobe")) {
+      return;
+    }
+    const proc = Bun.spawn(
+      [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        outputPath,
+      ],
+      { stdin: "ignore", stdout: "pipe", stderr: "ignore" },
+    );
+    const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    if (exitCode !== 0) {
+      throw new Error("artifact-invalid: ffprobe could not inspect downloaded file");
+    }
+    const duration = Number.parseFloat(stdout.trim());
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new Error("artifact-invalid: ffprobe reported no playable duration");
     }
   }
 
@@ -449,7 +605,7 @@ export class DownloadService {
   }
 
   private resolveOutputPath(input: EnqueueDownloadInput): string {
-    const configuredBase = this.deps.config.downloadPath.trim();
+    const configuredBase = input.outputDirectory?.trim() || this.deps.config.downloadPath.trim();
     const baseDir =
       configuredBase.length > 0
         ? configuredBase
@@ -515,6 +671,9 @@ function retryDelayMs(retryCount: number): number {
 
 function analyzeDownloadFailure(message: string): { failureKind: string; retryable: boolean } {
   const normalized = message.toLowerCase();
+  if (normalized.includes("artifact-invalid")) {
+    return { failureKind: "artifact-invalid", retryable: false };
+  }
   if (normalized.includes("download aborted") || normalized.includes("aborted")) {
     return { failureKind: "aborted", retryable: false };
   }

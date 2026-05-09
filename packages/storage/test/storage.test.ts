@@ -202,6 +202,12 @@ test("download jobs repository supports queue lifecycle", () => {
     season: 1,
     episode: 1,
     providerId: "vidking",
+    mode: "series",
+    subLang: "eng",
+    animeLang: "sub",
+    selectedSourceId: "source-1",
+    selectedStreamId: "stream-1080p",
+    selectedQualityLabel: "1080p",
     streamUrl: "https://example.com/master.m3u8",
     headers: { Referer: "https://example.com" },
     outputPath: "/tmp/example.mp4",
@@ -237,6 +243,10 @@ test("download jobs repository supports queue lifecycle", () => {
   const done = repo.listCompleted(10)[0];
   expect(done?.status).toBe("completed");
   expect(done?.completedAt).toBe("2026-04-29T00:03:00.000Z");
+  expect(done?.mode).toBe("series");
+  expect(done?.subLang).toBe("eng");
+  expect(done?.selectedStreamId).toBe("stream-1080p");
+  expect(done?.artifactStatus).toBe("ready");
 
   db.close();
 });

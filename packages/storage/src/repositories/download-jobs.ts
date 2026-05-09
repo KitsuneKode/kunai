@@ -3,6 +3,7 @@ import type { MediaKind, ProviderId } from "@kunai/types";
 import type { KunaiDatabase } from "../sqlite";
 
 export type DownloadJobStatus = "queued" | "running" | "completed" | "failed" | "aborted";
+export type DownloadArtifactStatus = "pending" | "ready" | "missing" | "invalid-file";
 
 export interface DownloadJobRecord {
   readonly id: string;
@@ -12,6 +13,12 @@ export interface DownloadJobRecord {
   readonly season?: number;
   readonly episode?: number;
   readonly providerId: ProviderId;
+  readonly mode?: "series" | "anime";
+  readonly subLang?: string;
+  readonly animeLang?: "sub" | "dub";
+  readonly selectedSourceId?: string;
+  readonly selectedStreamId?: string;
+  readonly selectedQualityLabel?: string;
   readonly streamUrl: string;
   readonly headers: Record<string, string>;
   readonly status: DownloadJobStatus;
@@ -32,6 +39,8 @@ export interface DownloadJobRecord {
   readonly startedAt?: string;
   readonly lastHeartbeatAt?: string;
   readonly failureKind?: string;
+  readonly artifactStatus?: DownloadArtifactStatus;
+  readonly lastResolvedProviderId?: ProviderId;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly completedAt?: string;
@@ -45,6 +54,12 @@ interface DownloadJobRow {
   readonly season: number | null;
   readonly episode: number | null;
   readonly provider_id: string;
+  readonly mode: "series" | "anime" | null;
+  readonly sub_lang: string | null;
+  readonly anime_lang: "sub" | "dub" | null;
+  readonly selected_source_id: string | null;
+  readonly selected_stream_id: string | null;
+  readonly selected_quality_label: string | null;
   readonly stream_url: string;
   readonly headers_json: string;
   readonly status: DownloadJobStatus;
@@ -65,6 +80,8 @@ interface DownloadJobRow {
   readonly started_at: string | null;
   readonly last_heartbeat_at: string | null;
   readonly failure_kind: string | null;
+  readonly artifact_status: DownloadArtifactStatus;
+  readonly last_resolved_provider_id: string | null;
   readonly created_at: string;
   readonly updated_at: string;
   readonly completed_at: string | null;
@@ -91,17 +108,22 @@ export class DownloadJobsRepository {
       | "introSkipJson"
       | "durationMs"
       | "fileSize"
+      | "artifactStatus"
+      | "lastResolvedProviderId"
     >,
   ): void {
     this.db
       .query(
         `
           INSERT INTO download_jobs (
-            id, title_id, title_name, media_kind, season, episode, provider_id, stream_url, headers_json,
+            id, title_id, title_name, media_kind, season, episode, provider_id,
+            mode, sub_lang, anime_lang, selected_source_id, selected_stream_id, selected_quality_label,
+            stream_url, headers_json,
             status, progress_percent, output_path, temp_path, subtitle_url, subtitle_path, subtitle_language,
             intro_skip_json, duration_ms, file_size, error_message, retry_count, attempt, max_attempts, next_retry_at,
-            started_at, last_heartbeat_at, failure_kind, created_at, updated_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, ?, ?, NULL)
+            started_at, last_heartbeat_at, failure_kind, artifact_status, last_resolved_provider_id,
+            created_at, updated_at, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
         `,
       )
       .run(
@@ -112,6 +134,12 @@ export class DownloadJobsRepository {
         input.season ?? null,
         input.episode ?? null,
         input.providerId,
+        input.mode ?? null,
+        input.subLang ?? null,
+        input.animeLang ?? null,
+        input.selectedSourceId ?? null,
+        input.selectedStreamId ?? null,
+        input.selectedQualityLabel ?? null,
         input.streamUrl,
         JSON.stringify(input.headers),
         input.outputPath,
@@ -162,6 +190,29 @@ export class DownloadJobsRepository {
       .run(fileSize, updatedAt, id);
   }
 
+  updateResolvedStream(
+    id: string,
+    input: {
+      streamUrl: string;
+      headers: Record<string, string>;
+      providerId?: ProviderId;
+    },
+    updatedAt: string,
+  ): void {
+    this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET stream_url = ?,
+              headers_json = ?,
+              last_resolved_provider_id = COALESCE(?, last_resolved_provider_id),
+              updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(input.streamUrl, JSON.stringify(input.headers), input.providerId ?? null, updatedAt, id);
+  }
+
   markRunning(id: string, updatedAt: string): void {
     this.db
       .query(
@@ -202,6 +253,7 @@ export class DownloadJobsRepository {
               progress_percent = 100,
               next_retry_at = NULL,
               failure_kind = NULL,
+              artifact_status = 'ready',
               updated_at = ?,
               completed_at = ?
           WHERE id = ?
@@ -225,12 +277,13 @@ export class DownloadJobsRepository {
               error_message = ?,
               failure_kind = ?,
               next_retry_at = NULL,
+              artifact_status = CASE WHEN ? = 'artifact-invalid' THEN 'invalid-file' ELSE artifact_status END,
               retry_count = retry_count + ?,
               updated_at = ?
           WHERE id = ?
         `,
       )
-      .run(message, failureKind, incrementRetry ? 1 : 0, updatedAt, id);
+      .run(message, failureKind, failureKind, incrementRetry ? 1 : 0, updatedAt, id);
   }
 
   scheduleRetry(id: string, message: string, retryAt: string, updatedAt: string): void {
@@ -280,6 +333,10 @@ export class DownloadJobsRepository {
         `,
       )
       .run(updatedAt, id);
+  }
+
+  delete(id: string): void {
+    this.db.query("DELETE FROM download_jobs WHERE id = ?").run(id);
   }
 
   get(id: string): DownloadJobRecord | undefined {
@@ -358,6 +415,12 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     season: row.season ?? undefined,
     episode: row.episode ?? undefined,
     providerId: row.provider_id as ProviderId,
+    mode: row.mode ?? undefined,
+    subLang: row.sub_lang ?? undefined,
+    animeLang: row.anime_lang ?? undefined,
+    selectedSourceId: row.selected_source_id ?? undefined,
+    selectedStreamId: row.selected_stream_id ?? undefined,
+    selectedQualityLabel: row.selected_quality_label ?? undefined,
     streamUrl: row.stream_url,
     headers: parseHeaders(row.headers_json),
     status: row.status,
@@ -378,6 +441,8 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     startedAt: row.started_at ?? undefined,
     lastHeartbeatAt: row.last_heartbeat_at ?? undefined,
     failureKind: row.failure_kind ?? undefined,
+    artifactStatus: row.artifact_status ?? "pending",
+    lastResolvedProviderId: (row.last_resolved_provider_id as ProviderId | null) ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at ?? undefined,
