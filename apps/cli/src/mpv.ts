@@ -28,6 +28,7 @@ import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
 import { dbg } from "@/logger";
+import { normalizeSubtitleUrl } from "@/subtitle";
 
 export async function launchMpv(opts: {
   url: string;
@@ -355,17 +356,34 @@ export function collectAdditionalSubtitleTracks(
   subtitleTracks?: readonly SubtitleTrack[],
 ): SubtitleTrack[] {
   const collected: SubtitleTrack[] = [];
+  const seen = new Set<string>();
+  if (primarySubtitle) {
+    seen.add(normalizeSubtitleUrl(primarySubtitle));
+  }
   for (const track of subtitleTracks ?? []) {
-    if (
-      !track.url ||
-      track.url === primarySubtitle ||
-      collected.some((item) => item.url === track.url)
-    ) {
+    const key = normalizeSubtitleUrl(track.url);
+    if (!track.url || seen.has(key)) {
       continue;
     }
+    seen.add(key);
     collected.push(track);
   }
   return collected;
+}
+
+export function describeSubtitleTrackForMpv(
+  url: string,
+  subtitleTracks?: readonly SubtitleTrack[],
+): { title: string; language: string } {
+  const key = normalizeSubtitleUrl(url);
+  const match = subtitleTracks?.find((track) => normalizeSubtitleUrl(track.url) === key);
+  const language = match?.language?.trim() ?? "";
+  const title =
+    match?.display?.trim() ||
+    [language || null, match?.sourceName?.trim() || null, match?.sourceKind || null]
+      .filter((part): part is string => Boolean(part))
+      .join(" ");
+  return { title, language };
 }
 
 async function unlinkIfExists(path: string): Promise<void> {
@@ -423,7 +441,17 @@ async function attachLateSubtitles(
   if (!ipcSession) return 0;
   let attached = 0;
   if (attachment.primarySubtitle) {
-    const result = await ipcSession.send(["sub-add", attachment.primarySubtitle, "select"]);
+    const primary = describeSubtitleTrackForMpv(
+      attachment.primarySubtitle,
+      attachment.subtitleTracks,
+    );
+    const result = await ipcSession.send([
+      "sub-add",
+      attachment.primarySubtitle,
+      "select",
+      primary.title,
+      primary.language,
+    ]);
     if (result.ok) attached += 1;
   }
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import {
   fetchSubtitlesFromWyzie,
+  mergeSubtitleTracks,
   parseWyzieSubtitleList,
   rankSubtitleCandidates,
   resolveSubtitlesByTmdbId,
@@ -137,6 +138,23 @@ describe("selectSubtitle", () => {
     expect(ranked[0]?.entry.url).toBe("https://provider.example/source-en.vtt");
     expect(ranked[0]?.reasons).toContain("source-subtitle");
     expect(ranked[0]?.reasons).toContain("non-sdh");
+  });
+});
+
+describe("mergeSubtitleTracks", () => {
+  test("dedupes equivalent subtitle URLs before playback inventory is built", () => {
+    expect(
+      mergeSubtitleTracks(
+        [{ url: "https://sub.example/en.vtt?q=provider#one", display: "English" }],
+        [
+          { url: "https://sub.example/en.vtt?q=wyzie#two", display: "English duplicate" },
+          { url: "https://sub.example/fr.vtt?q=wyzie", display: "French" },
+        ],
+      ),
+    ).toEqual([
+      { url: "https://sub.example/en.vtt?q=wyzie#two", display: "English duplicate" },
+      { url: "https://sub.example/fr.vtt?q=wyzie", display: "French" },
+    ]);
   });
 });
 

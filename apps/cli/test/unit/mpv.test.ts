@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 
-import { buildMpvArgs, collectAdditionalSubtitleTracks, shouldApplyStartAtSeek } from "@/mpv";
+import {
+  buildMpvArgs,
+  collectAdditionalSubtitleTracks,
+  describeSubtitleTrackForMpv,
+  shouldApplyStartAtSeek,
+} from "@/mpv";
 
 test("buildMpvArgs only attaches the primary subtitle during initial launch", () => {
   const args = buildMpvArgs(
@@ -178,4 +183,28 @@ test("collectAdditionalSubtitleTracks excludes the primary subtitle and dedupes 
     { url: "https://sub.example/ar.srt", language: "ar" },
     { url: "https://sub.example/fr.srt", language: "fr" },
   ]);
+});
+
+test("collectAdditionalSubtitleTracks dedupes equivalent subtitle URLs with query churn", () => {
+  expect(
+    collectAdditionalSubtitleTracks("https://sub.example/en.vtt?q=first", [
+      { url: "https://sub.example/en.vtt?q=second", language: "en" },
+      { url: "https://sub.example/fr.vtt?q=first", language: "fr" },
+      { url: "https://sub.example/fr.vtt?q=second", language: "fr" },
+    ]),
+  ).toEqual([{ url: "https://sub.example/fr.vtt?q=first", language: "fr" }]);
+});
+
+test("describeSubtitleTrackForMpv names selected subtitle tracks from inventory", () => {
+  expect(
+    describeSubtitleTrackForMpv("https://sub.example/en.vtt?q=selected", [
+      {
+        url: "https://sub.example/en.vtt?q=inventory",
+        language: "en",
+        display: "English SDH",
+        sourceName: "wyzie",
+        sourceKind: "external",
+      },
+    ]),
+  ).toEqual({ title: "English SDH", language: "en" });
 });

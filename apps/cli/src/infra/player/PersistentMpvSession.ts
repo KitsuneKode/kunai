@@ -8,7 +8,12 @@ import type {
   SubtitleTrack,
 } from "@/domain/types";
 import { dbg } from "@/logger";
-import { buildMpvArgs, collectAdditionalSubtitleTracks, shouldApplyStartAtSeek } from "@/mpv";
+import {
+  buildMpvArgs,
+  collectAdditionalSubtitleTracks,
+  describeSubtitleTrackForMpv,
+  shouldApplyStartAtSeek,
+} from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import {
@@ -825,7 +830,14 @@ export class PersistentMpvSession {
     await this.removeExternalSubtitles();
 
     if (primarySubtitle) {
-      const result = await this.ipcSession.send(["sub-add", primarySubtitle, "select"]);
+      const primary = describeSubtitleTrackForMpv(primarySubtitle, subtitleTracks);
+      const result = await this.ipcSession.send([
+        "sub-add",
+        primarySubtitle,
+        "select",
+        primary.title,
+        primary.language,
+      ]);
       if (!result.ok) return;
     }
 
@@ -856,7 +868,17 @@ export class PersistentMpvSession {
     let attached = 0;
 
     if (attachment.primarySubtitle) {
-      const result = await this.ipcSession.send(["sub-add", attachment.primarySubtitle, "select"]);
+      const primary = describeSubtitleTrackForMpv(
+        attachment.primarySubtitle,
+        attachment.subtitleTracks,
+      );
+      const result = await this.ipcSession.send([
+        "sub-add",
+        attachment.primarySubtitle,
+        "select",
+        primary.title,
+        primary.language,
+      ]);
       if (result.ok) attached += 1;
     }
 

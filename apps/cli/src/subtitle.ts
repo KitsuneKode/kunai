@@ -143,7 +143,7 @@ export function mergeSubtitleTracks<T extends { url: string }>(
   const order: string[] = [];
 
   const absorb = (track: T, preferExisting: boolean) => {
-    const key = track.url.trim();
+    const key = normalizeSubtitleUrl(track.url);
     if (!key) return;
 
     const existing = merged.get(key);
@@ -344,13 +344,15 @@ function dedupeSubtitleEntries(list: readonly SubtitleEntry[]): SubtitleEntry[] 
   return order.map((key) => merged.get(key)).filter((entry): entry is SubtitleEntry => !!entry);
 }
 
-function normalizeSubtitleUrl(url: string): string {
+export function normalizeSubtitleUrl(url: string): string {
+  const trimmed = url.trim();
   try {
-    const parsed = new URL(url.trim());
+    const parsed = new URL(trimmed);
     parsed.search = "";
+    parsed.hash = "";
     return parsed.toString();
   } catch {
-    return url.trim().split("?")[0] ?? url.trim();
+    return trimmed.split("?")[0]?.split("#")[0] ?? trimmed;
   }
 }
 
