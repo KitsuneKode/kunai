@@ -31,7 +31,8 @@ export type AppCommandId =
   | "clear-history"
   | "export-diagnostics"
   | "report-issue"
-  | "download";
+  | "download"
+  | "downloads";
 
 export type AppCommand = {
   readonly id: AppCommandId;
@@ -52,6 +53,7 @@ export const COMMAND_CONTEXTS = {
     "presence",
     "provider",
     "history",
+    "downloads",
     "help",
     "about",
     "diagnostics",
@@ -70,6 +72,7 @@ export const COMMAND_CONTEXTS = {
     "source",
     "quality",
     "download",
+    "downloads",
     "next",
     "previous",
     "history",
@@ -95,6 +98,7 @@ export const COMMAND_CONTEXTS = {
     "source",
     "quality",
     "download",
+    "downloads",
     "pick-episode",
     "next",
     "previous",
@@ -122,6 +126,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Download Current Episode",
     aliases: ["download", "offline", "save"],
     description: "Queue the current resolved stream for offline download",
+  },
+  {
+    id: "downloads",
+    label: "Download Jobs",
+    aliases: ["downloads", "download-jobs", "jobs"],
+    description: "Inspect and control queued/running/failed download jobs",
   },
   {
     id: "search",
@@ -619,6 +629,9 @@ function resolveCommandState(
               state.episodeNavigation.nextUnavailableReason ??
               "No later episode metadata is available yet.",
           };
+
+    case "downloads":
+      return { enabled: true };
 
     case "previous":
       if (!inSeriesContext) {

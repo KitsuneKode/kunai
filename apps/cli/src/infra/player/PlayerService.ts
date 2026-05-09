@@ -89,6 +89,15 @@ export interface PlayerService {
   play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult>;
   releasePersistentSession(): Promise<void>;
   isAvailable(): Promise<boolean>;
+  playLocal(options: {
+    filePath: string;
+    displayTitle: string;
+    subtitlePath?: string | null;
+    timing?: PlaybackTimingMetadata | null;
+    attach?: boolean;
+    onPlayerReady?: () => void;
+    onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+  }): Promise<PlaybackResult>;
 }
 
 export type LateSubtitleAttachment = {

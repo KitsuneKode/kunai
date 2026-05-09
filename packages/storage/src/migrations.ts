@@ -87,6 +87,33 @@ export const dataMigrations: readonly Migration[] = [
         ON download_jobs(title_id, created_at DESC);
     `,
   },
+  {
+    id: "004_data_download_jobs_runtime",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE download_jobs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3;
+      ALTER TABLE download_jobs ADD COLUMN next_retry_at TEXT;
+      ALTER TABLE download_jobs ADD COLUMN started_at TEXT;
+      ALTER TABLE download_jobs ADD COLUMN last_heartbeat_at TEXT;
+      ALTER TABLE download_jobs ADD COLUMN failure_kind TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_download_jobs_status_retry
+        ON download_jobs(status, next_retry_at ASC, created_at ASC);
+    `,
+  },
+  {
+    id: "005_data_download_jobs_offline",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN subtitle_url TEXT;
+      ALTER TABLE download_jobs ADD COLUMN subtitle_path TEXT;
+      ALTER TABLE download_jobs ADD COLUMN subtitle_language TEXT;
+      ALTER TABLE download_jobs ADD COLUMN intro_skip_json TEXT;
+      ALTER TABLE download_jobs ADD COLUMN duration_ms INTEGER;
+      ALTER TABLE download_jobs ADD COLUMN file_size INTEGER;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

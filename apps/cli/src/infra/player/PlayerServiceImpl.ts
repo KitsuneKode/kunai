@@ -140,6 +140,50 @@ export class PlayerServiceImpl implements PlayerService {
     return Boolean(Bun.which("mpv"));
   }
 
+  async playLocal(options: {
+    filePath: string;
+    displayTitle: string;
+    subtitlePath?: string | null;
+    timing?: import("@/domain/types").PlaybackTimingMetadata | null;
+    attach?: boolean;
+    onPlayerReady?: () => void;
+    onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+  }): Promise<PlaybackResult> {
+    options.onPlaybackEvent?.({ type: "launching-player" });
+    this.deps.logger.info("Launching local MPV", {
+      title: options.displayTitle,
+      filePath: options.filePath,
+    });
+    this.deps.diagnosticsStore.record({
+      category: "playback",
+      message: "Launching local MPV",
+      context: {
+        title: options.displayTitle,
+        filePath: options.filePath,
+        hasSubtitle: Boolean(options.subtitlePath),
+      },
+    });
+
+    const result = await launchMpv({
+      url: options.filePath,
+      headers: {},
+      subtitle: options.subtitlePath ?? null,
+      displayTitle: options.displayTitle,
+      attach: options.attach,
+      timing: options.timing,
+      autoSkipEnabled: true,
+      skipRecap: true,
+      skipIntro: true,
+      skipPreview: false,
+      skipCredits: true,
+      onPlayerReady: options.onPlayerReady,
+      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
+      mpv: this.deps.mpv,
+    });
+
+    return result;
+  }
+
   private async playOneShotStream(
     stream: StreamInfo,
     options: PlayerOptions,

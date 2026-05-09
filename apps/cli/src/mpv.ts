@@ -140,6 +140,9 @@ export async function launchMpv(opts: {
       mutableTiming = timing;
       trySkipSegment(true);
     },
+    getTimingSnapshot() {
+      return mutableTiming;
+    },
   };
   opts.onControlReady?.(control);
   emitPlaybackEvent({ type: "mpv-process-started" });

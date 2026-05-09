@@ -28,13 +28,15 @@ Add local downloads, an offline library, and a first-run/setup flow without slow
 - Extend dependency checks to detect `ffmpeg` without blocking playback.
 - Add unit tests for config normalization and feature-gate decisions.
 
-Current progress: download config fields (`onboardingVersion` included), non-blocking `ffmpeg` capability detection, pure download feature gate, persisted `download_jobs` table/repository, initial `DownloadService`, and CLI `--setup` + `--offline` entrypoints are implemented.
+Current progress: download config fields (`onboardingVersion` included), non-blocking `ffmpeg` capability detection, pure download feature gate, persisted `download_jobs` table/repository (with runtime lifecycle fields), retry/reconcile-capable `DownloadService`, `/downloads` job management panel, and CLI `--setup` + validated `--offline` listing are implemented.
 
 ## Slice 2: Download Persistence
 
 - Add a `download_jobs` table through `@kunai/storage`.
 - Add repository methods for enqueue, update progress, complete, fail, abort, and list by title.
 - Add migration/idempotency tests.
+
+Current progress: `download_jobs` now includes runtime lifecycle columns (`attempt`, `max_attempts`, `next_retry_at`, heartbeat/failure metadata), repository retry/requeue/failed/running queries, and storage tests covering queue lifecycle.
 
 ## Slice 3: Download Service
 
@@ -44,6 +46,8 @@ Current progress: download config fields (`onboardingVersion` included), non-blo
 - Implement abort cleanup, retry backoff, and restart reconciliation.
 - Add process/output parser tests with fake subprocess ports.
 
+Current progress: in-process worker now owns active ffmpeg process handles, supports real cancellation, parses ffmpeg progress output, schedules bounded retry backoff, and reconciles stale running jobs on startup. Dedicated unit tests cover gate reject, success, retry scheduling, and cancellation behavior.
+
 ## Slice 4: Shell Integration
 
 - Add a non-destructive download action only when a playable stream exists.
@@ -51,12 +55,16 @@ Current progress: download config fields (`onboardingVersion` included), non-blo
 - Surface progress in a bounded shell panel or notification rail.
 - Add quit behavior for active downloads: keep, wait, or cancel.
 
+Current progress: download enqueue now checks gates before queue insertion (truthful user feedback), command palette includes `/downloads`, shell panel supports retry/cancel actions, diagnostics panel includes failed counts, and quit flow already supports keep/wait/cancel.
+
 ## Slice 5: Offline Library
 
 - Add `--offline` argument parsing after the service layer is ready.
 - Build a library screen from completed `download_jobs`.
 - Reuse playback launch policy for local files.
 - Validate file presence before playback.
+
+Current progress: `--offline` now validates file readability/shape (`ready`, `missing`, `invalid-file`) while full shell-native local playback library UX remains pending.
 
 ## Slice 6: Onboarding
 

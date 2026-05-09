@@ -65,6 +65,7 @@ export function buildShellRuntimeBindings(container: Container) {
         downloadSummary: {
           active: container.downloadService.listActive(200).length,
           completed: container.downloadService.listCompleted(200).length,
+          failed: container.downloadService.listFailed(200).length,
         },
         presenceSnapshot: container.presence.getSnapshot(),
       }),

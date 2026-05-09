@@ -497,6 +497,9 @@ export function LoadingShell({
           {state.subtitleStatus ? (
             <DetailLine label="Subtitle state" value={state.subtitleStatus} tone={subtitleTone} />
           ) : null}
+          {state.downloadStatus ? (
+            <DetailLine label="Download" value={state.downloadStatus} tone="info" />
+          ) : null}
           <DetailLine
             label="Status"
             value={

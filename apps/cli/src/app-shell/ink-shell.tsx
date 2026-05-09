@@ -388,6 +388,7 @@ function AppRoot({ container }: { container: Container }) {
   const screen = useRootShellScreen();
   const rootContent = useRootContentSession();
   const { stdout } = useStdout();
+  const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
 
   // Global Ctrl+C / Ctrl+D handler. Ink normalizes control characters to their
   // letter name with key.ctrl=true, so we check both forms for safety.
@@ -419,6 +420,35 @@ function AppRoot({ container }: { container: Container }) {
       }),
     [container],
   );
+
+  useEffect(() => {
+    const resolveStatus = () => {
+      const snapshot = stateManager.getState();
+      const currentTitle = snapshot.currentTitle;
+      if (!currentTitle) {
+        setDownloadStatus(null);
+        return;
+      }
+      const line = container.downloadService.describeActiveDownloadForPlayback({
+        titleId: currentTitle.id,
+        contentType: currentTitle.type,
+        season: snapshot.currentEpisode?.season,
+        episode: snapshot.currentEpisode?.episode,
+      });
+      setDownloadStatus(line);
+    };
+
+    resolveStatus();
+    const timer = setInterval(resolveStatus, 2000);
+    return () => clearInterval(timer);
+  }, [
+    container.downloadService,
+    stateManager,
+    state.currentTitle?.id,
+    state.currentTitle?.type,
+    state.currentEpisode?.season,
+    state.currentEpisode?.episode,
+  ]);
 
   const activePlaybackStatuses = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
   const playbackIsActive = activePlaybackStatuses.some((status) => status === state.playbackStatus);
@@ -550,6 +580,7 @@ function AppRoot({ container }: { container: Container }) {
                     state.playbackStatus === "stalled"
                       ? playbackSubtitleStatus
                       : undefined,
+                  downloadStatus: downloadStatus ?? undefined,
                   cancellable: playbackCanCancel,
                   trace: playbackTrace,
                   showMemory: container.config.showMemory,

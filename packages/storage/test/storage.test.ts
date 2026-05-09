@@ -215,7 +215,24 @@ test("download jobs repository supports queue lifecycle", () => {
   repo.markRunning("job-1", "2026-04-29T00:01:00.000Z");
   repo.updateProgress("job-1", 42, "2026-04-29T00:02:00.000Z");
   expect(repo.get("job-1")?.progressPercent).toBe(42);
+  expect(repo.get("job-1")?.attempt).toBe(1);
 
+  repo.scheduleRetry(
+    "job-1",
+    "temporary network issue",
+    "2026-04-29T00:02:30.000Z",
+    "2026-04-29T00:02:10.000Z",
+  );
+  expect(repo.get("job-1")?.status).toBe("queued");
+  expect(repo.get("job-1")?.retryCount).toBe(1);
+  expect(repo.get("job-1")?.nextRetryAt).toBe("2026-04-29T00:02:30.000Z");
+
+  repo.markRunning("job-1", "2026-04-29T00:02:40.000Z");
+  repo.fail("job-1", "fatal", true, "2026-04-29T00:02:45.000Z", "http-client");
+  expect(repo.listFailed(10)).toHaveLength(1);
+
+  repo.requeue("job-1", "2026-04-29T00:02:50.000Z");
+  expect(repo.get("job-1")?.status).toBe("queued");
   repo.complete("job-1", "2026-04-29T00:03:00.000Z");
   const done = repo.listCompleted(10)[0];
   expect(done?.status).toBe("completed");

@@ -2,7 +2,7 @@
 
 This is the canonical design reference for future download/offline/onboarding work.
 
-Status: partially implemented (feature gate + config fields + `download_jobs` persistence + initial worker + `--setup` + `--offline` landed; shell-native download actions/library playback polish pending).
+Status: in progress (feature gate + config fields + `download_jobs` persistence + retry/reconcile worker + `/downloads` shell panel + validated `--offline` listing landed; full offline playback library UX and daemon extraction still pending).
 
 ## Product Shape
 
@@ -30,18 +30,19 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 ## Desired Download Behavior
 
 - `ffmpeg` is optional but required for downloads.
-- Downloads are opt-in and confirmed before writing large files.
+- Downloads are opt-in and blocked at enqueue time when feature gates are not usable.
 - HLS size is reported honestly as unknown when content length cannot be known.
 - Temporary files use a `.tmp.*` suffix and are renamed only after a clean exit.
-- Abort deletes temporary files and persists an aborted job state.
-- Failed jobs retry with bounded backoff and then surface as failed.
+- Abort terminates active ffmpeg processes, deletes temporary files, and persists an aborted job state.
+- Failed jobs retry with bounded backoff and then surface as failed when retry limits are exhausted.
 - Quit with active downloads asks whether to keep, wait, or cancel.
+- Progress is parsed from ffmpeg progress output and persisted for shell diagnostics/UI.
 
 ## Desired Offline Behavior
 
 - No aggressive startup network probe.
 - Offline prompt appears only after a real network failure.
-- `--offline` enters local library listing mode from completed `download_jobs`.
+- `--offline` lists completed `download_jobs` and validates artifact readability.
 - Local files should validate before playback; corrupt or missing files should offer re-download, not crash.
 
 ## Config Fields (current + planned)

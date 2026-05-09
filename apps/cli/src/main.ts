@@ -129,20 +129,15 @@ async function maybeRunOfflineMode(
     return false;
   }
 
-  const completed = container.downloadService.listCompleted(100);
-  if (completed.length === 0) {
-    console.log("No completed downloads found.");
+  const { OfflineLibraryPhase } = await import("@/app/OfflineLibraryPhase");
+  const result = await new OfflineLibraryPhase().execute(undefined, {
+    container,
+    signal: new AbortController().signal,
+  });
+  if (result.status !== "error") {
     return true;
   }
-
-  console.log("Offline library:");
-  for (const job of completed) {
-    const episodeLabel =
-      job.season !== undefined && job.episode !== undefined
-        ? ` S${String(job.season).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`
-        : "";
-    console.log(`- ${job.titleName}${episodeLabel} -> ${job.outputPath}`);
-  }
+  console.log("Offline library failed to open.");
   return true;
 }
 
@@ -166,6 +161,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (await maybeRunOfflineMode(args, container)) {
     return;
   }
+  void container.downloadService.processQueue();
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsStore.record({
       category: "session",

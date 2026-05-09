@@ -18,8 +18,20 @@ export interface DownloadJobRecord {
   readonly progressPercent: number;
   readonly outputPath: string;
   readonly tempPath: string;
+  readonly subtitleUrl?: string;
+  readonly subtitlePath?: string;
+  readonly subtitleLanguage?: string;
+  readonly introSkipJson?: string;
+  readonly durationMs?: number;
+  readonly fileSize?: number;
   readonly errorMessage?: string;
   readonly retryCount: number;
+  readonly attempt: number;
+  readonly maxAttempts: number;
+  readonly nextRetryAt?: string;
+  readonly startedAt?: string;
+  readonly lastHeartbeatAt?: string;
+  readonly failureKind?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly completedAt?: string;
@@ -39,8 +51,20 @@ interface DownloadJobRow {
   readonly progress_percent: number;
   readonly output_path: string;
   readonly temp_path: string;
+  readonly subtitle_url: string | null;
+  readonly subtitle_path: string | null;
+  readonly subtitle_language: string | null;
+  readonly intro_skip_json: string | null;
+  readonly duration_ms: number | null;
+  readonly file_size: number | null;
   readonly error_message: string | null;
   readonly retry_count: number;
+  readonly attempt: number;
+  readonly max_attempts: number;
+  readonly next_retry_at: string | null;
+  readonly started_at: string | null;
+  readonly last_heartbeat_at: string | null;
+  readonly failure_kind: string | null;
   readonly created_at: string;
   readonly updated_at: string;
   readonly completed_at: string | null;
@@ -49,14 +73,35 @@ interface DownloadJobRow {
 export class DownloadJobsRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
-  enqueue(input: Omit<DownloadJobRecord, "status" | "progressPercent" | "retryCount">): void {
+  enqueue(
+    input: Omit<
+      DownloadJobRecord,
+      | "status"
+      | "progressPercent"
+      | "retryCount"
+      | "attempt"
+      | "maxAttempts"
+      | "nextRetryAt"
+      | "startedAt"
+      | "lastHeartbeatAt"
+      | "failureKind"
+      | "subtitleUrl"
+      | "subtitlePath"
+      | "subtitleLanguage"
+      | "introSkipJson"
+      | "durationMs"
+      | "fileSize"
+    >,
+  ): void {
     this.db
       .query(
         `
           INSERT INTO download_jobs (
             id, title_id, title_name, media_kind, season, episode, provider_id, stream_url, headers_json,
-            status, progress_percent, output_path, temp_path, error_message, retry_count, created_at, updated_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, 0, ?, ?, NULL)
+            status, progress_percent, output_path, temp_path, subtitle_url, subtitle_path, subtitle_language,
+            intro_skip_json, duration_ms, file_size, error_message, retry_count, attempt, max_attempts, next_retry_at,
+            started_at, last_heartbeat_at, failure_kind, created_at, updated_at, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, ?, ?, NULL)
         `,
       )
       .run(
@@ -76,45 +121,163 @@ export class DownloadJobsRepository {
       );
   }
 
+  updateOfflineMetadata(
+    id: string,
+    input: {
+      subtitleUrl?: string | null;
+      subtitlePath?: string | null;
+      subtitleLanguage?: string | null;
+      introSkipJson?: string | null;
+      durationMs?: number | null;
+    },
+    updatedAt: string,
+  ): void {
+    this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET subtitle_url = COALESCE(?, subtitle_url),
+              subtitle_path = COALESCE(?, subtitle_path),
+              subtitle_language = COALESCE(?, subtitle_language),
+              intro_skip_json = COALESCE(?, intro_skip_json),
+              duration_ms = COALESCE(?, duration_ms),
+              updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(
+        input.subtitleUrl ?? null,
+        input.subtitlePath ?? null,
+        input.subtitleLanguage ?? null,
+        input.introSkipJson ?? null,
+        input.durationMs ?? null,
+        updatedAt,
+        id,
+      );
+  }
+
+  updateFileSize(id: string, fileSize: number, updatedAt: string): void {
+    this.db
+      .query("UPDATE download_jobs SET file_size = ?, updated_at = ? WHERE id = ?")
+      .run(fileSize, updatedAt, id);
+  }
+
   markRunning(id: string, updatedAt: string): void {
     this.db
-      .query("UPDATE download_jobs SET status = 'running', updated_at = ? WHERE id = ?")
-      .run(updatedAt, id);
+      .query(
+        `
+          UPDATE download_jobs
+          SET status = 'running',
+              attempt = attempt + 1,
+              started_at = COALESCE(started_at, ?),
+              last_heartbeat_at = ?,
+              next_retry_at = NULL,
+              updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(updatedAt, updatedAt, updatedAt, id);
+  }
+
+  markHeartbeat(id: string, updatedAt: string): void {
+    this.db
+      .query("UPDATE download_jobs SET last_heartbeat_at = ?, updated_at = ? WHERE id = ?")
+      .run(updatedAt, updatedAt, id);
   }
 
   updateProgress(id: string, progressPercent: number, updatedAt: string): void {
     this.db
-      .query("UPDATE download_jobs SET progress_percent = ?, updated_at = ? WHERE id = ?")
-      .run(Math.max(0, Math.min(100, Math.trunc(progressPercent))), updatedAt, id);
+      .query(
+        "UPDATE download_jobs SET progress_percent = ?, last_heartbeat_at = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(Math.max(0, Math.min(100, Math.trunc(progressPercent))), updatedAt, updatedAt, id);
   }
 
   complete(id: string, updatedAt: string): void {
     this.db
       .query(
-        "UPDATE download_jobs SET status = 'completed', progress_percent = 100, updated_at = ?, completed_at = ? WHERE id = ?",
+        `
+          UPDATE download_jobs
+          SET status = 'completed',
+              progress_percent = 100,
+              next_retry_at = NULL,
+              failure_kind = NULL,
+              updated_at = ?,
+              completed_at = ?
+          WHERE id = ?
+        `,
       )
       .run(updatedAt, updatedAt, id);
   }
 
-  fail(id: string, message: string, incrementRetry: boolean, updatedAt: string): void {
+  fail(
+    id: string,
+    message: string,
+    incrementRetry: boolean,
+    updatedAt: string,
+    failureKind: string = "unknown",
+  ): void {
     this.db
       .query(
         `
           UPDATE download_jobs
           SET status = 'failed',
               error_message = ?,
+              failure_kind = ?,
+              next_retry_at = NULL,
               retry_count = retry_count + ?,
               updated_at = ?
           WHERE id = ?
         `,
       )
-      .run(message, incrementRetry ? 1 : 0, updatedAt, id);
+      .run(message, failureKind, incrementRetry ? 1 : 0, updatedAt, id);
+  }
+
+  scheduleRetry(id: string, message: string, retryAt: string, updatedAt: string): void {
+    this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET status = 'queued',
+              error_message = ?,
+              failure_kind = 'transient',
+              retry_count = retry_count + 1,
+              next_retry_at = ?,
+              updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(message, retryAt, updatedAt, id);
+  }
+
+  requeue(id: string, updatedAt: string): void {
+    this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET status = 'queued',
+              error_message = NULL,
+              failure_kind = NULL,
+              next_retry_at = NULL,
+              updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(updatedAt, id);
   }
 
   abort(id: string, updatedAt: string): void {
     this.db
       .query(
-        "UPDATE download_jobs SET status = 'aborted', error_message = NULL, updated_at = ? WHERE id = ?",
+        `
+          UPDATE download_jobs
+          SET status = 'aborted',
+              error_message = NULL,
+              failure_kind = 'aborted',
+              next_retry_at = NULL,
+              updated_at = ?
+          WHERE id = ?
+        `,
       )
       .run(updatedAt, id);
   }
@@ -135,6 +298,15 @@ export class DownloadJobsRepository {
       .map(mapRow);
   }
 
+  listRunning(limit = 100): readonly DownloadJobRecord[] {
+    return this.db
+      .query<DownloadJobRow, [number]>(
+        "SELECT * FROM download_jobs WHERE status = 'running' ORDER BY created_at ASC LIMIT ?",
+      )
+      .all(limit)
+      .map(mapRow);
+  }
+
   listByTitle(titleId: string, limit = 100): readonly DownloadJobRecord[] {
     return this.db
       .query<DownloadJobRow, [string, number]>(
@@ -148,6 +320,15 @@ export class DownloadJobsRepository {
     return this.db
       .query<DownloadJobRow, [number]>(
         "SELECT * FROM download_jobs WHERE status = 'completed' ORDER BY completed_at DESC LIMIT ?",
+      )
+      .all(limit)
+      .map(mapRow);
+  }
+
+  listFailed(limit = 100): readonly DownloadJobRecord[] {
+    return this.db
+      .query<DownloadJobRow, [number]>(
+        "SELECT * FROM download_jobs WHERE status = 'failed' ORDER BY updated_at DESC LIMIT ?",
       )
       .all(limit)
       .map(mapRow);
@@ -183,8 +364,20 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     progressPercent: row.progress_percent,
     outputPath: row.output_path,
     tempPath: row.temp_path,
+    subtitleUrl: row.subtitle_url ?? undefined,
+    subtitlePath: row.subtitle_path ?? undefined,
+    subtitleLanguage: row.subtitle_language ?? undefined,
+    introSkipJson: row.intro_skip_json ?? undefined,
+    durationMs: row.duration_ms ?? undefined,
+    fileSize: row.file_size ?? undefined,
     errorMessage: row.error_message ?? undefined,
     retryCount: row.retry_count,
+    attempt: row.attempt,
+    maxAttempts: row.max_attempts,
+    nextRetryAt: row.next_retry_at ?? undefined,
+    startedAt: row.started_at ?? undefined,
+    lastHeartbeatAt: row.last_heartbeat_at ?? undefined,
+    failureKind: row.failure_kind ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at ?? undefined,

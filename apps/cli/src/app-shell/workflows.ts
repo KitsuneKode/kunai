@@ -6,6 +6,7 @@ import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import type { EpisodePickerOption } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
+import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   formatTimestamp,
@@ -33,6 +34,9 @@ type HistoryAction =
   | { type: "entry"; id: string; title: string }
   | { type: "clear-all" }
   | { type: "back" };
+
+type DownloadJobAction = { type: "job"; id: string } | { type: "back" };
+type DownloadJobFilter = "active" | "failed" | "completed" | "all";
 
 type ShellOption<T> = {
   value: T;
@@ -73,15 +77,15 @@ async function chooseOption<T>({
   return openListShell({ title, subtitle, options, actionContext });
 }
 
-function packageInstallHint(pkg: "mpv" | "ffmpeg" | "imagemagick"): string {
+function packageInstallHint(pkg: "mpv" | "ffmpeg" | "chafa"): string {
   if (process.platform === "darwin") {
     return `brew install ${pkg}`;
   }
   if (process.platform === "linux") {
-    if (pkg === "imagemagick") {
-      return "sudo pacman -S imagemagick  ·  or  sudo apt install imagemagick";
-    }
     return `sudo pacman -S ${pkg}  ·  or  sudo apt install ${pkg}`;
+  }
+  if (process.platform === "win32" && pkg === "chafa") {
+    return "winget install hpjansson.Chafa";
   }
   return `${pkg}: install via your system package manager`;
 }
@@ -103,12 +107,17 @@ export async function runSetupWizard({
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const capabilitySnapshot = container.capabilitySnapshot;
   const ffmpegAvailable = capabilitySnapshot?.ffmpeg ?? Boolean(Bun.which("ffmpeg"));
-  const magickAvailable = capabilitySnapshot?.magick ?? Boolean(Bun.which("magick"));
+  const chafaAvailable = capabilitySnapshot?.chafa ?? Boolean(Bun.which("chafa"));
+  const imageCapability = capabilitySnapshot?.image;
+  const postersAvailable = imageCapability?.available ?? false;
+  const posterDetail = imageCapability
+    ? `${imageCapability.renderer} (${imageCapability.terminal})`
+    : "off";
   const capabilityCard = [
     `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}`,
     `ffmpeg ${ffmpegAvailable ? "ready" : "missing"}`,
-    `posters ${capabilitySnapshot?.kittyCompatible ? "enabled" : "limited"}`,
-    `magick ${magickAvailable ? "ready" : "optional"}`,
+    `posters ${postersAvailable ? posterDetail : "off"}`,
+    `chafa ${chafaAvailable ? "ready" : "optional"}`,
   ].join("  ·  ");
 
   const startChoice = await chooseOption({
@@ -163,11 +172,11 @@ export async function runSetupWizard({
           detail: packageInstallHint("ffmpeg"),
         },
         {
-          value: "magick" as const,
-          label: magickAvailable
-            ? "ImageMagick detected"
-            : "Install ImageMagick for broader posters",
-          detail: packageInstallHint("imagemagick"),
+          value: "chafa" as const,
+          label: chafaAvailable
+            ? "chafa detected (poster previews ready)"
+            : "Install chafa for poster previews",
+          detail: packageInstallHint("chafa"),
         },
         {
           value: "continue" as const,
@@ -467,6 +476,66 @@ function summarizeHeaderKeys(headers: Record<string, string> | undefined): strin
   return keys.length > 0 ? keys.join(", ") : "none";
 }
 
+function describeDownloadJob(job: import("@kunai/storage").DownloadJobRecord): string {
+  const episodeLabel =
+    job.season !== undefined && job.episode !== undefined
+      ? `S${String(job.season).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`
+      : "movie";
+  return `${job.titleName}  ·  ${episodeLabel}`;
+}
+
+function detailDownloadJob(job: import("@kunai/storage").DownloadJobRecord): string {
+  const parts = [
+    `${statusDetail(job)}`,
+    `${renderProgressBar(job.progressPercent)} ${job.progressPercent}%`,
+    `attempt ${job.attempt}/${job.maxAttempts}`,
+  ];
+  if (job.nextRetryAt) parts.push(`retry ${formatRelativeRetry(job.nextRetryAt)}`);
+  if (job.errorMessage) parts.push(job.errorMessage);
+  return parts.join("  ·  ");
+}
+
+function statusDetail(job: import("@kunai/storage").DownloadJobRecord): string {
+  if (job.status === "failed" && job.failureKind) {
+    return `failed (${job.failureKind})`;
+  }
+  return job.status;
+}
+
+function formatRelativeRetry(nextRetryAt: string): string {
+  const targetMs = Date.parse(nextRetryAt);
+  if (!Number.isFinite(targetMs)) {
+    return new Date(nextRetryAt).toLocaleTimeString();
+  }
+  const deltaMs = targetMs - Date.now();
+  if (deltaMs <= 0) {
+    return "now";
+  }
+  const seconds = Math.ceil(deltaMs / 1000);
+  if (seconds < 60) return `in ${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remSeconds = seconds % 60;
+  return remSeconds > 0 ? `in ${minutes}m ${remSeconds}s` : `in ${minutes}m`;
+}
+
+function renderProgressBar(percentage: number): string {
+  const totalBlocks = 10;
+  const filledBlocks = Math.max(
+    0,
+    Math.min(totalBlocks, Math.round((percentage / 100) * totalBlocks)),
+  );
+  const emptyBlocks = totalBlocks - filledBlocks;
+  return `[${"█".repeat(filledBlocks)}${"░".repeat(emptyBlocks)}]`;
+}
+
+function statusPrefix(job: import("@kunai/storage").DownloadJobRecord): string {
+  if (job.status === "running") return "▶";
+  if (job.status === "queued") return "●";
+  if (job.status === "failed") return "!";
+  if (job.status === "aborted") return "×";
+  return "✓";
+}
+
 async function openHistoryShell(
   historyStore: HistoryStore,
   actionContext?: ListShellActionContext,
@@ -531,6 +600,119 @@ async function openHistoryShell(
       ],
     });
     if (confirm) await historyStore.delete(picked.id);
+  }
+}
+
+async function openDownloadsShell(
+  container: Container,
+  actionContext?: ListShellActionContext,
+): Promise<void> {
+  let filter: DownloadJobFilter = "active";
+  while (true) {
+    const active = container.downloadService.listActive(100);
+    const failed = container.downloadService.listFailed(100);
+    const completed = container.downloadService.listCompleted(100).slice(0, 40);
+    const filterChoice: DownloadJobFilter | "back" | null = await chooseOption<
+      DownloadJobFilter | "back"
+    >({
+      title: "Download Jobs",
+      subtitle: `${active.length} active  ·  ${failed.length} failed  ·  ${completed.length} completed`,
+      actionContext,
+      options: [
+        {
+          value: "active" as const,
+          label: "Active queue",
+          detail: "Running and queued jobs",
+        },
+        {
+          value: "failed" as const,
+          label: "Failed jobs",
+          detail: "Retryable and terminal failures",
+        },
+        {
+          value: "completed" as const,
+          label: "Completed jobs",
+          detail: "Latest finished artifacts",
+        },
+        {
+          value: "all" as const,
+          label: "All jobs",
+          detail: "Combined queue view",
+        },
+        { value: "back" as const, label: "Back" },
+      ],
+    });
+    if (!filterChoice || filterChoice === "back") {
+      return;
+    }
+    filter = filterChoice;
+
+    const visibleJobs =
+      filter === "active"
+        ? active
+        : filter === "failed"
+          ? failed
+          : filter === "completed"
+            ? completed
+            : [...active, ...failed, ...completed];
+    const options: ShellOption<DownloadJobAction>[] = [
+      ...visibleJobs.map((job) => ({
+        value: { type: "job" as const, id: job.id },
+        label: `${statusPrefix(job)} ${describeDownloadJob(job)}`,
+        detail:
+          job.status === "completed"
+            ? `${job.status}  ·  ${job.outputPath}`
+            : detailDownloadJob(job),
+      })),
+      { value: { type: "back" as const }, label: "Back" },
+    ];
+    const picked = await chooseOption({
+      title: "Download Jobs",
+      subtitle:
+        options.length > 1
+          ? `${filter}  ·  ${options.length - 1} entries`
+          : `${filter}  ·  no entries yet`,
+      actionContext,
+      options,
+    });
+    if (!picked || picked.type === "back") {
+      return;
+    }
+    const job = [...active, ...failed, ...completed].find((entry) => entry.id === picked.id);
+    if (!job) continue;
+
+    if (job.status === "running" || job.status === "queued") {
+      const action = await chooseOption({
+        title: describeDownloadJob(job),
+        subtitle: detailDownloadJob(job),
+        actionContext,
+        options: [
+          { value: "cancel" as const, label: "Cancel job" },
+          { value: "back" as const, label: "Back" },
+        ],
+      });
+      if (action === "cancel") {
+        await container.downloadService.abort(job.id);
+      }
+      continue;
+    }
+
+    if (job.status === "failed" || job.status === "aborted") {
+      const action = await chooseOption({
+        title: describeDownloadJob(job),
+        subtitle: detailDownloadJob(job),
+        actionContext,
+        options: [
+          { value: "retry" as const, label: "Retry job" },
+          { value: "back" as const, label: "Back" },
+        ],
+      });
+      if (action === "retry") {
+        container.downloadService.retry(job.id);
+        void container.downloadService.processQueue();
+      }
+      continue;
+    }
   }
 }
 
@@ -681,6 +863,16 @@ export async function handleShellAction({
       openHistoryShell(
         historyStore,
         buildPickerActionContext({ container, taskLabel: "Manage history" }),
+      ),
+    );
+    return "handled";
+  }
+
+  if (action === "downloads") {
+    await withOverlay({ type: "history" }, () =>
+      openDownloadsShell(
+        container,
+        buildPickerActionContext({ container, taskLabel: "Inspect download jobs" }),
       ),
     );
     return "handled";
@@ -1002,12 +1194,31 @@ export async function enqueueCurrentPlaybackDownload({
     return false;
   }
 
+  const eligibility = container.downloadService.getEnqueueEligibility();
+  if (!eligibility.allowed) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: `Download unavailable: ${eligibility.reason}`,
+    });
+    container.diagnosticsStore.record({
+      category: "download",
+      message: "Download enqueue blocked by feature gate",
+      context: {
+        reason,
+        code: eligibility.code,
+      },
+    });
+    return false;
+  }
+
   try {
+    const timing = await resolveTimingSnapshot(container);
     const job = await container.downloadService.enqueue({
       title: state.currentTitle,
       episode: state.currentEpisode,
       stream: state.stream,
       providerId: state.provider,
+      timing,
     });
     container.diagnosticsStore.record({
       category: "download",
@@ -1038,7 +1249,12 @@ export async function enqueueCurrentPlaybackDownload({
     void container.downloadService.processQueue();
     return true;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message =
+      error instanceof DownloadEnqueueRejectedError
+        ? error.reason
+        : error instanceof Error
+          ? error.message
+          : String(error);
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: `Download queue failed: ${message}`,
@@ -1053,6 +1269,19 @@ export async function enqueueCurrentPlaybackDownload({
     });
     return false;
   }
+}
+
+async function resolveTimingSnapshot(container: Container) {
+  const control = await container.playerControl.waitForActivePlayer({
+    timeoutMs: 300,
+    signal: AbortSignal.timeout(500),
+  });
+  return control
+    ? (((control as { getTimingSnapshot?: () => unknown }).getTimingSnapshot?.() as
+        | import("@/domain/types").PlaybackTimingMetadata
+        | null
+        | undefined) ?? null)
+    : null;
 }
 
 export async function resolveQuitWithDownloadQueue(

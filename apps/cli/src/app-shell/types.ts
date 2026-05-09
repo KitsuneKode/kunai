@@ -28,6 +28,7 @@ export type ShellAction =
   | "source"
   | "quality"
   | "download"
+  | "downloads"
   | "pick-episode"
   | "next"
   | "previous"
@@ -88,6 +89,7 @@ export type LoadingShellState = {
   progress?: number; // 0-100 or undefined for indeterminate
   details?: string;
   trace?: string;
+  downloadStatus?: string;
   subtitleStatus?: string;
   showMemory?: boolean;
   getRuntimeHealth?: () => ShellPanelLine | undefined;
@@ -177,6 +179,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "export-diagnostics":
     case "report-issue":
     case "download":
+    case "downloads":
       return commandId;
   }
 }
