@@ -5,7 +5,6 @@ import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import type { EpisodePickerOption } from "@/domain/types";
-import { isChafaAvailable } from "@/image";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
@@ -94,15 +93,16 @@ async function chooseOption<T>({
   return openListShell({ title, subtitle, options, actionContext });
 }
 
-function packageInstallHint(pkg: "mpv" | "ffmpeg" | "chafa"): string {
+function packageInstallHint(pkg: "mpv" | "ffmpeg" | "chafa" | "imagemagick"): string {
   if (process.platform === "darwin") {
     return `brew install ${pkg}`;
   }
   if (process.platform === "linux") {
     return `sudo pacman -S ${pkg}  ·  or  sudo apt install ${pkg}`;
   }
-  if (process.platform === "win32" && pkg === "chafa") {
-    return "winget install hpjansson.Chafa";
+  if (process.platform === "win32") {
+    if (pkg === "chafa") return "winget install hpjansson.Chafa";
+    if (pkg === "imagemagick") return "winget install ImageMagick.ImageMagick";
   }
   return `${pkg}: install via your system package manager`;
 }
@@ -120,11 +120,12 @@ export async function runSetupWizard({
     return "skipped";
   }
 
-  const setupStepTitle = (step: number, title: string) => `[${step}/5] ${title}`;
+  const setupStepTitle = (step: number, title: string) => `[${step}/6] ${title}`;
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const capabilitySnapshot = container.capabilitySnapshot;
   const ffmpegAvailable = capabilitySnapshot?.ffmpeg ?? Boolean(Bun.which("ffmpeg"));
-  const chafaAvailable = capabilitySnapshot?.chafa ?? isChafaAvailable();
+  const chafaAvailable = capabilitySnapshot?.chafa ?? Boolean(Bun.which("chafa"));
+  const magickAvailable = capabilitySnapshot?.magick ?? Boolean(Bun.which("magick"));
   const imageCapability = capabilitySnapshot?.image;
   const postersAvailable = imageCapability?.available ?? false;
   const posterDetail = imageCapability
@@ -135,6 +136,7 @@ export async function runSetupWizard({
     `ffmpeg ${ffmpegAvailable ? "ready" : "missing"}`,
     `posters ${postersAvailable ? posterDetail : "off"}`,
     `chafa ${chafaAvailable ? "ready" : "optional"}`,
+    `magick ${magickAvailable ? "ready" : "optional"}`,
   ].join("  ·  ");
 
   const startChoice = await chooseOption({
@@ -196,6 +198,13 @@ export async function runSetupWizard({
           detail: packageInstallHint("chafa"),
         },
         {
+          value: "magick" as const,
+          label: magickAvailable
+            ? "ImageMagick detected (broader Kitty posters)"
+            : "Install ImageMagick for broader Kitty posters",
+          detail: packageInstallHint("imagemagick"),
+        },
+        {
           value: "continue" as const,
           label: "Continue setup",
           detail: "Apply download preferences and finish onboarding",
@@ -211,8 +220,55 @@ export async function runSetupWizard({
     }
   }
 
+  while (true) {
+    const posterReview = await chooseOption({
+      title: setupStepTitle(3, "Poster Preview"),
+      subtitle: postersAvailable
+        ? `Poster previews are available via ${posterDetail}`
+        : "Poster previews are currently unavailable. You can still use Kunai normally.",
+      options: [
+        {
+          value: "status" as const,
+          label: postersAvailable ? "Poster previews enabled" : "Poster previews unavailable",
+          detail: imageCapability?.reason ?? "No compatible terminal protocol detected",
+        },
+        {
+          value: "chafa" as const,
+          label: chafaAvailable
+            ? "chafa detected (Sixel/symbols ready)"
+            : "Install chafa for Windows/WezTerm posters",
+          detail: packageInstallHint("chafa"),
+        },
+        {
+          value: "magick" as const,
+          label: magickAvailable
+            ? "ImageMagick detected (broader Kitty posters)"
+            : "Install ImageMagick for broader Kitty posters",
+          detail: packageInstallHint("imagemagick"),
+        },
+        {
+          value: "env" as const,
+          label: "Poster env overrides",
+          detail: "KUNAI_POSTER=0  ·  KUNAI_IMAGE_PROTOCOL=auto|kitty|sixel|symbols|none",
+        },
+        {
+          value: "continue" as const,
+          label: "Continue setup",
+          detail: "Proceed to download preferences",
+        },
+      ],
+    });
+
+    if (!posterReview) {
+      return "cancelled";
+    }
+    if (posterReview === "continue") {
+      break;
+    }
+  }
+
   const downloadChoice = await chooseOption({
-    title: setupStepTitle(3, "Offline Downloads"),
+    title: setupStepTitle(4, "Offline Downloads"),
     subtitle: ffmpegAvailable
       ? "ffmpeg detected — download queue can run immediately"
       : "ffmpeg not found — playback still works; downloads stay disabled until ffmpeg is installed",
@@ -238,7 +294,7 @@ export async function runSetupWizard({
 
   let downloadPath = current.downloadPath;
   const pathChoice = await chooseOption({
-    title: setupStepTitle(4, "Download Location"),
+    title: setupStepTitle(5, "Download Location"),
     subtitle:
       downloadChoice === "enable"
         ? `Current: ${current.downloadPath || defaultDownloadPath}`
@@ -284,7 +340,7 @@ export async function runSetupWizard({
     downloadChoice === "enable" ? downloadPath || defaultDownloadPath : "disabled";
   while (true) {
     const finalChoice = await chooseOption({
-      title: setupStepTitle(5, "Setup Complete"),
+      title: setupStepTitle(6, "Setup Complete"),
       subtitle: `Downloads ${downloadChoice === "enable" ? "enabled" : "disabled"}  ·  Path ${finalDownloadPath}`,
       options: [
         {

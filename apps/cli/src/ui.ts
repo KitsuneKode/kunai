@@ -12,6 +12,7 @@ export interface CapabilityIssue {
   readonly id:
     | "mpv-missing"
     | "ffmpeg-missing"
+    | "yt-dlp-missing"
     | "poster-rendering-unavailable"
     | "poster-rendering-degraded";
   readonly severity: CapabilitySeverity;
@@ -22,6 +23,7 @@ export interface CapabilityIssue {
 export interface CapabilitySnapshot {
   readonly mpv: boolean;
   readonly ffmpeg: boolean;
+  readonly ytDlp: boolean;
   readonly chafa: boolean;
   readonly magick: boolean;
   readonly image: ImageCapability;
@@ -41,7 +43,7 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
     .map((issue) => `${issue.id}:${issue.severity}`)
     .sort()
     .join(",");
-  return `mpv:${snapshot.mpv ? "1" : "0"}|ffmpeg:${snapshot.ffmpeg ? "1" : "0"}|chafa:${snapshot.chafa ? "1" : "0"}|magick:${snapshot.magick ? "1" : "0"}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
+  return `mpv:${snapshot.mpv ? "1" : "0"}|ffmpeg:${snapshot.ffmpeg ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|chafa:${snapshot.chafa ? "1" : "0"}|magick:${snapshot.magick ? "1" : "0"}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
 }
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
@@ -67,6 +69,7 @@ export async function checkDeps(appVersion = "0.1.0"): Promise<CapabilitySnapsho
   const issues: CapabilityIssue[] = [];
   const mpv = Boolean(Bun.which("mpv"));
   const ffmpeg = Boolean(Bun.which("ffmpeg"));
+  const ytDlp = Boolean(Bun.which("yt-dlp"));
   const chafa = isChafaAvailable();
   const magick = Boolean(Bun.which("magick"));
   const image = detectImageCapability();
@@ -116,7 +119,7 @@ export async function checkDeps(appVersion = "0.1.0"): Promise<CapabilitySnapsho
     });
   }
 
-  const snapshot: CapabilitySnapshot = { mpv, ffmpeg, chafa, magick, image, issues };
+  const snapshot: CapabilitySnapshot = { mpv, ffmpeg, ytDlp, chafa, magick, image, issues };
   const fingerprint = capabilityFingerprint(snapshot);
   const previous = await loadCapabilityNoticeState();
   const shouldShowRemediation =

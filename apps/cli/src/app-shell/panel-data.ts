@@ -175,7 +175,7 @@ export function buildAboutPanelLines({
       tone:
         downloadFeature.status === "ready"
           ? "success"
-          : downloadFeature.status === "missing-ffmpeg"
+          : downloadFeature.status === "missing-yt-dlp"
             ? "warning"
             : "neutral",
     },

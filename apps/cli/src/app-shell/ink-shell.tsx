@@ -1258,7 +1258,7 @@ function PlaybackShell({
                   />
                 </Box>
                 <Box marginTop={1}>
-                  {poster.kind === "kitty" || poster.kind === "text" ? (
+                  {poster.kind !== "none" ? (
                     <Text>{poster.placeholder}</Text>
                   ) : (
                     <Box flexDirection="column">

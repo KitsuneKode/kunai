@@ -3,25 +3,25 @@ import { startTransition, useEffect, useReducer } from "react";
 import { clearRenderedPosterImages, fetchPoster } from "./image-pane";
 import type { PosterResult, PosterState } from "./poster-types";
 
-type PosterPreviewModel = {
-  poster: PosterResult;
-  posterState: PosterState;
+type PosterPreviewState = {
+  readonly poster: PosterResult;
+  readonly posterState: PosterState;
 };
 
 type PosterPreviewAction =
-  | { type: "reset"; posterState: Extract<PosterState, "idle" | "unavailable"> }
+  | { type: "reset"; posterState: PosterState }
   | { type: "loading" }
   | { type: "resolved"; result: PosterResult };
 
-const initialPosterPreviewState: PosterPreviewModel = {
+const initialPosterPreviewState: PosterPreviewState = {
   poster: { kind: "none" },
   posterState: "idle",
 };
 
 function posterPreviewReducer(
-  state: PosterPreviewModel,
+  _state: PosterPreviewState,
   action: PosterPreviewAction,
-): PosterPreviewModel {
+): PosterPreviewState {
   switch (action.type) {
     case "reset":
       return { poster: { kind: "none" }, posterState: action.posterState };
@@ -33,7 +33,7 @@ function posterPreviewReducer(
         posterState: action.result.kind === "none" ? "unavailable" : "ready",
       };
     default:
-      return state;
+      return _state;
   }
 }
 
@@ -55,19 +55,13 @@ export function usePosterPreview(
     allowKitty?: boolean;
   },
 ): { poster: PosterResult; posterState: PosterState } {
-  const [{ poster, posterState }, dispatch] = useReducer(
-    posterPreviewReducer,
-    initialPosterPreviewState,
-  );
+  const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
 
   useEffect(() => {
     clearRenderedPosterImages();
 
     if (!url || !enabled) {
-      dispatch({
-        type: "reset",
-        posterState: url ? "unavailable" : "idle",
-      });
+      dispatch({ type: "reset", posterState: url ? "unavailable" : "idle" });
       return undefined;
     }
 
@@ -78,16 +72,12 @@ export function usePosterPreview(
       fetchPoster(url, { rows, cols, variant, allowKitty })
         .then((result) => {
           if (cancelled) return undefined;
-          startTransition(() => {
-            dispatch({ type: "resolved", result });
-          });
+          startTransition(() => dispatch({ type: "resolved", result }));
           return undefined;
         })
         .catch(() => {
           if (cancelled) return;
-          startTransition(() => {
-            dispatch({ type: "reset", posterState: "unavailable" });
-          });
+          startTransition(() => dispatch({ type: "reset", posterState: "unavailable" }));
         });
     }, debounceMs);
 
@@ -97,10 +87,10 @@ export function usePosterPreview(
     };
   }, [allowKitty, cols, debounceMs, enabled, rows, url, variant]);
 
-  return { poster, posterState };
+  return { poster: state.poster, posterState: state.posterState };
 }
 
 export const __testing = {
-  posterPreviewReducer,
   initialPosterPreviewState,
+  posterPreviewReducer,
 };

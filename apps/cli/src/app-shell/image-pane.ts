@@ -47,8 +47,9 @@ export async function fetchPoster(
   if (!url) return { kind: "none" };
   if (!allowKitty) return { kind: "none" };
   const capability = runtime.detectImageCapability();
+  if (!capability.available || capability.renderer === "none") return { kind: "none" };
   const resolved = resolvePosterUrl(url, { cols, variant });
-  const key = `${resolved}:${rows}x${cols}:${allowKitty ? capability.renderer : "none"}`;
+  const key = `${resolved}:${rows}x${cols}:${capability.renderer}`;
 
   const cached = posterCache.get(key);
   if (cached) return cached;

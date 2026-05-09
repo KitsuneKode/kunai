@@ -23,8 +23,8 @@ Kunai lets you browse in a fullscreen TUI, resolve provider streams, and hand pl
 
 - `ffmpeg` for downloads/offline queue
 - `chafa` for poster previews (Sixel/ANSI fallback in non-Kitty terminals)
+- ImageMagick (`magick`) for broader Kitty poster compatibility (non-PNG)
 - Kitty/Ghostty for native Kitty poster previews
-- `magick` (ImageMagick) for Kitty/Ghostty non-PNG poster conversion
 - Discord desktop app + local IPC support for Rich Presence (`node` is required when Presence is enabled)
 
 ### Poster previews
@@ -44,6 +44,7 @@ Environment overrides:
 - `KUNAI_IMAGE_PROTOCOL=auto|kitty|sixel|symbols|none`
 - `KUNAI_IMAGE_SIZE=30x18`
 - `KUNAI_IMAGE_DEBUG=1`
+- `KUNAI_IMAGE_MAGICK_TIMEOUT_MS=30000`
 
 Details, code map, and how to test: [.docs/poster-image-rendering.md](.docs/poster-image-rendering.md).
 

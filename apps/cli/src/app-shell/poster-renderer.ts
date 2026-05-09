@@ -4,14 +4,22 @@ import { debugImage } from "@/image/debug";
 
 import type { PosterResult } from "./poster-types";
 
-type SymbolsSpawnOptions =
-  | { readonly stdout: "pipe"; readonly stderr: "pipe" }
-  | { readonly stdin: Uint8Array; readonly stdout: "pipe"; readonly stderr: "pipe" };
+type ChafaSpawnOptions = {
+  readonly stdin: "pipe";
+  readonly stdout: "pipe";
+  readonly stderr: "pipe";
+};
 
-const runtime = {
-  detectImageCapability,
-  which: (command: string): string | null => Bun.which(command),
-  spawn: (command: string[], options: SymbolsSpawnOptions) => Bun.spawn(command, options),
+type PosterRuntime = {
+  detectImageCapability: typeof detectImageCapability;
+  which: (command: string) => string | null;
+  spawn: (command: string[], options: ChafaSpawnOptions) => Bun.Subprocess;
+};
+
+const runtime: PosterRuntime = {
+  detectImageCapability: () => detectImageCapability(),
+  which: (command) => Bun.which(command),
+  spawn: (command, options) => Bun.spawn(command, options),
 };
 
 let nextId = 1;
@@ -21,15 +29,18 @@ function allocId(): number {
   return id;
 }
 
-export function deleteKittyImage(imageId: number): void {
+function canRenderKitty(): boolean {
   const capability = runtime.detectImageCapability();
-  if (capability.renderer !== "kitty-native") return;
+  return capability.renderer === "kitty-native";
+}
+
+export function deleteKittyImage(imageId: number): void {
+  if (!canRenderKitty()) return;
   process.stdout.write(`\x1b_Ga=d,d=I,i=${imageId};\x1b\\`);
 }
 
 export function deleteAllTerminalImages(): void {
-  const capability = runtime.detectImageCapability();
-  if (capability.renderer !== "kitty-native") return;
+  if (!canRenderKitty()) return;
   process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
 }
 
@@ -81,7 +92,7 @@ function buildPlaceholder(imageId: number, rows: number, cols: number): string {
 }
 
 async function uploadKitty(
-  data: ArrayBuffer,
+  data: Uint8Array,
   imageId: number,
   rows: number,
   cols: number,
@@ -103,8 +114,7 @@ async function renderKitty(data: ArrayBuffer, rows: number, cols: number): Promi
   const png = await ensurePngBytes(new Uint8Array(data));
   if (!png) return { kind: "none" };
   const imageId = allocId();
-  const pngBuffer = Uint8Array.from(png).buffer;
-  await uploadKitty(pngBuffer, imageId, rows, cols);
+  await uploadKitty(png, imageId, rows, cols);
   return {
     kind: "kitty",
     placeholder: buildPlaceholder(imageId, rows, cols),
@@ -114,7 +124,16 @@ async function renderKitty(data: ArrayBuffer, rows: number, cols: number): Promi
   };
 }
 
-async function renderSymbols(data: ArrayBuffer, rows: number, cols: number): Promise<PosterResult> {
+function isWritableStream(value: unknown): value is WritableStream<Uint8Array> {
+  return Boolean(value && typeof (value as WritableStream<Uint8Array>).getWriter === "function");
+}
+
+async function renderChafaSymbols(
+  data: ArrayBuffer,
+  rows: number,
+  cols: number,
+): Promise<PosterResult> {
+  if (!runtime.which("chafa")) return { kind: "none" };
   const proc = runtime.spawn(
     [
       "chafa",
@@ -128,31 +147,37 @@ async function renderSymbols(data: ArrayBuffer, rows: number, cols: number): Pro
       "on",
       "--colors",
       "full",
-      "-",
     ],
-    {
-      stdin: new Uint8Array(data),
-      stdout: "pipe",
-      stderr: "pipe",
-    },
+    { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
   );
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
+
+  try {
+    const stdin = proc.stdin;
+    if (isWritableStream(stdin)) {
+      const writer = stdin.getWriter();
+      await writer.write(new Uint8Array(data));
+      await writer.close();
+    }
+  } catch {
+    // best-effort
+  }
+
+  const [stdoutBuf, stderrBuf, exitCode] = await Promise.all([
+    new Response(proc.stdout as ReadableStream | null).arrayBuffer(),
+    new Response(proc.stderr as ReadableStream | null).arrayBuffer(),
     proc.exited,
   ]);
+
   if (exitCode !== 0) {
-    debugImage(`chafa symbols render failed (${exitCode}): ${stderr.trim()}`);
+    const stderrText = stderrBuf.byteLength ? new TextDecoder().decode(stderrBuf).trim() : "";
+    debugImage(`chafa symbols failed (code ${exitCode})${stderrText ? `: ${stderrText}` : ""}`);
     return { kind: "none" };
   }
-  const placeholder = stdout.trimEnd();
-  if (placeholder.length === 0) return { kind: "none" };
-  return {
-    kind: "text",
-    placeholder,
-    rows,
-    cols,
-  };
+
+  const text = stdoutBuf.byteLength ? new TextDecoder().decode(stdoutBuf).trimEnd() : "";
+  if (!text) return { kind: "none" };
+
+  return { kind: "text", placeholder: text, rows, cols };
 }
 
 export async function renderPoster(
@@ -166,11 +191,7 @@ export async function renderPoster(
     if (capability.renderer === "kitty-native") {
       return await renderKitty(data, rows, cols);
     }
-    if (capability.renderer === "chafa-sixel" || capability.renderer === "chafa-symbols") {
-      if (!runtime.which("chafa")) return { kind: "none" };
-      return await renderSymbols(data, rows, cols);
-    }
-    return { kind: "none" };
+    return await renderChafaSymbols(data, rows, cols);
   } catch {
     return { kind: "none" };
   }
