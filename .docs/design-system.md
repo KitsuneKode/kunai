@@ -65,6 +65,21 @@ These functions are meant to stay composable. Screen-specific policy should usua
 - Spinners should be used for genuinely pending async work, not as decoration
 - Raw cursor control should be minimal and always cleaned up on exit
 
+## Shell UX Standard
+
+Kunai should feel like a calm, fast media command shell: content-first in normal use, diagnostic-rich only when the user asks for it.
+
+- Put the title or active task in the strongest visual position
+- Use one compact context strip per screen for stable state such as provider, mode, episode, subtitle, filters, and active overlay
+- Do not repeat the same state in header, badge rows, detail lines, and footer
+- Use badges only for active filters, warnings/errors, selected/highlighted state, and actionable exceptional state
+- Do not badge internal rendering state such as poster loading, poster ready, or selection preview
+- Keep missing provider data honest but quiet; use dim placeholders unless the missing data blocks the task
+- Keep diagnostics available through diagnostics/help surfaces, not centered in normal browse or playback
+- Let the footer teach live actions; do not duplicate footer instructions inside companion/detail panels
+- Prefer 3-4 footer shortcuts plus `/ commands` over long shortcut sentences
+- Use `amber` for primary action and active selection, `teal` for informational status, `green` only for meaningful success, and `red` only for real failure
+
 ## Migration Note
 
 The active CLI shell is Ink-based. If future web or desktop surfaces consume the same visual identity, keep the semantic layer intact:

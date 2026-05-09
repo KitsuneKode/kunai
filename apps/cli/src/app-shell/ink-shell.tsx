@@ -56,6 +56,7 @@ import { footerActionFromCommand, getCommandLabel, InputField, ShellFrame } from
 import {
   Badge,
   BrowseTitle,
+  ContextStrip,
   DetailLine,
   InlineBadge,
   LocalSection,
@@ -1094,17 +1095,28 @@ function PlaybackShell({
     state.type === "series"
       ? `S${String(state.season).padStart(2, "0")}E${String(state.episode).padStart(2, "0")}`
       : "Movie";
+  const modeLabel = state.mode === "anime" ? "Anime" : "Series";
   const playbackSubtitleTone =
     state.subtitleStatus?.toLowerCase().includes("not found") ||
     state.subtitleStatus?.toLowerCase().includes("disabled")
       ? "warning"
       : "success";
+  const playbackContext = [
+    location,
+    modeLabel,
+    `Provider ${state.provider}`,
+    state.subtitleStatus,
+    state.autoplayPaused ? "Autoplay paused" : "Autoplay ready",
+  ].filter((item): item is string => Boolean(item));
+  const attentionHealthLines = [state.providerHealth, state.networkHealth].filter(
+    (line): line is ShellPanelLine => Boolean(line && line.tone && line.tone !== "neutral"),
+  );
 
   return (
     <ShellFrame
       eyebrow={APP_LABEL}
       title={state.title}
-      subtitle={`${location}  ·  Provider ${state.provider}  ·  Mode ${state.mode}`}
+      subtitle={playbackContext.join("  ·  ")}
       status={state.status}
       footerTask="Playback"
       footerActions={footerActions}
@@ -1122,32 +1134,7 @@ function PlaybackShell({
         />
       ) : (
         <>
-          <Box justifyContent="space-between">
-            <Box>
-              <Badge label={`provider ${state.provider}`} tone="info" />
-              <Badge label={state.mode === "anime" ? "anime mode" : "series mode"} />
-              <Badge label={`episode ${location.toLowerCase()}`} tone="accent" />
-              {state.showRecommendationNudge ? (
-                <Badge label="recommended next" tone="accent" />
-              ) : null}
-              {state.subtitleStatus ? (
-                <Badge
-                  label={state.subtitleStatus}
-                  tone={
-                    state.subtitleStatus.toLowerCase().includes("not found") ? "warning" : "success"
-                  }
-                />
-              ) : null}
-              <Badge
-                label={state.autoplayPaused ? "autoplay paused" : "autoplay ready"}
-                tone={state.autoplayPaused ? "warning" : "success"}
-              />
-            </Box>
-            <Text color={palette.gray} dimColor>
-              Playback controls stay visible and command-driven
-            </Text>
-          </Box>
-          <Box marginTop={1}>
+          <Box>
             <Text color={palette.gray} dimColor>
               {"─".repeat(Math.max(24, (stdout.columns ?? 80) - 8))}
             </Text>
@@ -1157,26 +1144,21 @@ function PlaybackShell({
               flexDirection="column"
               width={showPosterCompanion ? Math.max(56, (stdout.columns ?? 80) - 38) : undefined}
             >
-              <Text bold color="white">
-                {state.title}
+              <Text color={palette.amber}>
+                {state.resumeLabel
+                  ? `Resume from ${state.resumeLabel}`
+                  : state.type === "series"
+                    ? "Ready for the next episode"
+                    : "Ready to replay or search again"}
               </Text>
-              <Box marginTop={1}>
-                <Badge label={location.toLowerCase()} tone="accent" />
-                <Badge label={state.type === "series" ? "episode complete" : "playback complete"} />
-                {state.status ? (
-                  <Badge
-                    label={state.status.label.toLowerCase()}
-                    tone={state.status.tone === "success" ? "success" : "info"}
+              <Box marginTop={1} flexDirection="column">
+                {playbackSubtitleTone === "warning" ? (
+                  <DetailLine
+                    label="Subtitle state"
+                    value={state.subtitleStatus ?? "not reported"}
+                    tone={playbackSubtitleTone}
                   />
                 ) : null}
-              </Box>
-              <Box marginTop={1} flexDirection="column">
-                <DetailLine label="Provider" value={state.provider} tone="info" />
-                <DetailLine
-                  label="Subtitle state"
-                  value={state.subtitleStatus ?? "not reported"}
-                  tone={playbackSubtitleTone}
-                />
                 <DetailLine
                   label="Next step"
                   value={
@@ -1199,72 +1181,33 @@ function PlaybackShell({
                     tone="neutral"
                   />
                 ) : null}
-                <DetailLine
-                  label="Autoplay"
-                  value={
-                    state.autoplayPaused
-                      ? "Paused for this playback chain only"
-                      : "Ready to continue through the next available episode"
-                  }
-                  tone={state.autoplayPaused ? "warning" : "success"}
-                />
+                {state.autoplayPaused ? (
+                  <DetailLine
+                    label="Autoplay"
+                    value="Paused for this playback chain only"
+                    tone="warning"
+                  />
+                ) : null}
                 {state.lastQueuedDownload ? (
                   <DetailLine label="Downloads" value={state.lastQueuedDownload} tone="info" />
                 ) : null}
                 {state.showMemory && state.memoryUsage ? (
                   <DetailLine label="Memory" value={state.memoryUsage} />
                 ) : null}
-                {state.providerHealth ? (
+                {attentionHealthLines.map((line) => (
                   <DetailLine
-                    label={state.providerHealth.label}
-                    value={state.providerHealth.detail ?? ""}
-                    tone={
-                      state.providerHealth.tone === "neutral"
-                        ? undefined
-                        : state.providerHealth.tone
-                    }
+                    key={line.label}
+                    label={line.label}
+                    value={line.detail ?? ""}
+                    tone={line.tone === "neutral" ? undefined : line.tone}
                   />
-                ) : null}
-                {state.networkHealth ? (
-                  <DetailLine
-                    label={state.networkHealth.label}
-                    value={state.networkHealth.detail ?? ""}
-                    tone={
-                      state.networkHealth.tone === "neutral" ? undefined : state.networkHealth.tone
-                    }
-                  />
-                ) : null}
-              </Box>
-              <Box marginTop={1}>
-                <Text color={palette.muted}>
-                  Playback stays inside the shell now, so you can inspect the result, navigate to
-                  the next episode, or jump back into search without leaving the fullscreen flow.
-                </Text>
+                ))}
               </Box>
             </Box>
 
             {showPosterCompanion ? (
               <Box marginLeft={2} flexDirection="column" width={26}>
                 <Box>
-                  <Badge label="episode art" />
-                  <Badge
-                    label={
-                      posterState === "loading"
-                        ? "poster loading"
-                        : posterState === "unavailable"
-                          ? "poster unavailable"
-                          : "poster ready"
-                    }
-                    tone={
-                      posterState === "loading"
-                        ? "info"
-                        : posterState === "unavailable"
-                          ? "warning"
-                          : "success"
-                    }
-                  />
-                </Box>
-                <Box marginTop={1}>
                   {poster.kind !== "none" ? (
                     <Text>{poster.placeholder}</Text>
                   ) : (
@@ -1277,7 +1220,7 @@ function PlaybackShell({
                       </Text>
                       {posterState === "unavailable" ? (
                         <Text color={palette.gray} dimColor>
-                          The current title did not expose usable artwork for this terminal pass.
+                          Artwork is optional; playback controls stay available.
                         </Text>
                       ) : null}
                     </Box>
@@ -2113,9 +2056,9 @@ function BrowseShell<T>({
     Boolean(
       poster.kind !== "none" ||
       companionPanel.title ||
-      companionPanel.badges.length > 0 ||
+      companionPanel.metaLine ||
       previewBodyLines.some((line) => line.trim().length > 0) ||
-      companionPanel.note,
+      companionPanel.facts.length > 0,
     );
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -2279,15 +2222,20 @@ function BrowseShell<T>({
           <Text color={palette.muted}>{resultSubtitle}</Text>
         ) : null}
         <Box marginTop={1}>
-          <Badge label={`provider ${provider}`} tone="info" />
-          <Badge label={mode === "anime" ? "anime mode" : "series mode"} />
-          {activeOverlay ? (
-            <Badge label={`${activeOverlay.title.toLowerCase()} panel`} tone="success" />
-          ) : null}
-          {queryDirty && options.length > 0 ? <Badge label="results stale" tone="warning" /> : null}
-          {activeFilterBadges.map((filter) => (
-            <Badge key={filter} label={filter} tone="accent" />
-          ))}
+          <ContextStrip
+            items={[
+              { label: `Provider ${provider}`, tone: "info" },
+              { label: mode === "anime" ? "Anime" : "Series" },
+              ...(activeOverlay ? [{ label: activeOverlay.title, tone: "success" } as const] : []),
+              ...(queryDirty && options.length > 0
+                ? [{ label: "Results need refresh", tone: "warning" } as const]
+                : []),
+              ...activeFilterBadges.map((filter) => ({
+                label: `Filter ${filter}`,
+                tone: "info" as const,
+              })),
+            ]}
+          />
         </Box>
 
         <InputField
@@ -2379,50 +2327,24 @@ function BrowseShell<T>({
                 flexDirection="column"
                 width={previewWidth}
               >
-                <Box>
-                  <Badge label="selection preview" />
-                  {selectedOption?.previewImageUrl ? (
-                    <Badge
-                      label={
-                        posterState === "loading"
-                          ? "poster loading"
-                          : poster.kind === "none"
-                            ? "poster unavailable"
-                            : "poster ready"
-                      }
-                      tone={
-                        posterState === "loading"
-                          ? "info"
-                          : poster.kind === "none"
-                            ? "warning"
-                            : "success"
-                      }
-                    />
-                  ) : (
-                    <Badge label="no poster source" tone="warning" />
-                  )}
-                </Box>
                 {poster.kind !== "none" ? (
-                  <Box flexDirection="column" marginTop={1} marginBottom={1}>
+                  <Box flexDirection="column" marginBottom={1}>
                     <Text>{poster.placeholder}</Text>
                   </Box>
                 ) : selectedOption?.previewImageUrl ? (
-                  <Box marginTop={1}>
+                  <Box marginBottom={1}>
                     <Text color={posterState === "loading" ? palette.cyan : palette.gray} dimColor>
-                      {posterState === "loading" ? "Loading poster…" : "Poster unavailable"}
+                      {posterState === "loading" ? "Loading artwork…" : "Artwork unavailable"}
                     </Text>
                   </Box>
                 ) : null}
-                <Text bold color="white">
+                <Text bold color={palette.amber}>
                   {truncateLine(companionPanel.title, previewWidth)}
                 </Text>
-                {companionPanel.badges.length > 0 && !ultraCompact ? (
+                {companionPanel.metaLine && !ultraCompact ? (
                   <Box marginTop={1}>
                     <Text color={palette.gray}>
-                      {truncateLine(
-                        companionPanel.badges.map((badge) => badge.label).join("  ·  "),
-                        previewWidth,
-                      )}
+                      {truncateLine(companionPanel.metaLine, previewWidth)}
                     </Text>
                   </Box>
                 ) : null}
@@ -2453,9 +2375,14 @@ function BrowseShell<T>({
               </Box>
             ) : (
               <Box marginTop={1} flexDirection="column">
-                <Text bold color="white">
+                <Text bold color={palette.amber}>
                   {truncateLine(companionPanel.title, innerWidth)}
                 </Text>
+                {companionPanel.metaLine ? (
+                  <Text color={palette.gray}>
+                    {truncateLine(companionPanel.metaLine, innerWidth)}
+                  </Text>
+                ) : null}
                 {previewBodyLines.length > 0 ? (
                   <Text color={palette.muted}>{previewBodyLines[0]}</Text>
                 ) : null}

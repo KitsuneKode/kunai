@@ -10,17 +10,11 @@ export type BrowseDetailsPanel = {
   imageUrl?: string;
 };
 
-export type BrowseCompanionBadge = {
-  label: string;
-  tone: "neutral" | "success" | "warning";
-};
-
 export type BrowseCompanionPanel = {
   title: string;
-  badges: readonly BrowseCompanionBadge[];
+  metaLine: string;
   body: string;
   facts: readonly ShellPanelLine[];
-  note: string;
 };
 
 export function buildBrowseDetailsPanel<T>(
@@ -115,45 +109,28 @@ export function buildBrowseCompanionPanel<T>(
   if (!option) {
     return {
       title: "No selection yet",
-      badges: [],
+      metaLine: "Ready to search",
       body: "Type a title and press Enter to search.",
-      facts: [
-        {
-          label: "Next step",
-          detail: "Search for a title, then move through results.",
-          tone: "neutral",
-        },
-      ],
-      note: selectedDetail,
+      facts: selectedDetail ? [{ label: "Context", detail: selectedDetail }] : [],
     };
-  }
-
-  const badges: BrowseCompanionBadge[] = uniqueBadges(
-    (option.previewMeta ?? []).slice(0, 4).map((meta) => ({
-      label: meta,
-      tone: meta === option.previewRating ? ("success" as const) : ("neutral" as const),
-    })),
-  );
-  if (option.previewRating && !badges.some((badge) => badge.label === option.previewRating)) {
-    badges.push({
-      label: option.previewRating,
-      tone: "success",
-    });
   }
 
   return {
     title: option.previewTitle ?? option.label,
-    badges,
+    metaLine: buildPreviewMetaLine(option),
     body: option.previewBody || "No overview available yet.",
-    facts: [
-      ...getStructuredPreviewFacts(option),
-      {
-        label: "Next step",
-        detail: option.previewNote ?? selectedDetail,
-      },
-    ],
-    note: option.previewNote ?? selectedDetail,
+    facts: buildCompanionFacts(option),
   };
+}
+
+export function buildPreviewMetaLine<T>(option: BrowseShellOption<T>): string {
+  const meta = option.previewMeta ?? [];
+  const type = meta.find((value) => value === "Series" || value === "Movie");
+  const year = meta.find((value) => /^\d{4}$/.test(value));
+  const episodes = meta.find((value) => value.endsWith(" episodes"));
+  const rating = option.previewRating ?? meta.find((value) => /(?:★|\d(?:\.\d)?\/10)/.test(value));
+  const parts = uniqueStrings([year, type, episodes, rating]);
+  return parts.length > 0 ? parts.join("  ·  ") : "Provider result";
 }
 
 function getStructuredPreviewFacts<T>(option: BrowseShellOption<T>): ShellPanelLine[] {
@@ -197,13 +174,33 @@ function getStructuredPreviewFacts<T>(option: BrowseShellOption<T>): ShellPanelL
   ];
 }
 
-function uniqueBadges(badges: readonly BrowseCompanionBadge[]): BrowseCompanionBadge[] {
+function buildCompanionFacts<T>(option: BrowseShellOption<T>): ShellPanelLine[] {
+  const facts: ShellPanelLine[] = [];
+  const providerFacts = option.previewFacts ?? [];
+
+  if (!option.previewImageUrl) {
+    facts.push({
+      label: "Artwork",
+      detail: "Not supplied by this provider",
+      tone: "neutral",
+    });
+  }
+
+  for (const fact of providerFacts) {
+    if (fact.label === "Poster" || fact.label === "Rating") continue;
+    facts.push(fact);
+  }
+
+  return facts;
+}
+
+function uniqueStrings(values: readonly (string | undefined)[]): string[] {
   const seen = new Set<string>();
-  const result: BrowseCompanionBadge[] = [];
-  for (const badge of badges) {
-    if (seen.has(badge.label)) continue;
-    seen.add(badge.label);
-    result.push(badge);
+  const result: string[] = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
   }
   return result;
 }

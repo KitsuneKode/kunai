@@ -1,16 +1,54 @@
 # Kunai
 
-Terminal-first streaming for anime, series, and movies.
+Terminal-first playback for anime, series, and movies.
 
-Kunai lets you browse in a fullscreen TUI, resolve provider streams, and hand playback to `mpv` while keeping session context in the shell.
+Kunai is a fullscreen keyboard-native media shell. Search a title, pick the season or source you want, hand playback to `mpv`, then return to the same shell for next episode, replay, provider fallback, diagnostics, history, or a fresh search.
 
 ## What It Is
 
-- Search and browse from a keyboard-native shell UI
-- Pick provider, season, episode, source, quality, subtitle, and audio mode
-- Launch and control playback in `mpv`
-- Keep local watch history and resume state (SQLite-backed)
-- Use fallback/recovery and diagnostics when providers drift
+- Fast search and browse from a calm terminal UI
+- Provider, season, episode, source, quality, subtitle, and audio-mode pickers
+- `mpv` playback with shell-owned resume and post-playback controls
+- Local watch history and resume state backed by SQLite
+- Recovery paths for provider drift: retry, source switch, fallback provider, diagnostics export
+
+## 30-Second Start
+
+```bash
+npm install -g @kitsunekode/kunai
+kunai
+```
+
+Then search for a title and press Enter. Inside the shell, `/` opens commands from anywhere.
+
+Common starts:
+
+```bash
+kunai -S "Dune"
+kunai -S "Frieren" -a
+kunai --debug
+kunai --setup
+```
+
+## Shell Model
+
+Kunai is designed to stay anchored in one terminal session:
+
+```text
+search title
+  -> choose result
+  -> pick season / episode / source when needed
+  -> watch in mpv
+  -> return for next, replay, provider, diagnostics, history, or search
+```
+
+Core controls:
+
+- `/`: command palette
+- `Enter`: open/search/confirm the current task
+- `Esc`: close, clear, or go back
+- `?`: help
+- `q`: quit/stop flow
 
 ## What You Need
 
@@ -70,7 +108,7 @@ Windows options:
 
 ## Install And Run
 
-### Quick install (npm)
+### npm
 
 ```bash
 npm install -g @kitsunekode/kunai
@@ -87,7 +125,7 @@ bun run link:global
 kunai
 ```
 
-### Common launch commands
+### Launch commands
 
 ```bash
 kunai
@@ -111,17 +149,6 @@ retry, abort, or delete jobs, and `/library` or `/offline` for completed local f
 - macOS: `~/Library/Application Support/kunai/downloads`
 - Windows: `%LOCALAPPDATA%\kunai\downloads`
 
-## Core Flow
-
-```text
-kunai
-  -> search title
-  -> pick season/episode
-  -> resolve provider stream
-  -> watch in mpv
-  -> return to shell for next/replay/provider/diagnostics/history
-```
-
 ## Recommendations
 
 - Run `/ recommendation` to open recommendation + trending sections
@@ -134,16 +161,7 @@ kunai
 - Legacy Playwright provider code is archived under `archive/legacy/**` as reference-only material
 - Experimental provider research lives in `apps/experiments/scratchpads/**` and does not ship as runtime behavior
 
-## Controls
-
-### Global shell
-
-- `/`: command palette
-- `Esc`: close/back
-- `?`: help
-- `q`: quit/stop flow
-
-### Playback flow
+## Playback Controls
 
 - `n` / `p`: next/previous episode
 - `k`: source/quality picker

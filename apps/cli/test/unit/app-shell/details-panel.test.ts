@@ -59,15 +59,28 @@ describe("buildBrowseDetailsPanel", () => {
     });
 
     expect(panel.title).toBe("Demon Slayer");
-    expect(panel.badges.map((badge) => badge.label)).toEqual(["Series", "2019", "8.5/10 TMDB"]);
-    expect(panel.badges.find((badge) => badge.label === "8.5/10 TMDB")?.tone).toBe("success");
-    expect(panel.facts.map((fact) => fact.label)).toEqual([
-      "Type",
-      "Year",
-      "Rating",
-      "Poster",
-      "Next step",
+    expect(panel.metaLine).toBe("2019  ·  Series  ·  8.5/10 TMDB");
+    expect(panel.facts).toEqual([]);
+  });
+
+  test("keeps missing companion artwork honest without surfacing debug state", () => {
+    const option: BrowseShellOption<string> = {
+      value: "demo",
+      label: "Provider-only title",
+      previewMeta: ["Movie", "2024"],
+    };
+
+    const panel = buildBrowseCompanionPanel(option, {
+      selectedDetail: "Movie",
+    });
+
+    expect(panel.metaLine).toBe("2024  ·  Movie");
+    expect(panel.facts).toEqual([
+      {
+        label: "Artwork",
+        detail: "Not supplied by this provider",
+        tone: "neutral",
+      },
     ]);
-    expect(panel.facts.find((fact) => fact.label === "Poster")?.tone).toBe("success");
   });
 });

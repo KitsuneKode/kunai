@@ -9,6 +9,11 @@ type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "error" | "accent";
 const MINIMAL_FOOTER_ACTION_LIMIT = 4;
 
+export type ContextStripItem = {
+  label: string;
+  tone?: InlineBadgeTone;
+};
+
 export function selectFooterActions(
   actions: readonly FooterAction[],
   mode: ShellFooterMode,
@@ -192,6 +197,35 @@ export function Badge({ label, tone = "neutral" }: { label: string; tone?: Badge
       <Text color={color} bold={tone !== "neutral"}>
         {truncateLine(label, 26)}
       </Text>
+    </Box>
+  );
+}
+
+export function ContextStrip({ items }: { items: readonly ContextStripItem[] }) {
+  const visibleItems = items.filter((item) => item.label.trim().length > 0);
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <Box flexWrap="wrap">
+      {visibleItems.map((item, index) => {
+        const color =
+          item.tone === "info"
+            ? palette.cyan
+            : item.tone === "success"
+              ? palette.green
+              : item.tone === "warning"
+                ? palette.amber
+                : item.tone === "error"
+                  ? palette.red
+                  : palette.muted;
+
+        return (
+          <React.Fragment key={item.label}>
+            {index > 0 ? <Text color={palette.gray}> · </Text> : null}
+            <Text color={color}>{truncateLine(item.label, 34)}</Text>
+          </React.Fragment>
+        );
+      })}
     </Box>
   );
 }
