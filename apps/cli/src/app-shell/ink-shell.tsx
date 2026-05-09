@@ -1135,10 +1135,10 @@ function PlaybackShell({
                   <Badge
                     label={
                       posterState === "loading"
-                        ? "loading"
+                        ? "poster loading"
                         : posterState === "unavailable"
-                          ? "unavailable"
-                          : "ready"
+                          ? "poster unavailable"
+                          : "poster ready"
                     }
                     tone={
                       posterState === "loading"
@@ -1150,7 +1150,7 @@ function PlaybackShell({
                   />
                 </Box>
                 <Box marginTop={1}>
-                  {poster.kind === "kitty" ? (
+                  {poster.kind === "kitty" || poster.kind === "text" ? (
                     <Text>{poster.placeholder}</Text>
                   ) : (
                     <Box flexDirection="column">

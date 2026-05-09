@@ -12,7 +12,8 @@ import {
   detectImageCapability,
   detectTerminal,
 } from "@/image/capability";
-import { __testing as convertTesting } from "@/image/convert";
+import { ensurePngBytes, __testing as convertTesting } from "@/image/convert";
+import { isPngBytes } from "@/image/png";
 import {
   __testing as chafaTesting,
   renderChafaSixels,
@@ -660,7 +661,7 @@ describe("displayPoster", () => {
     const restoreTty = mockStdoutIsTty(true);
     const restoreWhich = mockBunWhich(null);
     const restoreEnv = setEnv({ KUNAI_IMAGE_PROTOCOL: "none", KUNAI_IMAGE_DEBUG: undefined });
-    let logs: string[] = [];
+    const logs: string[] = [];
     const originalLog = console.log;
     console.log = (msg: string) => {
       logs.push(msg);
@@ -678,6 +679,75 @@ describe("displayPoster", () => {
       restoreEnv();
       restoreWhich();
       restoreTty();
+    }
+  });
+});
+
+describe("ensurePngBytes (magick)", () => {
+  test("resolveMagickTimeoutMs defaults and clamps", () => {
+    const { resolveMagickTimeoutMs } = convertTesting;
+    const r0 = setEnv({});
+    try {
+      expect(resolveMagickTimeoutMs()).toBe(30_000);
+    } finally {
+      r0();
+    }
+    const r1 = setEnv({ KUNAI_IMAGE_MAGICK_TIMEOUT_MS: "500" });
+    try {
+      expect(resolveMagickTimeoutMs()).toBe(1000);
+    } finally {
+      r1();
+    }
+    const r2 = setEnv({ KUNAI_IMAGE_MAGICK_TIMEOUT_MS: "999999" });
+    try {
+      expect(resolveMagickTimeoutMs()).toBe(120_000);
+    } finally {
+      r2();
+    }
+    const r3 = setEnv({ KUNAI_IMAGE_MAGICK_TIMEOUT_MS: "5000" });
+    try {
+      expect(resolveMagickTimeoutMs()).toBe(5000);
+    } finally {
+      r3();
+    }
+    const r4 = setEnv({ KUNAI_IMAGE_MAGICK_TIMEOUT_MS: "nope" });
+    try {
+      expect(resolveMagickTimeoutMs()).toBe(30_000);
+    } finally {
+      r4();
+    }
+  });
+
+  test("passes AbortSignal to magick spawn and returns converted PNG bytes", async () => {
+    const restoreWhich = mockBunWhich("/usr/bin/magick");
+    let spawnOpts: { signal?: AbortSignal } | undefined;
+    const minimalPng = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+      0x52,
+    ]);
+    convertTesting.runtime.spawn = (cmd, options) => {
+      spawnOpts = options as { signal?: AbortSignal };
+      const outArg = cmd[2];
+      const out = typeof outArg === "string" && outArg.startsWith("png:") ? outArg.slice(4) : "";
+      if (out) {
+        void Bun.write(out, minimalPng);
+      }
+      return {
+        stdout: new Response("").body,
+        stderr: new Response("").body,
+        exited: Promise.resolve(0),
+      } as unknown as Bun.Subprocess;
+    };
+    try {
+      const jpegish = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+      const result = await ensurePngBytes(jpegish);
+      expect(result).not.toBeNull();
+      if (!result) throw new Error("expected converted png bytes");
+      expect(isPngBytes(result)).toBe(true);
+      expect(spawnOpts?.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      restoreWhich();
+      convertTesting.runtime.spawn = originalConvertSpawn;
     }
   });
 });

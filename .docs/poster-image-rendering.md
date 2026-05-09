@@ -4,14 +4,14 @@ Use this doc when changing terminal poster previews, capability detection, the s
 
 ## Code map
 
-| Area                                        | Role                                                                                                                                                                      |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/cli/src/image/`                       | Shared subsystem: `detectImageCapability()`, `displayPoster()`, TMDB poster cache, Kitty/chafa/noop renderers, PNG helpers, optional `magick` conversion via `convert.ts` |
-| `apps/cli/src/app-shell/poster-renderer.ts` | App-shell rendering: Kitty inline graphics + chafa **symbols** stdin path for non-Kitty capability; returns `PosterResult` (`kitty`, `text`, or `none`)                   |
-| `apps/cli/src/app-shell/image-pane.ts`      | Fetches TMDB bytes, calls `renderPoster`, LRU cache keyed by URL + dimensions + **renderer id**                                                                           |
-| `apps/cli/src/ui.ts`                        | `checkDeps()` snapshot: `chafa`, `magick`, `image` capability; degraded notices for missing tools                                                                         |
+| Area                                        | Role                                                                                                                                                                                                         |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/cli/src/image/`                       | Shared subsystem: `detectImageCapability()`, `displayPoster()`, TMDB poster cache, Kitty/chafa/noop renderers, PNG helpers, optional ImageMagick (`magick`) conversion via `convert.ts` (subprocess timeout) |
+| `apps/cli/src/app-shell/poster-renderer.ts` | App-shell rendering: Kitty inline graphics + chafa **symbols** stdin path for non-Kitty capability; returns `PosterResult` (`kitty`, `text`, or `none`)                                                      |
+| `apps/cli/src/app-shell/image-pane.ts`      | Fetches TMDB bytes, calls `renderPoster`, LRU cache keyed by URL + dimensions + **renderer id**                                                                                                              |
+| `apps/cli/src/ui.ts`                        | `checkDeps()` snapshot: `chafa`, `magick`, `image` capability; degraded notices for missing tools                                                                                                            |
 
-Legacy single-file entrypoint `apps/cli/src/image.ts` was removed; import from `@/image` or `apps/cli/src/image/index.ts`.
+Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` file was removed).
 
 ## Capability selection (summary)
 
@@ -23,23 +23,26 @@ Details live in `apps/cli/src/image/capability.ts`.
 
 ## Environment variables
 
-| Variable               | Purpose                                                           |
-| ---------------------- | ----------------------------------------------------------------- |
-| `KUNAI_POSTER`         | `0` / `false` disables poster flows                               |
-| `KUNAI_IMAGE_PROTOCOL` | Force or constrain renderer (see capability module)               |
-| `KUNAI_IMAGE_SIZE`     | Size string for generic `displayPoster()` (default in `index.ts`) |
-| `KUNAI_IMAGE_DEBUG`    | `1` enables `[kunai:image]` debug lines                           |
+| Variable                        | Purpose                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `KUNAI_POSTER`                  | `0` / `false` disables poster flows                                                                     |
+| `KUNAI_IMAGE_PROTOCOL`          | Force or constrain renderer (see capability module)                                                     |
+| `KUNAI_IMAGE_SIZE`              | Size string for generic `displayPoster()` (default in `index.ts`)                                       |
+| `KUNAI_IMAGE_DEBUG`             | `1` enables `[kunai:image]` debug lines                                                                 |
+| `KUNAI_IMAGE_MAGICK_TIMEOUT_MS` | Per-conversion time budget for the `magick` subprocess (default **30000**, clamped **1000**–**120000**) |
 
 ## Tools
 
 - **`chafa`**: Sixel/symbols output for non-Kitty terminals; required for forced `sixel` / `symbols` and for Windows Terminal / WezTerm auto paths where applicable.
-- **`magick` (ImageMagick)**: Converts non-PNG raster sources to PNG for Kitty-native and for shared Kitty renderer paths when TMDB serves JPEG/WebP.
+- **`magick` (ImageMagick 7+)**: Converts non-PNG raster sources to PNG for Kitty-native and shared renderer paths when TMDB serves JPEG/WebP. The CLI invokes `magick` only (not other binary names).
 
 ## App-shell `PosterResult` kinds
 
 - **`kitty`**: Kitty graphics protocol + placeholder grid for Ink layout.
 - **`text`**: chafa symbols output as placeholder text (fallback terminals).
 - **`none`**: Silent skip; UI shows “Poster unavailable” when appropriate.
+
+In Ink, browse and playback companion panes both render `placeholder` for **`kitty`** and **`text`**; only **`none`** (or missing URL while loading) shows the unavailable copy.
 
 ## Debugging
 
