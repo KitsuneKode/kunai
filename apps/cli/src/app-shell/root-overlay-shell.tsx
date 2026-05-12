@@ -697,6 +697,7 @@ export function RootOverlayShell({
             filterQuery,
             selectedIndex: Math.min(selectedIndex, Math.max(filteredHistoryOptions.length - 1, 0)),
             busy: loadingAsyncLines,
+            filterMode: historyFilterMode,
           }
         : overlay.type === "settings" && settingsPanel
           ? {

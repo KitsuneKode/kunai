@@ -34,6 +34,7 @@ export type BrowseOverlay =
       filterQuery: string;
       selectedIndex: number;
       busy?: boolean;
+      filterMode?: "all" | "watching" | "completed";
     }
   | {
       type: "settings";
@@ -728,6 +729,24 @@ export function OverlayPanel({
                   {overlay.filterQuery}
                 </Text>
               </>
+            ) : overlay.type === "history-picker" && overlay.filterMode ? (
+              <Box>
+                <Text color={palette.gray}>Tab: </Text>
+                {(["all", "watching", "completed"] as const).map((mode) => {
+                  const active = overlay.filterMode === mode;
+                  return (
+                    <Text key={mode}>
+                      {active ? (
+                        <Text bold color={palette.green}>
+                          {" [" + mode + "] "}
+                        </Text>
+                      ) : (
+                        <Text color={palette.gray}> {mode} </Text>
+                      )}
+                    </Text>
+                  );
+                })}
+              </Box>
             ) : (
               <Text color={palette.gray}>
                 {overlay.type === "provider"
