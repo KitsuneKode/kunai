@@ -241,6 +241,17 @@ export async function resolveVidkingDirect(
     });
   }
 
+  // Tier 2: Try scraping the embed page when the API path fails
+  const embedResult = await resolveVidkingFromEmbed(
+    input,
+    context,
+    cachePolicy,
+    events,
+    failures,
+    startedAt,
+  );
+  if (embedResult) return embedResult;
+
   return createVidkingExhaustedResult(input, context, undefined, {
     cachePolicy,
     events,
@@ -260,6 +271,7 @@ export function createVidkingResultFromPayload({
   context,
   startedAt,
   failures = [],
+  streamReferer,
 }: {
   readonly input: ProviderResolveInput;
   readonly cachePolicy?: CachePolicy;
@@ -270,6 +282,7 @@ export function createVidkingResultFromPayload({
   readonly context?: ProviderRuntimeContext;
   readonly startedAt?: string;
   readonly failures?: readonly ProviderFailure[];
+  readonly streamReferer?: string;
 }): ProviderResolveResult | null {
   const policy =
     cachePolicy ??
@@ -288,6 +301,7 @@ export function createVidkingResultFromPayload({
     cachePolicy: policy,
     sourceId: resolvedSourceId,
     server,
+    streamReferer,
   });
 
   if (streams.length === 0) {
@@ -424,7 +438,97 @@ async function fetchVideasyPayload({
       origin: VIDKING_ORIGIN,
       referer: VIDKING_REFERER,
       "user-agent": USER_AGENT,
+      "sec-fetch-dest": "empty",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-site": "same-site",
+      "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"Windows"',
     },
+  });
+}
+
+/**
+ * Tier 2: Scrape the embed page for already-decrypted HLS URL + subtitles.
+ * Used as fallback when the Videasy API is blocked (Cloudflare, timeout, etc.).
+ */
+async function fetchVidkingEmbed(options: {
+  readonly tmdbId: number;
+  readonly mediaKind: "movie" | "series";
+  readonly season?: number;
+  readonly episode?: number;
+}): Promise<{ hlsUrl: string; embedUrl: string; subtitleUrl?: string } | null> {
+  const { tmdbId, mediaKind, season, episode } = options;
+
+  if (mediaKind === "series" && (!season || !episode)) return null;
+
+  const embedUrl =
+    mediaKind === "series"
+      ? `https://www.vidking.net/embed/tv/${tmdbId}/${season}/${episode}?autoPlay=true&episodeSelector=false&nextEpisode=false`
+      : `https://www.vidking.net/embed/movie/${tmdbId}?autoPlay=true`;
+
+  const res = await fetch(embedUrl, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      Referer: VIDKING_REFERER,
+    },
+  });
+  if (!res.ok) return null;
+
+  const html = await res.text();
+  const streamMatch = html.match(/"hls","url":"([^"]+)"/);
+  if (!streamMatch?.[1]) return null;
+
+  const subtitleMatch = html.match(/"subtitles"\s*:\s*\[\{[^}]*"src"\s*:\s*"([^"]+)"/);
+
+  return { hlsUrl: streamMatch[1], embedUrl, subtitleUrl: subtitleMatch?.[1] };
+}
+
+async function resolveVidkingFromEmbed(
+  input: ProviderResolveInput,
+  context: ProviderRuntimeContext,
+  cachePolicy: CachePolicy,
+  events: ProviderTraceEvent[],
+  failures: ProviderFailure[],
+  startedAt: string,
+): Promise<ProviderResolveResult | null> {
+  const tmdbId = resolveTmdbId(input.title);
+  if (!tmdbId) return null;
+
+  const embed = await fetchVidkingEmbed({
+    tmdbId,
+    mediaKind: input.mediaKind as "movie" | "series",
+    season: input.episode?.season,
+    episode: input.episode?.episode,
+  });
+  if (!embed) return null;
+
+  emit(events, context, {
+    type: "source:start",
+    providerId: VIDKING_PROVIDER_ID,
+    sourceId: createSourceId("embed-scrape"),
+    message: "API path failed, falling back to embed page scrape",
+  });
+
+  const payload: VidkingPayload = {
+    sources: [{ url: embed.hlsUrl, quality: "auto", type: "hls" }],
+    subtitles: embed.subtitleUrl ? [{ src: embed.subtitleUrl, lang: "en", label: "English" }] : [],
+  };
+
+  const sourceId = createSourceId("embed-scrape");
+  return createVidkingResultFromPayload({
+    input,
+    cachePolicy,
+    payload,
+    sourceId,
+    server: "embed-scrape",
+    events,
+    context,
+    startedAt,
+    failures,
+    streamReferer: embed.embedUrl,
   });
 }
 
@@ -471,12 +575,16 @@ function normalizeStreamCandidates({
   cachePolicy,
   sourceId,
   server,
+  streamReferer = VIDKING_REFERER,
+  streamOrigin = VIDKING_ORIGIN,
 }: {
   readonly payload: VidkingPayload;
   readonly input: ProviderResolveInput;
   readonly cachePolicy: CachePolicy;
   readonly sourceId: string;
   readonly server?: string;
+  readonly streamReferer?: string;
+  readonly streamOrigin?: string;
 }): StreamCandidate[] {
   const seen = new Set<string>();
   const streams: StreamCandidate[] = [];
@@ -514,8 +622,8 @@ function normalizeStreamCandidates({
       qualityLabel: source.quality,
       qualityRank,
       headers: {
-        referer: VIDKING_REFERER,
-        origin: VIDKING_ORIGIN,
+        referer: streamReferer,
+        origin: streamOrigin,
         "user-agent": USER_AGENT,
       },
       confidence: qualityRank > 0 ? 0.92 : 0.82,
