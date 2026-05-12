@@ -365,7 +365,7 @@ export function RootOverlayShell({
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
     }
-    if (overlay.type === "history" && input === "f") {
+    if (overlay.type === "history" && key.tab) {
       setHistoryFilterMode((prev) =>
         prev === "all" ? "watching" : prev === "watching" ? "completed" : "all",
       );
