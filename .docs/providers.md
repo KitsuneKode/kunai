@@ -202,9 +202,18 @@ export const MyProvider: PlaywrightProvider = {
 Minimal shape (using shared helpers):
 
 ```ts
-import { createProviderCachePolicy, createResolveTrace, createTraceStep, type CoreProviderModule } from "@kunai/core";
+import {
+  createProviderCachePolicy,
+  createResolveTrace,
+  createTraceStep,
+  type CoreProviderModule,
+} from "@kunai/core";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
-import type { ProviderResolveInput, ProviderResolveResult, ProviderRuntimeContext } from "@kunai/types";
+import type {
+  ProviderResolveInput,
+  ProviderResolveResult,
+  ProviderRuntimeContext,
+} from "@kunai/types";
 
 export const myProviderModule: CoreProviderModule = {
   providerId: "myprovider",
@@ -212,7 +221,11 @@ export const myProviderModule: CoreProviderModule = {
   async resolve(input, context) {
     // Validate input
     if (!input.allowedRuntimes.includes("direct-http")) {
-      return createExhaustedResult(input, context, "myprovider", { code: "runtime-missing", message: "...", retryable: false });
+      return createExhaustedResult(input, context, "myprovider", {
+        code: "runtime-missing",
+        message: "...",
+        retryable: false,
+      });
     }
     // ... fetch, parse, build StreamCandidate[], SubtitleCandidate[]
     // On success: return { providerId, streams, subtitles, trace, ... }
@@ -260,12 +273,12 @@ Recommended workflow:
 
 Active providers are registered in `apps/cli/src/container.ts` via `createProviderEngine({ modules: [...] })`.
 
-| ID           | Content Types        | Runtime    | Module Location |
-| ------------ | -------------------- | ---------- | --------------- |
-| `rivestream` | movie, series        | direct-http | `packages/providers/src/rivestream/direct.ts` |
-| `vidking`    | movie, series        | direct-http | `packages/providers/src/vidking/direct.ts` |
-| `allanime`   | anime, series        | direct-http | `packages/providers/src/allmanga/direct.ts` |
-| `miruro`     | anime                | direct-http | `packages/providers/src/miruro/direct.ts` |
+| ID           | Content Types | Runtime     | Module Location                               |
+| ------------ | ------------- | ----------- | --------------------------------------------- |
+| `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
+| `vidking`    | movie, series | direct-http | `packages/providers/src/vidking/direct.ts`    |
+| `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
+| `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
 
 All 4 providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback.
 
