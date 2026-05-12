@@ -1,26 +1,26 @@
 /* oxlint-disable no-shadow */
 
-import {
-  createProviderCachePolicy,
-  createResolveTrace,
-  createTraceStep,
-  type CoreProviderModule,
-  rivestreamManifest,
-} from "@kunai/core";
 import type {
+  ProviderFailure,
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
-  ProviderFailure,
   SubtitleCandidate,
 } from "@kunai/types";
-
+import {
+  createProviderCachePolicy,
+  createResolveTrace,
+  createTraceStep,
+  type CoreProviderModule,
+} from "@kunai/core";
+import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
+import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 
-export const RIVESTREAM_PROVIDER_ID = rivestreamManifest.id;
+export { RIVESTREAM_PROVIDER_ID };
 export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
 export const RIVESTREAM_API_BASE = "https://www.rivestream.app/api/backendfetch";
 
@@ -218,7 +218,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
   manifest: rivestreamManifest,
   async resolve(input, context) {
     if (input.mediaKind !== "movie" && input.mediaKind !== "series") {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, {
         code: "unsupported-title",
         message: "Rivestream only supports movies and series",
         retryable: false,
@@ -226,7 +226,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
     }
 
     if (!input.allowedRuntimes.includes("direct-http")) {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, {
         code: "runtime-missing",
         message: "Rivestream resolver requires direct-http runtime",
         retryable: false,
@@ -235,7 +235,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
 
     const tmdbId = input.title.tmdbId ?? input.title.id.replace("tmdb:", "");
     if (!tmdbId || Number.isNaN(Number(tmdbId))) {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, {
         code: "unsupported-title",
         message: "Rivestream requires a numeric TMDB ID",
         retryable: false,
@@ -253,7 +253,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
       qualityPreference: input.qualityPreference,
     });
 
-    emit(events, context, {
+    emitTraceEvent(events, context, {
       type: "provider:start",
       providerId: RIVESTREAM_PROVIDER_ID,
       message: "Started Rivestream 0-RAM resolution",
@@ -407,7 +407,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         throw new Error("No selectable Rivestream streams were mapped.");
       }
 
-      emit(events, context, {
+      emitTraceEvent(events, context, {
         type: "provider:success",
         providerId: RIVESTREAM_PROVIDER_ID,
         message: `Successfully resolved Rivestream for TMDB ID ${tmdbId}`,
@@ -457,7 +457,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
       };
     } catch (error) {
       if (context.signal?.aborted) {
-        return createExhaustedResult(input, context, {
+        return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, {
           code: "cancelled",
           message: "Rivestream resolution was cancelled",
           retryable: false,
@@ -473,65 +473,9 @@ export const rivestreamProviderModule: CoreProviderModule = {
       };
       failures.push(failure);
 
-      return createExhaustedResult(input, context, failure);
+      return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, failure);
     }
   },
 };
 
-function createExhaustedResult(
-  input: ProviderResolveInput,
-  context: ProviderRuntimeContext,
-  failure: Omit<ProviderFailure, "providerId" | "at">,
-): ProviderResolveResult {
-  const at = context.now();
-  const providerFailure: ProviderFailure = {
-    providerId: RIVESTREAM_PROVIDER_ID,
-    at,
-    ...failure,
-  };
 
-  const event: ProviderTraceEvent = {
-    type: "provider:exhausted",
-    at,
-    providerId: RIVESTREAM_PROVIDER_ID,
-    message: providerFailure.message,
-  };
-  context.emit?.(event);
-
-  return {
-    providerId: RIVESTREAM_PROVIDER_ID,
-    streams: [],
-    subtitles: [],
-    trace: createResolveTrace({
-      title: input.title,
-      episode: input.episode,
-      providerId: RIVESTREAM_PROVIDER_ID,
-      cacheHit: false,
-      runtime: "direct-http",
-      startedAt: at,
-      endedAt: at,
-      steps: [
-        createTraceStep("provider", providerFailure.message, {
-          providerId: RIVESTREAM_PROVIDER_ID,
-          attributes: { code: providerFailure.code },
-        }),
-      ],
-      events: [event],
-      failures: [providerFailure],
-    }),
-    failures: [providerFailure],
-  };
-}
-
-function emit(
-  events: ProviderTraceEvent[],
-  context: ProviderRuntimeContext | undefined,
-  event: Omit<ProviderTraceEvent, "at">,
-): void {
-  const fullEvent = {
-    ...event,
-    at: context?.now() ?? new Date().toISOString(),
-  };
-  events.push(fullEvent);
-  context?.emit?.(fullEvent);
-}

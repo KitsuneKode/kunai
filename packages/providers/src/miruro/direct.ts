@@ -1,23 +1,23 @@
-import {
-  createProviderCachePolicy,
-  createResolveTrace,
-  createTraceStep,
-  type CoreProviderModule,
-  miruroManifest,
-} from "@kunai/core";
 import type {
+  ProviderFailure,
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
-  ProviderFailure,
 } from "@kunai/types";
-
+import {
+  createProviderCachePolicy,
+  createResolveTrace,
+  createTraceStep,
+  type CoreProviderModule,
+} from "@kunai/core";
+import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
+import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 
-export const MIRURO_PROVIDER_ID = miruroManifest.id;
+export { MIRURO_PROVIDER_ID };
 export const MIRURO_REFERER = "https://www.miruro.tv/";
 
 const USER_AGENT =
@@ -44,7 +44,7 @@ export const miruroProviderModule: CoreProviderModule = {
   manifest: miruroManifest,
   async resolve(input, context) {
     if (input.mediaKind !== "anime") {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "unsupported-title",
         message: "Miruro direct resolver only supports anime",
         retryable: false,
@@ -52,7 +52,7 @@ export const miruroProviderModule: CoreProviderModule = {
     }
 
     if (!input.allowedRuntimes.includes("direct-http")) {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "runtime-missing",
         message: "Miruro direct resolver requires direct-http runtime",
         retryable: false,
@@ -62,7 +62,7 @@ export const miruroProviderModule: CoreProviderModule = {
     // We must have an AniList ID for Miruro backend
     const anilistId = input.title.anilistId ?? input.title.id.replace("anilist:", "");
     if (!anilistId || Number.isNaN(Number(anilistId))) {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "unsupported-title",
         message: "Miruro direct resolver requires a numeric AniList ID",
         retryable: false,
@@ -74,7 +74,7 @@ export const miruroProviderModule: CoreProviderModule = {
     const events: ProviderTraceEvent[] = [];
     const failures: ProviderFailure[] = [];
 
-    emit(events, context, {
+    emitTraceEvent(events, context, {
       type: "provider:start",
       providerId: MIRURO_PROVIDER_ID,
       message: "Started Miruro direct backend resolution",
@@ -190,7 +190,7 @@ export const miruroProviderModule: CoreProviderModule = {
         throw new Error("Failed to select a valid stream.");
       }
 
-      emit(events, context, {
+      emitTraceEvent(events, context, {
         type: "provider:success",
         providerId: MIRURO_PROVIDER_ID,
         message: `Successfully resolved Miruro 0-RAM stream for AniList ID ${anilistId}`,
@@ -245,7 +245,7 @@ export const miruroProviderModule: CoreProviderModule = {
       };
     } catch (error) {
       if (context.signal?.aborted) {
-        return createExhaustedResult(input, context, {
+        return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
           code: "cancelled",
           message: "Miruro resolution was cancelled",
           retryable: false,
@@ -261,70 +261,9 @@ export const miruroProviderModule: CoreProviderModule = {
       };
       failures.push(failure);
 
-      return createExhaustedResult(input, context, failure);
+      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, failure);
     }
   },
 };
 
-function createExhaustedResult(
-  input: ProviderResolveInput,
-  context: ProviderRuntimeContext,
-  failure: Omit<ProviderFailure, "providerId" | "at">,
-): ProviderResolveResult {
-  const at = context.now();
-  const providerFailure: ProviderFailure = {
-    providerId: MIRURO_PROVIDER_ID,
-    at,
-    ...failure,
-  };
 
-  const event: ProviderTraceEvent = {
-    type: "provider:exhausted",
-    at,
-    providerId: MIRURO_PROVIDER_ID,
-    message: providerFailure.message,
-  };
-  context.emit?.(event);
-
-  return {
-    providerId: MIRURO_PROVIDER_ID,
-    streams: [],
-    subtitles: [],
-    trace: createResolveTrace({
-      title: input.title,
-      episode: input.episode,
-      providerId: MIRURO_PROVIDER_ID,
-      cacheHit: false,
-      runtime: "direct-http",
-      startedAt: at,
-      endedAt: at,
-      steps: [
-        createTraceStep("provider", providerFailure.message, {
-          providerId: MIRURO_PROVIDER_ID,
-          attributes: { code: providerFailure.code },
-        }),
-      ],
-      events: [event],
-      failures: [providerFailure],
-    }),
-    failures: [providerFailure],
-    healthDelta: {
-      providerId: MIRURO_PROVIDER_ID,
-      outcome: failure.code === "cancelled" ? "failure" : "failure",
-      at,
-    },
-  };
-}
-
-function emit(
-  events: ProviderTraceEvent[],
-  context: ProviderRuntimeContext | undefined,
-  event: Omit<ProviderTraceEvent, "at">,
-): void {
-  const fullEvent = {
-    ...event,
-    at: context?.now() ?? new Date().toISOString(),
-  };
-  events.push(fullEvent);
-  context?.emit?.(fullEvent);
-}

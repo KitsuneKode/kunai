@@ -1,10 +1,3 @@
-import {
-  createProviderCachePolicy,
-  createResolveTrace,
-  createTraceStep,
-  type CoreProviderModule,
-  vidkingManifest,
-} from "@kunai/core";
 import type {
   CachePolicy,
   EpisodeIdentity,
@@ -20,8 +13,16 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import {
+  createProviderCachePolicy,
+  createResolveTrace,
+  createTraceStep,
+  type CoreProviderModule,
+} from "@kunai/core";
+import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
+import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 
-export const VIDKING_PROVIDER_ID = vidkingManifest.id;
+export { VIDKING_PROVIDER_ID };
 export const VIDKING_REFERER = "https://www.vidking.net/";
 export const VIDKING_ORIGIN = "https://www.vidking.net";
 export const VIDKING_API_BASE = "https://api.videasy.net";
@@ -73,7 +74,7 @@ export const vidkingProviderModule: CoreProviderModule = {
       return result;
     }
 
-    return createVidkingExhaustedResult(input, context);
+    return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, { code: "not-found", message: "VidKing direct resolver did not find a playable source", retryable: true });
   },
 };
 
@@ -86,7 +87,7 @@ export async function resolveVidkingDirect(
   }
 
   if (!input.allowedRuntimes.includes("direct-http")) {
-    return createVidkingExhaustedResult(input, context, {
+    return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, {
       code: "runtime-missing",
       message: "VidKing direct resolver requires direct-http runtime",
       retryable: false,
@@ -95,7 +96,7 @@ export async function resolveVidkingDirect(
 
   const tmdbId = resolveTmdbId(input.title);
   if (!tmdbId) {
-    return createVidkingExhaustedResult(input, context, {
+    return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, {
       code: "unsupported-title",
       message: "VidKing direct resolver requires a numeric TMDB id",
       retryable: false,
@@ -114,7 +115,7 @@ export async function resolveVidkingDirect(
   const sources: ProviderSourceCandidate[] = [];
   const failures: ProviderFailure[] = [];
 
-  emit(events, context, {
+  emitTraceEvent(events, context, {
     type: "provider:start",
     providerId: VIDKING_PROVIDER_ID,
     message: "Started VidKing direct Videasy resolution",
@@ -134,7 +135,7 @@ export async function resolveVidkingDirect(
       cachePolicy,
       metadata: { server },
     });
-    emit(events, context, {
+    emitTraceEvent(events, context, {
       type: "source:start",
       providerId: VIDKING_PROVIDER_ID,
       sourceId,
@@ -213,7 +214,7 @@ export async function resolveVidkingDirect(
           continue;
         } catch (error) {
           if (context.signal?.aborted) {
-            return createVidkingExhaustedResult(input, context, {
+            return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, {
               code: "cancelled",
               message: "VidKing resolution was cancelled",
               retryable: false,
@@ -233,7 +234,7 @@ export async function resolveVidkingDirect(
       }
     }
 
-    emit(events, context, {
+    emitTraceEvent(events, context, {
       type: "source:failed",
       providerId: VIDKING_PROVIDER_ID,
       sourceId,
@@ -251,7 +252,7 @@ export async function resolveVidkingDirect(
   if (embedReferer) {
     for (const server of VIDKING_SERVERS) {
       const sourceId = createSourceId(`${server}-embed-ref`);
-      emit(events, context, {
+      emitTraceEvent(events, context, {
         type: "source:start",
         providerId: VIDKING_PROVIDER_ID,
         sourceId,
@@ -299,7 +300,7 @@ export async function resolveVidkingDirect(
     }
   }
 
-  return createVidkingExhaustedResult(input, context, undefined, {
+  return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, { code: "not-found", message: "VidKing direct resolver did not find a playable source", retryable: true }, {
     cachePolicy,
     events,
     failures,
@@ -373,7 +374,7 @@ export function createVidkingResultFromPayload({
     sourceId: resolvedSourceId,
   });
 
-  emit(events, context, {
+  emitTraceEvent(events, context, {
     type: "source:success",
     providerId: VIDKING_PROVIDER_ID,
     sourceId: resolvedSourceId,
@@ -383,7 +384,7 @@ export function createVidkingResultFromPayload({
       subtitles: orderedSubtitles.length,
     },
   });
-  emit(events, context, {
+  emitTraceEvent(events, context, {
     type: "variant:selected",
     providerId: VIDKING_PROVIDER_ID,
     sourceId: resolvedSourceId,
@@ -394,7 +395,7 @@ export function createVidkingResultFromPayload({
 
   const selectedSubtitle = orderedSubtitles[0];
   if (selectedSubtitle) {
-    emit(events, context, {
+    emitTraceEvent(events, context, {
       type: "subtitle:selected",
       providerId: VIDKING_PROVIDER_ID,
       sourceId: resolvedSourceId,
@@ -403,7 +404,7 @@ export function createVidkingResultFromPayload({
     });
   }
 
-  emit(events, context, {
+  emitTraceEvent(events, context, {
     type: "provider:success",
     providerId: VIDKING_PROVIDER_ID,
     sourceId: resolvedSourceId,
@@ -779,79 +780,7 @@ function buildQueryVariants(opts: {
   return variants;
 }
 
-function createVidkingExhaustedResult(
-  input: ProviderResolveInput,
-  context: ProviderRuntimeContext,
-  failure: Omit<ProviderFailure, "providerId" | "at"> = {
-    code: "not-found",
-    message: "VidKing direct resolver did not find a playable source",
-    retryable: true,
-  },
-  evidence: {
-    readonly cachePolicy?: CachePolicy;
-    readonly events?: readonly ProviderTraceEvent[];
-    readonly failures?: readonly ProviderFailure[];
-    readonly sources?: readonly ProviderSourceCandidate[];
-    readonly startedAt?: string;
-  } = {},
-): ProviderResolveResult {
-  const at = context.now();
-  const providerFailure: ProviderFailure = {
-    providerId: VIDKING_PROVIDER_ID,
-    at,
-    ...failure,
-  };
 
-  const event: ProviderTraceEvent = {
-    type: "provider:exhausted",
-    at,
-    providerId: VIDKING_PROVIDER_ID,
-    message: providerFailure.message,
-  };
-  context.emit?.(event);
-  const failures = evidence.failures?.length ? evidence.failures : [providerFailure];
-  const events = [...(evidence.events ?? []), event];
-  const cachePolicy =
-    evidence.cachePolicy ??
-    createProviderCachePolicy({
-      providerId: VIDKING_PROVIDER_ID,
-      title: input.title,
-      episode: input.episode,
-      subtitleLanguage: input.preferredSubtitleLanguage,
-      qualityPreference: input.qualityPreference,
-    });
-
-  return {
-    providerId: VIDKING_PROVIDER_ID,
-    sources: evidence.sources,
-    streams: [],
-    subtitles: [],
-    cachePolicy,
-    trace: createResolveTrace({
-      title: input.title,
-      episode: input.episode,
-      providerId: VIDKING_PROVIDER_ID,
-      cacheHit: false,
-      runtime: "direct-http",
-      startedAt: evidence.startedAt ?? at,
-      endedAt: at,
-      steps: [
-        createTraceStep("provider", providerFailure.message, {
-          providerId: VIDKING_PROVIDER_ID,
-          attributes: { code: providerFailure.code },
-        }),
-      ],
-      events,
-      failures,
-    }),
-    failures,
-    healthDelta: {
-      providerId: VIDKING_PROVIDER_ID,
-      outcome: providerFailure.code === "cancelled" ? "failure" : "failure",
-      at,
-    },
-  };
-}
 
 function emitRetryIfNeeded(
   events: ProviderTraceEvent[],
@@ -865,7 +794,7 @@ function emitRetryIfNeeded(
     return;
   }
 
-  emit(events, context, {
+  emitTraceEvent(events, context, {
     type: "retry:scheduled",
     providerId: VIDKING_PROVIDER_ID,
     sourceId,
@@ -884,19 +813,6 @@ function isRetryableFailure(context: ProviderRuntimeContext, failure: ProviderFa
   if (!failure.retryable) return false;
   const retryableCodes = context.retryPolicy?.retryableCodes;
   return !retryableCodes || retryableCodes.includes(failure.code);
-}
-
-function emit(
-  events: ProviderTraceEvent[],
-  context: ProviderRuntimeContext | undefined,
-  event: Omit<ProviderTraceEvent, "at">,
-): void {
-  const fullEvent = {
-    ...event,
-    at: context?.now() ?? new Date().toISOString(),
-  };
-  events.push(fullEvent);
-  context?.emit?.(fullEvent);
 }
 
 function resolveTmdbId(title: TitleIdentity): number | null {

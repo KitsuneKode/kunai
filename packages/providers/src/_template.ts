@@ -15,6 +15,7 @@ import type {
   ProviderFailure,
   SubtitleCandidate,
 } from "@kunai/types";
+import { createExhaustedResult, emitTraceEvent } from "./shared/resolve-helpers";
 
 // =====================================================================
 // 1. MANIFEST DEFINITION
@@ -73,7 +74,7 @@ export const templateProviderModule: CoreProviderModule = {
     // A. Input Validation
     // -------------------------------------------------------------
     if (!input.allowedRuntimes.includes("direct-http")) {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, TEMPLATE_PROVIDER_ID, {
         code: "runtime-missing",
         message: "Template resolver requires direct-http runtime",
         retryable: false,
@@ -95,7 +96,7 @@ export const templateProviderModule: CoreProviderModule = {
       qualityPreference: input.qualityPreference,
     });
 
-    emit(events, context, {
+    emitTraceEvent(events, context, {
       type: "provider:start",
       providerId: TEMPLATE_PROVIDER_ID,
       message: "Started Template resolution",
@@ -175,7 +176,7 @@ export const templateProviderModule: CoreProviderModule = {
       // -------------------------------------------------------------
       // D. Return the Success Object
       // -------------------------------------------------------------
-      emit(events, context, {
+      emitTraceEvent(events, context, {
         type: "provider:success",
         providerId: TEMPLATE_PROVIDER_ID,
         message: `Successfully resolved stream`,
@@ -233,7 +234,7 @@ export const templateProviderModule: CoreProviderModule = {
       // E. Catch Errors (Always handle user cancellation)
       // -------------------------------------------------------------
       if (context.signal?.aborted) {
-        return createExhaustedResult(input, context, {
+        return createExhaustedResult(input, context, TEMPLATE_PROVIDER_ID, {
           code: "cancelled",
           message: "Resolution was cancelled by the user",
           retryable: false,
@@ -249,73 +250,9 @@ export const templateProviderModule: CoreProviderModule = {
       };
       failures.push(failure);
 
-      return createExhaustedResult(input, context, failure);
+      return createExhaustedResult(input, context, TEMPLATE_PROVIDER_ID, failure);
     }
   },
 };
 
-// =====================================================================
-// 3. INTERNAL HELPERS
-// =====================================================================
-function createExhaustedResult(
-  input: ProviderResolveInput,
-  context: ProviderRuntimeContext,
-  failure: Omit<ProviderFailure, "providerId" | "at">,
-): ProviderResolveResult {
-  const at = context.now();
-  const providerFailure: ProviderFailure = {
-    providerId: TEMPLATE_PROVIDER_ID,
-    at,
-    ...failure,
-  };
 
-  const event: ProviderTraceEvent = {
-    type: "provider:exhausted",
-    at,
-    providerId: TEMPLATE_PROVIDER_ID,
-    message: providerFailure.message,
-  };
-  context.emit?.(event);
-
-  return {
-    providerId: TEMPLATE_PROVIDER_ID,
-    streams: [],
-    subtitles: [],
-    trace: createResolveTrace({
-      title: input.title,
-      episode: input.episode,
-      providerId: TEMPLATE_PROVIDER_ID,
-      cacheHit: false,
-      runtime: "direct-http",
-      startedAt: at,
-      endedAt: at,
-      steps: [
-        createTraceStep("provider", providerFailure.message, {
-          providerId: TEMPLATE_PROVIDER_ID,
-          attributes: { code: providerFailure.code },
-        }),
-      ],
-      events: [event],
-      failures: [providerFailure],
-    }),
-    failures: [providerFailure],
-    healthDelta: {
-      providerId: TEMPLATE_PROVIDER_ID,
-      outcome: failure.code === "cancelled" ? "failure" : "failure",
-      at,
-    },
-  };
-}
-
-function emit(
-  events: ProviderTraceEvent[],
-  context: ProviderRuntimeContext | undefined,
-  event: Omit<ProviderTraceEvent, "at">,
-): void {
-  const fullEvent = {
-    ...event,
-    at: context?.now() ?? new Date().toISOString(),
-  };
-  events.push(fullEvent);
-  context?.emit?.(fullEvent);
-}

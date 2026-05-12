@@ -1,11 +1,5 @@
-import {
-  createProviderCachePolicy,
-  createResolveTrace,
-  createTraceStep,
-  type CoreProviderModule,
-  allanimeManifest,
-} from "@kunai/core";
 import type {
+  ProviderFailure,
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
@@ -13,10 +7,16 @@ import type {
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
-  ProviderFailure,
   SubtitleCandidate,
 } from "@kunai/types";
-
+import {
+  createProviderCachePolicy,
+  createResolveTrace,
+  createTraceStep,
+  type CoreProviderModule,
+} from "@kunai/core";
+import { allanimeManifest, ALLANIME_PROVIDER_ID } from "./manifest";
+import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   loadAvailableEpisodesDetail,
   resolveAnimeEpisodeString,
@@ -24,7 +24,7 @@ import {
   buildStreamHeaders,
 } from "./api-client";
 
-export const ALLANIME_PROVIDER_ID = allanimeManifest.id;
+export { ALLANIME_PROVIDER_ID };
 
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
@@ -36,7 +36,7 @@ export const allmangaProviderModule: CoreProviderModule = {
   manifest: allanimeManifest,
   async resolve(input, context) {
     if (input.mediaKind !== "anime") {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
         code: "unsupported-title",
         message: "AllManga only supports anime",
         retryable: false,
@@ -44,7 +44,7 @@ export const allmangaProviderModule: CoreProviderModule = {
     }
 
     if (!input.allowedRuntimes.includes("direct-http")) {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
         code: "runtime-missing",
         message: "AllManga resolver requires direct-http runtime",
         retryable: false,
@@ -55,7 +55,7 @@ export const allmangaProviderModule: CoreProviderModule = {
     // But actually, AllAnime search returned `id`. Let's assume input.title.id is the allanime internal ID.
     const showId = input.title.id.replace("allanime:", "");
     if (!showId) {
-      return createExhaustedResult(input, context, {
+      return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
         code: "unsupported-title",
         message: "AllManga requires an internal show ID",
         retryable: false,
@@ -73,14 +73,18 @@ export const allmangaProviderModule: CoreProviderModule = {
       qualityPreference: input.qualityPreference,
     });
 
-    emit(events, context, {
+    emitTraceEvent(events, context, {
       type: "provider:start",
       providerId: ALLANIME_PROVIDER_ID,
       message: "Started AllManga 0-RAM resolution",
     });
 
     try {
-      const mode = input.preferredAudioLanguage === "dub" ? "dub" : "sub";
+      const mode =
+        input.preferredAudioLanguage === "ja" ||
+        input.preferredAudioLanguage === "original"
+          ? "sub"
+          : "dub";
       const episodeNum = input.episode?.absoluteEpisode ?? input.episode?.episode ?? 1;
 
       // Load the catalog to find the exact episode string (e.g. "01" or "1.5")
@@ -195,7 +199,7 @@ export const allmangaProviderModule: CoreProviderModule = {
         cachePolicy,
       );
 
-      emit(events, context, {
+      emitTraceEvent(events, context, {
         type: "provider:success",
         providerId: ALLANIME_PROVIDER_ID,
         message: `Successfully resolved AllManga for ID ${showId}`,
@@ -233,7 +237,7 @@ export const allmangaProviderModule: CoreProviderModule = {
       };
     } catch (error) {
       if (context.signal?.aborted) {
-        return createExhaustedResult(input, context, {
+        return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
           code: "cancelled",
           message: "AllManga resolution was cancelled",
           retryable: false,
@@ -249,55 +253,10 @@ export const allmangaProviderModule: CoreProviderModule = {
       };
       failures.push(failure);
 
-      return createExhaustedResult(input, context, failure);
+      return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, failure);
     }
   },
 };
-
-function createExhaustedResult(
-  input: ProviderResolveInput,
-  context: ProviderRuntimeContext,
-  failure: Omit<ProviderFailure, "providerId" | "at">,
-): ProviderResolveResult {
-  const at = context.now();
-  const providerFailure: ProviderFailure = {
-    providerId: ALLANIME_PROVIDER_ID,
-    at,
-    ...failure,
-  };
-
-  const event: ProviderTraceEvent = {
-    type: "provider:exhausted",
-    at,
-    providerId: ALLANIME_PROVIDER_ID,
-    message: providerFailure.message,
-  };
-  context.emit?.(event);
-
-  return {
-    providerId: ALLANIME_PROVIDER_ID,
-    streams: [],
-    subtitles: [],
-    trace: createResolveTrace({
-      title: input.title,
-      episode: input.episode,
-      providerId: ALLANIME_PROVIDER_ID,
-      cacheHit: false,
-      runtime: "direct-http",
-      startedAt: at,
-      endedAt: at,
-      steps: [
-        createTraceStep("provider", providerFailure.message, {
-          providerId: ALLANIME_PROVIDER_ID,
-          attributes: { code: providerFailure.code },
-        }),
-      ],
-      events: [event],
-      failures: [providerFailure],
-    }),
-    failures: [providerFailure],
-  };
-}
 
 export function buildAllmangaSourceCandidates(
   streams: readonly StreamCandidate[],
@@ -336,15 +295,4 @@ function formatAllmangaSourceLabel(sourceId: string): string {
     .join("-");
 }
 
-function emit(
-  events: ProviderTraceEvent[],
-  context: ProviderRuntimeContext | undefined,
-  event: Omit<ProviderTraceEvent, "at">,
-): void {
-  const fullEvent = {
-    ...event,
-    at: context?.now() ?? new Date().toISOString(),
-  };
-  events.push(fullEvent);
-  context?.emit?.(fullEvent);
-}
+
