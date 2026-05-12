@@ -15,6 +15,7 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+import { TTLCache } from "../shared/provider-cache";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 
@@ -26,6 +27,11 @@ const USER_AGENT =
 
 const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
 const PIPE_URL = "https://www.miruro.tv/api/secure/pipe";
+
+/** Cache episode lists per AniList ID. TTL 30 minutes (episode data is stable). */
+const episodeCache = new TTLCache<string, unknown>(1_800_000);
+/** Cache source responses per episode+category. TTL 5 minutes. */
+const sourceCache = new TTLCache<string, unknown>(300_000);
 
 type MiruroPipeStream = {
   readonly url?: string;
@@ -178,12 +184,17 @@ export const miruroProviderModule: CoreProviderModule = {
     });
 
     try {
-      // Step 1: Fetch episode list to get the episodeId
-      const epData = (await pipeCall(
-        "episodes",
-        { anilistId: Number(anilistId) },
-        context.signal,
-      )) as MiruroEpisodesResponse | null;
+      // Step 1: Fetch episode list to get the episodeId (cached 30m)
+      const epCacheKey = `episodes:${anilistId}`;
+      let epData = episodeCache.get(epCacheKey) as MiruroEpisodesResponse | null;
+      if (!epData) {
+        epData = (await pipeCall(
+          "episodes",
+          { anilistId: Number(anilistId) },
+          context.signal,
+        )) as MiruroEpisodesResponse | null;
+        if (epData) episodeCache.set(epCacheKey, epData);
+      }
       if (!epData?.providers?.kiwi?.episodes) {
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
           code: "not-found",
@@ -217,17 +228,22 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
-      // Step 2: Fetch sources for this episode
-      const srcData = (await pipeCall(
-        "sources",
-        {
-          episodeId: episodeEntry.id,
-          anilistId: Number(anilistId),
-          provider: "kiwi",
-          category: targetAudio,
-        },
-        context.signal,
-      )) as MiruroSourcesResponse | null;
+      // Step 2: Fetch sources for this episode (cached 5m)
+      const srcCacheKey = `sources:${episodeEntry.id}:${targetAudio}`;
+      let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
+      if (!srcData) {
+        srcData = (await pipeCall(
+          "sources",
+          {
+            episodeId: episodeEntry.id,
+            anilistId: Number(anilistId),
+            provider: "kiwi",
+            category: targetAudio,
+          },
+          context.signal,
+        )) as MiruroSourcesResponse | null;
+        if (srcData) sourceCache.set(srcCacheKey, srcData);
+      }
 
       const rawStreams = srcData?.streams?.filter((s) => s.type === "hls" && s.url) ?? [];
       if (rawStreams.length === 0) {

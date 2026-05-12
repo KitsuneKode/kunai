@@ -1,3 +1,5 @@
+import { TTLCache } from "../shared/provider-cache";
+
 export type AllMangaSearchResult = {
   readonly id: string;
   readonly title: string;
@@ -200,6 +202,9 @@ function availableEpisodesDetailCacheKey(apiUrl: string, showId: string): string
   return `${apiUrl}\n${showId}`;
 }
 
+/** Cache source resolve results per show+episode+mode. TTL 5 minutes. */
+const sourceCache = new TTLCache<string, StreamLink[]>(300_000);
+
 export async function loadAvailableEpisodesDetail(
   apiUrl: string,
   referer: string,
@@ -285,6 +290,12 @@ export async function resolveEpisodeSources(opts: {
   readonly mode: "sub" | "dub";
 }): Promise<StreamLink[]> {
   const { apiUrl, referer, ua, showId, epStr, mode } = opts;
+
+  // Check source cache (episode string + mode → StreamLink[])
+  const cacheKey = `${showId}:${epStr}:${mode}`;
+  const cached = sourceCache.get(cacheKey);
+  if (cached) return cached;
+
   const query = `query($showId:String! $translationType:VaildTranslationTypeEnumType! $episodeString:String!){
     episode(showId:$showId translationType:$translationType episodeString:$episodeString){
       episodeString sourceUrls
@@ -366,9 +377,11 @@ export async function resolveEpisodeSources(opts: {
   const settled = await Promise.allSettled(apiJobs);
   const apiLinks = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
 
-  return [...direct, ...apiLinks].sort(
+  const result = [...direct, ...apiLinks].sort(
     (left, right) => (parseInt(right.quality) || 0) - (parseInt(left.quality) || 0),
   );
+  if (result.length > 0) sourceCache.set(cacheKey, result);
+  return result;
 }
 
 export async function fetchAllMangaEpisodeCatalog(opts: {

@@ -20,6 +20,7 @@ import type {
   TitleIdentity,
 } from "@kunai/types";
 
+import { TTLCache, HealthTracker } from "../shared/provider-cache";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
 
@@ -32,6 +33,12 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const VIDKING_SERVERS = ["mb-flix", "cdn", "downloader2", "1movies"] as const;
+
+/** Track server health with 60s cooldown after 2 consecutive failures. */
+const vidkingHealth = new HealthTracker(60_000, 2);
+
+/** Cache source response per server+query. TTL 5 minutes. */
+const sourceCache = new TTLCache<string, unknown>(300_000);
 
 type VidkingServer = (typeof VIDKING_SERVERS)[number];
 
@@ -127,6 +134,15 @@ export async function resolveVidkingDirect(
   });
 
   for (const server of VIDKING_SERVERS) {
+    if (!vidkingHealth.shouldTry(server)) {
+      emitTraceEvent(events, context, {
+        type: "source:skipped",
+        providerId: VIDKING_PROVIDER_ID,
+        sourceId: createSourceId(server),
+        message: `Skipping ${server} - failing (cooling down)`,
+      });
+      continue;
+    }
     const sourceId = createSourceId(server);
     sources.push({
       id: sourceId,
@@ -164,6 +180,7 @@ export async function resolveVidkingDirect(
           });
 
           if (!response.ok) {
+            vidkingHealth.recordFailure(server);
             const failure: ProviderFailure = {
               providerId: VIDKING_PROVIDER_ID,
               code: response.status === 504 ? "timeout" : "network-error",
@@ -178,6 +195,7 @@ export async function resolveVidkingDirect(
 
           const payload = (await response.text()).trim();
           if (!payload) {
+            vidkingHealth.recordFailure(server);
             const failure: ProviderFailure = {
               providerId: VIDKING_PROVIDER_ID,
               code: "not-found",
@@ -191,6 +209,9 @@ export async function resolveVidkingDirect(
           }
 
           const decoded = await decodeVidkingPayload(payload, tmdbId);
+          const cacheQueryKey = `${server}:${query.toString()}`;
+          sourceCache.set(cacheQueryKey, decoded);
+
           const result = createVidkingResultFromPayload({
             input,
             cachePolicy,
@@ -204,6 +225,7 @@ export async function resolveVidkingDirect(
           });
 
           if (result) {
+            vidkingHealth.recordSuccess(server);
             return result;
           }
 
@@ -216,8 +238,8 @@ export async function resolveVidkingDirect(
           };
           failures.push(failure);
           emitRetryIfNeeded(events, context, failure, sourceId, attempt, maxAttempts);
-          continue;
         } catch (error) {
+          vidkingHealth.recordFailure(server);
           if (context.signal?.aborted) {
             return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, {
               code: "cancelled",
