@@ -1,3 +1,9 @@
+import {
+  createProviderCachePolicy,
+  createResolveTrace,
+  createTraceStep,
+  type CoreProviderModule,
+} from "@kunai/core";
 import type {
   ProviderFailure,
   ProviderResolveInput,
@@ -9,13 +15,7 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
-import {
-  createProviderCachePolicy,
-  createResolveTrace,
-  createTraceStep,
-  type CoreProviderModule,
-} from "@kunai/core";
-import { allanimeManifest, ALLANIME_PROVIDER_ID } from "./manifest";
+
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   loadAvailableEpisodesDetail,
@@ -23,6 +23,7 @@ import {
   resolveEpisodeSources,
   buildStreamHeaders,
 } from "./api-client";
+import { allanimeManifest, ALLANIME_PROVIDER_ID } from "./manifest";
 
 export { ALLANIME_PROVIDER_ID };
 
@@ -81,8 +82,7 @@ export const allmangaProviderModule: CoreProviderModule = {
 
     try {
       const mode =
-        input.preferredAudioLanguage === "ja" ||
-        input.preferredAudioLanguage === "original"
+        input.preferredAudioLanguage === "ja" || input.preferredAudioLanguage === "original"
           ? "sub"
           : "dub";
       const episodeNum = input.episode?.absoluteEpisode ?? input.episode?.episode ?? 1;
@@ -294,5 +294,3 @@ function formatAllmangaSourceLabel(sourceId: string): string {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join("-");
 }
-
-

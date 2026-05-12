@@ -1,3 +1,9 @@
+import {
+  createProviderCachePolicy,
+  createResolveTrace,
+  createTraceStep,
+  type CoreProviderModule,
+} from "@kunai/core";
 import type {
   CachePolicy,
   EpisodeIdentity,
@@ -13,14 +19,9 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import {
-  createProviderCachePolicy,
-  createResolveTrace,
-  createTraceStep,
-  type CoreProviderModule,
-} from "@kunai/core";
-import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
+
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
 
 export { VIDKING_PROVIDER_ID };
 export const VIDKING_REFERER = "https://www.vidking.net/";
@@ -74,7 +75,11 @@ export const vidkingProviderModule: CoreProviderModule = {
       return result;
     }
 
-    return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, { code: "not-found", message: "VidKing direct resolver did not find a playable source", retryable: true });
+    return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, {
+      code: "not-found",
+      message: "VidKing direct resolver did not find a playable source",
+      retryable: true,
+    });
   },
 };
 
@@ -300,13 +305,23 @@ export async function resolveVidkingDirect(
     }
   }
 
-  return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, { code: "not-found", message: "VidKing direct resolver did not find a playable source", retryable: true }, {
-    cachePolicy,
-    events,
-    failures,
-    sources,
-    startedAt,
-  });
+  return createExhaustedResult(
+    input,
+    context,
+    VIDKING_PROVIDER_ID,
+    {
+      code: "not-found",
+      message: "VidKing direct resolver did not find a playable source",
+      retryable: true,
+    },
+    {
+      cachePolicy,
+      events,
+      failures,
+      sources,
+      startedAt,
+    },
+  );
 }
 
 export function createVidkingResultFromPayload({
@@ -779,8 +794,6 @@ function buildQueryVariants(opts: {
   variants.push(base);
   return variants;
 }
-
-
 
 function emitRetryIfNeeded(
   events: ProviderTraceEvent[],

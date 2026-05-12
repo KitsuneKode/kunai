@@ -1,3 +1,9 @@
+import {
+  createProviderCachePolicy,
+  createResolveTrace,
+  createTraceStep,
+  type CoreProviderModule,
+} from "@kunai/core";
 import type {
   ProviderFailure,
   ProviderResolveInput,
@@ -7,15 +13,10 @@ import type {
   ProviderVariantCandidate,
   StreamCandidate,
 } from "@kunai/types";
-import {
-  createProviderCachePolicy,
-  createResolveTrace,
-  createTraceStep,
-  type CoreProviderModule,
-} from "@kunai/core";
-import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
+
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 
 export { MIRURO_PROVIDER_ID };
 export const MIRURO_REFERER = "https://www.miruro.tv/";
@@ -265,5 +266,3 @@ export const miruroProviderModule: CoreProviderModule = {
     }
   },
 };
-
-

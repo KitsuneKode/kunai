@@ -1,5 +1,11 @@
 /* oxlint-disable no-shadow */
 
+import {
+  createProviderCachePolicy,
+  createResolveTrace,
+  createTraceStep,
+  type CoreProviderModule,
+} from "@kunai/core";
 import type {
   ProviderFailure,
   ProviderResolveInput,
@@ -10,15 +16,10 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
-import {
-  createProviderCachePolicy,
-  createResolveTrace,
-  createTraceStep,
-  type CoreProviderModule,
-} from "@kunai/core";
-import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
+
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 
 export { RIVESTREAM_PROVIDER_ID };
 export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
@@ -477,5 +478,3 @@ export const rivestreamProviderModule: CoreProviderModule = {
     }
   },
 };
-
-
