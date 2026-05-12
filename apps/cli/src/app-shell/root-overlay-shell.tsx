@@ -104,7 +104,9 @@ export function RootOverlayShell({
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
-  const [historyFilterMode, setHistoryFilterMode] = useState<"all" | "watching" | "completed">("all");
+  const [historyFilterMode, setHistoryFilterMode] = useState<"all" | "watching" | "completed">(
+    "all",
+  );
   const overlayResetKey = getRootOverlayResetKey(overlay);
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const commands = resolveCommandContext(state, "rootOverlay");
