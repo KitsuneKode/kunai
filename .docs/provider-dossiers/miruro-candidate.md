@@ -20,8 +20,9 @@
 ### Phase 1: Backend Bypass (current production)
 
 **Endpoint:** `theanimecommunity.com/api/v1/episodes/mediaItemID?AniList_ID={id}&mediaType=anime&episodeChapterNumber={ep}`
+
 - Returns `{"mediaItemID": 569}` — works without Cloudflare issues
-- **Source fetch:** `theanimecommunity.com/api/v1/episodes/{mediaItemID}/{episode}` — **ALWAYS returns Cloudflare JS challenge**. All header variations failed testing (different User-Agent, Accept, Referer, Origin, sec-* headers, query-parameter format).
+- **Source fetch:** `theanimecommunity.com/api/v1/episodes/{mediaItemID}/{episode}` — **ALWAYS returns Cloudflare JS challenge**. All header variations failed testing (different User-Agent, Accept, Referer, Origin, sec-\* headers, query-parameter format).
 
 **Verdict:** Backend bypass is partially broken. The source endpoint is CF-protected and unreachable via plain HTTP. No amount of header tweaking fixes it.
 
@@ -30,6 +31,7 @@
 **Endpoint:** `https://www.miruro.tv/api/secure/pipe?e={base64url-payload}`
 
 **Request construction:**
+
 1. Build JSON payload:
    ```json
    {"path": "<endpoint>", "method": "GET", "query": { ... }, "body": null, "version": "0.2.0"}
@@ -38,6 +40,7 @@
 3. Append as `?e=` parameter
 
 **Decryption (XOR + optional gzip):**
+
 1. Check for `bh4YNPj7` prefix or `x-obfuscated: 2` response header
 2. Base64url-decode the response body
 3. XOR-decrypt with hex key `71951034f8fbcf53d89db52ceb3dc22c` (rolling XOR, each byte XOR'd with key byte at `i % 32`)
@@ -46,17 +49,18 @@
 
 **Known pipe endpoints:**
 
-| Path | Query | Response Format |
-|------|-------|----------------|
-| `search` | `q`, `limit`, `offset`, `type` ("ANIME") | Array of anime results |
-| `episodes` | `anilistId` | `{ mappings, providers: { kiwi: { meta, episodes: { sub: [...], dub: [...] } } } }` |
-| `sources` | `episodeId`, `anilistId`, `provider`, `category` | `{ sources: { [provider]: [...] }, headers, subtitles? }` |
+| Path       | Query                                            | Response Format                                                                     |
+| ---------- | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `search`   | `q`, `limit`, `offset`, `type` ("ANIME")         | Array of anime results                                                              |
+| `episodes` | `anilistId`                                      | `{ mappings, providers: { kiwi: { meta, episodes: { sub: [...], dub: [...] } } } }` |
+| `sources`  | `episodeId`, `anilistId`, `provider`, `category` | `{ sources: { [provider]: [...] }, headers, subtitles? }`                           |
 
 **Episode ID format:** From `kiwi.episodes.sub[0].id` — base64-encoded string like `"YW5pbWVwYWhlOjMyMDU6MjI0OTc6MQ"`. Use this as `episodeId` in the sources pipe.
 
 **Source response format:** Each source entry has: `url`, `quality`, `type` ("hls"/"embed"), `referer`.
 
 **Known issues with pipe API:**
+
 1. Cloudflare rate limiting — after ~3-5 requests in quick succession, Bun's fetch gets `ECONNRESET`. The episodes endpoint works reliably for the first request but may fail after repeated calls.
 2. Sources endpoint returns `HTTP 444` (Cloudflare "no response") intermittently — likely because the pipe proxies to the same CF-blocked theanimecommunity.com backend.
 3. `curl` with `--tls-max 1.2` has a different success rate than Bun's fetch due to TLS fingerprint differences.
@@ -72,12 +76,12 @@
 
 ## Known Gaps
 
-| Gap | Status |
-|-----|--------|
-| XOR decrypt + gzip decompress | Available in experiments (`miruro-decrypt.ts`) |
-| Pipe API episode listing | Proven (episodes endpoint works) |
-| Pipe API sources | Intermittently works (CF rate limits) |
-| Rate limit handling | Not implemented — need retry with backoff |
-| Cookie/CF clearance reuse | Not explored — potential to improve reliability |
-| Subtitle extraction | Untested — sources response may contain subtitles |
-| Provider selection | kiwi, arc, dune, hop, bee — need to test which works |
+| Gap                           | Status                                               |
+| ----------------------------- | ---------------------------------------------------- |
+| XOR decrypt + gzip decompress | Available in experiments (`miruro-decrypt.ts`)       |
+| Pipe API episode listing      | Proven (episodes endpoint works)                     |
+| Pipe API sources              | Intermittently works (CF rate limits)                |
+| Rate limit handling           | Not implemented — need retry with backoff            |
+| Cookie/CF clearance reuse     | Not explored — potential to improve reliability      |
+| Subtitle extraction           | Untested — sources response may contain subtitles    |
+| Provider selection            | kiwi, arc, dune, hop, bee — need to test which works |

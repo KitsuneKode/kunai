@@ -467,7 +467,7 @@ export async function searchAllManga(
         genres
         altNames
         episodeCount
-        airedStart{year}
+        season
         availableEpisodes
         __typename
       }
@@ -499,7 +499,7 @@ export async function searchAllManga(
           genres?: readonly string[] | null;
           altNames?: readonly string[] | null;
           episodeCount?: string | number | null;
-          airedStart?: { year?: number | null } | null;
+          season?: { year?: number | null; quarter?: string | null } | null;
           availableEpisodes: Record<string, unknown>;
         }>;
       };
@@ -529,7 +529,7 @@ export async function searchAllManga(
       englishTitle: edge.englishName ?? undefined,
       nativeTitle: edge.nativeName ?? undefined,
       type: "series",
-      year: edge.airedStart?.year ? String(edge.airedStart.year) : undefined,
+      year: edge.season?.year ? String(edge.season.year) : undefined,
       posterUrl: posterUrl ?? edge.banner ?? undefined,
       bannerUrl: edge.banner ?? undefined,
       malId: edge.malId ? Number(edge.malId) : undefined,

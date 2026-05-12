@@ -104,6 +104,7 @@ export function RootOverlayShell({
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
+  const [historyFilterMode, setHistoryFilterMode] = useState<"all" | "watching" | "completed">("all");
   const overlayResetKey = getRootOverlayResetKey(overlay);
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const commands = resolveCommandContext(state, "rootOverlay");
@@ -188,15 +189,19 @@ export function RootOverlayShell({
           historySelections
             .filter(({ entry }) => {
               const filter = filterQuery.trim().toLowerCase();
-              if (filter.length === 0) return true;
+              if (filter.length > 0) {
+                const isCompleted = entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
+                if (filter === "completed" && isCompleted) return true;
+                if (filter === "watching" && !isCompleted) return true;
+                return `${entry.title} ${entry.provider} s${entry.season}e${entry.episode}`
+                  .toLowerCase()
+                  .includes(filter);
+              }
 
               const isCompleted = entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
-              if (filter === "completed" && isCompleted) return true;
-              if (filter === "watching" && !isCompleted) return true;
-
-              return `${entry.title} ${entry.provider} s${entry.season}e${entry.episode}`
-                .toLowerCase()
-                .includes(filter);
+              if (historyFilterMode === "completed" && !isCompleted) return false;
+              if (historyFilterMode === "watching" && isCompleted) return false;
+              return true;
             })
             .map(({ titleId, entry }) => [titleId, entry] as const),
         )
@@ -356,6 +361,12 @@ export function RootOverlayShell({
         resolveRootHistorySelection(null);
       }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      return;
+    }
+    if (overlay.type === "history" && input === "f") {
+      setHistoryFilterMode((prev) =>
+        prev === "all" ? "watching" : prev === "watching" ? "completed" : "all",
+      );
       return;
     }
     if (key.return) {
