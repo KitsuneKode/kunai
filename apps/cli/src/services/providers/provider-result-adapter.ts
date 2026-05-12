@@ -23,17 +23,14 @@ export function providerResolveResultToStreamInfo(
   }
 
   const selected =
-    result.streams.find((stream) => stream.id === result.selectedStreamId) ??
-    result.streams[0];
+    result.streams.find((stream) => stream.id === result.selectedStreamId) ?? result.streams[0];
   if (!selected?.url) {
     return null;
   }
 
   const subtitleList = result.subtitles.map(subtitleCandidateToTrack);
   const pickedSubtitle =
-    subtitlePreference === "none"
-      ? null
-      : selectSubtitle(subtitleList, subtitlePreference);
+    subtitlePreference === "none" ? null : selectSubtitle(subtitleList, subtitlePreference);
 
   return {
     url: selected.url,
@@ -52,9 +49,7 @@ export function providerResolveResultToStreamInfo(
   };
 }
 
-export function subtitleCandidateToTrack(
-  candidate: SubtitleCandidate,
-): SubtitleTrack {
+export function subtitleCandidateToTrack(candidate: SubtitleCandidate): SubtitleTrack {
   const normalizedLang = normalizeSubtitleLanguage(candidate.language);
   const displayName = normalizedLang
     ? subtitleLanguageDisplayName(normalizedLang)
@@ -66,9 +61,7 @@ export function subtitleCandidateToTrack(
     language: normalizedLang ?? candidate.language,
     release: candidate.syncEvidence,
     sourceKind:
-      candidate.source === "provider" || candidate.source === "embedded"
-        ? "embedded"
-        : "external",
+      candidate.source === "provider" || candidate.source === "embedded" ? "embedded" : "external",
     sourceName: candidate.source,
     isHearingImpaired: looksLikeHiSubtitle(
       candidate.label,
@@ -77,5 +70,3 @@ export function subtitleCandidateToTrack(
     ),
   };
 }
-
-

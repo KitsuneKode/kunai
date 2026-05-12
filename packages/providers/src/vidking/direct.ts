@@ -22,10 +22,7 @@ import type {
 
 import { TTLCache, HealthTracker } from "../shared/provider-cache";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
-import {
-  looksLikeHiSubtitle,
-  normalizeSubtitleLanguage,
-} from "../shared/subtitle-helpers";
+import { looksLikeHiSubtitle, normalizeSubtitleLanguage } from "../shared/subtitle-helpers";
 import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
 
 export { VIDKING_PROVIDER_ID };

@@ -193,6 +193,16 @@ export function resolveAnimeEpisodeString(
 
 /** listEpisodes + resolveStream both query this; dedupe within a short window to avoid double network per play. */
 const AVAILABLE_EPISODES_DETAIL_TTL_MS = 45_000;
+/** Extended show metadata returned alongside episode detail. */
+export type ShowCatalogInfo = {
+  readonly detail: Record<string, unknown[]>;
+  readonly episodeCount?: number;
+  readonly aniListId?: number;
+  readonly malId?: number;
+  readonly status?: string;
+  readonly thumbnail?: string;
+};
+
 const availableEpisodesDetailCache = new Map<
   string,
   { readonly expiresAt: number; readonly detail: Record<string, unknown[]> }
@@ -202,8 +212,8 @@ function availableEpisodesDetailCacheKey(apiUrl: string, showId: string): string
   return `${apiUrl}\n${showId}`;
 }
 
-/** Cache source resolve results per show+episode+mode. TTL 5 minutes. */
-const sourceCache = new TTLCache<string, StreamLink[]>(300_000);
+/** Cache extended show metadata per showId. TTL same 45s as episode detail. */
+const showCatalogCache = new TTLCache<string, ShowCatalogInfo>(AVAILABLE_EPISODES_DETAIL_TTL_MS);
 
 export async function loadAvailableEpisodesDetail(
   apiUrl: string,
@@ -211,32 +221,51 @@ export async function loadAvailableEpisodesDetail(
   ua: string,
   showId: string,
 ): Promise<Record<string, unknown[]>> {
-  const key = availableEpisodesDetailCacheKey(apiUrl, showId);
-  const now = Date.now();
-  const hit = availableEpisodesDetailCache.get(key);
-  if (hit && now < hit.expiresAt) {
-    return hit.detail;
+  const info = await loadShowCatalogInfo(apiUrl, referer, ua, showId);
+  return info.detail;
+}
+
+/** Fetch show metadata + episode detail in one GraphQL call. */
+export async function loadShowCatalogInfo(
+  apiUrl: string,
+  referer: string,
+  ua: string,
+  showId: string,
+): Promise<ShowCatalogInfo> {
+  const cacheKey = `${apiUrl}\n${showId}`;
+  const cached = showCatalogCache.get(cacheKey);
+  if (cached) return cached;
+
+  const query = `query($id:String!){
+    show(_id:$id){
+      availableEpisodesDetail
+      episodeCount
+      malId
+      aniListId
+      thumbnail
+      availableEpisodes
+    }
+  }`;
+
+  let data = (await gqlPost(apiUrl, referer, ua, query, { id: showId })) as {
+    data: { show: ShowCatalogInfo & { episodeCount?: string | number | null; malId?: string | number | null; aniListId?: string | number | null; availableEpisodes?: Record<string, unknown> } };
+  } | null | undefined;
+
+  if (!data?.data?.show?.availableEpisodesDetail) {
+    data = (await gqlPost(apiUrl, "https://youtu-chan.com", ua, query, { id: showId })) as typeof data;
   }
-  const listQuery = `query($id:String!){show(_id:$id){availableEpisodesDetail}}`;
 
-  // Try primary referer first, fall back to youtu-chan.com
-  let listData = (await gqlPost(apiUrl, referer, ua, listQuery, { id: showId })) as
-    | { data: { show: { availableEpisodesDetail: Record<string, unknown[]> } } }
-    | null
-    | undefined;
+  const show = data?.data?.show;
+  const info: ShowCatalogInfo = {
+    detail: show?.availableEpisodesDetail ?? ({} as Record<string, unknown[]>),
+    episodeCount: show?.episodeCount ? Number(show.episodeCount) : undefined,
+    aniListId: show?.aniListId ? Number(show.aniListId) : undefined,
+    malId: show?.malId ? Number(show.malId) : undefined,
+    thumbnail: show?.thumbnail ?? undefined,
+  };
 
-  if (!listData?.data?.show?.availableEpisodesDetail) {
-    listData = (await gqlPost(apiUrl, "https://youtu-chan.com", ua, listQuery, { id: showId })) as {
-      data: { show: { availableEpisodesDetail: Record<string, unknown[]> } };
-    } | null;
-  }
-
-  const detail = listData?.data?.show?.availableEpisodesDetail ?? {};
-  availableEpisodesDetailCache.set(key, {
-    expiresAt: now + AVAILABLE_EPISODES_DETAIL_TTL_MS,
-    detail,
-  });
-  return detail;
+  showCatalogCache.set(cacheKey, info);
+  return info;
 }
 
 export async function gqlPost(

@@ -92,46 +92,73 @@ The `Show` type in the allanime GraphQL API carries rich metadata (discovered vi
 
 ### Available Fields
 
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `_id` | String | Internal allanime ID (used as `showId`) |
-| `name` | String | Display title (may be romaji) |
-| `englishName` | String | English title (e.g. "Solo Leveling") |
-| `nativeName` | String | Native/Japanese title |
-| `thumbnail` | String | Poster image URL (sometimes relative to `allanime.day/`, sometimes full AniList CDN URL) |
-| `banner` | String | Wide banner image (always full AniList CDN URL) |
-| `description` | String | Show synopsis (HTML, may include MAL credit) |
-| `malId` | BigInt | MyAnimeList ID |
-| `aniListId` | BigInt | AniList ID |
-| `score` | Float | Community score (e.g. 8.18) |
-| `averageScore` | Float | AniList average score (0-100 scale, e.g. 81) |
-| `popularity` | BigInt | AniList popularity count |
-| `status` | String | "Finished", "Releasing", etc. |
-| `type` | String | "TV", "Movie", "OVA", etc. |
-| `genres` | [String] | Genre list (e.g. ["Action", "Adventure"]) |
-| `tags` | [String] | Detailed tag list |
-| `altNames` | [String] | Alternative titles (includes localized, translated, transliterated) |
-| `trustedAltNames` | [String] | Curated subset of alt names |
-| `episodeCount` | BigInt | Total episode count |
-| `episodeDuration` | BigInt | Episode duration in seconds? (e.g. 1380000) |
-| `airedStart` | Object | `{ year, month, date, hour, minute }` |
-| `airedEnd` | Object | `{ year, month, date, hour, minute }` |
-| `studios` | [String] | Production studios (e.g. ["A-1 Pictures"]) |
-| `countryOfOrigin` | String | "JP", "CN", etc. |
-| `rating` | String | Content rating (e.g. "R") |
-| `availableEpisodes` | Object | `{ sub: number, dub: number, raw: number }` |
-| `availableEpisodesDetail` | Object | `{ sub: ["1","2",...], dub: [...], raw: [...] }` |
+| Field                     | Type     | Description                                                                              |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `_id`                     | String   | Internal allanime ID (used as `showId`)                                                  |
+| `name`                    | String   | Display title (may be romaji)                                                            |
+| `englishName`             | String   | English title (e.g. "Solo Leveling")                                                     |
+| `nativeName`              | String   | Native/Japanese title                                                                    |
+| `thumbnail`               | String   | Poster image URL (sometimes relative to `allanime.day/`, sometimes full AniList CDN URL) |
+| `banner`                  | String   | Wide banner image (always full AniList CDN URL)                                          |
+| `description`             | String   | Show synopsis (HTML, may include MAL credit)                                             |
+| `malId`                   | BigInt   | MyAnimeList ID                                                                           |
+| `aniListId`               | BigInt   | AniList ID                                                                               |
+| `score`                   | Float    | Community score (e.g. 8.18)                                                              |
+| `averageScore`            | Float    | AniList average score (0-100 scale, e.g. 81)                                             |
+| `popularity`              | BigInt   | AniList popularity count                                                                 |
+| `status`                  | String   | "Finished", "Releasing", etc.                                                            |
+| `type`                    | String   | "TV", "Movie", "OVA", etc.                                                               |
+| `genres`                  | [String] | Genre list (e.g. ["Action", "Adventure"])                                                |
+| `tags`                    | [String] | Detailed tag list                                                                        |
+| `altNames`                | [String] | Alternative titles (includes localized, translated, transliterated)                      |
+| `trustedAltNames`         | [String] | Curated subset of alt names                                                              |
+| `episodeCount`            | BigInt   | Total episode count                                                                      |
+| `episodeDuration`         | BigInt   | Episode duration in seconds? (e.g. 1380000)                                              |
+| `airedStart`              | Object   | `{ year, month, date, hour, minute }`                                                    |
+| `airedEnd`                | Object   | `{ year, month, date, hour, minute }`                                                    |
+| `studios`                 | [String] | Production studios (e.g. ["A-1 Pictures"])                                               |
+| `countryOfOrigin`         | String   | "JP", "CN", etc.                                                                         |
+| `rating`                  | String   | Content rating (e.g. "R")                                                                |
+| `availableEpisodes`       | Object   | `{ sub: number, dub: number, raw: number }`                                              |
+| `availableEpisodesDetail` | Object   | `{ sub: ["1","2",...], dub: [...], raw: [...] }`                                         |
 
 ### Search Query (used by `searchAllManga`)
 
 ```graphql
-query($search:SearchInput $limit:Int $page:Int $translationType:VaildTranslationTypeEnumType $countryOrigin:VaildCountryOriginEnumType){
-  shows(search:$search limit:$limit page:$page translationType:$translationType countryOrigin:$countryOrigin){
-    edges{
-      _id name englishName nativeName thumbnail banner description
-      malId aniListId score averageScore popularity
-      type genres altNames episodeCount
-      airedStart{year}
+query (
+  $search: SearchInput
+  $limit: Int
+  $page: Int
+  $translationType: VaildTranslationTypeEnumType
+  $countryOrigin: VaildCountryOriginEnumType
+) {
+  shows(
+    search: $search
+    limit: $limit
+    page: $page
+    translationType: $translationType
+    countryOrigin: $countryOrigin
+  ) {
+    edges {
+      _id
+      name
+      englishName
+      nativeName
+      thumbnail
+      banner
+      description
+      malId
+      aniListId
+      score
+      averageScore
+      popularity
+      type
+      genres
+      altNames
+      episodeCount
+      airedStart {
+        year
+      }
       availableEpisodes
       __typename
     }
@@ -143,21 +170,21 @@ query($search:SearchInput $limit:Int $page:Int $translationType:VaildTranslation
 
 `searchAllManga` maps these API fields to `AllMangaSearchResult`:
 
-| API Field | SearchResult Field |
-|-----------|-------------------|
-| `_id` | `id` |
-| `name` | `title` |
-| `englishName` | `englishTitle` → `titleAliases[].kind="english"` |
-| `nativeName` | `nativeTitle` → `titleAliases[].kind="native"` |
-| `altNames[0..2]` | → `titleAliases[].kind="synonym"` |
-| `thumbnail` | `posterUrl` (prepend `https://allanime.day/` if relative) |
-| `banner` | `bannerUrl` |
-| `description` | `description` |
-| `aniListId` | `aniListId` (also used for `metadataSource: "AniList"`) |
-| `averageScore ?? score` | `rating` (0-10) |
-| `popularity` | `popularity` |
-| `airedStart.year` | `year` |
-| `availableEpisodes[lang] ?? episodeCount` | `epCount` |
+| API Field                                 | SearchResult Field                                        |
+| ----------------------------------------- | --------------------------------------------------------- |
+| `_id`                                     | `id`                                                      |
+| `name`                                    | `title`                                                   |
+| `englishName`                             | `englishTitle` → `titleAliases[].kind="english"`          |
+| `nativeName`                              | `nativeTitle` → `titleAliases[].kind="native"`            |
+| `altNames[0..2]`                          | → `titleAliases[].kind="synonym"`                         |
+| `thumbnail`                               | `posterUrl` (prepend `https://allanime.day/` if relative) |
+| `banner`                                  | `bannerUrl`                                               |
+| `description`                             | `description`                                             |
+| `aniListId`                               | `aniListId` (also used for `metadataSource: "AniList"`)   |
+| `averageScore ?? score`                   | `rating` (0-10)                                           |
+| `popularity`                              | `popularity`                                              |
+| `airedStart.year`                         | `year`                                                    |
+| `availableEpisodes[lang] ?? episodeCount` | `epCount`                                                 |
 
 This replaces the previous `enrichAnimeSearchResultsWithAniList` step which did brittle title-based matching. The API provides AniList/MAL IDs natively, so poster images and metadata are now available for every search result directly without external enrichment.
 

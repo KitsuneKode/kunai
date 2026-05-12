@@ -19,7 +19,7 @@ const ISO_639_1_MAP: Record<string, string> = {
   ptb: "pt",
   portuguese: "pt",
   "brazilian portuguese": "pt",
-  "brazilian": "pt",
+  brazilian: "pt",
   rus: "ru",
   russian: "ru",
   kor: "ko",
