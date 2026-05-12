@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
+import { createProviderEngine } from "@kunai/core";
 
 import {
   allmangaProviderModule,
   buildAllmangaSourceCandidates,
   createVidkingResultFromPayload,
-  createProviderModuleRegistry,
   getProviderMigrationQueue,
   getProviderResearchProfile,
   miruroProviderModule,
@@ -14,24 +14,21 @@ import {
   vidkingProviderModule,
 } from "../src/index";
 
-test("provider module registry can expose migrated modules", () => {
-  const registry = createProviderModuleRegistry([
-    rivestreamProviderModule,
-    vidkingProviderModule,
-    miruroProviderModule,
-    allmangaProviderModule,
-  ]);
+test("provider engine exposes registered modules", () => {
+  const engine = createProviderEngine({
+    modules: [
+      rivestreamProviderModule,
+      vidkingProviderModule,
+      miruroProviderModule,
+      allmangaProviderModule,
+    ],
+  });
 
-  expect(registry.modules.map((module) => module.providerId)).toEqual([
-    "rivestream",
-    "vidking",
-    "miruro",
-    "allanime",
-  ]);
-  expect(registry.get("rivestream")).toBe(rivestreamProviderModule);
-  expect(registry.get("vidking")).toBe(vidkingProviderModule);
-  expect(registry.get("miruro")).toBe(miruroProviderModule);
-  expect(registry.get("allanime")).toBe(allmangaProviderModule);
+  expect(engine.getProviderIds()).toEqual(["rivestream", "vidking", "miruro", "allanime"]);
+  expect(engine.get("rivestream")).toBe(rivestreamProviderModule);
+  expect(engine.get("vidking")).toBe(vidkingProviderModule);
+  expect(engine.get("miruro")).toBe(miruroProviderModule);
+  expect(engine.get("allanime")).toBe(allmangaProviderModule);
 });
 
 test("provider research profiles are dossier-backed and migration ordered", () => {
