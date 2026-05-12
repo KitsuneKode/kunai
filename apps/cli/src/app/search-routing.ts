@@ -38,8 +38,13 @@ export async function searchTitles(
 
     if (results) {
       const normalized = results.map(normalizeProviderSearchResult);
+
+      // Skip AniList enrichment when provider already supplied rich metadata.
+      const hasNativeMetadata = normalized.some(
+        (r) => r.posterPath && r.metadataSource === "AniList",
+      );
       const enriched =
-        context.enrichAnimeMetadata === false
+        context.enrichAnimeMetadata === false || hasNativeMetadata
           ? normalized
           : await enrichAnimeSearchResultsWithAniList(query, normalized, context.signal);
 

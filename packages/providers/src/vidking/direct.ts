@@ -134,143 +134,53 @@ export async function resolveVidkingDirect(
     message: "Started VidKing direct Videasy resolution",
   });
 
-  for (const server of VIDKING_SERVERS) {
-    if (!vidkingHealth.shouldTry(server)) {
-      emitTraceEvent(events, context, {
-        type: "source:skipped",
-        providerId: VIDKING_PROVIDER_ID,
-        sourceId: createSourceId(server),
-        message: `Skipping ${server} - failing (cooling down)`,
-      });
-      continue;
-    }
-    const sourceId = createSourceId(server);
+  // Tier 1: Fire all healthy servers in parallel, pick first success
+  const activeServers = VIDKING_SERVERS.filter((s) => vidkingHealth.shouldTry(s));
+  if (activeServers.length === 0) {
+    emitTraceEvent(events, context, {
+      type: "source:skipped",
+      providerId: VIDKING_PROVIDER_ID,
+      sourceId: createSourceId("all"),
+      message: "All servers in cooldown, skipping Tier 1",
+    });
+  }
+
+  for (const server of activeServers) {
+    const sid = createSourceId(server);
     sources.push({
-      id: sourceId,
+      id: sid,
       providerId: VIDKING_PROVIDER_ID,
       kind: "provider-api",
       label: server,
       host: "api.videasy.net",
       status: "probing",
       confidence: 0.8,
-      requiresRuntime: "direct-http",
       cachePolicy,
       metadata: { server },
     });
-    emitTraceEvent(events, context, {
-      type: "source:start",
-      providerId: VIDKING_PROVIDER_ID,
-      sourceId,
-      message: `Trying Videasy server ${server}`,
-    });
-
-    for (const query of buildQueryVariants({
-      title: input.title,
-      mediaKind: input.mediaKind,
-      tmdbId,
-      episode: input.episode,
-    })) {
-      const maxAttempts = Math.max(1, context.retryPolicy?.maxAttempts ?? 2);
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          const response = await fetchVideasyPayload({
-            server,
-            query,
-            fetchPort: context.fetch,
-            signal: context.signal,
-          });
-
-          if (!response.ok) {
-            vidkingHealth.recordFailure(server);
-            const failure: ProviderFailure = {
-              providerId: VIDKING_PROVIDER_ID,
-              code: response.status === 504 ? "timeout" : "network-error",
-              message: `Videasy ${server} returned HTTP ${response.status}`,
-              retryable: true,
-              at: context.now(),
-            };
-            failures.push(failure);
-            emitRetryIfNeeded(events, context, failure, sourceId, attempt, maxAttempts);
-            continue;
-          }
-
-          const payload = (await response.text()).trim();
-          if (!payload) {
-            vidkingHealth.recordFailure(server);
-            const failure: ProviderFailure = {
-              providerId: VIDKING_PROVIDER_ID,
-              code: "not-found",
-              message: `Videasy ${server} returned an empty payload`,
-              retryable: true,
-              at: context.now(),
-            };
-            failures.push(failure);
-            emitRetryIfNeeded(events, context, failure, sourceId, attempt, maxAttempts);
-            continue;
-          }
-
-          const decoded = await decodeVidkingPayload(payload, tmdbId);
-          const cacheQueryKey = `${server}:${query.toString()}`;
-          sourceCache.set(cacheQueryKey, decoded);
-
-          const result = createVidkingResultFromPayload({
-            input,
-            cachePolicy,
-            payload: decoded,
-            sourceId,
-            server,
-            events,
-            context,
-            startedAt,
-            failures,
-          });
-
-          if (result) {
-            vidkingHealth.recordSuccess(server);
-            return result;
-          }
-
-          const failure: ProviderFailure = {
-            providerId: VIDKING_PROVIDER_ID,
-            code: "not-found",
-            message: `Videasy ${server} returned no playable streams`,
-            retryable: true,
-            at: context.now(),
-          };
-          failures.push(failure);
-          emitRetryIfNeeded(events, context, failure, sourceId, attempt, maxAttempts);
-        } catch (error) {
-          vidkingHealth.recordFailure(server);
-          if (context.signal?.aborted) {
-            return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, {
-              code: "cancelled",
-              message: "VidKing resolution was cancelled",
-              retryable: false,
-            });
-          }
-
-          const failure: ProviderFailure = {
-            providerId: VIDKING_PROVIDER_ID,
-            code: "parse-failed",
-            message: error instanceof Error ? error.message : "VidKing payload decode failed",
-            retryable: true,
-            at: context.now(),
-          };
-          failures.push(failure);
-          emitRetryIfNeeded(events, context, failure, sourceId, attempt, maxAttempts);
-        }
-      }
-    }
-
-    emitTraceEvent(events, context, {
-      type: "source:failed",
-      providerId: VIDKING_PROVIDER_ID,
-      sourceId,
-      message: `Videasy server ${server} did not produce a playable source`,
-    });
   }
 
-  // Tier 2: Retry API with embed page referer (mimics in-browser context)
+  const serverResults = await Promise.allSettled(
+    activeServers.map((server) =>
+      tryVidkingServer({
+        server,
+        tmdbId,
+        input,
+        cachePolicy,
+        events,
+        context,
+        failures,
+        startedAt,
+        sources,
+      }),
+    ),
+  );
+
+  for (const settled of serverResults) {
+    if (settled.status === "fulfilled" && settled.value) return settled.value;
+  }
+
+  // Tier 2: Retry failed servers with embed page referer (parallel)
   const embedReferer = buildEmbedReferer({
     tmdbId,
     mediaKind: input.mediaKind as "movie" | "series",
@@ -278,53 +188,24 @@ export async function resolveVidkingDirect(
     episode: input.episode?.episode,
   });
   if (embedReferer) {
-    for (const server of VIDKING_SERVERS) {
-      const sourceId = createSourceId(`${server}-embed-ref`);
-      emitTraceEvent(events, context, {
-        type: "source:start",
-        providerId: VIDKING_PROVIDER_ID,
-        sourceId,
-        message: `Retrying Videasy server ${server} with embed page referer`,
-      });
-
-      for (const query of buildQueryVariants({
-        title: input.title,
-        mediaKind: input.mediaKind,
-        tmdbId,
-        episode: input.episode,
-      })) {
-        try {
-          const response = await fetchVideasyPayload({
-            server,
-            query,
-            fetchPort: context.fetch,
-            signal: context.signal,
-            customReferer: embedReferer,
-          });
-
-          if (!response.ok) continue;
-
-          const payload = (await response.text()).trim();
-          if (!payload) continue;
-
-          const decoded = await decodeVidkingPayload(payload, tmdbId);
-          const result = createVidkingResultFromPayload({
-            input,
-            cachePolicy,
-            payload: decoded,
-            sourceId,
-            server: `${server}-embed-ref`,
-            events,
-            context,
-            startedAt,
-            failures,
-            streamReferer: embedReferer,
-          });
-          if (result) return result;
-        } catch {
-          // Fall through to next server
-        }
-      }
+    const embedResults = await Promise.allSettled(
+      VIDKING_SERVERS.map((server) =>
+        tryVidkingServer({
+          server,
+          tmdbId,
+          input,
+          cachePolicy,
+          events,
+          context,
+          failures,
+          startedAt,
+          sources,
+          customReferer: embedReferer,
+        }),
+      ),
+    );
+    for (const settled of embedResults) {
+      if (settled.status === "fulfilled" && settled.value) return settled.value;
     }
   }
 
@@ -553,6 +434,148 @@ function buildEmbedReferer(options: {
   return mediaKind === "series"
     ? `https://www.vidking.net/embed/tv/${tmdbId}/${season}/${episode}?autoPlay=true&episodeSelector=false&nextEpisode=false`
     : `https://www.vidking.net/embed/movie/${tmdbId}?autoPlay=true`;
+}
+
+/**
+ * Probe a single VidKing server with all query variants and retries.
+ * Runs sequentially internally but multiple servers are fired in parallel.
+ */
+async function tryVidkingServer(opts: {
+  readonly server: VidkingServer;
+  readonly tmdbId: number;
+  readonly input: ProviderResolveInput;
+  readonly cachePolicy: CachePolicy;
+  readonly events: ProviderTraceEvent[];
+  readonly context: ProviderRuntimeContext;
+  readonly failures: ProviderFailure[];
+  readonly startedAt: string;
+  readonly sources: ProviderSourceCandidate[];
+  readonly customReferer?: string;
+}): Promise<ProviderResolveResult | null> {
+  const {
+    server,
+    tmdbId,
+    input,
+    cachePolicy,
+    events,
+    context,
+    failures,
+    startedAt,
+    sources,
+    customReferer,
+  } = opts;
+  const sourceId = createSourceId(customReferer ? `${server}-embed-ref` : server);
+
+  emitTraceEvent(events, context, {
+    type: "source:start",
+    providerId: VIDKING_PROVIDER_ID,
+    sourceId,
+    message: customReferer
+      ? `Retrying ${server} with embed referer`
+      : `Trying Videasy server ${server}`,
+  });
+
+  const queries = buildQueryVariants({
+    title: input.title,
+    mediaKind: input.mediaKind as "movie" | "series",
+    tmdbId,
+    episode: input.episode,
+  });
+  const maxAttempts = Math.max(1, context.retryPolicy?.maxAttempts ?? 2);
+
+  for (const query of queries) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await fetchVideasyPayload({
+          server,
+          query,
+          fetchPort: context.fetch,
+          signal: context.signal,
+          customReferer,
+        });
+
+        if (!response.ok) {
+          vidkingHealth.recordFailure(server);
+          const f: ProviderFailure = {
+            providerId: VIDKING_PROVIDER_ID,
+            code: response.status === 504 ? "timeout" : "network-error",
+            message: `Videasy ${server} returned HTTP ${response.status}`,
+            retryable: true,
+            at: context.now(),
+          };
+          failures.push(f);
+          emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
+          continue;
+        }
+
+        const payload = (await response.text()).trim();
+        if (!payload) {
+          vidkingHealth.recordFailure(server);
+          const f: ProviderFailure = {
+            providerId: VIDKING_PROVIDER_ID,
+            code: "not-found",
+            message: `Videasy ${server} empty payload`,
+            retryable: true,
+            at: context.now(),
+          };
+          failures.push(f);
+          emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
+          continue;
+        }
+
+        const decoded = await decodeVidkingPayload(payload, tmdbId);
+        const cacheKey = `${server}:${query.toString()}`;
+        sourceCache.set(cacheKey, decoded);
+
+        const result = createVidkingResultFromPayload({
+          input,
+          cachePolicy,
+          payload: decoded,
+          sourceId,
+          server,
+          events,
+          context,
+          startedAt,
+          failures,
+          streamReferer: customReferer,
+        });
+        if (result) {
+          vidkingHealth.recordSuccess(server);
+          return result;
+        }
+
+        const f: ProviderFailure = {
+          providerId: VIDKING_PROVIDER_ID,
+          code: "not-found",
+          message: `Videasy ${server} no playable streams`,
+          retryable: true,
+          at: context.now(),
+        };
+        failures.push(f);
+        emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
+      } catch (error) {
+        vidkingHealth.recordFailure(server);
+        if (context.signal?.aborted) throw error;
+        const f: ProviderFailure = {
+          providerId: VIDKING_PROVIDER_ID,
+          code: "parse-failed",
+          message: error instanceof Error ? error.message : "VidKing payload decode failed",
+          retryable: true,
+          at: context.now(),
+        };
+        failures.push(f);
+        emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
+      }
+    }
+  }
+
+  emitTraceEvent(events, context, {
+    type: "source:failed",
+    providerId: VIDKING_PROVIDER_ID,
+    sourceId,
+    message: `Server ${server} did not produce a playable source`,
+  });
+  return null;
 }
 
 async function loadWasmExports(): Promise<WasmExports> {

@@ -43,6 +43,10 @@ import type { Tracer } from "./infra/tracer/Tracer";
 import { TracerImpl } from "./infra/tracer/TracerImpl";
 import type { WorkControlService } from "./infra/work/WorkControlService";
 import { WorkControlServiceImpl } from "./infra/work/WorkControlServiceImpl";
+import {
+  createCatalogScheduleService,
+  type CatalogScheduleService,
+} from "./services/catalog/CatalogScheduleService";
 import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
 import { DownloadService } from "./services/download/DownloadService";
@@ -106,6 +110,9 @@ export interface Container {
 
   // Recommendations
   readonly recommendationService: RecommendationService;
+
+  // Schedule/release tracking
+  readonly catalogScheduleService: CatalogScheduleService;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;
@@ -235,6 +242,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const capabilitySnapshot = options?.capabilitySnapshot ?? null;
 
   const recommendationService = new RecommendationServiceImpl(recommendationCache);
+  const catalogScheduleService = createCatalogScheduleService();
 
   const container: Container = {
     logger,
@@ -258,6 +266,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     presence,
     stateManager,
     recommendationService,
+    catalogScheduleService,
     shellChrome,
     capabilitySnapshot,
   };
