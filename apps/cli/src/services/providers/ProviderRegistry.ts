@@ -46,11 +46,20 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 id: r.id,
                 type: r.type,
                 title: r.title,
+                titleAliases: [
+                  ...(r.englishTitle ? [{ kind: "english" as const, value: r.englishTitle }] : []),
+                  ...(r.nativeTitle ? [{ kind: "native" as const, value: r.nativeTitle }] : []),
+                  ...(r.altNames ?? [])
+                    .slice(0, 3)
+                    .map((v) => ({ kind: "synonym" as const, value: v })),
+                ],
                 year: r.year ?? "",
-                overview: "",
+                overview: r.description ?? "",
                 posterPath: r.posterUrl ?? null,
-                rating: null,
-                popularity: null,
+                posterSource: r.posterUrl ? ("AniList" as const) : undefined,
+                metadataSource: r.aniListId ? "AniList" : "AllManga",
+                rating: r.averageScore ?? r.score ?? null,
+                popularity: r.popularity ?? null,
                 episodeCount: r.epCount,
                 availableAudioModes: r.availableAudioModes,
                 subtitleAvailability: r.availableAudioModes?.includes("sub")

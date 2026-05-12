@@ -1,9 +1,20 @@
 export type AllMangaSearchResult = {
   readonly id: string;
   readonly title: string;
+  readonly englishTitle?: string;
+  readonly nativeTitle?: string;
   readonly type: "series";
   readonly year?: string;
   readonly posterUrl?: string;
+  readonly bannerUrl?: string;
+  readonly malId?: number;
+  readonly aniListId?: number;
+  readonly description?: string;
+  readonly score?: number;
+  readonly averageScore?: number;
+  readonly popularity?: number;
+  readonly genres?: readonly string[];
+  readonly altNames?: readonly string[];
   readonly epCount?: number;
   readonly availableAudioModes?: readonly ("sub" | "dub")[];
 };
@@ -387,7 +398,27 @@ export async function searchAllManga(
 ): Promise<AllMangaSearchResult[]> {
   const gqlQuery = `query($search:SearchInput $limit:Int $page:Int $translationType:VaildTranslationTypeEnumType $countryOrigin:VaildCountryOriginEnumType){
     shows(search:$search limit:$limit page:$page translationType:$translationType countryOrigin:$countryOrigin){
-      edges{_id name availableEpisodes __typename}
+      edges{
+        _id
+        name
+        englishName
+        nativeName
+        thumbnail
+        banner
+        description
+        malId
+        aniListId
+        score
+        averageScore
+        popularity
+        type
+        genres
+        altNames
+        episodeCount
+        airedStart{year}
+        availableEpisodes
+        __typename
+      }
     }
   }`;
   const data = (await gqlPost(apiUrl, referer, ua, gqlQuery, {
@@ -399,7 +430,26 @@ export async function searchAllManga(
   })) as {
     data: {
       shows: {
-        edges: Array<{ _id: string; name: string; availableEpisodes: Record<string, unknown> }>;
+        edges: Array<{
+          _id: string;
+          name: string;
+          englishName?: string;
+          nativeName?: string;
+          thumbnail?: string;
+          banner?: string;
+          description?: string;
+          malId?: string | number | null;
+          aniListId?: string | number | null;
+          score?: number | null;
+          averageScore?: number | null;
+          popularity?: number | null;
+          type?: string;
+          genres?: readonly string[] | null;
+          altNames?: readonly string[] | null;
+          episodeCount?: string | number | null;
+          airedStart?: { year?: number | null } | null;
+          availableEpisodes: Record<string, unknown>;
+        }>;
       };
     };
   } | null;
@@ -407,15 +457,37 @@ export async function searchAllManga(
   const edges = data?.data?.shows?.edges ?? [];
   return edges.map((edge): AllMangaSearchResult => {
     const epRaw = edge.availableEpisodes[animeLang];
-    const epCount = typeof epRaw === "number" ? epRaw : undefined;
+    const epCount =
+      typeof epRaw === "number" ? epRaw : edge.episodeCount ? Number(edge.episodeCount) : undefined;
+
+    // Fix relative thumbnail URLs (prepend allanime.day)
+    let posterUrl = edge.thumbnail ?? undefined;
+    if (posterUrl && !posterUrl.startsWith("http")) {
+      posterUrl = `https://allanime.day/${posterUrl.replace(/^\//, "")}`;
+    }
+
     const availableAudioModes = (["sub", "dub"] as const).filter((mode) => {
       const count = edge.availableEpisodes[mode];
       return typeof count === "number" && count > 0;
     });
+
     return {
       id: edge._id,
       title: edge.name,
+      englishTitle: edge.englishName ?? undefined,
+      nativeTitle: edge.nativeName ?? undefined,
       type: "series",
+      year: edge.airedStart?.year ? String(edge.airedStart.year) : undefined,
+      posterUrl: posterUrl ?? edge.banner ?? undefined,
+      bannerUrl: edge.banner ?? undefined,
+      malId: edge.malId ? Number(edge.malId) : undefined,
+      aniListId: edge.aniListId ? Number(edge.aniListId) : undefined,
+      description: edge.description ?? undefined,
+      score: edge.score ?? undefined,
+      averageScore: edge.averageScore ?? undefined,
+      popularity: edge.popularity ?? undefined,
+      genres: edge.genres ?? undefined,
+      altNames: edge.altNames ?? undefined,
       epCount,
       availableAudioModes,
     };
