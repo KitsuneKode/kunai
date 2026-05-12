@@ -12,9 +12,9 @@ import type {
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
+  SubtitleCandidate,
 } from "@kunai/types";
 
-import { ProviderHttpError, providerJson } from "../runtime/fetch";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 
@@ -24,21 +24,109 @@ export const MIRURO_REFERER = "https://www.miruro.tv/";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-type MiruroMediaItemResponse = {
-  readonly mediaItemID?: string | number;
-};
+const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
+const PIPE_URL = "https://www.miruro.tv/api/secure/pipe";
 
-type MiruroRawStream = {
+type MiruroPipeStream = {
   readonly url?: string;
+  readonly type?: "hls" | "embed";
   readonly quality?: string;
+  readonly referer?: string;
+  readonly resolution?: { readonly width?: number; readonly height?: number };
+  readonly codec?: string;
+  readonly audio?: string;
+  readonly fansub?: string;
+  readonly isActive?: boolean;
 };
 
 type MiruroSourcesResponse = {
-  readonly sources?: {
-    readonly sub?: readonly MiruroRawStream[];
-    readonly dub?: readonly MiruroRawStream[];
+  readonly streams?: readonly MiruroPipeStream[];
+  readonly intro?: { readonly start: number; readonly end: number };
+  readonly outro?: { readonly start: number; readonly end: number };
+  readonly download?: string;
+};
+
+type MiruroEpisodeEntry = {
+  readonly id: string;
+  readonly number: number;
+  readonly title?: string;
+};
+
+type MiruroEpisodesResponse = {
+  readonly mappings?: Record<string, unknown>;
+  readonly providers?: {
+    readonly kiwi?: {
+      readonly meta?: Record<string, unknown>;
+      readonly episodes?: {
+        readonly sub?: readonly MiruroEpisodeEntry[];
+        readonly dub?: readonly MiruroEpisodeEntry[];
+      };
+    };
   };
 };
+
+function base64urlToBytes(s: string): Uint8Array {
+  const pad = (4 - (s.length % 4)) % 4;
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+function bytesToBase64url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function xorDecrypt(encrypted: Uint8Array, keyHex: string): Uint8Array {
+  const key = new Uint8Array(keyHex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+  const result = new Uint8Array(encrypted.length);
+  for (let i = 0; i < encrypted.length; i++) result[i] = encrypted[i]! ^ key[i % key.length]!;
+  return result;
+}
+
+async function pipeCall(
+  path: string,
+  query: Record<string, string | number>,
+  signal?: AbortSignal,
+): Promise<unknown | null> {
+  const q: Record<string, string> = {};
+  for (const [k, v] of Object.entries(query)) q[k] = String(v);
+
+  const payload = { path, method: "GET" as const, query: q, body: null, version: "0.2.0" };
+  const encoded = bytesToBase64url(new TextEncoder().encode(JSON.stringify(payload)));
+  const url = `${PIPE_URL}?e=${encoded}`;
+
+  try {
+    const res = await fetch(url, {
+      signal: signal ?? AbortSignal.timeout(20_000),
+      headers: {
+        "User-Agent": USER_AGENT,
+        Referer: MIRURO_REFERER,
+        Origin: MIRURO_REFERER.slice(0, -1),
+        Accept: "application/json, text/plain, */*",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+      },
+    });
+    if (!res.ok) return null;
+
+    const body = await res.text();
+    if (!body.startsWith("bh4YNPj7") && res.headers.get("x-obfuscated") !== "2") return null;
+
+    const raw = base64urlToBytes(body);
+    const decrypted = xorDecrypt(raw, PIPE_KEY);
+    let json: string;
+    if (decrypted[0] === 31 && decrypted[1] === 139) {
+      json = new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer));
+    } else {
+      json = new TextDecoder().decode(decrypted);
+    }
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
 
 export const miruroProviderModule: CoreProviderModule = {
   providerId: MIRURO_PROVIDER_ID,
@@ -47,7 +135,7 @@ export const miruroProviderModule: CoreProviderModule = {
     if (input.mediaKind !== "anime") {
       return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "unsupported-title",
-        message: "Miruro direct resolver only supports anime",
+        message: "Miruro pipe resolver only supports anime",
         retryable: false,
       });
     }
@@ -55,22 +143,21 @@ export const miruroProviderModule: CoreProviderModule = {
     if (!input.allowedRuntimes.includes("direct-http")) {
       return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "runtime-missing",
-        message: "Miruro direct resolver requires direct-http runtime",
+        message: "Miruro pipe resolver requires direct-http runtime",
         retryable: false,
       });
     }
 
-    // We must have an AniList ID for Miruro backend
     const anilistId = input.title.anilistId ?? input.title.id.replace("anilist:", "");
     if (!anilistId || Number.isNaN(Number(anilistId))) {
       return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "unsupported-title",
-        message: "Miruro direct resolver requires a numeric AniList ID",
+        message: "Miruro pipe resolver requires a numeric AniList ID",
         retryable: false,
       });
     }
 
-    const absoluteEpisode = input.episode?.absoluteEpisode ?? input.episode?.episode ?? 1;
+    const episodeNum = input.episode?.absoluteEpisode ?? input.episode?.episode ?? 1;
     const startedAt = context.now();
     const events: ProviderTraceEvent[] = [];
     const failures: ProviderFailure[] = [];
@@ -78,10 +165,10 @@ export const miruroProviderModule: CoreProviderModule = {
     emitTraceEvent(events, context, {
       type: "provider:start",
       providerId: MIRURO_PROVIDER_ID,
-      message: "Started Miruro direct backend resolution",
+      message: "Started Miruro pipe resolution",
     });
 
-    const sourceId = `source:${MIRURO_PROVIDER_ID}:theanimecommunity`;
+    const sourceId = `source:${MIRURO_PROVIDER_ID}:pipe`;
     const cachePolicy = createProviderCachePolicy({
       providerId: MIRURO_PROVIDER_ID,
       title: input.title,
@@ -91,75 +178,91 @@ export const miruroProviderModule: CoreProviderModule = {
     });
 
     try {
-      // 1. Fetch MediaItemID from AniList ID
-      const mediaData = await providerJson<MiruroMediaItemResponse>(
-        context,
-        `https://theanimecommunity.com/api/v1/episodes/mediaItemID?AniList_ID=${anilistId}&mediaType=anime&episodeChapterNumber=${absoluteEpisode}`,
-        {
-          headers: { "User-Agent": USER_AGENT },
-          signal: context.signal,
-        },
-        { providerId: MIRURO_PROVIDER_ID, stage: "source:start" },
-      );
-      const mediaItemId = mediaData?.mediaItemID;
-
-      if (!mediaItemId) {
-        throw new Error("No mediaItemID found for this episode.");
+      // Step 1: Fetch episode list to get the episodeId
+      const epData = (await pipeCall(
+        "episodes",
+        { anilistId: Number(anilistId) },
+        context.signal,
+      )) as MiruroEpisodesResponse | null;
+      if (!epData?.providers?.kiwi?.episodes) {
+        return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
+          code: "not-found",
+          message: "No episode data from miruro pipe API",
+          retryable: true,
+        });
       }
 
-      // 2. Fetch the Sources
-      const sourceData = await providerJson<MiruroSourcesResponse>(
-        context,
-        `https://theanimecommunity.com/api/v1/episodes/${mediaItemId}/${absoluteEpisode}`,
-        {
-          headers: { "User-Agent": USER_AGENT },
-          signal: context.signal,
-        },
-        { providerId: MIRURO_PROVIDER_ID, stage: "source:start" },
-      );
-      const subDubObj = sourceData?.sources;
-
-      if (!subDubObj) {
-        throw new Error("No sources object returned.");
-      }
-
-      // Parse the sub/dub arrays
       const targetAudio = input.preferredAudioLanguage === "dub" ? "dub" : "sub";
-      let rawStreams: readonly MiruroRawStream[] = subDubObj[targetAudio] || [];
-
-      if (rawStreams.length === 0) {
-        // Fallback to the other if the preferred is missing
-        const fallbackAudio = targetAudio === "dub" ? "sub" : "dub";
-        rawStreams = subDubObj[fallbackAudio] || [];
-        if (rawStreams.length === 0) {
-          throw new Error("No streams available for sub or dub.");
-        }
+      const fallbackAudio = targetAudio === "dub" ? "sub" : "dub";
+      const episodeList =
+        epData.providers.kiwi.episodes[targetAudio] ??
+        epData.providers.kiwi.episodes[fallbackAudio];
+      if (!episodeList?.length) {
+        return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
+          code: "not-found",
+          message: `No ${targetAudio} episodes available`,
+          retryable: true,
+        });
       }
 
+      const episodeEntry =
+        episodeList.find((e) => e.number === episodeNum) ??
+        episodeList[episodeNum - 1] ??
+        episodeList[0];
+      if (!episodeEntry?.id) {
+        return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
+          code: "not-found",
+          message: `Episode ${episodeNum} has no ID in miruro data`,
+          retryable: false,
+        });
+      }
+
+      // Step 2: Fetch sources for this episode
+      const srcData = (await pipeCall(
+        "sources",
+        {
+          episodeId: episodeEntry.id,
+          anilistId: Number(anilistId),
+          provider: "kiwi",
+          category: targetAudio,
+        },
+        context.signal,
+      )) as MiruroSourcesResponse | null;
+
+      const rawStreams = srcData?.streams?.filter((s) => s.type === "hls" && s.url) ?? [];
+      if (rawStreams.length === 0) {
+        return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
+          code: "not-found",
+          message: "No HLS streams from miruro sources pipe",
+          retryable: true,
+        });
+      }
+
+      // Map to StreamCandidate + ProviderVariantCandidate
       const streams: StreamCandidate[] = [];
       const variants: ProviderVariantCandidate[] = [];
+      const subtitles: SubtitleCandidate[] = [];
 
-      rawStreams.forEach((streamRaw) => {
-        if (!streamRaw.url) return;
-        const qualityStr = streamRaw.quality || "auto";
-        const streamId = `stream:${MIRURO_PROVIDER_ID}:${Bun.hash(streamRaw.url).toString(36)}`;
+      for (const raw of rawStreams) {
+        if (!raw.url) continue;
+        const qualityStr = raw.quality || "auto";
+        const streamId = `stream:${MIRURO_PROVIDER_ID}:${Bun.hash(raw.url).toString(36)}`;
         const variantId = `variant:${MIRURO_PROVIDER_ID}:${sourceId}:${qualityStr}`;
-
-        const protocol = streamRaw.url.includes(".m3u8") ? "hls" : "mp4";
+        const streamReferer = raw.referer || MIRURO_REFERER;
 
         streams.push({
           id: streamId,
           providerId: MIRURO_PROVIDER_ID,
           sourceId,
           variantId,
-          url: streamRaw.url,
-          protocol,
-          container: protocol === "hls" ? "m3u8" : "mp4",
+          url: raw.url,
+          protocol: "hls",
+          container: "m3u8",
           audioLanguages: [targetAudio],
           qualityLabel: qualityStr,
           qualityRank: parseInt(qualityStr) || 0,
           headers: {
-            referer: MIRURO_REFERER, // Required by pro.ultracloud.cc CDN
+            referer: streamReferer,
             "user-agent": USER_AGENT,
           },
           confidence: 0.95,
@@ -172,29 +275,33 @@ export const miruroProviderModule: CoreProviderModule = {
           sourceId,
           qualityLabel: qualityStr,
           qualityRank: parseInt(qualityStr) || 0,
-          protocol,
-          container: protocol === "hls" ? "m3u8" : "mp4",
+          protocol: "hls",
+          container: "m3u8",
           audioLanguages: [targetAudio],
           streamIds: [streamId],
           confidence: 0.95,
         });
-      });
+      }
 
-      // Sort streams by quality rank
+      // Sort by quality
       streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
       variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
 
       const selectedStream =
-        streams.find((s) => s.qualityLabel?.includes(input.qualityPreference || "")) || streams[0];
+        streams.find((s) => s.qualityLabel?.includes(input.qualityPreference || "")) ?? streams[0];
 
       if (!selectedStream) {
-        throw new Error("Failed to select a valid stream.");
+        return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
+          code: "not-found",
+          message: "No selectable miruro stream",
+          retryable: false,
+        });
       }
 
       emitTraceEvent(events, context, {
         type: "provider:success",
         providerId: MIRURO_PROVIDER_ID,
-        message: `Successfully resolved Miruro 0-RAM stream for AniList ID ${anilistId}`,
+        message: `Resolved Miruro stream for AniList ID ${anilistId}`,
       });
 
       const endedAt = context.now();
@@ -207,17 +314,17 @@ export const miruroProviderModule: CoreProviderModule = {
             id: sourceId,
             providerId: MIRURO_PROVIDER_ID,
             kind: "provider-api",
-            label: "theanimecommunity.com",
-            host: "theanimecommunity.com",
+            label: "miruro.tv pipe",
+            host: "www.miruro.tv",
             status: "selected",
-            confidence: 0.95,
+            confidence: 0.9,
             requiresRuntime: "direct-http",
             cachePolicy,
           },
         ],
         streams,
         variants,
-        subtitles: [], // Native HLS often has embedded softsubs
+        subtitles,
         cachePolicy,
         trace: createResolveTrace({
           title: input.title,
@@ -229,7 +336,7 @@ export const miruroProviderModule: CoreProviderModule = {
           startedAt,
           endedAt,
           steps: [
-            createTraceStep("provider", "Resolved Miruro through direct backend payload", {
+            createTraceStep("provider", "Resolved Miruro through pipe API", {
               providerId: MIRURO_PROVIDER_ID,
               attributes: { streams: streams.length },
             }),
@@ -253,16 +360,19 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
-      const failure: ProviderFailure = {
+      failures.push({
         providerId: MIRURO_PROVIDER_ID,
-        code: error instanceof ProviderHttpError ? error.code : "network-error",
-        message: error instanceof Error ? error.message : "Failed to fetch from Miruro backend",
-        retryable: error instanceof ProviderHttpError ? error.retryable : true,
+        code: "network-error",
+        message: error instanceof Error ? error.message : "Miruro pipe API failed",
+        retryable: true,
         at: context.now(),
-      };
-      failures.push(failure);
+      });
 
-      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, failure);
+      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
+        code: "network-error",
+        message: error instanceof Error ? error.message : "Miruro pipe API failed",
+        retryable: true,
+      });
     }
   },
 };
