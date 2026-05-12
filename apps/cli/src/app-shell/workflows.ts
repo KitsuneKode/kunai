@@ -1003,12 +1003,12 @@ export async function handleShellAction({
         }),
         seriesProviders: providerRegistry
           .getAll()
-          .map((p) => p.metadata)
-          .filter((p) => !p.isAnimeProvider),
+          .filter((p) => !p.metadata.isAnimeProvider)
+          .map((p) => p.metadata),
         animeProviders: providerRegistry
           .getAll()
-          .map((p) => p.metadata)
-          .filter((p) => p.isAnimeProvider),
+          .filter((p) => p.metadata.isAnimeProvider)
+          .map((p) => p.metadata),
       }),
     );
 

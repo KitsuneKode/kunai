@@ -101,12 +101,12 @@ export async function routeSearchShellAction({
     await openRootOwnedOverlay(container, { type: "history" });
     const selection = await selectionPromise;
     if (!selection) return "handled";
-    const providerMetadata = container.providerRegistry.get(selection.entry.provider)?.metadata;
+    const providerMetadata = container.providerRegistry.get(selection.entry.provider);
     if (providerMetadata) {
       stateManager.dispatch({
         type: "SET_MODE",
-        mode: providerMetadata.isAnimeProvider ? "anime" : "series",
-        provider: providerMetadata.id,
+        mode: providerMetadata.metadata.isAnimeProvider ? "anime" : "series",
+        provider: providerMetadata.metadata.id,
       });
     } else {
       stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
@@ -182,12 +182,12 @@ export async function routePlaybackShellAction({
     await openRootOwnedOverlay(container, { type: "history" });
     const selection = await selectionPromise;
     if (!selection) return "handled";
-    const providerMetadata = container.providerRegistry.get(selection.entry.provider)?.metadata;
+    const providerMetadata = container.providerRegistry.get(selection.entry.provider);
     if (providerMetadata) {
       stateManager.dispatch({
         type: "SET_MODE",
-        mode: providerMetadata.isAnimeProvider ? "anime" : "series",
-        provider: providerMetadata.id,
+        mode: providerMetadata.metadata.isAnimeProvider ? "anime" : "series",
+        provider: providerMetadata.metadata.id,
       });
     } else {
       stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });

@@ -1,14 +1,11 @@
-// =============================================================================
-// Provider Registry
-//
-// Manages provider registration and resolution.
-// =============================================================================
+import type { ProviderMetadata, ShellMode, TitleInfo } from "@/domain/types";
+import type { CoreProviderManifest, ProviderEngine } from "@kunai/core";
+import {
+  fetchAllMangaEpisodeCatalog,
+  searchAllManga,
+} from "@kunai/providers";
 
-import type { TitleInfo, ProviderMetadata, ShellMode } from "@/domain/types";
-import type { CoreProviderManifest } from "@kunai/core";
-
-import { manifestToProviderMetadata } from "./core-manifest-adapter";
-import type { Provider, ProviderDefinition, ProviderDeps } from "./Provider";
+import { createProviderFromModule, type Provider } from "./Provider";
 
 export interface ProviderRegistry {
   get(id: string): Provider | undefined;
@@ -20,65 +17,120 @@ export interface ProviderRegistry {
   getMetadata(id: string): ProviderMetadata | undefined;
 }
 
-export interface ProviderRegistryDeps extends ProviderDeps {}
+const ALLMANGA_API_URL = "https://api.allanime.day/api";
+const ALLMANGA_REFERER = "https://allmanga.to";
+const ALLMANGA_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
 
 export class ProviderRegistryImpl implements ProviderRegistry {
-  private providers = new Map<string, Provider>();
-  private definitions = new Map<string, ProviderDefinition>();
+  private readonly providersById = new Map<string, Provider>();
 
-  constructor(deps: ProviderRegistryDeps, definitions: ProviderDefinition[]) {
-    // Instantiate all providers
-    for (const def of definitions) {
-      const instance = def.factory(deps);
-      this.providers.set(def.id, instance);
-      this.definitions.set(def.id, def);
+  constructor(private readonly engine: ProviderEngine) {
+    for (const module of engine.modules) {
+      const isAllManga = module.providerId === "allanime";
+
+      const provider = createProviderFromModule(module, {
+        mode: module.manifest.mediaKinds.includes("anime") ? "anime" : "series",
+        search: isAllManga
+          ? async (query, opts, _signal?) => {
+              const animeLang =
+                opts.audioPreference === "ja" ||
+                opts.audioPreference === "original"
+                  ? ("sub" as const)
+                  : ("dub" as const);
+              const results = await searchAllManga(
+                ALLMANGA_API_URL,
+                ALLMANGA_REFERER,
+                ALLMANGA_UA,
+                query,
+                animeLang,
+              );
+              if (!results) return null;
+              return results.map(
+                (r): import("@/domain/types").SearchResult => ({
+                  id: r.id,
+                  type: r.type,
+                  title: r.title,
+                  year: r.year ?? "",
+                  overview: "",
+                  posterPath: r.posterUrl ?? null,
+                  rating: null,
+                  popularity: null,
+                  episodeCount: r.epCount,
+                  availableAudioModes: r.availableAudioModes,
+                  subtitleAvailability: r.availableAudioModes?.includes("sub")
+                    ? ("hardsub" as const)
+                    : ("unknown" as const),
+                }),
+              );
+            }
+          : undefined,
+        listEpisodes: isAllManga
+          ? async (request, _signal?) => {
+              return fetchAllMangaEpisodeCatalog({
+                apiUrl: ALLMANGA_API_URL,
+                referer: ALLMANGA_REFERER,
+                ua: ALLMANGA_UA,
+                showId: request.title.id,
+                mode: "sub",
+              });
+            }
+          : undefined,
+      });
+      this.providersById.set(module.manifest.id, provider);
     }
   }
 
   get(id: string): Provider | undefined {
-    return this.providers.get(id);
+    return this.providersById.get(id);
   }
 
   getManifest(id: string): CoreProviderManifest | undefined {
-    return this.definitions.get(id)?.manifest;
+    return this.engine.getManifest(id);
   }
 
   getAll(): Provider[] {
-    return Array.from(this.providers.values());
+    return [...this.providersById.values()];
   }
 
   getAllIds(): string[] {
-    return Array.from(this.providers.keys());
+    return this.engine.getProviderIds();
   }
 
   getCompatible(title: TitleInfo, mode?: ShellMode): Provider[] {
-    return this.getAll().filter((p) => {
-      if (mode && p.metadata.isAnimeProvider !== (mode === "anime")) {
+    return this.getAll().filter((provider) => {
+      if (mode && provider.metadata.isAnimeProvider !== (mode === "anime")) {
         return false;
       }
-      return p.canHandle(title);
+      return provider.canHandle(title);
     });
   }
 
   getDefault(isAnime: boolean): Provider {
-    const preferred = isAnime ? this.get("allanime") : this.get("vidking");
+    const preferred = isAnime
+      ? this.providersById.get("allanime")
+      : this.providersById.get("vidking");
 
     if (preferred) return preferred;
 
-    // Fallback to any provider with matching capability
     const fallback = this.getAll().find((p) =>
       isAnime ? p.metadata.isAnimeProvider : !p.metadata.isAnimeProvider,
     );
 
     if (!fallback) {
-      throw new Error(`No providers available for mode: ${isAnime ? "anime" : "series"}`);
+      throw new Error(
+        `No providers available for mode: ${isAnime ? "anime" : "series"}`,
+      );
     }
 
     return fallback;
   }
 
   getMetadata(id: string): ProviderMetadata | undefined {
-    const definition = this.definitions.get(id);
-    return definition ? manifestToProviderMetadata(definition.manifest) : undefined;
+    return this.providersById.get(id)?.metadata;
   }
+}
+
+export function createProviderRegistry(engine: ProviderEngine): ProviderRegistry {
+  return new ProviderRegistryImpl(engine);
 }

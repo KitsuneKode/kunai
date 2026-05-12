@@ -1,18 +1,12 @@
-// =============================================================================
-// Provider Interface (Domain)
-//
-// The contract that all providers must implement.
-// =============================================================================
-
 import type {
-  TitleInfo,
   EpisodeInfo,
   EpisodePickerOption,
-  StreamInfo,
-  ProviderMetadata,
   ProviderCapabilities,
+  ProviderMetadata,
+  StreamInfo,
+  TitleInfo,
 } from "@/domain/types";
-import type { CoreProviderManifest } from "@kunai/core";
+import type { CoreProviderManifest, CoreProviderModule } from "@kunai/core";
 
 export interface StreamRequest {
   title: TitleInfo;
@@ -25,29 +19,15 @@ export interface EpisodeListRequest {
   title: TitleInfo;
 }
 
-export interface ProviderDeps {
-  logger: import("@/infra/logger/Logger").Logger;
-  tracer: import("@/infra/tracer/Tracer").Tracer;
-  config: import("@/services/persistence/ConfigService").ConfigService;
-}
-
 export interface Provider {
   readonly metadata: ProviderMetadata;
   readonly capabilities: ProviderCapabilities;
-
-  // Check if this provider can handle this title (fast, no network)
   canHandle(title: TitleInfo): boolean;
-
-  // Resolve stream (may involve network, scraping, etc.)
   resolveStream(request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null>;
-
-  // Optional richer episode catalog for providers that can expose one.
   listEpisodes?(
     request: EpisodeListRequest,
     signal?: AbortSignal,
   ): Promise<EpisodePickerOption[] | null>;
-
-  // Optional search capability for providers that expose a search API (e.g. anime).
   search?(
     query: string,
     opts: { audioPreference: string; subtitlePreference: string },
@@ -55,12 +35,78 @@ export interface Provider {
   ): Promise<import("@/domain/types").SearchResult[] | null>;
 }
 
-// Factory function type for creating providers
-export type ProviderFactory = (deps: ProviderDeps) => Provider;
+export type ProviderResolveFn = (
+  request: StreamRequest,
+  signal?: AbortSignal,
+) => Promise<StreamInfo | null>;
 
-// Definition for registration
-export interface ProviderDefinition {
-  readonly id: string;
-  readonly manifest: CoreProviderManifest;
-  readonly factory: ProviderFactory;
+export function createProviderFromModule(
+  module: CoreProviderModule,
+  opts: {
+    readonly mode: "series" | "anime";
+    readonly resolveStream?: ProviderResolveFn;
+    readonly search?: Provider["search"];
+    readonly listEpisodes?: Provider["listEpisodes"];
+    readonly canHandle?: (title: TitleInfo) => boolean;
+  },
+): Provider {
+  const manifest = module.manifest;
+
+  const metadata: ProviderMetadata = {
+    id: manifest.id,
+    name: manifest.displayName,
+    aliases: manifest.aliases,
+    description: manifest.description,
+    recommended: manifest.recommended,
+    isAnimeProvider: manifest.mediaKinds.includes("anime"),
+    status: manifest.status,
+    domain: manifest.domain,
+  };
+
+  const capabilities: ProviderCapabilities = {
+    contentTypes: manifest.mediaKinds.filter(
+      (k): k is "movie" | "series" => k === "movie" || k === "series",
+    ),
+  };
+
+  return {
+    metadata,
+    capabilities,
+    canHandle: opts.canHandle ?? defaultCanHandle(manifest),
+    resolveStream: opts.resolveStream ?? defaultResolveStream(module, opts.mode),
+    search: opts.search,
+    listEpisodes: opts.listEpisodes,
+  };
+}
+
+function defaultCanHandle(manifest: CoreProviderManifest) {
+  return (title: TitleInfo): boolean => {
+    return manifest.mediaKinds.includes(title.type) || manifest.mediaKinds.includes("anime");
+  };
+}
+
+function defaultResolveStream(
+  module: CoreProviderModule,
+  mode: "series" | "anime",
+): ProviderResolveFn {
+  return async (request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> => {
+    const { streamRequestToResolveInput } =
+      await import("./stream-request-adapter");
+    const { providerResolveResultToStreamInfo } =
+      await import("./provider-result-adapter");
+
+    const input = streamRequestToResolveInput(request, mode);
+    const result = await module.resolve(input, {
+      now: () => new Date().toISOString(),
+      signal,
+    });
+
+    if (!result.streams.length) return null;
+
+    return providerResolveResultToStreamInfo({
+      result,
+      title: request.title.name,
+      subtitlePreference: request.subtitlePreference,
+    });
+  };
 }

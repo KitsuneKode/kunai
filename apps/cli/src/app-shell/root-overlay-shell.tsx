@@ -110,14 +110,14 @@ export function RootOverlayShell({
   const settingsSeriesProviderOptions = buildSettingsProviderOptions({
     providers: container.providerRegistry
       .getAll()
-      .map((provider) => provider.metadata)
+      .map((p) => p.metadata)
       .filter((metadata) => !metadata.isAnimeProvider),
     currentProvider: settingsDraft?.provider ?? container.config.provider,
   });
   const settingsAnimeProviderOptions = buildSettingsProviderOptions({
     providers: container.providerRegistry
       .getAll()
-      .map((provider) => provider.metadata)
+      .map((p) => p.metadata)
       .filter((metadata) => metadata.isAnimeProvider),
     currentProvider: settingsDraft?.animeProvider ?? container.config.animeProvider,
   });
@@ -144,7 +144,7 @@ export function RootOverlayShell({
       ? buildProviderPickerOptions({
           providers: container.providerRegistry
             .getAll()
-            .map((provider) => provider.metadata)
+            .map((p) => p.metadata)
             .filter((metadata) => metadata.isAnimeProvider === overlay.isAnime),
           currentProvider: overlay.currentProvider,
         })

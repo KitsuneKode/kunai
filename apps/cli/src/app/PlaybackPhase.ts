@@ -271,6 +271,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const { container } = context;
     const {
       providerRegistry,
+      engine,
       stateManager,
       logger,
       historyStore,
@@ -537,7 +538,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (!consumedPrefetch) {
             const playbackResolver = new PlaybackResolveService({
-              providerRegistry,
+              engine,
               cacheStore,
             });
             const resolveResult = await playbackResolver.resolve({

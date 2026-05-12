@@ -4,7 +4,7 @@ import {
   buildApiStreamResolveCacheKey,
   buildEmbedStreamCacheKey,
 } from "@/services/cache/stream-resolve-cache";
-import { allanimeManifest, vidkingManifest } from "@kunai/core";
+import { allanimeManifest, vidkingManifest } from "@kunai/providers";
 
 test("buildApiStreamResolveCacheKey is stable and encodes prefs", () => {
   const title = { id: "abc", type: "series" as const, name: "X", year: "2020" };

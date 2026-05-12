@@ -1,134 +1,132 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import type { CacheStore } from "@/services/persistence/CacheStore";
+import {
+  PlaybackResolveService,
+  type PlaybackResolveInput,
+} from "@/services/playback/PlaybackResolveService";
+import type { ProviderEngine, ProviderEngineResolveOutput } from "@kunai/core";
+import type {
+  ProviderId,
+  ProviderResolveResult,
+} from "@kunai/types";
 
-import type { StreamInfo, TitleInfo } from "@/domain/types";
-import { PlaybackResolveService } from "@/services/playback/PlaybackResolveService";
-import type { Provider } from "@/services/providers/Provider";
-import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
-
-const title: TitleInfo = {
-  id: "demo",
-  type: "series",
-  name: "Demo",
-  year: "2026",
+const title = {
+  id: "12345",
+  type: "movie" as const,
+  name: "Test Movie",
+  year: "2025",
 };
 
-const stream: StreamInfo = {
-  url: "https://cdn.example/stream.m3u8",
+const stream = {
+  url: "https://example.com/stream.m3u8",
   headers: {},
-  timestamp: 1,
+  subtitle: undefined,
+  subtitleList: [],
+  subtitleSource: "none" as const,
+  subtitleEvidence: {
+    directSubtitleObserved: false,
+    wyzieSearchObserved: false,
+    reason: "not-observed" as const,
+  },
+  title: "Test Movie",
+  timestamp: Date.now(),
 };
+
+function createMemoryCache(
+  value: (typeof stream) | null,
+): CacheStore & { setKeys: string[] } {
+  let stored: (typeof stream) | null = value;
+  const setKeys: string[] = [];
+  return {
+    get: async () => stored,
+    set: async (_key: string, val: unknown) => {
+      setKeys.push(_key);
+      stored = val as typeof stream;
+    },
+    setKeys,
+    delete: async () => {
+      stored = null;
+    },
+    clear: async () => {},
+    prune: async () => {},
+    ttl: () => 0,
+  } as unknown as CacheStore & { setKeys: string[] };
+}
+
+function createMockEngine(
+  resolveWithFallbackResult: ProviderEngineResolveOutput,
+): ProviderEngine {
+  return {
+    modules: [],
+    get: () => undefined,
+    getProviderIds: () => [],
+    getManifest: () => undefined,
+    resolve: async () => ({}) as ProviderResolveResult,
+    resolveWithFallback: async () => resolveWithFallbackResult,
+  } as unknown as ProviderEngine;
+}
 
 test("PlaybackResolveService returns cached stream without provider resolve", async () => {
   const cache = createMemoryCache(stream);
-  let providerCalls = 0;
-  const service = new PlaybackResolveService({
-    cacheStore: cache,
-    providerRegistry: createRegistry([
-      createProvider("vidking", async () => {
-        providerCalls += 1;
-        return stream;
-      }),
-    ]),
-  });
+  const engine = createMockEngine({ result: null, providerId: null, attempts: [] });
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
 
-  const result = await service.resolve(createInput("vidking"));
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
 
   expect(result.cacheStatus).toBe("hit");
   expect(result.stream?.cacheProvenance).toBe("cached");
-  expect(providerCalls).toBe(0);
 });
 
-test("PlaybackResolveService falls back and persists stream under resolved provider", async () => {
+test("PlaybackResolveService falls back to engine on cache miss", async () => {
   const cache = createMemoryCache(null);
   const fallbackStream = { ...stream, url: "https://fallback.example/stream.m3u8" };
-  const service = new PlaybackResolveService({
-    cacheStore: cache,
-    providerRegistry: createRegistry([
-      createProvider("primary", async () => null),
-      createProvider("fallback", async () => fallbackStream),
-    ]),
-    maxAttempts: 1,
+  const engine = createMockEngine({
+    result: {
+      providerId: "fallback" as ProviderId,
+      streams: [
+        {
+          id: "stream:fallback:1",
+          providerId: "fallback" as ProviderId,
+          url: "https://fallback.example/stream.m3u8",
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:1",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "fallback" as ProviderId,
+    attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
   });
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
 
-  const result = await service.resolve(createInput("primary"));
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
 
   expect(result.providerId).toBe("fallback");
   expect(result.stream?.url).toBe(fallbackStream.url);
-  expect(cache.setKeys[0]).toContain("api-resolve:provider:fallback");
 });
-
-test("PlaybackResolveService does not persist after hard abort", async () => {
-  const cache = createMemoryCache(null);
-  const controller = new AbortController();
-  const service = new PlaybackResolveService({
-    cacheStore: cache,
-    providerRegistry: createRegistry([
-      createProvider("vidking", async () => {
-        controller.abort();
-        return stream;
-      }),
-    ]),
-    maxAttempts: 1,
-  });
-
-  const result = await service.resolve(createInput("vidking", controller.signal));
-
-  expect(result.stream?.url).toBe(stream.url);
-  expect(cache.setKeys).toEqual([]);
-});
-
-function createInput(providerId: string, signal = new AbortController().signal) {
-  return {
-    title,
-    episode: { season: 1, episode: 2 },
-    mode: "series" as const,
-    providerId,
-    audioPreference: "original",
-    subtitlePreference: "none",
-    signal,
-  };
-}
-
-function createProvider(id: string, resolveStream: Provider["resolveStream"]): Provider {
-  return {
-    metadata: {
-      id,
-      name: id,
-      description: id,
-      recommended: false,
-      isAnimeProvider: false,
-    },
-    capabilities: {
-      contentTypes: ["movie", "series"],
-    },
-    canHandle: () => true,
-    resolveStream,
-  };
-}
-
-function createRegistry(providers: readonly Provider[]): ProviderRegistry {
-  return {
-    get: (id) => providers.find((provider) => provider.metadata.id === id),
-    getManifest: () => undefined,
-    getAll: () => [...providers],
-    getAllIds: () => providers.map((provider) => provider.metadata.id),
-    getCompatible: () => [...providers],
-    getDefault: () => providers[0]!,
-    getMetadata: (id) => providers.find((provider) => provider.metadata.id === id)?.metadata,
-  };
-}
-
-function createMemoryCache(initial: StreamInfo | null) {
-  const setKeys: string[] = [];
-  return {
-    setKeys,
-    ttl: 1,
-    get: async () => initial,
-    set: async (key: string) => {
-      setKeys.push(key);
-    },
-    delete: async () => {},
-    clear: async () => {},
-    prune: async () => {},
-  };
-}

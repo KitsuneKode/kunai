@@ -1,14 +1,11 @@
 import { describeProviderResolveProviderNote } from "@/app/provider-resolve-copy";
-import { resolveProviderStreamWithRetries } from "@/app/provider-resolve-retry";
 import type { EpisodeInfo, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import type { CacheStore } from "@/services/persistence/CacheStore";
-import type { Provider } from "@/services/providers/Provider";
-import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
-import { resolveWithFallback, type ResolveAttempt } from "@kunai/core";
-
-const DEFAULT_PROVIDER_RESOLVE_MAX_ATTEMPTS = 3;
-const DEFAULT_PROVIDER_RESOLVE_ATTEMPT_TIMEOUT_MS = 30_000;
+import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
+import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
+import { type ProviderEngine, type ResolveAttempt, type ProviderResolveFailureError } from "@kunai/core";
+import type { ProviderResolveResult } from "@kunai/types";
 
 export type PlaybackResolveFeedback = {
   readonly detail?: string | null;
@@ -64,104 +61,112 @@ export type PlaybackResolveOutput = {
 export class PlaybackResolveService {
   constructor(
     private readonly deps: {
-      readonly providerRegistry: ProviderRegistry;
+      readonly engine: ProviderEngine;
       readonly cacheStore: CacheStore;
-      readonly maxAttempts?: number;
-      readonly attemptTimeoutMs?: number;
     },
   ) {}
 
   async resolve(input: PlaybackResolveInput): Promise<PlaybackResolveOutput> {
-    const currentProvider = this.deps.providerRegistry.get(input.providerId);
-    if (!currentProvider) {
-      return {
-        stream: null,
-        providerId: input.providerId,
-        attempts: [],
-        cacheStatus: "miss",
-      };
-    }
+    const manifest = this.deps.engine.getManifest(input.providerId);
+    const providerName = manifest?.displayName ?? input.providerId;
 
     if (input.prefetchedStream) {
       return {
         stream: input.prefetchedStream,
-        providerId: currentProvider.metadata.id,
+        providerId: input.providerId,
         attempts: [],
         cacheStatus: "prefetched",
       };
     }
 
-    const cacheKey = this.buildCacheKey(input, currentProvider.metadata.id);
+    const cacheKey = this.buildCacheKey(input, input.providerId);
     const cachedStream = await this.deps.cacheStore.get(cacheKey);
     if (cachedStream) {
-      input.onEvent?.({ type: "cache-hit", providerId: currentProvider.metadata.id });
+      input.onEvent?.({ type: "cache-hit", providerId: input.providerId });
       return {
         stream: { ...cachedStream, cacheProvenance: "cached" },
-        providerId: currentProvider.metadata.id,
+        providerId: input.providerId,
         attempts: [],
         cacheStatus: "hit",
       };
     }
 
-    input.onEvent?.({ type: "cache-miss", providerId: currentProvider.metadata.id });
-    const compatibleProviders = this.deps.providerRegistry.getCompatible(input.title, input.mode);
-    let providerAttemptCount = 0;
-    const resolveResult = await resolveWithFallback<StreamInfo>({
-      signal: input.signal,
-      candidates: compatibleProviders.map((provider) => ({
-        providerId: provider.metadata.id,
-        preferred: provider.metadata.id === currentProvider.metadata.id,
-        resolve: () => {
-          providerAttemptCount++;
-          this.emitProviderFeedback(input, provider, providerAttemptCount > 1);
-          return resolveProviderStreamWithRetries({
-            providerId: provider.metadata.id,
-            providerName: provider.metadata.name ?? provider.metadata.id,
-            maxAttempts: this.deps.maxAttempts ?? DEFAULT_PROVIDER_RESOLVE_MAX_ATTEMPTS,
-            timeoutMs: this.deps.attemptTimeoutMs ?? DEFAULT_PROVIDER_RESOLVE_ATTEMPT_TIMEOUT_MS,
-            signal: input.signal,
-            onAttempt: (attempt) => input.onEvent?.({ type: "attempt", ...attempt }),
-            onFailure: (failure) => input.onEvent?.({ type: "failure", ...failure }),
-            resolve: (attemptSignal) =>
-              provider.resolveStream(
-                {
-                  title: input.title,
-                  episode: input.episode,
-                  audioPreference: input.audioPreference,
-                  subtitlePreference: input.subtitlePreference,
-                },
-                attemptSignal,
-              ),
-          });
-        },
-      })),
+    input.onEvent?.({ type: "cache-miss", providerId: input.providerId });
+
+    const resolveInput = streamRequestToResolveInput(
+      {
+        title: input.title,
+        episode: input.episode,
+        audioPreference: input.audioPreference,
+        subtitlePreference: input.subtitlePreference,
+      },
+      input.mode,
+    );
+
+    const compatibleIds = [input.providerId];
+    // Add fallback provider ids if different from primary
+    for (const module of this.deps.engine.modules) {
+      if (module.providerId !== input.providerId) {
+        compatibleIds.push(module.providerId);
+      }
+    }
+
+    input.onFeedback?.({
+      detail: `Resolving via ${providerName}`,
+      note: describeProviderResolveProviderNote(false),
     });
 
-    const resolvedProviderId = resolveResult.providerId ?? currentProvider.metadata.id;
-    if (resolveResult.stream && !input.signal.aborted) {
-      await this.persistResolvedStream(input, resolvedProviderId, resolveResult.stream);
+    const engineResult = await this.deps.engine.resolveWithFallback(
+      resolveInput,
+      compatibleIds,
+      input.signal,
+    );
+
+    if (engineResult.result && !input.signal.aborted) {
+      const stream = providerResolveResultToStreamInfo({
+        result: engineResult.result,
+        title: input.title.name,
+        subtitlePreference: input.subtitlePreference,
+      });
+
+      if (stream) {
+        await this.persistResolvedStream(
+          input,
+          engineResult.providerId ?? input.providerId,
+          stream,
+        );
+
+        return {
+          stream,
+          providerId: engineResult.providerId ?? input.providerId,
+          attempts: engineResult.attempts.map((a) => ({
+            providerId: a.providerId,
+            stream: a.result
+              ? providerResolveResultToStreamInfo({
+                  result: a.result,
+                  title: input.title.name,
+                  subtitlePreference: input.subtitlePreference,
+                })
+              : null,
+            result: a.result,
+            failure: a.failure,
+          })),
+          cacheStatus: "miss",
+        };
+      }
     }
 
     return {
-      stream: resolveResult.stream,
-      providerId: resolvedProviderId,
-      attempts: resolveResult.attempts,
+      stream: null,
+      providerId: input.providerId,
+      attempts: engineResult.attempts.map((a) => ({
+        providerId: a.providerId,
+        stream: null,
+        result: a.result,
+        failure: a.failure,
+      })),
       cacheStatus: "miss",
     };
-  }
-
-  private emitProviderFeedback(
-    input: PlaybackResolveInput,
-    provider: Provider,
-    isFallback: boolean,
-  ): void {
-    const providerName = provider.metadata.name ?? provider.metadata.id;
-    input.onFeedback?.({
-      detail: isFallback
-        ? `Trying fallback provider ${providerName}…`
-        : `Resolving via ${providerName}`,
-      note: describeProviderResolveProviderNote(isFallback),
-    });
   }
 
   private async persistResolvedStream(
@@ -178,7 +183,7 @@ export class PlaybackResolveService {
   }
 
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {
-    const providerManifest = this.deps.providerRegistry.getManifest(providerId);
+    const providerManifest = this.deps.engine.getManifest(providerId);
     return buildApiStreamResolveCacheKey({
       providerId,
       providerManifest,

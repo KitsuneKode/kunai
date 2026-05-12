@@ -14,7 +14,7 @@ export function buildShellRuntimeBindings(container: Container) {
   const state = stateManager.getState();
   const rawConfig = config.getRaw();
 
-  const providers = providerRegistry.getAll().map((provider) => provider.metadata);
+  const providers = providerRegistry.getAll().map((p) => p.metadata);
 
   return {
     providerOptions: buildProviderPickerOptions({

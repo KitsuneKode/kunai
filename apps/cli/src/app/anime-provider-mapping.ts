@@ -1,3 +1,4 @@
+import { searchAllManga } from "@kunai/providers";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
 
@@ -9,6 +10,11 @@ export type AnimeProviderMappingContext = {
   readonly signal?: AbortSignal;
 };
 
+const ALLMANGA_API_URL = "https://api.allanime.day/api";
+const ALLMANGA_REFERER = "https://allmanga.to";
+const ALLMANGA_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
+
 export async function mapAnimeDiscoveryResultToProviderNative(
   result: SearchResult,
   context: AnimeProviderMappingContext,
@@ -17,21 +23,40 @@ export async function mapAnimeDiscoveryResultToProviderNative(
     return result;
   }
 
-  const provider = context.providerRegistry.get(context.providerId);
-  if (!provider?.search) return result;
+  if (context.providerId !== "allanime") return result;
+
+  const animeLang =
+    context.animeLanguageProfile.audio === "ja" ||
+    context.animeLanguageProfile.audio === "original"
+      ? "sub"
+      : "dub";
 
   for (const query of providerSearchQueries(result)) {
-    const providerResults = await provider
-      .search(
-        query,
-        {
-          audioPreference: context.animeLanguageProfile.audio,
-          subtitlePreference: context.animeLanguageProfile.subtitle,
-        },
-        context.signal,
-      )
-      .catch(() => null);
-    const match = chooseProviderSearchMatch(result, providerResults ?? []);
+    const providerResults = await searchAllManga(
+      ALLMANGA_API_URL,
+      ALLMANGA_REFERER,
+      ALLMANGA_UA,
+      query,
+      animeLang as "sub" | "dub",
+    ).catch(() => []);
+
+    const mapped: SearchResult[] = providerResults.map((r) => ({
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      year: r.year ?? "",
+      overview: "",
+      posterPath: r.posterUrl ?? null,
+      rating: null,
+      popularity: null,
+      episodeCount: r.epCount,
+      availableAudioModes: r.availableAudioModes,
+      subtitleAvailability: r.availableAudioModes?.includes("sub")
+        ? ("hardsub" as const)
+        : ("unknown" as const),
+    }));
+
+    const match = chooseProviderSearchMatch(result, mapped);
     if (match) return mergeAniListDiscoveryWithProviderResult(result, match);
   }
 

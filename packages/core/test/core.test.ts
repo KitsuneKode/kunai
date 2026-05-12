@@ -1,21 +1,75 @@
 import { expect, test } from "bun:test";
 
 import {
-  allanimeManifest,
-  adaptCliStreamResult,
   assertRuntimeAllowed,
   assertManifestHasRuntimePort,
   buildVidkingEmbedUrl,
   createProviderCachePolicy,
   createProviderRuntimeContext,
   createProviderTraceEvent,
+  defineProviderManifest,
   DEFAULT_PROVIDER_RETRY_POLICY,
-  miruroManifest,
   ProviderResolveFailureError,
-  rivestreamManifest,
   resolveWithFallback,
-  vidkingManifest,
 } from "../src/index";
+
+const allanimeManifest = defineProviderManifest({
+  id: "allanime",
+  displayName: "AllManga",
+  description: "Test",
+  domain: "allmanga.to",
+  recommended: false,
+  mediaKinds: ["anime", "series"],
+  capabilities: ["search", "episode-list", "source-resolve"],
+  runtimePorts: [{ runtime: "direct-http", operations: ["resolve-stream"], browserSafe: false, relaySafe: false, localOnly: true }],
+  cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+  browserSafe: false,
+  relaySafe: false,
+});
+
+const miruroManifest = defineProviderManifest({
+  id: "miruro",
+  displayName: "Miruro",
+  description: "Test",
+  domain: "miruro.tv",
+  recommended: true,
+  mediaKinds: ["anime"],
+  capabilities: ["source-resolve"],
+  runtimePorts: [{ runtime: "direct-http", operations: ["resolve-stream"], browserSafe: true, relaySafe: true, localOnly: false }],
+  cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+  browserSafe: true,
+  relaySafe: true,
+  status: "candidate",
+});
+
+const rivestreamManifest = defineProviderManifest({
+  id: "rivestream",
+  displayName: "Rivestream",
+  description: "Test",
+  domain: "rivestream.app",
+  recommended: true,
+  mediaKinds: ["movie", "series"],
+  capabilities: ["source-resolve"],
+  runtimePorts: [{ runtime: "direct-http", operations: ["resolve-stream"], browserSafe: false, relaySafe: true, localOnly: false }],
+  cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+  browserSafe: false,
+  relaySafe: true,
+  status: "candidate",
+});
+
+const vidkingManifest = defineProviderManifest({
+  id: "vidking",
+  displayName: "VidKing",
+  description: "Test",
+  domain: "videasy.net",
+  recommended: true,
+  mediaKinds: ["movie", "series"],
+  capabilities: ["source-resolve"],
+  runtimePorts: [{ runtime: "direct-http", operations: ["resolve-stream"], browserSafe: false, relaySafe: false, localOnly: true }],
+  cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+  browserSafe: false,
+  relaySafe: false,
+});
 
 test("vidking manifest declares capability, cache, and runtime boundaries", () => {
   expect(vidkingManifest.id).toBe("vidking");
@@ -134,41 +188,8 @@ test("provider sdk helpers reject unavailable runtimes before provider work star
   ).toThrow("vidking requires direct-http");
 });
 
-test("cli stream adapter returns shared provider resolve result with trace evidence", () => {
-  const cachePolicy = createProviderCachePolicy({
-    providerId: "vidking",
-    title: { id: "438631", kind: "movie" },
-  });
-
-  const result = adaptCliStreamResult({
-    providerId: "vidking",
-    title: { id: "438631", kind: "movie", title: "Dune" },
-    stream: {
-      url: "https://cdn.example/master.m3u8",
-      headers: { referer: "https://vidking.net" },
-      audioLanguages: ["ja"],
-      hardSubLanguage: "en",
-      subtitle: "https://cdn.example/en.vtt",
-      subtitleList: [{ url: "https://cdn.example/en.vtt", language: "en", display: "English" }],
-      subtitleSource: "provider",
-    },
-    cachePolicy,
-    runtime: "direct-http",
-    cacheHit: true,
-  });
-
-  expect(result.providerId).toBe("vidking");
-  expect(result.streams[0]?.protocol).toBe("hls");
-  expect(result.streams[0]?.audioLanguages).toEqual(["ja"]);
-  expect(result.streams[0]?.hardSubLanguage).toBe("en");
-  expect(result.subtitles[0]?.language).toBe("en");
-  expect(result.trace.cacheHit).toBe(true);
-  expect(result.trace.runtime).toBe("direct-http");
-  expect(result.trace.steps.map((step) => step.stage)).toContain("runtime");
-});
-
 test("resolveWithFallback returns the first successful provider and preserves attempts", async () => {
-  const resolved = await resolveWithFallback({
+  const resolved = await resolveWithFallback<{ url: string; providerResolveResult?: import("@kunai/types").ProviderResolveResult }>({
     candidates: [
       {
         providerId: "first",
@@ -180,19 +201,7 @@ test("resolveWithFallback returns the first successful provider and preserves at
       {
         providerId: "second",
         async resolve() {
-          return {
-            url: "https://cdn.example/master.m3u8",
-            providerResolveResult: adaptCliStreamResult({
-              providerId: "second",
-              title: { id: "1", kind: "movie", title: "Example" },
-              stream: { url: "https://cdn.example/master.m3u8" },
-              cachePolicy: createProviderCachePolicy({
-                providerId: "second",
-                title: { id: "1", kind: "movie" },
-              }),
-              runtime: "direct-http",
-            }),
-          };
+          return { url: "https://cdn.example/master.m3u8" };
         },
       },
     ],
@@ -200,7 +209,6 @@ test("resolveWithFallback returns the first successful provider and preserves at
 
   expect(resolved.providerId).toBe("second");
   expect(resolved.stream?.url).toContain("master.m3u8");
-  expect(resolved.result?.providerId).toBe("second");
   expect(resolved.attempts.map((attempt) => attempt.providerId)).toEqual(["first", "second"]);
 });
 

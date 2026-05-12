@@ -21,8 +21,22 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
     const state = container.stateManager.getState();
     const provider = container.providerRegistry.get(state.provider);
     const isAnime = state.mode === "anime";
-    const animeEpisodes = isAnime
-      ? await provider?.listEpisodes?.({ title: input.title }, context.signal).catch(() => null)
+    const animeEpisodes = isAnime && provider
+      ? await import("@kunai/providers").then((m) =>
+          m
+            .fetchAllMangaEpisodeCatalog({
+              apiUrl: "https://api.allanime.day/api",
+              referer: "https://allmanga.to",
+              ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+              showId: input.title.id,
+              mode:
+                container.config.animeLanguageProfile.audio === "ja" ||
+                container.config.animeLanguageProfile.audio === "original"
+                  ? "sub"
+                  : "dub",
+            })
+            .catch(() => null),
+        )
       : undefined;
 
     const eligibility = container.downloadService.getEnqueueEligibility();

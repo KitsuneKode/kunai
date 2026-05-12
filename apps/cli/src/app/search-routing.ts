@@ -1,3 +1,4 @@
+import { searchAllManga } from "@kunai/providers";
 import type { SearchResult, ShellMode } from "../domain/types";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
@@ -20,36 +21,59 @@ export type SearchRoutingResult = {
   strategy: "provider-native" | "registry";
 };
 
+const ALLMANGA_API_URL = "https://api.allanime.day/api";
+const ALLMANGA_REFERER = "https://allmanga.to";
+const ALLMANGA_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
+
 export async function searchTitles(
   query: string,
   context: SearchRoutingContext,
 ): Promise<SearchRoutingResult> {
   const provider = context.providerRegistry.get(context.providerId);
 
-  if (provider && context.mode === "anime" && provider.search) {
-    const results = await provider.search(
+  if (provider && context.mode === "anime" && context.providerId === "allanime") {
+    const animeLang =
+      context.animeLanguageProfile.audio === "ja" ||
+      context.animeLanguageProfile.audio === "original"
+        ? "sub"
+        : "dub";
+
+    const providerResults = await searchAllManga(
+      ALLMANGA_API_URL,
+      ALLMANGA_REFERER,
+      ALLMANGA_UA,
       query,
-      {
-        audioPreference: context.animeLanguageProfile.audio,
-        subtitlePreference: context.animeLanguageProfile.subtitle,
-      },
-      context.signal,
+      animeLang as "sub" | "dub",
     );
 
-    if (results) {
-      const normalized = results.map(normalizeProviderSearchResult);
-      const enriched =
-        context.enrichAnimeMetadata === false
-          ? normalized
-          : await enrichAnimeSearchResultsWithAniList(query, normalized, context.signal);
+    const results = providerResults.map((r) => ({
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      year: r.year ?? "",
+      overview: "",
+      posterPath: r.posterUrl ?? null,
+      rating: null,
+      popularity: null,
+      episodeCount: r.epCount,
+      availableAudioModes: r.availableAudioModes,
+      subtitleAvailability: r.availableAudioModes?.includes("sub")
+        ? ("hardsub" as const)
+        : ("unknown" as const),
+    }));
 
-      return {
-        results: enriched,
-        sourceId: provider.metadata.id,
-        sourceName: provider.metadata.name,
-        strategy: "provider-native",
-      };
-    }
+    const enriched =
+      context.enrichAnimeMetadata === false
+        ? results
+        : await enrichAnimeSearchResultsWithAniList(query, results, context.signal);
+
+    return {
+      results: enriched,
+      sourceId: provider.metadata.id,
+      sourceName: provider.metadata.name,
+      strategy: "provider-native",
+    };
   }
 
   const searchService =

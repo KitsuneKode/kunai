@@ -50,9 +50,15 @@ import { PlaybackResolveService } from "./services/playback/PlaybackResolveServi
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
-import { PROVIDER_DEFINITIONS } from "./services/providers/definitions";
+import { createProviderEngine, type ProviderEngine } from "@kunai/core";
+import {
+  allmangaProviderModule,
+  miruroProviderModule,
+  rivestreamProviderModule,
+  vidkingProviderModule,
+} from "@kunai/providers";
 import type { ProviderRegistry } from "./services/providers/ProviderRegistry";
-import { ProviderRegistryImpl } from "./services/providers/ProviderRegistry";
+import { createProviderRegistry } from "./services/providers/ProviderRegistry";
 import type { RecommendationService } from "./services/recommendations/RecommendationService";
 import { RecommendationServiceImpl } from "./services/recommendations/RecommendationServiceImpl";
 import { SEARCH_SERVICE_DEFINITIONS } from "./services/search/definitions";
@@ -72,7 +78,8 @@ export interface Container {
   readonly tracer: Tracer;
   readonly config: ConfigService;
 
-  // Registries
+  // Engine and registries
+  readonly engine: ProviderEngine;
   readonly providerRegistry: ProviderRegistry;
   readonly searchRegistry: SearchRegistry;
 
@@ -175,6 +182,19 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     mpv: options?.mpv,
   });
   const presence = new PresenceServiceImpl({ config, diagnosticsStore });
+
+  // Engine: single source of truth for provider resolution
+  const engine = createProviderEngine({
+    modules: [
+      miruroProviderModule,
+      rivestreamProviderModule,
+      vidkingProviderModule,
+      allmangaProviderModule,
+    ],
+  });
+
+  const providerRegistry = createProviderRegistry(engine);
+
   const downloadService = new DownloadService({
     repo: downloadJobs,
     config,
@@ -182,7 +202,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
     ffprobeAvailable: Boolean(Bun.which("ffprobe")),
     resolveDownloadStream: async (intent) => {
-      const resolver = new PlaybackResolveService({ providerRegistry, cacheStore });
+      const resolver = new PlaybackResolveService({ engine, cacheStore });
       const controller = new AbortController();
       const result = await resolver.resolve({
         title: intent.title,
@@ -202,12 +222,6 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     },
   });
 
-  // Registries (depend on infrastructure)
-  const providerRegistry = new ProviderRegistryImpl(
-    { logger, tracer, config },
-    PROVIDER_DEFINITIONS,
-  );
-
   const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
 
   const shellChrome: ShellChrome = options?.shellChrome ?? "default";
@@ -219,6 +233,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     logger,
     tracer,
     config,
+    engine,
     providerRegistry,
     searchRegistry,
     shell,
@@ -240,7 +255,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   };
 
   logger.info("Container initialized", {
-    providers: providerRegistry.getAllIds(),
+    providers: engine.getProviderIds(),
     searchServices: searchRegistry.getAllIds(),
     capabilityIssues: capabilitySnapshot?.issues.length ?? 0,
   });
