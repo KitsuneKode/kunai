@@ -8,27 +8,41 @@ For concrete example patterns and demo provider shapes, use [.docs/provider-exam
 
 For **auto-skip timing** (IntroDB + AniSkip), **MAL / catalog identity** for anime, and **templates for wiring new anime providers** into that pipeline, read [.docs/playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md).
 
-## Direction: Provider SDK
+## Direction: Provider SDK (Implemented)
 
-Kunai is moving toward a Provider SDK shape:
+Kunai uses a Provider SDK shape modeled after the Vercel AI SDK:
 
 ```text
-apps/cli
-  -> @kunai/core resolver
-  -> @kunai/providers module
-  -> injected runtime ports
-  -> selected stream + candidates + subtitles + trace + cache policy
+apps/cli shell
+  -> ProviderEngine (retry, timeout, fallback, abort)
+  -> CoreProviderModule.resolve(input, context) -> ProviderResolveResult
+  -> provider-result-adapter -> StreamInfo
+  -> mpv
 ```
 
-Package ownership:
+### Package Ownership
 
-- `@kunai/core` owns provider filtering, ranking, fallback policy, cache-key policy, retry/abort contracts, and trace vocabulary.
-- `@kunai/providers` will own provider-specific implementation modules.
-- `@kunai/runtime-browser` will own JIT Playwright leases, interception, browser cooldowns, and teardown.
-- `@kunai/storage` owns SQLite cache, history, health, source inventory, and trace persistence.
-- `apps/cli` owns Ink UX, mpv IPC, local app flow, and user-facing controls.
+- `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
+- `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
+- `@kunai/providers` — 4 provider modules (`allmanga`, `miruro`, `rivestream`, `vidking`) each implementing `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`) + manifests co-located with modules
+- `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
+- `@kunai/schemas` — Zod validation schemas for all shared types
+- `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
 
-Provider modules should behave like Vercel AI SDK providers: one app-facing contract, provider-specific internals hidden behind it.
+### Resolution Flow
+
+```
+User selects title + episode
+  -> PlaybackResolveService
+  -> engine.resolveWithFallback(input, candidateIds, signal)
+  -> for each provider: engine.resolve(input, providerId, signal)  [built-in retry + timeout]
+  -> module.resolve(input, context)  [provider-specific scraping]
+  -> ProviderResolveResult { streams, subtitles, sources, variants, trace, failures, healthDelta }
+  -> providerResolveResultToStreamInfo(result, title, subtitlePreference)
+  -> StreamInfo { url, headers, subtitles, providerResolveResult }
+  -> providerHealth.set(healthDelta)  [persist health for adaptive fallback]
+  -> mpv
+```
 
 ## Source Model
 
@@ -112,9 +126,13 @@ Providers must not import Playwright directly once runtime ports land. They shou
 
 ## Registration
 
-- Add the implementation under `apps/cli/src/services/providers/definitions/`
-- Register it in `apps/cli/src/services/providers/definitions/index.ts`
-- Treat `apps/cli/src/services/providers/definitions/index.ts` as the source of truth for active providers
+- Implement provider module in `packages/providers/src/<provider>/direct.ts` implementing `CoreProviderModule`
+- Define manifest in `packages/providers/src/<provider>/manifest.ts` using `defineProviderManifest`
+- Export from `packages/providers/src/index.ts`
+- Register the module in `apps/cli/src/container.ts` — the `createProviderEngine()` call
+- The `ProviderRegistry` (engine compat wrapper) is built automatically from engine modules
+
+No separate CLI adapter file is needed. The `createProviderFromModule()` factory in `apps/cli/src/services/providers/Provider.ts` creates the CLI `Provider` wrapper with `resolveStream` (calls module), `metadata`, `canHandle`, and optional `search`/`listEpisodes`.
 
 ## Workflow Reminder
 
@@ -127,6 +145,7 @@ Use:
 - [.docs/provider-examples.md](./provider-examples.md) for concrete implementation patterns
 - [.plans/provider-hardening.md](../.plans/provider-hardening.md) for the broader hardening roadmap
 - `packages/providers/src/research.ts` for the current dossier-backed migration queue
+- `packages/providers/src/_template.ts` for the new-provider boilerplate
 
 When the site behavior is unclear, gather evidence first and keep knowns vs unknowns separate.
 
@@ -172,46 +191,41 @@ export const MyProvider: PlaywrightProvider = {
 };
 ```
 
-## Adding an API Provider
+## Adding a New Provider (Current Pattern)
 
-1. Implement `search()` if the provider owns a search backend today
-2. Implement `resolveStream()`
-3. Use `opts.embedScraper()` if the last step still needs a browser
-4. Register the provider in `apps/cli/src/services/providers/definitions/index.ts`
+1. Copy `packages/providers/src/_template.ts` to `packages/providers/src/<provider>/direct.ts`
+2. Define the manifest in `packages/providers/src/<provider>/manifest.ts` using `defineProviderManifest`
+3. Implement `CoreProviderModule.resolve(input, context)` returning `ProviderResolveResult`
+4. Export from `packages/providers/src/index.ts`
+5. Register the module in `apps/cli/src/container.ts` via `createProviderEngine({ modules: [...] })`
 
-Minimal shape:
+Minimal shape (using shared helpers):
 
 ```ts
-export const MyApiProvider: ApiProvider = {
-  kind: "api",
-  id: "myapi",
-  description: "HTTP-first provider",
+import { createProviderCachePolicy, createResolveTrace, createTraceStep, type CoreProviderModule } from "@kunai/core";
+import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import type { ProviderResolveInput, ProviderResolveResult, ProviderRuntimeContext } from "@kunai/types";
 
-  async search(query) {
-    return [];
-  },
-
-  async resolveStream(id, type, season, episode, opts) {
-    return opts.embedScraper(`https://example.com/embed/${id}`);
+export const myProviderModule: CoreProviderModule = {
+  providerId: "myprovider",
+  manifest: myProviderManifest,
+  async resolve(input, context) {
+    // Validate input
+    if (!input.allowedRuntimes.includes("direct-http")) {
+      return createExhaustedResult(input, context, "myprovider", { code: "runtime-missing", message: "...", retryable: false });
+    }
+    // ... fetch, parse, build StreamCandidate[], SubtitleCandidate[]
+    // On success: return { providerId, streams, subtitles, trace, ... }
+    // On failure: return createExhaustedResult(input, context, "myprovider", { code: "not-found", ... })
   },
 };
 ```
 
-## Adding An AllManga-Compatible Provider
+If the provider has native search or episode listing, export standalone functions alongside the module. They get wired on the CLI `Provider` wrapper via `createProviderFromModule({ search, listEpisodes })`.
 
-The AllManga-compatible client is one concrete anime provider/API client. It is not the base abstraction for anime providers.
+## AllManga / Ani-CLI Parity Policy
 
-If a provider deliberately follows the same AllManga/ani-cli-style API contract as `packages/providers/src/allmanga/api-client.ts`, use `createAllMangaApiProvider()` instead of reimplementing that specific crypto and decoder path.
-
-```ts
-export const MyAllMangaCompatible = createAllMangaApiProvider({
-  id: "myanime",
-  description: "Alternative AllManga-compatible endpoint",
-  apiUrl: "https://example.com/api",
-  referer: "https://example.com/",
-  isAnimeProvider: true,
-});
-```
+`packages/providers/src/allmanga/api-client.ts` contains the crypto/decoder and GraphQL helpers shared by the `allmangaProviderModule`. The module itself (`allmanga/direct.ts`) implements `CoreProviderModule`.
 
 ## AllManga / Ani-CLI Parity Policy
 
@@ -244,16 +258,18 @@ Recommended workflow:
 
 ## Active Beta Providers
 
-Current active runtime providers are the definitions wired in `apps/cli/src/services/providers/definitions/index.ts`.
+Active providers are registered in `apps/cli/src/container.ts` via `createProviderEngine({ modules: [...] })`.
 
-| ID           | Kind | Notes                                                                |
-| ------------ | ---- | -------------------------------------------------------------------- |
-| `rivestream` | API  | Direct module adapter (`@kunai/providers`) for movie/series          |
-| `vidking`    | API  | Direct module adapter (`@kunai/providers`) with subtitle merge logic |
-| `allanime`   | API  | AllManga-compatible GraphQL/AES path (anime)                         |
-| `miruro`     | API  | Direct module adapter (`@kunai/providers`) for anime                 |
+| ID           | Content Types        | Runtime    | Module Location |
+| ------------ | -------------------- | ---------- | --------------- |
+| `rivestream` | movie, series        | direct-http | `packages/providers/src/rivestream/direct.ts` |
+| `vidking`    | movie, series        | direct-http | `packages/providers/src/vidking/direct.ts` |
+| `allanime`   | anime, series        | direct-http | `packages/providers/src/allmanga/direct.ts` |
+| `miruro`     | anime                | direct-http | `packages/providers/src/miruro/direct.ts` |
 
-Legacy Playwright providers now live under `archive/legacy/apps/cli/src/providers/` as reference-only code.
+All 4 providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback.
+
+Legacy Playwright providers live under `archive/legacy/apps/cli/src/providers/` as reference-only code.
 For current beta publish scope, Playwright is not a required runtime dependency.
 
 ## User Overrides
