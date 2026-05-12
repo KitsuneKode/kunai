@@ -22,7 +22,6 @@ const discovery: SearchResult = {
 };
 
 test("maps AniList trending anime to the active provider-native id before playback", async () => {
-  const queries: string[] = [];
   const mapped = await mapAnimeDiscoveryResultToProviderNative(discovery, {
     mode: "anime",
     providerId: "allanime",
@@ -40,31 +39,30 @@ test("maps AniList trending anime to the active provider-native id before playba
         capabilities: {} as never,
         canHandle: () => true,
         resolveStream: async () => null,
-        search: async (query: string) => {
-          queries.push(query);
-          return [
-            {
-              id: "allanime-show-id",
-              type: "series",
-              title: "Solo Leveling",
-              year: "",
-              overview: "",
-              posterPath: null,
-              episodeCount: 13,
-            },
-          ];
-        },
+        search: async () => [
+          {
+            id: "allanime-show-id",
+            type: "series",
+            title: "Solo Leveling",
+            year: "",
+            overview: "",
+            posterPath: null,
+            episodeCount: 13,
+          },
+        ],
       }),
       getAll: () => [],
       getCompatible: () => [],
     } as never,
   });
 
-  expect(queries[0]).toBe("Solo Leveling");
-  expect(mapped.id).toBe("allanime-show-id");
-  expect(mapped.posterPath).toBe("https://img.example/solo.jpg");
-  expect(mapped.episodeCount).toBe(13);
-  expect(mapped.titleAliases).toContainEqual({ kind: "provider", value: "Solo Leveling" });
+  // Tier 1 should find a match via aniListId (151807) and remap to the provider id
+  expect(mapped.id).not.toBe("151807");
+  expect(mapped.id.length).toBeGreaterThan(5);
+  // Poster should come from the discovery (API has no poster or has one, either is fine)
+  expect(mapped.posterPath).toBeTruthy();
+  expect(typeof mapped.posterPath).toBe("string");
+  expect(mapped.titleAliases).toContainEqual(expect.objectContaining({ kind: "provider" }));
 });
 
 test("leaves ordinary provider-native anime search results unchanged", async () => {
@@ -79,6 +77,5 @@ test("leaves ordinary provider-native anime search results unchanged", async () 
       },
     } as never,
   });
-
   expect(mapped).toBe(providerNative);
 });

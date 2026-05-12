@@ -1,5 +1,6 @@
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
+import { searchAllManga, type AllMangaSearchResult } from "@kunai/providers";
 
 export type AnimeProviderMappingContext = {
   readonly mode: ShellMode;
@@ -9,6 +10,11 @@ export type AnimeProviderMappingContext = {
   readonly signal?: AbortSignal;
 };
 
+const ALLMANGA_API_URL = "https://api.allanime.day/api";
+const ALLMANGA_REFERER = "https://allmanga.to";
+const ALLMANGA_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
+
 export async function mapAnimeDiscoveryResultToProviderNative(
   result: SearchResult,
   context: AnimeProviderMappingContext,
@@ -17,7 +23,32 @@ export async function mapAnimeDiscoveryResultToProviderNative(
     return result;
   }
 
+  const discoveryAniListId = parseInt(result.id, 10);
   const provider = context.providerRegistry.get(context.providerId);
+
+  // Tier 1: Direct AniList ID match via API (fast, accurate)
+  if (!isNaN(discoveryAniListId)) {
+    const animeLang =
+      context.animeLanguageProfile.audio === "ja" ||
+      context.animeLanguageProfile.audio === "original"
+        ? ("sub" as const)
+        : ("dub" as const);
+    for (const query of providerSearchQueries(result)) {
+      const matches = await searchAllManga(
+        ALLMANGA_API_URL,
+        ALLMANGA_REFERER,
+        ALLMANGA_UA,
+        query,
+        animeLang,
+      ).catch(() => []);
+      const idMatch = matches.find((r) => r.aniListId === discoveryAniListId);
+      if (idMatch) return mergeAniListDiscoveryWithProviderResult(result, idMatch);
+      const titleMatch = chooseProviderSearchMatch(result, matches);
+      if (titleMatch) return mergeAniListDiscoveryWithProviderResult(result, titleMatch);
+    }
+  }
+
+  // Tier 2: Title-based match via provider search (testable via mock)
   if (!provider?.search) return result;
 
   for (const query of providerSearchQueries(result)) {
@@ -31,11 +62,35 @@ export async function mapAnimeDiscoveryResultToProviderNative(
         context.signal,
       )
       .catch(() => null);
-    const match = chooseProviderSearchMatch(result, providerResults ?? []);
+
+    if (!providerResults?.length) continue;
+
+    // Try numeric ID match on provider results
+    if (!isNaN(discoveryAniListId)) {
+      const idMatch = providerResults.find((r) => r.id === discoveryAniListId.toString());
+      if (idMatch) return result;
+    }
+
+    const match = chooseProviderSearchMatch(result, providerResults.map(toAllMangaResult));
     if (match) return mergeAniListDiscoveryWithProviderResult(result, match);
   }
 
   return result;
+}
+
+function toAllMangaResult(r: SearchResult): AllMangaSearchResult {
+  return {
+    id: r.id,
+    title: r.title,
+    type: "series",
+    year: r.year || undefined,
+    posterUrl: r.posterPath ?? undefined,
+    description: r.overview || undefined,
+    epCount: r.episodeCount,
+    englishTitle: r.titleAliases?.find((a) => a.kind === "english")?.value,
+    nativeTitle: r.titleAliases?.find((a) => a.kind === "native")?.value,
+    altNames: r.titleAliases?.filter((a) => a.kind === "synonym").map((a) => a.value),
+  };
 }
 
 function providerSearchQueries(result: SearchResult): readonly string[] {
@@ -53,9 +108,9 @@ function providerSearchQueries(result: SearchResult): readonly string[] {
 
 function chooseProviderSearchMatch(
   discovery: SearchResult,
-  providerResults: readonly SearchResult[],
-): SearchResult | null {
-  let best: { result: SearchResult; score: number } | null = null;
+  providerResults: readonly AllMangaSearchResult[],
+): AllMangaSearchResult | null {
+  let best: { result: AllMangaSearchResult; score: number } | null = null;
   for (const candidate of providerResults) {
     const score = titleMatchScore(discovery, candidate);
     if (score <= 0) continue;
@@ -64,9 +119,9 @@ function chooseProviderSearchMatch(
   return best?.result ?? null;
 }
 
-function titleMatchScore(discovery: SearchResult, candidate: SearchResult): number {
+function titleMatchScore(discovery: SearchResult, candidate: AllMangaSearchResult): number {
   const discoveryNames = titleNames(discovery).map(normalizeTitle).filter(Boolean);
-  const candidateNames = titleNames(candidate).map(normalizeTitle).filter(Boolean);
+  const candidateNames = candidateTitleNames(candidate).map(normalizeTitle).filter(Boolean);
   let score = 0;
   for (const left of discoveryNames) {
     for (const right of candidateNames) {
@@ -82,7 +137,7 @@ function titleMatchScore(discovery: SearchResult, candidate: SearchResult): numb
 
 function mergeAniListDiscoveryWithProviderResult(
   discovery: SearchResult,
-  providerResult: SearchResult,
+  providerResult: AllMangaSearchResult,
 ): SearchResult {
   return {
     ...discovery,
@@ -90,15 +145,36 @@ function mergeAniListDiscoveryWithProviderResult(
     title: providerResult.title || discovery.title,
     titleAliases: mergeTitleAliases(discovery.titleAliases, [
       { kind: "provider", value: providerResult.title },
-      ...(providerResult.titleAliases ?? []),
+      ...(providerResult.englishTitle
+        ? [{ kind: "english" as const, value: providerResult.englishTitle }]
+        : []),
+      ...(providerResult.nativeTitle
+        ? [{ kind: "native" as const, value: providerResult.nativeTitle }]
+        : []),
+      ...(providerResult.altNames ?? [])
+        .slice(0, 3)
+        .map((v: string) => ({ kind: "synonym" as const, value: v })),
     ]),
-    year: discovery.year || providerResult.year,
-    overview: discovery.overview || providerResult.overview,
-    posterPath: discovery.posterPath ?? providerResult.posterPath,
-    posterSource: discovery.posterPath ? discovery.posterSource : providerResult.posterSource,
-    metadataSource: `${discovery.metadataSource} + provider search`,
-    episodeCount: providerResult.episodeCount ?? discovery.episodeCount,
+    year: discovery.year || (providerResult.year ?? ""),
+    overview: discovery.overview || (providerResult.description ?? ""),
+    posterPath: discovery.posterPath ?? providerResult.posterUrl ?? null,
+    posterSource: discovery.posterPath
+      ? discovery.posterSource
+      : providerResult.posterUrl
+        ? "AllManga"
+        : undefined,
+    metadataSource: `${discovery.metadataSource} + allanime search`,
+    episodeCount: providerResult.epCount ?? discovery.episodeCount,
   };
+}
+
+function candidateTitleNames(candidate: AllMangaSearchResult): readonly string[] {
+  return [
+    candidate.title,
+    candidate.englishTitle,
+    candidate.nativeTitle,
+    ...(candidate.altNames ?? []),
+  ].filter((value): value is string => Boolean(value));
 }
 
 function titleNames(result: SearchResult): readonly string[] {
