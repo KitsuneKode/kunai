@@ -139,8 +139,13 @@ export function DownloadManagerContent({
           ]
             .filter(Boolean)
             .join(" · ")
-        : job.status === "completed" && job.completedAt
-          ? new Date(job.completedAt).toLocaleDateString()
+        : job.status === "completed"
+          ? [
+              job.completedAt ? new Date(job.completedAt).toLocaleDateString() : null,
+              job.subtitlePath ? "subs" : job.subtitleUrl ? "no subs" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
           : job.status === "failed"
             ? truncateLine(job.errorMessage ?? "Failed", 28)
             : job.status;

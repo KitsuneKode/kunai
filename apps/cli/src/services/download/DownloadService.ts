@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readdirSync, rmSync } from "node:fs";
 import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -433,7 +434,7 @@ export class DownloadService {
       lastResolvedProviderId: resolved.providerId as never,
     };
 
-    const args = ["--concurrent-fragments", "16", "--newline"];
+    const args = ["--concurrent-fragments", "16", "--newline", "--continue"];
 
     // Add headers
     for (const [key, value] of Object.entries(job.headers)) {
@@ -714,7 +715,17 @@ export class DownloadService {
 
   private reconcileInterruptedJobs(): void {
     const now = new Date().toISOString();
+    const cleanedDirs = new Set<string>();
     for (const runningJob of this.deps.repo.listRunning(200)) {
+      // Clean up orphaned temp files from crashed processes
+      if (runningJob.tempPath) {
+        const dir = dirname(runningJob.tempPath);
+        if (!cleanedDirs.has(dir)) {
+          cleanedDirs.add(dir);
+          this.cleanupOrphanedTempFiles(dir);
+        }
+        rm(runningJob.tempPath, { force: true }).catch(() => {});
+      }
       if (runningJob.retryCount < runningJob.maxAttempts) {
         this.deps.repo.scheduleRetry(
           runningJob.id,
@@ -731,6 +742,22 @@ export class DownloadService {
           "interrupted",
         );
       }
+    }
+  }
+
+  /** Scan a directory for orphaned .tmp.* files and remove them. */
+  private cleanupOrphanedTempFiles(dir: string): void {
+    try {
+      const entries = readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (entry.name.includes(".tmp.")) {
+          const fullPath = join(dir, entry.name);
+          rmSync(fullPath, { force: true });
+        }
+      }
+    } catch {
+      // ignore directory read errors
     }
   }
 
