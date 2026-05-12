@@ -275,6 +275,7 @@ export async function resolveEpisodeSources(opts: {
 
   try {
     const getRes = await fetch(getUrl, {
+      signal: AbortSignal.timeout(12_000),
       headers: {
         Referer: "https://youtu-chan.com",
         Origin: "https://youtu-chan.com",
@@ -288,6 +289,7 @@ export async function resolveEpisodeSources(opts: {
     try {
       const postRes = await fetch(apiUrl, {
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
         headers: {
           "Content-Type": "application/json",
           Referer: "https://allmanga.to",
@@ -431,6 +433,7 @@ async function fetchStreamLinks(
   ua: string,
 ): Promise<StreamLink[]> {
   const response = await fetch(`https://allanime.day${apiPath}`, {
+    signal: AbortSignal.timeout(15_000),
     headers: { Referer: referer, "User-Agent": ua },
   });
   if (!response.ok) {
@@ -522,6 +525,7 @@ async function fetchM3u8Variants({
   readonly subtitle?: string;
 }): Promise<StreamLink[]> {
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(15_000),
     headers: { Referer: referer, "User-Agent": ua },
   });
   if (!response.ok) {
@@ -563,6 +567,7 @@ async function fetchFilemoonLinks(
 ): Promise<StreamLink[]> {
   try {
     const res = await fetch(`https://allanime.day${apiPath}`, {
+      signal: AbortSignal.timeout(15_000),
       headers: { Referer: referer, "User-Agent": ua },
     });
     if (!res.ok) return [];
