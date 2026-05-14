@@ -55,4 +55,10 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   onboardingVersion: 0,
   downloadPath: "",
   downloadOnboardingDismissed: false,
+  updateChecksEnabled: true,
+  updateCheckIntervalDays: 7,
+  updateSnoozedUntil: 0,
+  lastUpdateCheckAt: 0,
+  lastUpdateCheckFailedAt: 0,
+  lastKnownLatestVersion: "",
 };

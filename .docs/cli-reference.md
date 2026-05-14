@@ -122,6 +122,18 @@ These are useful for docs parity so users do not search for a `--history` flag.
 | Source / quality               | Source changes restart the selected source; quality changes keep the current playback position                                     |
 | Provider fallback              | `f`; skips to the next compatible provider during resolve or recovery                                                              |
 | Pause autoskip                 | `u` during active playback; suppresses automatic segment skips for the current title/session without changing config               |
+| Check for updates              | `/ update` or command palette — checks the configured update source, then shows manual install-method-aware guidance               |
+
+### Update checks
+
+Kunai may run a cached background update check at startup. The check is non-blocking, records diagnostics, and never runs package-manager or installer commands. `/ update` performs a manual check and shows guidance based on the detected install method:
+
+- source checkout: `git pull`, then refresh dependencies/build as needed
+- Bun global install: `bun update --global @kitsunekode/kunai`
+- npm global install: `npm install -g @kitsunekode/kunai`
+- packaged binary: download the latest release manually
+
+Automatic checks can be snoozed for seven days or disabled from the `/ update` panel. Manual `/ update` remains available even when automatic checks are disabled.
 
 ### Optional presence settings
 

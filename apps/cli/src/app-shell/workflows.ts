@@ -883,6 +883,11 @@ export async function handleShellAction({
     return "handled";
   }
 
+  if (action === "update") {
+    await openUpdateShell(container);
+    return "handled";
+  }
+
   if (action === "diagnostics") {
     const state = stateManager.getState();
     const recentEvents = diagnosticsStore.getRecent(6);
@@ -1082,6 +1087,49 @@ export async function handleShellAction({
   }
 
   return "unhandled";
+}
+
+async function openUpdateShell(container: Container): Promise<void> {
+  const result = await container.updateService.checkForUpdate({ force: true });
+  const status =
+    result.status === "update-available"
+      ? `Kunai ${result.latestVersion} is available. Current ${result.currentVersion}.`
+      : result.status === "up-to-date"
+        ? `Kunai is up to date (${result.currentVersion}).`
+        : result.status === "error"
+          ? `Update check failed: ${result.error ?? "unknown error"}`
+          : `Update checks are ${result.status}.`;
+
+  const choice = await chooseFromListShell({
+    title: "Update",
+    subtitle: result.guidance ? `${status}  ·  ${result.guidance}` : status,
+    options: [
+      {
+        value: "snooze" as const,
+        label: "Snooze update checks for 7 days",
+        detail: "Mute automatic update notices temporarily",
+      },
+      {
+        value: "disable" as const,
+        label: "Disable automatic update checks",
+        detail: "You can still run /update manually",
+      },
+      {
+        value: "enable" as const,
+        label: "Enable automatic update checks",
+        detail: "Check at startup using the configured cache interval",
+      },
+      { value: "back" as const, label: "Back" },
+    ],
+  });
+
+  if (choice === "snooze") {
+    await container.updateService.snoozeForDays(7);
+  } else if (choice === "disable") {
+    await container.updateService.setChecksEnabled(false);
+  } else if (choice === "enable") {
+    await container.updateService.setChecksEnabled(true);
+  }
 }
 
 export async function enqueueCurrentPlaybackDownload({

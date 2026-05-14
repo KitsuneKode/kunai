@@ -318,6 +318,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
   void container.downloadService.processQueue();
+  container.updateService.checkInBackground();
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsStore.record({
       category: "session",

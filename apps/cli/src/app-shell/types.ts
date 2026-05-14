@@ -17,6 +17,7 @@ export type ShellAction =
   | "diagnostics"
   | "help"
   | "about"
+  | "update"
   | "image-pane"
   | "toggle-autoplay"
   | "toggle-autoskip"
@@ -180,6 +181,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "diagnostics":
     case "help":
     case "about":
+    case "update":
     case "image-pane":
     case "toggle-autoplay":
     case "provider":

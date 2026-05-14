@@ -5,6 +5,8 @@
 // and destructure only what they need.
 // =============================================================================
 
+import { existsSync } from "node:fs";
+
 import { initLogger } from "@/logger";
 import { createProviderEngine, type ProviderEngine } from "@kunai/core";
 import {
@@ -75,6 +77,8 @@ import { RecommendationServiceImpl } from "./services/recommendations/Recommenda
 import { SEARCH_SERVICE_DEFINITIONS } from "./services/search/definitions";
 import type { SearchRegistry } from "./services/search/SearchRegistry";
 import { SearchRegistryImpl } from "./services/search/SearchRegistry";
+import { detectInstallMethod } from "./services/update/install-method";
+import { fetchLatestKunaiVersion, UpdateService } from "./services/update/UpdateService";
 import type { CapabilitySnapshot } from "./ui";
 
 /**
@@ -124,6 +128,7 @@ export interface Container {
   readonly catalogScheduleService: CatalogScheduleService;
   readonly timelineService: TimelineService;
   readonly resultEnrichmentService: ResultEnrichmentService;
+  readonly updateService: UpdateService;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;
@@ -272,6 +277,17 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     historyStore,
     offlineLibraryService,
   });
+  const updateService = new UpdateService({
+    config,
+    diagnostics: diagnosticsStore,
+    currentVersion: options?.appVersion ?? "0.0.0",
+    installMethod: detectInstallMethod({
+      cwd: process.cwd(),
+      entrypoint: process.argv[1],
+      fileExists: existsSync,
+    }),
+    fetchLatestVersion: fetchLatestKunaiVersion,
+  });
 
   const container: Container = {
     logger,
@@ -301,6 +317,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     catalogScheduleService,
     timelineService,
     resultEnrichmentService,
+    updateService,
     shellChrome,
     capabilitySnapshot,
   };

@@ -202,6 +202,30 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.downloadOnboardingDismissed;
   }
 
+  get updateChecksEnabled(): boolean {
+    return this.config.updateChecksEnabled;
+  }
+
+  get updateCheckIntervalDays(): number {
+    return this.config.updateCheckIntervalDays;
+  }
+
+  get updateSnoozedUntil(): number {
+    return this.config.updateSnoozedUntil;
+  }
+
+  get lastUpdateCheckAt(): number {
+    return this.config.lastUpdateCheckAt;
+  }
+
+  get lastUpdateCheckFailedAt(): number {
+    return this.config.lastUpdateCheckFailedAt;
+  }
+
+  get lastKnownLatestVersion(): string {
+    return this.config.lastKnownLatestVersion;
+  }
+
   get discoverShowOnStartup(): boolean {
     return this.config.discoverShowOnStartup;
   }

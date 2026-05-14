@@ -71,6 +71,9 @@ describe("ConfigServiceImpl", () => {
     expect(service.autoDownloadNextCount).toBe(1);
     expect(service.autoCleanupWatched).toBe(false);
     expect(service.autoCleanupGraceDays).toBe(7);
+    expect(service.updateChecksEnabled).toBe(true);
+    expect(service.updateCheckIntervalDays).toBe(7);
+    expect(service.updateSnoozedUntil).toBe(0);
 
     await service.update({
       downloadsEnabled: true,
@@ -80,6 +83,8 @@ describe("ConfigServiceImpl", () => {
       autoDownloadNextCount: 3,
       autoCleanupWatched: true,
       autoCleanupGraceDays: 3,
+      updateChecksEnabled: false,
+      updateSnoozedUntil: 123,
     });
     await service.save();
 
@@ -90,6 +95,8 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).autoDownloadNextCount).toBe(3);
     expect((await store.load()).autoCleanupWatched).toBe(true);
     expect((await store.load()).autoCleanupGraceDays).toBe(3);
+    expect((await store.load()).updateChecksEnabled).toBe(false);
+    expect((await store.load()).updateSnoozedUntil).toBe(123);
   });
 
   test("clamps auto-download next count on load and update", async () => {

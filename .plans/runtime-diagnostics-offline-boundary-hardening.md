@@ -16,7 +16,7 @@ Use this section as the working tracker. Update checkboxes at phase boundaries, 
 - [x] Phase 6: Timeline, result enrichment, and details state.
 - [x] Phase 7: Tracks and media preference model.
 - [x] Phase 8: Live playback telemetry snapshot.
-- [ ] Phase 9: Update service and install method detection.
+- [x] Phase 9: Update service and install method detection.
 - [ ] Phase 10: Docs and test hardening.
 - [ ] Phase 11: Product polish and Zen mode.
 
@@ -749,13 +749,20 @@ Let users know when Kunai is out of date and offer safe, install-method-aware up
 
 ### Tasks
 
-- [ ] Add install method detection tests.
-- [ ] Add update check cache tests.
-- [ ] Add update service with injectable latest-version fetch.
-- [ ] Add non-blocking startup notice.
-- [ ] Add update/snooze commands.
-- [ ] Add docs for update behavior.
-- [ ] Run typecheck/lint/fmt/tests.
+- [x] Add install method detection tests.
+- [x] Add update check cache tests.
+- [x] Add update service with injectable latest-version fetch.
+- [x] Add non-blocking startup notice.
+- [x] Add update/snooze commands.
+- [x] Add docs for update behavior.
+- [x] Run typecheck/lint/fmt/tests.
+
+### Phase 9 Verification
+
+- `bun run typecheck` -> passed.
+- `bun run lint` -> passed with pre-existing warnings only.
+- `bun run fmt` -> passed.
+- `bun run --cwd apps/cli test:unit` -> 465 pass, 0 fail.
 
 ## Phase 10: Docs And Test Hardening
 
