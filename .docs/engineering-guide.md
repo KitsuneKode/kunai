@@ -186,18 +186,18 @@ Bun-first means using Bun primitives where they are the clearly better choice. I
 
 These patterns use Node APIs because Bun either lacks an equivalent or the Node API is safer for the use case:
 
-| Pattern | Files | Why Node stays |
-|---|---|---|
-| Atomic rename/unlink | `atomic-write.ts`, `download-service.ts`, `image/cache.ts` | Bun has no same-directory atomic rename |
-| Socket cleanup | `mpv.ts`, `PersistentMpvSession.ts` | `existsSync` + `unlink` for Unix socket lifecycle |
-| mtime comparison | `kunai-mpv-bridge.ts` | `statSync` dynamic import for Lua bridge deployment |
-| `/proc` filesystem | `runtime-memory.ts` | `readdirSync`/`readFileSync` for Linux kernel API |
-| Sync mkdir before SQLite | `packages/storage/src/sqlite.ts` | Must happen before `new Database()` |
-| `chmod` in build | `scripts/build.ts` | Bun has no chmod; plus `copyFile`/`rm` for build reliability |
-| Cancellable timeouts | `mpv-ipc.ts`, `PersistentMpvSession.ts`, `main.ts` | `clearTimeout` required — `Bun.sleep` is not cancellable |
-| Binary to base64 | `kitty.ts`, `poster-renderer.ts` | `Buffer.from()` handles arbitrary bytes safely; `btoa(String.fromCharCode)` fails on non-Latin1 |
-| Discord RPC bridge | `PresenceServiceImpl.ts` | `discord-rpc` npm package requires Node — `Bun.spawn([nodePath, ...])` is the bridge |
-| Search history (read) | `search-history.ts` | `readFileSync` kept for sync Ink render callers; write path already migrated to `writeAtomicJson` |
+| Pattern                  | Files                                                      | Why Node stays                                                                                    |
+| ------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Atomic rename/unlink     | `atomic-write.ts`, `download-service.ts`, `image/cache.ts` | Bun has no same-directory atomic rename                                                           |
+| Socket cleanup           | `mpv.ts`, `PersistentMpvSession.ts`                        | `existsSync` + `unlink` for Unix socket lifecycle                                                 |
+| mtime comparison         | `kunai-mpv-bridge.ts`                                      | `statSync` dynamic import for Lua bridge deployment                                               |
+| `/proc` filesystem       | `runtime-memory.ts`                                        | `readdirSync`/`readFileSync` for Linux kernel API                                                 |
+| Sync mkdir before SQLite | `packages/storage/src/sqlite.ts`                           | Must happen before `new Database()`                                                               |
+| `chmod` in build         | `scripts/build.ts`                                         | Bun has no chmod; plus `copyFile`/`rm` for build reliability                                      |
+| Cancellable timeouts     | `mpv-ipc.ts`, `PersistentMpvSession.ts`, `main.ts`         | `clearTimeout` required — `Bun.sleep` is not cancellable                                          |
+| Binary to base64         | `kitty.ts`, `poster-renderer.ts`                           | `Buffer.from()` handles arbitrary bytes safely; `btoa(String.fromCharCode)` fails on non-Latin1   |
+| Discord RPC bridge       | `PresenceServiceImpl.ts`                                   | `discord-rpc` npm package requires Node — `Bun.spawn([nodePath, ...])` is the bridge              |
+| Search history (read)    | `search-history.ts`                                        | `readFileSync` kept for sync Ink render callers; write path already migrated to `writeAtomicJson` |
 
 ### Decision rule
 
