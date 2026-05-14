@@ -47,6 +47,8 @@ import {
   createCatalogScheduleService,
   type CatalogScheduleService,
 } from "./services/catalog/CatalogScheduleService";
+import { ResultEnrichmentService } from "./services/catalog/ResultEnrichmentService";
+import { TimelineService } from "./services/catalog/TimelineService";
 import type { DiagnosticsService } from "./services/diagnostics/DiagnosticsService";
 import { DiagnosticsServiceImpl } from "./services/diagnostics/DiagnosticsServiceImpl";
 import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
@@ -118,6 +120,8 @@ export interface Container {
 
   // Schedule/release tracking
   readonly catalogScheduleService: CatalogScheduleService;
+  readonly timelineService: TimelineService;
+  readonly resultEnrichmentService: ResultEnrichmentService;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;
@@ -260,6 +264,11 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   const recommendationService = new RecommendationServiceImpl(recommendationCache);
   const catalogScheduleService = createCatalogScheduleService();
+  const timelineService = new TimelineService(catalogScheduleService);
+  const resultEnrichmentService = new ResultEnrichmentService({
+    historyStore,
+    offlineLibraryService,
+  });
 
   const container: Container = {
     logger,
@@ -286,6 +295,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     stateManager,
     recommendationService,
     catalogScheduleService,
+    timelineService,
+    resultEnrichmentService,
     shellChrome,
     capabilitySnapshot,
   };

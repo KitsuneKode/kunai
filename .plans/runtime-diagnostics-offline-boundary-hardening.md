@@ -13,7 +13,7 @@ Use this section as the working tracker. Update checkboxes at phase boundaries, 
 - [x] Phase 3: Typed intent and picker model.
 - [x] Phase 4: Offline library and local playback source.
 - [x] Phase 5: Scoped smart downloads and cleanup policy.
-- [ ] Phase 6: Timeline, result enrichment, and details state.
+- [x] Phase 6: Timeline, result enrichment, and details state.
 - [ ] Phase 7: Tracks and media preference model.
 - [ ] Phase 8: Live playback telemetry snapshot.
 - [ ] Phase 9: Update service and install method detection.
@@ -622,11 +622,18 @@ Potential badges:
 
 ### Tasks
 
-- [ ] Add timeline service tests for airing today and next release.
-- [ ] Add result enrichment tests for history and offline badges.
-- [ ] Add display model for title/details state.
-- [ ] Keep enrichment non-blocking and cache-aware.
-- [ ] Run typecheck/lint/fmt/tests.
+- [x] Add timeline service tests for airing today and next release.
+- [x] Add result enrichment tests for history and offline badges.
+- [x] Add display model for title/details state.
+- [x] Keep enrichment non-blocking and cache-aware.
+- [x] Run typecheck/lint/fmt/tests.
+
+### Phase 6 Verification
+
+- `bun run typecheck` -> passed.
+- `bun run lint` -> passed with pre-existing warnings in provider files and `ContextStrip`.
+- `bun run fmt` -> passed.
+- `bun run --cwd apps/cli test:unit` -> 452 pass, 0 fail.
 
 ## Phase 7: Tracks And Media Preference Model
 

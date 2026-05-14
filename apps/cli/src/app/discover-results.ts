@@ -1,5 +1,9 @@
 import type { Container } from "@/container";
 import type { SearchResult } from "@/domain/types";
+import {
+  resultEnrichmentKey,
+  type ResultEnrichment,
+} from "@/services/catalog/ResultEnrichmentService";
 
 import { buildDiscoverSections } from "./discover-sections";
 
@@ -12,7 +16,12 @@ export type DiscoverResultBundle = {
 export async function loadDiscoverResults(
   container: Pick<
     Container,
-    "recommendationService" | "stateManager" | "historyStore" | "providerRegistry" | "config"
+    | "recommendationService"
+    | "stateManager"
+    | "historyStore"
+    | "providerRegistry"
+    | "config"
+    | "resultEnrichmentService"
   >,
   options?: { refresh?: boolean },
 ): Promise<DiscoverResultBundle> {
@@ -45,9 +54,13 @@ export async function loadDiscoverResults(
     if (flatten.length >= itemLimit) break;
   }
 
+  const enrichments = await container.resultEnrichmentService
+    .enrichResults(flatten)
+    .catch(() => new Map<string, ResultEnrichment>());
+  const enriched = flatten.map((result) => applyResultEnrichment(result, enrichments));
   const discoverModeLabel = labelDiscoverMode(discoverMode, mode);
   return {
-    results: flatten,
+    results: enriched,
     subtitle:
       flatten.length > 0
         ? `${flatten.length} recommendation picks · ${discoverModeLabel}`
@@ -56,6 +69,23 @@ export async function loadDiscoverResults(
       discoverMode === "anime-only" || (discoverMode === "auto" && mode === "anime")
         ? "No anime recommendations right now. Finish a few episodes, then retry /recommendation."
         : "No recommendations right now. Finish something from history, then retry /recommendation.",
+  };
+}
+
+function applyResultEnrichment(
+  result: SearchResult,
+  enrichments: ReadonlyMap<string, ResultEnrichment>,
+): SearchResult {
+  const enrichment = enrichments.get(resultEnrichmentKey(result));
+  if (!enrichment || enrichment.badges.length === 0) return result;
+  return {
+    ...result,
+    metadataSource: [
+      result.metadataSource,
+      enrichment.badges.map((badge) => badge.label).join(" · "),
+    ]
+      .filter(Boolean)
+      .join(" · "),
   };
 }
 
