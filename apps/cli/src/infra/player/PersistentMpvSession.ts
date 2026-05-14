@@ -855,8 +855,9 @@ export class PersistentMpvSession {
       ]);
       if (!result.ok) return;
     }
-    if (primarySubtitle || additionalTracks.length > 0) {
-      onAttached?.(additionalTracks.length);
+    const attachedCount = (primarySubtitle ? 1 : 0) + additionalTracks.length;
+    if (attachedCount > 0) {
+      onAttached?.(attachedCount);
     }
   }
 
