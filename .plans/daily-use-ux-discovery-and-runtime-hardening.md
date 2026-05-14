@@ -107,6 +107,12 @@ Exit criteria:
 Goal: search stays instant while rows become more informative after local and relevant lazy
 enrichment.
 
+Progress:
+
+- 2026-05-14: local progress/offline enrichment now feeds normal browse/search/trending/recommendation
+  option mapping. Partial history is shown as a continue badge with episode, timestamp, and percent;
+  completed offline artifacts and broken local artifacts are surfaced as local/offline facts.
+
 Tasks:
 
 - local enrichment for all rows:
@@ -150,6 +156,11 @@ Exit criteria:
 ## Milestone 5: Details Panel Repair
 
 Goal: the details panel should feel like a real title hub, not a broken shallow projection.
+
+Progress:
+
+- 2026-05-14: details panels now promote local progress and offline state near the top of the
+  title overview instead of burying them among provider facts.
 
 Tasks:
 

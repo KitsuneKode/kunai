@@ -16,7 +16,12 @@ import { loadDiscoveryList } from "@/app/discovery-lists";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { searchTitles } from "@/app/search-routing";
 import { effectiveFooterHints } from "@/container";
-import type { TitleInfo } from "@/domain/types";
+import type { SearchResult, TitleInfo } from "@/domain/types";
+import {
+  resultEnrichmentKey,
+  type ResultEnrichment,
+} from "@/services/catalog/ResultEnrichmentService";
+import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -33,14 +38,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
     context: PhaseContext,
   ): Promise<PhaseResult<TitleInfo>> {
     const { container } = context;
-    const {
-      searchRegistry,
-      providerRegistry,
-      stateManager,
-      logger,
-      diagnosticsStore,
-      historyStore,
-    } = container;
+    const { searchRegistry, providerRegistry, stateManager, logger, diagnosticsStore } = container;
 
     try {
       const preserveExistingSearch =
@@ -138,12 +136,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         const shellRuntime = buildShellRuntimeBindings(container);
-        const historyMap = await historyStore
-          .getAll()
-          .catch(
-            () =>
-              ({}) as Record<string, import("@/services/persistence/HistoryStore").HistoryEntry>,
-          );
+        const browseContext = await loadBrowseDisplayContext(container, currentState.searchResults);
         const outcome = await openBrowseShell({
           mode: currentState.mode,
           provider: currentState.provider,
@@ -152,8 +145,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           initialResults: currentState.searchResults.map((r) =>
             toBrowseResultOption(
               r,
-              historyMap[r.id] ?? null,
+              browseContext.historyMap[r.id] ?? null,
               container.config.animeTitlePreference,
+              browseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
             ),
           ),
           initialResultSubtitle:
@@ -215,21 +209,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
             stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
 
-            const freshHistoryMap = await historyStore
-              .getAll()
-              .catch(
-                () =>
-                  ({}) as Record<
-                    string,
-                    import("@/services/persistence/HistoryStore").HistoryEntry
-                  >,
-              );
+            const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
               options: results.map((r) =>
                 toBrowseResultOption(
                   r,
-                  freshHistoryMap[r.id] ?? null,
+                  freshBrowseContext.historyMap[r.id] ?? null,
                   container.config.animeTitlePreference,
+                  freshBrowseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
                 ),
               ),
               subtitle: `${results.length} results · ${search.sourceName}`,
@@ -256,21 +243,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             });
 
             stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
-            const freshHistoryMap = await historyStore
-              .getAll()
-              .catch(
-                () =>
-                  ({}) as Record<
-                    string,
-                    import("@/services/persistence/HistoryStore").HistoryEntry
-                  >,
-              );
+            const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
               options: results.map((r) =>
                 toBrowseResultOption(
                   r,
-                  freshHistoryMap[r.id] ?? null,
+                  freshBrowseContext.historyMap[r.id] ?? null,
                   container.config.animeTitlePreference,
+                  freshBrowseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
                 ),
               ),
               subtitle: `${results.length} trending · ${mode === "anime" ? "AniList" : "TMDB"}`,
@@ -285,21 +265,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             ) => {
               const results = [...discover.results];
               stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
-              const freshHistoryMap = await historyStore
-                .getAll()
-                .catch(
-                  () =>
-                    ({}) as Record<
-                      string,
-                      import("@/services/persistence/HistoryStore").HistoryEntry
-                    >,
-                );
+              const freshBrowseContext = await loadBrowseDisplayContext(container, results);
               return {
                 options: results.map((r) =>
                   toBrowseResultOption(
                     r,
-                    freshHistoryMap[r.id] ?? null,
+                    freshBrowseContext.historyMap[r.id] ?? null,
                     container.config.animeTitlePreference,
+                    freshBrowseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
                   ),
                 ),
                 subtitle: discover.subtitle,
@@ -314,7 +287,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               hasDiscoverLoaded && currentResults.length > 0
                 ? {
                     options: currentResults.map((r) =>
-                      toBrowseResultOption(r, null, container.config.animeTitlePreference),
+                      toBrowseResultOption(
+                        r,
+                        browseContext.historyMap[r.id] ?? null,
+                        container.config.animeTitlePreference,
+                        browseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
+                      ),
                     ),
                     subtitle: `${currentResults.length} recommendation picks · cached`,
                     emptyMessage: "No recommendations available.",
@@ -457,4 +435,27 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       };
     }
   }
+}
+
+type BrowseDisplayContext = {
+  readonly historyMap: Record<string, HistoryEntry>;
+  readonly enrichments: ReadonlyMap<string, ResultEnrichment>;
+};
+
+async function loadBrowseDisplayContext(
+  container: PhaseContext["container"],
+  results: readonly SearchResult[],
+): Promise<BrowseDisplayContext> {
+  const [historyResult, enrichmentResult] = await Promise.allSettled([
+    container.historyStore.getAll(),
+    container.resultEnrichmentService.enrichResults(results),
+  ]);
+
+  return {
+    historyMap: historyResult.status === "fulfilled" ? historyResult.value : {},
+    enrichments:
+      enrichmentResult.status === "fulfilled"
+        ? enrichmentResult.value
+        : new Map<string, ResultEnrichment>(),
+  };
 }

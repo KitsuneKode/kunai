@@ -42,6 +42,44 @@ describe("buildBrowseDetailsPanel", () => {
     );
   });
 
+  test("promotes local progress and offline state in title details", () => {
+    const option: BrowseShellOption<string> = {
+      value: "demo",
+      label: "Anime Demo",
+      previewTitle: "Anime Demo",
+      previewMeta: ["Series", "2026", "continue S02E07 · 30:00 (50%)", "downloaded"],
+      previewFacts: [
+        {
+          label: "Local progress",
+          detail: "continue S02E07 · 30:00 (50%)",
+          tone: "warning",
+        },
+        {
+          label: "Offline",
+          detail: "downloaded",
+          tone: "success",
+        },
+      ],
+    };
+
+    const panel = buildBrowseDetailsPanel(option);
+
+    expect(panel.lines.slice(0, 4)).toEqual(
+      expect.arrayContaining([
+        {
+          label: "Local progress",
+          detail: "continue S02E07 · 30:00 (50%)",
+          tone: "warning",
+        },
+        {
+          label: "Offline",
+          detail: "downloaded",
+          tone: "success",
+        },
+      ]),
+    );
+  });
+
   test("builds compact companion facts for the selected browse result", () => {
     const option: BrowseShellOption<string> = {
       value: "demo",

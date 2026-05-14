@@ -1,7 +1,7 @@
 import type { SearchResult } from "@/domain/types";
 import type { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
-import type { HistoryStore } from "@/services/persistence/HistoryStore";
-import { isFinished } from "@/services/persistence/HistoryStore";
+import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
+import { formatTimestamp, isFinished } from "@/services/persistence/HistoryStore";
 
 export type ResultEnrichmentBadgeTone = "success" | "info" | "warning" | "neutral";
 
@@ -94,7 +94,7 @@ export function buildResultEnrichment(input: {
     badges.push(
       isFinished(input.historyEntry)
         ? { label: "watched", tone: "success" }
-        : { label: "in progress", tone: "warning" },
+        : { label: formatContinueBadge(input.historyEntry), tone: "warning" },
     );
   }
   if (input.offlineStatuses?.includes("ready")) {
@@ -105,4 +105,17 @@ export function buildResultEnrichment(input: {
     badges.push({ label: "offline issue", tone: "warning" });
   }
   return { badges };
+}
+
+function formatContinueBadge(entry: HistoryEntry): string {
+  const progress =
+    entry.duration > 0
+      ? ` (${Math.max(1, Math.min(99, Math.round((entry.timestamp / entry.duration) * 100)))}%)`
+      : "";
+  const timestamp = entry.timestamp > 10 ? ` · ${formatTimestamp(entry.timestamp)}` : "";
+  const episode =
+    entry.type === "series"
+      ? ` S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
+      : "";
+  return `continue${episode}${timestamp}${progress}`;
 }

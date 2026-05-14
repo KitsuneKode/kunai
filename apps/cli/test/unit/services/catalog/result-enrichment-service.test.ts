@@ -77,8 +77,23 @@ describe("ResultEnrichmentService", () => {
     const enrichments = await service.enrichResults([result()]);
 
     expect(enrichments.get("series:title-1")?.badges).toEqual([
-      { label: "in progress", tone: "warning" },
+      { label: "continue S01E01 · 5:00 (25%)", tone: "warning" },
     ]);
+  });
+
+  test("describes partial progress with episode timestamp and percentage", () => {
+    expect(
+      buildResultEnrichment({
+        result: result(),
+        historyEntry: history({
+          completed: false,
+          season: 2,
+          episode: 7,
+          timestamp: 1_800,
+          duration: 3_600,
+        }),
+      }).badges,
+    ).toEqual([{ label: "continue S02E07 · 30:00 (50%)", tone: "warning" }]);
   });
 
   test("uses cached enrichments within the ttl", async () => {

@@ -1,5 +1,6 @@
 import type { BrowseShellOption } from "@/app-shell/types";
 import type { SearchResult, TitleAliasKind } from "@/domain/types";
+import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import {
   formatTimestamp,
   isFinished,
@@ -38,8 +39,10 @@ export function toBrowseResultOption(
   result: SearchResult,
   historyEntry?: HistoryEntry | null,
   titlePreference: TitleAliasKind | "provider" = "provider",
+  enrichment?: ResultEnrichment | null,
 ): BrowseShellOption<SearchResult> {
   const historyBadge = buildHistoryBadge(historyEntry);
+  const enrichmentBadges = enrichment?.badges ?? [];
   const displayTitle = chooseSearchResultTitle(result, titlePreference);
   const alternateTitles = formatAlternateTitles(result, displayTitle);
   const meta = [
@@ -48,19 +51,22 @@ export function toBrowseResultOption(
     result.episodeCount ? `${result.episodeCount} episodes` : undefined,
     formatAnimeAvailability(result),
     formatRating(result.rating),
+    ...enrichmentBadges.map((badge) => badge.label),
     historyBadge,
   ].filter((value): value is string => Boolean(value));
   const posterUrl = toPosterUrl(result.posterPath);
+  const localStatus = enrichmentBadges.map((badge) => badge.label).join(" · ");
 
   return {
     value: result,
     label: result.year ? `${displayTitle} (${result.year})` : displayTitle,
     detail: `${result.type === "series" ? "Series" : "Movie"}${
-      historyBadge ? ` · ${historyBadge}` : ""
-    }${result.overview ? ` · ${result.overview}` : ""}`,
+      localStatus ? ` · ${localStatus}` : ""
+    }${historyBadge ? ` · ${historyBadge}` : ""}${result.overview ? ` · ${result.overview}` : ""}`,
     previewTitle: displayTitle,
     previewMeta: meta,
     previewFacts: [
+      ...buildLocalEnrichmentFacts(enrichment),
       ...(historyEntry
         ? [
             {
@@ -118,6 +124,23 @@ export function toBrowseResultOption(
         ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
         : "Press Enter to open this title and continue to playback. Use / details for the overview.",
   };
+}
+
+function buildLocalEnrichmentFacts(
+  enrichment: ResultEnrichment | null | undefined,
+): NonNullable<BrowseShellOption<SearchResult>["previewFacts"]> {
+  if (!enrichment?.badges.length) return [];
+  return enrichment.badges.map((badge) => {
+    const label =
+      badge.label === "downloaded" || badge.label === "offline issue"
+        ? "Offline"
+        : "Local progress";
+    return {
+      label,
+      detail: badge.label,
+      tone: badge.tone,
+    };
+  });
 }
 
 function formatAnimeAvailability(result: SearchResult): string | undefined {

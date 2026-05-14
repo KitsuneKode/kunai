@@ -131,4 +131,46 @@ describe("toBrowseResultOption", () => {
       },
     );
   });
+
+  test("adds local progress and offline enrichment without hiding provider facts", () => {
+    const result: SearchResult = {
+      id: "anime-demo",
+      type: "series",
+      title: "Anime Demo",
+      year: "2026",
+      overview: "A strange club keeps solving stranger mysteries.",
+      posterPath: null,
+      metadataSource: "AniList",
+    };
+
+    const option = toBrowseResultOption(result, null, "provider", {
+      badges: [
+        { label: "continue S02E07 · 30:00 (50%)", tone: "warning" },
+        { label: "downloaded", tone: "success" },
+      ],
+    });
+
+    expect(option.detail).toContain("continue S02E07 · 30:00 (50%)");
+    expect(option.previewMeta).toContain("continue S02E07 · 30:00 (50%)");
+    expect(option.previewMeta).toContain("downloaded");
+    expect(option.previewFacts).toEqual(
+      expect.arrayContaining([
+        {
+          label: "Local progress",
+          detail: "continue S02E07 · 30:00 (50%)",
+          tone: "warning",
+        },
+        {
+          label: "Offline",
+          detail: "downloaded",
+          tone: "success",
+        },
+        {
+          label: "Metadata source",
+          detail: "AniList",
+          tone: "success",
+        },
+      ]),
+    );
+  });
 });

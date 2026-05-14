@@ -2,6 +2,7 @@ import type { BrowseShellOption, ShellPanelLine } from "@/app-shell/types";
 
 const POSTER_AVAILABLE = "Poster available for companion preview";
 const POSTER_MISSING = "Poster unavailable from this provider";
+const LOCAL_FACT_LABELS = new Set(["Local progress", "Offline"]);
 
 export type BrowseDetailsPanel = {
   title: string;
@@ -36,12 +37,15 @@ export function buildBrowseDetailsPanel<T>(
 
   const title = option.previewTitle ?? option.label;
   const facts = getStructuredPreviewFacts(option);
+  const previewFacts = option.previewFacts ?? [];
+  const localFacts = previewFacts.filter((fact) => LOCAL_FACT_LABELS.has(fact.label));
   const lines: ShellPanelLine[] = [
     {
       label: "Title",
       detail: title,
       tone: "success",
     },
+    ...localFacts,
     ...(option.previewMeta?.length
       ? [
           {
@@ -81,7 +85,8 @@ export function buildBrowseDetailsPanel<T>(
     });
   }
 
-  for (const fact of option.previewFacts ?? []) {
+  for (const fact of previewFacts) {
+    if (LOCAL_FACT_LABELS.has(fact.label)) continue;
     lines.push(fact);
   }
 
