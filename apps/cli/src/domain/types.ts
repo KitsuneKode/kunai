@@ -55,7 +55,14 @@ export interface StreamInfo {
   readonly title?: string;
   readonly timestamp: number;
   readonly providerResolveResult?: SharedProviderResolveResult;
-  readonly cacheProvenance?: "fresh" | "cached" | "revalidated" | "fallback" | "expired";
+  readonly cacheProvenance?:
+    | "fresh"
+    | "cached"
+    | "revalidated"
+    | "refetched"
+    | "prefetched"
+    | "fallback"
+    | "expired";
 }
 
 export interface SubtitleEvidence {

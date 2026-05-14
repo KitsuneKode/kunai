@@ -60,7 +60,7 @@ import { ConfigStoreImpl } from "./services/persistence/ConfigStoreImpl";
 import type { HistoryStore } from "./services/persistence/HistoryStore";
 import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
 import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
-import { PlaybackResolveService } from "./services/playback/PlaybackResolveService";
+import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
@@ -222,10 +222,11 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
     ffprobeAvailable: Boolean(Bun.which("ffprobe")),
     resolveDownloadStream: async (intent) => {
-      const resolver = new PlaybackResolveService({
+      const resolver = new PlaybackResolveCoordinator({
         engine,
         cacheStore,
         providerHealth,
+        diagnostics: diagnosticsService,
       });
       const controller = new AbortController();
       const result = await resolver.resolve({

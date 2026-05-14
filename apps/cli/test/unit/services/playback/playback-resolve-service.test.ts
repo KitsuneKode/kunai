@@ -176,7 +176,7 @@ test("PlaybackResolveService validates stale cached stream and returns it when h
     onEvent: (e) => events.push(e.type),
   });
 
-  expect(events).toEqual(["cache-hit-validated"]);
+  expect(events).toEqual(["cache-health-check", "cache-hit-validated"]);
   expect(result.cacheStatus).toBe("hit");
   expect(result.stream?.cacheProvenance).toBe("revalidated");
 });

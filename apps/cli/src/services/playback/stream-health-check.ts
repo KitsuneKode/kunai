@@ -5,12 +5,22 @@ export type StreamHealthCheckInput = {
   readonly headers?: Record<string, string>;
   readonly fetchImpl?: StreamHealthFetch;
   readonly timeoutMs?: number;
+  readonly methodPreference?: "hls-manifest-get" | "head-then-range";
 };
 
 /** Validates that a cached stream URL is still reachable without downloading the full asset. */
 export async function checkStreamHealth(input: StreamHealthCheckInput): Promise<boolean> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const timeoutMs = input.timeoutMs ?? 5_000;
+
+  if (input.methodPreference === "hls-manifest-get") {
+    return attemptStreamHealthFetch(fetchImpl, input.url, {
+      method: "GET",
+      headers: { ...input.headers },
+      timeoutMs,
+      healthyStatus: (status) => status >= 200 && status < 300,
+    });
+  }
 
   if (
     await attemptStreamHealthFetch(fetchImpl, input.url, {

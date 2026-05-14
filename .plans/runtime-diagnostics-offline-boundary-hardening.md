@@ -9,7 +9,7 @@ Use this section as the working tracker. Update checkboxes at phase boundaries, 
 - [x] Phase 0: Stabilize and review the UI agent commit.
 - [x] Phase 0a: Stabilize stream-health testability and timeout cleanup.
 - [x] Phase 1: Unified diagnostics service.
-- [ ] Phase 2: Playback resolve/cache boundary cleanup.
+- [x] Phase 2: Playback resolve/cache boundary cleanup.
 - [ ] Phase 3: Typed intent and picker model.
 - [ ] Phase 4: Offline library and local playback source.
 - [ ] Phase 5: Scoped smart downloads and cleanup policy.
@@ -364,14 +364,21 @@ Stream health should be policy-driven:
 
 ### Tasks
 
-- [ ] Add pure `stream-health-policy` tests for fresh, stale, HLS, direct-file, and no-cache cases.
-- [ ] Add `StreamHealthService` with injectable fetch for tests.
-- [ ] Add tests proving headers are preserved during health checks.
-- [ ] Add `PlaybackResolveCoordinator` tests for normal hit, stale refetch, failed refetch fallback, and prefetched stream.
-- [ ] Move prefetch path in `PlaybackPhase` onto the coordinator.
-- [ ] Ensure refresh deletes/invalidates the same cache key the coordinator uses.
-- [ ] Emit diagnostics events for cache hit, health check, refetch, and failure.
-- [ ] Run typecheck/lint/fmt/tests.
+- [x] Add pure `stream-health-policy` tests for fresh, stale, HLS, direct-file, and no-cache cases.
+- [x] Add `StreamHealthService` with injectable fetch for tests.
+- [x] Add tests proving headers are preserved during health checks.
+- [x] Add `PlaybackResolveCoordinator` tests for normal hit, stale refetch, failed refetch fallback, and prefetched stream.
+- [x] Move prefetch path in `PlaybackPhase` onto the coordinator.
+- [x] Ensure refresh deletes/invalidates the same cache key the coordinator uses.
+- [x] Emit diagnostics events for cache hit, health check, refetch, and failure.
+- [x] Run typecheck/lint/fmt/tests.
+
+### Phase 2 Verification
+
+- `bun run --cwd apps/cli test:unit` passed: 424 tests, 0 failures.
+- `bun run typecheck` passed.
+- `bun run lint` passed with pre-existing warnings in provider files and `loading-shell.tsx`.
+- `bun run fmt` passed.
 
 ## Phase 3: Typed Intent And Picker Model
 
