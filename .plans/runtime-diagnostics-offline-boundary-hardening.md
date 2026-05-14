@@ -6,8 +6,8 @@ Status: planned
 
 Use this section as the working tracker. Update checkboxes at phase boundaries, not for every tiny edit. Each phase should end with verification evidence and a commit unless the phase is intentionally split.
 
-- [ ] Phase 0: Stabilize and review the UI agent commit.
-- [ ] Phase 0a: Stabilize stream-health testability and timeout cleanup.
+- [x] Phase 0: Stabilize and review the UI agent commit.
+- [x] Phase 0a: Stabilize stream-health testability and timeout cleanup.
 - [ ] Phase 1: Unified diagnostics service.
 - [ ] Phase 2: Playback resolve/cache boundary cleanup.
 - [ ] Phase 3: Typed intent and picker model.
@@ -513,7 +513,10 @@ export type DownloadScope =
   | { readonly type: "next-episode" }
   | { readonly type: "next-n"; readonly count: number }
   | { readonly type: "current-season-remaining" }
-  | { readonly type: "manual-selection"; readonly episodes: readonly { season: number; episode: number }[] };
+  | {
+      readonly type: "manual-selection";
+      readonly episodes: readonly { season: number; episode: number }[];
+    };
 ```
 
 ### Cleanup Rules

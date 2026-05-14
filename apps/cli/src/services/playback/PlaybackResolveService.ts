@@ -2,15 +2,12 @@ import { describeProviderResolveProviderNote } from "@/app/provider-resolve-copy
 import type { EpisodeInfo, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import type { CacheStore } from "@/services/persistence/CacheStore";
+import { checkStreamHealth } from "@/services/playback/stream-health-check";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
-import {
-  type ProviderEngine,
-  type ResolveAttempt,
-  type ProviderResolveFailureError,
-} from "@kunai/core";
+import { type ProviderEngine, type ResolveAttempt } from "@kunai/core";
 import type { ProviderHealthRepository } from "@kunai/storage";
-import type { ProviderHealthDelta, ProviderResolveResult } from "@kunai/types";
+import type { ProviderHealthDelta } from "@kunai/types";
 
 export type PlaybackResolveFeedback = {
   readonly detail?: string | null;
@@ -64,6 +61,11 @@ export type PlaybackResolveInput = {
   readonly onEvent?: (event: PlaybackResolveEvent) => void;
 };
 
+export type StreamHealthChecker = (
+  url: string,
+  headers?: Record<string, string>,
+) => Promise<boolean>;
+
 export type PlaybackResolveOutput = {
   readonly stream: StreamInfo | null;
   readonly providerId: string;
@@ -77,6 +79,7 @@ export class PlaybackResolveService {
       readonly engine: ProviderEngine;
       readonly cacheStore: CacheStore;
       readonly providerHealth?: ProviderHealthRepository;
+      readonly streamHealth?: StreamHealthChecker;
     },
   ) {}
 
@@ -100,7 +103,9 @@ export class PlaybackResolveService {
       const shouldValidate = cacheAgeMs > 2 * 60 * 60 * 1000;
 
       if (shouldValidate) {
-        const healthy = await checkStreamHealth(cachedStream.url, cachedStream.headers);
+        // Current cache TTL is shorter than this validation threshold; Phase 2 will
+        // move the age policy into a shared stream-health policy.
+        const healthy = await this.checkCachedStreamHealth(cachedStream);
         if (!healthy) {
           await this.deps.cacheStore.delete(cacheKey);
           input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
@@ -242,6 +247,17 @@ export class PlaybackResolveService {
     }
   }
 
+  private checkCachedStreamHealth(stream: StreamInfo): Promise<boolean> {
+    const checker =
+      this.deps.streamHealth ??
+      ((url: string, headers?: Record<string, string>) =>
+        checkStreamHealth({
+          url,
+          headers,
+        }));
+    return checker(stream.url, stream.headers);
+  }
+
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {
     const providerManifest = this.deps.engine.getManifest(providerId);
     return buildApiStreamResolveCacheKey({
@@ -253,36 +269,5 @@ export class PlaybackResolveService {
       audioPreference: input.audioPreference,
       subtitlePreference: input.subtitlePreference,
     });
-  }
-}
-
-/** Validate that a cached stream URL is still reachable. */
-async function checkStreamHealth(url: string, headers?: Record<string, string>): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
-    const response = await fetch(url, {
-      method: "HEAD",
-      headers: { ...headers },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (response.ok) return true;
-  } catch {
-    // HEAD may not be supported; fall through to GET with Range
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { ...headers, Range: "bytes=0-0" },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    return response.ok || response.status === 206;
-  } catch {
-    return false;
   }
 }

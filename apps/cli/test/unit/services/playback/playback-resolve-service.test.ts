@@ -1,10 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import type { CacheStore } from "@/services/persistence/CacheStore";
-import {
-  PlaybackResolveService,
-  type PlaybackResolveInput,
-} from "@/services/playback/PlaybackResolveService";
+import { PlaybackResolveService } from "@/services/playback/PlaybackResolveService";
 import type { ProviderEngine, ProviderEngineResolveOutput } from "@kunai/core";
 import type { ProviderId, ProviderResolveResult } from "@kunai/types";
 
@@ -153,11 +150,19 @@ test("PlaybackResolveService validates stale cached stream and returns it when h
   const staleStream = {
     ...stream,
     timestamp: Date.now() - 3 * 60 * 60 * 1000, // 3 hours old
-    url: "https://httpbin.org/status/200", // reachable endpoint for validation
+    url: "https://cdn.example/healthy.m3u8",
   };
   const cache = createMemoryCache(staleStream);
   const engine = createMockEngine({ result: null, providerId: null, attempts: [] });
-  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    streamHealth: async (url, headers) => {
+      expect(url).toBe(staleStream.url);
+      expect(headers).toEqual(staleStream.headers);
+      return true;
+    },
+  });
 
   const events: string[] = [];
   const result = await service.resolve({
@@ -171,17 +176,16 @@ test("PlaybackResolveService validates stale cached stream and returns it when h
     onEvent: (e) => events.push(e.type),
   });
 
-  // httpbin/status/200 may or may not be reachable in test environment,
-  // so we assert on the event type being emitted rather than the outcome.
-  expect(events.length).toBeGreaterThanOrEqual(1);
-  expect(["cache-hit-validated", "cache-stale", "cache-miss"]).toContain(events[0]!);
+  expect(events).toEqual(["cache-hit-validated"]);
+  expect(result.cacheStatus).toBe("hit");
+  expect(result.stream?.cacheProvenance).toBe("revalidated");
 });
 
 test("PlaybackResolveService deletes stale cache and refetches when validation fails", async () => {
   const staleStream = {
     ...stream,
     timestamp: Date.now() - 3 * 60 * 60 * 1000, // 3 hours old
-    url: "https://httpbin.org/status/404", // unreachable endpoint
+    url: "https://cdn.example/dead.m3u8",
   };
   const cache = createMemoryCache(staleStream);
   const fallbackStream = { ...stream, url: "https://fallback.example/stream.m3u8" };
@@ -212,7 +216,11 @@ test("PlaybackResolveService deletes stale cache and refetches when validation f
     providerId: "fallback" as ProviderId,
     attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
   });
-  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    streamHealth: async () => false,
+  });
 
   const events: string[] = [];
   const result = await service.resolve({
