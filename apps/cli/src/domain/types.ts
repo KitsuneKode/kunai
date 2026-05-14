@@ -11,6 +11,13 @@ import type {
 } from "@kunai/types";
 
 export type { SharedResolveTrace };
+export type { MediaPreference, MediaPreferenceKind } from "./media/media-preferences";
+export type {
+  ActiveMediaTrackState,
+  MediaTrackModel,
+  ProviderMediaInventory,
+  SelectedMediaTrackState,
+} from "./media/media-track-model";
 
 export type ContentType = "movie" | "series";
 export type ShellMode = "series" | "anime";

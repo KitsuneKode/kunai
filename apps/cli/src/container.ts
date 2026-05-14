@@ -63,6 +63,7 @@ import { ConfigStoreImpl } from "./services/persistence/ConfigStoreImpl";
 import type { HistoryStore } from "./services/persistence/HistoryStore";
 import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
 import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
+import { MediaTrackService } from "./services/playback/MediaTrackService";
 import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import type { PresenceService } from "./services/presence/PresenceService";
@@ -107,6 +108,7 @@ export interface Container {
   readonly diagnosticsStore: DiagnosticsStore;
   readonly diagnosticsService: DiagnosticsService;
   readonly sourceInventory: SourceInventoryService;
+  readonly mediaTrackService: MediaTrackService;
   readonly providerHealth: ProviderHealthRepository;
   readonly downloadService: DownloadService;
   readonly offlineLibraryService: OfflineLibraryService;
@@ -178,6 +180,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const historyStore = new SqliteHistoryStoreImpl(new HistoryRepository(dataDb));
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb));
+  const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const providerHealth = new ProviderHealthRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
@@ -288,6 +291,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     diagnosticsStore,
     diagnosticsService,
     sourceInventory,
+    mediaTrackService,
     providerHealth,
     downloadService,
     offlineLibraryService,

@@ -14,7 +14,7 @@ Use this section as the working tracker. Update checkboxes at phase boundaries, 
 - [x] Phase 4: Offline library and local playback source.
 - [x] Phase 5: Scoped smart downloads and cleanup policy.
 - [x] Phase 6: Timeline, result enrichment, and details state.
-- [ ] Phase 7: Tracks and media preference model.
+- [x] Phase 7: Tracks and media preference model.
 - [ ] Phase 8: Live playback telemetry snapshot.
 - [ ] Phase 9: Update service and install method detection.
 - [ ] Phase 10: Docs and test hardening.
@@ -661,11 +661,18 @@ Prepare `/tracks` without creating a mega-picker that mixes preferences, actual 
 
 ### Tasks
 
-- [ ] Add tests for preference labels and fallback copy.
-- [ ] Add tests for provider inventory vs active mpv state.
-- [ ] Normalize current subtitle/source models into the media track model.
-- [ ] Defer UI picker until model is stable.
-- [ ] Run typecheck/lint/fmt/tests.
+- [x] Add tests for preference labels and fallback copy.
+- [x] Add tests for provider inventory vs active mpv state.
+- [x] Normalize current subtitle/source models into the media track model.
+- [x] Defer UI picker until model is stable.
+- [x] Run typecheck/lint/fmt/tests.
+
+### Phase 7 Verification
+
+- `bun run typecheck` -> passed.
+- `bun run lint` -> passed with pre-existing warnings only.
+- `bun run fmt` -> passed.
+- `bun run --cwd apps/cli test:unit` -> 455 pass, 0 fail.
 
 ## Phase 8: Live Playback Telemetry Snapshot
 
