@@ -1,5 +1,9 @@
 // =============================================================================
 // History Store Implementation
+//
+// @deprecated Use SqliteHistoryStoreImpl instead. This JSON-backed
+// implementation is no longer wired in the container and is kept
+// only as a reference for migration tooling.
 // =============================================================================
 
 import type { StorageService } from "../../infra/storage/StorageService";
@@ -7,6 +11,7 @@ import type { HistoryStore, HistoryEntry } from "./HistoryStore";
 
 const STORAGE_KEY = "history";
 
+/** @deprecated Use SqliteHistoryStoreImpl (SQLite-backed). */
 export class HistoryStoreImpl implements HistoryStore {
   constructor(private storage: StorageService) {}
 

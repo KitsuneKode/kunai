@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { PathLike } from "node:fs";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { ImageRenderOptions } from "@/image";
 import { displayPoster } from "@/image";
@@ -580,16 +579,16 @@ describe("poster cache", () => {
     });
   });
 
-  test("uses a temp file and rename for atomic writes", async () => {
+  test("uses atomic write helper for poster cache", async () => {
     await withTempDir(async (dir) => {
       const restoreEnv = setEnv({ XDG_CACHE_HOME: dir });
-      let renameFrom: PathLike | null = null;
-      let renameTo: PathLike | null = null;
-      const originalRename = cacheTesting.fsOps.rename;
-      cacheTesting.fsOps.rename = async (from, to) => {
-        renameFrom = from;
-        renameTo = to;
-        return originalRename(from, to);
+      let writtenTarget: string | null = null;
+      let writtenData: ArrayBuffer | null = null;
+      const originalAtomic = cacheTesting.atomicWrite;
+      cacheTesting.atomicWrite = async (target, data) => {
+        writtenTarget = target;
+        writtenData = data instanceof ArrayBuffer ? data : null;
+        return originalAtomic(target, data);
       };
 
       setFetchMock(async () => new Response(new Uint8Array([4, 5, 6]), { status: 200 }));
@@ -598,35 +597,28 @@ describe("poster cache", () => {
         const cachePath = cacheTesting.buildCachePath(url, "/atomic.jpg");
         const result = await getCachedPoster("/atomic.jpg");
         expect(result).toBe(cachePath);
-        expect(renameFrom).toBeTruthy();
-        expect(renameTo).toBeTruthy();
-        expect(renameTo ? String(renameTo) : null).toBe(cachePath);
-        expect(renameFrom ? basename(String(renameFrom)).includes(".tmp-") : false).toBe(true);
+        expect(writtenTarget!).toBe(cachePath);
+        expect(writtenData!).toBeTruthy();
       } finally {
-        cacheTesting.fsOps.rename = originalRename;
+        cacheTesting.atomicWrite = originalAtomic;
         restoreEnv();
       }
     });
   });
 
-  test("cleans temp file on rename failure", async () => {
+  test("returns null when atomic write fails", async () => {
     await withTempDir(async (dir) => {
       const restoreEnv = setEnv({ XDG_CACHE_HOME: dir });
-      let renameFrom: PathLike | null = null;
-      const originalRename = cacheTesting.fsOps.rename;
-      cacheTesting.fsOps.rename = async (from) => {
-        renameFrom = from;
-        throw new Error("rename failed");
+      const originalAtomic = cacheTesting.atomicWrite;
+      cacheTesting.atomicWrite = async () => {
+        throw new Error("atomic write failed");
       };
       setFetchMock(async () => new Response(new Uint8Array([7, 8, 9]), { status: 200 }));
       try {
         const result = await getCachedPoster("/broken.jpg");
         expect(result).toBeNull();
-        if (renameFrom) {
-          await expect(stat(renameFrom)).rejects.toBeTruthy();
-        }
       } finally {
-        cacheTesting.fsOps.rename = originalRename;
+        cacheTesting.atomicWrite = originalAtomic;
         restoreEnv();
       }
     });

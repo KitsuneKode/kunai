@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 /** Where Bun connects for mpv JSON IPC (`--input-ipc-server` value). */
@@ -15,9 +14,15 @@ function unixSocketTempDir(): string {
   return Bun.env.TMPDIR ?? Bun.env.TMP ?? "/tmp";
 }
 
+function randomHex(byteCount: number): string {
+  const buf = new Uint8Array(byteCount);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** Unpredictable id for IPC socket/pipe paths (not `Math.random`). */
 export function newMpvIpcSessionId(): string {
-  return `${process.pid}-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
+  return `${process.pid}-${Date.now().toString(36)}-${randomHex(4)}`;
 }
 
 /**

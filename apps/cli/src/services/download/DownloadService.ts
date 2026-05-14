@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { readdirSync, rmSync } from "node:fs";
 import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -10,6 +9,7 @@ import type {
   StreamInfo,
   TitleInfo,
 } from "@/domain/types";
+import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
@@ -140,7 +140,7 @@ export class DownloadService {
       throw new DownloadEnqueueRejectedError(eligibility.code, eligibility.reason);
     }
     const now = new Date().toISOString();
-    const id = randomUUID();
+    const id = crypto.randomUUID();
     const outputPath = this.resolveOutputPath(input);
     const tempPath = `${outputPath}.tmp.${id}`;
     await mkdir(dirname(outputPath), { recursive: true });
@@ -670,7 +670,6 @@ export class DownloadService {
 
   private async downloadSubtitleIfAvailable(job: DownloadJobRecord): Promise<void> {
     if (!job.subtitleUrl) return;
-    let tempPath: string | null = null;
     try {
       const policy = buildDownloadStreamPolicy(job.headers);
       const res = await fetch(job.subtitleUrl, {
@@ -685,20 +684,16 @@ export class DownloadService {
         subtitleUrl: job.subtitleUrl,
         contentType: res.headers.get("content-type"),
       });
-      const buffer = new Uint8Array(await res.arrayBuffer());
-      if (buffer.byteLength <= 0) return;
-      tempPath = `${targetPath}.tmp.${job.id}`;
-      await Bun.write(tempPath, buffer);
-      await rename(tempPath, targetPath);
-      tempPath = null;
+      const data = await res.arrayBuffer();
+      if (data.byteLength <= 0) return;
+      await writeAtomicBytes(targetPath, data);
       this.deps.repo.updateOfflineMetadata(
         job.id,
         { subtitlePath: targetPath },
         new Date().toISOString(),
       );
     } catch {
-      if (tempPath) await rm(tempPath, { force: true }).catch(() => {});
-      // subtitle download is best-effort
+      // subtitle download is best-effort; writeAtomicBytes handles its own temp cleanup
     }
   }
 

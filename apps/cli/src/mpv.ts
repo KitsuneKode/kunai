@@ -82,6 +82,10 @@ export async function launchMpv(opts: {
   });
 
   let ipcSession: MpvIpcSession | null = null;
+  let endFileResolve: ((reason: string | undefined) => void) | null = null;
+  const endFileReceived = new Promise<string | undefined>((resolve) => {
+    endFileResolve = resolve;
+  });
   let stopRequested = false;
   let playerReadyNotified = false;
   let playbackStartedNotified = false;
@@ -180,6 +184,7 @@ export async function launchMpv(opts: {
       },
       onEndFile: ({ reason, observedAt }) => {
         applyEndFileEvent(telemetry, reason, observedAt);
+        endFileResolve?.(reason);
       },
       onCommandResult: (result) => {
         if (!result.ok) {
@@ -220,11 +225,8 @@ export async function launchMpv(opts: {
 
   await ipcBootstrap;
 
-  const flushDeadline = Date.now() + 1_500;
-  while (Date.now() < flushDeadline) {
-    if (telemetry.latestIpcSample?.endReason) break;
-    await Bun.sleep(50);
-  }
+  // Wait for the end-file IPC event (or timeout) before finalizing playback result.
+  await Promise.race([endFileReceived, Bun.sleep(1_500).then(() => undefined)]);
 
   await closeIpcSession(ipcSession);
   watchdog.stop();

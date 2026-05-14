@@ -3,6 +3,8 @@ import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 
+import { writeAtomicBytes } from "@/infra/fs/atomic-write";
+
 import { debugImage } from "./debug";
 
 const TMDB_IMG = "https://image.tmdb.org/t/p/w300";
@@ -46,6 +48,10 @@ async function fileIsNonEmpty(path: string): Promise<boolean> {
   }
 }
 
+type AtomicWriteFn = (targetPath: string, data: ArrayBuffer | Uint8Array | Blob) => Promise<void>;
+
+const posterOps = { atomicWrite: writeAtomicBytes as AtomicWriteFn };
+
 export async function getCachedPoster(posterPath: string): Promise<string | null> {
   const url = buildPosterUrl(posterPath);
   const cachePath = buildCachePath(url, posterPath);
@@ -57,33 +63,26 @@ export async function getCachedPoster(posterPath: string): Promise<string | null
 
   debugImage(`cache miss: ${basename(cachePath)}`);
 
-  await fsOps.mkdir(resolveCacheDir(), { recursive: true });
-
-  const tmpPath = join(
-    resolveCacheDir(),
-    `${basename(cachePath)}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-  );
-
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;
     const data = await res.arrayBuffer();
     if (data.byteLength === 0) return null;
-    await Bun.write(tmpPath, data);
-    await fsOps.rename(tmpPath, cachePath);
+    await posterOps.atomicWrite(cachePath, data);
     return cachePath;
   } catch {
-    try {
-      await fsOps.unlink(tmpPath);
-    } catch {
-      // best-effort cleanup
-    }
     return null;
   }
 }
 
 export const __testing = {
   fsOps,
+  get atomicWrite(): AtomicWriteFn {
+    return posterOps.atomicWrite;
+  },
+  set atomicWrite(fn: AtomicWriteFn) {
+    posterOps.atomicWrite = fn;
+  },
   buildPosterUrl,
   buildCachePath,
   resolveCacheDir,

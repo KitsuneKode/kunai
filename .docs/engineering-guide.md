@@ -167,6 +167,49 @@ When the implementation changes a meaningful contract, update the appropriate du
 
 Do not let chat become the only place where important implementation rules exist.
 
+## Bun-Native Runtime Conventions
+
+Bun-first means using Bun primitives where they are the clearly better choice. It does not mean removing every `node:` import for style. Correctness, mpv lifecycle, IPC reliability, history persistence, and recovery matter more than purity.
+
+### Already Bun-native (no Node APIs remain)
+
+- **Process spawning**: `Bun.spawn()` everywhere — mpv, yt-dlp, chafa, magick, ffprobe, xdg-open, Discord node bridge
+- **IPC**: `Bun.connect()` for mpv JSON IPC (Unix sockets and Windows named pipes)
+- **Tool detection**: `Bun.which("mpv")`, `Bun.which("ffprobe")`, etc.
+- **Storage**: `bun:sqlite` for history, stream cache, source inventory, download jobs, provider health, resolve traces
+- **Config reads**: `Bun.file().json()` for config and capability notice files
+- **Crypto IDs**: `crypto.randomUUID()` and `crypto.getRandomValues()` (not `node:crypto` `randomUUID`/`randomBytes`)
+- **Atomic writes**: `Bun.write()` + Node `rename`/`unlink` via shared `infra/fs/atomic-write.ts` helpers (`writeAtomicText`, `writeAtomicBytes`, `writeAtomicJson`)
+- **End-file telemetry**: Promise-based `endFileReceived` races `Bun.sleep(1500)` instead of a 50ms polling loop
+
+### Keep Node Intentionally
+
+These patterns use Node APIs because Bun either lacks an equivalent or the Node API is safer for the use case:
+
+| Pattern | Files | Why Node stays |
+|---|---|---|
+| Atomic rename/unlink | `atomic-write.ts`, `download-service.ts`, `image/cache.ts` | Bun has no same-directory atomic rename |
+| Socket cleanup | `mpv.ts`, `PersistentMpvSession.ts` | `existsSync` + `unlink` for Unix socket lifecycle |
+| mtime comparison | `kunai-mpv-bridge.ts` | `statSync` dynamic import for Lua bridge deployment |
+| `/proc` filesystem | `runtime-memory.ts` | `readdirSync`/`readFileSync` for Linux kernel API |
+| Sync mkdir before SQLite | `packages/storage/src/sqlite.ts` | Must happen before `new Database()` |
+| `chmod` in build | `scripts/build.ts` | Bun has no chmod; plus `copyFile`/`rm` for build reliability |
+| Cancellable timeouts | `mpv-ipc.ts`, `PersistentMpvSession.ts`, `main.ts` | `clearTimeout` required — `Bun.sleep` is not cancellable |
+| Binary to base64 | `kitty.ts`, `poster-renderer.ts` | `Buffer.from()` handles arbitrary bytes safely; `btoa(String.fromCharCode)` fails on non-Latin1 |
+| Discord RPC bridge | `PresenceServiceImpl.ts` | `discord-rpc` npm package requires Node — `Bun.spawn([nodePath, ...])` is the bridge |
+| Search history (read) | `search-history.ts` | `readFileSync` kept for sync Ink render callers; write path already migrated to `writeAtomicJson` |
+
+### Decision rule
+
+When considering a Node → Bun migration:
+
+1. Is the Bun equivalent a drop-in replacement with identical behavior? → Migrate.
+2. Does Bun lack the capability entirely (atomic rename, chmod, `/proc` reads)? → Keep Node.
+3. Is the Node API needed for correctness (cancellable timeouts, socket lifecycle)? → Keep Node.
+4. Is the Bun API async where the Node API is sync, and callers are sync? → Keep Node.
+
+The full audit and migration plan lives in `.opencode/plans/bun-native-migration.md`.
+
 ## Comment Rules
 
 - add comments only when control flow, migration seams, or provider behavior would otherwise be easy to misread

@@ -1,8 +1,9 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const CONFIG_DIR = join(process.env.HOME ?? "~", ".config", "kunai");
-const HISTORY_FILE = join(CONFIG_DIR, "search-history.json");
+import { writeAtomicJson } from "@/infra/fs/atomic-write";
+
+const HISTORY_FILE = join(process.env.HOME ?? "~", ".config", "kunai", "search-history.json");
 const MAX_HISTORY = 50;
 
 let _cache: string[] | null = null;
@@ -20,12 +21,9 @@ function load(): string[] {
 }
 
 function persist(history: string[]): void {
-  try {
-    mkdirSync(CONFIG_DIR, { recursive: true });
-    writeFileSync(HISTORY_FILE, JSON.stringify(history), "utf-8");
-  } catch {
+  writeAtomicJson(HISTORY_FILE, history).catch(() => {
     // best-effort; don't break the session if the write fails
-  }
+  });
 }
 
 export function getSearchHistory(): readonly string[] {

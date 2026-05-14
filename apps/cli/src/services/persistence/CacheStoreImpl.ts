@@ -1,5 +1,9 @@
 // =============================================================================
 // Cache Store Implementation
+//
+// @deprecated Use SqliteCacheStoreImpl instead. This JSON-backed
+// implementation is no longer wired in the container and is kept
+// only for legacy migration test coverage.
 // =============================================================================
 
 import type { StreamInfo } from "@/domain/types";
@@ -14,6 +18,7 @@ type LegacyCacheEntry = StreamInfo & {
   timestamp?: number;
 };
 
+/** @deprecated Use SqliteCacheStoreImpl (SQLite-backed). Kept for legacy migration tests. */
 export class CacheStoreImpl implements CacheStore {
   ttl = DEFAULT_CACHE_TTL;
 
