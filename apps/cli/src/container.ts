@@ -52,6 +52,7 @@ import { DiagnosticsServiceImpl } from "./services/diagnostics/DiagnosticsServic
 import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
 import { DownloadService } from "./services/download/DownloadService";
+import { OfflineLibraryService } from "./services/offline/OfflineLibraryService";
 import type { CacheStore } from "./services/persistence/CacheStore";
 import type { ConfigService } from "./services/persistence/ConfigService";
 import { ConfigServiceImpl } from "./services/persistence/ConfigServiceImpl";
@@ -106,6 +107,7 @@ export interface Container {
   readonly sourceInventory: SourceInventoryService;
   readonly providerHealth: ProviderHealthRepository;
   readonly downloadService: DownloadService;
+  readonly offlineLibraryService: OfflineLibraryService;
   readonly presence: PresenceService;
 
   // Session
@@ -246,6 +248,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       };
     },
   });
+  const offlineLibraryService = new OfflineLibraryService({
+    downloadService,
+    historyStore,
+  });
 
   const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
 
@@ -275,6 +281,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     sourceInventory,
     providerHealth,
     downloadService,
+    offlineLibraryService,
     presence,
     stateManager,
     recommendationService,

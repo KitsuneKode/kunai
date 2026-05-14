@@ -17,8 +17,7 @@ import { DownloadEnqueueRejectedError } from "@/services/download/DownloadServic
 import {
   formatOfflineJobListingTitle,
   formatOfflineSecondaryLine,
-  parseIntroSkipTiming,
-  resolveOfflineArtifactStatus,
+  offlineStatusIcon,
 } from "@/services/offline/offline-library";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
@@ -409,14 +408,6 @@ function describeDownloadJob(job: import("@kunai/storage").DownloadJobRecord): s
   return formatOfflineJobListingTitle(job);
 }
 
-function statusPrefix(job: import("@kunai/storage").DownloadJobRecord): string {
-  if (job.status === "running") return "▶";
-  if (job.status === "queued") return "●";
-  if (job.status === "failed") return "!";
-  if (job.status === "aborted") return "×";
-  return "✓";
-}
-
 async function openHistoryShell(
   historyStore: HistoryStore,
   actionContext?: ListShellActionContext,
@@ -489,12 +480,12 @@ async function _openCompletedDownloadsPicker(
   actionContext?: ListShellActionContext,
 ): Promise<void> {
   while (true) {
-    const completed = container.downloadService.listCompleted(120).slice(0, 60);
+    const completed = await container.offlineLibraryService.listCompletedEntries(60);
     const options: ShellOption<DownloadJobAction>[] = [
-      ...completed.map((job) => ({
-        value: { type: "job" as const, id: job.id },
-        label: `${statusPrefix(job)} ${describeDownloadJob(job)}`,
-        detail: `${job.status}  ·  ${job.outputPath}`,
+      ...completed.map((entry) => ({
+        value: { type: "job" as const, id: entry.job.id },
+        label: `${offlineStatusIcon(entry.status)} ${formatOfflineJobListingTitle(entry.job)}`,
+        detail: `${formatOfflineSecondaryLine(entry.job, entry.status)}  ·  ${entry.job.outputPath}`,
       })),
       { value: { type: "back" as const }, label: "Back" },
     ];
@@ -511,10 +502,17 @@ async function _openCompletedDownloadsPicker(
     const job = container.downloadService.getJob(picked.id);
     if (!job || job.status !== "completed") continue;
 
-    const artifactStatus = await resolveOfflineArtifactStatus(job);
+    const playable = await container.offlineLibraryService.getPlayableSource(job.id);
+    const artifactStatus = playable.status === "ready" ? "ready" : playable.status;
+    const artifactLineStatus =
+      artifactStatus === "invalid-file" ||
+      artifactStatus === "missing" ||
+      artifactStatus === "ready"
+        ? artifactStatus
+        : "missing";
     const action = await chooseFromListShell<CompletedDownloadAction>({
       title: describeDownloadJob(job),
-      subtitle: `${formatOfflineSecondaryLine(job, artifactStatus)}  ·  ${job.outputPath}`,
+      subtitle: `${formatOfflineSecondaryLine(job, artifactLineStatus)}  ·  ${job.outputPath}`,
       actionContext,
       options: [
         {
@@ -543,7 +541,7 @@ async function _openCompletedDownloadsPicker(
     });
     if (!action || action === "back") continue;
     if (action === "play") {
-      if (artifactStatus !== "ready") {
+      if (playable.status !== "ready") {
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
           note: `Offline file unavailable: ${artifactStatus}`,
@@ -555,13 +553,11 @@ async function _openCompletedDownloadsPicker(
         });
         continue;
       }
-      await container.player.playLocal({
-        filePath: job.outputPath,
-        displayTitle: formatOfflineJobListingTitle(job),
-        subtitlePath: job.subtitlePath ?? null,
-        timing: parseIntroSkipTiming(job.introSkipJson),
+      const result = await container.player.playLocal({
+        source: playable.source,
         attach: false,
       });
+      await container.offlineLibraryService.savePlaybackHistory(playable.source, result);
       continue;
     }
     if (action === "reveal") {

@@ -20,6 +20,7 @@ import { SessionController } from "@/app/SessionController";
 import { createContainer, type ShellChrome } from "@/container";
 import type { TitleInfo } from "@/domain/types";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
+import { shouldAutoCleanupOfflineJob } from "@/services/offline/offline-sync-policy";
 import { checkDeps } from "@/ui";
 
 const KUNAI_VERSION = "0.1.0";
@@ -206,27 +207,23 @@ async function maybeRunAutoCleanupDownloads(
   if (!config.autoCleanupWatched) return;
 
   const graceDays = Math.max(0, config.autoCleanupGraceDays);
-  const cutoff = Date.now() - graceDays * 24 * 60 * 60 * 1000;
+  const nowMs = Date.now();
   for (const job of downloadService.listCompleted(500)) {
     const historyEntries = await historyStore.listByTitle(job.titleId).catch(() => []);
-    const watched = historyEntries.find((entry) => {
-      if (!entry.completed) return false;
-      if (job.mediaKind !== entry.type) return false;
-      if (job.mediaKind !== "movie") {
-        if (entry.season !== (job.season ?? 1)) return false;
-        if (entry.episode !== (job.episode ?? 1)) return false;
-      }
-      const watchedAt = Date.parse(entry.watchedAt);
-      return Number.isFinite(watchedAt) && watchedAt <= cutoff;
+    const cleanup = shouldAutoCleanupOfflineJob({
+      job,
+      historyEntries,
+      nowMs,
+      graceDays,
     });
-    if (!watched) continue;
+    if (!cleanup.shouldDelete) continue;
 
     await downloadService.deleteJob(job.id, { deleteArtifact: true });
     logger.info("Auto-cleaned watched download", {
       jobId: job.id,
       titleId: job.titleId,
       outputPath: job.outputPath,
-      watchedAt: watched.watchedAt,
+      watchedAt: cleanup.watchedAt,
       graceDays,
     });
   }

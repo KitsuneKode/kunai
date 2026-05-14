@@ -11,7 +11,7 @@ Use this section as the working tracker. Update checkboxes at phase boundaries, 
 - [x] Phase 1: Unified diagnostics service.
 - [x] Phase 2: Playback resolve/cache boundary cleanup.
 - [x] Phase 3: Typed intent and picker model.
-- [ ] Phase 4: Offline library and local playback source.
+- [x] Phase 4: Offline library and local playback source.
 - [ ] Phase 5: Scoped smart downloads and cleanup policy.
 - [ ] Phase 6: Timeline, result enrichment, and details state.
 - [ ] Phase 7: Tracks and media preference model.
@@ -507,14 +507,21 @@ flowchart TD
 
 ### Tasks
 
-- [ ] Add tests for duplicate completed artifact resolution.
-- [ ] Add tests for missing, invalid, and ready artifact hydration.
-- [ ] Add `LocalPlaybackSource` builder.
-- [ ] Add tests proving local source includes subtitle sidecar and timing metadata.
-- [ ] Route local playback through the normal player/history path.
-- [ ] Add tests proving offline playback writes the same history shape as online playback.
-- [ ] Add library sync action that validates artifacts without deleting records automatically.
-- [ ] Run typecheck/lint/fmt/tests.
+- [x] Add tests for duplicate completed artifact resolution.
+- [x] Add tests for missing, invalid, and ready artifact hydration.
+- [x] Add `LocalPlaybackSource` builder.
+- [x] Add tests proving local source includes subtitle sidecar and timing metadata.
+- [x] Route local playback through the normal player/history path.
+- [x] Add tests proving offline playback writes the same history shape as online playback.
+- [x] Add library sync action that validates artifacts without deleting records automatically.
+- [x] Run typecheck/lint/fmt/tests.
+
+### Phase 4 Verification
+
+- `bun run typecheck` -> passed.
+- `bun run lint` -> passed with pre-existing warnings in provider files and `ContextStrip`.
+- `bun run fmt` -> passed.
+- `bun run --cwd apps/cli test:unit` -> 437 pass, 0 fail.
 
 ## Phase 5: Scoped Smart Downloads And Cleanup Policy
 
