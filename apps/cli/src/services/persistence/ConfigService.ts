@@ -85,9 +85,11 @@ export interface KitsuneConfig {
   downloadsEnabled: boolean;
   /** Queue future episodes automatically after playback. Default off. */
   autoDownload: AutoDownloadMode;
-  /** Delete completed watched downloads after the configured grace period. Default false. */
+  /** When autoDownload is "next", optionally keep the next N episodes queued. Default 1. */
+  autoDownloadNextCount: number;
+  /** Surface completed watched downloads as cleanup candidates after the grace period. Default false. */
   autoCleanupWatched: boolean;
-  /** Days to keep watched downloads before startup cleanup may remove them. */
+  /** Days to keep watched downloads before startup cleanup may suggest them. */
   autoCleanupGraceDays: number;
   /** Setup wizard completion marker for future migrations. */
   onboardingVersion: number;

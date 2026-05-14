@@ -68,6 +68,7 @@ describe("ConfigServiceImpl", () => {
     expect(service.downloadPath).toBe("");
     expect(service.downloadOnboardingDismissed).toBe(false);
     expect(service.autoDownload).toBe("off");
+    expect(service.autoDownloadNextCount).toBe(1);
     expect(service.autoCleanupWatched).toBe(false);
     expect(service.autoCleanupGraceDays).toBe(7);
 
@@ -76,6 +77,7 @@ describe("ConfigServiceImpl", () => {
       downloadPath: "~/Videos/Kunai",
       downloadOnboardingDismissed: true,
       autoDownload: "next",
+      autoDownloadNextCount: 3,
       autoCleanupWatched: true,
       autoCleanupGraceDays: 3,
     });
@@ -85,8 +87,21 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).downloadPath).toBe("~/Videos/Kunai");
     expect((await store.load()).downloadOnboardingDismissed).toBe(true);
     expect((await store.load()).autoDownload).toBe("next");
+    expect((await store.load()).autoDownloadNextCount).toBe(3);
     expect((await store.load()).autoCleanupWatched).toBe(true);
     expect((await store.load()).autoCleanupGraceDays).toBe(3);
+  });
+
+  test("clamps auto-download next count on load and update", async () => {
+    const store = new MemoryConfigStore({ autoDownloadNextCount: 99 });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.autoDownloadNextCount).toBe(24);
+
+    await service.update({ autoDownloadNextCount: 0 });
+    await service.save();
+
+    expect((await store.load()).autoDownloadNextCount).toBe(1);
   });
 
   test("normalizes legacy subtitle defaults back to english on load", async () => {

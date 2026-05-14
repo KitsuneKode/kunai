@@ -20,7 +20,7 @@ import { SessionController } from "@/app/SessionController";
 import { createContainer, type ShellChrome } from "@/container";
 import type { TitleInfo } from "@/domain/types";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
-import { shouldAutoCleanupOfflineJob } from "@/services/offline/offline-sync-policy";
+import { selectDownloadCleanupCandidates } from "@/services/download/download-cleanup-policy";
 import { checkDeps } from "@/ui";
 
 const KUNAI_VERSION = "0.1.0";
@@ -203,28 +203,47 @@ async function maybeRunDownloadMode(
 async function maybeRunAutoCleanupDownloads(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<void> {
-  const { config, downloadService, historyStore, logger } = container;
+  const { config, downloadService, diagnosticsService, historyStore, logger } = container;
   if (!config.autoCleanupWatched) return;
 
   const graceDays = Math.max(0, config.autoCleanupGraceDays);
   const nowMs = Date.now();
-  for (const job of downloadService.listCompleted(500)) {
-    const historyEntries = await historyStore.listByTitle(job.titleId).catch(() => []);
-    const cleanup = shouldAutoCleanupOfflineJob({
-      job,
-      historyEntries,
-      nowMs,
+  const jobs = downloadService.listCompleted(500);
+  const historyEntries = await Promise.all(
+    [...new Set(jobs.map((job) => job.titleId))].map(async (titleId) => {
+      const entries = await historyStore.listByTitle(titleId).catch(() => []);
+      return [titleId, entries] as const;
+    }),
+  );
+  const historyByTitle = new Map(historyEntries);
+  const candidates = selectDownloadCleanupCandidates({
+    jobs,
+    historyByTitle,
+    nowMs,
+    graceDays,
+  });
+  for (const candidate of candidates) {
+    logger.info("Watched download cleanup candidate", {
+      jobId: candidate.job.id,
+      titleId: candidate.job.titleId,
+      outputPath: candidate.job.outputPath,
+      watchedAt: candidate.watchedAt,
       graceDays,
     });
-    if (!cleanup.shouldDelete) continue;
-
-    await downloadService.deleteJob(job.id, { deleteArtifact: true });
-    logger.info("Auto-cleaned watched download", {
-      jobId: job.id,
-      titleId: job.titleId,
-      outputPath: job.outputPath,
-      watchedAt: cleanup.watchedAt,
-      graceDays,
+    diagnosticsService.record({
+      category: "download",
+      operation: "cleanup.candidate",
+      message: "Watched download eligible for explicit cleanup",
+      titleId: candidate.job.titleId,
+      providerId: candidate.job.providerId,
+      season: candidate.job.season,
+      episode: candidate.job.episode,
+      context: {
+        jobId: candidate.job.id,
+        outputPath: candidate.job.outputPath,
+        watchedAt: candidate.watchedAt,
+        graceDays,
+      },
     });
   }
 }

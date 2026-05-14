@@ -80,6 +80,10 @@ import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { AniSkipTimingSource, IntroDbTimingSource, PlaybackTimingAggregator } from "@/infra/timing";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
+import {
+  resolveAutoDownloadScope,
+  selectEpisodesForDownloadScope,
+} from "@/services/download/download-scope-policy";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { PlaybackResolveCoordinator } from "@/services/playback/PlaybackResolveCoordinator";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
@@ -867,7 +871,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
-          if (title.type === "series" && config.autoDownload !== "off") {
+          const autoDownloadScope = resolveAutoDownloadScope({
+            mode: config.autoDownload,
+            nextCount: config.autoDownloadNextCount,
+          });
+          if (title.type === "series" && autoDownloadScope) {
             const enqueueAutoDownload = async (targetEpisode: EpisodeInfo) => {
               if (
                 container.downloadService.hasJobForEpisode({
@@ -896,34 +904,44 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             };
 
             try {
-              if (config.autoDownload === "next" && episodeAvailability.nextEpisode) {
-                if (await enqueueAutoDownload(episodeAvailability.nextEpisode)) {
-                  this.updatePlaybackFeedback(context, {
-                    note: "⬇ Next episode auto-queued for offline",
-                  });
-                  void container.downloadService.processQueue();
+              if (
+                !(autoDownloadScope.type === "current-season-remaining" && autoDownloadSeasonQueued)
+              ) {
+                if (autoDownloadScope.type === "current-season-remaining") {
+                  autoDownloadSeasonQueued = true;
                 }
-              } else if (config.autoDownload === "season" && !autoDownloadSeasonQueued) {
-                autoDownloadSeasonQueued = true;
-                const episodes = await fetchEpisodes(title.id, currentEpisode.season);
-                const remaining = (episodes ?? [])
-                  .map((candidate) => ({
-                    season: currentEpisode.season,
-                    episode: candidate.number,
-                    name: candidate.name,
-                    airDate: candidate.airDate,
-                    overview: candidate.overview,
-                  }))
-                  .filter((candidate) => candidate.episode > currentEpisode.episode);
+                const needsSeasonEpisodes =
+                  autoDownloadScope.type === "current-season-remaining" ||
+                  autoDownloadScope.type === "next-n";
+                const seasonEpisodes = needsSeasonEpisodes
+                  ? (await fetchEpisodes(title.id, currentEpisode.season))?.map((candidate) => ({
+                      season: currentEpisode.season,
+                      episode: candidate.number,
+                      name: candidate.name,
+                      airDate: candidate.airDate,
+                      overview: candidate.overview,
+                    }))
+                  : null;
+                const targets = selectEpisodesForDownloadScope({
+                  scope: autoDownloadScope,
+                  currentEpisode,
+                  nextEpisode: episodeAvailability.nextEpisode,
+                  seasonEpisodes,
+                });
                 let queuedCount = 0;
-                for (const targetEpisode of remaining) {
+                for (const targetEpisode of targets) {
                   if (await enqueueAutoDownload(targetEpisode)) {
                     queuedCount += 1;
                   }
                 }
                 if (queuedCount > 0) {
                   this.updatePlaybackFeedback(context, {
-                    note: `⬇ Season ${currentEpisode.season} auto-queued (${queuedCount} episodes)`,
+                    note:
+                      autoDownloadScope.type === "current-season-remaining"
+                        ? `⬇ Season ${currentEpisode.season} auto-queued (${queuedCount} episodes)`
+                        : queuedCount === 1
+                          ? "⬇ Next episode auto-queued for offline"
+                          : `⬇ Next ${queuedCount} episodes auto-queued for offline`,
                   });
                   void container.downloadService.processQueue();
                 }

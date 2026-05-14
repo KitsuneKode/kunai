@@ -12,7 +12,7 @@ Use this section as the working tracker. Update checkboxes at phase boundaries, 
 - [x] Phase 2: Playback resolve/cache boundary cleanup.
 - [x] Phase 3: Typed intent and picker model.
 - [x] Phase 4: Offline library and local playback source.
-- [ ] Phase 5: Scoped smart downloads and cleanup policy.
+- [x] Phase 5: Scoped smart downloads and cleanup policy.
 - [ ] Phase 6: Timeline, result enrichment, and details state.
 - [ ] Phase 7: Tracks and media preference model.
 - [ ] Phase 8: Live playback telemetry snapshot.
@@ -567,13 +567,20 @@ Auto-clean should be conservative:
 
 ### Tasks
 
-- [ ] Add pure scope policy tests.
-- [ ] Add pure cleanup policy tests.
-- [ ] Add config fields only after policy tests define defaults.
-- [ ] Add “keep next N” queue behavior behind opt-in config.
-- [ ] Add auto-clean candidate selection without automatic deletion first.
-- [ ] Add explicit cleanup command or confirmation path.
-- [ ] Run typecheck/lint/fmt/tests.
+- [x] Add pure scope policy tests.
+- [x] Add pure cleanup policy tests.
+- [x] Add config fields only after policy tests define defaults.
+- [x] Add “keep next N” queue behavior behind opt-in config.
+- [x] Add auto-clean candidate selection without automatic deletion first.
+- [x] Add explicit cleanup command or confirmation path.
+- [x] Run typecheck/lint/fmt/tests.
+
+### Phase 5 Verification
+
+- `bun run typecheck` -> passed.
+- `bun run lint` -> passed with pre-existing warnings in provider files and `ContextStrip`.
+- `bun run fmt` -> passed.
+- `bun run --cwd apps/cli test:unit` -> 446 pass, 0 fail.
 
 ## Phase 6: Timeline, Result Enrichment, And Details State
 

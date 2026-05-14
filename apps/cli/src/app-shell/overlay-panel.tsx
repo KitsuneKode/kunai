@@ -327,7 +327,7 @@ export function buildSettingsOptions(
       label: `▸ Auto-cleanup  ·  ${
         config.autoCleanupWatched ? `on (${config.autoCleanupGraceDays} day grace)` : "off"
       }`,
-      detail: "Remove watched completed downloads on startup after the grace period",
+      detail: "Flag watched completed downloads for explicit cleanup after the grace period",
     },
     {
       value: "autoNext",

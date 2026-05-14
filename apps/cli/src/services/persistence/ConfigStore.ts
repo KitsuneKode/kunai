@@ -49,6 +49,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   presenceDiscordClientId: "",
   downloadsEnabled: false,
   autoDownload: "off",
+  autoDownloadNextCount: 1,
   autoCleanupWatched: false,
   autoCleanupGraceDays: 7,
   onboardingVersion: 0,

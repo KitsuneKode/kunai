@@ -2,6 +2,8 @@
 // Config Service Implementation
 // =============================================================================
 
+import { normalizeAutoDownloadNextCount } from "@/services/download/download-scope-policy";
+
 import type {
   ConfigService,
   KitsuneConfig,
@@ -54,6 +56,7 @@ export class ConfigServiceImpl implements ConfigService {
       animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
       movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
+      autoDownloadNextCount: normalizeAutoDownloadNextCount(loaded.autoDownloadNextCount),
     };
     return service;
   }
@@ -175,6 +178,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.autoDownload;
   }
 
+  get autoDownloadNextCount(): number {
+    return this.config.autoDownloadNextCount;
+  }
+
   get autoCleanupWatched(): boolean {
     return this.config.autoCleanupWatched;
   }
@@ -234,6 +241,9 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.movieLanguageProfile
         ? { movieLanguageProfile: normalizeLanguageProfile(partial.movieLanguageProfile) }
+        : null),
+      ...(partial.autoDownloadNextCount !== undefined
+        ? { autoDownloadNextCount: normalizeAutoDownloadNextCount(partial.autoDownloadNextCount) }
         : null),
     };
   }
