@@ -54,6 +54,7 @@ import {
   pruneSkippedPlaybackSegmentKeys,
 } from "./playback-skip";
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
+import { buildPlaybackTelemetrySnapshot } from "./PlaybackTelemetrySnapshot";
 import type { ActivePlayerControl } from "./PlayerControlService";
 
 const IN_PROCESS_RECONNECT_BASE_BACKOFF_MS = 1_800;
@@ -223,6 +224,8 @@ export class PersistentMpvSession {
       attachSubtitles: async (attachment) => await this.attachSubtitles(attachment),
       skipCurrentSegment: async () => this.skipCurrentSegment(),
       updateTiming: (timing) => this.updateTiming(timing),
+      getTelemetrySnapshot: () =>
+        this.activeCycle ? buildPlaybackTelemetrySnapshot(this.activeCycle.telemetry) : null,
       showOsdMessage: async (text, durationMs) => {
         await this.ipcSession?.send(["show-text", text, durationMs], 1_000);
       },

@@ -15,6 +15,10 @@ import {
 } from "@/app/source-quality";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { Container } from "@/container";
+import {
+  describePlaybackTelemetrySnapshot,
+  type PlaybackTelemetrySnapshot,
+} from "@/domain/playback/playback-telemetry-snapshot";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
@@ -391,6 +395,8 @@ function AppRoot({ container }: { container: Container }) {
   const rootContent = useRootContentSession();
   const { stdout } = useStdout();
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
+  const [playbackTelemetrySnapshot, setPlaybackTelemetrySnapshot] =
+    useState<PlaybackTelemetrySnapshot | null>(null);
   const presenceBootTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestPresenceProviderRef = useRef(container.config.presenceProvider);
   latestPresenceProviderRef.current = container.config.presenceProvider;
@@ -518,6 +524,21 @@ function AppRoot({ container }: { container: Container }) {
 
   const activePlaybackStatuses = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
   const playbackIsActive = activePlaybackStatuses.some((status) => status === state.playbackStatus);
+  useEffect(() => {
+    if (!playbackIsActive) {
+      setPlaybackTelemetrySnapshot(null);
+      return;
+    }
+
+    const refreshSnapshot = () => {
+      setPlaybackTelemetrySnapshot(container.playerControl.getTelemetrySnapshot());
+    };
+
+    refreshSnapshot();
+    const timer = setInterval(refreshSnapshot, 1_000);
+    return () => clearInterval(timer);
+  }, [container.playerControl, playbackIsActive]);
+
   const rootStatus = playbackIsActive
     ? state.playbackStatus
     : state.playbackStatus === "loading"
@@ -565,6 +586,9 @@ function AppRoot({ container }: { container: Container }) {
     state.currentEpisode !== null;
   const playbackTrace =
     state.playbackNote ??
+    (playbackTelemetrySnapshot
+      ? describePlaybackTelemetrySnapshot(playbackTelemetrySnapshot)
+      : undefined) ??
     (state.playbackStatus === "playing"
       ? "Auto-skip and live playback controls stay available while mpv is active"
       : undefined);
@@ -692,6 +716,17 @@ function AppRoot({ container }: { container: Container }) {
                   autoskipPaused: state.autoskipSessionPaused,
                   autoplayPaused: state.autoplaySessionPaused,
                   latestIssue: state.playbackNote,
+                  currentPosition: playbackTelemetrySnapshot?.positionSeconds,
+                  duration: playbackTelemetrySnapshot?.durationSeconds,
+                  bufferHealth:
+                    state.playbackStatus === "stalled"
+                      ? "stalled"
+                      : state.playbackStatus === "buffering" ||
+                          playbackTelemetrySnapshot?.pausedForCache
+                        ? "buffering"
+                        : playbackTelemetrySnapshot
+                          ? "healthy"
+                          : undefined,
                   stopHint:
                     state.playbackStatus === "playing" ||
                     state.playbackStatus === "buffering" ||

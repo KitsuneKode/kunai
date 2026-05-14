@@ -15,7 +15,7 @@ Use this section as the working tracker. Update checkboxes at phase boundaries, 
 - [x] Phase 5: Scoped smart downloads and cleanup policy.
 - [x] Phase 6: Timeline, result enrichment, and details state.
 - [x] Phase 7: Tracks and media preference model.
-- [ ] Phase 8: Live playback telemetry snapshot.
+- [x] Phase 8: Live playback telemetry snapshot.
 - [ ] Phase 9: Update service and install method detection.
 - [ ] Phase 10: Docs and test hardening.
 - [ ] Phase 11: Product polish and Zen mode.
@@ -708,12 +708,19 @@ export type PlaybackTelemetrySnapshot = {
 
 ### Tasks
 
-- [ ] Add snapshot type and pure formatting tests.
-- [ ] Store latest observed telemetry in player infra.
-- [ ] Add read-only `getTelemetrySnapshot()` to player control.
-- [ ] Ensure no new aggressive polling loop is introduced.
-- [ ] Feed cockpit display from snapshots only after the API is stable.
-- [ ] Run typecheck/lint/fmt/tests.
+- [x] Add snapshot type and pure formatting tests.
+- [x] Store latest observed telemetry in player infra.
+- [x] Add read-only `getTelemetrySnapshot()` to player control.
+- [x] Ensure no new aggressive polling loop is introduced.
+- [x] Feed cockpit display from snapshots only after the API is stable.
+- [x] Run typecheck/lint/fmt/tests.
+
+### Phase 8 Verification
+
+- `bun run typecheck` -> passed.
+- `bun run lint` -> passed with pre-existing warnings only.
+- `bun run fmt` -> passed.
+- `bun run --cwd apps/cli test:unit` -> 458 pass, 0 fail.
 
 ## Phase 9: Update Service And Install Method Detection
 
