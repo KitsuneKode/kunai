@@ -15,6 +15,7 @@ export type AppCommandId =
   | "diagnostics"
   | "help"
   | "about"
+  | "update"
   | "image-pane"
   | "toggle-autoplay"
   | "replay"
@@ -58,6 +59,7 @@ export const COMMAND_CONTEXTS = {
     "library",
     "help",
     "about",
+    "update",
     "diagnostics",
     "export-diagnostics",
     "report-issue",
@@ -83,6 +85,7 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "help",
     "about",
+    "update",
     "quit",
   ],
   postPlayback: [
@@ -112,6 +115,7 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "help",
     "about",
+    "update",
     "quit",
   ],
 } as const satisfies Record<string, readonly AppCommandId[]>;
@@ -220,6 +224,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "About",
     aliases: ["about", "version"],
     description: "Show version and capability information",
+  },
+  {
+    id: "update",
+    label: "Update",
+    aliases: ["update", "upgrade", "check-update", "version-check"],
+    description: "Check for a new Kunai version and show safe update guidance",
   },
   {
     id: "image-pane",
@@ -446,6 +456,7 @@ function resolveCommandState(
     case "diagnostics":
     case "help":
     case "about":
+    case "update":
     case "clear-cache":
     case "clear-history":
     case "export-diagnostics":

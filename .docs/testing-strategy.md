@@ -121,6 +121,11 @@ These should support development, but should not be the only form of safety.
 
 When changing shell behavior, focus on:
 
+- launch arg parsing and bootstrap route selection
+- hands-off search with `--jump` / `--quick`
+- continue/resume target selection from local history
+- history startup surface behavior
+- offline library versus downloads queue routing
 - command routing and availability
 - overlay open/close rules
 - focus retention
@@ -175,6 +180,27 @@ Prefer dossier-backed fixtures over hand-built guesses.
 | New provider                   | dossier + fixture-backed extraction tests + one integration path if needed |
 | Subtitle or quality extraction | fixture-backed parser tests                                                |
 | Diagnostics/report change      | contract tests for redaction and output shape                              |
+
+## Manual Smoke Matrix
+
+Use these after meaningful shell or startup-route changes. They are not replacements for unit tests; they verify the real terminal experience.
+
+| Flow                  | Command                                           | Expected first thing to verify                                       |
+| --------------------- | ------------------------------------------------- | -------------------------------------------------------------------- |
+| Interactive shell     | `bun run dev`                                     | Home/search shell opens and `/` command palette works                |
+| Search results        | `bun run dev -- -S "Dune"`                        | Results load; playback does not auto-start                           |
+| Search auto-pick      | `bun run dev -- -S "Dune" --jump 1`               | First result is selected and playback flow starts                    |
+| Quick search          | `bun run dev -- -S "Dune" -q`                     | Same first-result behavior as `--jump 1`                             |
+| Anime auto-pick       | `bun run dev -- -a -S "Attack on Titan" --jump 1` | Anime provider mode is active before title selection                 |
+| Continue latest       | `bun run dev -- --continue`                       | Newest unfinished local history entry is chosen before provider work |
+| History first         | `bun run dev -- --history`                        | History picker opens at startup                                      |
+| Offline library first | `bun run dev -- --offline`                        | Completed local downloads picker opens, not the queue manager        |
+| Queue manager         | In shell: `/downloads`                            | Queued/running/failed jobs are primary                               |
+| Offline library       | In shell: `/library` or `/offline`                | Completed playable downloads are primary                             |
+| Update panel          | In shell: `/update`                               | Manual guidance appears; no install command runs                     |
+| Diagnostics export    | In shell: `/export-diagnostics`                   | Redacted support bundle is written locally                           |
+
+`-S "Title"` alone is a search/results smoke test. Use `--jump N` or `-q` when the intent is to smoke-test hands-off playback.
 
 ## Implementation Advice
 

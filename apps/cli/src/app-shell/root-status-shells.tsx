@@ -39,6 +39,17 @@ export function RootIdleShell({ state }: { state: SessionState }) {
           </Text>
         </LocalSection>
 
+        <LocalSection title="Fast paths" tone="success">
+          <Text color="white">/history or --continue</Text>
+          <Text color={palette.muted}>
+            Resume the newest unfinished item without treating history like a hidden tool.
+          </Text>
+          <Text color="white">/offline or --offline</Text>
+          <Text color={palette.muted}>
+            Open completed local downloads first. Use /downloads for the queue.
+          </Text>
+        </LocalSection>
+
         {state.searchQuery.trim().length > 0 ? (
           <LocalSection title="Search context" tone="success">
             <Text color="white">{state.searchQuery}</Text>

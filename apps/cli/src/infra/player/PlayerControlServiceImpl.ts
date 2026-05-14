@@ -1,3 +1,4 @@
+import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
 import type { EpisodeInfo, PlaybackTimingMetadata } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
@@ -325,6 +326,10 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       context: { id: active.id, reason, hasCredits: Boolean((timing?.credits ?? []).length) },
     });
     active.updateTiming(timing);
+  }
+
+  getTelemetrySnapshot(): PlaybackTelemetrySnapshot | null {
+    return this.active?.getTelemetrySnapshot?.() ?? null;
   }
 
   private async stopWithAction(

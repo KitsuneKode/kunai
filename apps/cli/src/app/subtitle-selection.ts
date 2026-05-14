@@ -1,3 +1,4 @@
+import { isSubtitlePreferenceDisabled } from "@/domain/media/media-preferences";
 import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { selectSubtitle } from "@/subtitle";
@@ -25,7 +26,7 @@ export async function choosePlaybackSubtitle({
   subLang: string;
   pickSubtitle: (tracks: readonly SubtitleTrack[]) => Promise<string | null>;
 }): Promise<SubtitleDecision> {
-  if (subLang === "none") {
+  if (isSubtitlePreferenceDisabled(subLang)) {
     return {
       subtitle: null,
       reason: "disabled",

@@ -18,6 +18,8 @@ rg "scraper|provider|subtitle|wyzie|m3u8|playback|cache" debug.log
 
 Open the in-app diagnostics panel with `/diagnostics` to see the current session snapshot and recent runtime events without leaving the shell.
 
+Export a redacted support bundle with `/export-diagnostics`. The exported JSON includes app/runtime metadata, startup capability checks, and the bounded diagnostics event buffer. Stream URLs, auth headers, cookies, tokens, and local home-directory prefixes are redacted before writing the file.
+
 To test Vidking without the Ink shell, run the live provider smoke test:
 
 ```sh
@@ -59,7 +61,8 @@ Current provider behavior:
 ## When Adding Or Fixing Providers
 
 - Log provider-owned milestones with `dbg("provider-id", "...", context)`.
-- Record user-facing runtime facts in `DiagnosticsStore` so `/diagnostics` shows them.
+- Record user-facing runtime facts through `DiagnosticsService` when you need both structured logs and the diagnostics buffer. Use `DiagnosticsStore` directly only for low-level code that has not been migrated yet.
+- Include `category`, `operation`, failure stage, provider id, title id, and timing/provenance context when available.
 - Preserve the distinction between “source had no data” and “our scraper did not observe data”.
 - Do not print noisy `console.log` output inside Ink render paths; use debug logs or diagnostics events instead.
 

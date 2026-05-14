@@ -73,7 +73,7 @@
   },
   "dependencies": {
     "@types/react": "^19.2.14",
-    "ink": "^7.0.2",
+    "ink": "^7.0.3",
     "react": "^19.2.6"
   },
   "devDependencies": {
@@ -82,9 +82,9 @@
     "@kunai/providers": "workspace:*",
     "@kunai/storage": "workspace:*",
     "@kunai/types": "workspace:*",
-    "@types/bun": "latest",
-    "oxfmt": "^0.48.0",
-    "oxlint": "^1.63.0"
+    "@types/bun": "1.3.14",
+    "oxfmt": "^0.49.0",
+    "oxlint": "^1.64.0"
   },
   "peerDependencies": {
     "typescript": "^6.0.3"

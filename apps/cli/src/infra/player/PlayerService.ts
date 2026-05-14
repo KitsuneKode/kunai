@@ -7,6 +7,7 @@
 import type { StreamInfo, PlaybackResult } from "@/domain/types";
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 
 import type { PlaybackSkipKind } from "./playback-skip";
 
@@ -95,10 +96,7 @@ export interface PlayerService {
   releasePersistentSession(): Promise<void>;
   isAvailable(): Promise<boolean>;
   playLocal(options: {
-    filePath: string;
-    displayTitle: string;
-    subtitlePath?: string | null;
-    timing?: PlaybackTimingMetadata | null;
+    source: LocalPlaybackSource;
     attach?: boolean;
     onPlayerReady?: () => void;
     onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;

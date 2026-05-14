@@ -17,8 +17,7 @@ import { DownloadEnqueueRejectedError } from "@/services/download/DownloadServic
 import {
   formatOfflineJobListingTitle,
   formatOfflineSecondaryLine,
-  parseIntroSkipTiming,
-  resolveOfflineArtifactStatus,
+  offlineStatusIcon,
 } from "@/services/offline/offline-library";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
@@ -409,14 +408,6 @@ function describeDownloadJob(job: import("@kunai/storage").DownloadJobRecord): s
   return formatOfflineJobListingTitle(job);
 }
 
-function statusPrefix(job: import("@kunai/storage").DownloadJobRecord): string {
-  if (job.status === "running") return "▶";
-  if (job.status === "queued") return "●";
-  if (job.status === "failed") return "!";
-  if (job.status === "aborted") return "×";
-  return "✓";
-}
-
 async function openHistoryShell(
   historyStore: HistoryStore,
   actionContext?: ListShellActionContext,
@@ -484,26 +475,26 @@ async function openHistoryShell(
   }
 }
 
-async function _openCompletedDownloadsPicker(
+export async function openCompletedDownloadsPicker(
   container: Container,
   actionContext?: ListShellActionContext,
 ): Promise<void> {
   while (true) {
-    const completed = container.downloadService.listCompleted(120).slice(0, 60);
+    const completed = await container.offlineLibraryService.listCompletedEntries(60);
     const options: ShellOption<DownloadJobAction>[] = [
-      ...completed.map((job) => ({
-        value: { type: "job" as const, id: job.id },
-        label: `${statusPrefix(job)} ${describeDownloadJob(job)}`,
-        detail: `${job.status}  ·  ${job.outputPath}`,
+      ...completed.map((entry) => ({
+        value: { type: "job" as const, id: entry.job.id },
+        label: `${offlineStatusIcon(entry.status)} ${formatOfflineJobListingTitle(entry.job)}`,
+        detail: `${formatOfflineSecondaryLine(entry.job, entry.status)}  ·  ${entry.job.outputPath}`,
       })),
       { value: { type: "back" as const }, label: "Back" },
     ];
     const picked = await chooseFromListShell({
-      title: "Completed downloads",
+      title: "Offline library",
       subtitle:
         completed.length > 0
-          ? `${completed.length} job(s) · play, reveal folder, delete`
-          : "Nothing finished yet",
+          ? `${completed.length} local item(s) · play, reveal folder, re-download, delete`
+          : "No completed local videos yet. Use /downloads to manage the queue.",
       actionContext,
       options,
     });
@@ -511,10 +502,17 @@ async function _openCompletedDownloadsPicker(
     const job = container.downloadService.getJob(picked.id);
     if (!job || job.status !== "completed") continue;
 
-    const artifactStatus = await resolveOfflineArtifactStatus(job);
+    const playable = await container.offlineLibraryService.getPlayableSource(job.id);
+    const artifactStatus = playable.status === "ready" ? "ready" : playable.status;
+    const artifactLineStatus =
+      artifactStatus === "invalid-file" ||
+      artifactStatus === "missing" ||
+      artifactStatus === "ready"
+        ? artifactStatus
+        : "missing";
     const action = await chooseFromListShell<CompletedDownloadAction>({
       title: describeDownloadJob(job),
-      subtitle: `${formatOfflineSecondaryLine(job, artifactStatus)}  ·  ${job.outputPath}`,
+      subtitle: `${formatOfflineSecondaryLine(job, artifactLineStatus)}  ·  ${job.outputPath}`,
       actionContext,
       options: [
         {
@@ -530,20 +528,20 @@ async function _openCompletedDownloadsPicker(
         },
         {
           value: "delete-artifact",
-          label: "Delete artifact and job",
-          detail: "Remove local media, subtitle artifact, and queue record",
+          label: "Delete local file and job",
+          detail: "Remove local media, subtitle file, and queue record",
         },
         {
           value: "delete-job",
           label: "Delete job only",
-          detail: "Keep files on disk but remove this queue record",
+          detail: "Keep local files on disk but remove this queue record",
         },
         { value: "back", label: "Back" },
       ],
     });
     if (!action || action === "back") continue;
     if (action === "play") {
-      if (artifactStatus !== "ready") {
+      if (playable.status !== "ready") {
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
           note: `Offline file unavailable: ${artifactStatus}`,
@@ -555,13 +553,11 @@ async function _openCompletedDownloadsPicker(
         });
         continue;
       }
-      await container.player.playLocal({
-        filePath: job.outputPath,
-        displayTitle: formatOfflineJobListingTitle(job),
-        subtitlePath: job.subtitlePath ?? null,
-        timing: parseIntroSkipTiming(job.introSkipJson),
+      const result = await container.player.playLocal({
+        source: playable.source,
         attach: false,
       });
+      await container.offlineLibraryService.savePlaybackHistory(playable.source, result);
       continue;
     }
     if (action === "reveal") {
@@ -773,16 +769,10 @@ export async function handleShellAction({
   }
 
   if (action === "library") {
-    stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "downloads" } });
-    await new Promise<void>((resolve) => {
-      const unsubscribe = stateManager.subscribe((state) => {
-        const top = state.activeModals.at(-1);
-        if (!top || top.type !== "downloads") {
-          unsubscribe();
-          resolve();
-        }
-      });
-    });
+    await openCompletedDownloadsPicker(
+      container,
+      buildPickerActionContext({ container, taskLabel: "Offline library" }),
+    );
     return "handled";
   }
 
@@ -884,6 +874,11 @@ export async function handleShellAction({
         ],
       }),
     );
+    return "handled";
+  }
+
+  if (action === "update") {
+    await openUpdateShell(container);
     return "handled";
   }
 
@@ -1057,22 +1052,15 @@ export async function handleShellAction({
   }
 
   if (action === "export-diagnostics") {
-    const snapshot = diagnosticsStore.getSnapshot();
-    const redacted = JSON.parse(JSON.stringify(snapshot), (_key, value) => {
-      if (typeof value === "string" && /^https?:\/\//i.test(value)) {
-        return "[redacted-url]";
-      }
-      return value;
-    }) as typeof snapshot;
     const fileName = `kunai-diagnostics-export-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
     const path = join(process.cwd(), fileName);
-    await writeAtomicJson(path, {
-      exportedAt: new Date().toISOString(),
-      eventCount: redacted.length,
-      events: redacted,
+    const bundle = container.diagnosticsService.buildSupportBundle({
+      capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
     });
-    diagnosticsStore.record({
+    await writeAtomicJson(path, bundle);
+    container.diagnosticsService.record({
       category: "ui",
+      operation: "export-diagnostics",
       message: "Diagnostics exported to file",
       context: { path: fileName },
     });
@@ -1093,6 +1081,49 @@ export async function handleShellAction({
   }
 
   return "unhandled";
+}
+
+async function openUpdateShell(container: Container): Promise<void> {
+  const result = await container.updateService.checkForUpdate({ force: true });
+  const status =
+    result.status === "update-available"
+      ? `Kunai ${result.latestVersion} is available. Current ${result.currentVersion}.`
+      : result.status === "up-to-date"
+        ? `Kunai is up to date (${result.currentVersion}).`
+        : result.status === "error"
+          ? `Update check failed: ${result.error ?? "unknown error"}`
+          : `Update checks are ${result.status}.`;
+
+  const choice = await chooseFromListShell({
+    title: "Update",
+    subtitle: result.guidance ? `${status}  ·  ${result.guidance}` : status,
+    options: [
+      {
+        value: "snooze" as const,
+        label: "Snooze update checks for 7 days",
+        detail: "Mute automatic update notices temporarily",
+      },
+      {
+        value: "disable" as const,
+        label: "Disable automatic update checks",
+        detail: "You can still run /update manually",
+      },
+      {
+        value: "enable" as const,
+        label: "Enable automatic update checks",
+        detail: "Check at startup using the configured cache interval",
+      },
+      { value: "back" as const, label: "Back" },
+    ],
+  });
+
+  if (choice === "snooze") {
+    await container.updateService.snoozeForDays(7);
+  } else if (choice === "disable") {
+    await container.updateService.setChecksEnabled(false);
+  } else if (choice === "enable") {
+    await container.updateService.setChecksEnabled(true);
+  }
 }
 
 export async function enqueueCurrentPlaybackDownload({

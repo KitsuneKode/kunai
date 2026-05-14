@@ -111,7 +111,7 @@ export function buildRootStatusSummary({
     badges.push({ label: "stop after current", tone: "warning" });
   }
   if (downloadStatus) {
-    badges.push({ label: `[↓] ${downloadStatus}`, tone: "info" });
+    badges.push({ label: `downloads ${downloadStatus}`, tone: "info" });
   }
 
   return {

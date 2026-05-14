@@ -31,6 +31,7 @@ describe("command registry contexts", () => {
       "report-issue",
       "help",
       "about",
+      "update",
       "quit",
     ] satisfies readonly AppCommandId[]);
 
@@ -94,6 +95,7 @@ describe("command registry contexts", () => {
       "report-issue",
       "help",
       "about",
+      "update",
       "quit",
     ] satisfies AppCommandId[]);
   });

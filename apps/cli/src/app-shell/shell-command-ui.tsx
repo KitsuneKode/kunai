@@ -1,14 +1,9 @@
 import { getLineEditorViewport, splitCursor, useLineEditor } from "@/app-shell/line-editor";
+import { buildPickerModel, movePickerModelSelection } from "@/domain/session/picker-model";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useState } from "react";
 
-import {
-  COMMANDS,
-  parseCommand,
-  suggestCommands,
-  type AppCommandId,
-  type ResolvedAppCommand,
-} from "./commands";
+import { COMMANDS, parseCommand, type AppCommandId, type ResolvedAppCommand } from "./commands";
 import { routeShellInput } from "./input-router";
 import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -18,9 +13,8 @@ export function getCommandMatches(
   input: string,
   commands: readonly ResolvedAppCommand[],
 ): readonly ResolvedAppCommand[] {
-  const allowed = commands.map((command) => command.id);
-  return suggestCommands(input, allowed)
-    .map((command) => commands.find((resolved) => resolved.id === command.id))
+  return buildCommandPickerModel(input, commands, 0)
+    .options.map((option) => commands.find((command) => command.id === option.value))
     .filter((command): command is ResolvedAppCommand => Boolean(command));
 }
 
@@ -35,7 +29,10 @@ export function getHighlightedCommand(
   }
 
   const matches = getCommandMatches(input, commands);
-  return matches[highlightedIndex] ?? matches[0] ?? null;
+  const model = buildCommandPickerModel(input, commands, highlightedIndex);
+  return (
+    commands.find((command) => command.id === model.selectedOption?.value) ?? matches[0] ?? null
+  );
 }
 
 export function LineEditorText({
@@ -106,6 +103,35 @@ const CONTEXT_COMMAND_IDS = new Set<AppCommandId>([
   "download",
 ]);
 
+const COMMAND_GROUP_LABELS = {
+  context: "Context",
+  global: "Global",
+} as const;
+
+export function buildCommandPickerModel(
+  input: string,
+  commands: readonly ResolvedAppCommand[],
+  highlightedIndex: number,
+) {
+  const showGrouped = input.trim().length === 0;
+  return buildPickerModel<AppCommandId>({
+    query: input,
+    selectedIndex: highlightedIndex,
+    groupOrder: showGrouped ? ["context", "global"] : undefined,
+    groupLabels: COMMAND_GROUP_LABELS,
+    options: commands.map((command) => ({
+      id: command.id,
+      value: command.id,
+      label: command.label,
+      detail: command.description,
+      enabled: command.enabled,
+      disabledReason: command.reason,
+      group: showGrouped ? (CONTEXT_COMMAND_IDS.has(command.id) ? "context" : "global") : undefined,
+      keywords: command.aliases,
+    })),
+  });
+}
+
 export function CommandPalette({
   input,
   cursor = input.length,
@@ -121,18 +147,20 @@ export function CommandPalette({
   maxVisible?: number;
   width?: number;
 }) {
-  const matches = getCommandMatches(input, commands);
+  const model = buildCommandPickerModel(input, commands, highlightedIndex);
+  const matches = model.options
+    .map((option) => commands.find((command) => command.id === option.value))
+    .filter((command): command is ResolvedAppCommand => Boolean(command));
   const visibleCount = Math.max(3, maxVisible);
-  const windowStart = getWindowStart(highlightedIndex, matches.length, visibleCount);
+  const windowStart = getWindowStart(model.selectedIndex, matches.length, visibleCount);
   const windowEnd = Math.min(windowStart + visibleCount, matches.length);
   const visibleMatches = matches.slice(windowStart, windowEnd);
   const contentWidth = Math.max(28, (width ?? 84) - 4);
 
-  // Determine if we're showing ungrouped (filtered) or grouped (unfiltered) view
   const showGrouped = input.trim().length === 0 && matches.length > 0;
 
   const renderCommand = (command: ResolvedAppCommand, absoluteIndex: number) => {
-    const selected = absoluteIndex === highlightedIndex;
+    const selected = absoluteIndex === model.selectedIndex;
     return (
       <Box key={command.id} flexDirection="column">
         <Text
@@ -176,36 +204,25 @@ export function CommandPalette({
             {showGrouped ? (
               <>
                 {(() => {
-                  const contextMatches = visibleMatches.filter((c) =>
-                    CONTEXT_COMMAND_IDS.has(c.id),
-                  );
-                  const globalMatches = visibleMatches.filter(
-                    (c) => !CONTEXT_COMMAND_IDS.has(c.id),
-                  );
-                  return (
-                    <>
-                      {contextMatches.length > 0 ? (
-                        <>
-                          <Text color={palette.gray} dimColor>
-                            Context
-                          </Text>
-                          {contextMatches.map((command) =>
-                            renderCommand(command, matches.indexOf(command)),
-                          )}
-                        </>
-                      ) : null}
-                      {globalMatches.length > 0 ? (
-                        <>
-                          <Text color={palette.gray} dimColor>
-                            Global
-                          </Text>
-                          {globalMatches.map((command) =>
-                            renderCommand(command, matches.indexOf(command)),
-                          )}
-                        </>
-                      ) : null}
-                    </>
-                  );
+                  const rows: React.ReactNode[] = [];
+                  let previousGroup: "context" | "global" | null = null;
+                  for (const [index, command] of visibleMatches.entries()) {
+                    const group = CONTEXT_COMMAND_IDS.has(command.id) ? "context" : "global";
+                    if (group !== previousGroup) {
+                      rows.push(
+                        <Text
+                          key={`group:${group}:${windowStart + index}`}
+                          color={palette.gray}
+                          dimColor
+                        >
+                          {COMMAND_GROUP_LABELS[group]}
+                        </Text>,
+                      );
+                      previousGroup = group;
+                    }
+                    rows.push(renderCommand(command, windowStart + index));
+                  }
+                  return <>{rows}</>;
                 })()}
               </>
             ) : (
@@ -287,7 +304,7 @@ export function useShellInput({
     }
 
     if (commandMode) {
-      const matches = getCommandMatches(commandInput, commands);
+      const model = buildCommandPickerModel(commandInput, commands, highlightedIndex);
 
       if (key.return) {
         const resolved = getHighlightedCommand(commandInput, commands, highlightedIndex);
@@ -298,8 +315,8 @@ export function useShellInput({
         return;
       }
       if (key.tab) {
-        const nextIndex = matches.length > 0 ? (highlightedIndex + 1) % matches.length : 0;
-        const target = matches[nextIndex];
+        const nextIndex = movePickerModelSelection(model, 1);
+        const target = commands.find((command) => command.id === model.options[nextIndex]?.value);
         if (target) {
           setHighlightedIndex(nextIndex);
           commandEditor.setValue(target.aliases[0] ?? target.id);
@@ -307,14 +324,14 @@ export function useShellInput({
         return;
       }
       if (key.upArrow) {
-        if (matches.length > 0) {
-          setHighlightedIndex((current) => (current - 1 + matches.length) % matches.length);
+        if (model.options.length > 0) {
+          setHighlightedIndex(movePickerModelSelection(model, -1));
         }
         return;
       }
       if (key.downArrow) {
-        if (matches.length > 0) {
-          setHighlightedIndex((current) => (current + 1) % matches.length);
+        if (model.options.length > 0) {
+          setHighlightedIndex(movePickerModelSelection(model, 1));
         }
         return;
       }

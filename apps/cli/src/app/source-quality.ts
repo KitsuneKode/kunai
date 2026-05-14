@@ -1,3 +1,4 @@
+import { describeStreamCandidateMediaDetail } from "@/domain/media/media-track-model";
 import type { StreamInfo } from "@/domain/types";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
@@ -68,7 +69,7 @@ export function buildStreamPickerOptions(stream: StreamInfo): readonly StreamOpt
         label: selected
           ? `${sourceLabel}  ·  ${qualityLabel}  ·  current`
           : `${sourceLabel}  ·  ${qualityLabel}`,
-        detail: describeStreamCandidateDetail(candidate, result.subtitles),
+        detail: describeStreamCandidateMediaDetail(candidate, result.subtitles),
         selected,
         rank: candidate.qualityRank ?? 0,
       };
@@ -131,7 +132,7 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
         candidate.id === result.selectedStreamId
           ? `${candidate.qualityLabel ?? candidate.container ?? candidate.id}  ·  current`
           : (candidate.qualityLabel ?? candidate.container ?? candidate.id),
-      detail: describeStreamCandidateDetail(candidate, result.subtitles),
+      detail: describeStreamCandidateMediaDetail(candidate, result.subtitles),
       rank: candidate.qualityRank ?? 0,
     }))
     .sort((left, right) => right.rank - left.rank);
@@ -195,41 +196,6 @@ function describeSourceDetail(
   ]
     .filter(Boolean)
     .join("  ·  ");
-}
-
-function describeStreamCandidateDetail(
-  candidate: StreamCandidate,
-  subtitles: readonly SubtitleCandidate[],
-): string {
-  return [
-    candidate.protocol,
-    candidate.container,
-    candidate.audioLanguages?.length ? `audio ${candidate.audioLanguages.join(",")}` : null,
-    candidate.hardSubLanguage ? `hardsub ${candidate.hardSubLanguage}` : null,
-    describeLanguages(
-      "soft subs",
-      subtitlesForStreamCandidate(candidate, subtitles).map((subtitle) => subtitle.language),
-    ),
-  ]
-    .filter((part): part is string => typeof part === "string" && part.length > 0)
-    .join("  ·  ");
-}
-
-function subtitlesForStreamCandidate(
-  candidate: StreamCandidate,
-  subtitles: readonly SubtitleCandidate[],
-): readonly SubtitleCandidate[] {
-  if (candidate.variantId) {
-    const variantSubtitles = subtitles.filter(
-      (subtitle) => subtitle.variantId === candidate.variantId,
-    );
-    if (variantSubtitles.length > 0) return variantSubtitles;
-  }
-
-  if (!candidate.sourceId) return [];
-  return subtitles.filter(
-    (subtitle) => !subtitle.variantId && subtitle.sourceId === candidate.sourceId,
-  );
 }
 
 function describeQualities(streams: readonly StreamCandidate[]): string | null {

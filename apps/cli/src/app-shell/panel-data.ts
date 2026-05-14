@@ -123,7 +123,7 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
     // ── Panels ──
     { label: "─── Panels", detail: "", tone: "info" },
     { label: "/", detail: "Open command palette" },
-    { label: "h", detail: "Watch history" },
+    { label: "/history", detail: "Continue from recent progress" },
     { label: "?", detail: "This help panel" },
     { label: "i", detail: "Diagnostics panel" },
     { label: "g", detail: "Recommendations" },
@@ -138,8 +138,9 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
     // ── Downloads ──
     { label: "─── Downloads", detail: "", tone: "info" },
     { label: "Ctrl+D", detail: "Download highlighted title from browse" },
-    { label: "/downloads", detail: "Open download manager" },
-    { label: "/library", detail: "Browse completed downloads" },
+    { label: "/downloads", detail: "Manage queued, running, and failed jobs" },
+    { label: "/library", detail: "Play completed local downloads" },
+    { label: "/offline", detail: "Alias for the playable offline library" },
     { label: "/export-diagnostics", detail: "Write redacted support bundle" },
     { label: "/report-issue", detail: "Open GitHub issue reporting" },
   ];

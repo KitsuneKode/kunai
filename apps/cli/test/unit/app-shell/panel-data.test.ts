@@ -9,6 +9,7 @@ import {
   buildProviderPickerOptions,
 } from "@/app-shell/panel-data";
 import { createInitialState } from "@/domain/session/SessionState";
+import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
 describe("panel-data", () => {
   test("buildHelpPanelLines returns stable guidance", () => {
@@ -21,45 +22,12 @@ describe("panel-data", () => {
   test("buildAboutPanelLines includes default mode summary", () => {
     const lines = buildAboutPanelLines({
       config: {
+        ...DEFAULT_CONFIG,
         defaultMode: "anime",
         provider: "braflix",
         animeProvider: "allanime",
-        subLang: "en",
-        animeLang: "sub",
-        animeLanguageProfile: { audio: "original", subtitle: "en" },
-        seriesLanguageProfile: { audio: "original", subtitle: "none" },
-        movieLanguageProfile: { audio: "original", subtitle: "en" },
-        animeTitlePreference: "english",
-        headless: true,
-        showMemory: false,
-        autoNext: true,
-        resumeStartChoicePrompt: true,
         skipRecap: true,
-        skipIntro: true,
         skipPreview: true,
-        skipCredits: true,
-        footerHints: "detailed",
-        quitNearEndBehavior: "continue",
-        quitNearEndThresholdMode: "credits-or-90-percent",
-        mpvKunaiScriptPath: "",
-        mpvKunaiScriptOpts: {},
-        mpvInProcessStreamReconnect: true,
-        mpvInProcessStreamReconnectMaxAttempts: 3,
-        discoverShowOnStartup: false,
-        discoverMode: "auto",
-        discoverItemLimit: 24,
-        recommendationRailEnabled: true,
-        minimalMode: false,
-        presenceProvider: "off",
-        presencePrivacy: "full",
-        presenceDiscordClientId: "",
-        downloadsEnabled: false,
-        autoDownload: "off",
-        autoCleanupWatched: false,
-        autoCleanupGraceDays: 7,
-        onboardingVersion: 0,
-        downloadPath: "",
-        downloadOnboardingDismissed: false,
       },
       state: createInitialState("vidking", "allanime", {
         anime: { audio: "original", subtitle: "en" },
@@ -140,7 +108,9 @@ describe("panel-data", () => {
       recentEvents: [
         {
           timestamp: 3000,
+          level: "info",
           category: "provider",
+          operation: "provider",
           message: "Provider resolve trace completed",
           context: {
             trace: {

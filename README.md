@@ -25,10 +25,21 @@ Common starts:
 
 ```bash
 kunai -S "Dune"
-kunai -S "Frieren" -a
+kunai -a -S "Frieren" --jump 1
+kunai --continue
+kunai --history
+kunai --offline
 kunai --debug
 kunai --setup
 ```
+
+User guides:
+
+- [Getting started](docs/users/getting-started.md)
+- [Playback and recovery](docs/users/playback-and-recovery.md)
+- [Downloads and offline](docs/users/downloads-and-offline.md)
+- [Diagnostics and reporting](docs/users/diagnostics-and-reporting.md)
+- [Install and update](docs/users/install-and-update.md)
 
 ## Shell Model
 
@@ -131,7 +142,10 @@ kunai
 kunai
 kunai -a
 kunai -S "Dune"
+kunai -S "Dune" --jump 1
 kunai -S "Breaking Bad"
+kunai --continue
+kunai --history
 kunai -i 438631 -t movie
 kunai --debug
 kunai --setup

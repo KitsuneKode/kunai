@@ -214,10 +214,11 @@ export async function launchMpv(opts: {
     emitPlaybackEvent({ type: "ipc-connected" });
     emitPlaybackEvent({ type: "opening-stream" });
     notifyPlayerReady();
-    void attachAdditionalSubtitles(ipcSession, opts.subtitle, opts.subtitleTracks, (trackCount) => {
+    const trackCount = collectLaunchSubtitleFiles(opts.subtitle, opts.subtitleTracks).length;
+    if (trackCount > 0) {
       emitPlaybackEvent({ type: "subtitle-inventory-ready", trackCount });
       emitPlaybackEvent({ type: "subtitle-attached", trackCount });
-    });
+    }
   })().catch(() => {});
 
   const exit = await exitPromise;
@@ -275,8 +276,8 @@ export function buildMpvArgs(
   if (userAgent) args.push(`--user-agent=${userAgent}`);
   if (origin) args.push(`--http-header-fields=Origin: ${origin}`);
 
-  if (opts.subtitle) {
-    args.push(`--sub-file=${opts.subtitle}`);
+  for (const subtitleFile of collectLaunchSubtitleFiles(opts.subtitle, opts.subtitleTracks)) {
+    args.push(`--sub-file=${subtitleFile}`);
   }
 
   const alang = toMpvLanguageToken(opts.audioPreference, { forSubtitle: false });
@@ -373,6 +374,20 @@ export function collectAdditionalSubtitleTracks(
   return collected;
 }
 
+export function collectLaunchSubtitleFiles(
+  primarySubtitle: string | null,
+  subtitleTracks?: readonly SubtitleTrack[],
+): string[] {
+  const files: string[] = [];
+  if (primarySubtitle) {
+    files.push(primarySubtitle);
+  }
+  for (const track of collectAdditionalSubtitleTracks(primarySubtitle, subtitleTracks)) {
+    files.push(track.url);
+  }
+  return files;
+}
+
 export function describeSubtitleTrackForMpv(
   url: string,
   subtitleTracks?: readonly SubtitleTrack[],
@@ -406,33 +421,6 @@ async function cleanupUnixSocketFile(socketPath: string): Promise<boolean> {
 async function closeIpcSession(ipcSession: MpvIpcSession | null): Promise<void> {
   if (ipcSession === null) return;
   await ipcSession.close().catch(() => {});
-}
-
-async function attachAdditionalSubtitles(
-  ipcSession: MpvIpcSession | null,
-  primarySubtitle: string | null,
-  subtitleTracks?: readonly SubtitleTrack[],
-  onAttached?: (trackCount: number) => void,
-): Promise<void> {
-  if (!ipcSession) return;
-  const additionalTracks = collectAdditionalSubtitleTracks(primarySubtitle, subtitleTracks);
-  for (const track of additionalTracks) {
-    try {
-      const result = await ipcSession.send([
-        "sub-add",
-        track.url,
-        "auto",
-        track.display ?? "",
-        track.language ?? "",
-      ]);
-      if (!result.ok) return;
-    } catch {
-      return;
-    }
-  }
-  if (additionalTracks.length > 0 || primarySubtitle) {
-    onAttached?.(additionalTracks.length);
-  }
 }
 
 async function attachLateSubtitles(

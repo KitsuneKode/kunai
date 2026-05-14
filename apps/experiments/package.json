@@ -13,7 +13,7 @@
     "miruro:headless": "bun scratchpads/provider-miruro/miruro-headless.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.3.14",
     "playwright": "1.60.0",
     "cheerio": "^1.2.0"
   },

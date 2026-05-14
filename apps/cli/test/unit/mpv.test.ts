@@ -3,11 +3,12 @@ import { expect, test } from "bun:test";
 import {
   buildMpvArgs,
   collectAdditionalSubtitleTracks,
+  collectLaunchSubtitleFiles,
   describeSubtitleTrackForMpv,
   shouldApplyStartAtSeek,
 } from "@/mpv";
 
-test("buildMpvArgs only attaches the primary subtitle during initial launch", () => {
+test("buildMpvArgs attaches preferred subtitle first plus additional tracks during initial launch", () => {
   const args = buildMpvArgs(
     {
       url: "https://cdn.example/master.m3u8",
@@ -30,8 +31,10 @@ test("buildMpvArgs only attaches the primary subtitle during initial launch", ()
   expect(args).toContain("--demuxer-readahead-secs=60");
   expect(args).toContain("--demuxer-max-bytes=200MiB");
   expect(args).toContain("--input-ipc-server=/tmp/kunai-test.sock");
-  expect(args).toContain("--sub-file=https://sub.example/en.srt");
-  expect(args).not.toContain("--sub-file=https://sub.example/ar.srt");
+  expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([
+    "--sub-file=https://sub.example/en.srt",
+    "--sub-file=https://sub.example/ar.srt",
+  ]);
 });
 
 test("buildMpvArgs passes --script-opts when scriptOpts is set", () => {
@@ -193,6 +196,21 @@ test("collectAdditionalSubtitleTracks dedupes equivalent subtitle URLs with quer
       { url: "https://sub.example/fr.vtt?q=second", language: "fr" },
     ]),
   ).toEqual([{ url: "https://sub.example/fr.vtt?q=first", language: "fr" }]);
+});
+
+test("collectLaunchSubtitleFiles keeps the selected subtitle first and dedupes inventory", () => {
+  expect(
+    collectLaunchSubtitleFiles("https://sub.example/en.vtt?q=selected", [
+      { url: "https://sub.example/ar.vtt", language: "ar" },
+      { url: "https://sub.example/en.vtt?q=alternate", language: "en" },
+      { url: "https://sub.example/fr.vtt", language: "fr" },
+      { url: "https://sub.example/fr.vtt", language: "fr" },
+    ]),
+  ).toEqual([
+    "https://sub.example/en.vtt?q=selected",
+    "https://sub.example/ar.vtt",
+    "https://sub.example/fr.vtt",
+  ]);
 });
 
 test("describeSubtitleTrackForMpv names selected subtitle tracks from inventory", () => {

@@ -12,7 +12,7 @@ function event(
   message: string,
   context?: Record<string, unknown>,
 ): DiagnosticEvent {
-  return { timestamp, category, message, context };
+  return { timestamp, level: "info", category, operation: category, message, context };
 }
 
 describe("runtime health diagnostics", () => {

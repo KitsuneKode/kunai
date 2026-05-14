@@ -1,27 +1,9 @@
-// =============================================================================
-// Diagnostics Store
-//
-// Lightweight in-memory event buffer for runtime inspection.
-// =============================================================================
+import type { DiagnosticEvent, DiagnosticEventInput } from "./diagnostic-event";
 
-export interface DiagnosticEvent {
-  readonly timestamp: number;
-  readonly category:
-    | "session"
-    | "search"
-    | "provider"
-    | "subtitle"
-    | "playback"
-    | "cache"
-    | "ui"
-    | "presence"
-    | "download";
-  readonly message: string;
-  readonly context?: Record<string, unknown>;
-}
+export type { DiagnosticEvent, DiagnosticEventInput };
 
 export interface DiagnosticsStore {
-  record(event: Omit<DiagnosticEvent, "timestamp">): void;
+  record(event: DiagnosticEventInput): void;
   getRecent(limit?: number): readonly DiagnosticEvent[];
   /** Oldest-first snapshot for exports (bounded buffer, same backing store as getRecent). */
   getSnapshot(): readonly DiagnosticEvent[];

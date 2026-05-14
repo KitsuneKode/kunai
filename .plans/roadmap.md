@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-05-08
+Last updated: 2026-05-14
 
 Use this file as the planning index. It should stay short. Put implementation detail in the linked plan files, not here.
 
@@ -46,6 +46,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 ### Active Follow-Ups
 
 - Current execution mode: full-fledged CLI first. Web, desktop, remote sync, paid cloud, premium dashboards, and account-required flows are parked.
+- Daily-use UX hardening is the current coordinating track for discover/calendar/recommendations, random picks, language switching, fullscreen TUI polish, loading/playback visuals, offline visibility, and runtime soak: [.plans/daily-use-ux-discovery-and-runtime-hardening.md](.plans/daily-use-ux-discovery-and-runtime-hardening.md)
 - Phase 3 storage foundation is implemented with `@kunai/storage`.
 - Phase 4F Provider SDK contracts are landed; Phase 4G provider package migration is active, with VidKing already moved into `@kunai/providers`.
 - CLI history and stream cache now use SQLite-backed stores.
@@ -87,35 +88,36 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 ## Planned Tracks
 
-| Track                             | Status        | Doc                                                                                                          |
-| --------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Beta v1 scope & contracts**     | **Active**    | [.plans/kunai-beta-v1-scope-and-contracts.md](.plans/kunai-beta-v1-scope-and-contracts.md)                   |
-| **Execution passes & CLI modes**  | **Active**    | [.plans/kunai-execution-passes-and-cli-modes.md](.plans/kunai-execution-passes-and-cli-modes.md)             |
-| **Beta readiness**                | **Active**    | [.plans/beta-readiness.md](.plans/beta-readiness.md)                                                         |
-| Repo infrastructure               | Completed     | [.plans/repo-infrastructure.md](.plans/repo-infrastructure.md)                                               |
-| Design system and Discover        | Polish        | [.plans/kitsune-design-system-and-recommendations.md](.plans/kitsune-design-system-and-recommendations.md)   |
-| Presence integrations             | Polish        | [.plans/presence-integrations.md](.plans/presence-integrations.md)                                           |
-| Catalog release schedules         | Planned       | [.plans/catalog-release-schedule-service.md](.plans/catalog-release-schedule-service.md)                     |
-| Download/offline/onboarding       | Planned       | [.plans/download-offline-onboarding.md](.plans/download-offline-onboarding.md)                               |
-| Beta UI/provider hardening        | Planned       | [.plans/beta-ui-provider-runtime-hardening.md](.plans/beta-ui-provider-runtime-hardening.md)                 |
-| Fullscreen root shell redesign    | In Progress   | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                         |
-| Phase 1.8 mounted content tree    | In Progress   | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)           |
-| Phase 2 playback/media runtime    | In Progress   | [.plans/phase-2-playback-media-runtime.md](.plans/phase-2-playback-media-runtime.md)                         |
-| Cross-platform mpv IPC parity     | Planned       | [.plans/cross-platform-mpv-ipc-and-playback-parity.md](.plans/cross-platform-mpv-ipc-and-playback-parity.md) |
-| Kunai architecture hardening      | Planned       | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md)         |
-| Kunai experience and growth moat  | Planned       | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)                     |
-| Kunai principal grill Q&A         | Planned       | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                                     |
-| Turborepo and package boundaries  | Phase 4G Prep | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)                     |
-| Kunai V2 ecosystem and Debrid     | Planned       | [.plans/v2-ecosystem-and-debrid.md](.plans/v2-ecosystem-and-debrid.md)                                       |
-| Kunai V3 metadata and sync        | Planned       | [.plans/v3-metadata-and-sync.md](.plans/v3-metadata-and-sync.md)                                             |
-| CLI UX overhaul                   | Planned       | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                                       |
-| Persistent shell implementation   | In Progress   | [.plans/persistent-shell-implementation.md](.plans/persistent-shell-implementation.md)                       |
-| Ink UI migration                  | Planned       | [.plans/ink-migration.md](.plans/ink-migration.md)                                                           |
-| Provider hardening                | Planned       | [.plans/provider-hardening.md](.plans/provider-hardening.md)                                                 |
-| Resolve UX & Playwright lifecycle | Planned       | [.plans/resolve-ux-and-playwright-lifecycle.md](.plans/resolve-ux-and-playwright-lifecycle.md)               |
-| Runtime entry consolidation       | Planned       | [.docs/architecture-v2.md](.docs/architecture-v2.md)                                                         |
-| Search/catalog service            | Active Design | [.plans/search-service.md](.plans/search-service.md)                                                         |
-| YouTube provider research         | Idea          | [.plans/yt-provider.md](.plans/yt-provider.md)                                                               |
+| Track                             | Status        | Doc                                                                                                              |
+| --------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Daily-use UX hardening**        | **Active**    | [.plans/daily-use-ux-discovery-and-runtime-hardening.md](.plans/daily-use-ux-discovery-and-runtime-hardening.md) |
+| **Beta v1 scope & contracts**     | **Active**    | [.plans/kunai-beta-v1-scope-and-contracts.md](.plans/kunai-beta-v1-scope-and-contracts.md)                       |
+| **Execution passes & CLI modes**  | **Active**    | [.plans/kunai-execution-passes-and-cli-modes.md](.plans/kunai-execution-passes-and-cli-modes.md)                 |
+| **Beta readiness**                | **Active**    | [.plans/beta-readiness.md](.plans/beta-readiness.md)                                                             |
+| Repo infrastructure               | Completed     | [.plans/repo-infrastructure.md](.plans/repo-infrastructure.md)                                                   |
+| Design system and Discover        | Polish        | [.plans/kitsune-design-system-and-recommendations.md](.plans/kitsune-design-system-and-recommendations.md)       |
+| Presence integrations             | Polish        | [.plans/presence-integrations.md](.plans/presence-integrations.md)                                               |
+| Catalog release schedules         | Planned       | [.plans/catalog-release-schedule-service.md](.plans/catalog-release-schedule-service.md)                         |
+| Download/offline/onboarding       | Planned       | [.plans/download-offline-onboarding.md](.plans/download-offline-onboarding.md)                                   |
+| Beta UI/provider hardening        | Planned       | [.plans/beta-ui-provider-runtime-hardening.md](.plans/beta-ui-provider-runtime-hardening.md)                     |
+| Fullscreen root shell redesign    | In Progress   | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                             |
+| Phase 1.8 mounted content tree    | In Progress   | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)               |
+| Phase 2 playback/media runtime    | In Progress   | [.plans/phase-2-playback-media-runtime.md](.plans/phase-2-playback-media-runtime.md)                             |
+| Cross-platform mpv IPC parity     | Planned       | [.plans/cross-platform-mpv-ipc-and-playback-parity.md](.plans/cross-platform-mpv-ipc-and-playback-parity.md)     |
+| Kunai architecture hardening      | Planned       | [.plans/kunai-architecture-and-cache-hardening.md](.plans/kunai-architecture-and-cache-hardening.md)             |
+| Kunai experience and growth moat  | Planned       | [.plans/kunai-experience-and-growth-moat.md](.plans/kunai-experience-and-growth-moat.md)                         |
+| Kunai principal grill Q&A         | Planned       | [.plans/kunai-principal-grill-qa.md](.plans/kunai-principal-grill-qa.md)                                         |
+| Turborepo and package boundaries  | Phase 4G Prep | [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md)                         |
+| Kunai V2 ecosystem and Debrid     | Planned       | [.plans/v2-ecosystem-and-debrid.md](.plans/v2-ecosystem-and-debrid.md)                                           |
+| Kunai V3 metadata and sync        | Planned       | [.plans/v3-metadata-and-sync.md](.plans/v3-metadata-and-sync.md)                                                 |
+| CLI UX overhaul                   | Planned       | [.plans/cli-ux-overhaul.md](.plans/cli-ux-overhaul.md)                                                           |
+| Persistent shell implementation   | In Progress   | [.plans/persistent-shell-implementation.md](.plans/persistent-shell-implementation.md)                           |
+| Ink UI migration                  | Planned       | [.plans/ink-migration.md](.plans/ink-migration.md)                                                               |
+| Provider hardening                | Planned       | [.plans/provider-hardening.md](.plans/provider-hardening.md)                                                     |
+| Resolve UX & Playwright lifecycle | Planned       | [.plans/resolve-ux-and-playwright-lifecycle.md](.plans/resolve-ux-and-playwright-lifecycle.md)                   |
+| Runtime entry consolidation       | Planned       | [.docs/architecture-v2.md](.docs/architecture-v2.md)                                                             |
+| Search/catalog service            | Active Design | [.plans/search-service.md](.plans/search-service.md)                                                             |
+| YouTube provider research         | Idea          | [.plans/yt-provider.md](.plans/yt-provider.md)                                                                   |
 
 ## Milestone notes
 

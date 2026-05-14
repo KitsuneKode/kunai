@@ -25,9 +25,12 @@ Source installs require Bun during beta. The CLI uses Bun runtime APIs directly,
 ## Flows (what starts after launch)
 
 1. **Interactive** — no bootstrap flags: Ink shell opens; you search and pick everything in the UI.
-2. **Bootstrap search** — `-S` / `--search` with a query: shell opens with search already filled (and optionally auto-picks a result; see [Search auto-pick](#search-auto-pick)).
+2. **Bootstrap search** — `-S` / `--search` with a query: Kunai runs the first search and opens the shell at results. It does **not** auto-play unless paired with `--jump` or `--quick`; see [Search auto-pick](#search-auto-pick).
 3. **Bootstrap TMDB title** — `-i` / `--id` plus `-t` `movie` or `series`: skips the initial title search for that fixed TMDB id. **Not supported together with anime mode** (a warning is logged and the id path is skipped if `-a` is set).
 4. **Anime mode** — `-a` / `--anime`: starts in anime discovery mode (same shell; provider/search behavior follows anime configuration).
+5. **Continue watching** — `--continue` / `--resume`: picks the newest unfinished local history entry and enters the normal playback flow without doing provider/network work before choosing the target.
+6. **History first** — `--history`: opens the history picker at startup so you can choose what to continue.
+7. **Offline library first** — `--offline`: opens completed local downloads first. This is the same intent as `/library` or `/offline`; use `/downloads` for queue/status management.
 
 History, resume, provider choice, season/episode pickers, and diagnostics export are **in-shell** (command palette `/`, settings, etc.), not separate CLI flags today.
 
@@ -47,6 +50,14 @@ All flags are optional. Values that take an argument consume the **next** argv t
 | `--anime`  | `-a`  | —                   | Start session in anime mode.                                                            |
 | `--debug`  |       | —                   | Enable structured debug logging (stderr / logger).                                      |
 
+### Startup entry routes
+
+| Long         | Alias      | Description                                                                                       |
+| ------------ | ---------- | ------------------------------------------------------------------------------------------------- |
+| `--continue` | `--resume` | Continue the newest unfinished local history item. If none exists, Kunai falls back to the shell. |
+| `--history`  | —          | Open watch history first and continue the selected entry.                                         |
+| `--offline`  | —          | Open the completed offline library first.                                                         |
+
 ### Session UI density (shell chrome)
 
 Parsed flags feed `shellChrome` for this run (see `parseArgs` in `main.ts`):
@@ -65,7 +76,7 @@ Only applies when a **bootstrap search query** is present (`-S`).
 | `--jump`  |       | integer ≥ 1 | After search results load, automatically select the **n**th result (1-based).                                |
 | `--quick` | `-q`  | —           | With `-S` only: same as `--jump 1` (first result). Without `-S`, `-q` only affects shell chrome (see above). |
 
-If auto-pick fails (empty results, index out of range), you remain in the shell to choose manually.
+If auto-pick fails (empty results, index out of range), you remain in the shell to choose manually. For hands-off playback smoke tests, use `--jump N` or `--quick`; `-S "Title"` alone is a search/results test, not a playback test.
 
 ### mpv runtime (optional)
 
@@ -113,7 +124,7 @@ These are useful for docs parity so users do not search for a `--history` flag.
 
 | Action                         | How                                                                                                                                |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Resume / history               | Command palette (`/`) and history flows in the Ink shell                                                                           |
+| Resume / history               | `/ history` or command palette; `--continue` / `--resume` can jump to the newest unfinished local entry at startup                 |
 | Export diagnostics             | `/ export-diagnostics` or command palette — writes **redacted** JSON next to the process cwd                                       |
 | Provider / subtitles / episode | Shell pickers and hotkeys (see README “Shell controls”)                                                                            |
 | Next / previous                | `n` / `p` during playback; starts the target episode from the beginning and leaves manual mpv resume available when history exists |
@@ -122,6 +133,20 @@ These are useful for docs parity so users do not search for a `--history` flag.
 | Source / quality               | Source changes restart the selected source; quality changes keep the current playback position                                     |
 | Provider fallback              | `f`; skips to the next compatible provider during resolve or recovery                                                              |
 | Pause autoskip                 | `u` during active playback; suppresses automatic segment skips for the current title/session without changing config               |
+| Completed offline library      | `/ library`, `/ offline`, or `--offline` — browses playable completed downloads first                                              |
+| Download queue                 | `/ downloads` — manages queued, running, and failed download jobs                                                                  |
+| Check for updates              | `/ update` or command palette — checks the configured update source, then shows manual install-method-aware guidance               |
+
+### Update checks
+
+Kunai may run a cached background update check at startup. The check is non-blocking, records diagnostics, and never runs package-manager or installer commands. `/ update` performs a manual check and shows guidance based on the detected install method:
+
+- source checkout: `git pull`, then refresh dependencies/build as needed
+- Bun global install: `bun update --global @kitsunekode/kunai`
+- npm global install: `npm install -g @kitsunekode/kunai`
+- packaged binary: download the latest release manually
+
+Automatic checks can be snoozed for seven days or disabled from the `/ update` panel. Manual `/ update` remains available even when automatic checks are disabled.
 
 ### Optional presence settings
 
@@ -143,10 +168,10 @@ Presence integrations never receive stream URLs, provider URLs, request headers,
 # Interactive
 bun run dev
 
-# Search pre-filled
+# Search and show results
 bun run dev -- -S "Breaking Bad"
 
-# First search result only (minimal prompts for that step)
+# First search result only (hands-off playback smoke test)
 bun run dev -- -S "Dune" -q
 bun run dev -- -S "Dune" --jump 1
 
@@ -159,6 +184,14 @@ bun run dev -- -i 1396 -t series
 
 # Anime mode + debug
 bun run dev -- -a --debug
+
+# Anime search + first result
+bun run dev -- -a -S "Attack on Titan" --jump 1
+
+# Continue, history, and offline entry routes
+bun run dev -- --continue
+bun run dev -- --history
+bun run dev -- --offline
 
 # Dense shell + search
 bun run dev -- -m -S "Attack on Titan"

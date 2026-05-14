@@ -174,4 +174,22 @@ describe("buildRootStatusSummary", () => {
       "warning",
     );
   });
+
+  test("uses plain language for download status badges", () => {
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: base,
+      currentViewLabel: "home",
+      rootStatus: "ready",
+      downloadStatus: "2 active  ·  1 failed  ·  4 completed",
+    });
+
+    expect(summary.badges.map((badge) => badge.label)).toContain(
+      "downloads 2 active  ·  1 failed  ·  4 completed",
+    );
+  });
 });

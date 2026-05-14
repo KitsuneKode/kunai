@@ -1,15 +1,17 @@
-import type { DiagnosticEvent, DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import { normalizeDiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
+import type {
+  DiagnosticEvent,
+  DiagnosticEventInput,
+  DiagnosticsStore,
+} from "@/services/diagnostics/DiagnosticsStore";
 
 const MAX_EVENTS = 200;
 
 export class DiagnosticsStoreImpl implements DiagnosticsStore {
   private events: DiagnosticEvent[] = [];
 
-  record(event: Omit<DiagnosticEvent, "timestamp">): void {
-    this.events.push({
-      ...event,
-      timestamp: Date.now(),
-    });
+  record(event: DiagnosticEventInput): void {
+    this.events.push(normalizeDiagnosticEvent(event));
 
     if (this.events.length > MAX_EVENTS) {
       this.events.splice(0, this.events.length - MAX_EVENTS);

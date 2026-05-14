@@ -4,13 +4,11 @@ import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-c
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
-import {
-  type ProviderEngine,
-  type ResolveAttempt,
-  type ProviderResolveFailureError,
-} from "@kunai/core";
+import { type ProviderEngine, type ResolveAttempt } from "@kunai/core";
 import type { ProviderHealthRepository } from "@kunai/storage";
-import type { ProviderHealthDelta, ProviderResolveResult } from "@kunai/types";
+import type { ProviderHealthDelta } from "@kunai/types";
+
+import { StreamHealthService } from "./StreamHealthService";
 
 export type PlaybackResolveFeedback = {
   readonly detail?: string | null;
@@ -33,6 +31,13 @@ export type PlaybackResolveEvent =
   | {
       readonly type: "cache-hit-validated";
       readonly providerId: string;
+    }
+  | {
+      readonly type: "cache-health-check";
+      readonly providerId: string;
+      readonly strategy: "hls-manifest-get" | "head-then-range";
+      readonly healthy: boolean;
+      readonly ageMs?: number;
     }
   | {
       readonly type: "attempt";
@@ -64,11 +69,17 @@ export type PlaybackResolveInput = {
   readonly onEvent?: (event: PlaybackResolveEvent) => void;
 };
 
+export type StreamHealthChecker = (
+  url: string,
+  headers?: Record<string, string>,
+) => Promise<boolean>;
+
 export type PlaybackResolveOutput = {
   readonly stream: StreamInfo | null;
   readonly providerId: string;
   readonly attempts: readonly ResolveAttempt<StreamInfo>[];
   readonly cacheStatus: "hit" | "miss" | "prefetched";
+  readonly cacheProvenance: "fresh" | "cached" | "revalidated" | "refetched" | "prefetched";
 };
 
 export class PlaybackResolveService {
@@ -77,6 +88,8 @@ export class PlaybackResolveService {
       readonly engine: ProviderEngine;
       readonly cacheStore: CacheStore;
       readonly providerHealth?: ProviderHealthRepository;
+      readonly streamHealth?: StreamHealthChecker;
+      readonly streamHealthService?: StreamHealthService;
     },
   ) {}
 
@@ -90,18 +103,26 @@ export class PlaybackResolveService {
         providerId: input.providerId,
         attempts: [],
         cacheStatus: "prefetched",
+        cacheProvenance: "prefetched",
       };
     }
 
     const cacheKey = this.buildCacheKey(input, input.providerId);
     const cachedStream = await this.deps.cacheStore.get(cacheKey);
     if (cachedStream) {
-      const cacheAgeMs = Date.now() - (cachedStream.timestamp ?? 0);
-      const shouldValidate = cacheAgeMs > 2 * 60 * 60 * 1000;
+      const health = await this.checkCachedStreamHealth(cachedStream);
+      if (health.checked) {
+        input.onEvent?.({
+          type: "cache-health-check",
+          providerId: input.providerId,
+          strategy: health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+          healthy: health.healthy,
+          ageMs: health.ageMs,
+        });
+      }
 
-      if (shouldValidate) {
-        const healthy = await checkStreamHealth(cachedStream.url, cachedStream.headers);
-        if (!healthy) {
+      if (health.checked) {
+        if (!health.healthy) {
           await this.deps.cacheStore.delete(cacheKey);
           input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
           // Fall through to refetch below
@@ -112,6 +133,7 @@ export class PlaybackResolveService {
             providerId: input.providerId,
             attempts: [],
             cacheStatus: "hit",
+            cacheProvenance: "revalidated",
           };
         }
       } else {
@@ -121,6 +143,7 @@ export class PlaybackResolveService {
           providerId: input.providerId,
           attempts: [],
           cacheStatus: "hit",
+          cacheProvenance: "cached",
         };
       }
     }
@@ -193,6 +216,7 @@ export class PlaybackResolveService {
             failure: a.failure,
           })),
           cacheStatus: "miss",
+          cacheProvenance: cachedStream ? "refetched" : "fresh",
         };
       }
     }
@@ -207,6 +231,7 @@ export class PlaybackResolveService {
         failure: a.failure,
       })),
       cacheStatus: "miss",
+      cacheProvenance: cachedStream ? "refetched" : "fresh",
     };
   }
 
@@ -242,6 +267,24 @@ export class PlaybackResolveService {
     }
   }
 
+  private async checkCachedStreamHealth(stream: StreamInfo): Promise<{
+    readonly healthy: boolean;
+    readonly checked: boolean;
+    readonly strategy: "none" | "hls-manifest-get" | "head-then-range";
+    readonly ageMs?: number;
+  }> {
+    if (this.deps.streamHealth) {
+      const service = new StreamHealthService();
+      const policy = await service.check(stream);
+      if (!policy.checked) return policy;
+      return {
+        ...policy,
+        healthy: await this.deps.streamHealth(stream.url, stream.headers),
+      };
+    }
+    return (this.deps.streamHealthService ?? new StreamHealthService()).check(stream);
+  }
+
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {
     const providerManifest = this.deps.engine.getManifest(providerId);
     return buildApiStreamResolveCacheKey({
@@ -253,36 +296,5 @@ export class PlaybackResolveService {
       audioPreference: input.audioPreference,
       subtitlePreference: input.subtitlePreference,
     });
-  }
-}
-
-/** Validate that a cached stream URL is still reachable. */
-async function checkStreamHealth(url: string, headers?: Record<string, string>): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
-    const response = await fetch(url, {
-      method: "HEAD",
-      headers: { ...headers },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (response.ok) return true;
-  } catch {
-    // HEAD may not be supported; fall through to GET with Range
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { ...headers, Range: "bytes=0-0" },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    return response.ok || response.status === 206;
-  } catch {
-    return false;
   }
 }

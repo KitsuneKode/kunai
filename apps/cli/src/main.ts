@@ -9,6 +9,9 @@
 //   bun run dev -- -a                      # Anime mode
 //   bun run dev -- -S "Dune" --jump 1      # Pick first search result without browse UI
 //   bun run dev -- -S "Dune" -q            # Quick: same as --jump 1 when searching
+//   bun run dev -- --continue              # Continue newest unfinished local history entry
+//   bun run dev -- --history               # Open watch history first
+//   bun run dev -- --offline               # Open completed offline library first
 //   bun run dev -- -m                      # Minimal footer for this session
 //
 // This file owns the current fullscreen session runtime.
@@ -16,10 +19,16 @@
 // compatibility shim while migration residue is retired.
 // =============================================================================
 
+import {
+  applyHistorySelectionProvider,
+  selectContinueHistoryEntry,
+  titleFromHistorySelection,
+} from "@/app/launch-entry";
 import { SessionController } from "@/app/SessionController";
 import { createContainer, type ShellChrome } from "@/container";
 import type { TitleInfo } from "@/domain/types";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
+import { selectDownloadCleanupCandidates } from "@/services/download/download-cleanup-policy";
 import { checkDeps } from "@/ui";
 
 const KUNAI_VERSION = "0.1.0";
@@ -37,6 +46,8 @@ export function parseArgs(argv: string[]): {
   jump?: number;
   setup: boolean;
   offline: boolean;
+  history: boolean;
+  continuePlayback: boolean;
   download: boolean;
   downloadPath?: string;
   shellChrome: ShellChrome;
@@ -53,6 +64,8 @@ export function parseArgs(argv: string[]): {
     jump?: number;
     setup: boolean;
     offline: boolean;
+    history: boolean;
+    continuePlayback: boolean;
     download: boolean;
     downloadPath?: string;
   } = {
@@ -63,6 +76,8 @@ export function parseArgs(argv: string[]): {
     quick: false,
     setup: false,
     offline: false,
+    history: false,
+    continuePlayback: false,
     download: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -91,6 +106,10 @@ export function parseArgs(argv: string[]): {
       args.setup = true;
     } else if (arg === "--offline") {
       args.offline = true;
+    } else if (arg === "--history") {
+      args.history = true;
+    } else if (arg === "--continue" || arg === "--resume") {
+      args.continuePlayback = true;
     } else if (arg === "--download") {
       args.download = true;
     } else if (arg === "--download-path") {
@@ -139,16 +158,51 @@ async function maybeRunOfflineMode(
     return false;
   }
 
-  const { OfflineLibraryPhase } = await import("@/app/OfflineLibraryPhase");
-  const result = await new OfflineLibraryPhase().execute(undefined, {
+  const { openCompletedDownloadsPicker, buildPickerActionContext } =
+    await import("./app-shell/workflows");
+  await openCompletedDownloadsPicker(
     container,
-    signal: new AbortController().signal,
-  });
-  if (result.status !== "error") {
-    return true;
-  }
-  console.log("Offline library failed to open.");
+    buildPickerActionContext({ container, taskLabel: "Offline library" }),
+  );
   return true;
+}
+
+async function maybeOpenStartupHistory(
+  args: { history: boolean },
+  container: Awaited<ReturnType<typeof createContainer>>,
+): Promise<TitleInfo | null> {
+  if (!args.history) return null;
+
+  const { waitForRootHistorySelection } = await import("./app-shell/root-history-bridge");
+  const selectionPromise = waitForRootHistorySelection();
+  container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "history" } });
+  const selection = await selectionPromise;
+  container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+  if (!selection) return null;
+
+  applyHistorySelectionProvider(container, selection);
+  return titleFromHistorySelection(selection);
+}
+
+async function maybeResolveContinueTitle(
+  args: { continuePlayback: boolean },
+  container: Awaited<ReturnType<typeof createContainer>>,
+): Promise<TitleInfo | null> {
+  if (!args.continuePlayback) return null;
+  const selection = selectContinueHistoryEntry(await container.historyStore.getAll());
+  if (!selection) {
+    container.diagnosticsStore.record({
+      category: "session",
+      message: "Continue requested but no unfinished history entry was available",
+    });
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "No unfinished history entry to continue yet.",
+    });
+    return null;
+  }
+  applyHistorySelectionProvider(container, selection);
+  return titleFromHistorySelection(selection);
 }
 
 async function maybeRunDownloadMode(
@@ -202,32 +256,47 @@ async function maybeRunDownloadMode(
 async function maybeRunAutoCleanupDownloads(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<void> {
-  const { config, downloadService, historyStore, logger } = container;
+  const { config, downloadService, diagnosticsService, historyStore, logger } = container;
   if (!config.autoCleanupWatched) return;
 
   const graceDays = Math.max(0, config.autoCleanupGraceDays);
-  const cutoff = Date.now() - graceDays * 24 * 60 * 60 * 1000;
-  for (const job of downloadService.listCompleted(500)) {
-    const historyEntries = await historyStore.listByTitle(job.titleId).catch(() => []);
-    const watched = historyEntries.find((entry) => {
-      if (!entry.completed) return false;
-      if (job.mediaKind !== entry.type) return false;
-      if (job.mediaKind !== "movie") {
-        if (entry.season !== (job.season ?? 1)) return false;
-        if (entry.episode !== (job.episode ?? 1)) return false;
-      }
-      const watchedAt = Date.parse(entry.watchedAt);
-      return Number.isFinite(watchedAt) && watchedAt <= cutoff;
-    });
-    if (!watched) continue;
-
-    await downloadService.deleteJob(job.id, { deleteArtifact: true });
-    logger.info("Auto-cleaned watched download", {
-      jobId: job.id,
-      titleId: job.titleId,
-      outputPath: job.outputPath,
-      watchedAt: watched.watchedAt,
+  const nowMs = Date.now();
+  const jobs = downloadService.listCompleted(500);
+  const historyEntries = await Promise.all(
+    [...new Set(jobs.map((job) => job.titleId))].map(async (titleId) => {
+      const entries = await historyStore.listByTitle(titleId).catch(() => []);
+      return [titleId, entries] as const;
+    }),
+  );
+  const historyByTitle = new Map(historyEntries);
+  const candidates = selectDownloadCleanupCandidates({
+    jobs,
+    historyByTitle,
+    nowMs,
+    graceDays,
+  });
+  for (const candidate of candidates) {
+    logger.info("Watched download cleanup candidate", {
+      jobId: candidate.job.id,
+      titleId: candidate.job.titleId,
+      outputPath: candidate.job.outputPath,
+      watchedAt: candidate.watchedAt,
       graceDays,
+    });
+    diagnosticsService.record({
+      category: "download",
+      operation: "cleanup.candidate",
+      message: "Watched download eligible for explicit cleanup",
+      titleId: candidate.job.titleId,
+      providerId: candidate.job.providerId,
+      season: candidate.job.season,
+      episode: candidate.job.episode,
+      context: {
+        jobId: candidate.job.id,
+        outputPath: candidate.job.outputPath,
+        watchedAt: candidate.watchedAt,
+        graceDays,
+      },
     });
   }
 }
@@ -247,6 +316,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     mpv: args.mpv,
     shellChrome: args.shellChrome,
     capabilitySnapshot,
+    appVersion: KUNAI_VERSION,
   });
   globalContainer = container;
   const { logger, config, stateManager, cacheStore } = container;
@@ -297,10 +367,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   }
 
-  if (await maybeRunOfflineMode(args, container)) {
-    return;
-  }
   void container.downloadService.processQueue();
+  container.updateService.checkInBackground();
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsStore.record({
       category: "session",
@@ -328,6 +396,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const { launchSessionApp } = await import("./app-shell/ink-shell");
   launchSessionApp(container);
   await maybeRunSetupWizard(args, container);
+  if (await maybeRunOfflineMode(args, container)) {
+    await shutdownShell();
+    if (process.stdin.isTTY) process.stdin.unref();
+    return;
+  }
   if (await maybeRunDownloadMode(args, container, bootstrapTitle)) {
     await shutdownShell();
     if (process.stdin.isTTY) process.stdin.unref();
@@ -343,6 +416,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // Run the main session loop
   try {
     globalController = new SessionController(container);
+    if (!bootstrapTitle && args.history) {
+      bootstrapTitle = await maybeOpenStartupHistory(args, container);
+    }
+    if (!bootstrapTitle && args.continuePlayback) {
+      bootstrapTitle = await maybeResolveContinueTitle(args, container);
+    }
     let autoPickSearchResultIndex: number | undefined = args.jump;
     if (autoPickSearchResultIndex === undefined && args.quick && bootstrapQuery) {
       autoPickSearchResultIndex = 1;

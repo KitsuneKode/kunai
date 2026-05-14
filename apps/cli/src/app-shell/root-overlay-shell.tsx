@@ -285,6 +285,17 @@ export function RootOverlayShell({
                     ? { type: "settings" }
                     : { type: action },
         });
+        return;
+      }
+      if (action === "library" || action === "update" || action === "report-issue") {
+        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+        } else {
+          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        }
+        void import("./workflows").then(({ handleShellAction }) =>
+          handleShellAction({ action, container }),
+        );
       }
     },
   });

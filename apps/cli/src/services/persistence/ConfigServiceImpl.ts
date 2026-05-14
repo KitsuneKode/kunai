@@ -2,6 +2,8 @@
 // Config Service Implementation
 // =============================================================================
 
+import { normalizeAutoDownloadNextCount } from "@/services/download/download-scope-policy";
+
 import type {
   ConfigService,
   KitsuneConfig,
@@ -54,6 +56,7 @@ export class ConfigServiceImpl implements ConfigService {
       animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
       movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
+      autoDownloadNextCount: normalizeAutoDownloadNextCount(loaded.autoDownloadNextCount),
     };
     return service;
   }
@@ -175,6 +178,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.autoDownload;
   }
 
+  get autoDownloadNextCount(): number {
+    return this.config.autoDownloadNextCount;
+  }
+
   get autoCleanupWatched(): boolean {
     return this.config.autoCleanupWatched;
   }
@@ -193,6 +200,30 @@ export class ConfigServiceImpl implements ConfigService {
 
   get downloadOnboardingDismissed(): boolean {
     return this.config.downloadOnboardingDismissed;
+  }
+
+  get updateChecksEnabled(): boolean {
+    return this.config.updateChecksEnabled;
+  }
+
+  get updateCheckIntervalDays(): number {
+    return this.config.updateCheckIntervalDays;
+  }
+
+  get updateSnoozedUntil(): number {
+    return this.config.updateSnoozedUntil;
+  }
+
+  get lastUpdateCheckAt(): number {
+    return this.config.lastUpdateCheckAt;
+  }
+
+  get lastUpdateCheckFailedAt(): number {
+    return this.config.lastUpdateCheckFailedAt;
+  }
+
+  get lastKnownLatestVersion(): string {
+    return this.config.lastKnownLatestVersion;
   }
 
   get discoverShowOnStartup(): boolean {
@@ -234,6 +265,9 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.movieLanguageProfile
         ? { movieLanguageProfile: normalizeLanguageProfile(partial.movieLanguageProfile) }
+        : null),
+      ...(partial.autoDownloadNextCount !== undefined
+        ? { autoDownloadNextCount: normalizeAutoDownloadNextCount(partial.autoDownloadNextCount) }
         : null),
     };
   }

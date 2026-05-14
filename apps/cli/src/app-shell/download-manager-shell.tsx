@@ -80,14 +80,13 @@ export function DownloadManagerContent({
 
       if (key.return && job.status === "completed") {
         void (async () => {
-          const { parseIntroSkipTiming } = await import("@/services/offline/offline-library");
-          await container.player.playLocal({
-            filePath: job.outputPath,
-            displayTitle: `${job.titleName}${job.episode ? ` S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}` : ""}`,
-            subtitlePath: job.subtitlePath ?? null,
-            timing: parseIntroSkipTiming(job.introSkipJson),
+          const playable = await container.offlineLibraryService.getPlayableSource(job.id);
+          if (playable.status !== "ready") return;
+          const result = await container.player.playLocal({
+            source: playable.source,
             attach: false,
           });
+          await container.offlineLibraryService.savePlaybackHistory(playable.source, result);
           container.diagnosticsStore.record({
             category: "playback",
             message: "Offline playback started from unified manager",

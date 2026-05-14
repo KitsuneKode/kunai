@@ -85,9 +85,11 @@ export interface KitsuneConfig {
   downloadsEnabled: boolean;
   /** Queue future episodes automatically after playback. Default off. */
   autoDownload: AutoDownloadMode;
-  /** Delete completed watched downloads after the configured grace period. Default false. */
+  /** When autoDownload is "next", optionally keep the next N episodes queued. Default 1. */
+  autoDownloadNextCount: number;
+  /** Surface completed watched downloads as cleanup candidates after the grace period. Default false. */
   autoCleanupWatched: boolean;
-  /** Days to keep watched downloads before startup cleanup may remove them. */
+  /** Days to keep watched downloads before startup cleanup may suggest them. */
   autoCleanupGraceDays: number;
   /** Setup wizard completion marker for future migrations. */
   onboardingVersion: number;
@@ -95,6 +97,18 @@ export interface KitsuneConfig {
   downloadPath: string;
   /** Suppress the first-run offline/download onboarding reminder. */
   downloadOnboardingDismissed: boolean;
+  /** Optional background update checks. Never runs package-manager commands. */
+  updateChecksEnabled: boolean;
+  /** Minimum days between automatic update checks. */
+  updateCheckIntervalDays: number;
+  /** Epoch ms until which update notices are muted. 0 means not snoozed. */
+  updateSnoozedUntil: number;
+  /** Epoch ms of the last attempted update check. 0 means never. */
+  lastUpdateCheckAt: number;
+  /** Epoch ms of the last failed update check. 0 means no recorded failure. */
+  lastUpdateCheckFailedAt: number;
+  /** Last latest version observed from the update source. Empty string means unknown. */
+  lastKnownLatestVersion: string;
 }
 
 export interface ConfigService extends KitsuneConfig {

@@ -11,6 +11,7 @@ import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
 import { launchMpv, shouldApplyStartAtSeek } from "@/mpv";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 
@@ -143,37 +144,39 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   async playLocal(options: {
-    filePath: string;
-    displayTitle: string;
-    subtitlePath?: string | null;
-    timing?: import("@/domain/types").PlaybackTimingMetadata | null;
+    source: LocalPlaybackSource;
     attach?: boolean;
     onPlayerReady?: () => void;
     onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
   }): Promise<PlaybackResult> {
-    const subtitlePath = await this.resolveReadableSubtitlePath(options.subtitlePath ?? null);
+    const subtitlePath = await this.resolveReadableSubtitlePath(
+      options.source.subtitlePath ?? null,
+    );
+    const displayTitle = formatLocalPlaybackTitle(options.source);
     options.onPlaybackEvent?.({ type: "launching-player" });
     this.deps.logger.info("Launching local MPV", {
-      title: options.displayTitle,
-      filePath: options.filePath,
+      title: displayTitle,
+      filePath: options.source.filePath,
     });
     this.deps.diagnosticsStore.record({
       category: "playback",
       message: "Launching local MPV",
       context: {
-        title: options.displayTitle,
-        filePath: options.filePath,
+        titleId: options.source.titleId,
+        jobId: options.source.jobId,
+        title: displayTitle,
+        filePath: options.source.filePath,
         hasSubtitle: Boolean(subtitlePath),
       },
     });
 
     const result = await launchMpv({
-      url: options.filePath,
+      url: options.source.filePath,
       headers: {},
       subtitle: subtitlePath,
-      displayTitle: options.displayTitle,
+      displayTitle,
       attach: options.attach,
-      timing: options.timing,
+      timing: options.source.timing,
       autoSkipEnabled: true,
       skipRecap: true,
       skipIntro: true,
@@ -318,4 +321,9 @@ export class PlayerServiceImpl implements PlayerService {
       handler?.(event);
     };
   }
+}
+
+function formatLocalPlaybackTitle(source: LocalPlaybackSource): string {
+  if (source.mediaKind === "movie") return `${source.titleName}  ·  local`;
+  return `${source.titleName}  ·  S${String(source.season ?? 1).padStart(2, "0")}E${String(source.episode ?? 1).padStart(2, "0")}  ·  local`;
 }

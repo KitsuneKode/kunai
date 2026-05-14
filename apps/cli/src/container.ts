@@ -5,6 +5,8 @@
 // and destructure only what they need.
 // =============================================================================
 
+import { existsSync } from "node:fs";
+
 import { initLogger } from "@/logger";
 import { createProviderEngine, type ProviderEngine } from "@kunai/core";
 import {
@@ -47,9 +49,14 @@ import {
   createCatalogScheduleService,
   type CatalogScheduleService,
 } from "./services/catalog/CatalogScheduleService";
+import { ResultEnrichmentService } from "./services/catalog/ResultEnrichmentService";
+import { TimelineService } from "./services/catalog/TimelineService";
+import type { DiagnosticsService } from "./services/diagnostics/DiagnosticsService";
+import { DiagnosticsServiceImpl } from "./services/diagnostics/DiagnosticsServiceImpl";
 import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
 import { DownloadService } from "./services/download/DownloadService";
+import { OfflineLibraryService } from "./services/offline/OfflineLibraryService";
 import type { CacheStore } from "./services/persistence/CacheStore";
 import type { ConfigService } from "./services/persistence/ConfigService";
 import { ConfigServiceImpl } from "./services/persistence/ConfigServiceImpl";
@@ -58,7 +65,8 @@ import { ConfigStoreImpl } from "./services/persistence/ConfigStoreImpl";
 import type { HistoryStore } from "./services/persistence/HistoryStore";
 import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
 import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
-import { PlaybackResolveService } from "./services/playback/PlaybackResolveService";
+import { MediaTrackService } from "./services/playback/MediaTrackService";
+import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
@@ -69,6 +77,8 @@ import { RecommendationServiceImpl } from "./services/recommendations/Recommenda
 import { SEARCH_SERVICE_DEFINITIONS } from "./services/search/definitions";
 import type { SearchRegistry } from "./services/search/SearchRegistry";
 import { SearchRegistryImpl } from "./services/search/SearchRegistry";
+import { detectInstallMethod } from "./services/update/install-method";
+import { fetchLatestKunaiVersion, UpdateService } from "./services/update/UpdateService";
 import type { CapabilitySnapshot } from "./ui";
 
 /**
@@ -100,9 +110,12 @@ export interface Container {
   readonly configStore: ConfigStore;
   readonly cacheStore: CacheStore;
   readonly diagnosticsStore: DiagnosticsStore;
+  readonly diagnosticsService: DiagnosticsService;
   readonly sourceInventory: SourceInventoryService;
+  readonly mediaTrackService: MediaTrackService;
   readonly providerHealth: ProviderHealthRepository;
   readonly downloadService: DownloadService;
+  readonly offlineLibraryService: OfflineLibraryService;
   readonly presence: PresenceService;
 
   // Session
@@ -113,6 +126,9 @@ export interface Container {
 
   // Schedule/release tracking
   readonly catalogScheduleService: CatalogScheduleService;
+  readonly timelineService: TimelineService;
+  readonly resultEnrichmentService: ResultEnrichmentService;
+  readonly updateService: UpdateService;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;
@@ -139,6 +155,7 @@ export interface ContainerOptions {
   mpv?: MpvRuntimeOptions;
   shellChrome?: ShellChrome;
   capabilitySnapshot?: CapabilitySnapshot | null;
+  appVersion?: string;
 }
 
 /**
@@ -168,10 +185,17 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const historyStore = new SqliteHistoryStoreImpl(new HistoryRepository(dataDb));
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb));
+  const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const providerHealth = new ProviderHealthRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
   const diagnosticsStore = new DiagnosticsStoreImpl();
+  const diagnosticsService = new DiagnosticsServiceImpl({
+    store: diagnosticsStore,
+    logger,
+    appVersion: options?.appVersion,
+    debug,
+  });
 
   // Load config
   const config = await ConfigServiceImpl.load(configStore);
@@ -212,10 +236,11 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
     ffprobeAvailable: Boolean(Bun.which("ffprobe")),
     resolveDownloadStream: async (intent) => {
-      const resolver = new PlaybackResolveService({
+      const resolver = new PlaybackResolveCoordinator({
         engine,
         cacheStore,
         providerHealth,
+        diagnostics: diagnosticsService,
       });
       const controller = new AbortController();
       const result = await resolver.resolve({
@@ -235,6 +260,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       };
     },
   });
+  const offlineLibraryService = new OfflineLibraryService({
+    downloadService,
+    historyStore,
+  });
 
   const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
 
@@ -243,6 +272,22 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   const recommendationService = new RecommendationServiceImpl(recommendationCache);
   const catalogScheduleService = createCatalogScheduleService();
+  const timelineService = new TimelineService(catalogScheduleService);
+  const resultEnrichmentService = new ResultEnrichmentService({
+    historyStore,
+    offlineLibraryService,
+  });
+  const updateService = new UpdateService({
+    config,
+    diagnostics: diagnosticsStore,
+    currentVersion: options?.appVersion ?? "0.0.0",
+    installMethod: detectInstallMethod({
+      cwd: process.cwd(),
+      entrypoint: process.argv[1],
+      fileExists: existsSync,
+    }),
+    fetchLatestVersion: fetchLatestKunaiVersion,
+  });
 
   const container: Container = {
     logger,
@@ -260,13 +305,19 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     configStore,
     cacheStore,
     diagnosticsStore,
+    diagnosticsService,
     sourceInventory,
+    mediaTrackService,
     providerHealth,
     downloadService,
+    offlineLibraryService,
     presence,
     stateManager,
     recommendationService,
     catalogScheduleService,
+    timelineService,
+    resultEnrichmentService,
+    updateService,
     shellChrome,
     capabilitySnapshot,
   };

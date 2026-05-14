@@ -12,7 +12,7 @@ import {
 } from "./loading-shell-runtime";
 import { getRuntimeMemoryLine } from "./runtime-memory";
 import { ShellFrame } from "./shell-frame";
-import { Badge, ContextStrip, LocalSection } from "./shell-primitives";
+import { Badge, LocalSection } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 
