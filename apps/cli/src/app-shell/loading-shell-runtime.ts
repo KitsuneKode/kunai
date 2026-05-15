@@ -165,7 +165,8 @@ export function normalizeLoadingIssue(issue: string | null | undefined): string 
     normalized === "subtitles ready" ||
     normalized === "recoverable provider failures retry before fallback." ||
     normalized.includes("retry before fallback") ||
-    normalized.includes("retrying before fallback")
+    normalized.includes("retrying before fallback") ||
+    (normalized.includes("trying ") && normalized.includes(" fallback"))
   ) {
     return null;
   }

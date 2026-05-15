@@ -1,4 +1,12 @@
 import { describeProviderResolveProviderNote } from "@/app/provider-resolve-copy";
+import {
+  createProviderAttemptTimeline,
+  type ProviderAttemptTimelineSnapshot,
+} from "@/domain/provider/ProviderAttemptTimeline";
+import {
+  classifyProviderFailure,
+  fallbackPolicyForProviderFailureClass,
+} from "@/domain/provider/ProviderFailureClassifier";
 import type { EpisodeInfo, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import type { CacheStore } from "@/services/persistence/CacheStore";
@@ -78,6 +86,7 @@ export type PlaybackResolveOutput = {
   readonly stream: StreamInfo | null;
   readonly providerId: string;
   readonly attempts: readonly ResolveAttempt<StreamInfo>[];
+  readonly providerTimeline?: ProviderAttemptTimelineSnapshot;
   readonly cacheStatus: "hit" | "miss" | "prefetched";
   readonly cacheProvenance: "fresh" | "cached" | "revalidated" | "refetched" | "prefetched";
 };
@@ -178,6 +187,7 @@ export class PlaybackResolveService {
       compatibleIds,
       input.signal,
     );
+    const providerTimeline = buildProviderTimeline(engineResult, input.providerId);
 
     // Persist provider health deltas from all attempts
     for (const attempt of engineResult.attempts) {
@@ -215,6 +225,7 @@ export class PlaybackResolveService {
             result: a.result,
             failure: a.failure,
           })),
+          providerTimeline,
           cacheStatus: "miss",
           cacheProvenance: cachedStream ? "refetched" : "fresh",
         };
@@ -230,6 +241,7 @@ export class PlaybackResolveService {
         result: a.result,
         failure: a.failure,
       })),
+      providerTimeline,
       cacheStatus: "miss",
       cacheProvenance: cachedStream ? "refetched" : "fresh",
     };
@@ -297,4 +309,99 @@ export class PlaybackResolveService {
       subtitlePreference: input.subtitlePreference,
     });
   }
+}
+
+function buildProviderTimeline(
+  engineResult: {
+    readonly providerId?: string | null;
+    readonly result?: unknown;
+    readonly attempts: readonly ResolveAttempt<StreamInfo>[];
+  },
+  primaryProviderId: string,
+): ProviderAttemptTimelineSnapshot {
+  const traceId = `provider:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+  const timeline = createProviderAttemptTimeline({ traceId });
+  let lastFailureClass: ReturnType<typeof classifyProviderFailure>["failureClass"] | null = null;
+  let lastFailedProviderId: string | null = null;
+
+  engineResult.attempts.forEach((attempt, index) => {
+    const attemptId = `provider-attempt-${index + 1}`;
+    const isFallback = index > 0;
+
+    if (isFallback && lastFailureClass && lastFailedProviderId) {
+      timeline.record({
+        type: "fallback-started",
+        attemptId,
+        fromProviderId: lastFailedProviderId,
+        toProviderId: attempt.providerId,
+        reason: lastFailureClass,
+        at: index * 2,
+      });
+    } else {
+      timeline.record({
+        type: "attempt-started",
+        attemptId,
+        providerId: attempt.providerId,
+        reason: attempt.providerId === primaryProviderId ? "primary" : "fallback",
+        at: index * 2,
+      });
+    }
+
+    const resolvedProviderId = engineResult.providerId ?? null;
+    const succeeded =
+      Boolean(attempt.stream) ||
+      Boolean(attempt.result?.streams.length) ||
+      (resolvedProviderId !== null && attempt.providerId === resolvedProviderId);
+
+    if (succeeded) {
+      timeline.record({
+        type: "attempt-succeeded",
+        attemptId,
+        providerId: attempt.providerId,
+        at: index * 2 + 1,
+        cacheHit: attempt.result?.trace.cacheHit,
+        streamCount: attempt.result?.streams.length,
+      });
+      lastFailureClass = null;
+      lastFailedProviderId = null;
+      return;
+    }
+
+    const classification = classifyProviderFailure(
+      attempt.failure ?? {
+        providerId: attempt.providerId,
+        code: "not-found",
+        message: "Provider returned no playable stream candidates",
+        retryable: true,
+      },
+    );
+    timeline.record({
+      type: "attempt-failed",
+      attemptId,
+      providerId: attempt.providerId,
+      at: index * 2 + 1,
+      failureClass: classification.failureClass,
+      retryable: classification.fallbackPolicy === "auto-fallback",
+      userSummary: attempt.failure?.message ?? classification.userSummary,
+      developerDetail: classification.developerDetail,
+    });
+    lastFailureClass = classification.failureClass;
+    lastFailedProviderId = attempt.providerId;
+  });
+
+  if (!engineResult.providerId && !engineResult.result) {
+    const lastAttempt = engineResult.attempts.at(-1);
+    const classification = classifyProviderFailure(lastAttempt?.failure);
+    const policy = fallbackPolicyForProviderFailureClass(classification.failureClass);
+    timeline.record({
+      type: "final-failed",
+      at: engineResult.attempts.length * 2 + 1,
+      userSummary:
+        policy === "guided-action"
+          ? "Provider needs your choice before Kunai can continue."
+          : "No playable stream found after trying available providers.",
+    });
+  }
+
+  return timeline.snapshot();
 }

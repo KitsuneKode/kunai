@@ -1,3 +1,4 @@
+import { summarizeProviderAttemptTimeline } from "@/domain/provider/ProviderAttemptTimeline";
 import type { StreamInfo } from "@/domain/types";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { CacheStore } from "@/services/persistence/CacheStore";
@@ -48,6 +49,7 @@ export class PlaybackResolveCoordinator {
         input.onEvent?.(event);
       },
     });
+    this.recordProviderTimeline(input, result);
 
     return {
       ...result,
@@ -111,6 +113,33 @@ export class PlaybackResolveCoordinator {
         },
       });
     }
+  }
+
+  private recordProviderTimeline(input: PlaybackResolveInput, result: PlaybackResolveOutput): void {
+    if (!this.deps.diagnostics || !result.providerTimeline) return;
+
+    const summary = summarizeProviderAttemptTimeline(result.providerTimeline);
+    const failedAttempt = result.providerTimeline.attempts.find(
+      (attempt) => attempt.status === "failed",
+    );
+    this.deps.diagnostics.record({
+      category: "provider",
+      operation: "provider.resolve.timeline",
+      level: summary.status === "failed" ? "warn" : "info",
+      message: summary.currentUserMessage,
+      traceId: summary.traceId,
+      providerId: result.providerId,
+      titleId: input.title.id,
+      season: input.episode.season,
+      episode: input.episode.episode,
+      context: {
+        status: summary.status,
+        primaryFailure: summary.primaryFailure,
+        attempts: summary.attempts.length,
+        failureClass: failedAttempt?.failureClass ?? "none",
+        truncated: result.providerTimeline.truncated,
+      },
+    });
   }
 }
 

@@ -115,6 +115,19 @@ describe("loading shell runtime policy", () => {
     ).toBe("Resolving via AllManga");
   });
 
+  test("loading copy treats fallback progress as recovery, not final failure", () => {
+    expect(
+      normalizeLoadingIssue("VidKing had an issue. Trying Rivestream fallback now."),
+    ).toBeNull();
+    expect(
+      getProviderResolveWaitPresentation({
+        elapsedSeconds: 6,
+        latestIssue: "VidKing had an issue. Trying Rivestream fallback now.",
+        stageDetail: "Trying Rivestream fallback",
+      }).message,
+    ).toBe("Trying Rivestream fallback");
+  });
+
   test("provider detail avoids duplicate Provider labels", () => {
     expect(normalizeProviderDetail("Provider: vidking · direct-http")).toBe(
       "vidking · direct-http",

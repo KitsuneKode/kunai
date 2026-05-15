@@ -85,6 +85,49 @@ function createProviderResult(url: string): ProviderEngineResolveOutput {
   };
 }
 
+function createProviderResultAfterFallback(): ProviderEngineResolveOutput {
+  return {
+    result: {
+      providerId: "rivestream" as ProviderId,
+      streams: [
+        {
+          id: "stream:rivestream:1",
+          providerId: "rivestream" as ProviderId,
+          url: "https://rivestream.example/stream.m3u8",
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:fallback",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "series", title: "Test Series" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "rivestream" as ProviderId,
+    attempts: [
+      {
+        providerId: "vidking" as ProviderId,
+        stream: null,
+        failure: {
+          providerId: "vidking" as ProviderId,
+          code: "timeout",
+          message: "VidKing timed out",
+          retryable: true,
+          at: "2026-05-15T00:00:00.000Z",
+        },
+      },
+      { providerId: "rivestream" as ProviderId, stream: null, result: undefined },
+    ],
+  };
+}
+
 function input(signal = new AbortController().signal) {
   return {
     title,
@@ -170,5 +213,40 @@ describe("PlaybackResolveCoordinator", () => {
 
     expect(result?.url).toBe("https://fresh.example/stream.m3u8");
     expect(result?.cacheProvenance).toBe("fresh");
+  });
+
+  test("records provider fallback timeline diagnostics", async () => {
+    const events: unknown[] = [];
+    const diagnostics = {
+      record: (event: unknown) => events.push(event),
+      getRecent: () => [],
+      getSnapshot: () => [],
+      clear: () => {},
+      buildSupportBundle: () => {
+        throw new Error("not needed");
+      },
+    } as unknown as DiagnosticsService;
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createMockEngine(createProviderResultAfterFallback()),
+      cacheStore: createMemoryCache(null),
+      diagnostics,
+    });
+
+    const result = await coordinator.resolve(input());
+
+    expect(result.providerTimeline?.status).toBe("recovered");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        category: "provider",
+        operation: "provider.resolve.timeline",
+        message: "Recovered via Rivestream",
+        providerId: "rivestream",
+        context: expect.objectContaining({
+          status: "recovered",
+          primaryFailure: "VidKing timed out",
+          failureClass: "timeout",
+        }),
+      }),
+    );
   });
 });
