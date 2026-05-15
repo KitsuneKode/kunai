@@ -162,23 +162,24 @@ export function CommandPalette({
   const renderCommand = (command: ResolvedAppCommand, absoluteIndex: number) => {
     const selected = absoluteIndex === model.selectedIndex;
     const alias = `/${command.aliases[0]}`;
-    const aliasWidth = Math.min(22, Math.max(10, Math.floor(contentWidth * 0.34)));
-    const detailWidth = Math.max(12, contentWidth - aliasWidth - 5);
+    const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
+    const reason = !command.enabled && command.reason ? ` · ${command.reason}` : "";
+    const detailWidth = Math.max(10, contentWidth - aliasWidth - 7);
+    const detail = truncateLine(`${command.description}${reason}`, detailWidth);
     return (
-      <Box key={command.id} flexDirection="column">
+      <Box key={command.id}>
+        <Text color={selected ? palette.teal : palette.gray}>{selected ? "❯ " : "  "}</Text>
         <Text
           backgroundColor={selected ? palette.teal : undefined}
-          color={selected ? "black" : command.enabled ? palette.muted : palette.gray}
+          color={selected ? "black" : command.enabled ? palette.text : palette.gray}
           bold={selected}
         >
-          <Text color={selected ? "black" : palette.gray}>{selected ? "❯ " : "  "}</Text>
-          {truncateLine(alias, aliasWidth)}
-          <Text color={selected ? "black" : palette.gray}> </Text>
-          {truncateLine(command.description, detailWidth)}
+          {truncateLine(alias, aliasWidth).padEnd(aliasWidth)}
         </Text>
-        {!command.enabled && command.reason ? (
-          <Text color={palette.gray}>{truncateLine(`  ·  ${command.reason}`, contentWidth)}</Text>
-        ) : null}
+        <Text color={selected ? palette.teal : palette.gray}> </Text>
+        <Text color={command.enabled ? (selected ? palette.text : palette.muted) : palette.gray}>
+          {detail}
+        </Text>
       </Box>
     );
   };
@@ -193,10 +194,18 @@ export function CommandPalette({
       marginTop={1}
       width={width}
     >
-      <Text color={palette.amber}>Command</Text>
-      <Box>
+      <Text color={palette.amber} bold>
+        Command
+      </Text>
+      <Box marginTop={0}>
         <Text color="white">/</Text>
-        <LineEditorText value={input} cursor={cursor} focused placeholder="type a command" />
+        <LineEditorText
+          value={input}
+          cursor={cursor}
+          focused
+          placeholder="type a command"
+          maxWidth={Math.max(8, contentWidth - 2)}
+        />
       </Box>
       <Text color={palette.gray}>
         Tab autocomplete · ↑↓ choose · Enter run

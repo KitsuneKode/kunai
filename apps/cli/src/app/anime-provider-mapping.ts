@@ -19,7 +19,7 @@ export async function mapAnimeDiscoveryResultToProviderNative(
   result: SearchResult,
   context: AnimeProviderMappingContext,
 ): Promise<SearchResult> {
-  if (context.mode !== "anime" || result.metadataSource !== "AniList trending") {
+  if (context.mode !== "anime" || !isAniListBackedResult(result)) {
     return result;
   }
 
@@ -76,6 +76,10 @@ export async function mapAnimeDiscoveryResultToProviderNative(
   }
 
   return result;
+}
+
+function isAniListBackedResult(result: SearchResult): boolean {
+  return result.metadataSource?.startsWith("AniList ") === true;
 }
 
 function toAllMangaResult(r: SearchResult): AllMangaSearchResult {

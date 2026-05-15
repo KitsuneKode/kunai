@@ -155,6 +155,42 @@ describe("CatalogScheduleService", () => {
     expect(calls).toBe(1);
   });
 
+  test("loads and caches wider release windows by mode, date, and day count", async () => {
+    let calls = 0;
+    let lastWindowDays = 0;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: async (_mode, window) => {
+          calls += 1;
+          lastWindowDays = Math.round(
+            (window.end.getTime() - window.start.getTime()) / (24 * 60 * 60 * 1000),
+          );
+          return [
+            {
+              source: "anilist",
+              titleId: "10",
+              titleName: "Weekly Airing",
+              type: "anime",
+              episode: 5,
+              releaseAt: "2026-05-10T13:00:00.000Z",
+              releasePrecision: "timestamp",
+              status: "unknown",
+            },
+          ];
+        },
+      }),
+      () => NOW,
+    );
+
+    const first = await service.loadReleaseWindow("anime", 7);
+    const second = await service.loadReleaseWindow("anime", 7);
+
+    expect(first).toEqual(second);
+    expect(first[0]?.status).toBe("upcoming");
+    expect(lastWindowDays).toBe(7);
+    expect(calls).toBe(1);
+  });
+
   test("builds local day windows with stable date keys", () => {
     expect(buildLocalDayWindow(NOW).dateKey).toBe("2026-05-08");
   });

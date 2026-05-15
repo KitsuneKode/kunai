@@ -17,6 +17,8 @@ export type CatalogScheduleItem = {
   readonly titleName: string;
   readonly type: CatalogScheduleType;
   readonly posterPath?: string | null;
+  readonly popularity?: number;
+  readonly averageScore?: number;
   readonly season?: number;
   readonly episode?: number;
   readonly episodeTitle?: string;
@@ -106,6 +108,19 @@ export class CatalogScheduleService {
   ): Promise<readonly CatalogScheduleItem[]> {
     const window = buildLocalDayWindow(this.now());
     const key = `today:${mode}:${window.dateKey}`;
+    return this.loadCached(key, RELEASING_TODAY_TTL_MS, signal, { mode }, async () => {
+      const items = await this.loaders.releasingToday(mode, window, signal);
+      return items.map((item) => normalizeScheduleItem(item, this.now()));
+    });
+  }
+
+  async loadReleaseWindow(
+    mode: CatalogScheduleMode,
+    days: number,
+    signal?: AbortSignal,
+  ): Promise<readonly CatalogScheduleItem[]> {
+    const window = buildLocalWindow(this.now(), days);
+    const key = `window:${mode}:${window.dateKey}:${Math.max(1, Math.trunc(days))}`;
     return this.loadCached(key, RELEASING_TODAY_TTL_MS, signal, { mode }, async () => {
       const items = await this.loaders.releasingToday(mode, window, signal);
       return items.map((item) => normalizeScheduleItem(item, this.now()));
@@ -207,11 +222,15 @@ export function classifyReleaseStatus(
 }
 
 export function buildLocalDayWindow(nowMs: number): CatalogScheduleWindow {
+  return buildLocalWindow(nowMs, 1);
+}
+
+export function buildLocalWindow(nowMs: number, days: number): CatalogScheduleWindow {
   const now = new Date(nowMs);
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
-  end.setDate(start.getDate() + 1);
+  end.setDate(start.getDate() + Math.max(1, Math.min(14, Math.trunc(days))));
   return {
     start,
     end,
@@ -298,7 +317,18 @@ async function loadAniListReleasingToday(
   window: CatalogScheduleWindow,
   signal?: AbortSignal,
 ): Promise<readonly CatalogScheduleItem[]> {
-  const query = `query($start:Int,$end:Int){Page(page:1,perPage:25){airingSchedules(airingAt_greater:$start,airingAt_lesser:$end,sort:TIME){airingAt episode media{id title{romaji english} coverImage{extraLarge large}}}}}`;
+  const pages = await Promise.all(
+    [1, 2, 3].map((page) => loadAniListAiringSchedulePage(window, page, signal)),
+  );
+  return dedupeScheduleItems(pages.flat()).slice(0, 100);
+}
+
+async function loadAniListAiringSchedulePage(
+  window: CatalogScheduleWindow,
+  page: number,
+  signal?: AbortSignal,
+): Promise<readonly CatalogScheduleItem[]> {
+  const query = `query($start:Int,$end:Int,$page:Int){Page(page:$page,perPage:50){airingSchedules(airingAt_greater:$start,airingAt_lesser:$end,sort:TIME){airingAt episode media{id title{romaji english} coverImage{extraLarge large} popularity averageScore}}}}`;
   const data = await postAniListGraphql<{
     readonly data?: {
       readonly Page?: {
@@ -315,6 +345,8 @@ async function loadAniListReleasingToday(
               readonly extraLarge?: string | null;
               readonly large?: string | null;
             } | null;
+            readonly popularity?: number | null;
+            readonly averageScore?: number | null;
           } | null;
         }[];
       } | null;
@@ -325,6 +357,7 @@ async function loadAniListReleasingToday(
       variables: {
         start: Math.floor(window.start.getTime() / 1000),
         end: Math.floor(window.end.getTime() / 1000),
+        page,
       },
     },
     signal,
@@ -340,6 +373,8 @@ async function loadAniListReleasingToday(
         type: "anime",
         posterPath:
           schedule.media.coverImage?.extraLarge ?? schedule.media.coverImage?.large ?? null,
+        popularity: schedule.media.popularity ?? undefined,
+        averageScore: schedule.media.averageScore ?? undefined,
         episode: schedule.episode ?? undefined,
         releaseAt: new Date(schedule.airingAt * 1000).toISOString(),
         releasePrecision: "timestamp",
@@ -347,6 +382,20 @@ async function loadAniListReleasingToday(
       } satisfies CatalogScheduleItem,
     ];
   });
+}
+
+function dedupeScheduleItems(
+  items: readonly CatalogScheduleItem[],
+): readonly CatalogScheduleItem[] {
+  const seen = new Set<string>();
+  const deduped: CatalogScheduleItem[] = [];
+  for (const item of items) {
+    const key = `${item.source}:${item.titleId}:${item.season ?? "-"}:${item.episode ?? "-"}:${item.releaseAt ?? "-"}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
 }
 
 async function loadTmdbNextRelease(

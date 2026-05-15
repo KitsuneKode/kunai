@@ -19,7 +19,8 @@ export class TimelineService {
     private readonly schedule: Pick<
       CatalogScheduleService,
       "getNextRelease" | "loadReleasingToday"
-    >,
+    > &
+      Partial<Pick<CatalogScheduleService, "loadReleaseWindow">>,
     private readonly now: () => number = () => Date.now(),
   ) {}
 
@@ -36,6 +37,16 @@ export class TimelineService {
     signal?: AbortSignal,
   ): Promise<readonly CatalogScheduleItem[]> {
     return this.schedule.loadReleasingToday(mode, signal);
+  }
+
+  async loadReleaseWindow(
+    mode: CatalogScheduleMode,
+    days: number,
+    signal?: AbortSignal,
+  ): Promise<readonly CatalogScheduleItem[]> {
+    return this.schedule.loadReleaseWindow
+      ? this.schedule.loadReleaseWindow(mode, days, signal)
+      : this.schedule.loadReleasingToday(mode, signal);
   }
 }
 
