@@ -137,6 +137,10 @@ export interface PlaybackResult {
   readonly lastNonZeroPositionSeconds?: number;
   readonly lastNonZeroDurationSeconds?: number;
   readonly lastTrustedProgressSeconds?: number;
+  /** Most recent position reached through natural playback or user-initiated seek.
+   *  Updated on small forward steps AND user seeks (both forward and backward).
+   *  Unlike lastTrustedProgressSeconds, this CAN go down when the user seeks backward. */
+  readonly lastReliableProgressSeconds?: number;
 }
 
 export interface PlaybackTimingSegment {

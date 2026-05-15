@@ -1,8 +1,8 @@
 -- Kunai mpv bridge: IPC user-data with the Kunai CLI (persistent session only on Unix).
 -- user-data: kunai-skip-to, kunai-skip-auto, kunai-skip-kind, kunai-skip-label, kunai-skip-rev,
 --             kunai-skip-prompt-ms (countdown + Bun auto-skip alignment)
--- kunai-request: next | previous | skip | auto-skip | quality | refresh
--- kunai-loading: non-empty → full-window “loading episode” overlay (set by Bun or Lua before stop).
+-- kunai-request: next | previous | skip | auto-skip | quality | refresh | resume-seek
+-- kunai-loading: non-empty → full-window "loading episode" overlay (set by Bun or Lua before stop).
 -- kunai-resume-at: seconds > 0 → resume vs start-over prompt (kunai-resume-choice: resume|start).
 --
 -- Script-opts id `kunai-bridge`: margin_bottom, margin_right, chip_width, chip_height, prompt_seconds (Lua-only fallback if prompt-ms unset)
@@ -924,3 +924,9 @@ mp.add_key_binding("K", "kunai-quality-shift", do_quality, { repeatable = false 
 
 -- Same episode: re-resolve the stream URL (cache bust) and resume from the saved position.
 mp.add_key_binding("ctrl+r", "kunai-refresh", do_refresh, { repeatable = false })
+
+-- Seek to the last saved history position for the current episode without re-resolving.
+local function do_resume_seek()
+	signal("resume-seek")
+end
+mp.add_key_binding("Alt+r", "kunai-resume-seek", do_resume_seek, { repeatable = false })

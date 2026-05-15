@@ -15,6 +15,7 @@ import {
   shouldApplyStartAtSeek,
 } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { checkStreamPreflight } from "@/services/playback/stream-health-check";
 
 import {
   buildKunaiBridgeScriptOptsArg,
@@ -305,10 +306,41 @@ export class PersistentMpvSession {
     await this.removeExternalSubtitles();
     options.onPlaybackEvent?.({ type: "resolving-playback" });
     this.queueReadyWork(options, { armFallback: false });
+
+    const preflightPromise = checkStreamPreflight(stream.url, stream.headers, 3_000);
+
     const loadResult = await this.ipcSession?.send(
       buildPersistentLoadfileCommand(stream.url, options.startAt),
       3_000,
     );
+
+    const preflight = await preflightPromise;
+    if (preflight.status === "unreachable" && preflight.definitive && !loadResult?.ok) {
+      void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 500);
+      options.onPlaybackEvent?.({
+        type: "ipc-command-failed",
+        command: "loadfile",
+        error: `stream unreachable: ${preflight.reason}`,
+      });
+      cycle.telemetry.endReason = "error";
+      this.activeCycle = null;
+      cycle.resolve({
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "error",
+        resultSource: "ipc",
+        playerExitedCleanly: true,
+        playerExitCode: 0,
+        playerExitSignal: null,
+        socketPathCleanedUp: false,
+        lastNonZeroPositionSeconds: 0,
+        lastNonZeroDurationSeconds: 0,
+        lastTrustedProgressSeconds: 0,
+        lastReliableProgressSeconds: 0,
+      });
+      return await cycle.promise;
+    }
+
     if (!loadResult?.ok) {
       void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 500);
       options.onPlaybackEvent?.({
@@ -491,6 +523,9 @@ export class PersistentMpvSession {
                 this.currentCycleOptions().onMpvActionRequest?.(
                   req === "quality" ? "pick-quality" : req === "refresh" ? "refresh" : req,
                 );
+                void this.ipcSession?.send(["set_property", "user-data/kunai-request", ""], 500);
+              } else if (req === "resume-seek") {
+                void this.handleResumeSeekFromMpv();
                 void this.ipcSession?.send(["set_property", "user-data/kunai-request", ""], 500);
               } else if (req === "skip" || req === "auto-skip") {
                 const automatic = req === "auto-skip";
@@ -1055,6 +1090,17 @@ export class PersistentMpvSession {
     if (this.skippedSegments.has(seg.key)) return;
     if (!isPlaybackAutoSkipEnabled(seg.kind, this.skipConfig(options))) return;
     await this.performSeekSkip(options, seg, true);
+  }
+
+  private async handleResumeSeekFromMpv(): Promise<void> {
+    const target = this.currentOptions.resumePromptAt;
+    if (!target || target <= 0 || !this.ipcSession || !this.activeCycle) return;
+
+    const seekResult = await this.ipcSession.send(["seek", target, "absolute"], 2_000);
+    if (seekResult.ok) {
+      this.currentPositionSeconds = target;
+      noteTrustedSeek(this.activeCycle.telemetry, target);
+    }
   }
 
   private async onSkipRequestFromMpv(automatic: boolean): Promise<void> {

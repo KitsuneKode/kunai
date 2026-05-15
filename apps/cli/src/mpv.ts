@@ -28,6 +28,7 @@ import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
 import { dbg } from "@/logger";
+import { checkStreamPreflight } from "@/services/playback/stream-health-check";
 import { normalizeSubtitleUrl } from "@/subtitle";
 
 export async function launchMpv(opts: {
@@ -159,6 +160,8 @@ export async function launchMpv(opts: {
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
   }));
 
+  const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000).then((result) => result);
+
   const ipcBootstrap = (async () => {
     const ipcBootstrapStarted = Date.now();
     const ready = await waitForMpvIpcEndpoint(ipcEndpoint, 5_000);
@@ -223,6 +226,34 @@ export async function launchMpv(opts: {
 
   const exit = await exitPromise;
   recordPlayerExit(telemetry, exit);
+
+  // Check if preflight returned a definitive failure before mpv started.
+  // This catches dead URLs early so we can skip to fallback without waiting
+  // for full mpv startup/shutdown latency.
+  const preflightResult = await preflight;
+  if (preflightResult.status === "unreachable" && preflightResult.definitive && !ipcSession) {
+    // Stream is definitively dead and mpv hasn't found it either — abort.
+    watchdog.stop();
+    await closeIpcSession(ipcSession);
+    const socketPathCleanedUp = shouldUnlinkUnixSocket(ipcEndpoint)
+      ? await cleanupUnixSocketFile(ipcEndpoint.path)
+      : true;
+    opts.onControlReady?.(null);
+    return {
+      watchedSeconds: 0,
+      duration: 0,
+      endReason: "error",
+      resultSource: "unknown",
+      playerExitedCleanly: false,
+      playerExitCode: exit.code,
+      playerExitSignal: exit.signal ?? null,
+      socketPathCleanedUp,
+      lastNonZeroPositionSeconds: 0,
+      lastNonZeroDurationSeconds: 0,
+      lastTrustedProgressSeconds: 0,
+      lastReliableProgressSeconds: 0,
+    };
+  }
 
   await ipcBootstrap;
 

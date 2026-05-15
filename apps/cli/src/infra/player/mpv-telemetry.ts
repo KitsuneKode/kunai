@@ -42,6 +42,12 @@ export interface PlayerTelemetryState {
    * jump straight to EOF duration as genuine watch progress).
    */
   maxTrustedProgressSeconds: number;
+  /**
+   * Most recent position reached through natural playback or user-initiated seek.
+   * Updated on small forward steps AND user seeks (both forward and backward).
+   * Unlike maxTrustedProgressSeconds, this CAN go down when the user seeks backward.
+   */
+  lastReliableProgressSeconds: number;
   /** After the first positive time sample, large opening seeks (resume) are allowed once. */
   trustedProgressBootstrapDone: boolean;
   /** Last `stream-stalled` / `ipc-stalled` observation (ms) for premature-EOF heuristics. */
@@ -98,6 +104,7 @@ export function createPlayerTelemetryState(socketPath?: string): PlayerTelemetry
     playerExitCode: null,
     playerExitSignal: null,
     maxTrustedProgressSeconds: 0,
+    lastReliableProgressSeconds: 0,
     trustedProgressBootstrapDone: false,
     lastStreamStallAtMs: null,
     lastPausedAtMs: null,
@@ -124,7 +131,15 @@ function advanceTrustedProgressSeconds(
   prevPositionSeconds: number,
   newPositionSeconds: number,
   durationSeconds: number,
+  wasSeeking: boolean,
 ): void {
+  if (wasSeeking) {
+    state.maxTrustedProgressSeconds = Math.max(state.maxTrustedProgressSeconds, newPositionSeconds);
+    state.lastReliableProgressSeconds = newPositionSeconds;
+    state.trustedProgressBootstrapDone = true;
+    return;
+  }
+
   if (newPositionSeconds <= state.maxTrustedProgressSeconds) return;
 
   if (!state.trustedProgressBootstrapDone && prevPositionSeconds === 0 && newPositionSeconds > 0) {
@@ -135,6 +150,7 @@ function advanceTrustedProgressSeconds(
       return;
     }
     state.maxTrustedProgressSeconds = newPositionSeconds;
+    state.lastReliableProgressSeconds = newPositionSeconds;
     state.trustedProgressBootstrapDone = true;
     return;
   }
@@ -146,12 +162,14 @@ function advanceTrustedProgressSeconds(
   const delta = newPositionSeconds - prevPositionSeconds;
   if (delta <= TRUSTED_FORWARD_JUMP_SEC) {
     state.maxTrustedProgressSeconds = newPositionSeconds;
+    state.lastReliableProgressSeconds = newPositionSeconds;
   }
 }
 
 export function noteTrustedSeek(state: PlayerTelemetryState, positionSeconds: number): void {
   if (!Number.isFinite(positionSeconds) || positionSeconds <= 0) return;
   state.maxTrustedProgressSeconds = Math.max(state.maxTrustedProgressSeconds, positionSeconds);
+  state.lastReliableProgressSeconds = Math.max(state.lastReliableProgressSeconds, positionSeconds);
   state.trustedProgressBootstrapDone = true;
 }
 
@@ -348,6 +366,7 @@ export function applyObservedPropertySample(
       base.positionSeconds,
       next.positionSeconds,
       next.durationSeconds,
+      base.seeking === true,
     );
   }
 
@@ -540,6 +559,7 @@ export function finalizePlaybackResult(
       lastNonZeroPositionSeconds: 0,
       lastNonZeroDurationSeconds: 0,
       lastTrustedProgressSeconds: 0,
+      lastReliableProgressSeconds: 0,
     };
   }
 
@@ -555,5 +575,6 @@ export function finalizePlaybackResult(
     lastNonZeroPositionSeconds: state.lastNonZeroSample?.positionSeconds ?? 0,
     lastNonZeroDurationSeconds: state.lastNonZeroSample?.durationSeconds ?? 0,
     lastTrustedProgressSeconds,
+    lastReliableProgressSeconds: state.lastReliableProgressSeconds,
   };
 }

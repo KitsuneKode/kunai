@@ -273,6 +273,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
   async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
     const { container } = context;
+    PlaybackPhase.lateSubtitleInflight.clear();
     const {
       providerRegistry,
       engine,
@@ -384,6 +385,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       // Holds a prefetched stream for the upcoming episode (set during near-EOF).
       let pendingPrefetchedStream: import("@/domain/types").StreamInfo | null = null;
+      let pendingPrefetchedProviderId: string | null = null;
 
       // Inner playback loop
       while (true) {
@@ -756,6 +758,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Prefetch: start resolving the next episode's stream in the background
           // when we enter the last ~30 s, so autoplay feels instant.
           let prefetchedNextStream: import("@/domain/types").StreamInfo | null = null;
+          let prefetchedNextProviderId: string | null = null;
           let prefetchedRecommendationNames: readonly string[] | null = null;
           const maybePrefetchNext = () => {
             if (
@@ -784,6 +787,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               cacheStore,
               providerHealth: container.providerHealth,
             });
+            prefetchedNextProviderId = prefetchMetadata.metadata.id;
             void prefetchCoordinator
               .prefetch({
                 title,
@@ -867,6 +871,44 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 watchedSeconds: result.watchedSeconds,
                 duration: result.duration,
                 endReason: result.endReason,
+              },
+            });
+          }
+
+          if (result.endReason === "error") {
+            const invalidateProviderId = consumedPrefetch
+              ? (pendingPrefetchedProviderId ?? resolvedProviderId)
+              : resolvedProviderId;
+            const staleCacheKey = buildApiStreamResolveCacheKey({
+              providerId: invalidateProviderId,
+              title,
+              episode: currentEpisode,
+              mode: stateManager.getState().mode,
+              audioPreference:
+                stateManager.getState().mode === "anime"
+                  ? config.animeLanguageProfile.audio
+                  : config.seriesLanguageProfile.audio,
+              subtitlePreference:
+                stateManager.getState().mode === "anime"
+                  ? config.animeLanguageProfile.subtitle
+                  : config.seriesLanguageProfile.subtitle,
+            });
+            try {
+              await cacheStore.delete(staleCacheKey);
+            } catch {
+              // best-effort
+            }
+            diagnosticsStore.record({
+              category: "playback",
+              message: "Stream died — cache entry invalidated for next resolve",
+              context: {
+                provider: invalidateProviderId,
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+                exitCode: result.playerExitCode,
+                exitSignal: result.playerExitSignal,
+                wasPrefetched: Boolean(consumedPrefetch),
               },
             });
           }
@@ -1438,6 +1480,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             // skip the provider scrape and call loadfile immediately.
             if (prefetchedNextStream) {
               pendingPrefetchedStream = prefetchedNextStream;
+              pendingPrefetchedProviderId = prefetchedNextProviderId;
             }
 
             continue;

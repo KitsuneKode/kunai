@@ -50,6 +50,7 @@ describe("mpv-telemetry", () => {
       lastNonZeroPositionSeconds: 1440,
       lastNonZeroDurationSeconds: 1440,
       lastTrustedProgressSeconds: 1437,
+      lastReliableProgressSeconds: 1437,
     });
   });
 
@@ -98,6 +99,7 @@ describe("mpv-telemetry", () => {
       lastNonZeroPositionSeconds: 612,
       lastNonZeroDurationSeconds: 1440,
       lastTrustedProgressSeconds: 612,
+      lastReliableProgressSeconds: 612,
     });
   });
 
@@ -173,6 +175,7 @@ describe("mpv-telemetry", () => {
       lastNonZeroPositionSeconds: 0,
       lastNonZeroDurationSeconds: 0,
       lastTrustedProgressSeconds: 0,
+      lastReliableProgressSeconds: 0,
     });
   });
 
@@ -196,6 +199,7 @@ describe("mpv-telemetry", () => {
       lastNonZeroPositionSeconds: 0,
       lastNonZeroDurationSeconds: 0,
       lastTrustedProgressSeconds: 0,
+      lastReliableProgressSeconds: 0,
     });
   });
 

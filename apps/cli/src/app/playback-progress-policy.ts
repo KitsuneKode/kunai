@@ -16,6 +16,7 @@ export function playbackResultFromProgressPoint(point: PlaybackProgressPoint): P
     endReason: "quit",
     lastNonZeroPositionSeconds: point.positionSeconds,
     lastNonZeroDurationSeconds: point.durationSeconds,
+    lastReliableProgressSeconds: point.positionSeconds,
   };
 }
 
@@ -62,6 +63,11 @@ export function toHistoryTimestamp(
     result.duration > 0
   ) {
     return Math.max(result.watchedSeconds, result.duration);
+  }
+
+  const reliable = result.lastReliableProgressSeconds ?? 0;
+  if (reliable > 0) {
+    return reliable;
   }
 
   if (trusted > 0) {
