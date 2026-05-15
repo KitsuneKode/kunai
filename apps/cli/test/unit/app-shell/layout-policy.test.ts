@@ -6,6 +6,8 @@ describe("getShellViewportPolicy", () => {
   test("marks picker viewports below minimum size as too small", () => {
     const policy = getShellViewportPolicy("picker", 79, 19);
 
+    expect(policy.columns).toBe(79);
+    expect(policy.rows).toBe(19);
     expect(policy.tooSmall).toBe(true);
     expect(policy.minColumns).toBe(80);
     expect(policy.minRows).toBe(20);

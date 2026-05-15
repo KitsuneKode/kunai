@@ -57,4 +57,24 @@ describe("SearchIntentParser", () => {
       errors: [],
     });
   });
+
+  test("parses catalog sorts used by advanced search", () => {
+    expect(parseSearchIntentText("genre:thriller sort:popular")).toMatchObject({
+      query: "",
+      filters: {
+        genres: ["thriller"],
+      },
+      sort: "popular",
+      errors: [],
+    });
+
+    expect(parseSearchIntentText("rating:8 sort:rating")).toMatchObject({
+      query: "",
+      filters: {
+        minRating: 8,
+      },
+      sort: "rating",
+      errors: [],
+    });
+  });
 });

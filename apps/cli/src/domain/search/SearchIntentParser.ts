@@ -25,7 +25,7 @@ const SEARCH_MODES = new Set<SearchIntentMode>(["anime", "series", "movie", "all
 const TYPE_FILTERS = new Set<SearchIntentTypeFilter>(["movie", "series", "all"]);
 const WATCH_FILTERS = new Set<WatchFilter>(["any", "unwatched", "watching", "completed"]);
 const RELEASE_FILTERS = new Set<ReleaseFilter>(["today", "this-week", "upcoming"]);
-const SEARCH_SORTS = new Set<SearchSort>(["relevance", "progress", "recent"]);
+const SEARCH_SORTS = new Set<SearchSort>(["relevance", "progress", "recent", "popular", "rating"]);
 
 export function parseSearchIntentText(text: string): ParsedSearchIntentText {
   const terms: string[] = [];

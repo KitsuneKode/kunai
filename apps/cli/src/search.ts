@@ -64,6 +64,161 @@ export async function searchVideasy(query: string): Promise<SearchResult[]> {
   return results;
 }
 
+export async function discoverVideasy(
+  intent: import("./domain/search/SearchIntent").SearchIntent,
+  signal?: AbortSignal,
+): Promise<SearchResult[]> {
+  const urls = buildVideasyDiscoverUrls(intent);
+  if (urls.length === 0) return searchVideasy(intent.query);
+
+  const responses = await Promise.all(
+    urls.map(async ({ url, type }) => {
+      const res = await fetch(url, { signal: signal ?? AbortSignal.timeout(8000) });
+      if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+      const data = (await res.json()) as Record<string, unknown>;
+      const rawResults = Array.isArray(data.results) ? data.results : [];
+      return rawResults
+        .map(readSearchRecord)
+        .filter((record) => record.id !== null && record.id !== undefined)
+        .map((record): SearchResult => {
+          const posterPath = readString(record.poster_path) || null;
+          return {
+            id: String(record.id),
+            type,
+            title: readString(record.title) || readString(record.name) || "Unknown",
+            year:
+              (readString(record.release_date) || readString(record.first_air_date)).split(
+                "-",
+              )[0] || "?",
+            overview: readString(record.overview).slice(0, 120),
+            posterPath,
+            rating: typeof record.vote_average === "number" ? record.vote_average : null,
+            popularity: typeof record.popularity === "number" ? record.popularity : null,
+          };
+        });
+    }),
+  );
+
+  return responses.flat().slice(0, 20);
+}
+
+export function buildVideasyDiscoverUrls(
+  intent: import("./domain/search/SearchIntent").SearchIntent,
+): readonly { readonly url: string; readonly type: "movie" | "series" }[] {
+  if (intent.query.trim().length > 0) return [];
+  const mediaTypes = resolveTmdbMediaTypes(intent);
+  if (mediaTypes.length === 0) return [];
+
+  return mediaTypes.map((mediaType) => {
+    const params = new URLSearchParams({
+      language: "en-US",
+      page: "1",
+      sort_by: tmdbSortBy(intent.sort, mediaType),
+      "vote_count.gte": intent.sort === "rating" ? "150" : "20",
+    });
+
+    const genreId = resolveTmdbGenreId(intent.filters.genres?.[0], mediaType);
+    if (genreId) params.set("with_genres", genreId);
+    if (typeof intent.filters.minRating === "number") {
+      params.set("vote_average.gte", String(intent.filters.minRating));
+    }
+    applyTmdbYearParams(params, intent.filters.year, mediaType);
+
+    return {
+      type: mediaType === "tv" ? "series" : "movie",
+      url: `https://db.videasy.net/3/discover/${mediaType}?${params.toString()}`,
+    };
+  });
+}
+
+function resolveTmdbMediaTypes(
+  intent: import("./domain/search/SearchIntent").SearchIntent,
+): readonly ("movie" | "tv")[] {
+  if (intent.filters.type === "movie" || intent.mode === "movie") return ["movie"];
+  if (intent.filters.type === "series" || intent.mode === "series") return ["tv"];
+  return ["movie", "tv"];
+}
+
+function tmdbSortBy(
+  sort: import("./domain/search/SearchIntent").SearchSort,
+  mediaType: "movie" | "tv",
+): string {
+  if (sort === "rating") return "vote_average.desc";
+  if (sort === "recent")
+    return mediaType === "movie" ? "primary_release_date.desc" : "first_air_date.desc";
+  return "popularity.desc";
+}
+
+function applyTmdbYearParams(
+  params: URLSearchParams,
+  year: import("./domain/search/SearchIntent").SearchIntentFilters["year"],
+  mediaType: "movie" | "tv",
+): void {
+  if (!year) return;
+  const prefix = mediaType === "movie" ? "primary_release_date" : "first_air_date";
+  if (typeof year === "number") {
+    params.set(
+      mediaType === "movie" ? "primary_release_year" : "first_air_date_year",
+      String(year),
+    );
+    return;
+  }
+  if (typeof year.from === "number") params.set(`${prefix}.gte`, `${year.from}-01-01`);
+  if (typeof year.to === "number") params.set(`${prefix}.lte`, `${year.to}-12-31`);
+}
+
+const TMDB_MOVIE_GENRES: Readonly<Record<string, string>> = {
+  action: "28",
+  adventure: "12",
+  animation: "16",
+  comedy: "35",
+  crime: "80",
+  documentary: "99",
+  drama: "18",
+  family: "10751",
+  fantasy: "14",
+  history: "36",
+  horror: "27",
+  mystery: "9648",
+  romance: "10749",
+  "science-fiction": "878",
+  "sci-fi": "878",
+  scifi: "878",
+  thriller: "53",
+  war: "10752",
+  western: "37",
+};
+
+const TMDB_TV_GENRES: Readonly<Record<string, string>> = {
+  action: "10759",
+  adventure: "10759",
+  animation: "16",
+  comedy: "35",
+  crime: "80",
+  documentary: "99",
+  drama: "18",
+  family: "10751",
+  kids: "10762",
+  mystery: "9648",
+  news: "10763",
+  reality: "10764",
+  romance: "10749",
+  "science-fiction": "10765",
+  "sci-fi": "10765",
+  scifi: "10765",
+  fantasy: "10765",
+  soap: "10766",
+  talk: "10767",
+  politics: "10768",
+  western: "37",
+};
+
+function resolveTmdbGenreId(genre: string | undefined, mediaType: "movie" | "tv"): string | null {
+  if (!genre) return null;
+  const normalized = genre.trim().toLowerCase().replace(/\s+/g, "-");
+  return (mediaType === "movie" ? TMDB_MOVIE_GENRES : TMDB_TV_GENRES)[normalized] ?? null;
+}
+
 function readSearchRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

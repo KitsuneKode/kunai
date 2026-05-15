@@ -5,7 +5,7 @@
 // =============================================================================
 
 import type { SearchResult, TitleInfo, SearchMetadata } from "@/domain/types";
-import { searchVideasy } from "@/search";
+import { discoverVideasy, searchVideasy } from "@/search";
 
 import type { SearchService, SearchDeps } from "../SearchService";
 
@@ -20,11 +20,15 @@ export class TMDBSearchService implements SearchService {
 
   constructor(private deps: SearchDeps) {}
 
-  async search(query: string, _signal?: AbortSignal): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    signal?: AbortSignal,
+    intent?: import("@/domain/search/SearchIntent").SearchIntent,
+  ): Promise<SearchResult[]> {
     this.deps.logger.debug("TMDB search", { query });
 
     try {
-      const results = await searchVideasy(query);
+      const results = intent ? await discoverVideasy(intent, signal) : await searchVideasy(query);
       this.deps.logger.info("TMDB search complete", { query, count: results.length });
       return results;
     } catch (e) {

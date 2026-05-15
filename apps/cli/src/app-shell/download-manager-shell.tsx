@@ -1,11 +1,11 @@
-import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import { EmptyState, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
+import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { DownloadJobRecord } from "@kunai/storage";
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import React, { useEffect, useState } from "react";
 
 /**
@@ -23,7 +23,7 @@ export function DownloadManagerContent({
   container: Container;
   onClose: () => void;
 }) {
-  const { stdout } = useStdout();
+  const viewport = useDebouncedViewportPolicy("picker");
   const [activeJobs, setActiveJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [queuedJobs, setQueuedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [completedJobs, setCompletedJobs] = useState<readonly DownloadJobRecord[]>([]);
@@ -123,9 +123,8 @@ export function DownloadManagerContent({
     }
   });
 
-  const viewport = getShellViewportPolicy("picker", stdout?.columns ?? 80, stdout?.rows ?? 24);
   const { tooSmall, minColumns, minRows } = viewport;
-  const shellWidth = stdout?.columns ?? 80;
+  const shellWidth = viewport.columns;
 
   if (tooSmall) {
     return <ResizeBlocker minColumns={minColumns} minRows={minRows} />;

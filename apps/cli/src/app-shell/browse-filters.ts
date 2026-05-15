@@ -99,6 +99,10 @@ export function describeBrowseResultFilters(filters: BrowseResultFilters): reado
   ].filter((value): value is string => Boolean(value));
 }
 
+export function hasBrowseResultFilters(filters: BrowseResultFilters): boolean {
+  return describeBrowseResultFilters(filters).length > 0;
+}
+
 function getOptionType<T>(option: BrowseShellOption<T>): BrowseResultTypeFilter {
   const type = option.previewMeta?.find((value) => value === "Movie" || value === "Series");
   return type === "Movie" ? "movie" : type === "Series" ? "series" : "all";

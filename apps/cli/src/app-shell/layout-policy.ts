@@ -1,6 +1,8 @@
 export type ShellViewportKind = "browse" | "picker" | "playback";
 
 export type ShellViewportPolicy = {
+  columns: number;
+  rows: number;
   compact: boolean;
   ultraCompact: boolean;
   tooSmall: boolean;
@@ -25,6 +27,8 @@ export function getShellViewportPolicy(
 
   if (kind === "picker") {
     return {
+      columns,
+      rows,
       compact,
       ultraCompact,
       tooSmall: columns < minColumns || rows < minRows,
@@ -37,6 +41,8 @@ export function getShellViewportPolicy(
 
   if (kind === "browse") {
     return {
+      columns,
+      rows,
       compact,
       ultraCompact,
       tooSmall: columns < minColumns || rows < minRows,
@@ -48,6 +54,8 @@ export function getShellViewportPolicy(
   }
 
   return {
+    columns,
+    rows,
     compact,
     ultraCompact,
     tooSmall: columns < minColumns || rows < minRows,

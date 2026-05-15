@@ -2,7 +2,7 @@ export type SearchIntentMode = "series" | "anime" | "movie" | "all";
 export type SearchIntentTypeFilter = "movie" | "series" | "all";
 export type WatchFilter = "any" | "unwatched" | "watching" | "completed";
 export type ReleaseFilter = "today" | "this-week" | "upcoming";
-export type SearchSort = "relevance" | "progress" | "recent";
+export type SearchSort = "relevance" | "progress" | "recent" | "popular" | "rating";
 
 export type SearchIntentFilters = {
   readonly type?: SearchIntentTypeFilter;

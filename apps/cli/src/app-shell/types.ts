@@ -147,6 +147,9 @@ export type BrowseShellSearchResponse<T> = {
   options: readonly BrowseShellOption<T>[];
   subtitle: string;
   emptyMessage?: string;
+  upstreamFilterBadges?: readonly string[];
+  localFilterBadges?: readonly string[];
+  unsupportedFilterBadges?: readonly string[];
   revalidate?: Promise<BrowseShellSearchResponse<T>>;
 };
 

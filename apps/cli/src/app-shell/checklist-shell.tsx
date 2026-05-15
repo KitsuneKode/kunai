@@ -1,10 +1,10 @@
-import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { mountRootContent } from "@/app-shell/root-content-state";
 import { ShellFooter, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
-import { Box, Text, useInput, useStdout } from "ink";
+import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
+import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
 
 export type ListOption<T> = {
@@ -35,7 +35,7 @@ function ChecklistShell<T>({
   const [filterQuery, setFilterQuery] = useState(initialFilter ?? "");
   const [selectedSet, setSelectedSet] = useState<Set<T>>(new Set());
 
-  const { stdout } = useStdout();
+  const viewport = useDebouncedViewportPolicy("picker");
   const normalizedFilter = filterQuery.trim().toLowerCase();
 
   const filteredOptions = useMemo(() => {
@@ -56,10 +56,9 @@ function ChecklistShell<T>({
 
   const selectedOption = filteredOptions[index];
 
-  const viewport = getShellViewportPolicy("picker", stdout?.columns ?? 80, stdout?.rows ?? 24);
   const { ultraCompact, tooSmall, minColumns, minRows, maxVisibleRows: maxVisible } = viewport;
-  const innerWidth = Math.max(24, (stdout?.columns ?? 80) - 8);
-  const showSelectionCompanion = !tooSmall && !ultraCompact && (stdout?.columns ?? 80) >= 152;
+  const innerWidth = Math.max(24, viewport.columns - 8);
+  const showSelectionCompanion = !tooSmall && !ultraCompact && viewport.columns >= 152;
   const companionWidth = showSelectionCompanion ? Math.max(34, Math.floor(innerWidth * 0.32)) : 0;
   const listWidth = showSelectionCompanion
     ? Math.max(42, innerWidth - companionWidth - 3)

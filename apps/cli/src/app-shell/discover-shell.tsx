@@ -6,7 +6,7 @@ import React, { useState } from "react";
 
 import { EmptyState, ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
-import { useViewportPolicy } from "./use-viewport-policy";
+import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 export type DiscoverShellResult = { type: "open"; result: SearchResult } | { type: "back" };
 
@@ -90,11 +90,11 @@ export function DiscoverShell({
   const [sectionIdx, setSectionIdx] = useState(0);
   const [itemIdx, setItemIdx] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const viewport = useViewportPolicy("browse");
+  const viewport = useDebouncedViewportPolicy("browse");
 
   const currentSection = visibleSections[sectionIdx];
   const currentItems = currentSection?.items ?? [];
-  const innerWidth = Math.max(36, viewport.minColumns - 8);
+  const innerWidth = Math.max(36, viewport.columns - 8);
 
   useInput((input, key) => {
     if (key.escape) {

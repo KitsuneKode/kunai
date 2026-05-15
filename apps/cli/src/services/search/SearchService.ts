@@ -4,6 +4,7 @@
 // The contract that all search services must implement.
 // =============================================================================
 
+import type { SearchIntent } from "../../domain/search/SearchIntent";
 import type { SearchResult, TitleInfo, SearchMetadata } from "../../domain/types";
 
 export interface SearchDeps {
@@ -15,7 +16,7 @@ export interface SearchService {
   readonly metadata: SearchMetadata;
   readonly compatibleProviders: string[]; // Advisory coupling
 
-  search(query: string, signal?: AbortSignal): Promise<SearchResult[]>;
+  search(query: string, signal?: AbortSignal, intent?: SearchIntent): Promise<SearchResult[]>;
   getTitleDetails(id: string, signal?: AbortSignal): Promise<TitleInfo | null>;
 }
 

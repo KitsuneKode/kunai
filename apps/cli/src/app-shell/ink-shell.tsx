@@ -1,4 +1,3 @@
-import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
@@ -29,6 +28,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   applyBrowseResultFilters,
   describeBrowseResultFilters,
+  hasBrowseResultFilters,
   parseBrowseFilterQuery,
 } from "./browse-filters";
 import type { ResolvedAppCommand } from "./commands";
@@ -86,6 +86,7 @@ import {
 } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 import { useSessionSelector } from "./use-session-selector";
+import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 // =============================================================================
 // STDIN LIFECYCLE MANAGER
@@ -1063,9 +1064,8 @@ function PlaybackShell({
   onChangeProvider?: (providerId: string) => Promise<void>;
   onResolve: (result: PlaybackShellResult) => void;
 }) {
-  const { stdout } = useStdout();
-  const playbackViewport = getShellViewportPolicy("playback", stdout.columns, stdout.rows);
-  const playbackWide = (stdout.columns ?? 0) >= 150;
+  const playbackViewport = useDebouncedViewportPolicy("playback");
+  const playbackWide = playbackViewport.columns >= 150;
   const { poster, posterState } = usePosterPreview(state.posterUrl, {
     rows: 8,
     cols: 18,
@@ -1183,13 +1183,13 @@ function PlaybackShell({
         <>
           <Box>
             <Text color={palette.gray} dimColor>
-              {"─".repeat(Math.max(24, (stdout.columns ?? 80) - 8))}
+              {"─".repeat(Math.max(24, playbackViewport.columns - 8))}
             </Text>
           </Box>
           <Box flexDirection={showPosterCompanion ? "row" : "column"} marginTop={1} flexGrow={1}>
             <Box
               flexDirection="column"
-              width={showPosterCompanion ? Math.max(56, (stdout.columns ?? 80) - 38) : undefined}
+              width={showPosterCompanion ? Math.max(56, playbackViewport.columns - 38) : undefined}
             >
               <Text color={palette.amber}>
                 {state.resumeLabel
@@ -1443,7 +1443,7 @@ function ListShell<T>({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
-  const { stdout } = useStdout();
+  const viewport = useDebouncedViewportPolicy("picker");
   const normalizedFilter = filterQuery.trim().toLowerCase();
   const filteredOptions = useMemo(() => {
     return options.filter((option) => {
@@ -1476,10 +1476,9 @@ function ListShell<T>({
 
   const selectedOption = filteredOptions[index];
 
-  const viewport = getShellViewportPolicy("picker", stdout.columns, stdout.rows);
   const { ultraCompact, tooSmall, minColumns, minRows, maxVisibleRows: maxVisible } = viewport;
-  const innerWidth = Math.max(24, stdout.columns - 8);
-  const showSelectionCompanion = !tooSmall && !ultraCompact && (stdout.columns ?? 0) >= 152;
+  const innerWidth = Math.max(24, viewport.columns - 8);
+  const showSelectionCompanion = !tooSmall && !ultraCompact && viewport.columns >= 152;
   const companionWidth = showSelectionCompanion ? Math.max(34, Math.floor(innerWidth * 0.32)) : 0;
   const listWidth = showSelectionCompanion
     ? Math.max(42, innerWidth - companionWidth - 3)
@@ -1813,7 +1812,9 @@ function BrowseShell<T>({
   onCancel: () => void;
 }) {
   const spinner = useSpinner();
-  const { stdout } = useStdout();
+  const viewport = useDebouncedViewportPolicy("browse", {
+    forceCompact: _settings?.minimalMode,
+  });
   const [query, setQuery] = useState(initialQuery ?? "");
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
@@ -1849,9 +1850,7 @@ function BrowseShell<T>({
   const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
     rows: 10,
     cols: 24,
-    enabled: getShellViewportPolicy("browse", stdout.columns, stdout.rows, {
-      forceCompact: _settings?.minimalMode,
-    }).wideBrowse,
+    enabled: viewport.wideBrowse,
     debounceMs: 120,
   });
 
@@ -1892,7 +1891,10 @@ function BrowseShell<T>({
   const runSearch = async () => {
     const parsedQuery = parseBrowseFilterQuery(query);
     const trimmed = parsedQuery.searchQuery.trim();
-    if (trimmed.length === 0 || searchState === "loading") return;
+    const rawQuery = query.trim();
+    const hasFilters = hasBrowseResultFilters(parsedQuery.filters);
+    if (rawQuery.length === 0 || (trimmed.length === 0 && !hasFilters) || searchState === "loading")
+      return;
     const filterBadges = describeBrowseResultFilters(parsedQuery.filters);
 
     const requestId = requestIdRef.current + 1;
@@ -1903,22 +1905,31 @@ function BrowseShell<T>({
     setSelectedDetail("Finding titles and available matches…");
 
     try {
-      const response = await onSearch(trimmed);
+      const response = await onSearch(rawQuery);
       if (requestIdRef.current !== requestId) return;
-      const filteredOptions = applyBrowseResultFilters(response.options, parsedQuery.filters);
-      const filterSuffix = filterBadges.length > 0 ? `  ·  filters ${filterBadges.join(", ")}` : "";
+      const needsLocalFilters =
+        response.localFilterBadges === undefined && response.upstreamFilterBadges === undefined;
+      const filteredOptions = needsLocalFilters
+        ? applyBrowseResultFilters(response.options, parsedQuery.filters)
+        : response.options;
+      const activeBadges = [
+        ...(response.upstreamFilterBadges ?? filterBadges).map((badge) => `upstream ${badge}`),
+        ...(response.localFilterBadges ?? []).map((badge) => `local ${badge}`),
+        ...(response.unsupportedFilterBadges ?? []).map((badge) => `unsupported ${badge}`),
+      ];
+      const filterSuffix = activeBadges.length > 0 ? `  ·  ${activeBadges.join(", ")}` : "";
 
-      setLastSearchedQuery(trimmed);
-      addSearchQuery(trimmed);
+      setLastSearchedQuery(rawQuery);
+      addSearchQuery(rawQuery);
       setOptions(filteredOptions);
       setSelectedIndex(0);
       setResultSubtitle(`${response.subtitle}${filterSuffix}`);
       setEmptyMessage(
-        filterBadges.length > 0
+        activeBadges.length > 0
           ? "No results matched those filters."
           : (response.emptyMessage ?? "No results found."),
       );
-      setActiveFilterBadges(filterBadges);
+      setActiveFilterBadges(activeBadges);
       setSearchState("ready");
       setSelectedDetail(
         filteredOptions[0]?.detail ?? "Use ↑↓ to move through results, then press Enter.",
@@ -2092,9 +2103,6 @@ function BrowseShell<T>({
   const queryDirty = query.trim() !== lastSearchedQuery;
   const selectedOption = options[selectedIndex];
   const companionPanel = buildBrowseCompanionPanel(selectedOption, { selectedDetail });
-  const viewport = getShellViewportPolicy("browse", stdout.columns, stdout.rows, {
-    forceCompact: _settings?.minimalMode,
-  });
   const {
     compact,
     ultraCompact,
@@ -2105,7 +2113,7 @@ function BrowseShell<T>({
     maxVisibleRows: maxVisible,
   } = viewport;
   const effectiveFooterMode = "minimal";
-  const innerWidth = Math.max(24, stdout.columns - 8);
+  const innerWidth = Math.max(24, viewport.columns - 8);
   const previewWidth = wideBrowse ? Math.max(28, Math.floor(innerWidth * 0.3)) : innerWidth;
   const listWidth = wideBrowse ? Math.max(48, innerWidth - previewWidth - 4) : innerWidth;
   const rowWidth = Math.max(20, listWidth - 4);

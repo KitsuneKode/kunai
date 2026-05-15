@@ -211,10 +211,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           footerMode: effectiveFooterHints(container),
           commands: resolveCommands(currentState, SEARCH_BROWSE_COMMAND_IDS),
           onSearch: async (query) => {
+            const searchIntent = createSearchIntentEngine().fromText(query, {
+              currentMode: stateManager.getState().mode,
+            });
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
-            const search = await searchTitles(query, {
+            const search = await searchTitles(searchIntent.intent, {
               mode: stateManager.getState().mode,
               providerId: stateManager.getState().provider,
               animeLanguageProfile: container.config.animeLanguageProfile,
@@ -230,6 +233,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               count: results.length,
               strategy: search.strategy,
               source: search.sourceId,
+              filters: search.evidence,
             });
             diagnosticsStore.record({
               category: "search",
@@ -239,6 +243,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 count: results.length,
                 strategy: search.strategy,
                 source: search.sourceId,
+                filters: search.evidence,
               },
             });
 
@@ -255,6 +260,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 ),
               ),
               subtitle: `${results.length} results · ${search.sourceName}`,
+              upstreamFilterBadges: search.evidence.upstream,
+              localFilterBadges: search.evidence.local,
+              unsupportedFilterBadges: search.evidence.unsupported,
               emptyMessage: "No results found. Adjust the query and try again.",
             };
           },
@@ -558,6 +566,26 @@ async function chooseSearchFilterChip(currentQuery: string): Promise<string | nu
         detail: "Search TV catalogs/providers",
       },
       {
+        value: "type:series",
+        label: "Series",
+        detail: "Limit catalog results to TV/series",
+      },
+      {
+        value: "type:movie",
+        label: "Movies",
+        detail: "Limit catalog results to movies",
+      },
+      {
+        value: "genre:action",
+        label: "Genre",
+        detail: "Edit genre after insertion",
+      },
+      {
+        value: "rating:8",
+        label: "High rating",
+        detail: "Minimum rating out of 10",
+      },
+      {
         value: "downloaded:true",
         label: "Downloaded",
         detail: "Prefer local/downloaded facts when results are loaded",
@@ -576,6 +604,16 @@ async function chooseSearchFilterChip(currentQuery: string): Promise<string | nu
         value: "year:2021",
         label: "Year",
         detail: "Edit the year after insertion",
+      },
+      {
+        value: "sort:popular",
+        label: "Sort popular",
+        detail: "Use backend popularity ranking where available",
+      },
+      {
+        value: "sort:rating",
+        label: "Sort rating",
+        detail: "Use backend rating ranking where available",
       },
       {
         value: "sort:recent",
