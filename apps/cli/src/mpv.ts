@@ -124,6 +124,7 @@ export async function launchMpv(opts: {
           skippedSegments.add(activeSkip.key);
           emitPlaybackEvent({ type: "segment-skipped", kind: activeSkip.kind, automatic });
         }
+        return undefined;
       })
       .catch(() => {});
     return true;

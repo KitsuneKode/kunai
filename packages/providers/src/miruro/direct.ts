@@ -6,9 +6,6 @@ import {
 } from "@kunai/core";
 import type {
   ProviderFailure,
-  ProviderResolveInput,
-  ProviderResolveResult,
-  ProviderRuntimeContext,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
@@ -79,14 +76,18 @@ function base64urlToBytes(s: string): Uint8Array {
 
 function bytesToBase64url(bytes: Uint8Array): string {
   let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+  for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function xorDecrypt(encrypted: Uint8Array, keyHex: string): Uint8Array {
-  const key = new Uint8Array(keyHex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+  const parts = keyHex.match(/.{2}/g) ?? [];
+  if (parts.length === 0) throw new Error("Invalid Miruro pipe key");
+  const key = new Uint8Array(parts.map((b) => parseInt(b, 16)));
   const result = new Uint8Array(encrypted.length);
-  for (let i = 0; i < encrypted.length; i++) result[i] = encrypted[i]! ^ key[i % key.length]!;
+  for (let i = 0; i < encrypted.length; i++) {
+    result[i] = (encrypted[i] ?? 0) ^ (key[i % key.length] ?? 0);
+  }
   return result;
 }
 

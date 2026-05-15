@@ -171,7 +171,6 @@ export async function resolveVidkingDirect(
         context,
         failures,
         startedAt,
-        sources,
       }),
     ),
   );
@@ -199,7 +198,6 @@ export async function resolveVidkingDirect(
           context,
           failures,
           startedAt,
-          sources,
           customReferer: embedReferer,
         }),
       ),
@@ -449,7 +447,6 @@ async function tryVidkingServer(opts: {
   readonly context: ProviderRuntimeContext;
   readonly failures: ProviderFailure[];
   readonly startedAt: string;
-  readonly sources: ProviderSourceCandidate[];
   readonly customReferer?: string;
 }): Promise<ProviderResolveResult | null> {
   const {
@@ -461,7 +458,6 @@ async function tryVidkingServer(opts: {
     context,
     failures,
     startedAt,
-    sources,
     customReferer,
   } = opts;
   const sourceId = createSourceId(customReferer ? `${server}-embed-ref` : server);

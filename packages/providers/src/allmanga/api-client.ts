@@ -35,9 +35,6 @@ export type StreamLink = {
   readonly subtitle?: string;
 };
 
-const DEFAULT_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
-
 const ALLMANGA_KEY_RAW = "Xot36i3lK3:v1";
 
 const HEX: Record<string, string> = {
