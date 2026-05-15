@@ -12,7 +12,23 @@
 
 ## Status
 
-Planned.
+Core implementation completed on `main`.
+
+Implemented:
+
+- Shared `SearchIntent` model with parser and normalization engine.
+- Browse input supports advanced `key:value` filters as local chips without stream resolution.
+- Bootstrap `-S` search strips supported filter tokens before provider/catalog search.
+- `/filters` command is registered so advanced search help is discoverable.
+- `OfflineLibraryEngine` groups completed downloads into title-first local shelves.
+- `ContinuationEngine` separates local continuation, explicit online continuation, download-more, and browse-offline decisions.
+- `/offline` uses the read-model engine and shows continuation guidance from local history/artifact facts.
+
+Follow-up hardening still worth doing:
+
+- Build a guided `/filters` picker that inserts chips into the search box instead of only registering the command.
+- Apply cached local filter semantics for `downloaded`, `watched`, and `release` across already-loaded browse results when the data is present.
+- Add a richer offline title detail surface with batch actions, pin/protect, and explicit online/download continuation actions.
 
 ## Decisions Locked By Grill Session
 

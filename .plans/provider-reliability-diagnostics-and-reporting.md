@@ -12,7 +12,24 @@
 
 ## Status
 
-Planned.
+Core implementation completed on `main`.
+
+Implemented:
+
+- Bounded `ProviderAttemptTimeline` and canonical provider failure classification.
+- Redaction-at-record-time for diagnostics with bounded messages and context strings.
+- Redacted diagnostics bundle builder shared by export/report/debug flows.
+- Provider resolve timeline summaries recorded through diagnostics.
+- Loading copy no longer presents retry/fallback progress as a final error.
+- Preview-first `/report-issue` flow.
+- `--debug-json` with optional `KUNAI_TRACE=category,category` JSONL trace filtering.
+- Diagnostics guide updated with trace, redaction, and report flow usage.
+
+Follow-up hardening still worth doing:
+
+- Rotate old diagnostics exports and trace files to enforce the latest-10 retention policy.
+- Add a richer `/diagnostics` panel section that renders the full provider attempt timeline, not just the summary event.
+- Add an issue-report preview screen that shows bundle contents before export, instead of only describing the action in the picker.
 
 ## Decisions Locked By Grill Session
 
