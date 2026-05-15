@@ -85,6 +85,10 @@ Beyond your beta pillars, these pay rent on maintainability:
 
 **Verification:** enable skips in settings; play an anime episode with AniSkip data; confirm intro jumps once; with autoplay on, credits skip near EOF when policy says so. Use diagnostics overlay for `segment-skipped` events.
 
+**Prefetch note:** persistent mpv now uses the same credits timing to trigger next-episode
+prefetch before users hit the common skip/quit point. When no credible credits segment exists,
+prefetch falls back to the final 30 seconds so provider work remains bounded and explicit.
+
 ---
 
 ## Related

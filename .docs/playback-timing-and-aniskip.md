@@ -23,6 +23,7 @@ PlaybackPhase
 - **IntroDB in anime mode:** `IntroDbTimingSource` only runs when `title.id` looks like a numeric TMDB id (`apps/cli/src/infra/timing/IntroDbTimingSource.ts`). Otherwise IntroDB is skipped so AniSkip is not blocked by useless calls.
 - **Segments without `end_ms`:** IntroDB may return open-ended credits. Skip logic ignores segments without a finite end; see `.plans/kunai-execution-passes-and-cli-modes.md` for rationale.
 - **Autoskip policy:** config is the parent gate. `skipIntro`, `skipCredits`, and optional `skipRecap` enable automatic skipping; the per-session autoskip pause (`u` during playback) suppresses automatic skipping without changing config. Manual skip prompts can still appear for finite known segments.
+- **Autoplay prefetch:** persistent playback uses credits timing as an early prefetch trigger for the next episode. If a credible credits start exists near the natural end, prefetch starts roughly 45 seconds before credits; otherwise it falls back to the final 30 seconds. This keeps “skip credits / quit near credits” flows fast without adding provider work at playback start.
 
 Official product/docs: [theintrodb.org/docs](https://theintrodb.org/docs).
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildPersistentLoadfileCommand,
+  resolveNearEofPrefetchTriggerSeconds,
   resolvePersistentStartSeekTarget,
 } from "@/infra/player/PersistentMpvSession";
 
@@ -48,5 +49,39 @@ describe("persistent mpv start policy", () => {
       -1,
       { start: "562" },
     ]);
+  });
+});
+
+describe("persistent mpv prefetch trigger", () => {
+  test("uses credits timing to prefetch before the user reaches skip/quit territory", () => {
+    expect(
+      resolveNearEofPrefetchTriggerSeconds(1500, {
+        tmdbId: "tmdb:1",
+        type: "series",
+        recap: [],
+        intro: [],
+        preview: [],
+        credits: [{ startMs: 1_200_000, endMs: 1_320_000 }],
+      }),
+    ).toBe(1155);
+  });
+
+  test("falls back to the final thirty seconds when no credible credits timing exists", () => {
+    expect(resolveNearEofPrefetchTriggerSeconds(1500)).toBe(1470);
+    expect(
+      resolveNearEofPrefetchTriggerSeconds(1500, {
+        tmdbId: "tmdb:1",
+        type: "series",
+        recap: [],
+        intro: [],
+        preview: [],
+        credits: [{ startMs: 120_000, endMs: 180_000 }],
+      }),
+    ).toBe(1470);
+  });
+
+  test("does not prefetch tiny or live-like durations", () => {
+    expect(resolveNearEofPrefetchTriggerSeconds(20)).toBeNull();
+    expect(resolveNearEofPrefetchTriggerSeconds(Number.NaN)).toBeNull();
   });
 });

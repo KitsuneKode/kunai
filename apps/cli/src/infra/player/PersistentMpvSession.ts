@@ -95,7 +95,7 @@ type PlayerCycleOptions = {
   /** Called when the user presses N or P inside the mpv window. The mpv process
    *  handles the stop itself; the app only needs to record the intent. */
   onMpvActionRequest?: (action: "next" | "previous" | "pick-quality" | "refresh") => void;
-  /** Called once when playback position is within ~30 s of the end. */
+  /** Called once when playback reaches the credits prefetch window or the final ~30 s fallback. */
   onNearEof?: () => void;
 };
 
@@ -113,6 +113,27 @@ export function resolvePersistentStartSeekTarget(
     return options.startAt;
   }
   return undefined;
+}
+
+export function resolveNearEofPrefetchTriggerSeconds(
+  durationSeconds: number,
+  timing?: PlaybackTimingMetadata | null,
+): number | null {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 30) return null;
+  const fallbackTrigger = Math.max(0, durationSeconds - 30);
+  const creditsStart = (timing?.credits ?? [])
+    .map((segment) => segment.startMs)
+    .filter((startMs): startMs is number => typeof startMs === "number" && Number.isFinite(startMs))
+    .map((startMs) => startMs / 1000)
+    .filter(
+      (startSeconds) =>
+        startSeconds > 0 &&
+        startSeconds < durationSeconds &&
+        startSeconds >= Math.max(durationSeconds * 0.5, durationSeconds - 600),
+    )
+    .sort((left, right) => right - left)[0];
+  if (creditsStart === undefined) return fallbackTrigger;
+  return Math.max(0, Math.min(fallbackTrigger, creditsStart - 45));
 }
 
 export function buildPersistentLoadfileCommand(
@@ -536,10 +557,14 @@ export class PersistentMpvSession {
               }
               void this.handleSegmentSkipProgress(this.currentCycleOptions());
 
-              // Near-EOF detection for prefetch — fire once per cycle when within 30s of end.
+              // Prefetch once per cycle near credits when timing exists, else within 30s of end.
               if (!this.nearEofFired) {
                 const duration = active.telemetry.latestIpcSample?.durationSeconds ?? 0;
-                if (duration > 30 && duration - value < 30) {
+                const triggerSeconds = resolveNearEofPrefetchTriggerSeconds(
+                  duration,
+                  this.currentCycleOptions().timing,
+                );
+                if (triggerSeconds !== null && value >= triggerSeconds) {
                   this.nearEofFired = true;
                   this.currentCycleOptions().onNearEof?.();
                 }
