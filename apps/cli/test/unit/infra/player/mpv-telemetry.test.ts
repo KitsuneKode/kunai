@@ -286,6 +286,7 @@ describe("mpv-telemetry", () => {
     expect(result.endReason).toBe("unknown");
     expect(result.watchedSeconds).toBe(400);
     expect(result.lastTrustedProgressSeconds).toBe(400);
+    expect(result.suspectedDeadStream).toBe(true);
   });
 
   test("demotes eof without stall when trusted progress is still very early in a long file", () => {

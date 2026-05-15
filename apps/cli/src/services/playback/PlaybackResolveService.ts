@@ -77,6 +77,7 @@ export type PlaybackResolveInput = {
   readonly subtitlePreference: string;
   readonly signal: AbortSignal;
   readonly prefetchedStream?: StreamInfo | null;
+  readonly forceHealthCheck?: boolean;
   readonly onFeedback?: (feedback: PlaybackResolveFeedback) => void;
   readonly onEvent?: (event: PlaybackResolveEvent) => void;
 };
@@ -123,7 +124,10 @@ export class PlaybackResolveService {
     const cacheKey = this.buildCacheKey(input, input.providerId);
     const cachedStream = await this.deps.cacheStore.get(cacheKey);
     if (cachedStream) {
-      const health = await this.checkCachedStreamHealth(cachedStream);
+      const health = await this.checkCachedStreamHealth(
+        cachedStream,
+        input.forceHealthCheck === true,
+      );
       if (health.checked) {
         input.onEvent?.({
           type: "cache-health-check",
@@ -283,7 +287,10 @@ export class PlaybackResolveService {
     }
   }
 
-  private async checkCachedStreamHealth(stream: StreamInfo): Promise<{
+  private async checkCachedStreamHealth(
+    stream: StreamInfo,
+    force = false,
+  ): Promise<{
     readonly healthy: boolean;
     readonly checked: boolean;
     readonly strategy: "none" | "hls-manifest-get" | "head-then-range";
@@ -291,14 +298,14 @@ export class PlaybackResolveService {
   }> {
     if (this.deps.streamHealth) {
       const service = new StreamHealthService();
-      const policy = await service.check(stream);
+      const policy = await service.check(stream, { force });
       if (!policy.checked) return policy;
       return {
         ...policy,
         healthy: await this.deps.streamHealth(stream.url, stream.headers),
       };
     }
-    return (this.deps.streamHealthService ?? new StreamHealthService()).check(stream);
+    return (this.deps.streamHealthService ?? new StreamHealthService()).check(stream, { force });
   }
 
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {

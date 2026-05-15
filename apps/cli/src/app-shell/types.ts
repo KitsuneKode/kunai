@@ -101,6 +101,8 @@ export type LoadingShellState = {
   progress?: number; // 0-100 or undefined for indeterminate
   details?: string;
   trace?: string;
+  providerName?: string;
+  providerId?: string;
   downloadStatus?: string;
   posterUrl?: string;
   subtitleStatus?: string;

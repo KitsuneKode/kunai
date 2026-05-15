@@ -127,6 +127,22 @@ describe("resolvePlaybackResultDecision", () => {
     });
   });
 
+  test("refreshes source after suspected dead stream eof", () => {
+    const decision = resolvePlaybackResultDecision({
+      result: {
+        watchedSeconds: 120,
+        duration: 1800,
+        endReason: "unknown",
+        suspectedDeadStream: true,
+      },
+      controlAction: null,
+      session: createPlaybackSessionState({ autoNextEnabled: true }),
+    });
+
+    expect(decision.shouldRefreshSource).toBe(true);
+    expect(decision.shouldFallbackProvider).toBe(false);
+  });
+
   test("does not treat a near-end quit as an interruption by default", () => {
     const session = createPlaybackSessionState({ autoNextEnabled: true });
     expect(

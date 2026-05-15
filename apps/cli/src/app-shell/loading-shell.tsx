@@ -76,6 +76,15 @@ function formatTimestamp(seconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+export function formatLoadingProviderLine(
+  state: Pick<LoadingShellState, "providerName" | "providerId">,
+): string | null {
+  const name = state.providerName?.trim();
+  const id = state.providerId?.trim();
+  if (name && id && name !== id) return `${name} (${id})`;
+  return name || id || null;
+}
+
 export function shouldShowLoadingPosterCompanion({
   operation,
   columns,
@@ -362,6 +371,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
   const loadingIssue = normalizeLoadingIssue(state.latestIssue);
   const providerDetail = normalizeProviderDetail(state.details);
+  const providerLine = formatLoadingProviderLine(state);
   const subtitleReady = Boolean(
     state.subtitleStatus?.toLowerCase().includes("attached") ||
     state.subtitleStatus?.toLowerCase().includes("ready"),
@@ -525,6 +535,9 @@ export const LoadingShell = React.memo(function LoadingShell({
             ) : null}
             {providerDetail && !isPlaying ? (
               <Text color="white">Provider: {providerDetail}</Text>
+            ) : null}
+            {providerLine && isPlaying ? (
+              <Text color={palette.info}>Provider: {providerLine}</Text>
             ) : null}
             {state.downloadStatus ? (
               <Text color={palette.info}>Download: {state.downloadStatus}</Text>

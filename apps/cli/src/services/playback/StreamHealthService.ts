@@ -14,7 +14,13 @@ export type StreamHealthServiceResult = {
   readonly healthy: boolean;
   readonly checked: boolean;
   readonly strategy: "none" | "hls-manifest-get" | "head-then-range";
-  readonly reason: "no-cache" | "fresh" | "stale-hls" | "stale-direct";
+  readonly reason:
+    | "no-cache"
+    | "fresh"
+    | "forced-hls"
+    | "forced-direct"
+    | "stale-hls"
+    | "stale-direct";
   readonly ageMs?: number;
 };
 
@@ -23,12 +29,14 @@ export class StreamHealthService {
 
   async check(
     stream: Pick<StreamInfo, "url" | "headers" | "timestamp">,
+    options: { readonly force?: boolean } = {},
   ): Promise<StreamHealthServiceResult> {
     const policy = resolveStreamHealthPolicy({
       url: stream.url,
       cachedAt: stream.timestamp,
       now: this.deps.now?.(),
       staleAfterMs: this.deps.staleAfterMs,
+      force: options.force,
     });
 
     if (!policy.shouldCheck) {

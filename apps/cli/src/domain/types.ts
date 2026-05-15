@@ -147,6 +147,8 @@ export interface PlaybackResult {
    *  Updated on small forward steps AND user seeks (both forward and backward).
    *  Unlike lastTrustedProgressSeconds, this CAN go down when the user seeks backward. */
   readonly lastReliableProgressSeconds?: number;
+  /** True when mpv reported EOF but telemetry suggests the network stream died early. */
+  readonly suspectedDeadStream?: boolean;
 }
 
 export interface PlaybackTimingSegment {

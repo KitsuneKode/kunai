@@ -5,12 +5,19 @@ export type StreamHealthPolicyInput = {
   readonly cachedAt?: number | null;
   readonly now?: number;
   readonly staleAfterMs?: number;
+  readonly force?: boolean;
 };
 
 export type StreamHealthPolicyDecision = {
   readonly shouldCheck: boolean;
   readonly strategy: StreamHealthStrategy;
-  readonly reason: "no-cache" | "fresh" | "stale-hls" | "stale-direct";
+  readonly reason:
+    | "no-cache"
+    | "fresh"
+    | "forced-hls"
+    | "forced-direct"
+    | "stale-hls"
+    | "stale-direct";
   readonly ageMs?: number;
 };
 
@@ -26,6 +33,13 @@ export function resolveStreamHealthPolicy(
   const now = input.now ?? Date.now();
   const ageMs = Math.max(0, now - input.cachedAt);
   const staleAfterMs = input.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
+  if (input.force) {
+    if (isLikelyHlsManifest(input.url)) {
+      return { shouldCheck: true, strategy: "hls-manifest-get", reason: "forced-hls", ageMs };
+    }
+    return { shouldCheck: true, strategy: "head-then-range", reason: "forced-direct", ageMs };
+  }
+
   if (ageMs <= staleAfterMs) {
     return { shouldCheck: false, strategy: "none", reason: "fresh", ageMs };
   }

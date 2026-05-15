@@ -906,7 +906,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
-          if (result.endReason === "error") {
+          const shouldInvalidateStreamCache =
+            result.endReason === "error" || result.suspectedDeadStream === true;
+          if (shouldInvalidateStreamCache) {
             const invalidateProviderId = consumedPrefetch
               ? (pendingPrefetchedProviderId ?? resolvedProviderId)
               : resolvedProviderId;
@@ -929,9 +931,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             } catch {
               // best-effort
             }
+            const recentKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
+            recentEpisodeStreams.delete(recentKey);
             diagnosticsStore.record({
               category: "playback",
-              message: "Stream died — cache entry invalidated for next resolve",
+              message: result.suspectedDeadStream
+                ? "Stream ended early — cached URL invalidated for next resolve"
+                : "Stream died — cache entry invalidated for next resolve",
               context: {
                 provider: invalidateProviderId,
                 titleId: title.id,
@@ -939,6 +945,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: currentEpisode.episode,
                 exitCode: result.playerExitCode,
                 exitSignal: result.playerExitSignal,
+                suspectedDeadStream: result.suspectedDeadStream === true,
                 wasPrefetched: Boolean(consumedPrefetch),
               },
             });

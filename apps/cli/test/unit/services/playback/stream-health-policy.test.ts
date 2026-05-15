@@ -28,6 +28,22 @@ describe("stream health policy", () => {
     });
   });
 
+  test("checks fresh cached streams when forced by playback failure", () => {
+    expect(
+      resolveStreamHealthPolicy({
+        url: "https://cdn.example/a.m3u8",
+        cachedAt: now - 60_000,
+        now,
+        force: true,
+      }),
+    ).toMatchObject({
+      shouldCheck: true,
+      strategy: "hls-manifest-get",
+      reason: "forced-hls",
+      ageMs: 60_000,
+    });
+  });
+
   test("checks stale HLS manifests with a manifest GET", () => {
     expect(
       resolveStreamHealthPolicy({

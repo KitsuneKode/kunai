@@ -36,6 +36,7 @@ export function classifyPlaybackFailureFromEvent(event: PlayerPlaybackEvent): Pl
 }
 
 export function classifyPlaybackFailureFromResult(result: PlaybackResult): PlaybackFailureClass {
+  if (result.suspectedDeadStream) return "expired-stream";
   if (result.endReason === "error") return "player-exited";
   if (
     result.endReason === "unknown" &&

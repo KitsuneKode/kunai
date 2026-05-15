@@ -560,6 +560,7 @@ export function finalizePlaybackResult(
       lastNonZeroDurationSeconds: 0,
       lastTrustedProgressSeconds: 0,
       lastReliableProgressSeconds: 0,
+      ...(state.eofDemotedByPrematureGuard ? { suspectedDeadStream: true } : {}),
     };
   }
 
@@ -576,5 +577,6 @@ export function finalizePlaybackResult(
     lastNonZeroDurationSeconds: state.lastNonZeroSample?.durationSeconds ?? 0,
     lastTrustedProgressSeconds,
     lastReliableProgressSeconds: state.lastReliableProgressSeconds,
+    ...(state.eofDemotedByPrematureGuard ? { suspectedDeadStream: true } : {}),
   };
 }

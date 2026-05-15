@@ -604,6 +604,7 @@ function AppRoot({ container }: { container: Container }) {
           .getCompatible(state.currentTitle, state.mode)
           .find((candidate) => candidate.metadata.id !== state.provider)
       : undefined;
+  const activeProvider = container.providerRegistry.get(state.provider);
 
   const onCommandAction = useCallback(
     (action: ShellAction) => {
@@ -869,6 +870,8 @@ function AppRoot({ container }: { container: Container }) {
                         : "finding-stream",
                   stageDetail: state.playbackDetail ?? undefined,
                   details: state.playbackDetail ?? `Provider: ${state.provider}`,
+                  providerName: activeProvider?.metadata.name ?? state.provider,
+                  providerId: state.provider,
                   subtitleStatus:
                     state.playbackStatus === "playing" ||
                     state.playbackStatus === "buffering" ||

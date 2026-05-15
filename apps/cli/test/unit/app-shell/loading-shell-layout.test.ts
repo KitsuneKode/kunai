@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { shouldShowLoadingPosterCompanion } from "@/app-shell/loading-shell";
+import {
+  formatLoadingProviderLine,
+  shouldShowLoadingPosterCompanion,
+} from "@/app-shell/loading-shell";
 
 describe("loading shell layout", () => {
   test("shows playback artwork only for active playback on wide terminals", () => {
@@ -37,5 +40,13 @@ describe("loading shell layout", () => {
         posterState: "ready",
       }),
     ).toBe(false);
+  });
+
+  test("formats active provider identity for playback supervision", () => {
+    expect(formatLoadingProviderLine({ providerName: "VidKing", providerId: "vidking" })).toBe(
+      "VidKing (vidking)",
+    );
+    expect(formatLoadingProviderLine({ providerId: "allanime" })).toBe("allanime");
+    expect(formatLoadingProviderLine({})).toBeNull();
   });
 });
