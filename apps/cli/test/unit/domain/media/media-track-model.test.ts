@@ -20,6 +20,9 @@ const streamCandidate: StreamCandidate = {
   container: "m3u8",
   audioLanguages: ["ja"],
   hardSubLanguage: "en",
+  presentation: "sub",
+  subtitleDelivery: "hardcoded",
+  flavorLabel: "Kiwi hardsub",
   qualityLabel: "1080p",
   qualityRank: 1080,
   url: "https://cdn.example/1080.m3u8",
@@ -137,7 +140,9 @@ describe("media track model", () => {
       describeStreamCandidateMediaDetail({ ...streamCandidate, variantId: "variant-1080" }, [
         subtitleCandidate,
       ]),
-    ).toBe("hls  ·  m3u8  ·  audio ja  ·  hardsub en  ·  soft subs en");
+    ).toBe(
+      "Kiwi hardsub  ·  sub stream  ·  hls  ·  m3u8  ·  audio ja  ·  subs hardcoded  ·  hardsub en  ·  soft subs en",
+    );
   });
 
   test("classifies language switch paths from cached inventory before provider lookup", () => {

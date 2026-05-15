@@ -24,11 +24,16 @@ test("stream candidate schema accepts serialized cache-safe shape", () => {
     url: "https://example.com/master.m3u8",
     protocol: "hls",
     container: "m3u8",
+    presentation: "raw",
+    subtitleDelivery: "external",
+    flavorArchetype: "Cineby flavors",
+    flavorLabel: "Neon",
     confidence: 0.92,
     cachePolicy,
   });
 
   expect(parsed.protocol).toBe("hls");
+  expect(parsed.flavorLabel).toBe("Neon");
   expect(parsed.cachePolicy.ttlClass).toBe("stream-manifest");
 });
 
@@ -48,7 +53,10 @@ test("provider source and variant schemas model mirror inventory without forcing
     providerId: "vidking",
     sourceId: source.id,
     qualityLabel: "1080p",
-    audioLanguage: "en",
+    audioLanguages: ["en"],
+    presentation: "dub",
+    subtitleDelivery: "embedded",
+    flavorLabel: "Bee softsub",
     subtitleLanguages: ["en", "es"],
     streamIds: ["stream-1"],
     confidence: 0.86,
@@ -56,6 +64,7 @@ test("provider source and variant schemas model mirror inventory without forcing
 
   expect(source.kind).toBe("mirror");
   expect(variant.subtitleLanguages).toContain("en");
+  expect(variant.subtitleDelivery).toBe("embedded");
 });
 
 test("provider trace event schema validates live retry and runtime events", () => {

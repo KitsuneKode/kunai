@@ -32,6 +32,8 @@ export const cacheTtlClassSchema = z.enum([
   "catalog-trending",
   "provider-health",
 ]);
+export const streamPresentationSchema = z.enum(["sub", "dub", "raw"]);
+export const subtitleDeliverySchema = z.enum(["hardcoded", "embedded", "external"]);
 export const resolveErrorCodeSchema = z.enum([
   "provider-unavailable",
   "unsupported-title",
@@ -85,8 +87,12 @@ export const streamCandidateSchema = z.object({
   protocol: z.enum(["hls", "dash", "mp4", "iframe", "unknown"]),
   container: z.enum(["m3u8", "mpd", "mp4", "webm", "unknown"]).optional(),
   audioLanguages: z.array(z.string().min(1)).optional(),
+  presentation: streamPresentationSchema.optional(),
   hardSubLanguage: z.string().min(1).optional(),
+  subtitleDelivery: subtitleDeliverySchema.optional(),
   subtitleLanguages: z.array(z.string().min(1)).optional(),
+  flavorArchetype: z.string().min(1).optional(),
+  flavorLabel: z.string().min(1).optional(),
   serverName: z.string().min(1).optional(),
   qualityLabel: z.string().min(1).optional(),
   qualityRank: z.number().int().optional(),
@@ -143,8 +149,12 @@ export const providerVariantCandidateSchema = z.object({
   protocol: z.enum(["hls", "dash", "mp4", "iframe", "unknown"]).optional(),
   container: z.enum(["m3u8", "mpd", "mp4", "webm", "unknown"]).optional(),
   audioLanguages: z.array(z.string().min(1)).optional(),
+  presentation: streamPresentationSchema.optional(),
   hardSubLanguage: z.string().min(1).optional(),
+  subtitleDelivery: subtitleDeliverySchema.optional(),
   subtitleLanguages: z.array(z.string().min(1)).optional(),
+  flavorArchetype: z.string().min(1).optional(),
+  flavorLabel: z.string().min(1).optional(),
   streamIds: z.array(z.string().min(1)).optional(),
   subtitleIds: z.array(z.string().min(1)).optional(),
   selected: z.boolean().optional(),

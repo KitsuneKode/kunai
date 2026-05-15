@@ -102,9 +102,12 @@ export function describeStreamCandidateMediaDetail(
   subtitles: readonly SubtitleCandidate[],
 ): string {
   return [
+    candidate.flavorLabel,
+    candidate.presentation ? `${candidate.presentation} stream` : null,
     candidate.protocol,
     candidate.container,
     candidate.audioLanguages?.length ? `audio ${candidate.audioLanguages.join(",")}` : null,
+    candidate.subtitleDelivery ? `subs ${candidate.subtitleDelivery}` : null,
     candidate.hardSubLanguage ? `hardsub ${candidate.hardSubLanguage}` : null,
     describeLanguages(
       "soft subs",
