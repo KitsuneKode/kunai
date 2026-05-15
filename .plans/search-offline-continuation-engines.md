@@ -19,7 +19,7 @@ Implemented:
 - Shared `SearchIntent` model with parser and normalization engine.
 - Browse input supports advanced `key:value` filters as local chips without stream resolution.
 - Bootstrap `-S` search strips supported filter tokens before provider/catalog search.
-- `/filters` command is registered so advanced search help is discoverable.
+- `/filters` opens a guided chip picker and inserts supported filters into the active search query.
 - `OfflineLibraryEngine` groups completed downloads into title-first local shelves.
 - `ContinuationEngine` separates local continuation, explicit online continuation, download-more, and browse-offline decisions.
 - `SourceSelectionEngine` formalizes local-vs-online playback decisions so offline,
@@ -33,13 +33,14 @@ Implemented:
   inspectable, and repairable instead of like a raw download job table.
 - `--continue` now checks for an exact ready local artifact and records a source-selection decision
   without silently hijacking normal online continuation.
+- Offline title details now expose explicit local actions for online continuation, downloading more
+  episodes, and protecting/removing protection from watched-download cleanup suggestions.
+- History launch selections now record the same exact-local source decision used by `--continue`.
 
 Follow-up hardening still worth doing:
 
-- Build a guided `/filters` picker that inserts chips into the search box instead of only registering the command.
-- Add pin/protect and explicit online/download continuation actions to offline title details.
-- Extend the same `SourceSelectionEngine` note to history-launch source pickers; keep normal search
-  online-first unless the user changes a future source preference setting.
+- A future source preference setting can decide whether exact local history matches should offer a
+  first-class local playback prompt instead of remaining an informational hint.
 
 ## Decisions Locked By Grill Session
 

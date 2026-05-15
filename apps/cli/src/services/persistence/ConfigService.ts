@@ -91,6 +91,8 @@ export interface KitsuneConfig {
   autoCleanupWatched: boolean;
   /** Days to keep watched downloads before startup cleanup may suggest them. */
   autoCleanupGraceDays: number;
+  /** Completed download job ids protected from watched-download cleanup suggestions. */
+  protectedDownloadJobIds: readonly string[];
   /** Setup wizard completion marker for future migrations. */
   onboardingVersion: number;
   /** Directory for offline downloads. Empty string = use Kunai app data defaults when implemented. */

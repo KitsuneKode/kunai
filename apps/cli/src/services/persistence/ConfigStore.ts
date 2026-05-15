@@ -52,6 +52,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   autoDownloadNextCount: 1,
   autoCleanupWatched: false,
   autoCleanupGraceDays: 7,
+  protectedDownloadJobIds: [],
   onboardingVersion: 0,
   downloadPath: "",
   downloadOnboardingDismissed: false,

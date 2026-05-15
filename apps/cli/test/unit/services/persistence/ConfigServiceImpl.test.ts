@@ -71,6 +71,7 @@ describe("ConfigServiceImpl", () => {
     expect(service.autoDownloadNextCount).toBe(1);
     expect(service.autoCleanupWatched).toBe(false);
     expect(service.autoCleanupGraceDays).toBe(7);
+    expect(service.protectedDownloadJobIds).toEqual([]);
     expect(service.updateChecksEnabled).toBe(true);
     expect(service.updateCheckIntervalDays).toBe(7);
     expect(service.updateSnoozedUntil).toBe(0);
@@ -83,6 +84,7 @@ describe("ConfigServiceImpl", () => {
       autoDownloadNextCount: 3,
       autoCleanupWatched: true,
       autoCleanupGraceDays: 3,
+      protectedDownloadJobIds: ["job-a", "job-a", " job-b "],
       updateChecksEnabled: false,
       updateSnoozedUntil: 123,
     });
@@ -95,6 +97,7 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).autoDownloadNextCount).toBe(3);
     expect((await store.load()).autoCleanupWatched).toBe(true);
     expect((await store.load()).autoCleanupGraceDays).toBe(3);
+    expect((await store.load()).protectedDownloadJobIds).toEqual(["job-a", "job-b"]);
     expect((await store.load()).updateChecksEnabled).toBe(false);
     expect((await store.load()).updateSnoozedUntil).toBe(123);
   });

@@ -14,7 +14,7 @@ import { createContinuationEngine } from "@/domain/continuation/ContinuationEngi
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelectionEngine";
-import type { EpisodePickerOption } from "@/domain/types";
+import type { EpisodePickerOption, TitleInfo } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
@@ -36,7 +36,7 @@ import {
   type HistoryStore,
 } from "@/services/persistence/HistoryStore";
 import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
-import { getKunaiPaths } from "@kunai/storage";
+import { getKunaiPaths, type DownloadJobRecord } from "@kunai/storage";
 
 import { resolveCommands } from "./commands";
 import { openSessionPicker } from "./session-picker";
@@ -51,6 +51,10 @@ type DownloadJobAction =
   | { type: "job"; id: string }
   | { type: "check-integrity" }
   | { type: "repair-missing" }
+  | { type: "download-more" }
+  | { type: "search-online" }
+  | { type: "protect-group" }
+  | { type: "unprotect-group" }
   | { type: "delete-group" }
   | { type: "back" };
 type OfflineLibraryGroupAction =
@@ -443,7 +447,7 @@ function summarizeHeaderKeys(headers: Record<string, string> | undefined): strin
   return keys.length > 0 ? keys.join(", ") : "none";
 }
 
-function describeDownloadJob(job: import("@kunai/storage").DownloadJobRecord): string {
+function describeDownloadJob(job: DownloadJobRecord): string {
   return formatOfflineJobListingTitle(job);
 }
 
@@ -613,7 +617,7 @@ async function openOfflineLibraryGroupPicker(
         )}`,
         previewImageUrl: resolveOfflineJobPreviewImage(entry.job),
       })),
-      ...buildOfflineGroupActions(entries),
+      ...buildOfflineGroupActions(entries, container.config.protectedDownloadJobIds),
       { value: { type: "back" as const }, label: "Back to titles" },
     ];
     const picked = await chooseFromListShell({
@@ -673,6 +677,43 @@ async function openOfflineLibraryGroupPicker(
         }`,
       });
       void container.downloadService.processQueue();
+      continue;
+    }
+    if (picked.type === "download-more") {
+      await queueMoreOfflineTitleEpisodes(container, first, actionContext);
+      continue;
+    }
+    if (picked.type === "search-online") {
+      container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: first.titleName });
+      container.stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: `Search prepared for ${first.titleName}. Submit it to continue online.`,
+      });
+      container.diagnosticsStore.record({
+        category: "search",
+        message: "Offline title requested online continuation",
+        context: {
+          titleId: first.titleId,
+          titleName: first.titleName,
+          provider: first.providerId,
+        },
+      });
+      return;
+    }
+    if (picked.type === "protect-group" || picked.type === "unprotect-group") {
+      await setOfflineGroupProtection(
+        container,
+        entries.map((entry) => entry.job.id),
+        picked.type === "protect-group",
+      );
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          picked.type === "protect-group"
+            ? `Protected ${first.titleName} from watched-download cleanup.`
+            : `Removed cleanup protection for ${first.titleName}.`,
+      });
       continue;
     }
     if (picked.type === "delete-group") {
@@ -859,9 +900,23 @@ function localSourceStatusFromArtifactStatus(status: string): LocalSourceStatus 
 
 function buildOfflineGroupActions(
   entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
+  protectedJobIds: readonly string[] = [],
 ): ShellOption<DownloadJobAction>[] {
   const missingCount = entries.filter((entry) => entry.status !== "ready").length;
+  const protectedSet = new Set(protectedJobIds);
+  const allProtected =
+    entries.length > 0 && entries.every((entry) => protectedSet.has(entry.job.id));
   const actions: ShellOption<DownloadJobAction>[] = [
+    {
+      value: { type: "search-online" },
+      label: "Continue this title online",
+      detail: "Prepare a search for this title; no provider work happens until you submit it",
+    },
+    {
+      value: { type: "download-more" },
+      label: "Download more episodes",
+      detail: "Open the download episode picker for this title",
+    },
     {
       value: { type: "check-integrity" },
       label: "Check title integrity",
@@ -876,11 +931,74 @@ function buildOfflineGroupActions(
     });
   }
   actions.push({
+    value: { type: allProtected ? "unprotect-group" : "protect-group" },
+    label: allProtected ? "Remove cleanup protection" : "Protect from cleanup",
+    detail: allProtected
+      ? "Allow watched-download cleanup suggestions for this title again"
+      : "Keep this title out of watched-download cleanup suggestions",
+  });
+  actions.push({
     value: { type: "delete-group" },
     label: "Delete this offline title",
     detail: "Confirm before removing all local files and queue records",
   });
   return actions;
+}
+
+async function queueMoreOfflineTitleEpisodes(
+  container: Container,
+  first: DownloadJobRecord,
+  actionContext?: ListShellActionContext,
+): Promise<void> {
+  const provider = container.providerRegistry.get(first.providerId);
+  if (provider) {
+    container.stateManager.dispatch({
+      type: "SET_MODE",
+      mode: provider.metadata.isAnimeProvider ? "anime" : "series",
+      provider: provider.metadata.id,
+    });
+  } else {
+    container.stateManager.dispatch({ type: "SET_PROVIDER", provider: first.providerId });
+  }
+
+  const title: TitleInfo = {
+    id: first.titleId,
+    type: first.mediaKind === "movie" ? "movie" : "series",
+    name: first.titleName,
+    posterUrl: first.posterUrl,
+  };
+  const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
+  const result = await new DownloadOnlyPhase().execute(
+    { title },
+    { container, signal: new AbortController().signal },
+  );
+  container.diagnosticsStore.record({
+    category: "download",
+    message: "Offline title download-more action completed",
+    context: {
+      titleId: first.titleId,
+      provider: first.providerId,
+      result: result.status === "success" ? result.value : result.status,
+      task: actionContext?.taskLabel,
+    },
+  });
+}
+
+async function setOfflineGroupProtection(
+  container: Container,
+  jobIds: readonly string[],
+  protectedFromCleanup: boolean,
+): Promise<void> {
+  const current = new Set(container.config.protectedDownloadJobIds);
+  for (const jobId of jobIds) {
+    if (protectedFromCleanup) {
+      current.add(jobId);
+    } else {
+      current.delete(jobId);
+    }
+  }
+  await container.config.update({ protectedDownloadJobIds: [...current] });
+  await container.config.save();
 }
 
 async function openStaticInfoShell({

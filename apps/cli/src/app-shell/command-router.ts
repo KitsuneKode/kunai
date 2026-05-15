@@ -1,3 +1,4 @@
+import { recordLocalHistorySourceDecision } from "@/app/launch-entry";
 import { switchSessionMode } from "@/app/mode-switch";
 import type { Container } from "@/container";
 import type { TitleInfo } from "@/domain/types";
@@ -114,6 +115,7 @@ export async function routeSearchShellAction({
     } else {
       stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
     }
+    await recordLocalHistorySourceDecision(container, selection, "history");
     return {
       type: "history-entry",
       title: {
@@ -195,6 +197,7 @@ export async function routePlaybackShellAction({
     } else {
       stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
     }
+    await recordLocalHistorySourceDecision(container, selection, "history");
     return {
       type: "history-entry",
       title: {

@@ -591,14 +591,39 @@ async function chooseSearchFilterChip(currentQuery: string): Promise<string | nu
         detail: "Prefer local/downloaded facts when results are loaded",
       },
       {
+        value: "downloaded:false",
+        label: "Not downloaded",
+        detail: "Hide results with local/downloaded facts when loaded",
+      },
+      {
         value: "watched:watching",
         label: "Continue watching",
         detail: "Show intent for in-progress titles",
       },
       {
+        value: "watched:completed",
+        label: "Completed",
+        detail: "Use local history facts when results are loaded",
+      },
+      {
+        value: "watched:unwatched",
+        label: "Unwatched",
+        detail: "Prefer results without local watch progress",
+      },
+      {
         value: "release:today",
         label: "Released today",
         detail: "Use cached release facts where available",
+      },
+      {
+        value: "release:upcoming",
+        label: "Upcoming",
+        detail: "Use cached schedule facts where available",
+      },
+      {
+        value: "provider:allanime",
+        label: "Provider",
+        detail: "Edit provider id after insertion",
       },
       {
         value: "year:2021",

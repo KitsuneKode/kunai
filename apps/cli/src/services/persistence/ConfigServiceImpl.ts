@@ -57,6 +57,7 @@ export class ConfigServiceImpl implements ConfigService {
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
       movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
       autoDownloadNextCount: normalizeAutoDownloadNextCount(loaded.autoDownloadNextCount),
+      protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
     };
     return service;
   }
@@ -190,6 +191,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.autoCleanupGraceDays;
   }
 
+  get protectedDownloadJobIds(): readonly string[] {
+    return [...this.config.protectedDownloadJobIds];
+  }
+
   get onboardingVersion(): number {
     return this.config.onboardingVersion;
   }
@@ -269,6 +274,9 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.autoDownloadNextCount !== undefined
         ? { autoDownloadNextCount: normalizeAutoDownloadNextCount(partial.autoDownloadNextCount) }
         : null),
+      ...(partial.protectedDownloadJobIds !== undefined
+        ? { protectedDownloadJobIds: normalizeStringList(partial.protectedDownloadJobIds) }
+        : null),
     };
   }
 
@@ -280,4 +288,9 @@ export class ConfigServiceImpl implements ConfigService {
     this.config = { ...DEFAULT_CONFIG };
     await this.store.save(this.config);
   }
+}
+
+function normalizeStringList(values: readonly string[] | undefined): readonly string[] {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }

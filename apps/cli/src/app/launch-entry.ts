@@ -1,4 +1,5 @@
 import type { Container } from "@/container";
+import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { TitleInfo } from "@/domain/types";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
@@ -46,6 +47,47 @@ export function selectLocalContinueCandidate(
       );
     }) ?? null
   );
+}
+
+export async function recordLocalHistorySourceDecision(
+  container: Pick<Container, "offlineLibraryService" | "diagnosticsStore" | "stateManager">,
+  selection: HistoryLaunchSelection,
+  reason: "continue" | "history",
+): Promise<void> {
+  const localCandidate = selectLocalContinueCandidate(
+    selection,
+    await container.offlineLibraryService.listCompletedEntries(120).catch(() => []),
+  );
+  if (!localCandidate) return;
+
+  const decision = createSourceSelectionEngine().decide({
+    entrypoint: "continue",
+    local: { status: "ready", jobId: localCandidate.job.id },
+    networkAvailable: true,
+    preference: "ask",
+  });
+  container.diagnosticsStore.record({
+    category: "playback",
+    message: "History target has an exact ready local artifact",
+    context: {
+      reason,
+      titleId: selection.titleId,
+      titleName: selection.entry.title,
+      season: selection.entry.season,
+      episode: selection.entry.episode,
+      jobId: localCandidate.job.id,
+      outputPath: localCandidate.job.outputPath,
+      sourceDecision: decision.reason,
+      shouldResolveOnline: decision.shouldResolveOnline,
+    },
+  });
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note:
+      reason === "continue"
+        ? "Downloaded copy is ready for this episode. Use /offline for local playback, or continue online from history."
+        : "Downloaded copy is ready for this history item. Use /offline for local playback, or continue online.",
+  });
 }
 
 export function applyHistorySelectionProvider(
