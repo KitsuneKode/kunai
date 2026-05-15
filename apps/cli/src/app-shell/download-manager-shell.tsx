@@ -3,6 +3,7 @@ import { EmptyState, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import type { Container } from "@/container";
+import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { DownloadJobRecord } from "@kunai/storage";
 import { Box, Text, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
@@ -82,15 +83,33 @@ export function DownloadManagerContent({
         void (async () => {
           const playable = await container.offlineLibraryService.getPlayableSource(job.id);
           if (playable.status !== "ready") return;
+          const decision = createSourceSelectionEngine().decide({
+            entrypoint: "offline-library",
+            local: { status: "ready", jobId: job.id },
+            networkAvailable: true,
+            preference: "prefer-local",
+          });
           const result = await container.player.playLocal({
             source: playable.source,
             attach: false,
+            policy: {
+              autoSkipEnabled: !container.stateManager.getState().autoskipSessionPaused,
+              skipRecap: container.config.skipRecap,
+              skipIntro: container.config.skipIntro,
+              skipPreview: container.config.skipPreview,
+              skipCredits: container.config.skipCredits,
+            },
           });
           await container.offlineLibraryService.savePlaybackHistory(playable.source, result);
           container.diagnosticsStore.record({
             category: "playback",
             message: "Offline playback started from unified manager",
-            context: { jobId: job.id, path: job.outputPath },
+            context: {
+              jobId: job.id,
+              path: job.outputPath,
+              sourceDecision: decision.reason,
+              shouldResolveOnline: decision.shouldResolveOnline,
+            },
           });
         })();
         return;

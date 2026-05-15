@@ -15,6 +15,7 @@ import type { LocalPlaybackSource } from "@/services/offline/local-playback-sour
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 
+import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { PersistentMpvSession } from "./PersistentMpvSession";
 import {
@@ -146,6 +147,7 @@ export class PlayerServiceImpl implements PlayerService {
   async playLocal(options: {
     source: LocalPlaybackSource;
     attach?: boolean;
+    policy?: LocalPlaybackPolicyInput;
     onPlayerReady?: () => void;
     onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
   }): Promise<PlaybackResult> {
@@ -170,6 +172,7 @@ export class PlayerServiceImpl implements PlayerService {
       },
     });
 
+    const policy = resolveLocalPlaybackPolicy(options.policy ?? {});
     const result = await launchMpv({
       url: options.source.filePath,
       headers: {},
@@ -177,11 +180,11 @@ export class PlayerServiceImpl implements PlayerService {
       displayTitle,
       attach: options.attach,
       timing: options.source.timing,
-      autoSkipEnabled: true,
-      skipRecap: true,
-      skipIntro: true,
-      skipPreview: false,
-      skipCredits: true,
+      autoSkipEnabled: policy.autoSkipEnabled,
+      skipRecap: policy.skipRecap,
+      skipIntro: policy.skipIntro,
+      skipPreview: policy.skipPreview,
+      skipCredits: policy.skipCredits,
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
       mpv: this.deps.mpv,

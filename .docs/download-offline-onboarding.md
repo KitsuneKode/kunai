@@ -26,6 +26,7 @@ The feature must not make startup slower or more fragile.
 | Download service  | Queue, yt-dlp process lifecycle, progress, retries, SQLite state                              |
 | Media artifacts   | Persist poster URL, cached IntroDB/AniSkip timing, subtitles, and optional thumbnail sidecars |
 | Offline library   | Browse and play completed local files from stored download metadata                           |
+| Source policy     | Decide local-vs-online actions from cached local state without provider work                  |
 | Notification rail | Small queued status messages for downloads, updates, and offline prompts                      |
 
 Layering rule: UI asks services for capability/state; services do not render UI.
@@ -53,6 +54,16 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - Offline prompt appears only after a real network failure.
 - `--offline` and `/library` list completed `download_jobs` and validate artifact readability.
 - Local files should validate before playback; corrupt or missing files should offer re-download, not crash.
+- Offline playback uses the shared source-selection policy as a local-only entrypoint:
+  ready files play locally, broken files surface repair actions, and no provider resolve is
+  triggered merely because the user opened or selected an offline row.
+- Normal online search keeps provider playback online-first by default even when a downloaded
+  copy exists; downloaded state is a badge/action, not a silent hijack.
+- Continue-style flows may prefer a ready local file before provider resolution, but online
+  continuation must remain an explicit action when local episodes are exhausted or broken.
+- Local playback uses the same persisted/session autoskip policy as online playback so intro,
+  recap, preview, and credits behavior does not unexpectedly change between streamed and
+  downloaded files.
 - Offline shelf rows are grouped by title and may render the best local preview image:
   generated thumbnail first, then persisted poster URL, then text-only fallback.
 - Opening `/offline` must not fetch remote metadata. Stored poster URLs are only fetched by the

@@ -12,6 +12,8 @@ import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
+import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
+import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelectionEngine";
 import type { EpisodePickerOption } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
@@ -740,20 +742,54 @@ async function openOfflineLibraryGroupPicker(
     if (!action || action === "back") continue;
     if (action === "play") {
       if (playable.status !== "ready") {
+        const decision = createSourceSelectionEngine().decide({
+          entrypoint: "offline-library",
+          local: { status: localSourceStatusFromArtifactStatus(playable.status), jobId: job.id },
+          networkAvailable: true,
+          preference: "prefer-local",
+        });
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
-          note: `Offline file unavailable: ${artifactStatus}`,
+          note: `Offline file unavailable: ${artifactStatus}. ${decision.actions[0]?.label ?? "Check integrity"}.`,
         });
         container.diagnosticsStore.record({
           category: "download",
           message: "Completed download playback blocked",
-          context: { jobId: job.id, artifactStatus, outputPath: job.outputPath },
+          context: {
+            jobId: job.id,
+            artifactStatus,
+            outputPath: job.outputPath,
+            sourceDecision: decision.reason,
+            nextActions: decision.actions.map((nextAction) => nextAction.kind),
+          },
         });
         continue;
       }
+      const decision = createSourceSelectionEngine().decide({
+        entrypoint: "offline-library",
+        local: { status: "ready", jobId: job.id },
+        networkAvailable: true,
+        preference: "prefer-local",
+      });
+      container.diagnosticsStore.record({
+        category: "playback",
+        message: "Offline source selected",
+        context: {
+          jobId: job.id,
+          sourceDecision: decision.reason,
+          shouldResolveOnline: decision.shouldResolveOnline,
+        },
+      });
       const result = await container.player.playLocal({
         source: playable.source,
         attach: false,
+        policy: {
+          autoSkipEnabled: !container.stateManager.getState().autoskipSessionPaused,
+          skipRecap: container.config.skipRecap,
+          skipIntro: container.config.skipIntro,
+          skipPreview: container.config.skipPreview,
+          skipCredits: container.config.skipCredits,
+        },
       });
       await container.offlineLibraryService.savePlaybackHistory(playable.source, result);
       continue;
@@ -801,6 +837,13 @@ async function openOfflineLibraryGroupPicker(
       note: action === "delete-artifact" ? "Download artifact deleted" : "Download job deleted",
     });
   }
+}
+
+function localSourceStatusFromArtifactStatus(status: string): LocalSourceStatus {
+  if (status === "ready") return "ready";
+  if (status === "missing") return "missing-file";
+  if (status === "invalid-file") return "invalid-file";
+  return "none";
 }
 
 function buildOfflineGroupActions(

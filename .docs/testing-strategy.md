@@ -197,6 +197,8 @@ Use these after meaningful shell or startup-route changes. They are not replacem
 | Offline library first | `bun run dev -- --offline`                        | Completed local downloads picker opens, not the queue manager        |
 | Queue manager         | In shell: `/downloads`                            | Queued/running/failed jobs are primary                               |
 | Offline library       | In shell: `/library` or `/offline`                | Completed playable downloads are primary                             |
+| Offline playback      | In `/library`: select a ready episode             | mpv starts from the local file; no provider fallback/resolve appears |
+| Offline repair        | In `/library`: check/delete a missing artifact    | UI explains repair/re-download instead of silently going online      |
 | Update panel          | In shell: `/update`                               | Manual guidance appears; no install command runs                     |
 | Diagnostics export    | In shell: `/export-diagnostics`                   | Redacted support bundle is written locally                           |
 

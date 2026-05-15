@@ -22,13 +22,19 @@ Implemented:
 - `/filters` command is registered so advanced search help is discoverable.
 - `OfflineLibraryEngine` groups completed downloads into title-first local shelves.
 - `ContinuationEngine` separates local continuation, explicit online continuation, download-more, and browse-offline decisions.
+- `SourceSelectionEngine` formalizes local-vs-online playback decisions so offline,
+  continue, and online-search entrypoints do not drift into different fallback semantics.
 - `/offline` uses the read-model engine and shows continuation guidance from local history/artifact facts.
+- Offline play actions record the source decision in diagnostics and local playback uses the same
+  autoskip flags as online playback.
 
 Follow-up hardening still worth doing:
 
 - Build a guided `/filters` picker that inserts chips into the search box instead of only registering the command.
 - Apply cached local filter semantics for `downloaded`, `watched`, and `release` across already-loaded browse results when the data is present.
 - Add a richer offline title detail surface with batch actions, pin/protect, and explicit online/download continuation actions.
+- Thread `SourceSelectionEngine` through future `--continue` and history-launch source pickers;
+  keep normal search online-first unless the user changes a future source preference setting.
 
 ## Decisions Locked By Grill Session
 
@@ -44,6 +50,7 @@ Follow-up hardening still worth doing:
   - `SearchIntentEngine`
   - `OfflineLibraryEngine`
   - `ContinuationEngine`
+  - `SourceSelectionEngine`
   - existing `ResultEnrichmentService`
   - existing `PlaybackResolveService`
 
@@ -99,6 +106,7 @@ quality:1080p
 - Create `apps/cli/src/domain/search/SearchIntentEngine.ts`: normalize raw text, chips, config, current mode into `SearchIntent`.
 - Create `apps/cli/src/domain/offline/OfflineLibraryEngine.ts`: local read model grouping download jobs, history, artifact states, and cached metadata.
 - Create `apps/cli/src/domain/continuation/ContinuationEngine.ts`: returns local/online/download continuation options from local state and cached facts.
+- Create `apps/cli/src/domain/playback-source/SourceSelectionEngine.ts`: returns the preferred playback source and explicit local/online/repair actions.
 - Modify `apps/cli/src/services/offline/offline-library.ts`: keep low-level formatting helpers, move policy decisions into `OfflineLibraryEngine`.
 - Modify `apps/cli/src/app-shell/workflows.ts`: use `OfflineLibraryEngine` for `/offline` and `ContinuationEngine` for continuation actions.
 - Modify `apps/cli/src/app/SearchPhase.ts`: use `SearchIntentEngine` for bootstrap and shell search.

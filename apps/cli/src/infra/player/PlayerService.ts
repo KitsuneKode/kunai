@@ -9,6 +9,7 @@ import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 
+import type { LocalPlaybackPolicyInput } from "./local-playback-policy";
 import type { PlaybackSkipKind } from "./playback-skip";
 
 export type PlayerPlaybackEvent =
@@ -98,6 +99,7 @@ export interface PlayerService {
   playLocal(options: {
     source: LocalPlaybackSource;
     attach?: boolean;
+    policy?: LocalPlaybackPolicyInput;
     onPlayerReady?: () => void;
     onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
   }): Promise<PlaybackResult>;
