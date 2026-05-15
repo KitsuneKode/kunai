@@ -28,7 +28,9 @@ export class TMDBSearchService implements SearchService {
     this.deps.logger.debug("TMDB search", { query });
 
     try {
-      const results = intent ? await discoverVideasy(intent, signal) : await searchVideasy(query);
+      const results = intent
+        ? await discoverVideasy(intent, signal)
+        : await searchVideasy(query, signal);
       this.deps.logger.info("TMDB search complete", { query, count: results.length });
       return results;
     } catch (e) {

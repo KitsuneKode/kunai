@@ -217,6 +217,69 @@ describe("searchTitles", () => {
     expect(result.evidence.upstream).toEqual(["genre action", "rating >= 7", "sort rating"]);
   });
 
+  test("routes mode anime filters through the anime search service even from series mode", async () => {
+    let searchedProvider: string | undefined;
+    const searchRegistry = createSearchRegistry({
+      animeResults: [
+        {
+          id: "anilist-cross-mode",
+          type: "series",
+          title: "Cross Mode Anime",
+          year: "2025",
+          overview: "",
+          posterPath: null,
+        },
+      ],
+      onProviderResolution: (providerId) => {
+        searchedProvider = providerId;
+      },
+    });
+
+    const providerRegistry: any = {
+      get: (id: string) => ({
+        metadata: {
+          id,
+          name: id,
+          description: "",
+          recommended: true,
+          isAnimeProvider: id === "allanime",
+          domain: `${id}.test`,
+        },
+      }),
+      getDefault: (isAnime: boolean) => ({
+        metadata: {
+          id: isAnime ? "allanime" : "vidking",
+          name: isAnime ? "AllAnime" : "VidKing",
+          description: "",
+          recommended: true,
+          isAnimeProvider: isAnime,
+          domain: isAnime ? "allanime.day" : "vidking.net",
+        },
+      }),
+    };
+
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "",
+        mode: "anime",
+        filters: { genres: ["action"] },
+        sort: "popular",
+      }),
+      {
+        mode: "series",
+        providerId: "vidking",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: searchRegistry as any,
+        providerRegistry,
+      },
+    );
+
+    expect(searchedProvider).toBe("allanime");
+    expect(result.sourceId).toBe("anilist");
+    expect(result.results[0]?.id).toBe("anilist-cross-mode");
+    expect(result.evidence.upstream).toEqual(["mode anime", "genre action", "sort popular"]);
+  });
+
   test("applies text search filters locally when TMDB search cannot push them upstream", async () => {
     const searchRegistry = createSearchRegistry({
       providerResults: [
@@ -283,11 +346,13 @@ function createSearchRegistry({
   defaultResults = [],
   animeResults = [],
   onSearch,
+  onProviderResolution,
 }: {
   providerResults?: SearchResult[];
   defaultResults?: SearchResult[];
   animeResults?: SearchResult[];
   onSearch?: (query: string, signal?: AbortSignal, intent?: any) => void;
+  onProviderResolution?: (providerId: string) => void;
 }) {
   const providerService = {
     metadata: { id: "tmdb", name: "TMDB", description: "" },
@@ -315,6 +380,7 @@ function createSearchRegistry({
 
   return {
     getForProvider(providerId: string) {
+      onProviderResolution?.(providerId);
       if (providerId === "allanime") return animeService;
       return providerId === "vidking" ? providerService : undefined;
     },

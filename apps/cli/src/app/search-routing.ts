@@ -5,6 +5,7 @@ import {
 } from "../domain/search/SearchIntent";
 import { describeSearchIntentFilters } from "../domain/search/SearchIntentParser";
 import type { SearchResult, ShellMode } from "../domain/types";
+import { buildVideasyDiscoverPlan } from "../search";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
 import { enrichAnimeSearchResultsWithAniList } from "./anime-metadata";
@@ -39,14 +40,15 @@ export async function searchTitles(
 ): Promise<SearchRoutingResult> {
   const intent = typeof input === "string" ? normalizeSearchInput(input, context.mode) : input;
   const query = intent.query;
-  const provider = context.providerRegistry.get(context.providerId);
+  const routing = resolveSearchRouting(intent, context);
+  const provider = context.providerRegistry.get(routing.providerId);
   const advanced = hasAdvancedSearchFilters(intent);
 
   if (advanced) {
     const searchService =
-      context.searchRegistry.getForProvider(context.providerId) ??
+      context.searchRegistry.getForProvider(routing.providerId) ??
       context.searchRegistry.getDefault();
-    const evidence = classifySearchEvidence(intent, searchService.metadata.id);
+    const evidence = classifySearchEvidence(intent, searchService.metadata.id, context.mode);
     const results = applyLocalSearchFilters(
       await searchService.search(query, context.signal, intent),
       intent,
@@ -62,7 +64,7 @@ export async function searchTitles(
     };
   }
 
-  if (provider && context.mode === "anime" && provider.search) {
+  if (provider && routing.mode === "anime" && provider.search) {
     const results = await provider.search(
       query,
       {
@@ -89,16 +91,16 @@ export async function searchTitles(
         sourceId: provider.metadata.id,
         sourceName: provider.metadata.name,
         strategy: "provider-native",
-        evidence: classifySearchEvidence(intent, provider.metadata.id),
+        evidence: classifySearchEvidence(intent, provider.metadata.id, context.mode),
       };
     }
   }
 
   const searchService =
-    context.searchRegistry.getForProvider(context.providerId) ??
+    context.searchRegistry.getForProvider(routing.providerId) ??
     context.searchRegistry.getDefault();
 
-  const evidence = classifySearchEvidence(intent, searchService.metadata.id);
+  const evidence = classifySearchEvidence(intent, searchService.metadata.id, context.mode);
   const results = applyLocalSearchFilters(
     await searchService.search(query, context.signal, intent),
     intent,
@@ -112,6 +114,27 @@ export async function searchTitles(
     strategy: "registry",
     evidence,
   };
+}
+
+function resolveSearchRouting(
+  intent: SearchIntent,
+  context: SearchRoutingContext,
+): { readonly mode: ShellMode; readonly providerId: string } {
+  if (intent.mode === "anime" && context.mode !== "anime") {
+    return {
+      mode: "anime",
+      providerId: context.providerRegistry.getDefault(true).metadata.id,
+    };
+  }
+
+  if ((intent.mode === "series" || intent.mode === "movie") && context.mode !== "series") {
+    return {
+      mode: "series",
+      providerId: context.providerRegistry.getDefault(false).metadata.id,
+    };
+  }
+
+  return { mode: context.mode, providerId: context.providerId };
 }
 
 function normalizeSearchInput(query: string, mode: ShellMode): SearchIntent {
@@ -140,7 +163,11 @@ function hasAdvancedSearchFilters(intent: SearchIntent): boolean {
   );
 }
 
-function classifySearchEvidence(intent: SearchIntent, sourceId: string): SearchFilterEvidence {
+function classifySearchEvidence(
+  intent: SearchIntent,
+  sourceId: string,
+  sessionMode: ShellMode,
+): SearchFilterEvidence {
   const labels = describeSearchIntentFilters({
     mode: intent.mode === "all" ? undefined : intent.mode,
     filters: intent.filters,
@@ -148,7 +175,7 @@ function classifySearchEvidence(intent: SearchIntent, sourceId: string): SearchF
   });
   if (labels.length === 0) return { upstream: [], local: [], unsupported: [] };
 
-  const upstreamKeys = getUpstreamFilterKeys(intent, sourceId);
+  const upstreamKeys = getUpstreamFilterKeys(intent, sourceId, sessionMode);
   const localKeys = getLocalFilterKeys(intent, sourceId);
   const unsupportedKeys = getUnsupportedFilterKeys(intent, sourceId);
 
@@ -159,17 +186,27 @@ function classifySearchEvidence(intent: SearchIntent, sourceId: string): SearchF
   };
 }
 
-function getUpstreamFilterKeys(intent: SearchIntent, sourceId: string): readonly string[] {
+function getUpstreamFilterKeys(
+  intent: SearchIntent,
+  sourceId: string,
+  sessionMode: ShellMode,
+): readonly string[] {
   if (sourceId === "tmdb" && intent.query.trim().length > 0) return [];
   if (sourceId !== "tmdb" && sourceId !== "anilist") return [];
+  const modeKey =
+    intent.mode !== "all" && intent.mode !== sessionMode && sourceIdSupportsMode(sourceId, intent)
+      ? "mode"
+      : null;
+  if (sourceId === "tmdb") {
+    return [modeKey, ...buildVideasyDiscoverPlan(intent).evidence.upstream].filter(
+      (value): value is string => Boolean(value),
+    );
+  }
   return [
-    intent.filters.type && sourceId === "tmdb" ? "type" : null,
+    modeKey,
     intent.filters.genres?.length ? "genre" : null,
     typeof intent.filters.minRating === "number" ? "rating" : null,
-    intent.filters.year && sourceId === "tmdb" ? "year" : null,
-    intent.filters.year && sourceId === "anilist" && typeof intent.filters.year === "number"
-      ? "year"
-      : null,
+    intent.filters.year && typeof intent.filters.year === "number" ? "year" : null,
     intent.sort !== "relevance" && intent.sort !== "progress" ? "sort" : null,
   ].filter((value): value is string => Boolean(value));
 }
@@ -195,7 +232,12 @@ function getLocalFilterKeys(intent: SearchIntent, sourceId: string): readonly st
 
 function getUnsupportedFilterKeys(intent: SearchIntent, sourceId: string): readonly string[] {
   const { filters } = intent;
+  const tmdbUnsupported =
+    sourceId === "tmdb" && intent.query.trim().length === 0
+      ? buildVideasyDiscoverPlan(intent).evidence.unsupported
+      : [];
   return [
+    ...tmdbUnsupported,
     sourceId === "tmdb" && intent.query.trim().length > 0 && filters.genres?.length
       ? "genre"
       : null,
@@ -252,7 +294,19 @@ function compareResultsBySort(
 }
 
 function matchesEvidenceKey(label: string, keys: readonly string[]): boolean {
-  return keys.some((key) => label === key || label.startsWith(`${key} `));
+  return keys.some((key) => {
+    if (key.includes(":")) {
+      const [name, value] = key.split(":", 2);
+      return label === `${name} ${value}`;
+    }
+    return label === key || label.startsWith(`${key} `);
+  });
+}
+
+function sourceIdSupportsMode(sourceId: string, intent: SearchIntent): boolean {
+  if (sourceId === "anilist") return intent.mode === "anime";
+  if (sourceId === "tmdb") return intent.mode === "series" || intent.mode === "movie";
+  return false;
 }
 
 function normalizeProviderSearchResult(result: SearchResult): SearchResult {

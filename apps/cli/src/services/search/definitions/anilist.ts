@@ -1,5 +1,6 @@
 import type { SearchIntent } from "@/domain/search/SearchIntent";
 import type { SearchMetadata, SearchResult, TitleAlias, TitleInfo } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 
 import type { SearchDeps, SearchService } from "../SearchService";
 
@@ -55,7 +56,7 @@ export class AniListSearchService implements SearchService {
 
     const response = await fetch(ANILIST_GRAPHQL_URL, {
       method: "POST",
-      signal: signal ?? AbortSignal.timeout(8000),
+      signal: withTimeoutSignal(signal, 8000),
       headers: {
         "content-type": "application/json",
         accept: "application/json",
@@ -97,16 +98,18 @@ export function buildAniListSearchRequest(intent: SearchIntent): {
     sort: [toAniListSort(intent.sort, intent.query)],
   };
   if (intent.query.trim().length > 0) variables.search = intent.query.trim();
-  if (intent.filters.genres?.[0]) variables.genre = toAniListGenre(intent.filters.genres[0]);
+  if (intent.filters.genres?.length) {
+    variables.genres = intent.filters.genres.map(toAniListGenre);
+  }
   if (typeof intent.filters.minRating === "number") {
     variables.score = Math.round(intent.filters.minRating * 10);
   }
   if (typeof intent.filters.year === "number") variables.seasonYear = intent.filters.year;
 
   return {
-    query: `query($page:Int,$search:String,$genre:String,$seasonYear:Int,$score:Int,$sort:[MediaSort]){
+    query: `query($page:Int,$search:String,$genres:[String],$seasonYear:Int,$score:Int,$sort:[MediaSort]){
       Page(page:$page, perPage:20){
-        media(type:ANIME, search:$search, genre:$genre, seasonYear:$seasonYear, averageScore_greater:$score, sort:$sort, status_not:NOT_YET_RELEASED, isAdult:false){
+        media(type:ANIME, search:$search, genre_in:$genres, seasonYear:$seasonYear, averageScore_greater:$score, sort:$sort, status_not:NOT_YET_RELEASED, isAdult:false){
           id
           title{romaji english native}
           coverImage{extraLarge large}

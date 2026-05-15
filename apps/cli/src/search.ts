@@ -10,6 +10,8 @@
 // HTTP endpoint (TMDB proxy today; HiAnime as a future SearchService).
 // =============================================================================
 
+import { withTimeoutSignal } from "./infra/abort/timeout-signal";
+
 export type SearchResult = {
   id: string;
   type: "movie" | "series";
@@ -34,13 +36,13 @@ export type SearchService = {
 
 const cache = new Map<string, SearchResult[]>();
 
-export async function searchVideasy(query: string): Promise<SearchResult[]> {
+export async function searchVideasy(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const key = query.toLowerCase().trim();
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
 
   const url = `https://db.videasy.net/3/search/multi?language=en&page=1&query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(url, { signal: withTimeoutSignal(signal, 8000) });
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
 
   const data = (await res.json()) as Record<string, unknown>;
@@ -64,16 +66,24 @@ export async function searchVideasy(query: string): Promise<SearchResult[]> {
   return results;
 }
 
+export type VideasyDiscoverPlan = {
+  readonly urls: readonly { readonly url: string; readonly type: "movie" | "series" }[];
+  readonly evidence: {
+    readonly upstream: readonly string[];
+    readonly unsupported: readonly string[];
+  };
+};
+
 export async function discoverVideasy(
   intent: import("./domain/search/SearchIntent").SearchIntent,
   signal?: AbortSignal,
 ): Promise<SearchResult[]> {
-  const urls = buildVideasyDiscoverUrls(intent);
-  if (urls.length === 0) return searchVideasy(intent.query);
+  const { urls } = buildVideasyDiscoverPlan(intent);
+  if (urls.length === 0) return searchVideasy(intent.query, signal);
 
-  const responses = await Promise.all(
+  const responses = await Promise.allSettled(
     urls.map(async ({ url, type }) => {
-      const res = await fetch(url, { signal: signal ?? AbortSignal.timeout(8000) });
+      const res = await fetch(url, { signal: withTimeoutSignal(signal, 8000) });
       if (!res.ok) throw new Error(`Search failed: ${res.status}`);
       const data = (await res.json()) as Record<string, unknown>;
       const rawResults = Array.isArray(data.results) ? data.results : [];
@@ -99,17 +109,39 @@ export async function discoverVideasy(
     }),
   );
 
-  return responses.flat().slice(0, 20);
+  const fulfilled = responses
+    .filter((response): response is PromiseFulfilledResult<SearchResult[]> => {
+      return response.status === "fulfilled";
+    })
+    .flatMap((response) => response.value);
+  if (fulfilled.length > 0) return fulfilled.slice(0, 20);
+
+  const firstFailure = responses.find(
+    (response): response is PromiseRejectedResult => response.status === "rejected",
+  );
+  throw firstFailure?.reason instanceof Error
+    ? firstFailure.reason
+    : new Error("Search failed: all TMDB discover endpoints failed");
 }
 
 export function buildVideasyDiscoverUrls(
   intent: import("./domain/search/SearchIntent").SearchIntent,
 ): readonly { readonly url: string; readonly type: "movie" | "series" }[] {
-  if (intent.query.trim().length > 0) return [];
-  const mediaTypes = resolveTmdbMediaTypes(intent);
-  if (mediaTypes.length === 0) return [];
+  return buildVideasyDiscoverPlan(intent).urls;
+}
 
-  return mediaTypes.map((mediaType) => {
+export function buildVideasyDiscoverPlan(
+  intent: import("./domain/search/SearchIntent").SearchIntent,
+): VideasyDiscoverPlan {
+  if (intent.query.trim().length > 0) {
+    return { urls: [], evidence: { upstream: [], unsupported: [] } };
+  }
+  const mediaTypes = resolveTmdbMediaTypes(intent);
+  if (mediaTypes.length === 0) {
+    return { urls: [], evidence: { upstream: [], unsupported: [] } };
+  }
+
+  const urls: VideasyDiscoverPlan["urls"] = mediaTypes.map((mediaType) => {
     const params = new URLSearchParams({
       language: "en-US",
       page: "1",
@@ -125,10 +157,18 @@ export function buildVideasyDiscoverUrls(
     applyTmdbYearParams(params, intent.filters.year, mediaType);
 
     return {
-      type: mediaType === "tv" ? "series" : "movie",
+      type: mediaType === "tv" ? ("series" as const) : ("movie" as const),
       url: `https://db.videasy.net/3/discover/${mediaType}?${params.toString()}`,
     };
   });
+
+  return {
+    urls,
+    evidence: {
+      upstream: buildTmdbUpstreamEvidence(intent, mediaTypes),
+      unsupported: buildTmdbUnsupportedEvidence(intent, mediaTypes),
+    },
+  };
 }
 
 function resolveTmdbMediaTypes(
@@ -217,6 +257,45 @@ function resolveTmdbGenreId(genre: string | undefined, mediaType: "movie" | "tv"
   if (!genre) return null;
   const normalized = genre.trim().toLowerCase().replace(/\s+/g, "-");
   return (mediaType === "movie" ? TMDB_MOVIE_GENRES : TMDB_TV_GENRES)[normalized] ?? null;
+}
+
+function buildTmdbUpstreamEvidence(
+  intent: import("./domain/search/SearchIntent").SearchIntent,
+  mediaTypes: readonly ("movie" | "tv")[],
+): readonly string[] {
+  return [
+    intent.filters.type || intent.mode === "movie" || intent.mode === "series" ? "type" : null,
+    getSupportedTmdbGenreEvidence(intent.filters.genres?.[0], mediaTypes),
+    typeof intent.filters.minRating === "number" ? "rating" : null,
+    intent.filters.year ? "year" : null,
+    intent.sort !== "relevance" && intent.sort !== "progress" ? "sort" : null,
+  ].filter((value): value is string => Boolean(value));
+}
+
+function buildTmdbUnsupportedEvidence(
+  intent: import("./domain/search/SearchIntent").SearchIntent,
+  mediaTypes: readonly ("movie" | "tv")[],
+): readonly string[] {
+  const genres = intent.filters.genres ?? [];
+  return genres
+    .filter((genre, index) => index > 0 || !isTmdbGenreSupported(genre, mediaTypes))
+    .map((genre) => `genre:${normalizeTmdbGenreKey(genre)}`);
+}
+
+function getSupportedTmdbGenreEvidence(
+  genre: string | undefined,
+  mediaTypes: readonly ("movie" | "tv")[],
+): string | null {
+  if (!genre || !isTmdbGenreSupported(genre, mediaTypes)) return null;
+  return `genre:${normalizeTmdbGenreKey(genre)}`;
+}
+
+function isTmdbGenreSupported(genre: string, mediaTypes: readonly ("movie" | "tv")[]): boolean {
+  return mediaTypes.some((mediaType) => resolveTmdbGenreId(genre, mediaType));
+}
+
+function normalizeTmdbGenreKey(genre: string): string {
+  return genre.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
 function readSearchRecord(value: unknown): Record<string, unknown> {

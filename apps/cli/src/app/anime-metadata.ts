@@ -1,4 +1,5 @@
 import type { SearchResult, TitleAlias } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 
 type AniListTitle = {
   readonly romaji?: string | null;
@@ -86,7 +87,7 @@ async function fetchAniListSearchPage(
 
   const response = await fetch(ANILIST_GRAPHQL_URL, {
     method: "POST",
-    signal: signal ?? AbortSignal.timeout(3500),
+    signal: withTimeoutSignal(signal, 3500),
     headers: {
       "content-type": "application/json",
       accept: "application/json",
