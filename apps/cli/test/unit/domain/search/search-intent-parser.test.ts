@@ -22,10 +22,24 @@ describe("SearchIntentParser", () => {
       query: "anime",
       filters: {
         year: { from: 2010, to: 2020 },
+        genres: ["action"],
       },
       sort: undefined,
       mode: undefined,
-      errors: [{ key: "genre", value: "action", reason: "unsupported-filter" }],
+      errors: [],
+    });
+  });
+
+  test("parses browse-class filters in the shared intent parser", () => {
+    expect(parseSearchIntentText("breaking bad type:series rating:9 min:8.5")).toEqual({
+      query: "breaking bad",
+      filters: {
+        type: "series",
+        minRating: 8.5,
+      },
+      sort: undefined,
+      mode: undefined,
+      errors: [],
     });
   });
 

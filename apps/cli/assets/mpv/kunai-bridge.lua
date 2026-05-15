@@ -311,6 +311,9 @@ local function clear_resume_prompt_bindings()
 		mp.remove_key_binding("kunai-resume-r")
 	end)
 	pcall(function()
+		mp.remove_key_binding("kunai-resume-alt-r")
+	end)
+	pcall(function()
 		mp.remove_key_binding("kunai-resume-o")
 	end)
 	pcall(function()
@@ -339,16 +342,71 @@ local function format_hms(total_sec)
 	return string.format("%d:%02d", m, r)
 end
 
+local function resume_card_path(w, h, r)
+	w = math.max(0, math.floor(w))
+	h = math.max(0, math.floor(h))
+	r = clamp(math.floor(r), 0, math.floor(math.min(w, h) * 0.5))
+	if w <= 0 or h <= 0 then
+		return ""
+	end
+	if r <= 0 then
+		return string.format("m 0 0 l %d 0 l %d %d l 0 %d l 0 0", w, w, h, h)
+	end
+
+	local c = math.floor(r * 0.55228475 + 0.5)
+	return string.format(
+		"m %d %d l %d %d b %d %d %d %d %d %d l %d %d b %d %d %d %d %d %d l %d %d b %d %d %d %d %d %d l %d %d b %d %d %d %d %d %d",
+		r,
+		0,
+		w - r,
+		0,
+		w - r + c,
+		0,
+		w,
+		r - c,
+		w,
+		r,
+		w,
+		h - r,
+		w,
+		h - r + c,
+		w - r + c,
+		h,
+		w - r,
+		h,
+		r,
+		h,
+		r - c,
+		h,
+		0,
+		h - r + c,
+		0,
+		h - r,
+		0,
+		r,
+		0,
+		r - c,
+		r - c,
+		0,
+		r,
+		0
+	)
+end
+
 local function draw_resume_prompt(at_sec)
 	local dim = mp.get_property_native("osd-dimensions", {})
 	local w = dim.w or 1280
 	local h = dim.h or 720
-	local margin = clamp(math.floor(w * 0.035), 28, 72)
-	local top = clamp(math.floor(h * 0.055), 28, 58)
-	local x = w - margin
-	local y = top
-	local fs = clamp(math.floor(h * 0.026), 18, 30)
-	local sub_fs = clamp(math.floor(h * 0.018), 12, 17)
+	local cx = math.floor(w / 2)
+	local cy = math.floor(h / 2)
+	local card_w = clamp(math.floor(w * 0.62), 560, 980)
+	local card_h = clamp(math.floor(h * 0.28), 190, 310)
+	local card_x = math.floor(cx - card_w / 2)
+	local card_y = math.floor(cy - card_h / 2)
+	local title_fs = clamp(math.floor(h * 0.022), 18, 28)
+	local action_fs = clamp(math.floor(h * 0.044), 30, 54)
+	local sub_fs = clamp(math.floor(h * 0.023), 15, 22)
+	local key_fs = clamp(math.floor(h * 0.026), 18, 28)
 
 	local label = mp.get_property("user-data/kunai-resume-label", "")
 	if label == "" then
@@ -357,34 +415,50 @@ local function draw_resume_prompt(at_sec)
 	local title = mp.get_property("user-data/kunai-resume-title", "Kunai")
 
 	local line1 = esc_ass(title)
-	local line2 = esc_ass("Resume at " .. label .. "  ·  or start from the beginning")
-	local line3 = esc_ass("[Ctrl+R] resume   [O] start over")
+	local line2 = esc_ass("Continue from last history point")
+	local line3 = esc_ass("Resume at " .. label)
+	local line4 = esc_ass("[Alt+R] resume   [Enter] resume   [O] start over")
 
 	local ass_nl = "\\N"
 	resume_overlay.res_x = w
 	resume_overlay.res_y = h
 	resume_overlay.data = string.format(
-		"{\\an9\\bord3\\blur2\\fnSans\\b1\\fs%d\\pos(%d,%d)\\c&HF0F0F0&}%s",
-		fs,
-		x,
-		y,
-		line1
+		"{\\an7\\pos(%d,%d)\\bord4\\blur1\\1c&H101010&\\3c&H3BC8FF&\\alpha&H50&\\p1}%s{\\p0}",
+		card_x,
+		card_y,
+		resume_card_path(card_w, card_h, clamp(math.floor(card_h * 0.13), 18, 34))
 	)
 		.. ass_nl
 		.. string.format(
-			"{\\an9\\alpha&HC0&\\fs%d\\pos(%d,%d)\\c&HDDDDDD&}%s",
-			sub_fs,
-			x,
-			y + math.floor(fs * 1.25),
+			"{\\an5\\bord3\\blur2\\shadow1\\shadowcolor&H66000000&\\fnSans\\b1\\fs%d\\pos(%d,%d)\\c&HFFFFFF&}%s",
+			title_fs,
+			cx,
+			card_y + math.floor(card_h * 0.22),
+			line1
+		)
+		.. ass_nl
+		.. string.format(
+			"{\\an5\\bord2\\blur1\\fnSans\\b1\\fs%d\\pos(%d,%d)\\c&H3BC8FF&}%s",
+			action_fs,
+			cx,
+			card_y + math.floor(card_h * 0.46),
 			line2
 		)
 		.. ass_nl
 		.. string.format(
-			"{\\an9\\alpha&HB0&\\fs%d\\pos(%d,%d)\\c&HBBBBBB&}%s",
+			"{\\an5\\alpha&H20&\\bord1\\blur1\\fnSans\\fs%d\\pos(%d,%d)\\c&HDDDDDD&}%s",
 			sub_fs,
-			x,
-			y + math.floor(fs * 2.2),
+			cx,
+			card_y + math.floor(card_h * 0.65),
 			line3
+		)
+		.. ass_nl
+		.. string.format(
+			"{\\an5\\bord2\\blur1\\fnSans\\b1\\fs%d\\pos(%d,%d)\\c&HFFFFFF&}%s",
+			key_fs,
+			cx,
+			card_y + math.floor(card_h * 0.84),
+			line4
 		)
 	resume_overlay:update()
 end
@@ -408,6 +482,9 @@ local function show_resume_prompt(at_sec)
 	mp.add_forced_key_binding("Ctrl+r", "kunai-resume-r", function()
 		commit_resume_choice("resume")
 	end)
+	mp.add_forced_key_binding("Alt+r", "kunai-resume-alt-r", function()
+		commit_resume_choice("resume")
+	end)
 	mp.add_forced_key_binding("o", "kunai-resume-o", function()
 		commit_resume_choice("start")
 	end)
@@ -415,7 +492,7 @@ local function show_resume_prompt(at_sec)
 		commit_resume_choice("resume")
 	end)
 
-	resume_prompt_timer = mp.add_timeout(8, function()
+	resume_prompt_timer = mp.add_timeout(12, function()
 		resume_prompt_timer = nil
 		commit_resume_choice("start")
 	end)

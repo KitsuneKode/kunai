@@ -61,12 +61,13 @@ describe("browse filters", () => {
 
   test("parses advanced intent filters as local badges without changing provider query", () => {
     const parsed = parseBrowseFilterQuery(
-      "solo leveling mode:anime downloaded:true watched:watching release:this-week sort:recent",
+      "solo leveling mode:anime genre:action downloaded:true watched:watching release:this-week sort:recent",
     );
 
     expect(parsed.searchQuery).toBe("solo leveling");
     expect(parsed.filters).toMatchObject({
       type: "all",
+      genres: ["action"],
       downloaded: true,
       watched: "watching",
       release: "this-week",
@@ -75,6 +76,7 @@ describe("browse filters", () => {
     });
     expect(describeBrowseResultFilters(parsed.filters)).toEqual([
       "mode anime",
+      "genre action",
       "downloaded true",
       "watched watching",
       "release this-week",

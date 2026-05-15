@@ -1,9 +1,13 @@
 export type SearchIntentMode = "series" | "anime" | "movie" | "all";
+export type SearchIntentTypeFilter = "movie" | "series" | "all";
 export type WatchFilter = "any" | "unwatched" | "watching" | "completed";
 export type ReleaseFilter = "today" | "this-week" | "upcoming";
 export type SearchSort = "relevance" | "progress" | "recent";
 
 export type SearchIntentFilters = {
+  readonly type?: SearchIntentTypeFilter;
+  readonly genres?: readonly string[];
+  readonly minRating?: number;
   readonly provider?: string;
   readonly downloaded?: boolean;
   readonly watched?: WatchFilter;
@@ -35,9 +39,16 @@ export function normalizeSearchIntent(input: {
 function normalizeFilters(filters: SearchIntentFilters): SearchIntentFilters {
   const year = filters.year;
   const normalizedYear = typeof year === "object" && year ? normalizeYearRange(year) : year;
+  const normalizedGenres = filters.genres?.map((genre) => genre.trim()).filter(Boolean);
+  const normalizedMinRating =
+    typeof filters.minRating === "number" && Number.isFinite(filters.minRating)
+      ? Math.min(10, Math.max(0, filters.minRating))
+      : undefined;
 
   return {
     ...filters,
+    ...(normalizedGenres && normalizedGenres.length > 0 ? { genres: normalizedGenres } : {}),
+    ...(normalizedMinRating === undefined ? {} : { minRating: normalizedMinRating }),
     ...(normalizedYear === undefined ? {} : { year: normalizedYear }),
   };
 }

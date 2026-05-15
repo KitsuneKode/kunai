@@ -25,10 +25,10 @@ describe("SearchIntentEngine", () => {
   test("keeps unknown filters non-blocking", () => {
     const engine = createSearchIntentEngine();
 
-    const result = engine.fromText("Dune genre:sci-fi", { currentMode: "anime" });
+    const result = engine.fromText("Dune mood:bleak", { currentMode: "anime" });
 
     expect(result.intent.query).toBe("Dune");
     expect(result.intent.mode).toBe("anime");
-    expect(result.warnings).toEqual(["Ignored unsupported filter genre:sci-fi"]);
+    expect(result.warnings).toEqual(["Ignored unsupported filter mood:bleak"]);
   });
 });

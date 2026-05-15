@@ -2,6 +2,7 @@ import type {
   ReleaseFilter,
   SearchIntentFilters,
   SearchIntentMode,
+  SearchIntentTypeFilter,
   SearchSort,
   WatchFilter,
 } from "./SearchIntent";
@@ -21,6 +22,7 @@ export type ParsedSearchIntentText = {
 };
 
 const SEARCH_MODES = new Set<SearchIntentMode>(["anime", "series", "movie", "all"]);
+const TYPE_FILTERS = new Set<SearchIntentTypeFilter>(["movie", "series", "all"]);
 const WATCH_FILTERS = new Set<WatchFilter>(["any", "unwatched", "watching", "completed"]);
 const RELEASE_FILTERS = new Set<ReleaseFilter>(["today", "this-week", "upcoming"]);
 const SEARCH_SORTS = new Set<SearchSort>(["relevance", "progress", "recent"]);
@@ -29,6 +31,9 @@ export function parseSearchIntentText(text: string): ParsedSearchIntentText {
   const terms: string[] = [];
   const errors: SearchIntentParseError[] = [];
   const filters: {
+    type?: SearchIntentTypeFilter;
+    genres?: string[];
+    minRating?: number;
     provider?: string;
     downloaded?: boolean;
     watched?: WatchFilter;
@@ -48,6 +53,23 @@ export function parseSearchIntentText(text: string): ParsedSearchIntentText {
     const { key, value } = parsed;
     if (key === "mode") {
       if (isSearchMode(value)) mode = value;
+      else errors.push({ key, value, reason: "unsupported-value" });
+      continue;
+    }
+    if (key === "type") {
+      if (isTypeFilter(value)) filters.type = value;
+      else errors.push({ key, value, reason: "unsupported-value" });
+      continue;
+    }
+    if (key === "genre" || key === "genres") {
+      const genres = parseGenreFilter(value);
+      if (genres.length > 0) filters.genres = [...(filters.genres ?? []), ...genres];
+      else errors.push({ key, value, reason: "unsupported-value" });
+      continue;
+    }
+    if (key === "rating" || key === "min") {
+      const rating = parseRatingFilter(value);
+      if (typeof rating === "number") filters.minRating = rating;
       else errors.push({ key, value, reason: "unsupported-value" });
       continue;
     }
@@ -103,6 +125,9 @@ export function describeSearchIntentFilters(input: {
   const { filters } = input;
   const badges = [
     input.mode ? `mode ${input.mode}` : null,
+    filters.type && filters.type !== "all" ? `type ${filters.type}` : null,
+    filters.genres?.length ? `genre ${filters.genres.join(",")}` : null,
+    typeof filters.minRating === "number" ? `rating >= ${filters.minRating}` : null,
     filters.provider ? `provider ${filters.provider}` : null,
     typeof filters.downloaded === "boolean" ? `downloaded ${filters.downloaded}` : null,
     filters.watched ? `watched ${filters.watched}` : null,
@@ -139,6 +164,19 @@ function parseYearFilter(
   return { from, to };
 }
 
+function parseGenreFilter(value: string): readonly string[] {
+  return value
+    .split(",")
+    .map((genre) => genre.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function parseRatingFilter(value: string): number | null {
+  const rating = Number.parseFloat(value);
+  if (!Number.isFinite(rating) || rating < 0) return null;
+  return Math.min(10, Math.max(0, rating));
+}
+
 function formatYear(year: SearchIntentFilters["year"]): string {
   if (typeof year === "number") return String(year);
   if (!year) return "";
@@ -150,6 +188,10 @@ function formatYear(year: SearchIntentFilters["year"]): string {
 
 function isSearchMode(value: string): value is SearchIntentMode {
   return SEARCH_MODES.has(value as SearchIntentMode);
+}
+
+function isTypeFilter(value: string): value is SearchIntentTypeFilter {
+  return TYPE_FILTERS.has(value as SearchIntentTypeFilter);
 }
 
 function isWatchFilter(value: string): value is WatchFilter {

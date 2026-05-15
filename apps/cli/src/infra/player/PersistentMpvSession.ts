@@ -191,7 +191,7 @@ export class PersistentMpvSession {
   /** Bun delayed auto-skip timer; must match Lua chip countdown (`user-data/kunai-skip-prompt-ms`). */
   private skipPromptDurationMs = 3000;
 
-  private static readonly resumeChoiceTimeoutMs = 8_000;
+  private static readonly resumeChoiceTimeoutMs = 12_000;
 
   private resumeChoiceWait: {
     resolve: (choice: PersistentResumeStartChoice) => void;
