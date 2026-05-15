@@ -48,6 +48,16 @@ const vidkingHealth = new HealthTracker(60_000, 2);
 const sourceCache = new TTLCache<string, unknown>(300_000);
 
 type VidkingServer = (typeof VIDKING_SERVERS)[number];
+type VidkingServerEndpoint = VidkingServer | (string & {});
+
+export interface VidKingEngineOptions {
+  readonly serverEndpoint?: VidkingServerEndpoint;
+  readonly language?: string;
+  readonly filterQuality?: string;
+  readonly flavorLabel?: string;
+  readonly flavorArchetype?: string;
+  readonly customReferer?: string;
+}
 
 export interface VidkingSourcePayload {
   readonly url?: string;
@@ -100,6 +110,7 @@ export const vidkingProviderModule: CoreProviderModule = {
 export async function resolveVidkingDirect(
   input: ProviderResolveInput,
   context: ProviderRuntimeContext,
+  engineOptions: VidKingEngineOptions = {},
 ): Promise<ProviderResolveResult | null> {
   if (input.mediaKind !== "movie" && input.mediaKind !== "series") {
     return null;
@@ -142,7 +153,15 @@ export async function resolveVidkingDirect(
 
   // Tier 1: Fire all healthy servers in parallel, merge all successful results
   // so multi-audio streams from different servers are all available to the user.
-  const activeServers = VIDKING_SERVERS.filter((s) => vidkingHealth.shouldTry(s));
+  let activeServers: VidkingServerEndpoint[] = VIDKING_SERVERS.filter((s) =>
+    vidkingHealth.shouldTry(s),
+  );
+
+  // Flavor wrappers can target a specific Videasy-compatible endpoint.
+  if (engineOptions?.serverEndpoint) {
+    activeServers = [engineOptions.serverEndpoint];
+  }
+
   if (activeServers.length === 0) {
     emitTraceEvent(events, context, {
       type: "source:skipped",
@@ -158,12 +177,12 @@ export async function resolveVidkingDirect(
       id: sid,
       providerId: VIDKING_PROVIDER_ID,
       kind: "provider-api",
-      label: server,
+      label: engineOptions?.flavorLabel ?? server,
       host: "api.videasy.net",
       status: "probing",
       confidence: 0.8,
       cachePolicy,
-      metadata: { server },
+      metadata: { server, flavorArchetype: engineOptions?.flavorArchetype },
     });
   }
 
@@ -178,6 +197,7 @@ export async function resolveVidkingDirect(
         context,
         failures,
         startedAt,
+        engineOptions,
       }),
     ),
   );
@@ -193,8 +213,11 @@ export async function resolveVidkingDirect(
     episode: input.episode?.episode,
   });
   if (embedReferer) {
+    const retryServers: readonly VidkingServerEndpoint[] = engineOptions.serverEndpoint
+      ? [engineOptions.serverEndpoint]
+      : VIDKING_SERVERS;
     const embedResults = await Promise.allSettled(
-      VIDKING_SERVERS.map((server) =>
+      retryServers.map((server) =>
         tryVidkingServer({
           server,
           tmdbId,
@@ -204,7 +227,8 @@ export async function resolveVidkingDirect(
           context,
           failures,
           startedAt,
-          customReferer: embedReferer,
+          customReferer: engineOptions.customReferer ?? embedReferer,
+          engineOptions,
         }),
       ),
     );
@@ -242,7 +266,9 @@ function mergeVidkingResults(
     .map((s) => s.value);
 
   if (successes.length === 0) return null;
-  if (successes.length === 1) return successes[0]!;
+  const first = successes[0];
+  if (!first) return null;
+  if (successes.length === 1) return first;
 
   const seenStreamUrls = new Set<string>();
   const mergedStreams = [];
@@ -266,7 +292,6 @@ function mergeVidkingResults(
 
   const bestStream = mergedStreams.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0))[0];
 
-  const first = successes[0]!;
   return {
     ...first,
     streams: mergedStreams,
@@ -286,6 +311,7 @@ export function createVidkingResultFromPayload({
   startedAt,
   failures = [],
   streamReferer,
+  sourceQualityFilter,
 }: {
   readonly input: ProviderResolveInput;
   readonly cachePolicy?: CachePolicy;
@@ -297,6 +323,7 @@ export function createVidkingResultFromPayload({
   readonly startedAt?: string;
   readonly failures?: readonly ProviderFailure[];
   readonly streamReferer?: string;
+  readonly sourceQualityFilter?: string;
 }): ProviderResolveResult | null {
   const policy =
     cachePolicy ??
@@ -316,6 +343,7 @@ export function createVidkingResultFromPayload({
     sourceId: resolvedSourceId,
     server,
     streamReferer,
+    sourceQualityFilter,
   });
 
   if (streams.length === 0) {
@@ -439,7 +467,7 @@ async function fetchVideasyPayload({
   signal,
   customReferer,
 }: {
-  readonly server: VidkingServer;
+  readonly server: VidkingServerEndpoint;
   readonly query: URLSearchParams;
   readonly fetchPort?: ProviderFetchPort;
   readonly signal?: AbortSignal;
@@ -488,7 +516,7 @@ function buildEmbedReferer(options: {
  * Runs sequentially internally but multiple servers are fired in parallel.
  */
 async function tryVidkingServer(opts: {
-  readonly server: VidkingServer;
+  readonly server: VidkingServerEndpoint;
   readonly tmdbId: number;
   readonly input: ProviderResolveInput;
   readonly cachePolicy: CachePolicy;
@@ -497,6 +525,7 @@ async function tryVidkingServer(opts: {
   readonly failures: ProviderFailure[];
   readonly startedAt: string;
   readonly customReferer?: string;
+  readonly engineOptions?: VidKingEngineOptions;
 }): Promise<ProviderResolveResult | null> {
   const {
     server,
@@ -508,6 +537,7 @@ async function tryVidkingServer(opts: {
     failures,
     startedAt,
     customReferer,
+    engineOptions = {},
   } = opts;
   const sourceId = createSourceId(customReferer ? `${server}-embed-ref` : server);
 
@@ -525,6 +555,7 @@ async function tryVidkingServer(opts: {
     mediaKind: input.mediaKind as "movie" | "series",
     tmdbId,
     episode: input.episode,
+    language: engineOptions.language,
   });
   const maxAttempts = Math.max(1, context.retryPolicy?.maxAttempts ?? 2);
 
@@ -583,6 +614,7 @@ async function tryVidkingServer(opts: {
           startedAt,
           failures,
           streamReferer: customReferer,
+          sourceQualityFilter: engineOptions.filterQuality,
         });
         if (result) {
           vidkingHealth.recordSuccess(server);
@@ -668,6 +700,7 @@ function normalizeStreamCandidates({
   server,
   streamReferer = VIDKING_REFERER,
   streamOrigin = VIDKING_ORIGIN,
+  sourceQualityFilter,
 }: {
   readonly payload: VidkingPayload;
   readonly input: ProviderResolveInput;
@@ -676,11 +709,22 @@ function normalizeStreamCandidates({
   readonly server?: string;
   readonly streamReferer?: string;
   readonly streamOrigin?: string;
+  readonly sourceQualityFilter?: string;
 }): StreamCandidate[] {
   const seen = new Set<string>();
   const streams: StreamCandidate[] = [];
+  const normalizedFilter = sourceQualityFilter?.trim().toLowerCase();
+  const payloadSources = normalizedFilter
+    ? (payload.sources ?? []).filter((source) =>
+        [source.quality, source.language, source.type]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedFilter),
+      )
+    : (payload.sources ?? []);
 
-  for (const source of payload.sources ?? []) {
+  for (const source of payloadSources) {
     if (!source.url || seen.has(source.url)) {
       continue;
     }
@@ -723,6 +767,7 @@ function normalizeStreamCandidates({
         server,
         mediaKind: input.mediaKind,
         title: input.title.title,
+        flavorFilter: sourceQualityFilter,
       },
     });
   }
@@ -870,6 +915,7 @@ function buildQueryVariants(opts: {
   readonly mediaKind: "movie" | "series";
   readonly tmdbId: number;
   readonly episode?: EpisodeIdentity;
+  readonly language?: string;
 }): URLSearchParams[] {
   const variants: URLSearchParams[] = [];
   const base = new URLSearchParams({
@@ -877,6 +923,10 @@ function buildQueryVariants(opts: {
     mediaType: opts.mediaKind === "series" ? "tv" : "movie",
     tmdbId: String(opts.tmdbId),
   });
+
+  if (opts.language) {
+    base.set("language", opts.language);
+  }
 
   if (opts.mediaKind === "series") {
     if (!opts.episode?.season || !opts.episode.episode) {

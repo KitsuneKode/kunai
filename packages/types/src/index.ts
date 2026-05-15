@@ -32,6 +32,10 @@ export type CacheTtlClass =
   | "catalog-trending"
   | "provider-health";
 
+export type StreamPresentation = "sub" | "dub" | "raw";
+
+export type SubtitleDelivery = "hardcoded" | "embedded" | "external";
+
 export interface CachePolicy {
   readonly ttlClass: CacheTtlClass;
   readonly ttlMs?: number;
@@ -70,8 +74,12 @@ export interface StreamCandidate {
   readonly protocol: "hls" | "dash" | "mp4" | "iframe" | "unknown";
   readonly container?: "m3u8" | "mpd" | "mp4" | "webm" | "unknown";
   readonly audioLanguages?: readonly string[];
+  readonly presentation?: StreamPresentation;
   readonly hardSubLanguage?: string;
+  readonly subtitleDelivery?: SubtitleDelivery;
   readonly subtitleLanguages?: readonly string[];
+  readonly flavorArchetype?: string;
+  readonly flavorLabel?: string;
   readonly serverName?: string;
   readonly qualityLabel?: string;
   readonly qualityRank?: number;
@@ -138,8 +146,12 @@ export interface ProviderVariantCandidate {
   readonly protocol?: StreamCandidate["protocol"];
   readonly container?: StreamCandidate["container"];
   readonly audioLanguages?: readonly string[];
+  readonly presentation?: StreamPresentation;
   readonly hardSubLanguage?: string;
+  readonly subtitleDelivery?: SubtitleDelivery;
   readonly subtitleLanguages?: readonly string[];
+  readonly flavorArchetype?: string;
+  readonly flavorLabel?: string;
   readonly streamIds?: readonly string[];
   readonly subtitleIds?: readonly string[];
   readonly selected?: boolean;
@@ -260,6 +272,8 @@ export interface ProviderResolveInput {
   readonly mediaKind: MediaKind;
   readonly preferredAudioLanguage?: string;
   readonly preferredSubtitleLanguage?: string;
+  readonly preferredPresentation?: StreamPresentation;
+  readonly preferredSubtitleDelivery?: SubtitleDelivery;
   readonly qualityPreference?: string;
   readonly regionHint?: string;
   readonly intent: "browse" | "focused" | "prefetch" | "play" | "refresh" | "autoplay";

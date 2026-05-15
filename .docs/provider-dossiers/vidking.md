@@ -1,75 +1,40 @@
 # VidKing Provider Dossier
 
-- **Status:** production
+- **Status:** production (Core Engine)
 - **Provider ID:** vidking
 - **Domain:** www.vidking.net / api.videasy.net
 - **Supported content:** movie, series
 - **Runtime class:** node fetch (0-RAM)
-- **Search support:** External TMDB ID required; no native search.
-- **Stream resolution path:** Two-tier: (1) API call to `api.videasy.net/{server}/sources-with-title` + WASM + AES, (2) fallback to `www.vidking.net/embed/tv|movie/{tmdbId}` scrape.
-- **Quality/source inventory behavior:** Multiple quality streams from API; single auto-quality from embed scrape.
-- **Header/referrer/user-agent requirements:** Browser-like headers including `sec-*` headers, origin, and referer.
-- **Cache key and TTL recommendations:** 2 hours for streams, 24h for catalog.
-- **Known failure modes:** 504 Gateway Timeout from Videasy backend, Cloudflare challenge on API endpoint.
-- **What is proven in production code:** 0-RAM extraction using patched WASM + empty AES key.
-- **What is only proven in experiments:** Embed-page HLS extraction (scrape path).
-- **Minimum tests/fixtures needed before Provider SDK promotion:** WASM decrypt test, embed scrape fixture.
+- **Consumer Skins:** Cineby, HDToday
+- **Multi-Server Support:** Yes (High)
 
-## Two-Tier Request Strategy
+## Request Strategy (0-RAM)
 
-**Tier 1 — API (primary):**
+VidKing serves as the backbone for multiple streaming sites. It utilizes a two-tier resolution strategy.
 
-```
-GET https://api.videasy.net/{server}/sources-with-title?title=...&mediaType=...&tmdbId=...
-Origin: https://www.vidking.net
-Referer: https://www.vidking.net/
-sec-fetch-dest: empty
-sec-fetch-mode: cors
-sec-fetch-site: same-site
-```
+### Tier 1: The `api.videasy.net` Endpoints
 
-Returns an encrypted payload that is decrypted in two stages:
+The primary way to get high-quality streams is by hitting the JSON API.
 
-1. Patched WASM binary (`module1_patched.wasm`) with TMDB ID as key → base64
-2. `crypto-js` AES decrypt with empty string key → JSON
+| Endpoint      | Commonly Known As | Notes                                          |
+| :------------ | :---------------- | :--------------------------------------------- |
+| `mb-flix`     | Oxygen / Neon     | Primary default server                         |
+| `cdn`         | Hydrogen / Yoru   | Alternative with 4K support                    |
+| `downloader2` | Lithium / Cypher  | Backup server                                  |
+| `1movies`     | Helium / Sage     | Backup server                                  |
+| `meine`       | Localized Audio   | Use `?language=german\|italian\|french`        |
+| `hdmovie`     | Packaged Audio    | Use for English/Hindi (filter `quality` field) |
 
-The decrypted JSON contains `sources[]` (URL + quality + type) and `subtitles[]` in various field-name conventions.
+### Decryption Protocol
 
-Four server endpoints are probed in order: `mb-flix`, `cdn`, `downloader2`, `1movies`.
+1. **WASM Layer:** Use `module1_patched.wasm` with `tmdbId` (integer) as the key.
+2. **AES Layer:** Decrypt the WASM output using `CryptoJS` with an **empty string** (`""`) as the key.
 
-**Tier 2 — Embed scrape (fallback):**
+## Subtitle Resolution
 
-```
-GET https://www.vidking.net/embed/tv|movie/{tmdbId}/{season}/{episode}?autoPlay=true&episodeSelector=false&nextEpisode=false
-Accept: text/html,...
-Referer: https://www.vidking.net/
-```
+Subtitles are returned within the decrypted JSON. They usually follow a `{ url, language, lang }` structure. If missing, fallback to **Wyzie API** is recommended.
 
-Extracts HLS URL from HTML via regex:
+## Known Gaps
 
-- `"hls","url":"..."` → stream URL
-- `"subtitles":[{"src":"..."}]` → subtitle URL
-
-Used when the API path returns empty or errors for all servers.
-
-## Decryption
-
-### WASM Decrypt
-
-- Binary: `assets/module1_patched.wasm` (263 KB)
-- Loads via `@assemblyscript/loader`
-- `wasm.decrypt(payloadPointer, tmdbId)` → base64 string
-- The WASM `tmdbId` argument is the integer TMDB ID; the Hashids library seen in browser traffic is a decoy/trap.
-
-### AES Decrypt
-
-- `crypto-js` AES decrypt with **empty string key** (`""`)
-- Input: base64 from WASM step
-- Output: JSON with `sources[]` and `subtitles[]`
-
-## Subtitles
-
-- **Current production subtitle behavior:** Provider-native subtitles merged with Wyzie fallback.
-- **Wyzie API:** `sub.wyzie.io/search?id={tmdbId}&key=wyzie-9bafe78d95b0ae85e716d772b4d63ec4&season={s}&episode={e}`
-- **CLI adapter:** Calls `resolveSubtitlesByTmdbId()` when provider subtitles don't satisfy preference.
-- **Known gap:** Need robust fallback if Wyzie goes down.
+- **WASM Maintenance:** The WASM binary occasionally rotates or updates its internal salts.
+- **Referer Sensitivity:** Requests to `api.videasy.net` strictly require `Referer: https://www.vidking.net/` or the skin's domain.

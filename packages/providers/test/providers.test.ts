@@ -6,12 +6,14 @@ import {
   allmangaProviderModule,
   buildAllmangaSourceCandidates,
   createVidkingResultFromPayload,
+  extractQualitiesFromMaster,
   getProviderMigrationQueue,
   getProviderResearchProfile,
   miruroProviderModule,
   providerResearchProfiles,
   resolveVidkingDirect,
   rivestreamProviderModule,
+  VariantTreeBuilder,
   vidkingProviderModule,
 } from "../src/index";
 
@@ -51,7 +53,7 @@ test("provider research profiles separate direct providers from legacy fallbacks
   });
 
   expect(getProviderResearchProfile("cineby")).toMatchObject({
-    status: "legacy-fallback",
+    status: "research-only",
     migrationAction: "keep-as-fallback",
   });
 
@@ -163,6 +165,144 @@ test("vidking direct resolver retries a failing source and preserves trace evide
       attempt: 2,
     }),
   );
+});
+
+test("vidking direct resolver can target a flavored endpoint without broad server probing", async () => {
+  const requestedUrls: string[] = [];
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+        year: 2021,
+      },
+      mediaKind: "movie",
+      preferredAudioLanguage: "de",
+      preferredPresentation: "raw",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-05-01T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input) => {
+          requestedUrls.push(String(input));
+          return new Response("", { status: 504 });
+        },
+      },
+    },
+    {
+      serverEndpoint: "meine",
+      language: "german",
+      flavorLabel: "Killjoy",
+      flavorArchetype: "Cineby flavors",
+    },
+  );
+
+  expect(requestedUrls.every((url) => url.includes("/meine/sources-with-title?"))).toBe(true);
+  expect(requestedUrls[0]).toContain("language=german");
+  expect(result?.sources?.[0]).toMatchObject({
+    id: "source:vidking:videasy:meine",
+    label: "Killjoy",
+    metadata: { server: "meine", flavorArchetype: "Cineby flavors" },
+  });
+});
+
+test("vidking payload filtering keeps localized flavored sources explicit", () => {
+  const result = createVidkingResultFromPayload({
+    input: {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+        year: 2021,
+      },
+      mediaKind: "movie",
+      preferredAudioLanguage: "hi",
+      preferredPresentation: "raw",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    payload: {
+      sources: [
+        { url: "https://cdn.example/original.m3u8", quality: "Original 1080p" },
+        { url: "https://cdn.example/hindi.m3u8", quality: "Hindi 1080p" },
+      ],
+    },
+    sourceQualityFilter: "Hindi",
+    server: "hdmovie",
+  });
+
+  expect(result?.streams).toHaveLength(1);
+  expect(result?.streams[0]?.url).toBe("https://cdn.example/hindi.m3u8");
+  expect(result?.streams[0]?.metadata?.flavorFilter).toBe("Hindi");
+});
+
+test("m3u8 quality extraction exposes sorted playable variants", async () => {
+  const streams = await extractQualitiesFromMaster(
+    {
+      runtime: "direct-http",
+      fetch: async () =>
+        new Response(
+          [
+            "#EXTM3U",
+            '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1280x720,NAME="720p"',
+            "720/index.m3u8",
+            "#EXT-X-STREAM-INF:BANDWIDTH=1600000,RESOLUTION=1920x1080",
+            "https://cdn.example/1080/index.m3u8",
+          ].join("\n"),
+        ),
+    },
+    "https://cdn.example/master.m3u8",
+    {
+      providerId: "vidking",
+      protocol: "hls",
+      container: "m3u8",
+      confidence: 0.9,
+      cachePolicy: {
+        ttlClass: "stream-manifest",
+        scope: "local",
+        keyParts: ["provider", "vidking", "qualities"],
+      },
+    },
+  );
+
+  expect(streams.map((stream) => stream.qualityLabel)).toEqual(["1080p", "720p"]);
+  expect(streams[1]?.url).toBe("https://cdn.example/720/index.m3u8");
+});
+
+test("variant tree builder creates stable grouped variant ordering", () => {
+  const variants = new VariantTreeBuilder({
+    providerId: "miruro",
+    sourceId: "source:miruro:pipe",
+  })
+    .addVariant({
+      label: "Dub 720p",
+      presentation: "dub",
+      subtitleDelivery: "embedded",
+      qualityLabel: "720p",
+      qualityRank: 720,
+      streamIds: ["stream-dub-720"],
+      confidence: 0.8,
+    })
+    .addVariant({
+      label: "Sub 1080p",
+      presentation: "sub",
+      subtitleDelivery: "hardcoded",
+      qualityLabel: "1080p",
+      qualityRank: 1080,
+      streamIds: ["stream-sub-1080"],
+      confidence: 0.9,
+    })
+    .build();
+
+  expect(variants.map((variant) => variant.label)).toEqual(["Sub 1080p", "Dub 720p"]);
+  expect(variants[0]?.id.startsWith("var_")).toBe(true);
 });
 
 test("allmanga source candidates preserve separate source families", () => {

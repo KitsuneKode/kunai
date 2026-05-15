@@ -49,6 +49,29 @@ type MiruroSourcesResponse = {
   readonly download?: string;
 };
 
+type MiruroAudioCategory = "sub" | "dub";
+type MiruroServerKey = "kiwi" | "bee";
+type MiruroServerProfile = {
+  readonly id: MiruroServerKey;
+  readonly label: string;
+  readonly subtitleDelivery: "hardcoded" | "embedded";
+  readonly hardSubLanguage?: string;
+};
+
+const MIRURO_SERVER_PROFILES: Record<MiruroServerKey, MiruroServerProfile> = {
+  kiwi: {
+    id: "kiwi",
+    label: "Kiwi hardsub",
+    subtitleDelivery: "hardcoded",
+    hardSubLanguage: "en",
+  },
+  bee: {
+    id: "bee",
+    label: "Bee softsub",
+    subtitleDelivery: "embedded",
+  },
+};
+
 type MiruroEpisodeEntry = {
   readonly id: string;
   readonly number: number;
@@ -204,7 +227,10 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
-      const targetAudio = input.preferredAudioLanguage === "dub" ? "dub" : "sub";
+      const targetAudio: MiruroAudioCategory =
+        input.preferredPresentation === "dub" || input.preferredAudioLanguage === "dub"
+          ? "dub"
+          : "sub";
       const fallbackAudio = targetAudio === "dub" ? "sub" : "dub";
       const episodeList =
         epData.providers.kiwi.episodes[targetAudio] ??
@@ -230,7 +256,11 @@ export const miruroProviderModule: CoreProviderModule = {
       }
 
       // Step 2: Fetch sources for this episode (cached 5m)
-      const srcCacheKey = `sources:${episodeEntry.id}:${targetAudio}`;
+      const targetServer =
+        input.preferredSubtitleDelivery === "embedded"
+          ? MIRURO_SERVER_PROFILES.bee
+          : MIRURO_SERVER_PROFILES.kiwi;
+      const srcCacheKey = `sources:${episodeEntry.id}:${targetAudio}:${targetServer.id}`;
       let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
       if (!srcData) {
         srcData = (await pipeCall(
@@ -238,7 +268,7 @@ export const miruroProviderModule: CoreProviderModule = {
           {
             episodeId: episodeEntry.id,
             anilistId: Number(anilistId),
-            provider: "kiwi",
+            provider: targetServer.id,
             category: targetAudio,
           },
           context.signal,
@@ -255,7 +285,8 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
-      // Map to StreamCandidate + ProviderVariantCandidate
+      // Map to StreamCandidate + ProviderVariantCandidate while preserving presentation and
+      // subtitle-delivery metadata for UI pickers and diagnostics.
       const streams: StreamCandidate[] = [];
       const variants: ProviderVariantCandidate[] = [];
       const subtitles: SubtitleCandidate[] = [];
@@ -276,7 +307,12 @@ export const miruroProviderModule: CoreProviderModule = {
           protocol: "hls",
           container: "m3u8",
           audioLanguages: targetAudio === "sub" ? ["ja"] : targetAudio === "dub" ? ["en"] : [],
-          hardSubLanguage: "en",
+          presentation: targetAudio,
+          hardSubLanguage: targetServer.hardSubLanguage,
+          subtitleDelivery: targetServer.subtitleDelivery,
+          subtitleLanguages: targetServer.subtitleDelivery === "embedded" ? ["en"] : undefined,
+          flavorArchetype: "Miruro animals",
+          flavorLabel: targetServer.label,
           qualityLabel: qualityStr,
           qualityRank: parseInt(qualityStr) || 0,
           headers: {
@@ -296,7 +332,12 @@ export const miruroProviderModule: CoreProviderModule = {
           protocol: "hls",
           container: "m3u8",
           audioLanguages: targetAudio === "sub" ? ["ja"] : targetAudio === "dub" ? ["en"] : [],
-          hardSubLanguage: "en",
+          presentation: targetAudio,
+          hardSubLanguage: targetServer.hardSubLanguage,
+          subtitleDelivery: targetServer.subtitleDelivery,
+          subtitleLanguages: targetServer.subtitleDelivery === "embedded" ? ["en"] : undefined,
+          flavorArchetype: "Miruro animals",
+          flavorLabel: targetServer.label,
           streamIds: [streamId],
           confidence: 0.95,
         });
@@ -333,12 +374,17 @@ export const miruroProviderModule: CoreProviderModule = {
             id: sourceId,
             providerId: MIRURO_PROVIDER_ID,
             kind: "provider-api",
-            label: "miruro.tv pipe",
+            label: targetServer.label,
             host: "www.miruro.tv",
             status: "selected",
             confidence: 0.9,
             requiresRuntime: "direct-http",
             cachePolicy,
+            metadata: {
+              audioCategory: targetAudio,
+              subtitleDelivery: targetServer.subtitleDelivery,
+              server: targetServer.id,
+            },
           },
         ],
         streams,

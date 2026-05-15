@@ -19,6 +19,9 @@ export function streamRequestToResolveInput(
     mediaKind: mode === "anime" ? "anime" : request.title.type,
     preferredAudioLanguage: mode === "anime" ? request.audioPreference : undefined,
     preferredSubtitleLanguage: request.subtitlePreference,
+    preferredPresentation:
+      mode === "anime" ? (request.audioPreference === "dub" ? "dub" : "sub") : "raw",
+    preferredSubtitleDelivery: mode === "anime" ? "hardcoded" : "external",
     qualityPreference: undefined,
     intent,
     allowedRuntimes: ["direct-http"],

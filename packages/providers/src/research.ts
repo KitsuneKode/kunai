@@ -51,7 +51,7 @@ export const providerResearchProfiles = [
     status: "production",
     migrationAction: "promote-direct-provider",
     migrationRank: 20,
-    dossierPath: ".docs/provider-dossiers/allmanga-api-client.md",
+    dossierPath: ".docs/provider-dossiers/allmanga.md",
     evidencePaths: ["packages/providers/src/allmanga/api-client.ts", "~/Projects/osc/ani-cli"],
     runtimeClass: "direct-http GraphQL + AES-256-CTR decode",
     implementationSource: "production-code",
@@ -68,7 +68,7 @@ export const providerResearchProfiles = [
     status: "candidate",
     migrationAction: "implement-from-scratchpad",
     migrationRank: 30,
-    dossierPath: ".docs/provider-dossiers/rivestream-candidate.md",
+    dossierPath: ".docs/provider-dossiers/rivestream.md",
     evidencePaths: [
       "apps/experiments/scratchpads/provider-rivestream/RIVESTREAM_DECRYPT_REPORT.md",
       "apps/experiments/scratchpads/provider-rivestream/rivestream-headless.ts",
@@ -87,19 +87,20 @@ export const providerResearchProfiles = [
     status: "candidate",
     migrationAction: "implement-from-scratchpad",
     migrationRank: 40,
-    dossierPath: ".docs/provider-dossiers/miruro-candidate.md",
+    dossierPath: ".docs/provider-dossiers/miruro.md",
     evidencePaths: [
       "apps/experiments/scratchpads/provider-miruro/MIRURO_BACKEND_REPORT.md",
       "apps/experiments/scratchpads/provider-miruro/miruro-0-ram-scraper.ts",
     ],
-    runtimeClass: "direct-http backend API by AniList ID",
-    implementationSource: "scratchpad-report",
+    runtimeClass: "direct-http pipe API by AniList ID",
+    implementationSource: "mixed",
     supportedContent: ["anime"],
     sourceStrategy:
       "Bypass frontend Cloudflare by calling backend episode/media APIs with AniList IDs.",
     subtitleStrategy:
       "Provider payload or embedded HLS subtitle tracks; verify English selection through mpv.",
-    productionGap: "Add API fixtures and referer/header regression tests.",
+    productionGap:
+      "Keep expanding fixtures around animal server subtitle delivery and dub/source availability.",
   },
   {
     providerId: "anikai",
@@ -122,7 +123,7 @@ export const providerResearchProfiles = [
   },
   {
     providerId: "cineby",
-    status: "legacy-fallback",
+    status: "research-only",
     migrationAction: "keep-as-fallback",
     migrationRank: 70,
     dossierPath: ".docs/provider-dossiers/cineby.md",
@@ -130,12 +131,15 @@ export const providerResearchProfiles = [
       "archive/legacy/apps/cli/src/providers/cineby.ts",
       "apps/experiments/scratchpads/provider-cineby/cineby.ts",
     ],
-    runtimeClass: "Playwright legacy wrapper",
+    runtimeClass: "direct-http VidKing flavor wrapper",
     implementationSource: "mixed",
     supportedContent: ["movie", "series"],
-    sourceStrategy: "Legacy wrapper path; dossier says bypass with VidKing/Videasy direct route.",
-    subtitleStrategy: "Network sniffing only; superseded by direct provider/Wyzie handling.",
-    productionGap: "Keep out of the first Provider SDK migration except as compatibility fallback.",
+    sourceStrategy:
+      "Research wrapper targets Videasy-compatible endpoints through the VidKing direct engine.",
+    subtitleStrategy:
+      "Provider subtitle payload from VidKing engine; Wyzie remains the higher-level fallback.",
+    productionGap:
+      "Keep out of default fallback order until live validation proves endpoint stability.",
   },
   {
     providerId: "bitcine",
