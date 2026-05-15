@@ -41,6 +41,7 @@ import {
   startFromBeginning,
   startFromEpisodeSelection,
 } from "@/app/playback-start-intent";
+import { loadPostPlaybackRecommendationNames } from "@/app/post-playback-recommendations";
 import {
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
@@ -1556,21 +1557,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   : "movie";
               return `${latest.titleName} ${episodeLabel}  ·  ${latest.status}`;
             })();
-            let recommendationRailNames: readonly string[] = [];
-            if (container.config.recommendationRailEnabled) {
-              if (prefetchedRecommendationNames !== null) {
-                recommendationRailNames = prefetchedRecommendationNames;
-              } else {
-                recommendationRailNames = await container.recommendationService
-                  .getForTitle(title.id, title.type)
-                  .then((section) =>
-                    section.items
-                      .map((item) => item.title)
-                      .filter((name) => name.trim().length > 0),
-                  )
-                  .catch(() => []);
-              }
-            }
+            const mode = stateManager.getState().mode;
+            const recommendationRailNames = container.config.recommendationRailEnabled
+              ? await loadPostPlaybackRecommendationNames(
+                  container,
+                  title,
+                  mode,
+                  prefetchedRecommendationNames,
+                )
+              : [];
             const postAction = await openPlaybackShell({
               state: {
                 type: title.type,
@@ -1590,7 +1585,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 providerHealth: runtimeHealth.provider,
                 networkHealth: runtimeHealth.network,
                 lastQueuedDownload,
-                mode: stateManager.getState().mode,
+                mode,
                 resumeLabel: canResumePlayback
                   ? `resume ${formatTimestamp(resumeSeconds)}`
                   : undefined,

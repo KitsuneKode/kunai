@@ -1155,6 +1155,23 @@ function PlaybackShell({
     state.subtitleStatus,
     state.autoplayPaused ? "Autoplay paused" : "Autoplay ready",
   ].filter((item): item is string => Boolean(item));
+  const hasRecommendationRail = Boolean(
+    state.recommendationRailItems && state.recommendationRailItems.length > 0,
+  );
+  const postPlaybackHeading = state.resumeLabel
+    ? `Resume from ${state.resumeLabel}`
+    : state.autoplayPaused && state.type === "series"
+      ? "You're caught up for now"
+      : state.type === "series"
+        ? "Ready for the next episode"
+        : "Ready to replay or search again";
+  const postPlaybackNextStep = state.resumeLabel
+    ? "Resume from your last stop, restart from the beginning, or move between episodes"
+    : state.autoplayPaused && hasRecommendationRail
+      ? "Try a recommendation, check /calendar, or replay this episode"
+      : state.autoplayPaused
+        ? "Check /calendar for new releases, open /recommendation, or replay this episode"
+        : "Replay, move episodes, or start a fresh search";
   const attentionHealthLines = [state.providerHealth, state.networkHealth].filter(
     (line): line is ShellPanelLine => Boolean(line && line.tone && line.tone !== "neutral"),
   );
@@ -1191,12 +1208,8 @@ function PlaybackShell({
               flexDirection="column"
               width={showPosterCompanion ? Math.max(56, playbackViewport.columns - 38) : undefined}
             >
-              <Text color={palette.amber}>
-                {state.resumeLabel
-                  ? `Resume from ${state.resumeLabel}`
-                  : state.type === "series"
-                    ? "Ready for the next episode"
-                    : "Ready to replay or search again"}
+              <Text color={state.autoplayPaused ? palette.teal : palette.amber} bold>
+                {postPlaybackHeading}
               </Text>
               <Box marginTop={1} flexDirection="column">
                 {playbackSubtitleTone === "warning" ? (
@@ -1206,18 +1219,18 @@ function PlaybackShell({
                     tone={playbackSubtitleTone}
                   />
                 ) : null}
-                <DetailLine
-                  label="Next step"
-                  value={
-                    state.resumeLabel
-                      ? "Resume from your last stop, restart from the beginning, or move between episodes"
-                      : "Replay, move episodes, or start a fresh search"
-                  }
-                />
-                {state.recommendationRailItems && state.recommendationRailItems.length > 0 ? (
+                <DetailLine label="Next step" value={postPlaybackNextStep} />
+                {hasRecommendationRail ? (
                   <DetailLine
                     label="Recommended next"
-                    value={state.recommendationRailItems.join("  ·  ")}
+                    value={state.recommendationRailItems?.join("  ·  ") ?? ""}
+                    tone="info"
+                  />
+                ) : null}
+                {state.autoplayPaused && !hasRecommendationRail ? (
+                  <DetailLine
+                    label="Discover"
+                    value="Use /recommendation for picks or /calendar for weekly anime releases"
                     tone="info"
                   />
                 ) : null}
@@ -1671,9 +1684,9 @@ function ListShell<T>({
                   const secondary = option.detail
                     ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 4))}`
                     : "";
-                  const rowText = truncateLine(`${option.label}${secondary}`, rowWidth);
+                  const rowText = truncateLine(`${option.label}${secondary}`, rowWidth - 2);
                   return (
-                    <Box key={`${option.label}-${option.detail ?? ""}`}>
+                    <Box key={`${option.label}-${option.detail ?? ""}`} width={rowWidth}>
                       <Text
                         backgroundColor={selected ? palette.teal : undefined}
                         color={selected ? "black" : "white"}
@@ -1681,7 +1694,7 @@ function ListShell<T>({
                         dimColor={!selected && !isConfirmed}
                       >
                         <Text color={selected ? "black" : itemTone}>{`${itemPrefix} `}</Text>
-                        {rowText}
+                        {rowText.padEnd(rowWidth - 2)}
                       </Text>
                     </Box>
                   );
@@ -2080,6 +2093,14 @@ function BrowseShell<T>({
   };
 
   useEffect(() => {
+    if (options.length === 0) {
+      setSelectedIndex(0);
+      return;
+    }
+    setSelectedIndex((current) => Math.min(current, options.length - 1));
+  }, [options.length]);
+
+  useEffect(() => {
     const option = options[selectedIndex];
     if (!option) {
       return;
@@ -2382,32 +2403,27 @@ function BrowseShell<T>({
                 const selected = optionIndex === selectedIndex;
                 const metaText = option.previewMeta?.[0];
                 const metaWidth = metaText ? Math.min(12, Math.max(6, metaText.length)) : 0;
-                const titleBudget = Math.max(12, rowWidth - metaWidth - 6);
+                const titleBudget = Math.max(12, rowWidth - metaWidth - 4);
                 const titleText = truncateLine(option.label, titleBudget);
+                const metaSegment = metaText ? truncateLine(metaText, metaWidth) : "";
+                const rowText = metaText
+                  ? `${titleText.padEnd(titleBudget)} ${metaSegment.padStart(metaWidth)}`
+                  : titleText;
 
                 return (
                   <Box key={`${option.label}-${option.detail ?? ""}`} width={rowWidth}>
-                    <Box flexShrink={1} flexGrow={1}>
-                      <Text
-                        backgroundColor={selected ? palette.teal : undefined}
-                        color={selected ? "black" : "white"}
-                        bold={selected}
-                        dimColor={!selected}
-                        wrap="truncate"
-                      >
-                        <Text color={selected ? "black" : palette.gray}>
-                          {selected ? "❯ " : "  "}
-                        </Text>
-                        {titleText}
+                    <Text
+                      backgroundColor={selected ? palette.teal : undefined}
+                      color={selected ? "black" : "white"}
+                      bold={selected}
+                      dimColor={!selected}
+                      wrap="truncate"
+                    >
+                      <Text color={selected ? "black" : palette.gray}>
+                        {selected ? "❯ " : "  "}
                       </Text>
-                    </Box>
-                    {metaText ? (
-                      <Box flexShrink={0} width={metaWidth + 1} justifyContent="flex-end">
-                        <Text color={selected ? palette.teal : palette.gray} dimColor={!selected}>
-                          {truncateLine(metaText, metaWidth)}
-                        </Text>
-                      </Box>
-                    ) : null}
+                      {truncateLine(rowText, rowWidth - 2).padEnd(rowWidth - 2)}
+                    </Text>
                   </Box>
                 );
               })}
