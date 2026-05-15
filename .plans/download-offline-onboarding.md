@@ -15,7 +15,7 @@ Add local downloads, an offline library, and a first-run/setup flow without slow
 - No corrupt file should look complete.
 - Download state must persist in SQLite.
 - UI renders state; services own process/file mechanics.
-- `yt-dlp` is required for downloads when the feature is enabled; `ffprobe` is optional (artifact validation only).
+- `yt-dlp` is required for downloads when the feature is enabled; `ffprobe` is optional (artifact validation only), and `ffmpeg` is optional (thumbnail sidecars only).
 
 ## Slice 1: Capability And Config
 
@@ -36,7 +36,7 @@ Current progress: download config fields (`onboardingVersion` included), non-blo
 - Add repository methods for enqueue, update progress, complete, fail, abort, and list by title.
 - Add migration/idempotency tests.
 
-Current progress: `download_jobs` now includes runtime lifecycle columns (`attempt`, `max_attempts`, `next_retry_at`, heartbeat/failure metadata), durable download intent fields, repository retry/requeue/pause/failed/running queries, and storage tests covering queue lifecycle.
+Current progress: `download_jobs` now includes runtime lifecycle columns (`attempt`, `max_attempts`, `next_retry_at`, heartbeat/failure metadata), durable download intent fields, media artifact fields (`poster_url`, `thumbnail_path`), repository retry/requeue/pause/failed/running queries, and storage tests covering queue lifecycle.
 
 ## Slice 3: Download Service
 
@@ -46,7 +46,7 @@ Current progress: `download_jobs` now includes runtime lifecycle columns (`attem
 - Implement abort cleanup, retry backoff, and restart reconciliation.
 - Add process/output parser tests with fake subprocess ports.
 
-Current progress: in-process worker now owns active **yt-dlp** process handles, supports real cancellation with SIGTERM-to-SIGKILL escalation, pauses active jobs on app shutdown without spending retry budget, parses yt-dlp newline progress, schedules bounded retry backoff, re-resolves stale stream URLs before processing, optionally validates completed artifacts via **ffprobe**, and reconciles stale running jobs on startup. Dedicated unit tests cover gate reject, success, retry scheduling, artifact validation, stream re-resolve, destination override, pause, and cancellation behavior.
+Current progress: in-process worker now owns active **yt-dlp** process handles, supports real cancellation with SIGTERM-to-SIGKILL escalation, pauses active jobs on app shutdown without spending retry budget, parses yt-dlp newline progress, schedules bounded retry backoff, re-resolves stale stream URLs before processing, optionally validates completed artifacts via **ffprobe**, optionally generates atomic post-completion `*.thumbnail.jpg` sidecars via **ffmpeg**, and reconciles stale running jobs on startup. Dedicated unit tests cover gate reject, success, retry scheduling, artifact validation, stream re-resolve, destination override, thumbnail metadata, pause, and cancellation behavior.
 
 ## Slice 4: Shell Integration
 
@@ -64,7 +64,7 @@ Current progress: download enqueue now checks gates before queue insertion (trut
 - Reuse playback launch policy for local files.
 - Validate file presence before playback.
 
-Current progress: `--offline` and `/library` now validate file readability/shape (`ready`, `missing`, `invalid-file`), and completed artifacts can be played, retried, revealed, or deleted from the shell.
+Current progress: `--offline` and `/library` now validate file readability/shape (`ready`, `missing`, `invalid-file`), group completed artifacts by title, show poster/timing/subtitle/thumbnail metadata, support title-level integrity checks, and completed artifacts can be played, retried, revealed, or deleted from the shell.
 
 ## Slice 6: Onboarding
 

@@ -83,6 +83,56 @@ describe("DownloadService", () => {
     expect(service.listCompleted(10).some((entry) => entry.id === job.id)).toBe(true);
   });
 
+  test("carries poster metadata and generates a thumbnail when ffmpeg is available", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      ffmpegAvailable: true,
+    });
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] === "ffmpeg") {
+        const outputPath = command.at(-1);
+        if (typeof outputPath === "string") writeFileSync(outputPath, "jpeg-bytes");
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+        } as never;
+      }
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") {
+        writeFileSync(outputPath, "video-bytes");
+      }
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf(""),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+
+    const job = await service.enqueue({
+      title: {
+        id: "tmdb:1",
+        type: "series",
+        name: "Example",
+        posterUrl: "https://img.example/poster.jpg",
+      },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    await service.processQueue();
+    await waitUntil(() => repo.get(job.id)?.thumbnailPath !== undefined);
+
+    const completed = repo.get(job.id);
+    expect(completed?.posterUrl).toBe("https://img.example/poster.jpg");
+    expect(completed?.thumbnailPath).toBeDefined();
+    expect(existsSync(completed?.thumbnailPath ?? "")).toBe(true);
+  });
+
   test("stores durable intent and resolves a fresh stream before processing", async () => {
     const resolvedUrls: string[] = [];
     const service = buildService({
@@ -478,9 +528,11 @@ describe("DownloadService", () => {
 function buildService({
   repo,
   downloadsEnabled,
+  ytDlpAvailable,
   downloadPath,
   resolveDownloadStream,
   abortGraceMs,
+  ffmpegAvailable = false,
 }: {
   repo: DownloadJobsRepository;
   downloadsEnabled: boolean;
@@ -488,6 +540,7 @@ function buildService({
   downloadPath: string;
   resolveDownloadStream?: ConstructorParameters<typeof DownloadService>[0]["resolveDownloadStream"];
   abortGraceMs?: number;
+  ffmpegAvailable?: boolean;
 }): DownloadService {
   return new DownloadService({
     repo,
@@ -495,7 +548,8 @@ function buildService({
       downloadsEnabled,
       downloadPath,
     } as ConfigService,
-    ytDlpAvailable: true,
+    ytDlpAvailable,
+    ffmpegAvailable,
     logger: {
       debug() {},
       info() {},
@@ -518,4 +572,12 @@ function streamOf(text: string): ReadableStream<Uint8Array> {
       controller.close();
     },
   });
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs = 250): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await Bun.sleep(5);
+  }
 }

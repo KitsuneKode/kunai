@@ -21,6 +21,7 @@ export type OfflineLibraryGroup = {
   readonly issueCount: number;
   readonly totalSize: number | null;
   readonly latestCompletedAt: string;
+  readonly previewImageUrl?: string;
 };
 
 export async function resolveOfflineArtifactStatus(
@@ -81,6 +82,7 @@ export function groupOfflineLibraryEntries(
       issueCount: sortedEntries.filter((entry) => entry.status !== "ready").length,
       totalSize: fileSizes.length > 0 ? fileSizes.reduce((total, size) => total + size, 0) : null,
       latestCompletedAt: latestCompletedAt ?? first.updatedAt,
+      previewImageUrl: resolveOfflinePreviewImage(sortedEntries),
     });
   }
 
@@ -102,6 +104,8 @@ export function formatOfflineLibraryGroupDetail(group: OfflineLibraryGroup): str
     `${group.readyCount} ready`,
     group.issueCount > 0 ? `${group.issueCount} needs attention` : null,
     group.totalSize !== null ? `${(group.totalSize / 1_048_576).toFixed(1)} MB local` : null,
+    group.previewImageUrl ? "artwork ready" : null,
+    group.entries.some((entry) => entry.job.introSkipJson) ? "timing cached" : null,
     formatOfflineRange(group.entries),
   ].filter(Boolean);
   return parts.join("  ·  ");
@@ -123,10 +127,18 @@ export function formatOfflineSecondaryLine(
   const sizeMb =
     typeof job.fileSize === "number" ? `${(job.fileSize / 1_048_576).toFixed(1)} MB` : null;
   const subtitleLabel = job.subtitlePath ? "subtitles cached" : "no subtitles cached";
+  const timingLabel = job.introSkipJson ? "timing cached" : null;
+  const artworkLabel = job.thumbnailPath
+    ? "thumbnail ready"
+    : job.posterUrl
+      ? "poster cached"
+      : null;
   const parts = [
     `${offlineStatusLabel(status)}`,
     sizeMb,
     subtitleLabel,
+    timingLabel,
+    artworkLabel,
     basename(dirname(job.outputPath)),
   ].filter(Boolean);
   return parts.join("  ·  ");
@@ -149,9 +161,22 @@ export function formatOfflineShelfDetail(
     formatOfflineEpisodeLabel(job),
     typeof job.fileSize === "number" ? `${(job.fileSize / 1_048_576).toFixed(1)} MB` : null,
     job.subtitlePath ? "subtitles cached" : "no subtitles cached",
+    job.introSkipJson ? "timing cached" : null,
+    job.thumbnailPath ? "thumbnail ready" : job.posterUrl ? "poster cached" : null,
     status === "ready" ? basename(dirname(job.outputPath)) : offlineStatusLabel(status),
   ].filter(Boolean);
   return parts.join(" · ");
+}
+
+export function resolveOfflineJobPreviewImage(job: DownloadJobRecord): string | undefined {
+  return job.thumbnailPath ?? job.posterUrl;
+}
+
+function resolveOfflinePreviewImage(entries: readonly OfflineLibraryEntry[]): string | undefined {
+  return (
+    entries.find((entry) => entry.job.thumbnailPath)?.job.thumbnailPath ??
+    entries.find((entry) => entry.job.posterUrl)?.job.posterUrl
+  );
 }
 
 export function offlineStatusIcon(status: OfflineArtifactStatus): string {

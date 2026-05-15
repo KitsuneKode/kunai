@@ -233,11 +233,20 @@ test("download jobs repository supports queue lifecycle", () => {
     headers: { Referer: "https://example.com" },
     outputPath: "/tmp/example.mp4",
     tempPath: "/tmp/example.mp4.tmp.job-1",
+    posterUrl: "https://img.example/poster.jpg",
     createdAt: now,
     updatedAt: now,
     completedAt: undefined,
   });
   expect(repo.listQueued(10)).toHaveLength(1);
+  repo.updateOfflineMetadata(
+    "job-1",
+    {
+      introSkipJson: JSON.stringify({ openings: [] }),
+      thumbnailPath: "/tmp/example.thumbnail.jpg",
+    },
+    "2026-04-29T00:00:30.000Z",
+  );
 
   repo.markRunning("job-1", "2026-04-29T00:01:00.000Z");
   repo.updateProgress("job-1", 42, "2026-04-29T00:02:00.000Z");
@@ -268,6 +277,9 @@ test("download jobs repository supports queue lifecycle", () => {
   expect(done?.subLang).toBe("eng");
   expect(done?.selectedStreamId).toBe("stream-1080p");
   expect(done?.artifactStatus).toBe("ready");
+  expect(done?.posterUrl).toBe("https://img.example/poster.jpg");
+  expect(done?.thumbnailPath).toBe("/tmp/example.thumbnail.jpg");
+  expect(done?.introSkipJson).toBe(JSON.stringify({ openings: [] }));
 
   db.close();
 });

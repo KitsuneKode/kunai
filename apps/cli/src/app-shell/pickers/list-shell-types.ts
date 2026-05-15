@@ -15,4 +15,5 @@ export type ShellOption<T> = {
   readonly value: T;
   readonly label: string;
   readonly detail?: string;
+  readonly previewImageUrl?: string;
 };

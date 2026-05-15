@@ -11,6 +11,7 @@ export type OfflineLibraryShelfEntry = {
   readonly episodeLabel: string;
   readonly badge: string;
   readonly detail: string;
+  readonly previewImageUrl?: string;
   readonly playable: boolean;
 };
 
@@ -22,6 +23,7 @@ export type OfflineLibraryShelfGroup = {
   readonly detail: string;
   readonly readyCount: number;
   readonly issueCount: number;
+  readonly previewImageUrl?: string;
   readonly entries: readonly OfflineLibraryShelfEntry[];
 };
 
@@ -46,11 +48,13 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
         detail: formatOfflineLibraryGroupDetail(group),
         readyCount: group.readyCount,
         issueCount: group.issueCount,
+        previewImageUrl: group.previewImageUrl,
         entries: group.entries.map((entry) => ({
           jobId: entry.job.id,
           episodeLabel: formatEpisodeLabel(entry),
           badge: formatOfflineShelfBadge(entry.job, entry.status),
           detail: formatOfflineShelfDetail(entry.job, entry.status),
+          previewImageUrl: entry.job.thumbnailPath ?? entry.job.posterUrl,
           playable: entry.status === "ready",
         })),
       }));

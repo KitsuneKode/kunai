@@ -4,12 +4,13 @@ Use this doc when changing terminal poster previews, capability detection, the s
 
 ## Code map
 
-| Area                                        | Role                                                                                                                                                                                                         |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/cli/src/image/`                       | Shared subsystem: `detectImageCapability()`, `displayPoster()`, TMDB poster cache, Kitty/chafa/noop renderers, PNG helpers, optional ImageMagick (`magick`) conversion via `convert.ts` (subprocess timeout) |
-| `apps/cli/src/app-shell/poster-renderer.ts` | App-shell rendering: Kitty inline graphics + chafa **symbols** stdin path for non-Kitty capability; returns `PosterResult` (`kitty`, `text`, or `none`)                                                      |
-| `apps/cli/src/app-shell/image-pane.ts`      | Fetches TMDB bytes, calls `renderPoster`, LRU cache keyed by URL + dimensions + **renderer id**                                                                                                              |
-| `apps/cli/src/ui.ts`                        | `checkDeps()` snapshot: `chafa`, `magick`, `image` capability; degraded notices for missing tools                                                                                                            |
+| Area                                            | Role                                                                                                                                                                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/cli/src/image/`                           | Shared subsystem: `detectImageCapability()`, `displayPoster()`, TMDB poster cache, Kitty/chafa/noop renderers, PNG helpers, optional ImageMagick (`magick`) conversion via `convert.ts` (subprocess timeout) |
+| `apps/cli/src/app-shell/poster-renderer.ts`     | App-shell rendering: Kitty inline graphics + chafa **symbols** stdin path for non-Kitty capability; returns `PosterResult` (`kitty`, `text`, or `none`)                                                      |
+| `apps/cli/src/app-shell/image-pane.ts`          | Fetches TMDB/remote bytes or local thumbnail bytes, calls `renderPoster`, LRU cache keyed by URL/path + dimensions + **renderer id**                                                                         |
+| `apps/cli/src/app-shell/poster-source-cache.ts` | Resolves TMDB poster paths, absolute remote URLs, and local `file://` / absolute thumbnail paths without confusing local files for TMDB paths                                                                |
+| `apps/cli/src/ui.ts`                            | `checkDeps()` snapshot: `chafa`, `magick`, `image` capability; degraded notices for missing tools                                                                                                            |
 
 Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` file was removed).
 
@@ -43,6 +44,28 @@ Details live in `apps/cli/src/image/capability.ts`.
 - **`none`**: Silent skip; UI shows “Poster unavailable” when appropriate.
 
 In Ink, browse and playback companion panes both render `placeholder` for **`kitty`** and **`text`**; only **`none`** (or missing URL while loading) shows the unavailable copy.
+
+## Offline thumbnails
+
+Downloads persist the title poster URL and cached IntroDB/AniSkip timing in `download_jobs`.
+When `ffmpeg` is available, the download service also creates a local sidecar thumbnail
+next to the completed video using the pattern:
+
+```text
+Title - S01E01.mp4
+Title - S01E01.thumbnail.jpg
+```
+
+The offline library chooses previews in this order:
+
+1. Generated local thumbnail path.
+2. Persisted poster URL.
+3. Text-only shelf details.
+
+Thumbnail generation is post-completion and atomic: `ffmpeg` writes to a temporary sidecar,
+Kunai verifies the file is non-empty, then renames it into place and records `thumbnail_path`.
+Missing `ffmpeg`, missing terminal graphics support, failed thumbnail decode, a partial thumbnail,
+or a tiny terminal must degrade to text without blocking playback or marking the download failed.
 
 ## Debugging
 

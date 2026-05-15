@@ -38,6 +38,7 @@ describe("OfflineLibraryEngine", () => {
           season: 1,
           episode: 1,
           fileSize: 100,
+          thumbnailPath: "/downloads/solo-s01e01.thumbnail.jpg",
         }),
         status: "ready",
       },
@@ -59,10 +60,14 @@ describe("OfflineLibraryEngine", () => {
     expect(shelf.summary).toBe("1 title · 2 local items · local-only");
     expect(shelf.groups[0]?.label).toBe("Solo Leveling");
     expect(shelf.groups[0]?.detail).toContain("1 ready");
+    expect(shelf.groups[0]?.previewImageUrl).toBe("/downloads/solo-s01e01.thumbnail.jpg");
     expect(shelf.groups[0]?.entries.map((entry) => entry.episodeLabel)).toEqual([
       "S01E01",
       "S01E02",
     ]);
+    expect(shelf.groups[0]?.entries[0]?.previewImageUrl).toBe(
+      "/downloads/solo-s01e01.thumbnail.jpg",
+    );
   });
 
   test("keeps empty shelf actionable without network work", () => {

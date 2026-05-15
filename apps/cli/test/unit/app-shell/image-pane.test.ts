@@ -110,6 +110,15 @@ describe("poster image helpers", () => {
     );
   });
 
+  test("preserves local image artifact paths", () => {
+    expect(resolvePosterUrl("/tmp/kunai/downloads/example.thumbnail.jpg")).toBe(
+      "/tmp/kunai/downloads/example.thumbnail.jpg",
+    );
+    expect(resolvePosterUrl("file:///tmp/kunai/downloads/example.thumbnail.jpg")).toBe(
+      "/tmp/kunai/downloads/example.thumbnail.jpg",
+    );
+  });
+
   test("detects Kitty and Ghostty terminal graphics support", () => {
     expect(isKittyCompatible({ KITTY_WINDOW_ID: "1" })).toBe(true);
     expect(isKittyCompatible({ TERM_PROGRAM: "Ghostty" })).toBe(true);

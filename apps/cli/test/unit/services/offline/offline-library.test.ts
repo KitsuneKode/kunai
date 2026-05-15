@@ -77,12 +77,15 @@ describe("offline-library helpers", () => {
       episode: 4,
       fileSize: 15_728_640,
       subtitlePath: "/downloads/example.srt",
+      introSkipJson: JSON.stringify({ openings: [] }),
+      posterUrl: "https://img.example/poster.jpg",
+      thumbnailPath: "/downloads/example.thumbnail.jpg",
       outputPath: "/downloads/Example/episode-4.mp4",
     });
 
     expect(formatOfflineShelfBadge(job, "ready")).toBe("offline ready");
     expect(formatOfflineShelfDetail(job, "ready")).toBe(
-      "S01E04 · 15.0 MB · subtitles cached · Example",
+      "S01E04 · 15.0 MB · subtitles cached · timing cached · thumbnail ready · Example",
     );
     expect(formatOfflineShelfBadge(job, "missing")).toBe("file missing");
   });
@@ -97,6 +100,8 @@ describe("offline-library helpers", () => {
           season: 5,
           episode: 1,
           fileSize: 100,
+          introSkipJson: JSON.stringify({ openings: [] }),
+          posterUrl: "https://img.example/bb.jpg",
           completedAt: "2026-05-12T00:00:00.000Z",
         }),
         status: "ready",
@@ -129,6 +134,9 @@ describe("offline-library helpers", () => {
     expect(formatOfflineLibraryGroupLabel(groups[1]!)).toBe("Breaking Bad  ·  2 episodes");
     expect(formatOfflineLibraryGroupDetail(groups[1]!)).toContain("1 ready");
     expect(formatOfflineLibraryGroupDetail(groups[1]!)).toContain("1 needs attention");
+    expect(formatOfflineLibraryGroupDetail(groups[1]!)).toContain("artwork ready");
+    expect(formatOfflineLibraryGroupDetail(groups[1]!)).toContain("timing cached");
+    expect(groups[1]!.previewImageUrl).toBe("https://img.example/bb.jpg");
     expect(groups[1]!.entries.map((entry) => entry.job.episode)).toEqual([1, 2]);
   });
 

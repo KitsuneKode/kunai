@@ -1,6 +1,6 @@
 import { readdirSync, rmSync } from "node:fs";
 import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 
 import type {
   EpisodeInfo,
@@ -31,6 +31,7 @@ const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
+const THUMBNAIL_TIMEOUT_MS = 12_000;
 
 export type DownloadEnqueueEligibility =
   | { readonly allowed: true }
@@ -62,6 +63,7 @@ export type EnqueueDownloadInput = {
   readonly selectedQualityLabel?: string;
   readonly outputDirectory?: string;
   readonly timing?: PlaybackTimingMetadata | null;
+  readonly posterUrl?: string;
 };
 
 export type DownloadResolveIntent = {
@@ -108,6 +110,7 @@ export class DownloadService {
         intent: DownloadResolveIntent,
       ) => Promise<DownloadResolveResult | null>;
       readonly ffprobeAvailable?: boolean;
+      readonly ffmpegAvailable?: boolean;
       readonly abortGraceMs?: number;
     },
   ) {}
@@ -174,6 +177,7 @@ export class DownloadService {
       headers: input.stream?.headers ?? {},
       outputPath,
       tempPath,
+      posterUrl: input.posterUrl ?? input.title.posterUrl,
       createdAt: now,
       updatedAt: now,
       completedAt: undefined,
@@ -273,7 +277,11 @@ export class DownloadService {
       await this.persistOutputFileSize(downloaded);
       const completedAt = new Date().toISOString();
       this.deps.repo.complete(next.id, completedAt);
-      return this.deps.repo.get(next.id) ?? null;
+      const completed = this.deps.repo.get(next.id) ?? null;
+      if (completed) {
+        void this.generateThumbnailIfAvailable(completed);
+      }
+      return completed;
     } catch (error) {
       const active = this.activeProcesses.get(next.id);
       const cancellation = this.cancellationRequests.get(next.id);
@@ -399,6 +407,11 @@ export class DownloadService {
     if (opts.deleteArtifact) {
       await rm(job.outputPath, { force: true }).catch(() => {});
       if (job.subtitlePath) await rm(job.subtitlePath, { force: true }).catch(() => {});
+      if (job.thumbnailPath) await rm(job.thumbnailPath, { force: true }).catch(() => {});
+      const derivedThumbnailPath = resolveThumbnailArtifactPath(job.outputPath);
+      if (derivedThumbnailPath !== job.thumbnailPath) {
+        await rm(derivedThumbnailPath, { force: true }).catch(() => {});
+      }
     }
     this.deps.repo.delete(jobId);
   }
@@ -697,6 +710,77 @@ export class DownloadService {
     }
   }
 
+  private async generateThumbnailIfAvailable(job: DownloadJobRecord): Promise<void> {
+    if (!this.deps.ffmpegAvailable) return;
+    const targetPath = resolveThumbnailArtifactPath(job.outputPath);
+    const tempPath = `${targetPath}.tmp.${job.id}`;
+    try {
+      const existing = await stat(targetPath).catch(() => null);
+      if (existing?.isFile() && existing.size > 0) {
+        this.deps.repo.updateOfflineMetadata(
+          job.id,
+          { thumbnailPath: targetPath },
+          new Date().toISOString(),
+        );
+        return;
+      }
+      await rm(tempPath, { force: true }).catch(() => {});
+
+      const proc = Bun.spawn(
+        [
+          "ffmpeg",
+          "-y",
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-ss",
+          "00:00:12",
+          "-i",
+          job.outputPath,
+          "-frames:v",
+          "1",
+          "-vf",
+          "scale=640:-1",
+          tempPath,
+        ],
+        { stdin: "ignore", stdout: "ignore", stderr: "ignore" },
+      );
+      const exited = await waitForExit(proc.exited, THUMBNAIL_TIMEOUT_MS);
+      if (!exited) {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // best-effort thumbnail generation must never poison the download.
+        }
+        await waitForExit(proc.exited, 1_000).catch(() => false);
+        await rm(tempPath, { force: true }).catch(() => {});
+        return;
+      }
+      const exitCode = await proc.exited.catch(() => 1);
+      if (exitCode !== 0) {
+        await rm(tempPath, { force: true }).catch(() => {});
+        return;
+      }
+      const thumbnailStat = await stat(tempPath).catch(() => null);
+      if (!thumbnailStat?.isFile() || thumbnailStat.size <= 0) {
+        await rm(tempPath, { force: true }).catch(() => {});
+        return;
+      }
+      await rename(tempPath, targetPath);
+      this.deps.repo.updateOfflineMetadata(
+        job.id,
+        { thumbnailPath: targetPath },
+        new Date().toISOString(),
+      );
+    } catch (error) {
+      this.deps.logger.debug("Offline thumbnail generation skipped", {
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await rm(tempPath, { force: true }).catch(() => {});
+    }
+  }
+
   private selectEligibleQueuedJob(nowIso: string): DownloadJobRecord | null {
     const now = Date.parse(nowIso);
     const queued = this.deps.repo.listQueued(50);
@@ -928,6 +1012,12 @@ function appendBounded(current: string, line: string, maxBytes: number): string 
   const next = `${current}${line}\n`;
   if (next.length <= maxBytes) return next;
   return next.slice(next.length - maxBytes);
+}
+
+function resolveThumbnailArtifactPath(outputPath: string): string {
+  const extension = extname(outputPath);
+  if (!extension) return `${outputPath}.thumbnail.jpg`;
+  return `${outputPath.slice(0, -extension.length)}.thumbnail.jpg`;
 }
 
 function resolveSubtitleLanguage(stream: StreamInfo): string | null {

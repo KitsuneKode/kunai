@@ -250,6 +250,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     logger,
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
     ffprobeAvailable: Boolean(Bun.which("ffprobe")),
+    ffmpegAvailable: Boolean(Bun.which("ffmpeg")),
     resolveDownloadStream: async (intent) => {
       const resolver = new PlaybackResolveCoordinator({
         engine,

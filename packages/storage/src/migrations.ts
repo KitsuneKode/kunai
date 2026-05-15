@@ -131,6 +131,14 @@ export const dataMigrations: readonly Migration[] = [
         ON download_jobs(artifact_status, updated_at DESC);
     `,
   },
+  {
+    id: "007_data_download_jobs_media_artifacts",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN poster_url TEXT;
+      ALTER TABLE download_jobs ADD COLUMN thumbnail_path TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

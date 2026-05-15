@@ -1493,6 +1493,12 @@ function ListShell<T>({
       ? "Use ↑↓ to move through results"
       : "No matching results. Keep typing or press Esc to clear the filter.");
   const detailLines = wrapText(selectedDetail, Math.max(20, companionWidth - 2), 7);
+  const { poster, posterState } = usePosterPreview(selectedOption?.previewImageUrl, {
+    rows: 9,
+    cols: Math.max(18, Math.min(30, companionWidth - 4)),
+    enabled: showSelectionCompanion,
+    debounceMs: 120,
+  });
 
   const windowStart = getWindowStart(index, filteredOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, filteredOptions.length);
@@ -1692,6 +1698,20 @@ function ListShell<T>({
                   width={showSelectionCompanion ? companionWidth : undefined}
                 >
                   <LocalSection title="Current Selection" tone="success" marginTop={0}>
+                    {poster.kind !== "none" ? (
+                      <Box flexDirection="column" marginBottom={1}>
+                        <Text>{poster.placeholder}</Text>
+                      </Box>
+                    ) : selectedOption?.previewImageUrl ? (
+                      <Box marginBottom={1}>
+                        <Text
+                          color={posterState === "loading" ? palette.info : palette.gray}
+                          dimColor
+                        >
+                          {posterState === "loading" ? "Loading artwork…" : "Artwork unavailable"}
+                        </Text>
+                      </Box>
+                    ) : null}
                     <Box>
                       <Badge label={confirmed ? "selected" : "highlighted"} tone="success" />
                       {normalizedFilter.length > 0 ? (

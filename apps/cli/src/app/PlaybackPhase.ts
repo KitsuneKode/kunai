@@ -891,6 +891,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: targetEpisode,
                 providerId: resolvedProviderId,
                 mode: stateManager.getState().mode,
+                posterUrl: title.posterUrl,
                 audioPreference:
                   stateManager.getState().mode === "anime"
                     ? config.animeLanguageProfile.audio

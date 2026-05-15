@@ -20,6 +20,7 @@ export function resolvePosterUrl(
   url: string,
   { cols = 18, variant = "preview" }: { cols?: number; variant?: "preview" | "detail" } = {},
 ): string {
+  if (isLocalImagePath(url)) return url.startsWith("file://") ? url.slice("file://".length) : url;
   if (!url.startsWith("/")) return url;
   return `${TMDB_BASE}/${getTmdbSize(cols, variant)}${url}`;
 }
@@ -47,6 +48,20 @@ export async function fetchPosterSource(
 
   const task = (async (): Promise<PosterSourceEntry | null> => {
     try {
+      if (isLocalImagePath(resolved)) {
+        const file = Bun.file(resolved);
+        if (!(await file.exists())) return null;
+        const entry = {
+          url: resolved,
+          data: await file.arrayBuffer(),
+        } satisfies PosterSourceEntry;
+        if (sourceCache.size >= MAX_SOURCE_CACHE) {
+          const first = sourceCache.keys().next().value;
+          if (first) evictSourceCacheEntry(first);
+        }
+        sourceCache.set(resolved, entry);
+        return entry;
+      }
       const res = await fetch(resolved, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) return null;
       const entry = {
@@ -70,4 +85,9 @@ export async function fetchPosterSource(
   } finally {
     sourceInflight.delete(resolved);
   }
+}
+
+function isLocalImagePath(url: string): boolean {
+  if (url.startsWith("file://")) return true;
+  return url.startsWith("/") && url.slice(1).includes("/");
 }

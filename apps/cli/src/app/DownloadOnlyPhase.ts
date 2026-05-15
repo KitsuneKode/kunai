@@ -93,6 +93,7 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
           audioPreference,
           subtitlePreference,
           outputDirectory: input.outputDirectory,
+          posterUrl: input.title.posterUrl,
         });
         lastJobId = job.id;
         queuedCount += 1;

@@ -29,6 +29,8 @@ export interface DownloadJobRecord {
   readonly subtitlePath?: string;
   readonly subtitleLanguage?: string;
   readonly introSkipJson?: string;
+  readonly posterUrl?: string;
+  readonly thumbnailPath?: string;
   readonly durationMs?: number;
   readonly fileSize?: number;
   readonly errorMessage?: string;
@@ -70,6 +72,8 @@ interface DownloadJobRow {
   readonly subtitle_path: string | null;
   readonly subtitle_language: string | null;
   readonly intro_skip_json: string | null;
+  readonly poster_url: string | null;
+  readonly thumbnail_path: string | null;
   readonly duration_ms: number | null;
   readonly file_size: number | null;
   readonly error_message: string | null;
@@ -106,6 +110,7 @@ export class DownloadJobsRepository {
       | "subtitlePath"
       | "subtitleLanguage"
       | "introSkipJson"
+      | "thumbnailPath"
       | "durationMs"
       | "fileSize"
       | "artifactStatus"
@@ -120,10 +125,10 @@ export class DownloadJobsRepository {
             mode, sub_lang, anime_lang, selected_source_id, selected_stream_id, selected_quality_label,
             stream_url, headers_json,
             status, progress_percent, output_path, temp_path, subtitle_url, subtitle_path, subtitle_language,
-            intro_skip_json, duration_ms, file_size, error_message, retry_count, attempt, max_attempts, next_retry_at,
+            intro_skip_json, poster_url, thumbnail_path, duration_ms, file_size, error_message, retry_count, attempt, max_attempts, next_retry_at,
             started_at, last_heartbeat_at, failure_kind, artifact_status, last_resolved_provider_id,
             created_at, updated_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
         `,
       )
       .run(
@@ -144,6 +149,7 @@ export class DownloadJobsRepository {
         JSON.stringify(input.headers),
         input.outputPath,
         input.tempPath,
+        input.posterUrl ?? null,
         input.createdAt,
         input.updatedAt,
       );
@@ -156,6 +162,7 @@ export class DownloadJobsRepository {
       subtitlePath?: string | null;
       subtitleLanguage?: string | null;
       introSkipJson?: string | null;
+      thumbnailPath?: string | null;
       durationMs?: number | null;
     },
     updatedAt: string,
@@ -173,6 +180,7 @@ export class DownloadJobsRepository {
     setIfPresent("subtitlePath", "subtitle_path");
     setIfPresent("subtitleLanguage", "subtitle_language");
     setIfPresent("introSkipJson", "intro_skip_json");
+    setIfPresent("thumbnailPath", "thumbnail_path");
     setIfPresent("durationMs", "duration_ms");
 
     assignments.push("updated_at = ?");
@@ -457,6 +465,8 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     subtitlePath: row.subtitle_path ?? undefined,
     subtitleLanguage: row.subtitle_language ?? undefined,
     introSkipJson: row.intro_skip_json ?? undefined,
+    posterUrl: row.poster_url ?? undefined,
+    thumbnailPath: row.thumbnail_path ?? undefined,
     durationMs: row.duration_ms ?? undefined,
     fileSize: row.file_size ?? undefined,
     errorMessage: row.error_message ?? undefined,

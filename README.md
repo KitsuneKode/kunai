@@ -81,6 +81,7 @@ fallback, stream/source/quality, episode, download, next, and previous actions.
 
 - `yt-dlp` for the offline download queue (required on `PATH` when downloads are enabled in `/setup`)
 - `ffprobe` on your `PATH` if you want optional validation of completed downloads after `yt-dlp` finishes (not the downloader)
+- `ffmpeg` on your `PATH` if you want optional local thumbnail sidecars for downloaded videos
 - `chafa` for poster previews (Sixel/ANSI fallback in non-Kitty terminals)
 - ImageMagick (`magick`) for broader Kitty poster compatibility (non-PNG)
 - Kitty/Ghostty for native Kitty poster previews
@@ -172,6 +173,10 @@ In the shell, use `/download` to enqueue the selected/current item, `/downloads`
 retry, abort, or delete jobs, and `/library` or `/offline` for completed local files.
 Use `/discover` for recommendations, `/calendar` for releases airing today, and `/random`
 or `/surprise` to spin a small non-autoplaying surprise tray.
+
+Downloads persist the selected title poster and cached IntroDB/AniSkip timing when available.
+If `ffmpeg` is installed, Kunai also creates a small local thumbnail next to the completed
+video so `/offline` can show artwork without doing network work.
 
 ### Default download path (when enabled)
 

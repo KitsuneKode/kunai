@@ -23,6 +23,8 @@ import {
   formatOfflineShelfDetail,
   formatOfflineSecondaryLine,
   offlineStatusIcon,
+  resolveOfflineArtifactStatus,
+  resolveOfflineJobPreviewImage,
 } from "@/services/offline/offline-library";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
@@ -45,6 +47,7 @@ type HistoryAction =
 
 type DownloadJobAction =
   | { type: "job"; id: string }
+  | { type: "check-integrity" }
   | { type: "repair-missing" }
   | { type: "delete-group" }
   | { type: "back" };
@@ -56,6 +59,7 @@ type OfflineLibraryGroupAction =
 type CompletedDownloadAction =
   | "play"
   | "reveal"
+  | "check-integrity"
   | "retry"
   | "delete-job"
   | "delete-artifact"
@@ -520,6 +524,7 @@ export async function openCompletedDownloadsPicker(
         value: { type: "group" as const, key: group.key },
         label: group.label,
         detail: group.detail,
+        previewImageUrl: group.previewImageUrl,
       })),
       {
         value: { type: "downloads" as const },
@@ -591,7 +596,6 @@ async function openOfflineLibraryGroupPicker(
         })),
     });
     const options: ShellOption<DownloadJobAction>[] = [
-      ...buildOfflineGroupActions(entries),
       ...entries.map((entry) => ({
         value: { type: "job" as const, id: entry.job.id },
         label: `${offlineStatusIcon(entry.status)} ${formatOfflineJobListingTitle(entry.job)}`,
@@ -599,7 +603,9 @@ async function openOfflineLibraryGroupPicker(
           entry.job,
           entry.status,
         )}`,
+        previewImageUrl: resolveOfflineJobPreviewImage(entry.job),
       })),
+      ...buildOfflineGroupActions(entries),
       { value: { type: "back" as const }, label: "Back to titles" },
     ];
     const picked = await chooseFromListShell({
@@ -611,6 +617,37 @@ async function openOfflineLibraryGroupPicker(
       options,
     });
     if (!picked || picked.type === "back") return;
+    if (picked.type === "check-integrity") {
+      const statuses = await Promise.all(
+        entries.map(async (entry) => ({
+          job: entry.job,
+          status: await resolveOfflineArtifactStatus(entry.job),
+        })),
+      );
+      const issueCount = statuses.filter((entry) => entry.status !== "ready").length;
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          issueCount === 0
+            ? `Integrity check passed for ${entries.length} local item(s).`
+            : `Integrity check found ${issueCount} item(s) needing repair.`,
+      });
+      container.diagnosticsStore.record({
+        category: "download",
+        message: "Offline group integrity checked",
+        context: {
+          titleId: first.titleId,
+          total: entries.length,
+          issueCount,
+          statuses: statuses.map((entry) => ({
+            jobId: entry.job.id,
+            status: entry.status,
+            outputPath: entry.job.outputPath,
+          })),
+        },
+      });
+      continue;
+    }
     if (picked.type === "repair-missing") {
       const repairEntries = entries.filter((entry) => entry.status !== "ready");
       for (const entry of repairEntries) {
@@ -673,6 +710,13 @@ async function openOfflineLibraryGroupPicker(
           value: "play",
           label: artifactStatus === "ready" ? "Play downloaded file" : "Play unavailable",
           detail: artifactStatus === "ready" ? "Open local artifact in mpv" : artifactStatus,
+          previewImageUrl: resolveOfflineJobPreviewImage(job),
+        },
+        {
+          value: "check-integrity",
+          label: "Check integrity",
+          detail: "Verify the local media artifact is readable before playback",
+          previewImageUrl: resolveOfflineJobPreviewImage(job),
         },
         { value: "reveal", label: "Reveal folder", detail: dirname(job.outputPath) },
         {
@@ -724,6 +768,22 @@ async function openOfflineLibraryGroupPicker(
       }
       continue;
     }
+    if (action === "check-integrity") {
+      const checkedStatus = await resolveOfflineArtifactStatus(job);
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          checkedStatus === "ready"
+            ? `Integrity check passed: ${formatOfflineJobListingTitle(job)}`
+            : `Integrity check failed: ${formatOfflineJobListingTitle(job)} is ${checkedStatus}`,
+      });
+      container.diagnosticsStore.record({
+        category: "download",
+        message: "Offline artifact integrity checked",
+        context: { jobId: job.id, artifactStatus: checkedStatus, outputPath: job.outputPath },
+      });
+      continue;
+    }
     if (action === "retry") {
       container.downloadService.retry(job.id);
       container.stateManager.dispatch({
@@ -747,7 +807,13 @@ function buildOfflineGroupActions(
   entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
 ): ShellOption<DownloadJobAction>[] {
   const missingCount = entries.filter((entry) => entry.status !== "ready").length;
-  const actions: ShellOption<DownloadJobAction>[] = [];
+  const actions: ShellOption<DownloadJobAction>[] = [
+    {
+      value: { type: "check-integrity" },
+      label: "Check title integrity",
+      detail: "Verify local files and surface anything that needs repair",
+    },
+  ];
   if (missingCount > 0) {
     actions.push({
       value: { type: "repair-missing" },
@@ -1381,6 +1447,7 @@ export async function enqueueCurrentPlaybackDownload({
       stream: state.stream,
       providerId: state.provider,
       mode: state.mode,
+      posterUrl: state.currentTitle.posterUrl,
       audioPreference:
         state.mode === "anime"
           ? state.animeLanguageProfile.audio
