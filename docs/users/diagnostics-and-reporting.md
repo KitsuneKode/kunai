@@ -13,10 +13,29 @@ Diagnostics are local-first. Kunai records enough context to explain failures wi
 
 - startup capabilities such as `mpv`, `yt-dlp`, `ffprobe`, and poster renderer support
 - provider resolve stages and failures
+- provider fallback timelines, including which provider failed and which fallback recovered
 - subtitle evidence
 - playback and mpv runtime events
 - cache and stream health events
 - update checks and failures
+
+## Good Smoke Tests
+
+From a source checkout:
+
+```sh
+bun run dev -- -S "Dune"
+bun run dev -- -S "Attack on Titan" -a
+bun run dev -- -S "Dune" --debug
+bun run dev -- --discover
+bun run dev -- --random
+bun run dev -- --calendar
+bun run dev -- --offline
+bun run dev -- --zen --offline
+```
+
+If a provider takes time but is still retrying, Kunai should describe it as retry/fallback progress,
+not as a final error. Use `/diagnostics` or `/export-diagnostics` to inspect the attempt timeline.
 
 ## Privacy
 

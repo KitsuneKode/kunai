@@ -20,10 +20,17 @@ Kunai keeps playback centered on one shell session. After `mpv` exits, you retur
 
 - `r` reloads or recovers the current stream.
 - `f` tries the next compatible provider.
-- `k`, `o`, and `v` expose stream/source/quality choices, depending on the current surface.
+- `/streams`, `/source`, and `/quality` expose stream/source/quality choices from already resolved inventory when available.
 - `/diagnostics` shows recent provider, subtitle, cache, and playback events.
 - `/export-diagnostics` writes a redacted support bundle.
 
 Provider availability can drift. Recovery commands are part of normal usage, not a sign that the app is broken.
+
+## Audio And Subtitles
+
+- Preferred audio/subtitle language is configured in Settings or setup-related profiles.
+- Kunai passes the preferred subtitle first when launching `mpv`.
+- Additional subtitle tracks are attached when available, so you can switch inside mpv without another Kunai lookup.
+- Source/quality/language-like provider variants are selected from already resolved stream inventory where possible to avoid extra network calls.
 
 More detail lives in [`../../.docs/diagnostics-guide.md`](../../.docs/diagnostics-guide.md).

@@ -9,3 +9,5 @@ Discovery now preserves artwork on release-calendar entries, exposes discover/of
 Offline mode now behaves more like a local library: rows are grouped by title, show clearer shelf metadata, include local availability in search context, expose queue/online handoff actions, support title-level repair/delete actions, and work with the new `--zen --offline` minimal shelf flow.
 
 Playback and diagnostics are clearer: provider fallback attempts are recorded as a bounded timeline, recover is described as a stream refresh/resume action, command palette rows are width-aware, details panels use cleaner selection/local/details/synopsis/availability sections, diagnostics/report exports are pruned, smoke-test recipes are available from Diagnostics, and loading status copy no longer presents healthy subtitle attachment or provider retry progress as an error.
+
+Release documentation now includes a feature tour, expanded onboarding/playback/offline guidance, and VHS demo scripts for onboarding, discovery, offline, diagnostics, and launch-story capture.

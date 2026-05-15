@@ -342,32 +342,51 @@ export async function runSetupWizard({
   while (true) {
     const finalChoice = await chooseFromListShell({
       title: setupStepTitle(6, "Setup Complete"),
-      subtitle: `Downloads ${downloadChoice === "enable" ? "enabled" : "disabled"}  ·  Path ${finalDownloadPath}`,
+      subtitle: `Downloads ${downloadChoice === "enable" ? "enabled" : "disabled"}  ·  Path ${finalDownloadPath}  ·  Start with search, discover, random, or offline`,
       options: [
         {
-          value: "tips-command" as const,
-          label: "/ command palette",
-          detail: "Open global actions from anywhere in the TUI",
+          value: "tips-search" as const,
+          label: "Search a title",
+          detail: 'Type a title or launch with kunai -S "Dune"; Enter opens the selected result',
         },
         {
-          value: "tips-recommendation" as const,
-          label: "Ctrl+T refresh trending",
-          detail: "Reload recommendation lists in browse mode",
+          value: "tips-discover" as const,
+          label: "Discover and surprise",
+          detail:
+            "Use /discover for recommendations, /calendar for today, or /random for a non-autoplay tray",
+        },
+        {
+          value: "tips-offline" as const,
+          label: "Offline library",
+          detail: "Use /offline or kunai --zen --offline to browse completed downloads locally",
+        },
+        {
+          value: "tips-command" as const,
+          label: "Command palette",
+          detail: "Press / from anywhere; common actions are ordered by the current screen",
+        },
+        {
+          value: "tips-recovery" as const,
+          label: "Recovery is normal",
+          detail:
+            "Use /recover to refresh the current stream, /fallback for another provider, and /diagnostics for evidence",
         },
         {
           value: "tips-download" as const,
-          label: "d queue download during playback",
-          detail: "Use playback controls to queue offline jobs quickly",
+          label: "Download queue",
+          detail:
+            "Use /download while browsing or playing; /downloads manages jobs and /offline plays completed files",
         },
         {
           value: "tips-rerun" as const,
-          label: "/setup reruns onboarding",
-          detail: "Change onboarding decisions anytime",
+          label: "Rerun onboarding",
+          detail: "/setup changes downloads, poster hints, and local defaults anytime",
         },
         {
           value: "tips-presence" as const,
-          label: "Enable Discord Presence now",
-          detail: "Use /presence to turn on Rich Presence (Discord desktop app required)",
+          label: "Discord Presence",
+          detail:
+            "Use /presence to turn on Rich Presence when Discord desktop and IPC are available",
         },
         {
           value: "done" as const,

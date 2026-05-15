@@ -12,6 +12,10 @@ kunai -a -S "Attack on Titan" --jump 1
 kunai --continue
 kunai --history
 kunai --offline
+kunai --zen --offline
+kunai --discover
+kunai --random
+kunai --calendar
 ```
 
 ## What The Flags Mean
@@ -22,6 +26,8 @@ kunai --offline
 - `--continue` or `--resume` opens the newest unfinished local history entry.
 - `--history` opens history first so you can choose what to continue.
 - `--offline` opens completed local downloads first.
+- `--zen --offline` opens the completed offline library with minimal chrome.
+- `--discover`, `--random`, and `--calendar` start directly in recommendation, surprise, or release views.
 
 ## In The Shell
 
@@ -31,5 +37,15 @@ kunai --offline
 - `/library` or `/offline` opens playable completed downloads.
 - `/diagnostics` shows runtime state.
 - `/update` checks for a new Kunai version and shows manual update guidance.
+- `/filters` adds guided search chips while browsing.
+- `/recover` refreshes the current stream during playback; `/fallback` tries the next compatible provider.
+
+## Recommended First Session
+
+1. Run `kunai --setup` to review optional tools and local download defaults.
+2. Run `kunai -S "Dune"` or `kunai -a -S "Attack on Titan"`.
+3. Press `/` to see context-aware commands.
+4. Try `/discover`, `/random`, or `/calendar` when you do not know what to watch.
+5. If playback has provider trouble, use `/recover`, `/fallback`, then `/diagnostics`.
 
 More flag details live in [`../../.docs/cli-reference.md`](../../.docs/cli-reference.md).

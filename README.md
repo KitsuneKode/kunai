@@ -29,6 +29,7 @@ kunai -a -S "Frieren" --jump 1
 kunai --continue
 kunai --history
 kunai --offline
+kunai --zen --offline
 kunai --discover
 kunai --calendar
 kunai --random
@@ -39,6 +40,7 @@ kunai --setup
 User guides:
 
 - [Getting started](docs/users/getting-started.md)
+- [Feature tour](docs/users/feature-tour.md)
 - [Playback and recovery](docs/users/playback-and-recovery.md)
 - [Downloads and offline](docs/users/downloads-and-offline.md)
 - [Diagnostics and reporting](docs/users/diagnostics-and-reporting.md)
@@ -63,6 +65,10 @@ Core controls:
 - `Esc`: close, clear, or go back
 - `?`: help
 - `q`: quit/stop flow
+
+The command palette is context-aware. Browse prioritizes filters, discover, random,
+calendar, offline, downloads, history, and details. Playback prioritizes recover,
+fallback, stream/source/quality, episode, download, next, and previous actions.
 
 ## What You Need
 
@@ -155,6 +161,7 @@ kunai --setup
 kunai --download -S "Dune"
 kunai --download -S "Dune" --download-path ~/Videos/Kunai
 kunai --offline
+kunai --zen --offline
 kunai --discover
 kunai --calendar
 kunai --random
@@ -177,6 +184,7 @@ or `/surprise` to spin a small non-autoplaying surprise tray.
 - Run `/discover` to open recommendation + trending sections
 - Run `/random` or `/surprise` to mix recommendations with a cached randomized catalog pool
 - Run `/calendar` to see releases airing today; provider availability is checked only after selection
+- Run `/filters` in browse to add guided query chips without memorizing syntax
 - Press `Ctrl+T` in browse mode to reload trending recommendation lists
 - Recommendation lists use cached catalog responses for deterministic UX
 
@@ -194,6 +202,8 @@ or `/surprise` to spin a small non-autoplaying surprise tray.
 - `b`: skip active intro/recap/credit segment
 - `r`: reload/recover current stream
 - `f`: fallback provider
+- `/streams`, `/source`, and `/quality`: switch among already resolved stream choices
+- mpv subtitle menu: switch among attached subtitle tracks when the provider/subtitle lookup exposed them
 - `Ctrl+R` (inside `mpv`): manual resume prompt when history exists
 
 ## Diagnostics And Issue Reports
@@ -253,10 +263,16 @@ For contributor-friendly shell walkthroughs:
 ```bash
 bun run --cwd apps/cli test:vhs:browse
 bun run --cwd apps/cli test:vhs:help
+bun run --cwd apps/cli test:vhs:onboarding
+bun run --cwd apps/cli test:vhs:discover
+bun run --cwd apps/cli test:vhs:offline
+bun run --cwd apps/cli test:vhs:diagnostics
 bun run --cwd apps/cli test:vhs:launch
+bun run --cwd apps/cli test:vhs:all
 ```
 
 These are demos and visual regression references, not a replacement for unit/integration/live verification.
+See the [Feature tour](docs/users/feature-tour.md) for the demo storyboard and website-ready content map.
 
 ## Appreciation And Inspiration
 
