@@ -18,6 +18,7 @@ import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { loadRandomResults } from "@/app/random-results";
 import { searchTitles } from "@/app/search-routing";
 import { effectiveFooterHints } from "@/container";
+import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import type { SearchResult, TitleInfo } from "@/domain/types";
 import {
   resultEnrichmentKey,
@@ -43,6 +44,7 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "surprise",
   "downloads",
   "library",
+  "filters",
   "toggle-mode",
   "provider",
   "history",
@@ -96,8 +98,15 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         if (currentState.searchQuery.trim().length > 0 && currentState.searchResults.length === 0) {
           stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
-          const search = await searchTitles(currentState.searchQuery, {
-            mode: currentState.mode,
+          const searchIntent = createSearchIntentEngine().fromText(currentState.searchQuery, {
+            currentMode: currentState.mode,
+          });
+          const searchMode =
+            searchIntent.intent.mode === "anime" || searchIntent.intent.mode === "series"
+              ? searchIntent.intent.mode
+              : currentState.mode;
+          const search = await searchTitles(searchIntent.intent.query, {
+            mode: searchMode,
             providerId: currentState.provider,
             animeLanguageProfile: container.config.animeLanguageProfile,
             signal: context.signal,
@@ -108,19 +117,22 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           const results = search.results;
 
           logger.info("Bootstrap search complete", {
-            query: currentState.searchQuery,
+            query: searchIntent.intent.query,
             count: results.length,
             strategy: search.strategy,
             source: search.sourceId,
+            filters: searchIntent.chips,
           });
           diagnosticsStore.record({
             category: "search",
             message: "Bootstrap search complete",
             context: {
-              query: currentState.searchQuery,
+              query: searchIntent.intent.query,
               count: results.length,
               strategy: search.strategy,
               source: search.sourceId,
+              filters: searchIntent.chips,
+              warnings: searchIntent.warnings,
             },
           });
 
@@ -340,6 +352,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         if (outcome.type === "action") {
+          if (outcome.action === "filters") {
+            diagnosticsStore.record({
+              category: "search",
+              message: "Search filter help opened",
+              context: {
+                supported: "mode, provider, downloaded, watched, year, release, sort, type, rating",
+              },
+            });
+            continue;
+          }
+
           if (outcome.action === "download") {
             const selected =
               stateManager.getState().searchResults[stateManager.getState().selectedResultIndex];

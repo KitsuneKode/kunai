@@ -3,6 +3,7 @@ import type { SessionState } from "./SessionState";
 export type AppCommandId =
   | "setup"
   | "search"
+  | "filters"
   | "trending"
   | "recommendation"
   | "calendar"
@@ -158,6 +159,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Search",
     aliases: ["search", "find"],
     description: "Start a new search",
+  },
+  {
+    id: "filters",
+    label: "Filters",
+    aliases: ["filters", "advanced-search", "filter"],
+    description: "Show supported search filter syntax",
   },
   {
     id: "trending",

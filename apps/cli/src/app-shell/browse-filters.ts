@@ -1,3 +1,14 @@
+import type {
+  ReleaseFilter,
+  SearchIntentMode,
+  SearchSort,
+  WatchFilter,
+} from "@/domain/search/SearchIntent";
+import {
+  describeSearchIntentFilters,
+  parseSearchIntentText,
+} from "@/domain/search/SearchIntentParser";
+
 import type { BrowseShellOption } from "./types";
 
 export type BrowseResultTypeFilter = "all" | "movie" | "series";
@@ -6,6 +17,13 @@ export type BrowseResultFilters = {
   readonly type: BrowseResultTypeFilter;
   readonly year?: string;
   readonly minRating?: number;
+  readonly mode?: SearchIntentMode;
+  readonly provider?: string;
+  readonly downloaded?: boolean;
+  readonly watched?: WatchFilter;
+  readonly release?: ReleaseFilter;
+  readonly sort?: SearchSort;
+  readonly ignoredFilterCount?: number;
 };
 
 export type ParsedBrowseFilterQuery = {
@@ -17,6 +35,7 @@ export function parseBrowseFilterQuery(query: string): ParsedBrowseFilterQuery {
   let type: BrowseResultTypeFilter = "all";
   let year: string | undefined;
   let minRating: number | undefined;
+  const intentTokens: string[] = [];
   const terms: string[] = [];
 
   for (const token of query.trim().split(/\s+/).filter(Boolean)) {
@@ -40,7 +59,16 @@ export function parseBrowseFilterQuery(query: string): ParsedBrowseFilterQuery {
       }
     }
 
+    intentTokens.push(token);
+  }
+
+  const parsedIntent = parseSearchIntentText(intentTokens.join(" "));
+  for (const token of parsedIntent.query.trim().split(/\s+/).filter(Boolean)) {
     terms.push(token);
+  }
+
+  if (typeof parsedIntent.filters.year === "number") {
+    year = String(parsedIntent.filters.year);
   }
 
   return {
@@ -49,6 +77,15 @@ export function parseBrowseFilterQuery(query: string): ParsedBrowseFilterQuery {
       type,
       ...(year ? { year } : {}),
       ...(typeof minRating === "number" ? { minRating } : {}),
+      ...(parsedIntent.mode ? { mode: parsedIntent.mode } : {}),
+      ...(parsedIntent.filters.provider ? { provider: parsedIntent.filters.provider } : {}),
+      ...(typeof parsedIntent.filters.downloaded === "boolean"
+        ? { downloaded: parsedIntent.filters.downloaded }
+        : {}),
+      ...(parsedIntent.filters.watched ? { watched: parsedIntent.filters.watched } : {}),
+      ...(parsedIntent.filters.release ? { release: parsedIntent.filters.release } : {}),
+      ...(parsedIntent.sort ? { sort: parsedIntent.sort } : {}),
+      ...(parsedIntent.errors.length ? { ignoredFilterCount: parsedIntent.errors.length } : {}),
     },
   };
 }
@@ -69,10 +106,23 @@ export function applyBrowseResultFilters<T>(
 }
 
 export function describeBrowseResultFilters(filters: BrowseResultFilters): readonly string[] {
+  const intentBadges = describeSearchIntentFilters({
+    mode: filters.mode,
+    sort: filters.sort,
+    filters: {
+      provider: filters.provider,
+      downloaded: filters.downloaded,
+      watched: filters.watched,
+      release: filters.release,
+    },
+  });
+
   return [
     filters.type !== "all" ? `type ${filters.type}` : null,
     filters.year ? `year ${filters.year}` : null,
     typeof filters.minRating === "number" ? `rating >= ${filters.minRating}` : null,
+    ...intentBadges,
+    filters.ignoredFilterCount ? `${filters.ignoredFilterCount} ignored` : null,
   ].filter((value): value is string => Boolean(value));
 }
 

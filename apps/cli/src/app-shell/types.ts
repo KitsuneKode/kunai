@@ -4,6 +4,7 @@ export type ShellAction =
   | "command-mode"
   | "setup"
   | "search"
+  | "filters"
   | "back-to-search"
   | "trending"
   | "recommendation"
@@ -173,6 +174,7 @@ export type PlaybackShellResult = ShellAction;
 export function toShellAction(commandId: AppCommandId): ShellAction {
   switch (commandId) {
     case "search":
+    case "filters":
     case "setup":
     case "trending":
     case "recommendation":

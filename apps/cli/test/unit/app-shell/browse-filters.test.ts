@@ -58,4 +58,27 @@ describe("browse filters", () => {
       "rating >= 9",
     ]);
   });
+
+  test("parses advanced intent filters as local badges without changing provider query", () => {
+    const parsed = parseBrowseFilterQuery(
+      "solo leveling mode:anime downloaded:true watched:watching release:this-week sort:recent",
+    );
+
+    expect(parsed.searchQuery).toBe("solo leveling");
+    expect(parsed.filters).toMatchObject({
+      type: "all",
+      downloaded: true,
+      watched: "watching",
+      release: "this-week",
+      sort: "recent",
+      mode: "anime",
+    });
+    expect(describeBrowseResultFilters(parsed.filters)).toEqual([
+      "mode anime",
+      "downloaded true",
+      "watched watching",
+      "release this-week",
+      "sort recent",
+    ]);
+  });
 });
