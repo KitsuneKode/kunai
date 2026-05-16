@@ -3,7 +3,6 @@ import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
-import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { DownloadJobRecord } from "@kunai/storage";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useState } from "react";
@@ -19,9 +18,11 @@ import React, { useEffect, useState } from "react";
 export function DownloadManagerContent({
   container,
   onClose,
+  onNavigateToLibrary,
 }: {
   container: Container;
   onClose: () => void;
+  onNavigateToLibrary?: () => void;
 }) {
   const viewport = useDebouncedViewportPolicy("picker");
   const [activeJobs, setActiveJobs] = useState<readonly DownloadJobRecord[]>([]);
@@ -29,6 +30,7 @@ export function DownloadManagerContent({
   const [completedJobs, setCompletedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [failedJobs, setFailedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const update = () => {
@@ -55,11 +57,17 @@ export function DownloadManagerContent({
       onClose();
       return;
     }
+    if (input === "l" && onNavigateToLibrary) {
+      onNavigateToLibrary();
+      return;
+    }
     if (key.upArrow) {
+      setConfirmingDeleteIndex(null);
       setSelectedIndex((current) => (current - 1 + allJobs.length) % allJobs.length);
       return;
     }
     if (key.downArrow) {
+      setConfirmingDeleteIndex(null);
       setSelectedIndex((current) => (current + 1) % allJobs.length);
       return;
     }
@@ -70,48 +78,26 @@ export function DownloadManagerContent({
         void container.downloadService.abort(job.id);
         return;
       }
-      void container.downloadService.deleteJob(job.id, {
-        deleteArtifact: job.status === "failed",
-      });
+      if (confirmingDeleteIndex === selectedIndex) {
+        setConfirmingDeleteIndex(null);
+        const deleteArtifact = job.status === "failed" || job.status === "completed";
+        void container.downloadService.deleteJob(job.id, { deleteArtifact });
+        return;
+      }
+      setConfirmingDeleteIndex(selectedIndex);
       return;
+    }
+    if (confirmingDeleteIndex !== null) {
+      setConfirmingDeleteIndex(null);
     }
     if (input === "r" || key.return) {
       const job = allJobs[selectedIndex];
       if (!job) return;
 
       if (key.return && job.status === "completed") {
-        void (async () => {
-          const playable = await container.offlineLibraryService.getPlayableSource(job.id);
-          if (playable.status !== "ready") return;
-          const decision = createSourceSelectionEngine().decide({
-            entrypoint: "offline-library",
-            local: { status: "ready", jobId: job.id },
-            networkAvailable: true,
-            preference: "prefer-local",
-          });
-          const result = await container.player.playLocal({
-            source: playable.source,
-            attach: false,
-            policy: {
-              autoSkipEnabled: !container.stateManager.getState().autoskipSessionPaused,
-              skipRecap: container.config.skipRecap,
-              skipIntro: container.config.skipIntro,
-              skipPreview: container.config.skipPreview,
-              skipCredits: container.config.skipCredits,
-            },
-          });
-          await container.offlineLibraryService.savePlaybackHistory(playable.source, result);
-          container.diagnosticsStore.record({
-            category: "playback",
-            message: "Offline playback started from unified manager",
-            context: {
-              jobId: job.id,
-              path: job.outputPath,
-              sourceDecision: decision.reason,
-              shouldResolveOnline: decision.shouldResolveOnline,
-            },
-          });
-        })();
+        void import("./workflows").then(({ playCompletedDownload }) =>
+          playCompletedDownload(container, job.id),
+        );
         return;
       }
 
@@ -130,6 +116,8 @@ export function DownloadManagerContent({
     return <ResizeBlocker minColumns={minColumns} minRows={minRows} />;
   }
 
+  const isConfirming = (index: number) =>
+    confirmingDeleteIndex === index && selectedIndex === index;
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
     const totalBlocks = 10;
@@ -193,6 +181,14 @@ export function DownloadManagerContent({
             {progressMeta}
           </Text>
         </Box>
+        {isConfirming(index) ? (
+          <Box marginLeft={1}>
+            <Text color={palette.amber} bold>
+              {" "}
+              x again to confirm delete
+            </Text>
+          </Box>
+        ) : null}
       </Box>
     );
   };
@@ -240,6 +236,13 @@ export function DownloadManagerContent({
           )}
         </Box>
       )}
+      {confirmingDeleteIndex !== null ? (
+        <Box marginTop={1}>
+          <Text color={palette.amber}>
+            {"⚠ "}Press x again to confirm delete, any other key to cancel
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }
