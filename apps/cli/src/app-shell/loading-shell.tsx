@@ -213,6 +213,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   );
   const { stdout } = useStdout();
   const terminalColumns = stdout.columns ?? 80;
+  const barWidth = Math.min(48, Math.max(12, Math.floor(terminalColumns * 0.45)));
   const { poster, posterState } = usePosterPreview(state.posterUrl, {
     rows: 10,
     cols: 22,
@@ -600,8 +601,8 @@ export const LoadingShell = React.memo(function LoadingShell({
               {disclosure.showProgress && state.progress !== undefined ? (
                 <Box marginTop={1}>
                   <Text>
-                    {"█".repeat(Math.floor(state.progress / 2.5))}
-                    {"░".repeat(40 - Math.floor(state.progress / 2.5))}
+                    {"█".repeat(Math.floor((state.progress / 100) * barWidth))}
+                    {"░".repeat(barWidth - Math.floor((state.progress / 100) * barWidth))}
                   </Text>
                   <Text color={palette.teal}> {Math.round(state.progress)}%</Text>
                 </Box>
@@ -627,13 +628,13 @@ export const LoadingShell = React.memo(function LoadingShell({
             <>
               {/* Status context strip */}
               {statusItems.length > 0 && (
-                <LocalSection title="Status" tone="success" marginTop={0}>
+                <Box marginTop={0} flexDirection="column">
                   <ContextStrip items={statusItems} />
-                </LocalSection>
+                </Box>
               )}
 
               {/* Playback telemetry */}
-              <LocalSection title="Playback" tone="success" marginTop={1}>
+              <LocalSection title="Now playing" tone="success" marginTop={1}>
                 {state.currentPosition !== undefined &&
                 state.duration !== undefined &&
                 state.duration > 0 ? (
@@ -662,18 +663,6 @@ export const LoadingShell = React.memo(function LoadingShell({
                   )}
                 </Box>
               </LocalSection>
-
-              {/* Up-next preview */}
-              {isPlaying && (state.hasNextEpisode || state.hasPreviousEpisode) ? (
-                <LocalSection title="Navigation" tone="info" marginTop={1}>
-                  {state.nextEpisodeLabel ? (
-                    <Text color={palette.teal}>Next: {state.nextEpisodeLabel}</Text>
-                  ) : null}
-                  {state.previousEpisodeLabel ? (
-                    <Text color={palette.gray}>Previous: {state.previousEpisodeLabel}</Text>
-                  ) : null}
-                </LocalSection>
-              ) : null}
             </>
           )}
         </Box>
