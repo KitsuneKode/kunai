@@ -151,6 +151,9 @@ type PlayerCycleState = {
   promise: Promise<PlaybackResult>;
   playerReadyNotified: boolean;
   playerStartedNotified: boolean;
+  lastPlaybackProgressEventAtMs: number;
+  lastPlaybackProgressPositionSeconds: number;
+  lastPlaybackProgressDurationSeconds: number;
   acceptPlaybackProperties: boolean;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
@@ -187,6 +190,12 @@ export class PersistentMpvSession {
   private skipUserDataRev = 0;
   /** Suppress segment OSD/skip until initial resume seek has run (avoids time-pos@0 races). */
   private resumeSeekPending = false;
+  /** Position the current file was loaded at (0 or resume seconds). Null if not yet tracked. */
+  private loadStartAt: number | null = null;
+  /** True when spawn() baked --sub-file into mpv argv (first play only). */
+  private subtitlesAttachedAtSpawn = false;
+  /** True when spawn() baked --force-media-title into mpv argv (first play only). */
+  private titleAppliedViaArgs = false;
   private scriptOptsArg: string | undefined;
   /** Bun delayed auto-skip timer; must match Lua chip countdown (`user-data/kunai-skip-prompt-ms`). */
   private skipPromptDurationMs = 3000;
@@ -301,6 +310,8 @@ export class PersistentMpvSession {
     await this.removeExternalSubtitles();
     options.onPlaybackEvent?.({ type: "resolving-playback" });
     this.queueReadyWork(options, { armFallback: false });
+
+    this.loadStartAt = shouldApplyStartAtSeek(options.startAt) ? (options.startAt ?? 0) : 0;
 
     const isFreshCached = (stream.timestamp ?? 0) > Date.now() - 5 * 60 * 1000;
     const preflightPromise = isFreshCached
@@ -422,6 +433,7 @@ export class PersistentMpvSession {
     this.beginCycle(this.initialOptions);
     this.initialOptions.onPlaybackEvent?.({ type: "launching-player" });
 
+    const includeStartArg = shouldApplyStartAtSeek(this.initialOptions.startAt);
     // Persistent replacements always pass a file-local loadfile `start` option
     // (`0` for normal navigation, resume seconds for direct continue). That
     // clears any process-level --start used for the initial file.
@@ -440,11 +452,15 @@ export class PersistentMpvSession {
       {
         persistent: true,
         mpv: mpvOptions,
-        includeStartArg: shouldApplyStartAtSeek(this.initialOptions.startAt),
+        includeStartArg,
         scriptPath: this.luaScriptPath ?? undefined,
         scriptOpts: this.scriptOptsArg,
       },
     );
+    this.loadStartAt =
+      includeStartArg && this.initialOptions.startAt ? this.initialOptions.startAt : 0;
+    this.subtitlesAttachedAtSpawn = Boolean(this.initialOptions.primarySubtitle);
+    this.titleAppliedViaArgs = true;
 
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
       const active = this.activeCycle;
@@ -590,6 +606,7 @@ export class PersistentMpvSession {
                 active.playerStartedNotified = true;
                 active.onPlaybackEvent?.({ type: "playback-started" });
               }
+              this.maybeEmitPlaybackProgress(active, observedAt);
               void this.handleSegmentSkipProgress(this.currentCycleOptions());
 
               // Prefetch once per cycle near credits when timing exists, else within 30s of end.
@@ -678,7 +695,11 @@ export class PersistentMpvSession {
       void this.ipcSession.send(["observe_property", 202, "user-data/kunai-track-changed"], 1_000);
       void this.ipcSession.send(["observe_property", 203, "pause"], 1_000);
     }
-    this.queueReadyWork(this.initialOptions);
+    this.queueReadyWork(this.initialOptions, { armFallback: false });
+    this.armReadyWorkFallback(
+      this.initialOptions,
+      PersistentMpvSession.loadfileReadyWorkFallbackMs,
+    );
   }
 
   private beginCycle(
@@ -698,6 +719,9 @@ export class PersistentMpvSession {
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: options.onPlaybackEvent,
       playerStartedNotified: false,
+      lastPlaybackProgressEventAtMs: 0,
+      lastPlaybackProgressPositionSeconds: -1,
+      lastPlaybackProgressDurationSeconds: 0,
       acceptPlaybackProperties: cycleOptions.acceptPlaybackProperties ?? true,
     };
     this.activeCycle = cycle;
@@ -843,15 +867,19 @@ export class PersistentMpvSession {
 
       // Always push the display title for this episode so the mpv window title and
       // OSD stay correct across persistent-session episode transitions.
-      const titleResult = await this.ipcSession.send(
-        ["set_property", "force-media-title", options.displayTitle],
-        1_000,
-      );
-      if (!titleResult.ok) {
-        dbg("mpv-ipc", "set-title-failed", {
-          error: titleResult.error,
-        });
+      // Skip when spawn() already baked --force-media-title into mpv argv with the same title.
+      if (!this.titleAppliedViaArgs || options.displayTitle !== this.initialOptions.displayTitle) {
+        const titleResult = await this.ipcSession.send(
+          ["set_property", "force-media-title", options.displayTitle],
+          1_000,
+        );
+        if (!titleResult.ok) {
+          dbg("mpv-ipc", "set-title-failed", {
+            error: titleResult.error,
+          });
+        }
       }
+      this.titleAppliedViaArgs = false;
 
       let choice: PersistentResumeStartChoice | undefined;
       const resumePromptAt = options.resumePromptAt ?? 0;
@@ -867,27 +895,52 @@ export class PersistentMpvSession {
       if (shouldApplyStartAtSeek(seekTarget) && seekTarget !== undefined) {
         const target = seekTarget;
         options.onPlaybackEvent?.({ type: "resolving-playback" });
-        const seekResult = await this.ipcSession.send(["seek", target, "absolute"], 2_000);
-        // IPC time-pos may lag behind the seek; autoskip uses currentPositionSeconds — sync so
-        // recap/intro windows are evaluated from the resume point, not from 0 (which would
-        // incorrectly skip earlier segments after a mid-episode resume).
-        if (seekResult.ok) {
+        // Skip redundant seek: loadfile (via --start, loadfile start, or spawn argv) already
+        // positioned the file at the target. An extra IPC seek only extends mpv's seeking=true
+        // duration past the watchdog's 8s threshold, producing a false "Seek stalled" event.
+        if (this.loadStartAt !== null && target === this.loadStartAt) {
           this.currentPositionSeconds = target;
           noteTrustedSeek(cycle.telemetry, target);
+        } else {
+          const seekResult = await this.ipcSession.send(["seek", target, "absolute"], 2_000);
+          // IPC time-pos may lag behind the seek; autoskip uses currentPositionSeconds — sync so
+          // recap/intro windows are evaluated from the resume point, not from 0 (which would
+          // incorrectly skip earlier segments after a mid-episode resume).
+          if (seekResult.ok) {
+            this.currentPositionSeconds = target;
+            noteTrustedSeek(cycle.telemetry, target);
+          }
         }
       }
     } finally {
       this.resumeSeekPending = false;
     }
 
-    await this.replaceSubtitleInventory(
-      options.primarySubtitle,
-      options.subtitleTracks,
-      (trackCount) => {
-        options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
-        options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
-      },
-    );
+    if (
+      this.subtitlesAttachedAtSpawn &&
+      options.primarySubtitle &&
+      options.primarySubtitle === this.initialOptions.primarySubtitle
+    ) {
+      // Subtitles were loaded at spawn via --sub-file= in mpv argv. No need to
+      // sub-remove + sub-add them again. Fire the events so the UI knows subtitles
+      // are ready.
+      const additionalCount = options.subtitleTracks
+        ? collectAdditionalSubtitleTracks(options.primarySubtitle, options.subtitleTracks).length
+        : 0;
+      const trackCount = 1 + additionalCount;
+      options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
+      options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
+    } else {
+      await this.replaceSubtitleInventory(
+        options.primarySubtitle,
+        options.subtitleTracks,
+        (trackCount) => {
+          options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
+          options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
+        },
+      );
+    }
+    this.subtitlesAttachedAtSpawn = false;
     await this.handleSegmentSkipProgress(options);
   }
 
@@ -985,6 +1038,32 @@ export class PersistentMpvSession {
 
   private currentCycleOptions(): PlayerCycleOptions {
     return this.currentOptions;
+  }
+
+  private maybeEmitPlaybackProgress(cycle: PlayerCycleState, observedAt: number): void {
+    const sample = cycle.telemetry.latestIpcSample;
+    if (!sample || sample.positionSeconds <= 0) return;
+    const durationChanged =
+      sample.durationSeconds > 0 &&
+      Math.abs(sample.durationSeconds - cycle.lastPlaybackProgressDurationSeconds) >= 1;
+    const positionChanged =
+      Math.abs(sample.positionSeconds - cycle.lastPlaybackProgressPositionSeconds) >= 15;
+    if (
+      cycle.lastPlaybackProgressEventAtMs > 0 &&
+      !durationChanged &&
+      !positionChanged &&
+      observedAt - cycle.lastPlaybackProgressEventAtMs < 15_000
+    ) {
+      return;
+    }
+    cycle.lastPlaybackProgressEventAtMs = observedAt;
+    cycle.lastPlaybackProgressPositionSeconds = sample.positionSeconds;
+    cycle.lastPlaybackProgressDurationSeconds = sample.durationSeconds;
+    cycle.onPlaybackEvent?.({
+      type: "playback-progress",
+      positionSeconds: sample.positionSeconds,
+      durationSeconds: sample.durationSeconds,
+    });
   }
 
   private skipConfig(options: PlayerCycleOptions): PlaybackSkipConfig {

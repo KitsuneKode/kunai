@@ -50,6 +50,48 @@ describe("persistent mpv start policy", () => {
       { start: "562" },
     ]);
   });
+
+  test("keeps 0 start-at when offerResumeStartChoice handles it", () => {
+    expect(
+      resolvePersistentStartSeekTarget({
+        startAt: 0,
+        resumePromptAt: 0,
+        offerResumeStartChoice: false,
+      }),
+    ).toBeUndefined();
+  });
+
+  test("loadfile start matches seek target for direct continue", () => {
+    const startAt = 562;
+    const cmd = buildPersistentLoadfileCommand("https://cdn.example/e.m3u8", startAt);
+    const target = resolvePersistentStartSeekTarget({ startAt });
+
+    // Both produce the same position — the seek in runReadyWork should be skipped.
+    expect(cmd[4].start).toBe("562");
+    expect(target).toBe(562);
+  });
+
+  test("loadfile start is 0 when resume prompt will handle the seek later", () => {
+    const startAt = 0;
+    const resumePromptAt = 562;
+    const cmd = buildPersistentLoadfileCommand("https://cdn.example/e.m3u8", startAt);
+    const target = resolvePersistentStartSeekTarget(
+      { startAt, resumePromptAt, offerResumeStartChoice: true },
+      "resume",
+    );
+
+    // loadfile loads at 0, seek target is 562 — they differ → seek IS needed (not redundant)
+    expect(cmd[4].start).toBe("0");
+    expect(target).toBe(562);
+  });
+
+  test("loadfile start is 0 when no resume position exists", () => {
+    const cmd = buildPersistentLoadfileCommand("https://cdn.example/fresh.m3u8", 0);
+    const target = resolvePersistentStartSeekTarget({ startAt: 0 });
+
+    expect(cmd[4].start).toBe("0");
+    expect(target).toBeUndefined();
+  });
 });
 
 describe("persistent mpv prefetch trigger", () => {
