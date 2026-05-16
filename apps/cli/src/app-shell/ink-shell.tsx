@@ -1847,7 +1847,7 @@ function BrowseShell<T>({
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const [selectedDetail, setSelectedDetail] = useState(
     initialResults?.[initialSelectedIndex ?? 0]?.detail ??
-      "Type a title and press Enter to search.",
+      "Search for a title — or try /trending to see what's popular",
   );
   const [resultSubtitle, setResultSubtitle] = useState(initialResultSubtitle ?? "");
   const [searchState, setSearchState] = useState<"idle" | "loading" | "ready" | "error">(
@@ -1859,7 +1859,9 @@ function BrowseShell<T>({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftQuery, setDraftQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
+  const [emptyMessage, setEmptyMessage] = useState(
+    "Search for a title — or try /trending to see what's popular",
+  );
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const requestIdRef = useRef(0);
   const showPoster = viewport.wideBrowse || viewport.mediumBrowse;
@@ -1876,9 +1878,9 @@ function BrowseShell<T>({
     setSearchState("idle");
     setLastSearchedQuery("");
     setErrorMessage(null);
-    setEmptyMessage("Type a title and press Enter to search.");
+    setEmptyMessage("Search for a title — or try /trending to see what's popular");
     setResultSubtitle("");
-    setSelectedDetail("Type a title and press Enter to search.");
+    setSelectedDetail("Search for a title — or try /trending to see what's popular");
     setActiveFilterBadges([]);
   };
 
@@ -2543,8 +2545,15 @@ function BrowseShell<T>({
             </Text>
           </Box>
         ) : (
-          <Box marginTop={1} flexGrow={1}>
+          <Box marginTop={1} flexGrow={1} flexDirection="column">
             <Text color={palette.gray}>{emptyMessage}</Text>
+            {emptyMessage.includes("trending") ? (
+              <Text color={palette.dim} dimColor>
+                Use <Text color={palette.gray}>year:2022</Text> or{" "}
+                <Text color={palette.gray}>type:anime</Text> to narrow ·{" "}
+                <Text color={palette.gray}>/filters</Text> for all tokens
+              </Text>
+            ) : null}
           </Box>
         )}
       </Box>
