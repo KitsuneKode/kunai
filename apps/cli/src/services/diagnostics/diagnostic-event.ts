@@ -8,6 +8,8 @@ export type DiagnosticCategory =
   | "playback"
   | "cache"
   | "ui"
+  | "network"
+  | "runtime"
   | "presence"
   | "download"
   | "offline"

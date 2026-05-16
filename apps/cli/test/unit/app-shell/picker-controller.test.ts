@@ -13,6 +13,7 @@ const options = [
   { value: "source:cdn", label: "CDN", detail: "1080p  ·  hardsub en" },
   { value: "source:backup", label: "Backup", detail: "720p  ·  audio ja" },
   { value: "source:mp4", label: "MP4", detail: "480p" },
+  { value: "source:hls", label: "HLS", detail: "adaptive stream" },
 ];
 
 describe("picker controller", () => {
@@ -33,6 +34,19 @@ describe("picker controller", () => {
     ]);
   });
 
+  test("ranks direct label matches before loose detail matches", () => {
+    const state = createPickerState({
+      id: "source",
+      title: "Choose source",
+      subtitle: "4 sources",
+      options,
+    });
+
+    const filtered = updatePickerFilter(state, "hls");
+
+    expect(getFilteredPickerOptions(filtered).map((option) => option.value)[0]).toBe("source:hls");
+  });
+
   test("wraps selection inside the filtered option set", () => {
     let state = createPickerState({
       id: "source",
@@ -45,7 +59,7 @@ describe("picker controller", () => {
     expect(confirmPickerSelection(state)).toEqual({
       type: "selected",
       id: "source",
-      value: "source:mp4",
+      value: "source:hls",
     });
 
     state = movePickerSelection(state, 1);

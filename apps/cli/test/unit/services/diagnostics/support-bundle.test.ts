@@ -2,44 +2,33 @@ import { describe, expect, test } from "bun:test";
 
 import { buildDiagnosticsSupportBundle } from "@/services/diagnostics/support-bundle";
 
-describe("buildDiagnosticsSupportBundle", () => {
-  test("builds a redacted support bundle with runtime metadata", () => {
+describe("DiagnosticsSupportBundle", () => {
+  test("builds layered summary and section metadata", () => {
     const bundle = buildDiagnosticsSupportBundle({
-      appVersion: "1.2.3",
+      appVersion: "0.1.0",
       debug: true,
-      capabilities: {
-        mpv: true,
-        ytDlp: false,
-        notes: ["https://example.com/internal"],
-      },
+      now: () => new Date("2026-05-16T00:00:00.000Z"),
       events: [
         {
           timestamp: 1,
-          level: "info",
           category: "provider",
+          level: "info",
           operation: "provider.resolve",
-          message: "Resolved",
-          context: {
-            url: "https://cdn.example/stream.m3u8?token=secret",
-            status: 200,
-          },
+          message: "Provider resolve started",
+        },
+        {
+          timestamp: 2,
+          category: "network",
+          level: "warn",
+          operation: "network.snapshot",
+          message: "Network unavailable",
         },
       ],
-      now: () => new Date("2026-05-14T00:00:00.000Z"),
     });
 
-    expect(bundle.exportedAt).toBe("2026-05-14T00:00:00.000Z");
-    expect(bundle.app).toEqual({ version: "1.2.3", debug: true });
-    expect(bundle.runtime.platform).toBe(process.platform);
-    expect(bundle.eventCount).toBe(1);
-    expect(bundle.capabilities).toEqual({
-      mpv: true,
-      ytDlp: false,
-      notes: ["https://example.com/internal"],
-    });
-    expect(bundle.events[0]?.context).toEqual({
-      url: "https://cdn.example/stream.m3u8?token=[redacted]",
-      status: 200,
-    });
+    expect(bundle.summary.headline).toBe("Network unavailable");
+    expect(bundle.summary.sections).toEqual(["network", "provider"]);
+    expect(bundle.sections.network).toMatchObject({ tone: "warning", eventCount: 1 });
+    expect(bundle.sections.provider).toMatchObject({ tone: "neutral", eventCount: 1 });
   });
 });

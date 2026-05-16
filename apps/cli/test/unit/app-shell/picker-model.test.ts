@@ -10,6 +10,13 @@ import {
 
 const commands: readonly ResolvedAppCommand[] = [
   {
+    id: "filters",
+    label: "Search Filters",
+    aliases: ["filters"],
+    description: "Show supported search filter syntax",
+    enabled: true,
+  },
+  {
     id: "setup",
     label: "Setup Wizard",
     aliases: ["setup"],
@@ -72,7 +79,12 @@ describe("command picker model", () => {
   test("keeps first visible grouped command as the selected command", () => {
     const model = buildCommandPickerModel("", commands, 0);
 
-    expect(model.options.map((option) => option.value)).toEqual(["download", "setup", "history"]);
+    expect(model.options.map((option) => option.value)).toEqual([
+      "download",
+      "filters",
+      "setup",
+      "history",
+    ]);
     expect(model.rows[0]).toMatchObject({ type: "group", label: "Context" });
     expect(model.rows[1]).toMatchObject({
       type: "item",
@@ -85,8 +97,19 @@ describe("command picker model", () => {
   test("filtered commands keep matching order without grouping", () => {
     const model = buildCommandPickerModel("hist", commands, 0);
 
-    expect(model.options.map((option) => option.value)).toEqual(["history"]);
-    expect(model.rows).toHaveLength(1);
+    expect(model.options.map((option) => option.value)[0]).toBe("history");
+    expect(model.rows[0]).toMatchObject({
+      type: "item",
+      option: expect.objectContaining({ value: "history" }),
+      selected: true,
+    });
     expect(getHighlightedCommand("hist", commands, 0)?.id).toBe("history");
+  });
+
+  test("filtered commands rank alias and label matches above fuzzy description matches", () => {
+    const model = buildCommandPickerModel("his", commands, 0);
+
+    expect(model.options[0]?.value).toBe("history");
+    expect(getHighlightedCommand("his", commands, 0)?.id).toBe("history");
   });
 });

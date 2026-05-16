@@ -149,11 +149,14 @@ async function attemptStreamHealthFetch(
     readonly signal?: AbortSignal;
   },
 ): Promise<boolean> {
+  if (options.signal?.aborted) return false;
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
 
   const onExternalAbort = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onExternalAbort, { once: true });
+  if (options.signal?.aborted) controller.abort(options.signal.reason);
 
   try {
     const response = await fetchImpl(url, {

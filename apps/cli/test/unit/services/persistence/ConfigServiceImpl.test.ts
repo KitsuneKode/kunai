@@ -70,6 +70,9 @@ describe("ConfigServiceImpl", () => {
     expect(service.autoDownload).toBe("off");
     expect(service.autoDownloadNextCount).toBe(1);
     expect(service.autoCleanupWatched).toBe(false);
+    expect(service.recoveryMode).toBe("guided");
+    expect(service.artworkPreviewsEnabled).toBe(true);
+    expect(service.offlineArtworkCacheEnabled).toBe(true);
     expect(service.autoCleanupGraceDays).toBe(7);
     expect(service.protectedDownloadJobIds).toEqual([]);
     expect(service.updateChecksEnabled).toBe(true);
@@ -83,6 +86,9 @@ describe("ConfigServiceImpl", () => {
       autoDownload: "next",
       autoDownloadNextCount: 3,
       autoCleanupWatched: true,
+      recoveryMode: "fallback-first",
+      artworkPreviewsEnabled: false,
+      offlineArtworkCacheEnabled: false,
       autoCleanupGraceDays: 3,
       protectedDownloadJobIds: ["job-a", "job-a", " job-b "],
       updateChecksEnabled: false,
@@ -96,10 +102,23 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).autoDownload).toBe("next");
     expect((await store.load()).autoDownloadNextCount).toBe(3);
     expect((await store.load()).autoCleanupWatched).toBe(true);
+    expect((await store.load()).recoveryMode).toBe("fallback-first");
+    expect((await store.load()).artworkPreviewsEnabled).toBe(false);
+    expect((await store.load()).offlineArtworkCacheEnabled).toBe(false);
     expect((await store.load()).autoCleanupGraceDays).toBe(3);
     expect((await store.load()).protectedDownloadJobIds).toEqual(["job-a", "job-b"]);
     expect((await store.load()).updateChecksEnabled).toBe(false);
     expect((await store.load()).updateSnoozedUntil).toBe(123);
+  });
+
+  test("normalizes unknown recovery modes to guided", async () => {
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        recoveryMode: "surprise-me" as never,
+      }),
+    );
+
+    expect(service.recoveryMode).toBe("guided");
   });
 
   test("clamps auto-download next count on load and update", async () => {

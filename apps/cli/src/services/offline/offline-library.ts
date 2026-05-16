@@ -11,6 +11,12 @@ export type OfflineLibraryEntry = {
   readonly status: OfflineArtifactStatus;
 };
 
+export type OfflineArtworkPolicy = {
+  readonly networkAvailable?: boolean;
+  readonly artworkPreviewsEnabled?: boolean;
+  readonly allowRemoteArtwork?: boolean;
+};
+
 export type OfflineLibraryGroup = {
   readonly key: string;
   readonly titleId: string;
@@ -50,6 +56,7 @@ export async function hydrateCompletedOfflineJobs(
 
 export function groupOfflineLibraryEntries(
   entries: readonly OfflineLibraryEntry[],
+  artworkPolicy: OfflineArtworkPolicy = {},
 ): readonly OfflineLibraryGroup[] {
   const groups = new Map<string, OfflineLibraryEntry[]>();
   for (const entry of entries) {
@@ -82,7 +89,7 @@ export function groupOfflineLibraryEntries(
       issueCount: sortedEntries.filter((entry) => entry.status !== "ready").length,
       totalSize: fileSizes.length > 0 ? fileSizes.reduce((total, size) => total + size, 0) : null,
       latestCompletedAt: latestCompletedAt ?? first.updatedAt,
-      previewImageUrl: resolveOfflinePreviewImage(sortedEntries),
+      previewImageUrl: resolveOfflinePreviewImage(sortedEntries, artworkPolicy),
     });
   }
 
@@ -168,14 +175,31 @@ export function formatOfflineShelfDetail(
   return parts.join(" · ");
 }
 
-export function resolveOfflineJobPreviewImage(job: DownloadJobRecord): string | undefined {
-  return job.thumbnailPath ?? job.posterUrl;
+export function resolveOfflineJobPreviewImage(
+  job: DownloadJobRecord,
+  artworkPolicy: OfflineArtworkPolicy = {},
+): string | undefined {
+  if (job.thumbnailPath) return job.thumbnailPath;
+  if (canUseRemoteArtwork(artworkPolicy)) return job.posterUrl;
+  return undefined;
 }
 
-function resolveOfflinePreviewImage(entries: readonly OfflineLibraryEntry[]): string | undefined {
+function resolveOfflinePreviewImage(
+  entries: readonly OfflineLibraryEntry[],
+  artworkPolicy: OfflineArtworkPolicy,
+): string | undefined {
   return (
     entries.find((entry) => entry.job.thumbnailPath)?.job.thumbnailPath ??
-    entries.find((entry) => entry.job.posterUrl)?.job.posterUrl
+    (canUseRemoteArtwork(artworkPolicy)
+      ? entries.find((entry) => entry.job.posterUrl)?.job.posterUrl
+      : undefined)
+  );
+}
+
+function canUseRemoteArtwork(policy: OfflineArtworkPolicy): boolean {
+  return (
+    policy.allowRemoteArtwork === true ||
+    (policy.networkAvailable === true && policy.artworkPreviewsEnabled !== false)
   );
 }
 

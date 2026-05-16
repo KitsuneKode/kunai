@@ -75,6 +75,8 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Download/offline/onboarding is now a canonical planned track rather than a generated superpowers-only spec: [.plans/download-offline-onboarding.md](.plans/download-offline-onboarding.md)
 - Catalog release schedules need a shared service for anime next-airing, TV upcoming episodes, and releasing-today surfaces: [.plans/catalog-release-schedule-service.md](.plans/catalog-release-schedule-service.md)
 - Provider reliability, fallback visibility, diagnostics bundles, report issue flow, and local debug tracing are tracked in [.plans/provider-reliability-diagnostics-and-reporting.md](.plans/provider-reliability-diagnostics-and-reporting.md)
+- Production recovery hardening now coordinates recovery policy modes, network/offline suggestions, diagnostics/reporting UX, offline artwork, developer debugging, and provider/player harness tests: [.plans/production-recovery-hardening.md](.plans/production-recovery-hardening.md)
+- The implementation pass for production-ready usage, UX behavior, and recovery harness coverage is tracked in [.plans/production-readiness-usage-hardening.md](.plans/production-readiness-usage-hardening.md)
 - Advanced search input, local-first offline library read models, and continuation decision engines are tracked in [.plans/search-offline-continuation-engines.md](.plans/search-offline-continuation-engines.md)
 
 ### Recently Improved
@@ -102,6 +104,8 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Catalog release schedules         | Planned       | [.plans/catalog-release-schedule-service.md](.plans/catalog-release-schedule-service.md)                             |
 | Download/offline/onboarding       | Planned       | [.plans/download-offline-onboarding.md](.plans/download-offline-onboarding.md)                                       |
 | Provider reliability diagnostics  | Planned       | [.plans/provider-reliability-diagnostics-and-reporting.md](.plans/provider-reliability-diagnostics-and-reporting.md) |
+| Production recovery hardening     | Planned       | [.plans/production-recovery-hardening.md](.plans/production-recovery-hardening.md)                                   |
+| Production usage hardening        | Planned       | [.plans/production-readiness-usage-hardening.md](.plans/production-readiness-usage-hardening.md)                     |
 | Search/offline engines            | Planned       | [.plans/search-offline-continuation-engines.md](.plans/search-offline-continuation-engines.md)                       |
 | Beta UI/provider hardening        | Planned       | [.plans/beta-ui-provider-runtime-hardening.md](.plans/beta-ui-provider-runtime-hardening.md)                         |
 | Fullscreen root shell redesign    | In Progress   | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                                 |

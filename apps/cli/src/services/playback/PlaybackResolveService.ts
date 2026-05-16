@@ -85,6 +85,7 @@ export type PlaybackResolveInput = {
 export type StreamHealthChecker = (
   url: string,
   headers?: Record<string, string>,
+  signal?: AbortSignal,
 ) => Promise<boolean>;
 
 export type PlaybackResolveOutput = {
@@ -281,9 +282,7 @@ export class PlaybackResolveService {
       const consecutiveFailures =
         delta.outcome === "success" || delta.outcome === "stalled"
           ? 0
-          : (existing?.recentFailureRate ?? 0) >= 0.5
-            ? (existing?.consecutiveFailures ?? 0) + 1
-            : 1;
+          : (existing?.consecutiveFailures ?? 0) + 1;
       const status: "healthy" | "degraded" | "down" =
         consecutiveFailures >= 5 ? "down" : consecutiveFailures >= 2 ? "degraded" : "healthy";
       const recentFailureRate =
@@ -298,6 +297,7 @@ export class PlaybackResolveService {
         checkedAt: delta.at,
         medianResolveMs: delta.resolveMs,
         recentFailureRate: Math.max(0, Math.min(1, recentFailureRate)),
+        consecutiveFailures,
         subtitleSuccessRate: undefined,
         streamSurvivalRate: undefined,
       });
@@ -318,15 +318,15 @@ export class PlaybackResolveService {
   }> {
     const healthService = this.deps.streamHealthService ?? new StreamHealthService();
     if (this.deps.streamHealth) {
-      const policy = await healthService.check(stream, { force });
+      const policy = await healthService.check(stream, { force, signal });
       if (!policy.checked) return policy;
       if (signal?.aborted) return { healthy: false, checked: true, strategy: policy.strategy };
       return {
         ...policy,
-        healthy: await this.deps.streamHealth(stream.url, stream.headers),
+        healthy: await this.deps.streamHealth(stream.url, stream.headers, signal),
       };
     }
-    return healthService.check(stream, { force });
+    return healthService.check(stream, { force, signal });
   }
 
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {

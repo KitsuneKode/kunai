@@ -1,3 +1,5 @@
+import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
+
 import type { ShellPickerOption } from "./types";
 
 export type PickerRequest = {
@@ -102,11 +104,11 @@ function filterOptions(
   const normalized = filterQuery.trim().toLowerCase();
   if (!normalized) return options;
 
-  return options.filter((option) =>
-    `${option.label} ${option.detail ?? ""} ${option.badge ?? ""}`
-      .toLowerCase()
-      .includes(normalized),
-  );
+  return rankFuzzyMatches(options, normalized, (option) => [
+    { value: option.label, weight: 0 },
+    { value: option.detail, weight: 8 },
+    { value: option.badge, weight: 12 },
+  ]);
 }
 
 function clampIndex(index: number, length: number): number {

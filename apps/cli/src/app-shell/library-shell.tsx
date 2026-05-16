@@ -133,37 +133,15 @@ function LibraryTab({ container }: { container: Container }) {
       });
   }, [container]);
 
-  if (loading) {
-    return (
-      <Box flexDirection="column" flexGrow={1} justifyContent="center">
-        <Text color={palette.teal}>◌ Loading offline titles…</Text>
-      </Box>
-    );
-  }
-
-  if (!entries || entries.length === 0) {
-    return (
-      <Box flexDirection="column" flexGrow={1}>
-        <EmptyState
-          icon="📂"
-          title="No offline titles yet"
-          subtitle="Queue downloads from playback with / → Download current episode"
-        />
-        <Box marginTop={1}>
-          <Text color={palette.muted} dimColor>
-            Switch to Queue (2) to see active downloads
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  const shelf = createOfflineLibraryEngine().buildShelf(entries);
-  const safeIndex = Math.min(selectedIndex, shelf.groups.length - 1);
-  const groups = shelf.groups.slice(0, 15);
+  // Compute derived data unconditionally so hooks stay stable.
+  // Guard all operations inside useInput so they no-op when data isn't ready.
+  const shelf = entries ? createOfflineLibraryEngine().buildShelf(entries) : null;
+  const safeIndex = shelf ? Math.min(selectedIndex, shelf.groups.length - 1) : 0;
+  const groups = shelf ? shelf.groups.slice(0, 15) : [];
   const selectedGroup = groups[safeIndex] ?? null;
 
   useInput((input, key) => {
+    if (loading || !entries || entries.length === 0 || groups.length === 0) return;
     if (key.upArrow) {
       setConfirmDeleteKey(null);
       setSelectedIndex((prev) => Math.max(0, prev - 1));
@@ -244,6 +222,34 @@ function LibraryTab({ container }: { container: Container }) {
       setConfirmDeleteKey(null);
     }
   });
+
+  if (loading) {
+    return (
+      <Box flexDirection="column" flexGrow={1} justifyContent="center">
+        <Text color={palette.teal}>◌ Loading offline titles…</Text>
+      </Box>
+    );
+  }
+
+  if (!entries || entries.length === 0) {
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <EmptyState
+          icon="📂"
+          title="No offline titles yet"
+          subtitle="Queue downloads from playback with / → Download current episode"
+        />
+        <Box marginTop={1}>
+          <Text color={palette.muted} dimColor>
+            Switch to Queue (2) to see active downloads
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // TypeScript narrowing: shelf is guaranteed here because loading/empty returned above
+  if (!shelf) return null;
 
   return (
     <Box flexDirection="column" flexGrow={1}>

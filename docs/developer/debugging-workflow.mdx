@@ -1,0 +1,138 @@
+# Debugging Workflow
+
+Kunai debugging should be evidence-first. Prefer diagnostics, structured traces, and focused live smokes over ad hoc `console.log` output in the Ink UI.
+
+## Fast Triage
+
+Use the in-app diagnostics overlay when the shell is running:
+
+```sh
+/diagnostics
+```
+
+Use it to check:
+
+- current provider and mode
+- provider attempt timeline
+- cache provenance
+- subtitle state
+- player/mpv state
+- network status
+- recent recovery actions
+
+## Export A Support Bundle
+
+Use:
+
+```sh
+/export-diagnostics
+```
+
+The bundle is redacted. It should include runtime metadata, capabilities, provider attempts, cache state, player failures, and recent diagnostic events. It must not include raw stream URLs, auth headers, cookies, tokens, signed query values, or private home-directory paths.
+
+## Report An Issue
+
+Use:
+
+```sh
+/report-issue
+```
+
+The flow should preview what will be included, ask for confirmation, write a redacted diagnostics bundle, and open the GitHub issue page with a safe prefilled summary. If opening a browser fails, Kunai should show the issue URL and local bundle path.
+
+## Structured Trace Debugging
+
+Use scoped JSON traces for reproducible provider/playback bugs:
+
+```sh
+KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Dune" --debug-json
+```
+
+Useful categories include:
+
+- `provider`
+- `playback`
+- `cache`
+- `subtitle`
+- `download`
+- `offline`
+- `network`
+
+Use `--debug-json` when you need an artifact to compare between runs. Use `/diagnostics` when you need quick state while staying in the app.
+
+## Live Provider Smokes
+
+Provider live checks are opt-in. They are for provider drift, CDN behavior, and release-candidate checks, not default CI.
+
+```sh
+KITSUNE_CLEAR_CACHE=1 KITSUNE_DEBUG=1 bun run test:live:vidking 1 2 2> debug.log
+KITSUNE_CLEAR_CACHE=1 KITSUNE_DEBUG=1 bun run test:live:rivestream
+KITSUNE_CLEAR_CACHE=1 KITSUNE_DEBUG=1 bun run test:live:allanime
+KITSUNE_CLEAR_CACHE=1 KITSUNE_DEBUG=1 bun run test:live:miruro
+```
+
+Compare live smoke output against the provider attempt timeline and cache provenance before changing provider code.
+
+## Breakpoints
+
+Use Bun inspect when stepping through orchestration:
+
+```sh
+bun --inspect-brk apps/cli/src/main.ts --debug
+```
+
+Attach Chrome DevTools or VS Code to the printed inspector URL. Prefer breakpoints in service/domain code over Ink render functions.
+
+Good breakpoint targets:
+
+- provider module `resolve()` functions
+- `PlaybackResolveService`
+- `PlaybackResolveCoordinator`
+- recovery policy decisions
+- cache health checks
+- player result classification
+- offline library source selection
+
+## Debugging By Symptom
+
+### Provider resolve failed
+
+1. Open `/diagnostics`.
+2. Check provider attempt timeline and failure class.
+3. Run the matching live provider smoke if provider drift is suspected.
+4. Use `KUNAI_TRACE=provider,cache --debug-json` for repeatable traces.
+
+### Playback started but died
+
+1. Check mpv/player section in `/diagnostics`.
+2. Look for `expired-stream`, `network-buffering`, `player-exited`, or IPC failures.
+3. Use refresh/recover before changing provider code.
+4. Check whether cache was stale, revalidated, or refetched.
+
+### Network unavailable
+
+1. Confirm network snapshot in diagnostics.
+2. Do not degrade provider health from local network evidence.
+3. Suggest offline library or retry.
+4. Use live provider smokes only after general connectivity is confirmed.
+
+### Offline library issue
+
+1. Check artifact status: ready, missing, invalid file.
+2. Verify local subtitle, timing, thumbnail, and cached poster fields.
+3. Do not trigger online repair unless the user requested an online action.
+
+## Logging Rules
+
+- Do not add noisy `console.log` calls in Ink render paths.
+- Use diagnostics events for user-visible runtime facts.
+- Use trace events for developer debugging.
+- Use scratchpads for noisy provider research.
+- Redact before storage/export, and redact again before reporting.
+
+## Related Plans
+
+- [Production recovery hardening](../../.plans/production-recovery-hardening.md)
+- [Recovery policy engine](../../.plans/recovery-policy-engine.md)
+- [Diagnostics reporting UX](../../.plans/diagnostics-reporting-ux.md)
+- [Provider/player harness test matrix](../../.plans/provider-player-harness-test-matrix.md)

@@ -1,4 +1,4 @@
-import { fuzzyMatch } from "./fuzzy-match";
+import { rankFuzzyMatches } from "./fuzzy-match";
 import type { SessionState } from "./SessionState";
 
 export type AppCommandId =
@@ -376,11 +376,11 @@ export function suggestCommands(
   const normalized = input.trim().replace(/^\//, "").toLowerCase();
   const pool = COMMANDS.filter((command) => allowed.includes(command.id));
   if (!normalized) return pool;
-  return pool.filter(
-    (command) =>
-      command.aliases.some((alias) => alias.includes(normalized)) ||
-      fuzzyMatch(normalized, command.label),
-  );
+  return rankFuzzyMatches(pool, normalized, (command) => [
+    ...command.aliases.map((alias) => ({ value: alias, weight: -4 })),
+    { value: command.label, weight: 0 },
+    { value: command.description, weight: 14 },
+  ]);
 }
 
 export function resolveCommands(

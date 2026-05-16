@@ -67,4 +67,50 @@ describe("checkStreamHealth", () => {
 
     expect(healthy).toBe(false);
   });
+
+  test("external abort cancels a slow health probe promptly", async () => {
+    const controller = new AbortController();
+    const calls: RequestInit[] = [];
+    const fetchImpl: StreamHealthFetch = async (_url, init) => {
+      calls.push(init);
+      return new Promise((_resolve, reject) => {
+        init.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("cancelled", "AbortError")),
+          { once: true },
+        );
+      });
+    };
+
+    const resultPromise = checkStreamHealth({
+      url: "https://cdn.example/slow.m3u8",
+      fetchImpl,
+      timeoutMs: 5_000,
+      signal: controller.signal,
+    });
+    controller.abort("user-cancelled");
+
+    expect(await resultPromise).toBe(false);
+    expect(calls).toHaveLength(1);
+    expect(calls.every((call) => call.signal?.aborted)).toBe(true);
+  });
+
+  test("already-aborted health probe does not start a fetch", async () => {
+    const controller = new AbortController();
+    controller.abort("user-cancelled");
+    let calls = 0;
+
+    const healthy = await checkStreamHealth({
+      url: "https://cdn.example/slow.m3u8",
+      fetchImpl: async () => {
+        calls += 1;
+        return response(200);
+      },
+      timeoutMs: 5_000,
+      signal: controller.signal,
+    });
+
+    expect(healthy).toBe(false);
+    expect(calls).toBe(0);
+  });
 });

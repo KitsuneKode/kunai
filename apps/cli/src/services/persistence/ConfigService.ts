@@ -13,6 +13,7 @@ export type PresenceProvider = "off" | "discord";
 export type PresencePrivacy = "full" | "private";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
 export type AutoDownloadMode = "off" | "next" | "season";
+export type RecoveryMode = "guided" | "fallback-first" | "manual";
 
 export interface MediaLanguageProfile {
   audio: string;
@@ -89,6 +90,12 @@ export interface KitsuneConfig {
   autoDownloadNextCount: number;
   /** Surface completed watched downloads as cleanup candidates after the grace period. Default false. */
   autoCleanupWatched: boolean;
+  /** Playback/provider recovery behavior. Default guided. */
+  recoveryMode: RecoveryMode;
+  /** Render/fetch artwork previews when terminal capability allows it. Default true. */
+  artworkPreviewsEnabled: boolean;
+  /** Best-effort cache poster artwork for downloaded entries. Default true. */
+  offlineArtworkCacheEnabled: boolean;
   /** Days to keep watched downloads before startup cleanup may suggest them. */
   autoCleanupGraceDays: number;
   /** Completed download job ids protected from watched-download cleanup suggestions. */

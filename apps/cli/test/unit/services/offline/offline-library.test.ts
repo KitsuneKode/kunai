@@ -12,6 +12,7 @@ import {
   groupOfflineLibraryEntries,
   formatOfflineSecondaryLine,
   offlineStatusIcon,
+  resolveOfflineJobPreviewImage,
   resolveOfflineArtifactStatus,
 } from "@/services/offline/offline-library";
 import type { DownloadJobRecord } from "@kunai/storage";
@@ -91,44 +92,47 @@ describe("offline-library helpers", () => {
   });
 
   test("offline library groups completed files by title before showing episodes", () => {
-    const groups = groupOfflineLibraryEntries([
-      {
-        job: minimalJob({
-          id: "bb-1",
-          titleId: "bb",
-          titleName: "Breaking Bad",
-          season: 5,
-          episode: 1,
-          fileSize: 100,
-          introSkipJson: JSON.stringify({ openings: [] }),
-          posterUrl: "https://img.example/bb.jpg",
-          completedAt: "2026-05-12T00:00:00.000Z",
-        }),
-        status: "ready",
-      },
-      {
-        job: minimalJob({
-          id: "bb-2",
-          titleId: "bb",
-          titleName: "Breaking Bad",
-          season: 5,
-          episode: 2,
-          completedAt: "2026-05-13T00:00:00.000Z",
-        }),
-        status: "missing",
-      },
-      {
-        job: minimalJob({
-          id: "solo-1",
-          titleId: "solo",
-          titleName: "Solo Leveling",
-          season: 1,
-          episode: 1,
-          completedAt: "2026-05-14T00:00:00.000Z",
-        }),
-        status: "ready",
-      },
-    ]);
+    const groups = groupOfflineLibraryEntries(
+      [
+        {
+          job: minimalJob({
+            id: "bb-1",
+            titleId: "bb",
+            titleName: "Breaking Bad",
+            season: 5,
+            episode: 1,
+            fileSize: 100,
+            introSkipJson: JSON.stringify({ openings: [] }),
+            posterUrl: "https://img.example/bb.jpg",
+            completedAt: "2026-05-12T00:00:00.000Z",
+          }),
+          status: "ready",
+        },
+        {
+          job: minimalJob({
+            id: "bb-2",
+            titleId: "bb",
+            titleName: "Breaking Bad",
+            season: 5,
+            episode: 2,
+            completedAt: "2026-05-13T00:00:00.000Z",
+          }),
+          status: "missing",
+        },
+        {
+          job: minimalJob({
+            id: "solo-1",
+            titleId: "solo",
+            titleName: "Solo Leveling",
+            season: 1,
+            episode: 1,
+            completedAt: "2026-05-14T00:00:00.000Z",
+          }),
+          status: "ready",
+        },
+      ],
+      { allowRemoteArtwork: true },
+    );
 
     expect(groups.map((group) => group.titleName)).toEqual(["Solo Leveling", "Breaking Bad"]);
     expect(formatOfflineLibraryGroupLabel(groups[1]!)).toBe("Breaking Bad  ·  2 episodes");
@@ -138,6 +142,33 @@ describe("offline-library helpers", () => {
     expect(formatOfflineLibraryGroupDetail(groups[1]!)).toContain("timing cached");
     expect(groups[1]!.previewImageUrl).toBe("https://img.example/bb.jpg");
     expect(groups[1]!.entries.map((entry) => entry.job.episode)).toEqual([1, 2]);
+  });
+
+  test("offline previews prefer local thumbnails and avoid remote artwork while offline", () => {
+    const posterOnly = minimalJob({
+      id: "poster",
+      posterUrl: "https://img.example/poster.jpg",
+    });
+    const thumbnail = minimalJob({
+      id: "thumb",
+      posterUrl: "https://img.example/poster.jpg",
+      thumbnailPath: "/downloads/demo.thumbnail.jpg",
+    });
+
+    expect(resolveOfflineJobPreviewImage(thumbnail)).toBe("/downloads/demo.thumbnail.jpg");
+    expect(resolveOfflineJobPreviewImage(posterOnly)).toBeUndefined();
+    expect(
+      resolveOfflineJobPreviewImage(posterOnly, {
+        networkAvailable: true,
+        artworkPreviewsEnabled: true,
+      }),
+    ).toBe("https://img.example/poster.jpg");
+    expect(
+      groupOfflineLibraryEntries([{ job: posterOnly, status: "ready" }], {
+        networkAvailable: false,
+        artworkPreviewsEnabled: true,
+      })[0]?.previewImageUrl,
+    ).toBeUndefined();
   });
 
   test("artifact hydration marks readable non-empty files as ready", async () => {

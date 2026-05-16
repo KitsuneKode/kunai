@@ -1,6 +1,6 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { Container } from "@/container";
-import { fuzzyMatch } from "@/domain/session/fuzzy-match";
+import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import type {
   AutoDownloadMode,
@@ -177,24 +177,27 @@ export function RootOverlayShell({
           badge: option.badge,
         }))
       : [];
-  const filteredProviderOptions = providerOptions.filter((option) => {
-    const filter = filterQuery.trim().toLowerCase();
-    if (filter.length === 0) return true;
-    return fuzzyMatch(filter, `${option.label} ${option.detail ?? ""}`);
-  });
-  const filteredGenericPickerOptions = genericPickerOptions.filter((option) => {
-    const filter = pickerFilterQuery.trim().toLowerCase();
-    if (filter.length === 0) return true;
-    return fuzzyMatch(filter, `${option.label} ${option.detail ?? ""} ${option.badge ?? ""}`);
-  });
+  const filteredProviderOptions = rankFuzzyMatches(providerOptions, filterQuery, (option) => [
+    { value: option.label, weight: 0 },
+    { value: option.detail, weight: 8 },
+  ]);
+  const filteredGenericPickerOptions = rankFuzzyMatches(
+    genericPickerOptions,
+    pickerFilterQuery,
+    (option) => [
+      { value: option.label, weight: 0 },
+      { value: option.detail, weight: 8 },
+      { value: option.badge, weight: 12 },
+    ],
+  );
   const filteredHistoryOptions =
     overlay.type === "history"
       ? buildHistoryPickerOptions(
-          historySelections
-            .filter(({ entry }) => {
+          rankFuzzyMatches(
+            historySelections.filter(({ entry }) => {
               const filter = filterQuery.trim().toLowerCase();
+              const isCompleted = entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
               if (filter.length > 0) {
-                const isCompleted = entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
                 if (filter === "completed" && isCompleted) return true;
                 if (filter === "watching" && !isCompleted) return true;
                 return fuzzyMatch(
@@ -203,12 +206,20 @@ export function RootOverlayShell({
                 );
               }
 
-              const isCompleted = entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
               if (historyFilterMode === "completed" && !isCompleted) return false;
               if (historyFilterMode === "watching" && isCompleted) return false;
               return true;
-            })
-            .map(({ titleId, entry }) => [titleId, entry] as const),
+            }),
+            filterQuery.trim().toLowerCase() === "completed" ||
+              filterQuery.trim().toLowerCase() === "watching"
+              ? ""
+              : filterQuery,
+            ({ entry }) => [
+              { value: entry.title, weight: 0 },
+              { value: entry.provider, weight: 8 },
+              { value: `s${entry.season}e${entry.episode}`, weight: 4 },
+            ],
+          ).map(({ titleId, entry }) => [titleId, entry] as const),
         )
       : [];
   const settingsPanel =
@@ -232,12 +243,14 @@ export function RootOverlayShell({
             busy: settingsBusy,
           } satisfies Extract<BrowseOverlay, { type: "settings" }>)
       : null;
-  const filteredSettingsOptions =
-    settingsPanel?.options.filter((option) => {
-      const filter = filterQuery.trim().toLowerCase();
-      if (filter.length === 0) return true;
-      return fuzzyMatch(filter, `${option.label} ${option.detail ?? ""}`);
-    }) ?? [];
+  const filteredSettingsOptions = rankFuzzyMatches(
+    settingsPanel?.options ?? [],
+    filterQuery,
+    (option) => [
+      { value: option.label, weight: 0 },
+      { value: option.detail, weight: 8 },
+    ],
+  );
   const title = getRootOverlayTitle(overlay);
   const subtitle = getRootOverlaySubtitle({
     overlay,

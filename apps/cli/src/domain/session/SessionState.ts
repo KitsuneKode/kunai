@@ -8,7 +8,7 @@
 import type { PlaybackProblem } from "../playback/playback-problem";
 import type { EpisodeInfo, SearchResult, StreamInfo, TitleInfo } from "../types";
 import type { AppCommandId } from "./command-registry";
-import { fuzzyMatch } from "./fuzzy-match";
+import { rankFuzzyMatches } from "./fuzzy-match";
 import {
   DEFAULT_LAYOUT_PREFERENCES,
   DEFAULT_VIEWPORT,
@@ -715,9 +715,11 @@ function filterPickerOptions(
 ): readonly OverlayPickerOption[] {
   const normalized = filterQuery.trim().toLowerCase();
   if (!normalized) return options;
-  return options.filter((option) =>
-    fuzzyMatch(normalized, `${option.label} ${option.detail ?? ""} ${option.badge ?? ""}`),
-  );
+  return rankFuzzyMatches(options, normalized, (option) => [
+    { value: option.label, weight: 0 },
+    { value: option.detail, weight: 8 },
+    { value: option.badge, weight: 12 },
+  ]);
 }
 
 function popPickerOverlay(modals: readonly OverlayState[], id: string): OverlayState[] {

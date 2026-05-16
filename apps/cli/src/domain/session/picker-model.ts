@@ -1,4 +1,4 @@
-import { fuzzyMatch } from "./fuzzy-match";
+import { rankFuzzyMatches } from "./fuzzy-match";
 import type { PickerModel, PickerModelOption, PickerModelRow } from "./PickerModel";
 
 export type BuildPickerModelInput<TValue extends string = string> = {
@@ -48,11 +48,12 @@ function filterPickerOptions<TValue extends string>(
   const normalized = query.trim().replace(/^\//, "").toLowerCase();
   if (!normalized) return options;
 
-  return options.filter((option) =>
-    [option.label, option.detail, option.group, ...(option.keywords ?? [])]
-      .filter((value): value is string => Boolean(value))
-      .some((value) => fuzzyMatch(normalized, value)),
-  );
+  return rankFuzzyMatches(options, normalized, (option) => [
+    ...(option.keywords ?? []).map((keyword) => ({ value: keyword, weight: -4 })),
+    { value: option.label, weight: 0 },
+    { value: option.detail, weight: 12 },
+    { value: option.group, weight: 20 },
+  ]);
 }
 
 function orderPickerOptions<TValue extends string>(

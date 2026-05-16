@@ -12,6 +12,7 @@ import type {
   QuitNearEndThresholdMode,
   PresencePrivacy,
   PresenceProvider,
+  RecoveryMode,
 } from "./ConfigService";
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
@@ -60,6 +61,7 @@ export class ConfigServiceImpl implements ConfigService {
       movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
       autoDownloadNextCount: normalizeAutoDownloadNextCount(loaded.autoDownloadNextCount),
       protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
+      recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
     };
     return service;
   }
@@ -189,6 +191,18 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.autoCleanupWatched;
   }
 
+  get recoveryMode(): RecoveryMode {
+    return this.config.recoveryMode;
+  }
+
+  get artworkPreviewsEnabled(): boolean {
+    return this.config.artworkPreviewsEnabled;
+  }
+
+  get offlineArtworkCacheEnabled(): boolean {
+    return this.config.offlineArtworkCacheEnabled;
+  }
+
   get autoCleanupGraceDays(): number {
     return this.config.autoCleanupGraceDays;
   }
@@ -279,6 +293,9 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.protectedDownloadJobIds !== undefined
         ? { protectedDownloadJobIds: normalizeStringList(partial.protectedDownloadJobIds) }
         : null),
+      ...(partial.recoveryMode !== undefined
+        ? { recoveryMode: normalizeRecoveryMode(partial.recoveryMode) }
+        : null),
     };
   }
 
@@ -314,4 +331,8 @@ export class ConfigServiceImpl implements ConfigService {
 function normalizeStringList(values: readonly string[] | undefined): readonly string[] {
   if (!Array.isArray(values)) return [];
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function normalizeRecoveryMode(value: unknown): RecoveryMode {
+  return value === "fallback-first" || value === "manual" ? value : "guided";
 }
