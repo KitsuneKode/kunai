@@ -2,7 +2,7 @@ import { Box, Text, useStdout } from "ink";
 import React from "react";
 
 import { truncateLine } from "./shell-text";
-import { hotkeyLabel, palette } from "./shell-theme";
+import { APP_LABEL, hotkeyLabel, palette } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
 
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
@@ -276,6 +276,11 @@ export const ResizeBlocker = React.memo(function ResizeBlocker({
         {`Terminal is ${cols}×${rows}  ·  needs ${minColumns}×${minRows}`}
       </Text>
       <Text color={palette.dim}>Zoom out or resize the terminal window.</Text>
+      <Box marginTop={1}>
+        <Text color={palette.dim} dimColor>
+          {APP_LABEL}
+        </Text>
+      </Box>
     </Box>
   );
 });

@@ -120,11 +120,9 @@ export function InputField({
   onRedraw?: () => void;
 }) {
   const { stdout } = useStdout();
-  const wideField = (stdout.columns ?? 0) >= 112;
   const fieldWidth = Math.max(20, maxWidth ?? (stdout.columns ?? 80) - 8);
   const textWidth = Math.max(4, fieldWidth - 8);
-  const hintWidth = Math.max(12, fieldWidth - (wideField ? 18 : 2));
-  const renderedHint = hint ? truncateLine(hint, hintWidth) : undefined;
+  const renderedHint = hint ? truncateLine(hint, Math.max(12, fieldWidth - 4)) : undefined;
   const editor = useLineEditor({
     value,
     onChange,
@@ -152,13 +150,8 @@ export function InputField({
 
   return (
     <Box marginTop={1} flexDirection="column">
-      <Box justifyContent="space-between">
+      <Box>
         <Text color={palette.muted}>{label}</Text>
-        {renderedHint && wideField ? (
-          <Text color={palette.gray} dimColor>
-            {renderedHint}
-          </Text>
-        ) : null}
       </Box>
       <Box marginTop={1} flexDirection="column">
         <Box paddingX={1}>
@@ -177,7 +170,7 @@ export function InputField({
           </Text>
         </Box>
       </Box>
-      {renderedHint && !wideField ? (
+      {renderedHint ? (
         <Box marginTop={1}>
           <Text color={palette.gray} dimColor>
             {renderedHint}
