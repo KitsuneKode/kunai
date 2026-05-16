@@ -615,6 +615,9 @@ export class PersistentMpvSession {
               active.onPlaybackEvent?.({ type: "player-ready" });
               active.onPlayerReady?.();
             }
+            if (name === "pause" && typeof value === "boolean") {
+              active.onPlaybackEvent?.({ type: value ? "playback-paused" : "playback-resumed" });
+            }
           },
           onEndFile: ({ reason, observedAt }) => {
             void this.handlePlaybackEnded(reason, observedAt);
@@ -673,6 +676,7 @@ export class PersistentMpvSession {
       void this.ipcSession.send(["observe_property", 200, "user-data/kunai-request"], 1_000);
       void this.ipcSession.send(["observe_property", 201, "user-data/kunai-resume-choice"], 1_000);
       void this.ipcSession.send(["observe_property", 202, "user-data/kunai-track-changed"], 1_000);
+      void this.ipcSession.send(["observe_property", 203, "pause"], 1_000);
     }
     this.queueReadyWork(this.initialOptions);
   }

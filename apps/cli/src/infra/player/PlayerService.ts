@@ -40,6 +40,8 @@ export type PlayerPlaybackEvent =
   | { type: "late-subtitles-attached"; trackCount: number }
   | { type: "player-ready" }
   | { type: "playback-started" }
+  | { type: "playback-paused" }
+  | { type: "playback-resumed" }
   | {
       type: "stream-stalled";
       secondsWithoutProgress: number;

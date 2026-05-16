@@ -2102,6 +2102,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               startedAtMs: Date.now(),
               subtitleCount: event.trackCount,
             });
+          } else if (event.type === "playback-paused") {
+            context.container.presence.updatePlayback({
+              mode: stateManager.getState().mode,
+              title,
+              episode,
+              providerId: stateManager.getState().provider,
+              stream,
+              startedAtMs: Date.now(),
+              paused: true,
+            });
+          } else if (event.type === "playback-resumed") {
+            context.container.presence.updatePlayback({
+              mode: stateManager.getState().mode,
+              title,
+              episode,
+              providerId: stateManager.getState().provider,
+              stream,
+              startedAtMs: Date.now(),
+            });
           } else if (event.type === "track-changed") {
             // Keep session state aligned when users switch tracks directly in mpv.
             const currentStream = stateManager.getState().stream;
