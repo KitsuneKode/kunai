@@ -5,7 +5,16 @@ import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
 import type { DownloadJobRecord } from "@kunai/storage";
 import { Box, Text, useInput } from "ink";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+
+function refreshJobLists(container: Container) {
+  return {
+    activeJobs: container.downloadService.listActive(50).filter((j) => j.status === "running"),
+    queuedJobs: container.downloadService.listActive(50).filter((j) => j.status === "queued"),
+    completedJobs: container.downloadService.listCompleted(5),
+    failedJobs: container.downloadService.listFailed(10),
+  };
+}
 
 /**
  * Inline download manager content for rendering inside RootOverlayShell.
@@ -32,17 +41,29 @@ export function DownloadManagerContent({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
 
-  useEffect(() => {
-    const update = () => {
-      setActiveJobs(container.downloadService.listActive(50).filter((j) => j.status === "running"));
-      setQueuedJobs(container.downloadService.listActive(50).filter((j) => j.status === "queued"));
-      setCompletedJobs(container.downloadService.listCompleted(5));
-      setFailedJobs(container.downloadService.listFailed(10));
-    };
-    update();
-    const interval = setInterval(update, 750);
-    return () => clearInterval(interval);
+  const refresh = useCallback(() => {
+    const lists = refreshJobLists(container);
+    setActiveJobs(lists.activeJobs);
+    setQueuedJobs(lists.queuedJobs);
+    setCompletedJobs(lists.completedJobs);
+    setFailedJobs(lists.failedJobs);
   }, [container]);
+
+  useEffect(() => {
+    refresh();
+    const unsub = container.downloadService.onEvent((event) => {
+      if (
+        event.type === "enqueued" ||
+        event.type === "complete" ||
+        event.type === "failed" ||
+        event.type === "aborted" ||
+        event.type === "deleted"
+      ) {
+        refresh();
+      }
+    });
+    return unsub;
+  }, [container, refresh]);
 
   const allJobs = [...activeJobs, ...queuedJobs, ...completedJobs, ...failedJobs];
 
