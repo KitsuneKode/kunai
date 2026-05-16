@@ -886,9 +886,16 @@ export function RootOverlayShell({
             />
           ) : null}
           <ShellFooter
-            taskLabel="Library  ·  1 library  2 queue  ·  d toggle downloads  ·  Esc closes"
-            actions={footerActions}
-            mode="detailed"
+            taskLabel="Library"
+            actions={[
+              { key: "↑↓", label: "select", action: "search" as const },
+              { key: "enter", label: "open", action: "search" as const },
+              { key: "d", label: "downloads", action: "search" as const },
+              { key: "a", label: "auto", action: "search" as const },
+              { key: "/", label: "commands", action: "command-mode" as const },
+              { key: "esc", label: "close", action: "quit" as const },
+            ]}
+            mode="minimal"
             commandMode={commandMode}
           />
         </Box>

@@ -1,5 +1,5 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
-import { EmptyState, InlineBadge, ResizeBlocker, ShellFooter } from "@/app-shell/shell-primitives";
+import { EmptyState, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
@@ -59,28 +59,24 @@ export function LibraryShell({
     return <ResizeBlocker minColumns={viewport.minColumns} minRows={viewport.minRows} />;
   }
 
+  const autoLabel =
+    autoDownload === "next" ? "next ep" : autoDownload === "season" ? "season" : "off";
+
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <Box>
-        <InlineBadge label="panel library" tone="success" />
-        <InlineBadge
-          label={downloadsEnabled ? "downloads on" : "downloads off"}
-          tone={downloadsEnabled ? "success" : "warning"}
-        />
-        <InlineBadge
-          label={`auto: ${autoDownload === "next" ? "next ep" : autoDownload === "season" ? "season" : "off"}`}
-          tone={autoDownload === "off" ? "neutral" : "info"}
-        />
-      </Box>
-
-      <Box marginTop={1} flexDirection="row" columnGap={2}>
+      {/* Tab bar */}
+      <Box flexDirection="row" columnGap={3}>
         <Text color={tab === "library" ? palette.teal : palette.gray} bold={tab === "library"}>
-          {tab === "library" ? "▸ " : "  "}1 Library
+          {tab === "library" ? "▸ " : "  "}Library
         </Text>
         <Text color={tab === "queue" ? palette.teal : palette.gray} bold={tab === "queue"}>
-          {tab === "queue" ? "▸ " : "  "}2 Queue
+          {tab === "queue" ? "▸ " : "  "}Queue
         </Text>
       </Box>
+      {/* Single-line status */}
+      <Text color={palette.gray} dimColor>
+        {downloadsEnabled ? "downloads on" : "downloads off"} · auto: {autoLabel}
+      </Text>
 
       <Box marginTop={1} flexDirection="column" flexGrow={1}>
         {tab === "queue" ? (
@@ -93,18 +89,7 @@ export function LibraryShell({
           <LibraryTab container={container} />
         )}
       </Box>
-
-      <ShellFooter
-        taskLabel="Library"
-        mode="minimal"
-        actions={[
-          { key: "↑↓", label: "select", action: "search" },
-          { key: "enter", label: "browse", action: "search" },
-          { key: "d", label: "toggle dl", action: "search" },
-          { key: "a", label: "cycle auto", action: "search" },
-          { key: "esc", label: "close", action: "quit" },
-        ]}
-      />
+      {/* No ShellFooter here — RootOverlayShell owns the single footer */}
     </Box>
   );
 }
