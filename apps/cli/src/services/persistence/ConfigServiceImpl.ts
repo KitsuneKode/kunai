@@ -41,6 +41,8 @@ function normalizeLanguageProfile(
 
 export class ConfigServiceImpl implements ConfigService {
   private config: KitsuneConfig;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private saveTimeoutMs = 300;
 
   constructor(private store: ConfigStore) {
     this.config = { ...DEFAULT_CONFIG };
@@ -280,8 +282,27 @@ export class ConfigServiceImpl implements ConfigService {
     };
   }
 
+  private savePending: Promise<void> | null = null;
+
   async save(): Promise<void> {
-    await this.store.save(this.config);
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+    }
+    if (this.savePending) {
+      return this.savePending;
+    }
+    this.savePending = new Promise<void>((resolve) => {
+      this.saveTimer = setTimeout(async () => {
+        this.saveTimer = null;
+        try {
+          await this.store.save(this.config);
+        } finally {
+          this.savePending = null;
+          resolve();
+        }
+      }, this.saveTimeoutMs);
+    });
+    return this.savePending;
   }
 
   async reset(): Promise<void> {
