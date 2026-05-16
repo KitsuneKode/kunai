@@ -174,14 +174,13 @@ export function CommandPalette({
       <Box key={command.id}>
         <Text color={selected ? palette.teal : palette.gray}>{selected ? "❯ " : "  "}</Text>
         <Text
-          backgroundColor={selected ? palette.teal : undefined}
-          color={selected ? "black" : command.enabled ? palette.text : palette.gray}
+          color={selected ? palette.teal : command.enabled ? palette.text : palette.gray}
           bold={selected}
         >
           {truncateLine(alias, aliasWidth).padEnd(aliasWidth)}
         </Text>
         <Text color={selected ? palette.teal : palette.gray}> </Text>
-        <Text color={command.enabled ? (selected ? palette.text : palette.muted) : palette.gray}>
+        <Text color={command.enabled ? (selected ? "white" : palette.muted) : palette.gray}>
           {detail}
         </Text>
       </Box>

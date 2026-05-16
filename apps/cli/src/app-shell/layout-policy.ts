@@ -25,9 +25,9 @@ const KIND_MINIMUMS: Record<ShellViewportKind, { minColumns: number; minRows: nu
  *
  * Breakpoints:
  * - ultraCompact: <92 cols or <28 rows  (list-only, no companion, minimal chrome)
- * - compact:      <110 cols or <34 rows (reduced companion, smaller lists)
- * - mediumBrowse: 132-163 cols + >=30 rows  (compact side companion, no poster)
- * - wideBrowse:     164+ cols + >=30 rows   (full side companion with poster)
+ * - compact:      <110 cols or <34 rows (reduced chrome, no side companion)
+ * - mediumBrowse: 110-139 cols + >=30 rows  (compact side companion with small poster)
+ * - wideBrowse:     140+ cols + >=30 rows   (full side companion with poster)
  */
 export function getShellViewportPolicy(
   kind: ShellViewportKind,
@@ -38,9 +38,9 @@ export function getShellViewportPolicy(
   const forceCompact = options.forceCompact ?? false;
   const compact = forceCompact || columns < 110 || rows < 34;
   const ultraCompact = forceCompact || columns < 92 || rows < 28;
-  const wideBrowse = !forceCompact && kind === "browse" && columns >= 164 && rows >= 30;
+  const wideBrowse = !forceCompact && kind === "browse" && columns >= 140 && rows >= 30;
   const mediumBrowse =
-    !forceCompact && kind === "browse" && !wideBrowse && columns >= 132 && rows >= 30;
+    !forceCompact && kind === "browse" && !wideBrowse && columns >= 110 && rows >= 30;
 
   const { minColumns, minRows } = KIND_MINIMUMS[kind];
 

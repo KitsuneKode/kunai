@@ -34,14 +34,14 @@ describe("getShellViewportPolicy", () => {
   });
 
   test("enables wide browse layout only on sufficiently large terminals", () => {
-    expect(getShellViewportPolicy("browse", 164, 30).wideBrowse).toBe(true);
-    expect(getShellViewportPolicy("browse", 163, 30).wideBrowse).toBe(false);
+    expect(getShellViewportPolicy("browse", 140, 30).wideBrowse).toBe(true);
+    expect(getShellViewportPolicy("browse", 139, 30).wideBrowse).toBe(false);
   });
 
-  test("enables medium browse layout between 132 and 163 columns", () => {
-    expect(getShellViewportPolicy("browse", 132, 30).mediumBrowse).toBe(true);
-    expect(getShellViewportPolicy("browse", 131, 30).mediumBrowse).toBe(false);
-    expect(getShellViewportPolicy("browse", 164, 30).mediumBrowse).toBe(false);
+  test("enables medium browse layout between 110 and 139 columns", () => {
+    expect(getShellViewportPolicy("browse", 110, 30).mediumBrowse).toBe(true);
+    expect(getShellViewportPolicy("browse", 109, 30).mediumBrowse).toBe(false);
+    expect(getShellViewportPolicy("browse", 140, 30).mediumBrowse).toBe(false);
   });
 
   test("keeps playback policy separate from browse wide layout rules", () => {

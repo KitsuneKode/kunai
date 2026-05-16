@@ -1861,10 +1861,11 @@ function BrowseShell<T>({
   const [emptyMessage, setEmptyMessage] = useState("Type a title and press Enter to search.");
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const requestIdRef = useRef(0);
+  const showPoster = viewport.wideBrowse || viewport.mediumBrowse;
   const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
-    rows: 10,
-    cols: 24,
-    enabled: viewport.wideBrowse,
+    rows: viewport.wideBrowse ? 10 : 8,
+    cols: viewport.wideBrowse ? 24 : 18,
+    enabled: showPoster,
     debounceMs: 120,
   });
 
@@ -2470,12 +2471,12 @@ function BrowseShell<T>({
                 flexDirection="column"
                 width={previewWidth}
               >
-                {/* Poster only in wideBrowse; mediumBrowse skips it for space */}
-                {wideBrowse && poster.kind !== "none" ? (
+                {/* Poster in wideBrowse and mediumBrowse; compact poster for medium */}
+                {showPoster && poster.kind !== "none" ? (
                   <Box flexDirection="column" marginBottom={1}>
                     <Text>{poster.placeholder}</Text>
                   </Box>
-                ) : wideBrowse && selectedOption?.previewImageUrl ? (
+                ) : showPoster && selectedOption?.previewImageUrl ? (
                   <Box marginBottom={1}>
                     <Text color={posterState === "loading" ? palette.info : palette.dim} dimColor>
                       {posterState === "loading" ? "Loading artwork…" : "Artwork unavailable"}
