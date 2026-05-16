@@ -6,7 +6,9 @@ import {
 } from "@kunai/core";
 import type {
   ProviderFailure,
+  ProviderEpisodeOption,
   ProviderSourceCandidate,
+  ProviderSearchResult,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
@@ -20,6 +22,8 @@ import {
   resolveAnimeEpisodeString,
   resolveEpisodeSources,
   buildStreamHeaders,
+  fetchAllMangaEpisodeCatalog,
+  searchAllManga,
 } from "./api-client";
 import { allanimeManifest, ALLANIME_PROVIDER_ID } from "./manifest";
 
@@ -37,6 +41,51 @@ const EPISODE_CATALOG_CACHE_TTL_MS = 30 * 60 * 1000;
 export const allmangaProviderModule: CoreProviderModule = {
   providerId: ALLANIME_PROVIDER_ID,
   manifest: allanimeManifest,
+  async search(input, context): Promise<readonly ProviderSearchResult[] | null> {
+    const animeLang =
+      input.preferredAudioLanguage === "dub" || input.preferredAudioLanguage === "en"
+        ? ("dub" as const)
+        : ("sub" as const);
+    const results = await searchAllManga(
+      ALLANIME_API_URL,
+      ALLANIME_REFERER,
+      DEFAULT_UA,
+      input.query,
+      animeLang,
+      context.signal,
+    );
+    return results.map((result) => ({
+      id: result.id,
+      type: result.type,
+      title: result.title,
+      year: result.year,
+      overview: result.description,
+      posterPath: result.posterUrl ?? null,
+      metadataSource: result.aniListId ? "AniList" : "AllManga",
+      rating: result.averageScore ?? result.score ?? null,
+      popularity: result.popularity ?? null,
+      episodeCount: result.epCount,
+      availableAudioModes: result.availableAudioModes,
+      subtitleAvailability: result.availableAudioModes?.includes("sub") ? "hardsub" : "unknown",
+      englishTitle: result.englishTitle,
+      nativeTitle: result.nativeTitle,
+      altNames: result.altNames,
+    }));
+  },
+  async listEpisodes(input, context): Promise<readonly ProviderEpisodeOption[] | null> {
+    const mode =
+      input.preferredAudioLanguage === "dub" || input.preferredAudioLanguage === "en"
+        ? ("dub" as const)
+        : ("sub" as const);
+    return fetchAllMangaEpisodeCatalog({
+      apiUrl: ALLANIME_API_URL,
+      referer: ALLANIME_REFERER,
+      ua: DEFAULT_UA,
+      showId: input.title.id.replace("allanime:", ""),
+      mode,
+      signal: context.signal,
+    });
+  },
   async resolve(input, context) {
     if (input.mediaKind !== "anime") {
       return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {

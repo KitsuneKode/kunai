@@ -308,6 +308,43 @@ export interface ProviderRuntimeContext {
   emit?(event: ProviderTraceEvent): void;
 }
 
+export interface ProviderSearchInput {
+  readonly query: string;
+  readonly preferredAudioLanguage?: string;
+  readonly preferredSubtitleLanguage?: string;
+}
+
+export interface ProviderSearchResult {
+  readonly id: string;
+  readonly type: "movie" | "series";
+  readonly title: string;
+  readonly year?: string;
+  readonly overview?: string;
+  readonly posterPath?: string | null;
+  readonly metadataSource?: string;
+  readonly rating?: number | null;
+  readonly popularity?: number | null;
+  readonly episodeCount?: number;
+  readonly availableAudioModes?: readonly ("sub" | "dub")[];
+  readonly subtitleAvailability?: "hardsub" | "softsub" | "unknown";
+  readonly englishTitle?: string;
+  readonly nativeTitle?: string;
+  readonly altNames?: readonly string[];
+}
+
+export interface ProviderEpisodeListInput {
+  readonly title: TitleIdentity;
+  readonly preferredAudioLanguage?: string;
+  readonly preferredSubtitleLanguage?: string;
+}
+
+export interface ProviderEpisodeOption {
+  readonly index: number;
+  readonly label: string;
+  readonly detail?: string;
+  readonly totalEpisodeCount?: number;
+}
+
 export interface ProviderResolveResult {
   readonly status: "resolved" | "exhausted";
   readonly providerId: ProviderId;
@@ -557,6 +594,14 @@ function truncateProviderFailureDetail(value: string, maxLength: number): string
 export interface ProviderModule<TContext extends ProviderRuntimeContext = ProviderRuntimeContext> {
   readonly providerId: ProviderId;
   resolve(input: ProviderResolveInput, context: TContext): Promise<ProviderResolveResult>;
+  search?(
+    input: ProviderSearchInput,
+    context: TContext,
+  ): Promise<readonly ProviderSearchResult[] | null>;
+  listEpisodes?(
+    input: ProviderEpisodeListInput,
+    context: TContext,
+  ): Promise<readonly ProviderEpisodeOption[] | null>;
 }
 
 export interface PlaybackRecoveryEvent {

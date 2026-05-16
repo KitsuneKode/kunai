@@ -234,6 +234,54 @@ describe("playback-watchdog", () => {
     watchdog.stop();
   });
 
+  test("can emit a fresh stream stall after a seek resolves without progress", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 500,
+      seekStallAfterMs: 300,
+      cacheStallAfterMs: 2_000,
+    });
+
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 30,
+      durationSeconds: 120,
+    });
+
+    nowMs = 600;
+    runTimers();
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(1);
+
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 700,
+      positionSeconds: 30,
+      durationSeconds: 120,
+      seeking: true,
+    });
+    nowMs = 800;
+    runTimers();
+    nowMs = 1_100;
+    runTimers();
+    expect(events.filter((event) => event.type === "seek-stalled")).toHaveLength(1);
+
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 1_200,
+      positionSeconds: 30,
+      durationSeconds: 120,
+      seeking: false,
+    });
+    nowMs = 1_800;
+    runTimers();
+
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(2);
+
+    watchdog.stop();
+  });
+
   test("emits throttled network samples for passive speed diagnostics", () => {
     const events: PlayerPlaybackEvent[] = [];
     const watchdog = createPlaybackWatchdog((event) => events.push(event), {

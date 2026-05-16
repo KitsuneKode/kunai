@@ -161,7 +161,16 @@ export function createPlaybackWatchdog(
 
   return {
     observe(sample) {
+      const wasSeeking = Boolean(latest?.seeking);
       latest = sample;
+      if (!wasSeeking && sample.seeking) {
+        emittedStreamStall = false;
+      }
+      if (wasSeeking && !sample.seeking) {
+        lastProgressAt = sample.observedAt;
+        lastCacheProgressAt = sample.observedAt;
+        emittedStreamStall = false;
+      }
       if (
         sample.demuxerViaNetwork === true &&
         sample.observedAt - lastNetworkSampleAt >= networkSampleEveryMs

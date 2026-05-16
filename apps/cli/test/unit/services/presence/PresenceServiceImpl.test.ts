@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -39,6 +39,16 @@ function createDiagnostics(): DiagnosticsStore & { messages: string[] } {
 }
 
 describe("PresenceServiceImpl", () => {
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  const originalDateNow = Date.now;
+
+  afterEach(() => {
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+    Date.now = originalDateNow;
+  });
+
   test("stays disabled by default", async () => {
     const diagnostics = createDiagnostics();
     const service = new PresenceServiceImpl({
@@ -192,5 +202,42 @@ describe("PresenceServiceImpl", () => {
       detail: "connected to local Discord client",
       canConnect: true,
     });
+  });
+
+  test("browsing updates honor elapsed reconnect backoff and start heartbeat", async () => {
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnosticsStore: diagnostics,
+    });
+    const activities: Record<string, unknown>[] = [];
+    let intervalCount = 0;
+    globalThis.setInterval = ((_callback: (...args: unknown[]) => void) => {
+      intervalCount += 1;
+      return intervalCount as unknown as ReturnType<typeof setInterval>;
+    }) as unknown as typeof setInterval;
+    globalThis.clearInterval = (() => {}) as typeof clearInterval;
+    Date.now = () => 10_000;
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      discordClient: {
+        async login() {},
+        async setActivity(activity: Record<string, unknown>) {
+          activities.push(activity);
+        },
+        async clearActivity() {},
+        async destroy() {},
+        on() {},
+      },
+      unavailableUntilRestart: true,
+      unavailableRetryAtMs: 9_000,
+    });
+
+    await service.updateBrowsing({ view: "discover", detail: "Trending" });
+
+    expect(service.getStatus()).toBe("ready");
+    expect(activities).toHaveLength(1);
+    expect(intervalCount).toBe(1);
+    expect(service.getSnapshot().detail).toBe("connected to local Discord client");
   });
 });

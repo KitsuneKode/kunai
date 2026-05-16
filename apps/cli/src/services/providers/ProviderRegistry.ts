@@ -1,6 +1,5 @@
 import type { ProviderMetadata, ShellMode, TitleInfo } from "@/domain/types";
 import type { CoreProviderManifest, ProviderEngine } from "@kunai/core";
-import { fetchAllMangaEpisodeCatalog, searchAllManga } from "@kunai/providers";
 
 import { createProviderFromModule, type Provider } from "./Provider";
 
@@ -14,33 +13,22 @@ export interface ProviderRegistry {
   getMetadata(id: string): ProviderMetadata | undefined;
 }
 
-const ALLMANGA_API_URL = "https://api.allanime.day/api";
-const ALLMANGA_REFERER = "https://youtu-chan.com";
-const ALLMANGA_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
-
 export class ProviderRegistryImpl implements ProviderRegistry {
   private readonly providersById = new Map<string, Provider>();
 
   constructor(private readonly engine: ProviderEngine) {
     for (const module of engine.modules) {
-      const isAllManga = module.providerId === "allanime";
-
       const provider = createProviderFromModule(module, {
         mode: module.manifest.mediaKinds.includes("anime") ? "anime" : "series",
-        search: isAllManga
+        search: module.search
           ? async (query, opts, signal?) => {
-              const animeLang =
-                opts.audioPreference === "ja" || opts.audioPreference === "original"
-                  ? ("sub" as const)
-                  : ("dub" as const);
-              const results = await searchAllManga(
-                ALLMANGA_API_URL,
-                ALLMANGA_REFERER,
-                ALLMANGA_UA,
-                query,
-                animeLang,
-                signal,
+              const results = await module.search?.(
+                {
+                  query,
+                  preferredAudioLanguage: opts.audioPreference,
+                  preferredSubtitleLanguage: opts.subtitlePreference,
+                },
+                { now: () => new Date().toISOString(), signal },
               );
               if (!results) return null;
               return results.map((r): import("@/domain/types").SearchResult => ({
@@ -55,30 +43,33 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                     .map((v) => ({ kind: "synonym" as const, value: v })),
                 ],
                 year: r.year ?? "",
-                overview: r.description ?? "",
-                posterPath: r.posterUrl ?? null,
-                posterSource: r.posterUrl ? ("AniList" as const) : undefined,
-                metadataSource: r.aniListId ? "AniList" : "AllManga",
-                rating: r.averageScore ?? r.score ?? null,
+                overview: r.overview ?? "",
+                posterPath: r.posterPath ?? null,
+                posterSource: r.posterPath ? ("provider" as const) : undefined,
+                metadataSource: r.metadataSource,
+                rating: r.rating ?? null,
                 popularity: r.popularity ?? null,
-                episodeCount: r.epCount,
+                episodeCount: r.episodeCount,
                 availableAudioModes: r.availableAudioModes,
-                subtitleAvailability: r.availableAudioModes?.includes("sub")
-                  ? ("hardsub" as const)
-                  : ("unknown" as const),
+                subtitleAvailability: r.subtitleAvailability,
               }));
             }
           : undefined,
-        listEpisodes: isAllManga
+        listEpisodes: module.listEpisodes
           ? async (request, signal?) => {
-              return fetchAllMangaEpisodeCatalog({
-                apiUrl: ALLMANGA_API_URL,
-                referer: ALLMANGA_REFERER,
-                ua: ALLMANGA_UA,
-                showId: request.title.id,
-                mode: "sub",
-                signal,
-              });
+              const episodes = await module.listEpisodes?.(
+                {
+                  title: {
+                    id: request.title.id,
+                    kind: module.manifest.mediaKinds.includes("anime")
+                      ? "anime"
+                      : request.title.type,
+                    title: request.title.name,
+                  },
+                },
+                { now: () => new Date().toISOString(), signal },
+              );
+              return episodes ? [...episodes] : null;
             }
           : undefined,
       });

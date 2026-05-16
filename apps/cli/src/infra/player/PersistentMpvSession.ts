@@ -46,6 +46,12 @@ import {
   type PlayerTelemetryState,
 } from "./mpv-telemetry";
 import {
+  buildPersistentLoadfileCommand,
+  resolveNearEofPrefetchTriggerSeconds,
+  resolvePersistentStartSeekTarget,
+  type PersistentResumeStartChoice,
+} from "./persistent-ready-work-policy";
+import {
   type ActivePlaybackSkip,
   findActivePlaybackSkip,
   findPlaybackSegmentAtPosition,
@@ -57,12 +63,20 @@ import {
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
 import { buildPlaybackTelemetrySnapshot } from "./PlaybackTelemetrySnapshot";
 import type { ActivePlayerControl } from "./PlayerControlService";
+import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
+import { extractExternalSubtitleIds } from "./subtitle-track-cache";
+
+export {
+  buildPersistentLoadfileCommand,
+  extractExternalSubtitleIds,
+  resolveNearEofPrefetchTriggerSeconds,
+  resolvePersistentStartSeekTarget,
+};
 
 const IN_PROCESS_RECONNECT_BASE_BACKOFF_MS = 1_800;
 const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
 
 type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error";
-import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
 
 type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill">;
 
@@ -94,56 +108,6 @@ type PlayerCycleOptions = {
   /** Called once when playback reaches the credits prefetch window or the final ~30 s fallback. */
   onNearEof?: () => void;
 };
-
-export type PersistentResumeStartChoice = "resume" | "start";
-
-export function resolvePersistentStartSeekTarget(
-  options: Pick<PlayerCycleOptions, "startAt" | "resumePromptAt" | "offerResumeStartChoice">,
-  choice?: PersistentResumeStartChoice,
-): number | undefined {
-  const resumePromptAt = options.resumePromptAt ?? 0;
-  if (options.offerResumeStartChoice && shouldApplyStartAtSeek(resumePromptAt)) {
-    return choice === "resume" ? resumePromptAt : undefined;
-  }
-  if (typeof options.startAt === "number" && shouldApplyStartAtSeek(options.startAt)) {
-    return options.startAt;
-  }
-  return undefined;
-}
-
-export function resolveNearEofPrefetchTriggerSeconds(
-  durationSeconds: number,
-  timing?: PlaybackTimingMetadata | null,
-): number | null {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 60) return null;
-  const fallbackTrigger = Math.max(0, durationSeconds - 60);
-  const creditsStart = (timing?.credits ?? [])
-    .map((segment) => segment.startMs)
-    .filter((startMs): startMs is number => typeof startMs === "number" && Number.isFinite(startMs))
-    .map((startMs) => startMs / 1000)
-    .filter(
-      (startSeconds) =>
-        startSeconds > 0 &&
-        startSeconds < durationSeconds &&
-        startSeconds >= Math.max(durationSeconds * 0.5, durationSeconds - 600),
-    )
-    .sort((left, right) => right - left)[0];
-  if (creditsStart === undefined) return fallbackTrigger;
-  return Math.max(0, Math.min(fallbackTrigger, creditsStart - 60));
-}
-
-export function buildPersistentLoadfileCommand(
-  url: string,
-  startAt?: number,
-): ["loadfile", string, "replace", -1, { start: string }] {
-  return [
-    "loadfile",
-    url,
-    "replace",
-    -1,
-    { start: shouldApplyStartAtSeek(startAt) ? String(startAt) : "0" },
-  ];
-}
 
 type PlayerCycleState = {
   telemetry: PlayerTelemetryState;
@@ -588,6 +552,11 @@ export class PersistentMpvSession {
               return;
             }
 
+            if (name === "track-list") {
+              this.lastTrackList = value;
+              this.cachedExternalSubIds = extractExternalSubtitleIds(value);
+            }
+
             if (!active) return;
             applyObservedPropertySample(
               active.telemetry,
@@ -597,10 +566,6 @@ export class PersistentMpvSession {
             if (!active.acceptPlaybackProperties) return;
             if (active.telemetry.latestIpcSample) {
               this.watchdog?.observe(active.telemetry.latestIpcSample);
-            }
-            if (name === "track-list") {
-              this.lastTrackList = value;
-              this.cachedExternalSubIds = extractExternalSubtitleIds(value);
             }
             if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
               const previousPositionSeconds = this.currentPositionSeconds;
@@ -1612,19 +1577,6 @@ export class PersistentMpvSession {
       await this.handleSegmentSkipProgress(opts);
     }
   }
-}
-
-function extractExternalSubtitleIds(trackList: unknown): number[] {
-  if (!Array.isArray(trackList)) return [];
-
-  return trackList
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const track = entry as Record<string, unknown>;
-      if (track.type !== "sub" || !track.external) return null;
-      return typeof track.id === "number" ? track.id : null;
-    })
-    .filter((id): id is number => id !== null);
 }
 
 async function unlinkIfExists(path: string): Promise<void> {

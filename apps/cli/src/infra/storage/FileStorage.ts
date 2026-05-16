@@ -37,8 +37,10 @@ export class FileStorage implements StorageService {
   // Simple mutex to prevent concurrent writes from interleaving and corrupting files
   private writeLock: Promise<void> = Promise.resolve();
 
+  constructor(private readonly paths: Record<string, string> = PATHS) {}
+
   async read<T>(key: string): Promise<T | null> {
-    const path = PATHS[key];
+    const path = this.paths[key];
     if (!path) throw new Error(`Unknown storage key: ${key}`);
 
     const file = Bun.file(path);
@@ -56,7 +58,7 @@ export class FileStorage implements StorageService {
   }
 
   async write<T>(key: string, data: T): Promise<void> {
-    const path = PATHS[key];
+    const path = this.paths[key];
     if (!path) throw new Error(`Unknown storage key: ${key}`);
 
     const task = this.writeLock.then(async () => {
@@ -69,7 +71,7 @@ export class FileStorage implements StorageService {
   }
 
   async delete(key: string): Promise<void> {
-    const path = PATHS[key];
+    const path = this.paths[key];
     if (!path) throw new Error(`Unknown storage key: ${key}`);
 
     const task = this.writeLock.then(async () => {
@@ -82,7 +84,7 @@ export class FileStorage implements StorageService {
   }
 
   async exists(key: string): Promise<boolean> {
-    const path = PATHS[key];
+    const path = this.paths[key];
     if (!path) return false;
     return Bun.file(path).exists();
   }

@@ -153,7 +153,10 @@ export class PresenceServiceImpl implements PresenceService {
       return;
     }
     if (this.deps.config.presenceProvider !== "discord") return;
-    if (this.unavailableUntilRestart) return;
+    if (this.unavailableUntilRestart) {
+      if (Date.now() < this.unavailableRetryAtMs) return;
+      this.unavailableUntilRestart = false;
+    }
 
     const client = await this.ensureDiscordClient();
     if (!client) return;
@@ -175,6 +178,9 @@ export class PresenceServiceImpl implements PresenceService {
       this.status = "ready";
       this.lastActivityHash = activityHash;
       this.lastActivityPayload = payload;
+      this.unavailableRetryAtMs = 0;
+      this.unavailableBackoffMs = 1_000;
+      this.startHeartbeat();
     } catch (error) {
       this.markUnavailable("Discord browsing presence update failed", error, {
         suspectedDuplicateDiscordConsumer: true,

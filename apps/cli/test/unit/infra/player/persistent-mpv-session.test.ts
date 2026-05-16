@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildPersistentLoadfileCommand,
+  extractExternalSubtitleIds,
   resolveNearEofPrefetchTriggerSeconds,
   resolvePersistentStartSeekTarget,
 } from "@/infra/player/PersistentMpvSession";
@@ -125,5 +126,20 @@ describe("persistent mpv prefetch trigger", () => {
   test("does not prefetch tiny or live-like durations", () => {
     expect(resolveNearEofPrefetchTriggerSeconds(20)).toBeNull();
     expect(resolveNearEofPrefetchTriggerSeconds(Number.NaN)).toBeNull();
+  });
+});
+
+describe("persistent mpv subtitle track cache", () => {
+  test("extracts only external subtitle track ids from mpv track-list payloads", () => {
+    expect(
+      extractExternalSubtitleIds([
+        { id: 1, type: "video", external: false },
+        { id: 2, type: "sub", external: false },
+        { id: 3, type: "sub", external: true },
+        { id: "bad", type: "sub", external: true },
+        null,
+      ]),
+    ).toEqual([3]);
+    expect(extractExternalSubtitleIds({})).toEqual([]);
   });
 });
