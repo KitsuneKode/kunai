@@ -309,6 +309,66 @@ test("PlayerControlServiceImpl prioritizes stop controls over queued subtitle co
   expect(await attachPromise).toBe(true);
 });
 
+test("PlayerControlServiceImpl runs queued playback commands in FIFO order", async () => {
+  let releaseReload!: () => void;
+  const reloadGate = new Promise<void>((resolve) => {
+    releaseReload = resolve;
+  });
+  const ordering: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+    async reloadSubtitles() {
+      ordering.push("reload:start");
+      await reloadGate;
+      ordering.push("reload:end");
+    },
+    async skipCurrentSegment() {
+      ordering.push("skip");
+      return true;
+    },
+  });
+
+  const reloadPromise = service.reloadCurrentSubtitles("reload");
+  const skipPromise = service.skipCurrentSegment("skip");
+  await Bun.sleep(0);
+
+  expect(ordering).toEqual(["reload:start"]);
+  releaseReload();
+
+  expect(await reloadPromise).toBe(true);
+  expect(await skipPromise).toBe(true);
+  expect(ordering).toEqual(["reload:start", "reload:end", "skip"]);
+});
+
+test("PlayerControlServiceImpl keeps the command queue usable after a queued command fails", async () => {
+  const ordering: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+    async reloadSubtitles() {
+      ordering.push("reload:fail");
+      throw new Error("reload failed");
+    },
+    async skipCurrentSegment() {
+      ordering.push("skip");
+      return true;
+    },
+  });
+
+  await expect(service.reloadCurrentSubtitles("reload")).rejects.toThrow("reload failed");
+  await expect(service.skipCurrentSegment("skip")).resolves.toBe(true);
+  expect(ordering).toEqual(["reload:fail", "skip"]);
+});
+
 test("PlayerControlServiceImpl waitForActivePlayer resolves immediately when active", async () => {
   const service = makeService();
   const ctrl = { id: "p", async stop() {} };

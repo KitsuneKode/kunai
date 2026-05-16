@@ -19,7 +19,7 @@ import {
   resolveKunaiMpvBridgeScriptPath,
 } from "./kunai-mpv-bridge";
 import { computeInProcessReconnectSeek } from "./mpv-in-process-reconnect";
-import type { MpvIpcSession } from "./mpv-ipc";
+import type { MpvIpcSession, PersistentMpvSessionRuntime } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
 import {
   createMpvIpcEndpoint,
@@ -76,6 +76,13 @@ const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
 type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error";
 
 type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill">;
+
+const defaultPersistentMpvSessionRuntime: PersistentMpvSessionRuntime = {
+  which: (command) => Bun.which(command),
+  spawn: (command, options) => Bun.spawn(command, options),
+  waitForIpcEndpoint: waitForMpvIpcEndpoint,
+  openIpcSession: openMpvIpcSession,
+};
 
 type PlayerCycleOptions = {
   displayTitle: string;
@@ -211,6 +218,7 @@ export class PersistentMpvSession {
     private readonly initialStream: StreamInfo,
     private readonly initialOptions: PlayerCycleOptions,
     private readonly onControlReady: (control: ActivePlayerControl | null) => void,
+    private readonly runtime: PersistentMpvSessionRuntime,
   ) {
     this.playbackStream = initialStream;
     this.currentHeadersKey = this.buildHeadersKey(initialStream.headers ?? {});
@@ -258,8 +266,15 @@ export class PersistentMpvSession {
     mpv?: MpvRuntimeOptions;
     kitsuneConfig: KitsuneConfig;
     onControlReady: (control: ActivePlayerControl | null) => void;
+    /** Test seam for deterministic fake mpv IPC. Production uses Bun/mpv directly. */
+    runtime?: PersistentMpvSessionRuntime;
   }): Promise<PersistentMpvSession> {
-    const session = new PersistentMpvSession(opts.stream, opts.options, opts.onControlReady);
+    const session = new PersistentMpvSession(
+      opts.stream,
+      opts.options,
+      opts.onControlReady,
+      opts.runtime ?? defaultPersistentMpvSessionRuntime,
+    );
     const cfg = opts.kitsuneConfig;
     session.mpvInProcessStreamReconnectEnabled = cfg.mpvInProcessStreamReconnect !== false;
     const maxAttempts = cfg.mpvInProcessStreamReconnectMaxAttempts;
@@ -467,7 +482,7 @@ export class PersistentMpvSession {
     };
     this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
 
-    if (!Bun.which("mpv")) {
+    if (!this.runtime.which("mpv")) {
       this.currentCycleOptions().onPlaybackEvent?.({
         type: "ipc-command-failed",
         command: "spawn",
@@ -477,7 +492,7 @@ export class PersistentMpvSession {
       return;
     }
 
-    const proc = Bun.spawn(["mpv", ...args], {
+    const proc = this.runtime.spawn(["mpv", ...args], {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
@@ -500,7 +515,7 @@ export class PersistentMpvSession {
 
     {
       const ipcBootstrapStarted = Date.now();
-      const ready = await waitForMpvIpcEndpoint(this.ipcEndpoint, 5_000);
+      const ready = await this.runtime.waitForIpcEndpoint(this.ipcEndpoint, 5_000);
       const waitedMs = Date.now() - ipcBootstrapStarted;
       if (!ready) {
         this.currentCycleOptions().onPlaybackEvent?.({
@@ -514,7 +529,7 @@ export class PersistentMpvSession {
       }
 
       try {
-        this.ipcSession = await openMpvIpcSession({
+        this.ipcSession = await this.runtime.openIpcSession({
           endpoint: this.ipcEndpoint,
           onPropertyUpdate: ({ name, value, observedAt }) => {
             this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });

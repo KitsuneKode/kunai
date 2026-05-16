@@ -15,6 +15,7 @@
     "fmt:check": "turbo run fmt:check",
     "test": "turbo run test",
     "test:live:allanime": "bun run --cwd apps/cli test:live:allanime",
+    "test:live:discord": "bun run --cwd apps/cli test:live:discord",
     "test:live:miruro": "bun run --cwd apps/cli test:live:miruro",
     "test:live:providers": "bun run --cwd apps/cli test:live:providers",
     "test:live:rivestream": "bun run --cwd apps/cli test:live:rivestream",

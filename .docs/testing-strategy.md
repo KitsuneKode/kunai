@@ -113,6 +113,9 @@ Run them only as an explicit release-candidate or provider-drift check. Each scr
 an isolated temporary XDG profile and print that profile in its JSON output so it never touches
 the developer's real Kunai config, data DB, or cache DB.
 
+The release gate for deterministic checks, provider smokes, Discord presence smoke, and manual
+mpv playback is tracked in [release-reliability-gate.md](./release-reliability-gate.md).
+
 Do not loop live smokes while iterating on a provider. Use fixture payloads, mocked fetch ports,
 and provider contract tests for repeated runs, then perform one focused live smoke when the
 deterministic seam is already green.
