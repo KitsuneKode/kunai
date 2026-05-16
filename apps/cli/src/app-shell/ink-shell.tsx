@@ -821,29 +821,30 @@ function AppRoot({ container }: { container: Container }) {
       paddingX={1}
       paddingY={0}
     >
+      {/* Brand + macro status */}
       <Box justifyContent="space-between">
-        <Text color={palette.amber}>{APP_LABEL}</Text>
+        <Text bold color={palette.amber}>
+          {"🦊 Kunai"}
+        </Text>
         <Text color={statusColor(rootStatusSummary.header.tone)}>
           {container.config.minimalMode && currentViewLabel === "browse"
             ? undefined
             : rootStatusSummary.header.label}
         </Text>
       </Box>
-      <Box marginTop={0} flexWrap="wrap">
-        {rootStatusSummary.badges.map((badge) => (
-          <InlineBadge
-            key={`${badge.label}-${badge.tone}`}
-            label={truncateLine(badge.label, badge.label === state.currentTitle?.name ? 34 : 28)}
-            tone={badge.tone}
-          />
-        ))}
-      </Box>
-      {presenceBootLine ? (
-        <Box marginTop={0}>
-          <Text dimColor color={statusColor(presenceBootLine.tone)}>
-            {truncateLine(presenceBootLine.text, Math.max(36, shellWidth - 8))}
-          </Text>
-        </Box>
+      {/* Compact crumb: mode · provider (+ title · episode during playback) */}
+      <Text color={palette.infoDim}>{rootStatusSummary.crumb}</Text>
+      {/* Single transient alert — highest priority wins, null when idle */}
+      {rootStatusSummary.alert ? (
+        <Text color={statusColor(rootStatusSummary.alert.tone)} dimColor>
+          {truncateLine(rootStatusSummary.alert.text, Math.max(36, shellWidth - 8))}
+        </Text>
+      ) : null}
+      {/* Presence boot line renders as alert override when it fires */}
+      {presenceBootLine && !rootStatusSummary.alert ? (
+        <Text dimColor color={statusColor(presenceBootLine.tone)}>
+          {truncateLine(presenceBootLine.text, Math.max(36, shellWidth - 8))}
+        </Text>
       ) : null}
       <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>

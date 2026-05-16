@@ -7,9 +7,9 @@ import type { SessionState } from "@/domain/session/SessionState";
 
 import type { ShellStatusTone } from "./types";
 
-export type RootStatusBadge = {
-  label: string;
-  tone: "neutral" | "info" | "success" | "warning" | "error";
+export type RootStatusAlert = {
+  text: string;
+  tone: ShellStatusTone;
 };
 
 export type RootStatusSummary = {
@@ -17,7 +17,10 @@ export type RootStatusSummary = {
     label: string;
     tone: ShellStatusTone;
   };
-  badges: readonly RootStatusBadge[];
+  /** Compact context crumb: "series · vidking" or "series · vidking · Title · S01E04" */
+  crumb: string;
+  /** Highest-priority transient alert, or null when idle */
+  alert: RootStatusAlert | null;
 };
 
 function formatEpisode(state: SessionState): string | null {
@@ -27,58 +30,24 @@ function formatEpisode(state: SessionState): string | null {
   ).padStart(2, "0")}`;
 }
 
-function subtitleBadge(state: SessionState): RootStatusBadge | null {
-  const isActivePlayback =
-    state.playbackStatus === "playing" ||
-    state.playbackStatus === "buffering" ||
-    state.playbackStatus === "stalled" ||
-    state.playbackStatus === "seeking";
-  if (
-    state.stream ||
-    (state.mode === "anime"
-      ? state.animeLanguageProfile.subtitle
-      : state.seriesLanguageProfile.subtitle) === "none" ||
-    isActivePlayback
-  ) {
-    const status = describePlaybackSubtitleStatus(
-      state.stream,
-      state.mode === "anime"
-        ? state.animeLanguageProfile.subtitle
-        : state.seriesLanguageProfile.subtitle,
-    );
-    return {
-      label: compactPlaybackSubtitleStatus(status),
-      tone: playbackSubtitleStatusTone(status),
-    };
-  }
-  return null;
-}
-
-function headerTone(rootStatus: string, subtitle: RootStatusBadge | null): ShellStatusTone {
-  if (rootStatus === "error") return "error";
-  if (subtitle?.tone === "warning") return "warning";
-  if (rootStatus === "playing" || rootStatus === "ready") return "success";
-  return "neutral";
-}
-
 function humanReadableRootStatus(raw: string): string {
   switch (raw) {
     case "playing":
       return "Playing";
     case "buffering":
-      return "Buffering...";
+      return "Buffering…";
     case "stalled":
       return "Stream stalled";
     case "seeking":
-      return "Seeking...";
+      return "Seeking…";
     case "loading":
-      return "Loading...";
+      return "Loading…";
     case "error":
       return "Playback error";
     case "idle":
-      return "Ready";
+      return "ready";
     case "resolving":
-      return "Resolving...";
+      return "Resolving…";
     case "paused":
       return "Paused";
     default:
@@ -86,9 +55,16 @@ function humanReadableRootStatus(raw: string): string {
   }
 }
 
+function headerTone(rootStatus: string, subtitleTone: ShellStatusTone | null): ShellStatusTone {
+  if (rootStatus === "error") return "error";
+  if (subtitleTone === "warning") return "warning";
+  if (rootStatus === "playing" || rootStatus === "ready" || rootStatus === "idle") return "success";
+  return "neutral";
+}
+
 export function buildRootStatusSummary({
   state,
-  currentViewLabel,
+  currentViewLabel: _currentViewLabel,
   rootStatus,
   downloadStatus,
 }: {
@@ -98,52 +74,62 @@ export function buildRootStatusSummary({
   downloadStatus?: string | null;
 }): RootStatusSummary {
   const episode = formatEpisode(state);
-  const subtitle = subtitleBadge(state);
   const title = state.currentTitle?.name;
+  const isActivePlayback =
+    rootStatus === "playing" ||
+    rootStatus === "buffering" ||
+    rootStatus === "stalled" ||
+    rootStatus === "seeking";
+
+  const subtitleStatus =
+    state.stream || isActivePlayback
+      ? describePlaybackSubtitleStatus(
+          state.stream,
+          state.mode === "anime"
+            ? state.animeLanguageProfile.subtitle
+            : state.seriesLanguageProfile.subtitle,
+        )
+      : null;
+  const subtitleTone = subtitleStatus ? playbackSubtitleStatusTone(subtitleStatus) : null;
+  const subtitleCompact = subtitleStatus ? compactPlaybackSubtitleStatus(subtitleStatus) : null;
+
   const headerLabel =
-    subtitle && (rootStatus === "playing" || rootStatus === "buffering" || rootStatus === "stalled")
-      ? `${humanReadableRootStatus(rootStatus)} · ${subtitle.label}`
+    isActivePlayback && subtitleCompact
+      ? `${humanReadableRootStatus(rootStatus)} · ${subtitleCompact}`
       : humanReadableRootStatus(rootStatus);
 
-  const badges: RootStatusBadge[] = [
-    { label: state.mode, tone: "info" },
-    { label: state.provider, tone: "neutral" },
-    { label: currentViewLabel, tone: "success" },
-  ];
+  // Crumb: always mode · provider; add title + episode during playback
+  const crumbParts: string[] = [state.mode, state.provider];
+  if (isActivePlayback && title) {
+    crumbParts.push(title);
+    if (episode) crumbParts.push(episode);
+    if (subtitleCompact) crumbParts.push(subtitleCompact);
+  }
+  const crumb = crumbParts.join(" · ");
 
-  if (title) {
-    badges.push({ label: title, tone: "neutral" });
-  }
-  if (episode) {
-    badges.push({ label: episode, tone: "neutral" });
-  }
-  if (subtitle) {
-    badges.push(subtitle);
-  }
+  // Alert: highest-priority transient signal, null when nothing is active
+  let alert: RootStatusAlert | null = null;
   if (state.playbackProblem) {
-    badges.push({
-      label: `issue ${state.playbackProblem.cause}`,
+    alert = {
+      text: `⚠ issue · ${state.playbackProblem.cause}`,
       tone: state.playbackProblem.severity === "blocking" ? "error" : "warning",
-    });
-  }
-  if (state.autoplaySessionPaused) {
-    badges.push({ label: "autoplay paused", tone: "warning" });
-  }
-  if (state.autoskipSessionPaused) {
-    badges.push({ label: "autoskip paused", tone: "warning" });
-  }
-  if (state.stopAfterCurrent) {
-    badges.push({ label: "stop after current", tone: "warning" });
-  }
-  if (downloadStatus) {
-    badges.push({ label: `downloads ${downloadStatus}`, tone: "info" });
+    };
+  } else if (state.autoplaySessionPaused) {
+    alert = { text: "⚠ autoplay paused", tone: "warning" };
+  } else if (state.autoskipSessionPaused) {
+    alert = { text: "⚠ autoskip paused", tone: "warning" };
+  } else if (state.stopAfterCurrent) {
+    alert = { text: "⚠ stop after current", tone: "warning" };
+  } else if (downloadStatus) {
+    alert = { text: `⬇ ${downloadStatus}`, tone: "info" };
   }
 
   return {
     header: {
       label: headerLabel,
-      tone: headerTone(rootStatus, subtitle),
+      tone: headerTone(rootStatus, subtitleTone),
     },
-    badges,
+    crumb,
+    alert,
   };
 }

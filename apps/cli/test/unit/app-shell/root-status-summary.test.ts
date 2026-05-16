@@ -40,18 +40,17 @@ describe("buildRootStatusSummary", () => {
 
     expect(summary.header.label).toBe("Playing · subs ready");
     expect(summary.header.tone).toBe("success");
-    expect(summary.badges.map((badge) => badge.label)).toEqual([
-      "anime",
-      "hianime",
-      "playback",
-      "Frieren",
-      "S02E04",
-      "subs ready",
-      "autoplay paused",
-    ]);
+    // Crumb includes mode · provider · title · episode during active playback
+    expect(summary.crumb).toContain("anime");
+    expect(summary.crumb).toContain("hianime");
+    expect(summary.crumb).toContain("Frieren");
+    expect(summary.crumb).toContain("S02E04");
+    // autoplaySessionPaused fires as the alert (playbackProblem is null)
+    expect(summary.alert?.text).toBe("⚠ autoplay paused");
+    expect(summary.alert?.tone).toBe("warning");
   });
 
-  test("uses hardsub inventory in the root playback subtitle badge", () => {
+  test("uses hardsub inventory in the root playback subtitle header", () => {
     const base = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
@@ -120,7 +119,7 @@ describe("buildRootStatusSummary", () => {
 
     expect(summary.header.label).toBe("Playing · hardsub en");
     expect(summary.header.tone).toBe("success");
-    expect(summary.badges.map((badge) => badge.label)).toContain("hardsub en");
+    expect(summary.crumb).toContain("hardsub en");
   });
 
   test("keeps idle search state compact when no title is selected", () => {
@@ -140,15 +139,12 @@ describe("buildRootStatusSummary", () => {
 
     expect(summary.header.label).toBe("searching");
     expect(summary.header.tone).toBe("warning");
-    expect(summary.badges.map((badge) => badge.label)).toEqual([
-      "series",
-      "vidking",
-      "search",
-      "subs off",
-    ]);
+    // Idle: crumb is just mode · provider, no title or episode
+    expect(summary.crumb).toBe("series · vidking");
+    expect(summary.alert).toBeNull();
   });
 
-  test("surfaces playback problem state as a compact badge", () => {
+  test("surfaces playback problem state as an alert", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
@@ -170,12 +166,11 @@ describe("buildRootStatusSummary", () => {
       rootStatus: "error",
     });
 
-    expect(summary.badges.find((badge) => badge.label === "issue expired-stream")?.tone).toBe(
-      "warning",
-    );
+    expect(summary.alert?.text).toBe("⚠ issue · expired-stream");
+    expect(summary.alert?.tone).toBe("warning");
   });
 
-  test("uses plain language for download status badges", () => {
+  test("uses plain language for download status alert", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
@@ -188,8 +183,7 @@ describe("buildRootStatusSummary", () => {
       downloadStatus: "2 active  ·  1 failed  ·  4 completed",
     });
 
-    expect(summary.badges.map((badge) => badge.label)).toContain(
-      "downloads 2 active  ·  1 failed  ·  4 completed",
-    );
+    expect(summary.alert?.text).toBe("⬇ 2 active  ·  1 failed  ·  4 completed");
+    expect(summary.alert?.tone).toBe("info");
   });
 });
