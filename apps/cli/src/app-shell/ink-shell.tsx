@@ -655,6 +655,13 @@ function AppRoot({ container }: { container: Container }) {
         });
         return;
       }
+      if (action === "stop-after-current") {
+        container.stateManager.dispatch({
+          type: "SET_SESSION_STOP_AFTER_CURRENT",
+          enabled: !container.stateManager.getState().stopAfterCurrent,
+        });
+        return;
+      }
       if (action === "search") {
         void container.playerControl.returnToSearchFromPlayback("playback-loading-command-search");
         return;

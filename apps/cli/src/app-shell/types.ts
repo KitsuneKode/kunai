@@ -25,6 +25,7 @@ export type ShellAction =
   | "image-pane"
   | "toggle-autoplay"
   | "toggle-autoskip"
+  | "stop-after-current"
   | "resume"
   | "replay"
   | "recover"
@@ -201,6 +202,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "update":
     case "image-pane":
     case "toggle-autoplay":
+    case "toggle-autoskip":
+    case "stop-after-current":
     case "provider":
     case "replay":
     case "recover":

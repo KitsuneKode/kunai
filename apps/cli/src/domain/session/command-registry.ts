@@ -23,6 +23,8 @@ export type AppCommandId =
   | "update"
   | "image-pane"
   | "toggle-autoplay"
+  | "toggle-autoskip"
+  | "stop-after-current"
   | "replay"
   | "recover"
   | "fallback"
@@ -80,6 +82,8 @@ export const COMMAND_CONTEXTS = {
     "next",
     "previous",
     "toggle-autoplay",
+    "toggle-autoskip",
+    "stop-after-current",
     "downloads",
     "library",
     "history",
@@ -113,6 +117,7 @@ export const COMMAND_CONTEXTS = {
     "source",
     "quality",
     "toggle-autoplay",
+    "toggle-autoskip",
     "previous",
     "next-season",
     "provider",
@@ -276,6 +281,18 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Pause Autoplay",
     aliases: ["autoplay", "pause-autoplay", "resume-autoplay"],
     description: "Temporarily pause or resume autoplay for this playback chain",
+  },
+  {
+    id: "toggle-autoskip",
+    label: "Pause Autoskip",
+    aliases: ["autoskip", "skip", "pause-autoskip", "resume-autoskip"],
+    description: "Temporarily pause or resume auto-skip for this session",
+  },
+  {
+    id: "stop-after-current",
+    label: "Stop After Current",
+    aliases: ["stop-after", "stop-after-current", "one-more", "finish-episode"],
+    description: "Stop playback after the current episode finishes instead of continuing the chain",
   },
   {
     id: "replay",
@@ -451,6 +468,26 @@ function resolveCommandPresentation(command: AppCommand, state: SessionState): A
     };
   }
 
+  if (command.id === "toggle-autoskip") {
+    return {
+      ...command,
+      label: state.autoskipSessionPaused ? "Resume Autoskip" : "Pause Autoskip",
+      description: state.autoskipSessionPaused
+        ? "Resume auto-skip for this session"
+        : "Pause auto-skip for this session",
+    };
+  }
+
+  if (command.id === "stop-after-current") {
+    return {
+      ...command,
+      label: state.stopAfterCurrent ? "Resume Playback Chain" : "Stop After Current Episode",
+      description: state.stopAfterCurrent
+        ? "Resume normal playback chain after this episode"
+        : "Stop playback after the current episode finishes",
+    };
+  }
+
   return command;
 }
 
@@ -553,6 +590,24 @@ function resolveCommandState(
         return {
           enabled: false,
           reason: "Wait for stream resolution to finish first.",
+        };
+      }
+      return { enabled: true };
+
+    case "toggle-autoskip":
+      if (state.currentTitle?.type !== "series" || !hasEpisode) {
+        return {
+          enabled: false,
+          reason: "Auto-skip controls are only available for episodic playback.",
+        };
+      }
+      return { enabled: true };
+
+    case "stop-after-current":
+      if (state.currentTitle?.type !== "series" || !hasEpisode) {
+        return {
+          enabled: false,
+          reason: "Stop-after-current is only available for episodic playback.",
         };
       }
       return { enabled: true };
