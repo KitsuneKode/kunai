@@ -262,6 +262,45 @@ describe("PlaybackResolveCoordinator", () => {
     );
   });
 
+  test("propagates resolve correlation into provider timeline diagnostics", async () => {
+    const events: unknown[] = [];
+    const diagnostics = {
+      record: (event: unknown) => events.push(event),
+      getRecent: () => [],
+      getSnapshot: () => [],
+      clear: () => {},
+      buildSupportBundle: () => {
+        throw new Error("not needed");
+      },
+    } as unknown as DiagnosticsService;
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createMockEngine(createProviderResultAfterFallback()),
+      cacheStore: createMemoryCache(null),
+      diagnostics,
+    });
+
+    const result = await coordinator.resolve({
+      ...input(),
+      correlation: {
+        sessionId: "session-1",
+        playbackCycleId: "playback-1",
+        providerAttemptId: "provider-1",
+      },
+    });
+
+    expect(result.providerTimeline?.traceId).toBe("provider-1");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        category: "provider",
+        operation: "provider.resolve.timeline",
+        traceId: "provider-1",
+        sessionId: "session-1",
+        playbackCycleId: "playback-1",
+        providerAttemptId: "provider-1",
+      }),
+    );
+  });
+
   test("records playback recovery decisions through diagnostics", async () => {
     const events: unknown[] = [];
     const diagnostics = {

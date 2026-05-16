@@ -7,6 +7,7 @@
 import type { StreamInfo, PlaybackResult } from "@/domain/types";
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
+import type { DiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 
 import type { LocalPlaybackPolicyInput } from "./local-playback-policy";
@@ -78,6 +79,7 @@ export interface PlayerOptions {
   /** Preferred subtitle language hint for mpv track selection (`none` disables autosub selection). */
   subtitlePreference?: string;
   displayTitle: string;
+  correlation?: DiagnosticCorrelation;
   /** Automatic seek target for this launch. */
   startAt?: number;
   /** Optional resume offer shown in mpv without automatically seeking. */

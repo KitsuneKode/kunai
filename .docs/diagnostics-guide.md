@@ -32,6 +32,18 @@ KUNAI_TRACE=provider,playback bun run dev -- -S "Dune" --debug-json
 
 `--debug-json` also enables `--debug` and writes newline-delimited redacted diagnostic events under the Kunai state `traces/` directory. `KUNAI_TRACE` is optional; when present it is a comma-separated category allowlist such as `provider,playback,cache`. URL redaction keeps host/path shape and non-sensitive query keys, but redacts tokens, signatures, cookies, authorization headers, and private home-directory prefixes.
 
+Diagnostic events can carry stable correlation fields:
+
+- `sessionId`: one Kunai process/session.
+- `playbackCycleId`: one title/episode playback cycle.
+- `providerAttemptId`: one provider resolve timeline for that cycle.
+- `traceId`: the provider timeline or lower-level trace identifier when present.
+
+Support bundles include a `correlation` summary listing the IDs seen in the
+exported events. Use those IDs to join provider fallback, cache checks, mpv
+runtime events, presence background failures, and debug JSONL rows without
+guessing from timestamps.
+
 Use `/report-issue` for a preview-first issue flow. It asks before writing a redacted diagnostics report bundle and then opens the GitHub issue chooser. Use `/export-diagnostics` when you only want the bundle and do not want to open a browser.
 
 To test Vidking without the Ink shell, run the live provider smoke test:

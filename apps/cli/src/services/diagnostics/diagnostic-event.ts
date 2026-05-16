@@ -21,6 +21,9 @@ export type DiagnosticEvent = {
   readonly category: DiagnosticCategory;
   readonly operation: string;
   readonly message: string;
+  readonly sessionId?: string;
+  readonly playbackCycleId?: string;
+  readonly providerAttemptId?: string;
   readonly traceId?: string;
   readonly spanId?: string;
   readonly titleId?: string;

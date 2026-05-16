@@ -1,3 +1,4 @@
+import type { DiagnosticCorrelation } from "./correlation";
 import type { DiagnosticCategory } from "./diagnostic-event";
 import type { DiagnosticsStore } from "./DiagnosticsStore";
 
@@ -10,7 +11,7 @@ export type BackgroundTaskInput = {
   readonly category: DiagnosticCategory;
   readonly diagnosticsStore?: DiagnosticsStore;
   readonly logger?: BackgroundTaskLogger;
-  readonly context?: Record<string, unknown>;
+  readonly context?: Record<string, unknown> & DiagnosticCorrelation;
   readonly run: Promise<unknown> | (() => Promise<unknown>);
 };
 
@@ -39,6 +40,17 @@ export function runBackgroundTask(input: BackgroundTaskInput): void {
         titleId: typeof input.context?.titleId === "string" ? input.context.titleId : undefined,
         season: typeof input.context?.season === "number" ? input.context.season : undefined,
         episode: typeof input.context?.episode === "number" ? input.context.episode : undefined,
+        sessionId:
+          typeof input.context?.sessionId === "string" ? input.context.sessionId : undefined,
+        playbackCycleId:
+          typeof input.context?.playbackCycleId === "string"
+            ? input.context.playbackCycleId
+            : undefined,
+        providerAttemptId:
+          typeof input.context?.providerAttemptId === "string"
+            ? input.context.providerAttemptId
+            : undefined,
+        traceId: typeof input.context?.traceId === "string" ? input.context.traceId : undefined,
         context: failureContext,
       });
       return;
@@ -61,6 +73,10 @@ function contextWithoutPromotedFields(
     titleId: _titleId,
     season: _season,
     episode: _episode,
+    sessionId: _sessionId,
+    playbackCycleId: _playbackCycleId,
+    providerAttemptId: _providerAttemptId,
+    traceId: _traceId,
     ...rest
   } = context;
   return rest;

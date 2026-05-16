@@ -55,6 +55,10 @@ describe("DiagnosticsServiceImpl", () => {
       category: "cache",
       operation: "cache.hit",
       message: "Cache hit",
+      sessionId: "session-1",
+      playbackCycleId: "playback-1",
+      providerAttemptId: "provider-1",
+      traceId: "trace-1",
       context: { streamUrl: "https://cdn.example/stream.m3u8?token=secret" },
     });
 
@@ -64,6 +68,12 @@ describe("DiagnosticsServiceImpl", () => {
     expect(bundle.eventCount).toBe(1);
     expect(bundle.events[0]?.context).toEqual({
       streamUrl: "https://cdn.example/stream.m3u8?token=[redacted]",
+    });
+    expect(bundle.correlation).toEqual({
+      sessionIds: ["session-1"],
+      playbackCycleIds: ["playback-1"],
+      providerAttemptIds: ["provider-1"],
+      traceIds: ["trace-1"],
     });
   });
 });

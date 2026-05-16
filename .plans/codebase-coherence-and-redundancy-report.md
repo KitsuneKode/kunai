@@ -79,9 +79,10 @@ small extraction plans, not bundled with docs reconciliation.
   IPC event routing, ready work, subtitle cleanup, reconnect, telemetry, and
   playback position state. Extract ready-work execution and subtitle management
   only after the fake IPC harness covers the target behavior.
-- **Unified trace/event correlation:** diagnostics events, debug JSONL traces,
-  background task failures, provider timelines, and playback telemetry should
-  share a request/session/cycle correlation id model.
+- **Unified trace/event correlation:** implemented in the follow-up sweep.
+  Diagnostics events, debug JSONL traces, support bundles, background task
+  failures, provider timelines, and playback runtime events now share optional
+  `sessionId`, `playbackCycleId`, `providerAttemptId`, and `traceId` fields.
 - **Provider capability dispatch:** registry-level provider special cases should
   continue moving toward manifest-declared capabilities.
 - **Single mounted content tree:** browse/playback shell transitions still have
@@ -96,18 +97,10 @@ small extraction plans, not bundled with docs reconciliation.
 
 ## Next Recommended Sweep
 
-Start with **unified trace/event correlation**. It is the best next reliability
-multiplier because it makes provider fallback, background errors, mpv cycles,
-presence updates, diagnostics exports, and user reports easier to join without
-guessing from timestamps.
-
-Suggested scope:
-
-- define stable `sessionId`, `playbackCycleId`, and `providerAttemptId` fields
-- thread them through diagnostics events, provider attempt timelines, playback
-  telemetry, and background task error reports
-- keep redaction rules intact
-- add focused tests for exported diagnostics shape and correlation propagation
+The next reliability sweep should focus on **Persistent mpv decomposition**:
+extract ready-work execution and subtitle management behind the existing fake
+IPC harness so playback state remains easier to reason about as more recovery
+paths are added.
 
 ## Verification
 

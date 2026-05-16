@@ -53,6 +53,7 @@ import {
 } from "./services/catalog/CatalogScheduleService";
 import { ResultEnrichmentService } from "./services/catalog/ResultEnrichmentService";
 import { TimelineService } from "./services/catalog/TimelineService";
+import { createCorrelationId } from "./services/diagnostics/correlation";
 import {
   buildDebugSessionInstructions,
   DebugTraceReporter,
@@ -99,6 +100,7 @@ export interface Container {
   readonly logger: Logger;
   readonly tracer: Tracer;
   readonly config: ConfigService;
+  readonly sessionId: string;
 
   // Engine and registries
   readonly engine: ProviderEngine;
@@ -181,6 +183,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   // Core infrastructure first (no dependencies on other services)
   const logger = new StructuredLogger({ debug });
+  const sessionId = createCorrelationId("session");
   const tracer = new TracerImpl({
     logger,
     outputs: debug ? ["console", "file"] : [],
@@ -332,6 +335,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const container: Container = {
     logger,
     tracer,
+    sessionId,
     config,
     engine,
     providerRegistry,

@@ -81,6 +81,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Advanced search input, local-first offline library read models, and continuation decision engines are tracked in [.plans/search-offline-continuation-engines.md](.plans/search-offline-continuation-engines.md)
 - Autonomous reliability and coherence handoff path is tracked in [.plans/autonomous-reliability-and-coherence-path.md](.plans/autonomous-reliability-and-coherence-path.md)
 - Reliability core hardening and codebase coherence passes are implemented; the coherence report tracks deferred architecture work: [.plans/codebase-coherence-and-redundancy-report.md](.plans/codebase-coherence-and-redundancy-report.md)
+- Diagnostics now carry optional session/playback/provider correlation IDs across provider resolve, cache checks, mpv runtime events, presence background tasks, debug JSONL, and support bundles.
 
 ### Recently Improved
 

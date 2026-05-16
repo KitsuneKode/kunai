@@ -51,6 +51,9 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
     const context = {
       category: event.category,
       operation: event.operation ?? event.category,
+      sessionId: event.sessionId,
+      playbackCycleId: event.playbackCycleId,
+      providerAttemptId: event.providerAttemptId,
       traceId: event.traceId,
       spanId: event.spanId,
       titleId: event.titleId,

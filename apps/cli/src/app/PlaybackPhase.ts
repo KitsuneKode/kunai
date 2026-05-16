@@ -81,6 +81,10 @@ import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { AniSkipTimingSource, IntroDbTimingSource, PlaybackTimingAggregator } from "@/infra/timing";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
+import {
+  createCorrelationId,
+  type DiagnosticCorrelation,
+} from "@/services/diagnostics/correlation";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import {
   resolveAutoDownloadScope,
@@ -143,12 +147,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     context: PhaseContext,
     task: string,
     activity: Parameters<PhaseContext["container"]["presence"]["updatePlayback"]>[0],
+    correlation?: DiagnosticCorrelation,
   ): void {
     runBackgroundTask({
       task,
       category: "presence",
       diagnosticsStore: context.container.diagnosticsStore,
       context: {
+        ...correlation,
         titleId: activity.title.id,
         providerId: activity.providerId,
         season: activity.episode.season,
@@ -546,6 +552,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           let stream: StreamInfo | null = consumedPrefetch ?? null;
           let resolvedProviderId = currentProvider.metadata.id;
           let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
+          const providerAttemptId = createCorrelationId("provider");
+          const playbackCorrelation: DiagnosticCorrelation = {
+            sessionId: container.sessionId,
+            playbackCycleId: createCorrelationId("playback"),
+            providerAttemptId,
+            traceId: providerAttemptId,
+          };
 
           const resolveTrace = createResolveTraceStub({
             title,
@@ -554,6 +567,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             mode: stateManager.getState().mode,
           });
           diagnosticsStore.record({
+            ...playbackCorrelation,
             category: "provider",
             message: "Resolve trace started",
             context: { trace: resolveTrace },
@@ -565,6 +579,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               consumedPrefetchProviderId !== currentProvider.metadata.id
             ) {
               diagnosticsStore.record({
+                ...playbackCorrelation,
                 category: "playback",
                 level: "warn",
                 message: "Discarding prefetched stream — provider changed since prefetch",
@@ -584,6 +599,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: currentEpisode.episode,
               });
               diagnosticsStore.record({
+                ...playbackCorrelation,
                 category: "provider",
                 message: "Using prefetched stream",
                 context: {
@@ -605,6 +621,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               stream = recent;
               resolvedProviderId = currentProvider.metadata.id;
               diagnosticsStore.record({
+                ...playbackCorrelation,
                 category: "provider",
                 message: "Using in-memory recent episode stream (backward navigation)",
                 context: {
@@ -637,6 +654,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   : config.seriesLanguageProfile.subtitle,
               recoveryMode: config.recoveryMode,
               signal: resolveController.signal,
+              correlation: playbackCorrelation,
               onFeedback: (feedback) => this.updatePlaybackFeedback(context, feedback),
               onEvent: (event) => {
                 if (event.type === "cache-hit" || event.type === "cache-miss") {
@@ -650,6 +668,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     });
                   }
                   diagnosticsStore.record({
+                    ...playbackCorrelation,
                     category: "cache",
                     message: hit ? "Provider resolve cache hit" : "Provider resolve cache miss",
                     context: {
@@ -664,6 +683,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
                 if (event.type === "cache-health-check") {
                   diagnosticsStore.record({
+                    ...playbackCorrelation,
                     category: "cache",
                     message: event.healthy
                       ? "Cached stream health check passed"
@@ -714,6 +734,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             for (const [attemptIndex, attempt] of resolveAttempts.entries()) {
               diagnosticsStore.record({
+                ...playbackCorrelation,
                 category: "provider",
                 message: attempt.stream
                   ? "Provider resolve attempt succeeded"
@@ -741,6 +762,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             if (stream?.providerResolveResult) {
               diagnosticsStore.record({
+                ...playbackCorrelation,
                 category: "provider",
                 message: "Provider resolve trace completed",
                 context: {
@@ -955,6 +977,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             playbackTiming,
             maybePrefetchNext,
             startIntent.suppressResumePrompt,
+            playbackCorrelation,
           );
 
           // Save history — use effectiveTiming.current so that a background retry
@@ -2113,6 +2136,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     timing: PlaybackTimingMetadata | null = null,
     onNearEof?: () => void,
     suppressResumePrompt = false,
+    correlation?: DiagnosticCorrelation,
   ): Promise<PlaybackResult> {
     const { player, stateManager, config } = context.container;
 
@@ -2141,16 +2165,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           : undefined;
       let latestPresencePositionSeconds = startAt > 0 ? startAt : 0;
       let latestPresenceDurationSeconds = 0;
-      this.updatePresenceInBackground(context, "presence.updatePlaybackLaunch", {
-        mode: stateManager.getState().mode,
-        title,
-        episode,
-        providerId: stateManager.getState().provider,
-        stream,
-        startedAtMs: Date.now(),
-        positionSeconds: latestPresencePositionSeconds,
-        subtitleCount: initialSubtitleCount,
-      });
+      this.updatePresenceInBackground(
+        context,
+        "presence.updatePlaybackLaunch",
+        {
+          mode: stateManager.getState().mode,
+          title,
+          episode,
+          providerId: stateManager.getState().provider,
+          stream,
+          startedAtMs: Date.now(),
+          positionSeconds: latestPresencePositionSeconds,
+          subtitleCount: initialSubtitleCount,
+        },
+        correlation,
+      );
       this.startLateSubtitleResolver({
         stream,
         title,
@@ -2162,6 +2191,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         headers: stream.headers,
         subtitle: stream.subtitle,
         subtitleStatus,
+        correlation,
         audioPreference:
           stateManager.getState().mode === "anime"
             ? stateManager.getState().animeLanguageProfile.audio
@@ -2200,65 +2230,90 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           } else if (event.type === "playback-started") {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
             // Update presence with accurate start time (after buffering)
-            this.updatePresenceInBackground(context, "presence.updatePlaybackStarted", {
-              mode: stateManager.getState().mode,
-              title,
-              episode,
-              providerId: stateManager.getState().provider,
-              stream,
-              startedAtMs: Date.now(),
-              positionSeconds: latestPresencePositionSeconds,
-              durationSeconds: latestPresenceDurationSeconds,
-              subtitleCount: undefined,
-            });
+            this.updatePresenceInBackground(
+              context,
+              "presence.updatePlaybackStarted",
+              {
+                mode: stateManager.getState().mode,
+                title,
+                episode,
+                providerId: stateManager.getState().provider,
+                stream,
+                startedAtMs: Date.now(),
+                positionSeconds: latestPresencePositionSeconds,
+                durationSeconds: latestPresenceDurationSeconds,
+                subtitleCount: undefined,
+              },
+              correlation,
+            );
           } else if (event.type === "playback-progress") {
             latestPresencePositionSeconds = event.positionSeconds;
             latestPresenceDurationSeconds = event.durationSeconds;
-            this.updatePresenceInBackground(context, "presence.updatePlaybackProgress", {
-              mode: stateManager.getState().mode,
-              title,
-              episode,
-              providerId: stateManager.getState().provider,
-              stream,
-              startedAtMs: Date.now(),
-              positionSeconds: latestPresencePositionSeconds,
-              durationSeconds: latestPresenceDurationSeconds,
-            });
+            this.updatePresenceInBackground(
+              context,
+              "presence.updatePlaybackProgress",
+              {
+                mode: stateManager.getState().mode,
+                title,
+                episode,
+                providerId: stateManager.getState().provider,
+                stream,
+                startedAtMs: Date.now(),
+                positionSeconds: latestPresencePositionSeconds,
+                durationSeconds: latestPresenceDurationSeconds,
+              },
+              correlation,
+            );
           } else if (event.type === "late-subtitles-attached") {
-            this.updatePresenceInBackground(context, "presence.updatePlaybackSubtitles", {
-              mode: stateManager.getState().mode,
-              title,
-              episode,
-              providerId: stateManager.getState().provider,
-              stream,
-              startedAtMs: Date.now(),
-              positionSeconds: latestPresencePositionSeconds,
-              durationSeconds: latestPresenceDurationSeconds,
-              subtitleCount: event.trackCount,
-            });
+            this.updatePresenceInBackground(
+              context,
+              "presence.updatePlaybackSubtitles",
+              {
+                mode: stateManager.getState().mode,
+                title,
+                episode,
+                providerId: stateManager.getState().provider,
+                stream,
+                startedAtMs: Date.now(),
+                positionSeconds: latestPresencePositionSeconds,
+                durationSeconds: latestPresenceDurationSeconds,
+                subtitleCount: event.trackCount,
+              },
+              correlation,
+            );
           } else if (event.type === "playback-paused") {
-            this.updatePresenceInBackground(context, "presence.updatePlaybackPaused", {
-              mode: stateManager.getState().mode,
-              title,
-              episode,
-              providerId: stateManager.getState().provider,
-              stream,
-              startedAtMs: Date.now(),
-              positionSeconds: latestPresencePositionSeconds,
-              durationSeconds: latestPresenceDurationSeconds,
-              paused: true,
-            });
+            this.updatePresenceInBackground(
+              context,
+              "presence.updatePlaybackPaused",
+              {
+                mode: stateManager.getState().mode,
+                title,
+                episode,
+                providerId: stateManager.getState().provider,
+                stream,
+                startedAtMs: Date.now(),
+                positionSeconds: latestPresencePositionSeconds,
+                durationSeconds: latestPresenceDurationSeconds,
+                paused: true,
+              },
+              correlation,
+            );
           } else if (event.type === "playback-resumed") {
-            this.updatePresenceInBackground(context, "presence.updatePlaybackResumed", {
-              mode: stateManager.getState().mode,
-              title,
-              episode,
-              providerId: stateManager.getState().provider,
-              stream,
-              startedAtMs: Date.now(),
-              positionSeconds: latestPresencePositionSeconds,
-              durationSeconds: latestPresenceDurationSeconds,
-            });
+            this.updatePresenceInBackground(
+              context,
+              "presence.updatePlaybackResumed",
+              {
+                mode: stateManager.getState().mode,
+                title,
+                episode,
+                providerId: stateManager.getState().provider,
+                stream,
+                startedAtMs: Date.now(),
+                positionSeconds: latestPresencePositionSeconds,
+                durationSeconds: latestPresenceDurationSeconds,
+              },
+              correlation,
+            );
           } else if (event.type === "track-changed") {
             // Keep session state aligned when users switch tracks directly in mpv.
             const currentStream = stateManager.getState().stream;

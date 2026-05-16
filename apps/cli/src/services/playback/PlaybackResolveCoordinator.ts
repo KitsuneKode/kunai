@@ -1,5 +1,6 @@
 import { summarizeProviderAttemptTimeline } from "@/domain/provider/ProviderAttemptTimeline";
 import type { StreamInfo } from "@/domain/types";
+import { withDiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import type { ProviderEngine } from "@kunai/core";
@@ -85,6 +86,7 @@ export class PlaybackResolveCoordinator {
       event.type === "cache-hit-validated"
     ) {
       this.deps.diagnostics.record({
+        ...input.correlation,
         category: "cache",
         operation: "playback-resolve",
         message: `Playback resolve ${event.type}`,
@@ -98,6 +100,7 @@ export class PlaybackResolveCoordinator {
 
     if (event.type === "cache-health-check") {
       this.deps.diagnostics.record({
+        ...input.correlation,
         category: "cache",
         operation: "stream-health-check",
         message: event.healthy
@@ -117,6 +120,7 @@ export class PlaybackResolveCoordinator {
 
     if (event.type === "recovery-decision") {
       this.deps.diagnostics.record({
+        ...input.correlation,
         category: "playback",
         operation: "playback-recovery-decision",
         level: event.userVisible ? "info" : "debug",
@@ -142,31 +146,34 @@ export class PlaybackResolveCoordinator {
     const failedAttempt = result.providerTimeline.attempts.find(
       (attempt) => attempt.status === "failed",
     );
-    this.deps.diagnostics.record({
-      category: "provider",
-      operation: "provider.resolve.timeline",
-      level: summary.status === "failed" ? "warn" : "info",
-      message: summary.currentUserMessage,
-      traceId: summary.traceId,
-      providerId: result.providerId,
-      titleId: input.title.id,
-      season: input.episode.season,
-      episode: input.episode.episode,
-      context: {
-        status: summary.status,
-        primaryFailure: summary.primaryFailure,
-        attempts: summary.attempts.length,
-        attemptTimeline: summary.attempts.slice(0, 6).map((attempt) => ({
-          reason: attempt.reason,
-          providerId: attempt.providerId,
-          status: attempt.status,
-          failureClass: attempt.failureClass ?? null,
-          summary: attempt.userSummary ?? null,
-        })),
-        failureClass: failedAttempt?.failureClass ?? "none",
-        truncated: result.providerTimeline.truncated,
-      },
-    });
+    this.deps.diagnostics.record(
+      withDiagnosticCorrelation(input.correlation, {
+        category: "provider",
+        operation: "provider.resolve.timeline",
+        level: summary.status === "failed" ? "warn" : "info",
+        message: summary.currentUserMessage,
+        traceId: summary.traceId,
+        providerAttemptId: input.correlation?.providerAttemptId ?? summary.traceId,
+        providerId: result.providerId,
+        titleId: input.title.id,
+        season: input.episode.season,
+        episode: input.episode.episode,
+        context: {
+          status: summary.status,
+          primaryFailure: summary.primaryFailure,
+          attempts: summary.attempts.length,
+          attemptTimeline: summary.attempts.slice(0, 6).map((attempt) => ({
+            reason: attempt.reason,
+            providerId: attempt.providerId,
+            status: attempt.status,
+            failureClass: attempt.failureClass ?? null,
+            summary: attempt.userSummary ?? null,
+          })),
+          failureClass: failedAttempt?.failureClass ?? "none",
+          truncated: result.providerTimeline.truncated,
+        },
+      }),
+    );
   }
 }
 

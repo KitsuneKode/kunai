@@ -17,9 +17,17 @@ export type DiagnosticsSupportBundle = {
     readonly bunVersion: string;
   };
   readonly capabilities: Record<string, unknown>;
+  readonly correlation: DiagnosticsBundleCorrelation;
   readonly sections: Record<string, DiagnosticsBundleSection>;
   readonly eventCount: number;
   readonly events: readonly DiagnosticEvent[];
+};
+
+export type DiagnosticsBundleCorrelation = {
+  readonly sessionIds: readonly string[];
+  readonly playbackCycleIds: readonly string[];
+  readonly providerAttemptIds: readonly string[];
+  readonly traceIds: readonly string[];
 };
 
 export type DiagnosticsBundleSection = {
@@ -64,10 +72,34 @@ export function buildDiagnosticsSupportBundle(
       bunVersion: Bun.version,
     },
     capabilities,
+    correlation: buildBundleCorrelation(events),
     sections,
     eventCount: events.length,
     events,
   };
+}
+
+function buildBundleCorrelation(events: readonly DiagnosticEvent[]): DiagnosticsBundleCorrelation {
+  return {
+    sessionIds: collectUnique(events, "sessionId"),
+    playbackCycleIds: collectUnique(events, "playbackCycleId"),
+    providerAttemptIds: collectUnique(events, "providerAttemptId"),
+    traceIds: collectUnique(events, "traceId"),
+  };
+}
+
+function collectUnique(
+  events: readonly DiagnosticEvent[],
+  key: "sessionId" | "playbackCycleId" | "providerAttemptId" | "traceId",
+): readonly string[] {
+  const ids = new Set<string>();
+  for (const event of events) {
+    const value = event[key];
+    if (typeof value === "string" && value.length > 0) {
+      ids.add(value);
+    }
+  }
+  return [...ids];
 }
 
 function buildBundleHeadline(events: readonly DiagnosticEvent[]): string {

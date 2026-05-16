@@ -56,6 +56,7 @@ export class PlayerServiceImpl implements PlayerService {
       resumePromptAt: options.resumePromptAt ?? 0,
     });
     this.deps.diagnosticsStore.record({
+      ...options.correlation,
       category: "playback",
       message: "Launching MPV",
       context: {
@@ -87,6 +88,7 @@ export class PlayerServiceImpl implements PlayerService {
         lastTrustedProgressSeconds: result.lastTrustedProgressSeconds ?? 0,
       });
       this.deps.diagnosticsStore.record({
+        ...options.correlation,
         category: "playback",
         message: "MPV playback complete",
         context: {
@@ -114,6 +116,7 @@ export class PlayerServiceImpl implements PlayerService {
         : "Run / export-diagnostics and / report-issue if this keeps failing.";
       this.deps.logger.error("MPV playback failed", { error: String(e) });
       this.deps.diagnosticsStore.record({
+        ...options.correlation,
         category: "playback",
         message: "MPV playback failed",
         context: { error: errorMessage, hint: actionableHint },
@@ -233,7 +236,7 @@ export class PlayerServiceImpl implements PlayerService {
       skipCredits: options.skipCredits,
       onControlReady: (control) => this.deps.playerControl.setActive(control),
       onPlayerReady: options.onPlayerReady,
-      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
+      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent, options.correlation),
       mpv: this.deps.mpv,
     });
   }
@@ -308,10 +311,12 @@ export class PlayerServiceImpl implements PlayerService {
 
   private wrapPlaybackEventHandler(
     handler: ((event: PlayerPlaybackEvent) => void) | undefined,
+    correlation: PlayerOptions["correlation"] = undefined,
   ): (event: PlayerPlaybackEvent) => void {
     return (event) => {
       const failureClass = classifyPlaybackFailureFromEvent(event);
       this.deps.diagnosticsStore.record({
+        ...correlation,
         category: "playback",
         message: "MPV runtime event",
         context: {

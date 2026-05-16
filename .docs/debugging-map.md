@@ -77,6 +77,10 @@ JSONL traces for long local sessions. Redaction must preserve enough shape to
 debug host/stage/provenance while removing secrets, tokens, cookies, stream URLs,
 authorization headers, and private home-directory prefixes.
 
+When events cross subsystems, join them by `sessionId`, `playbackCycleId`,
+`providerAttemptId`, and `traceId`. The support bundle `correlation` summary is
+the quickest way to see which IDs are available in an exported report.
+
 ## Shell And Commands
 
 Start with:

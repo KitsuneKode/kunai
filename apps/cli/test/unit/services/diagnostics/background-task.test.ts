@@ -14,6 +14,10 @@ describe("runBackgroundTask", () => {
       context: {
         streamUrl: "https://cdn.example/watch/1234567890/master.m3u8?token=secret",
         providerId: "vidking",
+        sessionId: "session-1",
+        playbackCycleId: "playback-1",
+        providerAttemptId: "provider-1",
+        traceId: "trace-1",
       },
       run: async () => {
         throw new Error("failed for https://cdn.example/watch/1234567890/master.m3u8?token=secret");
@@ -30,6 +34,10 @@ describe("runBackgroundTask", () => {
       operation: "background.presence.heartbeat",
       message: "Background task failed: presence.heartbeat",
       providerId: "vidking",
+      sessionId: "session-1",
+      playbackCycleId: "playback-1",
+      providerAttemptId: "provider-1",
+      traceId: "trace-1",
     });
     expect(event?.context).toEqual({
       errorName: "Error",

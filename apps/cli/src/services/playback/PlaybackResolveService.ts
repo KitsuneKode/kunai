@@ -14,6 +14,10 @@ import {
 } from "@/domain/recovery/RecoveryPolicy";
 import type { EpisodeInfo, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
+import {
+  createCorrelationId,
+  type DiagnosticCorrelation,
+} from "@/services/diagnostics/correlation";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
@@ -92,6 +96,7 @@ export type PlaybackResolveInput = {
   readonly prefetchedStream?: StreamInfo | null;
   readonly forceHealthCheck?: boolean;
   readonly recoveryMode?: RecoveryMode;
+  readonly correlation?: DiagnosticCorrelation;
   readonly onFeedback?: (feedback: PlaybackResolveFeedback) => void;
   readonly onEvent?: (event: PlaybackResolveEvent) => void;
 };
@@ -240,7 +245,11 @@ export class PlaybackResolveService {
       compatibleIds,
       input.signal,
     );
-    const providerTimeline = buildProviderTimeline(engineResult, input.providerId);
+    const providerTimeline = buildProviderTimeline(
+      engineResult,
+      input.providerId,
+      input.correlation,
+    );
 
     // Persist provider health deltas from all attempts
     for (const attempt of engineResult.attempts) {
@@ -399,8 +408,9 @@ function buildProviderTimeline(
     readonly attempts: readonly ProviderEngineResolveAttempt[];
   },
   primaryProviderId: string,
+  correlation?: DiagnosticCorrelation,
 ): ProviderAttemptTimelineSnapshot {
-  const traceId = `provider:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+  const traceId = correlation?.providerAttemptId ?? createCorrelationId("provider");
   const timeline = createProviderAttemptTimeline({ traceId });
   let lastFailureClass: ReturnType<typeof classifyProviderFailure>["failureClass"] | null = null;
   let lastFailedProviderId: string | null = null;

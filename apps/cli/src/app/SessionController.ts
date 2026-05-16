@@ -47,6 +47,7 @@ export class SessionController {
         diagnosticsStore.record({
           category: "session",
           message: "Session started",
+          sessionId: this.container.sessionId,
           context: {
             mode: stateManager.getState().mode,
             provider: stateManager.getState().provider,
@@ -99,7 +100,7 @@ export class SessionController {
               task: "presence.updateBrowsingAfterPlayback",
               category: "presence",
               diagnosticsStore,
-              context: { view: lastView },
+              context: { sessionId: this.container.sessionId, view: lastView },
               run: () =>
                 this.container.presence.updateBrowsing({
                   view: lastView === "details" ? "title details" : `${lastView} results`,
@@ -111,7 +112,7 @@ export class SessionController {
               task: "presence.clearAfterPlayback",
               category: "presence",
               diagnosticsStore,
-              context: { reason: "playback-exited" },
+              context: { sessionId: this.container.sessionId, reason: "playback-exited" },
               run: () => this.container.presence.clearPlayback("playback-exited"),
             });
           }
