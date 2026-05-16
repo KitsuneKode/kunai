@@ -169,6 +169,13 @@ export class PersistentMpvSession {
   private ipcSession: MpvIpcSession | null = null;
   private activeCycle: PlayerCycleState | null = null;
   private lastTrackList: unknown = null;
+  /** Snapshot of external subtitle track IDs from last track-list observation.
+   *  Used by removeExternalSubtitles to skip IPC when no external subs exist.
+   *  Refreshed on every track-list property-change event so it self-corrects if
+   *  subtitle state changes (e.g. after sub-add/sub-remove). If a bug ever causes
+   *  external subs to persist across episodes, the cache is stale only until the
+   *  next observation cycle — logged IPC will make it diagnosable. */
+  private cachedExternalSubIds: number[] = [];
   private alive = false;
   private currentHeadersKey = "";
   private currentControl: ActivePlayerControl;
@@ -593,6 +600,7 @@ export class PersistentMpvSession {
             }
             if (name === "track-list") {
               this.lastTrackList = value;
+              this.cachedExternalSubIds = extractExternalSubtitleIds(value);
             }
             if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
               const previousPositionSeconds = this.currentPositionSeconds;
@@ -1289,7 +1297,16 @@ export class PersistentMpvSession {
   private async removeExternalSubtitles(): Promise<void> {
     if (!this.ipcSession) return;
 
-    for (const trackId of extractExternalSubtitleIds(this.lastTrackList)) {
+    // Skip IPC when no external subtitle tracks exist in the cached track-list
+    // snapshot. This is the common case for direct-provider streams — we avoid
+    // 0..N sub-remove round-trips per episode transition when the previous file
+    // had no external subs loaded. The cache refreshes on every track-list
+    // property-change event so it self-corrects; if a false empty causes a
+    // stray external sub to survive across episodes, it will be caught on the
+    // next observation cycle and cleaned up then.
+    if (this.cachedExternalSubIds.length === 0) return;
+
+    for (const trackId of this.cachedExternalSubIds) {
       await this.ipcSession.send(["sub-remove", trackId], 1_000);
     }
   }

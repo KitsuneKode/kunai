@@ -1872,7 +1872,7 @@ function BrowseShell<T>({
     debounceMs: 120,
   });
 
-  const clearResults = () => {
+  const clearResults = useCallback(() => {
     setOptions([]);
     setSelectedIndex(0);
     setSearchState("idle");
@@ -1882,31 +1882,26 @@ function BrowseShell<T>({
     setResultSubtitle("");
     setSelectedDetail("Search for a title — or try /trending to see what's popular");
     setActiveFilterBadges([]);
-  };
+  }, []);
 
-  const updateQuery = (nextValue: string) => {
-    const normalized = normalizeReservedCommandInput(nextValue);
-    setQuery(normalized.value);
-    setHistoryIndex(-1);
-    if (normalized.openCommandPalette) {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
-    }
-    if (normalized.value.trim().length === 0) {
-      clearResults();
-    }
-  };
+  const updateQuery = useCallback(
+    (nextValue: string) => {
+      const normalized = normalizeReservedCommandInput(nextValue);
+      setQuery(normalized.value);
+      setHistoryIndex(-1);
+      if (normalized.openCommandPalette) {
+        setCommandMode(true);
+        setCommandInput("");
+        setHighlightedCommandIndex(0);
+      }
+      if (normalized.value.trim().length === 0) {
+        clearResults();
+      }
+    },
+    [clearResults],
+  );
 
-  const handleQuerySubmit = () => {
-    if (!queryDirty && selectedOption && options.length > 0 && searchState === "ready") {
-      onSubmit(selectedOption.value);
-      return;
-    }
-    void runSearch();
-  };
-
-  const runSearch = async () => {
+  const runSearch = useCallback(async () => {
     const parsedQuery = parseBrowseFilterQuery(query);
     const trimmed = parsedQuery.searchQuery.trim();
     const rawQuery = query.trim();
@@ -1962,7 +1957,17 @@ function BrowseShell<T>({
       setEmptyMessage("Search failed.");
       setSelectedDetail("The search failed. Press Enter to retry or Esc to clear.");
     }
-  };
+  }, [query, searchState, onSearch]);
+
+  const handleQuerySubmit = useCallback(() => {
+    const isDirty = query.trim() !== lastSearchedQuery;
+    const selected = options[selectedIndex];
+    if (!isDirty && selected && options.length > 0 && searchState === "ready") {
+      onSubmit(selected.value);
+      return;
+    }
+    void runSearch();
+  }, [query, lastSearchedQuery, options, selectedIndex, searchState, onSubmit, runSearch]);
 
   const loadDiscovery = async () => {
     if (!onLoadDiscovery || searchState === "loading") return;
