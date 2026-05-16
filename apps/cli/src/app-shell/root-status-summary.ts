@@ -59,6 +59,15 @@ function headerTone(rootStatus: string, subtitleTone: ShellStatusTone | null): S
   if (rootStatus === "error") return "error";
   if (subtitleTone === "warning") return "warning";
   if (rootStatus === "playing" || rootStatus === "ready" || rootStatus === "idle") return "success";
+  if (
+    rootStatus === "searching" ||
+    rootStatus === "loading" ||
+    rootStatus === "buffering" ||
+    rootStatus === "seeking" ||
+    rootStatus === "resolving" ||
+    rootStatus === "stalled"
+  )
+    return "warning";
   return "neutral";
 }
 
