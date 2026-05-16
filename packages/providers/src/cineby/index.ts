@@ -151,6 +151,7 @@ function remapVidkingResult(
 
   return {
     ...result,
+    status: result.status,
     providerId: CINEBY_PROVIDER_ID,
     sources: result.sources?.map((source) => ({
       ...source,

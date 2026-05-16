@@ -72,6 +72,7 @@ describe("media track model", () => {
       subtitle: "https://cdn.example/en.vtt",
       timestamp: Date.now(),
       providerResolveResult: {
+        status: "resolved",
         providerId: "vidking",
         selectedStreamId: "stream-1080",
         streams: [
@@ -152,6 +153,7 @@ describe("media track model", () => {
       subtitle: "https://cdn.example/en.vtt",
       timestamp: Date.now(),
       providerResolveResult: {
+        status: "resolved",
         providerId: "vidking",
         selectedStreamId: "stream-1080",
         streams: [

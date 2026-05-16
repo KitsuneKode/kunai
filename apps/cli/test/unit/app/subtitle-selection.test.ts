@@ -117,6 +117,7 @@ describe("choosePlaybackSubtitle", () => {
         headers: {},
         timestamp: Date.now(),
         providerResolveResult: {
+          status: "resolved",
           providerId: "allanime",
           selectedStreamId: "sub-en",
           streams: [

@@ -16,6 +16,7 @@ const streamWithCandidates: StreamInfo = {
   headers: { referer: "https://example.com" },
   timestamp: Date.now(),
   providerResolveResult: {
+    status: "resolved",
     providerId: "vidking",
     selectedStreamId: "stream-1080",
     streams: [

@@ -311,6 +311,7 @@ test("ProviderEngine falls back after a provider returns an exhausted empty resu
     }),
     async resolve(input, context) {
       return {
+        status: "exhausted",
         providerId: "empty",
         streams: [],
         subtitles: [],
@@ -356,6 +357,7 @@ test("ProviderEngine falls back after a provider returns an exhausted empty resu
     }),
     async resolve(input, context) {
       return {
+        status: "resolved",
         providerId: "good",
         selectedStreamId: "stream:good:1",
         streams: [
@@ -410,4 +412,133 @@ test("ProviderEngine falls back after a provider returns an exhausted empty resu
     code: "not-found",
     message: "empty provider had no streams",
   });
+});
+
+test("ProviderEngine retries retryable exhausted results before falling back", async () => {
+  let primaryAttempts = 0;
+  const flakyProvider: CoreProviderModule = {
+    providerId: "flaky",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "flaky",
+      displayName: "Flaky Provider",
+    }),
+    async resolve(input, context) {
+      primaryAttempts += 1;
+      if (primaryAttempts === 1) {
+        return {
+          status: "exhausted",
+          providerId: "flaky",
+          streams: [],
+          subtitles: [],
+          trace: {
+            id: "trace:flaky:empty",
+            startedAt: context.now(),
+            title: input.title,
+            cacheHit: false,
+            steps: [],
+            failures: [
+              {
+                providerId: "flaky",
+                code: "network-error",
+                message: "temporary upstream wobble",
+                retryable: true,
+                at: context.now(),
+              },
+            ],
+          },
+          failures: [
+            {
+              providerId: "flaky",
+              code: "network-error",
+              message: "temporary upstream wobble",
+              retryable: true,
+              at: context.now(),
+            },
+          ],
+        };
+      }
+
+      return {
+        status: "resolved",
+        providerId: "flaky",
+        selectedStreamId: "stream:flaky:1",
+        streams: [
+          {
+            id: "stream:flaky:1",
+            providerId: "flaky",
+            url: "https://cdn.example/flaky.m3u8",
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:flaky:ok",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      };
+    },
+  };
+  const fallbackProvider: CoreProviderModule = {
+    providerId: "fallback",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "fallback",
+      displayName: "Fallback Provider",
+    }),
+    async resolve(input, context) {
+      return {
+        status: "resolved",
+        providerId: "fallback",
+        selectedStreamId: "stream:fallback:1",
+        streams: [
+          {
+            id: "stream:fallback:1",
+            providerId: "fallback",
+            url: "https://cdn.example/fallback.m3u8",
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:fallback",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      };
+    },
+  };
+  const engine = createProviderEngine({
+    modules: [flakyProvider, fallbackProvider],
+    maxAttempts: 2,
+    retryDelayMs: 0,
+  });
+
+  const resolved = await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "movie", title: "Demo" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["flaky", "fallback"],
+  );
+
+  expect(resolved.providerId).toBe("flaky");
+  expect(resolved.result?.selectedStreamId).toBe("stream:flaky:1");
+  expect(primaryAttempts).toBe(2);
+  expect(resolved.attempts).toHaveLength(1);
 });

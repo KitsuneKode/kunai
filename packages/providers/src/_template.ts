@@ -183,6 +183,7 @@ export const templateProviderModule: CoreProviderModule = {
       const endedAt = context.now();
 
       return {
+        status: "resolved",
         providerId: TEMPLATE_PROVIDER_ID,
         selectedStreamId: selectedStream.id,
         sources: [

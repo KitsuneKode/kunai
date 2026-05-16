@@ -64,6 +64,7 @@ function createMemoryProviderHealth(initial: ProviderHealth[] = []) {
 
 function createEmptyProviderResult(providerId: ProviderId): ProviderResolveResult {
   return {
+    status: "exhausted",
     providerId,
     streams: [],
     subtitles: [],
@@ -148,6 +149,7 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
   const fallbackStream = { ...stream, url: "https://fallback.example/stream.m3u8" };
   const engine = createMockEngine({
     result: {
+      status: "resolved",
       providerId: "fallback" as ProviderId,
       streams: [
         {
@@ -263,6 +265,7 @@ test("PlaybackResolveService force-validates fresh cached stream after suspected
   const fallbackStream = { ...stream, url: "https://fallback.example/refetched.m3u8" };
   const engine = createMockEngine({
     result: {
+      status: "resolved",
       providerId: "fallback" as ProviderId,
       streams: [
         {
@@ -361,6 +364,7 @@ test("PlaybackResolveService deletes stale cache and refetches when validation f
   const fallbackStream = { ...stream, url: "https://fallback.example/stream.m3u8" };
   const engine = createMockEngine({
     result: {
+      status: "resolved",
       providerId: "fallback" as ProviderId,
       streams: [
         {

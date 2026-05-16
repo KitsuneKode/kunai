@@ -426,6 +426,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
       const endedAt = context.now();
 
       return {
+        status: "resolved",
         providerId: RIVESTREAM_PROVIDER_ID,
         selectedStreamId: selectedStream.id,
         sources: [

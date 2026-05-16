@@ -367,6 +367,7 @@ export const miruroProviderModule: CoreProviderModule = {
       const endedAt = context.now();
 
       return {
+        status: "resolved",
         providerId: MIRURO_PROVIDER_ID,
         selectedStreamId: selectedStream.id,
         sources: [

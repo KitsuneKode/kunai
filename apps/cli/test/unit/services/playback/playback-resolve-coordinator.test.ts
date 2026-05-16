@@ -58,6 +58,7 @@ function createMockEngine(resolveWithFallbackResult: ProviderEngineResolveOutput
 function createProviderResult(url: string): ProviderEngineResolveOutput {
   return {
     result: {
+      status: "resolved",
       providerId: "fallback" as ProviderId,
       streams: [
         {
@@ -88,6 +89,7 @@ function createProviderResult(url: string): ProviderEngineResolveOutput {
 function createProviderResultAfterFallback(): ProviderEngineResolveOutput {
   return {
     result: {
+      status: "resolved",
       providerId: "rivestream" as ProviderId,
       streams: [
         {

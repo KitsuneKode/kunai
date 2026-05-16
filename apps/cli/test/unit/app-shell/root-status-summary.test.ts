@@ -77,6 +77,7 @@ describe("buildRootStatusSummary", () => {
           headers: {},
           timestamp: 1,
           providerResolveResult: {
+            status: "resolved",
             providerId: "allanime",
             selectedStreamId: "sub-en",
             streams: [

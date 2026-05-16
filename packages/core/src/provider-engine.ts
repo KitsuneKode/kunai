@@ -5,6 +5,7 @@ import type {
   ProviderResolveResult,
   ProviderRuntimeContext,
 } from "@kunai/types";
+import { isProviderResolveResultResolved } from "@kunai/types";
 
 import type { CoreProviderModule } from "./provider-sdk";
 import {
@@ -84,8 +85,11 @@ export class ProviderEngine {
 
       const result = await this.resolveWithTimeout(module, input, signal);
 
-      if (result?.streams.length) return result;
-      if (result) throw createProviderResolveFailureError(result);
+      if (result && isProviderResolveResultResolved(result)) return result;
+      if (result) {
+        const error = createProviderResolveFailureError(result);
+        if (attempt >= this.maxAttempts || !error.failure.retryable) throw error;
+      }
 
       if (signal?.aborted) throw this.abortError();
 

@@ -47,6 +47,7 @@ export function createExhaustedResult(
   };
 
   return {
+    status: "exhausted",
     providerId,
     sources: evidence.sources,
     streams: [],

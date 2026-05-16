@@ -29,7 +29,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
       const provider = createProviderFromModule(module, {
         mode: module.manifest.mediaKinds.includes("anime") ? "anime" : "series",
         search: isAllManga
-          ? async (query, opts, _signal?) => {
+          ? async (query, opts, signal?) => {
               const animeLang =
                 opts.audioPreference === "ja" || opts.audioPreference === "original"
                   ? ("sub" as const)
@@ -40,6 +40,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 ALLMANGA_UA,
                 query,
                 animeLang,
+                signal,
               );
               if (!results) return null;
               return results.map((r): import("@/domain/types").SearchResult => ({
@@ -69,13 +70,14 @@ export class ProviderRegistryImpl implements ProviderRegistry {
             }
           : undefined,
         listEpisodes: isAllManga
-          ? async (request, _signal?) => {
+          ? async (request, signal?) => {
               return fetchAllMangaEpisodeCatalog({
                 apiUrl: ALLMANGA_API_URL,
                 referer: ALLMANGA_REFERER,
                 ua: ALLMANGA_UA,
                 showId: request.title.id,
                 mode: "sub",
+                signal,
               });
             }
           : undefined,

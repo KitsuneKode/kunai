@@ -102,6 +102,7 @@ function migratedCacheDb() {
 
 function makeResolveResult(): ProviderResolveResult {
   return {
+    status: "resolved",
     providerId: "vidking",
     selectedStreamId: "stream:vidking:1080",
     sources: [

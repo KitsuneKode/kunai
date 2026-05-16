@@ -407,6 +407,7 @@ export function createVidkingResultFromPayload({
   const endedAt = context?.now() ?? new Date().toISOString();
 
   return {
+    status: "resolved",
     providerId: VIDKING_PROVIDER_ID,
     selectedStreamId: selectedStream.id,
     sources: [

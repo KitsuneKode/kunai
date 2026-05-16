@@ -40,6 +40,7 @@ export async function mapAnimeDiscoveryResultToProviderNative(
         ALLMANGA_UA,
         query,
         animeLang,
+        context.signal,
       ).catch(() => []);
       const idMatch = matches.find((r) => r.aniListId === discoveryAniListId);
       if (idMatch) return mergeAniListDiscoveryWithProviderResult(result, idMatch);

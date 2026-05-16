@@ -460,9 +460,10 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
   readonly ua: string;
   readonly showId: string;
   readonly mode: "sub" | "dub";
+  readonly signal?: AbortSignal;
 }): Promise<AllMangaEpisodeOption[]> {
-  const { apiUrl, referer, ua, showId, mode } = opts;
-  const info = await loadShowCatalogInfo(apiUrl, referer, ua, showId);
+  const { apiUrl, referer, ua, showId, mode, signal } = opts;
+  const info = await loadShowCatalogInfo(apiUrl, referer, ua, showId, signal);
   const episodeStrings = (info.detail[mode] ?? []) as string[];
 
   return [...episodeStrings].sort(compareEpisodeStrings).map((episodeString, index) => ({
@@ -479,6 +480,7 @@ export async function searchAllManga(
   ua: string,
   query: string,
   animeLang: "sub" | "dub",
+  signal?: AbortSignal,
 ): Promise<AllMangaSearchResult[]> {
   const gqlQuery = `query($search:SearchInput $limit:Int $page:Int $translationType:VaildTranslationTypeEnumType $countryOrigin:VaildCountryOriginEnumType){
     shows(search:$search limit:$limit page:$page translationType:$translationType countryOrigin:$countryOrigin){
@@ -505,13 +507,20 @@ export async function searchAllManga(
       }
     }
   }`;
-  const data = (await gqlPost(apiUrl, referer, ua, gqlQuery, {
-    search: { allowAdult: false, allowUnknown: false, query },
-    limit: 40,
-    page: 1,
-    translationType: animeLang,
-    countryOrigin: "ALL",
-  })) as {
+  const data = (await gqlPost(
+    apiUrl,
+    referer,
+    ua,
+    gqlQuery,
+    {
+      search: { allowAdult: false, allowUnknown: false, query },
+      limit: 40,
+      page: 1,
+      translationType: animeLang,
+      countryOrigin: "ALL",
+    },
+    signal,
+  )) as {
     data: {
       shows: {
         edges: Array<{

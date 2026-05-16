@@ -8,6 +8,7 @@ import type {
   ProviderTraceEvent,
   ResolveTrace,
 } from "../src/index";
+import { classifyProviderFailure, getProviderResolveStatus } from "../src/index";
 
 test("provider resolve result requires trace and immutable candidate arrays", () => {
   const trace: ResolveTrace = {
@@ -24,6 +25,7 @@ test("provider resolve result requires trace and immutable candidate arrays", ()
   };
 
   const result: ProviderResolveResult = {
+    status: "exhausted",
     providerId: "vidking",
     streams: [],
     subtitles: [],
@@ -33,6 +35,96 @@ test("provider resolve result requires trace and immutable candidate arrays", ()
 
   expect(result.trace.id).toBe("trace-1");
   expect(result.streams.length).toBe(0);
+  expect(getProviderResolveStatus(result)).toBe("exhausted");
+});
+
+test("provider resolve result status is the source of truth for playable output", () => {
+  const trace: ResolveTrace = {
+    id: "trace-1",
+    startedAt: "2026-04-29T00:00:00.000Z",
+    title: {
+      id: "tmdb:1",
+      kind: "movie",
+      title: "Example",
+    },
+    cacheHit: false,
+    steps: [],
+    failures: [],
+  };
+
+  const resolved: ProviderResolveResult = {
+    status: "resolved",
+    providerId: "vidking",
+    selectedStreamId: "stream-1",
+    streams: [
+      {
+        id: "stream-1",
+        providerId: "vidking",
+        url: "https://cdn.example/master.m3u8",
+        protocol: "hls",
+        confidence: 0.9,
+        cachePolicy: {
+          ttlClass: "stream-manifest",
+          scope: "local",
+          keyParts: ["provider", "vidking", "1"],
+        },
+      },
+    ],
+    subtitles: [],
+    trace,
+    failures: [],
+  };
+
+  const exhausted: ProviderResolveResult = {
+    status: "exhausted",
+    providerId: "vidking",
+    streams: [],
+    subtitles: [],
+    trace,
+    failures: [],
+  };
+
+  expect(getProviderResolveStatus(resolved)).toBe("resolved");
+  expect(getProviderResolveStatus(exhausted)).toBe("exhausted");
+});
+
+test("shared provider failure taxonomy maps codes and HTTP status consistently", () => {
+  expect(
+    classifyProviderFailure({
+      providerId: "vidking",
+      code: "timeout",
+      message: "Provider did not return a stream within 15s",
+      retryable: true,
+    }),
+  ).toMatchObject({
+    failureClass: "timeout",
+    fallbackPolicy: "auto-fallback",
+    retryable: true,
+  });
+
+  expect(
+    classifyProviderFailure({
+      providerId: "allmanga",
+      code: "blocked",
+      message: "Provider returned 403",
+      retryable: false,
+    }),
+  ).toMatchObject({
+    failureClass: "blocked",
+    fallbackPolicy: "guided-action",
+    retryable: false,
+  });
+
+  expect(
+    classifyProviderFailure({
+      providerId: "rivestream",
+      status: 404,
+      message: "HTTP 404",
+    }),
+  ).toMatchObject({
+    failureClass: "provider-empty",
+    fallbackPolicy: "auto-fallback",
+  });
 });
 
 test("provider sdk contract models selected output plus discovered source inventory", async () => {
@@ -56,6 +148,7 @@ test("provider sdk contract models selected output plus discovered source invent
       });
 
       return {
+        status: "resolved",
         providerId: "vidking",
         selectedStreamId: "stream-1080p",
         sources: [
@@ -141,6 +234,7 @@ test("provider contract carries presentation and subtitle delivery preferences",
   };
 
   const result: ProviderResolveResult = {
+    status: "resolved",
     providerId: "miruro",
     selectedStreamId: "stream-1",
     streams: [

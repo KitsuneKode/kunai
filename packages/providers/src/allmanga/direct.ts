@@ -248,6 +248,7 @@ export const allmangaProviderModule: CoreProviderModule = {
       const endedAt = context.now();
 
       return {
+        status: "resolved",
         providerId: ALLANIME_PROVIDER_ID,
         selectedStreamId: selectedStream.id,
         sources: sourceCandidates,

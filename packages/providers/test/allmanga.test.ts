@@ -3,8 +3,10 @@ import { describe, expect, test } from "bun:test";
 import {
   buildStreamHeaders,
   decodeTobeparsed,
+  fetchAllMangaEpisodeCatalog,
   gqlPost,
   resolveAnimeEpisodeString,
+  searchAllManga,
 } from "../src/index";
 
 const TEST_KEY_RAW = "Xot36i3lK3:v1";
@@ -81,6 +83,55 @@ describe("AllManga HTTP helpers", () => {
       expect(capturedSignal?.aborted).toBe(false);
       parent.abort("test-cancel");
       expect(capturedSignal?.aborted).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("search and episode catalog helpers pass caller cancellation into fetches", async () => {
+    const originalFetch = globalThis.fetch;
+    const parent = new AbortController();
+    const capturedSignals: AbortSignal[] = [];
+    globalThis.fetch = (async (_input, init) => {
+      if (init?.signal) capturedSignals.push(init.signal);
+      return new Response(
+        JSON.stringify({
+          data: {
+            shows: { edges: [] },
+            show: {
+              _id: "show-1",
+              availableEpisodesDetail: { sub: ["1"], dub: [] },
+              availableEpisodes: { sub: 1, dub: 0 },
+              episodeCount: 1,
+            },
+          },
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    try {
+      await searchAllManga(
+        "https://api.example/graphql",
+        "https://referer.example",
+        "ua",
+        "Example",
+        "sub",
+        parent.signal,
+      );
+      await fetchAllMangaEpisodeCatalog({
+        apiUrl: "https://api.example/graphql",
+        referer: "https://referer.example",
+        ua: "ua",
+        showId: "show-1",
+        mode: "sub",
+        signal: parent.signal,
+      });
+
+      expect(capturedSignals.length).toBeGreaterThanOrEqual(2);
+      expect(capturedSignals.every((signal) => signal !== parent.signal)).toBe(true);
+      parent.abort("test-cancel");
+      expect(capturedSignals.every((signal) => signal.aborted)).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }
