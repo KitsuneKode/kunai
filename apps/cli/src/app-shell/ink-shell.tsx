@@ -1866,8 +1866,8 @@ function BrowseShell<T>({
   const requestIdRef = useRef(0);
   const showPoster = viewport.wideBrowse || viewport.mediumBrowse;
   const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
-    rows: viewport.wideBrowse ? 10 : 8,
-    cols: viewport.wideBrowse ? 24 : 18,
+    rows: viewport.wideBrowse ? 11 : 9,
+    cols: viewport.wideBrowse ? 26 : 16,
     enabled: showPoster,
     debounceMs: 120,
   });
