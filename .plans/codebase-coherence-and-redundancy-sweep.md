@@ -1,10 +1,12 @@
 # Codebase Coherence And Redundancy Sweep
 
-Status: Ready after reliability core sweep
+Status: Implemented 2026-05-17
 Owner: next autonomous implementation agent
 Created: 2026-05-17
 
-> **For agentic workers:** run this after `.plans/reliability-core-autonomous-sweep.md` has landed. This is a repo-wide coherence and cleanup pass, not a broad behavior rewrite.
+> **For agentic workers:** this pass landed on 2026-05-17. Read
+> [.plans/codebase-coherence-and-redundancy-report.md](./codebase-coherence-and-redundancy-report.md)
+> for audited surfaces, fixed contradictions, and deferred architecture work.
 
 ## Goal
 

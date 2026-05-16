@@ -47,6 +47,7 @@ Kunai is a terminal-first Bun CLI that finds playable direct-provider video stre
 - Read [.docs/engineering-guide.md](.docs/engineering-guide.md) before broad refactors, service extraction, caching changes, or implementation-structure work
 - Read [.docs/ux-architecture.md](.docs/ux-architecture.md) before changing shell flow, hotkeys, overlays, diagnostics, or setup UX
 - Read [.docs/diagnostics-guide.md](.docs/diagnostics-guide.md) before changing debug logs, diagnostics panels, subtitle evidence, provider tracing, or playback/history troubleshooting
+- Read [.docs/debugging-map.md](.docs/debugging-map.md) before broad reliability/debugging sweeps across playback, providers, storage, presence, or diagnostics
 - Read [.docs/providers.md](.docs/providers.md) before adding or changing providers
 - Read [.docs/playback-timing-and-aniskip.md](.docs/playback-timing-and-aniskip.md) before changing IntroDB/AniSkip fetch, MAL resolution, `PlaybackTimingFetchContext`, or auto-skip metadata wiring
 - Read [.docs/provider-intake.md](.docs/provider-intake.md) before researching or hardening a provider, especially for new sites or major scraper changes

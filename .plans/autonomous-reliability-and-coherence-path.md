@@ -1,9 +1,11 @@
 # Autonomous Reliability And Coherence Path
 
-Status: Reliability pass implemented; coherence pass ready
+Status: Reliability and coherence passes implemented
 Created: 2026-05-17
 
-Use this as the execution path for the next autonomous agent. It chains the reliability work and the deeper codebase coherence work without mixing their risk profiles.
+Use this as the completed execution path for the reliability and coherence passes.
+It remains useful as a record of the risk split and as the handoff point for the
+next architecture sweep.
 
 ## Execution Order
 
@@ -41,9 +43,10 @@ Purpose:
 
 Completion requirements:
 
+- implementation complete on 2026-05-17
 - report created at `.plans/codebase-coherence-and-redundancy-report.md`
-- required deterministic verification passes
-- one commit created
+- required deterministic verification passes completed
+- one commit created for the coherence sweep
 - final report lists deferred architecture work
 
 ## Agent Rules

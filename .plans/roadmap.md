@@ -80,7 +80,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - The implementation pass for production-ready usage, UX behavior, and recovery harness coverage is tracked in [.plans/production-readiness-usage-hardening.md](.plans/production-readiness-usage-hardening.md)
 - Advanced search input, local-first offline library read models, and continuation decision engines are tracked in [.plans/search-offline-continuation-engines.md](.plans/search-offline-continuation-engines.md)
 - Autonomous reliability and coherence handoff path is tracked in [.plans/autonomous-reliability-and-coherence-path.md](.plans/autonomous-reliability-and-coherence-path.md)
-- Reliability core hardening pass is tracked in [.plans/reliability-core-autonomous-sweep.md](.plans/reliability-core-autonomous-sweep.md), followed by the docs/codebase coherence pass in [.plans/codebase-coherence-and-redundancy-sweep.md](.plans/codebase-coherence-and-redundancy-sweep.md)
+- Reliability core hardening and codebase coherence passes are implemented; the coherence report tracks deferred architecture work: [.plans/codebase-coherence-and-redundancy-report.md](.plans/codebase-coherence-and-redundancy-report.md)
 
 ### Recently Improved
 
@@ -111,7 +111,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Production usage hardening        | Planned       | [.plans/production-readiness-usage-hardening.md](.plans/production-readiness-usage-hardening.md)                     |
 | Search/offline engines            | Planned       | [.plans/search-offline-continuation-engines.md](.plans/search-offline-continuation-engines.md)                       |
 | Reliability core autonomous sweep | Implemented   | [.plans/reliability-core-autonomous-sweep.md](.plans/reliability-core-autonomous-sweep.md)                           |
-| Codebase coherence sweep          | Ready         | [.plans/codebase-coherence-and-redundancy-sweep.md](.plans/codebase-coherence-and-redundancy-sweep.md)               |
+| Codebase coherence sweep          | Implemented   | [.plans/codebase-coherence-and-redundancy-sweep.md](.plans/codebase-coherence-and-redundancy-sweep.md)               |
 | Beta UI/provider hardening        | In Progress   | [.plans/beta-ui-provider-runtime-hardening.md](.plans/beta-ui-provider-runtime-hardening.md)                         |
 | Fullscreen root shell redesign    | In Progress   | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                                 |
 | Phase 1.8 mounted content tree    | In Progress   | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)                   |

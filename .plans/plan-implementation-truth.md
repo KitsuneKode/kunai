@@ -1,6 +1,6 @@
 # Plan vs Implementation Truth Index
 
-**Last reconciled:** 2026-05-16
+**Last reconciled:** 2026-05-17
 
 Use this file when a `.plans/*` status disagrees with the codebase. **Code wins** unless this index explicitly says otherwise. Update this file in the same change set when you complete or retire plan work.
 
@@ -30,19 +30,21 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 
 ## Implemented capabilities (plans often still list as future)
 
-| Capability                                                            | Canonical code                                                                          | Notes                                                                                              |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Ink app shell                                                         | `apps/cli/src/app-shell/ink-shell.tsx`, `shell-frame.tsx`                               | Single module-level Ink root; not one reducer tree yet                                             |
-| Design tokens                                                         | `packages/design/src/tokens.ts`, `shell-theme.ts`                                       |                                                                                                    |
-| `/discover`, `/calendar`, `/random`                                   | `discover-shell.tsx`, `calendar-results.ts`, `random-results.ts`, `command-registry.ts` | Lazy-loaded; see [.docs/recommendations-and-discover.md](../.docs/recommendations-and-discover.md) |
-| Root overlays (settings, provider, history, diagnostics, help, about) | `root-overlay-shell.tsx`, `overlay-panel.tsx`                                           |                                                                                                    |
-| Session pickers (season, episode, subtitle, …)                        | `session-picker.ts`, `openSessionPicker`, `picker-overlay.tsx`                          | `root-picker-bridge.ts` **removed**                                                                |
-| Viewport policy + resize blockers                                     | `layout-policy.ts`, `use-viewport-policy.ts`, `ResizeBlocker`                           | Per-shell minimums; debounced resize                                                               |
-| `minimalMode`, footer modes                                           | config + `ink-shell.tsx`                                                                |                                                                                                    |
-| Poster preview (non-blocking)                                         | `image-pane.ts`, `use-poster-preview.ts`                                                | Flicker on resize still tracked                                                                    |
-| Playback resolve + source inventory                                   | `PlaybackResolveService.ts`, inventory service/tests                                    |                                                                                                    |
-| Catalog schedule + calendar                                           | `CatalogScheduleService.ts`, `schedule-cache` repository                                |                                                                                                    |
-| Shell responsiveness pass                                             | [shell-responsiveness-and-polish-pass.md](./shell-responsiveness-and-polish-pass.md)    | Marked completed 2026-05-16                                                                        |
+| Capability                                                            | Canonical code                                                                               | Notes                                                                                              |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Ink app shell                                                         | `apps/cli/src/app-shell/ink-shell.tsx`, `shell-frame.tsx`                                    | Single module-level Ink root; not one reducer tree yet                                             |
+| Design tokens                                                         | `packages/design/src/tokens.ts`, `shell-theme.ts`                                            |                                                                                                    |
+| `/discover`, `/calendar`, `/random`                                   | `discover-shell.tsx`, `calendar-results.ts`, `random-results.ts`, `command-registry.ts`      | Lazy-loaded; see [.docs/recommendations-and-discover.md](../.docs/recommendations-and-discover.md) |
+| Root overlays (settings, provider, history, diagnostics, help, about) | `root-overlay-shell.tsx`, `overlay-panel.tsx`                                                |                                                                                                    |
+| Session pickers (season, episode, subtitle, …)                        | `session-picker.ts`, `openSessionPicker`, `picker-overlay.tsx`                               | `root-picker-bridge.ts` **removed**                                                                |
+| Viewport policy + resize blockers                                     | `layout-policy.ts`, `use-viewport-policy.ts`, `ResizeBlocker`                                | Per-shell minimums; debounced resize                                                               |
+| `minimalMode`, footer modes                                           | config + `ink-shell.tsx`                                                                     |                                                                                                    |
+| Poster preview (non-blocking)                                         | `image-pane.ts`, `use-poster-preview.ts`                                                     | Flicker on resize still tracked                                                                    |
+| Playback resolve + source inventory                                   | `PlaybackResolveService.ts`, inventory service/tests                                         |                                                                                                    |
+| Catalog schedule + calendar                                           | `CatalogScheduleService.ts`, `schedule-cache` repository                                     |                                                                                                    |
+| Shell responsiveness pass                                             | [shell-responsiveness-and-polish-pass.md](./shell-responsiveness-and-polish-pass.md)         | Marked completed 2026-05-16                                                                        |
+| Reliability core hardening                                            | [reliability-core-autonomous-sweep.md](./reliability-core-autonomous-sweep.md)               | Fake mpv harness, PlayerControl ordering tests, release gate, live smoke scripts                   |
+| Codebase coherence sweep                                              | [codebase-coherence-and-redundancy-report.md](./codebase-coherence-and-redundancy-report.md) | README/PR checklist/release gate coherence, debugging map, deferred architecture report            |
 
 ---
 
@@ -56,6 +58,7 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 | Beta UI/provider hardening     | In progress (tasks 8–10)                          | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                     |
 | Catalog schedule polish        | In progress (calendar UX + browse badges)         | [catalog-release-schedule-service.md](./catalog-release-schedule-service.md)                         |
 | Design system + Discover       | Polish / verification                             | [kitsune-design-system-and-recommendations.md](./kitsune-design-system-and-recommendations.md)       |
+| Reliability/coherence path     | Implemented; use report for next sweep            | [codebase-coherence-and-redundancy-report.md](./codebase-coherence-and-redundancy-report.md)         |
 
 ---
 
@@ -68,6 +71,7 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 - **Central input routing** — beta-ui Task 6 step 2 unchecked.
 - **Split `ink-shell.tsx`** — beta-ui Task 10; file still large.
 - **Image flicker on terminal shrink** — explicit cleanup in `ink-shell.tsx` comments; image-pane ownership incomplete.
+- **Trace/event correlation** — diagnostics, debug JSONL, background task errors, and provider/player telemetry do not yet share a single correlation id model.
 
 ---
 

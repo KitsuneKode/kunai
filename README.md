@@ -368,11 +368,15 @@ bun run dev -- -S "Dune"
 # Link globally
 bun run link:global
 
-# Tests
-bun run typecheck
-bun run lint
+# Deterministic checks
 bun run fmt
+bun run lint
 bun run test
+bun run typecheck
+
+# Build/release confidence
+bun run build
+bun run pkg:check
 
 # Smoke tests
 bun run dev -- -S "Dune"
@@ -381,6 +385,11 @@ bun run dev -- --discover
 bun run dev -- --calendar
 bun run dev -- --offline
 ```
+
+Routine checks are deterministic and do not hit live providers or Discord.
+Provider and Rich Presence smokes are opt-in release checks; see
+[.docs/release-reliability-gate.md](.docs/release-reliability-gate.md) for the
+current gate.
 
 ### VHS demos
 

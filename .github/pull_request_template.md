@@ -5,5 +5,6 @@
 ## Checklist
 
 - [ ] Changeset added (`bun run changeset`) — or N/A for docs/infra/no-release changes
-- [ ] `bun run typecheck && bun run lint && bun run fmt` passes locally
-- [ ] Tests pass or new tests added for new behavior
+- [ ] `bun run fmt && bun run lint && bun run test && bun run typecheck` passes locally
+- [ ] `bun run build` passes for feature, playback, provider, release, or packaging-sensitive changes
+- [ ] Live provider or Discord smokes were skipped intentionally, or run manually with results noted

@@ -2,6 +2,10 @@
 
 Use this when a provider, subtitle, playback, cache, or shell flow behaves differently than expected.
 
+For cross-subsystem triage, start with the short
+[debugging map](debugging-map.md) and then return here for event shapes,
+redaction rules, and export behavior.
+
 ## Fast Debug Loop
 
 Run with debug logs enabled:
