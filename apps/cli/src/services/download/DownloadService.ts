@@ -11,6 +11,7 @@ import type {
 } from "@/domain/types";
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
+import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { cacheOfflinePosterArtwork } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
@@ -323,7 +324,13 @@ export class DownloadService {
       this.emit({ type: "complete", jobId: next.id });
       const completed = this.deps.repo.get(next.id) ?? null;
       if (completed) {
-        void this.prepareOfflineArtwork(completed);
+        runBackgroundTask({
+          task: "download.prepareOfflineArtwork",
+          category: "download",
+          logger: this.deps.logger,
+          context: { titleId: completed.titleId, jobId: completed.id },
+          run: () => this.prepareOfflineArtwork(completed),
+        });
       }
       return completed;
     } catch (error) {

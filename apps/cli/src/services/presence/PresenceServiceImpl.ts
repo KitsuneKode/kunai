@@ -1,3 +1,4 @@
+import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 
@@ -314,7 +315,12 @@ export class PresenceServiceImpl implements PresenceService {
   private startHeartbeat(): void {
     if (this.heartbeatTimer) return;
     this.heartbeatTimer = setInterval(() => {
-      void this.sendHeartbeat();
+      runBackgroundTask({
+        task: "presence.heartbeat",
+        category: "presence",
+        diagnosticsStore: this.deps.diagnosticsStore,
+        run: () => this.sendHeartbeat(),
+      });
     }, 15_000);
   }
 
@@ -329,7 +335,12 @@ export class PresenceServiceImpl implements PresenceService {
     if (!this.discordClient) {
       if (this.unavailableUntilRestart && Date.now() >= this.unavailableRetryAtMs) {
         this.unavailableUntilRestart = false;
-        void this.tryReconnect();
+        runBackgroundTask({
+          task: "presence.reconnectFromHeartbeat",
+          category: "presence",
+          diagnosticsStore: this.deps.diagnosticsStore,
+          run: () => this.tryReconnect(),
+        });
       }
       return;
     }

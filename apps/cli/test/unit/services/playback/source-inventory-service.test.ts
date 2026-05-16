@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImpl";
 import {
   buildSourceInventoryCacheKey,
   SourceInventoryService,
@@ -89,6 +90,59 @@ describe("SourceInventoryService", () => {
     expect(hit?.sources?.[0]?.id).toBe("source:vidking:cdn");
     expect(hit?.streams).toHaveLength(2);
     expect(hit?.subtitles[0]?.language).toBe("en");
+  });
+
+  test("records recoverable diagnostics when inventory persistence fails", async () => {
+    const diagnosticsStore = new DiagnosticsStoreImpl();
+    const service = new SourceInventoryService(
+      {
+        get() {
+          throw new Error("database is locked");
+        },
+        set() {
+          throw new Error("database is locked");
+        },
+        delete() {
+          throw new Error("database is locked");
+        },
+      } as never,
+      { diagnosticsStore },
+    );
+    const input = {
+      providerId: "vidking",
+      mediaKind: "series" as const,
+      titleId: "127529",
+      season: 1,
+      episode: 2,
+    };
+
+    await expect(service.get(input)).resolves.toBeNull();
+    await expect(service.set(input, makeResolveResult())).resolves.toBeUndefined();
+    await expect(service.delete(input)).resolves.toBeUndefined();
+
+    expect(diagnosticsStore.getSnapshot()).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        category: "cache",
+        operation: "source-inventory.get",
+        providerId: "vidking",
+        titleId: "127529",
+      }),
+      expect.objectContaining({
+        level: "warn",
+        category: "cache",
+        operation: "source-inventory.set",
+        providerId: "vidking",
+        titleId: "127529",
+      }),
+      expect.objectContaining({
+        level: "warn",
+        category: "cache",
+        operation: "source-inventory.delete",
+        providerId: "vidking",
+        titleId: "127529",
+      }),
+    ]);
   });
 });
 

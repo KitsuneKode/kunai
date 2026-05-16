@@ -9,6 +9,7 @@ import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import type { SearchPhaseInput } from "@/app/SearchPhase";
 import type { Container } from "@/container";
 import type { TitleInfo } from "@/domain/types";
+import { runBackgroundTask } from "@/services/diagnostics/background-task";
 
 export type SessionOutcome = "quit" | "mode_switch";
 
@@ -94,12 +95,25 @@ export class SessionController {
 
           const lastView = stateManager.getState().view;
           if (lastView === "results" || lastView === "search" || lastView === "details") {
-            void this.container.presence.updateBrowsing({
-              view: lastView === "details" ? "title details" : `${lastView} results`,
-              detail: stateManager.getState().currentTitle?.name,
+            runBackgroundTask({
+              task: "presence.updateBrowsingAfterPlayback",
+              category: "presence",
+              diagnosticsStore,
+              context: { view: lastView },
+              run: () =>
+                this.container.presence.updateBrowsing({
+                  view: lastView === "details" ? "title details" : `${lastView} results`,
+                  detail: stateManager.getState().currentTitle?.name,
+                }),
             });
           } else {
-            void this.container.presence.clearPlayback("playback-exited");
+            runBackgroundTask({
+              task: "presence.clearAfterPlayback",
+              category: "presence",
+              diagnosticsStore,
+              context: { reason: "playback-exited" },
+              run: () => this.container.presence.clearPlayback("playback-exited"),
+            });
           }
 
           if (this.abortController.signal.aborted) break;

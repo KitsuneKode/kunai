@@ -37,7 +37,7 @@ let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
 let failureMessages: readonly string[] = [];
 let streamCandidates = 0;
-const { stream } = await resolveProviderSmokeStream({
+const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
   container,
   providerId: "rivestream",
   mode: "series",
@@ -56,7 +56,7 @@ const { stream } = await resolveProviderSmokeStream({
   })
   .catch((error) => {
     resolveError = error;
-    return { stream: null };
+    return { stream: null, resolveDurationMs: null };
   });
 
 const payload = {
@@ -66,6 +66,7 @@ const payload = {
     season,
     episode,
     stream,
+    resolveDurationMs,
   }),
   ...(resolveError ? providerSmokeError(resolveError) : {}),
   failureCodes,

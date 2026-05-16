@@ -1,11 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import type { StreamInfo } from "@/domain/types";
-import type {
-  MpvIpcCommandResult,
-  MpvIpcSession,
-  PersistentMpvSessionRuntime,
-} from "@/infra/player/mpv-ipc";
+import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc";
+import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
 
 type CapturedCallbacks = Parameters<PersistentMpvSessionRuntime["openIpcSession"]>[0];
@@ -224,6 +221,62 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
 
     expect(await nextPlayback).toMatchObject({ endReason: "eof", watchedSeconds: 600 });
     expect(harness.commands).toContainEqual(["seek", 90, "absolute"]);
+  });
+
+  test("resume prompt timeout starts over without applying the resume seek", async () => {
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        mpvInProcessStreamReconnectMaxAttempts: 0,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+      resumeChoiceTimeoutMs: 5,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    const firstPlayback = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+    await firstPlayback;
+
+    const nextPlayback = session.play(
+      createStream({ url: "https://video.example/episode-2.m3u8" }),
+      {
+        displayTitle: "Episode 2",
+        primarySubtitle: null,
+        startAt: 0,
+        resumePromptAt: 90,
+        offerResumeStartChoice: true,
+      },
+    );
+    await waitFor(() =>
+      harness.commands.some(
+        (command) =>
+          command[0] === "loadfile" && command[1] === "https://video.example/episode-2.m3u8",
+      ),
+    );
+    harness.callbacks().onFileLoaded?.({ observedAt: 3 });
+    await waitFor(() =>
+      harness.commands.some(
+        (command) => command[0] === "set_property" && command[1] === "user-data/kunai-resume-at",
+      ),
+    );
+    await Bun.sleep(10);
+    harness.callbacks().onPropertyUpdate({
+      name: "user-data/kunai-resume-choice",
+      value: "resume",
+      observedAt: 4,
+    });
+    await flushAsyncWork();
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 5 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 5, observedAt: 6 });
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 7 });
+
+    expect(await nextPlayback).toMatchObject({ endReason: "eof" });
+    expect(harness.commands).not.toContainEqual(["seek", 90, "absolute"]);
   });
 
   test("in-process reconnect reloads the stream and restores subtitles after file-loaded", async () => {

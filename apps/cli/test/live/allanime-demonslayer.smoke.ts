@@ -97,7 +97,7 @@ let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
 let failureMessages: readonly string[] = [];
 let streamCandidates = 0;
-const { stream } = await resolveProviderSmokeStream({
+const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
   container,
   providerId: provider.metadata.id,
   mode: "anime",
@@ -116,7 +116,7 @@ const { stream } = await resolveProviderSmokeStream({
   })
   .catch((error) => {
     resolveError = error;
-    return { stream: null };
+    return { stream: null, resolveDurationMs: null };
   });
 
 const payload = {
@@ -126,6 +126,7 @@ const payload = {
     season: 1,
     episode: 1,
     stream,
+    resolveDurationMs,
   }),
   query,
   fixtureTitleId,

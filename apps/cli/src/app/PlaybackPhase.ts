@@ -80,6 +80,7 @@ import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { AniSkipTimingSource, IntroDbTimingSource, PlaybackTimingAggregator } from "@/infra/timing";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
+import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import {
   resolveAutoDownloadScope,
@@ -135,6 +136,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       type: "SET_PLAYBACK_FEEDBACK",
       detail: feedback.detail,
       note: feedback.note,
+    });
+  }
+
+  private updatePresenceInBackground(
+    context: PhaseContext,
+    task: string,
+    activity: Parameters<PhaseContext["container"]["presence"]["updatePlayback"]>[0],
+  ): void {
+    runBackgroundTask({
+      task,
+      category: "presence",
+      diagnosticsStore: context.container.diagnosticsStore,
+      context: {
+        titleId: activity.title.id,
+        providerId: activity.providerId,
+        season: activity.episode.season,
+        episode: activity.episode.episode,
+      },
+      run: () => context.container.presence.updatePlayback(activity),
     });
   }
 
@@ -786,14 +806,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // post-playback decisions (history, autoNext, result classification) use it.
           const effectiveTiming = { current: playbackTiming };
           if (!playbackTiming) {
-            void this.retryTimingInBackground(
-              title,
-              currentEpisode,
-              container,
-              effectiveTiming,
-              playbackTimingByEpisode,
-              stateManager.getState().mode === "anime",
-            );
+            runBackgroundTask({
+              task: "playback.retryTiming",
+              category: "playback",
+              diagnosticsStore: container.diagnosticsStore,
+              context: {
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+                providerId: container.stateManager.getState().provider,
+              },
+              run: () =>
+                this.retryTimingInBackground(
+                  title,
+                  currentEpisode,
+                  container,
+                  effectiveTiming,
+                  playbackTimingByEpisode,
+                  stateManager.getState().mode === "anime",
+                ),
+            });
           }
 
           const preparedStream = await this.preparePlaybackStream(
@@ -1962,29 +1994,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     isAnime?: boolean,
   ): Promise<void> {
     return (async () => {
-      try {
-        const mode = isAnime ? "anime" : title.type === "movie" ? "movie" : "series";
-        const providerId = container.stateManager.getState().provider;
-        const timing = await timingAggregator.resolve(
-          title,
-          episode,
-          mode,
-          AbortSignal.timeout(10_000),
-          { providerId },
-        );
-        if (timing) {
-          if (timingRef) timingRef.current = timing;
-          if (cache) {
-            const cacheKey =
-              title.type === "movie"
-                ? `movie:${title.id}`
-                : `series:${title.id}:${episode.season}:${episode.episode}`;
-            cache.set(cacheKey, timing);
-          }
-          container.playerControl.updateCurrentPlaybackTiming(timing, "background-retry");
+      const mode = isAnime ? "anime" : title.type === "movie" ? "movie" : "series";
+      const providerId = container.stateManager.getState().provider;
+      const timing = await timingAggregator.resolve(
+        title,
+        episode,
+        mode,
+        AbortSignal.timeout(10_000),
+        { providerId },
+      );
+      if (timing) {
+        if (timingRef) timingRef.current = timing;
+        if (cache) {
+          const cacheKey =
+            title.type === "movie"
+              ? `movie:${title.id}`
+              : `series:${title.id}:${episode.season}:${episode.episode}`;
+          cache.set(cacheKey, timing);
         }
-      } catch {
-        // background retry failed silently
+        container.playerControl.updateCurrentPlaybackTiming(timing, "background-retry");
       }
     })();
   }
@@ -2113,7 +2141,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           : undefined;
       let latestPresencePositionSeconds = startAt > 0 ? startAt : 0;
       let latestPresenceDurationSeconds = 0;
-      void context.container.presence.updatePlayback({
+      this.updatePresenceInBackground(context, "presence.updatePlaybackLaunch", {
         mode: stateManager.getState().mode,
         title,
         episode,
@@ -2172,7 +2200,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           } else if (event.type === "playback-started") {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
             // Update presence with accurate start time (after buffering)
-            context.container.presence.updatePlayback({
+            this.updatePresenceInBackground(context, "presence.updatePlaybackStarted", {
               mode: stateManager.getState().mode,
               title,
               episode,
@@ -2186,7 +2214,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           } else if (event.type === "playback-progress") {
             latestPresencePositionSeconds = event.positionSeconds;
             latestPresenceDurationSeconds = event.durationSeconds;
-            context.container.presence.updatePlayback({
+            this.updatePresenceInBackground(context, "presence.updatePlaybackProgress", {
               mode: stateManager.getState().mode,
               title,
               episode,
@@ -2197,7 +2225,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               durationSeconds: latestPresenceDurationSeconds,
             });
           } else if (event.type === "late-subtitles-attached") {
-            context.container.presence.updatePlayback({
+            this.updatePresenceInBackground(context, "presence.updatePlaybackSubtitles", {
               mode: stateManager.getState().mode,
               title,
               episode,
@@ -2209,7 +2237,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               subtitleCount: event.trackCount,
             });
           } else if (event.type === "playback-paused") {
-            context.container.presence.updatePlayback({
+            this.updatePresenceInBackground(context, "presence.updatePlaybackPaused", {
               mode: stateManager.getState().mode,
               title,
               episode,
@@ -2221,7 +2249,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               paused: true,
             });
           } else if (event.type === "playback-resumed") {
-            context.container.presence.updatePlayback({
+            this.updatePresenceInBackground(context, "presence.updatePlaybackResumed", {
               mode: stateManager.getState().mode,
               title,
               episode,

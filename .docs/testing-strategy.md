@@ -193,6 +193,13 @@ Prefer dossier-backed fixtures over hand-built guesses.
 | Subtitle or quality extraction | fixture-backed parser tests                                                |
 | Diagnostics/report change      | contract tests for redaction and output shape                              |
 
+## Reliability-Seam Expectations
+
+- Fire-and-forget async work must be routed through a background-task guard or have a local cleanup-only comment.
+- Recoverable cache/provider/presence failures should record redacted diagnostics while preserving playback when possible.
+- Fake mpv IPC lifecycle tests cover app-side orchestration only; keep one manual real-mpv smoke for release candidates that touch playback.
+- Live provider and Discord smokes are opt-in and must not be added to `bun run test`, CI, or Husky.
+
 ## Manual Smoke Matrix
 
 Use these after meaningful shell or startup-route changes. They are not replacements for unit tests; they verify the real terminal experience.

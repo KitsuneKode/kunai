@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import { getDefaultTtlMs, SourceInventoryRepository } from "@kunai/storage";
 import type {
   CacheTtlClass,
@@ -24,7 +25,10 @@ export type SourceInventoryCacheInput = {
 };
 
 export class SourceInventoryService {
-  constructor(private readonly repository: SourceInventoryRepository) {}
+  constructor(
+    private readonly repository: SourceInventoryRepository,
+    private readonly options: { readonly diagnosticsStore?: DiagnosticsStore } = {},
+  ) {}
 
   async get(
     input: SourceInventoryCacheInput,
@@ -36,7 +40,8 @@ export class SourceInventoryService {
         now,
       );
       return hit?.inventory ?? null;
-    } catch {
+    } catch (error) {
+      this.recordCacheFailure("source-inventory.get", input, error);
       return null;
     }
   }
@@ -60,7 +65,8 @@ export class SourceInventoryService {
         getInventoryExpiresAt(ttlClass, inventory.cachePolicy?.ttlMs, now),
         now.toISOString(),
       );
-    } catch {
+    } catch (error) {
+      this.recordCacheFailure("source-inventory.set", input, error);
       // Inventory caching is a performance feature; playback must keep going.
     }
   }
@@ -68,7 +74,31 @@ export class SourceInventoryService {
   async delete(input: SourceInventoryCacheInput): Promise<void> {
     try {
       this.repository.delete(buildSourceInventoryCacheKey(input));
-    } catch {}
+    } catch (error) {
+      this.recordCacheFailure("source-inventory.delete", input, error);
+    }
+  }
+
+  private recordCacheFailure(
+    operation: string,
+    input: SourceInventoryCacheInput,
+    error: unknown,
+  ): void {
+    this.options.diagnosticsStore?.record({
+      level: "warn",
+      category: "cache",
+      operation,
+      message: "Source inventory cache unavailable",
+      providerId: input.providerId,
+      titleId: input.titleId,
+      season: input.season,
+      episode: input.episode ?? input.absoluteEpisode,
+      context: {
+        mediaKind: input.mediaKind,
+        runtime: input.runtime,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
   }
 }
 

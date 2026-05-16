@@ -43,6 +43,8 @@ bun run test:live:miruro
 Expected result for each provider:
 
 - JSON output has `ok: true`
+- `skipped` is false
+- `providerId`, `engine`, and `resolveDurationMs` are present
 - `streamResolved` is true
 - `streamHost` is present
 - `failureCodes` is empty or contains only non-blocking fallback evidence when a fallback stream was selected
@@ -77,6 +79,7 @@ For playback-sensitive changes, confirm the deterministic fake IPC harness remai
 - property flood before ready work
 - external subtitle cleanup
 - resume prompt and resume seek
+- resume prompt timeout starts over without applying the resume seek
 - in-process reconnect after `file-loaded`
 
 The fake harness does not replace a manual mpv smoke. It proves app-side orchestration without requiring a real player.
@@ -95,4 +98,5 @@ Check:
 - terminal shell stays responsive
 - mpv opens and starts playback
 - `/diagnostics` shows provider and playback events
+- background presence/cache/timing failures appear as redacted diagnostics instead of disappearing silently
 - next/previous/refresh controls do not leave the terminal or mpv in a stuck state

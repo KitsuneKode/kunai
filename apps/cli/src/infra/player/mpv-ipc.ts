@@ -139,16 +139,6 @@ export interface MpvIpcSession {
   close(): Promise<void>;
 }
 
-export type PersistentMpvSessionRuntime = {
-  which(command: string): string | null;
-  spawn(
-    command: string[],
-    options: Parameters<typeof Bun.spawn>[1],
-  ): Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill">;
-  waitForIpcEndpoint: typeof waitForMpvIpcEndpoint;
-  openIpcSession(options: MpvIpcSessionOptions): Promise<MpvIpcSession>;
-};
-
 export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<MpvIpcSession> {
   const requestIds = new Map<number, string>();
   const pendingCommands = new Map<number, PendingCommand>();

@@ -10,7 +10,9 @@ import type { ProviderResolveResult } from "@kunai/types";
 
 export type ProviderSmokePayload = {
   readonly ok: boolean;
+  readonly skipped: boolean;
   readonly provider: string;
+  readonly providerId: string;
   readonly title: string;
   readonly titleId: string;
   readonly type: TitleInfo["type"];
@@ -21,7 +23,9 @@ export type ProviderSmokePayload = {
   readonly subtitleTracks: number;
   readonly selectedSubtitleUrl: string | null;
   readonly headerKeys: readonly string[];
+  readonly engine: string | null;
   readonly runtime: string | null;
+  readonly resolveDurationMs: number | null;
   readonly cacheHit: boolean | null;
   readonly failureCodes: readonly string[];
   readonly failureMessages?: readonly string[];
@@ -73,16 +77,21 @@ export function buildProviderSmokePayload({
   season,
   episode,
   stream,
+  resolveDurationMs,
 }: {
   readonly provider: string;
   readonly title: TitleInfo;
   readonly season?: number;
   readonly episode?: number;
   readonly stream: StreamInfo | null;
+  readonly resolveDurationMs?: number | null;
 }): ProviderSmokePayload {
+  const engine = stream?.providerResolveResult?.trace.runtime ?? null;
   return {
     ok: Boolean(stream?.url),
+    skipped: false,
     provider,
+    providerId: provider,
     title: title.name,
     titleId: title.id,
     type: title.type,
@@ -93,7 +102,9 @@ export function buildProviderSmokePayload({
     subtitleTracks: stream?.subtitleList?.length ?? 0,
     selectedSubtitleUrl: stream?.subtitle ?? null,
     headerKeys: Object.keys(stream?.headers ?? {}),
-    runtime: stream?.providerResolveResult?.trace.runtime ?? null,
+    engine,
+    runtime: engine,
+    resolveDurationMs: resolveDurationMs ?? null,
     cacheHit: stream?.providerResolveResult?.trace.cacheHit ?? null,
     failureCodes: stream?.providerResolveResult?.failures.map((failure) => failure.code) ?? [],
   };
@@ -123,17 +134,23 @@ export async function resolveProviderSmokeStream({
   readonly providerId: string;
   readonly request: StreamRequest;
   readonly mode: "series" | "anime";
-}): Promise<{ readonly stream: StreamInfo | null; readonly result: ProviderResolveResult }> {
+}): Promise<{
+  readonly stream: StreamInfo | null;
+  readonly result: ProviderResolveResult;
+  readonly resolveDurationMs: number;
+}> {
   const module = container.engine.get(providerId);
   if (!module) {
     throw new Error(`Missing provider module: ${providerId}`);
   }
 
+  const startedAt = Date.now();
   const result = await module.resolve(streamRequestToResolveInput(request, mode), {
     now: () => new Date().toISOString(),
   });
   return {
     result,
+    resolveDurationMs: Date.now() - startedAt,
     stream: providerResolveResultToStreamInfo({
       result,
       title: request.title.name,

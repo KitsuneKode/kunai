@@ -16,13 +16,17 @@ KUNAI_LIVE_DISCORD_PRESENCE=1 bun run test:live:discord
 
 Use `KITSUNE_CLEAR_CACHE=1` only when the point of the run is to prove a cold-cache provider path. Do not loop live smokes while iterating; add or update unit/integration coverage around the deterministic seam instead.
 
-For each run, capture:
+For each run, the JSON payload should include:
 
-- provider id and selected runtime
-- cache status: fresh, stale, validated, refetched, or miss
+- `ok` and `skipped`
+- `providerId` and selected `engine`
+- `isolatedProfile`
+- `resolveDurationMs`
+- `streamResolved` and `streamHost`
+- `failureCodes`
+- cache status when available: fresh, stale, validated, refetched, or miss
 - stream candidate count and selected protocol
 - subtitle candidate count and selected source
-- timing for resolve, health check, and player startup
 - redacted diagnostics export path when a failure needs reporting
 
 Do not mark a provider down from a local offline/DNS failure. Confirm general connectivity first, then compare the smoke output with `/diagnostics` and the provider attempt timeline before changing provider code.

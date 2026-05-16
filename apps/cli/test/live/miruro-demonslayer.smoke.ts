@@ -36,7 +36,7 @@ let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
 let failureMessages: readonly string[] = [];
 let streamCandidates = 0;
-const { stream } = await resolveProviderSmokeStream({
+const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
   container,
   providerId: "miruro",
   mode: "anime",
@@ -55,7 +55,7 @@ const { stream } = await resolveProviderSmokeStream({
   })
   .catch((error) => {
     resolveError = error;
-    return { stream: null };
+    return { stream: null, resolveDurationMs: null };
   });
 
 const payload = {
@@ -65,6 +65,7 @@ const payload = {
     season: 1,
     episode,
     stream,
+    resolveDurationMs,
   }),
   ...(resolveError ? providerSmokeError(resolveError) : {}),
   failureCodes,

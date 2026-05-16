@@ -24,10 +24,14 @@ Discord presence is optional and local-only:
 2. User provides a Discord application client id through `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID`.
 3. The optional `discord-rpc` package must be available at runtime (ships as an optional dependency in the CLI package).
 4. Kunai connects through Discord IPC and calls `setActivity` during playback.
+5. Playback progress updates provide Discord timestamps while playing; paused playback uses static
+   "Paused at" text so Discord does not show an advancing timer.
 
 If any requirement is missing, Kunai records a diagnostics event and disables automatic retry until
 the user reconnects from Settings or changes the presence configuration. This prevents every
 playback update from hammering Discord IPC when the desktop app or client id is unavailable.
+Elapsed retry windows are allowed to recover from browsing or heartbeat updates, and duplicate
+activity payloads are skipped to avoid unnecessary Discord IPC churn.
 
 ## Onboarding And Controls
 
@@ -71,7 +75,8 @@ Discord Rich Presence here is local IPC, not OAuth:
 2. Ensure a client id is available via `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID`.
 3. Set `presenceProvider: "discord"` and preferred `presencePrivacy`.
 4. Start playback in Kunai.
-5. Confirm Discord activity updates and check `/diagnostics` for presence events.
+5. Confirm Discord activity updates with the current playback timestamp and check `/diagnostics` for presence events.
+6. Pause playback and confirm Discord shows a static paused position instead of a moving timer.
 
 ## Remaining Work
 

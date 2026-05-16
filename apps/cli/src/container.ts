@@ -197,13 +197,15 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const configStore = new ConfigStoreImpl(storage);
   const historyStore = new SqliteHistoryStoreImpl(new HistoryRepository(dataDb));
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
-  const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb));
   const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const providerHealth = new ProviderHealthRepository(cacheDb);
   const scheduleCache = new ScheduleCacheRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
   const diagnosticsStore = new DiagnosticsStoreImpl();
+  const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
+    diagnosticsStore,
+  });
   const traceCategories = resolveTraceCategories({
     explicit: process.env.KUNAI_TRACE,
     debugSession: options?.debugSession,

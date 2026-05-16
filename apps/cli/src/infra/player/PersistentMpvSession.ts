@@ -19,7 +19,7 @@ import {
   resolveKunaiMpvBridgeScriptPath,
 } from "./kunai-mpv-bridge";
 import { computeInProcessReconnectSeek } from "./mpv-in-process-reconnect";
-import type { MpvIpcSession, PersistentMpvSessionRuntime } from "./mpv-ipc";
+import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
 import {
   createMpvIpcEndpoint,
@@ -40,6 +40,7 @@ import {
   type PlayerTelemetryState,
 } from "./mpv-telemetry";
 import { PersistentMpvPropertyRouter } from "./persistent-mpv-property-router";
+import type { PersistentMpvSessionRuntime } from "./persistent-mpv-runtime";
 import { PersistentReadyWorkExecutor } from "./persistent-ready-work-executor";
 import {
   buildPersistentLoadfileCommand,
@@ -196,6 +197,7 @@ export class PersistentMpvSession {
   private skipPromptDurationMs = 3000;
 
   private static readonly resumeChoiceTimeoutMs = 12_000;
+  private resumeChoiceTimeoutMs = PersistentMpvSession.resumeChoiceTimeoutMs;
 
   private resumeChoiceWait: {
     resolve: (choice: PersistentResumeStartChoice) => void;
@@ -268,6 +270,8 @@ export class PersistentMpvSession {
     onControlReady: (control: ActivePlayerControl | null) => void;
     /** Test seam for deterministic fake mpv IPC. Production uses Bun/mpv directly. */
     runtime?: PersistentMpvSessionRuntime;
+    /** Test seam for the mpv resume prompt timeout; production uses the default 12s. */
+    resumeChoiceTimeoutMs?: number;
   }): Promise<PersistentMpvSession> {
     const session = new PersistentMpvSession(
       opts.stream,
@@ -282,6 +286,12 @@ export class PersistentMpvSession {
       typeof maxAttempts === "number" && Number.isFinite(maxAttempts)
         ? Math.max(0, Math.min(12, Math.trunc(maxAttempts)))
         : 3;
+    if (
+      typeof opts.resumeChoiceTimeoutMs === "number" &&
+      Number.isFinite(opts.resumeChoiceTimeoutMs)
+    ) {
+      session.resumeChoiceTimeoutMs = Math.max(1, Math.trunc(opts.resumeChoiceTimeoutMs));
+    }
     session.skipPromptDurationMs = parseSkipPromptDurationMs(cfg.mpvKunaiScriptOpts);
     session.scriptOptsArg = buildKunaiBridgeScriptOptsArg(cfg.mpvKunaiScriptOpts);
     session.luaScriptPath = await resolveKunaiMpvBridgeScriptPath(cfg);
@@ -654,7 +664,7 @@ export class PersistentMpvSession {
     return new Promise<PersistentResumeStartChoice>((resolve) => {
       const timeoutId = setTimeout(() => {
         this.finishResumeChoiceWait("start");
-      }, PersistentMpvSession.resumeChoiceTimeoutMs);
+      }, this.resumeChoiceTimeoutMs);
 
       this.resumeChoiceWait = {
         resolve,
