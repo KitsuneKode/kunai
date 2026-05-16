@@ -13,7 +13,12 @@ import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
-import { getKunaiPaths, type DownloadJobRecord, type DownloadJobsRepository } from "@kunai/storage";
+import {
+  getKunaiPaths,
+  type DownloadArtifactStatus,
+  type DownloadJobRecord,
+  type DownloadJobsRepository,
+} from "@kunai/storage";
 
 import { persistLanguageHintsFromEnqueueInput } from "./download-language-hints";
 import { resolveDownloadFeatureState } from "./DownloadFeature";
@@ -84,6 +89,16 @@ export type DownloadResolveResult = {
   readonly selectionChanged?: boolean;
 };
 
+export type DownloadEvent =
+  | { type: "enqueued"; job: DownloadJobRecord }
+  | { type: "progress"; jobId: string; percent: number }
+  | { type: "complete"; jobId: string }
+  | { type: "failed"; jobId: string; error: string }
+  | { type: "aborted"; jobId: string }
+  | { type: "deleted"; jobId: string };
+
+type DownloadEventListener = (event: DownloadEvent) => void;
+
 type ActiveDownloadProcess = {
   readonly process: Bun.Subprocess;
   cancelRequested: boolean;
@@ -99,6 +114,24 @@ export class DownloadService {
     { readonly mode: "abort" | "pause"; readonly reason: string }
   >();
   private readonly activeProcesses = new Map<string, ActiveDownloadProcess>();
+  private readonly eventListeners = new Set<DownloadEventListener>();
+
+  onEvent(handler: DownloadEventListener): () => void {
+    this.eventListeners.add(handler);
+    return () => {
+      this.eventListeners.delete(handler);
+    };
+  }
+
+  private emit(event: DownloadEvent): void {
+    for (const handler of this.eventListeners) {
+      try {
+        handler(event);
+      } catch {
+        // listener error is non-fatal
+      }
+    }
+  }
 
   constructor(
     private readonly deps: {
@@ -114,6 +147,14 @@ export class DownloadService {
       readonly abortGraceMs?: number;
     },
   ) {}
+
+  markArtifactValidated(jobId: string, status: string): void {
+    this.deps.repo.markArtifactValidated(
+      jobId,
+      status as DownloadArtifactStatus,
+      new Date().toISOString(),
+    );
+  }
 
   getEnqueueEligibility(): DownloadEnqueueEligibility {
     const feature = resolveDownloadFeatureState({
@@ -200,6 +241,7 @@ export class DownloadService {
     if (!created) {
       throw new Error("Download enqueue failed");
     }
+    this.emit({ type: "enqueued", job: created });
     return created;
   }
 
@@ -277,6 +319,7 @@ export class DownloadService {
       await this.persistOutputFileSize(downloaded);
       const completedAt = new Date().toISOString();
       this.deps.repo.complete(next.id, completedAt);
+      this.emit({ type: "complete", jobId: next.id });
       const completed = this.deps.repo.get(next.id) ?? null;
       if (completed) {
         void this.generateThumbnailIfAvailable(completed);
@@ -298,6 +341,7 @@ export class DownloadService {
           );
         } else {
           this.deps.repo.abort(next.id, failedAt);
+          this.emit({ type: "aborted", jobId: next.id });
         }
       } else {
         const analysis = analyzeDownloadFailure(message);
@@ -307,6 +351,7 @@ export class DownloadService {
           this.deps.repo.scheduleRetry(next.id, message, retryAt, failedAt);
         } else {
           this.deps.repo.fail(next.id, message, true, failedAt, analysis.failureKind);
+          this.emit({ type: "failed", jobId: next.id, error: message });
         }
       }
       await rm(next.tempPath, { force: true }).catch(() => {});
@@ -414,6 +459,7 @@ export class DownloadService {
       }
     }
     this.deps.repo.delete(jobId);
+    this.emit({ type: "deleted", jobId });
   }
 
   private async executeYtDlpDownload(job: DownloadJobRecord): Promise<DownloadJobRecord> {
@@ -484,6 +530,7 @@ export class DownloadService {
       if (clamped === lastPersistedPercent) return;
       if (now - lastProgressPersistAt < 1000) return;
       this.deps.repo.updateProgress(job.id, clamped, new Date().toISOString());
+      this.emit({ type: "progress", jobId: job.id, percent: clamped });
       lastProgressPersistAt = now;
       lastPersistedPercent = clamped;
     };

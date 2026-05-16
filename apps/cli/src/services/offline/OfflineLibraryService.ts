@@ -10,8 +10,16 @@ import {
   hydrateCompletedOfflineJobs,
   parseIntroSkipTiming,
   resolveOfflineArtifactStatus,
+  type OfflineArtifactStatus,
   type OfflineLibraryEntry,
 } from "./offline-library";
+
+const ARTIFACT_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function isArtifactCacheFresh(job: DownloadJobRecord): boolean {
+  if (!job.lastValidatedAt) return false;
+  return Date.now() - new Date(job.lastValidatedAt).getTime() < ARTIFACT_CACHE_TTL_MS;
+}
 
 export type OfflineLibraryServiceDeps = {
   readonly downloadService: DownloadService;
@@ -29,7 +37,21 @@ export class OfflineLibraryService {
     const completed = dedupeCompletedJobs(
       this.deps.downloadService.listCompleted(Math.max(limit * 2, 1)),
     ).slice(0, limit);
-    return hydrateCompletedOfflineJobs(completed);
+
+    const entries: OfflineLibraryEntry[] = [];
+    for (const job of completed) {
+      if (isArtifactCacheFresh(job) && job.artifactStatus) {
+        entries.push({
+          job,
+          status: job.artifactStatus as OfflineArtifactStatus,
+        });
+        continue;
+      }
+      const status = await resolveOfflineArtifactStatus(job);
+      this.deps.downloadService.markArtifactValidated(job.id, status);
+      entries.push({ job, status });
+    }
+    return entries;
   }
 
   async getPlayableSource(jobId: string): Promise<
