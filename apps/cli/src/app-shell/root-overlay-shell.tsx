@@ -52,6 +52,22 @@ import { CommandPalette, useShellInput } from "./shell-command-ui";
 import { InlineBadge, ShellFooter } from "./shell-primitives";
 import type { FooterAction, ShellPanelLine } from "./types";
 
+function nextSelectableIndex(
+  options: readonly { value: unknown }[],
+  from: number,
+  delta: number,
+): number {
+  const len = options.length;
+  if (len === 0) return 0;
+  let idx = (((from + delta) % len) + len) % len;
+  for (let i = 0; i < len; i++) {
+    const v = options[idx]?.value;
+    if (typeof v !== "string" || !v.startsWith("section:")) return idx;
+    idx = (((idx + delta) % len) + len) % len;
+  }
+  return from;
+}
+
 function getLatestPresenceErrorDetail(container: Container): string | null {
   const event = container.diagnosticsStore
     .getRecent(20)
@@ -96,7 +112,15 @@ export function RootOverlayShell({
         return;
       }
       setFilterQuery(nextValue);
-      setSelectedIndex(0);
+      if (overlay.type === "settings") {
+        const nextFiltered = rankFuzzyMatches(settingsPanel?.options ?? [], nextValue, (option) => [
+          { value: option.label, weight: 0 },
+          { value: option.detail, weight: 8 },
+        ]);
+        setSelectedIndex(nextSelectableIndex(nextFiltered, -1, 1));
+      } else {
+        setSelectedIndex(0);
+      }
     },
     onRedraw,
   });
@@ -320,7 +344,15 @@ export function RootOverlayShell({
     setScrollIndex(0);
     setFilterQuery("");
     setSelectedIndex(
-      overlay.type === "provider_picker" ? providerInitialIndex : overlayInitialIndex,
+      overlay.type === "provider_picker"
+        ? providerInitialIndex
+        : overlay.type === "settings"
+          ? nextSelectableIndex(
+              buildSettingsOptions(container.config.getRaw(), container.presence.getSnapshot()),
+              -1,
+              1,
+            )
+          : overlayInitialIndex,
     );
     setAsyncLines(null);
     setLoadingAsyncLines(false);
@@ -330,7 +362,14 @@ export function RootOverlayShell({
     setSettingsBusy(false);
     setSettingsError(null);
     setHistorySelections([]);
-  }, [container.config, overlay.type, overlayResetKey, overlayInitialIndex, providerInitialIndex]);
+  }, [
+    container.config,
+    container.presence,
+    overlay.type,
+    overlayResetKey,
+    overlayInitialIndex,
+    providerInitialIndex,
+  ]);
 
   useEffect(() => {
     if (overlay.type !== "history") {
@@ -715,9 +754,16 @@ export function RootOverlayShell({
                 ? filteredSettingsOptions.length
                 : filteredGenericPickerOptions.length;
         if (optionCount > 0) {
-          setSelectedIndex((current) =>
-            key.upArrow ? (current - 1 + optionCount) % optionCount : (current + 1) % optionCount,
-          );
+          if (overlay.type === "settings") {
+            const delta = key.upArrow ? -1 : 1;
+            setSelectedIndex((current) =>
+              nextSelectableIndex(filteredSettingsOptions, current, delta),
+            );
+          } else {
+            setSelectedIndex((current) =>
+              key.upArrow ? (current - 1 + optionCount) % optionCount : (current + 1) % optionCount,
+            );
+          }
         }
       } else {
         if (key.upArrow) {
