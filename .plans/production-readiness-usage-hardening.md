@@ -40,7 +40,7 @@
 - Test: `apps/cli/test/unit/services/playback/playback-resolve-coordinator.test.ts`
 - Test: `apps/cli/test/unit/domain/recovery/recovery-policy.test.ts`
 
-- [ ] **Step 1: Add failing tests for policy-routed recovery**
+- [x] **Step 1: Add failing tests for policy-routed recovery**
 
   Add tests that prove:
   - fresh cache returns without provider work
@@ -59,7 +59,7 @@
 
   Expected: new tests fail before wiring.
 
-- [ ] **Step 2: Introduce a playback recovery decision adapter**
+- [x] **Step 2: Introduce a playback recovery decision adapter**
 
   Create a small adapter near playback resolve, not inside Ink UI:
 
@@ -80,7 +80,7 @@
 
   The adapter should call `decideRecovery()` and return the exact decision plus a user-facing reason string. Do not duplicate policy branches in `PlaybackResolveService`.
 
-- [ ] **Step 3: Route fallback candidate selection through policy outcomes**
+- [x] **Step 3: Route fallback candidate selection through policy outcomes**
 
   Keep `PlaybackResolveService` responsible for provider candidate IDs, but make down-provider handling match the policy:
   - automatic path skips `down`
@@ -88,7 +88,7 @@
   - degraded remains eligible
   - incompatible `mediaKind` remains excluded
 
-- [ ] **Step 4: Emit diagnostics for each recovery decision**
+- [x] **Step 4: Emit diagnostics for each recovery decision**
 
   Record diagnostics events with:
   - `category: "provider"` or `"playback"`
@@ -100,7 +100,7 @@
 
   Keep event attributes bounded and redacted.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
   Run:
 
@@ -121,7 +121,7 @@
 - Test: `apps/cli/test/unit/infra/player/playback-failure-classifier.test.ts`
 - Test: `apps/cli/test/unit/app/playback-session-controller.test.ts`
 
-- [ ] **Step 1: Add tests for repeated starvation**
+- [x] **Step 1: Add tests for repeated starvation**
 
   Cover:
   - one short buffer event does not trigger fallback
@@ -129,7 +129,7 @@
   - network-read-dead becomes refresh-first, then fallback only after refresh fails
   - user pause suppresses stall classification
 
-- [ ] **Step 2: Add a bounded slow-stream state model**
+- [x] **Step 2: Add a bounded slow-stream state model**
 
   Use the existing watchdog signals to classify:
   - `buffering-observed`
@@ -139,7 +139,7 @@
 
   Do not add timers in Ink render paths. Timers belong in player/watchdog services.
 
-- [ ] **Step 3: Map slow-stream state to user actions**
+- [x] **Step 3: Map slow-stream state to user actions**
 
   Recommended actions:
   - `buffering-observed`: wait silently or show subtle status
@@ -147,7 +147,7 @@
   - `stream-stalled`: offer refresh source
   - `stream-dead`: refresh first, then offer fallback provider
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
   Run:
 
@@ -169,7 +169,7 @@
 - Test: `apps/cli/test/unit/domain/session/command-registry-contexts.test.ts`
 - Test: `apps/cli/test/unit/app-shell/panel-data.test.ts`
 
-- [ ] **Step 1: Add tests for offline suggestions**
+- [x] **Step 1: Add tests for offline suggestions**
 
   Cover:
   - search/playback network unavailable suggests offline library
@@ -177,7 +177,7 @@
   - local continuation remains first when a downloaded next episode is ready
   - limited network says retry or offline, not provider down
 
-- [ ] **Step 2: Add a user-facing network hint model**
+- [x] **Step 2: Add a user-facing network hint model**
 
   Shape:
 
@@ -192,11 +192,11 @@
 
   Generate this from `NetworkStatus.ts`; do not build copy independently in UI files.
 
-- [ ] **Step 3: Surface the hint in shell panels**
+- [x] **Step 3: Surface the hint in shell panels**
 
   Add compact status text and command availability. Avoid modal interruption unless the user's current action cannot continue.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
   Run:
 
@@ -215,7 +215,7 @@
 - Test: `apps/cli/test/unit/app-shell/panel-data.test.ts`
 - Test: `apps/cli/test/unit/services/persistence/ConfigServiceImpl.test.ts`
 
-- [ ] **Step 1: Add settings tests**
+- [x] **Step 1: Add settings tests**
 
   Cover:
   - settings exposes recovery mode choices
@@ -223,7 +223,7 @@
   - choosing `manual` persists
   - choosing `fallback-first` describes faster automatic fallback plainly
 
-- [ ] **Step 2: Add settings copy**
+- [x] **Step 2: Add settings copy**
 
   Copy:
   - Guided: `Balanced recovery`
@@ -235,11 +235,11 @@
   - Fallback-first: `Switch providers faster after slow or failed resolves.`
   - Manual: `Never switch providers without asking.`
 
-- [ ] **Step 3: Wire settings save through existing config flow**
+- [x] **Step 3: Wire settings save through existing config flow**
 
   Use `ConfigServiceImpl.update({ recoveryMode })`. Do not introduce a second config path.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
   Run:
 
@@ -261,14 +261,14 @@
 - Test: `apps/cli/test/unit/services/diagnostics/issue-report-builder.test.ts`
 - Test: `apps/cli/test/unit/app-shell/panel-data.test.ts`
 
-- [ ] **Step 1: Add issue report builder tests**
+- [x] **Step 1: Add issue report builder tests**
 
   Cover:
   - generated issue title includes failure area, not raw URL
   - generated body includes bundle summary, redacted timeline, version/runtime info
   - generated body excludes signed query values, local home paths, and full stream URLs
 
-- [ ] **Step 2: Implement `IssueReportBuilder`**
+- [x] **Step 2: Implement `IssueReportBuilder`**
 
   Build a pure helper:
 
@@ -283,7 +283,7 @@
 
   It should create a GitHub issue URL but not open the browser by itself. Opening belongs in workflow code and should remain optional.
 
-- [ ] **Step 3: Make diagnostics panel action-oriented**
+- [x] **Step 3: Make diagnostics panel action-oriented**
 
   Panel sections should show:
   - current symptom
@@ -291,7 +291,7 @@
   - safe next actions
   - export/report commands
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
   Run:
 
@@ -311,7 +311,7 @@
 - Test: `apps/cli/test/unit/services/offline/offline-library.test.ts`
 - Test: `apps/cli/test/unit/app-shell/image-pane.test.ts`
 
-- [ ] **Step 1: Add artwork cache tests**
+- [x] **Step 1: Add artwork cache tests**
 
   Cover:
   - local thumbnail wins
@@ -320,15 +320,15 @@
   - failed artwork cache does not fail download completion
   - repeated library render does not trigger N+1 remote fetches
 
-- [ ] **Step 2: Implement local cached poster artifact**
+- [x] **Step 2: Implement local cached poster artifact**
 
   Store poster cache path as derived local metadata when possible. Keep `posterUrl` as provenance, not as the offline-first display dependency.
 
-- [ ] **Step 3: Dedupe artwork work**
+- [x] **Step 3: Dedupe artwork work**
 
   Use a bounded in-flight map keyed by poster URL or title id. Clear entries on completion/failure.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
   Run:
 
@@ -345,7 +345,7 @@
 - Modify: `apps/cli/test/live/README.md`
 - Modify: `.plans/provider-player-harness-test-matrix.md`
 
-- [ ] **Step 1: Add deterministic harness scenarios**
+- [x] **Step 1: Add deterministic harness scenarios**
 
   Add tests for:
   - fast healthy stream
@@ -359,11 +359,11 @@
   - user cancel during health check
   - long autoplay session with bounded diagnostics
 
-- [ ] **Step 2: Add live smoke checklist**
+- [x] **Step 2: Add live smoke checklist**
 
   Document live checks for the active providers without making CI depend on remote providers.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
   Run:
 
@@ -383,11 +383,11 @@
 - Test: `apps/cli/test/unit/main-args.test.ts`
 - Test: `apps/cli/test/unit/services/diagnostics/DebugTraceReporter.test.ts`
 
-- [ ] **Step 1: Add CLI argument tests**
+- [x] **Step 1: Add CLI argument tests**
 
   Cover a `--debug-session` or equivalent command that enables trace categories, writes an exportable diagnostics path, and keeps normal playback behavior unchanged.
 
-- [ ] **Step 2: Implement debug session mode**
+- [x] **Step 2: Implement debug session mode**
 
   Behavior:
   - enables existing debug trace reporter
@@ -396,14 +396,14 @@
   - prints concise developer instructions only in debug mode
   - does not add normal user noise
 
-- [ ] **Step 3: Document breakpoint workflow**
+- [x] **Step 3: Document breakpoint workflow**
 
   Update `docs/developer/debugging-workflow.mdx` with:
   - `bun --inspect-brk`
   - how to set breakpoints in provider resolve and playback recovery
   - how to export a support bundle after reproducing
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
   Run:
 

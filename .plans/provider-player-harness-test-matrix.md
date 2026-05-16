@@ -47,3 +47,4 @@ Battle-test playback recovery against real-world user and provider behavior with
 
 - `apps/cli/test/unit/harness/provider-fallback-harness.test.ts` locks fallback candidate behavior across compatible media kinds, known-down providers, manual mode, and explicit down-provider selection.
 - `apps/cli/test/unit/harness/playback-recovery-harness.test.ts` locks slow-but-moving playback, network-read-dead refresh guidance, and long user pauses.
+- `apps/cli/test/live/README.md` documents opt-in provider smoke checks and the evidence to capture without putting remote providers on the default CI path.

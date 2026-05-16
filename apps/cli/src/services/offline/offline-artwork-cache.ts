@@ -7,6 +7,7 @@ import type { DownloadJobRecord } from "@kunai/storage";
 export type OfflineArtworkFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 const POSTER_CACHE_TIMEOUT_MS = 10_000;
+const inFlightPosterWrites = new Map<string, Promise<string | null>>();
 
 export function resolveOfflinePosterArtifactPath(job: DownloadJobRecord): string {
   const ext = posterExtension(job.posterUrl);
@@ -24,7 +25,26 @@ export async function cacheOfflinePosterArtwork(input: {
   const existing = await stat(targetPath).catch(() => null);
   if (existing?.isFile() && existing.size > 0) return targetPath;
 
-  const fetchImpl = input.fetchImpl ?? fetch;
+  const workKey = `${targetPath}\n${posterUrl}`;
+  const active = inFlightPosterWrites.get(workKey);
+  if (active) return active;
+
+  const work = fetchAndWritePoster(input.job, targetPath, input.fetchImpl).finally(() => {
+    inFlightPosterWrites.delete(workKey);
+  });
+  inFlightPosterWrites.set(workKey, work);
+  return work;
+}
+
+async function fetchAndWritePoster(
+  job: DownloadJobRecord,
+  targetPath: string,
+  fetchImplOverride?: OfflineArtworkFetch,
+): Promise<string | null> {
+  const posterUrl = job.posterUrl;
+  if (!posterUrl) return null;
+
+  const fetchImpl = fetchImplOverride ?? fetch;
   const response = await fetchImpl(posterUrl, {
     signal: AbortSignal.timeout(POSTER_CACHE_TIMEOUT_MS),
     headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" },

@@ -73,4 +73,40 @@ describe("offline artwork cache", () => {
 
     expect(path).toBeNull();
   });
+
+  test("dedupes concurrent poster cache work for the same artifact", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-artwork-"));
+    tempDirs.push(dir);
+    const job = createJob(join(dir, "Movie.mp4"), "https://img.example/poster.webp");
+    let fetchCount = 0;
+
+    const [first, second] = await Promise.all([
+      cacheOfflinePosterArtwork({
+        job,
+        fetchImpl: async () => {
+          fetchCount += 1;
+          await Bun.sleep(5);
+          return new Response(new Uint8Array([1, 2, 3, 4]), {
+            status: 200,
+            headers: { "content-type": "image/webp" },
+          });
+        },
+      }),
+      cacheOfflinePosterArtwork({
+        job,
+        fetchImpl: async () => {
+          fetchCount += 1;
+          return new Response(new Uint8Array([9]), {
+            status: 200,
+            headers: { "content-type": "image/webp" },
+          });
+        },
+      }),
+    ]);
+
+    expect(first).toBe(resolveOfflinePosterArtifactPath(job));
+    expect(second).toBe(first);
+    expect(fetchCount).toBe(1);
+    expect((await stat(first ?? "")).size).toBe(4);
+  });
 });
