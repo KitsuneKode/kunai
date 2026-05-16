@@ -43,7 +43,7 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
       </Text>
       {section.items.length === 0 ? (
         <Text color={palette.gray} dimColor>
-          {"    "}No results
+          {"    "}Nothing here yet
         </Text>
       ) : (
         section.items.map((item, idx) => {
@@ -90,6 +90,7 @@ export function DiscoverShell({
   const [sectionIdx, setSectionIdx] = useState(0);
   const [itemIdx, setItemIdx] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const viewport = useDebouncedViewportPolicy("browse");
 
   const currentSection = visibleSections[sectionIdx];
@@ -103,11 +104,16 @@ export function DiscoverShell({
     }
     if (input === "r" && onRefresh && !refreshing) {
       setRefreshing(true);
+      setRefreshError(null);
       void onRefresh()
         .then((nextSections) => {
           setVisibleSections(nextSections);
           setSectionIdx(0);
           setItemIdx(0);
+          return undefined;
+        })
+        .catch((err) => {
+          setRefreshError(String(err));
           return undefined;
         })
         .finally(() => {
@@ -157,8 +163,20 @@ export function DiscoverShell({
           <Text bold color={palette.amber}>
             ⬡ Discover
           </Text>
-          {refreshing ? <Text color={palette.info}>refreshing</Text> : null}
+          {refreshing ? (
+            <Text color={palette.teal}>◌ refreshing</Text>
+          ) : refreshError ? (
+            <Text color={palette.red}>refresh failed</Text>
+          ) : null}
         </Box>
+        {refreshError ? (
+          <Box marginTop={1}>
+            <Text color={palette.red}>{refreshError}</Text>
+            <Text color={palette.muted} dimColor>
+              Press r to retry
+            </Text>
+          </Box>
+        ) : null}
         <Box marginTop={1} flexDirection="column" flexGrow={1}>
           {visibleSections.length === 0 ? (
             <EmptyState

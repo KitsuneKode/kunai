@@ -1229,7 +1229,7 @@ async function handleStaticOverlay(
   container: Container,
   type: "help" | "about",
 ): Promise<"handled"> {
-  const { stateManager, config } = container;
+  const { stateManager } = container;
   const lines =
     type === "help"
       ? [

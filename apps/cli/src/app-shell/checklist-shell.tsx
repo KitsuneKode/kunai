@@ -151,16 +151,15 @@ function ChecklistShell<T>({
           </Text>
         </Box>
         <Box paddingY={1}>
-          <Text color={palette.teal}>Filter: </Text>
-          <Text>{filterQuery || <Text color={palette.gray}>Type to search...</Text>}</Text>
+          <Text color={palette.teal}>⌕ </Text>
+          <Text color={filterQuery ? "white" : palette.gray}>
+            {filterQuery || "type to filter"}
+          </Text>
         </Box>
         {tooSmall ? (
           <ResizeBlocker minColumns={minColumns} minRows={minRows} />
         ) : (
           <>
-            <Text color={palette.gray}>
-              {`Selected ${selectedSet.size} items  ·  Showing ${filteredOptions.length} of ${options.length}`}
-            </Text>
             <Box
               flexDirection={showSelectionCompanion ? "row" : "column"}
               marginTop={1}

@@ -67,21 +67,13 @@ export function LibraryShell({
         />
       </Box>
 
-      <Box marginTop={1} flexDirection="row" columnGap={1}>
-        <Box
-          borderStyle={tab === "library" ? "round" : undefined}
-          borderColor={tab === "library" ? palette.teal : undefined}
-          paddingX={1}
-        >
-          <Text color={tab === "library" ? "white" : palette.gray}>1 Library</Text>
-        </Box>
-        <Box
-          borderStyle={tab === "queue" ? "round" : undefined}
-          borderColor={tab === "queue" ? palette.teal : undefined}
-          paddingX={1}
-        >
-          <Text color={tab === "queue" ? "white" : palette.gray}>2 Queue</Text>
-        </Box>
+      <Box marginTop={1} flexDirection="row" columnGap={2}>
+        <Text color={tab === "library" ? palette.teal : palette.gray} bold={tab === "library"}>
+          {tab === "library" ? "▸ " : "  "}1 Library
+        </Text>
+        <Text color={tab === "queue" ? palette.teal : palette.gray} bold={tab === "queue"}>
+          {tab === "queue" ? "▸ " : "  "}2 Queue
+        </Text>
       </Box>
 
       <Box marginTop={1} flexDirection="column" flexGrow={1}>
@@ -131,8 +123,8 @@ function LibraryTab({ container }: { container: Container }) {
 
   if (loading) {
     return (
-      <Box>
-        <Text color={palette.muted}>Loading offline titles...</Text>
+      <Box flexDirection="column" flexGrow={1} justifyContent="center">
+        <Text color={palette.teal}>◌ Loading offline titles…</Text>
       </Box>
     );
   }
@@ -146,7 +138,9 @@ function LibraryTab({ container }: { container: Container }) {
           subtitle="Queue downloads from playback with / → Download current episode"
         />
         <Box marginTop={1}>
-          <Text color={palette.info}>Switch to Queue (2) to see active downloads</Text>
+          <Text color={palette.muted} dimColor>
+            Switch to Queue (2) to see active downloads
+          </Text>
         </Box>
       </Box>
     );

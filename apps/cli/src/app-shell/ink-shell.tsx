@@ -2371,8 +2371,11 @@ function BrowseShell<T>({
         </Box>
 
         {searchState === "error" && errorMessage ? (
-          <Box marginTop={1}>
+          <Box marginTop={1} flexDirection="column">
             <Text color={palette.red}>{errorMessage}</Text>
+            <Text color={palette.muted} dimColor>
+              Press Enter to retry or Esc to clear
+            </Text>
           </Box>
         ) : null}
 
@@ -2393,7 +2396,6 @@ function BrowseShell<T>({
           >
             {/* Result list */}
             <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
-              <Text color={palette.gray} dimColor>{`Results  ·  ${options.length} available`}</Text>
               {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
               {visibleOptions.map((option, index) => {
                 const optionIndex = windowStart + index;

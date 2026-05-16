@@ -5,7 +5,7 @@ import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
 import type { DownloadJobRecord } from "@kunai/storage";
 import { Box, Text, useInput } from "ink";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
 function refreshJobLists(container: Container) {
   return {
@@ -222,9 +222,8 @@ export function DownloadManagerContent({
   ) =>
     jobs.length > 0 ? (
       <Box flexDirection="column" marginBottom={1}>
-        <Text color={color}>
-          {"─── "}
-          {title.toUpperCase()} ({jobs.length})
+        <Text color={color} bold>
+          {title} ({jobs.length})
         </Text>
         {jobs.map((j, i) => renderJob(j, offset + i))}
       </Box>

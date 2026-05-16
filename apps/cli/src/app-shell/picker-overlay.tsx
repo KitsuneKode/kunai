@@ -3,7 +3,7 @@ import React from "react";
 
 import { getShellViewportPolicy } from "./layout-policy";
 import { getFilteredPickerOptions, type PickerState } from "./picker-controller";
-import { LineEditorText } from "./shell-command-ui";
+import { InputField } from "./shell-frame";
 import { ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { getWindowStart, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
@@ -11,11 +11,9 @@ import type { FooterAction } from "./types";
 
 export function PickerOverlay({
   state,
-  cursor = state.filterQuery.length,
   footerActions = DEFAULT_PICKER_FOOTER_ACTIONS,
 }: {
   state: PickerState;
-  cursor?: number;
   footerActions?: readonly FooterAction[];
 }) {
   const { stdout } = useStdout();
@@ -38,31 +36,44 @@ export function PickerOverlay({
 
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <Box
-        flexDirection="column"
-        borderStyle="round"
-        borderColor={palette.amber}
-        paddingX={1}
-        paddingY={0}
-      >
+      <Box flexDirection="column" paddingX={1}>
         <Box justifyContent="space-between">
           <Text bold color={palette.text}>
             {state.title}
           </Text>
-          <Text color={palette.gray}>
+          <Text color={palette.gray} dimColor>
             {filteredOptions.length}/{state.options.length}
           </Text>
         </Box>
         <Text color={palette.muted}>{state.subtitle}</Text>
 
         <Box marginTop={1}>
-          <Text color={palette.teal}>/ </Text>
-          <LineEditorText value={state.filterQuery} cursor={cursor} focused placeholder="filter" />
+          <InputField
+            label="Filter"
+            value={state.filterQuery}
+            onChange={() => {}}
+            placeholder="type to narrow"
+            focus
+            maxWidth={contentWidth}
+          />
+        </Box>
+
+        <Box marginTop={1}>
+          <Text color={palette.gray} dimColor>
+            {"─".repeat(contentWidth)}
+          </Text>
         </Box>
 
         <Box marginTop={1} flexDirection="column">
           {filteredOptions.length === 0 ? (
-            <Text color={palette.gray}>{state.emptyMessage}</Text>
+            <Box flexDirection="column">
+              <Text color={palette.gray}>{state.emptyMessage}</Text>
+              {state.filterQuery.length > 0 ? (
+                <Text color={palette.muted} dimColor>
+                  Esc clears the filter
+                </Text>
+              ) : null}
+            </Box>
           ) : (
             <>
               {windowStart > 0 ? <Text color={palette.gray}> more above</Text> : null}
@@ -94,18 +105,15 @@ export function PickerOverlay({
         </Box>
 
         {selected?.detail ? (
-          <Box
-            marginTop={1}
-            borderStyle="single"
-            borderColor={palette.surfaceElevated}
-            paddingX={1}
-          >
-            <Text color={palette.gray}>{truncateLine(selected.detail, contentWidth - 6)}</Text>
+          <Box marginTop={1} paddingX={1}>
+            <Text color={palette.gray} dimColor>
+              {truncateLine(selected.detail, contentWidth - 4)}
+            </Text>
           </Box>
         ) : null}
       </Box>
 
-      <ShellFooter taskLabel="Picker" actions={footerActions} mode="minimal" />
+      <ShellFooter taskLabel={state.title} actions={footerActions} mode="minimal" />
     </Box>
   );
 }
