@@ -56,7 +56,7 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
               <Box flexShrink={1} flexGrow={1}>
                 <Text
                   backgroundColor={isActive ? palette.teal : undefined}
-                  color={isActive ? "black" : palette.muted}
+                  color={isActive ? "black" : palette.text}
                   bold={isActive}
                   wrap="truncate"
                 >
