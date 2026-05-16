@@ -59,9 +59,8 @@ export function usePosterPreview(
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
 
   useEffect(() => {
-    clearRenderedPosterImages();
-
     if (!url || !enabled) {
+      clearRenderedPosterImages();
       dispatch({ type: "reset", posterState: url ? "unavailable" : "idle" });
       return undefined;
     }
@@ -73,11 +72,13 @@ export function usePosterPreview(
       fetchPoster(url, { rows, cols, variant, allowKitty })
         .then((result) => {
           if (cancelled) return undefined;
+          clearRenderedPosterImages();
           startTransition(() => dispatch({ type: "resolved", result }));
           return undefined;
         })
         .catch(() => {
           if (cancelled) return;
+          clearRenderedPosterImages();
           startTransition(() => dispatch({ type: "reset", posterState: "unavailable" }));
         });
     }, debounceMs);
@@ -85,7 +86,8 @@ export function usePosterPreview(
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      clearRenderedPosterImages();
+      // Do not call clearRenderedPosterImages here — the incoming effect's fetch
+      // clears just before rendering its result, preserving the old image during load.
     };
   }, [allowKitty, cols, debounceMs, enabled, rows, url, variant]);
 
