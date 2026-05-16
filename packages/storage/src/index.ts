@@ -10,7 +10,11 @@ export { defaultTtlMsByClass, getDefaultTtlMs, getExpiresAt, isExpired } from ".
 export { createHistoryKey, HistoryRepository } from "./repositories/history";
 export type { HistoryProgress, HistoryProgressInput } from "./repositories/history";
 export { DownloadJobsRepository } from "./repositories/download-jobs";
-export type { DownloadJobRecord, DownloadJobStatus } from "./repositories/download-jobs";
+export type {
+  DownloadArtifactStatus,
+  DownloadJobRecord,
+  DownloadJobStatus,
+} from "./repositories/download-jobs";
 export { ProviderHealthRepository } from "./repositories/provider-health";
 export { ResolveTraceRepository } from "./repositories/resolve-trace";
 export { RecommendationCacheRepository } from "./repositories/recommendation-cache";

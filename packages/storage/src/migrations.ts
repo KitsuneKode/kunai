@@ -139,6 +139,13 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE download_jobs ADD COLUMN thumbnail_path TEXT;
     `,
   },
+  {
+    id: "008_data_download_jobs_artifact_cache",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN last_validated_at TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

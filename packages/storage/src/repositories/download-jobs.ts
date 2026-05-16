@@ -43,6 +43,7 @@ export interface DownloadJobRecord {
   readonly failureKind?: string;
   readonly artifactStatus?: DownloadArtifactStatus;
   readonly lastResolvedProviderId?: ProviderId;
+  readonly lastValidatedAt?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly completedAt?: string;
@@ -89,6 +90,7 @@ interface DownloadJobRow {
   readonly created_at: string;
   readonly updated_at: string;
   readonly completed_at: string | null;
+  readonly last_validated_at: string | null;
 }
 
 export class DownloadJobsRepository {
@@ -268,11 +270,26 @@ export class DownloadJobsRepository {
               failure_kind = NULL,
               artifact_status = 'ready',
               updated_at = ?,
-              completed_at = ?
+              completed_at = ?,
+              last_validated_at = ?
           WHERE id = ?
         `,
       )
-      .run(updatedAt, updatedAt, id);
+      .run(updatedAt, updatedAt, updatedAt, id);
+  }
+
+  markArtifactValidated(id: string, status: DownloadArtifactStatus, validatedAt: string): void {
+    this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET artifact_status = ?,
+              last_validated_at = ?,
+              updated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(status, validatedAt, validatedAt, id);
   }
 
   fail(
@@ -479,6 +496,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     failureKind: row.failure_kind ?? undefined,
     artifactStatus: row.artifact_status ?? "pending",
     lastResolvedProviderId: (row.last_resolved_provider_id as ProviderId | null) ?? undefined,
+    lastValidatedAt: row.last_validated_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at ?? undefined,
