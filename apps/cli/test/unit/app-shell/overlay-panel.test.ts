@@ -182,3 +182,14 @@ test("Discord client id setting can keep or clear the configured id", () => {
   expect(overlay.options.map((option) => option.value)).toContain("__keep__");
   expect(overlay.options.map((option) => option.value)).toContain("__clear__");
 });
+
+test("buildSettingsOptions includes section separators for general and providers", () => {
+  const options = buildSettingsOptions(DEFAULT_CONFIG);
+  const sectionValues = options
+    .map((option) => option.value)
+    .filter((v) => typeof v === "string" && v.startsWith("section:"));
+
+  expect(sectionValues.length).toBeGreaterThan(0);
+  expect(sectionValues).toContain("section:general");
+  expect(sectionValues).toContain("section:providers");
+});

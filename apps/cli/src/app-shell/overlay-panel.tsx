@@ -8,6 +8,7 @@ import type {
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { resolvePresenceClientIdSource } from "@/services/presence/PresenceServiceImpl";
 import { Box, Text } from "ink";
+import React from "react";
 
 import { PickerOptionRow } from "./overlay-picker-row";
 import { Badge } from "./shell-primitives";
@@ -16,6 +17,17 @@ import { palette } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 
 export { formatPickerDisplayRow, formatPickerOptionRow } from "./overlay-picker-row";
+
+const BUSY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+function useBusySpinner(active: boolean): string {
+  const [frame, setFrame] = React.useState(0);
+  React.useEffect(() => {
+    if (!active) return undefined;
+    const timer = setInterval(() => setFrame((f) => (f + 1) % BUSY_FRAMES.length), 80);
+    return () => clearInterval(timer);
+  }, [active]);
+  return BUSY_FRAMES[frame] ?? "⠋";
+}
 
 export type BrowseOverlay =
   | {
@@ -884,30 +896,20 @@ export function OverlayPanel({
   const pickerAccent = isPickerOverlay
     ? pickerFocusAccent((overlay as Extract<BrowseOverlay, { filterQuery: string }>).type)
     : palette.teal;
+  const accentColor =
+    overlay.type === "settings" || overlay.type === "settings-choice"
+      ? palette.green
+      : overlay.type === "provider"
+        ? palette.amber
+        : palette.teal;
+  const busySpinner = useBusySpinner(
+    isPickerOverlay && Boolean((overlay as { busy?: boolean }).busy),
+  );
 
   return (
-    <Box
-      marginTop={1}
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={
-        overlay.type === "settings" || overlay.type === "settings-choice"
-          ? palette.green
-          : overlay.type === "provider"
-            ? palette.amber
-            : palette.teal
-      }
-      paddingX={1}
-    >
-      <Text
-        color={
-          overlay.type === "settings" || overlay.type === "settings-choice"
-            ? palette.green
-            : overlay.type === "provider"
-              ? palette.amber
-              : palette.teal
-        }
-      >
+    <Box marginTop={1} flexDirection="column" paddingX={1}>
+      <Text color={accentColor} bold>
+        {"▸ "}
         {overlay.title}
       </Text>
       <Text color={palette.gray}>{overlay.subtitle}</Text>
@@ -956,6 +958,16 @@ export function OverlayPanel({
             {visibleOptions.map((option, index) => {
               const optionIndex = optionWindowStart + index;
               const selected = optionIndex === overlay.selectedIndex;
+              // Section separator — render as a non-selectable group header
+              if (typeof option.value === "string" && option.value.startsWith("section:")) {
+                return (
+                  <Box key={`section-${option.value}`} marginTop={1} flexDirection="column">
+                    <Text color={palette.dim} dimColor bold>
+                      {option.label.toUpperCase()}
+                    </Text>
+                  </Box>
+                );
+              }
               const accentColor =
                 option.tone === "success"
                   ? palette.green
@@ -992,11 +1004,13 @@ export function OverlayPanel({
           <Box marginTop={1}>
             <Text color={overlay.busy ? palette.amber : palette.gray}>
               {overlay.busy
-                ? overlay.type === "provider"
-                  ? "Updating provider…"
-                  : overlay.type === "history-picker"
-                    ? "Loading history…"
-                    : "Saving settings…"
+                ? `${busySpinner} ${
+                    overlay.type === "provider"
+                      ? "Updating provider…"
+                      : overlay.type === "history-picker"
+                        ? "Loading history…"
+                        : "Saving settings…"
+                  }`
                 : `${overlay.options.length} items  ·  ↑↓ choose · Enter select · Esc close`}
             </Text>
           </Box>
