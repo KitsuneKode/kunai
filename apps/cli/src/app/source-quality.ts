@@ -1,5 +1,5 @@
 import { describeStreamCandidateMediaDetail } from "@/domain/media/media-track-model";
-import type { StreamInfo } from "@/domain/types";
+import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
 type SourceOption = {
@@ -19,6 +19,17 @@ type StreamOption = {
   readonly label: string;
   readonly detail?: string;
 };
+
+export type MediaTrackPickerOption = {
+  readonly value: string;
+  readonly label: string;
+  readonly detail?: string;
+};
+
+export type MediaTrackPickerSelection =
+  | { readonly kind: "stream"; readonly streamId: string }
+  | { readonly kind: "subtitle"; readonly subtitleUrl: string }
+  | { readonly kind: "subtitle-off" };
 
 export type StreamSelectionIntent = {
   readonly sourceId: string | null;
@@ -79,6 +90,48 @@ export function buildStreamPickerOptions(stream: StreamInfo): readonly StreamOpt
     );
 
   return options.map(({ selected: _selected, rank: _rank, ...option }) => option);
+}
+
+export function buildMediaTrackPickerOptions(
+  stream: StreamInfo,
+): readonly MediaTrackPickerOption[] {
+  const streamOptions = buildStreamPickerOptions(stream).map((option) => ({
+    value: `stream:${option.value}`,
+    label: `Stream  ·  ${option.label}`,
+    detail: option.detail,
+  }));
+  const subtitleOptions = buildSubtitleTrackPickerOptions(stream);
+  const offOption =
+    stream.subtitle && stream.subtitle.length > 0
+      ? [
+          {
+            value: "subtitle:none",
+            label: "Subtitles off",
+            detail: "Disable the selected external subtitle track",
+          },
+        ]
+      : [];
+
+  return [...streamOptions, ...subtitleOptions, ...offOption];
+}
+
+export function decodeMediaTrackPickerSelection(value: string): MediaTrackPickerSelection | null {
+  if (value.startsWith("stream:")) {
+    const streamId = value.slice("stream:".length);
+    return streamId ? { kind: "stream", streamId } : null;
+  }
+  if (value === "subtitle:none") return { kind: "subtitle-off" };
+  if (value.startsWith("subtitle:")) {
+    const encoded = value.slice("subtitle:".length);
+    if (!encoded) return null;
+    try {
+      const subtitleUrl = decodeURIComponent(encoded);
+      return subtitleUrl ? { kind: "subtitle", subtitleUrl } : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export function buildSourcePickerOptions(stream: StreamInfo): readonly SourceOption[] {
@@ -208,6 +261,40 @@ function describeLanguages(label: string, values: readonly (string | undefined)[
   const languages = uniqueStrings(values);
   if (languages.length === 0) return null;
   return `${label} ${languages.slice(0, 3).join("/")}${languages.length > 3 ? "+" : ""}`;
+}
+
+function buildSubtitleTrackPickerOptions(stream: StreamInfo): readonly MediaTrackPickerOption[] {
+  const tracks = collectSubtitleTracks(stream);
+  const seen = new Set<string>();
+  const options: MediaTrackPickerOption[] = [];
+
+  for (const track of tracks) {
+    if (!track.url || seen.has(track.url)) continue;
+    seen.add(track.url);
+    const current = stream.subtitle === track.url;
+    const language = track.language ? track.language.toUpperCase() : "Subtitle";
+    const source = track.sourceName ?? track.sourceKind ?? stream.subtitleSource;
+    options.push({
+      value: `subtitle:${encodeURIComponent(track.url)}`,
+      label: current ? `${language} subtitle  ·  current` : `${language} subtitle`,
+      detail: [track.display, track.release, source].filter(Boolean).join("  ·  ") || undefined,
+    });
+  }
+
+  return options;
+}
+
+function collectSubtitleTracks(stream: StreamInfo): readonly SubtitleTrack[] {
+  const fromStream = stream.subtitleList ?? [];
+  const fromProvider =
+    stream.providerResolveResult?.subtitles.map((subtitle) => ({
+      url: subtitle.url,
+      language: subtitle.language,
+      display: subtitle.label,
+      sourceName: subtitle.providerId,
+      sourceKind: "external" as const,
+    })) ?? [];
+  return [...fromStream, ...fromProvider];
 }
 
 function uniqueStrings(values: readonly (string | undefined)[]): readonly string[] {

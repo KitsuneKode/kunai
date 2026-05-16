@@ -22,7 +22,15 @@ export const miruroManifest = defineProviderManifest({
   cachePolicy: {
     ttlClass: "stream-manifest",
     scope: "local",
-    keyParts: ["provider", MIRURO_PROVIDER_ID, "media-kind", "title", "episode", "audio"],
+    keyParts: [
+      "provider",
+      MIRURO_PROVIDER_ID,
+      "media-kind",
+      "title",
+      "episode",
+      "audio",
+      "quality",
+    ],
     allowStale: true,
   },
   browserSafe: false,

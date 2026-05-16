@@ -194,6 +194,30 @@ describe("PresenceServiceImpl", () => {
     expect(JSON.stringify(payload)).not.toContain("signed-provider.example");
   });
 
+  test("adds opt-in Discord handoff button only for safe URLs", () => {
+    const activity = {
+      mode: "series" as const,
+      title: { id: "1", type: "series" as const, name: "Demo" },
+      episode: { season: 1, episode: 2 },
+      providerId: "vidking",
+      startedAtMs: 1000,
+    };
+
+    expect(
+      buildDiscordActivity(activity, "full", { openUrl: "kunai://play/current" }),
+    ).toMatchObject({
+      buttons: [
+        { label: "Open in Kunai", url: "kunai://play/current" },
+        { label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" },
+      ],
+    });
+    expect(
+      buildDiscordActivity(activity, "full", { openUrl: "javascript:alert(1)" }),
+    ).toMatchObject({
+      buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
+    });
+  });
+
   test("shows paused progress without an advancing Discord timer", () => {
     const activity = {
       mode: "series" as const,

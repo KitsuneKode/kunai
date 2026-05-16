@@ -4,9 +4,10 @@ import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { switchSessionMode } from "@/app/mode-switch";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import {
+  buildMediaTrackPickerOptions,
   buildQualityPickerOptions,
   buildSourcePickerOptions,
-  buildStreamPickerOptions,
+  decodeMediaTrackPickerSelection,
   isCurrentStreamSelection,
   streamSelectionFromSource,
   streamSelectionFromStream,
@@ -214,7 +215,7 @@ async function openPlaybackStreamSelectionPicker(
           }
         : {
             type: "quality_picker" as const,
-            options: buildStreamPickerOptions(stream),
+            options: buildMediaTrackPickerOptions(stream),
             toSelection: streamSelectionFromStream,
             controlAction: "pick-stream" as const,
           };
@@ -229,6 +230,34 @@ async function openPlaybackStreamSelectionPicker(
     })),
   });
   if (!value) return;
+
+  if (action === "streams") {
+    const mediaSelection = decodeMediaTrackPickerSelection(value);
+    if (!mediaSelection) return;
+    if (mediaSelection.kind === "subtitle" || mediaSelection.kind === "subtitle-off") {
+      const subtitleUrl = mediaSelection.kind === "subtitle" ? mediaSelection.subtitleUrl : null;
+      const selected = await container.playerControl.selectCurrentSubtitle(
+        {
+          subtitleUrl,
+          subtitleTracks: stream.subtitleList,
+        },
+        reason,
+      );
+      if (selected) {
+        container.stateManager.dispatch({
+          type: "SET_STREAM",
+          stream: { ...stream, subtitle: subtitleUrl ?? undefined },
+        });
+      }
+      return;
+    }
+    const selection = streamSelectionFromStream(mediaSelection.streamId);
+    if (isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {
+      return;
+    }
+    await container.playerControl.selectCurrentPlaybackStream("pick-stream", selection, reason);
+    return;
+  }
 
   const selection: StreamSelectionIntent = picker.toSelection(value);
   if (isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {

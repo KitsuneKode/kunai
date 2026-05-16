@@ -131,7 +131,9 @@ export class PresenceServiceImpl implements PresenceService {
     if (!client) return;
 
     try {
-      const payload = buildDiscordActivity(activity, this.deps.config.presencePrivacy);
+      const payload = buildDiscordActivity(activity, this.deps.config.presencePrivacy, {
+        openUrl: this.deps.config.presenceDiscordOpenUrl,
+      });
       const activityHash = stableJsonHash(payload);
       if (activityHash === this.lastActivityHash) {
         this.status = "ready";
@@ -588,6 +590,7 @@ async function createNodeBridgeDiscordClient(clientId: string): Promise<DiscordR
 export function buildDiscordActivity(
   activity: PresencePlaybackActivity,
   privacy: "full" | "private",
+  options: { readonly openUrl?: string } = {},
 ): Record<string, unknown> {
   const episodeLabel =
     activity.title.type === "series"
@@ -628,7 +631,7 @@ export function buildDiscordActivity(
       ...(activity.paused ? {} : timeline),
       largeImageKey: "kunai",
       largeImageText: "Kunai",
-      buttons: buildDiscordActionButtons(),
+      buttons: buildDiscordActionButtons(options),
     };
   }
 
@@ -662,7 +665,7 @@ export function buildDiscordActivity(
               : "Subtitles attached",
         }
       : {}),
-    buttons: buildDiscordActionButtons(),
+    buttons: buildDiscordActionButtons(options),
   };
 }
 
@@ -708,8 +711,28 @@ function formatMediaTime(seconds: number): string {
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-function buildDiscordActionButtons(): readonly { label: string; url: string }[] {
-  return [{ label: "Get Kunai", url: KUNAI_DISCORD_ACTION_URL }];
+function buildDiscordActionButtons(
+  options: {
+    readonly openUrl?: string;
+  } = {},
+): readonly { label: string; url: string }[] {
+  const openUrl = normalizeDiscordActionUrl(options.openUrl);
+  return [
+    ...(openUrl ? [{ label: "Open in Kunai", url: openUrl }] : []),
+    { label: "Get Kunai", url: KUNAI_DISCORD_ACTION_URL },
+  ];
+}
+
+function normalizeDiscordActionUrl(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === "https:" || url.protocol === "kunai:") return trimmed;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function compact(values: readonly (string | undefined | null | false)[]): string[] {

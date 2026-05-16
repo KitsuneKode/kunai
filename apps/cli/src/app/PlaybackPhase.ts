@@ -647,11 +647,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               audioPreference:
                 stateManager.getState().mode === "anime"
                   ? config.animeLanguageProfile.audio
-                  : config.seriesLanguageProfile.audio,
+                  : title.type === "movie"
+                    ? config.movieLanguageProfile.audio
+                    : config.seriesLanguageProfile.audio,
               subtitlePreference:
                 stateManager.getState().mode === "anime"
                   ? config.animeLanguageProfile.subtitle
-                  : config.seriesLanguageProfile.subtitle,
+                  : title.type === "movie"
+                    ? config.movieLanguageProfile.subtitle
+                    : config.seriesLanguageProfile.subtitle,
+              qualityPreference:
+                stateManager.getState().mode === "anime"
+                  ? config.animeLanguageProfile.quality
+                  : title.type === "movie"
+                    ? config.movieLanguageProfile.quality
+                    : config.seriesLanguageProfile.quality,
               recoveryMode: config.recoveryMode,
               signal: resolveController.signal,
               correlation: playbackCorrelation,
@@ -899,6 +909,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               mode === "anime"
                 ? config.animeLanguageProfile.subtitle
                 : config.seriesLanguageProfile.subtitle;
+            const qualityPreference =
+              mode === "anime"
+                ? config.animeLanguageProfile.quality
+                : config.seriesLanguageProfile.quality;
             const prefetchCoordinator = new PlaybackResolveCoordinator({
               engine,
               cacheStore,
@@ -913,6 +927,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 providerId: prefetchMetadata.metadata.id,
                 audioPreference,
                 subtitlePreference,
+                qualityPreference,
                 recoveryMode: config.recoveryMode,
                 signal: context.signal,
               })
@@ -1033,11 +1048,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               audioPreference:
                 stateManager.getState().mode === "anime"
                   ? config.animeLanguageProfile.audio
-                  : config.seriesLanguageProfile.audio,
+                  : title.type === "movie"
+                    ? config.movieLanguageProfile.audio
+                    : config.seriesLanguageProfile.audio,
               subtitlePreference:
                 stateManager.getState().mode === "anime"
                   ? config.animeLanguageProfile.subtitle
-                  : config.seriesLanguageProfile.subtitle,
+                  : title.type === "movie"
+                    ? config.movieLanguageProfile.subtitle
+                    : config.seriesLanguageProfile.subtitle,
+              qualityPreference:
+                stateManager.getState().mode === "anime"
+                  ? config.animeLanguageProfile.quality
+                  : title.type === "movie"
+                    ? config.movieLanguageProfile.quality
+                    : config.seriesLanguageProfile.quality,
             });
             try {
               await cacheStore.delete(staleCacheKey);
@@ -1088,11 +1113,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 audioPreference:
                   stateManager.getState().mode === "anime"
                     ? config.animeLanguageProfile.audio
-                    : config.seriesLanguageProfile.audio,
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.audio
+                      : config.seriesLanguageProfile.audio,
                 subtitlePreference:
                   stateManager.getState().mode === "anime"
                     ? config.animeLanguageProfile.subtitle
-                    : config.seriesLanguageProfile.subtitle,
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.subtitle
+                      : config.seriesLanguageProfile.subtitle,
+                qualityPreference:
+                  stateManager.getState().mode === "anime"
+                    ? config.animeLanguageProfile.quality
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.quality
+                      : config.seriesLanguageProfile.quality,
               });
               return true;
             };
@@ -1200,11 +1235,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               audioPreference:
                 stateManager.getState().mode === "anime"
                   ? config.animeLanguageProfile.audio
-                  : config.seriesLanguageProfile.audio,
+                  : title.type === "movie"
+                    ? config.movieLanguageProfile.audio
+                    : config.seriesLanguageProfile.audio,
               subtitlePreference:
                 stateManager.getState().mode === "anime"
                   ? config.animeLanguageProfile.subtitle
-                  : config.seriesLanguageProfile.subtitle,
+                  : title.type === "movie"
+                    ? config.movieLanguageProfile.subtitle
+                    : config.seriesLanguageProfile.subtitle,
+              qualityPreference:
+                stateManager.getState().mode === "anime"
+                  ? config.animeLanguageProfile.quality
+                  : title.type === "movie"
+                    ? config.movieLanguageProfile.quality
+                    : config.seriesLanguageProfile.quality,
             });
             try {
               await cacheStore.delete(refreshCacheKey);
@@ -2204,6 +2249,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             : title.type === "movie"
               ? stateManager.getState().movieLanguageProfile.subtitle
               : stateManager.getState().seriesLanguageProfile.subtitle,
+        qualityPreference:
+          stateManager.getState().mode === "anime"
+            ? stateManager.getState().animeLanguageProfile.quality
+            : title.type === "movie"
+              ? stateManager.getState().movieLanguageProfile.quality
+              : stateManager.getState().seriesLanguageProfile.quality,
         displayTitle,
         startAt,
         resumePromptAt,

@@ -17,6 +17,7 @@ export function buildApiStreamResolveCacheKey(input: {
   readonly mode: "series" | "anime";
   readonly audioPreference: string;
   readonly subtitlePreference: string;
+  readonly qualityPreference?: string;
 }): string {
   const parts = buildManifestDrivenPolicyParts(input);
   return `api-resolve:${parts.join(":")}`;
@@ -35,6 +36,7 @@ function buildManifestDrivenPolicyParts(input: {
   readonly mode: "series" | "anime";
   readonly audioPreference: string;
   readonly subtitlePreference: string;
+  readonly qualityPreference?: string;
 }): readonly string[] {
   const baseTokens = input.providerManifest?.cachePolicy.keyParts ?? [
     "provider",
@@ -45,6 +47,7 @@ function buildManifestDrivenPolicyParts(input: {
     "episode",
     "audio",
     "subtitle",
+    "quality",
   ];
 
   return baseTokens.map((token) => resolveToken(token, input));
@@ -59,6 +62,7 @@ function resolveToken(
     readonly mode: "series" | "anime";
     readonly audioPreference: string;
     readonly subtitlePreference: string;
+    readonly qualityPreference?: string;
   },
 ): string {
   switch (token) {
@@ -77,6 +81,8 @@ function resolveToken(
       return normalizePart(input.audioPreference);
     case "subtitle":
       return normalizePart(input.subtitlePreference);
+    case "quality":
+      return normalizePart(input.qualityPreference);
     default:
       return normalizePart(token);
   }

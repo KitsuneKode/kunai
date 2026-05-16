@@ -154,6 +154,17 @@ const AUDIO_OPTIONS = [
   { value: "dub", label: "Dub", detail: "Prefer dubbed audio when available" },
 ] as const;
 
+const QUALITY_OPTIONS = [
+  {
+    value: "best",
+    label: "Best available",
+    detail: "Let the provider choose the strongest stream",
+  },
+  { value: "1080p", label: "1080p", detail: "Prefer Full HD when the provider exposes variants" },
+  { value: "720p", label: "720p", detail: "Prefer HD when available" },
+  { value: "480p", label: "480p", detail: "Prefer lighter streams on limited networks" },
+] as const;
+
 function packageInstallHint(pkg: "mpv" | "yt-dlp" | "chafa" | "imagemagick" | "ffprobe"): string {
   if (pkg === "ffprobe") {
     return "Put ffprobe on your PATH via your distro, a static build, or another package manager build that ships the ffprobe binary";
@@ -1599,11 +1610,21 @@ export async function enqueueCurrentPlaybackDownload({
       audioPreference:
         state.mode === "anime"
           ? state.animeLanguageProfile.audio
-          : state.seriesLanguageProfile.audio,
+          : state.currentTitle.type === "movie"
+            ? state.movieLanguageProfile.audio
+            : state.seriesLanguageProfile.audio,
       subtitlePreference:
         state.mode === "anime"
           ? state.animeLanguageProfile.subtitle
-          : state.seriesLanguageProfile.subtitle,
+          : state.currentTitle.type === "movie"
+            ? state.movieLanguageProfile.subtitle
+            : state.seriesLanguageProfile.subtitle,
+      qualityPreference:
+        state.mode === "anime"
+          ? state.animeLanguageProfile.quality
+          : state.currentTitle.type === "movie"
+            ? state.movieLanguageProfile.quality
+            : state.seriesLanguageProfile.quality,
       timing,
     });
     container.diagnosticsStore.record({
@@ -1996,6 +2017,24 @@ function configSummary(config: KitsuneConfig): string {
   return `default ${config.defaultMode}  ·  provider ${config.provider}  ·  anime ${config.animeProvider}  ·  presence ${config.presenceProvider}`;
 }
 
+async function chooseQualityPreference(
+  title: string,
+  current: string | undefined,
+  actionContext?: ListShellActionContext,
+): Promise<(typeof QUALITY_OPTIONS)[number]["value"] | null> {
+  const active = current ?? "best";
+  return await chooseFromListShell({
+    title,
+    subtitle: `Current ${active}`,
+    actionContext,
+    options: QUALITY_OPTIONS.map((option) => ({
+      value: option.value,
+      label: option.value === active ? `${option.label}  ·  current` : option.label,
+      detail: option.detail,
+    })),
+  });
+}
+
 export async function openSettingsShell({
   container,
   current,
@@ -2046,6 +2085,11 @@ export async function openSettingsShell({
           detail: "Preferred anime subtitle behavior",
         },
         {
+          value: "animeQuality" as const,
+          label: `Anime quality  ·  ${next.animeLanguageProfile.quality ?? "best"}`,
+          detail: "Preferred anime stream quality",
+        },
+        {
           value: "seriesAudio" as const,
           label: `Series audio  ·  ${next.seriesLanguageProfile.audio}`,
           detail: "Preferred series audio track language",
@@ -2056,6 +2100,11 @@ export async function openSettingsShell({
           detail: "Preferred series subtitle behavior",
         },
         {
+          value: "seriesQuality" as const,
+          label: `Series quality  ·  ${next.seriesLanguageProfile.quality ?? "best"}`,
+          detail: "Preferred series stream quality",
+        },
+        {
           value: "movieAudio" as const,
           label: `Movie audio  ·  ${next.movieLanguageProfile.audio}`,
           detail: "Preferred movie audio track language",
@@ -2064,6 +2113,11 @@ export async function openSettingsShell({
           value: "movieSubtitle" as const,
           label: `Movie subtitles  ·  ${next.movieLanguageProfile.subtitle}`,
           detail: "Preferred movie subtitle behavior",
+        },
+        {
+          value: "movieQuality" as const,
+          label: `Movie quality  ·  ${next.movieLanguageProfile.quality ?? "best"}`,
+          detail: "Preferred movie stream quality",
         },
         {
           value: "showMemory" as const,
@@ -2272,6 +2326,19 @@ export async function openSettingsShell({
       continue;
     }
 
+    if (action === "animeQuality") {
+      const picked = await chooseQualityPreference(
+        "Anime quality",
+        next.animeLanguageProfile.quality,
+        actionContext,
+      );
+      if (picked && picked !== next.animeLanguageProfile.quality) {
+        next.animeLanguageProfile = { ...next.animeLanguageProfile, quality: picked };
+        changed = true;
+      }
+      continue;
+    }
+
     if (action === "seriesAudio") {
       const picked = await chooseFromListShell({
         title: "Series audio",
@@ -2313,6 +2380,19 @@ export async function openSettingsShell({
       continue;
     }
 
+    if (action === "seriesQuality") {
+      const picked = await chooseQualityPreference(
+        "Series quality",
+        next.seriesLanguageProfile.quality,
+        actionContext,
+      );
+      if (picked && picked !== next.seriesLanguageProfile.quality) {
+        next.seriesLanguageProfile = { ...next.seriesLanguageProfile, quality: picked };
+        changed = true;
+      }
+      continue;
+    }
+
     if (action === "movieAudio") {
       const picked = await chooseFromListShell({
         title: "Movie audio",
@@ -2349,6 +2429,19 @@ export async function openSettingsShell({
       });
       if (picked && picked !== next.movieLanguageProfile.subtitle) {
         next.movieLanguageProfile = { ...next.movieLanguageProfile, subtitle: picked };
+        changed = true;
+      }
+      continue;
+    }
+
+    if (action === "movieQuality") {
+      const picked = await chooseQualityPreference(
+        "Movie quality",
+        next.movieLanguageProfile.quality,
+        actionContext,
+      );
+      if (picked && picked !== next.movieLanguageProfile.quality) {
+        next.movieLanguageProfile = { ...next.movieLanguageProfile, quality: picked };
         changed = true;
       }
       continue;

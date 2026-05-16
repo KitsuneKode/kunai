@@ -65,6 +65,7 @@ export type EnqueueDownloadInput = {
   readonly mode?: ShellMode;
   readonly audioPreference?: string;
   readonly subtitlePreference?: string;
+  readonly qualityPreference?: string;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
   readonly selectedQualityLabel?: string;
@@ -80,6 +81,7 @@ export type DownloadResolveIntent = {
   readonly mode: ShellMode;
   readonly audioPreference: string;
   readonly subtitlePreference: string;
+  readonly qualityPreference?: string;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
   readonly selectedQualityLabel?: string;
@@ -215,7 +217,7 @@ export class DownloadService {
       animeLang,
       selectedSourceId: input.selectedSourceId,
       selectedStreamId: input.selectedStreamId,
-      selectedQualityLabel: input.selectedQualityLabel,
+      selectedQualityLabel: input.selectedQualityLabel ?? input.qualityPreference,
       streamUrl: input.stream?.url ?? "",
       headers: input.stream?.headers ?? {},
       outputPath,
@@ -622,6 +624,7 @@ export class DownloadService {
       mode,
       audioPreference: mode === "anime" ? (job.animeLang === "dub" ? "dub" : "sub") : "original",
       subtitlePreference: job.subLang ?? "eng",
+      qualityPreference: job.selectedQualityLabel,
       selectedSourceId: job.selectedSourceId,
       selectedStreamId: job.selectedStreamId,
       selectedQualityLabel: job.selectedQualityLabel,

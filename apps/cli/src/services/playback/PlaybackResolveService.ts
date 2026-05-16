@@ -92,6 +92,7 @@ export type PlaybackResolveInput = {
   readonly providerId: string;
   readonly audioPreference: string;
   readonly subtitlePreference: string;
+  readonly qualityPreference?: string;
   readonly signal: AbortSignal;
   readonly prefetchedStream?: StreamInfo | null;
   readonly forceHealthCheck?: boolean;
@@ -194,6 +195,7 @@ export class PlaybackResolveService {
         episode: input.episode,
         audioPreference: input.audioPreference,
         subtitlePreference: input.subtitlePreference,
+        qualityPreference: input.qualityPreference,
       },
       input.mode,
     );
@@ -397,6 +399,7 @@ export class PlaybackResolveService {
       mode: input.mode,
       audioPreference: input.audioPreference,
       subtitlePreference: input.subtitlePreference,
+      qualityPreference: input.qualityPreference,
     });
   }
 }

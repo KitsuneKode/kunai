@@ -292,6 +292,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
         providerId: intent.providerId,
         audioPreference: intent.audioPreference,
         subtitlePreference: intent.subtitlePreference,
+        qualityPreference: intent.qualityPreference,
         recoveryMode: config.recoveryMode,
         signal: controller.signal,
       });

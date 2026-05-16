@@ -315,9 +315,9 @@ export const COMMANDS: readonly AppCommand[] = [
   },
   {
     id: "streams",
-    label: "Streams",
-    aliases: ["streams", "stream", "variants"],
-    description: "Choose source, quality, audio, or subtitle stream details",
+    label: "Tracks",
+    aliases: ["tracks", "track", "streams", "stream", "variants", "audio", "subs", "subtitles"],
+    description: "Choose source, quality, audio, hardsub, or subtitle details",
   },
   {
     id: "source",
@@ -506,6 +506,11 @@ function resolveCommandState(
     state.playbackStatus === "stalled";
   const hasOverlay = state.activeModals.length > 0;
   const hasStreamCandidates = Boolean(state.stream?.providerResolveResult?.streams.length);
+  const hasMediaTrackChoices = Boolean(
+    hasStreamCandidates ||
+    state.stream?.subtitleList?.length ||
+    state.stream?.providerResolveResult?.subtitles.length,
+  );
   const hasResolvedStream = Boolean(state.stream?.url);
   const playbackCanRecover =
     state.playbackStatus === "loading" ||
@@ -653,11 +658,11 @@ function resolveCommandState(
           reason: "Start playback before stream selection is available.",
         };
       }
-      return hasStreamCandidates
+      return hasMediaTrackChoices
         ? { enabled: true }
         : {
             enabled: false,
-            reason: "No stream choices were exposed for this playback.",
+            reason: "No stream choices or subtitle choices were exposed for this playback.",
           };
 
     case "source":

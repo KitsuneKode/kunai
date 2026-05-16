@@ -17,6 +17,7 @@ test("buildApiStreamResolveCacheKey is stable and encodes prefs", () => {
     mode: "anime",
     audioPreference: "original",
     subtitlePreference: "en",
+    qualityPreference: "1080p",
   });
   const b = buildApiStreamResolveCacheKey({
     providerId: "allanime",
@@ -26,10 +27,12 @@ test("buildApiStreamResolveCacheKey is stable and encodes prefs", () => {
     mode: "anime",
     audioPreference: "original",
     subtitlePreference: "en",
+    qualityPreference: "1080p",
   });
   expect(a).toContain(":anime:");
   expect(a).toContain(":original:");
   expect(a).toContain(":en");
+  expect(a).toContain(":1080p");
   expect(a).toBe(b);
 });
 
@@ -42,8 +45,9 @@ test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => 
     mode: "series",
     audioPreference: "original",
     subtitlePreference: "en",
+    qualityPreference: "720p",
   });
-  expect(key).toContain("provider:vidking:series:tmdb:1:2:7:en");
+  expect(key).toContain("provider:vidking:series:tmdb:1:2:7:en:720p");
 });
 
 test("buildEmbedStreamCacheKey preserves embed URL", () => {

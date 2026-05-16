@@ -159,6 +159,24 @@ describe("ConfigServiceImpl", () => {
     expect(service.animeLanguageProfile.subtitle).toBe("interactive");
   });
 
+  test("normalizes media quality preferences on load and update", async () => {
+    const store = new MemoryConfigStore({
+      animeLanguageProfile: { audio: "original", subtitle: "en", quality: " 1080P " },
+      seriesLanguageProfile: { audio: "original", subtitle: "none", quality: "" },
+    });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.animeLanguageProfile.quality).toBe("1080p");
+    expect(service.seriesLanguageProfile.quality).toBe("best");
+
+    await service.update({
+      movieLanguageProfile: { audio: "original", subtitle: "en", quality: "720P" },
+    });
+    await service.save();
+
+    expect((await store.load()).movieLanguageProfile?.quality).toBe("720p");
+  });
+
   test("round-trips legacy profile subtitle preference as interactive on save", async () => {
     const store = new MemoryConfigStore({
       animeLanguageProfile: { audio: "original", subtitle: "fzf" },

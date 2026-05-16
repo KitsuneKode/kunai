@@ -30,13 +30,20 @@ function normalizeSubtitlePreference(value: string | undefined): string {
   return value;
 }
 
+function normalizeQualityPreference(value: string | undefined): string {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized || normalized === "auto") return "best";
+  return normalized;
+}
+
 function normalizeLanguageProfile(
   profile: KitsuneConfig["animeLanguageProfile"] | undefined,
 ): KitsuneConfig["animeLanguageProfile"] {
-  if (!profile) return { audio: "original", subtitle: "none" };
+  if (!profile) return { audio: "original", subtitle: "none", quality: "best" };
   return {
     audio: profile.audio,
     subtitle: normalizeSubtitlePreference(profile.subtitle),
+    quality: normalizeQualityPreference(profile.quality),
   };
 }
 
@@ -173,6 +180,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get presenceDiscordClientId(): string {
     return this.config.presenceDiscordClientId;
+  }
+
+  get presenceDiscordOpenUrl(): string {
+    return this.config.presenceDiscordOpenUrl;
   }
 
   get downloadsEnabled(): boolean {

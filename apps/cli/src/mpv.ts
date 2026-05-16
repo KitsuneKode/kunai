@@ -171,6 +171,24 @@ export async function launchMpv(opts: {
     async reloadSubtitles() {
       void ipcSession?.send(["sub-reload"]);
     },
+    async selectSubtitle(selection) {
+      if (!ipcSession) return false;
+      if (!selection.subtitleUrl) {
+        const result = await ipcSession.send(["set_property", "sid", "no"], 1_000);
+        return result.ok;
+      }
+      const attached = await attachLateSubtitles(
+        ipcSession,
+        {
+          primarySubtitle: selection.subtitleUrl,
+          subtitleTracks: selection.subtitleTracks,
+        },
+        (trackCount) => {
+          emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
+        },
+      );
+      return attached > 0;
+    },
     async attachSubtitles(attachment: LateSubtitleAttachment) {
       return await attachLateSubtitles(ipcSession, attachment, (trackCount) => {
         emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });

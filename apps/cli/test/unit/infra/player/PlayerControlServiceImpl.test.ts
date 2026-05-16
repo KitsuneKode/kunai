@@ -95,6 +95,53 @@ test("PlayerControlServiceImpl reloads subtitles without stopping playback", asy
   expect(reloaded).toBe(1);
 });
 
+test("PlayerControlServiceImpl selects subtitles without stopping playback", async () => {
+  const selections: unknown[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+    async selectSubtitle(selection) {
+      selections.push(selection);
+      return true;
+    },
+  });
+
+  expect(
+    await service.selectCurrentSubtitle(
+      {
+        subtitleUrl: "https://subs.example/en.vtt",
+        subtitleTracks: [{ url: "https://subs.example/en.vtt", language: "en" }],
+      },
+      "subtitle-select",
+    ),
+  ).toBe(true);
+  expect(service.consumeLastAction()).toBe("select-subtitle");
+  expect(selections).toEqual([
+    {
+      subtitleUrl: "https://subs.example/en.vtt",
+      subtitleTracks: [{ url: "https://subs.example/en.vtt", language: "en" }],
+    },
+  ]);
+});
+
+test("PlayerControlServiceImpl reports false when subtitle selection is unsupported", async () => {
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+  });
+
+  expect(await service.selectCurrentSubtitle({ subtitleUrl: null }, "subtitle-off")).toBe(false);
+  expect(service.consumeLastAction()).toBeNull();
+});
+
 test("PlayerControlServiceImpl skips the active timing segment without stopping playback", async () => {
   let skipped = 0;
   const service = makeService();

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Kunai">
+  <rect width="512" height="512" rx="96" fill="#101318"/>
+  <path
+    d="M256 54c41 0 74 33 74 74 0 30-18 56-43 68l104 244-135-73-135 73 104-244c-25-12-43-38-43-68 0-41 33-74 74-74Z"
+    fill="#f4f7fb"
+  />
+  <circle cx="256" cy="128" r="34" fill="#101318"/>
+  <path d="M256 216 200 348l56-30 56 30-56-132Z" fill="#8fd4ff"/>
+</svg>
+

@@ -2,9 +2,11 @@ import { expect, test } from "bun:test";
 
 import {
   applyPreferredStreamSelection,
+  buildMediaTrackPickerOptions,
   buildQualityPickerOptions,
   buildSourcePickerOptions,
   buildStreamPickerOptions,
+  decodeMediaTrackPickerSelection,
   isCurrentStreamSelection,
   streamSelectionFromSource,
   streamSelectionFromStream,
@@ -199,6 +201,41 @@ test("buildStreamPickerOptions combines source quality audio and subtitle detail
   expect(options[0]?.detail).toBe("hls  ·  m3u8  ·  audio ja  ·  hardsub en");
   expect(options[1]?.label).toBe("source-a  ·  720p");
   expect(options[1]?.detail).toBe("hls  ·  m3u8  ·  audio en");
+});
+
+test("buildMediaTrackPickerOptions combines streams and soft subtitle controls", () => {
+  const options = buildMediaTrackPickerOptions({
+    ...streamWithSubtitles,
+    subtitle: "https://subs.example/en.vtt",
+    subtitleList: [
+      { url: "https://subs.example/en.vtt", language: "en", display: "English" },
+      { url: "https://subs.example/fr.vtt", language: "fr", display: "French" },
+    ],
+  });
+
+  expect(options.map((option) => option.value)).toEqual([
+    "stream:stream-1080",
+    "stream:stream-720",
+    "stream:stream-480-source-b",
+    "subtitle:https%3A%2F%2Fsubs.example%2Fen.vtt",
+    "subtitle:https%3A%2F%2Fsubs.example%2Ffr.vtt",
+    "subtitle:none",
+  ]);
+  expect(options.find((option) => option.value === "subtitle:none")?.label).toBe("Subtitles off");
+});
+
+test("decodeMediaTrackPickerSelection decodes stream subtitle and subtitle-off choices", () => {
+  expect(decodeMediaTrackPickerSelection("stream:stream-720")).toEqual({
+    kind: "stream",
+    streamId: "stream-720",
+  });
+  expect(decodeMediaTrackPickerSelection("subtitle:https%3A%2F%2Fsubs.example%2Fen.vtt")).toEqual({
+    kind: "subtitle",
+    subtitleUrl: "https://subs.example/en.vtt",
+  });
+  expect(decodeMediaTrackPickerSelection("subtitle:none")).toEqual({
+    kind: "subtitle-off",
+  });
 });
 
 test("applyPreferredStreamSelection prefers explicit stream id override", () => {

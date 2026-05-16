@@ -1,6 +1,6 @@
 # Discord Presence And Media Track Polish
 
-Status: implemented core presence/media-summary slice; future `/tracks` UX remains planned
+Status: implemented core presence/media-summary, `/tracks`, quality preference, and opt-in handoff slices
 
 ## Implemented In This Sweep
 
@@ -14,19 +14,22 @@ Status: implemented core presence/media-summary slice; future `/tracks` UX remai
   the presence service.
 - Tests cover the privacy payload, URL redaction, selected media facts, and signed subtitle URL
   churn fallback.
+- `/tracks` now resolves to the stream picker and groups stream variants with soft subtitle choices.
+- Active soft subtitle selection can attach or disable subtitles without restarting playback.
+- Preferred quality is part of media profiles, settings, provider resolve requests, and stream cache
+  identity so a changed preference does not reuse the wrong cached variant.
+- Discord can show an opt-in `Open in Kunai` button only for configured `https://` or `kunai://`
+  handoff URLs; unsafe schemes are ignored.
+- Stable source assets for Discord keys `kunai` and `subtitles` live in `apps/cli/assets/discord/`.
 
 ## Remaining Product Work
 
-- Add a first-class `/tracks` surface that groups source, quality, audio, hardsub, and soft
-  subtitle choices in one mounted overlay.
 - Wire audio/hardsub `LanguageSelectionIntent` paths all the way into player reload behavior where
   provider inventory can satisfy the choice without a fresh provider resolve.
-- Add configured preferred quality to normal playback and download resolve input once the selection
-  contract is stable.
-- Design an opt-in `kunai://` or HTTPS handoff if Discord should offer "Open in Kunai"; Discord
-  cannot run local shell commands directly, and any local handoff must require confirmation.
-- Generate/upload stable Discord application assets (`kunai`, `subtitles`) through the Discord
-  Developer Portal before treating artwork as guaranteed.
+- Build and register the installer-owned `kunai://` handler, or an HTTPS relay with local
+  confirmation, before enabling a default Discord handoff.
+- Upload stable Discord application assets (`kunai`, `subtitles`) through the Discord Developer
+  Portal before treating artwork as guaranteed in live clients.
 
 ## Guardrails
 

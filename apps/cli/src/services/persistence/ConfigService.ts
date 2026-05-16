@@ -18,6 +18,7 @@ export type RecoveryMode = "guided" | "fallback-first" | "manual";
 export interface MediaLanguageProfile {
   audio: string;
   subtitle: string;
+  quality?: string;
 }
 
 export interface KitsuneConfig {
@@ -82,6 +83,8 @@ export interface KitsuneConfig {
   presencePrivacy: PresencePrivacy;
   /** Discord application client id. Empty string = read KUNAI_DISCORD_CLIENT_ID when needed. */
   presenceDiscordClientId: string;
+  /** Optional safe HTTPS or kunai:// handoff URL for Discord buttons. Empty string disables it. */
+  presenceDiscordOpenUrl: string;
   /** Optional offline download feature gate. Default off until the user opts in. */
   downloadsEnabled: boolean;
   /** Queue future episodes automatically after playback. Default off. */

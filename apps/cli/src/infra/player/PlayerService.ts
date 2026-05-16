@@ -78,6 +78,8 @@ export interface PlayerOptions {
   audioPreference?: string;
   /** Preferred subtitle language hint for mpv track selection (`none` disables autosub selection). */
   subtitlePreference?: string;
+  /** Provider quality preference that produced the current stream; retained for diagnostics/UI symmetry. */
+  qualityPreference?: string;
   displayTitle: string;
   correlation?: DiagnosticCorrelation;
   /** Automatic seek target for this launch. */

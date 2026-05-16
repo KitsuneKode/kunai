@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Subtitles">
+  <rect width="512" height="512" rx="96" fill="#101318"/>
+  <rect x="86" y="128" width="340" height="256" rx="44" fill="#f4f7fb"/>
+  <rect x="128" y="216" width="112" height="28" rx="14" fill="#101318"/>
+  <rect x="264" y="216" width="120" height="28" rx="14" fill="#101318"/>
+  <rect x="128" y="276" width="160" height="28" rx="14" fill="#101318"/>
+  <rect x="312" y="276" width="72" height="28" rx="14" fill="#101318"/>
+  <path d="M174 384h164l-82 54-82-54Z" fill="#8fd4ff"/>
+</svg>

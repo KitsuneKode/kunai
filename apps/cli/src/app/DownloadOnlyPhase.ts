@@ -86,6 +86,10 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
       state.mode === "anime"
         ? state.animeLanguageProfile.subtitle
         : state.seriesLanguageProfile.subtitle;
+    const qualityPreference =
+      state.mode === "anime"
+        ? state.animeLanguageProfile.quality
+        : state.seriesLanguageProfile.quality;
 
     let queuedCount = 0;
     let lastJobId: string | undefined;
@@ -98,6 +102,7 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
           mode: state.mode,
           audioPreference,
           subtitlePreference,
+          qualityPreference,
           outputDirectory: input.outputDirectory,
           posterUrl: input.title.posterUrl,
         });

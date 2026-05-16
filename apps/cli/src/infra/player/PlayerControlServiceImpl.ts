@@ -7,6 +7,7 @@ import type {
   ActivePlayerControl,
   PlaybackControlAction,
   PlaybackPickerAction,
+  PlaybackSubtitleSelection,
   PlaybackStreamSelection,
   PlayerControlService,
 } from "./PlayerControlService";
@@ -210,6 +211,49 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       reason,
       async () => await active.reloadSubtitles?.(),
     );
+    return true;
+  }
+
+  async selectCurrentSubtitle(
+    selection: PlaybackSubtitleSelection,
+    reason = "user-requested",
+  ): Promise<boolean> {
+    const active = this.active;
+    if (!active) {
+      this.deps.diagnosticsStore.record({
+        category: "subtitle",
+        message: "Subtitle selection requested without active player",
+        context: { reason, hasSubtitle: Boolean(selection.subtitleUrl) },
+      });
+      return false;
+    }
+
+    if (!active.selectSubtitle) {
+      this.deps.diagnosticsStore.record({
+        category: "subtitle",
+        message: "Subtitle selection unavailable for active player",
+        context: { id: active.id, reason, hasSubtitle: Boolean(selection.subtitleUrl) },
+      });
+      return false;
+    }
+
+    const selected = await this.enqueueCommand(
+      "select-subtitle",
+      reason,
+      async () => await active.selectSubtitle?.(selection),
+    );
+    if (!selected) return false;
+    this.lastAction = "select-subtitle";
+    this.deps.logger.info("Selected active playback subtitle", {
+      id: active.id,
+      reason,
+      enabled: Boolean(selection.subtitleUrl),
+    });
+    this.deps.diagnosticsStore.record({
+      category: "subtitle",
+      message: "Selected active playback subtitle",
+      context: { id: active.id, reason, enabled: Boolean(selection.subtitleUrl) },
+    });
     return true;
   }
 

@@ -21,6 +21,9 @@ describe("recommendation command", () => {
     expect(parseCommand("/surprise")?.id).toBe("surprise");
     expect(parseCommand("/offline")?.id).toBe("library");
     expect(parseCommand("/downloads")?.id).toBe("downloads");
+    expect(parseCommand("/tracks")?.id).toBe("streams");
+    expect(parseCommand("/audio")?.id).toBe("streams");
+    expect(parseCommand("/subtitles")?.id).toBe("streams");
     expect(resolveCommands(state, ["trending"])).toEqual([
       expect.objectContaining({
         id: "trending",

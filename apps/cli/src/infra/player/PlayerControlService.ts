@@ -1,5 +1,5 @@
 import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
-import type { EpisodeInfo, PlaybackTimingMetadata } from "@/domain/types";
+import type { EpisodeInfo, PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
 
 import type { LateSubtitleAttachment } from "./PlayerService";
 
@@ -13,6 +13,7 @@ export type PlaybackControlAction =
   | "pick-quality"
   | "pick-episode"
   | "reload-subtitles"
+  | "select-subtitle"
   | "next"
   | "previous"
   | "back-to-search";
@@ -27,11 +28,17 @@ export type PlaybackStreamSelection = {
   readonly streamId: string | null;
 };
 
+export type PlaybackSubtitleSelection = {
+  readonly subtitleUrl: string | null;
+  readonly subtitleTracks?: readonly SubtitleTrack[];
+};
+
 export interface ActivePlayerControl {
   readonly id: string;
   stop(reason?: string): Promise<void>;
   stopCurrentFile?(reason?: string): Promise<void>;
   reloadSubtitles?(): Promise<void>;
+  selectSubtitle?(selection: PlaybackSubtitleSelection): Promise<boolean>;
   attachSubtitles?(attachment: LateSubtitleAttachment): Promise<number>;
   skipCurrentSegment?(): Promise<boolean>;
   updateTiming?(timing: PlaybackTimingMetadata | null): void;
@@ -69,6 +76,7 @@ export interface PlayerControlService {
   fallbackCurrentPlayback(reason?: string): Promise<boolean>;
   pickStreamCurrentPlayback(reason?: string): Promise<boolean>;
   reloadCurrentSubtitles(reason?: string): Promise<boolean>;
+  selectCurrentSubtitle(selection: PlaybackSubtitleSelection, reason?: string): Promise<boolean>;
   attachLateSubtitles(attachment: LateSubtitleAttachment, reason?: string): Promise<boolean>;
   skipCurrentSegment(reason?: string): Promise<boolean>;
   pickSourceCurrentPlayback(reason?: string): Promise<boolean>;

@@ -29,7 +29,16 @@ export const allanimeManifest = defineProviderManifest({
   cachePolicy: {
     ttlClass: "stream-manifest",
     scope: "local",
-    keyParts: ["provider", ALLANIME_PROVIDER_ID, "anime", "title", "episode", "audio", "subtitle"],
+    keyParts: [
+      "provider",
+      ALLANIME_PROVIDER_ID,
+      "anime",
+      "title",
+      "episode",
+      "audio",
+      "subtitle",
+      "quality",
+    ],
     allowStale: true,
   },
   browserSafe: false,

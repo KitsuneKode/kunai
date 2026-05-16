@@ -245,6 +245,7 @@ export class PersistentMpvSession {
       reloadSubtitles: async () => {
         await this.reloadSubtitles();
       },
+      selectSubtitle: async (selection) => await this.selectSubtitle(selection),
       attachSubtitles: async (attachment) => await this.attachSubtitles(attachment),
       skipCurrentSegment: async () => this.skipCurrentSegment(),
       updateTiming: (timing) => this.updateTiming(timing),
@@ -803,6 +804,28 @@ export class PersistentMpvSession {
     const active = this.activeCycle;
     if (!active || !this.ipcSession) return;
     await this.ipcSession.send(["sub-reload"], 1_000);
+  }
+
+  private async selectSubtitle(selection: {
+    readonly subtitleUrl: string | null;
+    readonly subtitleTracks?: readonly SubtitleTrack[];
+  }): Promise<boolean> {
+    if (!this.ipcSession) return false;
+    if (!selection.subtitleUrl) {
+      const result = await this.ipcSession.send(["set_property", "sid", "no"], 1_000);
+      return result.ok;
+    }
+
+    const attached = await this.subtitleManager.attachSubtitles(this.ipcSession, {
+      primarySubtitle: selection.subtitleUrl,
+      subtitleTracks: selection.subtitleTracks,
+    });
+    if (attached <= 0) return false;
+    this.currentCycleOptions().onPlaybackEvent?.({
+      type: "late-subtitles-attached",
+      trackCount: attached,
+    });
+    return true;
   }
 
   private async attachSubtitles(attachment: LateSubtitleAttachment): Promise<number> {

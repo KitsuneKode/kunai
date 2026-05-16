@@ -13,6 +13,7 @@ export interface StreamRequest {
   episode?: EpisodeInfo;
   audioPreference: string;
   subtitlePreference: string;
+  qualityPreference?: string;
 }
 
 export interface EpisodeListRequest {
