@@ -2,6 +2,7 @@ import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { EmptyState, InlineBadge } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
+import { buildPickerActionContext } from "@/app-shell/workflows";
 import type { Container } from "@/container";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { Box, Text, useInput } from "ink";
@@ -97,7 +98,7 @@ export function LibraryShell({
 
       <Box marginTop={1}>
         <Text color={palette.muted} dimColor>
-          d toggle · a cycle auto · 1 Library · 2 Queue · Esc close
+          ↑↓ select · x delete · p protect · Enter browse · d toggle · a cycle auto · Esc close
         </Text>
       </Box>
     </Box>
@@ -109,6 +110,8 @@ function LibraryTab({ container }: { container: Container }) {
     readonly import("@/services/offline/offline-library").OfflineLibraryEntry[] | null
   >(null);
   const [loading, setLoading] = useState(true);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,9 +127,6 @@ function LibraryTab({ container }: { container: Container }) {
       .catch(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [container]);
 
   if (loading) {
@@ -153,7 +153,91 @@ function LibraryTab({ container }: { container: Container }) {
   }
 
   const shelf = createOfflineLibraryEngine().buildShelf(entries);
-  const previewGroups = shelf.groups.slice(0, 10);
+  const safeIndex = Math.min(selectedIndex, shelf.groups.length - 1);
+  const groups = shelf.groups.slice(0, 15);
+  const selectedGroup = groups[safeIndex] ?? null;
+
+  useInput((input, key) => {
+    if (key.upArrow) {
+      setConfirmDeleteKey(null);
+      setSelectedIndex((prev) => Math.max(0, prev - 1));
+      return;
+    }
+    if (key.downArrow) {
+      setConfirmDeleteKey(null);
+      setSelectedIndex((prev) => Math.min(groups.length - 1, prev + 1));
+      return;
+    }
+    if (input === "x" || key.delete) {
+      if (!selectedGroup) return;
+      if (confirmDeleteKey === selectedGroup.key) {
+        setConfirmDeleteKey(null);
+        const groupEntryIds = entries
+          .filter((e) => e.job.titleId === selectedGroup.titleId)
+          .map((e) => e.job.id);
+        for (const jobId of groupEntryIds) {
+          container.downloadService.deleteJob(jobId, { deleteArtifact: true });
+        }
+        setEntries((prev) =>
+          prev ? prev.filter((e) => e.job.titleId !== selectedGroup.titleId) : null,
+        );
+      } else {
+        setConfirmDeleteKey(selectedGroup.key);
+      }
+      return;
+    }
+    if (input === "p" || input === "P") {
+      if (!selectedGroup) return;
+      const groupEntryIds = entries
+        .filter((e) => e.job.titleId === selectedGroup.titleId)
+        .map((e) => e.job.id);
+      const protectedSet = new Set(container.config.protectedDownloadJobIds);
+      const allProtected = groupEntryIds.every((id) => protectedSet.has(id));
+      void (async () => {
+        const updated = new Set(container.config.protectedDownloadJobIds);
+        for (const jobId of groupEntryIds) {
+          if (allProtected) updated.delete(jobId);
+          else updated.add(jobId);
+        }
+        await container.config.update({ protectedDownloadJobIds: [...updated] });
+        await container.config.save();
+      })();
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: allProtected
+          ? `Removed cleanup protection: ${selectedGroup.titleName}`
+          : `Protected from cleanup: ${selectedGroup.titleName}`,
+      });
+      return;
+    }
+    if (key.return) {
+      if (!selectedGroup) return;
+      const entryById = new Map(entries.map((e) => [e.job.id, e]));
+      const groupEntryIdsSet = new Set(
+        entries.filter((e) => e.job.titleId === selectedGroup.titleId).map((e) => e.job.id),
+      );
+      const groupEntries = [...entryById.values()].filter((e) => groupEntryIdsSet.has(e.job.id));
+      void (async () => {
+        const { openOfflineLibraryGroupPicker } = await import("./workflows");
+        await openOfflineLibraryGroupPicker(
+          container,
+          groupEntries,
+          buildPickerActionContext({
+            container,
+            taskLabel: `Offline: ${selectedGroup.titleName}`,
+          }),
+          {
+            actionSummary: selectedGroup.actionSummary,
+            artifactSummary: selectedGroup.artifactSummary,
+          },
+        );
+      })();
+      return;
+    }
+    if (confirmDeleteKey !== null) {
+      setConfirmDeleteKey(null);
+    }
+  });
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -161,25 +245,40 @@ function LibraryTab({ container }: { container: Container }) {
         <Text color={palette.gray}>{shelf.summary}</Text>
       </Box>
       <Box flexDirection="column">
-        {previewGroups.map((group) => (
+        {groups.map((group, index) => (
           <Box key={group.key}>
-            <Text color="white" bold>
-              {truncateLine(group.label, 44)}
+            <Text color={index === safeIndex ? palette.teal : palette.gray}>
+              {index === safeIndex ? "❯ " : "  "}
+            </Text>
+            <Text color={index === safeIndex ? "white" : undefined} bold={index === safeIndex}>
+              {truncateLine(group.label, 42)}
             </Text>
             <Text color={palette.muted} dimColor>
               {"  ·  "}
               {group.actionSummary}
             </Text>
+            {confirmDeleteKey === group.key ? (
+              <Text color={palette.amber} bold>
+                {"  "}x again to delete
+              </Text>
+            ) : null}
           </Box>
         ))}
-        {shelf.groups.length > 10 ? (
+        {shelf.groups.length > 15 ? (
           <Box marginTop={1}>
             <Text color={palette.gray} dimColor>
-              and {shelf.groups.length - 10} more titles...
+              and {shelf.groups.length - 15} more titles...
             </Text>
           </Box>
         ) : null}
       </Box>
+      {selectedGroup && confirmDeleteKey === selectedGroup.key ? (
+        <Box marginTop={1}>
+          <Text color={palette.amber}>
+            {"⚠ "}Press x again to delete {selectedGroup.titleName} and all local files
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }

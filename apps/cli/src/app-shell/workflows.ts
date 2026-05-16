@@ -640,7 +640,7 @@ export async function openCompletedDownloadsPicker(
   }
 }
 
-async function openOfflineLibraryGroupPicker(
+export async function openOfflineLibraryGroupPicker(
   container: Container,
   entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
   actionContext?: ListShellActionContext,
