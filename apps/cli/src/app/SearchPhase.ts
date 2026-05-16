@@ -383,34 +383,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
 
           if (outcome.action === "download") {
-            const selected =
-              stateManager.getState().searchResults[stateManager.getState().selectedResultIndex];
-            if (!selected) {
-              stateManager.dispatch({
-                type: "SET_PLAYBACK_FEEDBACK",
-                note: "Choose a title before queueing a download.",
-              });
-              continue;
-            }
-            const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
-              mode: stateManager.getState().mode,
-              providerId: stateManager.getState().provider,
-              animeLanguageProfile: container.config.animeLanguageProfile,
-              providerRegistry,
-              signal: context.signal,
-            });
-            const title: TitleInfo = {
-              id: mapped.id,
-              type: mapped.type,
-              name: chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
-              titleAliases: mapped.titleAliases,
-              year: mapped.year,
-              overview: mapped.overview,
-              posterUrl: mapped.posterPath ?? undefined,
-              episodeCount: mapped.episodeCount,
-            };
-            const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
-            await new DownloadOnlyPhase().execute({ title }, context);
+            const { downloadSelectedResult } = await import("../app-shell/workflows");
+            await downloadSelectedResult(container);
             continue;
           }
 

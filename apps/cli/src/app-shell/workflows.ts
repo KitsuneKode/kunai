@@ -7,6 +7,8 @@ import {
   type ListShellActionContext,
   type ShellOption,
 } from "@/app-shell/pickers";
+import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
+import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
@@ -1149,6 +1151,34 @@ export async function applySettingsToRuntime({
   }
 }
 
+type ActionHandler = (container: Container) => Promise<"handled" | "quit" | "unhandled">;
+
+const actionHandlers: Record<string, ActionHandler | undefined> = {
+  quit: (c) => resolveQuitWithDownloadQueue(c),
+  history: (c) => handleHistory(c),
+  download: (c) => {
+    void downloadSelectedResult(c);
+    return Promise.resolve("handled");
+  },
+  downloads: (c) => handleLibraryOverlay(c, "queue"),
+  library: (c) => handleLibraryOverlay(c, "library"),
+  help: (c) => handleStaticOverlay(c, "help"),
+  about: (c) => handleStaticOverlay(c, "about"),
+  diagnostics: (c) => handleDiagnostics(c),
+  provider: (c) => handleProviderPicker(c),
+  settings: (c) => handleSettings(c),
+  presence: (c) => handleSettings(c),
+  setup: (c) => {
+    void runSetupWizard({ container: c, force: true });
+    return Promise.resolve("handled");
+  },
+  "clear-cache": (c) => handleClearCache(c),
+  "clear-history": (c) => handleClearHistory(c),
+  "export-diagnostics": (c) => handleExportDiagnostics(c),
+  "report-issue": (c) => handleReportIssue(c),
+  update: (c) => handleUpdate(c),
+};
+
 export async function handleShellAction({
   action,
   container,
@@ -1156,324 +1186,301 @@ export async function handleShellAction({
   action: ShellAction;
   container: Container;
 }): Promise<"handled" | "quit" | "unhandled"> {
-  const { providerRegistry, stateManager, config, diagnosticsStore, historyStore, cacheStore } =
-    container;
+  const handler = actionHandlers[action];
+  if (handler) return handler(container);
+  return "unhandled";
+}
 
-  const withOverlay = async <T>(
-    overlay: import("@/domain/session/SessionState").OverlayState,
-    run: () => Promise<T>,
-  ): Promise<T> => {
-    stateManager.dispatch({ type: "OPEN_OVERLAY", overlay });
-    try {
-      return await run();
-    } finally {
-      stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-    }
-  };
-
-  if (action === "quit") {
-    return await resolveQuitWithDownloadQueue(container);
+const withOverlay = async <T>(
+  stateManager: import("@/domain/session/SessionStateManager").SessionStateManager,
+  overlay: import("@/domain/session/SessionState").OverlayState,
+  run: () => Promise<T>,
+): Promise<T> => {
+  stateManager.dispatch({ type: "OPEN_OVERLAY", overlay });
+  try {
+    return await run();
+  } finally {
+    stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
   }
+};
 
-  if (action === "history") {
-    await withOverlay({ type: "history" }, () =>
-      openHistoryShell(
-        historyStore,
-        buildPickerActionContext({ container, taskLabel: "Manage history" }),
-      ),
-    );
-    return "handled";
-  }
+async function handleHistory(container: Container): Promise<"handled"> {
+  const { stateManager, historyStore } = container;
+  await withOverlay(stateManager, { type: "history" }, () =>
+    openHistoryShell(
+      historyStore,
+      buildPickerActionContext({ container, taskLabel: "Manage history" }),
+    ),
+  );
+  return "handled";
+}
 
-  if (action === "downloads") {
-    stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "library", view: "queue" } });
-    await waitForOverlayClose(stateManager, "library");
-    return "handled";
-  }
+async function handleLibraryOverlay(
+  container: Container,
+  view: "library" | "queue",
+): Promise<"handled"> {
+  const { stateManager } = container;
+  stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "library", view } });
+  await waitForOverlayClose(stateManager, "library");
+  return "handled";
+}
 
-  if (action === "library") {
-    stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "library", view: "library" } });
-    await waitForOverlayClose(stateManager, "library");
-    return "handled";
-  }
-
-  if (action === "help") {
-    await withOverlay({ type: "help" }, () =>
-      openStaticInfoShell({
-        title: "Help",
-        subtitle: "Global commands, editing, filtering, and playback navigation",
-        lines: [
-          {
-            label: "/ Command bar",
-            detail:
-              "Open global actions from anywhere in the shell. Use Tab to autocomplete, ↑↓ to choose, and Enter to run the highlighted command.",
-          },
+async function handleStaticOverlay(
+  container: Container,
+  type: "help" | "about",
+): Promise<"handled"> {
+  const { stateManager, config } = container;
+  const lines =
+    type === "help"
+      ? [
+          { label: "/ Command bar", detail: "Open global actions from anywhere in the shell." },
           {
             label: "Esc Clear or close",
-            detail:
-              "Clear the current transient state first, then close the top overlay or go back one level. Esc should never imply confirm.",
+            detail: "Clear the current transient state first, then close the top overlay.",
           },
           {
             label: "Enter Search or confirm",
-            detail:
-              "Searches when the query changed, otherwise confirms the selected result or picker entry.",
+            detail: "Searches when the query changed, otherwise confirms the selected result.",
           },
           {
             label: "↑↓ Navigate",
-            detail: "Move through visible results, episodes, season rows, and command suggestions.",
+            detail: "Move through visible results, episodes, and picker options.",
           },
           {
             label: "Type to filter pickers",
             detail:
-              "Season, episode, provider, subtitle, history, and settings pickers all support inline filtering.",
+              "Season, episode, provider, subtitle, history, and settings pickers support filtering.",
           },
           {
             label: "Ctrl+W Delete previous word",
-            detail:
-              "Supported in the browse input and picker filters so terminal-native editing keeps working.",
+            detail: "Supported in the browse input and picker filters.",
           },
           {
             label: "Tab Switch destination mode",
-            detail:
-              "In browse, Tab jumps directly into the destination mode shown in the footer, like anime mode or series mode.",
+            detail: "Jump directly into the destination mode shown in the footer.",
           },
-          {
-            label: "Ctrl+T Trending",
-            detail:
-              "Loads the cached discovery list on demand, instead of fetching trending titles during startup.",
-          },
+          { label: "Ctrl+T Trending", detail: "Loads the cached discovery list on demand." },
           {
             label: "Playback actions",
             detail:
-              "Replay, episode picker, provider switch, history, diagnostics, downloads, offline library, and next/previous actions stay reachable after playback ends.",
+              "Replay, episode picker, provider switch, diagnostics, and more stay available after playback ends.",
           },
           {
             label: "Why commands are disabled",
             detail:
-              "If an action is unavailable, the footer and command palette show the reason instead of silently ignoring input.",
+              "The footer and command palette show the reason instead of silently ignoring input.",
           },
-        ],
-      }),
-    );
-    return "handled";
-  }
-
-  if (action === "about") {
-    await withOverlay({ type: "about" }, () =>
-      openStaticInfoShell({
-        title: "About",
-        subtitle: "Kunai",
-        lines: [
-          {
-            label: "Version",
-            detail: "v0.1.0",
-          },
-          {
-            label: "Runtime",
-            detail: `Bun ${Bun.version}  ·  Node ${process.versions.node}`,
-          },
+        ]
+      : [
+          { label: "Version", detail: "v0.1.0" },
+          { label: "Runtime", detail: `Bun ${Bun.version}  ·  Node ${process.versions.node}` },
           {
             label: "Current mode",
             detail: `${stateManager.getState().mode}  ·  Provider ${stateManager.getState().provider}`,
           },
           {
-            label: "Default startup mode",
-            detail: `${config.getRaw().defaultMode}  ·  Series ${config.getRaw().provider}  ·  Anime ${config.getRaw().animeProvider}`,
-          },
-          {
             label: "Capabilities",
-            detail:
-              container.capabilitySnapshot?.issues.length &&
-              container.capabilitySnapshot.issues.length > 0
-                ? `${container.capabilitySnapshot.issues.length} degraded startup capability checks`
-                : "all required capabilities available",
+            detail: container.capabilitySnapshot?.issues.length
+              ? `${container.capabilitySnapshot.issues.length} degraded checks`
+              : "all required available",
           },
           {
             label: "Privacy",
             detail: "Diagnostics stay local unless you explicitly export or share them.",
           },
-        ],
-      }),
-    );
-    return "handled";
-  }
+        ];
+  await withOverlay(stateManager, { type }, () =>
+    openStaticInfoShell({
+      title: type === "help" ? "Help" : "About",
+      subtitle:
+        type === "help" ? "Global commands, editing, filtering, and playback navigation" : "Kunai",
+      lines,
+    }),
+  );
+  return "handled";
+}
 
-  if (action === "update") {
-    await openUpdateShell(container);
-    return "handled";
-  }
+async function handleDiagnostics(container: Container): Promise<"handled"> {
+  const { stateManager, diagnosticsStore } = container;
+  const state = stateManager.getState();
+  const recentEvents = diagnosticsStore.getRecent(6);
+  await withOverlay(stateManager, { type: "diagnostics" }, () =>
+    openStaticInfoShell({
+      title: "Diagnostics",
+      subtitle: "Current shell state snapshot",
+      lines: [
+        { label: "Mode and provider", detail: `${state.mode}  ·  ${state.provider}` },
+        { label: "View and playback", detail: `${state.view}  ·  ${state.playbackStatus}` },
+        {
+          label: "Subtitle state",
+          detail: describePlaybackSubtitleStatus(
+            state.stream,
+            state.mode === "anime"
+              ? state.animeLanguageProfile.subtitle
+              : state.seriesLanguageProfile.subtitle,
+          ),
+        },
+        {
+          label: "Selected subtitle URL",
+          detail: state.stream?.subtitle ?? "not found or disabled",
+        },
+        { label: "Subtitle tracks", detail: String(state.stream?.subtitleList?.length ?? 0) },
+        { label: "Stream URL", detail: state.stream?.url ?? "not resolved yet" },
+        { label: "Header keys", detail: summarizeHeaderKeys(state.stream?.headers) },
+        {
+          label: "Search state",
+          detail: `${state.searchState}  ·  ${state.searchResults.length} results`,
+        },
+        { label: "Memory", detail: `RSS ${(process.memoryUsage().rss / 1_048_576).toFixed(1)} MB` },
+        {
+          label: "Startup capabilities",
+          detail: container.capabilitySnapshot?.issues?.length
+            ? container.capabilitySnapshot.issues
+                .map((i) => `${String(i.id)} (${String(i.severity)})`)
+                .join("  ·  ")
+            : "no startup capability issues",
+        },
+        ...recentEvents.map((event) => ({
+          label: `${new Date(event.timestamp).toLocaleTimeString()}  ·  ${event.category}`,
+          detail: event.context
+            ? `${event.message}  ·  ${JSON.stringify(event.context)}`
+            : event.message,
+        })),
+      ],
+    }),
+  );
+  return "handled";
+}
 
-  if (action === "diagnostics") {
-    const state = stateManager.getState();
-    const recentEvents = diagnosticsStore.getRecent(6);
-    await withOverlay({ type: "diagnostics" }, () =>
-      openStaticInfoShell({
-        title: "Diagnostics",
-        subtitle: "Current shell state snapshot",
-        lines: [
-          {
-            label: "Mode and provider",
-            detail: `${state.mode}  ·  ${state.provider}`,
-          },
-          {
-            label: "View and playback",
-            detail: `${state.view}  ·  ${state.playbackStatus}`,
-          },
-          {
-            label: "Subtitle state",
-            detail: describePlaybackSubtitleStatus(
-              state.stream,
-              state.mode === "anime"
-                ? state.animeLanguageProfile.subtitle
-                : state.seriesLanguageProfile.subtitle,
-            ),
-          },
-          {
-            label: "Selected subtitle URL",
-            detail: state.stream?.subtitle ?? "not found or disabled",
-          },
-          {
-            label: "Subtitle tracks",
-            detail: String(state.stream?.subtitleList?.length ?? 0),
-          },
-          {
-            label: "Stream URL",
-            detail: state.stream?.url ?? "not resolved yet",
-          },
-          {
-            label: "Header keys",
-            detail: summarizeHeaderKeys(state.stream?.headers),
-          },
-          {
-            label: "Search state",
-            detail: `${state.searchState}  ·  ${state.searchResults.length} results`,
-          },
-          {
-            label: "Memory",
-            detail: `RSS ${(process.memoryUsage().rss / 1_048_576).toFixed(1)} MB`,
-          },
-          {
-            label: "Startup capabilities",
-            detail:
-              container.capabilitySnapshot?.issues.length &&
-              container.capabilitySnapshot.issues.length > 0
-                ? container.capabilitySnapshot.issues
-                    .map((issue) => `${issue.id} (${issue.severity})`)
-                    .join("  ·  ")
-                : "no startup capability issues",
-          },
-          ...recentEvents.map((event) => ({
-            label: `${new Date(event.timestamp).toLocaleTimeString()}  ·  ${event.category}`,
-            detail: event.context
-              ? `${event.message}  ·  ${JSON.stringify(event.context)}`
-              : event.message,
-          })),
-        ],
-      }),
-    );
-    return "handled";
-  }
-
-  if (action === "provider") {
-    const state = stateManager.getState();
-    const picked = await withOverlay(
-      {
-        type: "provider_picker",
+async function handleProviderPicker(container: Container): Promise<"handled"> {
+  const { stateManager, providerRegistry } = container;
+  const state = stateManager.getState();
+  const picked = await withOverlay(
+    stateManager,
+    { type: "provider_picker", currentProvider: state.provider, isAnime: state.mode === "anime" },
+    () =>
+      openProviderPicker({
         currentProvider: state.provider,
-        isAnime: state.mode === "anime",
-      },
-      () =>
-        openProviderPicker({
-          currentProvider: state.provider,
-          providers: providerRegistry
-            .getAll()
-            .map((p) => p.metadata)
-            .filter((p) => p.isAnimeProvider === (state.mode === "anime")),
-          actionContext: buildPickerActionContext({
-            container,
-            taskLabel: "Choose provider",
-            allowed: ["settings", "history", "diagnostics", "help", "about", "quit"],
-          }),
-        }),
-    );
-
-    if (picked && picked !== state.provider) {
-      stateManager.dispatch({
-        type: "SET_PROVIDER",
-        provider: picked,
-      });
-    }
-    return "handled";
-  }
-
-  if (action === "settings" || action === "presence") {
-    const next = await withOverlay({ type: "settings" }, () =>
-      openSettingsShell({
-        container,
-        current: config.getRaw(),
-        historyStore: container.historyStore,
+        providers: providerRegistry
+          .getAll()
+          .map((p) => p.metadata)
+          .filter((p) => p.isAnimeProvider === (state.mode === "anime")),
         actionContext: buildPickerActionContext({
           container,
-          taskLabel: "Adjust settings",
-          allowed: ["history", "diagnostics", "help", "about", "quit"],
+          taskLabel: "Choose provider",
+          allowed: ["settings", "history", "diagnostics", "help", "about", "quit"],
         }),
-        seriesProviders: providerRegistry
-          .getAll()
-          .filter((p) => !p.metadata.isAnimeProvider)
-          .map((p) => p.metadata),
-        animeProviders: providerRegistry
-          .getAll()
-          .filter((p) => p.metadata.isAnimeProvider)
-          .map((p) => p.metadata),
       }),
-    );
-
-    if (next) {
-      await applySettingsToRuntime({ container, next, previous: config.getRaw() });
-    }
-
-    return "handled";
+  );
+  if (picked && picked !== state.provider) {
+    stateManager.dispatch({ type: "SET_PROVIDER", provider: picked });
   }
+  return "handled";
+}
 
-  if (action === "setup") {
-    await runSetupWizard({ container, force: true });
-    return "handled";
+async function handleSettings(container: Container): Promise<"handled"> {
+  const { stateManager, config, providerRegistry } = container;
+  const next = await withOverlay(stateManager, { type: "settings" }, () =>
+    openSettingsShell({
+      container,
+      current: config.getRaw(),
+      historyStore: container.historyStore,
+      actionContext: buildPickerActionContext({
+        container,
+        taskLabel: "Adjust settings",
+        allowed: ["history", "diagnostics", "help", "about", "quit"],
+      }),
+      seriesProviders: providerRegistry
+        .getAll()
+        .map((p) => p.metadata)
+        .filter((p) => !p.isAnimeProvider),
+      animeProviders: providerRegistry
+        .getAll()
+        .map((p) => p.metadata)
+        .filter((p) => p.isAnimeProvider),
+    }),
+  );
+  if (next) {
+    await applySettingsToRuntime({ container, next, previous: config.getRaw() });
   }
+  return "handled";
+}
 
-  if (action === "clear-cache") {
-    const confirm = await chooseFromListShell({
-      title: "Clear stream cache?",
-      subtitle: "This will remove all cached stream URLs. Next play will require fresh resolving.",
-      options: [
-        { value: true, label: "Yes, clear cache" },
-        { value: false, label: "Cancel" },
-      ],
-    });
-    if (confirm) {
-      await cacheStore.clear();
-      diagnosticsStore.record({ category: "cache", message: "Stream cache cleared" });
-    }
-    return "handled";
+async function handleClearCache(container: Container): Promise<"handled"> {
+  const confirm = await chooseFromListShell({
+    title: "Clear stream cache?",
+    subtitle: "This will remove all cached stream URLs.",
+    options: [
+      { value: true, label: "Yes, clear cache" },
+      { value: false, label: "Cancel" },
+    ],
+  });
+  if (confirm) {
+    await container.cacheStore.clear();
+    container.diagnosticsStore.record({ category: "cache", message: "Stream cache cleared" });
   }
+  return "handled";
+}
 
-  if (action === "clear-history") {
-    const confirm = await chooseFromListShell({
-      title: "Clear watch history?",
-      subtitle: "This will remove all saved playback positions and progress.",
-      options: [
-        { value: true, label: "Yes, clear history" },
-        { value: false, label: "Cancel" },
-      ],
-    });
-    if (confirm) {
-      await historyStore.clear();
-      diagnosticsStore.record({ category: "session", message: "Watch history cleared" });
-    }
-    return "handled";
+async function handleClearHistory(container: Container): Promise<"handled"> {
+  const confirm = await chooseFromListShell({
+    title: "Clear watch history?",
+    subtitle: "This will remove all saved playback positions and progress.",
+    options: [
+      { value: true, label: "Yes, clear history" },
+      { value: false, label: "Cancel" },
+    ],
+  });
+  if (confirm) {
+    await container.historyStore.clear();
+    container.diagnosticsStore.record({ category: "session", message: "Watch history cleared" });
   }
+  return "handled";
+}
 
-  if (action === "export-diagnostics") {
-    const fileName = `kunai-diagnostics-export-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+async function handleExportDiagnostics(container: Container): Promise<"handled"> {
+  const fileName = `kunai-diagnostics-export-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  const path = join(process.cwd(), fileName);
+  const bundle = container.diagnosticsService.buildSupportBundle({
+    capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
+  });
+  await writeAtomicJson(path, bundle);
+  await pruneOldDiagnosticFiles({
+    dir: process.cwd(),
+    prefix: "kunai-diagnostics-export-",
+    maxFiles: 10,
+  });
+  container.diagnosticsService.record({
+    category: "ui",
+    operation: "export-diagnostics",
+    message: "Diagnostics exported to file",
+    context: { path: fileName },
+  });
+  return "handled";
+}
+
+async function handleReportIssue(container: Container): Promise<"handled"> {
+  const reportAction = await chooseFromListShell({
+    title: "Report an issue",
+    subtitle:
+      "Preview-first: export a redacted diagnostics bundle, then open GitHub when you are ready.",
+    options: [
+      {
+        value: "export-and-open" as const,
+        label: "Export diagnostics and open GitHub",
+        detail: "Writes a redacted local JSON bundle, then opens the issue chooser",
+      },
+      {
+        value: "open-only" as const,
+        label: "Open GitHub only",
+        detail: "No files are written by this action",
+      },
+      { value: "cancel" as const, label: "Cancel" },
+    ],
+  });
+  if (!reportAction || reportAction === "cancel") return "handled";
+  if (reportAction === "export-and-open") {
+    const fileName = `kunai-diagnostics-report-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
     const path = join(process.cwd(), fileName);
     const bundle = container.diagnosticsService.buildSupportBundle({
       capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
@@ -1481,71 +1488,22 @@ export async function handleShellAction({
     await writeAtomicJson(path, bundle);
     await pruneOldDiagnosticFiles({
       dir: process.cwd(),
-      prefix: "kunai-diagnostics-export-",
+      prefix: "kunai-diagnostics-report-",
       maxFiles: 10,
     });
-    container.diagnosticsService.record({
+    container.diagnosticsStore.record({
       category: "ui",
-      operation: "export-diagnostics",
-      message: "Diagnostics exported to file",
+      message: "Diagnostics report bundle exported",
       context: { path: fileName },
     });
-    return "handled";
   }
+  await openIssueUrl();
+  return "handled";
+}
 
-  if (action === "report-issue") {
-    const reportAction = await chooseFromListShell({
-      title: "Report an issue",
-      subtitle:
-        "Preview-first: export a redacted diagnostics bundle, then open GitHub when you are ready.",
-      options: [
-        {
-          value: "export-and-open" as const,
-          label: "Export diagnostics and open GitHub",
-          detail: "Writes a redacted local JSON bundle, then opens the issue chooser",
-        },
-        {
-          value: "open-only" as const,
-          label: "Open GitHub only",
-          detail: "No files are written by this action",
-        },
-        { value: "cancel" as const, label: "Cancel" },
-      ],
-    });
-    if (!reportAction || reportAction === "cancel") return "handled";
-    if (reportAction === "export-and-open") {
-      const fileName = `kunai-diagnostics-report-${new Date()
-        .toISOString()
-        .replace(/[:.]/g, "-")}.json`;
-      const path = join(process.cwd(), fileName);
-      const bundle = container.diagnosticsService.buildSupportBundle({
-        capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
-      });
-      await writeAtomicJson(path, bundle);
-      await pruneOldDiagnosticFiles({
-        dir: process.cwd(),
-        prefix: "kunai-diagnostics-report-",
-        maxFiles: 10,
-      });
-      diagnosticsStore.record({
-        category: "ui",
-        message: "Diagnostics report bundle exported",
-        context: { path: fileName },
-      });
-    }
-    await openIssueUrl();
-    diagnosticsStore.record({
-      category: "ui",
-      message: "Opened issue reporting page",
-      context: {
-        url: "https://github.com/kitsunekode/kunai/issues/new/choose",
-        guidance: "Attach exported diagnostics, provider id, OS, and exact command.",
-      },
-    });
-    return "handled";
-  }
-
-  return "unhandled";
+async function handleUpdate(container: Container): Promise<"handled"> {
+  await openUpdateShell(container);
+  return "handled";
 }
 
 async function openUpdateShell(container: Container): Promise<void> {
@@ -1692,6 +1650,41 @@ export async function enqueueCurrentPlaybackDownload({
     });
     return false;
   }
+}
+
+export async function downloadSelectedResult(container: Container): Promise<void> {
+  const { stateManager, providerRegistry } = container;
+  const state = stateManager.getState();
+  const selected = state.searchResults[state.selectedResultIndex];
+  if (!selected) {
+    stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Choose a title before queueing a download.",
+    });
+    return;
+  }
+  const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
+    mode: state.mode,
+    providerId: state.provider,
+    animeLanguageProfile: container.config.animeLanguageProfile,
+    providerRegistry,
+    signal: new AbortController().signal,
+  });
+  const title: TitleInfo = {
+    id: mapped.id,
+    type: mapped.type,
+    name: chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+    titleAliases: mapped.titleAliases,
+    year: mapped.year,
+    overview: mapped.overview,
+    posterUrl: mapped.posterPath ?? undefined,
+    episodeCount: mapped.episodeCount,
+  };
+  const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
+  await new DownloadOnlyPhase().execute(
+    { title },
+    { container, signal: new AbortController().signal },
+  );
 }
 
 async function resolveTimingSnapshot(container: Container) {
