@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 test("discover shell data contract: RecommendationSection shape is stable", () => {
   type DiscoverItem = { id: string; title: string; year: number; rating: number | null };

@@ -968,7 +968,7 @@ export function OverlayPanel({
                   </Box>
                 );
               }
-              const accentColor =
+              const rowAccentColor =
                 option.tone === "success"
                   ? palette.green
                   : option.tone === "warning"
@@ -991,7 +991,7 @@ export function OverlayPanel({
                     badge={option.badge}
                     width={Math.max(0, contentWidth)}
                     selected={selected}
-                    accentColor={accentColor}
+                    accentColor={rowAccentColor}
                     pickerAccent={pickerAccent}
                   />
                 </Text>

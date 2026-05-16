@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 test("useLineEditor is importable and returns cursor", () => {
   const mod = require("@/app-shell/line-editor");
