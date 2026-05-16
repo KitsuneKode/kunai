@@ -614,7 +614,9 @@ export function describePresenceConfiguration(
       ? "config client id"
       : source === "environment"
         ? "env client id"
-        : "missing client id";
+        : source === "default"
+          ? "default client id"
+          : "missing client id";
   return `${config.presenceProvider}  ·  privacy ${config.presencePrivacy}  ·  ${clientIdSource}`;
 }
 
@@ -639,7 +641,7 @@ export function resolvePresenceClientIdSource(
   if ((env?.KUNAI_DISCORD_CLIENT_ID ?? process.env.KUNAI_DISCORD_CLIENT_ID)?.trim()) {
     return "environment";
   }
-  return "missing";
+  return DEFAULT_DISCORD_CLIENT_ID ? "default" : "missing";
 }
 
 export function buildPresenceSnapshot({

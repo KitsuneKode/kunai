@@ -2,7 +2,7 @@ import type { EpisodeInfo, ShellMode, StreamInfo, TitleInfo } from "@/domain/typ
 
 export type PresenceStatus = "disabled" | "idle" | "connecting" | "ready" | "unavailable" | "error";
 
-export type PresenceClientIdSource = "off" | "config" | "environment" | "missing";
+export type PresenceClientIdSource = "off" | "config" | "environment" | "default" | "missing";
 
 export type PresenceSnapshot = {
   readonly provider: "off" | "discord";
