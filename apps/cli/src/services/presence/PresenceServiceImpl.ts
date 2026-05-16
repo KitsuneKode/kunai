@@ -2,6 +2,7 @@ import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 
 import type {
+  PresenceBrowseActivity,
   PresenceClientIdSource,
   PresencePlaybackActivity,
   PresenceService,
@@ -141,6 +142,41 @@ export class PresenceServiceImpl implements PresenceService {
       this.startHeartbeat();
     } catch (error) {
       this.markUnavailable("Discord presence update failed", error, {
+        suspectedDuplicateDiscordConsumer: true,
+      });
+    }
+  }
+
+  async updateBrowsing(activity: PresenceBrowseActivity): Promise<void> {
+    if (this.deps.config.presenceProvider === "off") {
+      this.status = "disabled";
+      return;
+    }
+    if (this.deps.config.presenceProvider !== "discord") return;
+    if (this.unavailableUntilRestart) return;
+
+    const client = await this.ensureDiscordClient();
+    if (!client) return;
+
+    try {
+      const privacy = this.deps.config.presencePrivacy;
+      const payload: Record<string, unknown> =
+        privacy === "private"
+          ? { type: 3, details: "Browsing with Kunai", largeImageKey: "kunai" }
+          : {
+              type: 3,
+              details: `Browsing ${activity.view}`,
+              ...(activity.detail ? { state: activity.detail } : {}),
+              largeImageKey: "kunai",
+            };
+      const activityHash = stableJsonHash(payload);
+      if (activityHash === this.lastActivityHash) return;
+      await client.setActivity(payload);
+      this.status = "ready";
+      this.lastActivityHash = activityHash;
+      this.lastActivityPayload = payload;
+    } catch (error) {
+      this.markUnavailable("Discord browsing presence update failed", error, {
         suspectedDuplicateDiscordConsumer: true,
       });
     }
@@ -506,32 +542,35 @@ export function buildDiscordActivity(
 ): Record<string, unknown> {
   const episodeLabel =
     activity.title.type === "series"
-      ? `S${String(activity.episode.season).padStart(2, "0")}E${String(
-          activity.episode.episode,
-        ).padStart(2, "0")}`
+      ? `Season ${activity.episode.season}, Episode ${activity.episode.episode}`
       : "Movie";
+  const stateLine =
+    activity.title.type === "series"
+      ? `${episodeLabel} · ${activity.providerId}`
+      : activity.providerId;
+  const subtitleAttached = (activity.subtitleCount ?? 0) > 0;
 
   if (privacy === "private") {
     return {
+      type: 3,
       details: "Watching with Kunai",
-      state: "Playback active",
-      startTimestamp: Math.floor(activity.startedAtMs / 1000),
+      state: activity.paused ? "Paused" : "Playing",
+      ...(activity.paused ? {} : { startTimestamp: Math.floor(activity.startedAtMs / 1000) }),
       largeImageKey: "kunai",
       largeImageText: "Kunai",
     };
   }
 
   return {
-    details:
-      activity.title.type === "series"
-        ? `${activity.title.name} ${episodeLabel}`
-        : activity.title.name,
-    state: `${activity.mode} · ${activity.providerId}`,
-    startTimestamp: Math.floor(activity.startedAtMs / 1000),
+    type: 3,
+    details: activity.title.name,
+    state: stateLine,
+    ...(activity.paused ? {} : { startTimestamp: Math.floor(activity.startedAtMs / 1000) }),
     largeImageKey: "kunai",
     largeImageText: "Kunai",
-    smallImageKey: activity.stream?.subtitle ? "subtitles" : undefined,
-    smallImageText: activity.stream?.subtitle ? "Subtitles attached" : undefined,
+    ...(subtitleAttached
+      ? { smallImageKey: "subtitles", smallImageText: "Subtitles attached" }
+      : {}),
   };
 }
 
@@ -571,7 +610,7 @@ export function resolvePresenceClientIdSource(
   if ((env?.KUNAI_DISCORD_CLIENT_ID ?? process.env.KUNAI_DISCORD_CLIENT_ID)?.trim()) {
     return "environment";
   }
-  return "config";
+  return "missing";
 }
 
 export function buildPresenceSnapshot({

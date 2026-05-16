@@ -20,6 +20,13 @@ export type PresencePlaybackActivity = {
   readonly providerId: string;
   readonly stream?: StreamInfo | null;
   readonly startedAtMs: number;
+  readonly paused?: boolean;
+  readonly subtitleCount?: number;
+};
+
+export type PresenceBrowseActivity = {
+  readonly view: string;
+  readonly detail?: string;
 };
 
 export interface PresenceService {
@@ -28,6 +35,7 @@ export interface PresenceService {
   connect(): Promise<PresenceSnapshot>;
   disconnect(reason: string): Promise<PresenceSnapshot>;
   updatePlayback(activity: PresencePlaybackActivity): Promise<void>;
+  updateBrowsing(activity: PresenceBrowseActivity): Promise<void>;
   clearPlayback(reason: string): Promise<void>;
   shutdown(): Promise<void>;
 }

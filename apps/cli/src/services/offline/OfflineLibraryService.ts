@@ -7,7 +7,6 @@ import type { DownloadJobRecord } from "@kunai/storage";
 
 import { buildLocalPlaybackSource, type LocalPlaybackSource } from "./local-playback-source";
 import {
-  hydrateCompletedOfflineJobs,
   parseIntroSkipTiming,
   resolveOfflineArtifactStatus,
   type OfflineArtifactStatus,

@@ -2020,6 +2020,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         detail: "Launching player",
         note: subtitleStatus,
       });
+      const initialSubtitleCount = stream.subtitleList?.length
+        ? stream.subtitleList.length
+        : stream.subtitle
+          ? 1
+          : undefined;
       void context.container.presence.updatePlayback({
         mode: stateManager.getState().mode,
         title,
@@ -2027,6 +2032,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         providerId: stateManager.getState().provider,
         stream,
         startedAtMs: Date.now(),
+        subtitleCount: initialSubtitleCount,
       });
       this.startLateSubtitleResolver({
         stream,
@@ -2076,6 +2082,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "seeking" });
           } else if (event.type === "playback-started") {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
+            // Update presence with accurate start time (after buffering)
+            context.container.presence.updatePlayback({
+              mode: stateManager.getState().mode,
+              title,
+              episode,
+              providerId: stateManager.getState().provider,
+              stream,
+              startedAtMs: Date.now(),
+              subtitleCount: undefined,
+            });
+          } else if (event.type === "late-subtitles-attached") {
+            context.container.presence.updatePlayback({
+              mode: stateManager.getState().mode,
+              title,
+              episode,
+              providerId: stateManager.getState().provider,
+              stream,
+              startedAtMs: Date.now(),
+              subtitleCount: event.trackCount,
+            });
           } else if (event.type === "track-changed") {
             // Keep session state aligned when users switch tracks directly in mpv.
             const currentStream = stateManager.getState().stream;

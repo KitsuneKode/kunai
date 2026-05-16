@@ -92,7 +92,15 @@ export class SessionController {
             new (await import("./PlaybackPhase")).PlaybackPhase(),
           );
 
-          void this.container.presence.clearPlayback("playback-exited");
+          const lastView = stateManager.getState().view;
+          if (lastView === "results" || lastView === "search" || lastView === "details") {
+            void this.container.presence.updateBrowsing({
+              view: lastView === "details" ? "title details" : `${lastView} results`,
+              detail: stateManager.getState().currentTitle?.name,
+            });
+          } else {
+            void this.container.presence.clearPlayback("playback-exited");
+          }
 
           if (this.abortController.signal.aborted) break;
 
