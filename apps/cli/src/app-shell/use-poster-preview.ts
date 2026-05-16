@@ -19,21 +19,22 @@ const initialPosterPreviewState: PosterPreviewState = {
 };
 
 function posterPreviewReducer(
-  _state: PosterPreviewState,
+  state: PosterPreviewState,
   action: PosterPreviewAction,
 ): PosterPreviewState {
   switch (action.type) {
     case "reset":
       return { poster: { kind: "none" }, posterState: action.posterState };
     case "loading":
-      return { poster: { kind: "none" }, posterState: "loading" };
+      // Preserve previous poster while loading to avoid flash when switching episodes
+      return { poster: state.poster, posterState: "loading" };
     case "resolved":
       return {
         poster: action.result,
         posterState: action.result.kind === "none" ? "unavailable" : "ready",
       };
     default:
-      return _state;
+      return state;
   }
 }
 

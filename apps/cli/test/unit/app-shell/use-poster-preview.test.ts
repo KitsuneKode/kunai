@@ -22,12 +22,16 @@ describe("usePosterPreview reducer", () => {
     expect(next.posterState).toBe("unavailable");
   });
 
-  test("loading clears poster to none", () => {
-    const next = posterPreviewReducer(initialPosterPreviewState, {
+  test("loading preserves previous poster to avoid flash", () => {
+    const withPoster = posterPreviewReducer(initialPosterPreviewState, {
+      type: "resolved",
+      result: { kind: "kitty", placeholder: "·", rows: 4, cols: 8, imageId: 1 },
+    });
+    const next = posterPreviewReducer(withPoster, {
       type: "loading",
     });
     expect(next.posterState).toBe("loading");
-    expect(next.poster.kind).toBe("none");
+    expect(next.poster.kind).toBe("kitty");
   });
 
   test("resolved maps none result to unavailable state", () => {
