@@ -52,9 +52,10 @@ function computeVisibleActions(
   const visible: FooterAction[] = [];
 
   for (const action of actions) {
-    const glyph = FOOTER_GLYPHS[action.key] ?? action.key;
-    // Rendered width: [glyph key] label  (with trailing space)
-    const width = `[${glyph} ${action.key}] ${action.label}  `.length;
+    const glyph = FOOTER_GLYPHS[action.key] ?? "";
+    const hotkeyStr = glyph ? glyph : `[${action.key}]`;
+    // Rendered width: glyph label  or  [key] label  (with trailing space)
+    const width = `${hotkeyStr} ${action.label}  `.length;
     if (used + width > budget && visible.length > 0) break;
     visible.push(action);
     used += width;
@@ -213,7 +214,7 @@ export function Footer({
         <Box flexWrap="nowrap" marginTop={1}>
           {visibleActions.map((action, index) => {
             const glyph = FOOTER_GLYPHS[action.key] ?? "";
-            const keyDisplay = glyph ? `${glyph} ${action.key}` : action.key;
+            const keyDisplay = glyph ? `${glyph}§${action.key}` : action.key;
             return (
               <Box
                 key={`${action.key}-${action.label}`}

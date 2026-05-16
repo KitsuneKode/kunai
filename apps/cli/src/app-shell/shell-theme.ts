@@ -55,5 +55,10 @@ export function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
 }
 
 export function hotkeyLabel(key: string): string {
+  // "glyph§letter" sentinel: show only the glyph, no brackets or letter
+  const sentinelIdx = key.indexOf("§");
+  if (sentinelIdx !== -1) {
+    return key.slice(0, sentinelIdx);
+  }
   return `[${key}]`;
 }
