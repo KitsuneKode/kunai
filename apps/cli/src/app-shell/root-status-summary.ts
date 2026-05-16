@@ -79,7 +79,8 @@ export function buildRootStatusSummary({
     rootStatus === "playing" ||
     rootStatus === "buffering" ||
     rootStatus === "stalled" ||
-    rootStatus === "seeking";
+    rootStatus === "seeking" ||
+    rootStatus === "paused";
 
   const subtitleStatus =
     state.stream || isActivePlayback

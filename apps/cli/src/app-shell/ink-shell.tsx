@@ -833,7 +833,7 @@ function AppRoot({ container }: { container: Container }) {
         </Text>
       </Box>
       {/* Compact crumb: mode · provider (+ title · episode during playback) */}
-      <Text color={palette.infoDim}>{rootStatusSummary.crumb}</Text>
+      <Text color={palette.muted}>{rootStatusSummary.crumb}</Text>
       {/* Single transient alert — highest priority wins, null when idle */}
       {rootStatusSummary.alert ? (
         <Text color={statusColor(rootStatusSummary.alert.tone)} dimColor>
