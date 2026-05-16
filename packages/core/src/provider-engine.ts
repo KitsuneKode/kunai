@@ -7,7 +7,7 @@ import type {
 } from "@kunai/types";
 
 import type { CoreProviderModule } from "./provider-sdk";
-import { ProviderResolveFailureError } from "./resolver";
+import { ProviderResolveAbortError, ProviderResolveFailureError } from "./resolver";
 
 export interface ProviderEngineOptions {
   readonly modules: readonly CoreProviderModule[];
@@ -220,7 +220,7 @@ export class ProviderEngine {
   }
 
   private abortError(): Error {
-    return new Error("Provider resolve aborted");
+    return new ProviderResolveAbortError();
   }
 }
 

@@ -29,7 +29,7 @@ export class StreamHealthService {
 
   async check(
     stream: Pick<StreamInfo, "url" | "headers" | "timestamp">,
-    options: { readonly force?: boolean } = {},
+    options: { readonly force?: boolean; readonly signal?: AbortSignal } = {},
   ): Promise<StreamHealthServiceResult> {
     const policy = resolveStreamHealthPolicy({
       url: stream.url,
@@ -56,6 +56,7 @@ export class StreamHealthService {
       timeoutMs: this.deps.timeoutMs,
       methodPreference:
         policy.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+      signal: options.signal,
     });
 
     return {

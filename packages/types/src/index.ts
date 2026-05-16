@@ -247,6 +247,7 @@ export interface ProviderHealth {
   readonly checkedAt: string;
   readonly medianResolveMs?: number;
   readonly recentFailureRate?: number;
+  readonly consecutiveFailures?: number;
   readonly subtitleSuccessRate?: number;
   readonly streamSurvivalRate?: number;
 }

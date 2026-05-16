@@ -127,6 +127,7 @@ export class PlaybackResolveService {
       const health = await this.checkCachedStreamHealth(
         cachedStream,
         input.forceHealthCheck === true,
+        input.signal,
       );
       if (health.checked) {
         input.onEvent?.({
@@ -178,11 +179,16 @@ export class PlaybackResolveService {
     );
 
     const compatibleIds = [input.providerId];
-    // Add fallback provider ids if different from primary
+    // Add fallback provider ids, filtering by mediaKind so incompatible
+    // providers (e.g. series/movie-only for anime) are never attempted.
     for (const module of this.deps.engine.modules) {
-      if (module.providerId !== input.providerId) {
-        compatibleIds.push(module.providerId);
-      }
+      if (module.providerId === input.providerId) continue;
+      if (!module.manifest.mediaKinds.includes(resolveInput.mediaKind)) continue;
+      // Skip providers with known-dead health status to avoid wasted attempts,
+      // but always allow degraded providers as they may still succeed.
+      const health = this.deps.providerHealth?.get(module.providerId);
+      if (health?.status === "down") continue;
+      compatibleIds.push(module.providerId);
     }
 
     input.onFeedback?.({
@@ -271,14 +277,27 @@ export class PlaybackResolveService {
   private persistProviderHealthDelta(delta: ProviderHealthDelta): void {
     if (!this.deps.providerHealth) return;
     try {
+      const existing = this.deps.providerHealth.get(delta.providerId);
+      const consecutiveFailures =
+        delta.outcome === "success" || delta.outcome === "stalled"
+          ? 0
+          : (existing?.recentFailureRate ?? 0) >= 0.5
+            ? (existing?.consecutiveFailures ?? 0) + 1
+            : 1;
       const status: "healthy" | "degraded" | "down" =
-        delta.outcome === "success" ? "healthy" : "degraded";
+        consecutiveFailures >= 5 ? "down" : consecutiveFailures >= 2 ? "degraded" : "healthy";
+      const recentFailureRate =
+        existing?.recentFailureRate !== undefined
+          ? existing.recentFailureRate * 0.7 + (delta.outcome === "success" ? 0 : 0.3)
+          : delta.outcome === "success"
+            ? 0
+            : 1;
       this.deps.providerHealth.set({
         providerId: delta.providerId,
         status,
         checkedAt: delta.at,
         medianResolveMs: delta.resolveMs,
-        recentFailureRate: delta.outcome === "failure" ? 1 : 0,
+        recentFailureRate: Math.max(0, Math.min(1, recentFailureRate)),
         subtitleSuccessRate: undefined,
         streamSurvivalRate: undefined,
       });
@@ -290,22 +309,24 @@ export class PlaybackResolveService {
   private async checkCachedStreamHealth(
     stream: StreamInfo,
     force = false,
+    signal?: AbortSignal,
   ): Promise<{
     readonly healthy: boolean;
     readonly checked: boolean;
     readonly strategy: "none" | "hls-manifest-get" | "head-then-range";
     readonly ageMs?: number;
   }> {
+    const healthService = this.deps.streamHealthService ?? new StreamHealthService();
     if (this.deps.streamHealth) {
-      const service = new StreamHealthService();
-      const policy = await service.check(stream, { force });
+      const policy = await healthService.check(stream, { force });
       if (!policy.checked) return policy;
+      if (signal?.aborted) return { healthy: false, checked: true, strategy: policy.strategy };
       return {
         ...policy,
         healthy: await this.deps.streamHealth(stream.url, stream.headers),
       };
     }
-    return (this.deps.streamHealthService ?? new StreamHealthService()).check(stream, { force });
+    return healthService.check(stream, { force });
   }
 
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {

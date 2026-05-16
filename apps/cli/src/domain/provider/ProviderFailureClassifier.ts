@@ -1,3 +1,4 @@
+import { ProviderResolveAbortError } from "@kunai/core";
 import type { ResolveErrorCode } from "@kunai/types";
 
 import type { ProviderFailureClass } from "./ProviderAttemptTimeline";
@@ -64,6 +65,15 @@ export function fallbackPolicyForProviderFailureClass(
 function normalizeFailure(failure: unknown): ClassifiableProviderFailure {
   if (isClassifiableProviderFailure(failure)) {
     return failure;
+  }
+
+  if (failure instanceof ProviderResolveAbortError) {
+    return {
+      providerId: failure.failure.providerId,
+      code: "cancelled",
+      message: failure.message,
+      retryable: false,
+    };
   }
 
   if (failure instanceof Error) {

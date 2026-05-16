@@ -6,6 +6,7 @@ export type StreamHealthCheckInput = {
   readonly fetchImpl?: StreamHealthFetch;
   readonly timeoutMs?: number;
   readonly methodPreference?: "hls-manifest-get" | "head-then-range";
+  readonly signal?: AbortSignal;
 };
 
 export type StreamPreflightResult =
@@ -112,6 +113,7 @@ export async function checkStreamHealth(input: StreamHealthCheckInput): Promise<
       headers: { ...input.headers },
       timeoutMs,
       healthyStatus: (status) => status >= 200 && status < 300,
+      signal: input.signal,
     });
   }
 
@@ -121,6 +123,7 @@ export async function checkStreamHealth(input: StreamHealthCheckInput): Promise<
       headers: { ...input.headers },
       timeoutMs,
       healthyStatus: (status) => status >= 200 && status < 300,
+      signal: input.signal,
     })
   ) {
     return true;
@@ -131,6 +134,7 @@ export async function checkStreamHealth(input: StreamHealthCheckInput): Promise<
     headers: { ...input.headers, Range: "bytes=0-0" },
     timeoutMs,
     healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
+    signal: input.signal,
   });
 }
 
@@ -142,10 +146,15 @@ async function attemptStreamHealthFetch(
     readonly headers: Record<string, string>;
     readonly timeoutMs: number;
     readonly healthyStatus: (status: number) => boolean;
+    readonly signal?: AbortSignal;
   },
 ): Promise<boolean> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+
+  const onExternalAbort = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener("abort", onExternalAbort, { once: true });
+
   try {
     const response = await fetchImpl(url, {
       method: options.method,
@@ -157,5 +166,6 @@ async function attemptStreamHealthFetch(
     return false;
   } finally {
     clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", onExternalAbort);
   }
 }

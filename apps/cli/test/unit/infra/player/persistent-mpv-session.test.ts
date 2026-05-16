@@ -63,11 +63,11 @@ describe("persistent mpv prefetch trigger", () => {
         preview: [],
         credits: [{ startMs: 1_200_000, endMs: 1_320_000 }],
       }),
-    ).toBe(1155);
+    ).toBe(1140);
   });
 
-  test("falls back to the final thirty seconds when no credible credits timing exists", () => {
-    expect(resolveNearEofPrefetchTriggerSeconds(1500)).toBe(1470);
+  test("falls back to the final sixty seconds when no credible credits timing exists", () => {
+    expect(resolveNearEofPrefetchTriggerSeconds(1500)).toBe(1440);
     expect(
       resolveNearEofPrefetchTriggerSeconds(1500, {
         tmdbId: "tmdb:1",
@@ -77,7 +77,7 @@ describe("persistent mpv prefetch trigger", () => {
         preview: [],
         credits: [{ startMs: 120_000, endMs: 180_000 }],
       }),
-    ).toBe(1470);
+    ).toBe(1440);
   });
 
   test("does not prefetch tiny or live-like durations", () => {

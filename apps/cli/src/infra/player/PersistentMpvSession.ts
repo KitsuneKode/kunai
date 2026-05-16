@@ -115,8 +115,8 @@ export function resolveNearEofPrefetchTriggerSeconds(
   durationSeconds: number,
   timing?: PlaybackTimingMetadata | null,
 ): number | null {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 30) return null;
-  const fallbackTrigger = Math.max(0, durationSeconds - 30);
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 60) return null;
+  const fallbackTrigger = Math.max(0, durationSeconds - 60);
   const creditsStart = (timing?.credits ?? [])
     .map((segment) => segment.startMs)
     .filter((startMs): startMs is number => typeof startMs === "number" && Number.isFinite(startMs))
@@ -129,7 +129,7 @@ export function resolveNearEofPrefetchTriggerSeconds(
     )
     .sort((left, right) => right - left)[0];
   if (creditsStart === undefined) return fallbackTrigger;
-  return Math.max(0, Math.min(fallbackTrigger, creditsStart - 45));
+  return Math.max(0, Math.min(fallbackTrigger, creditsStart - 60));
 }
 
 export function buildPersistentLoadfileCommand(

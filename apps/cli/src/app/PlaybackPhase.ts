@@ -113,6 +113,15 @@ export type PlaybackOutcome =
   | "quit"
   | { type: "history_entry"; title: TitleInfo };
 
+async function racePrefetchWithTimeout(promise: Promise<void>, timeoutMs: number): Promise<void> {
+  try {
+    await Promise.race([promise, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
 
@@ -510,7 +519,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Use a prefetched stream (prepared during the previous episode's near-EOF
           // window) or fall back to a full provider resolve.
           const consumedPrefetch = pendingPrefetchedStream;
+          const consumedPrefetchProviderId = pendingPrefetchedProviderId;
           pendingPrefetchedStream = null;
+          pendingPrefetchedProviderId = null;
 
           let stream: StreamInfo | null = consumedPrefetch ?? null;
           let resolvedProviderId = currentProvider.metadata.id;
@@ -529,20 +540,39 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
 
           if (consumedPrefetch) {
-            logger.info("Using prefetched stream for episode", {
-              titleId: title.id,
-              season: currentEpisode.season,
-              episode: currentEpisode.episode,
-            });
-            diagnosticsStore.record({
-              category: "provider",
-              message: "Using prefetched stream",
-              context: {
+            if (
+              consumedPrefetchProviderId &&
+              consumedPrefetchProviderId !== currentProvider.metadata.id
+            ) {
+              diagnosticsStore.record({
+                category: "playback",
+                level: "warn",
+                message: "Discarding prefetched stream — provider changed since prefetch",
+                context: {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  prefetchProviderId: consumedPrefetchProviderId,
+                  currentProviderId: currentProvider.metadata.id,
+                },
+              });
+              stream = null;
+            } else {
+              logger.info("Using prefetched stream for episode", {
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
-              },
-            });
+              });
+              diagnosticsStore.record({
+                category: "provider",
+                message: "Using prefetched stream",
+                context: {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                },
+              });
+            }
           }
 
           // Check in-memory cache for recently played episodes (backward navigation).
@@ -787,9 +817,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           pendingStart = startFromBeginning();
 
           // Prefetch: start resolving the next episode's stream in the background
-          // when we enter the last ~30 s, so autoplay feels instant.
+          // when we enter the last ~60 s, so autoplay feels instant.
           let prefetchedNextStream: import("@/domain/types").StreamInfo | null = null;
           let prefetchedNextProviderId: string | null = null;
+          let prefetchedNextPromise: Promise<void> | null = null;
           let prefetchedRecommendationNames: readonly string[] | null = null;
           const maybePrefetchNext = () => {
             if (
@@ -819,7 +850,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerHealth: container.providerHealth,
             });
             prefetchedNextProviderId = prefetchMetadata.metadata.id;
-            void prefetchCoordinator
+            prefetchedNextPromise = prefetchCoordinator
               .prefetch({
                 title,
                 episode: nextEp,
@@ -831,9 +862,34 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               })
               .then((result) => {
                 prefetchedNextStream = result;
+                if (result) {
+                  diagnosticsStore.record({
+                    category: "playback",
+                    message: "Prefetch resolved successfully",
+                    context: {
+                      titleId: title.id,
+                      nextSeason: nextEp.season,
+                      nextEpisode: nextEp.episode,
+                      providerId: prefetchMetadata.metadata.id,
+                    },
+                  });
+                }
                 return undefined;
               })
-              .catch(() => {});
+              .catch((err) => {
+                diagnosticsStore.record({
+                  category: "playback",
+                  level: "warn",
+                  message: "Prefetch resolve failed",
+                  context: {
+                    titleId: title.id,
+                    nextSeason: nextEp.season,
+                    nextEpisode: nextEp.episode,
+                    providerId: prefetchMetadata.metadata.id,
+                    error: err instanceof Error ? err.message : String(err),
+                  },
+                });
+              });
 
             if (
               container.config.recommendationRailEnabled &&
@@ -910,7 +966,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             result.endReason === "error" || result.suspectedDeadStream === true;
           if (shouldInvalidateStreamCache) {
             const invalidateProviderId = consumedPrefetch
-              ? (pendingPrefetchedProviderId ?? resolvedProviderId)
+              ? (consumedPrefetchProviderId ?? resolvedProviderId)
               : resolvedProviderId;
             const staleCacheKey = buildApiStreamResolveCacheKey({
               providerId: invalidateProviderId,
@@ -1184,6 +1240,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 };
               } else {
                 playbackSession = { ...playbackSession, stopAfterCurrent: false };
+              }
+
+              // Consume an in-progress or completed prefetch so the next loop
+              // iteration skips the provider resolve.
+              if (prefetchedNextPromise && !prefetchedNextStream) {
+                await racePrefetchWithTimeout(prefetchedNextPromise, 3000);
+              }
+              if (prefetchedNextStream) {
+                pendingPrefetchedStream = prefetchedNextStream;
+                pendingPrefetchedProviderId = prefetchedNextProviderId;
               }
               continue;
             }
@@ -1513,6 +1579,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               ...playbackSession,
               stopAfterCurrent: false,
             };
+
+            // If a prefetch is still in-flight (e.g. user sought to end quickly),
+            // wait briefly for it before falling back to a full resolve.
+            if (prefetchedNextPromise && !prefetchedNextStream) {
+              await racePrefetchWithTimeout(prefetchedNextPromise, 3000);
+              diagnosticsStore.record({
+                category: "playback",
+                message: prefetchedNextStream
+                  ? "Prefetch completed during auto-advance wait"
+                  : "Prefetch timed out during auto-advance",
+                context: {
+                  titleId: title.id,
+                  nextSeason: nextEpisode.season,
+                  nextEpisode: nextEpisode.episode,
+                  completed: prefetchedNextStream !== null,
+                },
+              });
+            }
 
             // If we prefetched the stream, inject it directly so the loop can
             // skip the provider scrape and call loadfile immediately.

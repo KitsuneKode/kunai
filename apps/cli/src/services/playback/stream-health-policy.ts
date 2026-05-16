@@ -21,7 +21,7 @@ export type StreamHealthPolicyDecision = {
   readonly ageMs?: number;
 };
 
-const DEFAULT_STALE_AFTER_MS = 2 * 60 * 60 * 1000;
+const DEFAULT_STALE_AFTER_MS = 10 * 60 * 1000;
 
 export function resolveStreamHealthPolicy(
   input: StreamHealthPolicyInput,

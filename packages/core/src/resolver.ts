@@ -27,6 +27,23 @@ export class ProviderResolveFailureError extends Error {
   }
 }
 
+/**
+ * Thrown specifically when provider resolution is aborted (user cancel or timeout).
+ * Downstream classifiers can use `instanceof` instead of fragile string matching.
+ */
+export class ProviderResolveAbortError extends ProviderResolveFailureError {
+  constructor(reason?: string) {
+    super({
+      providerId: "unknown",
+      code: "cancelled",
+      message: reason ?? "Provider resolve aborted",
+      retryable: false,
+      at: new Date().toISOString(),
+    });
+    this.name = "ProviderResolveAbortError";
+  }
+}
+
 export function createProviderResolveFailureError(
   result: ProviderResolveResult,
   message = "Provider returned no playable stream candidates",
