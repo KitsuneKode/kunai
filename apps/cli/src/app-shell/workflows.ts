@@ -42,6 +42,66 @@ import { resolveCommands } from "./commands";
 import { openSessionPicker } from "./session-picker";
 import type { ShellAction } from "./types";
 
+export function localSourceStatusFromArtifactStatus(status: string): LocalSourceStatus {
+  if (status === "ready") return "ready";
+  if (status === "missing") return "missing-file";
+  if (status === "invalid-file") return "invalid-file";
+  return "none";
+}
+
+export async function playCompletedDownload(container: Container, jobId: string): Promise<void> {
+  const playable = await container.offlineLibraryService.getPlayableSource(jobId);
+  if (playable.status !== "ready") {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: `Offline file unavailable: ${playable.status}. Check integrity first.`,
+    });
+    return;
+  }
+  const decision = createSourceSelectionEngine().decide({
+    entrypoint: "offline-library",
+    local: { status: "ready", jobId },
+    networkAvailable: true,
+    preference: "prefer-local",
+  });
+  container.diagnosticsStore.record({
+    category: "playback",
+    message: "Offline source selected (unified play)",
+    context: {
+      jobId,
+      sourceDecision: decision.reason,
+      shouldResolveOnline: decision.shouldResolveOnline,
+    },
+  });
+  const result = await container.player.playLocal({
+    source: playable.source,
+    attach: false,
+    policy: {
+      autoSkipEnabled: !container.stateManager.getState().autoskipSessionPaused,
+      skipRecap: container.config.skipRecap,
+      skipIntro: container.config.skipIntro,
+      skipPreview: container.config.skipPreview,
+      skipCredits: container.config.skipCredits,
+    },
+  });
+  await container.offlineLibraryService.savePlaybackHistory(playable.source, result);
+}
+
+export function waitForOverlayClose(
+  stateManager: import("@/domain/session/SessionStateManager").SessionStateManager,
+  overlayType: string,
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const unsubscribe = stateManager.subscribe((state) => {
+      const top = state.activeModals.at(-1);
+      if (!top || top.type !== overlayType) {
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
+}
+
 type HistoryAction =
   | { type: "entry"; id: string; title: string }
   | { type: "clear-all" }
@@ -794,15 +854,9 @@ async function openOfflineLibraryGroupPicker(
     if (!action || action === "back") continue;
     if (action === "play") {
       if (playable.status !== "ready") {
-        const decision = createSourceSelectionEngine().decide({
-          entrypoint: "offline-library",
-          local: { status: localSourceStatusFromArtifactStatus(playable.status), jobId: job.id },
-          networkAvailable: true,
-          preference: "prefer-local",
-        });
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
-          note: `Offline file unavailable: ${artifactStatus}. ${decision.actions[0]?.label ?? "Check integrity"}.`,
+          note: `Offline file unavailable: ${artifactStatus}. Check integrity first.`,
         });
         container.diagnosticsStore.record({
           category: "download",
@@ -811,39 +865,11 @@ async function openOfflineLibraryGroupPicker(
             jobId: job.id,
             artifactStatus,
             outputPath: job.outputPath,
-            sourceDecision: decision.reason,
-            nextActions: decision.actions.map((nextAction) => nextAction.kind),
           },
         });
         continue;
       }
-      const decision = createSourceSelectionEngine().decide({
-        entrypoint: "offline-library",
-        local: { status: "ready", jobId: job.id },
-        networkAvailable: true,
-        preference: "prefer-local",
-      });
-      container.diagnosticsStore.record({
-        category: "playback",
-        message: "Offline source selected",
-        context: {
-          jobId: job.id,
-          sourceDecision: decision.reason,
-          shouldResolveOnline: decision.shouldResolveOnline,
-        },
-      });
-      const result = await container.player.playLocal({
-        source: playable.source,
-        attach: false,
-        policy: {
-          autoSkipEnabled: !container.stateManager.getState().autoskipSessionPaused,
-          skipRecap: container.config.skipRecap,
-          skipIntro: container.config.skipIntro,
-          skipPreview: container.config.skipPreview,
-          skipCredits: container.config.skipCredits,
-        },
-      });
-      await container.offlineLibraryService.savePlaybackHistory(playable.source, result);
+      await playCompletedDownload(container, job.id);
       continue;
     }
     if (action === "reveal") {
@@ -889,13 +915,6 @@ async function openOfflineLibraryGroupPicker(
       note: action === "delete-artifact" ? "Download artifact deleted" : "Download job deleted",
     });
   }
-}
-
-function localSourceStatusFromArtifactStatus(status: string): LocalSourceStatus {
-  if (status === "ready") return "ready";
-  if (status === "missing") return "missing-file";
-  if (status === "invalid-file") return "invalid-file";
-  return "none";
 }
 
 function buildOfflineGroupActions(
@@ -1167,24 +1186,14 @@ export async function handleShellAction({
   }
 
   if (action === "downloads") {
-    stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "downloads" } });
-    await new Promise<void>((resolve) => {
-      const unsubscribe = stateManager.subscribe((state) => {
-        const top = state.activeModals.at(-1);
-        if (!top || top.type !== "downloads") {
-          unsubscribe();
-          resolve();
-        }
-      });
-    });
+    stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "library", view: "queue" } });
+    await waitForOverlayClose(stateManager, "library");
     return "handled";
   }
 
   if (action === "library") {
-    await openCompletedDownloadsPicker(
-      container,
-      buildPickerActionContext({ container, taskLabel: "Offline library" }),
-    );
+    stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "library", view: "library" } });
+    await waitForOverlayClose(stateManager, "library");
     return "handled";
   }
 
