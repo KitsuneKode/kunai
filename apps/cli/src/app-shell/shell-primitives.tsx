@@ -8,7 +8,7 @@ import type { FooterAction, ShellFooterMode } from "./types";
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "error" | "accent";
 const MINIMAL_FOOTER_ACTION_LIMIT = 4;
-const DETAILED_FOOTER_ACTION_LIMIT = 7;
+const DETAILED_FOOTER_ACTION_LIMIT = 5;
 const DETAILED_FOOTER_VISIBLE_LIMIT = 4;
 
 /** Unicode glyphs for footer action keys — makes the footer feel like a cockpit. */
@@ -72,14 +72,18 @@ export function selectFooterActions(
   actions: readonly FooterAction[],
   mode: ShellFooterMode,
   terminalWidth?: number,
+  maxVisible?: number,
 ): readonly FooterAction[] {
   const enabledActions = actions.filter((action) => !action.disabled);
 
+  const hardLimit = maxVisible ?? DETAILED_FOOTER_ACTION_LIMIT;
+
   if (mode === "minimal") {
+    const limit = Math.min(MINIMAL_FOOTER_ACTION_LIMIT, hardLimit);
     const commandAction = enabledActions.find((action) => action.action === "command-mode");
     const primaryActions = enabledActions
       .filter((action) => action.action !== "command-mode")
-      .slice(0, commandAction ? MINIMAL_FOOTER_ACTION_LIMIT - 1 : MINIMAL_FOOTER_ACTION_LIMIT);
+      .slice(0, commandAction ? limit - 1 : limit);
     return commandAction ? [...primaryActions, commandAction] : primaryActions;
   }
 
@@ -91,7 +95,7 @@ export function selectFooterActions(
   if (terminalWidth && terminalWidth > 0) {
     const widthLimit =
       terminalWidth < 92 ? 2 : terminalWidth < 132 ? 3 : DETAILED_FOOTER_VISIBLE_LIMIT;
-    const primaryLimit = Math.max(1, widthLimit);
+    const primaryLimit = Math.min(hardLimit, Math.max(1, widthLimit));
 
     if (nonCommandActions.length > primaryLimit) {
       const hiddenCount = nonCommandActions.length - primaryLimit;
@@ -123,7 +127,7 @@ export function selectFooterActions(
   // Fallback: fixed limit
   const primaryActions = nonCommandActions.slice(
     0,
-    commandAction ? DETAILED_FOOTER_VISIBLE_LIMIT : DETAILED_FOOTER_ACTION_LIMIT,
+    commandAction ? DETAILED_FOOTER_VISIBLE_LIMIT : hardLimit,
   );
   const hiddenCount = enabledActions.length - primaryActions.length - (commandAction ? 1 : 0);
   const result = commandAction ? [...primaryActions, commandAction] : primaryActions;
@@ -163,19 +167,26 @@ export function Footer({
   actions,
   mode = "detailed",
   commandMode = false,
+  maxVisible,
 }: {
   taskLabel: string;
   actions: readonly FooterAction[];
   mode?: ShellFooterMode;
   commandMode?: boolean;
+  maxVisible?: number;
 }) {
   const { stdout } = useStdout();
   const terminalWidth = stdout.columns ?? 100;
   const taskWidth = Math.max(20, terminalWidth - 4);
-  const visibleActions = selectFooterActions(
-    actions,
-    mode,
-    mode === "detailed" ? terminalWidth : undefined,
+  const visibleActions = React.useMemo(
+    () =>
+      selectFooterActions(
+        actions,
+        mode,
+        mode === "detailed" ? terminalWidth : undefined,
+        maxVisible,
+      ),
+    [actions, mode, terminalWidth, maxVisible],
   );
 
   if (commandMode) {
@@ -209,8 +220,8 @@ export function Footer({
                 marginRight={index === visibleActions.length - 1 ? 0 : 2}
                 marginBottom={1}
               >
-                <Text color={palette.teal}>{hotkeyLabel(keyDisplay)}</Text>
-                <Text color="white"> {truncateLine(action.label, 18)}</Text>
+                <Text color={palette.dim}>{hotkeyLabel(keyDisplay)}</Text>
+                <Text color={palette.textDim}> {truncateLine(action.label, 18)}</Text>
               </Box>
             );
           })}
@@ -225,13 +236,23 @@ export function ShellFooter({
   actions,
   mode = "detailed",
   commandMode = false,
+  maxVisible,
 }: {
   taskLabel: string;
   actions: readonly FooterAction[];
   mode?: ShellFooterMode;
   commandMode?: boolean;
+  maxVisible?: number;
 }) {
-  return <Footer taskLabel={taskLabel} actions={actions} mode={mode} commandMode={commandMode} />;
+  return (
+    <Footer
+      taskLabel={taskLabel}
+      actions={actions}
+      mode={mode}
+      commandMode={commandMode}
+      maxVisible={maxVisible}
+    />
+  );
 }
 
 export const ResizeBlocker = React.memo(function ResizeBlocker({
@@ -248,18 +269,12 @@ export const ResizeBlocker = React.memo(function ResizeBlocker({
   const rows = stdout.rows ?? 0;
 
   return (
-    <Box
-      marginTop={1}
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={palette.red}
-      paddingX={1}
-    >
-      <Text color={palette.red}>{message}</Text>
+    <Box marginTop={1} flexDirection="column" paddingX={1}>
+      <Text color={palette.amber}>{message}</Text>
       <Text color={palette.muted}>
-        {`Terminal is ${cols}×${rows}  ·  Needs ${minColumns}×${minRows}`}
+        {`Terminal is ${cols}×${rows}  ·  needs ${minColumns}×${minRows}`}
       </Text>
-      <Text color={palette.gray}>Zoom out or resize the terminal window.</Text>
+      <Text color={palette.dim}>Zoom out or resize the terminal window.</Text>
     </Box>
   );
 });
@@ -320,7 +335,7 @@ export const Badge = React.memo(function Badge({
               : palette.gray;
 
   return (
-    <Box borderStyle="round" borderColor={color} paddingX={1} marginRight={1}>
+    <Box marginRight={1}>
       <Text color={color} bold={tone !== "neutral"}>
         {truncateLine(label, 26)}
       </Text>

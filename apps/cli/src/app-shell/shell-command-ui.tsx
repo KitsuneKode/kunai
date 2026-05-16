@@ -1,6 +1,6 @@
 import { getLineEditorViewport, splitCursor, useLineEditor } from "@/app-shell/line-editor";
 import { buildPickerModel, movePickerModelSelection } from "@/domain/session/picker-model";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 
 import { COMMANDS, parseCommand, type AppCommandId, type ResolvedAppCommand } from "./commands";
@@ -137,7 +137,7 @@ export function CommandPalette({
   cursor = input.length,
   commands,
   highlightedIndex,
-  maxVisible = 5,
+  maxVisible: maxVisibleProp,
   width,
 }: {
   input: string;
@@ -147,6 +147,10 @@ export function CommandPalette({
   maxVisible?: number;
   width?: number;
 }) {
+  const { stdout } = useStdout();
+  const terminalRows = stdout.rows ?? 24;
+  // Dynamic maxVisible: leave room for header (2), input (1), hint (1), footer (~4)
+  const maxVisible = maxVisibleProp ?? Math.max(3, terminalRows - 12);
   const model = buildCommandPickerModel(input, commands, highlightedIndex);
   const matches = model.options
     .map((option) => commands.find((command) => command.id === option.value))
@@ -155,7 +159,7 @@ export function CommandPalette({
   const windowStart = getWindowStart(model.selectedIndex, matches.length, visibleCount);
   const windowEnd = Math.min(windowStart + visibleCount, matches.length);
   const visibleMatches = matches.slice(windowStart, windowEnd);
-  const contentWidth = Math.max(28, (width ?? 84) - 4);
+  const contentWidth = Math.max(28, Math.min(width ?? 84, (stdout.columns ?? 80) - 4) - 4);
 
   const showGrouped = input.trim().length === 0 && matches.length > 0;
 
@@ -186,11 +190,6 @@ export function CommandPalette({
 
   return (
     <Box flexDirection="column" marginTop={1} width={width}>
-      <Box>
-        <Text color={palette.gray} dimColor>
-          {"─".repeat(contentWidth)}
-        </Text>
-      </Box>
       <Box marginTop={0}>
         <Text color={palette.teal}>/</Text>
         <LineEditorText

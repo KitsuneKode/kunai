@@ -61,7 +61,6 @@ export function ShellFrame({
       flexGrow={1}
       justifyContent="space-between"
       backgroundColor={palette.bg}
-      paddingX={1}
     >
       <Box flexDirection="column" flexGrow={1}>
         <Box justifyContent="space-between">
@@ -163,7 +162,7 @@ export function InputField({
       </Box>
       <Box marginTop={1} flexDirection="column">
         <Box paddingX={1}>
-          <Text color={focus ? palette.teal : palette.gray}>{focus ? "⌕ " : "› "}</Text>
+          <Text color={focus ? palette.teal : palette.dim}>{focus ? "⌕ " : "› "}</Text>
           <LineEditorText
             value={value}
             cursor={editor.cursor}
@@ -171,11 +170,6 @@ export function InputField({
             placeholder={placeholder}
             maxWidth={textWidth}
           />
-        </Box>
-        <Box>
-          <Text color={focus ? palette.teal : palette.gray} dimColor>
-            {"─".repeat(Math.max(4, fieldWidth))}
-          </Text>
         </Box>
       </Box>
       {renderedHint && !wideField ? (
