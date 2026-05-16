@@ -15,6 +15,7 @@ const container = await createContainer({ debug: true });
 const { searchRegistry, providerRegistry, config } = container;
 
 const query = process.argv[2] ?? "Kimetsu no Yaiba";
+const fixtureTitleId = process.argv[3] ?? "SJms742bSTrcyJZay";
 
 const search = await searchTitles(query, {
   mode: "anime",
@@ -41,6 +42,7 @@ const search = await searchTitles(query, {
 });
 
 const selected =
+  search.results.find((result) => result.id === fixtureTitleId) ??
   search.results.find((result) => result.type === "series" && (result.episodeCount ?? 0) > 1) ??
   search.results.find((result) => result.type === "series") ??
   search.results[0];
@@ -126,6 +128,7 @@ const payload = {
     stream,
   }),
   query,
+  fixtureTitleId,
   sourceName: search.sourceName,
   episodeCount: title.episodeCount ?? null,
   episodeOptions: episodes?.length ?? 0,

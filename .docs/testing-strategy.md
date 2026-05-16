@@ -108,6 +108,15 @@ Reserve for:
 
 These should support development, but should not be the only form of safety.
 
+Live provider smokes are intentionally excluded from CI, Husky hooks, and `bun run test`.
+Run them only as an explicit release-candidate or provider-drift check. Each script must use
+an isolated temporary XDG profile and print that profile in its JSON output so it never touches
+the developer's real Kunai config, data DB, or cache DB.
+
+Do not loop live smokes while iterating on a provider. Use fixture payloads, mocked fetch ports,
+and provider contract tests for repeated runs, then perform one focused live smoke when the
+deterministic seam is already green.
+
 ## Non-Flaky Test Rules
 
 - avoid real timers unless the timer behavior itself is under test

@@ -9,7 +9,7 @@ Run them only when network access is intentional. Prefer one focused provider wh
 ```sh
 bun run test:live:vidking 1 2
 bun run test:live:rivestream
-bun run test:live:allanime
+bun run test:live:allanime "Kimetsu no Yaiba" SJms742bSTrcyJZay
 bun run test:live:miruro
 ```
 
