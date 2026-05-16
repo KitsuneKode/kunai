@@ -50,8 +50,12 @@ export function redactDiagnosticValue(value: unknown, options: RedactionOptions 
 }
 
 function redactString(value: string, options: RedactionOptions): string {
-  const redacted = /^https?:\/\//i.test(value) ? redactUrl(value) : redactPath(value, options);
+  const redacted = redactEmbeddedUrls(redactPath(value, options));
   return truncate(redacted, options.maxStringLength ?? DEFAULT_MAX_STRING_LENGTH);
+}
+
+function redactEmbeddedUrls(value: string): string {
+  return value.replace(/https?:\/\/[^\s"'<>]+/gi, (url) => redactUrl(url));
 }
 
 function redactPath(value: string, options: RedactionOptions): string {

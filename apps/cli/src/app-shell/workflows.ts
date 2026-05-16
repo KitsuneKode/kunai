@@ -19,6 +19,7 @@ import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelection
 import type { EpisodePickerOption, TitleInfo } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
+import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
 import {
@@ -1045,8 +1046,9 @@ async function openStaticInfoShell({
   });
 }
 
-async function openIssueUrl(): Promise<void> {
-  const url = "https://github.com/kitsunekode/kunai/issues/new/choose";
+async function openIssueUrl(
+  url = "https://github.com/kitsunekode/kunai/issues/new/choose",
+): Promise<void> {
   const commands: readonly [string, readonly string[]][] = [
     ["xdg-open", [url]],
     ["open", [url]],
@@ -1486,6 +1488,7 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
       capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
     });
     await writeAtomicJson(path, bundle);
+    const draft = buildIssueReportDraft({ bundle, diagnosticsPath: fileName });
     await pruneOldDiagnosticFiles({
       dir: process.cwd(),
       prefix: "kunai-diagnostics-report-",
@@ -1494,8 +1497,10 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
     container.diagnosticsStore.record({
       category: "ui",
       message: "Diagnostics report bundle exported",
-      context: { path: fileName },
+      context: { path: fileName, issueTitle: draft.title },
     });
+    await openIssueUrl(draft.issueUrl);
+    return "handled";
   }
   await openIssueUrl();
   return "handled";
