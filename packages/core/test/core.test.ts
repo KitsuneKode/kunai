@@ -7,10 +7,12 @@ import {
   createProviderCachePolicy,
   createProviderRuntimeContext,
   createProviderTraceEvent,
+  createProviderEngine,
   defineProviderManifest,
   DEFAULT_PROVIDER_RETRY_POLICY,
   ProviderResolveFailureError,
   resolveWithFallback,
+  type CoreProviderModule,
 } from "../src/index";
 
 const allanimeManifest = defineProviderManifest({
@@ -296,5 +298,116 @@ test("resolveWithFallback preserves typed provider failure errors", async () => 
     code: "provider-unavailable",
     message: "Direct provider returned no stream candidates",
     retryable: true,
+  });
+});
+
+test("ProviderEngine falls back after a provider returns an exhausted empty result", async () => {
+  const emptyProvider: CoreProviderModule = {
+    providerId: "empty",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "empty",
+      displayName: "Empty Provider",
+    }),
+    async resolve(input, context) {
+      return {
+        providerId: "empty",
+        streams: [],
+        subtitles: [],
+        trace: {
+          id: "trace:empty",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [
+            {
+              providerId: "empty",
+              code: "not-found",
+              message: "empty provider had no streams",
+              retryable: true,
+              at: context.now(),
+            },
+          ],
+        },
+        failures: [
+          {
+            providerId: "empty",
+            code: "not-found",
+            message: "empty provider had no streams",
+            retryable: true,
+            at: context.now(),
+          },
+        ],
+        healthDelta: {
+          providerId: "empty",
+          outcome: "failure",
+          at: context.now(),
+        },
+      };
+    },
+  };
+  const goodProvider: CoreProviderModule = {
+    providerId: "good",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "good",
+      displayName: "Good Provider",
+    }),
+    async resolve(input, context) {
+      return {
+        providerId: "good",
+        selectedStreamId: "stream:good:1",
+        streams: [
+          {
+            id: "stream:good:1",
+            providerId: "good",
+            url: "https://cdn.example/master.m3u8",
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:good",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+        healthDelta: {
+          providerId: "good",
+          outcome: "success",
+          at: context.now(),
+        },
+      };
+    },
+  };
+  const engine = createProviderEngine({
+    modules: [emptyProvider, goodProvider],
+    maxAttempts: 1,
+    retryDelayMs: 0,
+  });
+
+  const resolved = await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "movie", title: "Demo" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["empty", "good"],
+  );
+
+  expect(resolved.providerId).toBe("good");
+  expect(resolved.result?.streams[0]?.url).toBe("https://cdn.example/master.m3u8");
+  expect(resolved.attempts).toHaveLength(2);
+  expect(resolved.attempts[0]?.failure).toMatchObject({
+    providerId: "empty",
+    code: "not-found",
+    message: "empty provider had no streams",
   });
 });

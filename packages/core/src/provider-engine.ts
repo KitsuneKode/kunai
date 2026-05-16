@@ -7,7 +7,11 @@ import type {
 } from "@kunai/types";
 
 import type { CoreProviderModule } from "./provider-sdk";
-import { ProviderResolveAbortError, ProviderResolveFailureError } from "./resolver";
+import {
+  createProviderResolveFailureError,
+  ProviderResolveAbortError,
+  ProviderResolveFailureError,
+} from "./resolver";
 
 export interface ProviderEngineOptions {
   readonly modules: readonly CoreProviderModule[];
@@ -80,7 +84,8 @@ export class ProviderEngine {
 
       const result = await this.resolveWithTimeout(module, input, signal);
 
-      if (result) return result;
+      if (result?.streams.length) return result;
+      if (result) throw createProviderResolveFailureError(result);
 
       if (signal?.aborted) throw this.abortError();
 
@@ -130,7 +135,13 @@ export class ProviderEngine {
                 at: new Date().toISOString(),
               };
 
-        attempts.push({ providerId, failure });
+        attempts.push({
+          providerId,
+          failure,
+          ...(error instanceof ProviderResolveFailureError && error.result
+            ? { result: error.result }
+            : {}),
+        });
       }
     }
 

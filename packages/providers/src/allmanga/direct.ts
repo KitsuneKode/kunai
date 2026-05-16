@@ -102,6 +102,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           ALLANIME_REFERER,
           DEFAULT_UA,
           showId,
+          context.signal,
         );
         episodes = (detail[mode] ?? []) as string[];
         episodeCatalogCache.set(cacheKey, { at: Date.now(), data: episodes });
@@ -121,6 +122,7 @@ export const allmangaProviderModule: CoreProviderModule = {
         showId,
         epStr,
         mode,
+        signal: context.signal,
       });
 
       if (links.length === 0) {
@@ -272,6 +274,11 @@ export const allmangaProviderModule: CoreProviderModule = {
           failures,
         }),
         failures,
+        healthDelta: {
+          providerId: ALLANIME_PROVIDER_ID,
+          outcome: "success",
+          at: endedAt,
+        },
       };
     } catch (error) {
       if (context.signal?.aborted) {

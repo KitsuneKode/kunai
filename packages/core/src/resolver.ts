@@ -21,7 +21,10 @@ export interface ResolveWithFallbackResult<TStream> {
 }
 
 export class ProviderResolveFailureError extends Error {
-  constructor(readonly failure: ProviderFailure) {
+  constructor(
+    readonly failure: ProviderFailure,
+    readonly result?: ProviderResolveResult,
+  ) {
     super(failure.message);
     this.name = "ProviderResolveFailureError";
   }
@@ -56,6 +59,7 @@ export function createProviderResolveFailureError(
       retryable: true,
       at: new Date().toISOString(),
     },
+    result,
   );
 }
 

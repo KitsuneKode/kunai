@@ -464,6 +464,11 @@ export const rivestreamProviderModule: CoreProviderModule = {
           failures,
         }),
         failures,
+        healthDelta: {
+          providerId: RIVESTREAM_PROVIDER_ID,
+          outcome: "success",
+          at: endedAt,
+        },
       };
     } catch (error) {
       if (context.signal?.aborted) {

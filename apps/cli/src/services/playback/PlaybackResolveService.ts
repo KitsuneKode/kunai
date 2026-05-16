@@ -447,8 +447,9 @@ function buildProviderTimeline(
       return;
     }
 
+    const failure = attempt.failure ?? attempt.result?.failures[0];
     const classification = classifyProviderFailure(
-      attempt.failure ?? {
+      failure ?? {
         providerId: attempt.providerId,
         code: "not-found",
         message: "Provider returned no playable stream candidates",
@@ -462,7 +463,7 @@ function buildProviderTimeline(
       at: index * 2 + 1,
       failureClass: classification.failureClass,
       retryable: classification.fallbackPolicy === "auto-fallback",
-      userSummary: attempt.failure?.message ?? classification.userSummary,
+      userSummary: failure?.message ?? classification.userSummary,
       developerDetail: classification.developerDetail,
     });
     lastFailureClass = classification.failureClass;

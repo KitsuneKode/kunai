@@ -190,6 +190,46 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
   expect(result.stream!.url).toBe(fallbackStream.url);
 });
 
+test("PlaybackResolveService records empty provider results as failed attempts", async () => {
+  const emptyResult = {
+    ...createEmptyProviderResult("primary" as ProviderId),
+    failures: [
+      {
+        providerId: "primary" as ProviderId,
+        code: "not-found" as const,
+        message: "primary had no stream candidates",
+        retryable: true,
+        at: new Date().toISOString(),
+      },
+    ],
+  };
+  const engine = createMockEngine({
+    result: null,
+    providerId: null,
+    attempts: [{ providerId: "primary" as ProviderId, result: emptyResult }],
+  });
+  const service = new PlaybackResolveService({ engine, cacheStore: createMemoryCache(null) });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(result.stream).toBeNull();
+  const attempt = result.providerTimeline?.attempts[0];
+  expect(attempt).toMatchObject({
+    providerId: "primary",
+    status: "failed",
+    failureClass: "provider-empty",
+    userSummary: "primary had no stream candidates",
+  });
+});
+
 test("PlaybackResolveService reuses fresh cached stream without health check", async () => {
   const freshStream = { ...stream, timestamp: Date.now() };
   const cache = createMemoryCache(freshStream);

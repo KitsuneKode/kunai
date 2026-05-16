@@ -20,7 +20,7 @@ import type {
   TitleIdentity,
 } from "@kunai/types";
 
-import { TTLCache, HealthTracker } from "../shared/provider-cache";
+import { HealthTracker } from "../shared/provider-cache";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { looksLikeHiSubtitle, normalizeSubtitleLanguage } from "../shared/subtitle-helpers";
 import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
@@ -43,9 +43,6 @@ function normalizeLanguageCode(value: string | undefined): string | undefined {
 
 /** Track server health with 60s cooldown after 2 consecutive failures. */
 const vidkingHealth = new HealthTracker(60_000, 2);
-
-/** Cache source response per server+query. TTL 5 minutes. */
-const sourceCache = new TTLCache<string, unknown>(300_000);
 
 type VidkingServer = (typeof VIDKING_SERVERS)[number];
 type VidkingServerEndpoint = VidkingServer | (string & {});
@@ -601,9 +598,6 @@ async function tryVidkingServer(opts: {
         }
 
         const decoded = await decodeVidkingPayload(payload, tmdbId);
-        const cacheKey = `${server}:${query.toString()}`;
-        sourceCache.set(cacheKey, decoded);
-
         const result = createVidkingResultFromPayload({
           input,
           cachePolicy,

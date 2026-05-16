@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildStreamHeaders, decodeTobeparsed, resolveAnimeEpisodeString } from "../src/index";
+import {
+  buildStreamHeaders,
+  decodeTobeparsed,
+  gqlPost,
+  resolveAnimeEpisodeString,
+} from "../src/index";
 
 const TEST_KEY_RAW = "Xot36i3lK3:v1";
 
@@ -49,6 +54,36 @@ describe("resolveAnimeEpisodeString", () => {
 
   test("falls back to positional lookup when an exact numeric match is unavailable", () => {
     expect(resolveAnimeEpisodeString(["special-a", "special-b"], 2)).toBe("special-b");
+  });
+});
+
+describe("AllManga HTTP helpers", () => {
+  test("gqlPost composes caller cancellation with its request timeout", async () => {
+    const originalFetch = globalThis.fetch;
+    const parent = new AbortController();
+    let capturedSignal: AbortSignal | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      capturedSignal = init?.signal ?? undefined;
+      return new Response(JSON.stringify({ data: {} }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      await gqlPost(
+        "https://api.example/graphql",
+        "https://referer.example",
+        "ua",
+        "query { ok }",
+        {},
+        parent.signal,
+      );
+      expect(capturedSignal).toBeDefined();
+      expect(capturedSignal).not.toBe(parent.signal);
+      expect(capturedSignal?.aborted).toBe(false);
+      parent.abort("test-cancel");
+      expect(capturedSignal?.aborted).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

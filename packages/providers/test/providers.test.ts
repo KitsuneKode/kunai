@@ -34,6 +34,25 @@ test("provider engine exposes registered modules", () => {
   expect(engine.get("allanime")).toBe(allmangaProviderModule);
 });
 
+test("direct provider success paths report health deltas", async () => {
+  const files = [
+    "src/vidking/direct.ts",
+    "src/allmanga/direct.ts",
+    "src/rivestream/direct.ts",
+    "src/miruro/direct.ts",
+  ];
+
+  for (const file of files) {
+    const source = await Bun.file(new URL(`../${file}`, import.meta.url)).text();
+    expect(source, `${file} should include provider health feedback`).toContain("healthDelta");
+  }
+});
+
+test("Vidking direct resolver does not keep a write-only source cache", async () => {
+  const source = await Bun.file(new URL("../src/vidking/direct.ts", import.meta.url)).text();
+  expect(source).not.toContain("sourceCache");
+});
+
 test("provider research profiles are dossier-backed and migration ordered", () => {
   const queue = getProviderMigrationQueue();
 
