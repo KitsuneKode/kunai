@@ -2385,7 +2385,7 @@ function BrowseShell<T>({
         </Box>
 
         {searchState === "error" && errorMessage ? (
-          <Box marginTop={1} flexDirection="column">
+          <Box marginTop={1} flexDirection="column" flexGrow={1}>
             <Text color={palette.red}>{errorMessage}</Text>
             <Text color={palette.muted} dimColor>
               Press Enter to retry or Esc to clear
@@ -2535,14 +2535,14 @@ function BrowseShell<T>({
             )}
           </Box>
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
-          <Box marginTop={2} flexDirection="column">
+          <Box marginTop={2} flexDirection="column" flexGrow={1}>
             <Text color={palette.amber}>{`No results for "${lastSearchedQuery}"`}</Text>
             <Text color={palette.gray} dimColor>
               Try a different spelling, or switch provider with /provider
             </Text>
           </Box>
         ) : (
-          <Box marginTop={1}>
+          <Box marginTop={1} flexGrow={1}>
             <Text color={palette.gray}>{emptyMessage}</Text>
           </Box>
         )}
