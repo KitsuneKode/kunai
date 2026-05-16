@@ -91,19 +91,18 @@ export function ErrorShell({
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={palette.red} paddingX={1}>
-      <Box marginBottom={1}>
+    <Box flexDirection="row" marginTop={1}>
+      <Text color={palette.red}>{"│ "}</Text>
+      <Box flexDirection="column">
         <Text color={palette.red} bold>
-          ⚠ Playback Error
+          Playback failed
         </Text>
-      </Box>
-      <Box marginBottom={1}>
-        <Text color="white">{message}</Text>
-      </Box>
-      <Box>
-        <Text color={palette.gray} dimColor>
-          {onRetry ? "R retry  ·  Enter / Esc dismiss" : "Enter / Esc to continue"}
-        </Text>
+        <Text color={palette.text}>{message}</Text>
+        <Box marginTop={1}>
+          <Text color={palette.gray} dimColor>
+            {onRetry ? "r retry  ·  Enter / Esc dismiss" : "Enter / Esc to continue"}
+          </Text>
+        </Box>
       </Box>
     </Box>
   );
