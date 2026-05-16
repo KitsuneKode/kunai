@@ -118,6 +118,7 @@ export const COMMAND_CONTEXTS = {
     "quality",
     "toggle-autoplay",
     "toggle-autoskip",
+    "stop-after-current",
     "previous",
     "next-season",
     "provider",
