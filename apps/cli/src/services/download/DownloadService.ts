@@ -11,6 +11,7 @@ import type {
 } from "@/domain/types";
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
+import { cacheOfflinePosterArtwork } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
 import {
@@ -322,7 +323,7 @@ export class DownloadService {
       this.emit({ type: "complete", jobId: next.id });
       const completed = this.deps.repo.get(next.id) ?? null;
       if (completed) {
-        void this.generateThumbnailIfAvailable(completed);
+        void this.prepareOfflineArtwork(completed);
       }
       return completed;
     } catch (error) {
@@ -825,6 +826,26 @@ export class DownloadService {
         error: error instanceof Error ? error.message : String(error),
       });
       await rm(tempPath, { force: true }).catch(() => {});
+    }
+  }
+
+  private async prepareOfflineArtwork(job: DownloadJobRecord): Promise<void> {
+    await this.generateThumbnailIfAvailable(job);
+    const refreshed = this.deps.repo.get(job.id) ?? job;
+    if (refreshed.thumbnailPath || !this.deps.config.offlineArtworkCacheEnabled) return;
+    try {
+      const posterPath = await cacheOfflinePosterArtwork({ job: refreshed });
+      if (!posterPath) return;
+      this.deps.repo.updateOfflineMetadata(
+        job.id,
+        { thumbnailPath: posterPath },
+        new Date().toISOString(),
+      );
+    } catch (error) {
+      this.deps.logger.debug("Offline poster artwork cache skipped", {
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
