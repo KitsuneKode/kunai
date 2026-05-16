@@ -79,13 +79,15 @@ describe("PresenceServiceImpl", () => {
 
     expect(buildDiscordActivity(activity, "full")).toMatchObject({
       details: "Breaking Bad",
-      state: "Season 4, Episode 9 · vidking",
+      state: "S4 E9 · vidking",
       type: 3,
+      buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
     });
     expect(buildDiscordActivity(activity, "private")).toMatchObject({
       details: "Watching with Kunai",
       state: "Playing",
       type: 3,
+      buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
     });
   });
 
@@ -112,6 +114,86 @@ describe("PresenceServiceImpl", () => {
     }
   });
 
+  test("adds exact progress, media facts, and a safe action button to full presence", () => {
+    const activity = {
+      mode: "anime" as const,
+      title: { id: "1", type: "series" as const, name: "Frieren: Beyond Journey's End" },
+      episode: { season: 1, episode: 14 },
+      providerId: "allanime",
+      startedAtMs: 1000,
+      positionSeconds: 734,
+      durationSeconds: 1440,
+      subtitleCount: 2,
+      stream: {
+        url: "https://signed-provider.example/video.m3u8",
+        headers: { Referer: "https://provider.example/" },
+        subtitle: "https://signed-provider.example/subs-en.vtt",
+        timestamp: 1,
+        providerResolveResult: {
+          status: "resolved" as const,
+          providerId: "allanime",
+          selectedStreamId: "stream-1080",
+          streams: [
+            {
+              id: "stream-1080",
+              providerId: "allanime",
+              sourceId: "source-a",
+              url: "https://signed-provider.example/video.m3u8",
+              protocol: "hls" as const,
+              container: "m3u8" as const,
+              presentation: "sub" as const,
+              qualityLabel: "1080p",
+              audioLanguages: ["ja"],
+              headers: {},
+              confidence: 1,
+              cachePolicy: {
+                ttlClass: "stream-manifest" as const,
+                scope: "local" as const,
+                keyParts: [],
+              },
+            },
+          ],
+          subtitles: [
+            {
+              id: "sub-en",
+              providerId: "allanime",
+              sourceId: "source-a",
+              url: "https://signed-provider.example/subs-en.vtt",
+              language: "en",
+              source: "provider" as const,
+              confidence: 1,
+              cachePolicy: {
+                ttlClass: "subtitle-list" as const,
+                scope: "local" as const,
+                keyParts: [],
+              },
+            },
+          ],
+          trace: {
+            id: "trace-1",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            cacheHit: false,
+            title: { id: "1", kind: "series" as const, title: "Frieren" },
+            steps: [],
+            failures: [],
+          },
+          failures: [],
+        },
+      },
+    };
+
+    const payload = buildDiscordActivity(activity, "full");
+
+    expect(payload).toMatchObject({
+      details: "Frieren: Beyond Journey's End",
+      state: "S1 E14 · 12:14 / 24:00 · 1080p · sub · ja audio · en subs · allanime",
+      smallImageKey: "subtitles",
+      smallImageText: "2 subtitle tracks",
+      buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
+    });
+    expect(JSON.stringify(payload)).not.toContain("signed-provider.example");
+  });
+
   test("shows paused progress without an advancing Discord timer", () => {
     const activity = {
       mode: "series" as const,
@@ -126,7 +208,7 @@ describe("PresenceServiceImpl", () => {
 
     expect(buildDiscordActivity(activity, "full")).toMatchObject({
       details: "Breaking Bad",
-      state: "Season 4, Episode 9 · Paused at 12:14 / 24:00",
+      state: "S4 E9 · Paused at 12:14 / 24:00 · vidking",
     });
     expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("startTimestamp");
     expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("endTimestamp");

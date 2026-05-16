@@ -17,6 +17,7 @@ export type {
   LanguageSelectionIntent,
   LanguageSelectionRequest,
   MediaTrackModel,
+  PresenceMediaTrackSummary,
   ProviderMediaInventory,
   SelectedMediaTrackState,
 } from "./media/media-track-model";

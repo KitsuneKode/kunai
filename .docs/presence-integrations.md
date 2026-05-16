@@ -24,8 +24,12 @@ Discord presence is optional and local-only:
 2. User provides a Discord application client id through `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID`.
 3. The optional `discord-rpc` package must be available at runtime (ships as an optional dependency in the CLI package).
 4. Kunai connects through Discord IPC and calls `setActivity` during playback.
-5. Playback progress updates provide Discord timestamps while playing; paused playback uses static
+5. Playback progress updates provide Discord timestamps while playing. Full privacy also includes
+   an exact `position / duration` label in the activity text so the card is readable even when
+   Discord chooses to render the timestamp as time remaining. Paused playback uses static
    "Paused at" text so Discord does not show an advancing timer.
+6. Full privacy adds provider-safe media facts when the stream inventory exposes them: quality,
+   sub/dub presentation, audio language, subtitle language, and subtitle-track count.
 
 If any requirement is missing, Kunai records a diagnostics event and disables automatic retry until
 the user reconnects from Settings or changes the presence configuration. This prevents every
@@ -60,6 +64,11 @@ Presence integrations must never receive:
 
 `presencePrivacy: "private"` only reports generic Kunai playback. `presencePrivacy: "full"` may include title, episode, mode, and provider id.
 
+Discord activity buttons are URL-only. Kunai therefore uses a safe project link for the public
+button and does not expose stream, subtitle, provider, or local command URLs. A future "Open in
+Kunai" button must go through an explicit custom-protocol or HTTPS handoff with local confirmation,
+not direct shell execution.
+
 ## Authentication Model
 
 Discord Rich Presence here is local IPC, not OAuth:
@@ -75,13 +84,18 @@ Discord Rich Presence here is local IPC, not OAuth:
 2. Ensure a client id is available via `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID`.
 3. Set `presenceProvider: "discord"` and preferred `presencePrivacy`.
 4. Start playback in Kunai.
-5. Confirm Discord activity updates with the current playback timestamp and check `/diagnostics` for presence events.
-6. Pause playback and confirm Discord shows a static paused position instead of a moving timer.
+5. Confirm Discord activity updates with the current playback timestamp, exact progress label,
+   quality/language facts when available, and safe `Get Kunai` button.
+6. Check `/diagnostics` for presence events.
+7. Pause playback and confirm Discord shows a static paused position instead of a moving timer.
 
 ## Remaining Work
 
 - Consider optional package installation guidance without making `discord-rpc` a required dependency.
-- Add richer activity assets only after stable Discord application assets exist.
+- Add richer activity assets only after stable Discord application assets exist. Upload asset keys
+  `kunai` and `subtitles` in the Discord Developer Portal before relying on the icons.
+- Consider an opt-in custom protocol / HTTPS relay for "Open in Kunai" after installer and
+  confirmation semantics exist.
 
 ## Related Plan
 

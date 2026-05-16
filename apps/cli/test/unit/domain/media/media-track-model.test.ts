@@ -7,6 +7,7 @@ import {
 import {
   buildMediaTrackModel,
   resolveLanguageSelectionIntent,
+  summarizeMediaTrackForPresence,
   describeStreamCandidateMediaDetail,
 } from "@/domain/media/media-track-model";
 import type { StreamInfo } from "@/domain/types";
@@ -144,6 +145,55 @@ describe("media track model", () => {
     ).toBe(
       "Kiwi hardsub  ·  sub stream  ·  hls  ·  m3u8  ·  audio ja  ·  subs hardcoded  ·  hardsub en  ·  soft subs en",
     );
+  });
+
+  test("summarizes selected quality, presentation, audio, and subtitle without leaking URLs", () => {
+    const stream: StreamInfo = {
+      url: "https://signed.example/video.m3u8",
+      headers: { Referer: "https://provider.example/" },
+      subtitle: "https://signed.example/en.vtt",
+      timestamp: Date.now(),
+      providerResolveResult: {
+        status: "resolved",
+        providerId: "vidking",
+        selectedStreamId: "stream-1080",
+        streams: [{ ...streamCandidate, variantId: "variant-1080" }],
+        sources: [],
+        subtitles: [subtitleCandidate],
+        trace: {
+          id: "trace-1",
+          startedAt: new Date().toISOString(),
+          cacheHit: false,
+          title: { id: "1", kind: "series", title: "Demo" },
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      },
+    };
+
+    expect(summarizeMediaTrackForPresence(stream)).toEqual({
+      quality: "1080p",
+      presentation: "sub",
+      audio: "ja audio",
+      subtitle: "en subs",
+    });
+    expect(JSON.stringify(summarizeMediaTrackForPresence(stream))).not.toContain("signed.example");
+  });
+
+  test("falls back to direct stream metadata when provider inventory is absent", () => {
+    expect(
+      summarizeMediaTrackForPresence({
+        url: "https://signed.example/video.m3u8",
+        headers: {},
+        audioLanguages: ["en", "ja"],
+        hardSubLanguage: "en",
+        timestamp: Date.now(),
+      }),
+    ).toEqual({
+      audio: "en/ja audio",
+      subtitle: "en hardsub",
+    });
   });
 
   test("classifies language switch paths from cached inventory before provider lookup", () => {

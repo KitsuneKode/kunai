@@ -1,3 +1,4 @@
+import { summarizeMediaTrackForPresence } from "@/domain/media/media-track-model";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService } from "@/services/persistence/ConfigService";
@@ -32,6 +33,8 @@ type NodeBridgeResponse = {
 };
 
 const DEFAULT_DISCORD_CLIENT_ID = "1502307419047461025";
+const KUNAI_DISCORD_ACTION_URL = "https://github.com/KitsuneKode/kunai";
+const DISCORD_ACTIVITY_TEXT_LIMIT = 128;
 
 /** Shown in diagnostics when IPC/update fails and another consumer may hold the Discord app pipe. */
 const DISCORD_PRESENCE_MULTI_INSTANCE_DIAGNOSTIC =
@@ -596,40 +599,70 @@ export function buildDiscordActivity(
       : activity.providerId;
   const subtitleAttached = (activity.subtitleCount ?? 0) > 0;
   const timeline = buildDiscordPlaybackTimeline(activity);
-  const pausedProgressLabel = formatPlaybackProgressLabel(
+  const progressLabel = formatPlaybackProgressLabel(
     activity.positionSeconds,
     activity.durationSeconds,
   );
+  const mediaSummary = activity.stream ? summarizeMediaTrackForPresence(activity.stream) : {};
+  const mediaParts = compact([
+    progressLabel,
+    mediaSummary.quality,
+    mediaSummary.presentation,
+    mediaSummary.audio,
+    mediaSummary.subtitle,
+  ]);
 
   if (privacy === "private") {
     return {
       type: 3,
       details: "Watching with Kunai",
-      state: activity.paused
-        ? pausedProgressLabel
-          ? `Paused at ${pausedProgressLabel}`
-          : "Paused"
-        : "Playing",
+      state: limitDiscordText(
+        activity.paused
+          ? progressLabel
+            ? `Paused at ${progressLabel}`
+            : "Paused"
+          : progressLabel
+            ? `Playing · ${progressLabel}`
+            : "Playing",
+      ),
       ...(activity.paused ? {} : timeline),
       largeImageKey: "kunai",
       largeImageText: "Kunai",
+      buttons: buildDiscordActionButtons(),
     };
   }
 
+  const compactEpisodeLabel =
+    activity.title.type === "series"
+      ? `S${activity.episode.season} E${activity.episode.episode}`
+      : "Movie";
   return {
     type: 3,
-    details: activity.title.name,
-    state: activity.paused
-      ? pausedProgressLabel
-        ? `${episodeLabel} · Paused at ${pausedProgressLabel}`
-        : `${episodeLabel} · Paused`
-      : stateLine,
+    details: limitDiscordText(activity.title.name),
+    state: limitDiscordText(
+      activity.paused
+        ? compact([
+            compactEpisodeLabel,
+            progressLabel ? `Paused at ${progressLabel}` : "Paused",
+            ...mediaParts.slice(1),
+            activity.providerId,
+          ]).join(" · ")
+        : compact([compactEpisodeLabel, ...mediaParts, activity.providerId]).join(" · ") ||
+            stateLine,
+    ),
     ...(activity.paused ? {} : timeline),
     largeImageKey: "kunai",
     largeImageText: "Kunai",
     ...(subtitleAttached
-      ? { smallImageKey: "subtitles", smallImageText: "Subtitles attached" }
+      ? {
+          smallImageKey: "subtitles",
+          smallImageText:
+            activity.subtitleCount && activity.subtitleCount > 1
+              ? `${activity.subtitleCount} subtitle tracks`
+              : "Subtitles attached",
+        }
       : {}),
+    buttons: buildDiscordActionButtons(),
   };
 }
 
@@ -673,6 +706,20 @@ function formatMediaTime(seconds: number): string {
     return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
   }
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function buildDiscordActionButtons(): readonly { label: string; url: string }[] {
+  return [{ label: "Get Kunai", url: KUNAI_DISCORD_ACTION_URL }];
+}
+
+function compact(values: readonly (string | undefined | null | false)[]): string[] {
+  return values.filter((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+function limitDiscordText(value: string): string {
+  if (value.length <= DISCORD_ACTIVITY_TEXT_LIMIT) return value;
+  if (DISCORD_ACTIVITY_TEXT_LIMIT <= 1) return value.slice(0, DISCORD_ACTIVITY_TEXT_LIMIT);
+  return `${value.slice(0, DISCORD_ACTIVITY_TEXT_LIMIT - 3)}...`;
 }
 
 export function describePresenceConfiguration(

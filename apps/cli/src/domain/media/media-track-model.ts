@@ -57,6 +57,13 @@ export type MediaTrackModel = {
   readonly switching: MediaSwitchingCapability;
 };
 
+export type PresenceMediaTrackSummary = {
+  readonly quality?: string;
+  readonly presentation?: string;
+  readonly audio?: string;
+  readonly subtitle?: string;
+};
+
 export function buildMediaTrackModel(
   stream: StreamInfo,
   active?: ActiveMediaTrackState,
@@ -116,6 +123,30 @@ export function describeStreamCandidateMediaDetail(
   ]
     .filter((part): part is string => typeof part === "string" && part.length > 0)
     .join("  ·  ");
+}
+
+export function summarizeMediaTrackForPresence(stream: StreamInfo): PresenceMediaTrackSummary {
+  const result = stream.providerResolveResult;
+  const selected = result?.streams.find((candidate) => candidate.id === result.selectedStreamId);
+  const softSubtitles = result?.subtitles ?? stream.subtitleList ?? [];
+  const candidateSubtitles =
+    selected && result ? subtitlesForStreamCandidate(selected, result.subtitles) : [];
+  const selectedSubtitle =
+    selectedSubtitleLanguage(stream, softSubtitles) ??
+    (stream.subtitle && candidateSubtitles.length === 1
+      ? candidateSubtitles[0]?.language
+      : undefined);
+  const hardSubLanguage = selected?.hardSubLanguage ?? stream.hardSubLanguage;
+  return stripEmptySummary({
+    quality: selected?.qualityLabel,
+    presentation: selected?.presentation,
+    audio: describeCompactLanguages(selected?.audioLanguages ?? stream.audioLanguages, "audio"),
+    subtitle: selectedSubtitle
+      ? `${selectedSubtitle} subs`
+      : hardSubLanguage
+        ? `${hardSubLanguage} hardsub`
+        : undefined,
+  });
 }
 
 export function resolveLanguageSelectionIntent(
@@ -188,6 +219,21 @@ function describeLanguages(label: string, values: readonly (string | undefined)[
   const languages = uniqueStrings(values);
   if (languages.length === 0) return null;
   return `${label} ${languages.slice(0, 3).join("/")}${languages.length > 3 ? "+" : ""}`;
+}
+
+function describeCompactLanguages(
+  values: readonly (string | undefined)[] | undefined,
+  suffix: string,
+): string | undefined {
+  const languages = uniqueStrings(values);
+  if (languages.length === 0) return undefined;
+  return `${languages.slice(0, 3).join("/")}${languages.length > 3 ? "+" : ""} ${suffix}`;
+}
+
+function stripEmptySummary(summary: PresenceMediaTrackSummary): PresenceMediaTrackSummary {
+  return Object.fromEntries(
+    Object.entries(summary).filter(([, value]) => typeof value === "string" && value.length > 0),
+  ) as PresenceMediaTrackSummary;
 }
 
 function uniqueStrings(values: readonly (string | undefined)[] | undefined): readonly string[] {

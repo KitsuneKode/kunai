@@ -1,6 +1,6 @@
 # Presence Integrations Plan
 
-Status: onboarding implemented; richer activity assets and manual Discord smoke remaining
+Status: onboarding and richer privacy-safe playback activity implemented; richer uploaded assets and manual Discord smoke remaining
 
 ## Current Behavior
 
@@ -8,6 +8,10 @@ Status: onboarding implemented; richer activity assets and manual Discord smoke 
 - `presenceProvider: "discord"` enables Discord when configuration and runtime dependencies are available.
 - `presencePrivacy` controls full versus private activity detail.
 - `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID` provides the Discord app id.
+- Full privacy activity now includes exact playback progress, quality, sub/dub presentation,
+  audio/subtitle labels, subtitle-track count, and a safe project URL button when those facts are
+  present in the resolved stream inventory.
+- Private activity remains generic and only shows non-title progress state.
 - Missing client id, package, IPC, or update failure records diagnostics and disables automatic retries
   until Settings reconnects or presence configuration changes.
 - About/diagnostics copy shows whether the Discord client id comes from config, environment, or is missing.
@@ -34,14 +38,18 @@ Status: onboarding implemented; richer activity assets and manual Discord smoke 
 
 ### Slice 3: Activity Polish
 
+- [x] Add exact progress and provider-safe media details to full playback activity.
+- [x] Add a safe Discord URL button that never contains provider stream or subtitle URLs.
 - Decide stable Discord application assets:
   - `kunai`
   - `subtitles`
   - optional anime/series/movie icons
 - Keep activity text conservative:
   - private: generic playback
-  - full: title + episode + provider id
-- Do not add elapsed progress or episode art until privacy and asset behavior are verified.
+  - full: title + episode + progress + provider-safe stream facts + provider id
+- Do not add episode art until privacy and asset behavior are verified.
+- Do not add "open local command" buttons until a custom protocol / HTTPS handoff is designed
+  with explicit local confirmation.
 
 ## Verification
 

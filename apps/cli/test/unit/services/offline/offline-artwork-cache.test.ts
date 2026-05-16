@@ -79,30 +79,39 @@ describe("offline artwork cache", () => {
     tempDirs.push(dir);
     const job = createJob(join(dir, "Movie.mp4"), "https://img.example/poster.webp");
     let fetchCount = 0;
+    let releaseFirstFetch!: () => void;
+    const firstFetchStarted = Promise.withResolvers<void>();
+    const firstFetchRelease = new Promise<void>((resolve) => {
+      releaseFirstFetch = resolve;
+    });
 
-    const [first, second] = await Promise.all([
-      cacheOfflinePosterArtwork({
-        job,
-        fetchImpl: async () => {
-          fetchCount += 1;
-          await Bun.sleep(5);
-          return new Response(new Uint8Array([1, 2, 3, 4]), {
-            status: 200,
-            headers: { "content-type": "image/webp" },
-          });
-        },
-      }),
-      cacheOfflinePosterArtwork({
-        job,
-        fetchImpl: async () => {
-          fetchCount += 1;
-          return new Response(new Uint8Array([9]), {
-            status: 200,
-            headers: { "content-type": "image/webp" },
-          });
-        },
-      }),
-    ]);
+    const firstWork = cacheOfflinePosterArtwork({
+      job,
+      fetchImpl: async () => {
+        fetchCount += 1;
+        firstFetchStarted.resolve();
+        await firstFetchRelease;
+        return new Response(new Uint8Array([1, 2, 3, 4]), {
+          status: 200,
+          headers: { "content-type": "image/webp" },
+        });
+      },
+    });
+    await firstFetchStarted.promise;
+
+    const secondWork = cacheOfflinePosterArtwork({
+      job,
+      fetchImpl: async () => {
+        fetchCount += 1;
+        return new Response(new Uint8Array([9]), {
+          status: 200,
+          headers: { "content-type": "image/webp" },
+        });
+      },
+    });
+    releaseFirstFetch();
+
+    const [first, second] = await Promise.all([firstWork, secondWork]);
 
     expect(first).toBe(resolveOfflinePosterArtifactPath(job));
     expect(second).toBe(first);

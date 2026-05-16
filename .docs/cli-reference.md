@@ -161,10 +161,10 @@ Presence is configured in the shell settings/config, not argv flags:
 | Setting                   | Values             | Notes                                                                         |
 | ------------------------- | ------------------ | ----------------------------------------------------------------------------- |
 | `presenceProvider`        | `off` / `discord`  | Off by default. Discord uses optional local `discord-rpc` if installed.       |
-| `presencePrivacy`         | `full` / `private` | Full shows title/episode; private only says Kunai playback is active.         |
+| `presencePrivacy`         | `full` / `private` | Full shows title/episode/progress/media facts; private keeps title hidden.    |
 | `presenceDiscordClientId` | string             | Discord application id. Empty string falls back to `KUNAI_DISCORD_CLIENT_ID`. |
 
-Presence integrations never receive stream URLs, provider URLs, request headers, subtitle URLs, or diagnostics bundles.
+Presence integrations never receive stream URLs, provider URLs, request headers, subtitle URLs, or diagnostics bundles. Discord buttons are URL-only, so Kunai only exposes safe public links today; local command/deep-link handoff needs an explicit future opt-in.
 
 ---
 
