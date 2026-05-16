@@ -8,6 +8,7 @@ export type RootOwnedOverlay = Extract<
       | "about"
       | "diagnostics"
       | "downloads"
+      | "library"
       | "provider_picker"
       | "history"
       | "settings"
@@ -36,6 +37,7 @@ export function isRootOwnedOverlay(
     overlay?.type === "about" ||
     overlay?.type === "diagnostics" ||
     overlay?.type === "downloads" ||
+    overlay?.type === "library" ||
     overlay?.type === "provider_picker" ||
     overlay?.type === "history" ||
     overlay?.type === "settings" ||

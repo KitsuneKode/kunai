@@ -62,6 +62,7 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay): string {
   if (overlay.type === "about") return "About";
   if (overlay.type === "diagnostics") return "Diagnostics";
   if (overlay.type === "downloads") return "Downloads";
+  if (overlay.type === "library") return "Library";
   if (overlay.type === "history") return "History";
   if (overlay.type === "settings") return "Settings";
   if (overlay.type === "season_picker") return "Choose season";
@@ -91,6 +92,7 @@ export function getRootOverlaySubtitle({
   if (overlay.type === "diagnostics") return "Current runtime snapshot and recent events";
   if (overlay.type === "downloads")
     return "Live download queue, failed retries, and completed jobs";
+  if (overlay.type === "library") return "Offline titles, download queue, and quick settings";
   if (overlay.type === "history") return "Recent playback positions without leaving the shell";
   if (overlay.type === "settings")
     return settingsError ?? buildSettingsSummary(settingsDraft ?? config);

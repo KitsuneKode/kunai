@@ -88,6 +88,7 @@ export type OverlayState =
   | ({ type: "recommendation_picker" } & PickerOverlayState)
   | { type: "history" }
   | { type: "downloads" }
+  | { type: "library"; view?: "library" | "queue" }
   | { type: "diagnostics" }
   | { type: "help" }
   | { type: "about" }

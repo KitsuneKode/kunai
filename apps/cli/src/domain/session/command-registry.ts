@@ -146,15 +146,15 @@ export const COMMANDS: readonly AppCommand[] = [
   },
   {
     id: "downloads",
-    label: "Download Jobs",
-    aliases: ["downloads", "download-jobs", "jobs"],
-    description: "Inspect and control queued/running/failed download jobs",
+    label: "Queue (Queue)",
+    aliases: ["downloads", "download-jobs", "queue", "jobs"],
+    description: "Inspect active, queued, and failed download jobs",
   },
   {
     id: "library",
-    label: "Offline Library",
-    aliases: ["library", "offline", "offline-library", "my-downloads"],
-    description: "Browse completed downloads and play local files",
+    label: "Library",
+    aliases: ["library", "offline", "offline-library", "my-downloads", "downloads"],
+    description: "Browse offline titles, manage downloads, and toggle settings",
   },
   {
     id: "search",
