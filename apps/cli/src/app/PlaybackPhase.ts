@@ -615,6 +615,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stateManager.getState().mode === "anime"
                   ? config.animeLanguageProfile.subtitle
                   : config.seriesLanguageProfile.subtitle,
+              recoveryMode: config.recoveryMode,
               signal: resolveController.signal,
               onFeedback: (feedback) => this.updatePlaybackFeedback(context, feedback),
               onEvent: (event) => {
@@ -858,6 +859,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 providerId: prefetchMetadata.metadata.id,
                 audioPreference,
                 subtitlePreference,
+                recoveryMode: config.recoveryMode,
                 signal: context.signal,
               })
               .then((result) => {

@@ -270,7 +270,7 @@ test("PlaybackResolveService force-validates fresh cached stream after suspected
     onEvent: (e) => events.push(e.type),
   });
 
-  expect(events).toEqual(["cache-health-check", "cache-stale", "cache-miss"]);
+  expect(events).toEqual(["cache-health-check", "cache-stale", "cache-miss", "recovery-decision"]);
   expect(result.cacheStatus).toBe("miss");
   expect(result.cacheProvenance).toBe("refetched");
   expect(result.stream?.url).toBe(fallbackStream.url);
@@ -422,6 +422,41 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
   });
 
   expect(observedCandidates).toEqual([["primary", "anime-ok"]]);
+});
+
+test("PlaybackResolveService manual recovery mode does not auto-fallback", async () => {
+  const cache = createMemoryCache(null);
+  const observedCandidates: ProviderId[][] = [];
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    {
+      modules: [
+        {
+          providerId: "primary" as ProviderId,
+          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+        },
+        {
+          providerId: "fallback" as ProviderId,
+          manifest: createManifest("fallback" as ProviderId, ["series", "movie"]),
+        },
+      ],
+      onCandidateIds: (candidateIds) => observedCandidates.push([...candidateIds]),
+    },
+  );
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    recoveryMode: "manual",
+    signal: new AbortController().signal,
+  });
+
+  expect(observedCandidates).toEqual([["primary"]]);
 });
 
 test("PlaybackResolveService persists consecutive provider failures before marking down", async () => {

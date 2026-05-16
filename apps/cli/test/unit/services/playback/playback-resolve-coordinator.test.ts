@@ -259,4 +259,37 @@ describe("PlaybackResolveCoordinator", () => {
       }),
     );
   });
+
+  test("records playback recovery decisions through diagnostics", async () => {
+    const events: unknown[] = [];
+    const diagnostics = {
+      record: (event: unknown) => events.push(event),
+      getRecent: () => [],
+      getSnapshot: () => [],
+      clear: () => {},
+      buildSupportBundle: () => {
+        throw new Error("not needed");
+      },
+    } as unknown as DiagnosticsService;
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createMockEngine(createProviderResult("https://fresh.example/stream.m3u8")),
+      cacheStore: createMemoryCache(null),
+      diagnostics,
+    });
+
+    await coordinator.resolve({ ...input(), recoveryMode: "guided" });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        category: "playback",
+        operation: "playback-recovery-decision",
+        message: "Playback recovery decision: resolve-primary",
+        context: expect.objectContaining({
+          decision: "resolve-primary",
+          reason: "normal-primary",
+          recoveryMode: "guided",
+        }),
+      }),
+    );
+  });
 });

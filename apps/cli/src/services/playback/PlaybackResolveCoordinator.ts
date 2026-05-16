@@ -112,6 +112,26 @@ export class PlaybackResolveCoordinator {
           ageMs: event.ageMs,
         },
       });
+      return;
+    }
+
+    if (event.type === "recovery-decision") {
+      this.deps.diagnostics.record({
+        category: "playback",
+        operation: "playback-recovery-decision",
+        level: event.userVisible ? "info" : "debug",
+        message: `Playback recovery decision: ${event.decision}`,
+        providerId: event.providerId,
+        titleId: input.title.id,
+        season: input.episode.season,
+        episode: input.episode.episode,
+        context: {
+          decision: event.decision,
+          reason: event.reason,
+          recoveryMode: event.recoveryMode,
+          userVisible: event.userVisible,
+        },
+      });
     }
   }
 

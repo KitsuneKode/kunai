@@ -7,6 +7,11 @@ import {
   classifyProviderFailure,
   fallbackPolicyForProviderFailureClass,
 } from "@/domain/provider/ProviderFailureClassifier";
+import {
+  decideRecovery,
+  type RecoveryMode,
+  type RecoveryPolicyDecision,
+} from "@/domain/recovery/RecoveryPolicy";
 import type { EpisodeInfo, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import type { CacheStore } from "@/services/persistence/CacheStore";
@@ -18,7 +23,7 @@ import {
   type ResolveAttempt,
 } from "@kunai/core";
 import type { ProviderHealthRepository } from "@kunai/storage";
-import type { ProviderHealthDelta } from "@kunai/types";
+import type { MediaKind, ProviderHealthDelta } from "@kunai/types";
 
 import { StreamHealthService } from "./StreamHealthService";
 
@@ -66,6 +71,14 @@ export type PlaybackResolveEvent =
       readonly maxAttempts: number;
       readonly issue: string;
       readonly retryable: boolean;
+    }
+  | {
+      readonly type: "recovery-decision";
+      readonly providerId: string;
+      readonly decision: RecoveryPolicyDecision["decision"];
+      readonly reason: RecoveryPolicyDecision["reason"];
+      readonly recoveryMode: RecoveryMode;
+      readonly userVisible: boolean;
     };
 
 export type PlaybackResolveInput = {
@@ -78,6 +91,7 @@ export type PlaybackResolveInput = {
   readonly signal: AbortSignal;
   readonly prefetchedStream?: StreamInfo | null;
   readonly forceHealthCheck?: boolean;
+  readonly recoveryMode?: RecoveryMode;
   readonly onFeedback?: (feedback: PlaybackResolveFeedback) => void;
   readonly onEvent?: (event: PlaybackResolveEvent) => void;
 };
@@ -179,17 +193,41 @@ export class PlaybackResolveService {
       input.mode,
     );
 
+    const recoveryMode = input.recoveryMode ?? "guided";
+    const primaryHealth = this.deps.providerHealth?.get(input.providerId);
+    const recoveryDecision = decideRecovery({
+      mode: recoveryMode,
+      intent: "automatic",
+      network: "unknown",
+      cache: cachedStream ? "health-failed" : "none",
+      providerHealth: primaryHealth,
+      compatibleProviderAvailable: this.hasCompatibleFallbackProvider(
+        input,
+        resolveInput.mediaKind,
+      ),
+    });
+    input.onEvent?.({
+      type: "recovery-decision",
+      providerId: input.providerId,
+      decision: recoveryDecision.decision,
+      reason: recoveryDecision.reason,
+      recoveryMode,
+      userVisible: recoveryDecision.userVisible,
+    });
+
     const compatibleIds = [input.providerId];
     // Add fallback provider ids, filtering by mediaKind so incompatible
     // providers (e.g. series/movie-only for anime) are never attempted.
-    for (const module of this.deps.engine.modules) {
-      if (module.providerId === input.providerId) continue;
-      if (!module.manifest.mediaKinds.includes(resolveInput.mediaKind)) continue;
-      // Skip providers with known-dead health status to avoid wasted attempts,
-      // but always allow degraded providers as they may still succeed.
-      const health = this.deps.providerHealth?.get(module.providerId);
-      if (health?.status === "down") continue;
-      compatibleIds.push(module.providerId);
+    if (recoveryMode !== "manual") {
+      for (const module of this.deps.engine.modules) {
+        if (module.providerId === input.providerId) continue;
+        if (!module.manifest.mediaKinds.includes(resolveInput.mediaKind)) continue;
+        // Skip providers with known-dead health status to avoid wasted attempts,
+        // but always allow degraded providers as they may still succeed.
+        const health = this.deps.providerHealth?.get(module.providerId);
+        if (health?.status === "down") continue;
+        compatibleIds.push(module.providerId);
+      }
     }
 
     input.onFeedback?.({
@@ -327,6 +365,17 @@ export class PlaybackResolveService {
       };
     }
     return healthService.check(stream, { force, signal });
+  }
+
+  private hasCompatibleFallbackProvider(
+    input: PlaybackResolveInput,
+    mediaKind: MediaKind,
+  ): boolean {
+    return this.deps.engine.modules.some((module) => {
+      if (module.providerId === input.providerId) return false;
+      if (!module.manifest.mediaKinds.includes(mediaKind)) return false;
+      return this.deps.providerHealth?.get(module.providerId)?.status !== "down";
+    });
   }
 
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {
