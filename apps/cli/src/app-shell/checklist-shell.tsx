@@ -1,6 +1,7 @@
 import { getPickerLayout } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { mountRootContent } from "@/app-shell/root-content-state";
+import { LineEditorText } from "@/app-shell/shell-command-ui";
 import { ShellFooter, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
@@ -148,9 +149,13 @@ function ChecklistShell<T>({
         </Box>
         <Box paddingY={1}>
           <Text color={palette.teal}>⌕ </Text>
-          <Text color={filterQuery ? "white" : palette.gray}>
-            {filterQuery || "type to filter"}
-          </Text>
+          <LineEditorText
+            value={filterQuery}
+            cursor={filterEditor.cursor}
+            focused={true}
+            placeholder="type to filter"
+            maxWidth={Math.max(20, rowWidth - 6)}
+          />
         </Box>
         {tooSmall ? (
           <ResizeBlocker minColumns={minColumns} minRows={minRows} />
