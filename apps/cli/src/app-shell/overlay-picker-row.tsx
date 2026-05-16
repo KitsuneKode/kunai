@@ -49,23 +49,31 @@ export function PickerOptionRow({
   readonly accentColor: string | null;
   readonly pickerAccent: string;
 }) {
-  const row = formatPickerDisplayRow({
-    label,
-    detail,
-    badge,
-    width,
-    selected,
-  });
+  const prefix = selected ? "❯ " : "  ";
+  const badgeSuffix = badge ? `  ${badge}` : "";
+  // Budget: width minus prefix (2) and badge
+  const contentWidth = Math.max(0, width - prefix.length - badgeSuffix.length);
+  const truncatedLabel = truncateLine(label, contentWidth);
+  // Detail only shown when label leaves room (at least 5 chars)
+  const detailBudget = contentWidth - truncatedLabel.length - 2;
+  const truncatedDetail =
+    detail && detailBudget >= 5 ? truncateLine(detail, detailBudget) : undefined;
 
   return (
     <>
-      <Text color={selected ? pickerAccent : palette.gray}>{row.prefix}</Text>
+      <Text color={selected ? pickerAccent : palette.gray}>{prefix}</Text>
       <Text color={selected ? pickerAccent : (accentColor ?? palette.text)} wrap="truncate-end">
-        {row.text}
+        {truncatedLabel}
       </Text>
-      {row.badgeSuffix ? (
+      {truncatedDetail ? (
+        <Text color={selected ? palette.dim : palette.muted} wrap="truncate-end">
+          {"  "}
+          {truncatedDetail}
+        </Text>
+      ) : null}
+      {badgeSuffix ? (
         <Text color={selected ? pickerAccent : (accentColor ?? palette.gray)} wrap="truncate-end">
-          {row.badgeSuffix}
+          {badgeSuffix}
         </Text>
       ) : null}
     </>
