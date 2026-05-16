@@ -47,6 +47,7 @@ export type PlayerPlaybackEvent =
   | { type: "late-subtitles-attached"; trackCount: number }
   | { type: "player-ready" }
   | { type: "playback-started" }
+  | { type: "playback-progress"; positionSeconds: number; durationSeconds: number }
   | { type: "playback-paused" }
   | { type: "playback-resumed" }
   | {

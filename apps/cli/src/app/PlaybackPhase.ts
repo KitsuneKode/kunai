@@ -2111,6 +2111,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         : stream.subtitle
           ? 1
           : undefined;
+      let latestPresencePositionSeconds = startAt > 0 ? startAt : 0;
+      let latestPresenceDurationSeconds = 0;
       void context.container.presence.updatePlayback({
         mode: stateManager.getState().mode,
         title,
@@ -2118,6 +2120,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         providerId: stateManager.getState().provider,
         stream,
         startedAtMs: Date.now(),
+        positionSeconds: latestPresencePositionSeconds,
         subtitleCount: initialSubtitleCount,
       });
       this.startLateSubtitleResolver({
@@ -2176,7 +2179,22 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerId: stateManager.getState().provider,
               stream,
               startedAtMs: Date.now(),
+              positionSeconds: latestPresencePositionSeconds,
+              durationSeconds: latestPresenceDurationSeconds,
               subtitleCount: undefined,
+            });
+          } else if (event.type === "playback-progress") {
+            latestPresencePositionSeconds = event.positionSeconds;
+            latestPresenceDurationSeconds = event.durationSeconds;
+            context.container.presence.updatePlayback({
+              mode: stateManager.getState().mode,
+              title,
+              episode,
+              providerId: stateManager.getState().provider,
+              stream,
+              startedAtMs: Date.now(),
+              positionSeconds: latestPresencePositionSeconds,
+              durationSeconds: latestPresenceDurationSeconds,
             });
           } else if (event.type === "late-subtitles-attached") {
             context.container.presence.updatePlayback({
@@ -2186,6 +2204,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerId: stateManager.getState().provider,
               stream,
               startedAtMs: Date.now(),
+              positionSeconds: latestPresencePositionSeconds,
+              durationSeconds: latestPresenceDurationSeconds,
               subtitleCount: event.trackCount,
             });
           } else if (event.type === "playback-paused") {
@@ -2196,6 +2216,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerId: stateManager.getState().provider,
               stream,
               startedAtMs: Date.now(),
+              positionSeconds: latestPresencePositionSeconds,
+              durationSeconds: latestPresenceDurationSeconds,
               paused: true,
             });
           } else if (event.type === "playback-resumed") {
@@ -2206,6 +2228,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerId: stateManager.getState().provider,
               stream,
               startedAtMs: Date.now(),
+              positionSeconds: latestPresencePositionSeconds,
+              durationSeconds: latestPresenceDurationSeconds,
             });
           } else if (event.type === "track-changed") {
             // Keep session state aligned when users switch tracks directly in mpv.

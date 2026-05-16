@@ -578,13 +578,22 @@ export function buildDiscordActivity(
       ? `${episodeLabel} · ${activity.providerId}`
       : activity.providerId;
   const subtitleAttached = (activity.subtitleCount ?? 0) > 0;
+  const timeline = buildDiscordPlaybackTimeline(activity);
+  const pausedProgressLabel = formatPlaybackProgressLabel(
+    activity.positionSeconds,
+    activity.durationSeconds,
+  );
 
   if (privacy === "private") {
     return {
       type: 3,
       details: "Watching with Kunai",
-      state: activity.paused ? "Paused" : "Playing",
-      ...(activity.paused ? {} : { startTimestamp: Math.floor(activity.startedAtMs / 1000) }),
+      state: activity.paused
+        ? pausedProgressLabel
+          ? `Paused at ${pausedProgressLabel}`
+          : "Paused"
+        : "Playing",
+      ...(activity.paused ? {} : timeline),
       largeImageKey: "kunai",
       largeImageText: "Kunai",
     };
@@ -593,14 +602,60 @@ export function buildDiscordActivity(
   return {
     type: 3,
     details: activity.title.name,
-    state: stateLine,
-    ...(activity.paused ? {} : { startTimestamp: Math.floor(activity.startedAtMs / 1000) }),
+    state: activity.paused
+      ? pausedProgressLabel
+        ? `${episodeLabel} · Paused at ${pausedProgressLabel}`
+        : `${episodeLabel} · Paused`
+      : stateLine,
+    ...(activity.paused ? {} : timeline),
     largeImageKey: "kunai",
     largeImageText: "Kunai",
     ...(subtitleAttached
       ? { smallImageKey: "subtitles", smallImageText: "Subtitles attached" }
       : {}),
   };
+}
+
+function buildDiscordPlaybackTimeline(
+  activity: Pick<PresencePlaybackActivity, "startedAtMs" | "positionSeconds" | "durationSeconds">,
+): { startTimestamp: number; endTimestamp?: number } {
+  const nowMs = Date.now();
+  const positionSeconds = normalizePresenceSeconds(activity.positionSeconds);
+  const durationSeconds = normalizePresenceSeconds(activity.durationSeconds);
+  const startedAtMs = positionSeconds > 0 ? nowMs - positionSeconds * 1_000 : activity.startedAtMs;
+  const timeline: { startTimestamp: number; endTimestamp?: number } = {
+    startTimestamp: Math.floor(startedAtMs / 1_000),
+  };
+  if (durationSeconds > positionSeconds) {
+    timeline.endTimestamp = Math.floor((startedAtMs + durationSeconds * 1_000) / 1_000);
+  }
+  return timeline;
+}
+
+function formatPlaybackProgressLabel(
+  positionSeconds: number | undefined,
+  durationSeconds: number | undefined,
+): string | null {
+  const position = normalizePresenceSeconds(positionSeconds);
+  if (position <= 0) return null;
+  const duration = normalizePresenceSeconds(durationSeconds);
+  if (duration > position) return `${formatMediaTime(position)} / ${formatMediaTime(duration)}`;
+  return formatMediaTime(position);
+}
+
+function normalizePresenceSeconds(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function formatMediaTime(seconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 export function describePresenceConfiguration(

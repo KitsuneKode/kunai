@@ -79,6 +79,49 @@ describe("PresenceServiceImpl", () => {
     });
   });
 
+  test("builds Discord media timestamps from playback progress", () => {
+    const realDateNow = Date.now;
+    Date.now = () => 1_000_000;
+    try {
+      const activity = {
+        mode: "series" as const,
+        title: { id: "1", type: "series" as const, name: "Breaking Bad" },
+        episode: { season: 4, episode: 9 },
+        providerId: "vidking",
+        startedAtMs: 1000,
+        positionSeconds: 120,
+        durationSeconds: 1500,
+      };
+
+      expect(buildDiscordActivity(activity, "full")).toMatchObject({
+        startTimestamp: 880,
+        endTimestamp: 2380,
+      });
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+
+  test("shows paused progress without an advancing Discord timer", () => {
+    const activity = {
+      mode: "series" as const,
+      title: { id: "1", type: "series" as const, name: "Breaking Bad" },
+      episode: { season: 4, episode: 9 },
+      providerId: "vidking",
+      startedAtMs: 1000,
+      positionSeconds: 734,
+      durationSeconds: 1440,
+      paused: true,
+    };
+
+    expect(buildDiscordActivity(activity, "full")).toMatchObject({
+      details: "Breaking Bad",
+      state: "Season 4, Episode 9 · Paused at 12:14 / 24:00",
+    });
+    expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("startTimestamp");
+    expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("endTimestamp");
+  });
+
   test("describes effective discord client id source", () => {
     expect(
       describePresenceConfiguration(createConfig({ presenceProvider: "off" }), {

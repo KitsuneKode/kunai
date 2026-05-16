@@ -91,6 +91,9 @@ export async function launchMpv(opts: {
   let playerReadyNotified = false;
   let playbackStartedNotified = false;
   let currentPositionSeconds = 0;
+  let lastPlaybackProgressEventAtMs = 0;
+  let lastPlaybackProgressPositionSeconds = -1;
+  let lastPlaybackProgressDurationSeconds = 0;
   let mutableTiming = opts.timing ?? null;
   const watchdog = createPlaybackWatchdog(emitPlaybackEvent);
   const skippedSegments = new Set<string>();
@@ -111,6 +114,31 @@ export async function launchMpv(opts: {
     if (playbackStartedNotified) return;
     playbackStartedNotified = true;
     emitPlaybackEvent({ type: "playback-started" });
+  };
+  const maybeEmitPlaybackProgress = (observedAt: number) => {
+    const sample = telemetry.latestIpcSample;
+    if (!sample || sample.positionSeconds <= 0) return;
+    const durationChanged =
+      sample.durationSeconds > 0 &&
+      Math.abs(sample.durationSeconds - lastPlaybackProgressDurationSeconds) >= 1;
+    const positionChanged =
+      Math.abs(sample.positionSeconds - lastPlaybackProgressPositionSeconds) >= 15;
+    if (
+      lastPlaybackProgressEventAtMs > 0 &&
+      !durationChanged &&
+      !positionChanged &&
+      observedAt - lastPlaybackProgressEventAtMs < 15_000
+    ) {
+      return;
+    }
+    lastPlaybackProgressEventAtMs = observedAt;
+    lastPlaybackProgressPositionSeconds = sample.positionSeconds;
+    lastPlaybackProgressDurationSeconds = sample.durationSeconds;
+    emitPlaybackEvent({
+      type: "playback-progress",
+      positionSeconds: sample.positionSeconds,
+      durationSeconds: sample.durationSeconds,
+    });
   };
   const trySkipSegment = (automatic: boolean) => {
     const activeSkip = findActivePlaybackSkip(mutableTiming, currentPositionSeconds, skipConfig);
@@ -189,6 +217,7 @@ export async function launchMpv(opts: {
           if (value > 0) {
             notifyPlaybackStarted();
           }
+          maybeEmitPlaybackProgress(observedAt);
           trySkipSegment(true);
         }
       },

@@ -20,6 +20,8 @@ export type PresencePlaybackActivity = {
   readonly providerId: string;
   readonly stream?: StreamInfo | null;
   readonly startedAtMs: number;
+  readonly positionSeconds?: number;
+  readonly durationSeconds?: number;
   readonly paused?: boolean;
   readonly subtitleCount?: number;
 };
