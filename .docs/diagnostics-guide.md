@@ -46,9 +46,12 @@ For playback recovery debugging, prefer stable operation names over free-form lo
 - `playback.recover.requested`: recover/refetch same playback intent after failure evidence.
 - `playback.refresh.requested`: advanced fresh-source request.
 - `playback.refresh.cooldown`: repeated voluntary refresh was rate-limited.
+- `provider.resolve.timeline`: provider attempts, retries, and fallback outcome for one resolve.
 - `resolve.cache.hit`, `resolve.cache.miss`, `resolve.cache.stale`: cache decision.
 - `resolve.refetch.failed.cached-fallback`: no fresher source was found, so Kunai kept the current cached stream.
 - `download.artifact.validated`: a completed local download passed artifact validation and persisted local size/duration metadata when available.
+- `presence.clear.failed`: Discord presence did not clear cleanly during shutdown or disconnect.
+- `storage.maintenance.startup`: startup storage maintenance pruned disposable cache data and optimized databases.
 
 Support bundles include a `correlation` summary listing the IDs seen in the
 exported events. Use those IDs to join provider fallback, cache checks, mpv

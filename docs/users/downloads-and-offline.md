@@ -48,7 +48,11 @@ repair missing local files, or delete a whole local title after confirmation.
 - Kunai does not silently delete completed artifacts.
 - Cleanup candidates are surfaced explicitly.
 - Re-download uses the saved download intent when available.
+- Opening the offline library uses local SQLite/filesystem facts and must not trigger provider calls.
+- Artifact validation records local size and duration when available, which makes offline rows easier to inspect.
 - Delete actions ask for confirmation before removing a whole offline title.
 - Network handoff stays explicit: if the local shelf is exhausted, Kunai points you toward online search instead of silently switching modes.
 
 More design detail lives in [`../../.docs/download-offline-onboarding.md`](../../.docs/download-offline-onboarding.md).
+Continue Watching behavior is covered in
+[`continue-watching-and-new-episodes.mdx`](./continue-watching-and-new-episodes.mdx).

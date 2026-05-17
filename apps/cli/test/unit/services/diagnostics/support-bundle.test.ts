@@ -65,6 +65,8 @@ describe("DiagnosticsSupportBundle", () => {
     expect(bundle.sections.download).toMatchObject({
       tone: "neutral",
       latestOperation: "download.artifact.validated",
+      latestOperationSummary: "A completed download passed local artifact validation.",
+      latestUserAction: "Open /downloads or /library if the artifact later disappears.",
     });
   });
 });

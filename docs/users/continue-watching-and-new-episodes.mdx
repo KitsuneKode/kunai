@@ -1,0 +1,62 @@
+# Continue Watching And New Episodes
+
+Kunai uses local watch history as the source of truth for Continue Watching. It
+does not overwrite completed history just because a new episode appears.
+
+## Continue Watching
+
+If an episode is unfinished, Continue Watching should resume that episode.
+
+Example:
+
+- Episode 7 is partially watched.
+- Episode 6 was completed later during a rewatch.
+- Continue Watching should still keep the unfinished Episode 7 reachable.
+
+Kunai stores the completed and unfinished facts separately, then chooses the
+least surprising continue target.
+
+## Completed Latest Episode
+
+When the latest watched episode is complete, Kunai can use cached release data
+to explain what comes next:
+
+- if the next episode is released, it can be shown as a new episode candidate.
+- if the next episode is scheduled but unreleased, Kunai should say it is
+  upcoming instead of pretending it is playable.
+- if release data is unavailable, Kunai should stay calm and keep the completed
+  history intact.
+
+Provider availability is checked only when the user chooses playback.
+
+## Notifications
+
+New episode notifications should be opt-in through followed titles or explicit
+interest signals. Muted titles stay quiet.
+
+Notification actions should not hijack active playback:
+
+- queue new episode
+- open details
+- download after confirmation
+- dismiss
+
+If Kunai crashes with queued items, queue recovery should restore pending items
+only after the user chooses to restore them.
+
+## Offline Copies
+
+If an exact local copy exists for the continue target, Kunai can surface it as a
+local option. It should not silently switch from online to offline playback for
+normal search results.
+
+Offline rows may show:
+
+- duration
+- resume timestamp
+- percent watched
+- watched state
+- missing or invalid artifact state
+
+These are local facts from SQLite and the filesystem. Opening the offline
+library should not trigger provider calls.

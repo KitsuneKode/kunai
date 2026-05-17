@@ -17,6 +17,8 @@ Diagnostics are local-first. Kunai records enough context to explain failures wi
 - subtitle evidence
 - playback and mpv runtime events
 - cache and stream health events
+- presence and Discord clear/connect failures
+- download artifact validation and queue failures
 - update checks and failures
 
 ## Good Smoke Tests
@@ -42,3 +44,6 @@ not as a final error. Use `/diagnostics` or `/export-diagnostics` to inspect the
 Diagnostics should redact stream URLs, sensitive headers, and local home paths before export. Review exported files before sharing them publicly.
 
 More detail lives in [`../../.docs/diagnostics-guide.md`](../../.docs/diagnostics-guide.md).
+
+For user-facing reliability expectations, see
+[`reliability-and-privacy.mdx`](./reliability-and-privacy.mdx).

@@ -1,4 +1,5 @@
 import type { DiagnosticEvent } from "./diagnostic-event";
+import { getDiagnosticOperation } from "./operation-taxonomy";
 import { redactDiagnosticValue } from "./redaction";
 
 export type DiagnosticsSupportBundle = {
@@ -34,6 +35,8 @@ export type DiagnosticsBundleSection = {
   readonly tone: "neutral" | "warning" | "issue";
   readonly eventCount: number;
   readonly latestOperation?: string;
+  readonly latestOperationSummary?: string;
+  readonly latestUserAction?: string;
   readonly latestMessage?: string;
 };
 
@@ -130,6 +133,8 @@ function buildBundleSections(
   for (const name of sectionNames) {
     const matching = events.filter((event) => event.category === name);
     if (matching.length === 0) continue;
+    const latest = matching.at(-1);
+    const operation = latest ? getDiagnosticOperation(latest.operation) : undefined;
     sections[name] = {
       tone: matching.some((event) => event.level === "error")
         ? "issue"
@@ -137,8 +142,10 @@ function buildBundleSections(
           ? "warning"
           : "neutral",
       eventCount: matching.length,
-      latestOperation: matching.at(-1)?.operation,
-      latestMessage: matching.at(-1)?.message,
+      latestOperation: latest?.operation,
+      latestOperationSummary: operation?.summary,
+      latestUserAction: operation?.userAction,
+      latestMessage: latest?.message,
     };
   }
   return sections;

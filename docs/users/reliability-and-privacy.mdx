@@ -1,0 +1,80 @@
+# Reliability And Privacy
+
+Kunai is designed to keep playback useful when providers, networks, Discord, or
+local files behave imperfectly. The default rule is simple: preserve the user's
+current context, keep durable user data safe, and make failures explainable.
+
+## What Kunai Protects
+
+- Watch history, lists, playlists, queue sessions, notifications, followed
+  titles, and completed download records are durable user data.
+- Stream URLs, provider caches, recommendation caches, release schedules,
+  source inventories, provider health, and trace rows are disposable cache data.
+- Startup maintenance may prune expired cache rows. It must not delete durable
+  history, playlists, download jobs, lists, follows, or notifications.
+
+## Recovery Behavior
+
+Playback recovery is conservative:
+
+- `recover` refreshes the current playback intent after failure evidence.
+- `replay` or `restart` starts the current episode from the beginning.
+- a failed fresh lookup can keep the current cached stream if it is still usable.
+- provider fallback should explain what failed and what recovered.
+
+Queue recovery is explicit. If a previous session crashed with pending queue
+items, Kunai can show a recoverable queue notice. Restoring that notice moves
+pending items into the current session, but it does not autoplay them.
+
+## Offline And Downloads
+
+Downloads stay local-first:
+
+- `/downloads` manages queued, running, failed, and retryable jobs.
+- `/library` and `/offline` show completed local media.
+- completed artifacts are validated before Kunai marks them ready.
+- when `ffprobe` is available, Kunai stores local duration metadata after
+  validation.
+- offline rows may show duration, resume position, percent watched, and watched
+  state from local history.
+
+Opening the offline library must not call providers. Repair, re-download, and
+online playback are explicit user actions.
+
+## Diagnostics Privacy
+
+Diagnostics stay local unless you export or share them. Exported bundles are
+redacted and should not include raw stream URLs, cookies, authorization headers,
+signed query values, or private home-directory paths.
+
+The fastest way to inspect reliability state is:
+
+```text
+/diagnostics
+```
+
+For a shareable local bundle:
+
+```text
+/export-diagnostics
+```
+
+Support bundles include category sections such as playback, provider, cache,
+presence, download, and offline. Each section includes the latest operation so a
+report can show whether a provider fallback happened, Discord failed to clear,
+or a download artifact was validated.
+
+## Release Confidence
+
+Before release candidates, deterministic checks should pass first:
+
+```sh
+bun run fmt
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+```
+
+Live provider, Discord, and real mpv checks are still manual by design. They are
+provider and machine reality checks, not default CI.

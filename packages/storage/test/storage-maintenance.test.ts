@@ -43,7 +43,7 @@ test("cache maintenance prunes disposable expired rows without touching durable 
     resolveTraces: 1,
     providerHealth: 1,
   });
-  expect(count(dataDb, "history_progress")).toBe(1);
+  expect(count(dataDb, "history_progress")).toBe(2);
   expect(count(dataDb, "list_items")).toBe(1);
   expect(count(dataDb, "download_jobs")).toBe(1);
   expect(count(cacheDb, "stream_cache")).toBe(1);
@@ -79,6 +79,15 @@ function seedDurableData(db: KunaiDatabase): void {
       VALUES ('series:tmdb:1:1:1', 'tmdb:1', 'series', 'Example', 1, 1, 120, 1200, 0, 'vidking', ?, ?)
     `,
   ).run("2026-05-16T00:00:00.000Z", "2026-05-16T00:00:00.000Z");
+  db.query(
+    `
+      INSERT INTO history_progress (
+        key, title_id, media_kind, title, season, episode, position_seconds,
+        duration_seconds, completed, provider_id, updated_at, created_at
+      )
+      VALUES ('series:tmdb:old:1:1', 'tmdb:old', 'series', 'Old But Durable', 1, 1, 1200, 1200, 1, 'vidking', ?, ?)
+    `,
+  ).run("2025-01-01T00:00:00.000Z", "2025-01-01T00:00:00.000Z");
   db.query(
     `
       INSERT INTO list_items (
