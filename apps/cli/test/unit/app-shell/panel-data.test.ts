@@ -212,6 +212,54 @@ describe("panel-data", () => {
     expect(lines.find((line) => line.label === "Provider timeline")?.tone).toBe("success");
   });
 
+  test("buildDiagnosticsPanelLines puts plain-language health summary before technical sections", () => {
+    const lines = buildDiagnosticsPanelLines({
+      state: {
+        ...createInitialState("vidking", "allanime", {
+          anime: { audio: "original", subtitle: "en" },
+          series: { audio: "original", subtitle: "none" },
+          movie: { audio: "original", subtitle: "en" },
+        }),
+        playbackStatus: "stalled",
+      },
+      recentEvents: [
+        {
+          timestamp: 1,
+          level: "warn",
+          category: "cache",
+          operation: "resolve.refetch.failed.cached-fallback",
+          message: "Playback resolve fresh-source-failed-using-cache",
+        },
+        {
+          timestamp: 2,
+          level: "warn",
+          category: "playback",
+          operation: "playback.refresh.cooldown",
+          message: "Source was refreshed recently. Continuing current stream.",
+        },
+      ],
+      downloadSummary: { active: 0, completed: 2, failed: 1 },
+      presenceSnapshot: {
+        provider: "discord",
+        status: "ready",
+        privacy: "full",
+        clientIdSource: "config",
+        canConnect: true,
+        detail: "connected",
+      },
+    });
+
+    expect(lines[0]).toEqual({ label: "─── Health", detail: "", tone: "info" });
+    expect(lines.find((line) => line.label === "Playback")?.detail).toContain("Needs attention");
+    expect(lines.find((line) => line.label === "Cache")?.detail).toContain(
+      "kept current playable stream",
+    );
+    expect(lines.find((line) => line.label === "Downloads")?.tone).toBe("warning");
+    expect(lines.findIndex((line) => line.label === "Playback")).toBeLessThan(
+      lines.findIndex((line) => line.label === "─── Session"),
+    );
+  });
+
   test("buildHistoryPanelLines sorts newest entries first", () => {
     const lines = buildHistoryPanelLines([
       [

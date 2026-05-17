@@ -83,6 +83,10 @@ export type PlaybackResolveEvent =
       readonly reason: RecoveryPolicyDecision["reason"];
       readonly recoveryMode: RecoveryMode;
       readonly userVisible: boolean;
+    }
+  | {
+      readonly type: "fresh-source-failed-using-cache";
+      readonly providerId: string;
     };
 
 export type PlaybackResolveInput = {
@@ -96,6 +100,8 @@ export type PlaybackResolveInput = {
   readonly signal: AbortSignal;
   readonly prefetchedStream?: StreamInfo | null;
   readonly forceHealthCheck?: boolean;
+  readonly preferFreshStream?: boolean;
+  readonly preserveCachedStreamOnFreshFailure?: boolean;
   readonly recoveryMode?: RecoveryMode;
   readonly correlation?: DiagnosticCorrelation;
   readonly onFeedback?: (feedback: PlaybackResolveFeedback) => void;
@@ -144,7 +150,8 @@ export class PlaybackResolveService {
 
     const cacheKey = this.buildCacheKey(input, input.providerId);
     const cachedStream = await this.deps.cacheStore.get(cacheKey);
-    if (cachedStream) {
+    let cacheBecameStale = false;
+    if (cachedStream && input.preferFreshStream !== true) {
       const health = await this.checkCachedStreamHealth(
         cachedStream,
         input.forceHealthCheck === true,
@@ -164,6 +171,7 @@ export class PlaybackResolveService {
         if (!health.healthy) {
           await this.deps.cacheStore.delete(cacheKey);
           input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
+          cacheBecameStale = true;
           // Fall through to refetch below
         } else {
           input.onEvent?.({ type: "cache-hit-validated", providerId: input.providerId });
@@ -187,7 +195,9 @@ export class PlaybackResolveService {
       }
     }
 
-    input.onEvent?.({ type: "cache-miss", providerId: input.providerId });
+    if (!cachedStream || cacheBecameStale) {
+      input.onEvent?.({ type: "cache-miss", providerId: input.providerId });
+    }
 
     const resolveInput = streamRequestToResolveInput(
       {
@@ -294,6 +304,23 @@ export class PlaybackResolveService {
           cacheProvenance: cachedStream ? "refetched" : "fresh",
         };
       }
+    }
+
+    if (cachedStream && input.preserveCachedStreamOnFreshFailure === true) {
+      input.onEvent?.({ type: "fresh-source-failed-using-cache", providerId: input.providerId });
+      return {
+        stream: { ...cachedStream, cacheProvenance: "cached" },
+        providerId: input.providerId,
+        attempts: engineResult.attempts.map((a) => ({
+          providerId: a.providerId,
+          stream: null,
+          result: a.result,
+          failure: a.failure,
+        })),
+        providerTimeline,
+        cacheStatus: "hit",
+        cacheProvenance: "cached",
+      };
     }
 
     return {

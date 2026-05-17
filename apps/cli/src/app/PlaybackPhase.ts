@@ -57,6 +57,11 @@ import {
   streamSelectionFromSource,
   streamSelectionFromStream,
 } from "@/app/source-quality";
+import {
+  createSourceRefreshCooldownState,
+  resolveSourceRefreshDecision,
+  type SourceRefreshAction,
+} from "@/app/source-refresh-policy";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import {
@@ -368,6 +373,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       autoNextEnabled: config.autoNext,
     });
     let preferredStreamSelection = emptyStreamSelectionIntent();
+    const sourceRefreshCooldown = createSourceRefreshCooldownState();
+    let pendingSourceRefreshAction: SourceRefreshAction | null = null;
     let autoDownloadSeasonQueued = false;
 
     try {
@@ -582,16 +589,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             note: "Esc cancels this resolve and returns to results",
           });
 
-          // Use a prefetched stream (prepared during the previous episode's near-EOF
-          // window) or fall back to a full provider resolve.
-          const consumedPrefetch = pendingPrefetchedStream;
-          const consumedPrefetchProviderId = pendingPrefetchedProviderId;
-          pendingPrefetchedStream = null;
-          pendingPrefetchedProviderId = null;
-
-          let stream: StreamInfo | null = consumedPrefetch ?? null;
-          let resolvedProviderId = currentProvider.metadata.id;
-          let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
           const providerAttemptId = createCorrelationId("provider");
           const playbackCorrelation: DiagnosticCorrelation = {
             sessionId: container.sessionId,
@@ -599,6 +596,74 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             providerAttemptId,
             traceId: providerAttemptId,
           };
+          const sourceRefreshAction = pendingSourceRefreshAction;
+          pendingSourceRefreshAction = null;
+          const sourceRefreshDecision = sourceRefreshAction
+            ? resolveSourceRefreshDecision(sourceRefreshCooldown, {
+                action: sourceRefreshAction,
+                scope: {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  providerId: currentProvider.metadata.id,
+                  sourceId: preferredStreamSelection.sourceId,
+                  streamId: preferredStreamSelection.streamId,
+                },
+                now: new Date(),
+                cooldownMs: 30_000,
+              })
+            : null;
+
+          if (sourceRefreshDecision?.kind === "cooldown") {
+            this.updatePlaybackFeedback(context, {
+              detail: sourceRefreshDecision.message,
+              note: "The current stream can be reused without another provider lookup.",
+            });
+            diagnosticsStore.record({
+              ...playbackCorrelation,
+              category: "playback",
+              operation: "playback.refresh.cooldown",
+              message: sourceRefreshDecision.message,
+              providerId: currentProvider.metadata.id,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              context: { remainingMs: sourceRefreshDecision.remainingMs },
+            });
+          } else if (sourceRefreshDecision) {
+            diagnosticsStore.record({
+              ...playbackCorrelation,
+              category: "playback",
+              operation:
+                sourceRefreshDecision.kind === "recover"
+                  ? "playback.recover.requested"
+                  : "playback.refresh.requested",
+              message:
+                sourceRefreshDecision.kind === "recover"
+                  ? "Recovering current provider source"
+                  : "Refreshing current provider source",
+              providerId: currentProvider.metadata.id,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+            });
+          }
+
+          // Use a prefetched stream (prepared during the previous episode's near-EOF
+          // window) or fall back to a full provider resolve. Explicit refresh/recover
+          // bypasses prefetch so it can ask the provider for a fresh source.
+          const consumedPrefetch = sourceRefreshDecision ? null : pendingPrefetchedStream;
+          const consumedPrefetchProviderId = sourceRefreshDecision
+            ? null
+            : pendingPrefetchedProviderId;
+          if (!sourceRefreshDecision) {
+            pendingPrefetchedStream = null;
+            pendingPrefetchedProviderId = null;
+          }
+
+          let stream: StreamInfo | null = consumedPrefetch ?? null;
+          let resolvedProviderId = currentProvider.metadata.id;
+          let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
 
           const resolveTrace = createResolveTraceStub({
             title,
@@ -654,7 +719,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Check in-memory cache for recently played episodes (backward navigation).
           // This lets P-navigation reuse the exact same StreamInfo without any
           // provider resolve, cache lookup, or health check.
-          if (!stream) {
+          if (!stream && !sourceRefreshDecision) {
             const recentKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
             const recent = recentEpisodeStreams.get(recentKey);
             if (recent) {
@@ -674,10 +739,42 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           if (!stream) {
+            if (sourceRefreshDecision?.kind === "recover") {
+              const refreshCacheKey = buildApiStreamResolveCacheKey({
+                providerId: currentProvider.metadata.id,
+                title,
+                episode: currentEpisode,
+                mode: stateManager.getState().mode,
+                audioPreference:
+                  stateManager.getState().mode === "anime"
+                    ? config.animeLanguageProfile.audio
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.audio
+                      : config.seriesLanguageProfile.audio,
+                subtitlePreference:
+                  stateManager.getState().mode === "anime"
+                    ? config.animeLanguageProfile.subtitle
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.subtitle
+                      : config.seriesLanguageProfile.subtitle,
+                qualityPreference:
+                  stateManager.getState().mode === "anime"
+                    ? config.animeLanguageProfile.quality
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.quality
+                      : config.seriesLanguageProfile.quality,
+              });
+              try {
+                await cacheStore.delete(refreshCacheKey);
+              } catch {
+                // best-effort; a failed cache delete should not block recovery
+              }
+            }
             const playbackResolver = new PlaybackResolveCoordinator({
               engine,
               cacheStore,
               providerHealth: container.providerHealth,
+              diagnostics: container.diagnosticsService,
             });
             const resolveResult = await playbackResolver.resolve({
               title,
@@ -703,6 +800,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     ? config.movieLanguageProfile.quality
                     : config.seriesLanguageProfile.quality,
               recoveryMode: config.recoveryMode,
+              preferFreshStream: sourceRefreshDecision?.kind === "refresh",
+              preserveCachedStreamOnFreshFailure: sourceRefreshDecision?.kind === "refresh",
               signal: resolveController.signal,
               correlation: playbackCorrelation,
               onFeedback: (feedback) => this.updatePlaybackFeedback(context, feedback),
@@ -727,6 +826,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                       season: currentEpisode.season,
                       episode: currentEpisode.episode,
                     },
+                  });
+                  return;
+                }
+
+                if (event.type === "fresh-source-failed-using-cache") {
+                  this.updatePlaybackFeedback(context, {
+                    detail: "No fresher source found. Continuing current stream.",
+                    note: "The cached stream stayed available, so playback can resume.",
                   });
                   return;
                 }
@@ -1278,44 +1385,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
               { suppressResumePrompt: true },
             );
-            const refreshCacheKey = buildApiStreamResolveCacheKey({
-              providerId: resolvedProviderId,
-              title,
-              episode: currentEpisode,
-              mode: stateManager.getState().mode,
-              audioPreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.audio
-                  : title.type === "movie"
-                    ? config.movieLanguageProfile.audio
-                    : config.seriesLanguageProfile.audio,
-              subtitlePreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.subtitle
-                  : title.type === "movie"
-                    ? config.movieLanguageProfile.subtitle
-                    : config.seriesLanguageProfile.subtitle,
-              qualityPreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.quality
-                  : title.type === "movie"
-                    ? config.movieLanguageProfile.quality
-                    : config.seriesLanguageProfile.quality,
-            });
-            try {
-              await cacheStore.delete(refreshCacheKey);
-            } catch {
-              // best-effort
-            }
+            pendingSourceRefreshAction =
+              result.suspectedDeadStream === true || playbackControlAction === "recover"
+                ? "recover"
+                : "refresh";
             diagnosticsStore.record({
               category: "playback",
-              message: "Refreshing current provider source",
+              message:
+                pendingSourceRefreshAction === "recover"
+                  ? "Recovery requested for current provider source"
+                  : "Refresh requested for current provider source",
               context: {
                 provider: resolvedProviderId,
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
                 resumeSeconds: pendingStart.startAt,
+                action: pendingSourceRefreshAction,
               },
             });
             continue;

@@ -319,6 +319,60 @@ test("PlaybackResolveService force-validates fresh cached stream after suspected
   expect(result.stream?.url).toBe(fallbackStream.url);
 });
 
+test("PlaybackResolveService can try a fresh source without deleting a playable cached fallback", async () => {
+  const cachedStream = {
+    ...stream,
+    timestamp: Date.now(),
+    url: "https://cdn.example/current-playable.m3u8",
+  };
+  const cache = createMemoryCache(cachedStream);
+  let providerCalled = false;
+  const engine = createMockEngine(
+    {
+      result: null,
+      providerId: null,
+      attempts: [
+        {
+          providerId: "vidking" as ProviderId,
+          failure: {
+            providerId: "vidking" as ProviderId,
+            code: "not-found",
+            message: "No fresher source",
+            retryable: true,
+            at: new Date().toISOString(),
+          },
+        },
+      ],
+    },
+    {
+      onCandidateIds: () => {
+        providerCalled = true;
+      },
+    },
+  );
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const events: string[] = [];
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    preferFreshStream: true,
+    preserveCachedStreamOnFreshFailure: true,
+    onEvent: (e) => events.push(e.type),
+  });
+
+  expect(providerCalled).toBe(true);
+  expect(events).toContain("fresh-source-failed-using-cache");
+  expect(result.cacheStatus).toBe("hit");
+  expect(result.cacheProvenance).toBe("cached");
+  expect(result.stream?.url).toBe(cachedStream.url);
+});
+
 test("PlaybackResolveService validates stale cached stream and returns it when healthy", async () => {
   const staleStream = {
     ...stream,

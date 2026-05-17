@@ -83,12 +83,20 @@ export class PlaybackResolveCoordinator {
       event.type === "cache-hit" ||
       event.type === "cache-miss" ||
       event.type === "cache-stale" ||
-      event.type === "cache-hit-validated"
+      event.type === "cache-hit-validated" ||
+      event.type === "fresh-source-failed-using-cache"
     ) {
+      const operationByType = {
+        "cache-hit": "resolve.cache.hit",
+        "cache-miss": "resolve.cache.miss",
+        "cache-stale": "resolve.cache.stale",
+        "cache-hit-validated": "resolve.cache.hit.validated",
+        "fresh-source-failed-using-cache": "resolve.refetch.failed.cached-fallback",
+      } as const;
       this.deps.diagnostics.record({
         ...input.correlation,
         category: "cache",
-        operation: "playback-resolve",
+        operation: operationByType[event.type],
         message: `Playback resolve ${event.type}`,
         providerId: event.providerId,
         titleId: input.title.id,

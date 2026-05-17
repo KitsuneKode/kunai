@@ -59,6 +59,7 @@ import {
 } from "./services/catalog/CatalogScheduleService";
 import { ResultEnrichmentService } from "./services/catalog/ResultEnrichmentService";
 import { TimelineService } from "./services/catalog/TimelineService";
+import { ContinuationProjectionService } from "./services/continuation/ContinuationProjectionService";
 import { createCorrelationId } from "./services/diagnostics/correlation";
 import {
   buildDebugSessionInstructions,
@@ -79,6 +80,7 @@ import { ConfigStoreImpl } from "./services/persistence/ConfigStoreImpl";
 import type { HistoryStore } from "./services/persistence/HistoryStore";
 import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
 import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
+import { StorageMaintenanceService } from "./services/persistence/StorageMaintenanceService";
 import { SyncTokenStore } from "./services/persistence/SyncTokenStore";
 import { MediaTrackService } from "./services/playback/MediaTrackService";
 import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
@@ -132,6 +134,7 @@ export interface Container {
   readonly cacheStore: CacheStore;
   readonly diagnosticsStore: DiagnosticsStore;
   readonly diagnosticsService: DiagnosticsService;
+  readonly storageMaintenance: StorageMaintenanceService;
   readonly sourceInventory: SourceInventoryService;
   readonly mediaTrackService: MediaTrackService;
   readonly providerHealth: ProviderHealthRepository;
@@ -160,6 +163,7 @@ export interface Container {
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
   readonly syncService: SyncService;
+  readonly continuationProjectionService: ContinuationProjectionService;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;
@@ -262,6 +266,11 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     debug,
     traceReporter,
   });
+  const storageMaintenance = new StorageMaintenanceService({
+    dataDb,
+    cacheDb,
+    diagnosticsStore,
+  });
 
   // Lists, playlist, stats, sync
   const listService = new ListService(listRepository);
@@ -347,6 +356,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     downloadService,
     historyStore,
   });
+  const continuationProjectionService = new ContinuationProjectionService();
 
   const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
 
@@ -392,6 +402,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     cacheStore,
     diagnosticsStore,
     diagnosticsService,
+    storageMaintenance,
     sourceInventory,
     mediaTrackService,
     providerHealth,
@@ -412,6 +423,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     statsFormatter,
     syncTokenStore,
     syncService,
+    continuationProjectionService,
     shellChrome,
     capabilitySnapshot,
     debugTracePath,

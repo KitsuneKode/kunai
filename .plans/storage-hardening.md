@@ -30,6 +30,17 @@ kunai-cache.sqlite
 
 Config can remain JSON for now because it is low-churn and user-facing. Remote sync is not part of the current CLI phase.
 
+## Maintenance Contract
+
+Startup storage maintenance is implemented as a conservative best-effort pass:
+
+- data DB: `PRAGMA optimize` only by default
+- cache DB: prune expired stream/source/recommendation/schedule cache rows
+- cache DB: cap resolve traces and prune stale provider-health cache
+- both DBs: optional passive WAL checkpoint when explicitly requested by maintenance options
+
+Automatic maintenance must never delete durable user facts: `history_progress`, `lists`, `list_items`, completed `download_jobs`, config JSON, provider overrides, or sync tokens. Do not run automatic `VACUUM`; reserve that for explicit manual tooling after measuring bloat and only when playback is idle.
+
 ## Why SQLite Now
 
 JSON is acceptable for tiny single-process state, but Kunai is being remodeled before release. SQLite gives the CLI a better foundation now:

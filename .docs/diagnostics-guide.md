@@ -22,6 +22,8 @@ rg "scraper|provider|subtitle|wyzie|m3u8|playback|cache" debug.log
 
 Open the in-app diagnostics panel with `/diagnostics` to see the current session snapshot and recent runtime events without leaving the shell.
 
+The diagnostics panel starts with a plain-language health summary for Playback, Provider, Cache, Discord, Downloads, and Network. Each row should say whether Kunai is OK, needs attention, or failed, then give one short reason and action. The detailed provider timeline, cache decisions, mpv events, and recent event log stay below the summary for developer debugging.
+
 Export a redacted support bundle with `/export-diagnostics`. The exported JSON includes app/runtime metadata, startup capability checks, and the bounded diagnostics event buffer. Stream URLs, auth headers, cookies, tokens, and local home-directory prefixes are redacted before writing the file.
 
 For long local debugging sessions, use structured JSONL traces:
@@ -38,6 +40,14 @@ Diagnostic events can carry stable correlation fields:
 - `playbackCycleId`: one title/episode playback cycle.
 - `providerAttemptId`: one provider resolve timeline for that cycle.
 - `traceId`: the provider timeline or lower-level trace identifier when present.
+
+For playback recovery debugging, prefer stable operation names over free-form log text:
+
+- `playback.recover.requested`: recover/refetch same playback intent after failure evidence.
+- `playback.refresh.requested`: advanced fresh-source request.
+- `playback.refresh.cooldown`: repeated voluntary refresh was rate-limited.
+- `resolve.cache.hit`, `resolve.cache.miss`, `resolve.cache.stale`: cache decision.
+- `resolve.refetch.failed.cached-fallback`: no fresher source was found, so Kunai kept the current cached stream.
 
 Support bundles include a `correlation` summary listing the IDs seen in the
 exported events. Use those IDs to join provider fallback, cache checks, mpv

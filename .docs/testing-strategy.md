@@ -197,6 +197,8 @@ Prefer dossier-backed fixtures over hand-built guesses.
 
 - Fire-and-forget async work must be routed through a background-task guard or have a local cleanup-only comment.
 - Recoverable cache/provider/presence failures should record redacted diagnostics while preserving playback when possible.
+- Source refresh tests must prove that voluntary refresh cooldown does not block broken-stream recovery, and that a failed fresh lookup can keep the current cached stream instead of stalling playback.
+- Storage maintenance tests must seed durable user tables and disposable cache tables together, then prove automatic maintenance only prunes cache-class rows.
 - Fake mpv IPC lifecycle tests cover app-side orchestration only; keep one manual real-mpv smoke for release candidates that touch playback.
 - Live provider and Discord smokes are opt-in and must not be added to `bun run test`, CI, or Husky.
 

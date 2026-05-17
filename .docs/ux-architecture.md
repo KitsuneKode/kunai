@@ -154,6 +154,15 @@ Overlay behavior should stay disciplined:
 - diagnostics should be accessible to users, not hidden behind debug-only knowledge
 - first-run dependency issues should surface inside the shell before escalating to a dedicated setup overlay
 
+Playback command vocabulary is intentionally narrow:
+
+- `restart` / `replay` is local playback control. It starts the same episode from the beginning and should not force provider refetch by default.
+- `recover` is repair. It treats the current stream as suspect, refetches the same playback intent, and resumes near the last trusted position before trying fallback.
+- `refresh source` is an advanced diagnostics action. It may try a fresh provider resolve, but it must preserve the current playable cached stream when no better source is found.
+- `fallback` changes source/provider after recovery fails or when the user explicitly asks for another provider.
+
+Short-lived playback feedback should use mpv OSD plus shell status text for non-blocking outcomes such as `No fresher source found. Continuing current stream.` Full loading or error screens are for broken playback, not healthy-playback refresh misses.
+
 ## Settings Behavior
 
 - prefer staged edits with `Save` and `Cancel`
@@ -184,6 +193,7 @@ Show compact always-visible state for:
 Keep deeper detail in a diagnostics overlay:
 
 - cache / prefetch / fresh scrape / API path
+- source refresh / recover / fallback decisions
 - subtitle source and selected track
 - language switch path, especially whether the request was an mpv soft-subtitle switch, cached stream reload, or provider lookup
 - scrape timing

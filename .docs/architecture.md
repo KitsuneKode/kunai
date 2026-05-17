@@ -171,6 +171,14 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 The SQLite storage model is described in [.plans/storage-hardening.md](../.plans/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
 
+Automatic storage maintenance is conservative:
+
+- it may prune expired `stream_cache`, `source_inventory`, `recommendation_cache`, and `schedule_cache` rows
+- it may cap `resolve_traces` and age out stale provider-health cache
+- it may run `PRAGMA optimize` and an explicit passive WAL checkpoint
+- it must not run automatic `VACUUM`
+- it must not delete user-owned facts such as `history_progress`, lists, config, sync tokens, or completed download records
+
 Migration rule:
 
 - do not add new architecture around repo-local `stream_cache.json`

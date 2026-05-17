@@ -82,6 +82,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Autonomous reliability and coherence handoff path is tracked in [.plans/autonomous-reliability-and-coherence-path.md](.plans/autonomous-reliability-and-coherence-path.md)
 - Reliability core hardening and codebase coherence passes are implemented; the coherence report tracks deferred architecture work: [.plans/codebase-coherence-and-redundancy-report.md](.plans/codebase-coherence-and-redundancy-report.md)
 - Diagnostics now carry optional session/playback/provider correlation IDs across provider resolve, cache checks, mpv runtime events, presence background tasks, debug JSONL, and support bundles.
+- Playback recovery now separates restart/replay, recover, advanced source refresh, and fallback semantics. Fresh-source refresh can keep a playable cached stream when no better source is found, and startup storage maintenance prunes only disposable cache-class rows.
 
 ### Recently Improved
 
@@ -113,6 +114,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Search/offline engines            | Planned       | [.plans/search-offline-continuation-engines.md](.plans/search-offline-continuation-engines.md)                       |
 | Reliability core autonomous sweep | Implemented   | [.plans/reliability-core-autonomous-sweep.md](.plans/reliability-core-autonomous-sweep.md)                           |
 | Codebase coherence sweep          | Implemented   | [.plans/codebase-coherence-and-redundancy-sweep.md](.plans/codebase-coherence-and-redundancy-sweep.md)               |
+| Playback recovery diagnostics     | Implemented   | [.plans/playback-recovery-diagnostics-storage-chain.md](.plans/playback-recovery-diagnostics-storage-chain.md)       |
 | Beta UI/provider hardening        | In Progress   | [.plans/beta-ui-provider-runtime-hardening.md](.plans/beta-ui-provider-runtime-hardening.md)                         |
 | Fullscreen root shell redesign    | In Progress   | [.plans/fullscreen-root-shell-redesign.md](.plans/fullscreen-root-shell-redesign.md)                                 |
 | Phase 1.8 mounted content tree    | In Progress   | [.plans/phase-1.8-single-mounted-content-tree.md](.plans/phase-1.8-single-mounted-content-tree.md)                   |

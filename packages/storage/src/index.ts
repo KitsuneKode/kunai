@@ -2,6 +2,13 @@ export { createStreamCacheKey, stableKey } from "./cache-key";
 export type { StreamCacheKeyInput } from "./cache-key";
 export { cacheMigrations, dataMigrations, runMigrations } from "./migrations";
 export type { Migration, MigrationDatabase } from "./migrations";
+export { runDatabaseMaintenance } from "./maintenance";
+export type {
+  CacheMaintenancePruneCounts,
+  DatabaseMaintenanceOptions,
+  DatabaseMaintenanceResult,
+  MaintenanceDatabaseKind,
+} from "./maintenance";
 export { getKunaiPaths } from "./paths";
 export type { KunaiPathOptions, KunaiPaths, StoragePlatform } from "./paths";
 export { openKunaiDatabase } from "./sqlite";

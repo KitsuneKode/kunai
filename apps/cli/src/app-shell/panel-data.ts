@@ -234,8 +234,20 @@ export function buildDiagnosticsPanelLines({
     recentEvents,
     currentProvider: state.provider,
   });
+  const healthSummary = buildDiagnosticsHealthSummary({
+    state,
+    recentEvents,
+    downloadSummary,
+    presenceSnapshot,
+    runtimeProviderLine: runtimeHealth.provider,
+    runtimeNetworkLine: runtimeHealth.network,
+  });
 
   return [
+    // ── Health ──
+    { label: "─── Health", detail: "", tone: "info" },
+    ...healthSummary,
+
     // ── Session ──
     { label: "─── Session", detail: "", tone: "info" },
     { label: "Mode", detail: `${state.mode}  ·  ${state.provider}` },
@@ -392,6 +404,91 @@ export function buildDiagnosticsPanelLines({
         ? `${event.message}  ·  ${summarizeJson(event.context)}`
         : event.message,
     })),
+  ];
+}
+
+function buildDiagnosticsHealthSummary({
+  state,
+  recentEvents,
+  downloadSummary,
+  presenceSnapshot,
+  runtimeProviderLine,
+  runtimeNetworkLine,
+}: {
+  state: SessionState;
+  recentEvents: readonly DiagnosticEvent[];
+  downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  presenceSnapshot?: PresenceSnapshot | null;
+  runtimeProviderLine: ShellPanelLine;
+  runtimeNetworkLine: ShellPanelLine;
+}): readonly ShellPanelLine[] {
+  const playbackIssue = recentEvents.find(
+    (event) =>
+      event.category === "playback" &&
+      (event.level === "warn" ||
+        event.level === "error" ||
+        event.operation === "playback.refresh.cooldown"),
+  );
+  const cacheFallback = recentEvents.find(
+    (event) => event.operation === "resolve.refetch.failed.cached-fallback",
+  );
+  const failedDownloads = downloadSummary?.failed ?? 0;
+  return [
+    {
+      label: "Playback",
+      detail:
+        state.playbackProblem || playbackIssue || state.playbackStatus === "stalled"
+          ? `Needs attention  ·  ${state.playbackProblem?.userMessage ?? playbackIssue?.message ?? "Playback is stalled"}  ·  try recover or fallback`
+          : "OK  ·  no playback issue in recent events",
+      tone:
+        state.playbackProblem?.severity === "blocking"
+          ? "error"
+          : state.playbackProblem || playbackIssue || state.playbackStatus === "stalled"
+            ? "warning"
+            : "success",
+    },
+    {
+      label: "Provider",
+      detail: `${runtimeProviderLine.tone === "error" ? "Failed" : runtimeProviderLine.tone === "warning" ? "Needs attention" : "OK"}  ·  ${runtimeProviderLine.detail ?? runtimeProviderLine.label}`,
+      tone: runtimeProviderLine.tone,
+    },
+    {
+      label: "Cache",
+      detail: cacheFallback
+        ? "Needs attention  ·  fresh source unavailable; kept current playable stream"
+        : recentEvents.some((event) => event.operation === "resolve.cache.stale")
+          ? "Needs attention  ·  stale stream was detected and refreshed"
+          : recentEvents.some((event) => event.operation === "resolve.cache.hit")
+            ? "OK  ·  stream cache hit"
+            : "OK  ·  no cache issue in recent events",
+      tone: cacheFallback ? "warning" : "success",
+    },
+    {
+      label: "Discord",
+      detail: presenceSnapshot
+        ? `${presenceSnapshot.status === "error" || presenceSnapshot.status === "unavailable" ? "Needs attention" : "OK"}  ·  ${presenceSnapshot.detail}`
+        : "OK  ·  disabled or not used this session",
+      tone:
+        presenceSnapshot?.status === "error" || presenceSnapshot?.status === "unavailable"
+          ? "warning"
+          : "success",
+    },
+    {
+      label: "Downloads",
+      detail: downloadSummary
+        ? failedDownloads > 0
+          ? `Needs attention  ·  ${failedDownloads} failed job${failedDownloads === 1 ? "" : "s"}`
+          : downloadSummary.active > 0
+            ? `OK  ·  ${downloadSummary.active} active job${downloadSummary.active === 1 ? "" : "s"}`
+            : "OK  ·  queue idle"
+        : "OK  ·  queue status unavailable",
+      tone: failedDownloads > 0 ? "warning" : "success",
+    },
+    {
+      label: "Network",
+      detail: `${runtimeNetworkLine.tone === "error" ? "Failed" : runtimeNetworkLine.tone === "warning" ? "Needs attention" : "OK"}  ·  ${runtimeNetworkLine.detail ?? runtimeNetworkLine.label}`,
+      tone: runtimeNetworkLine.tone,
+    },
   ];
 }
 

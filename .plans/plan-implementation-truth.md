@@ -60,6 +60,7 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 | Catalog schedule polish        | In progress (calendar UX + browse badges)         | [catalog-release-schedule-service.md](./catalog-release-schedule-service.md)                         |
 | Design system + Discover       | Polish / verification                             | [kitsune-design-system-and-recommendations.md](./kitsune-design-system-and-recommendations.md)       |
 | Reliability/coherence path     | Implemented; use report for next sweep            | [codebase-coherence-and-redundancy-report.md](./codebase-coherence-and-redundancy-report.md)         |
+| Playback recovery diagnostics  | Core slices implemented; manual smoke remains     | [playback-recovery-diagnostics-storage-chain.md](./playback-recovery-diagnostics-storage-chain.md)   |
 
 ---
 
@@ -73,6 +74,7 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 - **Split `ink-shell.tsx`** — beta-ui Task 10; file still large.
 - **Image flicker on terminal shrink** — explicit cleanup in `ink-shell.tsx` comments; image-pane ownership incomplete.
 - **Trace/event correlation expansion** — core playback/provider/background events now share IDs; future work can carry the same IDs into provider package resolve trace payloads and persisted `resolve_traces`.
+- **Manual playback smoke** — source refresh/recover/fallback semantics have deterministic tests; one real mpv/provider smoke should still be run near release when provider access is acceptable.
 
 ---
 

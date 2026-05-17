@@ -34,6 +34,7 @@ import { SessionController } from "@/app/SessionController";
 import { createContainer, type ShellChrome } from "@/container";
 import type { TitleInfo } from "@/domain/types";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
+import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { selectDownloadCleanupCandidates } from "@/services/download/download-cleanup-policy";
 import { checkDeps } from "@/ui";
 
@@ -277,6 +278,23 @@ async function maybeResolveContinueTitle(
     return null;
   }
   applyHistorySelectionProvider(container, selection);
+  const continuation = container.continuationProjectionService.project({
+    titleId: selection.titleId,
+    entries: recentEntries.length
+      ? recentEntries
+      : Object.entries(await container.historyStore.getAll()),
+  });
+  container.diagnosticsStore.record({
+    category: "session",
+    operation: "continuation.project",
+    message: "Continue target projected from local history",
+    titleId: selection.titleId,
+    context: {
+      kind: continuation.kind,
+      season: "season" in continuation ? continuation.season : undefined,
+      episode: "episode" in continuation ? continuation.episode : undefined,
+    },
+  });
   await recordLocalHistorySourceDecision(container, selection, "continue");
   return titleFromHistorySelection(selection);
 }
@@ -418,7 +436,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     appVersion: KUNAI_VERSION,
   });
   globalContainer = container;
-  const { logger, config, stateManager, cacheStore } = container;
+  const { logger, config, stateManager } = container;
   await maybeRunAutoCleanupDownloads(container);
 
   // Initialize session state with CLI overrides
@@ -478,8 +496,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     });
   }
 
-  // Prune expired cache entries at startup to prevent indefinite bloat
-  await cacheStore.prune();
+  runBackgroundTask({
+    task: "storage.maintenance.startup",
+    category: "cache",
+    diagnosticsStore: container.diagnosticsStore,
+    logger,
+    run: () => container.storageMaintenance.runStartupMaintenance(),
+  });
 
   if (args.debug) {
     logger.info("Kunai started", {
