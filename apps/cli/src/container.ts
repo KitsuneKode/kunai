@@ -359,6 +359,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const resultEnrichmentService = new ResultEnrichmentService({
     historyStore,
     offlineLibraryService,
+    ttlMs: 5 * 60 * 1000,
   });
   const updateService = new UpdateService({
     config,

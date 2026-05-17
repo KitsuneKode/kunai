@@ -126,8 +126,9 @@ export function describeEpisodeWatchPresentation(
 ): EpisodeWatchPresentation {
   if (!entry) return { watched: false, inProgress: false };
   if (isFinished(entry)) {
+    const dateLabel = relativeDate(entry.watchedAt);
     return {
-      detail: "watched 100%",
+      detail: dateLabel ? `watched  ·  ${dateLabel}` : "watched",
       tone: "success",
       badge: "watched",
       watched: true,
@@ -149,6 +150,20 @@ export function describeEpisodeWatchPresentation(
     watched: false,
     inProgress: true,
   };
+}
+
+function relativeDate(isoDate: string): string | undefined {
+  const ms = Date.now() - Date.parse(isoDate);
+  if (!Number.isFinite(ms) || ms < 0) return undefined;
+  const days = Math.floor(ms / 86_400_000);
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  if (months < 13) return `${months}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
 }
 
 function buildEpisodePickerOption({
@@ -174,7 +189,7 @@ function buildEpisodePickerOption({
     label,
     detail: mergeEpisodeDetail(watch.detail, releaseBadge, baseDetail),
     tone: watch.tone ?? (current ? "info" : undefined),
-    badge: current ? "current" : watch.badge,
+    badge: current ? (watch.badge ? `▶ ${watch.badge}` : "▶") : watch.badge,
   };
 }
 
@@ -192,9 +207,11 @@ function describeEpisodePickerSubtitle(
 ): string {
   const watched = options.filter((option) => option.tone === "success").length;
   const inProgress = options.filter((option) => option.tone === "warning").length;
+  const unstarted = options.length - watched - inProgress;
   const parts = [baseSubtitle];
   if (watched > 0) parts.push(`${watched} watched`);
   if (inProgress > 0) parts.push(`${inProgress} in progress`);
+  if (unstarted > 0 && (watched > 0 || inProgress > 0)) parts.push(`${unstarted} unstarted`);
   return parts.join("  ·  ");
 }
 

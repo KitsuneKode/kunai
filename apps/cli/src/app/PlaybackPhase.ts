@@ -1868,7 +1868,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 lastQueuedDownload,
                 mode,
                 resumeLabel: canResumePlayback
-                  ? `resume ${formatTimestamp(resumeSeconds)}`
+                  ? title.type === "series"
+                    ? `resume S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}  ·  ${formatTimestamp(resumeSeconds)}`
+                    : `resume ${formatTimestamp(resumeSeconds)}`
                   : undefined,
                 status: catalogAutoplayEndBanner
                   ? { label: catalogAutoplayEndBanner, tone: "neutral" }
