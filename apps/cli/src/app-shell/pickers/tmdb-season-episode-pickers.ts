@@ -113,7 +113,12 @@ export async function chooseEpisodeFromOptions(
           label: `Episode ${episode.number}  ·  ${episode.name}`,
           detail: episode.airDate || "unknown year",
           tone: status?.tone ?? (episode.number === currentEpisode ? "info" : undefined),
-          badge: episode.number === currentEpisode ? "current" : status?.badge,
+          badge:
+            episode.number === currentEpisode
+              ? status?.badge
+                ? `▶ ${status.badge}`
+                : "▶"
+              : status?.badge,
         };
       }),
     });

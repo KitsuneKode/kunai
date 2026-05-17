@@ -16,6 +16,7 @@ import {
   handleShellAction,
   enqueueCurrentPlaybackDownload,
 } from "@/app-shell/workflows";
+import { runAutoplayAdvanceCountdown } from "@/app/autoplay-advance-countdown";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
@@ -141,6 +142,42 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       type: "SET_PLAYBACK_FEEDBACK",
       detail: feedback.detail,
       note: feedback.note,
+    });
+  }
+
+  private async runAutoNextCountdown(
+    context: PhaseContext,
+    episode: EpisodeInfo,
+  ): Promise<"continue" | "cancelled" | "skipped"> {
+    const { stateManager, playerControl } = context.container;
+    const episodeLabel = `S${String(episode.season).padStart(2, "0")}E${String(
+      episode.episode,
+    ).padStart(2, "0")}`;
+    let cancelledByAction = false;
+
+    return await runAutoplayAdvanceCountdown({
+      seconds: 3,
+      signal: context.signal,
+      sleep: (ms) => Bun.sleep(ms),
+      onTick: (remaining) => {
+        this.updatePlaybackFeedback(context, {
+          detail: "Auto-next ready",
+          note: `Next ${episodeLabel} in ${remaining}s  ·  n now  ·  a pause`,
+        });
+      },
+      isCancelled: () => {
+        const state = stateManager.getState();
+        return cancelledByAction || state.autoplaySessionPaused || state.stopAfterCurrent;
+      },
+      shouldSkip: () => {
+        const action = playerControl.consumeLastAction();
+        if (!action) return false;
+        if (action === "next") return true;
+        if (action === "stop" || action === "back-to-search" || action === "previous") {
+          cancelledByAction = true;
+        }
+        return false;
+      },
     });
   }
 
@@ -1689,72 +1726,95 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
           if (nextEpisode) {
-            logger.info("Auto-next advancing to next episode", {
-              titleId: title.id,
-              season: currentEpisode.season,
-              episode: currentEpisode.episode,
-              nextSeason: nextEpisode.season,
-              nextEpisode: nextEpisode.episode,
-              hasPrefetch: prefetchedNextStream !== null,
-            });
-            diagnosticsStore.record({
-              category: "playback",
-              message: "Auto-next advancing to next episode",
-              context: {
+            const countdownResult = await this.runAutoNextCountdown(context, nextEpisode);
+            if (countdownResult === "cancelled") {
+              stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
+              playbackSession = {
+                ...playbackSession,
+                autoplayPaused: true,
+                autoplayPauseReason: "user",
+              };
+              diagnosticsStore.record({
+                category: "playback",
+                message: "Auto-next countdown cancelled",
+                context: {
+                  titleId: title.id,
+                  nextSeason: nextEpisode.season,
+                  nextEpisode: nextEpisode.episode,
+                },
+              });
+              this.updatePlaybackFeedback(context, {
+                detail: "Auto-next paused",
+                note: "Press resume when you want to continue.",
+              });
+            } else {
+              logger.info("Auto-next advancing to next episode", {
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
                 nextSeason: nextEpisode.season,
                 nextEpisode: nextEpisode.episode,
                 hasPrefetch: prefetchedNextStream !== null,
-              },
-            });
-
-            this.updatePlaybackFeedback(context, {
-              detail: "Loading next episode",
-              note: `S${String(nextEpisode.season).padStart(2, "0")}E${String(nextEpisode.episode).padStart(2, "0")}`,
-            });
-
-            pendingStart = await startNavigationToEpisode(nextEpisode);
-
-            await applyMpvEpisodeLoadingOverlay(playerControl.getActive(), nextEpisode);
-
-            stateManager.dispatch({
-              type: "SELECT_EPISODE",
-              episode: nextEpisode,
-            });
-            stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
-            playbackSession = {
-              ...playbackSession,
-              stopAfterCurrent: false,
-            };
-
-            // If a prefetch is still in-flight (e.g. user sought to end quickly),
-            // wait briefly for it before falling back to a full resolve.
-            if (prefetchedNextPromise && !prefetchedNextStream) {
-              await racePrefetchWithTimeout(prefetchedNextPromise, 3000);
+              });
               diagnosticsStore.record({
                 category: "playback",
-                message: prefetchedNextStream
-                  ? "Prefetch completed during auto-advance wait"
-                  : "Prefetch timed out during auto-advance",
+                message: "Auto-next advancing to next episode",
                 context: {
                   titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
                   nextSeason: nextEpisode.season,
                   nextEpisode: nextEpisode.episode,
-                  completed: prefetchedNextStream !== null,
+                  hasPrefetch: prefetchedNextStream !== null,
                 },
               });
-            }
 
-            // If we prefetched the stream, inject it directly so the loop can
-            // skip the provider scrape and call loadfile immediately.
-            if (prefetchedNextStream) {
-              pendingPrefetchedStream = prefetchedNextStream;
-              pendingPrefetchedProviderId = prefetchedNextProviderId;
-            }
+              this.updatePlaybackFeedback(context, {
+                detail: "Loading next episode",
+                note: `S${String(nextEpisode.season).padStart(2, "0")}E${String(nextEpisode.episode).padStart(2, "0")}`,
+              });
 
-            continue;
+              pendingStart = await startNavigationToEpisode(nextEpisode);
+
+              await applyMpvEpisodeLoadingOverlay(playerControl.getActive(), nextEpisode);
+
+              stateManager.dispatch({
+                type: "SELECT_EPISODE",
+                episode: nextEpisode,
+              });
+              stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
+              playbackSession = {
+                ...playbackSession,
+                stopAfterCurrent: false,
+              };
+
+              // If a prefetch is still in-flight (e.g. user sought to end quickly),
+              // wait briefly for it before falling back to a full resolve.
+              if (prefetchedNextPromise && !prefetchedNextStream) {
+                await racePrefetchWithTimeout(prefetchedNextPromise, 3000);
+                diagnosticsStore.record({
+                  category: "playback",
+                  message: prefetchedNextStream
+                    ? "Prefetch completed during auto-advance wait"
+                    : "Prefetch timed out during auto-advance",
+                  context: {
+                    titleId: title.id,
+                    nextSeason: nextEpisode.season,
+                    nextEpisode: nextEpisode.episode,
+                    completed: prefetchedNextStream !== null,
+                  },
+                });
+              }
+
+              // If we prefetched the stream, inject it directly so the loop can
+              // skip the provider scrape and call loadfile immediately.
+              if (prefetchedNextStream) {
+                pendingPrefetchedStream = prefetchedNextStream;
+                pendingPrefetchedProviderId = prefetchedNextProviderId;
+              }
+
+              continue;
+            }
           }
 
           if (playbackSession.stopAfterCurrent) {
@@ -1782,13 +1842,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 nextPlaylistItem.episode !== undefined
                   ? ` S${String(nextPlaylistItem.season ?? 1).padStart(2, "0")}E${String(nextPlaylistItem.episode).padStart(2, "0")}`
                   : "";
-              for (let i = 5; i > 0 && !context.signal.aborted; i--) {
-                this.updatePlaybackFeedback(context, {
-                  note: `Next: ${nextPlaylistItem.title}${episodeLabel} in ${i}s  ·  [p] pause autoplay`,
-                });
-                await Bun.sleep(1000);
-              }
-              if (!context.signal.aborted) {
+              const playlistCountdown = await runAutoplayAdvanceCountdown({
+                seconds: 3,
+                signal: context.signal,
+                sleep: (ms) => Bun.sleep(ms),
+                onTick: (remaining) => {
+                  this.updatePlaybackFeedback(context, {
+                    detail: "Playlist next ready",
+                    note: `Next: ${nextPlaylistItem.title}${episodeLabel} in ${remaining}s  ·  a to pause`,
+                  });
+                },
+                isCancelled: () => stateManager.getState().autoplaySessionPaused,
+              });
+              if (playlistCountdown !== "cancelled") {
                 container.playlistService.advance();
                 const titleInfo: TitleInfo = {
                   id: nextPlaylistItem.titleId,
@@ -1805,6 +1871,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   },
                 };
               }
+              stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
+              playbackSession = {
+                ...playbackSession,
+                autoplayPaused: true,
+                autoplayPauseReason: "user",
+              };
               this.updatePlaybackFeedback(context, { detail: null, note: null });
             }
           }
