@@ -23,7 +23,11 @@ export class NotificationService {
         kind: notification.kind,
         title: notification.title,
         body: notification.body,
-        itemJson: notification.item ? JSON.stringify(notification.item) : undefined,
+        itemJson: notification.item
+          ? JSON.stringify(notification.item)
+          : notification.queueSessionId
+            ? JSON.stringify({ queueSessionId: notification.queueSessionId })
+            : undefined,
         actionJson: JSON.stringify(defaultNotificationActionIds(notification.kind)),
         createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
@@ -41,6 +45,6 @@ export class NotificationService {
 }
 
 function defaultNotificationActionIds(kind: string): readonly string[] {
-  if (kind === "queue-recovery") return ["queue-end", "dismiss"];
+  if (kind === "queue-recovery") return ["restore-queue", "dismiss"];
   return ["queue-next", "queue-end", "download", "dismiss"];
 }

@@ -1,7 +1,13 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { Container } from "@/container";
+import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
+import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
+import {
+  NotificationActionRouter,
+  type NotificationActionId,
+} from "@/services/notifications/NotificationActionRouter";
 import type {
   AutoDownloadMode,
   DiscoverMode,
@@ -16,6 +22,10 @@ import { useEffect, useState } from "react";
 import { resolveCommandContext } from "./commands";
 import { DownloadManagerContent } from "./download-manager-shell";
 import { LibraryShell } from "./library-shell";
+import {
+  buildNotificationPickerOptions,
+  getNotificationPrimaryAction,
+} from "./notification-overlay-model";
 import {
   buildSettingsChoiceOverlay,
   buildSettingsOptions,
@@ -32,7 +42,6 @@ import {
   buildHistoryPickerOptions,
   buildHelpPanelLines,
   buildHistoryPanelLines,
-  buildNotificationPanelLines,
   buildProviderPickerOptions,
 } from "./panel-data";
 import {
@@ -142,6 +151,7 @@ export function RootOverlayShell({
   const [settingsParentIndex, setSettingsParentIndex] = useState(0);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
   const [historyFilterMode, setHistoryFilterMode] = useState<"all" | "watching" | "completed">(
     "all",
@@ -179,9 +189,7 @@ export function RootOverlayShell({
               capabilitySnapshot: container.capabilitySnapshot,
               presenceSnapshot: container.presence.getSnapshot(),
             })
-          : overlay.type === "notifications"
-            ? buildNotificationPanelLines(container.notificationService.listActive())
-            : [];
+          : [];
   const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;
   const providerOptions =
     overlay.type === "provider_picker"
@@ -260,6 +268,20 @@ export function RootOverlayShell({
           ).map(({ titleId, entry }) => [titleId, entry] as const),
         )
       : [];
+  const notificationRecords =
+    overlay.type === "notifications" ? container.notificationService.listActive() : [];
+  const filteredNotificationOptions =
+    overlay.type === "notifications"
+      ? rankFuzzyMatches(
+          buildNotificationPickerOptions(notificationRecords),
+          filterQuery,
+          (option) => [
+            { value: option.label, weight: 0 },
+            { value: option.detail, weight: 8 },
+            { value: option.badge, weight: 12 },
+          ],
+        )
+      : [];
   const settingsPanel =
     overlay.type === "settings" && settingsDraft
       ? settingsChoice
@@ -297,6 +319,10 @@ export function RootOverlayShell({
     config: container.config.getRaw(),
     settingsError,
   });
+  const effectiveSubtitle =
+    (overlay.type === "notifications" || overlay.type === "history") && overlayStatus
+      ? overlayStatus
+      : subtitle;
   const footerActions: readonly FooterAction[] = [
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
@@ -377,6 +403,7 @@ export function RootOverlayShell({
     setSettingsParentIndex(0);
     setSettingsBusy(false);
     setSettingsError(null);
+    setOverlayStatus(null);
     setHistorySelections([]);
   }, [
     container.config,
@@ -419,6 +446,61 @@ export function RootOverlayShell({
     };
   }, [container.historyStore, overlay.type]);
 
+  useEffect(() => {
+    if (!overlayStatus) return undefined;
+    const timer = setTimeout(() => setOverlayStatus(null), 2500);
+    return () => clearTimeout(timer);
+  }, [overlayStatus]);
+
+  const runNotificationAction = (
+    dedupKey: string | null | undefined,
+    actionId?: NotificationActionId,
+  ): void => {
+    if (!dedupKey) return;
+    const notification = notificationRecords.find((record) => record.dedupKey === dedupKey);
+    if (!notification) return;
+    const resolvedAction = actionId ?? getNotificationPrimaryAction(notification);
+    const router = new NotificationActionRouter({
+      playlist: container.playlistService,
+      mediaActions: new MediaActionRouter({
+        queue: {
+          enqueueMediaItem: (item, options) => {
+            container.playlistService.enqueueMediaItem(item, options);
+          },
+        },
+      }),
+      notifications: {
+        dismiss: (key) => container.notificationService.dismiss(key),
+      },
+    });
+
+    void (async () => {
+      try {
+        await router.run({
+          notification,
+          actionId: resolvedAction,
+          playbackActive:
+            state.playbackStatus === "loading" ||
+            state.playbackStatus === "ready" ||
+            state.playbackStatus === "buffering" ||
+            state.playbackStatus === "seeking" ||
+            state.playbackStatus === "stalled" ||
+            state.playbackStatus === "playing",
+        });
+        setOverlayStatus(
+          resolvedAction === "dismiss"
+            ? "Notification dismissed"
+            : resolvedAction === "restore-queue"
+              ? "Queue restored"
+              : "Action queued",
+        );
+        onRedraw();
+      } catch (error) {
+        setOverlayStatus(`Notification action failed: ${String(error)}`);
+      }
+    })();
+  };
+
   useInput((input, key) => {
     if (commandMode) {
       return;
@@ -452,6 +534,23 @@ export function RootOverlayShell({
       setHistoryFilterMode((prev) =>
         prev === "all" ? "watching" : prev === "watching" ? "completed" : "all",
       );
+      return;
+    }
+    if (overlay.type === "history" && input.toLowerCase() === "q") {
+      const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
+      const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
+      if (selected) {
+        container.playlistService.enqueueMediaItem(
+          mediaItemFromHistoryEntry(selected.titleId, selected.entry),
+          { placement: "end", source: "history" },
+        );
+        setOverlayStatus("Queued from history");
+        onRedraw();
+      }
+      return;
+    }
+    if (overlay.type === "notifications" && input.toLowerCase() === "x") {
+      runNotificationAction(filteredNotificationOptions[selectedIndex]?.value, "dismiss");
       return;
     }
     if (key.return) {
@@ -752,6 +851,10 @@ export function RootOverlayShell({
         const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
         const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
         resolveRootHistorySelection(selected);
+      } else if (overlay.type === "notifications") {
+        const picked = filteredNotificationOptions[selectedIndex]?.value ?? null;
+        runNotificationAction(picked);
+        return;
       } else if (
         overlay.type === "season_picker" ||
         overlay.type === "episode_picker" ||
@@ -790,9 +893,11 @@ export function RootOverlayShell({
             ? filteredProviderOptions.length
             : overlay.type === "history"
               ? filteredHistoryOptions.length
-              : overlay.type === "settings"
-                ? filteredSettingsOptions.length
-                : filteredGenericPickerOptions.length;
+              : overlay.type === "notifications"
+                ? filteredNotificationOptions.length
+                : overlay.type === "settings"
+                  ? filteredSettingsOptions.length
+                  : filteredGenericPickerOptions.length;
         if (optionCount > 0) {
           if (overlay.type === "settings") {
             const delta = key.upArrow ? -1 : 1;
@@ -855,7 +960,7 @@ export function RootOverlayShell({
       ? {
           type: "provider",
           title,
-          subtitle,
+          subtitle: effectiveSubtitle,
           options: filteredProviderOptions,
           filterQuery,
           selectedIndex: Math.min(selectedIndex, Math.max(filteredProviderOptions.length - 1, 0)),
@@ -865,58 +970,73 @@ export function RootOverlayShell({
         ? {
             type: "history-picker",
             title,
-            subtitle,
+            subtitle: effectiveSubtitle,
             options: filteredHistoryOptions,
             filterQuery,
             selectedIndex: Math.min(selectedIndex, Math.max(filteredHistoryOptions.length - 1, 0)),
             busy: loadingAsyncLines,
             filterMode: historyFilterMode,
           }
-        : overlay.type === "settings" && settingsPanel
+        : overlay.type === "notifications"
           ? {
-              ...settingsPanel,
-              subtitle,
-              options: filteredSettingsOptions,
+              type: "history-picker",
+              title,
+              subtitle: effectiveSubtitle,
+              options: filteredNotificationOptions,
               filterQuery,
               selectedIndex: Math.min(
                 selectedIndex,
-                Math.max(filteredSettingsOptions.length - 1, 0),
+                Math.max(filteredNotificationOptions.length - 1, 0),
               ),
-              busy: settingsBusy,
+              busy: false,
             }
-          : overlay.type === "season_picker" ||
-              overlay.type === "episode_picker" ||
-              overlay.type === "subtitle_picker" ||
-              overlay.type === "source_picker" ||
-              overlay.type === "quality_picker" ||
-              overlay.type === "recommendation_picker"
+          : overlay.type === "settings" && settingsPanel
             ? {
-                type: "episode-picker",
-                title,
-                subtitle,
-                options: filteredGenericPickerOptions,
-                filterQuery: pickerFilterQuery,
+                ...settingsPanel,
+                subtitle: effectiveSubtitle,
+                options: filteredSettingsOptions,
+                filterQuery,
                 selectedIndex: Math.min(
-                  pickerSelectedIndex,
-                  Math.max(filteredGenericPickerOptions.length - 1, 0),
+                  selectedIndex,
+                  Math.max(filteredSettingsOptions.length - 1, 0),
                 ),
-                busy: false,
+                busy: settingsBusy,
               }
-            : overlay.type === "help" || overlay.type === "about" || overlay.type === "diagnostics"
+            : overlay.type === "season_picker" ||
+                overlay.type === "episode_picker" ||
+                overlay.type === "subtitle_picker" ||
+                overlay.type === "source_picker" ||
+                overlay.type === "quality_picker" ||
+                overlay.type === "recommendation_picker"
               ? {
-                  type: overlay.type,
+                  type: "episode-picker",
                   title,
-                  subtitle,
-                  lines,
-                  scrollIndex,
+                  subtitle: effectiveSubtitle,
+                  options: filteredGenericPickerOptions,
+                  filterQuery: pickerFilterQuery,
+                  selectedIndex: Math.min(
+                    pickerSelectedIndex,
+                    Math.max(filteredGenericPickerOptions.length - 1, 0),
+                  ),
+                  busy: false,
                 }
-              : {
-                  type: "help",
-                  title: "Help",
-                  subtitle: "Global commands, editing, filtering, and shell behavior",
-                  lines: buildHelpPanelLines(),
-                  scrollIndex: 0,
-                };
+              : overlay.type === "help" ||
+                  overlay.type === "about" ||
+                  overlay.type === "diagnostics"
+                ? {
+                    type: overlay.type,
+                    title,
+                    subtitle: effectiveSubtitle,
+                    lines,
+                    scrollIndex,
+                  }
+                : {
+                    type: "help",
+                    title: "Help",
+                    subtitle: "Global commands, editing, filtering, and shell behavior",
+                    lines: buildHelpPanelLines(),
+                    scrollIndex: 0,
+                  };
 
   if (overlay.type === "downloads") {
     return (
@@ -999,6 +1119,7 @@ export function RootOverlayShell({
           />
           {overlay.type === "provider_picker" ||
           overlay.type === "history" ||
+          overlay.type === "notifications" ||
           overlay.type === "settings" ? (
             <InlineBadge
               label={`${
@@ -1006,7 +1127,9 @@ export function RootOverlayShell({
                   ? filteredProviderOptions.length
                   : overlay.type === "history"
                     ? filteredHistoryOptions.length
-                    : filteredSettingsOptions.length
+                    : overlay.type === "notifications"
+                      ? filteredNotificationOptions.length
+                      : filteredSettingsOptions.length
               } options`}
               tone="neutral"
             />
@@ -1040,14 +1163,16 @@ export function RootOverlayShell({
             overlay.type === "provider_picker"
               ? "Provider picker  ·  Type to filter, Enter to switch, Esc closes"
               : overlay.type === "history"
-                ? "History picker  ·  Type to filter, Enter to resume, Esc closes"
-                : overlay.type === "settings"
-                  ? settingsChoice
-                    ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
-                    : "Settings  ·  Type to filter, Enter to edit, ^S saves, Esc closes"
-                  : isRootMediaPickerOverlay(overlay)
-                    ? `${title}  ·  Type to filter, Enter to select, Esc closes`
-                    : `${title}  ·  Esc closes and returns to the previous shell state`
+                ? "History picker  ·  Enter resumes, q queues, type to filter"
+                : overlay.type === "notifications"
+                  ? "Notifications  ·  Enter acts, x dismisses, type to filter"
+                  : overlay.type === "settings"
+                    ? settingsChoice
+                      ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
+                      : "Settings  ·  Type to filter, Enter to edit, ^S saves, Esc closes"
+                    : isRootMediaPickerOverlay(overlay)
+                      ? `${title}  ·  Type to filter, Enter to select, Esc closes`
+                      : `${title}  ·  Esc closes and returns to the previous shell state`
           }
           actions={footerActions}
           mode="detailed"

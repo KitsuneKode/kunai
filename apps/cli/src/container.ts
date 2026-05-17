@@ -34,6 +34,10 @@ import {
   StreamCacheRepository,
 } from "@kunai/storage";
 
+import {
+  resolveAttentionFeatureFlags,
+  type AttentionFeatureFlags,
+} from "./domain/features/feature-flags";
 import { ListService } from "./domain/lists/ListService";
 import { PlaylistService } from "./domain/lists/PlaylistService";
 import { StatsFormatter } from "./domain/lists/StatsFormatter";
@@ -56,6 +60,7 @@ import type { Tracer } from "./infra/tracer/Tracer";
 import { TracerImpl } from "./infra/tracer/TracerImpl";
 import type { WorkControlService } from "./infra/work/WorkControlService";
 import { WorkControlServiceImpl } from "./infra/work/WorkControlServiceImpl";
+import { AttentionRefreshWorker } from "./services/attention/AttentionRefreshWorker";
 import {
   createCatalogScheduleService,
   type CatalogScheduleService,
@@ -141,6 +146,7 @@ export interface Container {
   readonly storageMaintenance: StorageMaintenanceService;
   readonly sourceInventory: SourceInventoryService;
   readonly mediaTrackService: MediaTrackService;
+  readonly featureFlags: AttentionFeatureFlags;
   readonly providerHealth: ProviderHealthRepository;
   readonly downloadService: DownloadService;
   readonly offlineLibraryService: OfflineLibraryService;
@@ -172,6 +178,7 @@ export interface Container {
   readonly syncTokenStore: SyncTokenStore;
   readonly syncService: SyncService;
   readonly continuationProjectionService: ContinuationProjectionService;
+  readonly attentionRefreshWorker: AttentionRefreshWorker;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;
@@ -249,6 +256,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
     diagnosticsStore,
   });
+  const featureFlags = resolveAttentionFeatureFlags();
   const traceCategories = resolveTraceCategories({
     explicit: process.env.KUNAI_TRACE,
     debugSession: options?.debugSession,
@@ -390,6 +398,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     startupAt,
   );
   const continuationProjectionService = new ContinuationProjectionService();
+  const attentionRefreshWorker = new AttentionRefreshWorker({
+    flags: featureFlags,
+  });
 
   const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
 
@@ -438,6 +449,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     storageMaintenance,
     sourceInventory,
     mediaTrackService,
+    featureFlags,
     providerHealth,
     downloadService,
     offlineLibraryService,
@@ -461,6 +473,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     syncTokenStore,
     syncService,
     continuationProjectionService,
+    attentionRefreshWorker,
     shellChrome,
     capabilitySnapshot,
     debugTracePath,

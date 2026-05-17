@@ -82,7 +82,7 @@ Expected result:
 - JSON output has `ok: true` and `skipped: false`
 - `clientIdSource` is `default`, `environment`, or `config`
 - Discord visibly shows Kunai activity during the smoke
-- Discord application assets `kunai` and `subtitles` are uploaded before artwork is treated as verified
+- Discord application asset `kunai` is uploaded before artwork is treated as verified
 - activity clears after the script exits
 - if `Open in Kunai` changed, `/presence` can set or clear the safe button URL
 - if `kunai://` changed, `kunai --install-protocol-handler --dry-run` shows the expected XDG
@@ -127,6 +127,9 @@ Check:
 Run these when notifications, queue recovery, history, recommendations, downloads, or playlists change:
 
 - open `/notifications` during playback and confirm playback continues
+- press `Enter` on a recoverable queue notice and confirm pending items restore without autoplay
+- press `x` on a notice and confirm it is dismissed
+- press `q` in `/history` and confirm the selected title is queued without replacing playback
 - queue an item from a non-playback surface and confirm it does not start immediately
 - crash or kill a session with queued items, restart, and confirm a recoverable queue notice appears
 - dismiss or ignore the recoverable queue notice and confirm Kunai does not auto-restore

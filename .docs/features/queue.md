@@ -22,6 +22,11 @@ Shared media actions support:
 
 These actions can be offered from notifications, history, recommendations, search, playlists, and post-playback surfaces without each surface inventing queue policy.
 
+The current shell exposes:
+
+- `/notifications`: `Enter` restores recoverable queues or queues new episode notices
+- `/history`: `q` queues the selected history item without replacing playback
+
 ## Restore API
 
 Recoverable queue sessions can be restored into the current session through the queue service. This operation moves only pending items, closes the old queue session, and leaves playback untouched until the user chooses a play action.

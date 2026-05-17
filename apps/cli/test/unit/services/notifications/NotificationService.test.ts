@@ -28,6 +28,13 @@ test("NotificationService stores derived notices and lists active inbox rows", (
     kind: "queue-recovery",
     title: "Previous queue available",
   });
+  expect(JSON.parse(service.listActive()[0]?.itemJson ?? "{}")).toEqual({
+    queueSessionId: "queue-session-1",
+  });
+  expect(JSON.parse(service.listActive()[0]?.actionJson ?? "[]")).toEqual([
+    "restore-queue",
+    "dismiss",
+  ]);
 
   db.close();
 });

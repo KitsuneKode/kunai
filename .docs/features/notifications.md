@@ -22,6 +22,13 @@ Use:
 /alerts
 ```
 
-The inbox is safe to open during playback. It shows local notices and can later route actions through the shared media action router.
+The inbox is safe to open during playback. It shows local notices and routes safe actions through the notification/media action routers:
+
+- `Enter` runs the primary action for the selected notice
+- `x` dismisses the selected notice
+- recoverable queues restore into the current queue session, but do not autoplay
+- new episode notices queue by default instead of replacing active playback
 
 Recoverable queue notices are deliberate restore prompts. They should never auto-restore or autoplay on startup.
+
+Queue recovery notices persist only the recoverable queue session id. New episode notices persist media identity and provider hints. Neither path stores stream URLs, headers, cookies, or tokens.

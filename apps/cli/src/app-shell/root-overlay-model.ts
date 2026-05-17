@@ -10,6 +10,7 @@ export function isRootChoiceOverlay(
   RootOwnedOverlay,
   | { type: "provider_picker" }
   | { type: "history" }
+  | { type: "notifications" }
   | { type: "settings" }
   | { type: "season_picker" }
   | { type: "episode_picker" }
@@ -21,6 +22,7 @@ export function isRootChoiceOverlay(
   return (
     overlay.type === "provider_picker" ||
     overlay.type === "history" ||
+    overlay.type === "notifications" ||
     overlay.type === "settings" ||
     isRootMediaPickerOverlay(overlay)
   );
