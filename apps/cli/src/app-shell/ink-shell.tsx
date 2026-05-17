@@ -2485,12 +2485,16 @@ function BrowseShell<T>({
           onSubmit={handleQuerySubmit}
           placeholder={placeholder}
           focus={!commandMode}
-          hint="Tokens: type:series year:2008 rating:8 · /filters for guided chips"
+          hint={
+            commandMode
+              ? undefined
+              : "Tokens: type:series year:2008 rating:8 · /filters for guided chips"
+          }
           maxWidth={innerWidth}
           onRedraw={clearShellScreen}
         />
 
-        {queryDirty && options.length > 0 && !ultraCompact ? (
+        {queryDirty && options.length > 0 && !ultraCompact && !commandMode ? (
           <Text color={palette.gray}>Query changed · Press Enter to refresh results</Text>
         ) : null}
 
