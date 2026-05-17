@@ -51,7 +51,7 @@ import {
 import { RootOverlayShell } from "./root-overlay-shell";
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
-import { buildRootStatusSummary } from "./root-status-summary";
+import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
 import { openSessionPicker } from "./session-picker";
 import {
   CommandPalette,
@@ -426,6 +426,54 @@ function AppRoot({ container }: { container: Container }) {
   const rootContent = useRootContentSession();
   const { stdout } = useStdout();
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
+  const [streak, setStreak] = useState<number | undefined>(undefined);
+  const [syncHealth, setSyncHealth] = useState<SyncHealth | undefined>(undefined);
+
+  const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
+
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        const { current } = container.statsService.computeStreak();
+        setStreak(current);
+      } catch {
+        setStreak(undefined);
+      }
+      setSyncHealth(container.syncService.getHealth());
+    };
+    refresh();
+    const timer = setInterval(refresh, 60_000);
+    return () => clearInterval(timer);
+  }, [container.statsService, container.syncService]);
+
+  useEffect(() => {
+    const lastShown = container.config.lastWeeklyDigestShownAt;
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const shouldShow = !lastShown || Date.now() - new Date(lastShown).getTime() > sevenDaysMs;
+    if (!shouldShow) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const stats = container.statsService.getStats(7);
+        if (stats.totalEpisodes === 0) return;
+        const text = container.statsFormatter.formatWeeklyDigest(stats);
+        if (!cancelled) {
+          setWeeklyDigestLine(text);
+          await container.config.update({ lastWeeklyDigestShownAt: new Date().toISOString() });
+          setTimeout(() => {
+            if (!cancelled) setWeeklyDigestLine(null);
+          }, 8_000);
+        }
+      } catch {
+        // digest is best-effort
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [container.statsService, container.statsFormatter, container.config]);
 
   // Clear terminal artifacts when the terminal shrinks to prevent stale content
   // from lingering outside the new bounds.
@@ -628,6 +676,8 @@ function AppRoot({ container }: { container: Container }) {
     currentViewLabel,
     rootStatus,
     downloadStatus,
+    streak,
+    syncHealth,
   });
   const rootOverlay = getRootOwnedOverlay(state);
   const rootSurface = resolveRootShellSurface(state, {
@@ -880,6 +930,12 @@ function AppRoot({ container }: { container: Container }) {
       {presenceBootLine && !rootStatusSummary.alert ? (
         <Text dimColor color={statusColor(presenceBootLine.tone)}>
           {truncateLine(presenceBootLine.text, Math.max(36, shellWidth - 8))}
+        </Text>
+      ) : null}
+      {/* Weekly digest shows once per week when not mid-playback */}
+      {weeklyDigestLine && !rootStatusSummary.alert && !presenceBootLine ? (
+        <Text dimColor color={statusColor("info")}>
+          {truncateLine(weeklyDigestLine, Math.max(36, shellWidth - 8))}
         </Text>
       ) : null}
       <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="space-between">

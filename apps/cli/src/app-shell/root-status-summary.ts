@@ -23,6 +23,8 @@ export type RootStatusSummary = {
   alert: RootStatusAlert | null;
 };
 
+export type SyncHealth = "ok" | "warn" | "error" | "disconnected";
+
 function formatEpisode(state: SessionState): string | null {
   if (!state.currentEpisode) return null;
   return `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
@@ -76,11 +78,15 @@ export function buildRootStatusSummary({
   currentViewLabel: _currentViewLabel,
   rootStatus,
   downloadStatus,
+  streak,
+  syncHealth,
 }: {
   state: SessionState;
   currentViewLabel: string;
   rootStatus: string;
   downloadStatus?: string | null;
+  streak?: number;
+  syncHealth?: SyncHealth;
 }): RootStatusSummary {
   const episode = formatEpisode(state);
   const title = state.currentTitle?.name;
@@ -108,12 +114,24 @@ export function buildRootStatusSummary({
       ? `${humanReadableRootStatus(rootStatus)} · ${subtitleCompact}`
       : humanReadableRootStatus(rootStatus);
 
-  // Crumb: always mode · provider; add title + episode during playback
+  // Crumb: always mode · provider; add title + episode during playback,
+  // or streak + sync health when idle
   const crumbParts: string[] = [state.mode, state.provider];
   if (isActivePlayback && title) {
     crumbParts.push(title);
     if (episode) crumbParts.push(episode);
     if (subtitleCompact) crumbParts.push(subtitleCompact);
+  } else {
+    if (streak !== undefined && streak >= 2) {
+      crumbParts.push(`🔥 ${streak}d`);
+    }
+    if (syncHealth === "ok") {
+      crumbParts.push("sync✓");
+    } else if (syncHealth === "warn") {
+      crumbParts.push("sync⚠");
+    } else if (syncHealth === "error") {
+      crumbParts.push("sync✗");
+    }
   }
   const crumb = crumbParts.join(" · ");
 
