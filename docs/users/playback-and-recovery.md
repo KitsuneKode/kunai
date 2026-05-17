@@ -1,3 +1,8 @@
+---
+title: Playback And Recovery
+description: Recover, replay, resume, fallback, and keep playback state predictable.
+---
+
 # Playback And Recovery
 
 Kunai keeps playback centered on one shell session. After `mpv` exits, you return to Kunai with context intact.

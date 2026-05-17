@@ -418,6 +418,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const resultEnrichmentService = new ResultEnrichmentService({
     historyStore,
     offlineLibraryService,
+    getCachedNextRelease: (result) =>
+      result.id.startsWith("anilist:")
+        ? catalogScheduleService.peekNextRelease("anilist", result.id)
+        : null,
     ttlMs: 5 * 60 * 1000,
   });
   const updateService = new UpdateService({

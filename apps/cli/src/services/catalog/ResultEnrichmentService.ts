@@ -1,3 +1,8 @@
+import {
+  reconcileContinueHistory,
+  type ContinueHistoryRelease,
+  type ContinueHistoryReconciliationDecision,
+} from "@/domain/continuation/history-reconciliation";
 import type { SearchResult } from "@/domain/types";
 import type { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
 import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
@@ -17,6 +22,7 @@ export type ResultEnrichment = {
 export type ResultEnrichmentServiceDeps = {
   readonly historyStore: Pick<HistoryStore, "getAll">;
   readonly offlineLibraryService: Pick<OfflineLibraryService, "validateCompletedArtifacts">;
+  readonly getCachedNextRelease?: (result: SearchResult) => ContinueHistoryRelease | null;
   readonly now?: () => number;
   readonly ttlMs?: number;
 };
@@ -64,9 +70,15 @@ export class ResultEnrichmentService {
     const offlineEntries = offlineResult.status === "fulfilled" ? offlineResult.value : [];
 
     for (const result of missing) {
+      const historyEntry = history[result.id];
+      const nextRelease =
+        historyEntry && isFinished(historyEntry)
+          ? (this.deps.getCachedNextRelease?.(result) ?? null)
+          : null;
       const enrichment = buildResultEnrichment({
         result,
-        historyEntry: history[result.id],
+        historyEntry,
+        nextRelease,
         offlineStatuses: offlineEntries
           .filter((entry) => entry.job.titleId === result.id)
           .map((entry) => entry.status),
@@ -87,14 +99,15 @@ export function resultEnrichmentKey(result: Pick<SearchResult, "type" | "id">): 
 export function buildResultEnrichment(input: {
   readonly result: SearchResult;
   readonly historyEntry?: Awaited<ReturnType<HistoryStore["get"]>> | null;
+  readonly nextRelease?: ContinueHistoryRelease | null;
   readonly offlineStatuses?: readonly string[];
 }): ResultEnrichment {
   const badges: ResultEnrichmentBadge[] = [];
   if (input.historyEntry) {
     badges.push(
-      isFinished(input.historyEntry)
-        ? { label: "watched", tone: "success" }
-        : { label: formatContinueBadge(input.historyEntry), tone: "warning" },
+      ...badgesForHistoryDecision(
+        resolveHistoryDecision({ ...input, historyEntry: input.historyEntry }),
+      ),
     );
   }
   if (input.offlineStatuses?.includes("ready")) {
@@ -105,6 +118,53 @@ export function buildResultEnrichment(input: {
     badges.push({ label: "offline issue", tone: "warning" });
   }
   return { badges };
+}
+
+function resolveHistoryDecision(input: {
+  readonly result: SearchResult;
+  readonly historyEntry: HistoryEntry;
+  readonly nextRelease?: ContinueHistoryRelease | null;
+}): ContinueHistoryReconciliationDecision {
+  return reconcileContinueHistory({
+    titleId: input.result.id,
+    entries: [[input.result.id, input.historyEntry]],
+    nextRelease: input.nextRelease,
+  });
+}
+
+function badgesForHistoryDecision(
+  decision: ContinueHistoryReconciliationDecision,
+): ResultEnrichmentBadge[] {
+  switch (decision.kind) {
+    case "resume":
+      return [{ label: formatContinueBadge(decision.entry), tone: "warning" }];
+    case "new-episode":
+      return [
+        { label: formatEpisodeBadge("new", decision.season, decision.episode), tone: "info" },
+      ];
+    case "up-to-date": {
+      const badges: ResultEnrichmentBadge[] = [{ label: "watched", tone: "success" }];
+      if (decision.nextRelease?.status === "upcoming") {
+        badges.push({
+          label: formatEpisodeBadge(
+            "next",
+            decision.nextRelease.season,
+            decision.nextRelease.episode,
+          ),
+          tone: "info",
+        });
+      }
+      return badges;
+    }
+    case "empty":
+      return [];
+  }
+}
+
+function formatEpisodeBadge(prefix: string, season?: number, episode?: number): string {
+  if (typeof episode !== "number") return prefix;
+  const seasonLabel = typeof season === "number" ? `S${String(season).padStart(2, "0")}` : "";
+  return `${prefix} ${seasonLabel}E${String(episode).padStart(2, "0")}`;
 }
 
 function formatContinueBadge(entry: HistoryEntry): string {

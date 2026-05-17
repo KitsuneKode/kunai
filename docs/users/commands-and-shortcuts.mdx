@@ -1,0 +1,57 @@
+---
+title: Commands And Shortcuts
+description: Shell commands, playback shortcuts, overlays, and safe actions available across Kunai.
+---
+
+# Commands And Shortcuts
+
+Kunai keeps the command palette context-aware. Press `/` in the shell to open the
+available actions for the current screen. During playback, the same actions stay
+available without losing the playing context.
+
+## Global Commands
+
+- `/search` starts a new search.
+- `/history` opens recent playback progress.
+- `/library` or `/offline` opens completed local downloads.
+- `/downloads` opens active, queued, failed, and retryable download jobs.
+- `/notifications` opens the notification inbox.
+- `/playlist` opens saved playlists and recoverable queues.
+- `/stats` opens local watch stats.
+- `/sync` opens optional account sync settings.
+- `/calendar` opens release calendar results.
+- `/discover`, `/recommendation`, `/random`, and `/surprise` open recommendation
+  surfaces without autoplay.
+- `/filters` opens supported search filter syntax.
+- `/settings`, `/presence`, `/setup`, `/diagnostics`, `/docs`, `/help`, `/about`,
+  and `/update` open support surfaces.
+
+## Playback Commands
+
+- `/recover` refreshes the active stream from the current provider and resumes.
+- `/fallback` tries the next compatible provider when the active provider fails.
+- `/replay` starts the current episode again from the beginning.
+- `/streams`, `/source`, and `/quality` open media selection without stopping
+  playback until the user confirms a new stream.
+- `/pick-episode`, `/next`, `/previous`, and `/next-season` navigate episodes
+  only when the target exists.
+- `/download` queues the selected or active item for offline use after the
+  required confirmation path.
+- `/toggle-autoplay`, `/toggle-autoskip`, and `/stop-after-current` change the
+  current playback chain only.
+
+## Overlays
+
+Help, diagnostics, settings, notifications, history, downloads, and provider
+pickers are overlays. They should not destroy the underlying playback or browse
+context. Close the overlay to return where you were.
+
+## Reporting Problems
+
+Use `/diagnostics` first, then `/export-diagnostics` when you need a redacted
+support bundle. Use `/report-issue` to open the GitHub issue page.
+
+## Opening Docs
+
+Use `/docs` to open the documentation website. Development builds can point this
+to a local or preview deployment with `KUNAI_DOCS_URL`.

@@ -30,6 +30,7 @@ describe("command registry contexts", () => {
       "diagnostics",
       "export-diagnostics",
       "report-issue",
+      "docs",
       "settings",
       "presence",
       "setup",
@@ -104,6 +105,7 @@ describe("command registry contexts", () => {
       "diagnostics",
       "export-diagnostics",
       "report-issue",
+      "docs",
       "settings",
       "presence",
       "setup",
@@ -117,6 +119,7 @@ describe("command registry contexts", () => {
   test("keeps offline as the completed library command, not enqueue", () => {
     expect(parseCommand("/offline")?.id).toBe("library");
     expect(parseCommand("/download")?.id).toBe("download");
+    expect(parseCommand("/docs")?.id).toBe("docs");
   });
 
   test("keeps root overlay command order focused on first-run actions", () => {

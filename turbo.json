@@ -22,7 +22,7 @@
     },
     "build": {
       "dependsOn": ["typecheck"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "check": {
       "dependsOn": ["typecheck", "lint", "fmt"],

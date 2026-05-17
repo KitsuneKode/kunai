@@ -19,6 +19,7 @@ export type AppCommandId =
   | "history"
   | "details"
   | "diagnostics"
+  | "docs"
   | "help"
   | "about"
   | "update"
@@ -82,6 +83,7 @@ export const COMMAND_CONTEXTS = {
     "diagnostics",
     "export-diagnostics",
     "report-issue",
+    "docs",
     "help",
     "about",
     "update",
@@ -106,6 +108,7 @@ export const COMMAND_CONTEXTS = {
     "diagnostics",
     "export-diagnostics",
     "report-issue",
+    "docs",
     "settings",
     "presence",
     "setup",
@@ -146,6 +149,7 @@ export const COMMAND_CONTEXTS = {
     "diagnostics",
     "export-diagnostics",
     "report-issue",
+    "docs",
     "settings",
     "presence",
     "setup",
@@ -278,6 +282,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Diagnostics",
     aliases: ["diagnostics", "logs", "debug"],
     description: "Open diagnostics",
+  },
+  {
+    id: "docs",
+    label: "Docs",
+    aliases: ["docs", "documentation", "guide", "manual"],
+    description: "Open Kunai documentation",
   },
   {
     id: "help",
@@ -616,6 +626,7 @@ function resolveCommandState(
     case "history":
     case "details":
     case "diagnostics":
+    case "docs":
     case "help":
     case "about":
     case "update":

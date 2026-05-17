@@ -1,3 +1,8 @@
+---
+title: Downloads And Offline
+description: Manage download queues, local playback, cleanup, and offline diagnostics safely.
+---
+
 # Downloads And Offline
 
 Kunai separates the download queue from the offline library.

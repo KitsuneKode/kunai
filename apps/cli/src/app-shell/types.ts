@@ -20,6 +20,7 @@ export type ShellAction =
   | "history"
   | "details"
   | "diagnostics"
+  | "docs"
   | "help"
   | "about"
   | "update"
@@ -157,6 +158,7 @@ export type LoadingShellState = {
 
 export type BrowseIdleContext = {
   playlistNext?: { title: string; ep?: string };
+  continueWatching?: { title: string; ep?: string; remainingLabel?: string };
   todayReleaseCount?: number;
 };
 
@@ -234,6 +236,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "history":
     case "details":
     case "diagnostics":
+    case "docs":
     case "help":
     case "about":
     case "update":

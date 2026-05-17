@@ -16,27 +16,23 @@ export async function loadCalendarResults(
   signal?: AbortSignal,
 ): Promise<CalendarResultBundle> {
   const mode = container.stateManager.getState().mode;
-  const days = mode === "anime" ? 7 : 1;
+  const days = 7;
   const items = await loadCalendarWindow(container.timelineService, mode, days, signal);
   const sorted = [...items].sort(compareCalendarItems);
   const isInWatchlist = (titleId: string) => container.listService.isInWatchlist(titleId);
   const results = sorted.map((item) => toCalendarSearchResult(item, isInWatchlist));
   const releasedCount = sorted.filter((item) => item.status === "released").length;
-  const upcomingCount = sorted.filter((item) => item.status !== "released").length;
-  const todayCount = sorted.filter((item) => isSameLocalDay(item.releaseAt, Date.now())).length;
+  const airingTodayCount = sorted.filter(
+    (item) => item.status !== "released" && isSameLocalDay(item.releaseAt, Date.now()),
+  ).length;
 
   return {
     results,
     subtitle:
       results.length > 0
-        ? mode === "anime"
-          ? `${results.length} this week · ${todayCount} today · ${releasedCount} released · anime schedule`
-          : `${upcomingCount} airing today · ${releasedCount} released · series schedule`
-        : `No ${mode === "anime" ? "anime releases found for the next week" : "series releases found for today"}`,
-    emptyMessage:
-      mode === "anime"
-        ? "No anime releases found for the next week. Search and recommendations still work normally."
-        : "No TV releases found for today. Search and recommendations still work normally.",
+        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released · ${mode} schedule`
+        : `No ${mode} releases found for the next week`,
+    emptyMessage: `No ${mode} releases found for the next week. Search and recommendations still work normally.`,
   };
 }
 

@@ -96,6 +96,57 @@ describe("ResultEnrichmentService", () => {
     ).toEqual([{ label: "continue S02E07 · 30:00 (50%)", tone: "warning" }]);
   });
 
+  test("prefers a new episode badge over watched when cached release data moved ahead", () => {
+    expect(
+      buildResultEnrichment({
+        result: result(),
+        historyEntry: history({ episode: 5 }),
+        nextRelease: {
+          season: 1,
+          episode: 6,
+          status: "released",
+          releaseAt: "2026-05-17T12:00:00.000Z",
+        },
+      }).badges,
+    ).toEqual([{ label: "new S01E06", tone: "info" }]);
+  });
+
+  test("uses cached next-release data without probing schedules for unrelated results", async () => {
+    const releaseLookups: string[] = [];
+    const service = new ResultEnrichmentService({
+      historyStore: {
+        getAll: async () => ({
+          "anilist:1": history({ episode: 5 }),
+        }),
+      },
+      offlineLibraryService: {
+        validateCompletedArtifacts: async () => [],
+      },
+      getCachedNextRelease: (searchResult) => {
+        releaseLookups.push(searchResult.id);
+        return {
+          season: 1,
+          episode: 6,
+          status: "released",
+          releaseAt: "2026-05-17T12:00:00.000Z",
+        };
+      },
+      now: () => 1,
+      ttlMs: 1_000,
+    });
+
+    const enrichments = await service.enrichResults([
+      result({ id: "anilist:1" }),
+      result({ id: "anilist:2" }),
+    ]);
+
+    expect(releaseLookups).toEqual(["anilist:1"]);
+    expect(enrichments.get("series:anilist:1")?.badges).toEqual([
+      { label: "new S01E06", tone: "info" },
+    ]);
+    expect(enrichments.get("series:anilist:2")?.badges).toEqual([]);
+  });
+
   test("uses cached enrichments within the ttl", async () => {
     let offlineCalls = 0;
     const service = new ResultEnrichmentService({

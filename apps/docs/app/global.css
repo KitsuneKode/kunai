@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+
+@source "../app/**/*.{ts,tsx,mdx}";
+@source "../components/**/*.{ts,tsx}";
+@source "../lib/**/*.{ts,tsx}";
+@source "../content/**/*.{md,mdx}";
+@source "../../../docs/**/*.{md,mdx}";
+@source "../../../node_modules/fumadocs-ui/dist/**/*.js";
+
+:root {
+  --kunai-accent: #5ed0b6;
+  --kunai-warm: #f4b860;
+}
+
+body {
+  letter-spacing: 0;
+}

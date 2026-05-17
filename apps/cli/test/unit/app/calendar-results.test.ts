@@ -75,7 +75,7 @@ test("loadCalendarResults maps releasing-today items into playable browse candid
   );
 
   expect(requestedDays).toBe(7);
-  expect(results.subtitle).toBe("2 this week · 1 today · 0 released · anime schedule");
+  expect(results.subtitle).toBe("2 this week · 1 airing today · 0 released · anime schedule");
   expect(results.results[0]).toMatchObject({
     id: "21",
     type: "series",
@@ -124,7 +124,7 @@ test("loadCalendarResults distinguishes already released rows from timed upcomin
     }) as never,
   );
 
-  expect(results.subtitle).toBe("0 airing today · 1 released · series schedule");
+  expect(results.subtitle).toBe("1 this week · 0 airing today · 1 released · series schedule");
   expect(results.results[0]?.metadataSource).toBe("TMDB calendar · Today · new today · date");
   expect(results.results[0]?.overview).toContain("S05E03");
   expect(results.results[0]?.overview).toContain("available today");

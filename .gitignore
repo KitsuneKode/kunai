@@ -16,6 +16,7 @@ kunai-demo.tape
 # monorepo & frameworks
 .turbo
 .next
+apps/docs/.source/
 target/
 
 # databases

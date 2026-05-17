@@ -1,0 +1,44 @@
+---
+title: Docs Maintenance
+description: How to add, structure, verify, and release Kunai documentation.
+---
+
+# Docs Maintenance
+
+The docs website lives in `apps/docs` and uses Next.js, Fumadocs, MDX, and
+Tailwind CSS. User and developer content lives in the repository-level `docs/`
+folder so it can serve both the website and source readers.
+
+## Adding A Page
+
+1. Add an `.md` or `.mdx` file under `docs/users/` or `docs/developer/`.
+2. Include frontmatter with `title` and `description`.
+3. Add the page slug to the nearest `meta.json`.
+4. Link it from the home page if it is a primary user journey.
+5. Run the docs checks.
+
+```sh
+bun run --cwd apps/docs typecheck
+bun run --cwd apps/docs test
+bun run --cwd apps/docs build
+```
+
+## Content Rules
+
+- Document user-facing behavior before internal implementation details.
+- Say when a feature is local-only, cached-only, opt-in, or live-provider backed.
+- Keep provider traffic and Discord live checks manual unless a test is explicitly
+  named as live smoke.
+- Prefer reusable command examples over prose-only explanations.
+- Keep security and privacy boundaries visible: no stream URLs in support
+  bundles, no provider probing from normal docs rendering, and no autoplay from
+  imported playlists.
+
+## Build Boundaries
+
+The CLI release path should build and package `@kitsunekode/kunai` without
+requiring the docs website. Docs build is its own task and can run in docs CI or
+before docs deployment.
+
+Root scripts should delegate through Turborepo filters instead of hiding package
+logic in root commands.

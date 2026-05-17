@@ -1,0 +1,15 @@
+{
+  "title": "User Guides",
+  "pages": [
+    "getting-started",
+    "platforms",
+    "commands-and-shortcuts",
+    "feature-tour",
+    "playback-and-recovery",
+    "continue-watching-and-new-episodes",
+    "downloads-and-offline",
+    "diagnostics-and-reporting",
+    "reliability-and-privacy",
+    "install-and-update"
+  ]
+}

@@ -1,3 +1,8 @@
+---
+title: Getting Started
+description: Install Kunai, check dependencies, and start playback safely.
+---
+
 # Getting Started
 
 Kunai is a terminal-first media shell. Start it, search for a title, pick what to watch, and Kunai hands playback to `mpv`.

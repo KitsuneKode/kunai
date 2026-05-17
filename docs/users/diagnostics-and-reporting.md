@@ -1,3 +1,8 @@
+---
+title: Diagnostics And Reporting
+description: Use diagnostics, support bundles, traces, and issue reports without leaking private data.
+---
+
 # Diagnostics And Reporting
 
 Diagnostics are local-first. Kunai records enough context to explain failures without automatically uploading anything.

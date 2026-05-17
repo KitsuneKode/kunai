@@ -311,6 +311,7 @@ async function openHistoryShell(
   actionContext?: ListShellActionContext,
   catalogScheduleService?: CatalogScheduleService,
   stateManager?: import("@/domain/session/SessionStateManager").SessionStateManager,
+  playlistService?: import("@/domain/lists/PlaylistService").PlaylistService,
 ): Promise<void> {
   // Proactively refresh schedule cache for all anime history entries in one batch request.
   // Runs before the loop: first render gets fresh data. 3s timeout degrades gracefully to
@@ -401,7 +402,7 @@ async function openHistoryShell(
     }
 
     // Title selected — show action sub-menu
-    type EntryAction = "search" | "episodes" | "remove" | "back";
+    type EntryAction = "search" | "episodes" | "queue" | "remove" | "back";
     const isSeries = picked.entryType === "series";
     const subOptions: ShellOption<EntryAction>[] = [
       {
@@ -415,6 +416,15 @@ async function openHistoryShell(
               value: "episodes" as EntryAction,
               label: "View episode history",
               detail: "Browse per-episode progress and watch dates",
+            },
+          ]
+        : []),
+      ...(playlistService
+        ? [
+            {
+              value: "queue" as EntryAction,
+              label: "Add to playlist queue",
+              detail: "Queue without starting playback now",
             },
           ]
         : []),
@@ -456,6 +466,22 @@ async function openHistoryShell(
 
     if (action === "episodes") {
       await openEpisodeHistoryShell(historyStore, picked.id, picked.title, actionContext);
+      continue;
+    }
+
+    if (action === "queue" && playlistService) {
+      const entry = await historyStore.get(picked.id);
+      playlistService.enqueueMediaItem(
+        {
+          titleId: picked.id,
+          title: picked.title,
+          mediaKind: picked.entryType,
+          season: entry?.season,
+          episode:
+            entry?.episode !== undefined && entry.type === "series" ? entry.episode + 1 : undefined,
+        },
+        { placement: "end", source: "history" },
+      );
       continue;
     }
 
@@ -983,9 +1009,7 @@ async function openStaticInfoShell({
   });
 }
 
-async function openIssueUrl(
-  url = "https://github.com/kitsunekode/kunai/issues/new/choose",
-): Promise<void> {
+async function openExternalUrl(url: string): Promise<void> {
   const commands: readonly [string, readonly string[]][] = [
     ["xdg-open", [url]],
     ["open", [url]],
@@ -1001,6 +1025,18 @@ async function openIssueUrl(
       // try next opener
     }
   }
+}
+
+async function openIssueUrl(
+  url = "https://github.com/kitsunekode/kunai/issues/new/choose",
+): Promise<void> {
+  await openExternalUrl(url);
+}
+
+async function openDocsUrl(
+  url = process.env.KUNAI_DOCS_URL ?? "https://github.com/KitsuneKode/kunai/tree/main/docs",
+): Promise<void> {
+  await openExternalUrl(url);
 }
 
 export function buildPickerActionContext({
@@ -1103,6 +1139,10 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   downloads: (c) => handleLibraryOverlay(c, "queue"),
   library: (c) => handleLibraryOverlay(c, "library"),
   help: (c) => handleStaticOverlay(c, "help"),
+  docs: async () => {
+    await openDocsUrl();
+    return "handled";
+  },
   about: (c) => handleStaticOverlay(c, "about"),
   diagnostics: (c) => handleDiagnostics(c),
   provider: (c) => handleProviderPicker(c),
@@ -1154,13 +1194,14 @@ const withOverlay = async <T>(
 };
 
 async function handleHistory(container: Container): Promise<"handled"> {
-  const { stateManager, historyStore, catalogScheduleService } = container;
+  const { stateManager, historyStore, catalogScheduleService, playlistService } = container;
   await withOverlay(stateManager, { type: "history" }, () =>
     openHistoryShell(
       historyStore,
       buildPickerActionContext({ container, taskLabel: "Watch history" }),
       catalogScheduleService,
       stateManager,
+      playlistService,
     ),
   );
   return "handled";
@@ -2153,6 +2194,7 @@ export async function openSettingsShell({
           actionContext,
           container?.catalogScheduleService,
           container?.stateManager,
+          container?.playlistService,
         );
       continue;
     }

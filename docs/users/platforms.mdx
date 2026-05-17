@@ -1,0 +1,62 @@
+---
+title: Platforms
+description: Platform-specific install, playback, opening, protocol, and troubleshooting notes.
+---
+
+# Platforms
+
+Kunai is Bun-first and terminal-first. Playback uses `mpv`; optional downloads
+use `yt-dlp`, `ffmpeg`, and `ffprobe`; poster previews can use Kitty graphics or
+`chafa` depending on the terminal.
+
+## Linux
+
+```sh
+bun install -g @kitsunekode/kunai
+kunai --setup
+```
+
+Useful optional tools:
+
+- `mpv` for playback.
+- `yt-dlp` for downloads.
+- `ffmpeg` and `ffprobe` for media validation and thumbnails.
+- `chafa` for image previews outside Kitty-compatible terminals.
+- `xdg-open` for `/docs`, `/report-issue`, folder reveal, and account auth.
+
+## macOS
+
+```sh
+bun install -g @kitsunekode/kunai
+kunai --setup
+```
+
+Install `mpv` and optional download tools through Homebrew or your preferred
+package manager. Kunai uses `open` for browser and folder handoffs.
+
+## Windows
+
+Kunai can run where Bun, a terminal, and `mpv` are available. Windows Terminal
+works best for a predictable terminal surface. Kunai uses `cmd /c start` for
+browser handoffs such as `/docs` and `/report-issue`.
+
+## Source Checkout
+
+```sh
+bun install
+bun run dev
+bun run dev -- -S "Dune"
+bun run dev -- -a -S "Attack on Titan"
+```
+
+Source checkouts are the best path for debugging provider changes, playback
+recovery, and docs contributions.
+
+## Platform Guardrails
+
+- If an opener is missing, Kunai should keep running and leave the user in the
+  current shell context.
+- If optional tools are missing, setup and diagnostics should explain the missing
+  capability instead of failing unrelated playback paths.
+- Provider and Discord live smokes are manual release checks, not background
+  activity.

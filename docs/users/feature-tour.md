@@ -1,3 +1,8 @@
+---
+title: Feature Tour
+description: A guided map of Kunai's playback, discovery, offline, diagnostics, and release workflows.
+---
+
 # Feature Tour
 
 This tour maps Kunai's terminal-only features to repeatable VHS demos. The GIFs are intended for README snippets, release notes, and a future Astro/MDX site without tying this CLI repo to a website framework yet.
