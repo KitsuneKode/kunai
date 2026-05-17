@@ -1,7 +1,6 @@
 import type { DailyActivity, ShowStat, WatchStats } from "./StatsService";
 
 const BAR_FULL = "█";
-const BAR_HALF = "▓";
 const BAR_EMPTY = "░";
 const HEATMAP_NONE = "·";
 const HEATMAP_LOW = "░";
@@ -68,16 +67,18 @@ export class StatsFormatter {
     }
     cur.setTime(startDate.getTime());
 
-    const cursor = new Date(startDate);
-    while (cursor <= endDate) {
-      const dateStr = cursor.toISOString().slice(0, 10);
+    let cursorTime = startDate.getTime();
+    const endTime = endDate.getTime();
+    while (cursorTime <= endTime) {
+      const d = new Date(cursorTime);
+      const dateStr = d.toISOString().slice(0, 10);
       const count = byDate.get(dateStr) ?? 0;
       week.push(heatmapChar(count, maxCount));
-      if (cursor.getDay() === 6) {
+      if (d.getDay() === 6) {
         weeks.push(week);
         week = [];
       }
-      cursor.setDate(cursor.getDate() + 1);
+      cursorTime += 86_400_000;
     }
     if (week.length > 0) {
       while (week.length < 7) week.push(" ");
@@ -85,9 +86,9 @@ export class StatsFormatter {
     }
 
     const rows: string[] = [];
-    const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+    const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const;
     for (let day = 0; day < 7; day++) {
-      const label = DAY_LABELS[day]!;
+      const label = DAY_LABELS[day as 0 | 1 | 2 | 3 | 4 | 5 | 6];
       const cells = weeks.map((w) => w[day] ?? " ").join(" ");
       rows.push(`${label} ${cells}`);
     }
@@ -97,7 +98,8 @@ export class StatsFormatter {
         if (i === 0) return "";
         const d = new Date(startDate);
         d.setDate(d.getDate() + i * 7);
-        if (d.getDate() <= 7) return MONTHS[d.getMonth()]!.slice(0, 1);
+        const monthLabel = MONTHS[d.getMonth()];
+        if (d.getDate() <= 7 && monthLabel) return monthLabel.slice(0, 1);
         return " ";
       })
       .join(" ");
@@ -105,7 +107,7 @@ export class StatsFormatter {
     return ["   " + monthRow, ...rows].join("\n");
   }
 
-  formatTopShows(shows: readonly ShowStat[], width = 40): string {
+  formatTopShows(shows: readonly ShowStat[]): string {
     if (shows.length === 0) return "No shows watched yet.";
 
     const maxSeconds = Math.max(...shows.map((s) => s.totalSeconds), 1);
@@ -138,7 +140,8 @@ export class StatsFormatter {
     const buckets = stats.weeklyBuckets;
     if (buckets.length === 0) return "No watch history yet.";
 
-    const thisWeek = buckets[buckets.length - 1]!;
+    const thisWeek = buckets[buckets.length - 1];
+    if (!thisWeek) return "No watch history yet.";
     const lastWeek = buckets[buckets.length - 2];
 
     let trend = "";

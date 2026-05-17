@@ -69,7 +69,7 @@ export class StatsService {
           break;
         }
       } else {
-        const prev = new Date(prevDate!);
+        const prev = new Date(prevDate as string);
         const curr = new Date(date);
         const diffDays = Math.round((prev.getTime() - curr.getTime()) / 86400000);
         if (diffDays === 1) {
@@ -119,7 +119,7 @@ export class StatsService {
          FROM history_progress
          WHERE updated_at >= ?`,
       )
-      .get(windowStart)!;
+      .get(windowStart) ?? { total_episodes: 0, total_seconds: 0 };
 
     const dayRows = this.db
       .query<DayRow, [string]>(
@@ -208,7 +208,7 @@ export class StatsService {
         `SELECT COUNT(*) AS count FROM history_progress
          WHERE date(updated_at) = ? AND (completed = 1 OR position_seconds >= 300)`,
       )
-      .get(today)!;
-    return row.count > 0;
+      .get(today);
+    return (row?.count ?? 0) > 0;
   }
 }

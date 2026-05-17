@@ -91,7 +91,8 @@ export class PlaylistRepository {
 
     const row = this.db
       .query<PlaylistItemRow, [string]>("SELECT * FROM playlist_queue WHERE id = ?")
-      .get(id)!;
+      .get(id);
+    if (!row) throw new Error(`Playlist item not found after insert: ${id}`);
     return mapPlaylistRow(row);
   }
 
@@ -149,14 +150,14 @@ export class PlaylistRepository {
       .query<{ count: number }, [string]>(
         "SELECT COUNT(*) AS count FROM playlist_queue WHERE session_id = ? AND played_at IS NULL",
       )
-      .get(sessionId)!;
-    return row.count;
+      .get(sessionId);
+    return row?.count ?? 0;
   }
 
   getLastActivity(): string | undefined {
     const row = this.db
       .query<{ last_at: string | null }, []>("SELECT MAX(added_at) AS last_at FROM playlist_queue")
-      .get()!;
-    return row.last_at ?? undefined;
+      .get();
+    return row?.last_at ?? undefined;
   }
 }

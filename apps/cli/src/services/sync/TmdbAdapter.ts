@@ -150,14 +150,20 @@ export class TmdbAdapter implements SyncAdapter {
 
   private async waitForEnterOrTimeout(signal: AbortSignal): Promise<void> {
     return new Promise<void>((resolve) => {
-      const timeout = setTimeout(resolve, TMDB_TIMEOUT_MS);
+      let settled = false;
+      const settle = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const timeout = setTimeout(settle, TMDB_TIMEOUT_MS);
       signal.addEventListener("abort", () => {
         clearTimeout(timeout);
-        resolve();
+        settle();
       });
       process.stdin.once("data", () => {
         clearTimeout(timeout);
-        resolve();
+        settle();
       });
     });
   }
@@ -175,6 +181,6 @@ export class TmdbAdapter implements SyncAdapter {
 
 function extractTmdbId(titleId: string): number | null {
   const match = /^tmdb:(\d+)$/.exec(titleId);
-  if (match) return parseInt(match[1]!, 10);
+  if (match?.[1]) return parseInt(match[1], 10);
   return null;
 }

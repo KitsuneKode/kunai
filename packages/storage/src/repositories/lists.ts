@@ -110,8 +110,8 @@ export class ListRepository {
     const now = new Date().toISOString();
     const maxOrder = this.db
       .query<{ max_order: number | null }, []>("SELECT MAX(sort_order) AS max_order FROM lists")
-      .get()!;
-    const sortOrder = (maxOrder.max_order ?? -1) + 1;
+      .get();
+    const sortOrder = (maxOrder?.max_order ?? -1) + 1;
 
     this.db
       .query(
@@ -129,7 +129,9 @@ export class ListRepository {
         now,
       );
 
-    return this.getList(id)!;
+    const created = this.getList(id);
+    if (!created) throw new Error(`List not found after insert: ${id}`);
+    return created;
   }
 
   updateList(id: string, input: Partial<Pick<KunaiList, "name" | "color" | "icon">>): void {
@@ -168,8 +170,8 @@ export class ListRepository {
       .query<{ max_order: number | null }, [string]>(
         "SELECT MAX(sort_order) AS max_order FROM list_items WHERE list_id = ?",
       )
-      .get(input.listId)!;
-    const sortOrder = (maxOrder.max_order ?? -1) + 1;
+      .get(input.listId);
+    const sortOrder = (maxOrder?.max_order ?? -1) + 1;
 
     this.db
       .query(
@@ -191,7 +193,8 @@ export class ListRepository {
 
     const row = this.db
       .query<ListItemRow, [string]>("SELECT * FROM list_items WHERE id = ?")
-      .get(id)!;
+      .get(id);
+    if (!row) throw new Error(`List item not found after insert: ${id}`);
     return mapListItemRow(row);
   }
 

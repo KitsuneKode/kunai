@@ -141,7 +141,7 @@ export class AniListAdapter implements SyncAdapter {
         progress,
       });
       if (res.errors?.length) {
-        return { ok: false, error: res.errors[0]!.message };
+        return { ok: false, error: res.errors[0]?.message ?? "Unknown AniList error" };
       }
       return { ok: true };
     } catch (e) {
@@ -179,36 +179,34 @@ export class AniListAdapter implements SyncAdapter {
 
   private async waitForCallback(port: number, signal: AbortSignal): Promise<string | null> {
     return new Promise<string | null>((resolve) => {
-      let resolved = false;
+      let settled = false;
+      const settle = (value: string | null) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
       const timeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          server.stop(true);
-          resolve(null);
-        }
+        server.stop(true);
+        settle(null);
       }, OAUTH_TIMEOUT_MS);
 
       signal.addEventListener("abort", () => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          server.stop(true);
-          resolve(null);
-        }
+        clearTimeout(timeout);
+        server.stop(true);
+        settle(null);
       });
 
       const server = Bun.serve({
         port,
         hostname: "127.0.0.1",
         fetch(req) {
-          if (resolved) return new Response("Already handled", { status: 409 });
           const url = new URL(req.url);
           const code = url.searchParams.get("code");
           if (url.pathname === "/callback" && code) {
-            resolved = true;
             clearTimeout(timeout);
-            resolve(code);
             server.stop(true);
+            settle(code);
             return new Response(
               "<html><body><h2>Authorization complete. You can close this tab.</h2></body></html>",
               { headers: { "Content-Type": "text/html" } },
@@ -233,8 +231,8 @@ export class AniListAdapter implements SyncAdapter {
 
 function extractAniListId(titleId: string): number | null {
   const match = /^anilist:(\d+)$/.exec(titleId) ?? /^mal:(\d+)$/.exec(titleId);
-  if (match) return parseInt(match[1]!, 10);
+  if (match?.[1]) return parseInt(match[1], 10);
   const tmdbMatch = /^tmdb:(\d+)$/.exec(titleId);
-  if (tmdbMatch) return parseInt(tmdbMatch[1]!, 10);
+  if (tmdbMatch?.[1]) return parseInt(tmdbMatch[1], 10);
   return null;
 }
