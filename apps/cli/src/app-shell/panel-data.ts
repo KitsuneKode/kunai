@@ -9,6 +9,7 @@ import { formatTimestamp, type HistoryEntry } from "@/services/persistence/Histo
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { describePresenceConfiguration } from "@/services/presence/PresenceServiceImpl";
 import type { CapabilitySnapshot } from "@/ui";
+import type { NotificationRecord } from "@kunai/storage";
 
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 
@@ -124,6 +125,7 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
     { label: "─── Panels", detail: "", tone: "info" },
     { label: "/", detail: "Open command palette" },
     { label: "/history", detail: "Continue from recent progress" },
+    { label: "/notifications", detail: "Review app notices without leaving playback" },
     { label: "?", detail: "This help panel" },
     { label: "i", detail: "Diagnostics panel" },
     { label: "g", detail: "Recommendations" },
@@ -144,6 +146,31 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
     { label: "/export-diagnostics", detail: "Write redacted support bundle" },
     { label: "/report-issue", detail: "Open GitHub issue reporting" },
   ];
+}
+
+export function buildNotificationPanelLines(
+  notifications: readonly NotificationRecord[],
+): readonly ShellPanelLine[] {
+  if (notifications.length === 0) {
+    return [
+      {
+        label: "No notifications",
+        detail: "New episodes, recoverable queues, downloads, and app notices appear here.",
+        tone: "neutral",
+      },
+    ];
+  }
+
+  return notifications.map((notification) => ({
+    label: notification.title,
+    detail: notification.body,
+    tone:
+      notification.kind === "queue-recovery"
+        ? "warning"
+        : notification.kind === "new-episode"
+          ? "success"
+          : "info",
+  }));
 }
 
 export function buildAboutPanelLines({

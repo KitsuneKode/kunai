@@ -14,6 +14,7 @@ export type ShellAction =
   | "back-to-results"
   | "settings"
   | "presence"
+  | "notifications"
   | "toggle-mode"
   | "quit"
   | "history"
@@ -201,6 +202,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "surprise":
     case "settings":
     case "presence":
+    case "notifications":
     case "toggle-mode":
     case "quit":
     case "history":

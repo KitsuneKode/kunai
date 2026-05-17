@@ -37,6 +37,7 @@ async function openRootOwnedOverlay(
         | "about"
         | "diagnostics"
         | "downloads"
+        | "notifications"
         | "provider_picker"
         | "history"
         | "settings";
@@ -89,6 +90,10 @@ export async function routeSearchShellAction({
   }
   if (action === "diagnostics") {
     await openRootOwnedOverlay(container, { type: "diagnostics" });
+    return "handled";
+  }
+  if (action === "notifications") {
+    await openRootOwnedOverlay(container, { type: "notifications" });
     return "handled";
   }
   if (action === "provider") {
@@ -171,6 +176,10 @@ export async function routePlaybackShellAction({
   }
   if (action === "diagnostics") {
     await openRootOwnedOverlay(container, { type: "diagnostics" });
+    return "handled";
+  }
+  if (action === "notifications") {
+    await openRootOwnedOverlay(container, { type: "notifications" });
     return "handled";
   }
   if (action === "provider") {

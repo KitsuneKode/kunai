@@ -21,6 +21,8 @@ describe("recommendation command", () => {
     expect(parseCommand("/surprise")?.id).toBe("surprise");
     expect(parseCommand("/offline")?.id).toBe("library");
     expect(parseCommand("/downloads")?.id).toBe("downloads");
+    expect(parseCommand("/notifications")?.id).toBe("notifications");
+    expect(parseCommand("/inbox")?.id).toBe("notifications");
     expect(parseCommand("/tracks")?.id).toBe("streams");
     expect(parseCommand("/audio")?.id).toBe("streams");
     expect(parseCommand("/subtitles")?.id).toBe("streams");

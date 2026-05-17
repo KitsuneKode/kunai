@@ -50,6 +50,42 @@ test("PlaylistRepository: queue sessions can be marked recoverable and restored"
   db.close();
 });
 
+test("PlaylistRepository: startup recovery only exposes prior active sessions with pending items", () => {
+  const db = migratedDataDb();
+  const repo = new PlaylistRepository(db);
+
+  repo.createQueueSession({
+    id: "previous-session",
+    status: "active",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:00:00.000Z",
+  });
+  repo.createQueueSession({
+    id: "empty-session",
+    status: "active",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:00:00.000Z",
+  });
+  repo.enqueue({
+    title: "Example",
+    mediaKind: "series",
+    titleId: "tmdb:1",
+    season: 1,
+    episode: 2,
+    priority: 0,
+    source: "notification",
+    sessionId: "previous-session",
+  });
+
+  repo.markActiveQueueSessionsRecoverable("current-session", "2026-05-17T00:10:00.000Z");
+
+  expect(repo.listRecoverableQueueSessions().map((session) => session.id)).toEqual([
+    "previous-session",
+  ]);
+
+  db.close();
+});
+
 test("NotificationRepository: upsert dedupes and dismiss hides active rows", () => {
   const db = migratedDataDb();
   const repo = new NotificationRepository(db);

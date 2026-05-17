@@ -245,6 +245,23 @@ export class PlaylistRepository {
       .run(updatedAt, id);
   }
 
+  markActiveQueueSessionsRecoverable(exceptSessionId: string, updatedAt: string): number {
+    const result = this.db
+      .query(
+        `UPDATE playback_queue_sessions
+         SET status = 'recoverable', updated_at = ?
+         WHERE status = 'active'
+           AND id != ?
+           AND EXISTS (
+             SELECT 1 FROM playlist_queue q
+             WHERE q.session_id = playback_queue_sessions.id
+               AND q.status = 'pending'
+           )`,
+      )
+      .run(updatedAt, exceptSessionId);
+    return result.changes;
+  }
+
   closeQueueSession(id: string, closedAt: string): void {
     this.db
       .query(

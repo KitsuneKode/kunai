@@ -1,0 +1,23 @@
+# Queue
+
+Kunai treats the queue as runtime watch intent, not a durable taste artifact.
+
+The queue is checkpointed to SQLite so crashes do not silently destroy user intent. On next startup, prior active sessions with pending queue items are marked recoverable and exposed as a notification.
+
+## Rules
+
+- queue recovery never autoplays
+- queue recovery never silently replaces current playback
+- restore is a user action from the inbox
+- queue items store title identity and provider hints, not stream URLs
+- streams are resolved late when playback or download actually needs them
+
+## Placement
+
+Shared media actions support:
+
+- queue next
+- queue after current series
+- queue at end
+
+These actions can be offered from notifications, history, recommendations, search, playlists, and post-playback surfaces without each surface inventing queue policy.

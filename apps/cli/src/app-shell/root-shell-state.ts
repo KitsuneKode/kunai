@@ -11,6 +11,7 @@ export type RootOwnedOverlay = Extract<
       | "library"
       | "provider_picker"
       | "history"
+      | "notifications"
       | "settings"
       | "season_picker"
       | "episode_picker"
@@ -40,6 +41,7 @@ export function isRootOwnedOverlay(
     overlay?.type === "library" ||
     overlay?.type === "provider_picker" ||
     overlay?.type === "history" ||
+    overlay?.type === "notifications" ||
     overlay?.type === "settings" ||
     overlay?.type === "season_picker" ||
     overlay?.type === "episode_picker" ||

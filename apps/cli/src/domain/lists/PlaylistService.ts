@@ -1,5 +1,6 @@
 import type { PlaylistItem, PlaylistItemInput, PlaylistRepository } from "@kunai/storage";
 
+import type { MediaItemIdentity } from "../media/media-item-identity";
 import type { ListService } from "./ListService";
 
 export type { PlaylistItem, PlaylistItemInput };
@@ -21,6 +22,27 @@ export class PlaylistService {
 
   enqueue(input: Omit<PlaylistItemInput, "sessionId">): PlaylistItem {
     return this.repo.enqueue({ ...input, sessionId: this.sessionId });
+  }
+
+  enqueueMediaItem(
+    item: MediaItemIdentity,
+    options: {
+      readonly placement: "next" | "after-current-chain" | "end";
+      readonly source: string;
+    },
+  ): PlaylistItem {
+    const priority =
+      options.placement === "next" ? 100 : options.placement === "after-current-chain" ? 50 : 0;
+    return this.enqueue({
+      title: item.title,
+      mediaKind: item.mediaKind,
+      titleId: item.titleId,
+      season: item.season,
+      episode: item.episode,
+      absoluteEpisode: item.absoluteEpisode,
+      priority,
+      source: options.source,
+    });
   }
 
   enqueueBatch(items: Omit<PlaylistItemInput, "sessionId">[]): void {

@@ -12,6 +12,7 @@ export type AppCommandId =
   | "surprise"
   | "settings"
   | "presence"
+  | "notifications"
   | "toggle-mode"
   | "quit"
   | "provider"
@@ -72,6 +73,7 @@ export const COMMAND_CONTEXTS = {
     "sync",
     "library",
     "downloads",
+    "notifications",
     "history",
     "setup",
     "settings",
@@ -99,6 +101,7 @@ export const COMMAND_CONTEXTS = {
     "stop-after-current",
     "downloads",
     "library",
+    "notifications",
     "history",
     "diagnostics",
     "export-diagnostics",
@@ -118,6 +121,7 @@ export const COMMAND_CONTEXTS = {
     "download",
     "library",
     "downloads",
+    "notifications",
     "watchlist",
     "playlist",
     "stats",
@@ -232,6 +236,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Discord Presence",
     aliases: ["presence", "discord", "rpc", "rich-presence"],
     description: "Open settings for Discord Rich Presence setup and status",
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    aliases: ["notifications", "inbox", "alerts"],
+    description: "Review new episodes, queue recovery, downloads, and app notices",
   },
   {
     id: "toggle-mode",
@@ -602,6 +612,7 @@ function resolveCommandState(
     case "surprise":
     case "settings":
     case "presence":
+    case "notifications":
     case "history":
     case "details":
     case "diagnostics":

@@ -32,6 +32,7 @@ import {
   buildHistoryPickerOptions,
   buildHelpPanelLines,
   buildHistoryPanelLines,
+  buildNotificationPanelLines,
   buildProviderPickerOptions,
 } from "./panel-data";
 import {
@@ -178,7 +179,9 @@ export function RootOverlayShell({
               capabilitySnapshot: container.capabilitySnapshot,
               presenceSnapshot: container.presence.getSnapshot(),
             })
-          : [];
+          : overlay.type === "notifications"
+            ? buildNotificationPanelLines(container.notificationService.listActive())
+            : [];
   const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;
   const providerOptions =
     overlay.type === "provider_picker"
@@ -310,6 +313,7 @@ export function RootOverlayShell({
         action === "about" ||
         action === "diagnostics" ||
         action === "downloads" ||
+        action === "notifications" ||
         action === "history" ||
         action === "provider"
       ) {
@@ -329,11 +333,13 @@ export function RootOverlayShell({
                 }
               : action === "history"
                 ? { type: "history" }
-                : action === "downloads"
-                  ? { type: "downloads" }
-                  : action === "settings" || action === "presence"
-                    ? { type: "settings" }
-                    : { type: action },
+                : action === "notifications"
+                  ? { type: "notifications" }
+                  : action === "downloads"
+                    ? { type: "downloads" }
+                    : action === "settings" || action === "presence"
+                      ? { type: "settings" }
+                      : { type: action },
         });
         return;
       }

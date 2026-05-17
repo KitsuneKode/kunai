@@ -18,11 +18,14 @@ import {
 } from "@kunai/providers";
 import {
   DownloadJobsRepository,
+  FollowedTitleRepository,
   getKunaiPaths,
   HistoryRepository,
   ListRepository,
+  NotificationRepository,
   openKunaiDatabase,
   PlaylistRepository,
+  PlaylistsRepository,
   ProviderHealthRepository,
   RecommendationCacheRepository,
   runMigrations,
@@ -71,6 +74,7 @@ import { DiagnosticsServiceImpl } from "./services/diagnostics/DiagnosticsServic
 import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
 import { DownloadService } from "./services/download/DownloadService";
+import { NotificationService } from "./services/notifications/NotificationService";
 import { OfflineLibraryService } from "./services/offline/OfflineLibraryService";
 import type { CacheStore } from "./services/persistence/CacheStore";
 import type { ConfigService } from "./services/persistence/ConfigService";
@@ -140,6 +144,7 @@ export interface Container {
   readonly providerHealth: ProviderHealthRepository;
   readonly downloadService: DownloadService;
   readonly offlineLibraryService: OfflineLibraryService;
+  readonly notificationService: NotificationService;
   readonly presence: PresenceService;
 
   // Session
@@ -157,6 +162,9 @@ export interface Container {
   // Lists, playlist, stats, and sync
   readonly listRepository: ListRepository;
   readonly playlistRepository: PlaylistRepository;
+  readonly notificationRepository: NotificationRepository;
+  readonly followedTitleRepository: FollowedTitleRepository;
+  readonly playlistsRepository: PlaylistsRepository;
   readonly listService: ListService;
   readonly playlistService: PlaylistService;
   readonly statsService: StatsService;
@@ -234,6 +242,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const downloadJobs = new DownloadJobsRepository(dataDb);
   const listRepository = new ListRepository(dataDb);
   const playlistRepository = new PlaylistRepository(dataDb);
+  const notificationRepository = new NotificationRepository(dataDb);
+  const followedTitleRepository = new FollowedTitleRepository(dataDb);
+  const playlistsRepository = new PlaylistsRepository(dataDb);
   const diagnosticsStore = new DiagnosticsStoreImpl();
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
     diagnosticsStore,
@@ -356,6 +367,28 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     downloadService,
     historyStore,
   });
+  const notificationService = new NotificationService({
+    repo: notificationRepository,
+    getMutedTitleIds: () =>
+      new Set(followedTitleRepository.listByPreference("muted").map((item) => item.titleId)),
+  });
+  const startupAt = new Date().toISOString();
+  playlistRepository.markActiveQueueSessionsRecoverable(sessionId, startupAt);
+  playlistRepository.createQueueSession({
+    id: sessionId,
+    status: "active",
+    createdAt: startupAt,
+    updatedAt: startupAt,
+  });
+  notificationService.recordSignals(
+    playlistRepository.listRecoverableQueueSessions().map((queueSession) => ({
+      type: "queue-recoverable" as const,
+      queueSessionId: queueSession.id,
+      itemCount: queueSession.itemCount,
+      updatedAt: queueSession.updatedAt,
+    })),
+    startupAt,
+  );
   const continuationProjectionService = new ContinuationProjectionService();
 
   const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
@@ -408,6 +441,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     providerHealth,
     downloadService,
     offlineLibraryService,
+    notificationService,
     presence,
     stateManager,
     recommendationService,
@@ -417,6 +451,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     updateService,
     listRepository,
     playlistRepository,
+    notificationRepository,
+    followedTitleRepository,
+    playlistsRepository,
     listService,
     playlistService,
     statsService,

@@ -25,6 +25,7 @@ describe("command registry contexts", () => {
       "stop-after-current",
       "downloads",
       "library",
+      "notifications",
       "history",
       "diagnostics",
       "export-diagnostics",
@@ -78,6 +79,10 @@ describe("command registry contexts", () => {
       "download",
       "library",
       "downloads",
+      "notifications",
+      "watchlist",
+      "playlist",
+      "stats",
       "recommendation",
       "random",
       "surprise",
@@ -115,13 +120,14 @@ describe("command registry contexts", () => {
   });
 
   test("keeps root overlay command order focused on first-run actions", () => {
-    expect([...COMMAND_CONTEXTS.rootOverlay].slice(0, 8)).toEqual([
+    expect([...COMMAND_CONTEXTS.rootOverlay].slice(0, 9)).toEqual([
       "watchlist",
       "playlist",
       "stats",
       "sync",
       "library",
       "downloads",
+      "notifications",
       "history",
       "setup",
     ] satisfies readonly AppCommandId[]);

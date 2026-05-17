@@ -12,6 +12,8 @@ bun run lint
 bun run test
 bun run typecheck
 bun run build
+bun run pkg:check
+bun run release:dry-run
 ```
 
 Expected result:
@@ -21,6 +23,20 @@ Expected result:
 - unit and integration tests report 0 failures
 - typecheck exits 0
 - build writes `apps/cli/dist/kunai.js`
+- package check prints npm pack contents without leaking source-only test fixtures
+- release dry-run completes build, checks, and packability without publishing
+
+## Changelog Gate
+
+User-facing changes need a changeset before release:
+
+```sh
+bun run changeset
+```
+
+The generated `.changeset/*.md` file should summarize behavior, migration, and reliability impact.
+The release workflow uses Changesets to open a version PR, update package changelogs, and publish after
+that PR is merged.
 
 ## Provider Reality Gate
 
@@ -105,3 +121,14 @@ Check:
 - `/diagnostics` shows provider and playback events
 - background presence/cache/timing failures appear as redacted diagnostics instead of disappearing silently
 - next/previous/refresh controls do not leave the terminal or mpv in a stuck state
+
+## Attention, Queue, And Playlist Gate
+
+Run these when notifications, queue recovery, history, recommendations, downloads, or playlists change:
+
+- open `/notifications` during playback and confirm playback continues
+- queue an item from a non-playback surface and confirm it does not start immediately
+- crash or kill a session with queued items, restart, and confirm a recoverable queue notice appears
+- dismiss or ignore the recoverable queue notice and confirm Kunai does not auto-restore
+- export a Kunai playlist and inspect the JSON for no stream URLs, headers, cookies, tokens, or local paths
+- import a playlist with an unresolved item and confirm the item does not autoplay
