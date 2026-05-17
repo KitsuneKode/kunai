@@ -34,3 +34,7 @@ Exports must never include:
 - local file paths
 
 Imported unresolved items are inert until explicitly resolved. They must not autoplay from guesses.
+
+## Service Boundary
+
+The durable playlist service creates playlist rows, appends identity-only items, and exports safe Kunai playlist documents. It projects progress from history at export or render time instead of copying mutable progress into playlist storage.

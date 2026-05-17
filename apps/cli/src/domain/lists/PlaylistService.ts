@@ -1,4 +1,9 @@
-import type { PlaylistItem, PlaylistItemInput, PlaylistRepository } from "@kunai/storage";
+import type {
+  PlaylistItem,
+  PlaylistItemInput,
+  PlaylistRepository,
+  QueueSessionRecord,
+} from "@kunai/storage";
 
 import type { MediaItemIdentity } from "../media/media-item-identity";
 import type { ListService } from "./ListService";
@@ -88,6 +93,14 @@ export class PlaylistService {
 
   getUnplayed(): PlaylistItem[] {
     return this.repo.getUnplayed(this.sessionId);
+  }
+
+  listRecoverableSessions(): QueueSessionRecord[] {
+    return this.repo.listRecoverableQueueSessions();
+  }
+
+  restoreRecoverableSession(sourceSessionId: string): number {
+    return this.repo.restoreQueueSession(sourceSessionId, this.sessionId, new Date().toISOString());
   }
 
   markCurrentPlayed(): void {

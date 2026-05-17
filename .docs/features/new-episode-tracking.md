@@ -19,3 +19,5 @@ When enabled, sync must be budgeted:
 - muted titles never refresh
 - stale values are acceptable for non-visible items
 - provider checks must not run as an unbounded N+1 loop
+
+The current scheduler policy is deterministic and pure: it plans eligible title IDs from local visibility, follow, mute, and check-budget facts. Actual provider calls remain a separate experimental integration step.

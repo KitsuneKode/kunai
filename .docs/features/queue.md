@@ -21,3 +21,9 @@ Shared media actions support:
 - queue at end
 
 These actions can be offered from notifications, history, recommendations, search, playlists, and post-playback surfaces without each surface inventing queue policy.
+
+## Restore API
+
+Recoverable queue sessions can be restored into the current session through the queue service. This operation moves only pending items, closes the old queue session, and leaves playback untouched until the user chooses a play action.
+
+The restore path is intentionally explicit so crash recovery is durable without creating surprise autoplay after restart.

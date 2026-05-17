@@ -13,7 +13,10 @@ export interface KunaiPlaylistExportInput {
     readonly season?: number;
     readonly episode?: number;
     readonly sortOrder: number;
-    readonly providerHints?: readonly (MediaProviderHint & Record<string, unknown>)[];
+    readonly providerHints?: readonly (
+      | MediaProviderHint
+      | (MediaProviderHint & Record<string, unknown>)
+    )[];
     readonly progressPercent?: number;
   }[];
   readonly exportedAt?: string;

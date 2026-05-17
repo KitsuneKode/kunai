@@ -270,6 +270,26 @@ export class PlaylistRepository {
       .run(closedAt, closedAt, id);
   }
 
+  restoreQueueSession(
+    sourceSessionId: string,
+    targetSessionId: string,
+    restoredAt: string,
+  ): number {
+    const restore = this.db.transaction(() => {
+      const result = this.db
+        .query(
+          `UPDATE playlist_queue
+           SET session_id = ?
+           WHERE session_id = ?
+             AND status = 'pending'`,
+        )
+        .run(targetSessionId, sourceSessionId);
+      this.closeQueueSession(sourceSessionId, restoredAt);
+      return result.changes;
+    });
+    return restore();
+  }
+
   listRecoverableQueueSessions(limit = 5): QueueSessionRecord[] {
     return this.db
       .query<QueueSessionRow, [number]>(
