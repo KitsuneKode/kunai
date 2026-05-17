@@ -346,4 +346,70 @@ describe("PresenceServiceImpl", () => {
     expect(intervalCount).toBe(1);
     expect(service.getSnapshot().detail).toBe("connected to local Discord client");
   });
+
+  test("shutdown clears Discord activity before destroying the client", async () => {
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnosticsStore: diagnostics,
+    });
+    const calls: string[] = [];
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      discordClient: {
+        async login() {},
+        async setActivity() {},
+        async clearActivity() {
+          calls.push("clear");
+        },
+        async destroy() {
+          calls.push("destroy");
+        },
+        on() {},
+      },
+      lastActivityHash: "activity-hash",
+      lastActivityPayload: { details: "Still visible" },
+      status: "ready",
+    });
+
+    await service.shutdown();
+
+    expect(calls).toEqual(["clear", "destroy"]);
+    expect(diagnostics.messages).toContain("Presence cleared");
+    expect(service.getStatus()).toBe("idle");
+  });
+
+  test("shutdown clears a Discord client that finishes connecting during exit", async () => {
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnosticsStore: diagnostics,
+    });
+    const calls: string[] = [];
+    const client = {
+      async login() {},
+      async setActivity() {
+        calls.push("set");
+      },
+      async clearActivity() {
+        calls.push("clear");
+      },
+      async destroy() {
+        calls.push("destroy");
+      },
+      on() {},
+    };
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      connectPromise: Promise.resolve(client),
+      lastActivityHash: "activity-hash",
+      lastActivityPayload: { details: "Connecting while exiting" },
+      status: "connecting",
+    });
+
+    await service.shutdown();
+
+    expect(calls).toEqual(["clear", "destroy"]);
+    expect(service.getStatus()).toBe("idle");
+  });
 });

@@ -513,9 +513,25 @@ function AppRoot({ container }: { container: Container }) {
     }
   });
 
-  // Register download pause as a pre-exit handler for the /quit path.
+  // Register cleanup as pre-exit handlers for the /quit path.
   // The OS signal handler (SIGINT/SIGTERM) pauses downloads separately,
   // so this handler covers only requestHardExit callers (e.g. /quit).
+  useEffect(
+    () =>
+      registerExitHandler(async () => {
+        await container.presence.shutdown();
+      }),
+    [container],
+  );
+
+  useEffect(
+    () =>
+      registerExitHandler(async () => {
+        await container.player.releasePersistentSession();
+      }),
+    [container],
+  );
+
   useEffect(
     () =>
       registerExitHandler(async () => {

@@ -198,8 +198,12 @@ export class PresenceServiceImpl implements PresenceService {
     this.stopHeartbeat();
     this.lastActivityPayload = null;
     if (!this.discordClient) return;
+    await this.clearDiscordActivity(this.discordClient, reason);
+  }
+
+  private async clearDiscordActivity(client: DiscordRpcClient, reason: string): Promise<void> {
     try {
-      await this.discordClient.clearActivity();
+      await client.clearActivity();
       this.deps.diagnosticsStore.record({
         category: "presence",
         message: "Presence cleared",
@@ -213,8 +217,18 @@ export class PresenceServiceImpl implements PresenceService {
   }
 
   async shutdown(): Promise<void> {
+    const clearedClient = this.discordClient;
+    if (clearedClient) {
+      await this.clearPlayback("shutdown");
+    } else {
+      this.stopHeartbeat();
+      this.lastActivityPayload = null;
+    }
     this.stopHeartbeat();
-    const client = this.discordClient;
+    const client = this.discordClient ?? (await this.connectPromise?.catch(() => null));
+    if (client && client !== clearedClient) {
+      await this.clearDiscordActivity(client, "shutdown");
+    }
     this.discordClient = null;
     this.connectPromise = null;
     this.unavailableUntilRestart = false;
