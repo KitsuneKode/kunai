@@ -149,9 +149,10 @@ export function CommandPalette({
 }) {
   const { stdout } = useStdout();
   const terminalRows = stdout.rows ?? 24;
-  // Dynamic maxVisible: leave room for AppRoot header (~3), browse chrome (~5), palette
-  // chrome (input+hint+list marginTop = 3), group headers (2), footer (~3) = ~16 overhead
-  const maxVisible = maxVisibleProp ?? Math.max(3, terminalRows - 18);
+  // Fallback when caller doesn't pass maxVisible (e.g. ShellFrame). BrowseShell passes an
+  // exact value via computePaletteMaxVisible(); this fallback is for non-browse contexts:
+  // AppRoot header(3) + browse chrome(7) + palette chrome(3) + footer commandMode(5) + groups(3) = 21
+  const maxVisible = maxVisibleProp ?? Math.max(3, terminalRows - 21);
   const model = buildCommandPickerModel(input, commands, highlightedIndex);
   const matches = model.options
     .map((option) => commands.find((command) => command.id === option.value))

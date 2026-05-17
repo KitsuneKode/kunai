@@ -1882,6 +1882,16 @@ function ListShell<T>({
   );
 }
 
+function computePaletteMaxVisible(rows: number, hasSubtitle: boolean, hasFilters: boolean): number {
+  // AppRoot header: 3 rows (brand line + crumb line + marginTop)
+  // Browse chrome: BrowseTitle(1) + subtitle?(1) + filters?(1) + contextStrip+marginTop(2) + InputField(1) + divider+marginTop(2)
+  // Palette chrome: input(1) + hint(1) + marginTop(1)
+  // Footer in commandMode: marginTop(1) + taskLabel(1) + marginTop(1) + "Command palette"(1) + hints(1)
+  // Group overhead worst-case: Context header(1) + Global header(1) + "▼ more"(1)
+  const browseChromeRows = 1 + (hasSubtitle ? 1 : 0) + (hasFilters ? 1 : 0) + 5;
+  return Math.max(3, rows - 3 - browseChromeRows - 3 - 5 - 3);
+}
+
 function BrowseShell<T>({
   mode,
   provider,
@@ -2681,6 +2691,12 @@ function BrowseShell<T>({
           cursor={commandEditor.cursor}
           commands={commands}
           highlightedIndex={highlightedCommandIndex}
+          maxVisible={computePaletteMaxVisible(
+            viewport.rows,
+            Boolean(resultSubtitle && !viewport.ultraCompact),
+            Boolean(activeFilterBadges.length > 0 && !viewport.ultraCompact),
+          )}
+          width={innerWidth}
         />
       ) : null}
 
