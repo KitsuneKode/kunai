@@ -2975,32 +2975,16 @@ async function handleSync(container: Container): Promise<"handled"> {
     if (!picked || picked.type === "back") return "handled";
 
     if (picked.type === "push-now") {
-      const history = await container.historyStore.getAll();
-      const entries = Object.entries(history)
-        .sort(([, a], [, b]) => new Date(b.watchedAt).getTime() - new Date(a.watchedAt).getTime())
-        .slice(0, 20);
+      // Use historyRepository directly to get HistoryProgress — no lossy adapter mapping.
+      const entries = container.historyRepository.listRecent(20);
 
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
         note: `Syncing ${entries.length} entries…`,
       });
 
-      for (const [titleId, entry] of entries) {
-        await syncService.pushWatched({
-          key: titleId,
-          titleId,
-          mediaKind: entry.type as "movie" | "series" | "anime",
-          title: entry.title,
-          season: entry.season,
-          episode: entry.episode,
-          absoluteEpisode: undefined,
-          positionSeconds: entry.timestamp,
-          durationSeconds: entry.duration,
-          completed: entry.completed,
-          providerId: entry.provider as import("@kunai/types").ProviderId | undefined,
-          updatedAt: entry.watchedAt,
-          createdAt: entry.watchedAt,
-        });
+      for (const entry of entries) {
+        await syncService.pushWatched(entry);
       }
 
       container.stateManager.dispatch({

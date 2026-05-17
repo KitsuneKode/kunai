@@ -126,6 +126,8 @@ export interface Container {
 
   // Persistence stores
   readonly historyStore: HistoryStore;
+  /** Raw SQLite repository — use when you need HistoryProgress directly (no adapter mapping). */
+  readonly historyRepository: HistoryRepository;
   readonly configStore: ConfigStore;
   readonly cacheStore: CacheStore;
   readonly diagnosticsStore: DiagnosticsStore;
@@ -218,7 +220,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   // Persistence layer
   const configStore = new ConfigStoreImpl(storage);
-  const historyStore = new SqliteHistoryStoreImpl(new HistoryRepository(dataDb));
+  const historyRepository = new HistoryRepository(dataDb);
+  const historyStore = new SqliteHistoryStoreImpl(historyRepository);
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
@@ -267,7 +270,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const statsFormatter = new StatsFormatter();
   const syncTokenStore = new SyncTokenStore(paths);
   const anilistAdapter = new AniListAdapter(syncTokenStore);
-  const tmdbAdapter = new TmdbAdapter(syncTokenStore, process.env.KUNAI_TMDB_API_KEY ?? "");
+  // Use the same bundled public TMDB key the rest of the app uses for metadata.
+  // TMDB v3 uses a single key for both read and auth flows; no separate env var needed.
+  const TMDB_PUBLIC_KEY = process.env.KUNAI_TMDB_API_KEY ?? "653bb8af90162bd98fc7ee32bcbbfb3d";
+  const tmdbAdapter = new TmdbAdapter(syncTokenStore, TMDB_PUBLIC_KEY);
   await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
   const syncService = new SyncService(anilistAdapter, tmdbAdapter);
 
@@ -380,6 +386,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     workControl,
     storage,
     historyStore,
+    historyRepository,
     configStore,
     cacheStore,
     diagnosticsStore,
