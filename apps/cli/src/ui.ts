@@ -65,7 +65,11 @@ async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<
   await Bun.write(NOTICE_FILE, JSON.stringify(state, null, 2));
 }
 
-export async function checkDeps(appVersion = "0.1.0"): Promise<CapabilitySnapshot> {
+export async function checkDeps(
+  appVersion = "0.1.0",
+  options: { silent?: boolean } = {},
+): Promise<CapabilitySnapshot> {
+  const silent = options.silent ?? false;
   const issues: CapabilityIssue[] = [];
   const mpv = Boolean(Bun.which("mpv"));
   const ffprobe = Boolean(Bun.which("ffprobe"));
@@ -86,7 +90,7 @@ export async function checkDeps(appVersion = "0.1.0"): Promise<CapabilitySnapsho
       message: "mpv not found — required for playback.",
       remediation,
     });
-    console.error("mpv not found — required for playback.");
+    if (!silent) console.error("mpv not found — required for playback.");
   }
 
   if (image.terminal === "windows-terminal" && !chafa) {
@@ -133,7 +137,7 @@ export async function checkDeps(appVersion = "0.1.0"): Promise<CapabilitySnapsho
   const shouldShowRemediation =
     !previous || previous.version !== appVersion || previous.fingerprint !== fingerprint;
 
-  if (shouldShowRemediation) {
+  if (shouldShowRemediation && !silent) {
     for (const issue of snapshot.issues) {
       console.log(`${issue.message}\nFix:\n  ${issue.remediation.join("\n  ")}`);
     }
@@ -141,6 +145,9 @@ export async function checkDeps(appVersion = "0.1.0"): Promise<CapabilitySnapsho
       version: appVersion,
       fingerprint,
     });
+  } else if (shouldShowRemediation && silent) {
+    // Suppress console output — TUI onboarding shows system status visually instead.
+    await saveCapabilityNoticeState({ version: appVersion, fingerprint });
   }
 
   return snapshot;

@@ -45,6 +45,7 @@ import { getKunaiPaths, type DownloadJobRecord } from "@kunai/storage";
 
 import { resolveCommands } from "./commands";
 import { openSessionPicker } from "./session-picker";
+import { runSetupFlow } from "./setup-shell";
 import type { ShellAction } from "./types";
 
 export function localSourceStatusFromArtifactStatus(status: string): LocalSourceStatus {
@@ -188,24 +189,6 @@ const QUALITY_OPTIONS = [
   { value: "480p", label: "480p", detail: "Prefer lighter streams on limited networks" },
 ] as const;
 
-function packageInstallHint(pkg: "mpv" | "yt-dlp" | "chafa" | "imagemagick" | "ffprobe"): string {
-  if (pkg === "ffprobe") {
-    return "Put ffprobe on your PATH via your distro, a static build, or another package manager build that ships the ffprobe binary";
-  }
-  if (process.platform === "darwin") {
-    return `brew install ${pkg}`;
-  }
-  if (process.platform === "linux") {
-    return `sudo pacman -S ${pkg}  ·  or  sudo apt install ${pkg}`;
-  }
-  if (process.platform === "win32") {
-    if (pkg === "chafa") return "winget install hpjansson.Chafa";
-    if (pkg === "imagemagick") return "winget install ImageMagick.ImageMagick";
-    if (pkg === "yt-dlp") return "winget install yt-dlp";
-  }
-  return `${pkg}: install via your system package manager`;
-}
-
 export async function runSetupWizard({
   container,
   force = false,
@@ -214,315 +197,69 @@ export async function runSetupWizard({
   force?: boolean;
 }): Promise<SetupWizardResult> {
   const current = container.config.getRaw();
-  const needsOnboarding = current.onboardingVersion < 1 || !current.downloadOnboardingDismissed;
+  const needsOnboarding = current.onboardingVersion < 2 || !current.downloadOnboardingDismissed;
   if (!force && !needsOnboarding) {
     return "skipped";
   }
 
-  const setupStepTitle = (step: number, title: string) => `[${step}/6] ${title}`;
+  const snapshot = container.capabilitySnapshot ?? {
+    mpv: Boolean(Bun.which("mpv")),
+    ffprobe: Boolean(Bun.which("ffprobe")),
+    ytDlp: Boolean(Bun.which("yt-dlp")),
+    chafa: Boolean(Bun.which("chafa")),
+    magick: Boolean(Bun.which("magick")),
+    image: {
+      renderer: "none",
+      terminal: "unknown",
+      available: false,
+    } as import("@/image").ImageCapability,
+    issues: [],
+  };
+
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
-  const capabilitySnapshot = container.capabilitySnapshot;
-  const ffprobeAvailable = capabilitySnapshot?.ffprobe ?? Boolean(Bun.which("ffprobe"));
-  const ytDlpAvailable = capabilitySnapshot?.ytDlp ?? Boolean(Bun.which("yt-dlp"));
-  const chafaAvailable = capabilitySnapshot?.chafa ?? Boolean(Bun.which("chafa"));
-  const magickAvailable = capabilitySnapshot?.magick ?? Boolean(Bun.which("magick"));
-  const imageCapability = capabilitySnapshot?.image;
-  const postersAvailable = imageCapability?.available ?? false;
-  const posterDetail = imageCapability
-    ? `${imageCapability.renderer} (${imageCapability.terminal})`
-    : "off";
-  const capabilityCard = [
-    `mpv ${capabilitySnapshot?.mpv ? "ready" : "missing"}`,
-    `yt-dlp ${ytDlpAvailable ? "ready" : "missing"}`,
-    `ffprobe ${ffprobeAvailable ? "ready" : "optional"} (artifact check)`,
-    `posters ${postersAvailable ? posterDetail : "off"}`,
-    `chafa ${chafaAvailable ? "ready" : "optional"}`,
-    `magick ${magickAvailable ? "ready" : "optional"}`,
-  ].join("  ·  ");
+  const { result } = runSetupFlow(snapshot);
+  const { outcome, prefs } = await result;
 
-  const startChoice = await chooseFromListShell({
-    title: setupStepTitle(1, "Setup Wizard"),
-    subtitle: `Configure downloads and offline defaults without leaving the TUI  ·  ${capabilityCard}`,
-    options: [
-      {
-        value: "continue" as const,
-        label: "Continue guided setup",
-        detail: "We will configure downloads, pick a save path, and store onboarding preferences",
-      },
-      {
-        value: "skip" as const,
-        label: "Skip for now",
-        detail: "Keep default behavior and continue straight to search",
-      },
-    ],
-  });
-
-  if (!startChoice || startChoice === "skip") {
-    await container.config.update({
-      onboardingVersion: 1,
-      downloadOnboardingDismissed: true,
-    });
-    await container.config.save();
-    container.diagnosticsStore.record({
-      category: "session",
-      message: "Setup wizard skipped",
-      context: { force },
-    });
-    return startChoice ? "skipped" : "cancelled";
-  }
-
-  while (true) {
-    const dependencyReview = await chooseFromListShell({
-      title: setupStepTitle(2, "Dependency Guide"),
-      subtitle:
-        capabilitySnapshot?.mpv === false
-          ? "mpv is missing and required. Install it, then rerun Kunai. Other items are optional."
-          : "Kunai works with mpv only. Downloads and richer posters are optional add-ons.",
-      options: [
-        {
-          value: "mpv" as const,
-          label: capabilitySnapshot?.mpv ? "mpv detected (required)" : "Install mpv (required)",
-          detail: packageInstallHint("mpv"),
-        },
-        {
-          value: "yt-dlp" as const,
-          label: ytDlpAvailable
-            ? "yt-dlp detected (download engine ready)"
-            : "Install yt-dlp for offline downloads",
-          detail: packageInstallHint("yt-dlp"),
-        },
-        {
-          value: "ffprobe" as const,
-          label: ffprobeAvailable
-            ? "ffprobe detected (optional download validation)"
-            : "Install ffprobe for optional post-download validation",
-          detail: packageInstallHint("ffprobe"),
-        },
-        {
-          value: "chafa" as const,
-          label: chafaAvailable
-            ? "chafa detected (poster previews ready)"
-            : "Install chafa for poster previews",
-          detail: packageInstallHint("chafa"),
-        },
-        {
-          value: "magick" as const,
-          label: magickAvailable
-            ? "ImageMagick detected (broader Kitty posters)"
-            : "Install ImageMagick for broader Kitty posters",
-          detail: packageInstallHint("imagemagick"),
-        },
-        {
-          value: "continue" as const,
-          label: "Continue setup",
-          detail: "Apply download preferences and finish onboarding",
-        },
-      ],
-    });
-
-    if (!dependencyReview) {
-      return "cancelled";
-    }
-    if (dependencyReview === "continue") {
-      break;
-    }
-  }
-
-  while (true) {
-    const posterReview = await chooseFromListShell({
-      title: setupStepTitle(3, "Poster Preview"),
-      subtitle: postersAvailable
-        ? `Poster previews are available via ${posterDetail}`
-        : "Poster previews are currently unavailable. You can still use Kunai normally.",
-      options: [
-        {
-          value: "status" as const,
-          label: postersAvailable ? "Poster previews enabled" : "Poster previews unavailable",
-          detail: imageCapability?.reason ?? "No compatible terminal protocol detected",
-        },
-        {
-          value: "chafa" as const,
-          label: chafaAvailable
-            ? "chafa detected (Sixel/symbols ready)"
-            : "Install chafa for Windows/WezTerm posters",
-          detail: packageInstallHint("chafa"),
-        },
-        {
-          value: "magick" as const,
-          label: magickAvailable
-            ? "ImageMagick detected (broader Kitty posters)"
-            : "Install ImageMagick for broader Kitty posters",
-          detail: packageInstallHint("imagemagick"),
-        },
-        {
-          value: "env" as const,
-          label: "Poster env overrides",
-          detail: "KUNAI_POSTER=0  ·  KUNAI_IMAGE_PROTOCOL=auto|kitty|sixel|symbols|none",
-        },
-        {
-          value: "continue" as const,
-          label: "Continue setup",
-          detail: "Proceed to download preferences",
-        },
-      ],
-    });
-
-    if (!posterReview) {
-      return "cancelled";
-    }
-    if (posterReview === "continue") {
-      break;
-    }
-  }
-
-  const downloadChoice = await chooseFromListShell({
-    title: setupStepTitle(4, "Offline Downloads"),
-    subtitle: ytDlpAvailable
-      ? "yt-dlp detected — download queue can run when downloads are enabled"
-      : "yt-dlp not found — enable downloads in settings and install yt-dlp to use the queue",
-    options: [
-      {
-        value: "enable" as const,
-        label: "Enable downloads",
-        detail: ytDlpAvailable
-          ? "Queue downloads from browse or playback; manage jobs with /downloads"
-          : "Save the preference now; install yt-dlp (optional ffprobe for validation) for full checks",
-      },
-      {
-        value: "disable" as const,
-        label: "Keep downloads disabled",
-        detail: "You can rerun setup anytime with /setup from the command palette",
-      },
-    ],
-  });
-
-  if (!downloadChoice) {
-    return "cancelled";
-  }
-
-  let downloadPath = current.downloadPath;
-  const pathChoice = await chooseFromListShell({
-    title: setupStepTitle(5, "Download Location"),
-    subtitle:
-      downloadChoice === "enable"
-        ? `Current: ${current.downloadPath || defaultDownloadPath}`
-        : "Downloads are disabled, so location setup is optional for now",
-    options: [
-      {
-        value: "default" as const,
-        label: "Use default Kunai path",
-        detail: `${defaultDownloadPath}  ·  reliable fallback across sessions`,
-      },
-      {
-        value: "keep" as const,
-        label: "Keep current configured path",
-        detail: current.downloadPath || "No custom path configured yet",
-      },
-      {
-        value: "skip" as const,
-        label: "Skip path setup",
-        detail: "Keep current location without making changes",
-      },
-    ],
-  });
-
-  if (!pathChoice) {
-    return "cancelled";
-  }
-  if (pathChoice === "default") {
-    downloadPath = defaultDownloadPath;
-  }
-  if (pathChoice === "keep") {
-    downloadPath = current.downloadPath;
-  }
+  const downloadsEnabled = prefs.downloadsEnabled;
+  const downloadPath = downloadsEnabled
+    ? current.downloadPath || defaultDownloadPath
+    : current.downloadPath;
 
   await container.config.update({
-    onboardingVersion: 1,
-    downloadsEnabled: downloadChoice === "enable",
-    downloadPath,
+    onboardingVersion: 2,
     downloadOnboardingDismissed: true,
+    downloadsEnabled,
+    downloadPath,
+    animeLanguageProfile: {
+      ...current.animeLanguageProfile,
+      audio: prefs.audio,
+      subtitle: prefs.subtitle,
+    },
+    seriesLanguageProfile: {
+      ...current.seriesLanguageProfile,
+      subtitle: prefs.subtitle,
+    },
+    movieLanguageProfile: {
+      ...current.movieLanguageProfile,
+      subtitle: prefs.subtitle,
+    },
   });
   await container.config.save();
 
-  const finalDownloadPath =
-    downloadChoice === "enable" ? downloadPath || defaultDownloadPath : "disabled";
-  while (true) {
-    const finalChoice = await chooseFromListShell({
-      title: setupStepTitle(6, "Setup Complete"),
-      subtitle: `Downloads ${downloadChoice === "enable" ? "enabled" : "disabled"}  ·  Path ${finalDownloadPath}  ·  Start with search, discover, random, or offline`,
-      options: [
-        {
-          value: "tips-search" as const,
-          label: "Search a title",
-          detail: 'Type a title or launch with kunai -S "Dune"; Enter opens the selected result',
-        },
-        {
-          value: "tips-discover" as const,
-          label: "Discover and surprise",
-          detail:
-            "Use /discover for recommendations, /calendar for today, or /random for a non-autoplay tray",
-        },
-        {
-          value: "tips-offline" as const,
-          label: "Offline library",
-          detail: "Use /offline or kunai --zen --offline to browse completed downloads locally",
-        },
-        {
-          value: "tips-command" as const,
-          label: "Command palette",
-          detail: "Press / from anywhere; common actions are ordered by the current screen",
-        },
-        {
-          value: "tips-recovery" as const,
-          label: "Recovery is normal",
-          detail:
-            "Use /recover to refresh the current stream, /fallback for another provider, and /diagnostics for evidence",
-        },
-        {
-          value: "tips-download" as const,
-          label: "Download queue",
-          detail:
-            "Use /download while browsing or playing; /downloads manages jobs and /offline plays completed files",
-        },
-        {
-          value: "tips-rerun" as const,
-          label: "Rerun onboarding",
-          detail: "/setup changes downloads, poster hints, and local defaults anytime",
-        },
-        {
-          value: "tips-presence" as const,
-          label: "Discord Presence",
-          detail:
-            "Use /presence to turn on Rich Presence when Discord desktop and IPC are available",
-        },
-        {
-          value: "done" as const,
-          label: "Start using Kunai",
-          detail: "Jump into search and start watching",
-        },
-      ],
-    });
-    if (!finalChoice) {
-      return "cancelled";
-    }
-    if (finalChoice === "done") {
-      break;
-    }
-  }
-
   container.diagnosticsStore.record({
     category: "session",
-    message: "Setup wizard completed",
+    message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
     context: {
-      downloadsEnabled: downloadChoice === "enable",
-      downloadPath: downloadChoice === "enable" ? finalDownloadPath : null,
-      ffprobeAvailable,
-      ytDlpAvailable,
+      outcome,
+      downloadsEnabled,
+      downloadPath: downloadsEnabled ? downloadPath : null,
+      audio: prefs.audio,
+      subtitle: prefs.subtitle,
       force,
     },
   });
 
-  return "completed";
+  return outcome === "completed" ? "completed" : "skipped";
 }
 
 function formatHistoryLabel(entry: HistoryEntry, newEpisodeCount = 0): string {

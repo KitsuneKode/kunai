@@ -422,8 +422,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     applyProtocolHandoffArgs(args, protocolHandoff);
   }
 
-  // Guard: verify required system dependencies before touching the shell
-  const capabilitySnapshot = await checkDeps(KUNAI_VERSION);
+  // Guard: verify required system dependencies before touching the shell.
+  // Silence pre-TUI console output when onboarding will run — the system
+  // check slide shows the same information visually inside the TUI.
+  const { getKunaiPaths } = await import("@kunai/storage");
+  const configJson = await (async () => {
+    try {
+      return (await Bun.file(getKunaiPaths().configPath).json()) as { onboardingVersion?: number };
+    } catch {
+      return {} as { onboardingVersion?: number };
+    }
+  })();
+  const onboardingWillRun = (configJson.onboardingVersion ?? 0) < 2;
+  const capabilitySnapshot = await checkDeps(KUNAI_VERSION, { silent: onboardingWillRun });
 
   // Bootstrap the DI container
   const container = await createContainer({
