@@ -1,4 +1,5 @@
 import type { BrowseShellOption } from "@/app-shell/types";
+import type { ListService } from "@/domain/lists/ListService";
 import type { SearchResult, TitleAliasKind } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import {
@@ -40,9 +41,11 @@ export function toBrowseResultOption(
   historyEntry?: HistoryEntry | null,
   titlePreference: TitleAliasKind | "provider" = "provider",
   enrichment?: ResultEnrichment | null,
+  listService?: ListService,
 ): BrowseShellOption<SearchResult> {
   const historyBadge = buildHistoryBadge(historyEntry);
   const enrichmentBadges = enrichment?.badges ?? [];
+  const inWatchlist = listService?.isInWatchlist(result.id) ?? false;
   const displayTitle = chooseSearchResultTitle(result, titlePreference);
   const alternateTitles = formatAlternateTitles(result, displayTitle);
   const meta = [
@@ -52,6 +55,7 @@ export function toBrowseResultOption(
     formatAnimeAvailability(result),
     formatRating(result.rating),
     ...enrichmentBadges.map((badge) => badge.label),
+    inWatchlist ? "[wl]" : undefined,
     historyBadge,
   ].filter((value): value is string => Boolean(value));
   const posterUrl = toPosterUrl(result.posterPath);
@@ -67,7 +71,7 @@ export function toBrowseResultOption(
     previewMeta: meta,
     previewGroup: result.displayGroup,
     previewTime: result.displayTime,
-    previewBadge: result.displayBadge,
+    previewBadge: inWatchlist ? "wl" : result.displayBadge,
     previewFacts: [
       ...buildLocalEnrichmentFacts(enrichment),
       ...(historyEntry
