@@ -3,7 +3,7 @@
 This is the canonical design reference for future download/offline/onboarding work.
 
 Status: in progress (`--download`, `/download`, `/downloads`, `/library`, validated
-`--offline`, local poster/timing metadata, and best-effort video thumbnails are implemented;
+`--offline`, local poster/timing/duration metadata, local resume progress, and best-effort video thumbnails are implemented;
 daemon extraction and batch downloads are still pending).
 
 ## Product Shape
@@ -19,15 +19,15 @@ The feature must not make startup slower or more fragile.
 
 ## Proposed Layers
 
-| Layer             | Responsibility                                                                                |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| Onboarding wizard | First-run dependency checks, opt-in features, setup rerun                                     |
-| Feature gate      | Pure capability checks such as downloads enabled and `yt-dlp` available                       |
-| Download service  | Queue, yt-dlp process lifecycle, progress, retries, SQLite state                              |
-| Media artifacts   | Persist poster URL, cached IntroDB/AniSkip timing, subtitles, and optional thumbnail sidecars |
-| Offline library   | Browse and play completed local files from stored download metadata                           |
-| Source policy     | Decide local-vs-online actions from cached local state without provider work                  |
-| Notification rail | Small queued status messages for downloads, updates, and offline prompts                      |
+| Layer             | Responsibility                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------- |
+| Onboarding wizard | First-run dependency checks, opt-in features, setup rerun                                               |
+| Feature gate      | Pure capability checks such as downloads enabled and `yt-dlp` available                                 |
+| Download service  | Queue, yt-dlp process lifecycle, progress, retries, SQLite state                                        |
+| Media artifacts   | Persist poster URL, cached IntroDB/AniSkip timing, duration, subtitles, and optional thumbnail sidecars |
+| Offline library   | Browse and play completed local files from stored download metadata                                     |
+| Source policy     | Decide local-vs-online actions from cached local state without provider work                            |
+| Notification rail | Small queued status messages for downloads, updates, and offline prompts                                |
 
 Layering rule: UI asks services for capability/state; services do not render UI.
 
@@ -45,6 +45,7 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - Progress is parsed from yt-dlp newline output and persisted for shell diagnostics/UI.
 - Download-only mode resolves a playable stream without launching mpv.
 - Selected poster URL and IntroDB/AniSkip timing are persisted at enqueue time when available.
+- Completed downloads persist local file size and, when `ffprobe` is available, playable duration after artifact validation.
 - Thumbnail generation is best-effort and post-completion: failure or missing `ffmpeg` must never fail or delay a completed download.
 - Thumbnail sidecars are written through a temporary file and renamed only after a non-empty image exists.
 
@@ -54,6 +55,8 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - Offline prompt appears only after a real network failure.
 - `--offline` and `/library` list completed `download_jobs` and validate artifact readability.
 - Local files should validate before playback; corrupt or missing files should offer re-download, not crash.
+- Offline episode rows may show resume percentage or watched state from local history. This is derived from local
+  SQLite history and download metadata only; opening the library must not call providers.
 - Offline playback uses the shared source-selection policy as a local-only entrypoint:
   ready files play locally, broken files surface repair actions, and no provider resolve is
   triggered merely because the user opened or selected an offline row.
@@ -68,7 +71,7 @@ Layering rule: UI asks services for capability/state; services do not render UI.
   generated thumbnail first, then persisted poster URL, then text-only fallback.
 - Offline title rows should surface local facts that are already in SQLite or on disk:
   playable count, repair count, cached subtitles, timing metadata, artwork/thumbnail
-  availability, size, and the first few local episode rows. Opening the library must
+  availability, duration, size, watch progress, and the first few local episode rows. Opening the library must
   not call providers.
 - Opening `/offline` must not fetch remote metadata. Stored poster URLs are only fetched by the
   terminal image renderer when the selected row needs a preview.

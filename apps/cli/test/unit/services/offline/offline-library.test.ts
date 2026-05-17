@@ -7,6 +7,7 @@ import {
   formatOfflineJobListingTitle,
   formatOfflineLibraryGroupDetail,
   formatOfflineLibraryGroupLabel,
+  formatOfflineMediaDuration,
   formatOfflineShelfBadge,
   formatOfflineShelfDetail,
   groupOfflineLibraryEntries,
@@ -77,6 +78,7 @@ describe("offline-library helpers", () => {
       season: 1,
       episode: 4,
       fileSize: 15_728_640,
+      durationMs: 1_500_000,
       subtitlePath: "/downloads/example.srt",
       introSkipJson: JSON.stringify({ openings: [] }),
       posterUrl: "https://img.example/poster.jpg",
@@ -86,9 +88,15 @@ describe("offline-library helpers", () => {
 
     expect(formatOfflineShelfBadge(job, "ready")).toBe("offline ready");
     expect(formatOfflineShelfDetail(job, "ready")).toBe(
-      "S01E04 · 15.0 MB · subtitles cached · timing cached · thumbnail ready · Example",
+      "S01E04 · 25m · 15.0 MB · subtitles cached · timing cached · thumbnail ready · Example",
     );
     expect(formatOfflineShelfBadge(job, "missing")).toBe("file missing");
+  });
+
+  test("offline duration labels stay compact for picker rows", () => {
+    expect(formatOfflineMediaDuration(1_500_000)).toBe("25m");
+    expect(formatOfflineMediaDuration(3_720_000)).toBe("1h 02m");
+    expect(formatOfflineMediaDuration(undefined)).toBeNull();
   });
 
   test("offline library groups completed files by title before showing episodes", () => {

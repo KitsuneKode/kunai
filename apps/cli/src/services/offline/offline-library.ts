@@ -133,6 +133,7 @@ export function formatOfflineSecondaryLine(
 ): string {
   const sizeMb =
     typeof job.fileSize === "number" ? `${(job.fileSize / 1_048_576).toFixed(1)} MB` : null;
+  const duration = formatOfflineMediaDuration(job.durationMs);
   const subtitleLabel = job.subtitlePath ? "subtitles cached" : "no subtitles cached";
   const timingLabel = job.introSkipJson ? "timing cached" : null;
   const artworkLabel = job.thumbnailPath
@@ -142,6 +143,7 @@ export function formatOfflineSecondaryLine(
       : null;
   const parts = [
     `${offlineStatusLabel(status)}`,
+    duration,
     sizeMb,
     subtitleLabel,
     timingLabel,
@@ -166,6 +168,7 @@ export function formatOfflineShelfDetail(
 ): string {
   const parts = [
     formatOfflineEpisodeLabel(job),
+    formatOfflineMediaDuration(job.durationMs),
     typeof job.fileSize === "number" ? `${(job.fileSize / 1_048_576).toFixed(1)} MB` : null,
     job.subtitlePath ? "subtitles cached" : "no subtitles cached",
     job.introSkipJson ? "timing cached" : null,
@@ -173,6 +176,17 @@ export function formatOfflineShelfDetail(
     status === "ready" ? basename(dirname(job.outputPath)) : offlineStatusLabel(status),
   ].filter(Boolean);
   return parts.join(" · ");
+}
+
+export function formatOfflineMediaDuration(durationMs?: number): string | null {
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return null;
+  }
+  const totalMinutes = Math.max(1, Math.round(durationMs / 60_000));
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${String(minutes).padStart(2, "0")}m`;
 }
 
 export function resolveOfflineJobPreviewImage(

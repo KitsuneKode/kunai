@@ -25,6 +25,7 @@ import type { CatalogScheduleService } from "@/services/catalog/CatalogScheduleS
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
+import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
   formatOfflineJobListingTitle,
   formatOfflineShelfBadge,
@@ -607,10 +608,13 @@ export async function openOfflineLibraryGroupPicker(
       ...entries.map((entry) => ({
         value: { type: "job" as const, id: entry.job.id },
         label: `${offlineStatusIcon(entry.status)} ${formatOfflineJobListingTitle(entry.job)}`,
-        detail: `${formatOfflineShelfBadge(entry.job, entry.status)}  ·  ${formatOfflineShelfDetail(
-          entry.job,
-          entry.status,
-        )}`,
+        detail: [
+          formatOfflineShelfBadge(entry.job, entry.status),
+          formatOfflineHistoryProgress(entry.job, historyEntries),
+          formatOfflineShelfDetail(entry.job, entry.status),
+        ]
+          .filter(Boolean)
+          .join("  ·  "),
         previewImageUrl: resolveOfflineJobPreviewImage(entry.job),
       })),
       ...buildOfflineGroupActions(entries, container.config.protectedDownloadJobIds),

@@ -76,6 +76,12 @@ requires an explicit confirmation before Kunai performs provider mapping or
 stream resolution. A cancelled download action must leave the post-playback
 context untouched and perform no provider calls.
 
+Manual release smoke for this panel lives in
+[release-reliability-gate.md](./release-reliability-gate.md). Keep the smoke
+focused on side effects: Details is metadata-only, cancelling Download performs
+no provider work, and confirming Download enters the normal guarded download
+flow.
+
 ## Runtime Rules
 
 - Do not fetch recommendations or calendar data on process startup unless the user explicitly starts in that route (`--calendar` or `--random`).

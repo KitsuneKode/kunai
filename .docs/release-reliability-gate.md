@@ -133,6 +133,9 @@ Run these when notifications, queue recovery, history, recommendations, download
 - press `q` in `/history` and confirm the selected title is queued without replacing playback
 - press `q` on a search/recommendation row and confirm the selected title is queued without opening playback
 - after an episode ends with a recommendation rail visible, press `1` and confirm the pick is queued while the post-playback panel stays open
+- after an episode ends with a recommendation rail visible, press `i`, open Details, and confirm no provider or download diagnostics are emitted
+- from that same recommendation action panel, choose Download then Back/Cancel and confirm no provider resolution or download job is created
+- from that same panel, choose Download then confirm queueing and verify the normal download flow starts only after confirmation
 - queue an item from a non-playback surface and confirm it does not start immediately
 - with `KUNAI_EXPERIMENTAL_PROVIDER_AVAILABILITY_SYNC` unset, confirm availability sync records no provider calls
 - crash or kill a session with queued items, restart, and confirm a recoverable queue notice appears

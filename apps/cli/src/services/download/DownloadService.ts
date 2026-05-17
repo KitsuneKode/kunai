@@ -110,6 +110,11 @@ type ActiveDownloadProcess = {
   cancelReason?: string;
 };
 
+type ArtifactValidationResult = {
+  readonly fileSize: number;
+  readonly durationMs?: number;
+};
+
 export class DownloadService {
   private queueWorkerRunning = false;
   private reconciledStartupJobs = false;
@@ -582,7 +587,8 @@ export class DownloadService {
       }
 
       await rename(job.tempPath, job.outputPath);
-      await this.validateCompletedArtifact(job.outputPath);
+      const validation = await this.validateCompletedArtifact(job.outputPath);
+      this.persistValidatedArtifactMetadata(job.id, validation);
       return this.deps.repo.get(job.id) ?? job;
     } finally {
       stopHeartbeat();
@@ -695,13 +701,13 @@ export class DownloadService {
     });
   }
 
-  private async validateCompletedArtifact(outputPath: string): Promise<void> {
+  private async validateCompletedArtifact(outputPath: string): Promise<ArtifactValidationResult> {
     const fileStat = await stat(outputPath);
     if (!fileStat.isFile() || fileStat.size <= 0) {
       throw new Error("artifact-invalid: downloaded file is empty or not a regular file");
     }
     if (!this.deps.ffprobeAvailable || !Bun.which("ffprobe")) {
-      return;
+      return { fileSize: fileStat.size };
     }
     const proc = Bun.spawn(
       [
@@ -723,6 +729,18 @@ export class DownloadService {
     const duration = Number.parseFloat(stdout.trim());
     if (!Number.isFinite(duration) || duration <= 0) {
       throw new Error("artifact-invalid: ffprobe reported no playable duration");
+    }
+    return { fileSize: fileStat.size, durationMs: Math.round(duration * 1_000) };
+  }
+
+  private persistValidatedArtifactMetadata(
+    jobId: string,
+    validation: ArtifactValidationResult,
+  ): void {
+    const updatedAt = new Date().toISOString();
+    this.deps.repo.updateFileSize(jobId, validation.fileSize, updatedAt);
+    if (typeof validation.durationMs === "number") {
+      this.deps.repo.updateOfflineMetadata(jobId, { durationMs: validation.durationMs }, updatedAt);
     }
   }
 

@@ -14,6 +14,7 @@ describe("DownloadService", () => {
   let tempDir: string;
   let repo: DownloadJobsRepository;
   let spawnSpy: ReturnType<typeof spyOn>;
+  let whichSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "kunai-download-service-"));
@@ -21,11 +22,13 @@ describe("DownloadService", () => {
     runMigrations(db, "data");
     repo = new DownloadJobsRepository(db);
     spawnSpy = spyOn(Bun, "spawn");
+    whichSpy = spyOn(Bun, "which");
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     spawnSpy.mockRestore();
+    whichSpy.mockRestore();
     rmSync(tempDir, { recursive: true, force: true });
     mock.restore();
   });
@@ -81,6 +84,49 @@ describe("DownloadService", () => {
     await service.processQueue();
 
     expect(service.listCompleted(10).some((entry) => entry.id === job.id)).toBe(true);
+  });
+
+  test("persists artifact duration when ffprobe validation succeeds", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      ffprobeAvailable: true,
+      downloadPath: tempDir,
+    });
+    whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] === "ffprobe") {
+        return {
+          stdout: streamOf("1500.25\n"),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+        } as never;
+      }
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") {
+        writeFileSync(outputPath, "video-bytes");
+      }
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf(""),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    await service.processQueue();
+
+    const completed = repo.get(job.id);
+    expect(completed?.status).toBe("completed");
+    expect(completed?.durationMs).toBe(1_500_250);
+    expect(completed?.fileSize).toBeGreaterThan(0);
   });
 
   test("carries poster metadata and generates a thumbnail when ffmpeg is available", async () => {
@@ -533,6 +579,7 @@ function buildService({
   resolveDownloadStream,
   abortGraceMs,
   ffmpegAvailable = false,
+  ffprobeAvailable = false,
 }: {
   repo: DownloadJobsRepository;
   downloadsEnabled: boolean;
@@ -541,6 +588,7 @@ function buildService({
   resolveDownloadStream?: ConstructorParameters<typeof DownloadService>[0]["resolveDownloadStream"];
   abortGraceMs?: number;
   ffmpegAvailable?: boolean;
+  ffprobeAvailable?: boolean;
 }): DownloadService {
   return new DownloadService({
     repo,
@@ -549,6 +597,7 @@ function buildService({
       downloadPath,
     } as ConfigService,
     ytDlpAvailable,
+    ffprobeAvailable,
     ffmpegAvailable,
     logger: {
       debug() {},
