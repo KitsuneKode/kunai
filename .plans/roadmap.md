@@ -83,6 +83,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Reliability core hardening and codebase coherence passes are implemented; the coherence report tracks deferred architecture work: [.plans/codebase-coherence-and-redundancy-report.md](.plans/codebase-coherence-and-redundancy-report.md)
 - Diagnostics now carry optional session/playback/provider correlation IDs across provider resolve, cache checks, mpv runtime events, presence background tasks, debug JSONL, and support bundles.
 - Playback recovery now separates restart/replay, recover, advanced source refresh, and fallback semantics. Fresh-source refresh can keep a playable cached stream when no better source is found, and startup storage maintenance prunes only disposable cache-class rows.
+- Attention, queue, notifications, playlist sharing, and crash-recoverable queue execution is now planned as the next unified product layer: [.plans/attention-queue-notifications-playlists.md](.plans/attention-queue-notifications-playlists.md)
 
 ### Recently Improved
 
@@ -112,6 +113,7 @@ Use this file as the planning index. It should stay short. Put implementation de
 | Production recovery hardening     | Planned       | [.plans/production-recovery-hardening.md](.plans/production-recovery-hardening.md)                                   |
 | Production usage hardening        | Planned       | [.plans/production-readiness-usage-hardening.md](.plans/production-readiness-usage-hardening.md)                     |
 | Search/offline engines            | Planned       | [.plans/search-offline-continuation-engines.md](.plans/search-offline-continuation-engines.md)                       |
+| Attention, queue, notifications   | Planned       | [.plans/attention-queue-notifications-playlists.md](.plans/attention-queue-notifications-playlists.md)               |
 | Reliability core autonomous sweep | Implemented   | [.plans/reliability-core-autonomous-sweep.md](.plans/reliability-core-autonomous-sweep.md)                           |
 | Codebase coherence sweep          | Implemented   | [.plans/codebase-coherence-and-redundancy-sweep.md](.plans/codebase-coherence-and-redundancy-sweep.md)               |
 | Playback recovery diagnostics     | Implemented   | [.plans/playback-recovery-diagnostics-storage-chain.md](.plans/playback-recovery-diagnostics-storage-chain.md)       |

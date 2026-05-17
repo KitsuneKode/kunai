@@ -51,16 +51,17 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 
 ## Active tracks (accurate status)
 
-| Track                          | Status                                            | Source of truth                                                                                      |
-| ------------------------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Daily-use UX hardening         | Implementation pass done; manual smoke + doc sync | [daily-use-ux-discovery-and-runtime-hardening.md](./daily-use-ux-discovery-and-runtime-hardening.md) |
-| Fullscreen root shell redesign | In progress (slices 1–2 partial)                  | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)                             |
-| Phase 1.8 content tree         | In progress                                       | [phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md)               |
-| Beta UI/provider hardening     | In progress (tasks 8–10)                          | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                     |
-| Catalog schedule polish        | In progress (calendar UX + browse badges)         | [catalog-release-schedule-service.md](./catalog-release-schedule-service.md)                         |
-| Design system + Discover       | Polish / verification                             | [kitsune-design-system-and-recommendations.md](./kitsune-design-system-and-recommendations.md)       |
-| Reliability/coherence path     | Implemented; use report for next sweep            | [codebase-coherence-and-redundancy-report.md](./codebase-coherence-and-redundancy-report.md)         |
-| Playback recovery diagnostics  | Core slices implemented; manual smoke remains     | [playback-recovery-diagnostics-storage-chain.md](./playback-recovery-diagnostics-storage-chain.md)   |
+| Track                           | Status                                            | Source of truth                                                                                      |
+| ------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Daily-use UX hardening          | Implementation pass done; manual smoke + doc sync | [daily-use-ux-discovery-and-runtime-hardening.md](./daily-use-ux-discovery-and-runtime-hardening.md) |
+| Fullscreen root shell redesign  | In progress (slices 1–2 partial)                  | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)                             |
+| Phase 1.8 content tree          | In progress                                       | [phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md)               |
+| Beta UI/provider hardening      | In progress (tasks 8–10)                          | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                     |
+| Catalog schedule polish         | In progress (calendar UX + browse badges)         | [catalog-release-schedule-service.md](./catalog-release-schedule-service.md)                         |
+| Design system + Discover        | Polish / verification                             | [kitsune-design-system-and-recommendations.md](./kitsune-design-system-and-recommendations.md)       |
+| Reliability/coherence path      | Implemented; use report for next sweep            | [codebase-coherence-and-redundancy-report.md](./codebase-coherence-and-redundancy-report.md)         |
+| Playback recovery diagnostics   | Core slices implemented; manual smoke remains     | [playback-recovery-diagnostics-storage-chain.md](./playback-recovery-diagnostics-storage-chain.md)   |
+| Attention, queue, notifications | Planned; no implementation landed yet             | [attention-queue-notifications-playlists.md](./attention-queue-notifications-playlists.md)           |
 
 ---
 
@@ -75,6 +76,7 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 - **Image flicker on terminal shrink** — explicit cleanup in `ink-shell.tsx` comments; image-pane ownership incomplete.
 - **Trace/event correlation expansion** — core playback/provider/background events now share IDs; future work can carry the same IDs into provider package resolve trace payloads and persisted `resolve_traces`.
 - **Manual playback smoke** — source refresh/recover/fallback semantics have deterministic tests; one real mpv/provider smoke should still be run near release when provider access is acceptable.
+- **Attention/queue implementation** — the plan is intentionally broad but sequenced. Build shared media action policy, feature flags, and queue recovery before inbox UI, provider availability sync, or playlist sharing.
 
 ---
 
