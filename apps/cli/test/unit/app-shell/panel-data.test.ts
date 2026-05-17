@@ -356,4 +356,43 @@ describe("panel-data", () => {
     expect(options[0]?.label).toContain("Newer Show");
     expect(options[1]?.value).toBe("older");
   });
+
+  test("buildDiagnosticsPanelLines exposes memory trend as a runtime-only diagnostic", () => {
+    const lines = buildDiagnosticsPanelLines({
+      state: createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      recentEvents: [],
+      memorySamples: [
+        {
+          timestamp: 1000,
+          snapshot: {
+            appRssBytes: 256 * 1024 * 1024,
+            appHeapUsedBytes: 80 * 1024 * 1024,
+            appHeapTotalBytes: 128 * 1024 * 1024,
+            playbackChildRssBytes: 0,
+            playbackChildSwapBytes: 0,
+            playbackChildCount: 0,
+          },
+        },
+        {
+          timestamp: 31_000,
+          snapshot: {
+            appRssBytes: 400 * 1024 * 1024,
+            appHeapUsedBytes: 190 * 1024 * 1024,
+            appHeapTotalBytes: 220 * 1024 * 1024,
+            playbackChildRssBytes: 20 * 1024 * 1024,
+            playbackChildSwapBytes: 0,
+            playbackChildCount: 1,
+          },
+        },
+      ],
+    });
+
+    expect(lines.find((line) => line.label === "Memory trend")?.detail).toContain("growing");
+    expect(lines.find((line) => line.label === "Memory trend")?.tone).toBe("warning");
+    expect(lines.find((line) => line.label === "Memory")?.detail).toContain("Watch");
+  });
 });

@@ -3,6 +3,7 @@ import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
+import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory";
 import { resolveDownloadFeatureState } from "@/services/download/DownloadFeature";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { formatTimestamp, type HistoryEntry } from "@/services/persistence/HistoryStore";
@@ -239,12 +240,14 @@ export function buildDiagnosticsPanelLines({
   capabilitySnapshot,
   downloadSummary,
   presenceSnapshot,
+  memorySamples,
 }: {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
   capabilitySnapshot?: CapabilitySnapshot | null;
   downloadSummary?: { active: number; completed: number; failed?: number } | null;
   presenceSnapshot?: PresenceSnapshot | null;
+  memorySamples?: readonly RuntimeMemorySample[];
 }): readonly ShellPanelLine[] {
   const subtitleState = describeSubtitleState(state);
   const bufferingEvent = findRecentMpvEvent(recentEvents, "network-buffering");
@@ -258,6 +261,7 @@ export function buildDiagnosticsPanelLines({
   const runtimeHealth = buildRuntimeHealthSnapshot({
     recentEvents,
     currentProvider: state.provider,
+    memorySamples,
   });
   const healthSummary = buildDiagnosticsHealthSummary({
     state,
@@ -267,6 +271,7 @@ export function buildDiagnosticsPanelLines({
     runtimeProviderLine: runtimeHealth.provider,
     runtimeNetworkLine: runtimeHealth.network,
     runtimeMemoryLine: runtimeHealth.memory,
+    runtimeMemoryTrendLine: runtimeHealth.memoryTrend,
   });
 
   const issueCount = healthSummary.filter(
@@ -303,6 +308,7 @@ export function buildDiagnosticsPanelLines({
     runtimeHealth.provider,
     runtimeHealth.network,
     runtimeHealth.memory,
+    runtimeHealth.memoryTrend,
     {
       label: "Provider timeline",
       detail: formatProviderTimelineEvent(providerTimelineEvent),
@@ -417,6 +423,7 @@ export function buildDiagnosticsPanelLines({
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
     },
     runtimeHealth.memory,
+    runtimeHealth.memoryTrend,
 
     // ── Support ──
     { label: "─── Support", detail: "", tone: "info" },
@@ -460,6 +467,7 @@ function buildDiagnosticsHealthSummary({
   runtimeProviderLine,
   runtimeNetworkLine,
   runtimeMemoryLine,
+  runtimeMemoryTrendLine,
 }: {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
@@ -468,6 +476,7 @@ function buildDiagnosticsHealthSummary({
   runtimeProviderLine: ShellPanelLine;
   runtimeNetworkLine: ShellPanelLine;
   runtimeMemoryLine: ShellPanelLine;
+  runtimeMemoryTrendLine: ShellPanelLine;
 }): readonly ShellPanelLine[] {
   const playbackIssue = recentEvents.find(
     (event) =>
@@ -538,8 +547,11 @@ function buildDiagnosticsHealthSummary({
     },
     {
       label: "Memory",
-      detail: `${runtimeMemoryLine.tone === "warning" ? "Watch" : "OK"}  ·  ${runtimeMemoryLine.detail ?? runtimeMemoryLine.label}`,
-      tone: runtimeMemoryLine.tone,
+      detail: `${runtimeMemoryLine.tone === "warning" || runtimeMemoryTrendLine.tone === "warning" ? "Watch" : "OK"}  ·  ${runtimeMemoryLine.detail ?? runtimeMemoryLine.label}`,
+      tone:
+        runtimeMemoryLine.tone === "warning" || runtimeMemoryTrendLine.tone === "warning"
+          ? "warning"
+          : runtimeMemoryLine.tone,
     },
   ];
 }

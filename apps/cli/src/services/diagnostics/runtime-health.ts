@@ -2,6 +2,9 @@ import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import {
   collectRuntimeMemorySnapshot,
   formatRuntimeMemory,
+  getRuntimeMemorySamples,
+  summarizeRuntimeMemoryTrend,
+  type RuntimeMemorySample,
   type RuntimeMemorySnapshot,
 } from "@/services/diagnostics/runtime-memory";
 
@@ -17,6 +20,7 @@ export type RuntimeHealthSnapshot = {
   readonly network: RuntimeHealthLine;
   readonly provider: RuntimeHealthLine;
   readonly memory: RuntimeHealthLine;
+  readonly memoryTrend: RuntimeHealthLine;
 };
 
 const NETWORK_EVENT_TYPES = new Set([
@@ -277,6 +281,12 @@ export function summarizeRuntimeMemoryHealth(
   };
 }
 
+export function summarizeRuntimeMemoryTrendHealth(
+  samples: readonly RuntimeMemorySample[] = getRuntimeMemorySamples(),
+): RuntimeHealthLine {
+  return summarizeRuntimeMemoryTrend(samples);
+}
+
 function resolveDurationMs(
   recentEvents: readonly DiagnosticEvent[],
   completedEvent: DiagnosticEvent,
@@ -290,10 +300,12 @@ export function buildRuntimeHealthSnapshot(input: {
   readonly recentEvents: readonly DiagnosticEvent[];
   readonly currentProvider?: string | null;
   readonly memorySnapshot?: RuntimeMemorySnapshot;
+  readonly memorySamples?: readonly RuntimeMemorySample[];
 }): RuntimeHealthSnapshot {
   return {
     network: summarizePlaybackNetworkHealth(input.recentEvents),
     provider: summarizeProviderHealth(input.recentEvents, input.currentProvider),
     memory: summarizeRuntimeMemoryHealth(input.memorySnapshot),
+    memoryTrend: summarizeRuntimeMemoryTrendHealth(input.memorySamples),
   };
 }

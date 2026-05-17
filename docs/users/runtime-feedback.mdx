@@ -24,6 +24,8 @@ The memory line separates Kunai from the player:
 
 On Linux, Kunai reads `/proc` to include the direct `mpv` child. On platforms without `/proc`, the app memory remains available and player memory may show as `0.0 MiB`.
 
+`Memory trend` is a short-lived, in-process sample window. It is not written to the data DB and it resets when Kunai exits. `stable` means recent movement stayed inside the normal noise band, while `growing` means RSS or heap climbed quickly enough to deserve attention.
+
 ## Network and provider feedback
 
 The playback shell and Diagnostics panel summarize the latest mpv and provider events:
@@ -41,6 +43,7 @@ Memory is worth checking when:
 - The app stays open across many titles and RSS only climbs.
 - `mpv` remains non-zero after playback stops.
 - Swap appears in the runtime line.
+- `Memory trend` stays `growing` after several diagnostic checks.
 - The terminal becomes slow while provider/network health looks normal.
 
 If you report this, include the `/diagnostics` output, the exact command you ran, platform details, and whether artwork previews or downloads were enabled.

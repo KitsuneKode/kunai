@@ -24,7 +24,11 @@ import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import type { CatalogScheduleService } from "@/services/catalog/CatalogScheduleService";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
-import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
+import {
+  getRuntimeMemoryLine,
+  getRuntimeMemorySamples,
+  summarizeRuntimeMemoryTrend,
+} from "@/services/diagnostics/runtime-memory";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
@@ -1297,11 +1301,12 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
   const { stateManager, diagnosticsStore } = container;
   const state = stateManager.getState();
   const memoryLine = getRuntimeMemoryLine();
+  const memoryTrend = summarizeRuntimeMemoryTrend(getRuntimeMemorySamples());
   diagnosticsStore.record({
     category: "runtime",
     operation: "runtime.memory.sample",
     message: "Runtime memory sample",
-    context: { memory: memoryLine, source: "diagnostics-command" },
+    context: { memory: memoryLine, trend: memoryTrend.detail, source: "diagnostics-command" },
   });
   const recentEvents = diagnosticsStore.getRecent(6);
   await withOverlay(stateManager, { type: "diagnostics" }, () =>
@@ -1332,6 +1337,7 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
           detail: `${state.searchState}  ·  ${state.searchResults.length} results`,
         },
         { label: "Memory", detail: memoryLine },
+        { label: memoryTrend.label, detail: memoryTrend.detail },
         {
           label: "Startup capabilities",
           detail: container.capabilitySnapshot?.issues?.length
