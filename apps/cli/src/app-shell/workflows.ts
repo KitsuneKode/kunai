@@ -2718,36 +2718,63 @@ export async function openSettingsShell({
 // ─── Watchlist ─────────────────────────────────────────────────────────────────
 
 async function handleWatchlist(container: Container): Promise<"handled"> {
-  const { listService } = container;
+  const { listService, historyStore, catalogScheduleService } = container;
   const actionContext = buildPickerActionContext({ container, taskLabel: "Watchlist" });
 
   while (true) {
     const items = listService.getWatchlist();
 
-    type WlAction = { type: "remove"; titleId: string; title: string } | { type: "back" };
+    // Build per-title progress from history
+    const progressMap = new Map<string, string>();
+    const newEpisodeMap = new Map<string, number>();
+    for (const item of items) {
+      const entries = await historyStore.listByTitle(item.titleId);
+      if (entries.length === 0) continue;
+      const sorted = [...entries].sort((a, b) => Date.parse(b.watchedAt) - Date.parse(a.watchedAt));
+      const latest = sorted[0];
+      if (!latest) continue;
+      const epCode =
+        latest.type === "series" && latest.season && latest.episode
+          ? `S${String(latest.season).padStart(2, "0")}E${String(latest.episode).padStart(2, "0")}`
+          : null;
+      const pct =
+        latest.duration > 0 ? Math.round((latest.timestamp / latest.duration) * 100) : null;
+      const statusLabel = isFinished(latest) ? "watched" : pct !== null ? `${pct}%` : "in progress";
+      const dateLabel = relativeHistoryDate(latest.watchedAt);
+      progressMap.set(item.titleId, [epCode, statusLabel, dateLabel].filter(Boolean).join(" · "));
+
+      if (item.titleId.startsWith("anilist:")) {
+        const schedule = catalogScheduleService.peekNextRelease("anilist", item.titleId);
+        if (schedule?.episode) {
+          const lastAired = schedule.episode - 1;
+          const delta = Math.max(0, lastAired - (latest.episode ?? 0));
+          if (delta > 0) newEpisodeMap.set(item.titleId, delta);
+        }
+      }
+    }
+
+    type WlAction = { type: "select"; titleId: string; title: string } | { type: "back" };
 
     const options: ShellOption<WlAction>[] = [
-      ...items.map((item) => ({
-        value: { type: "remove" as const, titleId: item.titleId, title: item.title },
-        label: item.title,
-        detail: [
-          item.mediaKind,
-          item.season !== null &&
-          item.season !== undefined &&
-          item.episode !== null &&
-          item.episode !== undefined
-            ? `S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`
-            : null,
-        ]
+      ...items.map((item) => {
+        const progress = progressMap.get(item.titleId);
+        const newCount = newEpisodeMap.get(item.titleId);
+        const newBadge = newCount ? `+${newCount} new` : null;
+        const detail = [item.mediaKind, progress ?? "not started", newBadge]
           .filter(Boolean)
-          .join(" · "),
-      })),
+          .join(" · ");
+        return {
+          value: { type: "select" as const, titleId: item.titleId, title: item.title },
+          label: newCount ? `${item.title}  ·  +${newCount} new` : item.title,
+          detail,
+        };
+      }),
       { value: { type: "back" as const }, label: "Back" },
     ];
 
     const subtitle =
       items.length > 0
-        ? `${items.length} title${items.length === 1 ? "" : "s"}  ·  select to remove`
+        ? `${items.length} title${items.length === 1 ? "" : "s"}`
         : "Nothing in your watchlist yet. Add titles from search results via /wl.";
 
     const picked = await chooseFromListShell({
@@ -2759,16 +2786,42 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
 
     if (!picked || picked.type === "back") return "handled";
 
-    const confirm = await chooseFromListShell({
-      title: `Remove "${picked.title}" from watchlist?`,
-      subtitle: "This only removes it from your watchlist, not your history",
+    type SubAction = "search" | "remove" | "back";
+
+    const sub = await chooseFromListShell({
+      title: picked.title,
+      subtitle: "What would you like to do?",
       actionContext,
       options: [
-        { value: true, label: "Remove from watchlist" },
-        { value: false, label: "Keep it" },
+        {
+          value: "search" as SubAction,
+          label: "Open in search",
+          detail: "Search for this title to play it",
+        },
+        { value: "remove" as SubAction, label: "Remove from watchlist" },
+        { value: "back" as SubAction, label: "Back" },
       ],
     });
-    if (confirm) listService.removeFromWatchlist(picked.titleId);
+
+    if (!sub || sub === "back") continue;
+
+    if (sub === "search") {
+      container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: picked.title });
+      return "handled";
+    }
+
+    if (sub === "remove") {
+      const confirm = await chooseFromListShell({
+        title: `Remove "${picked.title}" from watchlist?`,
+        subtitle: "This only removes it from your watchlist, not your history",
+        actionContext,
+        options: [
+          { value: true, label: "Remove from watchlist" },
+          { value: false, label: "Keep it" },
+        ],
+      });
+      if (confirm) listService.removeFromWatchlist(picked.titleId);
+    }
   }
 }
 
@@ -2837,6 +2890,8 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
         ? `${status.unplayedCount} up next · ${all.length - status.unplayedCount} played${staleNote}`
         : "Playlist is empty. Add titles via /playlist-add or [r] refill from watchlist.";
 
+    const firstUnplayedId = all.find((i) => !i.playedAt)?.id;
+
     const options: ShellOption<PlAction>[] = [
       ...all.map((item) => {
         const ep =
@@ -2847,10 +2902,18 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
             ? ` S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`
             : "";
         const played = item.playedAt !== undefined;
+        const isNext = !played && item.id === firstUnplayedId;
+        const addedLabel = relativeHistoryDate(item.addedAt);
+        const label = isNext ? `▶  ${item.title}${ep}` : `${item.title}${ep}`;
+        const detail = played
+          ? `${item.mediaKind} · played · ${relativeHistoryDate(item.playedAt ?? item.addedAt)}`
+          : isNext
+            ? `${item.mediaKind} · next · added ${addedLabel}`
+            : `${item.mediaKind} · up next · added ${addedLabel}`;
         return {
           value: { type: "remove" as const, id: item.id, title: item.title },
-          label: played ? `${item.title}${ep}  ·  played` : `${item.title}${ep}`,
-          detail: played ? item.mediaKind + " · played" : item.mediaKind + " · up next",
+          label,
+          detail,
         };
       }),
       ...(all.some((i) => i.playedAt)
@@ -2957,21 +3020,30 @@ async function handleStats(container: Container): Promise<"handled"> {
   while (true) {
     const windowDays = windows[windowIdx] ?? 0;
     const stats = statsService.getStats(windowDays || 99999);
-    const heatmap = statsFormatter.formatHeatmap(stats.heatmap);
-    const topShows = statsFormatter.formatTopShows(stats.topShows);
     const summary = statsFormatter.formatSummaryLine(stats);
+    const weekly = statsFormatter.formatWeeklyDigest(stats);
+    const topShows = statsFormatter.formatTopShows(stats.topShows.slice(0, 5));
     const windowLabel = windowLabels[windowIdx] ?? "30d";
 
-    type StatsAction = "next-window" | "back";
+    type StatsAction = "window-30" | "window-90" | "window-all" | "back";
 
     const options: ShellOption<StatsAction>[] = [
-      { value: "next-window", label: `Window: [${windowLabel}]  →  cycle` },
+      {
+        value: "window-30",
+        label: `Last 30 days${windowIdx === 0 ? "  ·  current" : ""}`,
+      },
+      {
+        value: "window-90",
+        label: `Last 90 days${windowIdx === 1 ? "  ·  current" : ""}`,
+      },
+      {
+        value: "window-all",
+        label: `All time${windowIdx === 2 ? "  ·  current" : ""}`,
+      },
       { value: "back", label: "Back" },
     ];
 
-    const subtitle = [summary, "", "Heatmap (last 12 months):", heatmap, "", "Top shows:", topShows]
-      .join("\n")
-      .slice(0, 800);
+    const subtitle = [summary, weekly, "", "Top shows:", topShows].join("\n");
 
     const picked = await chooseFromListShell({
       title: `Watch Stats — ${windowLabel}`,
@@ -2981,9 +3053,9 @@ async function handleStats(container: Container): Promise<"handled"> {
     });
 
     if (!picked || picked === "back") return "handled";
-    if (picked === "next-window") {
-      windowIdx = (windowIdx + 1) % windows.length;
-    }
+    if (picked === "window-30") windowIdx = 0;
+    else if (picked === "window-90") windowIdx = 1;
+    else if (picked === "window-all") windowIdx = 2;
   }
 }
 

@@ -12,14 +12,15 @@ export type CalendarResultBundle = {
 };
 
 export async function loadCalendarResults(
-  container: Pick<Container, "stateManager" | "timelineService">,
+  container: Pick<Container, "stateManager" | "timelineService" | "listService">,
   signal?: AbortSignal,
 ): Promise<CalendarResultBundle> {
   const mode = container.stateManager.getState().mode;
   const days = mode === "anime" ? 7 : 1;
   const items = await loadCalendarWindow(container.timelineService, mode, days, signal);
   const sorted = [...items].sort(compareCalendarItems);
-  const results = sorted.map((item) => toCalendarSearchResult(item));
+  const isInWatchlist = (titleId: string) => container.listService.isInWatchlist(titleId);
+  const results = sorted.map((item) => toCalendarSearchResult(item, isInWatchlist));
   const releasedCount = sorted.filter((item) => item.status === "released").length;
   const upcomingCount = sorted.filter((item) => item.status !== "released").length;
   const todayCount = sorted.filter((item) => isSameLocalDay(item.releaseAt, Date.now())).length;
@@ -39,7 +40,10 @@ export async function loadCalendarResults(
   };
 }
 
-function toCalendarSearchResult(item: CatalogScheduleItem): SearchResult {
+function toCalendarSearchResult(
+  item: CatalogScheduleItem,
+  isInWatchlist?: (titleId: string) => boolean,
+): SearchResult {
   const releaseLabel = describeCalendarRelease(item);
   const source = item.source === "anilist" ? "AniList" : "TMDB";
   const year = item.releaseAt ? String(new Date(item.releaseAt).getFullYear()) : "";
@@ -64,7 +68,11 @@ function toCalendarSearchResult(item: CatalogScheduleItem): SearchResult {
     popularity: item.popularity,
     displayGroup: groupLabel,
     displayTime: timeLabel,
-    displayBadge: typeof item.episode === "number" ? `EP ${item.episode}` : undefined,
+    displayBadge: isInWatchlist?.(item.titleId)
+      ? "wl"
+      : typeof item.episode === "number"
+        ? `EP ${item.episode}`
+        : undefined,
     episodeCount: item.episode,
   };
 }
