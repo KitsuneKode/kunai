@@ -70,6 +70,12 @@ mutation stays in `PlaybackPhase`; the shell only renders rows and reports the
 typed action. This keeps playback context stable and prevents the rail from
 turning into a hidden provider-resolution path.
 
+`i` opens a recommendation action panel. Details are rendered from cached
+recommendation metadata only. Download is available from that panel, but it
+requires an explicit confirmation before Kunai performs provider mapping or
+stream resolution. A cancelled download action must leave the post-playback
+context untouched and perform no provider calls.
+
 ## Runtime Rules
 
 - Do not fetch recommendations or calendar data on process startup unless the user explicitly starts in that route (`--calendar` or `--random`).

@@ -66,6 +66,10 @@ Layering rule: UI asks services for capability/state; services do not render UI.
   downloaded files.
 - Offline shelf rows are grouped by title and may render the best local preview image:
   generated thumbnail first, then persisted poster URL, then text-only fallback.
+- Offline title rows should surface local facts that are already in SQLite or on disk:
+  playable count, repair count, cached subtitles, timing metadata, artwork/thumbnail
+  availability, size, and the first few local episode rows. Opening the library must
+  not call providers.
 - Opening `/offline` must not fetch remote metadata. Stored poster URLs are only fetched by the
   terminal image renderer when the selected row needs a preview.
 - Deleting a downloaded artifact removes the media file, subtitle sidecar, recorded thumbnail,

@@ -124,10 +124,10 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
     // ── Panels ──
     { label: "─── Panels", detail: "", tone: "info" },
     { label: "/", detail: "Open command palette" },
+    { label: "?", detail: "Open help on non-text playback and panel surfaces" },
     { label: "/history", detail: "Continue from recent progress" },
     { label: "/notifications", detail: "Review app notices without leaving playback" },
-    { label: "?", detail: "This help panel" },
-    { label: "i", detail: "Diagnostics panel" },
+    { label: "/diagnostics", detail: "Diagnostics panel" },
     { label: "g", detail: "Recommendations" },
 
     // ── Settings & Tools ──
@@ -140,6 +140,8 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
     // ── Downloads ──
     { label: "─── Downloads", detail: "", tone: "info" },
     { label: "Ctrl+D", detail: "Download highlighted title from browse" },
+    { label: "d", detail: "Download the current episode from post-playback" },
+    { label: "i", detail: "Open post-playback recommendation pick actions" },
     { label: "/downloads", detail: "Manage queued, running, and failed jobs" },
     { label: "/library", detail: "Play completed local downloads" },
     { label: "/offline", detail: "Alias for the playable offline library" },

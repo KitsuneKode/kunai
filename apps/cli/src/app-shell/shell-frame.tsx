@@ -58,6 +58,10 @@ export function ShellFrame({
 
   useInput((input, key) => {
     if (inputLocked || commandMode) return;
+    if (input === "?") {
+      onResolve("help");
+      return;
+    }
     onUnhandledInput?.(input, key);
   });
 

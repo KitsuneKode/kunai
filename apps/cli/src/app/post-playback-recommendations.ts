@@ -8,9 +8,11 @@ export interface PostPlaybackRecommendationItem {
   readonly type: SearchResult["type"];
   readonly sourceId?: string;
   readonly title: string;
+  readonly titleAliases?: SearchResult["titleAliases"];
   readonly year?: string;
   readonly overview?: string;
   readonly posterPath?: string | null;
+  readonly episodeCount?: number;
 }
 
 export async function loadPostPlaybackRecommendationNames(
@@ -74,9 +76,11 @@ function dedupeRecommendationItems(
       type: item.type,
       ...(item.metadataSource ? { sourceId: item.metadataSource } : {}),
       title: trimmed,
+      ...(item.titleAliases ? { titleAliases: item.titleAliases } : {}),
       year: item.year,
       overview: item.overview,
       posterPath: item.posterPath,
+      ...(item.episodeCount ? { episodeCount: item.episodeCount } : {}),
     });
     if (out.length >= 8) break;
   }

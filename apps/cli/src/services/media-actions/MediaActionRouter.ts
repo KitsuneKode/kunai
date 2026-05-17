@@ -27,6 +27,7 @@ export interface RunMediaActionInput {
   readonly source: string;
   readonly playbackActive?: boolean;
   readonly confirmedContextSwitch?: boolean;
+  readonly confirmedProviderResolution?: boolean;
 }
 
 export class MediaActionRouter {
@@ -67,6 +68,12 @@ export class MediaActionRouter {
       return;
     }
     if (input.actionId === "download") {
+      if (
+        requiresProviderResolutionConfirmation(input.source) &&
+        !input.confirmedProviderResolution
+      ) {
+        throw new Error("download requires provider resolution confirmation");
+      }
       await this.deps.downloads?.queueDownload(input.item);
       return;
     }
@@ -74,4 +81,8 @@ export class MediaActionRouter {
       await this.deps.notifications?.dismissByItem(input.item);
     }
   }
+}
+
+function requiresProviderResolutionConfirmation(source: string): boolean {
+  return source === "recommendation" || source === "post-playback-recommendation";
 }

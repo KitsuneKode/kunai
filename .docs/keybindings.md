@@ -12,6 +12,8 @@ visibly different.
 ## Principles
 
 - `/` opens commands anywhere the current surface supports command entry.
+- `?` opens help on non-text playback and panel surfaces. In focused search or
+  filter fields, use `/help` so `?` can still be typed normally.
 - `Esc` closes the top overlay or picker first; in post-playback it returns to
   previous results.
 - `Ctrl+C` is the hard global exit.
@@ -99,6 +101,10 @@ already opens settings in the playback loading/resolving shell.
 | `v`   | Quality                                                            |
 | `f`   | Fallback provider                                                  |
 | `a`   | Toggle autoplay                                                    |
+| `d`   | Download current episode                                           |
+| `i`   | Recommendation pick actions, when the rail is visible              |
+| `1-3` | Queue visible recommendation pick, when the rail is visible        |
+| `?`   | Help                                                               |
 | `s`   | Fresh search                                                       |
 | `q`   | Quit                                                               |
 | `Esc` | Back to previous results                                           |
@@ -115,6 +121,10 @@ history pickers.
 | `Enter`   | Confirm selected row                                                             |
 | `Esc`     | Clear filter first; close picker if filter is already empty                      |
 | `/`       | Command palette only when the picker router gives command ownership to the shell |
+
+For download episode checklists specifically, `Space` toggles the highlighted
+episode, `Ctrl+A` selects all visible episodes, and `Enter` queues the selected
+set.
 
 ## Timing And Autoskip
 

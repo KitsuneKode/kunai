@@ -1207,6 +1207,9 @@ function PlaybackShell({
     );
 
   const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
+  const hasRecommendationRail = Boolean(
+    state.recommendationRailItems && state.recommendationRailItems.length > 0,
+  );
   const footerActions: readonly FooterAction[] = [
     { key: "/", label: "commands", action: "command-mode" },
     footerActionFromCommand(
@@ -1281,9 +1284,6 @@ function PlaybackShell({
     state.subtitleStatus,
     state.autoplayPaused ? "Autoplay paused" : "Autoplay ready",
   ].filter((item): item is string => Boolean(item));
-  const hasRecommendationRail = Boolean(
-    state.recommendationRailItems && state.recommendationRailItems.length > 0,
-  );
   const postPlaybackHeading = state.resumeLabel
     ? `Resume from ${state.resumeLabel}`
     : state.autoplayPaused && state.type === "series"
@@ -1315,6 +1315,13 @@ function PlaybackShell({
       escapeAction="back-to-results"
       onUnhandledInput={(input) => {
         if (!hasRecommendationRail) return;
+        if (input.toLowerCase() === "i") {
+          onResolve({
+            type: "open-recommendation-actions",
+            items: state.recommendationRailItems?.slice(0, 3) ?? [],
+          });
+          return;
+        }
         if (input !== "1" && input !== "2" && input !== "3") return;
         const item = state.recommendationRailItems?.[Number(input) - 1];
         if (!item) return;
@@ -1351,7 +1358,7 @@ function PlaybackShell({
                 {hasRecommendationRail ? (
                   <DetailLine
                     label="Recommended next"
-                    value="Press 1-3 to queue a pick without leaving this playback context"
+                    value="Press 1-3 to queue a pick · i opens details/download actions"
                     tone="info"
                   />
                 ) : null}

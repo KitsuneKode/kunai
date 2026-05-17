@@ -1,5 +1,5 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
-import { EmptyState, ResizeBlocker } from "@/app-shell/shell-primitives";
+import { DetailLine, EmptyState, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
@@ -243,21 +243,30 @@ function LibraryTab({ container }: { container: Container }) {
       </Box>
       <Box flexDirection="column">
         {groups.map((group, index) => (
-          <Box key={group.key}>
-            <Text color={index === safeIndex ? palette.teal : palette.gray}>
-              {index === safeIndex ? "❯ " : "  "}
-            </Text>
-            <Text color={index === safeIndex ? "white" : undefined} bold={index === safeIndex}>
-              {truncateLine(group.label, 42)}
-            </Text>
-            <Text color={palette.muted} dimColor>
-              {"  ·  "}
-              {group.actionSummary}
-            </Text>
-            {confirmDeleteKey === group.key ? (
-              <Text color={palette.amber} bold>
-                {"  "}x again to delete
+          <Box key={group.key} flexDirection="column">
+            <Box>
+              <Text color={index === safeIndex ? palette.teal : palette.gray}>
+                {index === safeIndex ? "❯ " : "  "}
               </Text>
+              <Text color={index === safeIndex ? "white" : undefined} bold={index === safeIndex}>
+                {truncateLine(group.label, 42)}
+              </Text>
+              <Text color={palette.muted} dimColor>
+                {"  ·  "}
+                {group.actionSummary}
+              </Text>
+              {confirmDeleteKey === group.key ? (
+                <Text color={palette.amber} bold>
+                  {"  "}x again to delete
+                </Text>
+              ) : null}
+            </Box>
+            {index === safeIndex ? (
+              <Box marginLeft={2}>
+                <Text color={palette.gray} dimColor>
+                  {truncateLine(`${group.artifactSummary} · ${group.detail}`, 110)}
+                </Text>
+              </Box>
             ) : null}
           </Box>
         ))}
@@ -274,6 +283,20 @@ function LibraryTab({ container }: { container: Container }) {
           <Text color={palette.amber}>
             {"⚠ "}Press x again to delete {selectedGroup.titleName} and all local files
           </Text>
+        </Box>
+      ) : null}
+      {selectedGroup && confirmDeleteKey !== selectedGroup.key ? (
+        <Box marginTop={1} flexDirection="column">
+          <DetailLine label="Selected" value={selectedGroup.actionSummary} tone="info" />
+          <DetailLine label="Artifacts" value={selectedGroup.artifactSummary} tone="neutral" />
+          {selectedGroup.entries.slice(0, 3).map((entry) => (
+            <DetailLine
+              key={entry.jobId}
+              label={entry.episodeLabel}
+              value={entry.detail}
+              tone={entry.playable ? "success" : "warning"}
+            />
+          ))}
         </Box>
       ) : null}
     </Box>

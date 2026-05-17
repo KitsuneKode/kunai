@@ -48,3 +48,31 @@ test("play now requires explicit confirmation while playback is active", async (
     }),
   ).rejects.toThrow("requires confirmation");
 });
+
+test("recommendation downloads require explicit provider resolution confirmation", async () => {
+  const calls: string[] = [];
+  const router = new MediaActionRouter({
+    downloads: {
+      queueDownload: async () => {
+        calls.push("download");
+      },
+    },
+  });
+
+  await expect(
+    router.run({
+      actionId: "download",
+      item,
+      source: "post-playback-recommendation",
+    }),
+  ).rejects.toThrow("requires provider resolution confirmation");
+
+  await router.run({
+    actionId: "download",
+    item,
+    source: "post-playback-recommendation",
+    confirmedProviderResolution: true,
+  });
+
+  expect(calls).toEqual(["download"]);
+});

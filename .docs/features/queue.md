@@ -28,6 +28,7 @@ The current shell exposes:
 - `/history`: `q` queues the selected history item without replacing playback
 - search, trending, and recommendation browse rows: `q` queues the highlighted row without opening it
 - post-playback recommendation rail: `1`, `2`, or `3` queues the visible pick without leaving the post-playback controls
+- post-playback recommendation actions: `i` opens details/download actions; download requires confirmation before provider resolution
 
 ## Restore API
 

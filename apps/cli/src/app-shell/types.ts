@@ -104,7 +104,11 @@ export type PlaybackRecommendationRailItem = {
   readonly title: string;
   readonly type: "movie" | "series";
   readonly sourceId?: string;
+  readonly titleAliases?: import("@/domain/types").SearchResult["titleAliases"];
   readonly year?: string;
+  readonly overview?: string;
+  readonly posterPath?: string | null;
+  readonly episodeCount?: number;
 };
 
 export type LoadingShellStage = "finding-stream" | "preparing-player" | "starting-playback";
@@ -201,6 +205,10 @@ export type PlaybackShellResult =
   | {
       readonly type: "queue-recommendation";
       readonly item: PlaybackRecommendationRailItem;
+    }
+  | {
+      readonly type: "open-recommendation-actions";
+      readonly items: readonly PlaybackRecommendationRailItem[];
     };
 
 export function toShellAction(commandId: AppCommandId): ShellAction {
