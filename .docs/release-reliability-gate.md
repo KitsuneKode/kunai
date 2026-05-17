@@ -68,8 +68,10 @@ Expected result:
 - Discord visibly shows Kunai activity during the smoke
 - Discord application assets `kunai` and `subtitles` are uploaded before artwork is treated as verified
 - activity clears after the script exits
-- if `Open in Kunai` changed, `kunai --install-protocol-handler` has been run on the smoke machine
-  and the clicked `kunai://` action shows local confirmation before playback or download
+- if `Open in Kunai` changed, `/presence` can set or clear the safe button URL
+- if `kunai://` changed, `kunai --install-protocol-handler --dry-run` shows the expected XDG
+  desktop entry, then `kunai --install-protocol-handler` has been run on the smoke machine
+- the clicked `kunai://` action shows local confirmation before playback or download
 
 Without `KUNAI_LIVE_DISCORD_PRESENCE=1`, the script must skip safely and avoid Discord IPC.
 

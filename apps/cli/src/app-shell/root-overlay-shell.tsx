@@ -68,6 +68,16 @@ function nextSelectableIndex(
   return from;
 }
 
+function isSafeDiscordOpenUrl(value: string): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "kunai:";
+  } catch {
+    return false;
+  }
+}
+
 function getLatestPresenceErrorDetail(container: Container): string | null {
   const event = container.diagnosticsStore
     .getRecent(20)
@@ -466,6 +476,18 @@ export function RootOverlayShell({
             }
             setSettingsError("Type an absolute download path, or Esc to cancel.");
           }
+          if (settingsChoice === "presenceDiscordOpenUrl" && settingsDraft) {
+            const typedUrl = filterQuery.trim();
+            if (isSafeDiscordOpenUrl(typedUrl)) {
+              setSettingsDraft({ ...settingsDraft, presenceDiscordOpenUrl: typedUrl });
+              setSettingsChoice(null);
+              setFilterQuery("");
+              setSelectedIndex(settingsParentIndex);
+              setSettingsError("Discord open URL saved in draft. Press S to save settings.");
+              return;
+            }
+            setSettingsError("Type a safe https:// or kunai:// URL, or Esc to cancel.");
+          }
           return;
         }
         if (picked.value.startsWith("section:")) {
@@ -551,6 +573,18 @@ export function RootOverlayShell({
               // Keep the existing draft value.
             } else {
               setSettingsError("Type a numeric Discord application client id, or Esc to cancel.");
+              return;
+            }
+          } else if (settingsChoice === "presenceDiscordOpenUrl") {
+            const typedUrl = filterQuery.trim();
+            if (isSafeDiscordOpenUrl(typedUrl)) {
+              next.presenceDiscordOpenUrl = typedUrl;
+            } else if (picked.value === "__clear__") {
+              next.presenceDiscordOpenUrl = "";
+            } else if (picked.value === "__keep__") {
+              // Keep the existing draft value.
+            } else {
+              setSettingsError("Type a safe https:// or kunai:// URL, or Esc to cancel.");
               return;
             }
           } else if (settingsChoice === "quitNearEndBehavior") {

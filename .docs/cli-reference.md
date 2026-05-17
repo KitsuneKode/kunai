@@ -163,12 +163,14 @@ Presence is configured in the shell settings/config, not argv flags:
 | `presenceProvider`        | `off` / `discord`  | Off by default. Discord uses optional local `discord-rpc` if installed.       |
 | `presencePrivacy`         | `full` / `private` | Full shows title/episode/progress/media facts; private keeps title hidden.    |
 | `presenceDiscordClientId` | string             | Discord application id. Empty string falls back to `KUNAI_DISCORD_CLIENT_ID`. |
+| `presenceDiscordOpenUrl`  | string             | Optional safe `https://` or `kunai://` button URL. Empty string disables it.  |
 
-Presence integrations never receive stream URLs, provider URLs, request headers, subtitle URLs, or diagnostics bundles. Discord buttons are URL-only. `presenceDiscordOpenUrl` may use a safe `https://` or `kunai://` URL; `kunai://` links reopen Kunai through `--handoff-url` and require local confirmation before playback or download starts.
+Presence integrations never receive stream URLs, provider URLs, request headers, subtitle URLs, or diagnostics bundles. Discord buttons are URL-only. Configure `presenceDiscordOpenUrl` from `/presence` or `/settings`; `kunai://` links reopen Kunai through `--handoff-url` and require local confirmation before playback or download starts.
 
 Linux source/global installs can register the local scheme explicitly:
 
 ```bash
+kunai --install-protocol-handler --dry-run
 kunai --install-protocol-handler
 ```
 
@@ -195,6 +197,8 @@ bun run dev -- -i 438631 -t movie
 bun run dev -- -i 1396 -t series
 
 # Local protocol handoff target used by registered kunai:// links
+kunai --install-protocol-handler --dry-run
+kunai --install-protocol-handler
 kunai --handoff-url "kunai://play?search=Dune"
 kunai --handoff-url "kunai://download?id=438631&type=movie"
 

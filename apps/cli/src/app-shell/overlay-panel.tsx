@@ -113,6 +113,7 @@ type SettingsAction =
   | "presencePrivacy"
   | "presenceStatus"
   | "presenceDiscordClientId"
+  | "presenceDiscordOpenUrl"
   | "presenceConnection"
   | "downloadsEnabled"
   | "autoDownloadNextCount"
@@ -314,6 +315,10 @@ function describeDiscordClientId(config: KitsuneConfig): string {
   if (source === "environment") return "env";
   if (config.presenceDiscordClientId.trim()) return "configured";
   return "bundled default";
+}
+
+function describeDiscordOpenUrl(config: KitsuneConfig): string {
+  return config.presenceDiscordOpenUrl.trim() ? "configured" : "off";
 }
 
 export function buildSettingsOptions(
@@ -534,6 +539,11 @@ export function buildSettingsOptions(
       value: "presenceDiscordClientId",
       label: `▸ Discord client ID  ·  ${describeDiscordClientId(config)}`,
       detail: "Type a Discord application client id, or use KUNAI_DISCORD_CLIENT_ID",
+    },
+    {
+      value: "presenceDiscordOpenUrl",
+      label: `▸ Discord open URL  ·  ${describeDiscordOpenUrl(config)}`,
+      detail: "Optional safe https:// or kunai:// button URL; local handoffs still confirm",
     },
     {
       value: "presenceConnection",
@@ -799,6 +809,23 @@ export function buildSettingsChoiceOverlay({
             },
           ]
         : []),
+    ];
+  } else if (setting === "presenceDiscordOpenUrl") {
+    title = "Discord open URL";
+    subtitle = config.presenceDiscordOpenUrl.trim()
+      ? `Current ${config.presenceDiscordOpenUrl.trim()}`
+      : "No Discord handoff button configured";
+    options = [
+      {
+        value: "__keep__",
+        label: "Keep current URL",
+        detail: "Type a safe https:// or kunai:// URL to filter, then press Enter to draft it",
+      },
+      {
+        value: "__clear__",
+        label: "Clear open button",
+        detail: "Remove the optional Open in Kunai Discord activity button",
+      },
     ];
   } else if (setting === "quitNearEndBehavior") {
     title = "Quit near end";

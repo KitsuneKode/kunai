@@ -1180,7 +1180,8 @@ export async function applySettingsToRuntime({
 
   if (
     before.presenceProvider !== next.presenceProvider ||
-    before.presenceDiscordClientId !== next.presenceDiscordClientId
+    before.presenceDiscordClientId !== next.presenceDiscordClientId ||
+    before.presenceDiscordOpenUrl !== next.presenceDiscordOpenUrl
   ) {
     await container.presence.disconnect("settings-changed");
   }
@@ -2677,7 +2678,10 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
         label: item.title,
         detail: [
           item.mediaKind,
-          item.season != null && item.episode != null
+          item.season !== null &&
+          item.season !== undefined &&
+          item.episode !== null &&
+          item.episode !== undefined
             ? `S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`
             : null,
         ]
@@ -2782,7 +2786,10 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
     const options: ShellOption<PlAction>[] = [
       ...all.map((item) => {
         const ep =
-          item.season != null && item.episode != null
+          item.season !== null &&
+          item.season !== undefined &&
+          item.episode !== null &&
+          item.episode !== undefined
             ? ` S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`
             : "";
         const played = item.playedAt !== undefined;
@@ -2894,12 +2901,12 @@ async function handleStats(container: Container): Promise<"handled"> {
   let windowIdx = 0;
 
   while (true) {
-    const windowDays = windows[windowIdx]!;
+    const windowDays = windows[windowIdx] ?? 0;
     const stats = statsService.getStats(windowDays || 99999);
     const heatmap = statsFormatter.formatHeatmap(stats.heatmap);
     const topShows = statsFormatter.formatTopShows(stats.topShows);
     const summary = statsFormatter.formatSummaryLine(stats);
-    const windowLabel = windowLabels[windowIdx]!;
+    const windowLabel = windowLabels[windowIdx] ?? "30d";
 
     type StatsAction = "next-window" | "back";
 

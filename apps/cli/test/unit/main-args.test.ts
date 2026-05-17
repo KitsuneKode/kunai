@@ -66,3 +66,10 @@ test("parseArgs supports explicit local protocol handler installation", () => {
 
   expect(args.installProtocolHandler).toBe(true);
 });
+
+test("parseArgs supports dry-run protocol handler inspection", () => {
+  const args = parseArgs(["--install-protocol-handler", "--dry-run"]);
+
+  expect(args.installProtocolHandler).toBe(true);
+  expect(args.dryRun).toBe(true);
+});

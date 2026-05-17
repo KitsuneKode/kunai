@@ -60,6 +60,7 @@ export function parseArgs(argv: string[]): {
   downloadPath?: string;
   handoffUrl?: string;
   installProtocolHandler: boolean;
+  dryRun: boolean;
   initialRoute?: "recommendation" | "calendar" | "random";
   shellChrome: ShellChrome;
 } {
@@ -84,6 +85,7 @@ export function parseArgs(argv: string[]): {
     downloadPath?: string;
     handoffUrl?: string;
     installProtocolHandler: boolean;
+    dryRun: boolean;
     initialRoute?: "recommendation" | "calendar" | "random";
   } = {
     anime: false,
@@ -100,6 +102,7 @@ export function parseArgs(argv: string[]): {
     continuePlayback: false,
     download: false,
     installProtocolHandler: false,
+    dryRun: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -156,6 +159,8 @@ export function parseArgs(argv: string[]): {
       args.handoffUrl = argv[++i];
     } else if (arg === "--install-protocol-handler") {
       args.installProtocolHandler = true;
+    } else if (arg === "--dry-run") {
+      args.dryRun = true;
     } else if (arg === "--mpv-debug") {
       args.mpv = { ...args.mpv, debug: true };
     } else if (arg === "--mpv-clean") {
@@ -375,7 +380,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // Parse CLI arguments
   const args = parseArgs(argv);
   if (args.installProtocolHandler) {
-    const { installKunaiProtocolHandler } = await import("./infra/os/protocol-handler");
+    const { buildProtocolHandlerInstallPlan, installKunaiProtocolHandler } =
+      await import("./infra/os/protocol-handler");
+    if (args.dryRun) {
+      const plan = buildProtocolHandlerInstallPlan();
+      console.log(JSON.stringify(plan, null, 2));
+      return;
+    }
     const paths = await installKunaiProtocolHandler();
     console.log(`Registered kunai:// protocol handler at ${paths.desktopPath}`);
     return;

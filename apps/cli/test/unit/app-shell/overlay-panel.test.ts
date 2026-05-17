@@ -52,12 +52,17 @@ test("settings expose Discord presence onboarding actions", () => {
     ...DEFAULT_CONFIG,
     presenceProvider: "discord" as const,
     presenceDiscordClientId: "123456789012345678",
+    presenceDiscordOpenUrl: "kunai://play?search=Dune",
   };
   const options = buildSettingsOptions(config);
 
   expect(options.map((option) => option.value)).toContain("presenceDiscordClientId");
+  expect(options.map((option) => option.value)).toContain("presenceDiscordOpenUrl");
   expect(options.map((option) => option.value)).toContain("presenceConnection");
   expect(options.find((option) => option.value === "presenceDiscordClientId")?.label).toContain(
+    "configured",
+  );
+  expect(options.find((option) => option.value === "presenceDiscordOpenUrl")?.label).toContain(
     "configured",
   );
 });
@@ -181,6 +186,22 @@ test("Discord client id setting can keep or clear the configured id", () => {
   expect(overlay.title).toBe("Discord client ID");
   expect(overlay.options.map((option) => option.value)).toContain("__keep__");
   expect(overlay.options.map((option) => option.value)).toContain("__clear__");
+});
+
+test("Discord open URL setting can keep or clear the configured handoff", () => {
+  const overlay = buildSettingsChoiceOverlay({
+    config: {
+      ...DEFAULT_CONFIG,
+      presenceDiscordOpenUrl: "kunai://play?search=Dune",
+    },
+    setting: "presenceDiscordOpenUrl",
+    seriesProviderOptions: [],
+    animeProviderOptions: [],
+  });
+
+  expect(overlay.title).toBe("Discord open URL");
+  expect(overlay.subtitle).toContain("kunai://play?search=Dune");
+  expect(overlay.options.map((option) => option.value)).toEqual(["__keep__", "__clear__"]);
 });
 
 test("buildSettingsOptions includes section separators for general and providers", () => {

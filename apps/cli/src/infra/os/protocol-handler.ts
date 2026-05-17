@@ -6,6 +6,13 @@ export type LinuxProtocolHandlerPaths = {
   readonly desktopPath: string;
 };
 
+export type ProtocolHandlerInstallPlan = {
+  readonly supported: boolean;
+  readonly writes: readonly { readonly path: string; readonly contents: string }[];
+  readonly commands: readonly (readonly string[])[];
+  readonly notes: readonly string[];
+};
+
 export function resolveLinuxProtocolHandlerPaths({
   home,
   xdgDataHome,
@@ -36,6 +43,47 @@ export function buildLinuxProtocolDesktopEntry(executable: string): string {
   ].join("\n");
 }
 
+export function buildProtocolHandlerInstallPlan({
+  platform = process.platform,
+  executable = Bun.which("kunai") ?? process.argv[1] ?? "kunai",
+  home = process.env.HOME,
+  xdgDataHome = process.env.XDG_DATA_HOME,
+}: {
+  readonly platform?: NodeJS.Platform;
+  readonly executable?: string;
+  readonly home?: string;
+  readonly xdgDataHome?: string;
+} = {}): ProtocolHandlerInstallPlan {
+  if (platform !== "linux") {
+    return {
+      supported: false,
+      writes: [],
+      commands: [],
+      notes: [
+        "Automatic kunai:// registration is currently Linux-only in source installs.",
+        "macOS and Windows should be handled by a packaged installer so the OS owns the protocol association.",
+        "Every kunai:// launch still opens Kunai with local confirmation before playback or download starts.",
+      ],
+    };
+  }
+
+  const paths = resolveLinuxProtocolHandlerPaths({ home, xdgDataHome });
+  return {
+    supported: true,
+    writes: [
+      {
+        path: paths.desktopPath,
+        contents: buildLinuxProtocolDesktopEntry(executable),
+      },
+    ],
+    commands: [["xdg-mime", "default", "kunai-protocol-handler.desktop", "x-scheme-handler/kunai"]],
+    notes: [
+      "Registers kunai:// links to call kunai --handoff-url %u.",
+      "The handoff parser accepts only safe playback/download intents and requires local confirmation.",
+    ],
+  };
+}
+
 export async function installKunaiProtocolHandler({
   executable = Bun.which("kunai") ?? process.argv[1] ?? "kunai",
   home = process.env.HOME,
@@ -45,15 +93,18 @@ export async function installKunaiProtocolHandler({
   readonly home?: string;
   readonly xdgDataHome?: string;
 } = {}): Promise<LinuxProtocolHandlerPaths> {
-  if (process.platform !== "linux") {
-    throw new Error(
-      "Automatic kunai:// protocol registration is currently supported on Linux only",
-    );
+  const plan = buildProtocolHandlerInstallPlan({ executable, home, xdgDataHome });
+  if (!plan.supported) {
+    throw new Error(plan.notes.join(" "));
   }
 
   const paths = resolveLinuxProtocolHandlerPaths({ home, xdgDataHome });
   await mkdir(paths.applicationsDir, { recursive: true });
-  await Bun.write(paths.desktopPath, buildLinuxProtocolDesktopEntry(executable));
+  const desktopEntry = plan.writes.find((write) => write.path === paths.desktopPath);
+  await Bun.write(
+    paths.desktopPath,
+    desktopEntry?.contents ?? buildLinuxProtocolDesktopEntry(executable),
+  );
 
   const xdgMime = Bun.which("xdg-mime");
   if (xdgMime) {

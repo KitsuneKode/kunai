@@ -23,10 +23,14 @@ Status: implemented core presence/media-summary, `/tracks`, quality preference, 
   identity so a changed preference does not reuse the wrong cached variant.
 - Discord can show an opt-in `Open in Kunai` button only for configured `https://` or `kunai://`
   handoff URLs; unsafe schemes are ignored.
+- `/presence` and `/settings` expose `Discord open URL`, so users can set or clear the optional
+  handoff button without editing config JSON.
 - `kunai --handoff-url` parses only privacy-safe local handoff URLs and asks for local
   confirmation before playback or download starts.
 - `kunai --install-protocol-handler` registers `kunai://` on Linux source/global installs by
   creating an XDG desktop handler that calls back into `kunai --handoff-url`.
+- `kunai --install-protocol-handler --dry-run` prints the planned desktop entry and `xdg-mime`
+  command so the handler can be inspected before writing anything.
 - Stable source assets for Discord keys `kunai` and `subtitles` live in `apps/cli/assets/discord/`.
 
 ## Remaining Product Work
@@ -35,6 +39,9 @@ Status: implemented core presence/media-summary, `/tracks`, quality preference, 
   manual registration command.
 - Upload stable Discord application assets (`kunai`, `subtitles`) through the Discord Developer
   Portal before treating artwork as guaranteed in live clients.
+- Add macOS and Windows protocol-handler installers once the packaged app/binary shape is decided;
+  source installs intentionally keep those as documented manual exploration instead of partial OS
+  registry edits.
 
 ## Guardrails
 
