@@ -47,6 +47,7 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "sync",
   "library",
   "downloads",
+  "notifications",
   "history",
   "download",
   "details",

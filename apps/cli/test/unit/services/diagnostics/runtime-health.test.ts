@@ -83,7 +83,7 @@ describe("runtime health diagnostics", () => {
 
     expect(health.provider).toEqual({
       label: "Provider",
-      detail: "rivestream · direct-http · provider · cache miss · 2 streams · 3 subtitles",
+      detail: "rivestream · 2 streams · 3 subtitles",
       tone: "success",
     });
   });

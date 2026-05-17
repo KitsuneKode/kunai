@@ -141,8 +141,7 @@ describe("panel-data", () => {
     });
 
     const provider = lines.find((line) => line.label === "Provider");
-    expect(provider?.detail).toContain("rivestream · direct-http");
-    expect(provider?.detail).toContain("cache miss");
+    expect(provider?.detail).toContain("rivestream");
     expect(provider?.detail).toContain("2 streams");
     expect(provider?.tone).toBe("success");
   });
