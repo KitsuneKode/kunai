@@ -52,13 +52,19 @@ describe("buildPlaybackEpisodePickerOptions", () => {
     expect(result.subtitle).toBe("2 released episodes available");
     expect(result.initialIndex).toBe(1);
     expect(result.options).toEqual([
-      { value: "1:1", label: "Episode 1", detail: "Source episode 1" },
+      {
+        value: "1:1",
+        label: "Episode 1",
+        detail: "Source episode 1",
+        tone: undefined,
+        badge: undefined,
+      },
       {
         value: "1:2",
         label: "Episode 2",
         detail: "Source episode 2",
         tone: "info",
-        badge: "current",
+        badge: "▶",
       },
     ]);
   });
@@ -76,50 +82,56 @@ describe("buildPlaybackEpisodePickerOptions", () => {
     expect(result.options[1]).toMatchObject({
       label: "Episode 2",
       tone: "info",
-      badge: "current",
+      badge: "▶",
     });
   });
 
   test("loads season episodes for series playback", async () => {
-    const result = await buildPlaybackEpisodePickerOptions({
-      title: seriesTitle,
-      currentEpisode: { season: 2, episode: 5 },
-      isAnime: false,
-      watchedEntries: WATCHED_ENTRIES,
-      loadEpisodes: async () => [
-        {
-          number: 5,
-          name: "The Current One",
-          airDate: "2026-01-01",
-          overview: "A test overview",
-        },
-        {
-          number: 6,
-          name: "The Next One",
-          airDate: "",
-          overview: "",
-        },
-      ],
-    });
+    const realDateNow = Date.now;
+    Date.now = () => Date.parse("2026-05-17T00:00:00.000Z");
+    try {
+      const result = await buildPlaybackEpisodePickerOptions({
+        title: seriesTitle,
+        currentEpisode: { season: 2, episode: 5 },
+        isAnime: false,
+        watchedEntries: WATCHED_ENTRIES,
+        loadEpisodes: async () => [
+          {
+            number: 5,
+            name: "The Current One",
+            airDate: "2026-01-01",
+            overview: "A test overview",
+          },
+          {
+            number: 6,
+            name: "The Next One",
+            airDate: "",
+            overview: "",
+          },
+        ],
+      });
 
-    expect(result.subtitle).toBe("Season 2  ·  2 episodes  ·  1 watched  ·  1 in progress");
-    expect(result.initialIndex).toBe(0);
-    expect(result.options).toEqual([
-      {
-        value: "2:5",
-        label: "Episode 5  ·  The Current One",
-        detail: "watched 100%  ·  2026-01-01",
-        tone: "success",
-        badge: "current",
-      },
-      {
-        value: "2:6",
-        label: "Episode 6  ·  The Next One",
-        detail: "resume 10:00  ·  17% watched  ·  unknown year",
-        tone: "warning",
-        badge: "17%",
-      },
-    ]);
+      expect(result.subtitle).toBe("Season 2  ·  2 episodes  ·  1 watched  ·  1 in progress");
+      expect(result.initialIndex).toBe(0);
+      expect(result.options).toEqual([
+        {
+          value: "2:5",
+          label: "Episode 5  ·  The Current One",
+          detail: "watched  ·  2w ago  ·  2026-01-01",
+          tone: "success",
+          badge: "▶ watched",
+        },
+        {
+          value: "2:6",
+          label: "Episode 6  ·  The Next One",
+          detail: "resume 10:00  ·  17% watched  ·  unknown year",
+          tone: "warning",
+          badge: "17%",
+        },
+      ]);
+    } finally {
+      Date.now = realDateNow;
+    }
   });
 
   test("returns an empty picker for movies", async () => {

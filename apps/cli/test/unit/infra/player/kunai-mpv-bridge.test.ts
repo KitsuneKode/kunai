@@ -13,3 +13,14 @@ describe("kunai mpv bridge resume prompt", () => {
     expect(source).toContain("Continue from last history point");
   });
 });
+
+describe("kunai mpv bridge episode navigation", () => {
+  test("keeps manual next and previous snappy instead of delaying with countdown timers", () => {
+    const source = readFileSync(BRIDGE_PATH, "utf8");
+
+    expect(source).not.toContain('Loading " .. noun .. " episode in');
+    expect(source).not.toContain("mp.add_timeout(1, function()");
+    expect(source).toContain("if not navigation_allowed(action) then");
+    expect(source).toContain('mp.commandv("stop")');
+  });
+});
