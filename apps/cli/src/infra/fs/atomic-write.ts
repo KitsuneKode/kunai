@@ -1,4 +1,4 @@
-import { mkdir, rename, unlink } from "node:fs/promises";
+import { chmod, mkdir, rename, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 function tempPath(targetPath: string): string {
@@ -60,4 +60,12 @@ export async function writeAtomicBytes(
 
 export async function writeAtomicJson(targetPath: string, value: unknown): Promise<void> {
   await writeAtomicText(targetPath, JSON.stringify(value, null, 2));
+}
+
+/** Like writeAtomicJson but chmod 0o600 after rename — for token files that must not be world-readable. */
+export async function writeAtomicSecretJson(targetPath: string, value: unknown): Promise<void> {
+  await writeAtomicText(targetPath, JSON.stringify(value, null, 2));
+  if (process.platform !== "win32") {
+    await chmod(targetPath, 0o600);
+  }
 }
