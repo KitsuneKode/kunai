@@ -12,6 +12,7 @@ import type {
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
+import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import { cacheOfflinePosterArtwork } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
@@ -154,6 +155,7 @@ export class DownloadService {
       readonly ffprobeAvailable?: boolean;
       readonly ffmpegAvailable?: boolean;
       readonly abortGraceMs?: number;
+      readonly diagnosticsStore?: Pick<DiagnosticsStore, "record">;
     },
   ) {}
 
@@ -742,6 +744,17 @@ export class DownloadService {
     if (typeof validation.durationMs === "number") {
       this.deps.repo.updateOfflineMetadata(jobId, { durationMs: validation.durationMs }, updatedAt);
     }
+    this.deps.diagnosticsStore?.record({
+      category: "download",
+      level: "info",
+      operation: "download.artifact.validated",
+      message: "Download artifact validated",
+      context: {
+        jobId,
+        fileSize: validation.fileSize,
+        durationMs: validation.durationMs,
+      },
+    });
   }
 
   private async persistOutputFileSize(job: DownloadJobRecord): Promise<number | null> {

@@ -31,4 +31,40 @@ describe("DiagnosticsSupportBundle", () => {
     expect(bundle.sections.network).toMatchObject({ tone: "warning", eventCount: 1 });
     expect(bundle.sections.provider).toMatchObject({ tone: "neutral", eventCount: 1 });
   });
+
+  test("summarizes presence and download sections with latest operation details", () => {
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.1.0",
+      debug: true,
+      now: () => new Date("2026-05-16T00:00:00.000Z"),
+      events: [
+        {
+          timestamp: 1,
+          category: "presence",
+          level: "warn",
+          operation: "presence.clear.failed",
+          message: "Presence clear failed",
+        },
+        {
+          timestamp: 2,
+          category: "download",
+          level: "info",
+          operation: "download.artifact.validated",
+          message: "Download artifact validated",
+        },
+      ],
+    });
+
+    expect(bundle.summary.sections).toEqual(["presence", "download"]);
+    expect(bundle.sections.presence).toMatchObject({
+      tone: "warning",
+      eventCount: 1,
+      latestOperation: "presence.clear.failed",
+      latestMessage: "Presence clear failed",
+    });
+    expect(bundle.sections.download).toMatchObject({
+      tone: "neutral",
+      latestOperation: "download.artifact.validated",
+    });
+  });
 });

@@ -48,11 +48,17 @@ For playback recovery debugging, prefer stable operation names over free-form lo
 - `playback.refresh.cooldown`: repeated voluntary refresh was rate-limited.
 - `resolve.cache.hit`, `resolve.cache.miss`, `resolve.cache.stale`: cache decision.
 - `resolve.refetch.failed.cached-fallback`: no fresher source was found, so Kunai kept the current cached stream.
+- `download.artifact.validated`: a completed local download passed artifact validation and persisted local size/duration metadata when available.
 
 Support bundles include a `correlation` summary listing the IDs seen in the
 exported events. Use those IDs to join provider fallback, cache checks, mpv
 runtime events, presence background failures, and debug JSONL rows without
 guessing from timestamps.
+
+Support bundle sections include the latest operation for each active category,
+including `presence` and `download`, so a report can show whether Discord clear
+failed, a download artifact was validated, or a queue failure happened without
+reading the full event log first.
 
 Use `/report-issue` for a preview-first issue flow. It asks before writing a redacted diagnostics report bundle and then opens the GitHub issue chooser. Use `/export-diagnostics` when you only want the bundle and do not want to open a browser.
 

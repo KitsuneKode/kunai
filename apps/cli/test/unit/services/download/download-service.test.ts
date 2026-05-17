@@ -87,12 +87,16 @@ describe("DownloadService", () => {
   });
 
   test("persists artifact duration when ffprobe validation succeeds", async () => {
+    const diagnostics: unknown[] = [];
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       ffprobeAvailable: true,
       downloadPath: tempDir,
+      diagnosticsStore: {
+        record: (event: unknown) => diagnostics.push(event),
+      },
     });
     whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
     spawnSpy.mockImplementation((command: string[]) => {
@@ -127,6 +131,17 @@ describe("DownloadService", () => {
     expect(completed?.status).toBe("completed");
     expect(completed?.durationMs).toBe(1_500_250);
     expect(completed?.fileSize).toBeGreaterThan(0);
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        category: "download",
+        operation: "download.artifact.validated",
+        message: "Download artifact validated",
+        context: expect.objectContaining({
+          jobId: job.id,
+          durationMs: 1_500_250,
+        }),
+      }),
+    );
   });
 
   test("carries poster metadata and generates a thumbnail when ffmpeg is available", async () => {
@@ -580,6 +595,7 @@ function buildService({
   abortGraceMs,
   ffmpegAvailable = false,
   ffprobeAvailable = false,
+  diagnosticsStore,
 }: {
   repo: DownloadJobsRepository;
   downloadsEnabled: boolean;
@@ -589,6 +605,7 @@ function buildService({
   abortGraceMs?: number;
   ffmpegAvailable?: boolean;
   ffprobeAvailable?: boolean;
+  diagnosticsStore?: ConstructorParameters<typeof DownloadService>[0]["diagnosticsStore"];
 }): DownloadService {
   return new DownloadService({
     repo,
@@ -599,6 +616,7 @@ function buildService({
     ytDlpAvailable,
     ffprobeAvailable,
     ffmpegAvailable,
+    diagnosticsStore,
     logger: {
       debug() {},
       info() {},

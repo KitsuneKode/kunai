@@ -33,6 +33,7 @@ export type DiagnosticsBundleCorrelation = {
 export type DiagnosticsBundleSection = {
   readonly tone: "neutral" | "warning" | "issue";
   readonly eventCount: number;
+  readonly latestOperation?: string;
   readonly latestMessage?: string;
 };
 
@@ -120,6 +121,7 @@ function buildBundleSections(
     "cache",
     "playback",
     "subtitle",
+    "presence",
     "offline",
     "download",
     "runtime",
@@ -135,6 +137,7 @@ function buildBundleSections(
           ? "warning"
           : "neutral",
       eventCount: matching.length,
+      latestOperation: matching.at(-1)?.operation,
       latestMessage: matching.at(-1)?.message,
     };
   }
