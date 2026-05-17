@@ -42,7 +42,7 @@ import {
   startFromBeginning,
   startFromEpisodeSelection,
 } from "@/app/playback-start-intent";
-import { loadPostPlaybackRecommendationNames } from "@/app/post-playback-recommendations";
+import { loadPostPlaybackRecommendationItems } from "@/app/post-playback-recommendations";
 import {
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
@@ -77,6 +77,7 @@ import type {
   StreamInfo,
   PlaybackResult,
   SubtitleTrack,
+  SearchResult,
 } from "@/domain/types";
 import {
   classifyPlaybackFailureFromEvent,
@@ -1033,7 +1034,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           let prefetchedNextStream: import("@/domain/types").StreamInfo | null = null;
           let prefetchedNextProviderId: string | null = null;
           let prefetchedNextPromise: Promise<void> | null = null;
-          let prefetchedRecommendationNames: readonly string[] | null = null;
+          let prefetchedRecommendationItems: readonly SearchResult[] | null = null;
           const maybePrefetchNext = () => {
             if (
               playbackSession.mode !== "autoplay-chain" ||
@@ -1111,14 +1112,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             if (
               container.config.recommendationRailEnabled &&
-              prefetchedRecommendationNames === null
+              prefetchedRecommendationItems === null
             ) {
               void container.recommendationService
                 .getForTitle(title.id, title.type)
                 .then((section) => {
-                  prefetchedRecommendationNames = section.items
-                    .map((item) => item.title)
-                    .filter((name) => name.trim().length > 0);
+                  prefetchedRecommendationItems = section.items.filter(
+                    (item) => item.title.trim().length > 0,
+                  );
                   return undefined;
                 })
                 .catch(() => {
@@ -1997,12 +1998,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               return `${latest.titleName} ${episodeLabel}  ·  ${latest.status}`;
             })();
             const mode = stateManager.getState().mode;
-            const recommendationRailNames = container.config.recommendationRailEnabled
-              ? await loadPostPlaybackRecommendationNames(
+            const recommendationRailItems = container.config.recommendationRailEnabled
+              ? await loadPostPlaybackRecommendationItems(
                   container,
                   title,
                   mode,
-                  prefetchedRecommendationNames,
+                  prefetchedRecommendationItems,
                 )
               : [];
             const postAction = await openPlaybackShell({
@@ -2035,11 +2036,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   : { label: "Ready for next action", tone: "success" },
                 footerMode: "detailed",
                 showRecommendationNudge:
-                  recommendationRailNames.length > 0 &&
+                  recommendationRailItems.length > 0 &&
                   title.type === "series" &&
                   !episodeAvailability.nextEpisode,
-                recommendationRailItems: recommendationRailNames.slice(0, 3),
-                recommendationRailMoreCount: Math.max(0, recommendationRailNames.length - 3),
+                recommendationRailItems: recommendationRailItems.slice(0, 3).map((item) => ({
+                  id: item.id,
+                  title: item.title,
+                  type: item.type,
+                  ...(item.sourceId ? { sourceId: item.sourceId } : {}),
+                  ...(item.year ? { year: item.year } : {}),
+                })),
+                recommendationRailMoreCount: Math.max(0, recommendationRailItems.length - 3),
                 commands: resolveCommandContext(stateManager.getState(), "postPlayback"),
               },
               providerOptions: shellRuntime.providerOptions,
@@ -2056,6 +2063,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               loadDiagnosticsPanel: shellRuntime.loadDiagnosticsPanel,
               loadHistoryPanel: shellRuntime.loadHistoryPanel,
             });
+
+            if (typeof postAction === "object") {
+              if (postAction.type === "queue-recommendation") {
+                const queuedItem = {
+                  mediaKind: postAction.item.type,
+                  ...(postAction.item.sourceId ? { sourceId: postAction.item.sourceId } : {}),
+                  titleId: postAction.item.id,
+                  title: postAction.item.title,
+                };
+                container.playlistService.enqueueMediaItem(queuedItem, {
+                  placement: "end",
+                  source: "post-playback-recommendation",
+                });
+                stateManager.dispatch({
+                  type: "SET_PLAYBACK_FEEDBACK",
+                  note: `Queued ${postAction.item.title}.`,
+                });
+              }
+              continue postPlayback;
+            }
 
             const routedAction = await routePlaybackShellAction({
               action: postAction,

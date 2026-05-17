@@ -3,6 +3,16 @@ import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
 
 import { buildDiscoverSections } from "./discover-sections";
 
+export interface PostPlaybackRecommendationItem {
+  readonly id: string;
+  readonly type: SearchResult["type"];
+  readonly sourceId?: string;
+  readonly title: string;
+  readonly year?: string;
+  readonly overview?: string;
+  readonly posterPath?: string | null;
+}
+
 export async function loadPostPlaybackRecommendationNames(
   container: Pick<
     Container,
@@ -10,50 +20,64 @@ export async function loadPostPlaybackRecommendationNames(
   >,
   title: TitleInfo,
   mode: ShellMode,
-  prefetchedNames: readonly string[] | null,
+  prefetchedItems: readonly SearchResult[] | null,
 ): Promise<readonly string[]> {
-  if (prefetchedNames && prefetchedNames.length > 0) {
-    return dedupeRecommendationNames(prefetchedNames, title.name);
+  const items = await loadPostPlaybackRecommendationItems(container, title, mode, prefetchedItems);
+  return items.map((item) => item.title);
+}
+
+export async function loadPostPlaybackRecommendationItems(
+  container: Pick<
+    Container,
+    "recommendationService" | "historyStore" | "stateManager" | "providerRegistry"
+  >,
+  title: TitleInfo,
+  mode: ShellMode,
+  prefetchedItems: readonly SearchResult[] | null,
+): Promise<readonly PostPlaybackRecommendationItem[]> {
+  if (prefetchedItems && prefetchedItems.length > 0) {
+    return dedupeRecommendationItems(prefetchedItems, title.name);
   }
 
   if (mode !== "anime" && isTmdbLikeId(title.id)) {
     const direct = await container.recommendationService
       .getForTitle(title.id, title.type)
-      .then((section) => namesFromItems(section.items, title.name))
+      .then((section) => dedupeRecommendationItems(section.items, title.name))
       .catch(() => []);
     if (direct.length > 0) return direct;
   }
 
   return buildDiscoverSections(container)
     .then((sections) =>
-      dedupeRecommendationNames(
-        sections.flatMap((section) => section.items.map((item) => item.title)),
+      dedupeRecommendationItems(
+        sections.flatMap((section) => section.items),
         title.name,
       ),
     )
     .catch(() => []);
 }
 
-function namesFromItems(items: readonly SearchResult[], currentTitle: string): readonly string[] {
-  return dedupeRecommendationNames(
-    items.map((item) => item.title),
-    currentTitle,
-  );
-}
-
-function dedupeRecommendationNames(
-  names: readonly string[],
+function dedupeRecommendationItems(
+  items: readonly SearchResult[],
   currentTitle: string,
-): readonly string[] {
+): readonly PostPlaybackRecommendationItem[] {
   const current = normalizeRecommendationName(currentTitle);
   const seen = new Set<string>();
-  const out: string[] = [];
-  for (const name of names) {
-    const trimmed = name.trim();
+  const out: PostPlaybackRecommendationItem[] = [];
+  for (const item of items) {
+    const trimmed = item.title.trim();
     const normalized = normalizeRecommendationName(trimmed);
-    if (!trimmed || normalized === current || seen.has(normalized)) continue;
+    if (!item.id.trim() || !trimmed || normalized === current || seen.has(normalized)) continue;
     seen.add(normalized);
-    out.push(trimmed);
+    out.push({
+      id: item.id,
+      type: item.type,
+      ...(item.metadataSource ? { sourceId: item.metadataSource } : {}),
+      title: trimmed,
+      year: item.year,
+      overview: item.overview,
+      posterPath: item.posterPath,
+    });
     if (out.length >= 8) break;
   }
   return out;

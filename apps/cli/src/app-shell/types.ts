@@ -95,8 +95,16 @@ export type PlaybackShellState = {
   commands?: readonly ResolvedAppCommand[];
   footerMode?: ShellFooterMode;
   readonly showRecommendationNudge?: boolean;
-  readonly recommendationRailItems?: readonly string[];
+  readonly recommendationRailItems?: readonly PlaybackRecommendationRailItem[];
   readonly recommendationRailMoreCount?: number;
+};
+
+export type PlaybackRecommendationRailItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly type: "movie" | "series";
+  readonly sourceId?: string;
+  readonly year?: string;
 };
 
 export type LoadingShellStage = "finding-stream" | "preparing-player" | "starting-playback";
@@ -188,7 +196,12 @@ export type BrowseShellResult<T> =
   | { type: "action"; action: ShellAction }
   | { type: "cancelled" };
 
-export type PlaybackShellResult = ShellAction;
+export type PlaybackShellResult =
+  | ShellAction
+  | {
+      readonly type: "queue-recommendation";
+      readonly item: PlaybackRecommendationRailItem;
+    };
 
 export function toShellAction(commandId: AppCommandId): ShellAction {
   switch (commandId) {

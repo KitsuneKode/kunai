@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { loadPostPlaybackRecommendationNames } from "@/app/post-playback-recommendations";
+import {
+  loadPostPlaybackRecommendationItems,
+  loadPostPlaybackRecommendationNames,
+} from "@/app/post-playback-recommendations";
 
 test("post-playback recommendations use direct TMDB title recommendations for series ids", async () => {
   let directCalls = 0;
@@ -143,4 +146,73 @@ test("post-playback recommendations avoid provider-native anime ids and use disc
 
   expect(directCalls).toBe(0);
   expect(names).toEqual(["Reborn as a Cat", "Chibi Godzilla Raids Again"]);
+});
+
+test("post-playback recommendation items preserve playable identity for queue actions", async () => {
+  let directCalls = 0;
+  const items = await loadPostPlaybackRecommendationItems(
+    {
+      recommendationService: {
+        getForTitle: async () => {
+          directCalls += 1;
+          return {
+            label: "",
+            reason: "similar",
+            items: [
+              {
+                id: "1396",
+                type: "series",
+                title: "Breaking Bad",
+                year: "2008",
+                overview: "",
+                posterPath: null,
+              },
+              {
+                id: "2",
+                type: "series",
+                title: "Better Call Saul",
+                year: "2015",
+                overview: "A careful follow-up pick.",
+                posterPath: "/poster.jpg",
+              },
+              {
+                id: "2-duplicate",
+                type: "series",
+                title: " Better Call Saul ",
+                year: "2015",
+                overview: "",
+                posterPath: null,
+              },
+            ],
+          };
+        },
+        getGenreAffinity: async () => ({ label: "", reason: "genre-affinity", items: [] }),
+        getPersonalizedByHistory: async () => ({ label: "", reason: "genre-affinity", items: [] }),
+        getTrending: async () => ({ label: "", reason: "trending", items: [] }),
+      },
+      historyStore: { getAll: async () => ({}) },
+      stateManager: { getState: () => ({ mode: "series" }) },
+      providerRegistry: { getAll: () => [] },
+    } as never,
+    {
+      id: "1396",
+      type: "series",
+      name: "Breaking Bad",
+      year: "2008",
+    },
+    "series",
+    null,
+  );
+
+  expect(directCalls).toBe(1);
+  expect(items).toEqual([
+    {
+      id: "2",
+      type: "series",
+      title: "Better Call Saul",
+      year: "2015",
+      overview: "A careful follow-up pick.",
+      posterPath: "/poster.jpg",
+    },
+  ]);
 });

@@ -59,6 +59,17 @@ It only changes browse results; it does not mutate playback state.
 
 The shell should keep these as suggestions, not as autoplay or background network work.
 
+## Post-Playback Rail
+
+The post-playback rail is deliberately lightweight: it carries recommendation
+identity (`id`, media type, optional source id, title, and year) into the shell,
+but it does not resolve streams or call providers when the user presses a number.
+
+`1`, `2`, and `3` queue the visible picks into the playlist at the end. The
+mutation stays in `PlaybackPhase`; the shell only renders rows and reports the
+typed action. This keeps playback context stable and prevents the rail from
+turning into a hidden provider-resolution path.
+
 ## Runtime Rules
 
 - Do not fetch recommendations or calendar data on process startup unless the user explicitly starts in that route (`--calendar` or `--random`).

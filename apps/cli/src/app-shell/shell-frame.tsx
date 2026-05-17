@@ -11,6 +11,8 @@ import { truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { FooterAction, ShellAction, ShellFooterMode, ShellStatus } from "./types";
 
+type ShellFrameInputKey = Parameters<Parameters<typeof useInput>[0]>[1];
+
 export function ShellFrame({
   eyebrow: _eyebrow,
   title,
@@ -22,6 +24,7 @@ export function ShellFrame({
   commands,
   inputLocked = false,
   escapeAction,
+  onUnhandledInput,
   onResolve,
   children,
 }: {
@@ -35,6 +38,7 @@ export function ShellFrame({
   commands: readonly ResolvedAppCommand[];
   inputLocked?: boolean;
   escapeAction?: ShellAction | null;
+  onUnhandledInput?: (input: string, key: ShellFrameInputKey) => void;
   onResolve: (action: ShellAction) => void;
   children: React.ReactNode;
 }) {
@@ -50,6 +54,11 @@ export function ShellFrame({
     disabled: inputLocked,
     escapeAction,
     onResolve,
+  });
+
+  useInput((input, key) => {
+    if (inputLocked || commandMode) return;
+    onUnhandledInput?.(input, key);
   });
 
   const { stdout } = useStdout();

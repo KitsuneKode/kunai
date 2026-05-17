@@ -1301,7 +1301,6 @@ function PlaybackShell({
   const attentionHealthLines = [state.providerHealth, state.networkHealth].filter(
     (line): line is ShellPanelLine => Boolean(line && line.tone && line.tone !== "neutral"),
   );
-
   return (
     <ShellFrame
       eyebrow={APP_LABEL}
@@ -1314,6 +1313,13 @@ function PlaybackShell({
       commands={commands}
       inputLocked={false}
       escapeAction="back-to-results"
+      onUnhandledInput={(input) => {
+        if (!hasRecommendationRail) return;
+        if (input !== "1" && input !== "2" && input !== "3") return;
+        const item = state.recommendationRailItems?.[Number(input) - 1];
+        if (!item) return;
+        onResolve({ type: "queue-recommendation", item });
+      }}
       onResolve={onResolve}
     >
       {playbackViewport.tooSmall ? (
@@ -1345,10 +1351,18 @@ function PlaybackShell({
                 {hasRecommendationRail ? (
                   <DetailLine
                     label="Recommended next"
-                    value={state.recommendationRailItems?.join("  ·  ") ?? ""}
+                    value="Press 1-3 to queue a pick without leaving this playback context"
                     tone="info"
                   />
                 ) : null}
+                {state.recommendationRailItems?.slice(0, 3).map((item, index) => (
+                  <DetailLine
+                    key={`${item.type}:${item.id}`}
+                    label={`Pick ${index + 1}`}
+                    value={`${item.title}${item.year ? ` (${item.year})` : ""}`}
+                    tone="neutral"
+                  />
+                ))}
                 {state.autoplayPaused && !hasRecommendationRail ? (
                   <DetailLine
                     label="Discover"
