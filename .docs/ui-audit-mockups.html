@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kunai — UI/UX Audit & Design Upgrade</title>
+<style>
+  :root {
+    --bg: #110e0b;
+    --surface: #1a1612;
+    --elevated: #241e18;
+    --active: #2e251e;
+    --border: #332a22;
+    --amber: #f0a050;
+    --amber-soft: #ffbf80;
+    --teal: #5ad4b5;
+    --green: #7bc96e;
+    --green-dim: #2a5a22;
+    --red: #ff6666;
+    --info: #6a9fd8;
+    --lavender: #c4b5e8;
+    --text: #e8ddd0;
+    --text-dim: #c8bba8;
+    --muted: #95887a;
+    --dim: #5c5248;
+    --faint: #3c342c;
+    --font: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0806;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .page-header {
+    padding: 40px 48px 32px;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-header h1 { font-size: 22px; color: var(--amber); font-weight: 700; letter-spacing: -0.5px; }
+  .page-header p { color: var(--muted); margin-top: 6px; max-width: 700px; }
+
+  .toc {
+    padding: 24px 48px;
+    border-bottom: 1px solid var(--faint);
+    display: flex; gap: 24px; flex-wrap: wrap;
+  }
+  .toc a { color: var(--teal); text-decoration: none; font-size: 12px; }
+  .toc a:hover { color: var(--amber); }
+
+  .section {
+    padding: 48px 48px 64px;
+    border-bottom: 1px solid var(--faint);
+  }
+
+  h2 { font-size: 16px; color: var(--amber); margin-bottom: 6px; font-weight: 700; }
+  h3 { font-size: 13px; color: var(--text-dim); font-weight: 600; margin-bottom: 12px; margin-top: 28px; }
+  .section > p, .section > ul { color: var(--muted); margin-bottom: 16px; max-width: 760px; line-height: 1.7; }
+  ul { padding-left: 20px; }
+  li { margin-bottom: 4px; }
+
+  /* Side-by-side comparison */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 20px;
+  }
+  @media (max-width: 960px) { .compare { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .panel-label {
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-label.bad  { background: rgba(255,102,102,0.08); color: var(--red); }
+  .panel-label.good { background: rgba(90,212,181,0.07); color: var(--teal); }
+  .panel-label .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .panel-label.bad  .dot { background: var(--red); }
+  .panel-label.good .dot { background: var(--teal); }
+
+  /* Terminal mockup */
+  .term {
+    background: var(--bg);
+    padding: 14px 16px;
+    font-family: var(--font);
+    font-size: 12px;
+    line-height: 1.55;
+    min-height: 200px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Color helpers */
+  .c-amber  { color: var(--amber); }
+  .c-teal   { color: var(--teal); }
+  .c-green  { color: var(--green); }
+  .c-dim    { color: var(--dim); }
+  .c-muted  { color: var(--muted); }
+  .c-text   { color: var(--text); }
+  .c-info   { color: var(--info); }
+  .c-red    { color: var(--red); }
+  .c-lav    { color: var(--lavender); }
+  .c-faint  { color: var(--faint); }
+  .bold     { font-weight: 700; }
+  .dim-text { opacity: 0.5; }
+
+  .hl-row {
+    background: var(--teal);
+    color: #000;
+    padding: 0 2px;
+    font-weight: 700;
+  }
+  .badge {
+    display: inline-block;
+    padding: 0 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    vertical-align: middle;
+  }
+  .badge-teal   { background: rgba(90,212,181,0.15); color: var(--teal); }
+  .badge-amber  { background: rgba(240,160,80,0.15);  color: var(--amber); }
+  .badge-green  { background: rgba(123,201,110,0.15); color: var(--green); }
+  .badge-info   { background: rgba(106,159,216,0.15); color: var(--info); }
+  .badge-lav    { background: rgba(196,181,232,0.12); color: var(--lavender); }
+
+  /* Heatmap cells */
+  .hm { display: inline-block; width: 10px; text-align: center; }
+  .hm-0 { color: #3c342c; }
+  .hm-1 { color: #2a5a22; }
+  .hm-2 { color: #3e7832; }
+  .hm-3 { color: #56a042; }
+  .hm-4 { color: #7bc96e; }
+
+  /* Bar chart cells */
+  .bar-fill { color: var(--teal); }
+  .bar-empty { color: #3c342c; }
+
+  /* Reason tags */
+  .reason-tag {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 12px; font-size: 10px;
+    background: rgba(240,160,80,0.12);
+    color: var(--amber);
+    margin-right: 6px;
+    margin-bottom: 4px;
+  }
+
+  .impl-box {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-top: 16px;
+  }
+  .impl-box h4 { font-size: 11px; color: var(--teal); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px; }
+  .impl-box code { font-family: var(--font); font-size: 11px; color: var(--amber-soft); }
+  .impl-box p, .impl-box li { color: var(--muted); font-size: 12px; }
+
+  pre { font-family: var(--font); font-size: 11px; line-height: 1.6; }
+
+  .issue-list { margin-top: 12px; }
+  .issue-list .issue {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--faint);
+  }
+  .issue-list .issue:last-child { border-bottom: none; }
+  .issue-severity {
+    font-size: 10px; font-weight: 700; padding: 2px 6px;
+    border-radius: 4px; white-space: nowrap; margin-top: 1px;
+  }
+  .sev-crit { background: rgba(255,102,102,0.15); color: var(--red); }
+  .sev-high { background: rgba(240,160,80,0.15); color: var(--amber); }
+  .sev-med  { background: rgba(106,159,216,0.15); color: var(--info); }
+  .issue-text { color: var(--muted); font-size: 12px; }
+  .issue-text strong { color: var(--text); }
+
+  .divider { border: none; border-top: 1px solid var(--faint); margin: 32px 0; }
+
+  .metrics-row {
+    display: flex; gap: 20px; margin-top: 16px; flex-wrap: wrap;
+  }
+  .metric {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 18px;
+    min-width: 120px;
+  }
+  .metric .val { font-size: 22px; font-weight: 700; color: var(--amber); }
+  .metric .lbl { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+  /* Onboarding slide preview */
+  .slide-preview {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 22px;
+    font-family: var(--font);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>🦊 Kunai — UI/UX Audit & Design Upgrade</h1>
+  <p>Full surface audit across the new features (lists, playlist, stats, sync) plus cross-cutting issues.
+     Each section has: root-cause analysis, before/after mockups, and implementation guidance.</p>
+</div>
+
+<nav class="toc">
+  <a href="#audit-findings">Audit Findings</a>
+  <a href="#stats-screen">Stats / Heatmap</a>
+  <a href="#watchlist">Watchlist</a>
+  <a href="#playlist">Playlist</a>
+  <a href="#command-palette">Command Palette</a>
+  <a href="#onboarding">Onboarding</a>
+  <a href="#browse-shell">Browse Shell</a>
+  <a href="#header-chrome">Header Chrome</a>
+  <a href="#sharing">Sharing & Engagement</a>
+  <a href="#implementation">Implementation Roadmap</a>
+</nav>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="audit-findings">
+  <h2>Audit Findings Summary</h2>
+  <p>Issues ranked by user-impact. Overflow bugs are now fixed (palette, stats). Remaining issues are design quality, engagement, and premium feel.</p>
+
+  <div class="issue-list">
+    <div class="issue">
+      <span class="issue-severity sev-crit">FIXED</span>
+      <div class="issue-text"><strong>Command palette overflows terminal</strong> — computePaletteMaxVisible was off by 6 rows. InputField=5 rows, palette chrome=4 rows. Now correctly computes all 25 rows of fixed overhead.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-crit">FIXED</span>
+      <div class="issue-text"><strong>Stats subtitle overflow → double-render</strong> — 9-line subtitle in ListShell + AppRoot header exceeded terminal height, causing wrap-around artifacts. Replaced with dedicated StatsShell.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-high">HIGH</span>
+      <div class="issue-text"><strong>Stats heatmap missing entirely</strong> — formatHeatmap() existed but was never called. New StatsShell shows a colored GitHub-style heatmap with density depth.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-high">HIGH</span>
+      <div class="issue-text"><strong>Watchlist/Playlist use plain list pickers</strong> — No visual hierarchy, no status affordances, no empty-state polish. Feels like a debug menu.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-high">HIGH</span>
+      <div class="issue-text"><strong>No engagement hooks</strong> — Streak exists but is invisible until you open stats. No way to share, no social proof, nothing to come back to. Claude Code shows streak in header and celebrates milestones.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-med">MED</span>
+      <div class="issue-text"><strong>Onboarding slide feels like a setup wizard</strong> — Lacks personality, the DotMatrix animation is functional but not "aha". No preview of the product you're about to use.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-med">MED</span>
+      <div class="issue-text"><strong>Browse shell header padding wastes 2 rows</strong> — AppRoot paddingX + inner shell paddingX = 4 columns of wasted margin on each side. Only ListShell double-pads.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-med">MED</span>
+      <div class="issue-text"><strong>Sync/connect flow has no visual feedback during OAuth</strong> — User is told to open browser but the shell shows nothing while waiting for the callback. Needs a spinner + countdown.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="stats-screen">
+  <h2>Stats / Heatmap Screen</h2>
+  <p>The /stats screen is the most differentiated surface — it's the "product proof" that Kunai is tracking your watching life. It should feel like the GitHub contribution graph: meaningful, personal, beautiful.</p>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label bad"><span class="dot"></span>BEFORE — List picker with string subtitle</div>
+      <div class="term">
+        <pre><span class="c-teal bold">Watch Stats — 30d</span>
+<span class="c-muted">🔥 6d streak · 125 episodes · 74h 19m watch</span>
+<span class="c-muted">This week: 35 ep · 21h 34m ↓ less than last</span>
+<span class="c-muted"></span>
+<span class="c-muted">Top shows:</span>
+<span class="c-muted">Breaking Bad          ██████████  41 ep · 32h</span>
+<span class="c-muted">Perfect Crown          ███░░░░░░░   7 ep · 7h</span>
+<span class="c-dim">...3 more lines...</span>
+
+<span class="c-dim">Filter</span>
+<span class="c-dim">⌕ Type to narrow this list</span>
+<span class="c-dim">──────────────────────────────────────────</span>
+<span class="c-muted">Type to filter · / opens commands</span>
+<span class="c-muted">1 of 4</span>
+
+<span class="hl-row">❯ Last 30 days  ·  current                </span>
+<span class="c-text dim-text">  Last 90 days                             </span>
+<span class="c-text dim-text">  All time                                 </span>
+<span class="c-text dim-text">  Back                                     </span>
+
+<span class="c-muted">🔥 6d streak · 125 episodes · 74h ... <span class="c-red">← OVERFLOW WRAP</span></span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>AFTER — Dedicated StatsShell with colored heatmap</div>
+      <div class="term">
+        <pre><span class="c-amber bold">Watch Stats</span>                    <span class="c-teal bold">1:30d</span> <span class="c-dim">2:90d 3:all</span>
+
+<span class="c-amber">🔥 6d streak</span> <span class="c-muted">· 125 episodes · 74h 19m watched</span>
+<span class="c-dim">This week: 35 ep · 21h 34m ↓ less than last week</span>
+
+<span class="c-dim">    J  F  M  A  M  J  J  A  S  O  N  D</span>
+<span class="c-dim">Su </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-1">░</span><span class="c-dim"> </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span>
+<span class="c-dim">Mo </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-1">░</span><span class="c-dim"> </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-1">░</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-3">▓</span>
+<span class="c-dim">Tu </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span>
+<span class="c-dim">We </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span>
+<span class="c-dim">Th </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-1">░</span><span class="c-dim"> </span><span class="hm-1">░</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span>
+<span class="c-dim">Fr </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-0">·</span><span class="c-dim"> </span><span class="hm-2">▒</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span>
+<span class="c-dim">Sa </span><span class="hm-1">░</span><span class="c-dim"> </span><span class="hm-1">░</span><span class="c-dim"> </span><span class="hm-3">▓</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span><span class="c-dim"> </span><span class="hm-4">█</span>
+
+<span class="c-muted">Top shows</span>
+<span class="c-text">Breaking Bad        </span><span class="bar-fill">████████</span><span class="bar-empty">  </span> <span class="c-dim">41ep · 32h 24m</span>
+<span class="c-text">Perfect Crown       </span><span class="bar-fill">██░░░░░░</span><span class="bar-empty">  </span> <span class="c-dim">7ep · 7h 59m</span>
+
+<span class="c-dim">──────────────────────────────────────────────────</span>
+<span class="c-muted">Tab cycle windows</span> <span class="c-dim">·</span> <span class="c-muted">q back</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <h3>Further improvements to implement</h3>
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>NEXT: Streak milestone celebration</div>
+      <div class="term">
+        <pre><span class="c-amber bold">Watch Stats</span>
+
+<span class="c-amber bold">🔥 7d streak  ← 1 WEEK MILESTONE</span>
+<span class="c-dim">─────────────────────────────────</span>
+<span class="c-amber">One week straight. Keep it up.</span>
+<span class="c-muted">125 episodes · 74h 19m watched</span>
+
+<span class="c-dim">[Press any key to continue]</span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>NEXT: Shareable streak summary</div>
+      <div class="term">
+        <pre><span class="c-amber bold">Watch Stats</span>
+
+<span class="c-muted">s</span> <span class="c-dim">→ copy share text</span>
+
+<span class="c-dim">Copied to clipboard:</span>
+<span class="c-text">🦊 My Kunai watch streak: 🔥 6 days</span>
+<span class="c-text">125 episodes · 74h 19m</span>
+<span class="c-text">Breaking Bad (41 eps) · Perfect Crown (7 eps)</span>
+<span class="c-text">kitsunelabs.xyz/kunai</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="impl-box">
+    <h4>Implementation: Share + Milestone</h4>
+    <p>In <code>StatsShell</code>, add <code>s</code> key handler that calls <code>Bun.spawn(["xclip", "-sel", "clip"])</code> / <code>pbcopy</code> / <code>clip</code> depending on platform. Generate share text from stats. Show a 2-second "Copied!" flash in the footer. Milestone detection: compare <code>streakDays</code> to [3,7,14,30,50,100] thresholds and show a one-time celebratory panel (persisted via config <code>lastStreakMilestone</code>).</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="watchlist">
+  <h2>Watchlist Screen (/wl)</h2>
+  <p>The watchlist is a core retention surface. Users need to quickly see what they want to watch and act on it immediately. The current plain list has no status affordances and no visual hierarchy.</p>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label bad"><span class="dot"></span>BEFORE — Plain list, no context</div>
+      <div class="term">
+        <pre><span class="c-teal bold">Watchlist</span>
+<span class="c-muted">4 titles in your watchlist</span>
+
+<span class="c-dim">Filter</span>
+<span class="c-dim">⌕ Type to narrow this list</span>
+<span class="c-dim">────────────────────────────────────────</span>
+<span class="c-muted">1 of 4</span>
+
+<span class="hl-row">❯ Attack on Titan                         </span>
+<span class="c-text dim-text">  One Piece                               </span>
+<span class="c-text dim-text">  Frieren: Beyond Journey's End           </span>
+<span class="c-text dim-text">  Vinland Saga                            </span>
+
+<span class="c-dim">back  / commands</span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>AFTER — Status badges, progress, quick-play</div>
+      <div class="term">
+        <pre><span class="c-amber bold">Watchlist</span>       <span class="c-dim">4 titles</span>  <span class="badge badge-teal">anime</span>
+
+<span class="c-dim">Filter</span>
+<span class="c-dim">⌕ Type to narrow</span>
+<span class="c-dim">───────────────────────────────────────────────</span>
+
+<span class="hl-row">❯ Attack on Titan           S4  <span class="c-teal">↑ S4E10</span> next  </span>
+<span class="c-text dim-text">  One Piece                     </span><span class="c-dim">ep 1098   ···</span>
+<span class="c-text dim-text">  Frieren: Beyond Journey's End </span><span class="c-dim">ep 1    ✦ new</span>
+<span class="c-text dim-text">  Vinland Saga               S2 </span><span class="c-dim">ep 1      ···</span>
+
+<span class="c-dim">───────────────────────────────────────────────</span>
+<span class="c-muted">Attack on Titan</span>   <span class="c-dim">Season 4 · Continuing</span>
+<span class="c-teal">Next: S04E10</span>    <span class="c-dim">last watched 2d ago</span>
+
+<span class="c-dim">enter</span> <span class="c-text">play</span>  <span class="c-dim">d</span> <span class="c-text">remove</span>  <span class="c-dim">p</span> <span class="c-text">playlist+</span>  <span class="c-dim">/ commands</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="impl-box">
+    <h4>Implementation</h4>
+    <p>In <code>handleWatchlist</code> (workflows.ts), for each list item cross-reference <code>historyRepository.getLastWatched(item.titleId)</code> to determine the next episode. Add a <code>previewBadge</code> showing progress: "S4E10 next" or "new". The companion panel shows the history detail. Add hotkeys <code>p</code> to enqueue to playlist, <code>d</code> to remove from watchlist without confirmation. Filter input should respect <code>type:anime</code> / <code>type:series</code> tokens.</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="playlist">
+  <h2>Playlist Screen (/playlist)</h2>
+  <p>The playlist is a queue manager. It needs to feel like a real media queue — with clear "now playing next", played/unplayed distinction, and easy re-ordering cues.</p>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label bad"><span class="dot"></span>BEFORE — Flat undifferentiated list</div>
+      <div class="term">
+        <pre><span class="c-teal bold">Playlist</span>
+<span class="c-muted">3 unplayed</span>
+
+<span class="hl-row">❯ Attack on Titan S04E10                  </span>
+<span class="c-text dim-text">  One Piece E1098                         </span>
+<span class="c-text dim-text">  Frieren E01                             </span>
+<span class="c-text dim-text">  [Played] One Piece E1097                </span>
+<span class="c-text dim-text">  Back                                    </span>
+
+<span class="c-dim">back  / commands</span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>AFTER — Queue sections with status</div>
+      <div class="term">
+        <pre><span class="c-amber bold">Playlist</span>     <span class="c-teal">3 up next</span>  <span class="c-dim">· 2 played</span>
+
+<span class="c-dim">──────── Up next ────────────────────────────</span>
+<span class="hl-row">❯ Attack on Titan S04E10         </span><span class="badge badge-teal">▶ next</span>
+<span class="c-text dim-text">  One Piece E1098</span>
+<span class="c-text dim-text">  Frieren E01                         </span><span class="badge badge-lav">new</span>
+
+<span class="c-dim">──────── Played ─────────────────────────────</span>
+<span class="c-faint">  One Piece E1097                       ✓</span>
+<span class="c-faint">  Attack on Titan S04E09               ✓</span>
+
+<span class="c-dim">─────────────────────────────────────────────</span>
+<span class="c-dim">enter</span> <span class="c-text">play</span>  <span class="c-dim">c</span> <span class="c-text">clear played</span>  <span class="c-dim">C</span> <span class="c-text">clear all</span>
+<span class="c-dim">r</span> <span class="c-text">refill from watchlist</span>  <span class="c-dim">/ commands</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <h3>Stale queue warning state</h3>
+  <div class="panel" style="max-width: 480px;">
+    <div class="panel-label good"><span class="dot"></span>AFTER — Stale state with amber warning</div>
+    <div class="term">
+      <pre><span class="c-amber bold">Playlist</span>     <span class="c-teal">3 up next</span>
+
+<span class="c-amber">⚠ Last activity 5 days ago</span>
+<span class="c-muted">r to refill from watchlist  ·  C to clear all</span>
+
+<span class="c-dim">──────────────────────────────────────────────</span>
+<span class="hl-row">❯ Attack on Titan S04E10         </span><span class="badge badge-amber">stale</span></pre>
+    </div>
+  </div>
+
+  <div class="impl-box">
+    <h4>Implementation</h4>
+    <p>In <code>handlePlaylist</code>: use <code>playlistService.getStatus()</code> which returns <code>{ isStale, lastActivityAt, unplayedCount, nextItem }</code>. Render two sections: "Up next" (unplayed, sorted by priority) and "Played" (dimmed, sorted by playedAt desc). Use <code>previewGroup</code> on ShellOptions to create group headers. Stale warning shows when <code>isStale=true</code> — rendered as a colored subtitle. <code>r</code> key calls <code>playlistService.refillFromWatchlist(listService)</code> and re-renders.</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="command-palette">
+  <h2>Command Palette</h2>
+  <p>The command palette now overflows correctly. But the design can be more scannable — Claude Code uses subtle group headers and shows enabled/disabled state clearly.</p>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label bad"><span class="dot"></span>BEFORE — All commands flat, hard to scan</div>
+      <div class="term">
+        <pre><span class="c-teal bold">/</span><span class="c-text">|</span>
+<span class="c-dim">Tab autocomplete · ↑↓ choose · Enter run</span>
+
+<span class="hl-row">❯ /wl              Open watchlist           </span>
+<span class="c-dim">  /playlist        Manage your playlist     </span>
+<span class="c-dim">  /stats           View watch statistics    </span>
+<span class="c-dim">  /sync            Sync with AniList/TMDB   </span>
+<span class="c-dim">  /history         Watch history            </span>
+<span class="c-dim">  /discover        Recommendations          </span>
+<span class="c-dim">  /provider        Switch provider          </span>
+<span class="c-dim">  /settings        Settings                 </span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>AFTER — Grouped, icons, disabled reasons</div>
+      <div class="term">
+        <pre><span class="c-teal bold">/</span><span class="c-text">|</span>
+<span class="c-dim">Tab · ↑↓ · Enter · Esc close</span>
+
+<span class="c-amber">Context</span>
+<span class="hl-row">❯ /wl              <span class="c-dim">add to watchlist</span>          </span>
+<span class="c-text dim-text">  /playlist-add    queue for later           </span>
+<span class="c-text dim-text">  /discover        browse recommendations    </span>
+
+<span class="c-amber">Library</span>
+<span class="c-text dim-text">  /stats     <span class="badge badge-teal">🔥 6d</span>   watch history & streak    </span>
+<span class="c-text dim-text">  /playlist        3 up next                </span>
+<span class="c-text dim-text">  /history         recent watches           </span>
+
+<span class="c-amber">System</span>
+<span class="c-text dim-text">  /sync      <span class="badge badge-amber">○</span>     not connected            </span>
+<span class="c-text dim-text">  /settings        preferences              </span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="impl-box">
+    <h4>Implementation: Enriched command descriptions</h4>
+    <p>Add a <code>badge?: string</code> field to <code>ResolvedAppCommand</code> in <code>command-registry.ts</code>. When building commands in <code>container.ts</code>, inject live context: streak count for <code>/stats</code>, unplayed count for <code>/playlist</code>, sync health dot for <code>/sync</code>. In <code>CommandPalette</code> render, show the badge inline after the alias. Add "Library" as a new group alongside existing "Context" and "Global" groups.</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="onboarding">
+  <h2>Onboarding / Setup Wizard</h2>
+  <p>The onboarding is the first impression. It should feel like opening a premium product — warm, confident, and fast. Claude Code's setup is a great reference: it's minimal but shows you something useful immediately.</p>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label bad"><span class="dot"></span>BEFORE — Generic setup wizard feel</div>
+      <div class="term" style="min-height: 280px;">
+        <pre><span class="c-amber bold">🦊 Kunai</span>
+<span class="c-dim">Setup  1 / 6</span>
+
+<span class="c-teal">Welcome to Kunai</span>
+<span class="c-muted">A terminal-first anime &amp; series player.</span>
+
+<span class="c-dim">·  ●  ·  ·  ·  ·</span>
+
+<span class="c-dim">[Checking dependencies...]</span>
+
+<span class="c-dim">mpv    ✓  found</span>
+<span class="c-dim">yt-dlp ✓  found</span>
+<span class="c-dim">chafa  ○  optional</span>
+
+<span class="c-dim">Enter continue  ·  s skip</span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>AFTER — Premium welcome with personality</div>
+      <div class="term" style="min-height: 280px;">
+        <pre><span class="c-amber bold">🦊 Kunai</span>              <span class="c-dim">v0.1.0</span>
+
+<span class="c-dim">⠿⠿⠿⠿⠿  ⠿⠿  ⠿⠿⠿  ⠿⠿</span>  <span class="c-amber bold">KUNAI</span>
+<span class="c-dim">⠿⠿  ⠿⠿  ⠿⠿  ⠿⠿  ⠿⠿</span>
+<span class="c-dim">⠿⠿⠿⠿  ⠿⠿⠿⠿⠿⠿  ⠿⠿</span>
+
+<span class="c-teal bold">A terminal player that stays out of the way.</span>
+<span class="c-muted">Search, stream, and track your watch history —</span>
+<span class="c-muted">all without leaving the terminal.</span>
+
+<span class="c-dim">  ●  ·  ·  ·  ·  ·</span>   <span class="c-dim">slide 1 of 6</span>
+
+<span class="c-dim">Enter</span> <span class="c-text">start setup</span>  <span class="c-dim">s</span> <span class="c-text">skip to app</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>System check slide — rich status</div>
+      <div class="term">
+        <pre><span class="c-amber bold">System Check</span>      <span class="c-dim">slide 2 of 6</span>
+
+<span class="c-text">  ●  ·  ·  ·  ·  ·</span>
+
+<span class="c-green">✓  mpv</span>          <span class="c-dim">playback engine — ready</span>
+<span class="c-green">✓  yt-dlp</span>       <span class="c-dim">downloads — ready</span>
+<span class="c-muted">○  chafa</span>        <span class="c-dim">poster previews — optional</span>
+<span class="c-muted">○  ffprobe</span>      <span class="c-dim">metadata — optional</span>
+
+<span class="c-dim">──────────────────────────────────────────</span>
+<span class="c-teal">All required tools found. You're ready.</span>
+
+<span class="c-dim">Enter</span> <span class="c-text">continue</span>  <span class="c-dim">b</span> <span class="c-text">back</span>  <span class="c-dim">s</span> <span class="c-text">skip</span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>Tips slide — show the product</div>
+      <div class="term">
+        <pre><span class="c-amber bold">What you can do</span>    <span class="c-dim">slide 6 of 6</span>
+
+<span class="c-text">  ·  ·  ·  ·  ·  ●</span>
+
+<span class="c-teal">Search</span>  <span class="c-muted">type any title name to find it</span>
+<span class="c-teal">/</span>       <span class="c-muted">open the command palette</span>
+<span class="c-teal">/wl</span>     <span class="c-muted">manage your watchlist</span>
+<span class="c-teal">/stats</span>  <span class="c-muted">see your watch streak + heatmap</span>
+<span class="c-teal">/sync</span>   <span class="c-muted">link AniList or TMDB</span>
+
+<span class="c-dim">──────────────────────────────────────────</span>
+<span class="c-amber">Ready. Let's go.</span>
+
+<span class="c-dim">Enter</span> <span class="c-text">start</span>  <span class="c-dim">b</span> <span class="c-text">back</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="impl-box">
+    <h4>Implementation improvements</h4>
+    <p>The <code>setup-shell.tsx</code> <code>WelcomeSlide</code> already has the DotMatrix animation. Add: (1) version number in top-right, (2) change tagline to be more specific ("search, stream, track — no browser needed"), (3) on TipsSlide show 3 live commands with their key descriptions as actual demo, not just a bullet list. The "slide 1 of 6" count should always be visible. Progress dots should be colorable: completed = teal, current = amber, future = dim.</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="browse-shell">
+  <h2>Browse Shell</h2>
+  <p>The browse shell is the home screen. It should feel alive — not just a search input waiting for queries.</p>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label bad"><span class="dot"></span>BEFORE — Empty state, no guidance</div>
+      <div class="term">
+        <pre><span class="c-amber bold">🦊 Kunai</span>                       <span class="c-muted">idle</span>
+<span class="c-muted">anime · vidking · 🔥 6d</span>
+
+<span class="c-dim">──────────────────────────────────────</span>
+
+<span class="c-muted">Anime</span>  <span class="c-dim">Provider vidking</span>
+<span class="c-dim">⌕ </span><span class="c-text">|</span>
+<span class="c-dim">──────────────────────────────────────</span>
+<span class="c-dim">Type to search  ·  Ctrl+T trending</span>
+
+<span class="c-dim">Search  enter search  ↑↓ navigate  tab switch  / commands  esc clear</span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>AFTER — Context-rich idle state</div>
+      <div class="term">
+        <pre><span class="c-amber bold">🦊 Kunai</span>              <span class="c-dim">vidking</span> <span class="c-amber">🔥 6d</span> <span class="badge badge-teal">sync✓</span>
+<span class="c-muted">anime · Search or press Ctrl+T for trending</span>
+
+<span class="c-muted">Anime</span>  <span class="c-info">vidking</span>
+<span class="c-dim">⌕ </span><span class="c-text">|</span>
+<span class="c-dim">──────────────────────────────────────────────</span>
+
+<span class="c-dim">  Up next in playlist:</span> <span class="c-text">Attack on Titan S04E10</span>
+<span class="c-dim">  Watchlist:</span> <span class="c-teal">4 titles</span>  <span class="c-dim">· Today:</span> <span class="c-text">Frieren E01</span> <span class="c-dim">released</span>
+
+<span class="c-dim">──────────────────────────────────────────────</span>
+<span class="c-dim">type to search  / commands  ctrl+t trending  tab switch mode</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="impl-box">
+    <h4>Implementation: Contextual idle state</h4>
+    <p>In <code>RootIdleShell</code> (or via the BrowseShell empty state), render up to 2 lines of context when search query is empty and no results: (1) "Up next: [playlist.peekNext().title]" if playlist is non-empty, (2) today's calendar releases from <code>catalogScheduleService</code>. This gives the user something to do immediately on launch. Keep it hidden when results are showing.</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="header-chrome">
+  <h2>Header Chrome Improvements</h2>
+  <p>The header (brand + crumb + status) appears on every screen. It's the one place users always look. It currently shows static info. Claude Code's header shows active state, git branch, model, and contextual hints.</p>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label bad"><span class="dot"></span>BEFORE — Static header</div>
+      <div class="term">
+        <pre><span class="c-amber bold">🦊 Kunai</span>                           <span class="c-muted">idle</span>
+<span class="c-muted">anime · vidking</span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>AFTER — Live context header</div>
+      <div class="term">
+        <pre><span class="c-amber bold">🦊 Kunai</span>              <span class="c-dim">vidking</span> <span class="c-amber">🔥 6d</span> <span class="badge badge-green">sync✓</span>
+<span class="c-muted">anime · 4 watchlist · 3 up next</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="impl-box">
+    <h4>Implementation: Header crumb enrichment</h4>
+    <p>In <code>root-status-summary.ts</code>, <code>buildRootStatusSummary</code> already has streak and syncHealth. Extend the <code>crumb</code> field to include: watchlist count when non-zero, playlist unplayed count when non-zero. Format: <code>"anime · vidking · 4wl · 3pl"</code> or verbose when space allows. Keep it under 40 chars. The status header should show sync health as a colored badge: green ✓, amber ⚠, or dim ○ (disconnected).</p>
+  </div>
+
+  <hr class="divider" />
+
+  <h3>Sync status indicator designs</h3>
+  <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px;">
+    <div class="slide-preview" style="min-width: 200px;">
+      <div><span class="c-green">● sync✓</span> <span class="c-dim">AniList connected</span></div>
+      <div style="margin-top: 6px;"><span class="c-amber">● sync⚠</span> <span class="c-dim">last push failed</span></div>
+      <div style="margin-top: 6px;"><span class="c-dim">○ sync</span> <span class="c-dim">not connected</span></div>
+    </div>
+    <div class="slide-preview" style="min-width: 260px;">
+      <div class="c-muted" style="font-size: 11px; margin-bottom: 8px;">Auto-sync nudge (one-time):</div>
+      <div><span class="c-amber">→ Connect AniList to sync your progress</span></div>
+      <div><span class="c-dim">&nbsp;&nbsp;/sync to set up  ·  d dismiss</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="sharing">
+  <h2>Sharing & Engagement Hooks</h2>
+  <p>The streak + heatmap is the core engagement mechanic. Make it visible without being annoying. These are the patterns used by Duolingo, GitHub, and now Claude Code.</p>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>Streak milestone notification</div>
+      <div class="term">
+        <pre><span class="c-amber bold">🦊 Kunai</span>
+
+<span class="c-amber bold">🔥 7-day streak!</span>
+<span class="c-muted">One week of consistent watching.</span>
+<span class="c-dim">View your stats with /stats</span>
+
+<span class="c-dim">[auto-dismisses in 5s · d to dismiss permanently]</span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>Copyable streak card (s key)</div>
+      <div class="term">
+        <pre><span class="c-teal">Copied to clipboard:</span>
+
+<span class="c-text">🦊 Kunai · 🔥 7-day streak</span>
+<span class="c-text">125 episodes · 74h watched in 30 days</span>
+<span class="c-text">Top: Breaking Bad · One Piece · Frieren</span>
+<span class="c-dim">──────────────────────────────</span>
+<span class="c-muted">Su ░ ░ ▒ ▓ █ █ ▓ ▒ █ █ ▓ █</span>
+<span class="c-muted">...</span>
+<span class="c-dim">──────────────────────────────</span>
+<span class="c-muted">kitsunelabs.xyz/kunai</span>
+
+<span class="c-dim">Flash disappears in 3s</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>Weekly digest (auto, non-blocking)</div>
+      <div class="term">
+        <pre><span class="c-amber bold">🦊 Kunai</span>              <span class="c-amber">🔥 6d</span>
+<span class="c-info">↑ This week: 35 ep · 21h 34m  ← more than last</span>
+
+<span class="c-dim">[fades after 8 seconds]</span></pre>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-label good"><span class="dot"></span>Streak freeze / recovery hook</div>
+      <div class="term">
+        <pre><span class="c-amber bold">🦊 Kunai</span>
+
+<span class="c-red">Streak at risk!</span> <span class="c-muted">Watch something today to</span>
+<span class="c-muted">keep your 6-day streak.</span>
+
+<span class="c-dim">Up next: Attack on Titan S04E10</span>
+<span class="c-teal">enter to start watching</span>
+
+<span class="c-dim">[shown once per day if no activity by 8pm]</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="impl-box">
+    <h4>Implementation: Engagement hook system</h4>
+    <p><strong>Milestones</strong>: In <code>AppRoot</code> useEffect, after streak is loaded compare to <code>[3,7,14,21,30,50,100]</code>. If crossing a threshold and <code>config.lastStreakMilestone &lt; threshold</code>, show a transient alert for 8 seconds. Store in config. <br/><br/>
+    <strong>Streak-at-risk</strong>: If streak ≥ 3, current time ≥ 20:00 local, and <code>statsService.watchedToday() === false</code> — show a single-line amber alert with the next playlist item. Once per day (check <code>config.lastStreakRiskShownAt</code>). <br/><br/>
+    <strong>Share card</strong>: <code>s</code> key in StatsShell calls a platform-aware clipboard write. The text is a formatted card: ASCII heatmap + summary + show list + brand URL. Log to <code>diagnosticsStore</code> for analytics.</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────────────────────────── -->
+<section class="section" id="implementation">
+  <h2>Implementation Roadmap</h2>
+  <p>Ordered by impact vs effort. Each item is a single focused commit.</p>
+
+  <div class="metrics-row">
+    <div class="metric"><div class="val">2</div><div class="lbl">bugs fixed today</div></div>
+    <div class="metric"><div class="val">8</div><div class="lbl">design improvements</div></div>
+    <div class="metric"><div class="val">3</div><div class="lbl">engagement hooks</div></div>
+    <div class="metric"><div class="val">~4h</div><div class="lbl">est. implementation</div></div>
+  </div>
+
+  <h3>Priority 1 — Immediate polish (high impact, low effort)</h3>
+
+  <div class="tag-row">
+    <span class="reason-tag">crumb enrichment</span>
+    <span class="reason-tag">watchlist badges</span>
+    <span class="reason-tag">playlist sections</span>
+    <span class="reason-tag">idle context state</span>
+  </div>
+
+  <div class="issue-list">
+    <div class="issue">
+      <span class="issue-severity sev-high">QUICK</span>
+      <div class="issue-text"><strong>Enrich header crumb</strong> — Add watchlist count + playlist count to <code>buildRootStatusSummary</code>. 20 lines in <code>root-status-summary.ts</code>.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-high">QUICK</span>
+      <div class="issue-text"><strong>Watchlist next-episode badges</strong> — Cross-reference history when building watchlist options. Add <code>previewMeta</code> showing "S4E10 next" or "ep 1098". ~40 lines in <code>handleWatchlist</code>.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-high">QUICK</span>
+      <div class="issue-text"><strong>Playlist two-section layout</strong> — Use <code>previewGroup</code> on ShellOptions to separate "Up next" / "Played". Add stale warning as subtitle. ~30 lines in <code>handlePlaylist</code>.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-high">QUICK</span>
+      <div class="issue-text"><strong>Browse idle state context</strong> — Show "playlist next" + "today's releases" in empty BrowseShell state. ~25 lines in BrowseShell empty branch.</div>
+    </div>
+  </div>
+
+  <h3>Priority 2 — Engagement hooks (medium effort, high retention)</h3>
+  <div class="issue-list">
+    <div class="issue">
+      <span class="issue-severity sev-med">MEDIUM</span>
+      <div class="issue-text"><strong>Streak milestone alerts</strong> — AppRoot useEffect, check crossing thresholds, show transient alert. Config field <code>lastStreakMilestone</code>. ~40 lines.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-med">MEDIUM</span>
+      <div class="issue-text"><strong>Share card (s key in StatsShell)</strong> — Platform-aware clipboard, formatted card text with ASCII heatmap. ~50 lines in StatsShell.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-med">MEDIUM</span>
+      <div class="issue-text"><strong>Streak-at-risk evening alert</strong> — If streak ≥ 3, after 20:00, no watch today — show amber alert with next-up item. ~35 lines in AppRoot useEffect.</div>
+    </div>
+  </div>
+
+  <h3>Priority 3 — Onboarding polish (medium effort)</h3>
+  <div class="issue-list">
+    <div class="issue">
+      <span class="issue-severity sev-med">MEDIUM</span>
+      <div class="issue-text"><strong>Progress dot colors</strong> — In <code>SlideDots</code> component: completed = teal, current = amber, future = dim. ~10 lines.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-med">MEDIUM</span>
+      <div class="issue-text"><strong>Tips slide as interactive demo</strong> — Show 3 live example commands with key-press affordances. Hints show what you'd see if you ran each one. ~60 lines.</div>
+    </div>
+  </div>
+
+  <h3>Priority 4 — Command palette enrichment (medium effort)</h3>
+  <div class="issue-list">
+    <div class="issue">
+      <span class="issue-severity sev-med">LOWER</span>
+      <div class="issue-text"><strong>Live badges in command palette</strong> — streak count on /stats, unplayed count on /playlist, sync status on /sync. Requires <code>badge?</code> field on <code>ResolvedAppCommand</code> and container wiring. ~80 lines total.</div>
+    </div>
+    <div class="issue">
+      <span class="issue-severity sev-med">LOWER</span>
+      <div class="issue-text"><strong>"Library" command group</strong> — Group /wl, /playlist, /stats, /sync under a new "Library" context group. Add group IDs to command registry. ~30 lines.</div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
