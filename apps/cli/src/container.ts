@@ -92,6 +92,9 @@ import { RecommendationServiceImpl } from "./services/recommendations/Recommenda
 import { SEARCH_SERVICE_DEFINITIONS } from "./services/search/definitions";
 import type { SearchRegistry } from "./services/search/SearchRegistry";
 import { SearchRegistryImpl } from "./services/search/SearchRegistry";
+import { AniListAdapter } from "./services/sync/AniListAdapter";
+import { SyncService } from "./services/sync/SyncService";
+import { TmdbAdapter } from "./services/sync/TmdbAdapter";
 import { detectInstallMethod } from "./services/update/install-method";
 import { fetchLatestKunaiVersion, UpdateService } from "./services/update/UpdateService";
 import type { CapabilitySnapshot } from "./ui";
@@ -154,6 +157,7 @@ export interface Container {
   readonly statsService: StatsService;
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
+  readonly syncService: SyncService;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;
@@ -262,6 +266,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const statsService = new StatsService(dataDb);
   const statsFormatter = new StatsFormatter();
   const syncTokenStore = new SyncTokenStore(paths);
+  const anilistAdapter = new AniListAdapter(syncTokenStore);
+  const tmdbAdapter = new TmdbAdapter(syncTokenStore, process.env.KUNAI_TMDB_API_KEY ?? "");
+  await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
+  const syncService = new SyncService(anilistAdapter, tmdbAdapter);
 
   // Load config
   const config = await ConfigServiceImpl.load(configStore);
@@ -395,6 +403,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     statsService,
     statsFormatter,
     syncTokenStore,
+    syncService,
     shellChrome,
     capabilitySnapshot,
     debugTracePath,

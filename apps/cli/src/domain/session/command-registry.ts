@@ -41,7 +41,16 @@ export type AppCommandId =
   | "report-issue"
   | "download"
   | "downloads"
-  | "library";
+  | "library"
+  | "watchlist"
+  | "favorites"
+  | "playlist"
+  | "playlist-add"
+  | "stats"
+  | "sync"
+  | "sync-connect-anilist"
+  | "sync-connect-tmdb"
+  | "sync-disconnect";
 
 export type AppCommand = {
   readonly id: AppCommandId;
@@ -57,6 +66,10 @@ export type ResolvedAppCommand = AppCommand & {
 
 export const COMMAND_CONTEXTS = {
   rootOverlay: [
+    "watchlist",
+    "playlist",
+    "stats",
+    "sync",
     "library",
     "downloads",
     "history",
@@ -378,6 +391,60 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Report Issue",
     aliases: ["report-issue", "issue", "bug-report"],
     description: "Open the GitHub issue page with diagnostics guidance",
+  },
+  {
+    id: "watchlist",
+    label: "Watchlist",
+    aliases: ["wl", "watchlist", "watch-list"],
+    description: "View and manage your watchlist",
+  },
+  {
+    id: "favorites",
+    label: "Favorites",
+    aliases: ["fav", "favs", "favorites"],
+    description: "View your favorite titles",
+  },
+  {
+    id: "playlist",
+    label: "Playlist",
+    aliases: ["playlist", "pl", "queue-playlist"],
+    description: "Manage your playback playlist queue",
+  },
+  {
+    id: "playlist-add",
+    label: "Add to Playlist",
+    aliases: ["playlist-add", "pl-add", "add-to-playlist"],
+    description: "Queue the current title for sequential playback",
+  },
+  {
+    id: "stats",
+    label: "Stats",
+    aliases: ["stats", "statistics", "watch-stats"],
+    description: "View your watch statistics, streak, and heatmap",
+  },
+  {
+    id: "sync",
+    label: "Sync",
+    aliases: ["sync", "sync-settings", "integrations"],
+    description: "Sync watch progress with AniList or TMDB",
+  },
+  {
+    id: "sync-connect-anilist",
+    label: "Connect AniList",
+    aliases: ["connect-anilist", "anilist-connect", "anilist"],
+    description: "Link your AniList account to sync watch progress",
+  },
+  {
+    id: "sync-connect-tmdb",
+    label: "Connect TMDB",
+    aliases: ["connect-tmdb", "tmdb-connect", "tmdb"],
+    description: "Link your TMDB account to sync watch progress",
+  },
+  {
+    id: "sync-disconnect",
+    label: "Disconnect Sync",
+    aliases: ["sync-disconnect", "disconnect-sync", "unlink-sync"],
+    description: "Remove linked sync accounts",
   },
 ] as const;
 
@@ -757,6 +824,17 @@ function resolveCommandState(
       return { enabled: true };
 
     case "library":
+      return { enabled: true };
+
+    case "watchlist":
+    case "favorites":
+    case "playlist":
+    case "playlist-add":
+    case "stats":
+    case "sync":
+    case "sync-connect-anilist":
+    case "sync-connect-tmdb":
+    case "sync-disconnect":
       return { enabled: true };
 
     case "previous":

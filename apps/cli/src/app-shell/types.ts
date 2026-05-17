@@ -36,6 +36,15 @@ export type ShellAction =
   | "download"
   | "downloads"
   | "library"
+  | "watchlist"
+  | "favorites"
+  | "playlist"
+  | "playlist-add"
+  | "stats"
+  | "sync"
+  | "sync-connect-anilist"
+  | "sync-connect-tmdb"
+  | "sync-disconnect"
   | "pick-episode"
   | "next"
   | "previous"
@@ -222,6 +231,15 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "download":
     case "downloads":
     case "library":
+    case "watchlist":
+    case "favorites":
+    case "playlist":
+    case "playlist-add":
+    case "stats":
+    case "sync":
+    case "sync-connect-anilist":
+    case "sync-connect-tmdb":
+    case "sync-disconnect":
       return commandId;
   }
 }

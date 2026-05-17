@@ -1190,6 +1190,15 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   "export-diagnostics": (c) => handleExportDiagnostics(c),
   "report-issue": (c) => handleReportIssue(c),
   update: (c) => handleUpdate(c),
+  watchlist: (c) => handleWatchlist(c),
+  favorites: (c) => handleFavorites(c),
+  playlist: (c) => handlePlaylist(c),
+  "playlist-add": (c) => handlePlaylistAdd(c),
+  stats: (c) => handleStats(c),
+  sync: (c) => handleSync(c),
+  "sync-connect-anilist": (c) => handleSyncConnectAniList(c),
+  "sync-connect-tmdb": (c) => handleSyncConnectTmdb(c),
+  "sync-disconnect": (c) => handleSyncDisconnect(c),
 };
 
 export async function handleShellAction({
@@ -2627,4 +2636,421 @@ export async function openSettingsShell({
       }
     }
   }
+}
+
+// ─── Watchlist ─────────────────────────────────────────────────────────────────
+
+async function handleWatchlist(container: Container): Promise<"handled"> {
+  const { listService } = container;
+  const actionContext = buildPickerActionContext({ container, taskLabel: "Watchlist" });
+
+  while (true) {
+    const items = listService.getWatchlist();
+
+    type WlAction = { type: "remove"; titleId: string; title: string } | { type: "back" };
+
+    const options: ShellOption<WlAction>[] = [
+      ...items.map((item) => ({
+        value: { type: "remove" as const, titleId: item.titleId, title: item.title },
+        label: item.title,
+        detail: [
+          item.mediaKind,
+          item.season != null && item.episode != null
+            ? `S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      })),
+      { value: { type: "back" as const }, label: "Back" },
+    ];
+
+    const subtitle =
+      items.length > 0
+        ? `${items.length} title${items.length === 1 ? "" : "s"}  ·  select to remove`
+        : "Nothing in your watchlist yet. Add titles from search results via /wl.";
+
+    const picked = await chooseFromListShell({
+      title: "Watchlist",
+      subtitle,
+      actionContext,
+      options,
+    });
+
+    if (!picked || picked.type === "back") return "handled";
+
+    const confirm = await chooseFromListShell({
+      title: `Remove "${picked.title}" from watchlist?`,
+      subtitle: "This only removes it from your watchlist, not your history",
+      actionContext,
+      options: [
+        { value: true, label: "Remove from watchlist" },
+        { value: false, label: "Keep it" },
+      ],
+    });
+    if (confirm) listService.removeFromWatchlist(picked.titleId);
+  }
+}
+
+// ─── Favorites ─────────────────────────────────────────────────────────────────
+
+async function handleFavorites(container: Container): Promise<"handled"> {
+  const { listService } = container;
+  const actionContext = buildPickerActionContext({ container, taskLabel: "Favorites" });
+
+  while (true) {
+    const items = listService.getFavorites();
+
+    type FavAction = { type: "remove"; titleId: string; title: string } | { type: "back" };
+
+    const options: ShellOption<FavAction>[] = [
+      ...items.map((item) => ({
+        value: { type: "remove" as const, titleId: item.titleId, title: item.title },
+        label: item.title,
+        detail: item.mediaKind,
+      })),
+      { value: { type: "back" as const }, label: "Back" },
+    ];
+
+    const subtitle =
+      items.length > 0
+        ? `${items.length} title${items.length === 1 ? "" : "s"}  ·  select to remove`
+        : "No favorites yet.";
+
+    const picked = await chooseFromListShell({
+      title: "Favorites",
+      subtitle,
+      actionContext,
+      options,
+    });
+
+    if (!picked || picked.type === "back") return "handled";
+
+    listService.removeFromFavorites(picked.titleId);
+  }
+}
+
+// ─── Playlist ──────────────────────────────────────────────────────────────────
+
+async function handlePlaylist(container: Container): Promise<"handled"> {
+  const { playlistService, listService } = container;
+  const actionContext = buildPickerActionContext({ container, taskLabel: "Playlist" });
+
+  while (true) {
+    const status = playlistService.getStatus();
+    const all = playlistService.getAll();
+
+    type PlAction =
+      | { type: "remove"; id: string; title: string }
+      | { type: "clear-played" }
+      | { type: "clear-all" }
+      | { type: "refill" }
+      | { type: "back" };
+
+    const staleNote =
+      status.isStale && status.lastActivityAt
+        ? `  ·  last active ${describeStaleness(status.lastActivityAt)}`
+        : "";
+
+    const subtitle =
+      all.length > 0
+        ? `${status.unplayedCount} up next · ${all.length - status.unplayedCount} played${staleNote}`
+        : "Playlist is empty. Add titles via /playlist-add or [r] refill from watchlist.";
+
+    const options: ShellOption<PlAction>[] = [
+      ...all.map((item) => {
+        const ep =
+          item.season != null && item.episode != null
+            ? ` S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`
+            : "";
+        const played = item.playedAt !== undefined;
+        return {
+          value: { type: "remove" as const, id: item.id, title: item.title },
+          label: played ? `${item.title}${ep}  ·  played` : `${item.title}${ep}`,
+          detail: played ? item.mediaKind + " · played" : item.mediaKind + " · up next",
+        };
+      }),
+      ...(all.some((i) => i.playedAt)
+        ? [{ value: { type: "clear-played" as const }, label: "Clear played items" }]
+        : []),
+      ...(all.length > 0
+        ? [{ value: { type: "clear-all" as const }, label: "Clear entire playlist" }]
+        : []),
+      { value: { type: "refill" as const }, label: "Refill from watchlist" },
+      { value: { type: "back" as const }, label: "Back" },
+    ];
+
+    const picked = await chooseFromListShell({
+      title: `Playlist · ${status.unplayedCount} up next`,
+      subtitle,
+      actionContext,
+      options,
+    });
+
+    if (!picked || picked.type === "back") return "handled";
+
+    if (picked.type === "refill") {
+      const added = playlistService.refillFromWatchlist(listService);
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: added > 0 ? `Added ${added} titles from watchlist.` : "Nothing new to add.",
+      });
+      continue;
+    }
+
+    if (picked.type === "clear-played") {
+      playlistService.clearPlayed();
+      continue;
+    }
+
+    if (picked.type === "clear-all") {
+      const confirm = await chooseFromListShell({
+        title: "Clear entire playlist?",
+        subtitle: "This cannot be undone",
+        actionContext,
+        options: [
+          { value: true, label: "Yes, clear all" },
+          { value: false, label: "Cancel" },
+        ],
+      });
+      if (confirm) playlistService.clear();
+      continue;
+    }
+
+    if (picked.type === "remove") {
+      container.playlistRepository.remove(picked.id);
+      continue;
+    }
+  }
+}
+
+function describeStaleness(lastActivityAt: string): string {
+  const ms = Date.now() - new Date(lastActivityAt).getTime();
+  const days = Math.floor(ms / 86400000);
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  return `${days} days ago`;
+}
+
+async function handlePlaylistAdd(container: Container): Promise<"handled"> {
+  const { stateManager, playlistService } = container;
+  const state = stateManager.getState();
+
+  const title = state.currentTitle;
+  if (!title) {
+    stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "No current title to add to playlist.",
+    });
+    return "handled";
+  }
+
+  playlistService.enqueue({
+    title: title.name,
+    mediaKind: state.mode === "anime" ? "anime" : "series",
+    titleId: title.id,
+    season: state.currentEpisode?.season,
+    episode: state.currentEpisode?.episode,
+    source: "manual",
+  });
+
+  stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Added "${title.name}" to playlist.`,
+  });
+  return "handled";
+}
+
+// ─── Stats ──────────────────────────────────────────────────────────────────────
+
+async function handleStats(container: Container): Promise<"handled"> {
+  const { statsService, statsFormatter } = container;
+  const actionContext = buildPickerActionContext({ container, taskLabel: "Stats" });
+
+  const windows = [30, 90, 0] as const;
+  const windowLabels = ["30d", "90d", "all"] as const;
+  let windowIdx = 0;
+
+  while (true) {
+    const windowDays = windows[windowIdx]!;
+    const stats = statsService.getStats(windowDays || 99999);
+    const heatmap = statsFormatter.formatHeatmap(stats.heatmap);
+    const topShows = statsFormatter.formatTopShows(stats.topShows);
+    const summary = statsFormatter.formatSummaryLine(stats);
+    const windowLabel = windowLabels[windowIdx]!;
+
+    type StatsAction = "next-window" | "back";
+
+    const options: ShellOption<StatsAction>[] = [
+      { value: "next-window", label: `Window: [${windowLabel}]  →  cycle` },
+      { value: "back", label: "Back" },
+    ];
+
+    const subtitle = [summary, "", "Heatmap (last 12 months):", heatmap, "", "Top shows:", topShows]
+      .join("\n")
+      .slice(0, 800);
+
+    const picked = await chooseFromListShell({
+      title: `Watch Stats — ${windowLabel}`,
+      subtitle,
+      actionContext,
+      options,
+    });
+
+    if (!picked || picked === "back") return "handled";
+    if (picked === "next-window") {
+      windowIdx = (windowIdx + 1) % windows.length;
+    }
+  }
+}
+
+// ─── Sync ────────────────────────────────────────────────────────────────────────
+
+async function handleSync(container: Container): Promise<"handled"> {
+  const { syncService } = container;
+  const actionContext = buildPickerActionContext({ container, taskLabel: "Sync" });
+
+  while (true) {
+    const adapters = syncService.adapters;
+
+    type SyncAction =
+      | { type: "connect"; id: string }
+      | { type: "disconnect"; id: string }
+      | { type: "push-now" }
+      | { type: "back" };
+
+    const options: ShellOption<SyncAction>[] = [
+      ...adapters.map((adapter) => {
+        const connected = adapter.isConnected();
+        const username = adapter.getConnectedUsername();
+        return {
+          value: connected
+            ? ({ type: "disconnect", id: adapter.id } as SyncAction)
+            : ({ type: "connect", id: adapter.id } as SyncAction),
+          label: connected
+            ? `${adapter.displayName}  ·  connected${username ? ` as @${username}` : ""}`
+            : `${adapter.displayName}  ·  not connected`,
+          detail: connected ? "Select to disconnect" : "Select to connect",
+        };
+      }),
+      { value: { type: "push-now" as const }, label: "Sync now" },
+      { value: { type: "back" as const }, label: "Back" },
+    ];
+
+    const connectedCount = adapters.filter((a) => a.isConnected()).length;
+    const subtitle =
+      connectedCount > 0
+        ? `${connectedCount} service${connectedCount === 1 ? "" : "s"} connected`
+        : "No sync services connected. Select a service to link your account.";
+
+    const picked = await chooseFromListShell({
+      title: "Sync",
+      subtitle,
+      actionContext,
+      options,
+    });
+
+    if (!picked || picked.type === "back") return "handled";
+
+    if (picked.type === "push-now") {
+      const history = await container.historyStore.getAll();
+      const entries = Object.entries(history)
+        .sort(([, a], [, b]) => new Date(b.watchedAt).getTime() - new Date(a.watchedAt).getTime())
+        .slice(0, 20);
+
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: `Syncing ${entries.length} entries…`,
+      });
+
+      for (const [titleId, entry] of entries) {
+        await syncService.pushWatched({
+          key: titleId,
+          titleId,
+          mediaKind: entry.type as "movie" | "series" | "anime",
+          title: entry.title,
+          season: entry.season,
+          episode: entry.episode,
+          absoluteEpisode: undefined,
+          positionSeconds: entry.timestamp,
+          durationSeconds: entry.duration,
+          completed: entry.completed,
+          providerId: entry.provider as import("@kunai/types").ProviderId | undefined,
+          updatedAt: entry.watchedAt,
+          createdAt: entry.watchedAt,
+        });
+      }
+
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: "Sync complete.",
+      });
+      continue;
+    }
+
+    if (picked.type === "connect") {
+      const adapter = adapters.find((a) => a.id === picked.id);
+      if (!adapter) continue;
+
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: `Connecting to ${adapter.displayName}…`,
+      });
+
+      const controller = new AbortController();
+      const result = await adapter.connect(controller.signal);
+
+      if (result.ok) {
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: `Connected to ${adapter.displayName}.`,
+        });
+      } else {
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: `Failed: ${result.error}`,
+        });
+      }
+      continue;
+    }
+
+    if (picked.type === "disconnect") {
+      const adapter = adapters.find((a) => a.id === picked.id);
+      if (!adapter) continue;
+
+      const confirm = await chooseFromListShell({
+        title: `Disconnect ${adapter.displayName}?`,
+        subtitle: "Your local history will be kept",
+        actionContext,
+        options: [
+          { value: true, label: `Yes, disconnect ${adapter.displayName}` },
+          { value: false, label: "Cancel" },
+        ],
+      });
+
+      if (confirm) {
+        await adapter.disconnect();
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: `Disconnected from ${adapter.displayName}.`,
+        });
+      }
+      continue;
+    }
+  }
+}
+
+async function handleSyncConnectAniList(container: Container): Promise<"handled"> {
+  await handleSync(container);
+  return "handled";
+}
+
+async function handleSyncConnectTmdb(container: Container): Promise<"handled"> {
+  await handleSync(container);
+  return "handled";
+}
+
+async function handleSyncDisconnect(container: Container): Promise<"handled"> {
+  await handleSync(container);
+  return "handled";
 }
