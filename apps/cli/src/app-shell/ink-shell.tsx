@@ -1915,6 +1915,7 @@ function BrowseShell<T>({
   settingsSeriesProviderOptions: _settingsSeriesProviderOptions,
   settingsAnimeProviderOptions: _settingsAnimeProviderOptions,
   onSaveSettings: _onSaveSettings,
+  onQueueSelected,
   onResolve,
   onSubmit,
   onCancel,
@@ -1941,6 +1942,7 @@ function BrowseShell<T>({
   settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
   settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
   onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
+  onQueueSelected?: (value: T) => Promise<void> | void;
   onResolve: (action: ShellAction) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
@@ -2387,6 +2389,22 @@ function BrowseShell<T>({
       return;
     }
 
+    if (input.toLowerCase() === "q") {
+      if (
+        selectedOption &&
+        onQueueSelected &&
+        options.length > 0 &&
+        !queryDirty &&
+        searchState === "ready"
+      ) {
+        void Promise.resolve(onQueueSelected(selectedOption.value)).then(() => {
+          setSelectedDetail(`Queued ${selectedOption.label}`);
+          return undefined;
+        });
+      }
+      return;
+    }
+
     if (key.tab) {
       onResolve("toggle-mode");
       return;
@@ -2726,6 +2744,9 @@ function BrowseShell<T>({
           ...(options.length > 0 && !queryDirty
             ? [{ key: "^D", label: "download", action: "download" as const }]
             : []),
+          ...(onQueueSelected && options.length > 0 && !queryDirty
+            ? [{ key: "q", label: "queue", action: "playlist" as const }]
+            : []),
           { key: "esc", label: "clear/back", action: "quit" },
         ]}
       />
@@ -2756,6 +2777,7 @@ export function openBrowseShell<T>({
   settingsSeriesProviderOptions,
   settingsAnimeProviderOptions,
   onSaveSettings,
+  onQueueSelected,
 }: {
   mode: "series" | "anime";
   provider: string;
@@ -2779,6 +2801,7 @@ export function openBrowseShell<T>({
   settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
   settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
   onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
+  onQueueSelected?: (value: T) => Promise<void> | void;
 }): Promise<BrowseShellResult<T>> {
   const session = mountRootContent<BrowseShellResult<T>>({
     kind: "browse",
@@ -2806,6 +2829,7 @@ export function openBrowseShell<T>({
         settingsSeriesProviderOptions={settingsSeriesProviderOptions}
         settingsAnimeProviderOptions={settingsAnimeProviderOptions}
         onSaveSettings={onSaveSettings}
+        onQueueSelected={onQueueSelected}
         onResolve={(action) => finish({ type: "action", action })}
         onSubmit={(value) => finish({ type: "selected", value })}
         onCancel={() => finish({ type: "cancelled" })}

@@ -94,6 +94,7 @@ import { SyncTokenStore } from "./services/persistence/SyncTokenStore";
 import { MediaTrackService } from "./services/playback/MediaTrackService";
 import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
+import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
 import type { ProviderRegistry } from "./services/providers/ProviderRegistry";
@@ -171,6 +172,7 @@ export interface Container {
   readonly notificationRepository: NotificationRepository;
   readonly followedTitleRepository: FollowedTitleRepository;
   readonly playlistsRepository: PlaylistsRepository;
+  readonly durablePlaylistService: DurablePlaylistService;
   readonly listService: ListService;
   readonly playlistService: PlaylistService;
   readonly statsService: StatsService;
@@ -400,7 +402,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const continuationProjectionService = new ContinuationProjectionService();
   const attentionRefreshWorker = new AttentionRefreshWorker({
     flags: featureFlags,
+    diagnostics: diagnosticsStore,
   });
+  const durablePlaylistService = new DurablePlaylistService(playlistsRepository);
 
   const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
 
@@ -466,6 +470,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     notificationRepository,
     followedTitleRepository,
     playlistsRepository,
+    durablePlaylistService,
     listService,
     playlistService,
     statsService,

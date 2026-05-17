@@ -16,6 +16,14 @@ They do not store playback progress internally. Progress is projected from watch
 
 ## Import And Export
 
+Use `/playlist` to:
+
+- save the current runtime queue as a durable playlist
+- export a durable playlist to Kunai's playlist exchange folder
+- import a Kunai playlist JSON file from the same folder
+
+The exchange folder is `playlists/` under Kunai's app data directory.
+
 Kunai playlist exports include:
 
 - format/version
@@ -33,7 +41,7 @@ Exports must never include:
 - auth tokens
 - local file paths
 
-Imported unresolved items are inert until explicitly resolved. They must not autoplay from guesses.
+Imported unresolved items are inert until explicitly resolved. They must not autoplay from guesses or replace the current queue.
 
 ## Service Boundary
 

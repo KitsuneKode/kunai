@@ -20,4 +20,10 @@ When enabled, sync must be budgeted:
 - stale values are acceptable for non-visible items
 - provider checks must not run as an unbounded N+1 loop
 
-The current scheduler policy is deterministic and pure: it plans eligible title IDs from local visibility, follow, mute, and check-budget facts. Actual provider calls remain a separate experimental integration step.
+The current worker policy is deterministic and guarded:
+
+- with the experimental flag off, it is inert
+- with the flag on and no refresh callback, it only returns the planned IDs
+- when a refresh callback is supplied, it passes an `AbortSignal`, stops on cancellation, records runtime diagnostics, and only executes the budgeted planned IDs
+
+Actual provider calls remain an opt-in experimental integration behind that callback.

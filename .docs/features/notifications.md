@@ -25,6 +25,7 @@ Use:
 The inbox is safe to open during playback. It shows local notices and routes safe actions through the notification/media action routers:
 
 - `Enter` runs the primary action for the selected notice
+- `a` opens the explicit action menu for the selected notice
 - `x` dismisses the selected notice
 - recoverable queues restore into the current queue session, but do not autoplay
 - new episode notices queue by default instead of replacing active playback

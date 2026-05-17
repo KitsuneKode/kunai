@@ -128,9 +128,12 @@ Run these when notifications, queue recovery, history, recommendations, download
 
 - open `/notifications` during playback and confirm playback continues
 - press `Enter` on a recoverable queue notice and confirm pending items restore without autoplay
+- press `a` on a notice and confirm explicit action rows can be selected or escaped without side effects
 - press `x` on a notice and confirm it is dismissed
 - press `q` in `/history` and confirm the selected title is queued without replacing playback
+- press `q` on a search/recommendation row and confirm the selected title is queued without opening playback
 - queue an item from a non-playback surface and confirm it does not start immediately
+- with `KUNAI_EXPERIMENTAL_PROVIDER_AVAILABILITY_SYNC` unset, confirm availability sync records no provider calls
 - crash or kill a session with queued items, restart, and confirm a recoverable queue notice appears
 - dismiss or ignore the recoverable queue notice and confirm Kunai does not auto-restore
 - export a Kunai playlist and inspect the JSON for no stream URLs, headers, cookies, tokens, or local paths

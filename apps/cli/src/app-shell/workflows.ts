@@ -1,4 +1,5 @@
-import { dirname, join } from "node:path";
+import { mkdir, readdir, readFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 import {
   chooseEpisodeFromOptions,
@@ -40,6 +41,7 @@ import {
   type HistoryEntry,
   type HistoryStore,
 } from "@/services/persistence/HistoryStore";
+import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
 import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
 import { getKunaiPaths, type DownloadJobRecord } from "@kunai/storage";
 
@@ -2730,6 +2732,9 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
       | { type: "clear-played" }
       | { type: "clear-all" }
       | { type: "refill" }
+      | { type: "snapshot-queue" }
+      | { type: "export-durable" }
+      | { type: "import-durable" }
       | { type: "back" };
 
     const staleNote =
@@ -2774,6 +2779,25 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
       ...(all.length > 0
         ? [{ value: { type: "clear-all" as const }, label: "Clear entire playlist" }]
         : []),
+      ...(all.length > 0
+        ? [
+            {
+              value: { type: "snapshot-queue" as const },
+              label: "Save queue as durable playlist",
+              detail: "Create a shareable playlist from the current queue identities",
+            },
+          ]
+        : []),
+      {
+        value: { type: "export-durable" as const },
+        label: "Export durable playlist",
+        detail: "Write a safe Kunai playlist JSON file",
+      },
+      {
+        value: { type: "import-durable" as const },
+        label: "Import durable playlist",
+        detail: "Read a Kunai playlist JSON file from the playlist exchange folder",
+      },
       { value: { type: "refill" as const }, label: "Refill from watchlist" },
       { value: { type: "back" as const }, label: "Back" },
     ];
@@ -2793,6 +2817,38 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
         type: "SET_PLAYBACK_FEEDBACK",
         note: added > 0 ? `Added ${added} titles from watchlist.` : "Nothing new to add.",
       });
+      continue;
+    }
+
+    if (picked.type === "snapshot-queue") {
+      const playlist = container.durablePlaylistService.createPlaylist(
+        `Queue ${new Date().toISOString().slice(0, 10)}`,
+        "Saved from the runtime queue",
+      );
+      for (const item of all) {
+        container.durablePlaylistService.addItem(playlist.id, {
+          titleId: item.titleId,
+          mediaKind: item.mediaKind,
+          title: item.title,
+          season: item.season,
+          episode: item.episode,
+          absoluteEpisode: item.absoluteEpisode,
+        });
+      }
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: `Saved ${all.length} queue items to "${playlist.name}".`,
+      });
+      continue;
+    }
+
+    if (picked.type === "export-durable") {
+      await exportDurablePlaylist(container, actionContext);
+      continue;
+    }
+
+    if (picked.type === "import-durable") {
+      await importDurablePlaylist(container, actionContext);
       continue;
     }
 
@@ -2820,6 +2876,100 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
       continue;
     }
   }
+}
+
+async function ensurePlaylistExchangeDir(): Promise<string> {
+  const dir = join(getKunaiPaths().dataDir, "playlists");
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
+async function exportDurablePlaylist(
+  container: Container,
+  actionContext: ListShellActionContext,
+): Promise<void> {
+  const playlists = container.durablePlaylistService.listPlaylists();
+  if (playlists.length === 0) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "No durable playlists to export. Save the queue as a playlist first.",
+    });
+    return;
+  }
+
+  const picked = await chooseFromListShell({
+    title: "Export Playlist",
+    subtitle: "Exports identity and progress only; never stream URLs or local paths",
+    actionContext,
+    options: playlists.map((playlist) => ({
+      value: playlist.id,
+      label: playlist.name,
+      detail: playlist.description,
+    })),
+  });
+  if (!picked) return;
+
+  const playlist = playlists.find((item) => item.id === picked);
+  if (!playlist) return;
+  const document = container.durablePlaylistService.exportPlaylist(playlist.id, playlist.name, []);
+  const dir = await ensurePlaylistExchangeDir();
+  const filePath = join(dir, `${safeFileSlug(playlist.name)}.kunai-playlist.json`);
+  await Bun.write(filePath, `${JSON.stringify(document, null, 2)}\n`);
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Exported playlist to ${filePath}.`,
+  });
+}
+
+async function importDurablePlaylist(
+  container: Container,
+  actionContext: ListShellActionContext,
+): Promise<void> {
+  const dir = await ensurePlaylistExchangeDir();
+  const files = (await readdir(dir)).filter(
+    (name) => name.endsWith(".kunai-playlist.json") || name.endsWith(".json"),
+  );
+  if (files.length === 0) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: `No playlist files found in ${dir}.`,
+    });
+    return;
+  }
+
+  const picked = await chooseFromListShell({
+    title: "Import Playlist",
+    subtitle: `Choose a Kunai playlist file from ${dir}`,
+    actionContext,
+    options: files.map((file) => ({
+      value: join(dir, file),
+      label: basename(file),
+    })),
+  });
+  if (!picked) return;
+
+  const document = parseKunaiPlaylistDocument(await readFile(picked, "utf8"));
+  const playlist = container.durablePlaylistService.importPlaylist(document);
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Imported "${playlist.name}" without autoplaying anything.`,
+  });
+}
+
+function parseKunaiPlaylistDocument(json: string): KunaiPlaylistDocument {
+  const parsed = JSON.parse(json) as KunaiPlaylistDocument;
+  if (parsed.format !== "kunai-playlist" || parsed.version !== 1 || !Array.isArray(parsed.items)) {
+    throw new Error("Invalid Kunai playlist document");
+  }
+  return parsed;
+}
+
+function safeFileSlug(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "playlist";
 }
 
 function describeStaleness(lastActivityAt: string): string {

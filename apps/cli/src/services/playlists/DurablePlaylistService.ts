@@ -3,6 +3,7 @@ import type { PlaylistsRepository, UserPlaylistRecord } from "@kunai/storage";
 
 import {
   exportKunaiPlaylist,
+  importKunaiPlaylist,
   type KunaiPlaylistDocument,
   type KunaiPlaylistExportInput,
 } from "./KunaiPlaylistFormat";
@@ -46,6 +47,14 @@ export class DurablePlaylistService {
       createdAt: now,
       updatedAt: now,
     });
+  }
+
+  listPlaylists(): UserPlaylistRecord[] {
+    return this.repo.list();
+  }
+
+  listItems(playlistId: string) {
+    return this.repo.listItems(playlistId);
   }
 
   addItem(playlistId: string, input: DurablePlaylistItemInput): void {
@@ -106,6 +115,22 @@ export class DurablePlaylistService {
       items: exportItems,
       exportedAt: this.clock.now(),
     });
+  }
+
+  importPlaylist(document: KunaiPlaylistDocument): UserPlaylistRecord {
+    const imported = importKunaiPlaylist(document);
+    const playlist = this.createPlaylist(imported.playlist.name, "Imported Kunai playlist");
+    for (const item of [...imported.items].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      this.addItem(playlist.id, {
+        titleId: item.titleId,
+        mediaKind: item.mediaKind,
+        title: item.title,
+        season: item.season,
+        episode: item.episode,
+        providerHints: item.providerHints,
+      });
+    }
+    return playlist;
   }
 }
 

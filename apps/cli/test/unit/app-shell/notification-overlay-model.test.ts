@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  buildNotificationActionOptions,
   buildNotificationPickerOptions,
   getNotificationPrimaryAction,
 } from "@/app-shell/notification-overlay-model";
@@ -41,4 +42,21 @@ test("primary action prefers the first actionable notification action", () => {
     }),
   ).toBe("queue-next");
   expect(getNotificationPrimaryAction({ ...base, actionJson: undefined })).toBe("dismiss");
+});
+
+test("notification action menu exposes explicit safe row actions", () => {
+  expect(buildNotificationActionOptions(base)).toEqual([
+    {
+      value: "restore-queue",
+      label: "Restore queue",
+      detail: "Restore pending items into the current queue without autoplay",
+      tone: "warning",
+    },
+    {
+      value: "dismiss",
+      label: "Dismiss",
+      detail: "Hide this notice",
+      tone: "neutral",
+    },
+  ]);
 });

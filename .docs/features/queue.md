@@ -26,6 +26,7 @@ The current shell exposes:
 
 - `/notifications`: `Enter` restores recoverable queues or queues new episode notices
 - `/history`: `q` queues the selected history item without replacing playback
+- search, trending, and recommendation browse rows: `q` queues the highlighted row without opening it
 
 ## Restore API
 

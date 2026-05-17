@@ -23,6 +23,7 @@ import { resolveCommandContext } from "./commands";
 import { DownloadManagerContent } from "./download-manager-shell";
 import { LibraryShell } from "./library-shell";
 import {
+  buildNotificationActionOptions,
   buildNotificationPickerOptions,
   getNotificationPrimaryAction,
 } from "./notification-overlay-model";
@@ -152,6 +153,7 @@ export function RootOverlayShell({
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
+  const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
   const [historyFilterMode, setHistoryFilterMode] = useState<"all" | "watching" | "completed">(
     "all",
@@ -282,6 +284,21 @@ export function RootOverlayShell({
           ],
         )
       : [];
+  const selectedNotificationForActions =
+    overlay.type === "notifications" && notificationActionDedupKey
+      ? (notificationRecords.find((record) => record.dedupKey === notificationActionDedupKey) ??
+        null)
+      : null;
+  const filteredNotificationActionOptions = selectedNotificationForActions
+    ? rankFuzzyMatches(
+        buildNotificationActionOptions(selectedNotificationForActions),
+        filterQuery,
+        (option) => [
+          { value: option.label, weight: 0 },
+          { value: option.detail, weight: 8 },
+        ],
+      )
+    : [];
   const settingsPanel =
     overlay.type === "settings" && settingsDraft
       ? settingsChoice
@@ -404,6 +421,7 @@ export function RootOverlayShell({
     setSettingsBusy(false);
     setSettingsError(null);
     setOverlayStatus(null);
+    setNotificationActionDedupKey(null);
     setHistorySelections([]);
   }, [
     container.config,
@@ -512,6 +530,12 @@ export function RootOverlayShell({
         setSelectedIndex(settingsParentIndex);
         return;
       }
+      if (overlay.type === "notifications" && notificationActionDedupKey) {
+        setNotificationActionDedupKey(null);
+        setFilterQuery("");
+        setSelectedIndex(0);
+        return;
+      }
       if (isRootMediaPickerOverlay(overlay) && overlay.id) {
         if ((overlay.filterQuery ?? "").length > 0) {
           container.stateManager.dispatch({
@@ -550,7 +574,17 @@ export function RootOverlayShell({
       return;
     }
     if (overlay.type === "notifications" && input.toLowerCase() === "x") {
+      if (notificationActionDedupKey) return;
       runNotificationAction(filteredNotificationOptions[selectedIndex]?.value, "dismiss");
+      return;
+    }
+    if (overlay.type === "notifications" && input.toLowerCase() === "a") {
+      const picked = filteredNotificationOptions[selectedIndex]?.value ?? null;
+      if (picked) {
+        setNotificationActionDedupKey(picked);
+        setFilterQuery("");
+        setSelectedIndex(0);
+      }
       return;
     }
     if (key.return) {
@@ -852,8 +886,16 @@ export function RootOverlayShell({
         const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
         resolveRootHistorySelection(selected);
       } else if (overlay.type === "notifications") {
-        const picked = filteredNotificationOptions[selectedIndex]?.value ?? null;
-        runNotificationAction(picked);
+        if (notificationActionDedupKey) {
+          const actionId = filteredNotificationActionOptions[selectedIndex]?.value;
+          runNotificationAction(notificationActionDedupKey, actionId);
+          setNotificationActionDedupKey(null);
+          setFilterQuery("");
+          setSelectedIndex(0);
+        } else {
+          const picked = filteredNotificationOptions[selectedIndex]?.value ?? null;
+          runNotificationAction(picked);
+        }
         return;
       } else if (
         overlay.type === "season_picker" ||
@@ -894,7 +936,9 @@ export function RootOverlayShell({
             : overlay.type === "history"
               ? filteredHistoryOptions.length
               : overlay.type === "notifications"
-                ? filteredNotificationOptions.length
+                ? notificationActionDedupKey
+                  ? filteredNotificationActionOptions.length
+                  : filteredNotificationOptions.length
                 : overlay.type === "settings"
                   ? filteredSettingsOptions.length
                   : filteredGenericPickerOptions.length;
@@ -981,12 +1025,22 @@ export function RootOverlayShell({
           ? {
               type: "history-picker",
               title,
-              subtitle: effectiveSubtitle,
-              options: filteredNotificationOptions,
+              subtitle: notificationActionDedupKey
+                ? "Choose an explicit action for this notice"
+                : effectiveSubtitle,
+              options: notificationActionDedupKey
+                ? filteredNotificationActionOptions
+                : filteredNotificationOptions,
               filterQuery,
               selectedIndex: Math.min(
                 selectedIndex,
-                Math.max(filteredNotificationOptions.length - 1, 0),
+                Math.max(
+                  (notificationActionDedupKey
+                    ? filteredNotificationActionOptions
+                    : filteredNotificationOptions
+                  ).length - 1,
+                  0,
+                ),
               ),
               busy: false,
             }
@@ -1128,7 +1182,9 @@ export function RootOverlayShell({
                   : overlay.type === "history"
                     ? filteredHistoryOptions.length
                     : overlay.type === "notifications"
-                      ? filteredNotificationOptions.length
+                      ? notificationActionDedupKey
+                        ? filteredNotificationActionOptions.length
+                        : filteredNotificationOptions.length
                       : filteredSettingsOptions.length
               } options`}
               tone="neutral"
@@ -1165,7 +1221,9 @@ export function RootOverlayShell({
               : overlay.type === "history"
                 ? "History picker  ·  Enter resumes, q queues, type to filter"
                 : overlay.type === "notifications"
-                  ? "Notifications  ·  Enter acts, x dismisses, type to filter"
+                  ? notificationActionDedupKey
+                    ? "Notification actions  ·  Enter runs, Esc returns"
+                    : "Notifications  ·  Enter acts, a actions, x dismisses"
                   : overlay.type === "settings"
                     ? settingsChoice
                       ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"

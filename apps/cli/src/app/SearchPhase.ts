@@ -19,12 +19,14 @@ import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { loadRandomResults } from "@/app/random-results";
 import { searchTitles } from "@/app/search-routing";
 import { effectiveFooterHints } from "@/container";
+import { mediaItemFromSearchResult } from "@/domain/media/media-item-adapters";
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import type { SearchResult, TitleInfo } from "@/domain/types";
 import {
   resultEnrichmentKey,
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
+import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 
 export type SearchPhaseInput = {
@@ -216,6 +218,24 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           placeholder: currentState.mode === "anime" ? "Demon Slayer" : "Breaking Bad",
           footerMode: effectiveFooterHints(container),
           commands: resolveCommands(currentState, SEARCH_BROWSE_COMMAND_IDS),
+          onQueueSelected: async (result) => {
+            const router = new MediaActionRouter({
+              queue: {
+                enqueueMediaItem: (item, options) => {
+                  container.playlistService.enqueueMediaItem(item, options);
+                },
+              },
+            });
+            await router.run({
+              actionId: "queue-end",
+              item: mediaItemFromSearchResult(result),
+              source: "search",
+            });
+            stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: `Queued ${chooseSearchResultTitle(result, container.config.animeTitlePreference)}.`,
+            });
+          },
           onSearch: async (query) => {
             const searchIntent = createSearchIntentEngine().fromText(query, {
               currentMode: stateManager.getState().mode,

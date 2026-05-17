@@ -95,6 +95,13 @@ export class PlaylistsRepository {
     return row ? mapPlaylistRow(row) : undefined;
   }
 
+  list(): UserPlaylistRecord[] {
+    return this.db
+      .query<UserPlaylistRow, []>("SELECT * FROM user_playlists ORDER BY updated_at DESC")
+      .all()
+      .map(mapPlaylistRow);
+  }
+
   addItem(input: UserPlaylistItemRecord): UserPlaylistItemRecord {
     this.db
       .query(
