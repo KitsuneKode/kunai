@@ -2,6 +2,9 @@
 node_modules
 .worktrees
 
+
+next-env.d.ts
+
 .claude
 .codex
 .context

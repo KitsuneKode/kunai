@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "bun run --cwd apps/cli dev",
+    "dev:docs": "bun run --cwd apps/docs dev",
     "start": "bun run --cwd apps/cli start",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
