@@ -138,6 +138,18 @@ export class SessionController {
             stateManager.dispatch({ type: "RESET_CONTENT" });
             continue;
           }
+          if (typeof outcome === "object" && outcome.type === "playlist-advance") {
+            pendingInitialTitle = outcome.titleInfo;
+            if (outcome.episode !== undefined) {
+              stateManager.dispatch({
+                type: "SELECT_EPISODE",
+                episode: { season: outcome.season ?? 1, episode: outcome.episode },
+              });
+            }
+            preserveExistingSearch = false;
+            stateManager.dispatch({ type: "RESET_CONTENT" });
+            continue;
+          }
           if (outcome === "back_to_results") {
             stateManager.dispatch({ type: "RESET_CONTENT" });
             preserveExistingSearch = true;

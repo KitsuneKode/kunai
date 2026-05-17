@@ -116,7 +116,8 @@ export type PlaybackOutcome =
   | "back_to_results"
   | "mode_switch"
   | "quit"
-  | { type: "history_entry"; title: TitleInfo };
+  | { type: "history_entry"; title: TitleInfo }
+  | { type: "playlist-advance"; titleInfo: TitleInfo; season?: number; episode?: number };
 
 async function racePrefetchWithTimeout(promise: Promise<void>, timeoutMs: number): Promise<void> {
   try {
@@ -1034,6 +1035,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
+          // One-time sync nudge: show on first episode completion if no sync is connected.
+          if (
+            shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode) &&
+            !config.syncNudgeDismissedAt &&
+            container.syncService.getConnectedAdapters().length === 0
+          ) {
+            this.updatePlaybackFeedback(context, {
+              note: "Connect AniList or TMDB to sync progress. /sync to set up  ·  [d] dismiss",
+            });
+          }
+
           const shouldInvalidateStreamCache =
             result.endReason === "error" || result.suspectedDeadStream === true;
           if (shouldInvalidateStreamCache) {
@@ -1720,6 +1732,47 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           await player.releasePersistentSession();
           this.updatePlaybackFeedback(context, { detail: null, note: null });
+
+          // Playlist auto-advance: if catalog autoplay didn't fire, check the
+          // user's playlist queue for a cross-title advance.
+          if (
+            !nextEpisode &&
+            result.endReason === "eof" &&
+            !playbackSession.autoplayPaused &&
+            !context.signal.aborted
+          ) {
+            const nextPlaylistItem = container.playlistService.peekNext();
+            if (nextPlaylistItem) {
+              const episodeLabel =
+                nextPlaylistItem.episode !== undefined
+                  ? ` S${String(nextPlaylistItem.season ?? 1).padStart(2, "0")}E${String(nextPlaylistItem.episode).padStart(2, "0")}`
+                  : "";
+              for (let i = 5; i > 0 && !context.signal.aborted; i--) {
+                this.updatePlaybackFeedback(context, {
+                  note: `Next: ${nextPlaylistItem.title}${episodeLabel} in ${i}s  ·  [p] pause autoplay`,
+                });
+                await Bun.sleep(1000);
+              }
+              if (!context.signal.aborted) {
+                container.playlistService.advance();
+                const titleInfo: TitleInfo = {
+                  id: nextPlaylistItem.titleId,
+                  name: nextPlaylistItem.title,
+                  type: nextPlaylistItem.mediaKind === "movie" ? "movie" : "series",
+                };
+                return {
+                  status: "success",
+                  value: {
+                    type: "playlist-advance",
+                    titleInfo,
+                    season: nextPlaylistItem.season,
+                    episode: nextPlaylistItem.episode,
+                  },
+                };
+              }
+              this.updatePlaybackFeedback(context, { detail: null, note: null });
+            }
+          }
 
           // Post-playback menu — inner loop so unavailable navigation
           // actions stay in the menu instead of re-resolving the stream.
