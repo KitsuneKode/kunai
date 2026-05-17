@@ -20,6 +20,7 @@ import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelection
 import type { EpisodePickerOption, TitleInfo } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
+import type { CatalogScheduleService } from "@/services/catalog/CatalogScheduleService";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
@@ -524,18 +525,22 @@ export async function runSetupWizard({
   return "completed";
 }
 
-function formatHistoryLabel(entry: HistoryEntry): string {
+function formatHistoryLabel(entry: HistoryEntry, newEpisodeCount = 0): string {
   const progress = entry.duration
     ? `${Math.round((entry.timestamp / entry.duration) * 100)}%`
     : formatTimestamp(entry.timestamp);
-  return entry.type === "series"
-    ? `${entry.title}  ·  S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}  ·  ${progress}`
-    : `${entry.title}  ·  movie  ·  ${progress}`;
+  if (entry.type === "series") {
+    const epLabel = `S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`;
+    const newLabel = newEpisodeCount > 0 ? `  ·  +${newEpisodeCount} new` : "";
+    return `${entry.title}  ·  ${epLabel}  ·  ${progress}${newLabel}`;
+  }
+  return `${entry.title}  ·  movie  ·  ${progress}`;
 }
 
-function formatHistoryDetail(entry: HistoryEntry): string {
+function formatHistoryDetail(entry: HistoryEntry, newEpisodeCount = 0): string {
   const watched = new Date(entry.watchedAt).toLocaleDateString();
-  return `${watched}${isFinished(entry) ? "  ·  finished" : ""}  ·  provider ${entry.provider}`;
+  const finishedLabel = isFinished(entry) && newEpisodeCount === 0 ? "  ·  up to date" : "";
+  return `${watched}${finishedLabel}  ·  provider ${entry.provider}`;
 }
 
 function summarizeHeaderKeys(headers: Record<string, string> | undefined): string {
@@ -550,6 +555,7 @@ function describeDownloadJob(job: DownloadJobRecord): string {
 async function openHistoryShell(
   historyStore: HistoryStore,
   actionContext?: ListShellActionContext,
+  catalogScheduleService?: CatalogScheduleService,
 ): Promise<void> {
   while (true) {
     const entries = Object.entries(await historyStore.getAll()).sort(
@@ -557,12 +563,29 @@ async function openHistoryShell(
         (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
     );
 
+    // Build new-episode counts from cached schedule data — no network calls.
+    // titleId in history_progress uses "anilist:12345" prefix format.
+    const newEpisodeCounts = new Map<string, number>();
+    if (catalogScheduleService) {
+      for (const [id, entry] of entries) {
+        if (entry.type !== "series" || !id.startsWith("anilist:")) continue;
+        const schedule = catalogScheduleService.peekNextRelease("anilist", id);
+        if (!schedule?.episode) continue;
+        const lastAired = schedule.episode - 1;
+        const lastWatched = entry.episode ?? 0;
+        if (lastAired > lastWatched) newEpisodeCounts.set(id, lastAired - lastWatched);
+      }
+    }
+
     const options: ShellOption<HistoryAction>[] = [
-      ...entries.map(([id, entry]) => ({
-        value: { type: "entry" as const, id, title: entry.title },
-        label: formatHistoryLabel(entry),
-        detail: formatHistoryDetail(entry),
-      })),
+      ...entries.map(([id, entry]) => {
+        const newCount = newEpisodeCounts.get(id) ?? 0;
+        return {
+          value: { type: "entry" as const, id, title: entry.title },
+          label: formatHistoryLabel(entry, newCount),
+          detail: formatHistoryDetail(entry, newCount),
+        };
+      }),
       ...(entries.length > 0
         ? [
             {
@@ -1250,11 +1273,12 @@ const withOverlay = async <T>(
 };
 
 async function handleHistory(container: Container): Promise<"handled"> {
-  const { stateManager, historyStore } = container;
+  const { stateManager, historyStore, catalogScheduleService } = container;
   await withOverlay(stateManager, { type: "history" }, () =>
     openHistoryShell(
       historyStore,
       buildPickerActionContext({ container, taskLabel: "Manage history" }),
+      catalogScheduleService,
     ),
   );
   return "handled";

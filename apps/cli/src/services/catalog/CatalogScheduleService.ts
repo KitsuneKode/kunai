@@ -91,6 +91,21 @@ export class CatalogScheduleService {
     this.inflight.clear();
   }
 
+  /**
+   * Read the cached next-release for a title without triggering a network fetch.
+   * Returns null if not cached. titleId may be prefixed ("anilist:12345") or raw ("12345").
+   * `episode` on the returned item is the NEXT future episode; lastAiredEpisode = episode - 1.
+   */
+  peekNextRelease(source: "anilist", titleId: string): CatalogScheduleItem | null {
+    const rawId = titleId.startsWith(`${source}:`) ? titleId.slice(source.length + 1) : titleId;
+    const key = `next:${source}:anime:${rawId}:-:-`;
+    const cached = this.cache.get(key);
+    if (cached && cached.expiresAt > this.now()) return cached.value as CatalogScheduleItem | null;
+    const persisted = this.loadPersisted<CatalogScheduleItem | null>(key);
+    if (persisted.found) return persisted.value;
+    return null;
+  }
+
   async getNextRelease(
     input: CatalogScheduleInput,
     signal?: AbortSignal,
