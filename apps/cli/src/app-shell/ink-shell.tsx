@@ -482,7 +482,7 @@ function AppRoot({ container }: { container: Container }) {
     const cols = stdout.columns ?? 80;
     const rows = stdout.rows ?? 24;
     const prev = prevDimensionsRef.current;
-    if (cols < prev.cols || rows < prev.rows) {
+    if (cols !== prev.cols || rows !== prev.rows) {
       if (process.stdout.isTTY) {
         // Clear visible screen only (not scrollback) and move cursor home
         process.stdout.write("\x1b[2J\x1b[H");
