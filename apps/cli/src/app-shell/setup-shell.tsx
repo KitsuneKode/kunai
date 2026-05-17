@@ -496,14 +496,27 @@ function TipsSlide({ width, rows }: { width: number; rows: number }) {
 
 // ─── Progress dots ────────────────────────────────────────────────────────────
 
-function SlideDots({ current, total }: { current: number; total: number }) {
+function SlideDots({
+  current,
+  total,
+  visitedUpTo,
+}: {
+  current: number;
+  total: number;
+  visitedUpTo: number;
+}) {
   return (
     <Box gap={1} marginBottom={1}>
-      {Array.from({ length: total }, (_, i) => (
-        <Text key={i} color={i === current ? palette.teal : palette.dim}>
-          {i === current ? "●" : "○"}
-        </Text>
-      ))}
+      {Array.from({ length: total }, (_, i) => {
+        const isCompleted = i < visitedUpTo;
+        const isCurrent = i === current;
+        const color = isCurrent ? palette.amber : isCompleted ? palette.teal : palette.dim;
+        return (
+          <Text key={i} color={color}>
+            {isCurrent || isCompleted ? "●" : "○"}
+          </Text>
+        );
+      })}
     </Box>
   );
 }
@@ -522,6 +535,7 @@ function SetupShell({
   const rows = stdout.rows ?? 24;
 
   const [slideIdx, setSlideIdx] = useState(0);
+  const [visitedUpTo, setVisitedUpTo] = useState(0);
   const [audioIdx, setAudioIdx] = useState(0);
   const [subtitleIdx, setSubtitleIdx] = useState(0);
   const [downloadsIdx, setDownloadsIdx] = useState(0);
@@ -540,7 +554,9 @@ function SetupShell({
 
   function advance() {
     if (slideIdx < SLIDE_ORDER.length - 1) {
-      setSlideIdx((i) => i + 1);
+      const next = slideIdx + 1;
+      setSlideIdx(next);
+      setVisitedUpTo((prev) => Math.max(prev, next));
     } else {
       finish("completed", buildPrefs());
     }
@@ -608,7 +624,7 @@ function SetupShell({
     <Box flexDirection="column" width={cols} height={rows}>
       {/* Slide progress indicator */}
       <Box paddingX={Math.max(2, Math.floor((cols - Math.min(cols, 80)) / 2) + 3)} paddingTop={1}>
-        <SlideDots current={slideIdx} total={SLIDE_ORDER.length} />
+        <SlideDots current={slideIdx} total={SLIDE_ORDER.length} visitedUpTo={visitedUpTo} />
       </Box>
 
       {slide === "welcome" ? <WelcomeSlide width={cols} rows={rows - 2} /> : null}

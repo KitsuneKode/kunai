@@ -194,6 +194,26 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
         const shellRuntime = buildShellRuntimeBindings(container);
         const browseContext = await loadBrowseDisplayContext(container, currentState.searchResults);
+
+        const playlistNextItem = container.playlistService.peekNext();
+        const idleContext =
+          playlistNextItem || container.notificationService.listActive().length > 0
+            ? {
+                playlistNext: playlistNextItem
+                  ? {
+                      title: playlistNextItem.title,
+                      ep:
+                        playlistNextItem.season != null && playlistNextItem.episode != null
+                          ? `S${String(playlistNextItem.season).padStart(2, "0")}E${String(playlistNextItem.episode).padStart(2, "0")}`
+                          : undefined,
+                    }
+                  : undefined,
+                todayReleaseCount: container.notificationService
+                  .listActive()
+                  .filter((n) => n.kind === "new-episode").length,
+              }
+            : undefined;
+
         const outcome = await openBrowseShell({
           mode: currentState.mode,
           provider: currentState.provider,
@@ -218,6 +238,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           placeholder: currentState.mode === "anime" ? "Demon Slayer" : "Breaking Bad",
           footerMode: effectiveFooterHints(container),
           commands: resolveCommands(currentState, SEARCH_BROWSE_COMMAND_IDS),
+          idleContext,
           onQueueSelected: async (result) => {
             const router = new MediaActionRouter({
               queue: {

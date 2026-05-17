@@ -155,6 +155,11 @@ export type LoadingShellState = {
   footerMode?: ShellFooterMode;
 };
 
+export type BrowseIdleContext = {
+  playlistNext?: { title: string; ep?: string };
+  todayReleaseCount?: number;
+};
+
 export type BrowseShellOption<T> = {
   value: T;
   label: string;

@@ -1974,6 +1974,7 @@ function BrowseShell<T>({
   onResolve,
   onSubmit,
   onCancel,
+  idleContext,
 }: {
   mode: "series" | "anime";
   provider: string;
@@ -2001,6 +2002,7 @@ function BrowseShell<T>({
   onResolve: (action: ShellAction) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
+  idleContext?: import("./types").BrowseIdleContext;
 }) {
   const viewport = useDebouncedViewportPolicy("browse", {
     forceCompact: _settings?.minimalMode,
@@ -2754,6 +2756,26 @@ function BrowseShell<T>({
                 <Text color={palette.gray}>/filters</Text> for all tokens
               </Text>
             ) : null}
+            {idleContext && !viewport.ultraCompact ? (
+              <Box flexDirection="column" marginTop={1} gap={0}>
+                {idleContext.playlistNext ? (
+                  <Text color={palette.teal}>
+                    {"▶  "}
+                    <Text color="white">{idleContext.playlistNext.title}</Text>
+                    {idleContext.playlistNext.ep ? (
+                      <Text color={palette.muted}>{`  ${idleContext.playlistNext.ep}`}</Text>
+                    ) : null}
+                    <Text color={palette.dim}>{" · up next in playlist"}</Text>
+                  </Text>
+                ) : null}
+                {idleContext.todayReleaseCount && idleContext.todayReleaseCount > 0 ? (
+                  <Text color={palette.amber}>
+                    {`${idleContext.todayReleaseCount} new episode${idleContext.todayReleaseCount === 1 ? "" : "s"} releasing today`}
+                    <Text color={palette.dim}>{" · /notifications to see"}</Text>
+                  </Text>
+                ) : null}
+              </Box>
+            ) : null}
           </Box>
         )}
       </Box>
@@ -2833,6 +2855,7 @@ export function openBrowseShell<T>({
   settingsAnimeProviderOptions,
   onSaveSettings,
   onQueueSelected,
+  idleContext,
 }: {
   mode: "series" | "anime";
   provider: string;
@@ -2857,6 +2880,7 @@ export function openBrowseShell<T>({
   settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
   onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   onQueueSelected?: (value: T) => Promise<void> | void;
+  idleContext?: import("./types").BrowseIdleContext;
 }): Promise<BrowseShellResult<T>> {
   const session = mountRootContent<BrowseShellResult<T>>({
     kind: "browse",
@@ -2885,6 +2909,7 @@ export function openBrowseShell<T>({
         settingsAnimeProviderOptions={settingsAnimeProviderOptions}
         onSaveSettings={onSaveSettings}
         onQueueSelected={onQueueSelected}
+        idleContext={idleContext}
         onResolve={(action) => finish({ type: "action", action })}
         onSubmit={(value) => finish({ type: "selected", value })}
         onCancel={() => finish({ type: "cancelled" })}
