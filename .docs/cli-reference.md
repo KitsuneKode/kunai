@@ -164,7 +164,13 @@ Presence is configured in the shell settings/config, not argv flags:
 | `presencePrivacy`         | `full` / `private` | Full shows title/episode/progress/media facts; private keeps title hidden.    |
 | `presenceDiscordClientId` | string             | Discord application id. Empty string falls back to `KUNAI_DISCORD_CLIENT_ID`. |
 
-Presence integrations never receive stream URLs, provider URLs, request headers, subtitle URLs, or diagnostics bundles. Discord buttons are URL-only, so Kunai only exposes safe public links today; local command/deep-link handoff needs an explicit future opt-in.
+Presence integrations never receive stream URLs, provider URLs, request headers, subtitle URLs, or diagnostics bundles. Discord buttons are URL-only. `presenceDiscordOpenUrl` may use a safe `https://` or `kunai://` URL; `kunai://` links reopen Kunai through `--handoff-url` and require local confirmation before playback or download starts.
+
+Linux source/global installs can register the local scheme explicitly:
+
+```bash
+kunai --install-protocol-handler
+```
 
 ---
 
@@ -187,6 +193,10 @@ bun run dev -- -S "Dune" --jump 3
 # TMDB direct (movie / series)
 bun run dev -- -i 438631 -t movie
 bun run dev -- -i 1396 -t series
+
+# Local protocol handoff target used by registered kunai:// links
+kunai --handoff-url "kunai://play?search=Dune"
+kunai --handoff-url "kunai://download?id=438631&type=movie"
 
 # Anime mode + debug
 bun run dev -- -a --debug

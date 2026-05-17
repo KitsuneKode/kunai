@@ -9,6 +9,7 @@ import {
 } from "@/app-shell/pickers";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
+import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
@@ -135,6 +136,27 @@ type CompletedDownloadAction =
   | "back";
 
 export type SetupWizardResult = "completed" | "cancelled" | "skipped";
+
+export async function confirmProtocolHandoff(handoff: KunaiHandoffLaunch): Promise<boolean> {
+  const choice = await chooseFromListShell({
+    title: "Open Kunai Link",
+    subtitle: describeKunaiHandoffLaunch(handoff),
+    options: [
+      {
+        value: "continue" as const,
+        label: "Continue",
+        detail: "Run this local Kunai action",
+      },
+      {
+        value: "cancel" as const,
+        label: "Cancel",
+        detail: "Ignore the external link and close",
+      },
+    ],
+  });
+
+  return choice === "continue";
+}
 
 const SUBTITLE_OPTIONS = [
   { value: "en", label: "English" },

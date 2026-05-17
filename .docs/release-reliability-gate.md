@@ -66,7 +66,10 @@ Expected result:
 - JSON output has `ok: true` and `skipped: false`
 - `clientIdSource` is `default`, `environment`, or `config`
 - Discord visibly shows Kunai activity during the smoke
+- Discord application assets `kunai` and `subtitles` are uploaded before artwork is treated as verified
 - activity clears after the script exits
+- if `Open in Kunai` changed, `kunai --install-protocol-handler` has been run on the smoke machine
+  and the clicked `kunai://` action shows local confirmation before playback or download
 
 Without `KUNAI_LIVE_DISCORD_PRESENCE=1`, the script must skip safely and avoid Discord IPC.
 

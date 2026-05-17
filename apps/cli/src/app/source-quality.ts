@@ -28,6 +28,8 @@ export type MediaTrackPickerOption = {
 
 export type MediaTrackPickerSelection =
   | { readonly kind: "stream"; readonly streamId: string }
+  | { readonly kind: "audio"; readonly language: string; readonly streamId: string }
+  | { readonly kind: "hardsub"; readonly language: string; readonly streamId: string }
   | { readonly kind: "subtitle"; readonly subtitleUrl: string }
   | { readonly kind: "subtitle-off" };
 
@@ -100,6 +102,7 @@ export function buildMediaTrackPickerOptions(
     label: `Stream  ·  ${option.label}`,
     detail: option.detail,
   }));
+  const languageOptions = buildLanguageTrackPickerOptions(stream);
   const subtitleOptions = buildSubtitleTrackPickerOptions(stream);
   const offOption =
     stream.subtitle && stream.subtitle.length > 0
@@ -112,7 +115,7 @@ export function buildMediaTrackPickerOptions(
         ]
       : [];
 
-  return [...streamOptions, ...subtitleOptions, ...offOption];
+  return [...streamOptions, ...languageOptions, ...subtitleOptions, ...offOption];
 }
 
 export function decodeMediaTrackPickerSelection(value: string): MediaTrackPickerSelection | null {
@@ -120,6 +123,10 @@ export function decodeMediaTrackPickerSelection(value: string): MediaTrackPicker
     const streamId = value.slice("stream:".length);
     return streamId ? { kind: "stream", streamId } : null;
   }
+  const audio = decodeLanguageTrackSelection(value, "audio");
+  if (audio) return audio;
+  const hardsub = decodeLanguageTrackSelection(value, "hardsub");
+  if (hardsub) return hardsub;
   if (value === "subtitle:none") return { kind: "subtitle-off" };
   if (value.startsWith("subtitle:")) {
     const encoded = value.slice("subtitle:".length);
@@ -132,6 +139,25 @@ export function decodeMediaTrackPickerSelection(value: string): MediaTrackPicker
     }
   }
   return null;
+}
+
+function decodeLanguageTrackSelection(
+  value: string,
+  kind: "audio" | "hardsub",
+): Extract<MediaTrackPickerSelection, { kind: "audio" | "hardsub" }> | null {
+  const prefix = `${kind}:`;
+  if (!value.startsWith(prefix)) return null;
+  const rest = value.slice(prefix.length);
+  const separator = rest.indexOf(":");
+  if (separator <= 0 || separator === rest.length - 1) return null;
+  try {
+    const language = decodeURIComponent(rest.slice(0, separator));
+    const streamId = decodeURIComponent(rest.slice(separator + 1));
+    if (!language || !streamId) return null;
+    return { kind, language, streamId };
+  } catch {
+    return null;
+  }
 }
 
 export function buildSourcePickerOptions(stream: StreamInfo): readonly SourceOption[] {
@@ -284,6 +310,87 @@ function buildSubtitleTrackPickerOptions(stream: StreamInfo): readonly MediaTrac
   return options;
 }
 
+function buildLanguageTrackPickerOptions(stream: StreamInfo): readonly MediaTrackPickerOption[] {
+  const result = stream.providerResolveResult;
+  if (!result) return [];
+
+  const sourcesById = new Map((result.sources ?? []).map((source) => [source.id, source]));
+  const audioOptions: MediaTrackPickerOption[] = [];
+  const hardsubOptions: MediaTrackPickerOption[] = [];
+  const seenAudio = new Set<string>();
+  const seenHardsub = new Set<string>();
+
+  for (const candidate of result.streams) {
+    if (!candidate.url) continue;
+    const selected = candidate.id === result.selectedStreamId;
+    for (const language of candidate.audioLanguages ?? []) {
+      const key = normalizeLanguageKey(language);
+      if (!key || seenAudio.has(key)) continue;
+      seenAudio.add(key);
+      audioOptions.push(
+        buildLanguageTrackOption({
+          kind: "audio",
+          language,
+          candidate,
+          selected,
+          sourceLabel: describeCandidateSource(candidate, result.providerId, sourcesById),
+        }),
+      );
+    }
+
+    const hardSubLanguage = candidate.hardSubLanguage;
+    const hardSubKey = normalizeLanguageKey(hardSubLanguage);
+    if (hardSubLanguage && hardSubKey && !seenHardsub.has(hardSubKey)) {
+      seenHardsub.add(hardSubKey);
+      hardsubOptions.push(
+        buildLanguageTrackOption({
+          kind: "hardsub",
+          language: hardSubLanguage,
+          candidate,
+          selected,
+          sourceLabel: describeCandidateSource(candidate, result.providerId, sourcesById),
+        }),
+      );
+    }
+  }
+
+  return [...audioOptions, ...hardsubOptions];
+}
+
+function buildLanguageTrackOption({
+  kind,
+  language,
+  candidate,
+  selected,
+  sourceLabel,
+}: {
+  readonly kind: "audio" | "hardsub";
+  readonly language: string;
+  readonly candidate: StreamCandidate;
+  readonly selected: boolean;
+  readonly sourceLabel: string;
+}): MediaTrackPickerOption {
+  const displayKind = kind === "audio" ? "Audio" : "Hardsub";
+  const languageLabel = language.toUpperCase();
+  const quality = candidate.qualityLabel ?? candidate.container ?? candidate.id;
+  return {
+    value: `${kind}:${encodeURIComponent(language)}:${encodeURIComponent(candidate.id)}`,
+    label: selected
+      ? `${displayKind} ${languageLabel}  ·  current`
+      : `${displayKind} ${languageLabel}`,
+    detail: `Switches to cached stream inventory  ·  ${sourceLabel}  ·  ${quality}`,
+  };
+}
+
+function describeCandidateSource(
+  candidate: StreamCandidate,
+  providerId: string,
+  sourcesById: ReadonlyMap<string, { readonly label?: string; readonly host?: string }>,
+): string {
+  const source = candidate.sourceId ? sourcesById.get(candidate.sourceId) : undefined;
+  return source?.label ?? source?.host ?? candidate.sourceId ?? providerId;
+}
+
 function collectSubtitleTracks(stream: StreamInfo): readonly SubtitleTrack[] {
   const fromStream = stream.subtitleList ?? [];
   const fromProvider =
@@ -299,4 +406,9 @@ function collectSubtitleTracks(stream: StreamInfo): readonly SubtitleTrack[] {
 
 function uniqueStrings(values: readonly (string | undefined)[]): readonly string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function normalizeLanguageKey(value: string | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized || null;
 }

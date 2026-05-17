@@ -53,3 +53,16 @@ test("parseArgs supports zen startup as minimal quick playback", () => {
   expect(args.quick).toBe(true);
   expect(args.shellChrome).toBe("minimal");
 });
+
+test("parseArgs accepts a protocol handoff URL without executing it", () => {
+  const args = parseArgs(["--handoff-url", "kunai://play?search=Dune"]);
+
+  expect(args.handoffUrl).toBe("kunai://play?search=Dune");
+  expect(args.search).toBeUndefined();
+});
+
+test("parseArgs supports explicit local protocol handler installation", () => {
+  const args = parseArgs(["--install-protocol-handler"]);
+
+  expect(args.installProtocolHandler).toBe(true);
+});

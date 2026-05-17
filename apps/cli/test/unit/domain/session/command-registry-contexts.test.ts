@@ -116,14 +116,14 @@ describe("command registry contexts", () => {
 
   test("keeps root overlay command order focused on first-run actions", () => {
     expect([...COMMAND_CONTEXTS.rootOverlay].slice(0, 8)).toEqual([
+      "watchlist",
+      "playlist",
+      "stats",
+      "sync",
       "library",
       "downloads",
       "history",
       "setup",
-      "settings",
-      "provider",
-      "presence",
-      "diagnostics",
     ] satisfies readonly AppCommandId[]);
   });
 });

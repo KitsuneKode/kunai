@@ -217,17 +217,39 @@ test("buildMediaTrackPickerOptions combines streams and soft subtitle controls",
     "stream:stream-1080",
     "stream:stream-720",
     "stream:stream-480-source-b",
+    "audio:ja:stream-1080",
+    "audio:en:stream-720",
+    "hardsub:en:stream-1080",
     "subtitle:https%3A%2F%2Fsubs.example%2Fen.vtt",
     "subtitle:https%3A%2F%2Fsubs.example%2Ffr.vtt",
     "subtitle:none",
   ]);
+  expect(options.find((option) => option.value === "audio:ja:stream-1080")?.label).toBe(
+    "Audio JA  ·  current",
+  );
+  expect(options.find((option) => option.value === "audio:en:stream-720")?.detail).toContain(
+    "Switches to cached stream inventory",
+  );
+  expect(options.find((option) => option.value === "hardsub:en:stream-1080")?.label).toBe(
+    "Hardsub EN  ·  current",
+  );
   expect(options.find((option) => option.value === "subtitle:none")?.label).toBe("Subtitles off");
 });
 
-test("decodeMediaTrackPickerSelection decodes stream subtitle and subtitle-off choices", () => {
+test("decodeMediaTrackPickerSelection decodes stream language subtitle and subtitle-off choices", () => {
   expect(decodeMediaTrackPickerSelection("stream:stream-720")).toEqual({
     kind: "stream",
     streamId: "stream-720",
+  });
+  expect(decodeMediaTrackPickerSelection("audio:en:stream-720")).toEqual({
+    kind: "audio",
+    language: "en",
+    streamId: "stream-720",
+  });
+  expect(decodeMediaTrackPickerSelection("hardsub:en:stream-1080")).toEqual({
+    kind: "hardsub",
+    language: "en",
+    streamId: "stream-1080",
   });
   expect(decodeMediaTrackPickerSelection("subtitle:https%3A%2F%2Fsubs.example%2Fen.vtt")).toEqual({
     kind: "subtitle",

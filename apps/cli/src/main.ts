@@ -22,6 +22,7 @@
 // compatibility shim while migration residue is retired.
 // =============================================================================
 
+import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import {
   applyHistorySelectionProvider,
   recordLocalHistorySourceDecision,
@@ -57,6 +58,8 @@ export function parseArgs(argv: string[]): {
   continuePlayback: boolean;
   download: boolean;
   downloadPath?: string;
+  handoffUrl?: string;
+  installProtocolHandler: boolean;
   initialRoute?: "recommendation" | "calendar" | "random";
   shellChrome: ShellChrome;
 } {
@@ -79,6 +82,8 @@ export function parseArgs(argv: string[]): {
     continuePlayback: boolean;
     download: boolean;
     downloadPath?: string;
+    handoffUrl?: string;
+    installProtocolHandler: boolean;
     initialRoute?: "recommendation" | "calendar" | "random";
   } = {
     anime: false,
@@ -94,6 +99,7 @@ export function parseArgs(argv: string[]): {
     history: false,
     continuePlayback: false,
     download: false,
+    installProtocolHandler: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -146,6 +152,10 @@ export function parseArgs(argv: string[]): {
       args.download = true;
     } else if (arg === "--download-path") {
       args.downloadPath = argv[++i];
+    } else if (arg === "--handoff-url") {
+      args.handoffUrl = argv[++i];
+    } else if (arg === "--install-protocol-handler") {
+      args.installProtocolHandler = true;
     } else if (arg === "--mpv-debug") {
       args.mpv = { ...args.mpv, debug: true };
     } else if (arg === "--mpv-clean") {
@@ -160,6 +170,29 @@ export function parseArgs(argv: string[]): {
   const shellChrome: ShellChrome =
     args.minimal || args.zen ? "minimal" : args.quick ? "quick" : "default";
   return { ...args, shellChrome };
+}
+
+function applyProtocolHandoffArgs(
+  args: {
+    search?: string;
+    id?: string;
+    type?: string;
+    anime: boolean;
+    download: boolean;
+  },
+  handoff: KunaiHandoffLaunch,
+): void {
+  if (handoff.search) {
+    args.search = handoff.search;
+    args.id = undefined;
+    args.type = undefined;
+  } else if (handoff.id && handoff.type) {
+    args.id = handoff.id;
+    args.type = handoff.type;
+    args.search = undefined;
+  }
+  if (handoff.anime) args.anime = true;
+  if (handoff.action === "download") args.download = true;
 }
 
 let globalController: SessionController | null = null;
@@ -341,6 +374,20 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   // Parse CLI arguments
   const args = parseArgs(argv);
+  if (args.installProtocolHandler) {
+    const { installKunaiProtocolHandler } = await import("./infra/os/protocol-handler");
+    const paths = await installKunaiProtocolHandler();
+    console.log(`Registered kunai:// protocol handler at ${paths.desktopPath}`);
+    return;
+  }
+  const protocolHandoff = args.handoffUrl ? parseKunaiHandoffUrl(args.handoffUrl) : null;
+  if (args.handoffUrl && !protocolHandoff) {
+    console.error("Invalid kunai:// handoff URL. Refusing to run external action.");
+    return;
+  }
+  if (protocolHandoff) {
+    applyProtocolHandoffArgs(args, protocolHandoff);
+  }
 
   // Guard: verify required system dependencies before touching the shell
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION);
@@ -451,6 +498,24 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // Launch the persistent state-driven UI
   const { launchSessionApp } = await import("./app-shell/ink-shell");
   launchSessionApp(container);
+  if (protocolHandoff) {
+    const { confirmProtocolHandoff } = await import("./app-shell/workflows");
+    const confirmed = await confirmProtocolHandoff(protocolHandoff);
+    if (!confirmed) {
+      container.diagnosticsStore.record({
+        category: "session",
+        message: "Protocol handoff cancelled by local confirmation",
+        context: {
+          action: protocolHandoff.action,
+          hasSearch: Boolean(protocolHandoff.search),
+          hasDirectId: Boolean(protocolHandoff.id),
+        },
+      });
+      await shutdownShell();
+      if (process.stdin.isTTY) process.stdin.unref();
+      return;
+    }
+  }
   await maybeRunSetupWizard(args, container);
   if (await maybeRunOfflineMode(args, container)) {
     await shutdownShell();

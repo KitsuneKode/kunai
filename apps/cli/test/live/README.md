@@ -53,6 +53,10 @@ Before running the real smoke:
 
 - start the Discord desktop app
 - set `KUNAI_DISCORD_CLIENT_ID` when testing a custom Discord application, or rely on Kunai's default application id
+- upload Discord application assets with exact keys `kunai` and `subtitles` when validating artwork
 - close other Kunai windows or Discord RPC apps using the same application id
 - verify the JSON output has `ok: true`, `skipped: false`, and a `ready` connection status
 - confirm Discord visibly shows the Kunai activity and clears it after the script exits
+- when validating `Open in Kunai`, register `kunai://` with `kunai --install-protocol-handler`,
+  set `presenceDiscordOpenUrl` to a safe handoff URL, and confirm the local picker appears before
+  playback or download starts
