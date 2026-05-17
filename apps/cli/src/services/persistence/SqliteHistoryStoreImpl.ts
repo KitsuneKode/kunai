@@ -21,6 +21,12 @@ export class SqliteHistoryStoreImpl implements HistoryStore {
     return entries;
   }
 
+  async listRecent(limit = 500): Promise<readonly [string, HistoryEntry][]> {
+    return this.repository
+      .listRecent(limit)
+      .map((progress) => [progress.titleId, toHistoryEntry(progress)] as const);
+  }
+
   async listByTitle(id: string): Promise<readonly HistoryEntry[]> {
     return this.repository.listByTitle(id, 500).map(toHistoryEntry);
   }

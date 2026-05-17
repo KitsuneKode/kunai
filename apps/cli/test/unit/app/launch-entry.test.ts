@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   selectContinueHistoryEntry,
+  selectContinueHistoryEntryFromRecent,
   selectLocalContinueCandidate,
   titleFromHistorySelection,
 } from "@/app/launch-entry";
@@ -43,6 +44,40 @@ describe("launch entry helpers", () => {
     expect(selected).toEqual({
       titleId: "unfinished-newer",
       entry: expect.objectContaining({ title: "Newer" }),
+    });
+  });
+
+  test("selectContinueHistoryEntryFromRecent keeps older unfinished episodes reachable", () => {
+    const selected = selectContinueHistoryEntryFromRecent([
+      [
+        "demo-show",
+        history({
+          title: "Demo Show",
+          season: 1,
+          episode: 6,
+          timestamp: 1800,
+          duration: 1800,
+          completed: true,
+          watchedAt: "2026-05-14T10:00:00.000Z",
+        }),
+      ],
+      [
+        "demo-show",
+        history({
+          title: "Demo Show",
+          season: 1,
+          episode: 7,
+          timestamp: 600,
+          duration: 1800,
+          completed: false,
+          watchedAt: "2026-05-14T09:00:00.000Z",
+        }),
+      ],
+    ]);
+
+    expect(selected).toEqual({
+      titleId: "demo-show",
+      entry: expect.objectContaining({ season: 1, episode: 7, completed: false }),
     });
   });
 

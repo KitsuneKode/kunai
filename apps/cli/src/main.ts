@@ -27,6 +27,7 @@ import {
   applyHistorySelectionProvider,
   recordLocalHistorySourceDecision,
   selectContinueHistoryEntry,
+  selectContinueHistoryEntryFromRecent,
   titleFromHistorySelection,
 } from "@/app/launch-entry";
 import { SessionController } from "@/app/SessionController";
@@ -260,7 +261,10 @@ async function maybeResolveContinueTitle(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<TitleInfo | null> {
   if (!args.continuePlayback) return null;
-  const selection = selectContinueHistoryEntry(await container.historyStore.getAll());
+  const recentEntries = await container.historyStore.listRecent(500).catch(() => []);
+  const selection =
+    selectContinueHistoryEntryFromRecent(recentEntries) ??
+    selectContinueHistoryEntry(await container.historyStore.getAll());
   if (!selection) {
     container.diagnosticsStore.record({
       category: "session",

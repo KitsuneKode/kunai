@@ -21,6 +21,7 @@ export interface HistoryEntry {
 export interface HistoryStore {
   get(id: string): Promise<HistoryEntry | null>;
   getAll(): Promise<Record<string, HistoryEntry>>;
+  listRecent(limit?: number): Promise<readonly [string, HistoryEntry][]>;
   listByTitle(id: string): Promise<readonly HistoryEntry[]>;
   save(id: string, entry: HistoryEntry): Promise<void>;
   delete(id: string): Promise<void>;

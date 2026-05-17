@@ -24,6 +24,15 @@ export class HistoryStoreImpl implements HistoryStore {
     return (await this.storage.read<Record<string, HistoryEntry>>(STORAGE_KEY)) ?? {};
   }
 
+  async listRecent(limit = 500): Promise<readonly [string, HistoryEntry][]> {
+    return Object.entries(await this.getAll())
+      .sort(
+        (a, b) =>
+          (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
+      )
+      .slice(0, limit);
+  }
+
   async listByTitle(id: string): Promise<readonly HistoryEntry[]> {
     const entry = await this.get(id);
     return entry ? [entry] : [];

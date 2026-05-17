@@ -70,6 +70,49 @@ describe("SqliteHistoryStoreImpl", () => {
 
     db.close();
   });
+
+  test("keeps per-episode progress while getAll reflects the latest touched episode", async () => {
+    const db = openTempDb("history.sqlite");
+    runMigrations(db, "data");
+    const store = new SqliteHistoryStoreImpl(new HistoryRepository(db));
+
+    await store.save("tmdb:1", {
+      title: "Example",
+      type: "series",
+      season: 1,
+      episode: 7,
+      timestamp: 600,
+      duration: 1200,
+      completed: false,
+      provider: "vidking",
+      watchedAt: "2026-04-29T00:00:00.000Z",
+    });
+
+    await store.save("tmdb:1", {
+      title: "Example",
+      type: "series",
+      season: 1,
+      episode: 6,
+      timestamp: 1200,
+      duration: 1200,
+      completed: true,
+      provider: "vidking",
+      watchedAt: "2026-04-30T00:00:00.000Z",
+    });
+
+    const all = await store.getAll();
+    expect(all["tmdb:1"]).toMatchObject({ episode: 6, completed: true });
+    await expect(store.listRecent()).resolves.toMatchObject([
+      ["tmdb:1", { episode: 6, completed: true }],
+      ["tmdb:1", { episode: 7, completed: false }],
+    ]);
+    await expect(store.listByTitle("tmdb:1")).resolves.toMatchObject([
+      { episode: 6, completed: true },
+      { episode: 7, completed: false },
+    ]);
+
+    db.close();
+  });
 });
 
 describe("SqliteCacheStoreImpl", () => {

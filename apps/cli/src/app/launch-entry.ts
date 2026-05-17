@@ -23,6 +23,19 @@ export function selectContinueHistoryEntry(
   return selected ? { titleId: selected[0], entry: selected[1] } : null;
 }
 
+export function selectContinueHistoryEntryFromRecent(
+  entries: readonly [string, HistoryEntry][],
+): HistoryLaunchSelection | null {
+  const unfinished = entries
+    .filter(([, entry]) => !isFinished(entry))
+    .sort(
+      (a, b) =>
+        (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
+    );
+  const selected = unfinished[0];
+  return selected ? { titleId: selected[0], entry: selected[1] } : null;
+}
+
 export function titleFromHistorySelection(selection: HistoryLaunchSelection): TitleInfo {
   return {
     id: selection.titleId,

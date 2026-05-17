@@ -10,6 +10,7 @@ function makeStore(entries: readonly HistoryEntry[]): HistoryStore {
   return {
     get: async () => null,
     getAll: async () => ({}),
+    listRecent: async () => [],
     listByTitle: async () => entries,
     save: async () => {},
     delete: async () => {},
