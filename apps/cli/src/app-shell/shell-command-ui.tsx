@@ -159,7 +159,10 @@ export function CommandPalette({
   const windowStart = getWindowStart(model.selectedIndex, matches.length, visibleCount);
   const windowEnd = Math.min(windowStart + visibleCount, matches.length);
   const visibleMatches = matches.slice(windowStart, windowEnd);
-  const contentWidth = Math.max(28, Math.min(width ?? 84, (stdout.columns ?? 80) - 4) - 4);
+  const contentWidth = Math.max(
+    28,
+    Math.min(width ?? stdout.columns ?? 80, (stdout.columns ?? 80) - 4) - 4,
+  );
 
   const showGrouped = input.trim().length === 0 && matches.length > 0;
 
