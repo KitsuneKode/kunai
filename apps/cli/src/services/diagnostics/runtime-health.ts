@@ -1,4 +1,9 @@
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
+import {
+  collectRuntimeMemorySnapshot,
+  formatRuntimeMemory,
+  type RuntimeMemorySnapshot,
+} from "@/services/diagnostics/runtime-memory";
 
 export type RuntimeHealthTone = "neutral" | "info" | "success" | "warning" | "error";
 
@@ -11,6 +16,7 @@ export type RuntimeHealthLine = {
 export type RuntimeHealthSnapshot = {
   readonly network: RuntimeHealthLine;
   readonly provider: RuntimeHealthLine;
+  readonly memory: RuntimeHealthLine;
 };
 
 const NETWORK_EVENT_TYPES = new Set([
@@ -258,6 +264,19 @@ export function summarizeProviderHealth(
   };
 }
 
+export function summarizeRuntimeMemoryHealth(
+  snapshot: RuntimeMemorySnapshot = collectRuntimeMemorySnapshot(),
+): RuntimeHealthLine {
+  const totalRssBytes = snapshot.appRssBytes + snapshot.playbackChildRssBytes;
+  const swapBytes = (snapshot.appSwapBytes ?? 0) + snapshot.playbackChildSwapBytes;
+
+  return {
+    label: "Memory",
+    detail: formatRuntimeMemory(snapshot),
+    tone: totalRssBytes >= 3 * 1024 ** 3 || swapBytes > 0 ? "warning" : "success",
+  };
+}
+
 function resolveDurationMs(
   recentEvents: readonly DiagnosticEvent[],
   completedEvent: DiagnosticEvent,
@@ -270,9 +289,11 @@ function resolveDurationMs(
 export function buildRuntimeHealthSnapshot(input: {
   readonly recentEvents: readonly DiagnosticEvent[];
   readonly currentProvider?: string | null;
+  readonly memorySnapshot?: RuntimeMemorySnapshot;
 }): RuntimeHealthSnapshot {
   return {
     network: summarizePlaybackNetworkHealth(input.recentEvents),
     provider: summarizeProviderHealth(input.recentEvents, input.currentProvider),
+    memory: summarizeRuntimeMemoryHealth(input.memorySnapshot),
   };
 }

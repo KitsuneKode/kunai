@@ -1,0 +1,46 @@
+---
+title: Runtime Feedback
+description: How to read Kunai's playback health, memory, network, and diagnostics signals.
+---
+
+# Runtime Feedback
+
+Kunai keeps normal playback calm, then exposes runtime feedback when it helps you understand a slow provider, a buffering stream, or a possible memory issue.
+
+## During playback
+
+- Press `m` while playback is active to reveal the memory strip.
+- By default, the strip is hidden and temporary.
+- If the memory panel setting is enabled, pressing `m` pins it until you press `m` again.
+- Open `/diagnostics` for the full runtime health view.
+
+The memory line separates Kunai from the player:
+
+- `App` is the Kunai process RSS.
+- `mpv` is the direct child player RSS when the platform exposes it.
+- `total` is app plus player RSS.
+- `heap` is the JavaScript heap used and reserved by Bun.
+- `swap` appears only when the platform reports swap usage.
+
+On Linux, Kunai reads `/proc` to include the direct `mpv` child. On platforms without `/proc`, the app memory remains available and player memory may show as `0.0 MiB`.
+
+## Network and provider feedback
+
+The playback shell and Diagnostics panel summarize the latest mpv and provider events:
+
+- `Network` shows cache speed, buffer-ahead seconds, stalls, and same-stream reconnect attempts.
+- `Provider` shows the resolved provider, cache hits, stream counts, subtitle counts, and typed failures.
+- `Cache` explains whether Kunai used a fresh stream, refreshed a stale stream, or kept a cached fallback.
+
+Use `/export-diagnostics` when a session behaves strangely. The bundle is redacted and stays local until you choose to share it.
+
+## When to investigate memory
+
+Memory is worth checking when:
+
+- The app stays open across many titles and RSS only climbs.
+- `mpv` remains non-zero after playback stops.
+- Swap appears in the runtime line.
+- The terminal becomes slow while provider/network health looks normal.
+
+If you report this, include the `/diagnostics` output, the exact command you ran, platform details, and whether artwork previews or downloads were enabled.

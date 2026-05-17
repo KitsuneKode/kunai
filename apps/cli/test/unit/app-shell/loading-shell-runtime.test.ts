@@ -5,13 +5,14 @@ import {
   getProviderResolveWaitPresentation,
   normalizeLoadingIssue,
   normalizeProviderDetail,
+  shouldShowPlaybackRuntimeStrip,
   shouldShowLoadingElapsed,
 } from "@/app-shell/loading-shell-runtime";
 import {
   formatRuntimeMemory,
   parseProcStatus,
   summarizeChildProcessMemory,
-} from "@/app-shell/runtime-memory";
+} from "@/services/diagnostics/runtime-memory";
 
 describe("loading shell runtime policy", () => {
   test("active playback disables animation and elapsed repaint timers", () => {
@@ -38,6 +39,17 @@ describe("loading shell runtime policy", () => {
     expect(policy.trackElapsed).toBe(false);
     expect(policy.memoryRefreshMs).toBe(2_000);
     expect(policy.runtimeHealthRefreshMs).toBe(2_000);
+  });
+
+  test("playback runtime strip is visible when memory is requested during active playback", () => {
+    expect(
+      shouldShowPlaybackRuntimeStrip({
+        operation: "playing",
+        memoryPanelVisible: true,
+        hasMemoryLine: true,
+        hasRuntimeHealthLine: false,
+      }),
+    ).toBe(true);
   });
 
   test("loading keeps short-lived animation and elapsed timers", () => {

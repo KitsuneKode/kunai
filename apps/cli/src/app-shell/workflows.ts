@@ -24,6 +24,7 @@ import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import type { CatalogScheduleService } from "@/services/catalog/CatalogScheduleService";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
+import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
@@ -1295,6 +1296,13 @@ async function handleStaticOverlay(
 async function handleDiagnostics(container: Container): Promise<"handled"> {
   const { stateManager, diagnosticsStore } = container;
   const state = stateManager.getState();
+  const memoryLine = getRuntimeMemoryLine();
+  diagnosticsStore.record({
+    category: "runtime",
+    operation: "runtime.memory.sample",
+    message: "Runtime memory sample",
+    context: { memory: memoryLine, source: "diagnostics-command" },
+  });
   const recentEvents = diagnosticsStore.getRecent(6);
   await withOverlay(stateManager, { type: "diagnostics" }, () =>
     openStaticInfoShell({
@@ -1323,7 +1331,7 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
           label: "Search state",
           detail: `${state.searchState}  ·  ${state.searchResults.length} results`,
         },
-        { label: "Memory", detail: `RSS ${(process.memoryUsage().rss / 1_048_576).toFixed(1)} MB` },
+        { label: "Memory", detail: memoryLine },
         {
           label: "Startup capabilities",
           detail: container.capabilitySnapshot?.issues?.length
@@ -2100,8 +2108,9 @@ export async function openSettingsShell({
         },
         {
           value: "showMemory" as const,
-          label: `Memory panel  ·  ${next.showMemory ? "opens on playback" : "on demand"}`,
-          detail: "Press m during playback for fresh app, mpv, total, heap, and swap usage",
+          label: `Memory panel  ·  ${next.showMemory ? "pinned after m" : "temporary after m"}`,
+          detail:
+            "Hidden by default. Press m during playback for app, mpv, total, heap, and swap usage",
         },
         {
           value: "autoNext" as const,

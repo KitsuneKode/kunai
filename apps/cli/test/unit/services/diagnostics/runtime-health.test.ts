@@ -129,4 +129,25 @@ describe("runtime health diagnostics", () => {
     expect(health.network.detail).toBe("read idle for 8s · recover or switch source");
     expect(health.network.tone).toBe("error");
   });
+
+  test("summarizes app and playback child memory as a runtime health line", () => {
+    const health = buildRuntimeHealthSnapshot({
+      currentProvider: "vidking",
+      recentEvents: [],
+      memorySnapshot: {
+        appRssBytes: 256 * 1024 * 1024,
+        appHeapUsedBytes: 80 * 1024 * 1024,
+        appHeapTotalBytes: 128 * 1024 * 1024,
+        playbackChildRssBytes: 512 * 1024 * 1024,
+        playbackChildSwapBytes: 0,
+        playbackChildCount: 1,
+      },
+    });
+
+    expect(health.memory).toEqual({
+      label: "Memory",
+      detail: "App 256.0 MiB · mpv 512.0 MiB · total 768.0 MiB · heap 80.0/128.0 MiB",
+      tone: "success",
+    });
+  });
 });

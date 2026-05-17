@@ -1,0 +1,38 @@
+---
+title: Media Selection
+description: How Kunai picks providers, sources, streams, audio, subtitles, and quality.
+---
+
+# Media Selection
+
+Kunai separates provider facts from player state so stream choices can stay available without cluttering the playback view.
+
+## Profiles by mode
+
+Anime, series, and movie playback each has its own media profile:
+
+- Anime uses the anime audio, subtitle, quality, and title-name preferences.
+- Series uses the series audio, subtitle, and quality preferences.
+- Movies use the movie audio, subtitle, and quality preferences.
+
+These preferences are passed into provider resolution and then into mpv as player hints. Episode numbers remain 1-based in the UI.
+
+## What the pickers mean
+
+- Source picker chooses a provider source or mirror family when the provider reported more than one.
+- Stream picker shows the full playable stream inventory.
+- Quality picker narrows the stream inventory by quality labels and ranks.
+- Subtitle picker switches soft subtitles when they are already known, or asks for provider lookup when needed.
+- Audio and hardsub changes prefer cached stream inventory first, then provider lookup only when no matching stream is known.
+
+Kunai only shows these controls when the inventory says they are useful. A title with one stream and one subtitle should not grow a noisy menu.
+
+## Anime vs series/movie behavior
+
+Anime providers often expose sub, dub, hardsub, and source-family differences as different streams. Series/movie providers more often expose quality and subtitle differences. Kunai treats both through the same inventory model:
+
+- Provider inventory stores sources, stream candidates, subtitle candidates, selected stream, and trace evidence.
+- mpv state stores what is actually active in the player.
+- Diagnostics shows the difference without exposing signed URLs.
+
+This lets Kunai switch a known stream quickly, while still falling back to provider lookup when a language or quality was not discovered yet.

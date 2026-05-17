@@ -83,6 +83,13 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     audience: "developer",
     summary: "Startup storage maintenance pruned disposable cache data and optimized databases.",
   },
+  {
+    operation: "runtime.memory.sample",
+    category: "runtime",
+    audience: "both",
+    summary: "Kunai captured app, player, total RSS, heap, and swap memory for diagnostics.",
+    userAction: "Use repeated samples to compare app RSS, mpv RSS, heap, and swap over time.",
+  },
 ];
 
 const OPERATIONS_BY_NAME = new Map(

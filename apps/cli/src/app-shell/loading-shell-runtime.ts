@@ -32,6 +32,18 @@ export function getLoadingShellTimerPolicy(input: {
   };
 }
 
+export function shouldShowPlaybackRuntimeStrip(input: {
+  operation: LoadingShellState["operation"];
+  memoryPanelVisible: boolean;
+  hasMemoryLine: boolean;
+  hasRuntimeHealthLine: boolean;
+}): boolean {
+  return (
+    input.operation === "playing" &&
+    ((input.memoryPanelVisible && input.hasMemoryLine) || input.hasRuntimeHealthLine)
+  );
+}
+
 // ── 3-stage loading UX ──────────────────────────────────────────────────────
 
 const STAGE_ORDER: readonly LoadingShellState["stage"][] = [

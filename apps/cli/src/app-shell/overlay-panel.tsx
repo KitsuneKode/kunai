@@ -433,8 +433,9 @@ export function buildSettingsOptions(
     { value: "section:playback", label: "Playback", detail: "Autoplay, resume, skips, downloads" },
     {
       value: "showMemory",
-      label: `Memory panel  ·  ${config.showMemory ? "opens on playback" : "on demand"}`,
-      detail: "Press m during playback for fresh app, mpv, total, heap, and swap usage",
+      label: `Memory panel  ·  ${config.showMemory ? "pinned after m" : "temporary after m"}`,
+      detail:
+        "Hidden by default. Press m during playback for app, mpv, total, heap, and swap usage",
     },
     {
       value: "recoveryMode",

@@ -7,6 +7,7 @@ import {
 } from "@/app-shell/panel-data";
 import { applySettingsToRuntime } from "@/app-shell/workflows";
 import type { Container } from "@/container";
+import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 export function buildShellRuntimeBindings(container: Container) {
@@ -57,8 +58,15 @@ export function buildShellRuntimeBindings(container: Container) {
         state: stateManager.getState(),
         capabilitySnapshot: container.capabilitySnapshot,
       }),
-    loadDiagnosticsPanel: async () =>
-      buildDiagnosticsPanelLines({
+    loadDiagnosticsPanel: async () => {
+      const memoryLine = getRuntimeMemoryLine();
+      diagnosticsStore.record({
+        category: "runtime",
+        operation: "runtime.memory.sample",
+        message: "Runtime memory sample",
+        context: { memory: memoryLine, source: "diagnostics-panel" },
+      });
+      return buildDiagnosticsPanelLines({
         state: stateManager.getState(),
         recentEvents: diagnosticsStore.getRecent(10),
         capabilitySnapshot: container.capabilitySnapshot,
@@ -68,7 +76,8 @@ export function buildShellRuntimeBindings(container: Container) {
           failed: container.downloadService.listFailed(200).length,
         },
         presenceSnapshot: container.presence.getSnapshot(),
-      }),
+      });
+    },
     loadHistoryPanel: async () =>
       buildHistoryPanelLines(Object.entries(await historyStore.getAll())),
   };

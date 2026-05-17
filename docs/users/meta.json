@@ -8,6 +8,8 @@
     "playback-and-recovery",
     "continue-watching-and-new-episodes",
     "downloads-and-offline",
+    "media-selection",
+    "runtime-feedback",
     "diagnostics-and-reporting",
     "reliability-and-privacy",
     "install-and-update"

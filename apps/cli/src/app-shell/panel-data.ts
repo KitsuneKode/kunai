@@ -266,6 +266,7 @@ export function buildDiagnosticsPanelLines({
     presenceSnapshot,
     runtimeProviderLine: runtimeHealth.provider,
     runtimeNetworkLine: runtimeHealth.network,
+    runtimeMemoryLine: runtimeHealth.memory,
   });
 
   const issueCount = healthSummary.filter(
@@ -301,6 +302,7 @@ export function buildDiagnosticsPanelLines({
     { label: "─── Provider", detail: "", tone: "info" },
     runtimeHealth.provider,
     runtimeHealth.network,
+    runtimeHealth.memory,
     {
       label: "Provider timeline",
       detail: formatProviderTimelineEvent(providerTimelineEvent),
@@ -414,7 +416,7 @@ export function buildDiagnosticsPanelLines({
           : `mpv ${capabilitySnapshot?.mpv ? "✓" : "✗"}  ·  yt-dlp ${capabilitySnapshot?.ytDlp ? "✓" : "✗"}  ·  chafa ${capabilitySnapshot?.chafa ? "✓" : "✗"}  ·  magick ${capabilitySnapshot?.magick ? "✓" : "✗"}`,
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
     },
-    { label: "Memory", detail: `RSS ${(process.memoryUsage().rss / 1_048_576).toFixed(1)} MB` },
+    runtimeHealth.memory,
 
     // ── Support ──
     { label: "─── Support", detail: "", tone: "info" },
@@ -457,6 +459,7 @@ function buildDiagnosticsHealthSummary({
   presenceSnapshot,
   runtimeProviderLine,
   runtimeNetworkLine,
+  runtimeMemoryLine,
 }: {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
@@ -464,6 +467,7 @@ function buildDiagnosticsHealthSummary({
   presenceSnapshot?: PresenceSnapshot | null;
   runtimeProviderLine: ShellPanelLine;
   runtimeNetworkLine: ShellPanelLine;
+  runtimeMemoryLine: ShellPanelLine;
 }): readonly ShellPanelLine[] {
   const playbackIssue = recentEvents.find(
     (event) =>
@@ -531,6 +535,11 @@ function buildDiagnosticsHealthSummary({
       label: "Network",
       detail: `${runtimeNetworkLine.tone === "error" ? "Failed" : runtimeNetworkLine.tone === "warning" ? "Needs attention" : "OK"}  ·  ${runtimeNetworkLine.detail ?? runtimeNetworkLine.label}`,
       tone: runtimeNetworkLine.tone,
+    },
+    {
+      label: "Memory",
+      detail: `${runtimeMemoryLine.tone === "warning" ? "Watch" : "OK"}  ·  ${runtimeMemoryLine.detail ?? runtimeMemoryLine.label}`,
+      tone: runtimeMemoryLine.tone,
     },
   ];
 }

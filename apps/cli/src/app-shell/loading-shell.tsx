@@ -1,3 +1,4 @@
+import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput, useStdout } from "ink";
 import React from "react";
 
@@ -9,11 +10,11 @@ import {
   getProviderResolveWaitPresentation,
   normalizeLoadingIssue,
   normalizeProviderDetail,
+  shouldShowPlaybackRuntimeStrip,
   shouldShowLoadingElapsed,
   stageLabel,
 } from "./loading-shell-runtime";
 import type { PosterResult, PosterState } from "./poster-types";
-import { getRuntimeMemoryLine } from "./runtime-memory";
 import { ShellFrame } from "./shell-frame";
 import { ContextStrip, DetailLine, LocalSection } from "./shell-primitives";
 import { APP_LABEL, palette } from "./shell-theme";
@@ -197,9 +198,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   onStopAfterCurrent?: () => void;
   onFallback?: () => void;
 }) {
-  const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(() =>
-    Boolean(state.showMemory),
-  );
+  const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
+  const memoryPanelPinned = Boolean(state.showMemory && memoryPanelVisible);
   const timerPolicy = getLoadingShellTimerPolicy({
     operation: state.operation,
     memoryPanelVisible,
@@ -211,6 +211,12 @@ export const LoadingShell = React.memo(function LoadingShell({
     timerPolicy.runtimeHealthRefreshMs,
     state.getRuntimeHealth,
   );
+  const showPlaybackRuntimeStrip = shouldShowPlaybackRuntimeStrip({
+    operation: state.operation,
+    memoryPanelVisible,
+    hasMemoryLine: Boolean(memoryLine),
+    hasRuntimeHealthLine: Boolean(runtimeHealthLine),
+  });
   const { stdout } = useStdout();
   const terminalColumns = stdout.columns ?? 80;
   const barWidth = Math.min(48, Math.max(12, Math.floor(terminalColumns * 0.45)));
@@ -223,12 +229,13 @@ export const LoadingShell = React.memo(function LoadingShell({
   });
 
   React.useEffect(() => {
+    if (memoryPanelPinned) return undefined;
     if (!memoryPanelVisible) return undefined;
     const timer = setTimeout(() => {
       setMemoryPanelVisible(false);
     }, MEMORY_PANEL_AUTO_HIDE_MS);
     return () => clearTimeout(timer);
-  }, [memoryPanelVisible]);
+  }, [memoryPanelPinned, memoryPanelVisible]);
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -279,7 +286,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       onSkipSegment();
     }
     if (input.toLowerCase() === "m" && state.operation === "playing") {
-      setMemoryPanelVisible(true);
+      setMemoryPanelVisible((visible) => !visible);
     }
     if (
       input.toLowerCase() === "e" &&
@@ -653,6 +660,20 @@ export const LoadingShell = React.memo(function LoadingShell({
                   {state.bufferHealth && (
                     <Box marginTop={1}>
                       <BufferHealthBadge health={state.bufferHealth} />
+                    </Box>
+                  )}
+                  {showPlaybackRuntimeStrip && (
+                    <Box marginTop={1} flexDirection="column">
+                      {memoryPanelVisible && memoryLine && (
+                        <DetailLine label="Memory" value={memoryLine} tone="neutral" />
+                      )}
+                      {runtimeHealthLine && (
+                        <DetailLine
+                          label={runtimeHealthLine.label}
+                          value={runtimeHealthLine.detail ?? ""}
+                          tone={runtimeHealthLine.tone ?? "neutral"}
+                        />
+                      )}
                     </Box>
                   )}
                   {state.audioTrack && (
