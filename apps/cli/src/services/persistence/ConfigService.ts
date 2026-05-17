@@ -121,6 +121,15 @@ export interface KitsuneConfig {
   lastUpdateCheckFailedAt: number;
   /** Last latest version observed from the update source. Empty string means unknown. */
   lastKnownLatestVersion: string;
+  /** Per-provider sync settings. Tokens stored separately in sync-tokens.json. */
+  sync: {
+    anilist: { enabled: boolean; trackWatched: boolean; syncList: boolean };
+    tmdb: { enabled: boolean; trackWatched: boolean; syncList: boolean };
+  };
+  /** ISO timestamp of when the one-time sync nudge was dismissed. Undefined = not yet shown. */
+  syncNudgeDismissedAt?: string;
+  /** ISO timestamp of when the weekly digest was last shown. Null = never. */
+  lastWeeklyDigestShownAt?: string | null;
 }
 
 export interface ConfigService extends KitsuneConfig {

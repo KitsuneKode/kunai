@@ -278,6 +278,18 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.minimalMode;
   }
 
+  get sync(): KitsuneConfig["sync"] {
+    return this.config.sync;
+  }
+
+  get syncNudgeDismissedAt(): string | undefined {
+    return this.config.syncNudgeDismissedAt;
+  }
+
+  get lastWeeklyDigestShownAt(): string | null | undefined {
+    return this.config.lastWeeklyDigestShownAt;
+  }
+
   getRaw(): KitsuneConfig {
     return { ...this.config };
   }

@@ -20,7 +20,9 @@ import {
   DownloadJobsRepository,
   getKunaiPaths,
   HistoryRepository,
+  ListRepository,
   openKunaiDatabase,
+  PlaylistRepository,
   ProviderHealthRepository,
   RecommendationCacheRepository,
   runMigrations,
@@ -29,6 +31,10 @@ import {
   StreamCacheRepository,
 } from "@kunai/storage";
 
+import { ListService } from "./domain/lists/ListService";
+import { PlaylistService } from "./domain/lists/PlaylistService";
+import { StatsFormatter } from "./domain/lists/StatsFormatter";
+import { StatsService } from "./domain/lists/StatsService";
 import type { SessionStateManager } from "./domain/session/SessionStateManager";
 import { SessionStateManagerImpl } from "./domain/session/SessionStateManager";
 import type { Logger } from "./infra/logger/Logger";
@@ -73,6 +79,7 @@ import { ConfigStoreImpl } from "./services/persistence/ConfigStoreImpl";
 import type { HistoryStore } from "./services/persistence/HistoryStore";
 import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
 import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
+import { SyncTokenStore } from "./services/persistence/SyncTokenStore";
 import { MediaTrackService } from "./services/playback/MediaTrackService";
 import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
@@ -138,6 +145,15 @@ export interface Container {
   readonly timelineService: TimelineService;
   readonly resultEnrichmentService: ResultEnrichmentService;
   readonly updateService: UpdateService;
+
+  // Lists, playlist, stats, and sync
+  readonly listRepository: ListRepository;
+  readonly playlistRepository: PlaylistRepository;
+  readonly listService: ListService;
+  readonly playlistService: PlaylistService;
+  readonly statsService: StatsService;
+  readonly statsFormatter: StatsFormatter;
+  readonly syncTokenStore: SyncTokenStore;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;
@@ -205,6 +221,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const providerHealth = new ProviderHealthRepository(cacheDb);
   const scheduleCache = new ScheduleCacheRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
+  const listRepository = new ListRepository(dataDb);
+  const playlistRepository = new PlaylistRepository(dataDb);
   const diagnosticsStore = new DiagnosticsStoreImpl();
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
     diagnosticsStore,
@@ -237,6 +255,13 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     debug,
     traceReporter,
   });
+
+  // Lists, playlist, stats, sync
+  const listService = new ListService(listRepository);
+  const playlistService = new PlaylistService(playlistRepository, sessionId);
+  const statsService = new StatsService(dataDb);
+  const statsFormatter = new StatsFormatter();
+  const syncTokenStore = new SyncTokenStore(paths);
 
   // Load config
   const config = await ConfigServiceImpl.load(configStore);
@@ -363,6 +388,13 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     timelineService,
     resultEnrichmentService,
     updateService,
+    listRepository,
+    playlistRepository,
+    listService,
+    playlistService,
+    statsService,
+    statsFormatter,
+    syncTokenStore,
     shellChrome,
     capabilitySnapshot,
     debugTracePath,
