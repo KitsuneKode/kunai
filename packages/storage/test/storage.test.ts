@@ -12,7 +12,9 @@ import {
   getExpiresAt,
   getKunaiPaths,
   HistoryRepository,
+  ListRepository,
   openKunaiDatabase,
+  PlaylistRepository,
   ProviderHealthRepository,
   ResolveTraceRepository,
   runMigrations,
@@ -310,6 +312,245 @@ function tableNames(db: ReturnType<typeof openKunaiDatabase>): string[] {
     .all()
     .map((row) => row.name);
 }
+
+// ─── ListRepository ───────────────────────────────────────────────────────────
+
+test("ListRepository: migration seeds default watchlist and favorites", () => {
+  const db = migratedDataDb();
+  const repo = new ListRepository(db);
+
+  const lists = repo.getLists();
+  expect(lists.length).toBeGreaterThanOrEqual(2);
+  expect(lists.some((l) => l.id === "watchlist" && l.kind === "watchlist")).toBe(true);
+  expect(lists.some((l) => l.id === "favorites" && l.kind === "favorites")).toBe(true);
+
+  db.close();
+});
+
+test("ListRepository: createList + getList roundtrip", () => {
+  const db = migratedDataDb();
+  const repo = new ListRepository(db);
+
+  const list = repo.createList({ name: "Action", kind: "custom", color: "#ff0000" });
+  expect(list.name).toBe("Action");
+  expect(list.kind).toBe("custom");
+  expect(list.color).toBe("#ff0000");
+
+  const found = repo.getList(list.id);
+  expect(found?.id).toBe(list.id);
+
+  db.close();
+});
+
+test("ListRepository: addItem + getItems + removeItem", () => {
+  const db = migratedDataDb();
+  const repo = new ListRepository(db);
+
+  const item = repo.addItem({
+    listId: "watchlist",
+    titleId: "tmdb:123",
+    mediaKind: "series",
+    title: "Frieren",
+  });
+  expect(item.titleId).toBe("tmdb:123");
+  expect(item.title).toBe("Frieren");
+
+  const items = repo.getItems("watchlist");
+  expect(items.some((i) => i.id === item.id)).toBe(true);
+
+  repo.removeItem(item.id);
+  const after = repo.getItems("watchlist");
+  expect(after.some((i) => i.id === item.id)).toBe(false);
+
+  db.close();
+});
+
+test("ListRepository: toggleItem adds then removes on second call", () => {
+  const db = migratedDataDb();
+  const repo = new ListRepository(db);
+
+  const input = { listId: "watchlist", titleId: "tmdb:42", mediaKind: "anime", title: "AoT" };
+  const first = repo.toggleItem("watchlist", input);
+  expect(first).toBe("added");
+  expect(repo.isInList("watchlist", "tmdb:42")).toBe(true);
+
+  const second = repo.toggleItem("watchlist", input);
+  expect(second).toBe("removed");
+  expect(repo.isInList("watchlist", "tmdb:42")).toBe(false);
+
+  db.close();
+});
+
+test("ListRepository: deleteList cascades to list_items", () => {
+  const db = migratedDataDb();
+  const repo = new ListRepository(db);
+
+  const list = repo.createList({ name: "Temp", kind: "custom" });
+  repo.addItem({ listId: list.id, titleId: "tmdb:1", mediaKind: "series", title: "Test" });
+  expect(repo.getItems(list.id).length).toBe(1);
+
+  repo.deleteList(list.id);
+  expect(repo.getList(list.id)).toBeUndefined();
+  expect(repo.getItems(list.id).length).toBe(0);
+
+  db.close();
+});
+
+test("ListRepository: getListsForTitle returns all lists containing title", () => {
+  const db = migratedDataDb();
+  const repo = new ListRepository(db);
+
+  const custom = repo.createList({ name: "Custom", kind: "custom" });
+  repo.addItem({ listId: "watchlist", titleId: "tmdb:99", mediaKind: "series", title: "X" });
+  repo.addItem({ listId: custom.id, titleId: "tmdb:99", mediaKind: "series", title: "X" });
+
+  const lists = repo.getListsForTitle("tmdb:99");
+  expect(lists.length).toBe(2);
+  expect(lists.some((l) => l.id === "watchlist")).toBe(true);
+  expect(lists.some((l) => l.id === custom.id)).toBe(true);
+
+  db.close();
+});
+
+test("ListRepository: isInList returns false for absent title", () => {
+  const db = migratedDataDb();
+  const repo = new ListRepository(db);
+
+  expect(repo.isInList("watchlist", "tmdb:nothere")).toBe(false);
+
+  db.close();
+});
+
+// ─── PlaylistRepository ────────────────────────────────────────────────────────
+
+test("PlaylistRepository: enqueue + peekNext returns first by priority DESC addedAt ASC", () => {
+  const db = migratedDataDb();
+  const repo = new PlaylistRepository(db);
+  const sid = "session-1";
+
+  repo.enqueue({
+    title: "Low",
+    mediaKind: "anime",
+    titleId: "tmdb:1",
+    priority: 0,
+    source: "manual",
+    sessionId: sid,
+  });
+  repo.enqueue({
+    title: "High",
+    mediaKind: "anime",
+    titleId: "tmdb:2",
+    priority: 10,
+    source: "manual",
+    sessionId: sid,
+  });
+
+  const next = repo.peekNext(sid);
+  expect(next?.title).toBe("High");
+
+  db.close();
+});
+
+test("PlaylistRepository: markPlayed excludes item from getUnplayed", () => {
+  const db = migratedDataDb();
+  const repo = new PlaylistRepository(db);
+  const sid = "session-2";
+
+  const item = repo.enqueue({
+    title: "A",
+    mediaKind: "series",
+    titleId: "tmdb:10",
+    source: "watchlist",
+    sessionId: sid,
+  });
+  expect(repo.countUnplayed(sid)).toBe(1);
+
+  repo.markPlayed(item.id);
+  expect(repo.countUnplayed(sid)).toBe(0);
+  expect(repo.getUnplayed(sid).length).toBe(0);
+
+  const all = repo.getAll(sid);
+  expect(all.length).toBe(1);
+  expect(all[0]!.playedAt).toBeDefined();
+
+  db.close();
+});
+
+test("PlaylistRepository: clear removes all items for session", () => {
+  const db = migratedDataDb();
+  const repo = new PlaylistRepository(db);
+  const sid = "session-3";
+
+  repo.enqueue({
+    title: "A",
+    mediaKind: "series",
+    titleId: "tmdb:1",
+    source: "manual",
+    sessionId: sid,
+  });
+  repo.enqueue({
+    title: "B",
+    mediaKind: "series",
+    titleId: "tmdb:2",
+    source: "manual",
+    sessionId: sid,
+  });
+  expect(repo.getAll(sid).length).toBe(2);
+
+  repo.clear(sid);
+  expect(repo.getAll(sid).length).toBe(0);
+
+  db.close();
+});
+
+test("PlaylistRepository: clearPlayed only removes played items", () => {
+  const db = migratedDataDb();
+  const repo = new PlaylistRepository(db);
+  const sid = "session-4";
+
+  const a = repo.enqueue({
+    title: "A",
+    mediaKind: "anime",
+    titleId: "tmdb:1",
+    source: "manual",
+    sessionId: sid,
+  });
+  repo.enqueue({
+    title: "B",
+    mediaKind: "anime",
+    titleId: "tmdb:2",
+    source: "manual",
+    sessionId: sid,
+  });
+  repo.markPlayed(a.id);
+
+  repo.clearPlayed(sid);
+  const remaining = repo.getAll(sid);
+  expect(remaining.length).toBe(1);
+  expect(remaining[0]!.title).toBe("B");
+
+  db.close();
+});
+
+test("PlaylistRepository: getLastActivity returns latest addedAt across sessions", () => {
+  const db = migratedDataDb();
+  const repo = new PlaylistRepository(db);
+
+  expect(repo.getLastActivity()).toBeUndefined();
+
+  repo.enqueue({
+    title: "X",
+    mediaKind: "anime",
+    titleId: "tmdb:1",
+    source: "manual",
+    sessionId: "s1",
+  });
+  const activity = repo.getLastActivity();
+  expect(typeof activity).toBe("string");
+  expect(activity!.length).toBeGreaterThan(0);
+
+  db.close();
+});
 
 function makeStreamCandidate(): StreamCandidate {
   return {

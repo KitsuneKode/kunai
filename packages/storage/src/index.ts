@@ -24,3 +24,7 @@ export { SourceInventoryRepository } from "./repositories/source-inventory";
 export type { SourceInventoryEntry } from "./repositories/source-inventory";
 export { StreamCacheRepository } from "./repositories/stream-cache";
 export type { StreamCacheEntry } from "./repositories/stream-cache";
+export { ListRepository } from "./repositories/lists";
+export type { KunaiList, ListItem, ListItemInput, ListKind } from "./repositories/lists";
+export { PlaylistRepository } from "./repositories/playlist";
+export type { PlaylistItem, PlaylistItemInput } from "./repositories/playlist";

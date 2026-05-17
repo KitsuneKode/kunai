@@ -146,6 +146,68 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE download_jobs ADD COLUMN last_validated_at TEXT;
     `,
   },
+  {
+    id: "009_data_lists",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS lists (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        color TEXT,
+        icon TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS list_items (
+        id TEXT PRIMARY KEY,
+        list_id TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+        title_id TEXT NOT NULL,
+        media_kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        season INTEGER,
+        episode INTEGER,
+        notes TEXT,
+        added_at TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_list_items_list_id
+        ON list_items(list_id, sort_order ASC);
+
+      CREATE INDEX IF NOT EXISTS idx_list_items_title_id
+        ON list_items(title_id, added_at DESC);
+
+      CREATE TABLE IF NOT EXISTS playlist_queue (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        media_kind TEXT NOT NULL,
+        title_id TEXT NOT NULL,
+        season INTEGER,
+        episode INTEGER,
+        absolute_episode INTEGER,
+        priority INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL,
+        added_at TEXT NOT NULL,
+        played_at TEXT,
+        session_id TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_playlist_queue_priority
+        ON playlist_queue(priority DESC, added_at ASC);
+
+      CREATE INDEX IF NOT EXISTS idx_playlist_queue_session
+        ON playlist_queue(session_id, priority DESC, added_at ASC);
+
+      INSERT OR IGNORE INTO lists (id, name, kind, sort_order, created_at, updated_at)
+        VALUES ('watchlist', 'Watchlist', 'watchlist', 0, datetime('now'), datetime('now'));
+
+      INSERT OR IGNORE INTO lists (id, name, kind, sort_order, created_at, updated_at)
+        VALUES ('favorites', 'Favorites', 'favorites', 1, datetime('now'), datetime('now'));
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [
