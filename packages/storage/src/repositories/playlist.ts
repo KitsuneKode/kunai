@@ -15,6 +15,24 @@ export interface PlaylistItem {
   readonly addedAt: string;
   readonly playedAt?: string;
   readonly sessionId: string;
+  readonly status: QueueItemStatus;
+  readonly queuePosition?: number;
+  readonly completedAt?: string;
+}
+
+export type QueueSessionStatus = "active" | "recoverable" | "closed" | "expired";
+export type QueueItemStatus = "pending" | "played" | "skipped" | "failed";
+
+export interface QueueSessionInput {
+  readonly id: string;
+  readonly status: QueueSessionStatus;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly closedAt?: string;
+}
+
+export interface QueueSessionRecord extends QueueSessionInput {
+  readonly itemCount: number;
 }
 
 export interface PlaylistItemInput {
@@ -25,6 +43,7 @@ export interface PlaylistItemInput {
   readonly episode?: number;
   readonly absoluteEpisode?: number;
   readonly priority?: number;
+  readonly queuePosition?: number;
   readonly source: string;
   readonly sessionId: string;
 }
@@ -42,6 +61,18 @@ interface PlaylistItemRow {
   readonly added_at: string;
   readonly played_at: string | null;
   readonly session_id: string;
+  readonly status?: QueueItemStatus;
+  readonly queue_position?: number | null;
+  readonly completed_at?: string | null;
+}
+
+interface QueueSessionRow {
+  readonly id: string;
+  readonly status: QueueSessionStatus;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly closed_at: string | null;
+  readonly item_count: number;
 }
 
 function mapPlaylistRow(row: PlaylistItemRow): PlaylistItem {
@@ -58,6 +89,20 @@ function mapPlaylistRow(row: PlaylistItemRow): PlaylistItem {
     addedAt: row.added_at,
     playedAt: row.played_at ?? undefined,
     sessionId: row.session_id,
+    status: row.status ?? (row.played_at ? "played" : "pending"),
+    queuePosition: row.queue_position ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+  };
+}
+
+function mapQueueSessionRow(row: QueueSessionRow): QueueSessionRecord {
+  return {
+    id: row.id,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    closedAt: row.closed_at ?? undefined,
+    itemCount: row.item_count,
   };
 }
 
@@ -72,8 +117,8 @@ export class PlaylistRepository {
       .query(
         `INSERT INTO playlist_queue
            (id, title, media_kind, title_id, season, episode, absolute_episode,
-            priority, source, added_at, played_at, session_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+            priority, source, added_at, played_at, session_id, status, queue_position, completed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'pending', ?, NULL)`,
       )
       .run(
         id,
@@ -87,6 +132,7 @@ export class PlaylistRepository {
         input.source,
         now,
         input.sessionId,
+        input.queuePosition ?? null,
       );
 
     const row = this.db
@@ -100,7 +146,7 @@ export class PlaylistRepository {
     return this.db
       .query<PlaylistItemRow, [string]>(
         `SELECT * FROM playlist_queue WHERE session_id = ?
-         ORDER BY priority DESC, added_at ASC`,
+         ORDER BY COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC`,
       )
       .all(sessionId)
       .map(mapPlaylistRow);
@@ -110,7 +156,7 @@ export class PlaylistRepository {
     return this.db
       .query<PlaylistItemRow, [string]>(
         `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
-         ORDER BY priority DESC, added_at ASC`,
+         ORDER BY COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC`,
       )
       .all(sessionId)
       .map(mapPlaylistRow);
@@ -120,7 +166,7 @@ export class PlaylistRepository {
     const row = this.db
       .query<PlaylistItemRow, [string]>(
         `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
-         ORDER BY priority DESC, added_at ASC LIMIT 1`,
+         ORDER BY COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC LIMIT 1`,
       )
       .get(sessionId);
     return row === null ? undefined : mapPlaylistRow(row);
@@ -128,7 +174,11 @@ export class PlaylistRepository {
 
   markPlayed(id: string): void {
     const now = new Date().toISOString();
-    this.db.query("UPDATE playlist_queue SET played_at = ? WHERE id = ?").run(now, id);
+    this.db
+      .query(
+        "UPDATE playlist_queue SET played_at = ?, status = 'played', completed_at = ? WHERE id = ?",
+      )
+      .run(now, now, id);
   }
 
   remove(id: string): void {
@@ -159,5 +209,63 @@ export class PlaylistRepository {
       .query<{ last_at: string | null }, []>("SELECT MAX(added_at) AS last_at FROM playlist_queue")
       .get();
     return row?.last_at ?? undefined;
+  }
+
+  createQueueSession(input: QueueSessionInput): QueueSessionRecord {
+    this.db
+      .query(
+        `INSERT OR REPLACE INTO playback_queue_sessions
+           (id, status, created_at, updated_at, closed_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(input.id, input.status, input.createdAt, input.updatedAt, input.closedAt ?? null);
+    const record = this.getQueueSession(input.id);
+    if (!record) throw new Error(`Queue session not found after insert: ${input.id}`);
+    return record;
+  }
+
+  getQueueSession(id: string): QueueSessionRecord | undefined {
+    const row = this.db
+      .query<QueueSessionRow, [string]>(
+        `SELECT s.*, COUNT(q.id) AS item_count
+         FROM playback_queue_sessions s
+         LEFT JOIN playlist_queue q ON q.session_id = s.id AND q.status = 'pending'
+         WHERE s.id = ?
+         GROUP BY s.id`,
+      )
+      .get(id);
+    return row ? mapQueueSessionRow(row) : undefined;
+  }
+
+  markQueueSessionRecoverable(id: string, updatedAt: string): void {
+    this.db
+      .query(
+        "UPDATE playback_queue_sessions SET status = 'recoverable', updated_at = ? WHERE id = ? AND status = 'active'",
+      )
+      .run(updatedAt, id);
+  }
+
+  closeQueueSession(id: string, closedAt: string): void {
+    this.db
+      .query(
+        "UPDATE playback_queue_sessions SET status = 'closed', updated_at = ?, closed_at = ? WHERE id = ?",
+      )
+      .run(closedAt, closedAt, id);
+  }
+
+  listRecoverableQueueSessions(limit = 5): QueueSessionRecord[] {
+    return this.db
+      .query<QueueSessionRow, [number]>(
+        `SELECT s.*, COUNT(q.id) AS item_count
+         FROM playback_queue_sessions s
+         LEFT JOIN playlist_queue q ON q.session_id = s.id AND q.status = 'pending'
+         WHERE s.status = 'recoverable'
+         GROUP BY s.id
+         HAVING item_count > 0
+         ORDER BY s.updated_at DESC
+         LIMIT ?`,
+      )
+      .all(limit)
+      .map(mapQueueSessionRow);
   }
 }

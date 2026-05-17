@@ -34,4 +34,17 @@ export type { StreamCacheEntry } from "./repositories/stream-cache";
 export { ListRepository } from "./repositories/lists";
 export type { KunaiList, ListItem, ListItemInput, ListKind } from "./repositories/lists";
 export { PlaylistRepository } from "./repositories/playlist";
-export type { PlaylistItem, PlaylistItemInput } from "./repositories/playlist";
+export type {
+  PlaylistItem,
+  PlaylistItemInput,
+  QueueItemStatus,
+  QueueSessionInput,
+  QueueSessionRecord,
+  QueueSessionStatus,
+} from "./repositories/playlist";
+export { NotificationRepository } from "./repositories/notifications";
+export type { NotificationInput, NotificationRecord } from "./repositories/notifications";
+export { FollowedTitleRepository } from "./repositories/followed-titles";
+export type { FollowedTitlePreference, FollowedTitleRecord } from "./repositories/followed-titles";
+export { PlaylistsRepository } from "./repositories/playlists";
+export type { UserPlaylistItemRecord, UserPlaylistRecord } from "./repositories/playlists";

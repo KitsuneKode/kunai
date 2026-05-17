@@ -208,6 +208,100 @@ export const dataMigrations: readonly Migration[] = [
         VALUES ('favorites', 'Favorites', 'favorites', 1, datetime('now'), datetime('now'));
     `,
   },
+  {
+    id: "010_data_queue_sessions",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS playback_queue_sessions (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        closed_at TEXT
+      );
+
+      ALTER TABLE playlist_queue ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';
+      ALTER TABLE playlist_queue ADD COLUMN queue_position INTEGER;
+      ALTER TABLE playlist_queue ADD COLUMN completed_at TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_playback_queue_sessions_status
+        ON playback_queue_sessions(status, updated_at DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_playlist_queue_status_position
+        ON playlist_queue(session_id, status, queue_position ASC, priority DESC, added_at ASC);
+    `,
+  },
+  {
+    id: "011_data_notifications",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        dedup_key TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        item_json TEXT,
+        action_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        dismissed_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_notifications_recent
+        ON notifications(dismissed_at, updated_at DESC);
+    `,
+  },
+  {
+    id: "012_data_followed_titles",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS followed_titles (
+        title_id TEXT PRIMARY KEY,
+        media_kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        preference TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_followed_titles_preference
+        ON followed_titles(preference, updated_at DESC);
+    `,
+  },
+  {
+    id: "013_data_durable_playlists",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS user_playlists (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS user_playlist_items (
+        id TEXT PRIMARY KEY,
+        playlist_id TEXT NOT NULL REFERENCES user_playlists(id) ON DELETE CASCADE,
+        title_id TEXT NOT NULL,
+        media_kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        season INTEGER,
+        episode INTEGER,
+        absolute_episode INTEGER,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        provider_hints_json TEXT,
+        notes TEXT,
+        added_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_user_playlist_items_playlist_order
+        ON user_playlist_items(playlist_id, sort_order ASC, added_at ASC);
+
+      CREATE INDEX IF NOT EXISTS idx_user_playlist_items_title
+        ON user_playlist_items(title_id, media_kind);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [
