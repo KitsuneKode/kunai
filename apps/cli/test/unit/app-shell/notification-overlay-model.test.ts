@@ -27,7 +27,7 @@ test("notification picker exposes actionable queue recovery rows", () => {
       label: "Previous queue available",
       detail: "2 queued items can be restored",
       tone: "warning",
-      badge: "restore",
+      badge: "enter: restore  ·  a: all actions  ·  x: dismiss",
     },
   ]);
 });

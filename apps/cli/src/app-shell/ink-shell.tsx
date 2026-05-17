@@ -432,6 +432,7 @@ function AppRoot({ container }: { container: Container }) {
   const [syncHealth, setSyncHealth] = useState<SyncHealth | undefined>(undefined);
   const [playlistCount, setPlaylistCount] = useState<number>(0);
   const [streakMilestoneAlert, setStreakMilestoneAlert] = useState<string | null>(null);
+  const [streakAtRiskAlert, setStreakAtRiskAlert] = useState<string | null>(null);
 
   const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
 
@@ -460,6 +461,20 @@ function AppRoot({ container }: { container: Container }) {
           setStreakMilestoneAlert(`🔥 ${nextMilestone}-day streak! Keep it going.`);
           void container.config.update({ lastStreakMilestoneDays: nextMilestone });
           setTimeout(() => setStreakMilestoneAlert(null), 6_000);
+        }
+
+        // Streak-at-risk: after 20:00 local time, if user hasn't watched today
+        const hour = new Date().getHours();
+        if (hour >= 20) {
+          try {
+            const watchedToday = container.statsService.watchedToday();
+            if (!watchedToday) {
+              setStreakAtRiskAlert(`🔥 ${days}d streak at risk — watch something tonight`);
+              setTimeout(() => setStreakAtRiskAlert(null), 10_000);
+            }
+          } catch {
+            // best-effort
+          }
         }
       }
     };
@@ -977,11 +992,21 @@ function AppRoot({ container }: { container: Container }) {
           {truncateLine(streakMilestoneAlert, Math.max(36, shellWidth - 8))}
         </Text>
       ) : null}
+      {/* Streak-at-risk: evening reminder when streak is active but nothing watched today */}
+      {streakAtRiskAlert &&
+      !rootStatusSummary.alert &&
+      !presenceBootLine &&
+      !streakMilestoneAlert ? (
+        <Text dimColor color={statusColor("warning")}>
+          {truncateLine(streakAtRiskAlert, Math.max(36, shellWidth - 8))}
+        </Text>
+      ) : null}
       {/* Weekly digest shows once per week when not mid-playback */}
       {weeklyDigestLine &&
       !rootStatusSummary.alert &&
       !presenceBootLine &&
-      !streakMilestoneAlert ? (
+      !streakMilestoneAlert &&
+      !streakAtRiskAlert ? (
         <Text dimColor color={statusColor("info")}>
           {truncateLine(weeklyDigestLine, Math.max(36, shellWidth - 8))}
         </Text>
@@ -2790,6 +2815,21 @@ function BrowseShell<T>({
             ) : null}
             {idleContext && !viewport.ultraCompact ? (
               <Box flexDirection="column" marginTop={1} gap={0}>
+                {idleContext.continueWatching && !idleContext.playlistNext ? (
+                  <Text color={palette.muted}>
+                    {"⏸  "}
+                    <Text color="white">{idleContext.continueWatching.title}</Text>
+                    {idleContext.continueWatching.ep ? (
+                      <Text color={palette.muted}>{`  ${idleContext.continueWatching.ep}`}</Text>
+                    ) : null}
+                    {idleContext.continueWatching.remainingLabel ? (
+                      <Text
+                        color={palette.dim}
+                      >{`  · ${idleContext.continueWatching.remainingLabel}`}</Text>
+                    ) : null}
+                    <Text color={palette.dim}>{" · continue watching"}</Text>
+                  </Text>
+                ) : null}
                 {idleContext.playlistNext ? (
                   <Text color={palette.teal}>
                     {"▶  "}
@@ -3017,6 +3057,26 @@ function buildHeatmapGrid(
   return { grid, monthLabels };
 }
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    let cmd: string[];
+    if (process.platform === "darwin") {
+      cmd = ["pbcopy"];
+    } else if (process.env["WAYLAND_DISPLAY"]) {
+      cmd = ["wl-copy"];
+    } else {
+      cmd = ["xclip", "-selection", "clipboard"];
+    }
+    const proc = Bun.spawn(cmd, { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
+    proc.stdin.write(text);
+    proc.stdin.end();
+    await proc.exited;
+    return proc.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
 function StatsShell({
   statsService,
   statsFormatter,
@@ -3027,6 +3087,7 @@ function StatsShell({
   onBack: () => void;
 }) {
   const [windowIdx, setWindowIdx] = useState(0);
+  const [copiedFlash, setCopiedFlash] = useState<string | null>(null);
   const { stdout } = useStdout();
   const rows = stdout.rows ?? 24;
   const cols = stdout.columns ?? 80;
@@ -3079,6 +3140,21 @@ function StatsShell({
     if (input === "1") setWindowIdx(0);
     else if (input === "2") setWindowIdx(1);
     else if (input === "3") setWindowIdx(2);
+    else if (input === "s") {
+      const shareText = [
+        statsFormatter.formatSummaryLine(stats),
+        statsFormatter.formatWeeklyDigest(stats),
+        "",
+        statsFormatter.formatTopShows(stats.topShows.slice(0, 5)),
+      ]
+        .join("\n")
+        .trim();
+      void (async () => {
+        const ok = await copyToClipboard(shareText);
+        setCopiedFlash(ok ? "Copied to clipboard!" : "Copy failed — clipboard tool not found");
+        setTimeout(() => setCopiedFlash(null), 2_000);
+      })();
+    }
   });
 
   const summaryLine = statsFormatter.formatSummaryLine(stats);
@@ -3185,11 +3261,19 @@ function StatsShell({
       {/* Footer */}
       <Box marginTop={1} flexDirection="column">
         <Text color={palette.dim}>{"─".repeat(Math.min(innerWidth, cols - 4))}</Text>
-        <Box marginTop={1}>
-          <Text color={palette.gray}>Tab cycle windows</Text>
-          <Text color={palette.dim}> · </Text>
-          <Text color={palette.gray}>q back</Text>
-        </Box>
+        {copiedFlash ? (
+          <Box marginTop={1}>
+            <Text color={palette.teal}>{copiedFlash}</Text>
+          </Box>
+        ) : (
+          <Box marginTop={1}>
+            <Text color={palette.gray}>Tab cycle windows</Text>
+            <Text color={palette.dim}> · </Text>
+            <Text color={palette.gray}>s share</Text>
+            <Text color={palette.dim}> · </Text>
+            <Text color={palette.gray}>q back</Text>
+          </Box>
+        )}
       </Box>
     </Box>
   );

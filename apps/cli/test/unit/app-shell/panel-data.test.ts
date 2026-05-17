@@ -15,7 +15,7 @@ describe("panel-data", () => {
   test("buildHelpPanelLines returns stable guidance", () => {
     const lines = buildHelpPanelLines();
     expect(lines.length).toBeGreaterThan(4);
-    expect(lines.some((line) => line.label === "─── Panels")).toBe(true);
+    expect(lines.some((line) => line.label === "─── Panels & Commands")).toBe(true);
     expect(lines.some((line) => line.label === "Ctrl+W")).toBe(true);
   });
 
@@ -248,7 +248,8 @@ describe("panel-data", () => {
       },
     });
 
-    expect(lines[0]).toEqual({ label: "─── Health", detail: "", tone: "info" });
+    expect(lines[0]?.tone).toMatch(/warning|error|success/);
+    expect(lines[1]).toEqual({ label: "─── Health", detail: "", tone: "info" });
     expect(lines.find((line) => line.label === "Playback")?.detail).toContain("Needs attention");
     expect(lines.find((line) => line.label === "Cache")?.detail).toContain(
       "kept current playable stream",
