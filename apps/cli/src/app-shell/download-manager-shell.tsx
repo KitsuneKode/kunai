@@ -263,10 +263,32 @@ export function DownloadManagerContent({
       {confirmingDeleteIndex !== null ? (
         <Box marginTop={1}>
           <Text color={palette.amber}>
-            {"⚠ "}Press x again to confirm delete, any other key to cancel
+            {"⚠ "}Press x again to confirm delete · any other key cancels
           </Text>
         </Box>
-      ) : null}
+      ) : (
+        (() => {
+          const selected = allJobs[selectedIndex];
+          if (!selected) return null;
+          const hints =
+            selected.status === "running"
+              ? "x to abort"
+              : selected.status === "failed" || selected.status === "aborted"
+                ? "r to retry  ·  x to delete"
+                : selected.status === "completed"
+                  ? "enter to play  ·  x to delete"
+                  : selected.status === "queued"
+                    ? "x to remove from queue"
+                    : null;
+          return hints ? (
+            <Box marginTop={1}>
+              <Text color={palette.muted} dimColor>
+                {hints}
+              </Text>
+            </Box>
+          ) : null;
+        })()
+      )}
     </Box>
   );
 }

@@ -2584,6 +2584,7 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
 
     // Build per-title progress from history
     const progressMap = new Map<string, string>();
+    const nextEpisodeMap = new Map<string, string>();
     const newEpisodeMap = new Map<string, number>();
     for (const item of items) {
       const entries = await historyStore.listByTitle(item.titleId);
@@ -2601,6 +2602,14 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
       const dateLabel = relativeHistoryDate(latest.watchedAt);
       progressMap.set(item.titleId, [epCode, statusLabel, dateLabel].filter(Boolean).join(" · "));
 
+      // Compute next episode to watch (last watched + 1 for series)
+      if (latest.type === "series" && latest.season && latest.episode) {
+        const nextEp = isFinished(latest)
+          ? `S${String(latest.season).padStart(2, "0")}E${String(latest.episode + 1).padStart(2, "0")}`
+          : epCode;
+        if (nextEp) nextEpisodeMap.set(item.titleId, nextEp);
+      }
+
       if (item.titleId.startsWith("anilist:")) {
         const schedule = catalogScheduleService.peekNextRelease("anilist", item.titleId);
         if (schedule?.episode) {
@@ -2616,11 +2625,13 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     const options: ShellOption<WlAction>[] = [
       ...items.map((item) => {
         const progress = progressMap.get(item.titleId);
+        const nextEp = nextEpisodeMap.get(item.titleId);
         const newCount = newEpisodeMap.get(item.titleId);
         const newBadge = newCount ? `+${newCount} new` : null;
-        const detail = [item.mediaKind, progress ?? "not started", newBadge]
+        const nextBadge = nextEp ? `→ ${nextEp}` : null;
+        const detail = [item.mediaKind, progress ?? "not started", nextBadge, newBadge]
           .filter(Boolean)
-          .join(" · ");
+          .join("  ·  ");
         return {
           value: { type: "select" as const, titleId: item.titleId, title: item.title },
           label: newCount ? `${item.title}  ·  +${newCount} new` : item.title,
@@ -2765,12 +2776,13 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
         const played = item.playedAt !== undefined;
         const isNext = !played && item.id === firstUnplayedId;
         const addedLabel = relativeHistoryDate(item.addedAt);
-        const label = isNext ? `▶  ${item.title}${ep}` : `${item.title}${ep}`;
+        const prefix = played ? "✓  " : isNext ? "▶  " : "   ";
+        const label = `${prefix}${item.title}${ep}`;
         const detail = played
-          ? `${item.mediaKind} · played · ${relativeHistoryDate(item.playedAt ?? item.addedAt)}`
+          ? `played ${relativeHistoryDate(item.playedAt ?? item.addedAt)}  ·  ${item.mediaKind}`
           : isNext
-            ? `${item.mediaKind} · next · added ${addedLabel}`
-            : `${item.mediaKind} · up next · added ${addedLabel}`;
+            ? `next up  ·  ${item.mediaKind}  ·  added ${addedLabel}`
+            : `queued  ·  ${item.mediaKind}  ·  added ${addedLabel}`;
         return {
           value: { type: "remove" as const, id: item.id, title: item.title },
           label,

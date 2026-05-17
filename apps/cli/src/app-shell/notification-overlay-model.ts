@@ -8,13 +8,16 @@ import type { NotificationRecord } from "@kunai/storage";
 export function buildNotificationPickerOptions(
   notifications: readonly NotificationRecord[],
 ): readonly ShellPickerOption<string>[] {
-  return notifications.map((notification) => ({
-    value: notification.dedupKey,
-    label: notification.title,
-    detail: notification.body,
-    tone: getNotificationTone(notification.kind),
-    badge: getNotificationActionBadge(getNotificationPrimaryAction(notification)),
-  }));
+  return notifications.map((notification) => {
+    const primaryAction = getNotificationPrimaryAction(notification);
+    return {
+      value: notification.dedupKey,
+      label: notification.title,
+      detail: notification.body,
+      tone: getNotificationTone(notification.kind),
+      badge: `enter: ${getNotificationActionBadge(primaryAction)}  ·  a: all actions  ·  x: dismiss`,
+    };
+  });
 }
 
 export function getNotificationPrimaryAction(

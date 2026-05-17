@@ -101,6 +101,7 @@ function LibraryTab({ container }: { container: Container }) {
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
+  const viewport = useDebouncedViewportPolicy("picker");
 
   useEffect(() => {
     let cancelled = false;
@@ -264,7 +265,10 @@ function LibraryTab({ container }: { container: Container }) {
             {index === safeIndex ? (
               <Box marginLeft={2}>
                 <Text color={palette.gray} dimColor>
-                  {truncateLine(`${group.artifactSummary} · ${group.detail}`, 110)}
+                  {truncateLine(
+                    `${group.artifactSummary}  ·  ${group.detail}`,
+                    Math.max(40, Math.min(110, (viewport.columns ?? 80) - 6)),
+                  )}
                 </Text>
               </Box>
             ) : null}

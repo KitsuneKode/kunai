@@ -95,56 +95,51 @@ function formatMpvRuntimeDetail(event: DiagnosticEvent | undefined): string {
 
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
   return [
-    // ── Navigation ──
-    { label: "─── Navigation", detail: "", tone: "info" },
-    { label: "↑↓", detail: "Browse results, navigate pickers" },
-    { label: "Enter", detail: "Select result, confirm highlighted item" },
-    { label: "Esc", detail: "Clear filter first, then close panel" },
-    { label: "Tab", detail: "Switch between series and anime mode" },
-    { label: "Ctrl+A/E", detail: "Jump to start/end of input" },
+    // ── Global (always available) ──
+    { label: "─── Always available", detail: "", tone: "info" },
+    { label: "/", detail: "Open command palette — search all commands" },
+    { label: "?", detail: "Open help" },
+    { label: "Esc", detail: "Close panel · clear filter · go back" },
+    { label: "Ctrl+A / E", detail: "Jump to start / end of input" },
     { label: "Ctrl+W", detail: "Delete word backward" },
-    { label: "Ctrl+←/→", detail: "Move cursor by word" },
+    { label: "Ctrl+← →", detail: "Move cursor by word" },
 
-    // ── Playback ──
-    { label: "─── Playback", detail: "", tone: "info" },
-    { label: "n", detail: "Next episode" },
-    { label: "p", detail: "Previous episode" },
+    // ── While browsing ──
+    { label: "─── While browsing", detail: "", tone: "info" },
+    { label: "↑↓ / Enter", detail: "Navigate results · open selected title" },
+    { label: "Tab", detail: "Switch between series and anime mode" },
+    { label: "Ctrl+T", detail: "Reload trending results" },
+    { label: "Ctrl+D", detail: "Download highlighted title" },
+    { label: "g", detail: "Open recommendations panel" },
+    { label: "/history", detail: "Resume from recent progress" },
+    { label: "/wl", detail: "View and manage your watchlist" },
+    { label: "/playlist", detail: "View and manage your playback queue" },
+    { label: "/stats", detail: "Watch statistics and streak" },
+
+    // ── During / after playback ──
+    { label: "─── During and after playback", detail: "", tone: "info" },
+    { label: "n / p", detail: "Next / previous episode" },
     { label: "r", detail: "Replay current episode" },
-    { label: "a", detail: "Toggle autoplay" },
-    { label: "u", detail: "Toggle auto-skip intros" },
+    { label: "a", detail: "Toggle autoplay on / off" },
+    { label: "u", detail: "Toggle intro auto-skip" },
     { label: "f", detail: "Try fallback provider" },
-
-    // ── Media ──
-    { label: "─── Media", detail: "", tone: "info" },
     { label: "e", detail: "Open episode picker" },
     { label: "o", detail: "Switch stream source" },
     { label: "v", detail: "Change quality" },
     { label: "k", detail: "View available streams" },
+    { label: "d", detail: "Download current episode" },
+    { label: "i", detail: "Recommendation actions for post-playback picks" },
 
-    // ── Panels ──
-    { label: "─── Panels", detail: "", tone: "info" },
-    { label: "/", detail: "Open command palette" },
-    { label: "?", detail: "Open help on non-text playback and panel surfaces" },
-    { label: "/history", detail: "Continue from recent progress" },
-    { label: "/notifications", detail: "Review app notices without leaving playback" },
-    { label: "/diagnostics", detail: "Diagnostics panel" },
-    { label: "g", detail: "Recommendations" },
-
-    // ── Settings & Tools ──
-    { label: "─── Settings", detail: "", tone: "info" },
+    // ── Panels & Commands ──
+    { label: "─── Panels & Commands", detail: "", tone: "info" },
+    { label: "/notifications", detail: "App notices · new episodes · queue recovery" },
+    { label: "/diagnostics", detail: "Session health, provider, and network status" },
+    { label: "/downloads", detail: "Manage queued, running, and failed download jobs" },
+    { label: "/library", detail: "Play completed local downloads" },
     { label: "/settings", detail: "Open settings editor" },
     { label: "/setup", detail: "Run dependency setup wizard" },
     { label: "/presence", detail: "Discord presence configuration" },
-    { label: "Ctrl+T", detail: "Reload trending results" },
-
-    // ── Downloads ──
-    { label: "─── Downloads", detail: "", tone: "info" },
-    { label: "Ctrl+D", detail: "Download highlighted title from browse" },
-    { label: "d", detail: "Download the current episode from post-playback" },
-    { label: "i", detail: "Open post-playback recommendation pick actions" },
-    { label: "/downloads", detail: "Manage queued, running, and failed jobs" },
-    { label: "/library", detail: "Play completed local downloads" },
-    { label: "/offline", detail: "Alias for the playable offline library" },
+    { label: "/sync", detail: "AniList / TMDB sync configuration" },
     { label: "/export-diagnostics", detail: "Write redacted support bundle" },
     { label: "/report-issue", detail: "Open GitHub issue reporting" },
   ];
@@ -157,7 +152,8 @@ export function buildNotificationPanelLines(
     return [
       {
         label: "No notifications",
-        detail: "New episodes, recoverable queues, downloads, and app notices appear here.",
+        detail:
+          "New episodes, recoverable queues, downloads, and app notices appear here. Enter to act on one, x to dismiss, a to see all actions.",
         tone: "neutral",
       },
     ];
@@ -272,7 +268,25 @@ export function buildDiagnosticsPanelLines({
     runtimeNetworkLine: runtimeHealth.network,
   });
 
+  const issueCount = healthSummary.filter(
+    (line) => line.tone === "error" || line.tone === "warning",
+  ).length;
+  const overallBanner: ShellPanelLine =
+    issueCount === 0
+      ? {
+          label: "All clear",
+          detail: "No problems detected in recent session events",
+          tone: "success",
+        }
+      : {
+          label: `${issueCount} issue${issueCount === 1 ? "" : "s"} need${issueCount === 1 ? "s" : ""} attention`,
+          detail: "See Health section below for details",
+          tone: issueCount > 2 ? "error" : "warning",
+        };
+
   return [
+    overallBanner,
+
     // ── Health ──
     { label: "─── Health", detail: "", tone: "info" },
     ...healthSummary,

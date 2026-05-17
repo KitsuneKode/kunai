@@ -178,27 +178,27 @@ async function openPostPlaybackRecommendationActionPanel({
     taskLabel: "Recommendation actions",
   });
   const action = await openListShell<RecommendationRailPanelAction>({
-    title: "Recommendation actions",
-    subtitle: "Queue is local-only. Download asks before provider resolution.",
+    title: "Recommendations",
+    subtitle: `${items.length} pick${items.length === 1 ? "" : "s"}  ·  queue is local-only  ·  download confirms before resolving`,
     actionContext,
     options: [
-      ...items.flatMap((item, index) => {
-        const prefix = `${index + 1}. ${item.title}${item.year ? ` (${item.year})` : ""}`;
+      ...items.flatMap((item) => {
+        const titleLabel = `${item.title}${item.year ? ` (${item.year})` : ""}${item.type ? `  ·  ${item.type}` : ""}`;
         return [
           {
-            value: { type: "details" as const, item },
-            label: `Details · ${prefix}`,
-            detail: "Show cached recommendation metadata without provider calls",
-          },
-          {
             value: { type: "queue" as const, item },
-            label: `Queue · ${prefix}`,
-            detail: "Add to playlist without resolving a stream",
+            label: `Queue  ·  ${titleLabel}`,
+            detail: "Add to playlist queue without resolving a stream",
           },
           {
             value: { type: "download" as const, item },
-            label: `Download · ${prefix}`,
-            detail: "Requires confirmation before provider resolution",
+            label: `Download  ·  ${titleLabel}`,
+            detail: "Confirm before provider resolution  ·  will not autoplay",
+          },
+          {
+            value: { type: "details" as const, item },
+            label: `Details  ·  ${titleLabel}`,
+            detail: "Show cached metadata  ·  no provider calls",
           },
         ];
       }),
