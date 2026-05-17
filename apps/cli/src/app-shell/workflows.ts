@@ -220,43 +220,45 @@ export async function runSetupWizard({
   const { result } = runSetupFlow(snapshot);
   const { outcome, prefs } = await result;
 
-  const downloadsEnabled = prefs.downloadsEnabled;
-  const downloadPath = downloadsEnabled
-    ? current.downloadPath || defaultDownloadPath
-    : current.downloadPath;
+  if (outcome === "skipped") {
+    // Only mark done — never clobber existing preferences when the user skips.
+    await container.config.update({
+      onboardingVersion: 2,
+      downloadOnboardingDismissed: true,
+    });
+    await container.config.save();
+  } else {
+    const downloadsEnabled = prefs.downloadsEnabled;
+    const downloadPath = downloadsEnabled
+      ? current.downloadPath || defaultDownloadPath
+      : current.downloadPath;
 
-  await container.config.update({
-    onboardingVersion: 2,
-    downloadOnboardingDismissed: true,
-    downloadsEnabled,
-    downloadPath,
-    animeLanguageProfile: {
-      ...current.animeLanguageProfile,
-      audio: prefs.audio,
-      subtitle: prefs.subtitle,
-    },
-    seriesLanguageProfile: {
-      ...current.seriesLanguageProfile,
-      subtitle: prefs.subtitle,
-    },
-    movieLanguageProfile: {
-      ...current.movieLanguageProfile,
-      subtitle: prefs.subtitle,
-    },
-  });
-  await container.config.save();
+    await container.config.update({
+      onboardingVersion: 2,
+      downloadOnboardingDismissed: true,
+      downloadsEnabled,
+      downloadPath,
+      animeLanguageProfile: {
+        ...current.animeLanguageProfile,
+        audio: prefs.audio,
+        subtitle: prefs.subtitle,
+      },
+      seriesLanguageProfile: {
+        ...current.seriesLanguageProfile,
+        subtitle: prefs.subtitle,
+      },
+      movieLanguageProfile: {
+        ...current.movieLanguageProfile,
+        subtitle: prefs.subtitle,
+      },
+    });
+    await container.config.save();
+  }
 
   container.diagnosticsStore.record({
     category: "session",
     message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
-    context: {
-      outcome,
-      downloadsEnabled,
-      downloadPath: downloadsEnabled ? downloadPath : null,
-      audio: prefs.audio,
-      subtitle: prefs.subtitle,
-      force,
-    },
+    context: { outcome, force },
   });
 
   return outcome === "completed" ? "completed" : "skipped";
