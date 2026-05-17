@@ -1635,6 +1635,39 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               ...autoplayAdvanceArgs,
               isAnime: stateManager.getState().mode === "anime",
             });
+
+            // Enrich the anime banner with precise schedule data from cache when available.
+            // Overrides the generic "release schedules not shown here" message with a real date.
+            if (stateManager.getState().mode === "anime" && title.id.startsWith("anilist:")) {
+              const schedule = container.catalogScheduleService.peekNextRelease(
+                "anilist",
+                title.id,
+              );
+              if (schedule?.episode && schedule.releaseAt) {
+                const nextEp = schedule.episode;
+                const releaseMs = Date.parse(schedule.releaseAt);
+                const nowMs2 = Date.now();
+                if (Number.isFinite(releaseMs) && releaseMs > nowMs2) {
+                  const diffMs = releaseMs - nowMs2;
+                  const diffH = diffMs / 3_600_000;
+                  let timeLabel: string;
+                  if (diffH < 24) {
+                    const h = Math.floor(diffH);
+                    const m = Math.floor((diffH - h) * 60);
+                    timeLabel = h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
+                  } else if (diffH < 168) {
+                    timeLabel = `on ${new Date(releaseMs).toLocaleDateString(undefined, { weekday: "long" })}`;
+                  } else {
+                    timeLabel = new Date(releaseMs).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    });
+                  }
+                  catalogAutoplayEndBanner = `Caught up · Ep ${nextEp} airs ${timeLabel}`;
+                }
+              }
+            }
+
             diagnosticsStore.record({
               category: "playback",
               message: "Auto-next blocked",

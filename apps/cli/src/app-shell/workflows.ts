@@ -557,14 +557,31 @@ async function openHistoryShell(
   actionContext?: ListShellActionContext,
   catalogScheduleService?: CatalogScheduleService,
 ): Promise<void> {
+  // Proactively refresh schedule cache for all anime history entries in one batch request.
+  // Runs before the loop: first render gets fresh data. 3s timeout degrades gracefully to
+  // cached/no badges rather than blocking the view on a slow or failing network.
+  if (catalogScheduleService) {
+    const allEntries = await historyStore.getAll();
+    const anilistIds = Object.keys(allEntries).filter(
+      (id) => id.startsWith("anilist:") && allEntries[id]?.type === "series",
+    );
+    if (anilistIds.length > 0) {
+      const ctl = new AbortController();
+      const timeout = setTimeout(() => ctl.abort(), 3000);
+      await catalogScheduleService
+        .prefetchNextReleaseForTitles("anilist", anilistIds, ctl.signal)
+        .catch(() => {});
+      clearTimeout(timeout);
+    }
+  }
+
   while (true) {
     const entries = Object.entries(await historyStore.getAll()).sort(
       (a, b) =>
         (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
     );
 
-    // Build new-episode counts from cached schedule data — no network calls.
-    // titleId in history_progress uses "anilist:12345" prefix format.
+    // Build new-episode counts from the (now-fresh) schedule cache — no additional network calls.
     const newEpisodeCounts = new Map<string, number>();
     if (catalogScheduleService) {
       for (const [id, entry] of entries) {

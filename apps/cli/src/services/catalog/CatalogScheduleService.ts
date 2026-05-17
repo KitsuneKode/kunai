@@ -106,6 +106,103 @@ export class CatalogScheduleService {
     return null;
   }
 
+  /**
+   * Batch-prefetch next-release data for a set of titles in a single AniList request.
+   * Only fetches titles whose cache entry is missing or older than refreshThresholdMs.
+   * Silently ignores network failures — callers should not await this for correctness.
+   */
+  async prefetchNextReleaseForTitles(
+    source: "anilist",
+    titleIds: readonly string[],
+    signal: AbortSignal,
+    refreshThresholdMs = NEXT_RELEASE_TTL_MS / 2,
+  ): Promise<void> {
+    const nowMs = this.now();
+    const staleIds: number[] = [];
+
+    for (const titleId of titleIds) {
+      const rawId = titleId.startsWith(`${source}:`) ? titleId.slice(source.length + 1) : titleId;
+      const id = Number(rawId);
+      if (!Number.isFinite(id)) continue;
+      const key = `next:${source}:anime:${rawId}:-:-`;
+      const cached = this.cache.get(key);
+      if (cached && cached.expiresAt > nowMs + refreshThresholdMs) continue; // fresh enough
+      if (!cached) {
+        // try persistent before scheduling a fetch
+        const persisted = this.loadPersisted<CatalogScheduleItem | null>(key);
+        if (persisted.found) {
+          const entry = this.cache.get(key);
+          if (entry && entry.expiresAt > nowMs + refreshThresholdMs) continue;
+        }
+      }
+      staleIds.push(id);
+    }
+
+    if (staleIds.length === 0 || signal.aborted) return;
+
+    // One batch GraphQL call for all stale IDs
+    type BatchResponse = {
+      data?: {
+        Page?: {
+          media?: ReadonlyArray<{
+            id?: number;
+            title?: { romaji?: string | null; english?: string | null } | null;
+            nextAiringEpisode?: { airingAt?: number | null; episode?: number | null } | null;
+          } | null> | null;
+        } | null;
+      } | null;
+    };
+
+    const query = `
+      query($ids: [Int]) {
+        Page(perPage: 50) {
+          media(id_in: $ids, type: ANIME) {
+            id title { romaji english }
+            nextAiringEpisode { airingAt episode }
+          }
+        }
+      }
+    `;
+
+    const data = await postAniListGraphql<BatchResponse>(
+      { query, variables: { ids: staleIds } },
+      signal,
+    );
+    const mediaList = data?.data?.Page?.media ?? [];
+
+    for (const media of mediaList) {
+      if (!media?.id) continue;
+      const airing = media.nextAiringEpisode;
+      const titleId = String(media.id);
+      const key = `next:${source}:anime:${titleId}:-:-`;
+      const item: CatalogScheduleItem | null = airing?.airingAt
+        ? normalizeScheduleItem(
+            {
+              source,
+              titleId,
+              titleName: media.title?.english ?? media.title?.romaji ?? titleId,
+              type: "anime",
+              episode: airing.episode ?? undefined,
+              releaseAt: new Date(airing.airingAt * 1000).toISOString(),
+              releasePrecision: "timestamp",
+              status: "unknown",
+            },
+            nowMs,
+          )
+        : null;
+      const ttl = item
+        ? ttlForScheduleValue(item, NEXT_RELEASE_TTL_MS, nowMs)
+        : NEXT_RELEASE_TTL_MS;
+      const expiresAt = nowMs + ttl;
+      this.cache.set(key, { expiresAt, value: item });
+      this.persistentCache?.set(key, JSON.stringify(item), {
+        expiresAt: new Date(expiresAt).toISOString(),
+        now: new Date(nowMs).toISOString(),
+        source,
+      });
+    }
+  }
+
   async getNextRelease(
     input: CatalogScheduleInput,
     signal?: AbortSignal,
