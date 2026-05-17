@@ -260,6 +260,36 @@ export class PersistentMpvSession {
           1_000,
         );
       },
+      setEpisodeNavigationAvailability: async (state) => {
+        if (!this.ipcSession) return;
+        await Promise.all([
+          this.ipcSession.send(["set_property", "user-data/kunai-can-next", state.hasNext], 1_000),
+          this.ipcSession.send(
+            ["set_property", "user-data/kunai-can-previous", state.hasPrevious],
+            1_000,
+          ),
+          this.ipcSession.send(
+            ["set_property", "user-data/kunai-next-label", state.nextLabel ?? ""],
+            1_000,
+          ),
+          this.ipcSession.send(
+            ["set_property", "user-data/kunai-previous-label", state.previousLabel ?? ""],
+            1_000,
+          ),
+          this.ipcSession.send(
+            ["set_property", "user-data/kunai-next-unavailable", state.nextUnavailableReason ?? ""],
+            1_000,
+          ),
+          this.ipcSession.send(
+            [
+              "set_property",
+              "user-data/kunai-previous-unavailable",
+              state.previousUnavailableReason ?? "",
+            ],
+            1_000,
+          ),
+        ]);
+      },
     };
   }
 

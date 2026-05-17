@@ -182,6 +182,64 @@ test("PlayerControlServiceImpl records next and previous episode intents as stop
   expect(stoppedCurrentReasons).toEqual(["next-key", "previous-key"]);
 });
 
+test("PlayerControlServiceImpl rejects unavailable episode navigation before stopping", async () => {
+  const stoppedCurrentReasons: string[] = [];
+  const messages: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+    async stopCurrentFile(reason) {
+      stoppedCurrentReasons.push(reason ?? "");
+    },
+    async showOsdMessage(text) {
+      messages.push(text);
+    },
+  });
+  service.setEpisodeNavigationAvailability({
+    hasNext: false,
+    hasPrevious: true,
+    nextUnavailableReason: "No released next episode",
+  });
+
+  expect(await service.nextCurrentPlayback("next-key")).toBe(false);
+  expect(service.consumeLastAction()).toBeNull();
+  expect(stoppedCurrentReasons).toEqual([]);
+  expect(messages).toEqual(["Kunai · No next episode · No released next episode"]);
+});
+
+test("PlayerControlServiceImpl pushes episode navigation availability into active mpv controls", async () => {
+  const updates: unknown[] = [];
+  const service = makeService();
+
+  service.setEpisodeNavigationAvailability({
+    hasNext: true,
+    hasPrevious: false,
+    nextLabel: "S1 E2",
+    previousUnavailableReason: "Already at the first episode",
+  });
+
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async setEpisodeNavigationAvailability(state) {
+      updates.push(state);
+    },
+  });
+
+  expect(updates).toEqual([
+    {
+      hasNext: true,
+      hasPrevious: false,
+      nextLabel: "S1 E2",
+      previousUnavailableReason: "Already at the first episode",
+    },
+  ]);
+});
+
 test("PlayerControlServiceImpl records return-to-search as a full-stop action", async () => {
   const stoppedReasons: string[] = [];
   const service = makeService();

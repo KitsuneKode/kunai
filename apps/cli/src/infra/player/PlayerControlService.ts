@@ -33,6 +33,15 @@ export type PlaybackSubtitleSelection = {
   readonly subtitleTracks?: readonly SubtitleTrack[];
 };
 
+export type EpisodeNavigationAvailability = {
+  readonly hasNext: boolean;
+  readonly hasPrevious: boolean;
+  readonly nextLabel?: string;
+  readonly previousLabel?: string;
+  readonly nextUnavailableReason?: string;
+  readonly previousUnavailableReason?: string;
+};
+
 export interface ActivePlayerControl {
   readonly id: string;
   stop(reason?: string): Promise<void>;
@@ -47,6 +56,7 @@ export interface ActivePlayerControl {
   showOsdMessage?(text: string, durationMs: number): Promise<void>;
   /** Full-window loading overlay via Lua (`user-data/kunai-loading`); survives idle between files. */
   setEpisodeTransitionLoading?(message: string | null): Promise<void>;
+  setEpisodeNavigationAvailability?(state: EpisodeNavigationAvailability): Promise<void>;
 }
 
 export interface PlayerControlService {
@@ -61,6 +71,7 @@ export interface PlayerControlService {
   /** Signal that a playback action was initiated from inside mpv (e.g. N/P key),
    *  without sending a stop command (mpv handles that itself). */
   signalPlaybackAction(action: PlaybackControlAction): void;
+  setEpisodeNavigationAvailability(state: EpisodeNavigationAvailability): void;
   subscribePickerRequest(listener: (action: PlaybackPickerAction) => void): () => void;
   consumePendingStreamSelection(): PlaybackStreamSelection | null;
   consumePendingEpisodeSelection(): EpisodeInfo | null;

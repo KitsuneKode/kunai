@@ -187,10 +187,10 @@ describe("PresenceServiceImpl", () => {
     expect(payload).toMatchObject({
       details: "Frieren: Beyond Journey's End",
       state: "S1 E14 · 12:14 / 24:00 · 1080p · sub · ja audio · en subs · allanime",
-      smallImageKey: "subtitles",
-      smallImageText: "2 subtitle tracks",
       buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
     });
+    expect(payload).not.toHaveProperty("smallImageKey");
+    expect(payload).not.toHaveProperty("smallImageText");
     expect(JSON.stringify(payload)).not.toContain("signed-provider.example");
   });
 

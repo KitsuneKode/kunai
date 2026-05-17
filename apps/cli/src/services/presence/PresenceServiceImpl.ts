@@ -600,7 +600,6 @@ export function buildDiscordActivity(
     activity.title.type === "series"
       ? `${episodeLabel} · ${activity.providerId}`
       : activity.providerId;
-  const subtitleAttached = (activity.subtitleCount ?? 0) > 0;
   const timeline = buildDiscordPlaybackTimeline(activity);
   const progressLabel = formatPlaybackProgressLabel(
     activity.positionSeconds,
@@ -656,15 +655,6 @@ export function buildDiscordActivity(
     ...(activity.paused ? {} : timeline),
     largeImageKey: "kunai",
     largeImageText: "Kunai",
-    ...(subtitleAttached
-      ? {
-          smallImageKey: "subtitles",
-          smallImageText:
-            activity.subtitleCount && activity.subtitleCount > 1
-              ? `${activity.subtitleCount} subtitle tracks`
-              : "Subtitles attached",
-        }
-      : {}),
     buttons: buildDiscordActionButtons(options),
   };
 }

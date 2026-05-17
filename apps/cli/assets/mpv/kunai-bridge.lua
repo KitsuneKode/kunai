@@ -952,20 +952,70 @@ mp.observe_property("user-data/kunai-skip-rev", "native", function()
 	restart_skip_prompt()
 end)
 
+local episode_transition_pending = false
+
+local function navigation_block_reason(action)
+	if action == "next" then
+		return mp.get_property("user-data/kunai-next-unavailable", "")
+	end
+	return mp.get_property("user-data/kunai-previous-unavailable", "")
+end
+
+local function navigation_allowed(action)
+	if action == "next" then
+		return mp.get_property_bool("user-data/kunai-can-next", true)
+	end
+	return mp.get_property_bool("user-data/kunai-can-previous", true)
+end
+
+local function show_navigation_blocked(action)
+	local message = action == "next" and "Kunai · No next episode" or "Kunai · No previous episode"
+	local reason = navigation_block_reason(action)
+	if reason and reason ~= "" then
+		message = message .. " · " .. reason
+	end
+	mp.osd_message(message, 2.5)
+end
+
+local function start_episode_transition(action)
+	if episode_transition_pending then
+		return
+	end
+	if not navigation_allowed(action) then
+		show_navigation_blocked(action)
+		return
+	end
+	episode_transition_pending = true
+	local noun = action == "next" and "next" or "previous"
+	local function draw_countdown(remaining)
+		local message = "Kunai · Loading " .. noun .. " episode in " .. remaining .. "…"
+		mp.set_property("user-data/kunai-loading", message)
+		sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
+		draw_kunai_loading_overlay()
+	end
+	draw_countdown(3)
+	mp.add_timeout(1, function()
+		draw_countdown(2)
+		mp.add_timeout(1, function()
+			draw_countdown(1)
+			mp.add_timeout(1, function()
+				mp.set_property("user-data/kunai-loading", "Kunai · Loading " .. noun .. " episode…")
+				sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
+				draw_kunai_loading_overlay()
+				signal(action)
+				episode_transition_pending = false
+				mp.commandv("stop")
+			end)
+		end)
+	end)
+end
+
 local function do_next()
-	mp.set_property("user-data/kunai-loading", "Kunai · Loading next episode…")
-	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
-	draw_kunai_loading_overlay()
-	signal("next")
-	mp.commandv("stop")
+	start_episode_transition("next")
 end
 
 local function do_previous()
-	mp.set_property("user-data/kunai-loading", "Kunai · Loading previous episode…")
-	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
-	draw_kunai_loading_overlay()
-	signal("previous")
-	mp.commandv("stop")
+	start_episode_transition("previous")
 end
 
 local function do_skip()

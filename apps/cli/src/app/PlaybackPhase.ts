@@ -502,12 +502,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             },
           });
 
+          const navigationState = toEpisodeNavigationState(title.type, episodeAvailability, {
+            isAnime: stateManager.getState().mode === "anime",
+          });
           stateManager.dispatch({
             type: "SET_EPISODE_NAVIGATION",
-            navigation: toEpisodeNavigationState(title.type, episodeAvailability, {
-              isAnime: stateManager.getState().mode === "anime",
-            }),
+            navigation: navigationState,
           });
+          playerControl.setEpisodeNavigationAvailability(navigationState);
 
           if (episodeAvailability.tmdbUnavailable) {
             diagnosticsStore.record({

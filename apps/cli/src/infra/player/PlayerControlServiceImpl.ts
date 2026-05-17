@@ -5,6 +5,7 @@ import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 
 import type {
   ActivePlayerControl,
+  EpisodeNavigationAvailability,
   PlaybackControlAction,
   PlaybackPickerAction,
   PlaybackSubtitleSelection,
@@ -50,6 +51,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   private commandQueue: Promise<unknown> = Promise.resolve();
   private waitsForActive: ActiveWait[] = [];
   private pickerRequestListeners = new Set<(action: PlaybackPickerAction) => void>();
+  private episodeNavigationAvailability: EpisodeNavigationAvailability | null = null;
 
   constructor(
     private readonly deps: {
@@ -60,6 +62,9 @@ export class PlayerControlServiceImpl implements PlayerControlService {
 
   setActive(control: ActivePlayerControl | null): void {
     this.active = control;
+    if (control && this.episodeNavigationAvailability) {
+      void this.applyEpisodeNavigationAvailability(control, this.episodeNavigationAvailability);
+    }
     if (control && this.waitsForActive.length) {
       const pending = this.waitsForActive.splice(0);
       for (const w of pending) w.finish(control);
@@ -111,6 +116,13 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       return;
     }
     this.lastAction = action;
+  }
+
+  setEpisodeNavigationAvailability(state: EpisodeNavigationAvailability): void {
+    this.episodeNavigationAvailability = state;
+    if (this.active) {
+      void this.applyEpisodeNavigationAvailability(this.active, state);
+    }
   }
 
   subscribePickerRequest(listener: (action: PlaybackPickerAction) => void): () => void {
@@ -332,6 +344,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   }
 
   async nextCurrentPlayback(reason = "user-requested"): Promise<boolean> {
+    if (!(await this.ensureEpisodeNavigationAllowed("next", reason))) return false;
     this.lastAction = "next";
     return this.stopWithAction("next", reason, true);
   }
@@ -349,6 +362,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   }
 
   async previousCurrentPlayback(reason = "user-requested"): Promise<boolean> {
+    if (!(await this.ensureEpisodeNavigationAllowed("previous", reason))) return false;
     this.lastAction = "previous";
     return this.stopWithAction("previous", reason, true);
   }
@@ -447,6 +461,60 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     }
   }
 
+  private async ensureEpisodeNavigationAllowed(
+    action: "next" | "previous",
+    reason: string,
+  ): Promise<boolean> {
+    const availability = this.episodeNavigationAvailability;
+    if (!availability) return true;
+    const allowed = action === "next" ? availability.hasNext : availability.hasPrevious;
+    if (allowed) return true;
+
+    const active = this.active;
+    const unavailableReason =
+      action === "next"
+        ? availability.nextUnavailableReason
+        : availability.previousUnavailableReason;
+    const message = compact([
+      action === "next" ? "Kunai · No next episode" : "Kunai · No previous episode",
+      unavailableReason,
+    ]).join(" · ");
+
+    if (active?.showOsdMessage) {
+      await active.showOsdMessage(message, 2_500);
+    }
+    this.deps.diagnosticsStore.record({
+      category: "playback",
+      message: "Rejected unavailable episode navigation request",
+      context: {
+        id: active?.id ?? null,
+        action,
+        reason,
+        unavailableReason: unavailableReason ?? null,
+      },
+    });
+    return false;
+  }
+
+  private async applyEpisodeNavigationAvailability(
+    active: ActivePlayerControl,
+    state: EpisodeNavigationAvailability,
+  ): Promise<void> {
+    if (!active.setEpisodeNavigationAvailability) return;
+    try {
+      await active.setEpisodeNavigationAvailability(state);
+    } catch (error) {
+      this.deps.diagnosticsStore.record({
+        category: "playback",
+        message: "Failed to update mpv episode navigation availability",
+        context: {
+          id: active.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
   private async runPriorityCommand<T>(
     action: string,
     reason: string,
@@ -505,6 +573,10 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     this.commandQueue = next.catch(() => {});
     return next;
   }
+}
+
+function compact(values: readonly (string | null | undefined | false)[]): string[] {
+  return values.filter((value): value is string => typeof value === "string" && value.length > 0);
 }
 
 function isPlaybackPickerAction(action: PlaybackControlAction): action is PlaybackPickerAction {
