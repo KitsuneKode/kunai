@@ -1891,6 +1891,23 @@ function ListShell<T>({
           cursor={commandEditor.cursor}
           commands={actionContext.commands}
           highlightedIndex={highlightedCommandIndex}
+          maxVisible={Math.max(
+            3,
+            // ListShell overhead: AppRoot(4) + title(1) + subtitle-lines + InputField+hint(7) +
+            // count(1) + marginTop(1) + list(4) + palette-chrome(4) + footer(5) + groups(3) = ~30+subtitleLines
+            // Use compact value; subtitle can be many lines so we cap conservatively.
+            viewport.rows -
+              4 -
+              1 -
+              Math.min(subtitle.split("\n").length, 6) -
+              7 -
+              1 -
+              1 -
+              4 -
+              4 -
+              5 -
+              3,
+          )}
         />
       ) : null}
       <ShellFooter
@@ -1904,13 +1921,30 @@ function ListShell<T>({
 }
 
 function computePaletteMaxVisible(rows: number, hasSubtitle: boolean, hasFilters: boolean): number {
-  // AppRoot header: 3 rows (brand line + crumb line + marginTop)
-  // Browse chrome: BrowseTitle(1) + subtitle?(1) + filters?(1) + contextStrip+marginTop(2) + InputField(1) + divider+marginTop(2)
-  // Palette chrome: input(1) + hint(1) + marginTop(1)
-  // Footer in commandMode: marginTop(1) + taskLabel(1) + marginTop(1) + "Command palette"(1) + hints(1)
-  // Group overhead worst-case: Context header(1) + Global header(1) + "▼ more"(1)
-  const browseChromeRows = 1 + (hasSubtitle ? 1 : 0) + (hasFilters ? 1 : 0) + 5;
-  return Math.max(3, rows - 3 - browseChromeRows - 3 - 5 - 3);
+  // Exact row accounting for commandMode=true in BrowseShell:
+  //
+  // AppRoot header: brand(1) + crumb(1) + marginTop(1) = 3 rows.
+  //   Add 1 for optional transient alert/digest row → use 4 to stay safe.
+  //
+  // Browse chrome (palette visible, no queryDirty line):
+  //   BrowseTitle(1)
+  //   + subtitle if showing(1)
+  //   + filterBadges if showing: marginTop(1) + badges-row(1) = 2
+  //   + contextStrip+marginTop = marginTop(1) + strip(1) = 2
+  //   + InputField no-hint: outerMarginTop(1)+label(1)+innerMarginTop(1)+input(1)+underline(1) = 5
+  //   + BrowseShell divider: marginTop(1)+line(1) = 2
+  //   = 10 base
+  //
+  // CommandPalette chrome:
+  //   outerMarginTop(1)+input(1)+hint(1)+innerMarginTop(1) = 4
+  //
+  // Footer commandMode:
+  //   outerMarginTop(1)+taskLabel(1)+innerMarginTop(1)+"Command palette"(1)+hints(1) = 5
+  //
+  // Group overhead worst-case (showGrouped=true, input empty):
+  //   Context header(1) + Global header(1) + ▼ more(1) = 3
+  const browseChromeRows = 1 + (hasSubtitle ? 1 : 0) + (hasFilters ? 2 : 0) + 9;
+  return Math.max(3, rows - 4 - browseChromeRows - 4 - 5 - 3);
 }
 
 function BrowseShell<T>({
@@ -2859,6 +2893,263 @@ export function openBrowseShell<T>({
     fallbackValue: { type: "cancelled" },
   });
 
+  return session.result;
+}
+
+// ─── StatsShell ─────────────────────────────────────────────────────────────
+
+const HEATMAP_LEVELS = [
+  { char: "·", color: "#3c342c" }, // faint — no activity
+  { char: "░", color: "#2a5a22" }, // low
+  { char: "▒", color: "#3e7832" }, // medium-low
+  { char: "▓", color: "#56a042" }, // medium-high
+  { char: "█", color: "#7bc96e" }, // max (palette.green)
+] as const;
+
+function heatmapLevel(count: number, max: number) {
+  if (count === 0) return HEATMAP_LEVELS[0];
+  if (max === 0) return HEATMAP_LEVELS[1];
+  const ratio = count / max;
+  if (ratio < 0.25) return HEATMAP_LEVELS[1];
+  if (ratio < 0.5) return HEATMAP_LEVELS[2];
+  if (ratio < 0.75) return HEATMAP_LEVELS[3];
+  return HEATMAP_LEVELS[4];
+}
+
+type HeatmapCell = { char: string; color: string; count: number; date: string };
+type HeatmapWeek = { cells: HeatmapCell[]; weekStartDate: string };
+
+function buildHeatmapGrid(
+  heatmap: readonly import("@/domain/lists/StatsService").DailyActivity[],
+  maxWeeks: number,
+): { grid: HeatmapWeek[]; monthLabels: { weekStartDate: string; label: string }[] } {
+  const byDate = new Map<string, number>();
+  for (const d of heatmap) byDate.set(d.date, d.watchedCount);
+  const maxCount = Math.max(...heatmap.map((d) => d.watchedCount), 1);
+
+  const now = new Date();
+  const endDate = new Date(now);
+  endDate.setHours(0, 0, 0, 0);
+  const startMs = endDate.getTime() - maxWeeks * 7 * 86_400_000;
+  const startDate = new Date(startMs);
+  startDate.setDate(startDate.getDate() - startDate.getDay());
+
+  const grid: HeatmapWeek[] = [];
+  const monthLabels: { weekStartDate: string; label: string }[] = [];
+  const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+
+  let cur = new Date(startDate);
+  let lastMonth = -1;
+  while (cur.getTime() <= endDate.getTime() && grid.length < maxWeeks) {
+    const weekStartDate = cur.toISOString().slice(0, 10);
+    const cells: HeatmapCell[] = [];
+    for (let day = 0; day < 7; day++) {
+      const dateStr = cur.toISOString().slice(0, 10);
+      const count = byDate.get(dateStr) ?? 0;
+      const level = heatmapLevel(count, maxCount);
+      cells.push({ char: level.char, color: level.color, count, date: dateStr });
+      if (day === 0 && cur.getMonth() !== lastMonth) {
+        monthLabels.push({ weekStartDate, label: MONTHS[cur.getMonth()] ?? "" });
+        lastMonth = cur.getMonth();
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    grid.push({ cells, weekStartDate });
+  }
+
+  return { grid, monthLabels };
+}
+
+function StatsShell({
+  statsService,
+  statsFormatter,
+  onBack,
+}: {
+  statsService: import("@/domain/lists/StatsService").StatsService;
+  statsFormatter: import("@/domain/lists/StatsFormatter").StatsFormatter;
+  onBack: () => void;
+}) {
+  const [windowIdx, setWindowIdx] = useState(0);
+  const { stdout } = useStdout();
+  const rows = stdout.rows ?? 24;
+  const cols = stdout.columns ?? 80;
+  const innerWidth = Math.max(30, cols - 6);
+
+  const windows = [30, 90, 99999] as const;
+  const windowDays = windows[windowIdx] ?? 30;
+
+  const stats = useMemo(
+    () => statsService.getStats(windowDays),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [windowIdx],
+  );
+  const { current: streakDays } = useMemo(
+    () => statsService.computeStreak(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // height budget (AppRoot header = 4 with safety margin)
+  const available = rows - 4;
+  // heatmap = 1 (month labels) + 7 (day rows) + 1 (marginTop) = 9 rows
+  const showHeatmap = available >= 18;
+  // top shows header + N rows + marginTop
+  const fixedRows =
+    2 /* title+margin */ + 2 /* streak+weekly */ + (showHeatmap ? 9 : 0) + 3 /* footer */;
+  const showsRowBudget = Math.max(0, available - fixedRows - 2 /* shows header+margin */);
+  const maxTopShows = Math.min(5, showsRowBudget);
+
+  // heatmap weeks that fit (day-label=4 chars, cell=2 chars each)
+  const maxWeeks = Math.max(8, Math.floor((innerWidth - 4) / 2));
+  const { grid, monthLabels } = useMemo(
+    () => buildHeatmapGrid(stats.heatmap, maxWeeks),
+    [stats.heatmap, maxWeeks],
+  );
+
+  useInput((input, key) => {
+    if (key.ctrl && (input === "c" || input === "\x03")) {
+      requestHardExit(0);
+      return;
+    }
+    if (key.escape || input === "q") {
+      onBack();
+      return;
+    }
+    if (key.tab || input === "\t") {
+      setWindowIdx((i) => (i + 1) % 3);
+      return;
+    }
+    if (input === "1") setWindowIdx(0);
+    else if (input === "2") setWindowIdx(1);
+    else if (input === "3") setWindowIdx(2);
+  });
+
+  const summaryLine = statsFormatter.formatSummaryLine(stats);
+  const weeklyLine = statsFormatter.formatWeeklyDigest(stats);
+  const topShows = stats.topShows.slice(0, maxTopShows);
+  const maxShowSeconds = Math.max(...topShows.map((s) => s.totalSeconds), 1);
+  const BAR_WIDTH = 8;
+
+  const titleWidth = maxTopShows > 0 ? Math.max(...topShows.map((s) => s.title.length), 6) : 0;
+  const clampedTitleWidth = Math.min(titleWidth, Math.max(10, innerWidth - BAR_WIDTH - 24));
+
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      {/* Title + window tabs */}
+      <Box justifyContent="space-between">
+        <Text bold color={palette.amber}>
+          Watch Stats
+        </Text>
+        <Box>
+          {(["1:30d", "2:90d", "3:all"] as const).map((label, i) => (
+            <Box key={label} marginLeft={1}>
+              <Text color={i === windowIdx ? palette.teal : palette.dim} bold={i === windowIdx}>
+                {label}
+              </Text>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+
+      {/* Summary */}
+      <Box marginTop={1} flexDirection="column">
+        {streakDays >= 2 ? (
+          <Text>
+            <Text color={palette.amber}>{"🔥 " + streakDays + "d streak"}</Text>
+            <Text color={palette.muted}>
+              {" · " + summaryLine.replace(/🔥 \d+d streak · /, "")}
+            </Text>
+          </Text>
+        ) : (
+          <Text color={palette.muted}>{summaryLine}</Text>
+        )}
+        <Text color={palette.dim}>{weeklyLine}</Text>
+      </Box>
+
+      {/* Heatmap */}
+      {showHeatmap && grid.length > 0 ? (
+        <Box marginTop={1} flexDirection="column">
+          {/* Month label row */}
+          <Box>
+            <Text color={palette.dim}>{"    "}</Text>
+            {grid.map((week) => {
+              const monthEntry = monthLabels.find((m) => m.weekStartDate === week.weekStartDate);
+              return (
+                <Text key={`month-${week.weekStartDate}`} color={palette.dim}>
+                  {(monthEntry?.label ?? " ") + " "}
+                </Text>
+              );
+            })}
+          </Box>
+          {/* Day rows */}
+          {(["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const).map((dayLabel, dayIdx) => (
+            <Box key={dayLabel}>
+              <Text color={palette.dim}>{dayLabel + " "}</Text>
+              {grid.map((week) => {
+                const cell = week.cells[dayIdx];
+                return (
+                  <Text
+                    key={cell?.date ?? `${dayLabel}-${week.weekStartDate}`}
+                    color={cell?.color ?? "#3c342c"}
+                  >
+                    {(cell?.char ?? " ") + " "}
+                  </Text>
+                );
+              })}
+            </Box>
+          ))}
+        </Box>
+      ) : null}
+
+      {/* Top shows */}
+      {topShows.length > 0 ? (
+        <Box marginTop={1} flexDirection="column">
+          <Text color={palette.muted}>Top shows</Text>
+          {topShows.map((show) => {
+            const ratio = show.totalSeconds / maxShowSeconds;
+            const filled = Math.round(ratio * BAR_WIDTH);
+            const h = Math.floor(show.totalSeconds / 3600);
+            const m = Math.floor((show.totalSeconds % 3600) / 60);
+            const duration = h > 0 ? `${h}h ${m}m` : `${m}m`;
+            const titleDisplay = show.title.slice(0, clampedTitleWidth).padEnd(clampedTitleWidth);
+            return (
+              <Box key={show.titleId}>
+                <Text color={palette.text}>{titleDisplay}</Text>
+                <Text color={palette.dim}>{"  "}</Text>
+                <Text color={palette.teal}>{"█".repeat(filled)}</Text>
+                <Text color={palette.dim}>{"░".repeat(BAR_WIDTH - filled)}</Text>
+                <Text color={palette.dim}>{`  ${show.episodeCount}ep · ${duration}`}</Text>
+              </Box>
+            );
+          })}
+        </Box>
+      ) : null}
+
+      {/* Footer */}
+      <Box marginTop={1} flexDirection="column">
+        <Text color={palette.dim}>{"─".repeat(Math.min(innerWidth, cols - 4))}</Text>
+        <Box marginTop={1}>
+          <Text color={palette.gray}>Tab cycle windows</Text>
+          <Text color={palette.dim}> · </Text>
+          <Text color={palette.gray}>q back</Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+export function openStatsShell(container: Container): Promise<void> {
+  const session = mountRootContent<undefined>({
+    kind: "picker",
+    renderContent: (finish) => (
+      <StatsShell
+        statsService={container.statsService}
+        statsFormatter={container.statsFormatter}
+        onBack={() => finish(undefined)}
+      />
+    ),
+    fallbackValue: undefined,
+  });
   return session.result;
 }
 

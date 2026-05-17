@@ -3016,53 +3016,9 @@ async function handlePlaylistAdd(container: Container): Promise<"handled"> {
 // ─── Stats ──────────────────────────────────────────────────────────────────────
 
 async function handleStats(container: Container): Promise<"handled"> {
-  const { statsService, statsFormatter } = container;
-  const actionContext = buildPickerActionContext({ container, taskLabel: "Stats" });
-
-  const windows = [30, 90, 0] as const;
-  const windowLabels = ["30d", "90d", "all"] as const;
-  let windowIdx = 0;
-
-  while (true) {
-    const windowDays = windows[windowIdx] ?? 0;
-    const stats = statsService.getStats(windowDays || 99999);
-    const summary = statsFormatter.formatSummaryLine(stats);
-    const weekly = statsFormatter.formatWeeklyDigest(stats);
-    const topShows = statsFormatter.formatTopShows(stats.topShows.slice(0, 5));
-    const windowLabel = windowLabels[windowIdx] ?? "30d";
-
-    type StatsAction = "window-30" | "window-90" | "window-all" | "back";
-
-    const options: ShellOption<StatsAction>[] = [
-      {
-        value: "window-30",
-        label: `Last 30 days${windowIdx === 0 ? "  ·  current" : ""}`,
-      },
-      {
-        value: "window-90",
-        label: `Last 90 days${windowIdx === 1 ? "  ·  current" : ""}`,
-      },
-      {
-        value: "window-all",
-        label: `All time${windowIdx === 2 ? "  ·  current" : ""}`,
-      },
-      { value: "back", label: "Back" },
-    ];
-
-    const subtitle = [summary, weekly, "", "Top shows:", topShows].join("\n");
-
-    const picked = await chooseFromListShell({
-      title: `Watch Stats — ${windowLabel}`,
-      subtitle,
-      actionContext,
-      options,
-    });
-
-    if (!picked || picked === "back") return "handled";
-    if (picked === "window-30") windowIdx = 0;
-    else if (picked === "window-90") windowIdx = 1;
-    else if (picked === "window-all") windowIdx = 2;
-  }
+  const { openStatsShell } = await import("./ink-shell");
+  await openStatsShell(container);
+  return "handled";
 }
 
 // ─── Sync ────────────────────────────────────────────────────────────────────────
