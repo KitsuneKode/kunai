@@ -41,6 +41,16 @@ Startup storage maintenance is implemented as a conservative best-effort pass:
 
 Automatic maintenance must never delete durable user facts: `history_progress`, `lists`, `list_items`, completed `download_jobs`, config JSON, provider overrides, or sync tokens. Do not run automatic `VACUUM`; reserve that for explicit manual tooling after measuring bloat and only when playback is idle.
 
+Do not override this split when adding new persistence:
+
+- Put facts the user would be upset to lose in the data DB or JSON config stores.
+- Put recomputable provider, schedule, source, and diagnostics cache in the cache DB.
+- Give cache rows an expiry or an explicit cap before adding them to startup maintenance.
+- Treat cache cleanup as best-effort and non-blocking; playback and shell startup must continue if cleanup fails.
+- Add a maintenance test that seeds durable and disposable rows together before allowing any new automatic deletion query.
+
+If database size becomes a real issue, add an explicit manual maintenance command or release-time migration with clear diagnostics. Do not silently compact or vacuum during normal playback startup.
+
 ## Why SQLite Now
 
 JSON is acceptable for tiny single-process state, but Kunai is being remodeled before release. SQLite gives the CLI a better foundation now:

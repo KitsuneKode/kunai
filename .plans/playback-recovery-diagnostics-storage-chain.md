@@ -12,6 +12,24 @@
 
 ---
 
+## Implementation Summary
+
+Commit `02ef73e` completed the core reliability sweep:
+
+- Playback recovery now distinguishes user intent instead of treating every retry as the same action:
+  - restart/replay stays local and does not refetch by default
+  - recover repairs a failed/suspect stream by invalidating that cache entry and resolving again
+  - refresh asks for a fresher source but keeps a usable cached stream if the provider does not return a better one
+  - fallback remains the provider/source switch path
+- Source refresh has a scoped cooldown keyed by title, episode, provider, and selected source/stream where known. This prevents repeated provider hits from a healthy playback state while still allowing broken-stream recovery.
+- Diagnostics now include summary-first health rows for Playback, Provider, Cache, Discord, Downloads, and Network, with technical event details below.
+- Resolve diagnostics include cache-hit, miss, stale, validated-hit, and cached-fallback events so a developer can tell whether playback came from cache, a fresh resolve, or a preserved fallback.
+- Storage maintenance now runs as best-effort startup background work. It prunes only disposable cache rows, caps resolve traces, prunes stale provider-health cache, and optimizes both SQLite DBs.
+- Continuation projection is derived from history facts and optional release data, so "Continue" can show unfinished episodes or a newly released next episode without rewriting watch history.
+- Tests were added for refresh cooldown/recover bypass, fresh-source fallback to cache, diagnostics health summary, continuation projection, and storage maintenance safety.
+
+The sweep intentionally did not add live provider calls to default tests, automatic `VACUUM`, background release daemons, or destructive cleanup of user-owned history/list/download/config data.
+
 ## Guardrails
 
 - Do not auto-delete `history_progress`, `lists`, `list_items`, completed `download_jobs`, config JSON, provider overrides, or sync tokens.

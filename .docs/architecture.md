@@ -176,8 +176,11 @@ Automatic storage maintenance is conservative:
 - it may prune expired `stream_cache`, `source_inventory`, `recommendation_cache`, and `schedule_cache` rows
 - it may cap `resolve_traces` and age out stale provider-health cache
 - it may run `PRAGMA optimize` and an explicit passive WAL checkpoint
+- it runs as best-effort startup background work and must not block playback or shell startup
 - it must not run automatic `VACUUM`
 - it must not delete user-owned facts such as `history_progress`, lists, config, sync tokens, or completed download records
+
+When adding a new table, decide whether it is durable user data or recomputable cache before wiring cleanup. Durable tables belong in the data DB and are never automatically pruned without an explicit user action or migration plan. Cache tables belong in the cache DB and need a TTL, cap, or documented retention rule plus a maintenance test.
 
 Migration rule:
 
