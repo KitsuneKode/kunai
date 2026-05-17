@@ -219,13 +219,14 @@ export function CommandPalette({
                     const group = CONTEXT_COMMAND_IDS.has(command.id) ? "context" : "global";
                     if (group !== previousGroup) {
                       rows.push(
-                        <Text
+                        <Box
                           key={`group:${group}:${windowStart + index}`}
-                          color={palette.gray}
-                          dimColor
+                          marginTop={index > 0 ? 1 : 0}
                         >
-                          {COMMAND_GROUP_LABELS[group]}
-                        </Text>,
+                          <Text color={palette.gray} dimColor>
+                            {COMMAND_GROUP_LABELS[group]}
+                          </Text>
+                        </Box>,
                       );
                       previousGroup = group;
                     }

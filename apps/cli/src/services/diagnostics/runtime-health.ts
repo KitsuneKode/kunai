@@ -56,7 +56,6 @@ function summarizeTraceContext(context: Record<string, unknown>): string | null 
   const trace = asRecord(context.trace);
   if (!trace) return null;
 
-  const runtime = typeof trace.runtime === "string" ? trace.runtime : null;
   const selectedProvider =
     (typeof trace.selectedProviderId === "string" ? trace.selectedProviderId : null) ??
     (typeof context.provider === "string" ? context.provider : null) ??
@@ -64,17 +63,11 @@ function summarizeTraceContext(context: Record<string, unknown>): string | null 
   const cacheHit = asBoolean(trace.cacheHit);
   const streamCandidates = asFiniteNumber(context.streamCandidates);
   const subtitleCandidates = asFiniteNumber(context.subtitleCandidates);
-  const steps = Array.isArray(trace.steps) ? trace.steps : [];
-  const latestStep = steps
-    .map((step) => asRecord(step))
-    .find((step): step is Record<string, unknown> => Boolean(step));
-  const stage = typeof latestStep?.stage === "string" ? latestStep.stage : null;
 
   const parts = [
     selectedProvider,
-    runtime,
-    stage,
-    cacheHit === null ? null : cacheHit ? "cache hit" : "cache miss",
+    // Show "from cache" only on a hit — a miss is the normal first-play path, not worth surfacing
+    cacheHit === true ? "from cache" : null,
     streamCandidates !== null ? `${streamCandidates} streams` : null,
     subtitleCandidates !== null ? `${subtitleCandidates} subtitles` : null,
   ];

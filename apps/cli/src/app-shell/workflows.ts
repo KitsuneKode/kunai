@@ -108,7 +108,7 @@ export function waitForOverlayClose(
 }
 
 type HistoryAction =
-  | { type: "entry"; id: string; title: string }
+  | { type: "entry"; id: string; title: string; entryType: import("@/domain/types").ContentType }
   | { type: "clear-all" }
   | { type: "back" };
 
@@ -568,6 +568,7 @@ async function openHistoryShell(
   historyStore: HistoryStore,
   actionContext?: ListShellActionContext,
   catalogScheduleService?: CatalogScheduleService,
+  stateManager?: import("@/domain/session/SessionStateManager").SessionStateManager,
 ): Promise<void> {
   // Proactively refresh schedule cache for all anime history entries in one batch request.
   // Runs before the loop: first render gets fresh data. 3s timeout degrades gracefully to
@@ -593,13 +594,16 @@ async function openHistoryShell(
         (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
     );
 
-    // Build new-episode counts from the (now-fresh) schedule cache — no additional network calls.
+    // Build new-episode counts + poster paths from the (now-fresh) schedule cache.
     const newEpisodeCounts = new Map<string, number>();
+    const posterPaths = new Map<string, string>();
     if (catalogScheduleService) {
       for (const [id, entry] of entries) {
-        if (entry.type !== "series" || !id.startsWith("anilist:")) continue;
+        if (!id.startsWith("anilist:")) continue;
         const schedule = catalogScheduleService.peekNextRelease("anilist", id);
-        if (!schedule?.episode) continue;
+        if (!schedule) continue;
+        if (schedule.posterPath) posterPaths.set(id, schedule.posterPath);
+        if (entry.type !== "series" || !schedule.episode) continue;
         const lastAired = schedule.episode - 1;
         const lastWatched = entry.episode ?? 0;
         if (lastAired > lastWatched) newEpisodeCounts.set(id, lastAired - lastWatched);
@@ -610,9 +614,10 @@ async function openHistoryShell(
       ...entries.map(([id, entry]) => {
         const newCount = newEpisodeCounts.get(id) ?? 0;
         return {
-          value: { type: "entry" as const, id, title: entry.title },
+          value: { type: "entry" as const, id, title: entry.title, entryType: entry.type },
           label: formatHistoryLabel(entry, newCount),
           detail: formatHistoryDetail(entry, newCount),
+          previewImageUrl: posterPaths.get(id),
         };
       }),
       ...(entries.length > 0
@@ -631,7 +636,7 @@ async function openHistoryShell(
       title: "History",
       subtitle:
         entries.length > 0
-          ? "Select an entry to remove it, or clear the full history"
+          ? `${entries.length} title${entries.length === 1 ? "" : "s"} · select to view or manage`
           : "No watch history yet",
       actionContext,
       options,
@@ -653,17 +658,119 @@ async function openHistoryShell(
       continue;
     }
 
-    const confirm = await chooseFromListShell({
-      title: `Remove ${picked.title}?`,
-      subtitle: "This deletes the saved position for this title",
+    // Title selected — show action sub-menu
+    type EntryAction = "search" | "episodes" | "remove" | "back";
+    const isSeries = picked.entryType === "series";
+    const subOptions: ShellOption<EntryAction>[] = [
+      {
+        value: "search",
+        label: "Open in search",
+        detail: "Pre-fill the search bar with this title",
+      },
+      ...(isSeries
+        ? [
+            {
+              value: "episodes" as EntryAction,
+              label: "View episode history",
+              detail: "Browse per-episode progress and watch dates",
+            },
+          ]
+        : []),
+      {
+        value: "remove" as EntryAction,
+        label: "Remove from history",
+        detail: "Delete the saved position for this title",
+      },
+      { value: "back" as EntryAction, label: "Back" },
+    ];
+
+    const action = await chooseFromListShell({
+      title: picked.title,
+      subtitle: formatHistoryDetail(
+        // Re-fetch latest entry for the subtitle
+        (await historyStore.get(picked.id)) ?? {
+          title: picked.title,
+          type: picked.entryType,
+          season: 1,
+          episode: 1,
+          timestamp: 0,
+          duration: 0,
+          completed: false,
+          provider: "",
+          watchedAt: new Date(0).toISOString(),
+        },
+        newEpisodeCounts.get(picked.id) ?? 0,
+      ),
       actionContext,
-      options: [
-        { value: true, label: "Remove entry" },
-        { value: false, label: "Keep entry" },
-      ],
+      options: subOptions,
     });
-    if (confirm) await historyStore.delete(picked.id);
+
+    if (!action || action === "back") continue;
+
+    if (action === "search") {
+      stateManager?.dispatch({ type: "SET_SEARCH_QUERY", query: picked.title });
+      return;
+    }
+
+    if (action === "episodes") {
+      await openEpisodeHistoryShell(historyStore, picked.id, picked.title, actionContext);
+      continue;
+    }
+
+    if (action === "remove") {
+      const confirm = await chooseFromListShell({
+        title: `Remove ${picked.title}?`,
+        subtitle: "This deletes the saved position for this title",
+        actionContext,
+        options: [
+          { value: true, label: "Remove entry" },
+          { value: false, label: "Keep entry" },
+        ],
+      });
+      if (confirm) await historyStore.delete(picked.id);
+    }
   }
+}
+
+async function openEpisodeHistoryShell(
+  historyStore: HistoryStore,
+  titleId: string,
+  titleName: string,
+  actionContext?: ListShellActionContext,
+): Promise<void> {
+  const allEpisodes = await historyStore.listByTitle(titleId);
+  if (allEpisodes.length === 0) return;
+
+  // Sort newest first
+  const sorted = [...allEpisodes].sort((a, b) => Date.parse(b.watchedAt) - Date.parse(a.watchedAt));
+
+  const options: ShellOption<number>[] = sorted.map((ep, i) => {
+    const epCode =
+      typeof ep.season === "number" && typeof ep.episode === "number"
+        ? `S${String(ep.season).padStart(2, "0")}E${String(ep.episode).padStart(2, "0")}`
+        : typeof ep.episode === "number"
+          ? `Episode ${ep.episode}`
+          : "Unknown episode";
+    const pct =
+      ep.duration > 0
+        ? `${Math.round((ep.timestamp / ep.duration) * 100)}%`
+        : formatTimestamp(ep.timestamp);
+    const statusLabel = isFinished(ep) ? "✓ watched" : pct;
+    const dateLabel = relativeHistoryDate(ep.watchedAt);
+    return {
+      value: i,
+      label: epCode,
+      detail: `${statusLabel} · ${dateLabel} · via ${ep.provider}`,
+    };
+  });
+
+  const finishedCount = sorted.filter(isFinished).length;
+  await chooseFromListShell({
+    title: titleName,
+    subtitle: `${sorted.length} episode${sorted.length === 1 ? "" : "s"} · ${finishedCount} watched · Esc to go back`,
+    actionContext,
+    options,
+  });
 }
 
 export async function openCompletedDownloadsPicker(
@@ -1306,8 +1413,9 @@ async function handleHistory(container: Container): Promise<"handled"> {
   await withOverlay(stateManager, { type: "history" }, () =>
     openHistoryShell(
       historyStore,
-      buildPickerActionContext({ container, taskLabel: "Manage history" }),
+      buildPickerActionContext({ container, taskLabel: "Watch history" }),
       catalogScheduleService,
+      stateManager,
     ),
   );
   return "handled";
@@ -2295,7 +2403,12 @@ export async function openSettingsShell({
 
     if (action === "history") {
       if (historyStore)
-        await openHistoryShell(historyStore, actionContext, container?.catalogScheduleService);
+        await openHistoryShell(
+          historyStore,
+          actionContext,
+          container?.catalogScheduleService,
+          container?.stateManager,
+        );
       continue;
     }
 

@@ -401,7 +401,7 @@ export function buildMpvArgs(
     args.push("--keep-open=no");
     args.push("--idle=no");
   }
-  args.push("--force-window=immediate");
+  args.push("--force-window=yes");
   // Kunai resumes via `--start` / IPC when `shouldApplyStartAtSeek(startAt)`. mpv defaults
   // `--resume-playback=yes`, which restores watch-later positions on load — that clashes
   // with explicit episode changes (N / auto-next) and looks like a stale resume offset.
