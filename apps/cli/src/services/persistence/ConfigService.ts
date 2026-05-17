@@ -130,6 +130,8 @@ export interface KitsuneConfig {
   syncNudgeDismissedAt?: string;
   /** ISO timestamp of when the weekly digest was last shown. Null = never. */
   lastWeeklyDigestShownAt?: string | null;
+  /** The highest streak milestone (in days) that has already been celebrated. */
+  lastStreakMilestoneDays?: number;
 }
 
 export interface ConfigService extends KitsuneConfig {

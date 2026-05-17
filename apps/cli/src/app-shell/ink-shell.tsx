@@ -419,6 +419,8 @@ export function useSessionState(stateManager: SessionStateManager) {
  * Holds the identity logo and renders the appropriate shell based on state.
  */
 
+const STREAK_MILESTONES = [3, 7, 14, 30, 50, 100];
+
 function AppRoot({ container }: { container: Container }) {
   const { stateManager } = container;
   const state = useSessionState(stateManager);
@@ -428,23 +430,43 @@ function AppRoot({ container }: { container: Container }) {
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
   const [streak, setStreak] = useState<number | undefined>(undefined);
   const [syncHealth, setSyncHealth] = useState<SyncHealth | undefined>(undefined);
+  const [playlistCount, setPlaylistCount] = useState<number>(0);
+  const [streakMilestoneAlert, setStreakMilestoneAlert] = useState<string | null>(null);
 
   const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
 
   useEffect(() => {
     const refresh = () => {
+      let currentStreak: number | undefined;
       try {
         const { current } = container.statsService.computeStreak();
+        currentStreak = current;
         setStreak(current);
       } catch {
         setStreak(undefined);
       }
       setSyncHealth(container.syncService.getHealth());
+      try {
+        setPlaylistCount(container.playlistService.getStatus().unplayedCount);
+      } catch {
+        // best-effort
+      }
+
+      if (currentStreak !== undefined && currentStreak >= 3) {
+        const days = currentStreak;
+        const lastCelebrated = container.config.lastStreakMilestoneDays ?? 0;
+        const nextMilestone = STREAK_MILESTONES.find((m) => m <= days && m > lastCelebrated);
+        if (nextMilestone) {
+          setStreakMilestoneAlert(`🔥 ${nextMilestone}-day streak! Keep it going.`);
+          void container.config.update({ lastStreakMilestoneDays: nextMilestone });
+          setTimeout(() => setStreakMilestoneAlert(null), 6_000);
+        }
+      }
     };
     refresh();
     const timer = setInterval(refresh, 60_000);
     return () => clearInterval(timer);
-  }, [container.statsService, container.syncService]);
+  }, [container.statsService, container.syncService, container.playlistService, container.config]);
 
   useEffect(() => {
     const lastShown = container.config.lastWeeklyDigestShownAt;
@@ -694,6 +716,7 @@ function AppRoot({ container }: { container: Container }) {
     downloadStatus,
     streak,
     syncHealth,
+    playlistCount,
   });
   const rootOverlay = getRootOwnedOverlay(state);
   const rootSurface = resolveRootShellSurface(state, {
@@ -948,8 +971,17 @@ function AppRoot({ container }: { container: Container }) {
           {truncateLine(presenceBootLine.text, Math.max(36, shellWidth - 8))}
         </Text>
       ) : null}
+      {/* Streak milestone celebration */}
+      {streakMilestoneAlert && !rootStatusSummary.alert && !presenceBootLine ? (
+        <Text dimColor color={statusColor("warning")}>
+          {truncateLine(streakMilestoneAlert, Math.max(36, shellWidth - 8))}
+        </Text>
+      ) : null}
       {/* Weekly digest shows once per week when not mid-playback */}
-      {weeklyDigestLine && !rootStatusSummary.alert && !presenceBootLine ? (
+      {weeklyDigestLine &&
+      !rootStatusSummary.alert &&
+      !presenceBootLine &&
+      !streakMilestoneAlert ? (
         <Text dimColor color={statusColor("info")}>
           {truncateLine(weeklyDigestLine, Math.max(36, shellWidth - 8))}
         </Text>

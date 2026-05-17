@@ -203,7 +203,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   ? {
                       title: playlistNextItem.title,
                       ep:
-                        playlistNextItem.season != null && playlistNextItem.episode != null
+                        playlistNextItem.season !== null && playlistNextItem.episode !== null
                           ? `S${String(playlistNextItem.season).padStart(2, "0")}E${String(playlistNextItem.episode).padStart(2, "0")}`
                           : undefined,
                     }

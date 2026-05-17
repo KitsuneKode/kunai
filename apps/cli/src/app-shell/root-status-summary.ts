@@ -80,6 +80,7 @@ export function buildRootStatusSummary({
   downloadStatus,
   streak,
   syncHealth,
+  playlistCount,
 }: {
   state: SessionState;
   currentViewLabel: string;
@@ -87,6 +88,7 @@ export function buildRootStatusSummary({
   downloadStatus?: string | null;
   streak?: number;
   syncHealth?: SyncHealth;
+  playlistCount?: number;
 }): RootStatusSummary {
   const episode = formatEpisode(state);
   const title = state.currentTitle?.name;
@@ -131,6 +133,9 @@ export function buildRootStatusSummary({
       crumbParts.push("sync⚠");
     } else if (syncHealth === "error") {
       crumbParts.push("sync✗");
+    }
+    if (playlistCount !== undefined && playlistCount > 0) {
+      crumbParts.push(`${playlistCount} queued`);
     }
   }
   const crumb = crumbParts.join(" · ");
