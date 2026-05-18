@@ -57,6 +57,7 @@ export type ShellAction =
   | "export-diagnostics"
   | "report-issue"
   | "provider"
+  | "resume-continue-watching"
   | "continue";
 
 export type ShellMode = "series" | "anime";

@@ -15,6 +15,12 @@ import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-opti
 import { loadCalendarResults } from "@/app/calendar-results";
 import { loadDiscoverResults } from "@/app/discover-results";
 import { loadDiscoveryList } from "@/app/discovery-lists";
+import {
+  applyHistorySelectionProvider,
+  episodeFromHistorySelection,
+  titleFromHistorySelection,
+  type HistoryLaunchSelection,
+} from "@/app/launch-entry";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { loadRandomResults } from "@/app/random-results";
 import { searchTitles } from "@/app/search-routing";
@@ -204,6 +210,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
         // Find the most-recent in-progress history entry to show a "continue" hint
         let continueWatching: import("@/app-shell/types").BrowseIdleContext["continueWatching"];
+        let continueWatchingSelection: HistoryLaunchSelection | null = null;
         try {
           const allHistory = await container.historyStore.getAll();
           const inProgress = Object.entries(allHistory)
@@ -214,6 +221,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           const topEntry = inProgress[0];
           if (topEntry) {
             const [titleId, top] = topEntry;
+            continueWatchingSelection = { titleId, entry: top };
             const ep =
               top.type === "series" &&
               typeof top.season === "number" &&
@@ -475,6 +483,22 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const { downloadSelectedResult } = await import("../app-shell/workflows");
             await downloadSelectedResult(container);
             continue;
+          }
+
+          if (outcome.action === "resume-continue-watching") {
+            if (!continueWatchingSelection) {
+              logger.info("Inline continue requested without a history target");
+              continue;
+            }
+
+            applyHistorySelectionProvider(container, continueWatchingSelection);
+            const title = titleFromHistorySelection(continueWatchingSelection);
+            stateManager.dispatch({ type: "SELECT_TITLE", title });
+            const episode = episodeFromHistorySelection(continueWatchingSelection);
+            if (episode) {
+              stateManager.dispatch({ type: "SELECT_EPISODE", episode });
+            }
+            return { status: "success", value: title };
           }
 
           if (outcome.action === "recommendation") {

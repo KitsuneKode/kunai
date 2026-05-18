@@ -32,6 +32,7 @@ import {
   hasBrowseResultFilters,
   parseBrowseFilterQuery,
 } from "./browse-filters";
+import { resolveIdleContinueAction } from "./browse-idle-actions";
 import type { ResolvedAppCommand } from "./commands";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { buildBrowseCompanionPanel, buildBrowseDetailsPanel } from "./details-panel";
@@ -2529,7 +2530,7 @@ function BrowseShell<T>({
     }
 
     if (key.return && idleFocused && canFocusContinue) {
-      onResolve("continue");
+      onResolve(resolveIdleContinueAction(idleContext));
       return;
     }
 
