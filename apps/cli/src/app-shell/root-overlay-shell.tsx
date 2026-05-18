@@ -506,7 +506,7 @@ export function RootOverlayShell({
       { value: option.detail, weight: 8 },
     ],
   );
-  const title = getRootOverlayTitle(overlay);
+  const title = getRootOverlayTitle(overlay, state);
   const subtitle = getRootOverlaySubtitle({
     overlay,
     state,

@@ -59,7 +59,7 @@ export function getRootOverlayInitialIndex(overlay: RootOwnedOverlay): number {
   return overlay.type === "episode_picker" ? Math.max(0, overlay.initialIndex ?? 0) : 0;
 }
 
-export function getRootOverlayTitle(overlay: RootOwnedOverlay): string {
+export function getRootOverlayTitle(overlay: RootOwnedOverlay, state: SessionState): string {
   if (overlay.type === "help") return "Help";
   if (overlay.type === "about") return "About";
   if (overlay.type === "diagnostics") return "Diagnostics";
@@ -69,7 +69,9 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay): string {
   if (overlay.type === "notifications") return "Notifications";
   if (overlay.type === "settings") return "Settings";
   if (overlay.type === "season_picker") return "Choose season";
-  if (overlay.type === "episode_picker") return "Choose episode";
+  if (overlay.type === "episode_picker") {
+    return state.currentTitle?.name ?? "Choose episode";
+  }
   if (overlay.type === "subtitle_picker") return "Choose subtitles";
   if (overlay.type === "source_picker") return "Choose source";
   if (overlay.type === "quality_picker") return "Choose quality";
@@ -103,13 +105,11 @@ export function getRootOverlaySubtitle({
     return settingsError ?? buildSettingsSummary(settingsDraft ?? config);
   if (overlay.type === "season_picker") return `Current season ${overlay.currentSeason}`;
   if (overlay.type === "episode_picker") {
+    const seriesName = state.currentTitle?.name ?? "Series";
     const watched = overlay.options.filter((option) => option.tone === "success").length;
     const total = overlay.options.length;
     const progress = total > 0 ? Math.round((watched / total) * 100) : 0;
-    const parts: string[] = [];
-    if (state.currentTitle?.name) parts.push(state.currentTitle.name);
-    parts.push(`S${String(overlay.season).padStart(2, "0")}`);
-    parts.push(`${total} eps`);
+    const parts = [seriesName, `S${String(overlay.season).padStart(2, "0")}`, `${total} eps`];
     if (progress > 0) parts.push(`${progress}% complete`);
     return parts.join("  ·  ");
   }

@@ -11,6 +11,8 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { PickerOptionRow } from "./overlay-picker-row";
+import { renderHistoryProgressBar } from "./panel-data";
+import { PosterInitialBlock } from "./poster-initial-block";
 import { Badge } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -1016,10 +1018,18 @@ export function OverlayPanel({
                   : option.tone === "warning"
                     ? palette.amber
                     : option.tone === "info"
-                      ? palette.info
+                      ? palette.amber
                       : option.tone === "error"
                         ? palette.red
                         : null;
+              const isEpisodePicker = overlay.type === "episode-picker";
+              const episodePrefix = isEpisodePicker
+                ? option.tone === "success"
+                  ? { char: "✓ ", color: palette.green }
+                  : option.tone === "info" || option.badge?.startsWith("▶") || option.badge === "▶"
+                    ? { char: "▶ ", color: palette.amber }
+                    : { char: "○ ", color: palette.dim }
+                : null;
               // Derive dot indicator for settings rows
               const isSettingsOverlay =
                 overlay.type === "settings" || overlay.type === "settings-choice";
@@ -1060,6 +1070,13 @@ export function OverlayPanel({
                 }
               }
               const effectiveLabel = isSettingsOverlay && dotChar ? option.label : option.label;
+              const isHistoryPicker = overlay.type === "history-picker";
+              const historyPosterWidth = 4;
+              const prefixWidth =
+                (isSettingsOverlay && dotChar ? dotChar.length : 0) +
+                (episodePrefix ? episodePrefix.char.length : 0) +
+                (isHistoryPicker && option.posterTitle ? historyPosterWidth + 1 : 0);
+              const historyRowWidth = Math.max(0, contentWidth - prefixWidth);
               return (
                 <Box
                   key={`${option.value}-${optionIndex}`}
@@ -1069,20 +1086,41 @@ export function OverlayPanel({
                   {isSettingsOverlay && dotChar ? (
                     <Text color={selected ? pickerAccent : dotColor}>{dotChar}</Text>
                   ) : null}
-                  <Text bold={selected} wrap="truncate-end">
-                    <PickerOptionRow
-                      label={effectiveLabel}
-                      detail={option.detail}
-                      badge={option.badge}
-                      width={Math.max(
-                        0,
-                        contentWidth - (isSettingsOverlay && dotChar ? dotChar.length : 0),
-                      )}
-                      selected={selected}
-                      accentColor={rowAccentColor}
-                      pickerAccent={pickerAccent}
-                    />
-                  </Text>
+                  {episodePrefix ? (
+                    <Text color={selected ? pickerAccent : episodePrefix.color}>
+                      {episodePrefix.char}
+                    </Text>
+                  ) : null}
+                  {isHistoryPicker && option.posterTitle ? (
+                    <Box marginRight={1}>
+                      <PosterInitialBlock
+                        title={option.posterTitle}
+                        width={historyPosterWidth}
+                        height={3}
+                      />
+                    </Box>
+                  ) : null}
+                  <Box flexDirection="column" flexGrow={1}>
+                    <Text bold={selected} wrap="truncate-end">
+                      <PickerOptionRow
+                        label={effectiveLabel}
+                        detail={option.detail}
+                        badge={option.badge}
+                        width={historyRowWidth}
+                        selected={selected}
+                        accentColor={rowAccentColor}
+                        pickerAccent={pickerAccent}
+                      />
+                    </Text>
+                    {isHistoryPicker && option.historyProgress ? (
+                      <Text
+                        color={option.historyProgress.completed ? palette.green : palette.amber}
+                      >
+                        {renderHistoryProgressBar(option.historyProgress.percentage)}
+                        {`  ${option.historyProgress.percentage}%`}
+                      </Text>
+                    ) : null}
+                  </Box>
                 </Box>
               );
             })}

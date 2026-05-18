@@ -61,10 +61,11 @@ export async function buildPlaybackEpisodePickerOptions({
         }),
       );
       return {
-        subtitle: describeEpisodePickerSubtitle(
-          `${animeEpisodes.length} released episodes available`,
+        subtitle: formatEpisodePickerSubtitle({
+          seriesName: title.name,
+          season: 1,
           options,
-        ),
+        }),
         options,
         initialIndex: getInitialIndex(options, `${1}:${currentEpisode.episode}`),
       };
@@ -85,7 +86,11 @@ export async function buildPlaybackEpisodePickerOptions({
       }),
     );
     return {
-      subtitle: describeEpisodePickerSubtitle(`${fallbackCount} episode slots available`, options),
+      subtitle: formatEpisodePickerSubtitle({
+        seriesName: title.name,
+        season: 1,
+        options,
+      }),
       options,
       initialIndex: getInitialIndex(options, `${1}:${currentEpisode.episode}`),
     };
@@ -104,10 +109,11 @@ export async function buildPlaybackEpisodePickerOptions({
     }),
   );
   return {
-    subtitle: describeEpisodePickerSubtitle(
-      `Season ${currentEpisode.season}  ·  ${episodes.length} episodes`,
+    subtitle: formatEpisodePickerSubtitle({
+      seriesName: title.name,
+      season: currentEpisode.season,
       options,
-    ),
+    }),
     options,
     initialIndex: getInitialIndex(options, `${currentEpisode.season}:${currentEpisode.episode}`),
   };
@@ -120,6 +126,33 @@ export type EpisodeWatchPresentation = {
   watched: boolean;
   inProgress: boolean;
 };
+
+export function renderEpisodeWatchProgressBar(percentage: number): string {
+  const totalBlocks = 10;
+  const filledBlocks = Math.max(
+    0,
+    Math.min(totalBlocks, Math.round((percentage / 100) * totalBlocks)),
+  );
+  const emptyBlocks = totalBlocks - filledBlocks;
+  return `[${"█".repeat(filledBlocks)}${"░".repeat(emptyBlocks)}]`;
+}
+
+export function formatEpisodePickerSubtitle({
+  seriesName,
+  season,
+  options,
+}: {
+  readonly seriesName: string;
+  readonly season: number;
+  readonly options: readonly ShellPickerOption<string>[];
+}): string {
+  const total = options.length;
+  const watched = options.filter((option) => option.tone === "success").length;
+  const progress = total > 0 ? Math.round((watched / total) * 100) : 0;
+  const parts = [seriesName, `S${String(season).padStart(2, "0")}`, `${total} eps`];
+  if (progress > 0) parts.push(`${progress}% complete`);
+  return parts.join("  ·  ");
+}
 
 export function describeEpisodeWatchPresentation(
   entry: HistoryEntry | undefined,
@@ -166,7 +199,7 @@ function relativeDate(isoDate: string): string | undefined {
   return `${Math.floor(days / 365)}y ago`;
 }
 
-function buildEpisodePickerOption({
+export function buildEpisodePickerOption({
   season,
   episode,
   label,
@@ -184,35 +217,41 @@ function buildEpisodePickerOption({
   history?: HistoryEntry;
 }): ShellPickerOption<string> {
   const watch = describeEpisodeWatchPresentation(history);
+  const displayLabel = current ? `▶  ${label}` : label;
   return {
     value: `${season}:${episode}`,
-    label,
-    detail: mergeEpisodeDetail(watch.detail, releaseBadge, baseDetail),
-    tone: watch.tone ?? (current ? "info" : undefined),
-    badge: current ? (watch.badge ? `▶ ${watch.badge}` : "▶") : watch.badge,
+    label: displayLabel,
+    detail: mergeEpisodeDetail(history, watch.detail, releaseBadge, baseDetail),
+    tone:
+      watch.tone === "success"
+        ? "success"
+        : current
+          ? "info"
+          : watch.tone === "warning"
+            ? "warning"
+            : undefined,
+    badge: current && watch.badge && watch.badge !== "watched" ? watch.badge : watch.badge,
   };
 }
 
 function mergeEpisodeDetail(
+  history: HistoryEntry | undefined,
   watchedDetail?: string,
   releaseBadge?: string,
   baseDetail?: string,
 ): string | undefined {
-  return [watchedDetail, releaseBadge, baseDetail].filter(Boolean).join("  ·  ") || undefined;
-}
-
-function describeEpisodePickerSubtitle(
-  baseSubtitle: string,
-  options: readonly ShellPickerOption<string>[],
-): string {
-  const watched = options.filter((option) => option.tone === "success").length;
-  const inProgress = options.filter((option) => option.tone === "warning").length;
-  const unstarted = options.length - watched - inProgress;
-  const parts = [baseSubtitle];
-  if (watched > 0) parts.push(`${watched} watched`);
-  if (inProgress > 0) parts.push(`${inProgress} in progress`);
-  if (unstarted > 0 && (watched > 0 || inProgress > 0)) parts.push(`${unstarted} unstarted`);
-  return parts.join("  ·  ");
+  const parts: string[] = [];
+  if (history && history.duration > 0 && !isFinished(history)) {
+    const percentage = Math.max(
+      1,
+      Math.min(99, Math.round((history.timestamp / history.duration) * 100)),
+    );
+    parts.push(renderEpisodeWatchProgressBar(percentage));
+  }
+  if (watchedDetail) parts.push(watchedDetail);
+  if (releaseBadge) parts.push(releaseBadge);
+  if (baseDetail) parts.push(baseDetail);
+  return parts.length > 0 ? parts.join("  ·  ") : undefined;
 }
 
 function getInitialIndex(options: readonly ShellPickerOption<string>[], value: string): number {
