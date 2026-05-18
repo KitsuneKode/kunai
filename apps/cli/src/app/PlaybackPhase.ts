@@ -76,6 +76,7 @@ import type {
   EpisodeInfo,
   EpisodePickerOption,
   PlaybackTimingMetadata,
+  ShellMode,
   StreamInfo,
   PlaybackResult,
   SubtitleTrack,
@@ -126,7 +127,13 @@ export type PlaybackOutcome =
   | "mode_switch"
   | "quit"
   | { type: "history_entry"; title: TitleInfo }
-  | { type: "playlist-advance"; titleInfo: TitleInfo; season?: number; episode?: number };
+  | {
+      type: "playlist-advance";
+      titleInfo: TitleInfo;
+      mode: ShellMode;
+      season?: number;
+      episode?: number;
+    };
 
 async function racePrefetchWithTimeout(promise: Promise<void>, timeoutMs: number): Promise<void> {
   try {
@@ -2152,6 +2159,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   value: {
                     type: "playlist-advance",
                     titleInfo,
+                    mode: nextPlaylistItem.mediaKind === "anime" ? "anime" : "series",
                     season: nextPlaylistItem.season,
                     episode: nextPlaylistItem.episode,
                   },

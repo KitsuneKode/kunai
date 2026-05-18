@@ -140,6 +140,14 @@ export class SessionController {
           }
           if (typeof outcome === "object" && outcome.type === "playlist-advance") {
             pendingInitialTitle = outcome.titleInfo;
+            const targetMode = outcome.mode;
+            if (targetMode !== stateManager.getState().mode) {
+              stateManager.dispatch({
+                type: "SET_MODE",
+                mode: targetMode,
+                provider: stateManager.getState().defaultProviders[targetMode],
+              });
+            }
             if (outcome.episode !== undefined) {
               stateManager.dispatch({
                 type: "SELECT_EPISODE",
