@@ -38,7 +38,8 @@ import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { buildBrowseCompanionPanel, buildBrowseDetailsPanel } from "./details-panel";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { InlineDotMatrixLoader } from "./dot-matrix-loader";
-import { registerExitHandler, requestHardExit } from "./graceful-exit";
+import { ExitShell } from "./exit-shell";
+import { registerExitHandler, requestHardExit, runExitHandlers } from "./graceful-exit";
 import { deleteAllKittyImages } from "./image-pane";
 import { getBrowseCommandPaletteMaxVisible, getPickerLayout } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
@@ -428,6 +429,7 @@ function AppRoot({ container }: { container: Container }) {
   const screen = useRootShellScreen();
   const rootContent = useRootContentSession();
   const { stdout } = useStdout();
+  const [exiting, setExiting] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
   const [streak, setStreak] = useState<number | undefined>(undefined);
   const [syncHealth, setSyncHealth] = useState<SyncHealth | undefined>(undefined);
@@ -867,11 +869,11 @@ function AppRoot({ container }: { container: Container }) {
         const { routeSearchShellAction } = await import("./command-router");
         const routed = await routeSearchShellAction({ action, container });
         if (routed === "quit") {
-          requestHardExit(0);
+          setExiting(true);
         }
       })();
     },
-    [container, canGoNext, canGoPrevious, canToggleAutoplay],
+    [container, canGoNext, canGoPrevious, canToggleAutoplay, setExiting],
   );
 
   const onCancel = useCallback(() => {
@@ -952,6 +954,16 @@ function AppRoot({ container }: { container: Container }) {
   const onReturnToSearch = useCallback(() => {
     void container.playerControl.returnToSearchFromPlayback("playback-shell-shift-s");
   }, [container]);
+
+  if (exiting) {
+    return (
+      <ExitShell
+        onDone={() => {
+          void runExitHandlers().finally(() => process.exit(0));
+        }}
+      />
+    );
+  }
 
   return (
     <Box
