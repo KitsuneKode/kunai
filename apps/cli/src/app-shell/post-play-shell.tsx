@@ -6,7 +6,7 @@ import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { PlaybackRecommendationRailItem } from "./types";
 
-type PostPlayShellProps = {
+export type PostPlayShellProps = {
   title: string;
   episodeLabel: string;
   nextEpisodeLabel?: string;
@@ -47,7 +47,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     if (input === "w") onWatchlist?.();
     if (input === "q" || key.escape) onQuit?.();
     if ((key.leftArrow || input === "h") && recIndex > 0) setRecIndex((i) => i - 1);
-    if ((key.rightArrow || input === "l") && recIndex < recommendations.length - 1)
+    if ((key.rightArrow || input === "l") && recIndex < Math.min(recommendations.length, 4) - 1)
       setRecIndex((i) => i + 1);
     if (key.return && postPlayState.kind === "series-complete" && recommendations[recIndex]) {
       onRecommendation?.(recommendations[recIndex]);
