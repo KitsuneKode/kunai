@@ -80,10 +80,12 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
 export function DiscoverShell({
   sections,
   onRefresh,
+  onRefreshSection,
   onResult,
 }: {
   sections: RecommendationSection[];
   onRefresh?: () => Promise<readonly RecommendationSection[]>;
+  onRefreshSection?: (sectionIdx: number) => Promise<RecommendationSection | null>;
   onResult: (result: DiscoverShellResult) => void;
 }) {
   const [visibleSections, setVisibleSections] =
@@ -91,6 +93,7 @@ export function DiscoverShell({
   const [sectionIdx, setSectionIdx] = useState(0);
   const [itemIdx, setItemIdx] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingSectionIdx, setRefreshingSectionIdx] = useState<number | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const viewport = useDebouncedViewportPolicy("browse");
 
@@ -103,23 +106,46 @@ export function DiscoverShell({
       onResult({ type: "back" });
       return;
     }
-    if (input === "r" && onRefresh && !refreshing) {
-      setRefreshing(true);
-      setRefreshError(null);
-      void onRefresh()
-        .then((nextSections) => {
-          setVisibleSections(nextSections);
-          setSectionIdx(0);
-          setItemIdx(0);
-          return undefined;
-        })
-        .catch((err) => {
-          setRefreshError(String(err));
-          return undefined;
-        })
-        .finally(() => {
-          setRefreshing(false);
-        });
+    if (input === "r" && !refreshing && refreshingSectionIdx === null) {
+      if (onRefreshSection) {
+        // Per-section reroll: refresh only the focused section
+        setRefreshingSectionIdx(sectionIdx);
+        setRefreshError(null);
+        void onRefreshSection(sectionIdx)
+          .then((updated) => {
+            if (updated !== null) {
+              setVisibleSections((prev) => prev.map((s, i) => (i === sectionIdx ? updated : s)));
+            }
+            return undefined;
+          })
+          .catch((err) => {
+            setRefreshError(String(err));
+            return undefined;
+          })
+          .finally(() => {
+            setRefreshingSectionIdx(null);
+          });
+        return;
+      }
+      if (onRefresh) {
+        setRefreshing(true);
+        setRefreshError(null);
+        void onRefresh()
+          .then((nextSections) => {
+            setVisibleSections(nextSections);
+            setSectionIdx(0);
+            setItemIdx(0);
+            return undefined;
+          })
+          .catch((err) => {
+            setRefreshError(String(err));
+            return undefined;
+          })
+          .finally(() => {
+            setRefreshing(false);
+          });
+        return;
+      }
       return;
     }
     if (key.upArrow) {
@@ -203,17 +229,48 @@ export function DiscoverShell({
                 <Text color={palette.muted}>Loading recommendations…</Text>
               </Box>
             </Box>
+          ) : visibleSections.every((s) => s.items.length === 0) ? (
+            <Box flexDirection="column" paddingY={2}>
+              <Text color={palette.amber}>{"◈  nothing to discover yet"}</Text>
+              <Text color={palette.dim}>watch something first to get recommendations</Text>
+              <Box marginTop={1}>
+                <Text color={palette.dim} dimColor>
+                  {"  ^ᵔᴥᵔ^  a fox awaits"}
+                </Text>
+              </Box>
+            </Box>
           ) : (
-            visibleSections.map((section, idx) => (
-              <DiscoverSectionView
-                key={section.reason + String(idx)}
-                section={section}
-                isFocused={idx === sectionIdx}
-                focusedIndex={itemIdx}
-                compact={viewport.compact}
-                maxWidth={innerWidth}
-              />
-            ))
+            visibleSections.map((section, idx) => {
+              if (refreshingSectionIdx === idx) {
+                return (
+                  <Box key={section.reason + String(idx)} flexDirection="column" marginBottom={1}>
+                    <Text
+                      color={idx === sectionIdx ? palette.amber : palette.muted}
+                      bold={idx === sectionIdx}
+                    >
+                      {idx === sectionIdx ? "▸ " : "  "}
+                      {section.label}
+                    </Text>
+                    <Box>
+                      <InlineDotMatrixLoader variant="echo-ring" active onColor={palette.dim} />
+                      <Text color={palette.dim} dimColor>
+                        {" ░░░ rerolling…"}
+                      </Text>
+                    </Box>
+                  </Box>
+                );
+              }
+              return (
+                <DiscoverSectionView
+                  key={section.reason + String(idx)}
+                  section={section}
+                  isFocused={idx === sectionIdx}
+                  focusedIndex={itemIdx}
+                  compact={viewport.compact}
+                  maxWidth={innerWidth}
+                />
+              );
+            })
           )}
         </Box>
       </Box>
@@ -252,7 +309,11 @@ export function DiscoverShell({
           { key: "↵", label: "open", action: "search" },
           { key: "↑↓", label: "navigate", action: "search" },
           { key: "tab", label: "section", action: "search" },
-          ...(onRefresh ? [{ key: "r", label: "refresh", action: "search" as const }] : []),
+          ...(onRefreshSection
+            ? [{ key: "r", label: "reroll section", action: "search" as const }]
+            : onRefresh
+              ? [{ key: "r", label: "refresh", action: "search" as const }]
+              : []),
           { key: "esc", label: "back", action: "quit" },
         ]}
       />
