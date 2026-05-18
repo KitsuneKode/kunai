@@ -1,3 +1,5 @@
+import type { PostPlayState } from "@/domain/playback/post-play-state";
+
 import type { ResolvedAppCommand, AppCommandId } from "./commands";
 
 export type ShellAction =
@@ -103,6 +105,12 @@ export type PlaybackShellState = {
   readonly showRecommendationNudge?: boolean;
   readonly recommendationRailItems?: readonly PlaybackRecommendationRailItem[];
   readonly recommendationRailMoreCount?: number;
+  readonly postPlayState?: PostPlayState;
+  readonly episodeLabel?: string;
+  readonly nextEpisodeLabel?: string;
+  readonly totalEpisodes?: number;
+  readonly watchedEpisodes?: number;
+  readonly currentSeason?: number;
 };
 
 export type PlaybackRecommendationRailItem = {
@@ -215,6 +223,10 @@ export type ShellPickerOption<T> = {
   detail?: string;
   tone?: ShellStatusTone;
   badge?: string;
+  /** Title used for poster initials in history picker rows. */
+  posterTitle?: string;
+  /** Colored █░ progress bar rendered under history picker rows. */
+  historyProgress?: { readonly percentage: number; readonly completed: boolean };
 };
 
 export type BrowseShellResult<T> =
