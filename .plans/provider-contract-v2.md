@@ -14,10 +14,10 @@
 
 ```text
 SLICE_ID: P2
-SLICE_STATUS: in-progress
+SLICE_STATUS: completed
 SLICE_OWNER: codex
 SLICE_LAST_UPDATED: 2026-05-19
-SLICE_CURRENT_TASK: P2-T5
+SLICE_CURRENT_TASK: done
 SLICE_BLOCKERS: none
 ```
 
@@ -129,11 +129,16 @@ Completed in `716bb12`.
 
 ### P2-T5: Make Third-Party Metadata Fetch Fallback-Only
 
-- [ ] Update timing/catalog lookup sites to first use provider-native IDs when present.
-- [ ] Keep existing AniList/TMDB/Haglund fetches as fallback when IDs are absent.
-- [ ] Add tests proving provider-native `malId` skips redundant lookup where a test seam exists.
-- [ ] Run `bun run --cwd apps/cli test:unit`.
-- [ ] Commit with message `feat(playback): prefer provider-native metadata ids`.
+- [x] Update timing/catalog lookup sites to first use provider-native IDs when present.
+- [x] Keep existing AniList/TMDB/Haglund fetches as fallback when IDs are absent.
+- [x] Add tests proving provider-native `malId` skips redundant lookup where a test seam exists.
+- [x] Add tests proving provider-native release facts skip cached schedule probing.
+- [x] Run `bun run --cwd apps/cli typecheck`.
+- [x] Run `bun run --cwd apps/cli test:unit`.
+- [x] Commit with message `feat(playback): prefer provider-native metadata ids`.
+- [x] Commit with message `feat(catalog): surface provider-native release badges`.
+
+Completed in `01dd799` and `a467dae`.
 
 ## Commit Boundaries
 
