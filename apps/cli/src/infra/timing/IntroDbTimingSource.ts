@@ -17,7 +17,7 @@ export const IntroDbTimingSource: PlaybackTimingSource = {
 
   canHandle(title: TitleInfo, mode: TimingContentMode): boolean {
     if (mode === "anime") {
-      return isLikelyTmdbNumericId(title.id);
+      return Boolean(title.externalIds?.tmdbId) || isLikelyTmdbNumericId(title.id);
     }
     return true;
   },
@@ -29,8 +29,9 @@ export const IntroDbTimingSource: PlaybackTimingSource = {
     context?: PlaybackTimingFetchContext;
   }): Promise<PlaybackTimingMetadata | null> {
     const { title, episode, signal } = opts;
+    const tmdbId = title.externalIds?.tmdbId ?? title.id;
     return fetchPlaybackTimingMetadata({
-      tmdbId: title.id,
+      tmdbId,
       type: title.type,
       season: title.type === "series" ? episode.season : undefined,
       episode: title.type === "series" ? episode.episode : undefined,

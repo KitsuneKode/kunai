@@ -1,4 +1,5 @@
 import type { PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
+import type { ProviderExternalIds } from "@kunai/types";
 
 const ANISKIP_API = "https://api.aniskip.com/v1/skip-times";
 const ARM_IDS_API = "https://arm.haglund.dev/api/v2/ids";
@@ -85,26 +86,43 @@ async function fetchMalIdFromAllAnimeShow(
 
 async function resolveMalIdForAniSkip(opts: {
   catalogTitleId: string;
+  externalIds?: ProviderExternalIds;
   titleName?: string;
   titleYear?: string;
   /** `allanime` enables GraphQL `malId` lookup for opaque show ids (ani-skip `-s allanime`). */
   providerId?: string;
   signal?: AbortSignal;
 }): Promise<number | null> {
-  const { catalogTitleId, titleName, titleYear, providerId, signal } = opts;
+  const { catalogTitleId, externalIds, titleName, titleYear, providerId, signal } = opts;
 
   const seasonYear = (() => {
     const y = titleYear ? Number.parseInt(titleYear, 10) : Number.NaN;
     return Number.isFinite(y) ? y : undefined;
   })();
 
+  const directMalId = parsePositiveIntegerId(externalIds?.malId);
+  if (directMalId !== null) return directMalId;
+
   if (providerId === "allanime" && catalogTitleId && !isNumericAniListId(catalogTitleId)) {
     const fromAllAnime = await fetchMalIdFromAllAnimeShow(catalogTitleId, signal);
     if (fromAllAnime !== null) return fromAllAnime;
   }
 
+  const nativeAniListId = normalizeNumericId(externalIds?.anilistId);
+  if (nativeAniListId) {
+    const fromNativeAniList = await resolveMALFromAniListId(nativeAniListId, signal);
+    if (fromNativeAniList) return fromNativeAniList;
+  }
+
   if (isNumericAniListId(catalogTitleId)) {
-    return await resolveMALForSkipTiming({ catalogId: catalogTitleId, signal });
+    const fromCatalogId = await resolveMALForSkipTiming({ catalogId: catalogTitleId, signal });
+    if (fromCatalogId) return fromCatalogId;
+  }
+
+  const nativeTmdbId = normalizeNumericId(externalIds?.tmdbId);
+  if (nativeTmdbId) {
+    const fromNativeTmdb = await resolveMALFromTheMovieDbId(nativeTmdbId, signal);
+    if (fromNativeTmdb) return fromNativeTmdb;
   }
 
   if (titleName) {
@@ -121,6 +139,16 @@ async function resolveMalIdForAniSkip(opts: {
 // can be passed directly to arm.haglund.dev as an AniList source ID.
 function isNumericAniListId(id: string): boolean {
   return /^\d+$/.test(id);
+}
+
+function normalizeNumericId(id: string | undefined): string | null {
+  return id && /^\d+$/.test(id) ? id : null;
+}
+
+function parsePositiveIntegerId(id: string | undefined): number | null {
+  if (!id || !/^\d+$/.test(id)) return null;
+  const parsed = Number.parseInt(id, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 async function resolveAniListIdByName(
@@ -277,6 +305,7 @@ function intervalToSegment(interval: AniSkipIntervalJson): PlaybackTimingSegment
 
 export async function fetchAniSkipTimingMetadata(opts: {
   anilistId: string;
+  externalIds?: ProviderExternalIds;
   titleName?: string;
   /** Helps AniList `Media(search, seasonYear: …)` when the catalog id is not numeric. */
   titleYear?: string;
@@ -286,10 +315,20 @@ export async function fetchAniSkipTimingMetadata(opts: {
   /** From `PlaybackTimingFetchContext` — drives AllAnime-native MAL resolution. */
   providerId?: string;
 }): Promise<PlaybackTimingMetadata | null> {
-  const { anilistId, titleName, titleYear, episode, episodeLength, signal, providerId } = opts;
+  const {
+    anilistId,
+    externalIds,
+    titleName,
+    titleYear,
+    episode,
+    episodeLength,
+    signal,
+    providerId,
+  } = opts;
 
   const malId = await resolveMalIdForAniSkip({
     catalogTitleId: anilistId,
+    externalIds,
     titleName,
     titleYear,
     providerId,

@@ -43,9 +43,18 @@ export function titleToCoreIdentity(title: TitleInfo, mode: ShellMode): TitleIde
     kind,
     title: title.name,
     year: title.year ? Number.parseInt(title.year, 10) || undefined : undefined,
-    tmdbId: kind === "anime" ? undefined : title.id,
-    anilistId: kind === "anime" ? title.id : undefined,
+    tmdbId: title.externalIds?.tmdbId ?? (kind === "anime" ? undefined : title.id),
+    anilistId:
+      title.externalIds?.anilistId ??
+      (kind === "anime" && isNumericId(title.id) ? title.id : undefined),
+    imdbId: title.externalIds?.imdbId,
+    malId: title.externalIds?.malId,
+    externalIds: title.externalIds,
   };
+}
+
+function isNumericId(id: string): boolean {
+  return /^\d+$/.test(id);
 }
 
 export function episodeToCoreIdentity(
@@ -60,5 +69,7 @@ export function episodeToCoreIdentity(
     episode: episode.episode,
     title: episode.name,
     airDate: episode.airDate,
+    release: episode.release,
+    artwork: episode.artwork,
   };
 }
