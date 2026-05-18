@@ -15,11 +15,11 @@
 Update this block as work proceeds. Keep commits scoped to one slice unless a test-only follow-up is needed.
 
 ```text
-TRACKER_STATUS: planned
-TRACKER_OWNER: unassigned
-TRACKER_LAST_UPDATED: 2026-05-18
-TRACKER_CURRENT_SLICE: P0-plan-hardening
-TRACKER_NEXT_SLICE: P1-provider-cycle-types
+TRACKER_STATUS: in-progress
+TRACKER_OWNER: codex
+TRACKER_LAST_UPDATED: 2026-05-19
+TRACKER_CURRENT_SLICE: P1-provider-cycle-types
+TRACKER_NEXT_SLICE: P1-provider-cycle-engine
 TRACKER_BLOCKERS: none
 ```
 
@@ -44,19 +44,19 @@ Status values:
 
 ## Slice IDs
 
-| ID  | Plan                                                                        | Status  | Commit Scope                                           |
-| --- | --------------------------------------------------------------------------- | ------- | ------------------------------------------------------ |
-| P0  | this file + all `.plans/provider-*` hardening docs                          | planned | `docs: harden provider runtime v2 implementation plan` |
-| P1  | [Provider Fallback Resolver Engine](./provider-fallback-resolver-engine.md) | planned | types/core only before provider migration              |
-| P2  | [Provider Contract V2](./provider-contract-v2.md)                           | planned | additive contracts and schemas                         |
-| P3  | [Provider Evidence Fixtures](./provider-evidence-fixtures.md)               | planned | fixture tests, no runtime behavior change              |
-| P4  | [Provider UI Projection Contract](./provider-ui-projection-contract.md)     | planned | pure projection types/mapper first                     |
-| P5  | [Download Artifact Recovery](./download-artifact-recovery.md)               | planned | storage/service sidecar status                         |
-| P6  | [Search Filter State](./search-filter-state.md)                             | planned | search intent/filter domain                            |
-| P7  | [Cache and MPV Runtime Policy](./cache-and-mpv-runtime.md)                  | planned | cache identity/diagnostics                             |
-| P8  | [Post-Playback Fast Path](./post-playback-fast-path.md)                     | planned | UX latency fix, no provider contract dependency        |
-| P9  | [Diagnostics and Debuggability V2](./diagnostics-and-debuggability-v2.md)   | planned | diagnostics export/trace summaries                     |
-| P10 | [Docs and Release Gate V2](./docs-and-release-gate-v2.md)                   | planned | docs and plan truth index                              |
+| ID  | Plan                                                                        | Status      | Commit Scope                                           |
+| --- | --------------------------------------------------------------------------- | ----------- | ------------------------------------------------------ |
+| P0  | this file + all `.plans/provider-*` hardening docs                          | planned     | `docs: harden provider runtime v2 implementation plan` |
+| P1  | [Provider Fallback Resolver Engine](./provider-fallback-resolver-engine.md) | in-progress | types/core only before provider migration              |
+| P2  | [Provider Contract V2](./provider-contract-v2.md)                           | planned     | additive contracts and schemas                         |
+| P3  | [Provider Evidence Fixtures](./provider-evidence-fixtures.md)               | planned     | fixture tests, no runtime behavior change              |
+| P4  | [Provider UI Projection Contract](./provider-ui-projection-contract.md)     | planned     | pure projection types/mapper first                     |
+| P5  | [Download Artifact Recovery](./download-artifact-recovery.md)               | planned     | storage/service sidecar status                         |
+| P6  | [Search Filter State](./search-filter-state.md)                             | planned     | search intent/filter domain                            |
+| P7  | [Cache and MPV Runtime Policy](./cache-and-mpv-runtime.md)                  | planned     | cache identity/diagnostics                             |
+| P8  | [Post-Playback Fast Path](./post-playback-fast-path.md)                     | planned     | UX latency fix, no provider contract dependency        |
+| P9  | [Diagnostics and Debuggability V2](./diagnostics-and-debuggability-v2.md)   | planned     | diagnostics export/trace summaries                     |
+| P10 | [Docs and Release Gate V2](./docs-and-release-gate-v2.md)                   | planned     | docs and plan truth index                              |
 
 ## Implementation Order
 
