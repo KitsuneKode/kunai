@@ -2085,6 +2085,8 @@ function BrowseShell<T>({
     "Search for a title — or try /trending to see what's popular",
   );
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
+  // Calendar day strip filter — null means "show all days"
+  const [calendarDayFilter, setCalendarDayFilter] = useState<string | null>(null);
   // In zen/minimal mode, auto-focus the continue-watching row if there's a resumable title and no initial results
   const [idleFocused, setIdleFocused] = useState(
     () =>
@@ -2095,8 +2097,46 @@ function BrowseShell<T>({
       ),
   );
   const requestIdRef = useRef(0);
+
+  // Calendar view detection and day-strip derived state.
+  // displayGroup is only set by calendar-results.ts, so any option with previewGroup
+  // indicates calendar mode. Fall back to subtitle check for edge cases.
+  const isCalendarView =
+    options.some((opt) => opt.previewGroup !== undefined) || resultSubtitle.includes("schedule");
+
+  // Derive the ordered day list directly from options so labels always match previewGroup (locale-safe)
+  const calendarDays = useMemo(() => {
+    if (!isCalendarView) return [] as Array<{ label: string; isToday: boolean }>;
+    const seen = new Set<string>();
+    const days: Array<{ label: string; isToday: boolean }> = [];
+    for (const opt of options) {
+      if (!opt.previewGroup) continue;
+      // previewGroup is e.g. "MON 19" or "MON 19 · Today"
+      const separatorIdx = opt.previewGroup.indexOf(" · ");
+      const weekdayDay =
+        separatorIdx >= 0 ? opt.previewGroup.slice(0, separatorIdx) : opt.previewGroup;
+      const relative = separatorIdx >= 0 ? opt.previewGroup.slice(separatorIdx + 3) : "";
+      if (!weekdayDay || seen.has(weekdayDay)) continue;
+      seen.add(weekdayDay);
+      days.push({ label: weekdayDay, isToday: relative === "Today" });
+    }
+    return days;
+  }, [isCalendarView, options]);
+
+  // Filter options to the selected calendar day when a day filter is active
+  const displayOptions = useMemo(() => {
+    if (!isCalendarView || calendarDayFilter === null) return options;
+    return options.filter((opt) => {
+      if (!opt.previewGroup) return false;
+      const separatorIdx = opt.previewGroup.indexOf(" · ");
+      const weekdayDay =
+        separatorIdx >= 0 ? opt.previewGroup.slice(0, separatorIdx) : opt.previewGroup;
+      return weekdayDay === calendarDayFilter;
+    });
+  }, [isCalendarView, calendarDayFilter, options]);
+
   const showPoster = viewport.breakpoint === "wide" || viewport.breakpoint === "medium";
-  const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
+  const { poster, posterState } = usePosterPreview(displayOptions[selectedIndex]?.previewImageUrl, {
     rows: viewport.breakpoint === "wide" ? 11 : 9,
     cols: viewport.breakpoint === "wide" ? 26 : 16,
     enabled: showPoster,
@@ -2113,6 +2153,7 @@ function BrowseShell<T>({
     setResultSubtitle("");
     setSelectedDetail("Search for a title — or try /trending to see what's popular");
     setActiveFilterBadges([]);
+    setCalendarDayFilter(null);
     setIdleFocused(false);
   }, []);
 
@@ -2149,6 +2190,7 @@ function BrowseShell<T>({
     setErrorMessage(null);
     setEmptyMessage("Searching…");
     setSelectedDetail("Finding titles and available matches…");
+    setCalendarDayFilter(null);
 
     try {
       const response = await onSearch(rawQuery);
@@ -2194,13 +2236,13 @@ function BrowseShell<T>({
 
   const handleQuerySubmit = useCallback(() => {
     const isDirty = query.trim() !== lastSearchedQuery;
-    const selected = options[selectedIndex];
-    if (!isDirty && selected && options.length > 0 && searchState === "ready") {
+    const selected = displayOptions[selectedIndex];
+    if (!isDirty && selected && displayOptions.length > 0 && searchState === "ready") {
       onSubmit(selected.value);
       return;
     }
     void runSearch();
-  }, [query, lastSearchedQuery, options, selectedIndex, searchState, onSubmit, runSearch]);
+  }, [query, lastSearchedQuery, displayOptions, selectedIndex, searchState, onSubmit, runSearch]);
 
   const loadDiscovery = async () => {
     if (!onLoadDiscovery || searchState === "loading") return;
@@ -2212,6 +2254,7 @@ function BrowseShell<T>({
     setErrorMessage(null);
     setEmptyMessage("Loading trending…");
     setSelectedDetail("Loading cached trending titles…");
+    setCalendarDayFilter(null);
 
     try {
       const response = await onLoadDiscovery();
@@ -2247,6 +2290,7 @@ function BrowseShell<T>({
     setErrorMessage(null);
     setEmptyMessage("Loading recommendations…");
     setSelectedDetail("Building personalized recommendations from history and TMDB…");
+    setCalendarDayFilter(null);
 
     try {
       const response = await onLoadRecommendations();
@@ -2336,20 +2380,20 @@ function BrowseShell<T>({
   };
 
   useEffect(() => {
-    if (options.length === 0) {
+    if (displayOptions.length === 0) {
       setSelectedIndex(0);
       return;
     }
-    setSelectedIndex((current) => Math.min(current, options.length - 1));
-  }, [options.length]);
+    setSelectedIndex((current) => Math.min(current, displayOptions.length - 1));
+  }, [displayOptions.length]);
 
   useEffect(() => {
-    const option = options[selectedIndex];
+    const option = displayOptions[selectedIndex];
     if (!option) {
       return;
     }
     setSelectedDetail(option.detail ?? "Press Enter to select this result.");
-  }, [options, selectedIndex]);
+  }, [displayOptions, selectedIndex]);
 
   useEffect(() => {
     if (!commandMode) {
@@ -2365,7 +2409,7 @@ function BrowseShell<T>({
   }, [commandInput, commandMode, commands]);
 
   const queryDirty = query.trim() !== lastSearchedQuery;
-  const selectedOption = options[selectedIndex];
+  const selectedOption = displayOptions[selectedIndex];
   const companionPanel = buildBrowseCompanionPanel(selectedOption, { selectedDetail });
   const {
     compact,
@@ -2388,9 +2432,9 @@ function BrowseShell<T>({
         : innerWidth;
   const listWidth = showCompanionLayout ? Math.max(48, innerWidth - previewWidth - 4) : innerWidth;
   const rowWidth = Math.max(20, listWidth - 4);
-  const windowStart = getWindowStart(selectedIndex, options.length, maxVisible);
-  const windowEnd = Math.min(windowStart + maxVisible, options.length);
-  const visibleOptions = options.slice(windowStart, windowEnd);
+  const windowStart = getWindowStart(selectedIndex, displayOptions.length, maxVisible);
+  const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
+  const visibleOptions = displayOptions.slice(windowStart, windowEnd);
   const previewBodyLines = wrapText(
     companionPanel.body,
     Math.max(previewWidth - 2, 24),
@@ -2496,7 +2540,7 @@ function BrowseShell<T>({
     }
 
     if ((input === "d" && key.ctrl) || input === "\x04") {
-      if (selectedOption && options.length > 0 && !queryDirty && searchState === "ready") {
+      if (selectedOption && displayOptions.length > 0 && !queryDirty && searchState === "ready") {
         onResolve("download");
       }
       return;
@@ -2506,7 +2550,7 @@ function BrowseShell<T>({
       if (
         selectedOption &&
         onQueueSelected &&
-        options.length > 0 &&
+        displayOptions.length > 0 &&
         !queryDirty &&
         searchState === "ready"
       ) {
@@ -2526,9 +2570,35 @@ function BrowseShell<T>({
       return;
     }
 
+    // Calendar day strip navigation — left/right arrows when in calendar mode
+    if (isCalendarView && calendarDays.length > 0 && key.leftArrow) {
+      setCalendarDayFilter((current) => {
+        if (current === null) return calendarDays[calendarDays.length - 1]?.label ?? null;
+        const idx = calendarDays.findIndex((d) => d.label === current);
+        return idx > 0 ? (calendarDays[idx - 1]?.label ?? current) : current;
+      });
+      setSelectedIndex(0);
+      return;
+    }
+    if (isCalendarView && calendarDays.length > 0 && key.rightArrow) {
+      setCalendarDayFilter((current) => {
+        if (current === null) return calendarDays[0]?.label ?? null;
+        const idx = calendarDays.findIndex((d) => d.label === current);
+        return idx < calendarDays.length - 1 ? (calendarDays[idx + 1]?.label ?? current) : current;
+      });
+      setSelectedIndex(0);
+      return;
+    }
+
     if (key.escape) {
       if (idleFocused) {
         setIdleFocused(false);
+        return;
+      }
+      // In calendar view: escape clears day filter before clearing all results
+      if (isCalendarView && calendarDayFilter !== null) {
+        setCalendarDayFilter(null);
+        setSelectedIndex(0);
         return;
       }
       if (options.length > 0 || searchState === "error" || searchState === "loading") {
@@ -2553,13 +2623,13 @@ function BrowseShell<T>({
       return;
     }
 
-    if (key.upArrow && options.length > 0) {
-      setSelectedIndex((current) => (current - 1 + options.length) % options.length);
+    if (key.upArrow && displayOptions.length > 0) {
+      setSelectedIndex((current) => (current - 1 + displayOptions.length) % displayOptions.length);
       return;
     }
 
-    if (key.downArrow && options.length > 0) {
-      setSelectedIndex((current) => (current + 1) % options.length);
+    if (key.downArrow && displayOptions.length > 0) {
+      setSelectedIndex((current) => (current + 1) % displayOptions.length);
       return;
     }
 
@@ -2609,8 +2679,8 @@ function BrowseShell<T>({
               </>
             ) : searchState === "error" ? (
               <Text color={palette.red}>search failed</Text>
-            ) : searchState === "ready" && options.length > 0 ? (
-              <Text color={palette.muted}>{options.length} results</Text>
+            ) : searchState === "ready" && displayOptions.length > 0 ? (
+              <Text color={palette.muted}>{displayOptions.length} results</Text>
             ) : null}
           </Box>
         </Box>
@@ -2634,7 +2704,7 @@ function BrowseShell<T>({
               { label: `Provider ${provider}`, tone: "info" },
               { label: mode === "anime" ? "Anime" : "Series" },
               ...(activeOverlay ? [{ label: activeOverlay.title, tone: "success" } as const] : []),
-              ...(queryDirty && options.length > 0
+              ...(queryDirty && displayOptions.length > 0
                 ? [{ label: "Results need refresh", tone: "warning" } as const]
                 : []),
               ...activeFilterBadges.map((filter) => ({
@@ -2661,7 +2731,7 @@ function BrowseShell<T>({
           onRedraw={clearShellScreen}
         />
 
-        {queryDirty && options.length > 0 && !ultraCompact && !commandMode ? (
+        {queryDirty && displayOptions.length > 0 && !ultraCompact && !commandMode ? (
           <Text color={palette.gray}>Query changed · Press Enter to refresh results</Text>
         ) : null}
 
@@ -2680,6 +2750,59 @@ function BrowseShell<T>({
           </Box>
         ) : null}
 
+        {isCalendarView && calendarDays.length > 0 && !ultraCompact ? (
+          <Box flexDirection="column" marginTop={1} marginBottom={1}>
+            {/* Day strip */}
+            <Box flexDirection="row" flexWrap="wrap">
+              {calendarDays.map((day) => {
+                const isSelected = calendarDayFilter === day.label;
+                return (
+                  <Box key={day.label} marginRight={3} flexDirection="column">
+                    <Text
+                      color={
+                        isSelected ? palette.teal : day.isToday ? palette.amber : palette.muted
+                      }
+                      bold={isSelected || day.isToday}
+                    >
+                      {day.isToday ? "◉ " : isSelected ? "● " : "  "}
+                      {day.label}
+                    </Text>
+                    {isSelected ? (
+                      <Text color={palette.teal}>{"─".repeat(day.label.length + 2)}</Text>
+                    ) : null}
+                  </Box>
+                );
+              })}
+              {calendarDayFilter !== null ? (
+                <Box marginLeft={1} alignSelf="flex-start">
+                  <Text color={palette.dim} dimColor>
+                    esc · all days
+                  </Text>
+                </Box>
+              ) : (
+                <Box marginLeft={1} alignSelf="flex-start">
+                  <Text color={palette.dim} dimColor>
+                    ← → to filter day
+                  </Text>
+                </Box>
+              )}
+            </Box>
+            {/* Type tabs — visual only; interaction deferred */}
+            {!compact ? (
+              <Box flexDirection="row" marginTop={1}>
+                {(["All", "Anime", "TV", "Movies"] as const).map((tab) => (
+                  <Box key={tab} marginRight={3} flexDirection="column">
+                    <Text color={tab === "All" ? palette.amber : palette.muted}>{tab}</Text>
+                    {tab === "All" ? (
+                      <Text color={palette.amber}>{"─".repeat(tab.length)}</Text>
+                    ) : null}
+                  </Box>
+                ))}
+              </Box>
+            ) : null}
+          </Box>
+        ) : null}
+
         {viewport.breakpoint === "blocked" ? (
           <ResizeBlocker
             columns={viewport.columns}
@@ -2690,7 +2813,7 @@ function BrowseShell<T>({
           />
         ) : activeOverlay ? (
           <OverlayPanel overlay={activeOverlay} width={innerWidth} />
-        ) : options.length > 0 ? (
+        ) : displayOptions.length > 0 ? (
           <Box
             flexDirection={showCompanion ? "row" : "column"}
             marginTop={1}
@@ -2704,7 +2827,7 @@ function BrowseShell<T>({
                 const optionIndex = windowStart + index;
                 const selected = optionIndex === selectedIndex;
                 const previousGroup =
-                  optionIndex > 0 ? options[optionIndex - 1]?.previewGroup : null;
+                  optionIndex > 0 ? displayOptions[optionIndex - 1]?.previewGroup : null;
                 const showGroupHeader =
                   option.previewGroup && option.previewGroup !== previousGroup;
                 const metaText = option.previewBadge ?? option.previewMeta?.[0];
@@ -2749,7 +2872,7 @@ function BrowseShell<T>({
                   </Box>
                 );
               })}
-              {windowEnd < options.length ? <Text color={palette.gray}> ▼ ...</Text> : null}
+              {windowEnd < displayOptions.length ? <Text color={palette.gray}> ▼ ...</Text> : null}
             </Box>
 
             {/* Companion pane */}
