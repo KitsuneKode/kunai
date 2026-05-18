@@ -18,8 +18,8 @@ Update this block as work proceeds. Keep commits scoped to one slice unless a te
 TRACKER_STATUS: in-progress
 TRACKER_OWNER: codex
 TRACKER_LAST_UPDATED: 2026-05-19
-TRACKER_CURRENT_SLICE: P1-provider-cycle-types
-TRACKER_NEXT_SLICE: P1-provider-cycle-engine
+TRACKER_CURRENT_SLICE: P2-provider-contract-v2
+TRACKER_NEXT_SLICE: P3-provider-evidence-fixtures
 TRACKER_BLOCKERS: none
 ```
 
@@ -48,7 +48,7 @@ Status values:
 | --- | --------------------------------------------------------------------------- | ----------- | ------------------------------------------------------ |
 | P0  | this file + all `.plans/provider-*` hardening docs                          | planned     | `docs: harden provider runtime v2 implementation plan` |
 | P1  | [Provider Fallback Resolver Engine](./provider-fallback-resolver-engine.md) | in-progress | types/core only before provider migration              |
-| P2  | [Provider Contract V2](./provider-contract-v2.md)                           | planned     | additive contracts and schemas                         |
+| P2  | [Provider Contract V2](./provider-contract-v2.md)                           | in-progress | additive contracts and schemas                         |
 | P3  | [Provider Evidence Fixtures](./provider-evidence-fixtures.md)               | planned     | fixture tests, no runtime behavior change              |
 | P4  | [Provider UI Projection Contract](./provider-ui-projection-contract.md)     | planned     | pure projection types/mapper first                     |
 | P5  | [Download Artifact Recovery](./download-artifact-recovery.md)               | planned     | storage/service sidecar status                         |
