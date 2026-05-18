@@ -6,6 +6,8 @@ import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import { buildPickerActionContext } from "@/app-shell/workflows";
 import type { Container } from "@/container";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
+import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import { formatTimestamp, isFinished } from "@/services/persistence/HistoryStore";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useState } from "react";
 
@@ -101,22 +103,29 @@ function LibraryTab({ container }: { container: Container }) {
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
+  const [historyMap, setHistoryMap] = useState<Record<string, HistoryEntry>>({});
   const viewport = useDebouncedViewportPolicy("picker");
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    container.offlineLibraryService
-      .listCompletedEntries(200)
-      .then((result) => {
+    Promise.all([
+      container.offlineLibraryService.listCompletedEntries(200),
+      container.historyStore.getAll(),
+    ])
+      .then(([result, history]) => {
         if (cancelled) return undefined;
         setEntries(result);
+        setHistoryMap(history);
         setLoading(false);
         return undefined;
       })
       .catch(() => {
         if (!cancelled) setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [container]);
 
   // Compute derived data unconditionally so hooks stay stable.
@@ -250,11 +259,17 @@ function LibraryTab({ container }: { container: Container }) {
                 {index === safeIndex ? "❯ " : "  "}
               </Text>
               <Text color={index === safeIndex ? "white" : undefined} bold={index === safeIndex}>
-                {truncateLine(group.label, 42)}
+                {truncateLine(group.label, 36)}
               </Text>
+              {group.readyCount > 0 ? (
+                <Text color={palette.green}>{`  ${group.readyCount}▶`}</Text>
+              ) : null}
+              {group.issueCount > 0 ? (
+                <Text color={palette.amber}>{` ${group.issueCount}⚠`}</Text>
+              ) : null}
               <Text color={palette.muted} dimColor>
                 {"  ·  "}
-                {group.actionSummary}
+                {group.nextPlayableEpisodeLabel ?? "no playable files"}
               </Text>
               {confirmDeleteKey === group.key ? (
                 <Text color={palette.amber} bold>
@@ -291,8 +306,39 @@ function LibraryTab({ container }: { container: Container }) {
       ) : null}
       {selectedGroup && confirmDeleteKey !== selectedGroup.key ? (
         <Box marginTop={1} flexDirection="column">
-          <DetailLine label="Selected" value={selectedGroup.actionSummary} tone="info" />
-          <DetailLine label="Artifacts" value={selectedGroup.artifactSummary} tone="neutral" />
+          {(() => {
+            const hist = historyMap[selectedGroup.titleId];
+            if (!hist) return null;
+            if (!isFinished(hist) && hist.timestamp > 30) {
+              const ep =
+                hist.type === "series"
+                  ? ` S${String(hist.season).padStart(2, "0")}E${String(hist.episode).padStart(2, "0")}`
+                  : "";
+              const at = formatTimestamp(hist.timestamp);
+              return (
+                <DetailLine
+                  label="Resume"
+                  value={`${hist.title}${ep} · paused at ${at}`}
+                  tone="warning"
+                />
+              );
+            }
+            if (isFinished(hist)) {
+              const ep =
+                hist.type === "series"
+                  ? ` S${String(hist.season).padStart(2, "0")}E${String(hist.episode).padStart(2, "0")}`
+                  : "";
+              return (
+                <DetailLine
+                  label="History"
+                  value={`last watched${ep} · ${new Date(hist.watchedAt).toLocaleDateString()}`}
+                  tone="success"
+                />
+              );
+            }
+            return null;
+          })()}
+          <DetailLine label="Files" value={selectedGroup.artifactSummary} tone="neutral" />
           {selectedGroup.entries.slice(0, 3).map((entry) => (
             <DetailLine
               key={entry.jobId}

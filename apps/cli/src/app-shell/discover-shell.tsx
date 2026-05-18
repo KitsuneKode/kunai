@@ -139,6 +139,13 @@ export function DiscoverShell({
       }
       return;
     }
+    if (key.tab && key.shift) {
+      if (sectionIdx > 0) {
+        setSectionIdx((s) => s - 1);
+        setItemIdx(0);
+      }
+      return;
+    }
     if (key.tab) {
       if (sectionIdx < visibleSections.length - 1) {
         setSectionIdx((s) => s + 1);
@@ -203,12 +210,41 @@ export function DiscoverShell({
           )}
         </Box>
       </Box>
+      {(() => {
+        const focusedItem = currentSection?.items[itemIdx];
+        if (!focusedItem) return null;
+        const meta = [
+          focusedItem.year,
+          focusedItem.rating !== null && focusedItem.rating !== undefined
+            ? `★ ${focusedItem.rating.toFixed(1)}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("  ");
+        const overview = focusedItem.overview
+          ? focusedItem.overview.slice(0, Math.max(60, innerWidth - 4))
+          : null;
+        return (
+          <Box flexDirection="column" marginBottom={1} paddingX={1}>
+            {meta ? (
+              <Text color={palette.amber} dimColor>
+                {meta}
+              </Text>
+            ) : null}
+            {overview ? (
+              <Text color={palette.muted} dimColor wrap="truncate">
+                {overview}
+              </Text>
+            ) : null}
+          </Box>
+        );
+      })()}
       <ShellFooter
         taskLabel="Discover"
         actions={[
           { key: "↵", label: "open", action: "search" },
           { key: "↑↓", label: "navigate", action: "search" },
-          { key: "tab", label: "next section", action: "search" },
+          { key: "tab", label: "section", action: "search" },
           ...(onRefresh ? [{ key: "r", label: "refresh", action: "search" as const }] : []),
           { key: "esc", label: "back", action: "quit" },
         ]}

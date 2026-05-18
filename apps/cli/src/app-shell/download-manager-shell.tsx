@@ -54,6 +54,7 @@ export function DownloadManagerContent({
     const unsub = container.downloadService.onEvent((event) => {
       if (
         event.type === "enqueued" ||
+        event.type === "progress" ||
         event.type === "complete" ||
         event.type === "failed" ||
         event.type === "aborted" ||
@@ -160,8 +161,9 @@ export function DownloadManagerContent({
     const progressMeta =
       job.status === "running"
         ? [
-            job.fileSize ? `${formatBytes(job.fileSize)}` : null,
-            job.attempt > 0 ? `try ${job.attempt}` : null,
+            formatEta(job),
+            job.fileSize ? formatBytes(job.fileSize) : null,
+            job.attempt > 1 ? `try ${job.attempt}` : null,
           ]
             .filter(Boolean)
             .join(" · ")
@@ -303,4 +305,16 @@ function formatBytes(bytes: number): string {
     unit += 1;
   }
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function formatEta(job: import("@kunai/storage").DownloadJobRecord): string | null {
+  if (job.status !== "running" || !job.startedAt || job.progressPercent < 5) return null;
+  const elapsedMs = Date.now() - new Date(job.startedAt).getTime();
+  if (elapsedMs < 3_000) return null;
+  const totalEstMs = elapsedMs / (job.progressPercent / 100);
+  const remainingMs = totalEstMs - elapsedMs;
+  if (remainingMs <= 0) return null;
+  const remainingS = Math.ceil(remainingMs / 1_000);
+  if (remainingS < 60) return `~${remainingS}s left`;
+  return `~${Math.ceil(remainingMs / 60_000)}m left`;
 }

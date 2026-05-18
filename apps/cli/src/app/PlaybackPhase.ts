@@ -1340,6 +1340,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               effectiveTiming.current,
               quitThresholdMode,
             );
+            const didComplete = didPlaybackReachCompletionThreshold(
+              result,
+              effectiveTiming.current,
+              quitThresholdMode,
+            );
             await historyStore.save(title.id, {
               title: title.name,
               type: title.type,
@@ -1347,14 +1352,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               episode: currentEpisode.episode,
               timestamp: historyTimestamp,
               duration: result.duration,
-              completed: didPlaybackReachCompletionThreshold(
-                result,
-                effectiveTiming.current,
-                quitThresholdMode,
-              ),
+              completed: didComplete,
               provider: resolvedProviderId,
               watchedAt: new Date().toISOString(),
             });
+            if (didComplete) {
+              const epStr =
+                title.type === "series"
+                  ? ` S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}`
+                  : "";
+              this.updatePlaybackFeedback(context, {
+                note: `✓ ${title.name}${epStr} · episode complete`,
+              });
+            }
           } else {
             diagnosticsStore.record({
               category: "playback",
