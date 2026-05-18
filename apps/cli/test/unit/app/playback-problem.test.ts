@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildPlayerFailureProblem,
   buildProviderResolveProblem,
+  toErrorScenario,
 } from "@/domain/playback/playback-problem";
 
 describe("playback problem model", () => {
@@ -23,5 +24,54 @@ describe("playback problem model", () => {
     expect(problem.stage).toBe("mpv");
     expect(problem.recommendedAction).toBe("relaunch");
     expect(problem.secondaryActions).toContain("try-next-provider");
+  });
+
+  test("toErrorScenario maps provider timeout and network failures", () => {
+    expect(
+      toErrorScenario(
+        buildProviderResolveProblem({
+          attempts: [{ failure: { message: "timed out waiting for vidking" } }],
+        }),
+      ),
+    ).toEqual({
+      kind: "provider-timeout",
+      providerName: "provider",
+      elapsedSec: 30,
+    });
+
+    expect(
+      toErrorScenario(
+        buildProviderResolveProblem({
+          attempts: [{ failure: { message: "timed out waiting for vidking" } }],
+        }),
+        { providerName: "vidking" },
+      ),
+    ).toEqual({
+      kind: "provider-timeout",
+      providerName: "vidking",
+      elapsedSec: 30,
+    });
+
+    expect(
+      toErrorScenario(
+        buildProviderResolveProblem({
+          attempts: [{ failure: { message: "ERR_INTERNET_DISCONNECTED" } }],
+        }),
+      ),
+    ).toEqual({ kind: "network-offline" });
+
+    expect(
+      toErrorScenario(
+        buildProviderResolveProblem({
+          attempts: [{ failure: { message: "403 forbidden for Severance" } }],
+        }),
+      ),
+    ).toEqual({ kind: "title-unavailable", title: "This title" });
+
+    expect(toErrorScenario(buildPlayerFailureProblem("expired-stream"))).toEqual({
+      kind: "stream-broken",
+      attempt: 1,
+      maxAttempts: 3,
+    });
   });
 });

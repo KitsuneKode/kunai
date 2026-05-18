@@ -1,5 +1,11 @@
 import type { PlaybackFailureClass } from "@/infra/player/playback-failure-classifier";
 
+export type ErrorScenario =
+  | { kind: "provider-timeout"; providerName: string; elapsedSec: number }
+  | { kind: "stream-broken"; attempt: number; maxAttempts: number }
+  | { kind: "network-offline" }
+  | { kind: "title-unavailable"; title: string };
+
 export type PlaybackProblemStage =
   | "provider-resolve"
   | "stream-open"
@@ -178,6 +184,52 @@ export function buildPlayerFailureProblem(failureClass: PlaybackFailureClass): P
         secondaryActions: ["refresh", "relaunch"],
       };
   }
+}
+
+export type ErrorScenarioContext = {
+  readonly providerName?: string;
+  readonly title?: string;
+  readonly resolveRetryCount?: number;
+};
+
+export function toErrorScenario(
+  problem: PlaybackProblem | null | undefined,
+  context: ErrorScenarioContext = {},
+): ErrorScenario | undefined {
+  if (!problem) return undefined;
+
+  const attempt = Math.max(1, (context.resolveRetryCount ?? 0) + 1);
+
+  switch (problem.cause) {
+    case "provider-timeout":
+      return {
+        kind: "provider-timeout",
+        providerName: context.providerName ?? "provider",
+        elapsedSec: 30,
+      };
+    case "network":
+      return { kind: "network-offline" };
+    case "no-stream":
+    case "provider-access":
+      return {
+        kind: "title-unavailable",
+        title: context.title ?? extractUnavailableTitle(problem.userMessage),
+      };
+    case "expired-stream":
+    case "seek-stuck":
+    case "ipc-stuck":
+    case "player-exited":
+    case "network-buffering":
+      return { kind: "stream-broken", attempt, maxAttempts: 3 };
+    default:
+      return undefined;
+  }
+}
+
+function extractUnavailableTitle(message: string): string {
+  const quoted = message.match(/"([^"]+)"/);
+  if (quoted?.[1]) return quoted[1];
+  return "This title";
 }
 
 function hasRuntimeMissingFailure(

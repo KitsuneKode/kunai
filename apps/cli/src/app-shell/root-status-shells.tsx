@@ -1,14 +1,11 @@
+import type { ErrorScenario } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
-export type ErrorScenario =
-  | { kind: "provider-timeout"; providerName: string; elapsedSec: number }
-  | { kind: "stream-broken"; attempt: number; maxAttempts: number }
-  | { kind: "network-offline" }
-  | { kind: "title-unavailable"; title: string };
-
 import { palette } from "./shell-theme";
+
+export type { ErrorScenario } from "@/domain/playback/playback-problem";
 
 export function RootIdleShell({ state }: { state: SessionState }) {
   const hasSession = !!state.currentTitle;
