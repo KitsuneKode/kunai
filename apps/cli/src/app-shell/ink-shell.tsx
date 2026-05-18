@@ -66,7 +66,6 @@ import {
   BrowseTitle,
   ContextStrip,
   DetailLine,
-  InlineBadge,
   LocalSection,
   ResizeBlocker,
   ShellFooter,
@@ -2096,10 +2095,10 @@ function BrowseShell<T>({
       ),
   );
   const requestIdRef = useRef(0);
-  const showPoster = viewport.wideBrowse || viewport.mediumBrowse;
+  const showPoster = viewport.breakpoint === "wide" || viewport.breakpoint === "medium";
   const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
-    rows: viewport.wideBrowse ? 11 : 9,
-    cols: viewport.wideBrowse ? 26 : 16,
+    rows: viewport.breakpoint === "wide" ? 11 : 9,
+    cols: viewport.breakpoint === "wide" ? 26 : 16,
     enabled: showPoster,
     debounceMs: 120,
   });
@@ -2372,22 +2371,22 @@ function BrowseShell<T>({
     compact,
     ultraCompact,
     tooSmall,
-    wideBrowse,
-    mediumBrowse,
     minColumns,
     minRows,
     maxVisibleRows: maxVisible,
   } = viewport;
+  const browseBreakpoint = viewport.breakpoint;
+  const showCompanionLayout = browseBreakpoint === "wide" || browseBreakpoint === "medium";
   const effectiveFooterMode = "minimal";
   const innerWidth = Math.max(24, viewport.columns - 8);
-  // Tiered companion widths: wideBrowse gets 30%, mediumBrowse gets 28%, compact gets full width below list
-  const previewWidth = wideBrowse
-    ? Math.max(28, Math.floor(innerWidth * 0.3))
-    : mediumBrowse
-      ? Math.max(26, Math.floor(innerWidth * 0.28))
-      : innerWidth;
-  const listWidth =
-    wideBrowse || mediumBrowse ? Math.max(48, innerWidth - previewWidth - 4) : innerWidth;
+  // Tiered companion widths: wide gets 30%, medium gets 28%, compact gets full width below list
+  const previewWidth =
+    browseBreakpoint === "wide"
+      ? Math.max(28, Math.floor(innerWidth * 0.3))
+      : browseBreakpoint === "medium"
+        ? Math.max(26, Math.floor(innerWidth * 0.28))
+        : innerWidth;
+  const listWidth = showCompanionLayout ? Math.max(48, innerWidth - previewWidth - 4) : innerWidth;
   const rowWidth = Math.max(20, listWidth - 4);
   const windowStart = getWindowStart(selectedIndex, options.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, options.length);
@@ -2398,7 +2397,7 @@ function BrowseShell<T>({
     ultraCompact ? 1 : 2,
   );
   const showCompanion =
-    (wideBrowse || mediumBrowse) &&
+    showCompanionLayout &&
     !compact &&
     Boolean(
       companionPanel.title ||
@@ -2622,8 +2621,9 @@ function BrowseShell<T>({
           <Box marginTop={1} flexWrap="wrap">
             <Text color={palette.gray}>Filters </Text>
             {activeFilterBadges.map((filter) => (
-              <Box key={filter} marginRight={1}>
-                <InlineBadge label={filter} tone="info" />
+              <Box key={filter} marginRight={2} flexDirection="column">
+                <Text color={palette.amber}>{filter}</Text>
+                <Text color={palette.amber}>{"─".repeat(filter.length)}</Text>
               </Box>
             ))}
           </Box>
@@ -2760,7 +2760,7 @@ function BrowseShell<T>({
                 flexDirection="column"
                 width={previewWidth}
               >
-                {/* Poster in wideBrowse and mediumBrowse; compact poster for medium */}
+                {/* Poster in wide and medium breakpoints; compact poster for medium */}
                 {showPoster && poster.kind !== "none" ? (
                   <Box flexDirection="column" marginBottom={1}>
                     <Text>{poster.placeholder}</Text>
@@ -2825,9 +2825,9 @@ function BrowseShell<T>({
           </Box>
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
           <Box marginTop={2} flexDirection="column" flexGrow={1}>
-            <Text color={palette.amber}>{`No results for "${lastSearchedQuery}"`}</Text>
-            <Text color={palette.gray} dimColor>
-              Try a different spelling, or switch provider with /provider
+            <Text color={palette.dim}>{`◌  no results for "${lastSearchedQuery}"  `}</Text>
+            <Text color={palette.dim} dimColor>
+              try a different title or browse by genre
             </Text>
           </Box>
         ) : (
