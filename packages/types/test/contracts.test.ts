@@ -3,6 +3,10 @@ import { expect, test } from "bun:test";
 import type {
   ProviderResolveInput,
   ProviderModule,
+  ProviderCycleAttempt,
+  ProviderCycleCandidate,
+  ProviderCycleFailure,
+  ProviderCycleIntent,
   ProviderResolveResult,
   ProviderRuntimeContext,
   ProviderTraceEvent,
@@ -285,4 +289,50 @@ test("provider contract carries presentation and subtitle delivery preferences",
 
   expect(result.streams[0]?.presentation).toBe("dub");
   expect(result.variants?.[0]?.subtitleDelivery).toBe("embedded");
+});
+
+test("provider cycle contract separates normalized logic fields from provider labels", () => {
+  const intent: ProviderCycleIntent = "manual-source";
+  const candidate: ProviderCycleCandidate = {
+    id: "allmanga:sub:kiwi:1080p",
+    providerId: "allanime",
+    sourceId: "sub",
+    serverId: "kiwi",
+    variantId: "1080p",
+    streamId: "stream-kiwi-1080p",
+    groupId: "sub",
+    label: "Sub · Kiwi · 1080p",
+    nativeLabel: "kiwi",
+    normalizedAudioLanguage: "ja",
+    normalizedSubtitleLanguage: "en",
+    presentation: "sub",
+    qualityRank: 1080,
+    priority: 10,
+    metadata: {
+      translationType: "sub",
+      providerServerName: "kiwi",
+    },
+  };
+
+  const failure: ProviderCycleFailure = {
+    providerId: candidate.providerId,
+    candidateId: candidate.id,
+    failureClass: "candidate-timeout",
+    message: "Timed out while resolving Kiwi",
+    retryable: true,
+    at: "2026-05-19T00:00:00.000Z",
+  };
+
+  const attempt: ProviderCycleAttempt = {
+    candidate,
+    attempt: 1,
+    startedAt: "2026-05-19T00:00:00.000Z",
+    endedAt: "2026-05-19T00:00:01.000Z",
+    failure,
+  };
+
+  expect(intent).toBe("manual-source");
+  expect(attempt.candidate.nativeLabel).toBe("kiwi");
+  expect(attempt.candidate.normalizedAudioLanguage).toBe("ja");
+  expect(attempt.failure?.failureClass).toBe("candidate-timeout");
 });

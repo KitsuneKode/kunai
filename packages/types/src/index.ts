@@ -1,5 +1,7 @@
 export type MediaKind = "movie" | "series" | "anime";
 
+export type * from "./provider-cycle";
+
 export type ProviderId = string & { readonly __brand?: "ProviderId" };
 
 export type ProviderRuntime = "browser-safe-fetch" | "direct-http" | "debrid";
