@@ -226,3 +226,18 @@ export function getLoadingDisclosure(
     showSubtitleStatus: elapsedSeconds >= 2,
   };
 }
+
+export function getStageAnimationVariant(
+  stage: LoadingShellState["stage"],
+): "flux-columns" | "echo-ring" | "neon-drift" | "core-spiral" | "pulse-grid" {
+  switch (stage) {
+    case "finding-stream":
+      return "echo-ring";
+    case "preparing-player":
+      return "neon-drift";
+    case "starting-playback":
+      return "core-spiral";
+    default:
+      return "flux-columns";
+  }
+}

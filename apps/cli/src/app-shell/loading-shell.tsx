@@ -2,14 +2,16 @@ import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput, useStdout } from "ink";
 import React from "react";
 
-import { InlineDotMatrixLoader } from "./dot-matrix-loader";
+import { DotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
 import {
   getLoadingDisclosure,
   getLoadingShellTimerPolicy,
   getProviderResolveWaitPresentation,
+  getStageAnimationVariant,
   normalizeLoadingIssue,
   normalizeProviderDetail,
+  renderStageRail,
   shouldShowPlaybackRuntimeStrip,
   shouldShowLoadingElapsed,
   stageLabel,
@@ -138,6 +140,47 @@ function useRuntimeHealthLine(
   }, [getRuntimeHealth, refreshMs]);
 
   return healthLine;
+}
+
+function StageRail({
+  items,
+}: {
+  items: readonly {
+    label: string;
+    tone: "neutral" | "info" | "success" | "warning" | "error";
+  }[];
+}) {
+  return (
+    <Box flexDirection="row">
+      {items.map((item, i) => (
+        <React.Fragment key={item.label}>
+          {i > 0 ? (
+            <Text color={palette.dim} dimColor>
+              {" ── "}
+            </Text>
+          ) : null}
+          <Text
+            color={
+              item.tone === "success"
+                ? palette.green
+                : item.tone === "info"
+                  ? palette.teal
+                  : item.tone === "warning"
+                    ? palette.amber
+                    : palette.dim
+            }
+          >
+            {item.tone === "success"
+              ? "✓ "
+              : item.tone === "info" || item.tone === "warning"
+                ? "◉ "
+                : "· "}
+            {item.label}
+          </Text>
+        </React.Fragment>
+      ))}
+    </Box>
+  );
 }
 
 const BufferHealthBadge = React.memo(function BufferHealthBadge({
@@ -364,6 +407,7 @@ export const LoadingShell = React.memo(function LoadingShell({
 
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
   const loadingIssue = normalizeLoadingIssue(state.latestIssue);
+  const stageRailItems = renderStageRail(activeStage, loadingIssue);
   const providerDetail = normalizeProviderDetail(state.details);
   const providerLine = formatLoadingProviderLine(state);
   const subtitleReady = Boolean(
@@ -538,43 +582,45 @@ export const LoadingShell = React.memo(function LoadingShell({
                 </Text>
               </Box>
 
-              {/* Primary operation */}
-              <Box marginTop={1}>
-                <InlineDotMatrixLoader
-                  variant="flux-columns"
-                  active={timerPolicy.animate}
-                  onColor={palette.teal}
-                />
-                <Text color={palette.teal}> </Text>
-                <Text bold color="white">
-                  {state.stageDetail || stageLabel(activeStage)}
-                </Text>
+              {/* Animation grid + stage context side-by-side */}
+              <Box flexDirection="row" marginTop={1} alignItems="flex-start">
+                <Box marginRight={2}>
+                  <DotMatrixLoader
+                    variant={getStageAnimationVariant(activeStage)}
+                    active={timerPolicy.animate}
+                    onColor={palette.teal}
+                    offColor={palette.dim}
+                  />
+                </Box>
+                <Box flexDirection="column" flexGrow={1}>
+                  <Text bold color="white">
+                    {state.stageDetail || stageLabel(activeStage)}
+                  </Text>
+                  <Box marginTop={1}>
+                    <StageRail items={stageRailItems} />
+                  </Box>
+                  {/* Provider context — revealed after 2s */}
+                  {disclosure.showProvider && providerDetail && (
+                    <Box marginTop={1}>
+                      <Text color={palette.gray} dimColor>
+                        {providerDetail}
+                      </Text>
+                    </Box>
+                  )}
+                  {/* Subtitle status — revealed after 2s */}
+                  {disclosure.showSubtitleStatus && state.subtitleStatus && (
+                    <Box marginTop={1}>
+                      <Text color={subtitleReady ? palette.green : palette.amber}>
+                        {state.subtitleStatus}
+                      </Text>
+                    </Box>
+                  )}
+                </Box>
               </Box>
-
-              {/* Provider context — revealed after 2s so the user isn't overwhelmed */}
-              {disclosure.showProvider && providerDetail && (
-                <Box marginTop={1}>
-                  <Text color={palette.gray} dimColor>
-                    {providerDetail}
-                  </Text>
-                </Box>
-              )}
-
-              {/* Subtitle status — revealed after 2s */}
-              {disclosure.showSubtitleStatus && state.subtitleStatus && (
-                <Box marginTop={1}>
-                  <Text color={subtitleReady ? palette.green : palette.amber}>
-                    {state.subtitleStatus}
-                  </Text>
-                </Box>
-              )}
-
-              {/* Spacer instead of separator for calmer visual rhythm */}
-              {(disclosure.showDiagnostics || disclosure.showProgress) && <Box marginY={1} />}
 
               {/* Diagnostics strip — revealed after 5s */}
               {disclosure.showDiagnostics && (
-                <Box flexDirection="column">
+                <Box flexDirection="column" marginTop={2}>
                   {state.trace && (
                     <Text color={palette.gray} dimColor>
                       {state.trace}
