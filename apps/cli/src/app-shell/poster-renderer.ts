@@ -212,6 +212,19 @@ export async function renderPoster(
   }
 }
 
+type PosterFallbackColor = "amber" | "teal" | "purple" | "pink";
+const POSTER_COLORS: readonly PosterFallbackColor[] = ["amber", "teal", "purple", "pink"];
+
+export function hashTitleToColor(title: string): PosterFallbackColor {
+  let hash = 5381;
+  for (let i = 0; i < title.length; i++) {
+    hash = ((hash << 5) + hash) ^ title.charCodeAt(i);
+    hash = hash >>> 0; // keep unsigned 32-bit
+  }
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return POSTER_COLORS[hash % POSTER_COLORS.length]!;
+}
+
 export const __testing = {
   runtime,
 };

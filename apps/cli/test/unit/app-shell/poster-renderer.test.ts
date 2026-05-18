@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   __testing as rendererTesting,
+  hashTitleToColor,
   renderPoster,
   resolveAppShellPosterCapability,
 } from "@/app-shell/poster-renderer";
@@ -100,5 +101,27 @@ describe("app-shell poster renderer", () => {
     rendererTesting.runtime.detectImageCapability = () => capability("none");
     const result = await renderPoster(pngBytes(), { rows: 4, cols: 8, allowKitty: true });
     expect(result).toEqual({ kind: "none" });
+  });
+});
+
+describe("hashTitleToColor", () => {
+  test("returns one of the 4 palette colors for any string", () => {
+    const validColors = ["amber", "teal", "purple", "pink"] as const;
+    expect(validColors).toContain(hashTitleToColor("Attack on Titan"));
+    expect(validColors).toContain(hashTitleToColor("Demon Slayer"));
+    expect(validColors).toContain(hashTitleToColor(""));
+  });
+
+  test("same title always returns the same color", () => {
+    const color1 = hashTitleToColor("Vinland Saga");
+    const color2 = hashTitleToColor("Vinland Saga");
+    expect(color1).toBe(color2);
+  });
+
+  test("different titles usually return different colors", () => {
+    const titles = ["Attack on Titan", "Demon Slayer", "Frieren", "Solo Leveling", "Berserk"];
+    const colors = titles.map(hashTitleToColor);
+    const unique = new Set(colors);
+    expect(unique.size).toBeGreaterThanOrEqual(2);
   });
 });
