@@ -22,7 +22,14 @@ export function PickerOverlay({
   const policy = getShellViewportPolicy("picker", columns, rows);
 
   if (policy.tooSmall) {
-    return <ResizeBlocker minColumns={policy.minColumns} minRows={policy.minRows} />;
+    return (
+      <ResizeBlocker
+        columns={columns}
+        rows={rows}
+        minColumns={policy.minColumns}
+        minRows={policy.minRows}
+      />
+    );
   }
 
   const filteredOptions = getFilteredPickerOptions(state);

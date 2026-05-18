@@ -27,6 +27,8 @@ export function ShellFrame({
   onUnhandledInput,
   onResolve,
   children,
+  terminalWidth: terminalWidthProp,
+  terminalRows: terminalRowsProp,
 }: {
   eyebrow: string;
   title: string;
@@ -41,6 +43,8 @@ export function ShellFrame({
   onUnhandledInput?: (input: string, key: ShellFrameInputKey) => void;
   onResolve: (action: ShellAction) => void;
   children: React.ReactNode;
+  terminalWidth?: number;
+  terminalRows?: number;
 }) {
   useInput((input, key) => {
     if (isHardGlobalQuit(input, key)) {
@@ -66,7 +70,9 @@ export function ShellFrame({
   });
 
   const { stdout } = useStdout();
-  const commandWidth = Math.min(92, Math.max(36, Math.floor((stdout.columns ?? 80) * 0.62)));
+  const cols = terminalWidthProp ?? stdout.columns ?? 80;
+  const rows = terminalRowsProp ?? stdout.rows ?? 24;
+  const commandWidth = Math.min(92, Math.max(36, Math.floor(cols * 0.62)));
 
   return (
     <Box
@@ -95,7 +101,7 @@ export function ShellFrame({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
-            maxVisible={Math.max(5, Math.min(12, (stdout.rows ?? 24) - 18))}
+            maxVisible={Math.max(5, Math.min(12, rows - 18))}
             width={commandWidth}
           />
         ) : null}
@@ -105,6 +111,7 @@ export function ShellFrame({
           actions={footerActions}
           mode={footerMode}
           commandMode={commandMode && !inputLocked}
+          terminalWidth={cols}
         />
       </Box>
     </Box>
@@ -121,6 +128,7 @@ export function InputField({
   hint,
   maxWidth,
   onRedraw,
+  terminalWidth: terminalWidthProp,
 }: {
   label: string;
   value: string;
@@ -131,9 +139,10 @@ export function InputField({
   hint?: string;
   maxWidth?: number;
   onRedraw?: () => void;
+  terminalWidth?: number;
 }) {
   const { stdout } = useStdout();
-  const fieldWidth = Math.max(20, maxWidth ?? (stdout.columns ?? 80) - 8);
+  const fieldWidth = Math.max(20, maxWidth ?? (terminalWidthProp ?? stdout.columns ?? 80) - 8);
   const textWidth = Math.max(4, fieldWidth - 8);
   const renderedHint = hint ? truncateLine(hint, Math.max(12, fieldWidth - 4)) : undefined;
   const editor = useLineEditor({

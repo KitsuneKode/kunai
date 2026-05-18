@@ -1389,6 +1389,8 @@ function PlaybackShell({
     >
       {playbackViewport.tooSmall ? (
         <ResizeBlocker
+          columns={playbackViewport.columns}
+          rows={playbackViewport.rows}
           minColumns={playbackViewport.minColumns}
           minRows={playbackViewport.minRows}
           message="Resize terminal for playback controls"
@@ -1861,7 +1863,12 @@ function ListShell<T>({
           onRedraw={clearShellScreen}
         />
         {tooSmall ? (
-          <ResizeBlocker minColumns={minColumns} minRows={minRows} />
+          <ResizeBlocker
+            columns={viewport.columns}
+            rows={viewport.rows}
+            minColumns={minColumns}
+            minRows={minRows}
+          />
         ) : (
           <>
             <Text color={palette.gray} dimColor>
@@ -2667,6 +2674,8 @@ function BrowseShell<T>({
 
         {tooSmall ? (
           <ResizeBlocker
+            columns={viewport.columns}
+            rows={viewport.rows}
             minColumns={minColumns}
             minRows={minRows}
             message="Resize terminal to browse results"

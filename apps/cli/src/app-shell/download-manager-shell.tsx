@@ -135,7 +135,14 @@ export function DownloadManagerContent({
   const shellWidth = viewport.columns;
 
   if (tooSmall) {
-    return <ResizeBlocker minColumns={minColumns} minRows={minRows} />;
+    return (
+      <ResizeBlocker
+        columns={viewport.columns}
+        rows={viewport.rows}
+        minColumns={minColumns}
+        minRows={minRows}
+      />
+    );
   }
 
   const isConfirming = (index: number) =>

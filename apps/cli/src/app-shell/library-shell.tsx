@@ -62,7 +62,14 @@ export function LibraryShell({
   });
 
   if (viewport.tooSmall) {
-    return <ResizeBlocker minColumns={viewport.minColumns} minRows={viewport.minRows} />;
+    return (
+      <ResizeBlocker
+        columns={viewport.columns}
+        rows={viewport.rows}
+        minColumns={viewport.minColumns}
+        minRows={viewport.minRows}
+      />
+    );
   }
 
   const autoLabel =

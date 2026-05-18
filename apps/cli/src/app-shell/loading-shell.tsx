@@ -1,5 +1,5 @@
 import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import { DotMatrixLoader } from "./dot-matrix-loader";
@@ -22,6 +22,7 @@ import { ContextStrip, DetailLine, LocalSection } from "./shell-primitives";
 import { APP_LABEL, palette } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
+import { useViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
 
@@ -260,8 +261,8 @@ export const LoadingShell = React.memo(function LoadingShell({
     hasMemoryLine: Boolean(memoryLine),
     hasRuntimeHealthLine: Boolean(runtimeHealthLine),
   });
-  const { stdout } = useStdout();
-  const terminalColumns = stdout.columns ?? 80;
+  const loadingViewport = useViewportPolicy("playback");
+  const terminalColumns = loadingViewport.columns;
   const barWidth = Math.min(48, Math.max(12, Math.floor(terminalColumns * 0.45)));
   const { poster, posterState } = usePosterPreview(state.posterUrl, {
     rows: 10,

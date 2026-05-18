@@ -158,7 +158,12 @@ function ChecklistShell<T>({
           />
         </Box>
         {tooSmall ? (
-          <ResizeBlocker minColumns={minColumns} minRows={minRows} />
+          <ResizeBlocker
+            columns={viewport.columns}
+            rows={viewport.rows}
+            minColumns={minColumns}
+            minRows={minRows}
+          />
         ) : (
           <>
             <Box

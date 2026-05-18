@@ -169,15 +169,17 @@ export function Footer({
   mode = "detailed",
   commandMode = false,
   maxVisible,
+  terminalWidth: terminalWidthProp,
 }: {
   taskLabel: string;
   actions: readonly FooterAction[];
   mode?: ShellFooterMode;
   commandMode?: boolean;
   maxVisible?: number;
+  terminalWidth?: number;
 }) {
   const { stdout } = useStdout();
-  const terminalWidth = stdout.columns ?? 100;
+  const terminalWidth = terminalWidthProp ?? stdout.columns ?? 100;
   const taskWidth = Math.max(20, terminalWidth - 4);
   const visibleActions = React.useMemo(
     () =>
@@ -240,12 +242,14 @@ export function ShellFooter({
   mode = "detailed",
   commandMode = false,
   maxVisible,
+  terminalWidth,
 }: {
   taskLabel: string;
   actions: readonly FooterAction[];
   mode?: ShellFooterMode;
   commandMode?: boolean;
   maxVisible?: number;
+  terminalWidth?: number;
 }) {
   return (
     <Footer
@@ -254,28 +258,29 @@ export function ShellFooter({
       mode={mode}
       commandMode={commandMode}
       maxVisible={maxVisible}
+      terminalWidth={terminalWidth}
     />
   );
 }
 
 export const ResizeBlocker = React.memo(function ResizeBlocker({
+  columns,
+  rows,
   minColumns,
   minRows,
   message = "Terminal too small",
 }: {
+  columns: number;
+  rows: number;
   minColumns: number;
   minRows: number;
   message?: string;
 }) {
-  const { stdout } = useStdout();
-  const cols = stdout.columns ?? 0;
-  const rows = stdout.rows ?? 0;
-
   return (
     <Box marginTop={1} flexDirection="column" paddingX={1}>
       <Text color={palette.amber}>{message}</Text>
       <Text color={palette.muted}>
-        {`Terminal is ${cols}×${rows}  ·  needs ${minColumns}×${minRows}`}
+        {`Terminal is ${columns}×${rows}  ·  needs ${minColumns}×${minRows}`}
       </Text>
       <Text color={palette.dim}>Zoom out or resize the terminal window.</Text>
       <Box marginTop={1}>
