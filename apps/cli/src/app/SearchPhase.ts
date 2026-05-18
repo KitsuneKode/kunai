@@ -24,6 +24,7 @@ import {
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { loadRandomResults } from "@/app/random-results";
 import { searchTitles } from "@/app/search-routing";
+import { titleInfoFromSearchResult } from "@/app/title-info";
 import { effectiveFooterHints } from "@/container";
 import { mediaItemFromSearchResult } from "@/domain/media/media-item-adapters";
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
@@ -183,16 +184,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 providerRegistry,
                 signal: context.signal,
               });
-              const title: TitleInfo = {
-                id: mapped.id,
-                type: mapped.type,
-                name: chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
-                year: mapped.year,
-                overview: mapped.overview,
-                posterUrl: mapped.posterPath ?? undefined,
-                titleAliases: mapped.titleAliases,
-                episodeCount: mapped.episodeCount,
-              };
+              const title = titleInfoFromSearchResult(
+                mapped,
+                chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+              );
               stateManager.dispatch({ type: "SELECT_TITLE", title });
               return { status: "success", value: title };
             }
@@ -555,16 +550,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         // Convert SearchResult to TitleInfo
-        const title: TitleInfo = {
-          id: selected.id,
-          type: selected.type,
-          name: chooseSearchResultTitle(selected, container.config.animeTitlePreference),
-          titleAliases: selected.titleAliases,
-          year: selected.year,
-          overview: selected.overview,
-          posterUrl: selected.posterPath ?? undefined,
-          episodeCount: selected.episodeCount,
-        };
+        const title = titleInfoFromSearchResult(
+          selected,
+          chooseSearchResultTitle(selected, container.config.animeTitlePreference),
+        );
 
         stateManager.dispatch({ type: "SELECT_TITLE", title });
 

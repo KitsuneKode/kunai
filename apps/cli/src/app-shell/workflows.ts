@@ -12,6 +12,7 @@ import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-ma
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
+import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
@@ -1689,16 +1690,10 @@ export async function downloadSelectedResult(container: Container): Promise<void
     providerRegistry,
     signal: new AbortController().signal,
   });
-  const title: TitleInfo = {
-    id: mapped.id,
-    type: mapped.type,
-    name: chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
-    titleAliases: mapped.titleAliases,
-    year: mapped.year,
-    overview: mapped.overview,
-    posterUrl: mapped.posterPath ?? undefined,
-    episodeCount: mapped.episodeCount,
-  };
+  const title = titleInfoFromSearchResult(
+    mapped,
+    chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+  );
   const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
   await new DownloadOnlyPhase().execute(
     { title },

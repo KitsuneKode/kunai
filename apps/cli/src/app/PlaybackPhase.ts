@@ -66,6 +66,7 @@ import {
 } from "@/app/source-refresh-policy";
 import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
+import { titleInfoFromSearchResult } from "@/app/title-info";
 import {
   buildProviderResolveProblem,
   type PlaybackProblem,
@@ -301,16 +302,7 @@ async function confirmAndDownloadPostPlaybackRecommendation(
   const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
   await new DownloadOnlyPhase().execute(
     {
-      title: {
-        id: mapped.id,
-        type: mapped.type,
-        name: mapped.title,
-        ...(mapped.titleAliases ? { titleAliases: mapped.titleAliases } : {}),
-        ...(mapped.year ? { year: mapped.year } : {}),
-        ...(mapped.overview ? { overview: mapped.overview } : {}),
-        ...(mapped.posterPath ? { posterUrl: mapped.posterPath } : {}),
-        ...(mapped.episodeCount ? { episodeCount: mapped.episodeCount } : {}),
-      },
+      title: titleInfoFromSearchResult(mapped),
     },
     { container, signal: new AbortController().signal },
   );

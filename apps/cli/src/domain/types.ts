@@ -6,6 +6,10 @@
 // =============================================================================
 
 import type {
+  ProviderArtworkInfo,
+  ProviderExternalIds,
+  ProviderLanguageEvidence,
+  ProviderReleaseInfo,
   ProviderResolveResult as SharedProviderResolveResult,
   ResolveTrace as SharedResolveTrace,
 } from "@kunai/types";
@@ -33,6 +37,10 @@ export interface TitleInfo {
   readonly year?: string;
   readonly overview?: string;
   readonly posterUrl?: string;
+  readonly externalIds?: ProviderExternalIds;
+  readonly release?: ProviderReleaseInfo;
+  readonly artwork?: ProviderArtworkInfo;
+  readonly languageEvidence?: readonly ProviderLanguageEvidence[];
   readonly genreIds?: number[];
   readonly episodeCount?: number;
 }
@@ -43,6 +51,9 @@ export interface EpisodeInfo {
   readonly name?: string;
   readonly airDate?: string;
   readonly overview?: string;
+  readonly externalIds?: ProviderExternalIds;
+  readonly release?: ProviderReleaseInfo;
+  readonly artwork?: ProviderArtworkInfo;
 }
 
 export interface EpisodePickerOption {
@@ -120,6 +131,10 @@ export interface SearchResult {
   readonly episodeCount?: number;
   readonly availableAudioModes?: readonly ("sub" | "dub")[];
   readonly subtitleAvailability?: "hardsub" | "softsub" | "unknown";
+  readonly externalIds?: ProviderExternalIds;
+  readonly release?: ProviderReleaseInfo;
+  readonly artwork?: ProviderArtworkInfo;
+  readonly languageEvidence?: readonly ProviderLanguageEvidence[];
 }
 
 export type TitleAliasKind = "english" | "romaji" | "native" | "provider" | "synonym";

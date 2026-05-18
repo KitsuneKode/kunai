@@ -316,19 +316,15 @@ function normalizeProviderSearchResult(result: SearchResult): SearchResult {
     overview?: string;
     posterPath?: string | null;
   };
+  const { epCount: legacyEpisodeCount, ...normalized } = candidate;
 
   return {
-    id: candidate.id,
-    type: candidate.type,
-    title: candidate.title,
-    titleAliases: candidate.titleAliases,
-    year: candidate.year ?? "",
-    overview: candidate.overview ?? "",
-    posterPath: candidate.posterPath ?? null,
-    posterSource: candidate.posterSource,
-    metadataSource: candidate.metadataSource,
-    rating: candidate.rating ?? null,
-    popularity: candidate.popularity ?? null,
-    episodeCount: candidate.episodeCount ?? candidate.epCount,
+    ...normalized,
+    year: normalized.year ?? "",
+    overview: normalized.overview ?? "",
+    posterPath: normalized.posterPath ?? null,
+    rating: normalized.rating ?? null,
+    popularity: normalized.popularity ?? null,
+    episodeCount: normalized.episodeCount ?? legacyEpisodeCount,
   };
 }

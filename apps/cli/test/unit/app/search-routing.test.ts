@@ -61,6 +61,59 @@ describe("searchTitles", () => {
     ]);
   });
 
+  test("preserves provider-native metadata v2 fields during anime search normalization", async () => {
+    const provider: any = {
+      metadata: {
+        id: "allanime",
+        name: "AllAnime",
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        domain: "allanime.day",
+      } as ProviderMetadata,
+      search: async () => [
+        {
+          id: "anime-1",
+          title: "Mob Psycho 100",
+          type: "series",
+          epCount: 12,
+          externalIds: { anilistId: "21507", malId: "32182" },
+          release: {
+            availableAt: "2026-05-19T12:30:00.000Z",
+            status: "released",
+            providerConfirmed: true,
+          },
+          artwork: {
+            posterUrl: "https://cdn.example/poster.jpg",
+            seekBarVttUrl: "https://cdn.example/seek.vtt",
+          },
+          languageEvidence: [
+            {
+              role: "hardsub",
+              normalizedLanguage: "en",
+              nativeLabel: "Hard Sub",
+              confidence: 0.9,
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await searchTitles("mob", {
+      mode: "anime",
+      providerId: "allanime",
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      searchRegistry: createSearchRegistry({}) as any,
+      providerRegistry: { get: () => provider } as any,
+      enrichAnimeMetadata: false,
+    });
+
+    expect(result.results[0]?.externalIds?.malId).toBe("32182");
+    expect(result.results[0]?.release?.providerConfirmed).toBe(true);
+    expect(result.results[0]?.artwork?.seekBarVttUrl).toContain("seek.vtt");
+    expect(result.results[0]?.languageEvidence?.[0]?.nativeLabel).toBe("Hard Sub");
+  });
+
   test("uses registry-backed search for non-anime providers", async () => {
     const searchRegistry = createSearchRegistry({
       providerResults: [

@@ -52,6 +52,10 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 episodeCount: r.episodeCount,
                 availableAudioModes: r.availableAudioModes,
                 subtitleAvailability: r.subtitleAvailability,
+                externalIds: r.externalIds,
+                release: r.release,
+                artwork: r.artwork,
+                languageEvidence: r.languageEvidence,
               }));
             }
           : undefined,

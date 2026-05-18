@@ -41,6 +41,24 @@ test("ProviderRegistry wires provider-owned search and episode hooks without pro
           metadataSource: "Hooked",
           availableAudioModes: ["sub"],
           subtitleAvailability: "hardsub",
+          externalIds: { anilistId: "123", malId: "456" },
+          release: {
+            availableAt: "2026-05-19T12:30:00.000Z",
+            status: "released",
+            providerConfirmed: true,
+          },
+          artwork: {
+            posterUrl: "https://img.example/poster.jpg",
+            seekBarVttUrl: "https://img.example/seek.vtt",
+          },
+          languageEvidence: [
+            {
+              role: "hardsub",
+              normalizedLanguage: "en",
+              nativeLabel: "Hard Sub",
+              confidence: 0.9,
+            },
+          ],
         },
       ];
     },
@@ -68,6 +86,10 @@ test("ProviderRegistry wires provider-owned search and episode hooks without pro
   );
 
   expect(results?.[0]?.title).toBe("Hooked Anime");
+  expect(results?.[0]?.externalIds?.malId).toBe("456");
+  expect(results?.[0]?.release?.providerConfirmed).toBe(true);
+  expect(results?.[0]?.artwork?.seekBarVttUrl).toContain("seek.vtt");
+  expect(results?.[0]?.languageEvidence?.[0]?.nativeLabel).toBe("Hard Sub");
   expect(episodes?.[0]?.label).toBe("Episode 1");
   expect(searchSignals).toEqual([controller.signal]);
   expect(listSignals).toEqual([controller.signal]);
