@@ -245,6 +245,8 @@ export function applyPreferredStreamSelection(
     ...stream,
     url: selected.url,
     headers: selected.headers ?? {},
+    audioLanguages: selected.audioLanguages ? [...selected.audioLanguages] : undefined,
+    hardSubLanguage: selected.hardSubLanguage,
     providerResolveResult: {
       ...result,
       selectedStreamId: selected.id,

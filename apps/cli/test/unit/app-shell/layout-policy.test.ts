@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { getPickerLayout, getShellViewportPolicy } from "@/app-shell/layout-policy";
+import {
+  getBrowseCommandPaletteMaxVisible,
+  getCommandPaletteVisibleCommandCount,
+  getPickerLayout,
+  getShellViewportPolicy,
+} from "@/app-shell/layout-policy";
 
 describe("getShellViewportPolicy", () => {
   test("marks picker viewports below minimum size as too small", () => {
@@ -65,5 +70,30 @@ describe("getShellViewportPolicy", () => {
     expect(layout.showCompanion).toBe(false);
     expect(layout.companionWidth).toBe(0);
     expect(layout.listWidth).toBe(layout.innerWidth);
+  });
+
+  test("browse command palette budget stays bounded on common terminal heights", () => {
+    expect(getBrowseCommandPaletteMaxVisible(24, false, false)).toBeGreaterThanOrEqual(1);
+    expect(getBrowseCommandPaletteMaxVisible(30, false, false)).toBeLessThanOrEqual(8);
+    expect(getBrowseCommandPaletteMaxVisible(30, true, true)).toBeLessThanOrEqual(5);
+  });
+
+  test("command palette visible command count leaves room for group and more rows", () => {
+    expect(
+      getCommandPaletteVisibleCommandCount({
+        maxRows: 5,
+        totalMatches: 25,
+        grouped: true,
+        windowMayStartAfterFirst: false,
+      }),
+    ).toBe(1);
+    expect(
+      getCommandPaletteVisibleCommandCount({
+        maxRows: 8,
+        totalMatches: 25,
+        grouped: false,
+        windowMayStartAfterFirst: true,
+      }),
+    ).toBe(6);
   });
 });

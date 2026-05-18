@@ -117,3 +117,36 @@ export function getPickerLayout(
 
   return { innerWidth, listWidth, companionWidth, rowWidth, showCompanion, maxVisible };
 }
+
+export function getBrowseCommandPaletteMaxVisible(
+  rows: number,
+  hasSubtitle: boolean,
+  hasFilters: boolean,
+): number {
+  // Row accounting for commandMode=true in BrowseShell:
+  // AppRoot/header safety(4), browse chrome(10-13), command input chrome(4),
+  // command footer(5), and a small resize/Ink buffer(2). This intentionally
+  // favors a smaller bounded list over letting the palette push the input/footer
+  // out of view on tiled terminals.
+  const browseChromeRows = 1 + (hasSubtitle ? 1 : 0) + (hasFilters ? 2 : 0) + 9;
+  const availableRows = rows - 4 - browseChromeRows - 4 - 5 - 2;
+  return Math.max(1, Math.min(8, availableRows));
+}
+
+export function getCommandPaletteVisibleCommandCount({
+  maxRows,
+  totalMatches,
+  grouped,
+  windowMayStartAfterFirst,
+}: {
+  readonly maxRows: number;
+  readonly totalMatches: number;
+  readonly grouped: boolean;
+  readonly windowMayStartAfterFirst: boolean;
+}): number {
+  if (totalMatches <= 0) return 0;
+  const groupHeaderRows = grouped ? 3 : 0;
+  const scrollIndicatorRows = (windowMayStartAfterFirst ? 1 : 0) + (totalMatches > 1 ? 1 : 0);
+  const available = maxRows - groupHeaderRows - scrollIndicatorRows;
+  return Math.max(1, Math.min(totalMatches, available));
+}

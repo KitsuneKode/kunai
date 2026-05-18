@@ -39,7 +39,7 @@ import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { deleteAllKittyImages } from "./image-pane";
-import { getPickerLayout } from "./layout-policy";
+import { getBrowseCommandPaletteMaxVisible, getPickerLayout } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
 import { OverlayPanel } from "./overlay-panel";
 import type { BrowseOverlay } from "./overlay-panel";
@@ -1977,33 +1977,6 @@ function ListShell<T>({
   );
 }
 
-function computePaletteMaxVisible(rows: number, hasSubtitle: boolean, hasFilters: boolean): number {
-  // Exact row accounting for commandMode=true in BrowseShell:
-  //
-  // AppRoot header: brand(1) + crumb(1) + marginTop(1) = 3 rows.
-  //   Add 1 for optional transient alert/digest row → use 4 to stay safe.
-  //
-  // Browse chrome (palette visible, no queryDirty line):
-  //   BrowseTitle(1)
-  //   + subtitle if showing(1)
-  //   + filterBadges if showing: marginTop(1) + badges-row(1) = 2
-  //   + contextStrip+marginTop = marginTop(1) + strip(1) = 2
-  //   + InputField no-hint: outerMarginTop(1)+label(1)+innerMarginTop(1)+input(1)+underline(1) = 5
-  //   + BrowseShell divider: marginTop(1)+line(1) = 2
-  //   = 10 base
-  //
-  // CommandPalette chrome:
-  //   outerMarginTop(1)+input(1)+hint(1)+innerMarginTop(1) = 4
-  //
-  // Footer commandMode:
-  //   outerMarginTop(1)+taskLabel(1)+innerMarginTop(1)+"Command palette"(1)+hints(1) = 5
-  //
-  // Group overhead worst-case (showGrouped=true, input empty):
-  //   Context header(1) + Global header(1) + ▼ more(1) = 3
-  const browseChromeRows = 1 + (hasSubtitle ? 1 : 0) + (hasFilters ? 2 : 0) + 9;
-  return Math.max(3, rows - 4 - browseChromeRows - 4 - 5 - 3);
-}
-
 function BrowseShell<T>({
   mode,
   provider,
@@ -2904,7 +2877,7 @@ function BrowseShell<T>({
           cursor={commandEditor.cursor}
           commands={commands}
           highlightedIndex={highlightedCommandIndex}
-          maxVisible={computePaletteMaxVisible(
+          maxVisible={getBrowseCommandPaletteMaxVisible(
             viewport.rows,
             Boolean(resultSubtitle && !viewport.ultraCompact),
             Boolean(activeFilterBadges.length > 0 && !viewport.ultraCompact),

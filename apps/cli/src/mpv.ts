@@ -394,14 +394,14 @@ export function buildMpvArgs(
     // keep-open=no is intentional: with keep-open=yes, mpv silently pauses at the last
     // frame on natural EOF and never fires the end-file IPC event, so play() hangs and
     // auto-advance is unreachable. keep-open=no fires end-file with reason "eof" reliably.
-    // idle=yes + force-window=immediate keep the process and window alive between episodes.
+    // idle=yes + force-window=immediate keep the process and window visible between episodes.
     args.push("--keep-open=no");
     args.push("--idle=yes");
   } else {
     args.push("--keep-open=no");
     args.push("--idle=no");
   }
-  args.push("--force-window=yes");
+  args.push("--force-window=immediate");
   // Kunai resumes via `--start` / IPC when `shouldApplyStartAtSeek(startAt)`. mpv defaults
   // `--resume-playback=yes`, which restores watch-later positions on load — that clashes
   // with explicit episode changes (N / auto-next) and looks like a stale resume offset.

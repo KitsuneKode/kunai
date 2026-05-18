@@ -452,10 +452,10 @@ class NodeBridgeDiscordRpcClient implements DiscordRpcClient {
 
   async destroy(): Promise<void> {
     if (this.closed) return;
-    this.closed = true;
     try {
       await this.request("destroy");
     } finally {
+      this.closed = true;
       this.child.kill();
       const stdin = this.child.stdin;
       if (stdin && typeof stdin !== "number" && "end" in stdin && typeof stdin.end === "function") {
@@ -541,13 +541,28 @@ async function createNodeBridgeDiscordClient(clientId: string): Promise<DiscordR
     throw new Error("node binary not found for Discord RPC bridge");
   }
 
-  const bridgeScript = [
+  const bridgeScript = buildDiscordRpcNodeBridgeScript();
+
+  const child = Bun.spawn([nodePath, "-e", bridgeScript], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const client = new NodeBridgeDiscordRpcClient(child);
+  await client.login({ clientId });
+  return client;
+}
+
+export function buildDiscordRpcNodeBridgeScript(): string {
+  return [
     "const RPC = require('discord-rpc');",
     "const readline = require('node:readline');",
     "let client = null;",
     "const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\\n');",
     "const destroyClient = async () => {",
     "  if (!client) return;",
+    "  try { await client.clearActivity(); } catch {}",
     "  try { await client.destroy(); } catch {}",
     "  client = null;",
     "};",
@@ -589,16 +604,6 @@ async function createNodeBridgeDiscordClient(clientId: string): Promise<DiscordR
     "process.on('SIGINT', async () => { await destroyClient(); process.exit(0); });",
     "process.on('SIGTERM', async () => { await destroyClient(); process.exit(0); });",
   ].join("");
-
-  const child = Bun.spawn([nodePath, "-e", bridgeScript], {
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const client = new NodeBridgeDiscordRpcClient(child);
-  await client.login({ clientId });
-  return client;
 }
 
 export function buildDiscordActivity(

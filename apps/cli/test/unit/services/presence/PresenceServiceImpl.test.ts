@@ -4,6 +4,7 @@ import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import {
+  buildDiscordRpcNodeBridgeScript,
   buildDiscordActivity,
   buildPresenceSnapshot,
   describePresenceConfiguration,
@@ -411,5 +412,19 @@ describe("PresenceServiceImpl", () => {
 
     expect(calls).toEqual(["clear", "destroy"]);
     expect(service.getStatus()).toBe("idle");
+  });
+
+  test("node bridge clears Discord activity before destroy on parent signal", () => {
+    const script = buildDiscordRpcNodeBridgeScript();
+
+    const destroyStart = script.indexOf("const destroyClient = async () => {");
+    const clearCall = script.indexOf("await client.clearActivity()", destroyStart);
+    const destroyCall = script.indexOf("await client.destroy()", destroyStart);
+
+    expect(destroyStart).toBeGreaterThanOrEqual(0);
+    expect(clearCall).toBeGreaterThan(destroyStart);
+    expect(destroyCall).toBeGreaterThan(clearCall);
+    expect(script).toContain("process.on('SIGTERM', async () => { await destroyClient();");
+    expect(script).toContain("process.on('SIGINT', async () => { await destroyClient();");
   });
 });

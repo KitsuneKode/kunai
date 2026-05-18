@@ -101,6 +101,36 @@ Source and quality pickers must read from cached inventory.
 
 Never let one selected source overwrite another source's inventory. Store the full normalized result, then store user selection as separate playback intent.
 
+## Variant Model By Provider Shape
+
+Use the same normalized fields everywhere, but do not force every provider into
+the same user-facing hierarchy.
+
+- Anime providers: `presentation` (`sub`, `dub`, `raw`) is a first-class
+  variant dimension. `sourceId` / `serverName` is secondary inside that mode.
+  A sub stream and a dub stream are not interchangeable even when their server
+  names match.
+- Series/movie providers: `sourceId`, `serverName`, and `flavorLabel` are often
+  the first useful identity. Audio language can be metadata on the source or
+  stream (`audioLanguages`) when the provider exposes it. Some providers encode
+  language in a source family, so preserve both the source and language fields.
+- Quality is a selectable stream or variant inside the chosen source/presentation
+  when the inventory already contains all qualities. Only resolve again when the
+  provider truly defers a quality-specific URL.
+- Hard subtitles and embedded/external subtitles are different facts. A hard-sub
+  stream should advertise `hardSubLanguage` / `subtitleDelivery: "hardcoded"`;
+  soft subtitle tracks should stay in `subtitles`.
+
+UI surfaces can simplify this into tabs like "Sub", "Dub", "Servers", and
+"Quality", but diagnostics must always show the underlying `providerId`,
+`sourceId`, `variantId`, `selectedStreamId`, presentation, languages, quality,
+and subtitle evidence. This keeps the CLI familiar to streaming-site users
+without losing the debuggable engine contract.
+
+IntroDB and AniSkip timing are playback-session metadata, not source selection
+metadata. Timing lookup should attach after title/episode identity is known and
+should not cause a stream/source refetch unless the title or episode changed.
+
 ## Hard-Sub, Soft-Sub, And Dub Display
 
 The UI should distinguish:
@@ -128,4 +158,3 @@ Switching anime title display preference must be a pure projection over `SearchR
 The source checkout currently requires Bun for development and local source runs. The codebase uses Bun-first APIs and tooling (`Bun.spawn`, `Bun.which`, `Bun.file`, `Bun.connect`, `Bun.hash`, workspaces, lockfile behavior).
 
 For beta, prefer reducing onboarding friction through packaged binaries or installer checks over porting the runtime to Node/npm. A Node-only source path is possible later, but it would add compatibility work across process, socket, filesystem, bundling, and package scripts without improving playback reliability first.
-

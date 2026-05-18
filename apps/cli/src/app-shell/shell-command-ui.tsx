@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 
 import { COMMANDS, parseCommand, type AppCommandId, type ResolvedAppCommand } from "./commands";
 import { routeShellInput } from "./input-router";
+import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
 import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { toShellAction, type FooterAction, type ShellAction } from "./types";
@@ -157,7 +158,13 @@ export function CommandPalette({
   const matches = model.options
     .map((option) => commands.find((command) => command.id === option.value))
     .filter((command): command is ResolvedAppCommand => Boolean(command));
-  const visibleCount = Math.max(3, maxVisible);
+  const showGrouped = input.trim().length === 0 && matches.length > 0;
+  const visibleCount = getCommandPaletteVisibleCommandCount({
+    maxRows: Math.max(1, maxVisible),
+    totalMatches: matches.length,
+    grouped: showGrouped,
+    windowMayStartAfterFirst: model.selectedIndex > 0,
+  });
   const windowStart = getWindowStart(model.selectedIndex, matches.length, visibleCount);
   const windowEnd = Math.min(windowStart + visibleCount, matches.length);
   const visibleMatches = matches.slice(windowStart, windowEnd);
@@ -165,8 +172,6 @@ export function CommandPalette({
     28,
     Math.min(width ?? stdout.columns ?? 80, (stdout.columns ?? 80) - 4) - 4,
   );
-
-  const showGrouped = input.trim().length === 0 && matches.length > 0;
 
   const renderCommand = (command: ResolvedAppCommand, absoluteIndex: number) => {
     const selected = absoluteIndex === model.selectedIndex;

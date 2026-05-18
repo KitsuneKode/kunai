@@ -266,6 +266,8 @@ test("applyPreferredStreamSelection prefers explicit stream id override", () => 
     streamSelectionFromStream("stream-720"),
   );
   expect(next.url).toBe("https://cdn.example/720.m3u8");
+  expect(next.audioLanguages).toEqual(["en"]);
+  expect(next.hardSubLanguage).toBeUndefined();
   expect(next.providerResolveResult?.selectedStreamId).toBe("stream-720");
 });
 
@@ -290,5 +292,7 @@ test("applyPreferredStreamSelection falls back to best quality in preferred sour
     streamSelectionFromSource("source-b"),
   );
   expect(next.url).toBe("https://cdn.example/source-b-480.m3u8");
+  expect(next.audioLanguages).toBeUndefined();
+  expect(next.hardSubLanguage).toBeUndefined();
   expect(next.providerResolveResult?.selectedStreamId).toBe("stream-480-source-b");
 });

@@ -22,7 +22,7 @@ test("buildMpvArgs attaches preferred subtitle first plus additional tracks duri
 
   expect(args).toContain("--keep-open=no");
   expect(args).toContain("--idle=no");
-  expect(args).toContain("--force-window=yes");
+  expect(args).toContain("--force-window=immediate");
   expect(args).toContain("--resume-playback=no");
   expect(args).toContain("--autofit-larger=90%x90%");
   expect(args).toContain("--cache=yes");
@@ -123,6 +123,7 @@ test("buildMpvArgs keeps mpv alive between files for persistent autoplay chains"
 
   expect(args).toContain("--keep-open=no");
   expect(args).toContain("--idle=yes");
+  expect(args).toContain("--force-window=immediate");
 });
 
 test("buildMpvArgs maps language preferences to mpv alang/slang", () => {
