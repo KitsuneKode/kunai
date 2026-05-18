@@ -44,6 +44,11 @@ import {
   startFromBeginning,
   startFromEpisodeSelection,
 } from "@/app/playback-start-intent";
+import {
+  buildPostPlayEpisodeLabel,
+  buildPostPlayInputFromPlaybackContext,
+  buildPostPlayNextEpisodeLabel,
+} from "@/app/post-play-input";
 import { loadPostPlaybackRecommendationItems } from "@/app/post-playback-recommendations";
 import {
   describeProviderResolveAttemptDetail,
@@ -71,6 +76,7 @@ import {
   buildProviderResolveProblem,
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
+import { resolvePostPlayState } from "@/domain/playback/post-play-state";
 import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type {
   TitleInfo,
@@ -96,7 +102,6 @@ import {
   createCorrelationId,
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
-import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import {
   resolveAutoDownloadScope,
   selectEpisodesForDownloadScope,
@@ -2184,19 +2189,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               result.endReason !== "eof" &&
               resumeSeconds > 10 &&
               (result.duration <= 0 || resumeSeconds < Math.max(0, result.duration - 5));
-            const runtimeHealth = buildRuntimeHealthSnapshot({
-              recentEvents: diagnosticsStore.getRecent(25),
-              currentProvider: resolvedProviderId,
-            });
-            const lastQueuedDownload = (() => {
-              const latest = container.downloadService.listActive(200).at(-1);
-              if (!latest) return undefined;
-              const episodeLabel =
-                latest.season !== undefined && latest.episode !== undefined
-                  ? `S${String(latest.season).padStart(2, "0")}E${String(latest.episode).padStart(2, "0")}`
-                  : "movie";
-              return `${latest.titleName} ${episodeLabel}  ·  ${latest.status}`;
-            })();
             const mode = stateManager.getState().mode;
             const recommendationRailItems = container.config.recommendationRailEnabled
               ? await loadPostPlaybackRecommendationItems(
@@ -2206,6 +2198,27 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   prefetchedRecommendationItems,
                 )
               : [];
+            const postPlayInput = buildPostPlayInputFromPlaybackContext({
+              title,
+              currentEpisode,
+              availability: episodeAvailability,
+              isAnime: mode === "anime",
+              nextAirDateHint: catalogAutoplayEndBanner?.replace(/^Caught up ·\s*/i, ""),
+            });
+            const postPlayState = resolvePostPlayState(postPlayInput);
+            const upcomingEpisode = episodeAvailability.nextEpisode;
+            const nextEpisodePickerOption = upcomingEpisode
+              ? shellEpisodePicker.options.find(
+                  (option) =>
+                    option.value === `${upcomingEpisode.season}:${upcomingEpisode.episode}`,
+                )
+              : undefined;
+            const episodesInCurrentSeason = shellEpisodePicker.options.filter((option) =>
+              option.value.startsWith(`${currentEpisode.season}:`),
+            ).length;
+            const watchedEpisodes = watchedEntries.filter((entry) =>
+              title.type === "series" ? entry.season === currentEpisode.season : true,
+            ).length;
             const postAction = await openPlaybackShell({
               state: {
                 type: title.type,
@@ -2221,10 +2234,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     : stateManager.getState().seriesLanguageProfile.subtitle,
                 ),
                 autoplayPaused: autoplaySessionPaused,
-                showMemory: config.showMemory,
-                providerHealth: runtimeHealth.provider,
-                networkHealth: runtimeHealth.network,
-                lastQueuedDownload,
+                showMemory: false,
                 mode,
                 resumeLabel: canResumePlayback
                   ? title.type === "series"
@@ -2234,12 +2244,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 status: catalogAutoplayEndBanner
                   ? { label: catalogAutoplayEndBanner, tone: "neutral" }
                   : { label: "Ready for next action", tone: "success" },
-                footerMode: "detailed",
-                showRecommendationNudge:
-                  recommendationRailItems.length > 0 &&
-                  title.type === "series" &&
-                  !episodeAvailability.nextEpisode,
-                recommendationRailItems: recommendationRailItems.slice(0, 3).map((item) => ({
+                footerMode: "minimal",
+                postPlayState,
+                episodeLabel: buildPostPlayEpisodeLabel(
+                  title,
+                  currentEpisode,
+                  episodesInCurrentSeason || undefined,
+                ),
+                nextEpisodeLabel: buildPostPlayNextEpisodeLabel(
+                  upcomingEpisode,
+                  nextEpisodePickerOption?.label,
+                ),
+                totalEpisodes: title.episodeCount ?? shellEpisodePicker.options.length,
+                watchedEpisodes,
+                currentSeason: currentEpisode.season,
+                recommendationRailItems: recommendationRailItems.slice(0, 4).map((item) => ({
                   id: item.id,
                   title: item.title,
                   type: item.type,
@@ -2250,7 +2269,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   ...(item.posterPath !== undefined ? { posterPath: item.posterPath } : {}),
                   ...(item.episodeCount ? { episodeCount: item.episodeCount } : {}),
                 })),
-                recommendationRailMoreCount: Math.max(0, recommendationRailItems.length - 3),
                 commands: resolveCommandContext(stateManager.getState(), "postPlayback"),
               },
               providerOptions: shellRuntime.providerOptions,
