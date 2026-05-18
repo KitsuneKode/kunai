@@ -551,16 +551,22 @@ export function buildSettingsOptions(
       label: presenceConnectionLabel,
       detail: presenceConnectionDetail,
     },
-    { value: "section:storage", label: "Storage", detail: "Cache and local history" },
+    {
+      value: "section:storage",
+      label: "Danger Zone",
+      detail: "Destructive — irreversible actions",
+    },
     {
       value: "clearCache",
       label: "Clear stream cache",
       detail: "Wipe the local SQLite stream cache",
+      tone: "error" as const,
     },
     {
       value: "clearHistory",
       label: "Clear watch history",
       detail: "Reset all watch progress and history",
+      tone: "error" as const,
     },
   ];
 }
@@ -988,11 +994,19 @@ export function OverlayPanel({
               const selected = optionIndex === overlay.selectedIndex;
               // Section separator — render as a non-selectable group header
               if (typeof option.value === "string" && option.value.startsWith("section:")) {
+                const isSettings =
+                  overlay.type === "settings" || overlay.type === "settings-choice";
+                const headerLabel = isSettings
+                  ? option.label.toUpperCase()
+                  : option.label.toUpperCase();
                 return (
                   <Box key={`section-${option.value}`} marginTop={1} flexDirection="column">
-                    <Text color={palette.dim} dimColor bold>
-                      {option.label.toUpperCase()}
+                    <Text color={isSettings ? palette.amber : palette.dim} bold={isSettings}>
+                      {headerLabel}
                     </Text>
+                    {isSettings ? (
+                      <Text color={palette.amber}>{"─".repeat(headerLabel.length)}</Text>
+                    ) : null}
                   </Box>
                 );
               }
@@ -1006,23 +1020,70 @@ export function OverlayPanel({
                       : option.tone === "error"
                         ? palette.red
                         : null;
+              // Derive dot indicator for settings rows
+              const isSettingsOverlay =
+                overlay.type === "settings" || overlay.type === "settings-choice";
+              let dotChar = "";
+              let dotColor: string = palette.dim;
+              if (isSettingsOverlay) {
+                const lbl = option.label;
+                const isChoice = lbl.startsWith("▸");
+                const isDanger = option.tone === "error";
+                const isWarning = option.tone === "warning";
+                const isSuccess = option.tone === "success";
+                const isOn =
+                  !isChoice &&
+                  !isDanger &&
+                  (lbl.endsWith("· on") ||
+                    lbl.endsWith("· enabled") ||
+                    lbl.endsWith("· pinned after m") ||
+                    isSuccess);
+                const isOff =
+                  !isChoice &&
+                  !isDanger &&
+                  (lbl.endsWith("· off") || lbl.endsWith("· temporary after m"));
+                if (isDanger) {
+                  dotChar = "● ";
+                  dotColor = palette.red;
+                } else if (isWarning) {
+                  dotChar = "● ";
+                  dotColor = palette.amber;
+                } else if (isOn) {
+                  dotChar = "● ";
+                  dotColor = palette.green;
+                } else if (isOff) {
+                  dotChar = "○ ";
+                  dotColor = palette.dim;
+                } else if (!isChoice) {
+                  dotChar = "● ";
+                  dotColor = palette.dim;
+                }
+              }
+              const effectiveLabel = isSettingsOverlay && dotChar ? option.label : option.label;
               return (
-                <Text
+                <Box
                   key={`${option.value}-${optionIndex}`}
                   backgroundColor={selected ? palette.surfaceActive : undefined}
-                  bold={selected}
-                  wrap="truncate-end"
+                  flexDirection="row"
                 >
-                  <PickerOptionRow
-                    label={option.label}
-                    detail={option.detail}
-                    badge={option.badge}
-                    width={Math.max(0, contentWidth)}
-                    selected={selected}
-                    accentColor={rowAccentColor}
-                    pickerAccent={pickerAccent}
-                  />
-                </Text>
+                  {isSettingsOverlay && dotChar ? (
+                    <Text color={selected ? pickerAccent : dotColor}>{dotChar}</Text>
+                  ) : null}
+                  <Text bold={selected} wrap="truncate-end">
+                    <PickerOptionRow
+                      label={effectiveLabel}
+                      detail={option.detail}
+                      badge={option.badge}
+                      width={Math.max(
+                        0,
+                        contentWidth - (isSettingsOverlay && dotChar ? dotChar.length : 0),
+                      )}
+                      selected={selected}
+                      accentColor={rowAccentColor}
+                      pickerAccent={pickerAccent}
+                    />
+                  </Text>
+                </Box>
               );
             })}
             {optionWindowEnd < overlay.options.length ? (
