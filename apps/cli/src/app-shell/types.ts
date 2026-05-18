@@ -35,6 +35,7 @@ export type ShellAction =
   | "streams"
   | "source"
   | "quality"
+  | "memory"
   | "download"
   | "downloads"
   | "library"
@@ -258,6 +259,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "streams":
     case "source":
     case "quality":
+    case "memory":
     case "pick-episode":
     case "next":
     case "previous":

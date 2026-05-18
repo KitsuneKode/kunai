@@ -204,7 +204,6 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
         // Find the most-recent in-progress history entry to show a "continue" hint
         let continueWatching: import("@/app-shell/types").BrowseIdleContext["continueWatching"];
-        let continueWatchingTitleId: string | undefined;
         try {
           const allHistory = await container.historyStore.getAll();
           const inProgress = Object.entries(allHistory)
@@ -215,7 +214,6 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           const topEntry = inProgress[0];
           if (topEntry) {
             const [titleId, top] = topEntry;
-            continueWatchingTitleId = titleId;
             const ep =
               top.type === "series" &&
               typeof top.season === "number" &&
@@ -491,30 +489,6 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             outcome.action === "surprise"
           ) {
             await loadSearchRoute(outcome.action, context);
-            continue;
-          }
-
-          if (outcome.action === "continue") {
-            const resumeTitleId = continueWatchingTitleId;
-            if (resumeTitleId) {
-              const entry = await container.historyStore.get(resumeTitleId).catch(() => null);
-              if (entry) {
-                if (entry.provider) {
-                  stateManager.dispatch({ type: "SET_PROVIDER", provider: entry.provider });
-                }
-                const title = {
-                  id: resumeTitleId,
-                  type: entry.type,
-                  name: entry.title,
-                };
-                stateManager.dispatch({ type: "SELECT_TITLE", title });
-                return { status: "success", value: title };
-              }
-            }
-            stateManager.dispatch({
-              type: "SET_PLAYBACK_FEEDBACK",
-              note: "No in-progress title found. Search for something to watch.",
-            });
             continue;
           }
 

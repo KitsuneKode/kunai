@@ -275,7 +275,7 @@ const PRESENCE_PROVIDER_OPTIONS: readonly ShellPickerOption<KitsuneConfig["prese
   {
     value: "discord",
     label: "Discord",
-    detail: "Use optional local Discord Rich Presence when discord-rpc is installed",
+    detail: "Use optional local Discord Rich Presence through Discord desktop IPC",
   },
 ];
 

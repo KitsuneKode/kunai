@@ -2593,7 +2593,7 @@ export async function openSettingsShell({
           {
             value: "discord" as const,
             label: next.presenceProvider === "discord" ? "Discord  ·  current" : "Discord",
-            detail: "Use optional local Discord Rich Presence when discord-rpc is installed",
+            detail: "Use optional local Discord Rich Presence through Discord desktop IPC",
           },
         ],
       });

@@ -436,6 +436,11 @@ export const LoadingShell = React.memo(function LoadingShell({
           { key: "/", label: "commands", action: "command-mode" },
           { key: "q", label: "stop", action: "quit" },
           {
+            key: "m",
+            label: "memory",
+            action: "memory",
+          },
+          {
             key: "n",
             label: "next",
             action: "next",
@@ -564,7 +569,13 @@ export const LoadingShell = React.memo(function LoadingShell({
       commands={state.commands ?? []}
       inputLocked={!state.onCommandAction}
       escapeAction={null}
-      onResolve={(action) => state.onCommandAction?.(action)}
+      onResolve={(action) => {
+        if (action === "memory") {
+          setMemoryPanelVisible((visible) => !visible);
+          return;
+        }
+        state.onCommandAction?.(action);
+      }}
     >
       <Box
         flexDirection={showPosterCompanion ? "row" : "column"}

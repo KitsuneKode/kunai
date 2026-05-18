@@ -22,6 +22,7 @@ type RoutedActionResult =
   | "streams"
   | "source"
   | "quality"
+  | "memory"
   | "download"
   | "pick-episode"
   | { type: "history-entry"; title: TitleInfo }
@@ -56,6 +57,39 @@ async function openRootOwnedOverlay(
       }
     });
   });
+}
+
+async function openRootHistorySelection(
+  container: Container,
+  reason: "continue" | "history",
+): Promise<RoutedActionResult> {
+  const { stateManager } = container;
+  const selectionPromise = waitForRootHistorySelection();
+  await openRootOwnedOverlay(container, {
+    type: "history",
+    initialFilterMode: reason === "continue" ? "watching" : "all",
+  });
+  const selection = await selectionPromise;
+  if (!selection) return "handled";
+  const providerMetadata = container.providerRegistry.get(selection.entry.provider);
+  if (providerMetadata) {
+    stateManager.dispatch({
+      type: "SET_MODE",
+      mode: providerMetadata.metadata.isAnimeProvider ? "anime" : "series",
+      provider: providerMetadata.metadata.id,
+    });
+  } else {
+    stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
+  }
+  await recordLocalHistorySourceDecision(container, selection, reason);
+  return {
+    type: "history-entry",
+    title: {
+      id: selection.titleId,
+      type: selection.entry.type,
+      name: selection.entry.title,
+    },
+  };
 }
 
 export async function routeSearchShellAction({
@@ -105,31 +139,8 @@ export async function routeSearchShellAction({
     });
     return "handled";
   }
-  if (action === "history") {
-    const selectionPromise = waitForRootHistorySelection();
-    await openRootOwnedOverlay(container, { type: "history" });
-    const selection = await selectionPromise;
-    if (!selection) return "handled";
-    const providerMetadata = container.providerRegistry.get(selection.entry.provider);
-    if (providerMetadata) {
-      stateManager.dispatch({
-        type: "SET_MODE",
-        mode: providerMetadata.metadata.isAnimeProvider ? "anime" : "series",
-        provider: providerMetadata.metadata.id,
-      });
-    } else {
-      stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
-    }
-    await recordLocalHistorySourceDecision(container, selection, "history");
-    return {
-      type: "history-entry",
-      title: {
-        id: selection.titleId,
-        type: selection.entry.type,
-        name: selection.entry.title,
-      },
-    };
-  }
+  if (action === "continue") return openRootHistorySelection(container, "continue");
+  if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {
     await openRootOwnedOverlay(container, { type: "settings" });
     return "handled";
@@ -164,6 +175,7 @@ export async function routePlaybackShellAction({
   if (action === "streams") return "streams";
   if (action === "source") return "source";
   if (action === "quality") return "quality";
+  if (action === "memory") return "memory";
   if (action === "download") return "download";
   if (action === "pick-episode") return "pick-episode";
   if (action === "help") {
@@ -191,31 +203,8 @@ export async function routePlaybackShellAction({
     });
     return "handled";
   }
-  if (action === "history") {
-    const selectionPromise = waitForRootHistorySelection();
-    await openRootOwnedOverlay(container, { type: "history" });
-    const selection = await selectionPromise;
-    if (!selection) return "handled";
-    const providerMetadata = container.providerRegistry.get(selection.entry.provider);
-    if (providerMetadata) {
-      stateManager.dispatch({
-        type: "SET_MODE",
-        mode: providerMetadata.metadata.isAnimeProvider ? "anime" : "series",
-        provider: providerMetadata.metadata.id,
-      });
-    } else {
-      stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
-    }
-    await recordLocalHistorySourceDecision(container, selection, "history");
-    return {
-      type: "history-entry",
-      title: {
-        id: selection.titleId,
-        type: selection.entry.type,
-        name: selection.entry.title,
-      },
-    };
-  }
+  if (action === "continue") return openRootHistorySelection(container, "continue");
+  if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {
     await openRootOwnedOverlay(container, { type: "settings" });
     return "handled";

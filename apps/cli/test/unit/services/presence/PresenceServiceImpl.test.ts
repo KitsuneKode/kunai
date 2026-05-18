@@ -49,13 +49,13 @@ describe("PresenceServiceImpl", () => {
   const originalSetInterval = globalThis.setInterval;
   const originalClearInterval = globalThis.clearInterval;
   const originalDateNow = Date.now;
-  const originalImportDiscordRpc = presenceTesting.runtime.importDiscordRpc;
+  const originalCreateDiscordClient = presenceTesting.runtime.createDiscordClient;
 
   afterEach(() => {
     globalThis.setInterval = originalSetInterval;
     globalThis.clearInterval = originalClearInterval;
     Date.now = originalDateNow;
-    presenceTesting.runtime.importDiscordRpc = originalImportDiscordRpc;
+    presenceTesting.runtime.createDiscordClient = originalCreateDiscordClient;
   });
 
   test("stays disabled by default", async () => {
@@ -356,24 +356,21 @@ describe("PresenceServiceImpl", () => {
     expect(service.getSnapshot().detail).toBe("connected to local Discord client");
   });
 
-  test("connects through Bun-native discord-rpc without a Node bridge", async () => {
+  test("connects through Bun-native Discord IPC without a Node bridge", async () => {
     const diagnostics = createDiagnostics();
     const loginCalls: string[] = [];
 
-    class FakeDiscordClient {
-      constructor(readonly options: { transport: "ipc" }) {}
+    const fakeDiscordClient = {
       async login(input: { clientId: string }) {
-        loginCalls.push(`${this.options.transport}:${input.clientId}`);
-      }
-      async setActivity() {}
-      async clearActivity() {}
-      async destroy() {}
-      on() {}
-    }
+        loginCalls.push(`ipc:${input.clientId}`);
+      },
+      async setActivity() {},
+      async clearActivity() {},
+      async destroy() {},
+      on() {},
+    };
 
-    presenceTesting.runtime.importDiscordRpc = async () => ({
-      Client: FakeDiscordClient,
-    });
+    presenceTesting.runtime.createDiscordClient = () => fakeDiscordClient;
 
     const service = new PresenceServiceImpl({
       config: createConfig({
@@ -390,7 +387,7 @@ describe("PresenceServiceImpl", () => {
     expect(diagnostics.events.at(-1)).toMatchObject({
       category: "presence",
       message: "Discord presence connected",
-      context: { provider: "discord", transport: "bun-discord-rpc" },
+      context: { provider: "discord", transport: "bun-discord-ipc" },
     });
   });
 
@@ -460,9 +457,11 @@ describe("PresenceServiceImpl", () => {
     expect(service.getStatus()).toBe("idle");
   });
 
-  test("reports unavailable when the discord-rpc module cannot provide a client", async () => {
+  test("reports unavailable when Discord IPC cannot connect", async () => {
     const diagnostics = createDiagnostics();
-    presenceTesting.runtime.importDiscordRpc = async () => ({});
+    presenceTesting.runtime.createDiscordClient = () => {
+      throw new Error("Could not connect to Discord IPC");
+    };
 
     const service = new PresenceServiceImpl({
       config: createConfig({ presenceProvider: "discord" }),
@@ -472,7 +471,7 @@ describe("PresenceServiceImpl", () => {
     const snapshot = await service.connect();
 
     expect(snapshot.status).toBe("unavailable");
-    expect(snapshot.detail).toContain("Discord RPC package did not expose a client");
+    expect(snapshot.detail).toContain("Could not connect to Discord IPC");
     expect(diagnostics.messages).toContain("Discord presence unavailable");
   });
 });

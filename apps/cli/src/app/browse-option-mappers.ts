@@ -48,6 +48,7 @@ export function toBrowseResultOption(
   const inWatchlist = listService?.isInWatchlist(result.id) ?? false;
   const displayTitle = chooseSearchResultTitle(result, titlePreference);
   const alternateTitles = formatAlternateTitles(result, displayTitle);
+  const overview = normalizeProviderText(result.overview);
   const meta = [
     result.type === "series" ? "Series" : "Movie",
     result.year || undefined,
@@ -66,7 +67,7 @@ export function toBrowseResultOption(
     label: result.year ? `${displayTitle} (${result.year})` : displayTitle,
     detail: `${result.type === "series" ? "Series" : "Movie"}${
       localStatus ? ` · ${localStatus}` : ""
-    }${historyBadge ? ` · ${historyBadge}` : ""}${result.overview ? ` · ${result.overview}` : ""}`,
+    }${historyBadge ? ` · ${historyBadge}` : ""}${overview ? ` · ${overview}` : ""}`,
     previewTitle: displayTitle,
     previewMeta: meta,
     previewGroup: result.displayGroup,
@@ -103,8 +104,8 @@ export function toBrowseResultOption(
       },
       {
         label: "Provider detail page",
-        detail: result.overview ? "Overview available" : "Provider did not return overview text",
-        tone: result.overview ? ("success" as const) : ("warning" as const),
+        detail: overview ? "Overview available" : "Provider did not return overview text",
+        tone: overview ? ("success" as const) : ("warning" as const),
       },
       {
         label: "Image source",
@@ -125,12 +126,31 @@ export function toBrowseResultOption(
     ],
     previewImageUrl: posterUrl,
     previewRating: formatRating(result.rating),
-    previewBody: result.overview || "No overview available yet.",
+    previewBody: overview || "No overview available yet.",
     previewNote:
       result.type === "series"
         ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
         : "Press Enter to open this title and continue to playback. Use / details for the overview.",
   };
+}
+
+function normalizeProviderText(value: string | null | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  return decodeHtmlEntities(trimmed.replace(/<[^>]*>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
 }
 
 function buildLocalEnrichmentFacts(

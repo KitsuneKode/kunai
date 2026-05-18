@@ -33,6 +33,7 @@ export type AppCommandId =
   | "streams"
   | "source"
   | "quality"
+  | "memory"
   | "pick-episode"
   | "next"
   | "previous"
@@ -96,6 +97,7 @@ export const COMMAND_CONTEXTS = {
     "streams",
     "source",
     "quality",
+    "memory",
     "pick-episode",
     "download",
     "next",
@@ -271,7 +273,7 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "continue",
     label: "Continue Watching",
     aliases: ["continue", "c"],
-    description: "Resume the most recent in-progress title directly",
+    description: "Open unfinished and recent watch progress",
   },
   {
     id: "history",
@@ -374,6 +376,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Quality Picker",
     aliases: ["quality", "qualities", "variant"],
     description: "Open available quality variants",
+  },
+  {
+    id: "memory",
+    label: "Memory",
+    aliases: ["memory", "mem"],
+    description: "Temporarily show runtime memory usage",
   },
   {
     id: "pick-episode",
@@ -803,6 +811,14 @@ function resolveCommandState(
         : {
             enabled: false,
             reason: "No quality candidates were exposed for this stream.",
+          };
+
+    case "memory":
+      return state.playbackStatus === "playing"
+        ? { enabled: true }
+        : {
+            enabled: false,
+            reason: "Memory overlay is available during active playback.",
           };
 
     case "download":

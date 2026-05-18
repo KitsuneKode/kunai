@@ -173,4 +173,19 @@ describe("toBrowseResultOption", () => {
       ]),
     );
   });
+
+  test("strips provider HTML from visible overview fields", () => {
+    const option = toBrowseResultOption({
+      id: "html-demo",
+      title: "Farming Life",
+      type: "series",
+      year: "2026",
+      overview: "Second season of <i>Isekai Nonbiri Nouka</i> &amp; friends.",
+      posterPath: null,
+    });
+
+    expect(option.detail).toContain("Second season of Isekai Nonbiri Nouka & friends.");
+    expect(option.previewBody).toBe("Second season of Isekai Nonbiri Nouka & friends.");
+    expect(option.detail).not.toContain("<i>");
+  });
 });

@@ -87,7 +87,7 @@ export type OverlayState =
   | ({ type: "season_picker"; currentSeason: number } & PickerOverlayState)
   | ({ type: "episode_picker"; season: number; initialIndex?: number } & PickerOverlayState)
   | ({ type: "recommendation_picker" } & PickerOverlayState)
-  | { type: "history" }
+  | { type: "history"; initialFilterMode?: "all" | "watching" | "completed" }
   | { type: "notifications" }
   | { type: "downloads" }
   | { type: "library"; view?: "library" | "queue" }

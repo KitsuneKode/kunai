@@ -12,7 +12,7 @@ Kunai is a terminal-first media tool that resolves provider streams and launches
 - `chafa` for poster previews (Sixel/ANSI fallback in non-Kitty terminals)
 - Kitty/Ghostty terminal for native Kitty poster previews (optional)
 - ImageMagick (`magick`) for Kitty/Ghostty non-PNG poster conversion (optional)
-- Discord desktop app for Rich Presence (optional; uses Bun with the optional `discord-rpc` package)
+- Discord desktop app for Rich Presence (optional; Kunai talks to local Discord IPC from Bun)
 
 Poster subsystem and testing: repo root [.docs/poster-image-rendering.md](../../.docs/poster-image-rendering.md).
 

@@ -594,7 +594,7 @@ function AppRoot({ container }: { container: Container }) {
     [container],
   );
 
-  // Eager Discord RPC: choosing Discord presence in settings opens the local IPC pipe here and
+  // Eager Discord presence: choosing Discord in settings opens the local IPC pipe here and
   // after saves that enable Discord / change the Discord app id (applySettings disconnects first).
   // Failures backoff inside PresenceServiceImpl; never block Ink on this task.
   const presenceProvider = container.config.presenceProvider;
@@ -2822,7 +2822,9 @@ function BrowseShell<T>({
                 <Text color={palette.gray}>/filters</Text> for all tokens
               </Text>
             ) : null}
-            {idleContext && (!viewport.ultraCompact || !!idleContext.continueWatching?.titleId) ? (
+            {!commandMode &&
+            idleContext &&
+            (!viewport.ultraCompact || !!idleContext.continueWatching?.titleId) ? (
               <Box flexDirection="column" marginTop={1} gap={0}>
                 {idleContext.continueWatching && !idleContext.playlistNext ? (
                   <Text color={idleFocused ? "white" : palette.muted}>

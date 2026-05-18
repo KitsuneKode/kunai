@@ -95,7 +95,7 @@ export function ShellFrame({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
-            maxVisible={5}
+            maxVisible={Math.max(5, Math.min(12, (stdout.rows ?? 24) - 18))}
             width={commandWidth}
           />
         ) : null}

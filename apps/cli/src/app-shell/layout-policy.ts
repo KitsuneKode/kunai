@@ -133,7 +133,7 @@ export function getBrowseCommandPaletteMaxVisible(
   // the last visible command for a frame.
   const browseChromeRows = 1 + (hasSubtitle ? 1 : 0) + (hasFilters ? 2 : 0) + 9;
   const availableRows = rows - 4 - browseChromeRows - 4 - 5 - 3;
-  return Math.max(1, Math.min(15, availableRows));
+  return Math.max(1, Math.min(18, availableRows));
 }
 
 export function getCommandPaletteVisibleCommandCount({

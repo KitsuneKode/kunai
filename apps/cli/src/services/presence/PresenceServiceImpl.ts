@@ -3,6 +3,7 @@ import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 
+import { createDiscordIpcClient, type DiscordPresenceClient } from "./discord-ipc-client";
 import type {
   PresenceBrowseActivity,
   PresenceClientIdSource,
@@ -12,38 +13,22 @@ import type {
   PresenceStatus,
 } from "./PresenceService";
 
-type DiscordRpcClient = {
-  login(input: { clientId: string }): Promise<void>;
-  setActivity(activity: Record<string, unknown>): Promise<void>;
-  clearActivity(): Promise<void>;
-  destroy(): Promise<void>;
-  on(event: "ready", callback: () => void): void;
-};
-
-type DiscordRpcModule = {
-  readonly default?: { readonly Client?: new (opts: { transport: "ipc" }) => DiscordRpcClient };
-  readonly Client?: new (opts: { transport: "ipc" }) => DiscordRpcClient;
-};
-
 const DEFAULT_DISCORD_CLIENT_ID = "1502307419047461025";
 const KUNAI_DISCORD_ACTION_URL = "https://github.com/KitsuneKode/kunai";
 const DISCORD_ACTIVITY_TEXT_LIMIT = 128;
 
 /** Shown in diagnostics when IPC/update fails and another consumer may hold the Discord app pipe. */
 const DISCORD_PRESENCE_MULTI_INSTANCE_DIAGNOSTIC =
-  "Another Kunai window or discord-rpc app using the same Discord application id may contend for IPC; close other instances or disable Rich Presence there.";
+  "Another Kunai window or Discord presence app using the same Discord application id may contend for IPC; close other instances or disable Rich Presence there.";
 
 const presenceRuntime = {
-  importDiscordRpc: async (): Promise<DiscordRpcModule> => {
-    const packageName = "discord-rpc";
-    return (await import(packageName)) as DiscordRpcModule;
-  },
+  createDiscordClient: (): DiscordPresenceClient => createDiscordIpcClient(),
 };
 
 export class PresenceServiceImpl implements PresenceService {
   private status: PresenceStatus = "idle";
-  private discordClient: DiscordRpcClient | null = null;
-  private connectPromise: Promise<DiscordRpcClient | null> | null = null;
+  private discordClient: DiscordPresenceClient | null = null;
+  private connectPromise: Promise<DiscordPresenceClient | null> | null = null;
   private unavailableUntilRestart = false;
   private unavailableReason: string | null = null;
   private unavailableRetryAtMs = 0;
@@ -201,7 +186,7 @@ export class PresenceServiceImpl implements PresenceService {
     await this.clearDiscordActivity(this.discordClient, reason);
   }
 
-  private async clearDiscordActivity(client: DiscordRpcClient, reason: string): Promise<void> {
+  private async clearDiscordActivity(client: DiscordPresenceClient, reason: string): Promise<void> {
     try {
       await client.clearActivity();
       this.deps.diagnosticsStore.record({
@@ -242,7 +227,7 @@ export class PresenceServiceImpl implements PresenceService {
     this.status = this.deps.config.presenceProvider === "off" ? "disabled" : "idle";
   }
 
-  private async ensureDiscordClient(): Promise<DiscordRpcClient | null> {
+  private async ensureDiscordClient(): Promise<DiscordPresenceClient | null> {
     if (this.discordClient) return this.discordClient;
     if (this.connectPromise) return this.connectPromise;
 
@@ -259,14 +244,9 @@ export class PresenceServiceImpl implements PresenceService {
     return this.connectPromise;
   }
 
-  private async createDiscordClient(clientId: string): Promise<DiscordRpcClient | null> {
+  private async createDiscordClient(clientId: string): Promise<DiscordPresenceClient | null> {
     try {
-      const mod = await presenceRuntime.importDiscordRpc();
-      const Client = mod.Client ?? mod.default?.Client;
-      if (!Client) {
-        throw new Error("Discord RPC package did not expose a client");
-      }
-      const client = new Client({ transport: "ipc" });
+      const client = presenceRuntime.createDiscordClient();
       await client.login({ clientId });
       this.discordClient = client;
       this.status = "ready";
@@ -276,7 +256,7 @@ export class PresenceServiceImpl implements PresenceService {
       this.deps.diagnosticsStore.record({
         category: "presence",
         message: "Discord presence connected",
-        context: { provider: "discord", transport: "bun-discord-rpc" },
+        context: { provider: "discord", transport: "bun-discord-ipc" },
       });
       return client;
     } catch (error) {

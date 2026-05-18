@@ -155,8 +155,10 @@ export function RootOverlayShell({
   const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
   const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
+  const initialHistoryFilterMode =
+    overlay.type === "history" ? (overlay.initialFilterMode ?? "all") : "all";
   const [historyFilterMode, setHistoryFilterMode] = useState<"all" | "watching" | "completed">(
-    "all",
+    initialHistoryFilterMode,
   );
   const overlayResetKey = getRootOverlayResetKey(overlay);
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
@@ -423,12 +425,14 @@ export function RootOverlayShell({
     setOverlayStatus(null);
     setNotificationActionDedupKey(null);
     setHistorySelections([]);
+    setHistoryFilterMode(initialHistoryFilterMode);
   }, [
     container.config,
     container.presence,
     overlay.type,
     overlayResetKey,
     overlayInitialIndex,
+    initialHistoryFilterMode,
     providerInitialIndex,
   ]);
 

@@ -16,6 +16,7 @@ describe("command registry contexts", () => {
       "streams",
       "source",
       "quality",
+      "memory",
       "pick-episode",
       "download",
       "next",
@@ -125,6 +126,11 @@ describe("command registry contexts", () => {
   test("resolves /c and /continue aliases to the continue command", () => {
     expect(parseCommand("/c")?.id).toBe("continue");
     expect(parseCommand("/continue")?.id).toBe("continue");
+  });
+
+  test("resolves /memory aliases to the playback memory command", () => {
+    expect(parseCommand("/memory")?.id).toBe("memory");
+    expect(parseCommand("/mem")?.id).toBe("memory");
   });
 
   test("keeps root overlay command order focused on first-run actions", () => {

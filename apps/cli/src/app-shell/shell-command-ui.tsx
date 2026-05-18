@@ -36,6 +36,25 @@ export function getHighlightedCommand(
   );
 }
 
+export function getCommandAutocompleteTarget(
+  input: string,
+  commands: readonly ResolvedAppCommand[],
+  highlightedIndex: number,
+): ResolvedAppCommand | null {
+  const model = buildCommandPickerModel(input, commands, highlightedIndex);
+  if (model.options.length === 0) return null;
+
+  const normalized = input.trim().replace(/^\//, "").toLowerCase();
+  const selected = commands.find((command) => command.id === model.selectedOption?.value) ?? null;
+  if (!normalized || !selected) return selected;
+
+  const selectedAlias = selected.aliases[0] ?? selected.id;
+  if (selectedAlias.toLowerCase() !== normalized) return selected;
+
+  const nextIndex = movePickerModelSelection(model, 1);
+  return commands.find((command) => command.id === model.options[nextIndex]?.value) ?? selected;
+}
+
 export function LineEditorText({
   value,
   cursor,
@@ -97,6 +116,7 @@ const CONTEXT_COMMAND_IDS = new Set<AppCommandId>([
   "streams",
   "source",
   "quality",
+  "memory",
   "pick-episode",
   "next",
   "previous",
@@ -332,11 +352,11 @@ export function useShellInput({
         return;
       }
       if (key.tab) {
-        const nextIndex = movePickerModelSelection(model, 1);
-        const target = commands.find((command) => command.id === model.options[nextIndex]?.value);
+        const target = getCommandAutocompleteTarget(commandInput, commands, highlightedIndex);
         if (target) {
-          setHighlightedIndex(nextIndex);
           commandEditor.setValue(target.aliases[0] ?? target.id);
+          const targetIndex = model.options.findIndex((option) => option.value === target.id);
+          setHighlightedIndex(Math.max(0, targetIndex));
         }
         return;
       }

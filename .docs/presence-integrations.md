@@ -6,15 +6,15 @@ This is the canonical reference for local social presence integrations such as D
 
 Presence is implemented as a first-party service seam and is off by default.
 
-| Capability                     | Location                                                | Status      |
-| ------------------------------ | ------------------------------------------------------- | ----------- |
-| Presence contract              | `apps/cli/src/services/presence/PresenceService.ts`     | Implemented |
-| Discord RPC implementation     | `apps/cli/src/services/presence/PresenceServiceImpl.ts` | Implemented |
-| Config fields                  | `apps/cli/src/services/persistence/ConfigService.ts`    | Implemented |
-| Settings picker for onboarding | `apps/cli/src/app-shell/overlay-panel.tsx`              | Implemented |
-| Playback updates               | `apps/cli/src/app/PlaybackPhase.ts`                     | Implemented |
-| Shutdown cleanup               | `apps/cli/src/app/SessionController.ts`                 | Implemented |
-| Diagnostics snapshot           | `apps/cli/src/app-shell/panel-data.ts`                  | Implemented |
+| Capability                     | Location                                               | Status      |
+| ------------------------------ | ------------------------------------------------------ | ----------- |
+| Presence contract              | `apps/cli/src/services/presence/PresenceService.ts`    | Implemented |
+| Discord IPC implementation     | `apps/cli/src/services/presence/discord-ipc-client.ts` | Implemented |
+| Config fields                  | `apps/cli/src/services/persistence/ConfigService.ts`   | Implemented |
+| Settings picker for onboarding | `apps/cli/src/app-shell/overlay-panel.tsx`             | Implemented |
+| Playback updates               | `apps/cli/src/app/PlaybackPhase.ts`                    | Implemented |
+| Shutdown cleanup               | `apps/cli/src/app/SessionController.ts`                | Implemented |
+| Diagnostics snapshot           | `apps/cli/src/app-shell/panel-data.ts`                 | Implemented |
 
 ## How Discord Presence Connects
 
@@ -22,13 +22,13 @@ Discord presence is optional and local-only:
 
 1. User sets `presenceProvider` to `discord`.
 2. User provides a Discord application client id through `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID`.
-3. The optional `discord-rpc` package must be available at runtime (ships as an optional dependency in the CLI package).
-4. Kunai connects through Discord IPC and calls `setActivity` during playback.
-5. Playback progress updates provide Discord timestamps while playing. Full privacy also includes
+3. Kunai connects through Discord's local IPC pipe/socket from Bun and sends `SET_ACTIVITY`
+   frames directly.
+4. Playback progress updates provide Discord timestamps while playing. Full privacy also includes
    an exact `position / duration` label in the activity text so the card is readable even when
    Discord chooses to render the timestamp as time remaining. Paused playback uses static
    "Paused at" text so Discord does not show an advancing timer.
-6. Full privacy adds provider-safe media facts when the stream inventory exposes them: quality,
+5. Full privacy adds provider-safe media facts when the stream inventory exposes them: quality,
    sub/dub presentation, audio language, subtitle language, and subtitle-track count.
 
 If any requirement is missing, Kunai records a diagnostics event and disables automatic retry until
@@ -102,7 +102,7 @@ Discord Rich Presence here is local IPC, not OAuth:
 
 ## Remaining Work
 
-- Consider optional package installation guidance without making `discord-rpc` a required dependency.
+- Keep the Bun-native IPC client covered by unit tests because it owns Discord transport behavior.
 - Upload stable Discord application assets from `apps/cli/assets/discord/` with keys `kunai` and
   `subtitles` in the Discord Developer Portal before treating artwork as guaranteed.
 - Keep `presenceDiscordOpenUrl` opt-in until packaged installers can run protocol registration as

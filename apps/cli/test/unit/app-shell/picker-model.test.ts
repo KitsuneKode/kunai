@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildCommandPickerModel, getHighlightedCommand } from "@/app-shell/shell-command-ui";
+import {
+  buildCommandPickerModel,
+  getCommandAutocompleteTarget,
+  getHighlightedCommand,
+} from "@/app-shell/shell-command-ui";
 import type { ResolvedAppCommand } from "@/domain/session/command-registry";
 import {
   buildPickerModel,
@@ -111,5 +115,26 @@ describe("command picker model", () => {
 
     expect(model.options[0]?.value).toBe("history");
     expect(getHighlightedCommand("his", commands, 0)?.id).toBe("history");
+  });
+
+  test("tab completion completes the current best match before cycling", () => {
+    const calendarCommand: ResolvedAppCommand = {
+      id: "calendar",
+      label: "Release Calendar",
+      aliases: ["calendar", "schedule"],
+      description: "Anime and series release schedule",
+      enabled: true,
+    };
+    const playlistCommand: ResolvedAppCommand = {
+      id: "playlist",
+      label: "Playlist",
+      aliases: ["playlist", "queue"],
+      description: "Manage your playback calendar queue",
+      enabled: true,
+    };
+
+    expect(getCommandAutocompleteTarget("cal", [playlistCommand, calendarCommand], 0)?.id).toBe(
+      "calendar",
+    );
   });
 });
