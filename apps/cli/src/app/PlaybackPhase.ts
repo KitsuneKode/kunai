@@ -1348,6 +1348,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               title: title.name,
               type: title.type,
               mediaKind: stateManager.getState().mode === "anime" ? "anime" : title.type,
+              externalIds: title.externalIds,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
               timestamp: historyTimestamp,

@@ -1,4 +1,10 @@
-import type { EpisodeIdentity, MediaKind, ProviderId, TitleIdentity } from "@kunai/types";
+import type {
+  EpisodeIdentity,
+  MediaKind,
+  ProviderExternalIds,
+  ProviderId,
+  TitleIdentity,
+} from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
 
@@ -24,6 +30,7 @@ export interface HistoryProgress {
   readonly durationSeconds?: number;
   readonly completed: boolean;
   readonly providerId?: ProviderId;
+  readonly externalIds?: ProviderExternalIds;
   readonly updatedAt: string;
   readonly createdAt: string;
 }
@@ -40,6 +47,7 @@ interface HistoryProgressRow {
   readonly duration_seconds: number | null;
   readonly completed: number;
   readonly provider_id: string | null;
+  readonly external_ids_json: string | null;
   readonly updated_at: string;
   readonly created_at: string;
 }
@@ -66,16 +74,18 @@ export class HistoryRepository {
             duration_seconds,
             completed,
             provider_id,
+            external_ids_json,
             updated_at,
             created_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(key) DO UPDATE SET
             title = excluded.title,
             position_seconds = excluded.position_seconds,
             duration_seconds = excluded.duration_seconds,
             completed = excluded.completed,
             provider_id = excluded.provider_id,
+            external_ids_json = excluded.external_ids_json,
             updated_at = excluded.updated_at
         `,
       )
@@ -91,6 +101,7 @@ export class HistoryRepository {
         input.durationSeconds === undefined ? null : Math.max(0, Math.trunc(input.durationSeconds)),
         input.completed === true ? 1 : 0,
         input.providerId ?? null,
+        serializeExternalIds(input.title.externalIds),
         now,
         now,
       );
@@ -175,7 +186,31 @@ function mapHistoryRow(row: HistoryProgressRow): HistoryProgress {
     durationSeconds: row.duration_seconds ?? undefined,
     completed: row.completed === 1,
     providerId: row.provider_id === null ? undefined : (row.provider_id as ProviderId),
+    externalIds: parseExternalIds(row.external_ids_json),
     updatedAt: row.updated_at,
     createdAt: row.created_at,
   };
+}
+
+function serializeExternalIds(externalIds: ProviderExternalIds | undefined): string | null {
+  if (!externalIds || Object.keys(externalIds).length === 0) return null;
+  return JSON.stringify(externalIds);
+}
+
+function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as Partial<ProviderExternalIds>;
+    const externalIds: ProviderExternalIds = {
+      ...(typeof parsed.anilistId === "string" && parsed.anilistId
+        ? { anilistId: parsed.anilistId }
+        : {}),
+      ...(typeof parsed.tmdbId === "string" && parsed.tmdbId ? { tmdbId: parsed.tmdbId } : {}),
+      ...(typeof parsed.imdbId === "string" && parsed.imdbId ? { imdbId: parsed.imdbId } : {}),
+      ...(typeof parsed.malId === "string" && parsed.malId ? { malId: parsed.malId } : {}),
+    };
+    return Object.keys(externalIds).length > 0 ? externalIds : undefined;
+  } catch {
+    return undefined;
+  }
 }

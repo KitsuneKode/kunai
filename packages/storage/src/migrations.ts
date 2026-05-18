@@ -302,6 +302,13 @@ export const dataMigrations: readonly Migration[] = [
         ON user_playlist_items(title_id, media_kind);
     `,
   },
+  {
+    id: "014_data_history_external_ids",
+    database: "data",
+    sql: `
+      ALTER TABLE history_progress ADD COLUMN external_ids_json TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

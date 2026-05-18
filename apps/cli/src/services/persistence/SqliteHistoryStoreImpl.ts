@@ -37,6 +37,7 @@ export class SqliteHistoryStoreImpl implements HistoryStore {
         id,
         kind: entry.mediaKind ?? entry.type,
         title: entry.title,
+        externalIds: entry.externalIds,
       },
       episode: {
         season: entry.season,
@@ -70,6 +71,7 @@ function toHistoryEntry(progress: HistoryProgress): HistoryEntry {
     duration: progress.durationSeconds ?? 0,
     completed: progress.completed,
     provider: progress.providerId ?? "unknown",
+    externalIds: progress.externalIds,
     watchedAt: progress.updatedAt,
   };
 }

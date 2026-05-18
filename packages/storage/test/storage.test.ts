@@ -133,7 +133,12 @@ test("history repository round trips latest progress", () => {
   const repo = new HistoryRepository(db);
 
   repo.upsertProgress({
-    title: { id: "tmdb:1", kind: "series", title: "Example" },
+    title: {
+      id: "tmdb:1",
+      kind: "series",
+      title: "Example",
+      externalIds: { tmdbId: "1", imdbId: "tt123", anilistId: "987", malId: "654" },
+    },
     episode: { season: 1, episode: 2 },
     positionSeconds: 42.8,
     durationSeconds: 1200,
@@ -149,8 +154,39 @@ test("history repository round trips latest progress", () => {
 
   expect(progress?.positionSeconds).toBe(42);
   expect(progress?.providerId).toBe("vidking");
+  expect(progress?.externalIds).toEqual({
+    tmdbId: "1",
+    imdbId: "tt123",
+    anilistId: "987",
+    malId: "654",
+  });
   expect(repo.listRecent(1)[0]?.key).toContain("tmdb:1");
   expect(repo.listByTitle("tmdb:1")).toHaveLength(1);
+
+  db.close();
+});
+
+test("history repository keeps legacy progress without external ids compatible", () => {
+  const db = migratedDataDb();
+  const repo = new HistoryRepository(db);
+
+  repo.upsertProgress({
+    title: { id: "tmdb:legacy", kind: "series", title: "Legacy Example" },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 12,
+    durationSeconds: 1200,
+    completed: false,
+    providerId: "vidking",
+    updatedAt: "2026-04-29T00:00:00.000Z",
+  });
+
+  const progress = repo.getProgress(
+    { id: "tmdb:legacy", kind: "series", title: "Legacy Example" },
+    { season: 1, episode: 1 },
+  );
+
+  expect(progress?.externalIds).toBeUndefined();
+  expect(progress?.positionSeconds).toBe(12);
 
   db.close();
 });

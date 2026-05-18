@@ -30,6 +30,7 @@ describe("SqliteHistoryStoreImpl", () => {
     await store.save("tmdb:1", {
       title: "Example",
       type: "series",
+      externalIds: { tmdbId: "1", imdbId: "tt123" },
       season: 1,
       episode: 2,
       timestamp: 120,
@@ -45,6 +46,7 @@ describe("SqliteHistoryStoreImpl", () => {
       episode: 2,
       timestamp: 120,
       provider: "vidking",
+      externalIds: { tmdbId: "1", imdbId: "tt123" },
     });
 
     const all = await store.getAll();
