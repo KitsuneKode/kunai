@@ -2519,6 +2519,16 @@ function BrowseShell<T>({
       return;
     }
 
+    if (
+      input === "r" &&
+      options.length === 0 &&
+      searchState === "idle" &&
+      idleContext?.continueWatching?.titleId
+    ) {
+      onResolve("continue");
+      return;
+    }
+
     if (key.tab) {
       onResolve("toggle-mode");
       return;
@@ -2827,7 +2837,11 @@ function BrowseShell<T>({
                         color={palette.dim}
                       >{`  · ${idleContext.continueWatching.remainingLabel}`}</Text>
                     ) : null}
-                    <Text color={palette.dim}>{" · continue watching"}</Text>
+                    {idleContext.continueWatching.titleId ? (
+                      <Text color={palette.teal}>{" · [r] resume"}</Text>
+                    ) : (
+                      <Text color={palette.dim}>{" · continue watching"}</Text>
+                    )}
                   </Text>
                 ) : null}
                 {idleContext.playlistNext ? (
@@ -3077,6 +3091,13 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+const STATS_KINDS = ["all", "series", "anime", "movie"] as const;
+type StatsKind = (typeof STATS_KINDS)[number];
+
+function statsKindLabel(k: StatsKind): string {
+  return k === "all" ? "all" : k === "movie" ? "movies" : k;
+}
+
 function StatsShell({
   statsService,
   statsFormatter,
@@ -3087,6 +3108,7 @@ function StatsShell({
   onBack: () => void;
 }) {
   const [windowIdx, setWindowIdx] = useState(0);
+  const [kindIdx, setKindIdx] = useState(0);
   const [copiedFlash, setCopiedFlash] = useState<string | null>(null);
   const { stdout } = useStdout();
   const rows = stdout.rows ?? 24;
@@ -3095,16 +3117,18 @@ function StatsShell({
 
   const windows = [30, 90, 99999] as const;
   const windowDays = windows[windowIdx] ?? 30;
+  const activeKind = STATS_KINDS[kindIdx] ?? "all";
+  const mediaKindFilter = activeKind === "all" ? undefined : activeKind;
 
   const stats = useMemo(
-    () => statsService.getStats(windowDays),
+    () => statsService.getStats(windowDays, mediaKindFilter),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [windowIdx],
+    [windowIdx, kindIdx],
   );
   const { current: streakDays } = useMemo(
-    () => statsService.computeStreak(),
+    () => statsService.computeStreak(mediaKindFilter),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [kindIdx],
   );
 
   // height budget (AppRoot header = 4 with safety margin)
@@ -3131,6 +3155,10 @@ function StatsShell({
     }
     if (key.escape || input === "q") {
       onBack();
+      return;
+    }
+    if ((key.tab || input === "\t") && key.shift) {
+      setKindIdx((i) => (i + 1) % STATS_KINDS.length);
       return;
     }
     if (key.tab || input === "\t") {
@@ -3170,9 +3198,19 @@ function StatsShell({
     <Box flexDirection="column" paddingX={1}>
       {/* Title + window tabs */}
       <Box justifyContent="space-between">
-        <Text bold color={palette.amber}>
-          Watch Stats
-        </Text>
+        <Box>
+          <Text bold color={palette.amber}>
+            Watch Stats
+          </Text>
+          <Text color={palette.dim}>{" · "}</Text>
+          {STATS_KINDS.map((k, i) => (
+            <Box key={k} marginRight={1}>
+              <Text color={i === kindIdx ? "white" : palette.dim} bold={i === kindIdx}>
+                {statsKindLabel(k)}
+              </Text>
+            </Box>
+          ))}
+        </Box>
         <Box>
           {(["1:30d", "2:90d", "3:all"] as const).map((label, i) => (
             <Box key={label} marginLeft={1}>
@@ -3267,7 +3305,9 @@ function StatsShell({
           </Box>
         ) : (
           <Box marginTop={1}>
-            <Text color={palette.gray}>Tab cycle windows</Text>
+            <Text color={palette.gray}>Tab window</Text>
+            <Text color={palette.dim}> · </Text>
+            <Text color={palette.gray}>⇧Tab filter</Text>
             <Text color={palette.dim}> · </Text>
             <Text color={palette.gray}>s share</Text>
             <Text color={palette.dim}> · </Text>

@@ -38,6 +38,7 @@ export type SearchPhaseInput = {
 };
 
 export const SEARCH_BROWSE_COMMAND_IDS = [
+  "continue",
   "filters",
   "recommendation",
   "random",
@@ -203,13 +204,18 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
         // Find the most-recent in-progress history entry to show a "continue" hint
         let continueWatching: import("@/app-shell/types").BrowseIdleContext["continueWatching"];
+        let continueWatchingTitleId: string | undefined;
         try {
           const allHistory = await container.historyStore.getAll();
-          const inProgress = Object.values(allHistory)
-            .filter((e) => !e.completed && e.timestamp > 30)
-            .sort((a, b) => new Date(b.watchedAt).getTime() - new Date(a.watchedAt).getTime());
-          const top = inProgress[0];
-          if (top) {
+          const inProgress = Object.entries(allHistory)
+            .filter(([, e]) => !e.completed && e.timestamp > 30)
+            .sort(
+              ([, a], [, b]) => new Date(b.watchedAt).getTime() - new Date(a.watchedAt).getTime(),
+            );
+          const topEntry = inProgress[0];
+          if (topEntry) {
+            const [titleId, top] = topEntry;
+            continueWatchingTitleId = titleId;
             const ep =
               top.type === "series" &&
               typeof top.season === "number" &&
@@ -219,7 +225,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const remainingSecs = top.duration > 0 ? top.duration - top.timestamp : 0;
             const remainingLabel =
               remainingSecs > 60 ? `${Math.ceil(remainingSecs / 60)}m left` : undefined;
-            continueWatching = { title: top.title, ep, remainingLabel };
+            continueWatching = {
+              title: top.title,
+              ep,
+              remainingLabel,
+              titleId,
+              mediaKind: top.type === "movie" ? "movie" : "series",
+            };
           }
         } catch {
           // best-effort
@@ -479,6 +491,30 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             outcome.action === "surprise"
           ) {
             await loadSearchRoute(outcome.action, context);
+            continue;
+          }
+
+          if (outcome.action === "continue") {
+            const resumeTitleId = continueWatchingTitleId;
+            if (resumeTitleId) {
+              const entry = await container.historyStore.get(resumeTitleId).catch(() => null);
+              if (entry) {
+                if (entry.provider) {
+                  stateManager.dispatch({ type: "SET_PROVIDER", provider: entry.provider });
+                }
+                const title = {
+                  id: resumeTitleId,
+                  type: entry.type,
+                  name: entry.title,
+                };
+                stateManager.dispatch({ type: "SELECT_TITLE", title });
+                return { status: "success", value: title };
+              }
+            }
+            stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: "No in-progress title found. Search for something to watch.",
+            });
             continue;
           }
 

@@ -55,7 +55,8 @@ export type ShellAction =
   | "clear-history"
   | "export-diagnostics"
   | "report-issue"
-  | "provider";
+  | "provider"
+  | "continue";
 
 export type ShellMode = "series" | "anime";
 
@@ -158,7 +159,13 @@ export type LoadingShellState = {
 
 export type BrowseIdleContext = {
   playlistNext?: { title: string; ep?: string };
-  continueWatching?: { title: string; ep?: string; remainingLabel?: string };
+  continueWatching?: {
+    title: string;
+    ep?: string;
+    remainingLabel?: string;
+    titleId?: string;
+    mediaKind?: "movie" | "series";
+  };
   todayReleaseCount?: number;
 };
 
@@ -271,6 +278,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "sync-connect-anilist":
     case "sync-connect-tmdb":
     case "sync-disconnect":
+    case "continue":
       return commandId;
   }
 }

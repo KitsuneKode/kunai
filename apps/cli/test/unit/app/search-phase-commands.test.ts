@@ -4,7 +4,8 @@ import { loadSurpriseList } from "@/app/discovery-lists";
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app/SearchPhase";
 
 test("search browse command palette exposes discover, random, inbox, and offline surfaces", () => {
-  expect([...SEARCH_BROWSE_COMMAND_IDS].slice(0, 14)).toEqual([
+  expect([...SEARCH_BROWSE_COMMAND_IDS].slice(0, 15)).toEqual([
+    "continue",
     "filters",
     "recommendation",
     "random",

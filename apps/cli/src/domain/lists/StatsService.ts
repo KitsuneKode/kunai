@@ -40,12 +40,13 @@ interface ShowRow {
 export class StatsService {
   constructor(private readonly db: KunaiDatabase) {}
 
-  computeStreak(): { current: number; longest: number } {
+  computeStreak(mediaKind?: "movie" | "series" | "anime"): { current: number; longest: number } {
+    const kindClause = mediaKind ? ` AND media_kind = '${mediaKind}'` : "";
     const rows = this.db
       .query<{ date: string }, []>(
         `SELECT DISTINCT date(updated_at) AS date
          FROM history_progress
-         WHERE completed = 1 OR position_seconds >= 300
+         WHERE (completed = 1 OR position_seconds >= 300)${kindClause}
          ORDER BY date DESC`,
       )
       .all();
@@ -107,17 +108,18 @@ export class StatsService {
     return { current, longest };
   }
 
-  getStats(windowDays = 30): WatchStats {
-    const { current: streakDays, longest: longestStreak } = this.computeStreak();
+  getStats(windowDays = 30, mediaKind?: "movie" | "series" | "anime"): WatchStats {
+    const { current: streakDays, longest: longestStreak } = this.computeStreak(mediaKind);
 
     const windowStart = new Date(Date.now() - windowDays * 86400000).toISOString();
+    const kindClause = mediaKind ? ` AND media_kind = '${mediaKind}'` : "";
 
     const totalsRow = this.db
       .query<{ total_episodes: number; total_seconds: number }, [string]>(
         `SELECT COUNT(*) AS total_episodes,
                 COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
          FROM history_progress
-         WHERE updated_at >= ?`,
+         WHERE updated_at >= ?${kindClause}`,
       )
       .get(windowStart) ?? { total_episodes: 0, total_seconds: 0 };
 
@@ -127,7 +129,7 @@ export class StatsService {
                 COUNT(*) AS watched_count,
                 COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
          FROM history_progress
-         WHERE updated_at >= ?
+         WHERE updated_at >= ?${kindClause}
          GROUP BY date(updated_at)
          ORDER BY date ASC`,
       )
@@ -140,7 +142,7 @@ export class StatsService {
                 COUNT(*) AS watched_count,
                 COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
          FROM history_progress
-         WHERE updated_at >= ?
+         WHERE updated_at >= ?${kindClause}
          GROUP BY date(updated_at)
          ORDER BY date ASC`,
       )
@@ -153,7 +155,7 @@ export class StatsService {
                 COUNT(*) AS episode_count,
                 COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
          FROM history_progress
-         WHERE updated_at >= ?
+         WHERE updated_at >= ?${kindClause}
          GROUP BY title_id
          ORDER BY total_seconds DESC
          LIMIT 10`,
@@ -166,7 +168,7 @@ export class StatsService {
                 COUNT(*) AS watched_count,
                 COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
          FROM history_progress
-         WHERE updated_at >= date('now', '-84 days')
+         WHERE updated_at >= date('now', '-84 days')${kindClause}
          GROUP BY week
          ORDER BY week ASC`,
       )

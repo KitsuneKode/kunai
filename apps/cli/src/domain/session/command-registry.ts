@@ -52,7 +52,8 @@ export type AppCommandId =
   | "sync"
   | "sync-connect-anilist"
   | "sync-connect-tmdb"
-  | "sync-disconnect";
+  | "sync-disconnect"
+  | "continue";
 
 export type AppCommand = {
   readonly id: AppCommandId;
@@ -68,6 +69,7 @@ export type ResolvedAppCommand = AppCommand & {
 
 export const COMMAND_CONTEXTS = {
   rootOverlay: [
+    "continue",
     "watchlist",
     "playlist",
     "stats",
@@ -264,6 +266,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Provider Picker",
     aliases: ["provider", "switch-provider"],
     description: "Open the provider picker",
+  },
+  {
+    id: "continue",
+    label: "Continue Watching",
+    aliases: ["continue", "c"],
+    description: "Resume the most recent in-progress title directly",
   },
   {
     id: "history",
@@ -853,6 +861,7 @@ function resolveCommandState(
 
     case "watchlist":
     case "favorites":
+    case "continue":
     case "playlist":
     case "playlist-add":
     case "stats":

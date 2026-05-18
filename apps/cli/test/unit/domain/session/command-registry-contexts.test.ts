@@ -123,7 +123,8 @@ describe("command registry contexts", () => {
   });
 
   test("keeps root overlay command order focused on first-run actions", () => {
-    expect([...COMMAND_CONTEXTS.rootOverlay].slice(0, 9)).toEqual([
+    expect([...COMMAND_CONTEXTS.rootOverlay].slice(0, 10)).toEqual([
+      "continue",
       "watchlist",
       "playlist",
       "stats",
