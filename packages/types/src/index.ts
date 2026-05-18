@@ -47,6 +47,45 @@ export interface CachePolicy {
   readonly allowStale?: boolean;
 }
 
+export interface ProviderExternalIds {
+  readonly anilistId?: string;
+  readonly tmdbId?: string;
+  readonly imdbId?: string;
+  readonly malId?: string;
+}
+
+export interface ProviderReleaseInfo {
+  readonly airDate?: string;
+  readonly availableAt?: string;
+  readonly status?: "released" | "upcoming" | "unknown";
+  readonly providerConfirmed?: boolean;
+}
+
+export interface ProviderArtworkInfo {
+  readonly posterUrl?: string;
+  readonly backdropUrl?: string;
+  readonly thumbnailUrl?: string;
+  readonly seekBarVttUrl?: string;
+}
+
+export interface ProviderLanguageEvidence {
+  readonly role: "audio" | "subtitle" | "hardsub";
+  readonly normalizedLanguage?: string;
+  readonly nativeLabel?: string;
+  readonly sourceId?: string;
+  readonly confidence?: number;
+  readonly metadata?: Record<string, unknown>;
+}
+
+export interface ProviderSourceEvidence {
+  readonly sourceId?: string;
+  readonly serverId?: string;
+  readonly nativeLabel?: string;
+  readonly host?: string;
+  readonly confidence?: number;
+  readonly metadata?: Record<string, unknown>;
+}
+
 export interface TitleIdentity {
   readonly id: string;
   readonly kind: MediaKind;
@@ -56,6 +95,7 @@ export interface TitleIdentity {
   readonly tmdbId?: string;
   readonly imdbId?: string;
   readonly malId?: string;
+  readonly externalIds?: ProviderExternalIds;
 }
 
 export interface EpisodeIdentity {
@@ -64,6 +104,8 @@ export interface EpisodeIdentity {
   readonly absoluteEpisode?: number;
   readonly title?: string;
   readonly airDate?: string;
+  readonly release?: ProviderReleaseInfo;
+  readonly artwork?: ProviderArtworkInfo;
 }
 
 export interface StreamCandidate {
@@ -85,6 +127,9 @@ export interface StreamCandidate {
   readonly serverName?: string;
   readonly qualityLabel?: string;
   readonly qualityRank?: number;
+  readonly languageEvidence?: readonly ProviderLanguageEvidence[];
+  readonly sourceEvidence?: readonly ProviderSourceEvidence[];
+  readonly artwork?: ProviderArtworkInfo;
   readonly headers?: Record<string, string>;
   readonly expiresAt?: string;
   readonly confidence: number;
@@ -135,6 +180,9 @@ export interface ProviderSourceCandidate {
   readonly confidence: number;
   readonly requiresRuntime?: ProviderRuntime;
   readonly cachePolicy?: CachePolicy;
+  readonly languageEvidence?: readonly ProviderLanguageEvidence[];
+  readonly sourceEvidence?: readonly ProviderSourceEvidence[];
+  readonly artwork?: ProviderArtworkInfo;
   readonly metadata?: Record<string, unknown>;
 }
 
@@ -158,6 +206,9 @@ export interface ProviderVariantCandidate {
   readonly subtitleIds?: readonly string[];
   readonly selected?: boolean;
   readonly confidence: number;
+  readonly languageEvidence?: readonly ProviderLanguageEvidence[];
+  readonly sourceEvidence?: readonly ProviderSourceEvidence[];
+  readonly artwork?: ProviderArtworkInfo;
   readonly metadata?: Record<string, unknown>;
 }
 
@@ -332,6 +383,10 @@ export interface ProviderSearchResult {
   readonly englishTitle?: string;
   readonly nativeTitle?: string;
   readonly altNames?: readonly string[];
+  readonly externalIds?: ProviderExternalIds;
+  readonly release?: ProviderReleaseInfo;
+  readonly artwork?: ProviderArtworkInfo;
+  readonly languageEvidence?: readonly ProviderLanguageEvidence[];
 }
 
 export interface ProviderEpisodeListInput {
@@ -345,6 +400,9 @@ export interface ProviderEpisodeOption {
   readonly label: string;
   readonly detail?: string;
   readonly totalEpisodeCount?: number;
+  readonly externalIds?: ProviderExternalIds;
+  readonly release?: ProviderReleaseInfo;
+  readonly artwork?: ProviderArtworkInfo;
 }
 
 export interface ProviderResolveResult {
@@ -355,6 +413,9 @@ export interface ProviderResolveResult {
   readonly variants?: readonly ProviderVariantCandidate[];
   readonly streams: readonly StreamCandidate[];
   readonly subtitles: readonly SubtitleCandidate[];
+  readonly externalIds?: ProviderExternalIds;
+  readonly release?: ProviderReleaseInfo;
+  readonly artwork?: ProviderArtworkInfo;
   readonly cachePolicy?: CachePolicy;
   readonly trace: ResolveTrace;
   readonly failures: readonly ProviderFailure[];

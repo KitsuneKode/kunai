@@ -7,6 +7,10 @@ import type {
   ProviderCycleCandidate,
   ProviderCycleFailure,
   ProviderCycleIntent,
+  ProviderArtworkInfo,
+  ProviderExternalIds,
+  ProviderLanguageEvidence,
+  ProviderReleaseInfo,
   ProviderResolveResult,
   ProviderRuntimeContext,
   ProviderTraceEvent,
@@ -335,4 +339,76 @@ test("provider cycle contract separates normalized logic fields from provider la
   expect(attempt.candidate.nativeLabel).toBe("kiwi");
   expect(attempt.candidate.normalizedAudioLanguage).toBe("ja");
   expect(attempt.failure?.failureClass).toBe("candidate-timeout");
+});
+
+test("provider metadata v2 contract carries native ids release artwork and language evidence", () => {
+  const externalIds: ProviderExternalIds = {
+    anilistId: "123",
+    malId: "456",
+    tmdbId: "789",
+  };
+  const release: ProviderReleaseInfo = {
+    airDate: "2026-05-19",
+    availableAt: "2026-05-19T12:30:00.000Z",
+    status: "released",
+    providerConfirmed: true,
+  };
+  const artwork: ProviderArtworkInfo = {
+    posterUrl: "https://image.example/poster.jpg",
+    backdropUrl: "https://image.example/backdrop.jpg",
+    seekBarVttUrl: "https://cdn.example/thumbs.vtt",
+  };
+  const languageEvidence: ProviderLanguageEvidence = {
+    role: "audio",
+    normalizedLanguage: "ja",
+    nativeLabel: "Sub",
+    confidence: 0.95,
+  };
+
+  const result: ProviderResolveResult = {
+    status: "resolved",
+    providerId: "allanime",
+    selectedStreamId: "stream-1",
+    externalIds,
+    release,
+    artwork,
+    streams: [
+      {
+        id: "stream-1",
+        providerId: "allanime",
+        sourceId: "kiwi",
+        url: "https://cdn.example/master.m3u8",
+        protocol: "hls",
+        presentation: "sub",
+        languageEvidence: [languageEvidence],
+        artwork,
+        confidence: 0.9,
+        cachePolicy: {
+          ttlClass: "stream-manifest",
+          scope: "local",
+          keyParts: ["provider", "allanime", "1", "sub"],
+        },
+      },
+    ],
+    subtitles: [],
+    trace: {
+      id: "trace-1",
+      startedAt: "2026-05-19T00:00:00.000Z",
+      title: {
+        id: "allanime:1",
+        kind: "anime",
+        title: "Example",
+        externalIds,
+      },
+      cacheHit: false,
+      steps: [],
+      failures: [],
+    },
+    failures: [],
+  };
+
+  expect(result.externalIds?.malId).toBe("456");
+  expect(result.release?.providerConfirmed).toBe(true);
+  expect(result.streams[0]?.languageEvidence?.[0]?.nativeLabel).toBe("Sub");
+  expect(result.artwork?.seekBarVttUrl).toContain("thumbs.vtt");
 });
