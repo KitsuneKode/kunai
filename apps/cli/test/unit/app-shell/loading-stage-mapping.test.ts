@@ -44,6 +44,17 @@ describe("loading shell 4-stage mapping", () => {
     expect(rail[3]!.tone).toBe("neutral"); // starting-playback is future
   });
 
+  test("preparing-provider is visible as the active stage in the rail", () => {
+    const rail = renderStageRail("preparing-provider", null);
+    expect(rail).toHaveLength(4);
+    expect(rail[0]!.tone).toBe("success");
+    expect(rail[1]!.label).toBe("Providers");
+    expect(rail[1]!.tone).toBe("info");
+    expect(rail[1]!.glyph).toMatch(/◓/u);
+    expect(rail[2]!.tone).toBe("neutral");
+    expect(rail[3]!.tone).toBe("neutral");
+  });
+
   test("stage rail turns active stage amber when latestIssue exists", () => {
     const rail = renderStageRail("preparing-player", "CDN timeout");
     expect(rail[2]!.tone).toBe("warning");
