@@ -502,6 +502,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
           if (typeof routedAction === "object" && routedAction.type === "history-entry") {
             stateManager.dispatch({ type: "SELECT_TITLE", title: routedAction.title });
+            if (routedAction.episode) {
+              stateManager.dispatch({ type: "SELECT_EPISODE", episode: routedAction.episode });
+            }
             return { status: "success", value: routedAction.title };
           }
           if (routedAction === "mode-switch" || routedAction === "handled") {

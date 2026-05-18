@@ -357,6 +357,45 @@ describe("panel-data", () => {
     expect(options[1]?.value).toBe("older");
   });
 
+  test("buildHistoryPickerOptions promotes released next episodes over completed history", () => {
+    const options = buildHistoryPickerOptions(
+      [
+        [
+          "anilist:123",
+          {
+            title: "Weekly Show",
+            type: "series",
+            season: 1,
+            episode: 6,
+            timestamp: 1440,
+            duration: 1440,
+            completed: true,
+            provider: "allanime",
+            watchedAt: "2026-05-10T00:00:00.000Z",
+          },
+        ],
+      ],
+      {
+        nextReleases: new Map([
+          [
+            "anilist:123",
+            {
+              status: "released",
+              releaseAt: "2026-05-17T10:00:00.000Z",
+              season: 1,
+              episode: 7,
+            },
+          ],
+        ]),
+      },
+    );
+
+    expect(options[0]?.label).toContain("S01E07");
+    expect(options[0]?.detail).toContain("new episode ready");
+    expect(options[0]?.badge).toBe("new");
+    expect(options[0]?.tone).toBe("success");
+  });
+
   test("buildDiagnosticsPanelLines exposes memory trend as a runtime-only diagnostic", () => {
     const lines = buildDiagnosticsPanelLines({
       state: createInitialState("vidking", "allanime", {

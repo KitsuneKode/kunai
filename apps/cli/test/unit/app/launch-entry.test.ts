@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  applyHistorySelectionProvider,
+  episodeFromHistorySelection,
   selectContinueHistoryEntry,
   selectContinueHistoryEntryFromRecent,
   selectLocalContinueCandidate,
@@ -91,6 +93,60 @@ describe("launch entry helpers", () => {
       id: "tmdb:1399",
       type: "series",
       name: "Game of Thrones",
+    });
+  });
+
+  test("episodeFromHistorySelection prefers explicit continuation targets", () => {
+    expect(
+      episodeFromHistorySelection({
+        titleId: "anilist:123",
+        entry: history({ season: 1, episode: 6 }),
+        targetEpisode: { season: 1, episode: 7, reason: "new-episode" },
+      }),
+    ).toEqual({ season: 1, episode: 7 });
+  });
+
+  test("applyHistorySelectionProvider restores the explicit target episode", () => {
+    const transitions: unknown[] = [];
+
+    applyHistorySelectionProvider(
+      {
+        providerRegistry: {
+          get() {
+            return {
+              metadata: {
+                id: "allanime",
+                isAnimeProvider: true,
+              },
+            };
+          },
+        },
+        stateManager: {
+          dispatch(transition: unknown) {
+            transitions.push(transition);
+          },
+        },
+      } as never,
+      {
+        titleId: "anilist:123",
+        entry: history({
+          provider: "allanime",
+          season: 1,
+          episode: 6,
+          completed: true,
+        }),
+        targetEpisode: { season: 1, episode: 7, reason: "new-episode" },
+      },
+    );
+
+    expect(transitions).toContainEqual({
+      type: "SET_MODE",
+      mode: "anime",
+      provider: "allanime",
+    });
+    expect(transitions).toContainEqual({
+      type: "SELECT_EPISODE",
+      episode: { season: 1, episode: 7 },
     });
   });
 

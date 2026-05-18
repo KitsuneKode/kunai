@@ -1,4 +1,8 @@
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
+import {
+  reconcileContinueHistory,
+  type ContinueHistoryRelease,
+} from "@/domain/continuation/history-reconciliation";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
@@ -677,16 +681,61 @@ function relativeTime(date: Date): string {
   return `${months}mo ago`;
 }
 
+export type HistoryPickerOptionsContext = {
+  readonly nextReleases?: ReadonlyMap<string, ContinueHistoryRelease>;
+};
+
+function formatSeriesEpisode(season: number, episode: number): string {
+  return `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
+}
+
+export function isHistoryPickerContinuable(
+  titleId: string,
+  entry: HistoryEntry,
+  context: HistoryPickerOptionsContext = {},
+): boolean {
+  const details = historyProgressDetails(entry);
+  const isCompleted = details.percentage !== null && details.percentage >= 95;
+  if (!isCompleted) return true;
+  return (
+    reconcileContinueHistory({
+      titleId,
+      entries: [[titleId, entry]],
+      nextRelease: context.nextReleases?.get(titleId) ?? null,
+    }).kind === "new-episode"
+  );
+}
+
 export function buildHistoryPickerOptions(
   historyEntries: ReadonlyArray<[string, HistoryEntry]>,
+  context: HistoryPickerOptionsContext = {},
 ): readonly ShellPickerOption<string>[] {
   return sortHistoryEntries(historyEntries).map(([id, entry]: [string, HistoryEntry]) => {
     const details = historyProgressDetails(entry);
     const isCompleted = details.percentage !== null && details.percentage >= 95;
+    const decision = reconcileContinueHistory({
+      titleId: id,
+      entries: [[id, entry]],
+      nextRelease: context.nextReleases?.get(id) ?? null,
+    });
     const episode =
-      entry.type === "series"
-        ? `S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
-        : "movie";
+      entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
+    if (decision.kind === "new-episode") {
+      const nextEpisode =
+        typeof decision.episode === "number"
+          ? formatSeriesEpisode(decision.season ?? entry.season, decision.episode)
+          : episode;
+      const completedEpisode =
+        entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
+      const timeAgo = relativeTime(new Date(entry.watchedAt));
+      return {
+        value: id,
+        label: `${entry.title}  ·  ${nextEpisode}`,
+        detail: `new episode ready  ·  completed ${completedEpisode}  ·  ${entry.provider}  ·  ${timeAgo}`,
+        badge: "new",
+        tone: "success",
+      };
+    }
     const statusGlyph = isCompleted
       ? "✓ complete"
       : entry.timestamp > 10

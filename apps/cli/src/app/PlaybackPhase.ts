@@ -126,7 +126,7 @@ export type PlaybackOutcome =
   | "back_to_results"
   | "mode_switch"
   | "quit"
-  | { type: "history_entry"; title: TitleInfo }
+  | { type: "history_entry"; title: TitleInfo; episode?: EpisodeInfo }
   | {
       type: "playlist-advance";
       titleInfo: TitleInfo;
@@ -2298,7 +2298,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             } else if (typeof routedAction === "object" && routedAction.type === "history-entry") {
               return {
                 status: "success",
-                value: { type: "history_entry", title: routedAction.title },
+                value: {
+                  type: "history_entry",
+                  title: routedAction.title,
+                  episode: routedAction.episode,
+                },
               };
             } else if (routedAction === "mode-switch") {
               return { status: "success", value: "back_to_search" };

@@ -135,6 +135,32 @@ describe("SessionState overlays", () => {
     expect(state.pickerResult).toEqual({ type: "cancelled", id: "quality:1" });
   });
 
+  test("cancelling an episode picker opened from history returns to history", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    state = reduceState(state, {
+      type: "OPEN_OVERLAY",
+      overlay: { type: "history", initialFilterMode: "watching" },
+    });
+    state = reduceState(state, {
+      type: "OPEN_PICKER",
+      picker: {
+        id: "episode:history",
+        type: "episode_picker",
+        season: 1,
+        options: [{ value: "7", label: "Episode 7" }],
+      },
+    });
+    state = reduceState(state, { type: "CANCEL_PICKER", id: "episode:history" });
+
+    expect(state.activeModals).toEqual([{ type: "history", initialFilterMode: "watching" }]);
+    expect(state.pickerResult).toEqual({ type: "cancelled", id: "episode:history" });
+  });
+
   test("updates default providers without mutating the current provider directly", () => {
     let state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },

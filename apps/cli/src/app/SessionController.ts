@@ -8,7 +8,7 @@
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import type { SearchPhaseInput } from "@/app/SearchPhase";
 import type { Container } from "@/container";
-import type { TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 
 export type SessionOutcome = "quit" | "mode_switch";
@@ -16,6 +16,7 @@ export type SessionOutcome = "quit" | "mode_switch";
 export interface SessionBootstrap {
   initialQuery?: string;
   initialTitle?: TitleInfo | null;
+  initialEpisode?: EpisodeInfo | null;
   initialRoute?: SearchPhaseInput["initialRoute"];
   preserveExistingSearch?: boolean;
   /** 1-based search result index for the first bootstrap query (`--jump` / `--quick`). */
@@ -30,13 +31,24 @@ export class SessionController {
   public async shutdown(): Promise<void> {
     this.abortController.abort();
     this.container.workControl.setActive(null);
-    await this.container.presence.shutdown();
-    await this.container.player.releasePersistentSession();
+    const cleanupResults = await Promise.allSettled([
+      this.container.presence.shutdown(),
+      this.container.player.releasePersistentSession(),
+    ]);
+    for (const result of cleanupResults) {
+      if (result.status === "fulfilled") continue;
+      this.container.diagnosticsStore.record({
+        category: "session",
+        message: "Session shutdown cleanup failed",
+        context: { error: String(result.reason) },
+      });
+    }
   }
 
   async run(bootstrap: SessionBootstrap = {}): Promise<void> {
     const { logger, tracer, stateManager, diagnosticsStore } = this.container;
     let pendingInitialTitle = bootstrap.initialTitle ?? null;
+    let pendingInitialEpisode = bootstrap.initialEpisode ?? null;
     let pendingInitialQuery = bootstrap.initialQuery;
     let pendingInitialRoute = bootstrap.initialRoute;
     let preserveExistingSearch = bootstrap.preserveExistingSearch ?? false;
@@ -59,6 +71,10 @@ export class SessionController {
             title = pendingInitialTitle;
             pendingInitialTitle = null;
             stateManager.dispatch({ type: "SELECT_TITLE", title });
+            if (pendingInitialEpisode) {
+              stateManager.dispatch({ type: "SELECT_EPISODE", episode: pendingInitialEpisode });
+              pendingInitialEpisode = null;
+            }
           } else {
             // Phase 1: Search
             const searchResult = await this.executePhase(
@@ -134,6 +150,7 @@ export class SessionController {
           if (outcome === "quit") break;
           if (typeof outcome === "object" && outcome.type === "history_entry") {
             pendingInitialTitle = outcome.title;
+            pendingInitialEpisode = outcome.episode ?? null;
             preserveExistingSearch = false;
             stateManager.dispatch({ type: "RESET_CONTENT" });
             continue;

@@ -25,6 +25,7 @@
 import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import {
   applyHistorySelectionProvider,
+  episodeFromHistorySelection,
   recordLocalHistorySourceDecision,
   selectContinueHistoryEntry,
   selectContinueHistoryEntryFromRecent,
@@ -32,7 +33,7 @@ import {
 } from "@/app/launch-entry";
 import { SessionController } from "@/app/SessionController";
 import { createContainer, type ShellChrome } from "@/container";
-import type { TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { selectDownloadCleanupCandidates } from "@/services/download/download-cleanup-policy";
@@ -240,10 +241,15 @@ async function maybeRunOfflineMode(
   return true;
 }
 
+type StartupHistoryTarget = {
+  readonly title: TitleInfo;
+  readonly episode?: EpisodeInfo;
+};
+
 async function maybeOpenStartupHistory(
   args: { history: boolean },
   container: Awaited<ReturnType<typeof createContainer>>,
-): Promise<TitleInfo | null> {
+): Promise<StartupHistoryTarget | null> {
   if (!args.history) return null;
 
   const { waitForRootHistorySelection } = await import("./app-shell/root-history-bridge");
@@ -254,13 +260,16 @@ async function maybeOpenStartupHistory(
   if (!selection) return null;
 
   applyHistorySelectionProvider(container, selection);
-  return titleFromHistorySelection(selection);
+  return {
+    title: titleFromHistorySelection(selection),
+    episode: episodeFromHistorySelection(selection),
+  };
 }
 
 async function maybeResolveContinueTitle(
   args: { continuePlayback: boolean },
   container: Awaited<ReturnType<typeof createContainer>>,
-): Promise<TitleInfo | null> {
+): Promise<StartupHistoryTarget | null> {
   if (!args.continuePlayback) return null;
   const recentEntries = await container.historyStore.listRecent(500).catch(() => []);
   const selection =
@@ -296,7 +305,10 @@ async function maybeResolveContinueTitle(
     },
   });
   await recordLocalHistorySourceDecision(container, selection, "continue");
-  return titleFromHistorySelection(selection);
+  return {
+    title: titleFromHistorySelection(selection),
+    episode: episodeFromHistorySelection(selection),
+  };
 }
 
 async function maybeRunDownloadMode(
@@ -468,6 +480,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   let bootstrapQuery: string | undefined;
   let bootstrapTitle: TitleInfo | null = null;
+  let bootstrapEpisode: EpisodeInfo | null = null;
 
   if (args.search?.trim()) {
     bootstrapQuery = args.search.trim();
@@ -587,10 +600,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   try {
     globalController = new SessionController(container);
     if (!bootstrapTitle && args.history) {
-      bootstrapTitle = await maybeOpenStartupHistory(args, container);
+      const target = await maybeOpenStartupHistory(args, container);
+      bootstrapTitle = target?.title ?? null;
+      bootstrapEpisode = target?.episode ?? null;
     }
     if (!bootstrapTitle && args.continuePlayback) {
-      bootstrapTitle = await maybeResolveContinueTitle(args, container);
+      const target = await maybeResolveContinueTitle(args, container);
+      bootstrapTitle = target?.title ?? null;
+      bootstrapEpisode = target?.episode ?? null;
     }
     let autoPickSearchResultIndex: number | undefined = args.jump;
     if (autoPickSearchResultIndex === undefined && args.quick && bootstrapQuery) {
@@ -600,6 +617,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     await globalController.run({
       initialQuery: bootstrapQuery,
       initialTitle: bootstrapTitle,
+      initialEpisode: bootstrapEpisode,
       initialRoute: args.initialRoute,
       autoPickSearchResultIndex,
     });

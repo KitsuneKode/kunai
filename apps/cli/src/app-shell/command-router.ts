@@ -1,7 +1,7 @@
-import { recordLocalHistorySourceDecision } from "@/app/launch-entry";
+import { episodeFromHistorySelection, recordLocalHistorySourceDecision } from "@/app/launch-entry";
 import { switchSessionMode } from "@/app/mode-switch";
 import type { Container } from "@/container";
-import type { TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import type { ShellAction } from "./types";
@@ -25,7 +25,7 @@ type RoutedActionResult =
   | "memory"
   | "download"
   | "pick-episode"
-  | { type: "history-entry"; title: TitleInfo }
+  | { type: "history-entry"; title: TitleInfo; episode?: EpisodeInfo }
   | "unhandled";
 
 async function openRootOwnedOverlay(
@@ -89,6 +89,7 @@ async function openRootHistorySelection(
       type: selection.entry.type,
       name: selection.entry.title,
     },
+    episode: episodeFromHistorySelection(selection),
   };
 }
 

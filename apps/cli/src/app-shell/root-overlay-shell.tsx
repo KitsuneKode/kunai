@@ -1,5 +1,9 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { Container } from "@/container";
+import {
+  reconcileContinueHistory,
+  type ContinueHistoryRelease,
+} from "@/domain/continuation/history-reconciliation";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
@@ -44,6 +48,8 @@ import {
   buildHelpPanelLines,
   buildHistoryPanelLines,
   buildProviderPickerOptions,
+  isHistoryPickerContinuable,
+  type HistoryPickerOptionsContext,
 } from "./panel-data";
 import {
   hasPendingRootHistorySelection,
@@ -96,6 +102,55 @@ function getLatestPresenceErrorDetail(container: Container): string | null {
   const raw = event?.context?.error;
   if (typeof raw !== "string" || raw.trim().length === 0) return null;
   return raw.trim();
+}
+
+function readCachedHistoryNextReleases(
+  entries: ReadonlyArray<[string, RootHistorySelection["entry"]]>,
+  container: Container,
+): NonNullable<HistoryPickerOptionsContext["nextReleases"]> {
+  const releases = new Map<string, ContinueHistoryRelease>();
+  for (const [titleId, entry] of entries) {
+    if (!titleId.startsWith("anilist:") || entry.type !== "series") continue;
+    const schedule = container.catalogScheduleService.peekNextRelease("anilist", titleId);
+    if (!schedule) continue;
+    releases.set(titleId, {
+      status: schedule.status,
+      releaseAt: schedule.releaseAt,
+      season: schedule.season,
+      episode: schedule.episode,
+    });
+  }
+  return releases;
+}
+
+function buildRootHistorySelection(
+  selection: RootHistorySelection,
+  context: HistoryPickerOptionsContext,
+): RootHistorySelection {
+  if (selection.entry.type !== "series") return selection;
+  const decision = reconcileContinueHistory({
+    titleId: selection.titleId,
+    entries: [[selection.titleId, selection.entry]],
+    nextRelease: context.nextReleases?.get(selection.titleId) ?? null,
+  });
+  if (decision.kind === "new-episode" && typeof decision.episode === "number") {
+    return {
+      ...selection,
+      targetEpisode: {
+        season: decision.season ?? selection.entry.season,
+        episode: decision.episode,
+        reason: "new-episode",
+      },
+    };
+  }
+  return {
+    ...selection,
+    targetEpisode: {
+      season: selection.entry.season,
+      episode: selection.entry.episode,
+      reason: "resume",
+    },
+  };
 }
 
 export function RootOverlayShell({
@@ -155,6 +210,9 @@ export function RootOverlayShell({
   const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
   const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
+  const [historyNextReleases, setHistoryNextReleases] = useState<
+    NonNullable<HistoryPickerOptionsContext["nextReleases"]>
+  >(new Map());
   const initialHistoryFilterMode =
     overlay.type === "history" ? (overlay.initialFilterMode ?? "all") : "all";
   const [historyFilterMode, setHistoryFilterMode] = useState<"all" | "watching" | "completed">(
@@ -163,6 +221,7 @@ export function RootOverlayShell({
   const overlayResetKey = getRootOverlayResetKey(overlay);
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const commands = resolveCommandContext(state, "rootOverlay");
+  const historyPickerContext: HistoryPickerOptionsContext = { nextReleases: historyNextReleases };
   const settingsSeriesProviderOptions = buildSettingsProviderOptions({
     providers: container.providerRegistry
       .getAll()
@@ -244,12 +303,17 @@ export function RootOverlayShell({
     overlay.type === "history"
       ? buildHistoryPickerOptions(
           rankFuzzyMatches(
-            historySelections.filter(({ entry }) => {
+            historySelections.filter(({ titleId, entry }) => {
               const filter = filterQuery.trim().toLowerCase();
               const isCompleted = entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
+              const isContinuable = isHistoryPickerContinuable(
+                titleId,
+                entry,
+                historyPickerContext,
+              );
               if (filter.length > 0) {
                 if (filter === "completed" && isCompleted) return true;
-                if (filter === "watching" && !isCompleted) return true;
+                if (filter === "watching" && isContinuable) return true;
                 return fuzzyMatch(
                   filter,
                   `${entry.title} ${entry.provider} s${entry.season}e${entry.episode}`,
@@ -257,7 +321,7 @@ export function RootOverlayShell({
               }
 
               if (historyFilterMode === "completed" && !isCompleted) return false;
-              if (historyFilterMode === "watching" && isCompleted) return false;
+              if (historyFilterMode === "watching" && !isContinuable) return false;
               return true;
             }),
             filterQuery.trim().toLowerCase() === "completed" ||
@@ -270,6 +334,7 @@ export function RootOverlayShell({
               { value: `s${entry.season}e${entry.episode}`, weight: 4 },
             ],
           ).map(({ titleId, entry }) => [titleId, entry] as const),
+          historyPickerContext,
         )
       : [];
   const notificationRecords =
@@ -425,6 +490,7 @@ export function RootOverlayShell({
     setOverlayStatus(null);
     setNotificationActionDedupKey(null);
     setHistorySelections([]);
+    setHistoryNextReleases(new Map());
     setHistoryFilterMode(initialHistoryFilterMode);
   }, [
     container.config,
@@ -442,19 +508,36 @@ export function RootOverlayShell({
     }
 
     let cancelled = false;
+    let ctl: AbortController | null = null;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
     setLoadingAsyncLines(true);
 
     void container.historyStore
       .getAll()
-      .then((entries) => {
+      .then(async (entries) => {
         if (cancelled) return undefined;
+        const historyEntries = Object.entries(entries);
         setHistorySelections(
-          Object.entries(entries).map(([titleId, entry]) => ({
+          historyEntries.map(([titleId, entry]) => ({
             titleId,
             entry,
           })),
         );
-        setAsyncLines(buildHistoryPanelLines(Object.entries(entries)));
+        setAsyncLines(buildHistoryPanelLines(historyEntries));
+        setHistoryNextReleases(readCachedHistoryNextReleases(historyEntries, container));
+        const anilistIds = historyEntries
+          .filter(([titleId, entry]) => titleId.startsWith("anilist:") && entry.type === "series")
+          .map(([titleId]) => titleId);
+        if (anilistIds.length === 0) return undefined;
+        ctl = new AbortController();
+        timeout = setTimeout(() => ctl?.abort(), 3000);
+        await container.catalogScheduleService
+          .prefetchNextReleaseForTitles("anilist", anilistIds, ctl.signal)
+          .catch(() => {});
+        if (timeout) clearTimeout(timeout);
+        timeout = null;
+        if (cancelled) return undefined;
+        setHistoryNextReleases(readCachedHistoryNextReleases(historyEntries, container));
         return undefined;
       })
       .finally(() => {
@@ -465,8 +548,10 @@ export function RootOverlayShell({
 
     return () => {
       cancelled = true;
+      ctl?.abort();
+      if (timeout) clearTimeout(timeout);
     };
-  }, [container.historyStore, overlay.type]);
+  }, [container, container.historyStore, overlay.type]);
 
   useEffect(() => {
     if (!overlayStatus) return undefined;
@@ -568,8 +653,19 @@ export function RootOverlayShell({
       const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
       const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
       if (selected) {
+        const historySelection = buildRootHistorySelection(selected, historyPickerContext);
+        const queueEntry =
+          historySelection.targetEpisode && historySelection.targetEpisode.reason === "new-episode"
+            ? {
+                ...historySelection.entry,
+                season: historySelection.targetEpisode.season,
+                episode: historySelection.targetEpisode.episode,
+                timestamp: 0,
+                completed: false,
+              }
+            : historySelection.entry;
         container.playlistService.enqueueMediaItem(
-          mediaItemFromHistoryEntry(selected.titleId, selected.entry),
+          mediaItemFromHistoryEntry(historySelection.titleId, queueEntry),
           { placement: "end", source: "history" },
         );
         setOverlayStatus("Queued from history");
@@ -888,7 +984,9 @@ export function RootOverlayShell({
       } else if (overlay.type === "history") {
         const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
         const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
-        resolveRootHistorySelection(selected);
+        resolveRootHistorySelection(
+          selected ? buildRootHistorySelection(selected, historyPickerContext) : null,
+        );
       } else if (overlay.type === "notifications") {
         if (notificationActionDedupKey) {
           const actionId = filteredNotificationActionOptions[selectedIndex]?.value;

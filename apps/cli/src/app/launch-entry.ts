@@ -1,6 +1,6 @@
 import type { Container } from "@/container";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
-import type { TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import { isFinished } from "@/services/persistence/HistoryStore";
@@ -8,6 +8,11 @@ import { isFinished } from "@/services/persistence/HistoryStore";
 export type HistoryLaunchSelection = {
   readonly titleId: string;
   readonly entry: HistoryEntry;
+  readonly targetEpisode?: {
+    readonly season: number;
+    readonly episode: number;
+    readonly reason: "resume" | "new-episode";
+  };
 };
 
 export function selectContinueHistoryEntry(
@@ -42,6 +47,17 @@ export function titleFromHistorySelection(selection: HistoryLaunchSelection): Ti
     type: selection.entry.type,
     name: selection.entry.title,
   };
+}
+
+export function episodeFromHistorySelection(
+  selection: HistoryLaunchSelection,
+): EpisodeInfo | undefined {
+  if (selection.entry.type !== "series") return undefined;
+  const target = selection.targetEpisode ?? {
+    season: selection.entry.season,
+    episode: selection.entry.episode,
+  };
+  return { season: target.season, episode: target.episode };
 }
 
 export function selectLocalContinueCandidate(
@@ -114,7 +130,14 @@ export function applyHistorySelectionProvider(
       mode: provider.metadata.isAnimeProvider ? "anime" : "series",
       provider: provider.metadata.id,
     });
-    return;
+  } else {
+    container.stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
   }
-  container.stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
+  if (selection.entry.type !== "series") return;
+  const episode = episodeFromHistorySelection(selection);
+  if (!episode) return;
+  container.stateManager.dispatch({
+    type: "SELECT_EPISODE",
+    episode,
+  });
 }

@@ -3,6 +3,11 @@ import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 export type RootHistorySelection = {
   titleId: string;
   entry: HistoryEntry;
+  targetEpisode?: {
+    season: number;
+    episode: number;
+    reason: "resume" | "new-episode";
+  };
 };
 
 type HistoryResolver = (value: RootHistorySelection | null) => void;
