@@ -15,6 +15,7 @@ import {
 } from "@/app/source-quality";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { Container } from "@/container";
+import { toErrorScenario } from "@/domain/playback/playback-problem";
 import {
   describePlaybackTelemetrySnapshot,
   type PlaybackTelemetrySnapshot,
@@ -35,7 +36,13 @@ import {
 import { resolveIdleContinueAction } from "./browse-idle-actions";
 import type { ResolvedAppCommand } from "./commands";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
-import { buildBrowseCompanionPanel, buildBrowseDetailsPanel } from "./details-panel";
+import { DetailsPaneUI } from "./details-pane-ui";
+import {
+  buildBrowseDetailsPanel,
+  buildDetailsPanelDataFromBrowseOption,
+  resolveBrowseDetailsSecondary,
+  type DetailsPanelData,
+} from "./details-panel";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { ExitShell } from "./exit-shell";
@@ -45,6 +52,7 @@ import { getBrowseCommandPaletteMaxVisible, getPickerLayout } from "./layout-pol
 import { LoadingShell } from "./loading-shell";
 import { OverlayPanel } from "./overlay-panel";
 import type { BrowseOverlay } from "./overlay-panel";
+import { PostPlayShell } from "./post-play-shell";
 import {
   clearRootContentSession,
   mountRootContent,
@@ -61,11 +69,10 @@ import {
   getCommandMatches,
   getHighlightedCommand,
 } from "./shell-command-ui";
-import { footerActionFromCommand, getCommandLabel, InputField, ShellFrame } from "./shell-frame";
+import { getCommandLabel, InputField, ShellFrame } from "./shell-frame";
 import {
   BrowseTitle,
   ContextStrip,
-  DetailLine,
   LocalSection,
   ResizeBlocker,
   ShellFooter,
@@ -1024,6 +1031,11 @@ function AppRoot({ container }: { container: Container }) {
           {rootSurface === "error" ? (
             <ErrorShell
               message={state.playbackError || "An unknown error occurred"}
+              scenario={toErrorScenario(state.playbackProblem, {
+                providerName: activeProvider?.metadata.name ?? state.provider,
+                title: state.currentTitle?.name,
+                resolveRetryCount: state.resolveRetryCount,
+              })}
               onResolve={() => {
                 stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
                 stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
@@ -1054,9 +1066,11 @@ function AppRoot({ container }: { container: Container }) {
                   state.playbackStatus === "seeking" ||
                   state.playbackStatus === "stalled"
                     ? "starting-playback"
-                    : state.playbackStatus === "loading"
+                    : state.playbackStatus === "ready"
                       ? "preparing-player"
-                      : "finding-stream",
+                      : state.playbackStatus === "loading"
+                        ? "preparing-provider"
+                        : "finding-stream",
                 stageDetail: state.playbackDetail ?? undefined,
                 details: state.playbackDetail ?? `Provider: ${state.provider}`,
                 providerName: activeProvider?.metadata.name ?? state.provider,
@@ -1222,6 +1236,50 @@ export async function shutdownSessionApp(): Promise<void> {
   deleteAllKittyImages();
 }
 
+function buildPostPlayFooterActions(
+  postPlayState: NonNullable<PlaybackShellState["postPlayState"]>,
+  canResume: boolean,
+): readonly FooterAction[] {
+  const commandAction: FooterAction = { key: "/", label: "commands", action: "command-mode" };
+  const quitAction: FooterAction = { key: "q", label: "quit", action: "quit" };
+
+  switch (postPlayState.kind) {
+    case "caught-up":
+      return [
+        { key: "w", label: "watchlist", action: "watchlist", primary: true },
+        quitAction,
+        commandAction,
+      ];
+    case "season-finale":
+      return [
+        { key: "n", label: "next season", action: "next-season", primary: true },
+        { key: "r", label: "replay", action: "replay" },
+        quitAction,
+        commandAction,
+      ];
+    case "series-complete":
+      return [
+        { key: "r", label: "replay", action: "replay" },
+        { key: "s", label: "search", action: "search" },
+        quitAction,
+        commandAction,
+      ];
+    case "mid-series":
+    default:
+      return [
+        {
+          key: "n",
+          label: "continue",
+          action: canResume ? "resume" : "next",
+          primary: true,
+        },
+        { key: "r", label: "replay", action: "replay" },
+        quitAction,
+        commandAction,
+      ];
+  }
+}
+
 function PlaybackShell({
   state,
   episodePickerOptions: _episodePickerOptions,
@@ -1256,141 +1314,60 @@ function PlaybackShell({
   onResolve: (result: PlaybackShellResult) => void;
 }) {
   const playbackViewport = useDebouncedViewportPolicy("playback");
-  const playbackWide = playbackViewport.columns >= 150;
-  const { poster, posterState } = usePosterPreview(state.posterUrl, {
-    rows: 8,
-    cols: 18,
-    enabled: true,
-  });
-  const showPosterCompanion =
-    playbackWide &&
-    Boolean(
-      state.posterUrl ||
-      poster.kind !== "none" ||
-      posterState === "loading" ||
-      posterState === "unavailable",
-    );
-
   const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
-  const hasRecommendationRail = Boolean(
-    state.recommendationRailItems && state.recommendationRailItems.length > 0,
-  );
-  const footerActions: readonly FooterAction[] = [
-    { key: "/", label: "commands", action: "command-mode" },
-    footerActionFromCommand(
-      commands,
-      "next",
-      {
-        key: "n",
-        label: getCommandLabel(commands, "next", "next"),
-      },
-      toShellAction,
-    ),
-    footerActionFromCommand(
-      commands,
-      "previous",
-      {
-        key: "p",
-        label: getCommandLabel(commands, "previous", "previous"),
-      },
-      toShellAction,
-    ),
-    ...(state.resumeLabel
-      ? ([
-          { key: "c", label: state.resumeLabel, action: "resume" as const },
-        ] satisfies readonly FooterAction[])
-      : []),
-    footerActionFromCommand(commands, "replay", { key: "r", label: "replay" }, toShellAction),
-    ...(state.showRecommendationNudge
-      ? ([
-          footerActionFromCommand(
-            commands,
-            "recommendation",
-            { key: "g", label: "recommendation picks" },
-            toShellAction,
-          ),
-        ] satisfies readonly FooterAction[])
-      : []),
-    footerActionFromCommand(
-      commands,
-      "pick-episode",
-      { key: "e", label: "episodes" },
-      toShellAction,
-    ),
-    footerActionFromCommand(commands, "streams", { key: "k", label: "streams" }, toShellAction),
-    footerActionFromCommand(commands, "source", { key: "o", label: "source" }, toShellAction),
-    footerActionFromCommand(commands, "quality", { key: "v", label: "quality" }, toShellAction),
-    footerActionFromCommand(commands, "download", { key: "d", label: "download" }, toShellAction),
-    footerActionFromCommand(commands, "fallback", { key: "f", label: "fallback" }, toShellAction),
-    footerActionFromCommand(
-      commands,
-      "toggle-autoplay",
-      { key: "a", label: getCommandLabel(commands, "toggle-autoplay", "autoplay") },
-      toShellAction,
-    ),
-    footerActionFromCommand(commands, "search", { key: "s", label: "search" }, toShellAction),
-    footerActionFromCommand(commands, "quit", { key: "q", label: "quit" }, toShellAction),
-  ];
+  const postPlayState = state.postPlayState ?? { kind: "mid-series" as const };
+  const canResume = Boolean(state.resumeLabel);
+  const footerActions = buildPostPlayFooterActions(postPlayState, canResume);
+  const contextStrip = [
+    "post-play",
+    state.provider,
+    state.episodeLabel,
+    state.mode === "anime" ? "anime" : null,
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join("  ·  ");
+  const recommendations = state.recommendationRailItems ?? [];
 
-  const location =
-    state.type === "series"
-      ? `S${String(state.season).padStart(2, "0")}E${String(state.episode).padStart(2, "0")}`
-      : "Movie";
-  const modeLabel = state.mode === "anime" ? "Anime" : "Series";
-  const playbackSubtitleTone =
-    state.subtitleStatus?.toLowerCase().includes("not found") ||
-    state.subtitleStatus?.toLowerCase().includes("disabled")
-      ? "warning"
-      : "success";
-  const playbackContext = [
-    location,
-    modeLabel,
-    `Provider ${state.provider}`,
-    state.subtitleStatus,
-    state.autoplayPaused ? "Autoplay paused" : "Autoplay ready",
-  ].filter((item): item is string => Boolean(item));
-  const postPlaybackHeading = state.resumeLabel
-    ? `Resume from ${state.resumeLabel}`
-    : state.autoplayPaused && state.type === "series"
-      ? "You're caught up for now"
-      : state.type === "series"
-        ? "Ready for the next episode"
-        : "Ready to replay or search again";
-  const postPlaybackNextStep = state.resumeLabel
-    ? "Resume from your last stop, restart from the beginning, or move between episodes"
-    : state.autoplayPaused && hasRecommendationRail
-      ? "Try a recommendation, check /calendar, or replay this episode"
-      : state.autoplayPaused
-        ? "Check /calendar for new releases, open /recommendation, or replay this episode"
-        : "Replay, move episodes, or start a fresh search";
-  const attentionHealthLines = [state.providerHealth, state.networkHealth].filter(
-    (line): line is ShellPanelLine => Boolean(line && line.tone && line.tone !== "neutral"),
-  );
   return (
     <ShellFrame
       eyebrow={APP_LABEL}
       title={state.title}
-      subtitle={playbackContext.join("  ·  ")}
+      subtitle={contextStrip}
       status={state.status}
-      footerTask="Playback"
+      footerTask="Post-play"
       footerActions={footerActions}
-      footerMode={state.footerMode}
+      footerMode="minimal"
       commands={commands}
       inputLocked={false}
       escapeAction="back-to-results"
-      onUnhandledInput={(input) => {
-        if (!hasRecommendationRail) return;
-        if (input.toLowerCase() === "i") {
-          onResolve({
-            type: "open-recommendation-actions",
-            items: state.recommendationRailItems?.slice(0, 3) ?? [],
-          });
+      onUnhandledInput={(input, key) => {
+        if (key.return || input === "c") {
+          if (postPlayState.kind === "mid-series") {
+            onResolve(canResume ? "resume" : "next");
+            return;
+          }
+          if (postPlayState.kind === "season-finale") {
+            onResolve("next-season");
+            return;
+          }
+          if (postPlayState.kind === "series-complete") {
+            const item = recommendations[0];
+            if (item) {
+              onResolve({ type: "queue-recommendation", item });
+            }
+            return;
+          }
+        }
+        if (input === "w" && postPlayState.kind === "caught-up") {
+          onResolve("watchlist");
           return;
         }
-        if (input !== "1" && input !== "2" && input !== "3") return;
-        const item = state.recommendationRailItems?.[Number(input) - 1];
-        if (!item) return;
-        onResolve({ type: "queue-recommendation", item });
+        if (input === "1" || input === "2" || input === "3") {
+          const item = recommendations[Number(input) - 1];
+          if (item) {
+            onResolve({ type: "queue-recommendation", item });
+          }
+        }
       }}
       onResolve={onResolve}
     >
@@ -1400,106 +1377,20 @@ function PlaybackShell({
           rows={playbackViewport.rows}
           minColumns={playbackViewport.minColumns}
           minRows={playbackViewport.minRows}
-          message="Resize terminal for playback controls"
+          message="Resize terminal for post-play controls"
         />
       ) : (
-        <>
-          <Box marginTop={1} />
-          <Box flexDirection={showPosterCompanion ? "row" : "column"} marginTop={1} flexGrow={1}>
-            <Box
-              flexDirection="column"
-              width={showPosterCompanion ? Math.max(56, playbackViewport.columns - 38) : undefined}
-            >
-              <Text color={state.autoplayPaused ? palette.teal : palette.amber} bold>
-                {postPlaybackHeading}
-              </Text>
-              <Box marginTop={1} flexDirection="column">
-                {playbackSubtitleTone === "warning" ? (
-                  <DetailLine
-                    label="Subtitle state"
-                    value={state.subtitleStatus ?? "not reported"}
-                    tone={playbackSubtitleTone}
-                  />
-                ) : null}
-                <DetailLine label="Next step" value={postPlaybackNextStep} />
-                {hasRecommendationRail ? (
-                  <DetailLine
-                    label="Recommended next"
-                    value="Press 1-3 to queue a pick · i opens details/download actions"
-                    tone="info"
-                  />
-                ) : null}
-                {state.recommendationRailItems?.slice(0, 3).map((item, index) => (
-                  <DetailLine
-                    key={`${item.type}:${item.id}`}
-                    label={`Pick ${index + 1}`}
-                    value={`${item.title}${item.year ? ` (${item.year})` : ""}`}
-                    tone="neutral"
-                  />
-                ))}
-                {state.autoplayPaused && !hasRecommendationRail ? (
-                  <DetailLine
-                    label="Discover"
-                    value="Use /recommendation for picks or /calendar for weekly anime releases"
-                    tone="info"
-                  />
-                ) : null}
-                {state.recommendationRailMoreCount && state.recommendationRailMoreCount > 0 ? (
-                  <DetailLine
-                    label="More picks"
-                    value={`${state.recommendationRailMoreCount} more available in /recommendation`}
-                    tone="neutral"
-                  />
-                ) : null}
-                {state.autoplayPaused ? (
-                  <DetailLine
-                    label="Autoplay"
-                    value="Paused for this playback chain only"
-                    tone="warning"
-                  />
-                ) : null}
-                {state.lastQueuedDownload ? (
-                  <DetailLine label="Downloads" value={state.lastQueuedDownload} tone="info" />
-                ) : null}
-                {state.showMemory && state.memoryUsage ? (
-                  <DetailLine label="Memory" value={state.memoryUsage} />
-                ) : null}
-                {attentionHealthLines.map((line) => (
-                  <DetailLine
-                    key={line.label}
-                    label={line.label}
-                    value={line.detail ?? ""}
-                    tone={line.tone === "neutral" ? undefined : line.tone}
-                  />
-                ))}
-              </Box>
-            </Box>
-
-            {showPosterCompanion ? (
-              <Box marginLeft={2} flexDirection="column" width={26}>
-                <Box>
-                  {poster.kind !== "none" ? (
-                    <Text>{poster.placeholder}</Text>
-                  ) : (
-                    <Box flexDirection="column">
-                      <Text
-                        color={posterState === "loading" ? palette.info : palette.gray}
-                        dimColor
-                      >
-                        {posterState === "loading" ? "Loading poster…" : "Poster unavailable"}
-                      </Text>
-                      {posterState === "unavailable" ? (
-                        <Text color={palette.gray} dimColor>
-                          Artwork is optional; playback controls stay available.
-                        </Text>
-                      ) : null}
-                    </Box>
-                  )}
-                </Box>
-              </Box>
-            ) : null}
-          </Box>
-        </>
+        <PostPlayShell
+          title={state.title}
+          episodeLabel={state.episodeLabel ?? ""}
+          nextEpisodeLabel={state.nextEpisodeLabel}
+          resumeLabel={state.resumeLabel}
+          postPlayState={postPlayState}
+          recommendations={recommendations}
+          totalEpisodes={state.totalEpisodes}
+          watchedEpisodes={state.watchedEpisodes}
+          currentSeason={state.currentSeason ?? state.season}
+        />
       )}
     </ShellFrame>
   );
@@ -2067,7 +1958,7 @@ function BrowseShell<T>({
   const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
-  const [selectedDetail, setSelectedDetail] = useState(
+  const [_selectedDetail, setSelectedDetail] = useState(
     initialResults?.[initialSelectedIndex ?? 0]?.detail ??
       "Search for a title — or try /trending to see what's popular",
   );
@@ -2097,6 +1988,9 @@ function BrowseShell<T>({
       ),
   );
   const requestIdRef = useRef(0);
+  const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
+    buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
+  );
 
   // Calendar view detection and day-strip derived state.
   // displayGroup is only set by calendar-results.ts, so any option with previewGroup
@@ -2136,7 +2030,7 @@ function BrowseShell<T>({
   }, [isCalendarView, calendarDayFilter, options]);
 
   const showPoster = viewport.breakpoint === "wide" || viewport.breakpoint === "medium";
-  const { poster, posterState } = usePosterPreview(displayOptions[selectedIndex]?.previewImageUrl, {
+  const { poster } = usePosterPreview(displayOptions[selectedIndex]?.previewImageUrl, {
     rows: viewport.breakpoint === "wide" ? 11 : 9,
     cols: viewport.breakpoint === "wide" ? 26 : 16,
     enabled: showPoster,
@@ -2410,15 +2304,27 @@ function BrowseShell<T>({
 
   const queryDirty = query.trim() !== lastSearchedQuery;
   const selectedOption = displayOptions[selectedIndex];
-  const companionPanel = buildBrowseCompanionPanel(selectedOption, { selectedDetail });
-  const {
-    compact,
-    ultraCompact,
-    tooSmall,
-    minColumns,
-    minRows,
-    maxVisibleRows: maxVisible,
-  } = viewport;
+
+  useEffect(() => {
+    const primaryData = buildDetailsPanelDataFromBrowseOption(selectedOption);
+    setCompanionDetails(primaryData);
+    let cancelled = false;
+    void (async () => {
+      await Bun.sleep(32);
+      if (cancelled) return;
+      const secondary = resolveBrowseDetailsSecondary(selectedOption, { providerName: provider });
+      setCompanionDetails((current) => ({
+        ...current,
+        primary: primaryData.primary,
+        secondary,
+      }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, selectedOption]);
+
+  const { compact, ultraCompact, minColumns, minRows, maxVisibleRows: maxVisible } = viewport;
   const browseBreakpoint = viewport.breakpoint;
   const showCompanionLayout = browseBreakpoint === "wide" || browseBreakpoint === "medium";
   const effectiveFooterMode = "minimal";
@@ -2435,20 +2341,7 @@ function BrowseShell<T>({
   const windowStart = getWindowStart(selectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
-  const previewBodyLines = wrapText(
-    companionPanel.body,
-    Math.max(previewWidth - 2, 24),
-    ultraCompact ? 1 : 2,
-  );
-  const showCompanion =
-    showCompanionLayout &&
-    !compact &&
-    Boolean(
-      companionPanel.title ||
-      companionPanel.metaLine ||
-      previewBodyLines.some((line) => line.trim().length > 0) ||
-      companionPanel.facts.length > 0,
-    );
+  const showCompanion = showCompanionLayout && !compact && Boolean(selectedOption);
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestHardExit(0);
@@ -2883,68 +2776,14 @@ function BrowseShell<T>({
                 flexDirection="column"
                 width={previewWidth}
               >
-                {/* Poster in wide and medium breakpoints; compact poster for medium */}
                 {showPoster && poster.kind !== "none" ? (
                   <Box flexDirection="column" marginBottom={1}>
                     <Text>{poster.placeholder}</Text>
                   </Box>
-                ) : showPoster && selectedOption?.previewImageUrl ? (
-                  <Box marginBottom={1}>
-                    <Text color={posterState === "loading" ? palette.info : palette.dim} dimColor>
-                      {posterState === "loading" ? "Loading artwork…" : "Artwork unavailable"}
-                    </Text>
-                  </Box>
                 ) : null}
-                <Text bold color={palette.amber}>
-                  {truncateLine(companionPanel.title, previewWidth)}
-                </Text>
-                {companionPanel.metaLine && !ultraCompact ? (
-                  <Box marginTop={1}>
-                    <Text color={palette.gray}>
-                      {truncateLine(companionPanel.metaLine, previewWidth)}
-                    </Text>
-                  </Box>
-                ) : null}
-                {previewBodyLines.length > 0 ? (
-                  <Box marginTop={1} flexDirection="column">
-                    {previewBodyLines.map((line) => (
-                      <Text
-                        key={`${selectedOption?.label ?? "selected"}-${line}`}
-                        color={palette.muted}
-                      >
-                        {line}
-                      </Text>
-                    ))}
-                  </Box>
-                ) : null}
-                {!ultraCompact ? (
-                  <Box marginTop={1} flexDirection="column">
-                    {companionPanel.facts.slice(0, compact ? 2 : 4).map((fact) => (
-                      <DetailLine
-                        key={`${selectedOption?.label ?? "selected"}-${fact.label}`}
-                        label={fact.label}
-                        value={truncateLine(fact.detail ?? "", Math.max(18, previewWidth - 16))}
-                        tone={fact.tone === "error" ? "warning" : fact.tone}
-                      />
-                    ))}
-                  </Box>
-                ) : null}
+                <DetailsPaneUI data={companionDetails} width={previewWidth} />
               </Box>
-            ) : (
-              <Box marginTop={1} flexDirection="column">
-                <Text bold color={palette.amber}>
-                  {truncateLine(companionPanel.title, innerWidth)}
-                </Text>
-                {companionPanel.metaLine ? (
-                  <Text color={palette.gray}>
-                    {truncateLine(companionPanel.metaLine, innerWidth)}
-                  </Text>
-                ) : null}
-                {previewBodyLines.length > 0 ? (
-                  <Text color={palette.muted}>{previewBodyLines[0]}</Text>
-                ) : null}
-              </Box>
-            )}
+            ) : null}
           </Box>
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
           <Box marginTop={2} flexDirection="column" flexGrow={1}>
