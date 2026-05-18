@@ -1,71 +1,74 @@
-# Miruro Provider Dossier
+# Provider: Miruro
 
-- **Status:** candidate active module
-- **Provider ID:** miruro
-- **Domain:** www.miruro.tv
-- **Supported content:** anime
-- **Runtime class:** node fetch (0-RAM) with XOR + Gzip
-- **Multi-Server Support:** Yes (High)
-- **Server Archetype:** Animals
+## Summary
 
-## Animal Server Mapping
+- **Media kinds:** Anime.
+- **Search support:** Yes, internal API + AniList.
+- **Episode catalog support:** Yes, mapped via AniList IDs.
+- **Stream resolve support:** Yes, via the proprietary "Pipe API" (XOR + Gzip encrypted payloads).
+- **Language/audio/subtitle model:** Sub/Dub are distinct server pathways (`kiwi` vs `bee`).
+- **Server/source model:** Animal-themed servers. `kiwi` (Hardsub, fast), `bee` (Softsub, slower but higher quality).
+- **Quality model:** Standard parsed HLS.
+- **Thumbnail/poster support:** Yes. Pipe API (`bee` server) explicitly returns a `thumbnails[]` array pointing to VTT sprites for the seek-bar. Main episode thumbnails require TMDB/AniList cross-reference.
+- **Known failure modes:** Pipe API XOR key rotations. Heavy Cloudflare rate-limiting on stream resolve endpoints if called in rapid succession.
 
-Miruro uses animal names to represent different streaming mirrors and subtitle modes (Hardsub vs. Softsub):
+## User-Facing Capabilities
 
-| UI Server Name | Subtitle Mode        | Type   | Capabilities                                |
-| :------------- | :------------------- | :----- | :------------------------------------------ |
-| **kiwi**       | **Hardsub (Sub)**    | Native | Primary Hardsub server, high reliability    |
-| **telli**      | Hardsub (Sub)        | Embed  | Backup for kiwi (Iframe)                    |
-| **bee**        | **Soft-sub (S-Sub)** | Native | Primary Softsub server, includes Thumbnails |
-| **bun**        | Soft-sub (S-Sub)     | Embed  | Backup for bee (Iframe)                     |
-| **dune**       | Soft-sub (S-Sub)     | Native | Alternative native softsub                  |
-| **ally**       | **Hardsub (Sub)**    | Native | Alternative native hardsub                  |
-| **nun**        | Hardsub (Sub)        | Embed  | Backup for ally (Iframe)                    |
-| **hop**        | Soft-sub (S-Sub)     | Native | Alternative native softsub                  |
+| Capability            | Supported | Evidence                       | Notes                                                                |
+| --------------------- | --------: | ------------------------------ | -------------------------------------------------------------------- |
+| Search                |       yes | AniList integration            | Highly stable. User-visible.                                         |
+| Episode list          |       yes | AniList sync                   | Highly stable. Affects cache identity.                               |
+| Server switch         |       yes | `kiwi`, `bee`                  | User-visible.                                                        |
+| Quality switch        |       yes | HLS manifest                   | Standard parsing.                                                    |
+| Audio language switch |       yes | Server selection dictates this | `kiwi` = sub, `bee` = sub/dub options depending on upstream payload. |
+| Soft subtitles        |       yes | `bee` server                   | User-visible caption options.                                        |
+| Hardsubs              |       yes | `kiwi` server                  | Permanent burn-in.                                                   |
+| Downloads             |       yes | `ffmpeg`                       | Standard HLS downloads.                                              |
 
-## Implementation Intelligence
+## Provider Data Shapes
 
-### 0-RAM Strategy (The Pipe API)
+- **Search result fields:** AniList canonical IDs and titles.
+- **Episode fields:** AniList metadata.
+- **Stream candidate fields:** XOR/Gzipped JSON payload containing `.m3u8` links, `thumbnails` (VTT), and `subtitles`. Origin: Pipe API.
+- **Subtitle fields:** `url`, `lang` fields in the Pipe API response.
+- **Thumbnail/artwork fields:** `thumbnails` array for seek-bar sprites. Main artwork via external DB.
 
-Miruro uses a "Pipe" API that proxies requests to their actual backend (`theanimecommunity.com`).
+## Flow
 
-**Endpoint:** `https://www.miruro.tv/api/secure/pipe?e={base64url-payload}`
+```mermaid
+sequenceDiagram
+  participant UI
+  participant SearchIntent
+  participant Provider
+  participant ResolveService
+  participant SourceInventory
+  participant MPV
 
-**Encryption Key (Rolling XOR):** `71951034f8fbcf53d89db52ceb3dc22c`
-
-**Decryption Algorithm:**
-
-1. Base64url-decode the response.
-2. XOR each byte with the key (at `i % 32`).
-3. If first 2 bytes are `1f 8b`, decompress with **Gzip**.
-4. Parse the resulting JSON.
-
-### Request Payload Construction
-
-```json
-{
-  "path": "sources",
-  "method": "GET",
-  "query": {
-    "episodeId": "...",
-    "provider": "kiwi",
-    "category": "sub",
-    "anilistId": "..."
-  },
-  "body": null,
-  "version": "0.2.0"
-}
+  UI->>SearchIntent: structured filters
+  SearchIntent->>Provider: supported upstream filters
+  Provider-->>UI: results + evidence
+  UI->>ResolveService: selected title/episode/preferences
+  ResolveService->>Provider: resolve stream
+  Provider-->>SourceInventory: streams/subtitles/sources/quality
+  SourceInventory-->>MPV: selected playable stream
 ```
 
-_Note: `base64url` encode this JSON and append to the `?e=` param._
+## Edge Cases
 
-## Multi-Audio (Dub) Support
+- **Empty result:** Standard API empty handling.
+- **Region/block:** Heavy Cloudflare Turnstile implementation.
+- **Expired stream:** XOR payload is dynamically generated per IP. High expiration rate.
+- **Slow response:** Decrypting XOR + Gzip in JS can incur a 50-150ms penalty.
+- **Missing subtitle:** Common on Dub tracks.
+- **Hardsub-only:** If the user selects the `kiwi` server.
+- **Multi-server duplicate:** No.
+- **Language encoded in server name:** Indirectly. UI treats `kiwi`/`bee` as server names, but they inherently represent the subtitle/audio capability matrix.
+- **Provider returns HTML in text:** WAF block on Pipe API.
+- **Provider returns non-playable upcoming episode:** AniList integration provides next episode air dates.
 
-Miruro supports Dub by changing the `category` in the pipe query from `"sub"` to `"dub"`.
+## Recommended Contract Changes
 
-- **Important:** Not all animal servers support `dub`. The `kiwi` and `bee` servers usually have the best coverage for both categories.
-
-## Known Gaps
-
-- **Cloudflare Rate Limiting:** The Pipe API is sensitive. Implement exponential backoff.
-- **TLS Fingerprinting:** Standard `fetch` sometimes gets blocked while `curl` (TLS 1.2) works. Using a browser-like User-Agent and specific header ordering is recommended.
+- **Needed fields:** Decrypt keys tracked externally.
+- **Cache key dimensions:** `Miruro_[AniListID]_[Episode]_[Server]`.
+- **Diagnostics events:** `PipeAPIDecryptSuccess`, `PipeAPIDecryptFailed`.
+- **Tests to add:** Validate XOR + Gzip unwrapping logic against a mocked payload to ensure `thumbnails[]` array is correctly populated.

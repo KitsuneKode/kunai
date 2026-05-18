@@ -1,41 +1,74 @@
-# Rivestream Provider Dossier
+# Provider: Rivestream
 
-- **Status:** candidate
-- **Provider ID:** rivestream
-- **Domain:** rivestream.app
-- **Supported content:** movie, series
-- **Runtime class:** node fetch (0-RAM)
-- **Multi-Server Support:** Yes
-- **Server Archetype:** Service Providers
+## Summary
 
-## Server / Service Mapping
+- **Media kinds:** Movies, TV Series.
+- **Search support:** Yes. API based.
+- **Episode catalog support:** Yes.
+- **Stream resolve support:** Yes. Uses MurmurHash + a custom `cArray` salt to generate a `secretKey` for API authorization.
+- **Language/audio/subtitle model:** Relies heavily on external service node names multiplexed with quality (e.g., `FlowCast (1080)`).
+- **Server/source model:** Aggregator. Pulls from various underlying hosting providers.
+- **Quality model:** Standard HLS and direct `.mp4`.
+- **Thumbnail/poster support:** Yes. Backend fetch provides VTT/BIF files for the player seek-bar.
+- **Known failure modes:** `cArray` salt rotation breaks the MurmurHash `secretKey` generation, resulting in 401 Unauthorized errors.
 
-Rivestream acts as a meta-aggregator, mapping its "services" to various upstream providers. These are passed via the `service` query parameter in the `backendfetch` API:
+## User-Facing Capabilities
 
-| Service Name | Notes                  |
-| :----------- | :--------------------- |
-| **flowcast** | Primary HLS provider   |
-| **vidplay**  | Alternative provider   |
-| **filemoon** | Alternative provider   |
-| **embed**    | Direct iframe fallback |
+| Capability            | Supported | Evidence                | Notes                                            |
+| --------------------- | --------: | ----------------------- | ------------------------------------------------ |
+| Search                |       yes | API                     | Stable. User-visible.                            |
+| Episode list          |       yes | API                     | Stable. Cache identity.                          |
+| Server switch         |       yes | Multiple upstream nodes | "FlowCast", etc. User-visible.                   |
+| Quality switch        |       yes | String merged in source | `FlowCast (1080)`. Engine must regex/split this. |
+| Audio language switch |       yes | HLS manifest            | MPV relies on standard HLS `#EXT-X-MEDIA` tags.  |
+| Soft subtitles        |       yes | Sidecar or HLS          | Reliable.                                        |
+| Hardsubs              |     maybe | Upstream dependent      | Varies wildly.                                   |
+| Downloads             |       yes | `ffmpeg`                | Standard processing.                             |
 
-## Implementation Intelligence
+## Provider Data Shapes
 
-### 0-RAM Strategy
+- **Search result fields:** JSON array of canonical metadata.
+- **Episode fields:** Basic episode objects.
+- **Stream candidate fields:** Extracted from secured API endpoints. Contains stream URLs and subtitle tracks.
+- **Subtitle fields:** `url`, `language`.
+- **Thumbnail/artwork fields:** VTT/BIF sidecar URLs.
 
-Rivestream uses a custom hashing algorithm to generate a `secretKey` based on the TMDB ID and a rotating salt.
+## Flow
 
-**Secret Key Generation:**
+```mermaid
+sequenceDiagram
+  participant UI
+  participant SearchIntent
+  participant Provider
+  participant ResolveService
+  participant SourceInventory
+  participant MPV
 
-1. Use bitwise MurmurHash-like operations on the TMDB ID.
-2. Apply a 64-character salt table (`cArray`).
-3. Base64 encode the result.
+  UI->>SearchIntent: structured filters
+  SearchIntent->>Provider: supported upstream filters
+  Provider-->>UI: results + evidence
+  UI->>ResolveService: selected title/episode/preferences
+  ResolveService->>Provider: resolve stream
+  Provider-->>SourceInventory: streams/subtitles/sources/quality
+  SourceInventory-->>MPV: selected playable stream
+```
 
-### Subtitle Resolution
+## Edge Cases
 
-Rivestream provides a dedicated endpoint for subtitles:
-`https://www.rivestream.app/api/backendfetch?requestID={type}OnlineSubtitles&id={tmdbId}&secretKey={secretKey}`
+- **Empty result:** Standard API handling.
+- **Region/block:** Upstream API blocks.
+- **Expired stream:** Tokenized stream URLs.
+- **Slow response:** Upstream aggregator fetching can take 5+ seconds to resolve all sources.
+- **Missing subtitle:** Normal fallback.
+- **Hardsub-only:** Unpredictable based on upstream source.
+- **Multi-server duplicate:** High probability. Aggregators often scrape the same underlying file hosts. Deduplication required.
+- **Language encoded in server name:** Sometimes. E.g., `Server (Dub)`. Engine must parse and normalize.
+- **Provider returns HTML in text:** WAF block.
+- **Provider returns non-playable upcoming episode:** Usually omitted from the API payload entirely until aired.
 
-## Known Gaps
+## Recommended Contract Changes
 
-- The `cArray` salt rotates frequently. A fallback to Playwright/Scraping may be necessary if the salt cannot be dynamically retrieved.
+- **Needed fields:** Regex parser rules to separate `serverLabel` from `quality` in merged strings.
+- **Cache key dimensions:** `Rivestream_[MediaID]_[Episode]`.
+- **Diagnostics events:** `HashGenerationFailed`, `API401Unauthorized`.
+- **Tests to add:** Mock the MurmurHash + `cArray` logic to guarantee `secretKey` stability across Node versions.

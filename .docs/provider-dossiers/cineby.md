@@ -1,48 +1,74 @@
-# Cineby Provider Dossier (VidKing Flavor)
+# Provider: Cineby
 
-- **Status:** research flavor wrapper (not in default fallback order)
-- **Provider ID:** cineby
-- **Skin For:** VidKing (api.videasy.net)
-- **Domain:** cineby.sc
-- **Supported content:** movie, series
-- **Runtime class:** node fetch (0-RAM)
-- **Multi-Audio Support:** Yes (High)
-- **Server Archetype:** Valorant Agents
+## Summary
 
-## Valorant Agent Server Mapping
+- **Media kinds:** Movies, TV Series.
+- **Search support:** Yes, proxy to TMDB API.
+- **Episode catalog support:** Yes, TMDB proxy.
+- **Stream resolve support:** Yes, heavily obfuscated Valorant agent aliases routing to VidKing core.
+- **Language/audio/subtitle model:** Language is explicitly tied to the endpoint alias (e.g., `fade` = English, `killjoy` = German).
+- **Server/source model:** "Agents" act as servers.
+- **Quality model:** Derived from the final `.m3u8` manifest.
+- **Thumbnail/poster support:** Yes. TMDB proxies for episodes.
+- **Known failure modes:** Upstream WAF changes to the "Agent" routes. If Cineby changes "killjoy" to another agent, the language routing breaks.
 
-Cineby maps Valorant agent names to specific `api.videasy.net` endpoints or filtering logic:
+## User-Facing Capabilities
 
-| UI Server Name | API Endpoint / Param     | Audio Language | Notes                                      |
-| :------------- | :----------------------- | :------------- | :----------------------------------------- |
-| **Neon**       | `mb-flix`                | Original (EN)  | Default primary server                     |
-| **Yoru**       | `cdn`                    | Original (EN)  | High bit-rate / 4K support                 |
-| **Cypher**     | `downloader2`            | Original (EN)  | Backup primary                             |
-| **Sage**       | `1movies`                | Original (EN)  | Backup primary                             |
-| **Breach**     | `m4uhd`                  | Original (EN)  |                                            |
-| **Vyse**       | `hdmovie`                | English        | Filter sources for `quality === "English"` |
-| **Killjoy**    | `meine?language=german`  | **German**     | Native German audio                        |
-| **Harbor**     | `meine?language=italian` | **Italian**    | Native Italian audio                       |
-| **Chamber**    | `meine?language=french`  | **French**     | Native French audio (Movies only)          |
-| **Fade**       | `hdmovie`                | **Hindi**      | Filter sources for `quality === "Hindi"`   |
-| **Omen**       | `lamovie`                | **Spanish**    | Native Spanish audio                       |
-| **Raze**       | `superflix`              | **Portuguese** | Native Portuguese audio                    |
+| Capability            | Supported | Evidence                            | Notes                                                       |
+| --------------------- | --------: | ----------------------------------- | ----------------------------------------------------------- |
+| Search                |       yes | TMDB passthrough                    | Highly stable, user-visible.                                |
+| Episode list          |       yes | TMDB passthrough                    | Highly stable.                                              |
+| Server switch         |       yes | Exposed as different stream options | User-visible, but usually obfuscated behind "Auto" quality. |
+| Quality switch        |       yes | HLS parsing                         | Affects downloads and playback.                             |
+| Audio language switch |       yes | Agent alias mapping                 | _Crucial._ `killjoy` = de. Affects Cache identity heavily.  |
+| Soft subtitles        |       yes | Returned in standard payload        | User-visible.                                               |
+| Hardsubs              |     maybe | Varies by source                    | Not reliably detectable until playback.                     |
+| Downloads             |       yes | `ffmpeg` / `yt-dlp`                 | Stable via `.m3u8` chunk harvesting.                        |
 
-## Implementation Intelligence
+## Provider Data Shapes
 
-### Multi-Audio Selection
+- **Search result fields:** TMDB shapes.
+- **Episode fields:** TMDB shapes.
+- **Stream candidate fields:** JSON containing `url` (often encrypted), decrypted using local logic. Origin: Cineby proprietary endpoints.
+- **Subtitle fields:** Standard VTT links.
+- **Thumbnail/artwork fields:** TMDB proxies.
 
-When a user selects a specific language, the provider must switch the backend endpoint.
+## Flow
 
-- For **German/Italian/French**: Hit `https://api.videasy.net/meine/sources-with-title?...&language={lang}`.
-- For **Hindi/English**: Hit `https://api.videasy.net/hdmovie/sources-with-title?...` and post-process the `sources` array to find the entry where the `quality` field contains the language name.
+```mermaid
+sequenceDiagram
+  participant UI
+  participant SearchIntent
+  participant Provider
+  participant ResolveService
+  participant SourceInventory
+  participant MPV
 
-### 0-RAM Strategy
+  UI->>SearchIntent: structured filters
+  SearchIntent->>Provider: supported upstream filters
+  Provider-->>UI: results + evidence
+  UI->>ResolveService: selected title/episode/preferences
+  ResolveService->>Provider: resolve stream
+  Provider-->>SourceInventory: streams/subtitles/sources/quality
+  SourceInventory-->>MPV: selected playable stream
+```
 
-- Use the **VidKing WASM SDK** (`module1_patched.wasm`) to decrypt the response.
-- Use the **Empty AES Key** (`""`) for the final decryption stage.
-- Pass the integer `tmdbId` as the key to the WASM `decrypt` function.
+## Edge Cases
 
-## Known Gaps
+- **Empty result:** Standard TMDB empty handling.
+- **Region/block:** Cloudflare Turnstile blocks UI access if accessed outside the app.
+- **Expired stream:** Short-lived tokens on `.m3u8` URLs. Cache TTL must be short (< 2 hours).
+- **Slow response:** Agent routing can take 2-4 seconds.
+- **Missing subtitle:** Normal fallback.
+- **Hardsub-only:** Handled transparently by player.
+- **Multi-server duplicate:** Common. `fade` and `viper` might return identical URLs.
+- **Language encoded in server name:** The defining trait of Cineby. `killjoy` -> `de`. Engine must parse and normalize this to standard ISO codes before presenting to Shell.
+- **Provider returns HTML in text:** Cloudflare WAF trigger.
+- **Provider returns non-playable upcoming episode:** TMDB returns data, video endpoint returns 404.
 
-- Cineby's own site is protected by Cloudflare, but the underlying `api.videasy.net` endpoints are often reachable with the correct `Origin: https://www.vidking.net` and `Referer: https://www.vidking.net/` headers.
+## Recommended Contract Changes
+
+- **Needed fields:** Internal lookup table mapping Agent aliases to ISO 639-1 languages.
+- **Cache key dimensions:** `Cineby_[TMDB_ID]_[AgentAlias]`.
+- **Diagnostics events:** WAF Trigger detection.
+- **Tests to add:** Ensure `killjoy` endpoint payload results in `audioLanguage: "de"` in the `ProviderSourceInventory`.
