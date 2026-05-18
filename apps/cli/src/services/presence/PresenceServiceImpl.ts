@@ -154,14 +154,15 @@ export class PresenceServiceImpl implements PresenceService {
 
     try {
       const privacy = this.deps.config.presencePrivacy;
+      const assets = { large_image: "kunai", large_text: "Kunai" };
       const payload: Record<string, unknown> =
         privacy === "private"
-          ? { type: 3, details: "Browsing with Kunai", largeImageKey: "kunai" }
+          ? { type: 3, details: "Browsing with Kunai", assets }
           : {
               type: 3,
               details: `Browsing ${activity.view}`,
               ...(activity.detail ? { state: activity.detail } : {}),
-              largeImageKey: "kunai",
+              assets,
             };
       const activityHash = stableJsonHash(payload);
       if (activityHash === this.lastActivityHash) return;
@@ -364,6 +365,7 @@ function stableJsonHash(value: Record<string, unknown>): string {
   return JSON.stringify(value);
 }
 
+/** Builds a Discord local IPC activity object (snake_case timestamps/assets, not discord-rpc npm shape). */
 export function buildDiscordActivity(
   activity: PresencePlaybackActivity,
   privacy: "full" | "private",
@@ -391,6 +393,8 @@ export function buildDiscordActivity(
     mediaSummary.subtitle,
   ]);
 
+  const assets = { large_image: "kunai", large_text: "Kunai" };
+
   if (privacy === "private") {
     return {
       type: 3,
@@ -405,8 +409,7 @@ export function buildDiscordActivity(
             : "Playing",
       ),
       ...(activity.paused ? {} : timeline),
-      largeImageKey: "kunai",
-      largeImageText: "Kunai",
+      assets,
       buttons: buildDiscordActionButtons(options),
     };
   }
@@ -430,8 +433,7 @@ export function buildDiscordActivity(
             stateLine,
     ),
     ...(activity.paused ? {} : timeline),
-    largeImageKey: "kunai",
-    largeImageText: "Kunai",
+    assets,
     buttons: buildDiscordActionButtons(options),
   };
 }
@@ -442,18 +444,18 @@ export const __testing = {
 
 function buildDiscordPlaybackTimeline(
   activity: Pick<PresencePlaybackActivity, "startedAtMs" | "positionSeconds" | "durationSeconds">,
-): { startTimestamp: number; endTimestamp?: number } {
+): { timestamps: { start: number; end?: number } } {
   const nowMs = Date.now();
   const positionSeconds = normalizePresenceSeconds(activity.positionSeconds);
   const durationSeconds = normalizePresenceSeconds(activity.durationSeconds);
   const startedAtMs = positionSeconds > 0 ? nowMs - positionSeconds * 1_000 : activity.startedAtMs;
-  const timeline: { startTimestamp: number; endTimestamp?: number } = {
-    startTimestamp: Math.floor(startedAtMs / 1_000),
+  const timestamps: { start: number; end?: number } = {
+    start: Math.floor(startedAtMs / 1_000),
   };
   if (durationSeconds > positionSeconds) {
-    timeline.endTimestamp = Math.floor((startedAtMs + durationSeconds * 1_000) / 1_000);
+    timestamps.end = Math.floor((startedAtMs + durationSeconds * 1_000) / 1_000);
   }
-  return timeline;
+  return { timestamps };
 }
 
 function formatPlaybackProgressLabel(

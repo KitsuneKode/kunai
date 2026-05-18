@@ -100,6 +100,24 @@ describe("PresenceServiceImpl", () => {
     });
   });
 
+  test("uses Discord IPC activity shape instead of discord-rpc npm aliases", () => {
+    const activity = {
+      mode: "series" as const,
+      title: { id: "1", type: "series" as const, name: "Demo" },
+      episode: { season: 1, episode: 1 },
+      providerId: "vidking",
+      startedAtMs: 1_000,
+      positionSeconds: 30,
+      durationSeconds: 600,
+    };
+    const payload = buildDiscordActivity(activity, "full");
+
+    expect(payload).not.toHaveProperty("startTimestamp");
+    expect(payload).not.toHaveProperty("endTimestamp");
+    expect(payload).not.toHaveProperty("largeImageKey");
+    expect(payload).not.toHaveProperty("largeImageText");
+  });
+
   test("builds Discord media timestamps from playback progress", () => {
     const realDateNow = Date.now;
     Date.now = () => 1_000_000;
@@ -115,8 +133,8 @@ describe("PresenceServiceImpl", () => {
       };
 
       expect(buildDiscordActivity(activity, "full")).toMatchObject({
-        startTimestamp: 880,
-        endTimestamp: 2380,
+        timestamps: { start: 880, end: 2380 },
+        assets: { large_image: "kunai", large_text: "Kunai" },
       });
     } finally {
       Date.now = realDateNow;
@@ -198,8 +216,9 @@ describe("PresenceServiceImpl", () => {
       state: "S1 E14 · 12:14 / 24:00 · 1080p · sub · ja audio · en subs · allanime",
       buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
     });
+    expect(payload.assets).toMatchObject({ large_image: "kunai", large_text: "Kunai" });
+    expect(payload).not.toHaveProperty("largeImageKey");
     expect(payload).not.toHaveProperty("smallImageKey");
-    expect(payload).not.toHaveProperty("smallImageText");
     expect(JSON.stringify(payload)).not.toContain("signed-provider.example");
   });
 
@@ -243,8 +262,7 @@ describe("PresenceServiceImpl", () => {
       details: "Breaking Bad",
       state: "S4 E9 · Paused at 12:14 / 24:00 · vidking",
     });
-    expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("startTimestamp");
-    expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("endTimestamp");
+    expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("timestamps");
   });
 
   test("describes effective discord client id source", () => {

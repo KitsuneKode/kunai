@@ -76,12 +76,25 @@ describe("discord-ipc-client", () => {
       payload: { v: 1, client_id: "client-1" },
     });
 
-    const update = client.setActivity({ details: "Watching", state: "S1 E1" });
+    const update = client.setActivity({
+      details: "Watching",
+      state: "S1 E1",
+      timestamps: { start: 1_700_000_000, end: 1_700_001_500 },
+      assets: { large_image: "kunai", large_text: "Kunai" },
+    });
     const updatePacket = decodeDiscordIpcPacket(fake.writes[1] ?? new Uint8Array());
     expect(updatePacket.op).toBe(1);
     expect(updatePacket.payload).toMatchObject({
       cmd: "SET_ACTIVITY",
-      args: { pid: 1234, activity: { details: "Watching", state: "S1 E1" } },
+      args: {
+        pid: 1234,
+        activity: {
+          details: "Watching",
+          state: "S1 E1",
+          timestamps: { start: 1_700_000_000, end: 1_700_001_500 },
+          assets: { large_image: "kunai", large_text: "Kunai" },
+        },
+      },
     });
     fake.pushPacket({ cmd: "SET_ACTIVITY", nonce: updatePacket.payload.nonce as string });
     await update;
