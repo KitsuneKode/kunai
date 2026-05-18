@@ -1,8 +1,13 @@
 import type {
   CachePolicy,
+  ProviderArtworkInfo,
+  ProviderExternalIds,
   ProviderFailure,
   ProviderHealth,
+  ProviderLanguageEvidence,
+  ProviderReleaseInfo,
   ProviderSourceCandidate,
+  ProviderSourceEvidence,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   ResolveTrace,
@@ -49,6 +54,45 @@ export const resolveErrorCodeSchema = z.enum([
   "unknown",
 ]);
 
+export const providerExternalIdsSchema = z.object({
+  anilistId: z.string().min(1).optional(),
+  tmdbId: z.string().min(1).optional(),
+  imdbId: z.string().min(1).optional(),
+  malId: z.string().min(1).optional(),
+}) satisfies z.ZodType<ProviderExternalIds>;
+
+export const providerReleaseInfoSchema = z.object({
+  airDate: z.string().min(1).optional(),
+  availableAt: z.iso.datetime().optional(),
+  status: z.enum(["released", "upcoming", "unknown"]).optional(),
+  providerConfirmed: z.boolean().optional(),
+}) satisfies z.ZodType<ProviderReleaseInfo>;
+
+export const providerArtworkInfoSchema = z.object({
+  posterUrl: z.url().optional(),
+  backdropUrl: z.url().optional(),
+  thumbnailUrl: z.url().optional(),
+  seekBarVttUrl: z.url().optional(),
+}) satisfies z.ZodType<ProviderArtworkInfo>;
+
+export const providerLanguageEvidenceSchema = z.object({
+  role: z.enum(["audio", "subtitle", "hardsub"]),
+  normalizedLanguage: z.string().min(1).optional(),
+  nativeLabel: z.string().min(1).optional(),
+  sourceId: z.string().min(1).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}) satisfies z.ZodType<ProviderLanguageEvidence>;
+
+export const providerSourceEvidenceSchema = z.object({
+  sourceId: z.string().min(1).optional(),
+  serverId: z.string().min(1).optional(),
+  nativeLabel: z.string().min(1).optional(),
+  host: z.string().min(1).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}) satisfies z.ZodType<ProviderSourceEvidence>;
+
 export const cachePolicySchema = z.object({
   ttlClass: cacheTtlClassSchema,
   ttlMs: z.number().int().nonnegative().optional(),
@@ -67,6 +111,7 @@ export const titleIdentitySchema = z.object({
   tmdbId: z.string().min(1).optional(),
   imdbId: z.string().min(1).optional(),
   malId: z.string().min(1).optional(),
+  externalIds: providerExternalIdsSchema.optional(),
 });
 
 export const episodeIdentitySchema = z.object({
@@ -75,6 +120,8 @@ export const episodeIdentitySchema = z.object({
   absoluteEpisode: z.number().int().positive().optional(),
   title: z.string().min(1).optional(),
   airDate: z.string().min(1).optional(),
+  release: providerReleaseInfoSchema.optional(),
+  artwork: providerArtworkInfoSchema.optional(),
 });
 
 export const streamCandidateSchema = z.object({
@@ -98,6 +145,9 @@ export const streamCandidateSchema = z.object({
   qualityRank: z.number().int().optional(),
   headers: z.record(z.string(), z.string()).optional(),
   expiresAt: z.iso.datetime().optional(),
+  languageEvidence: z.array(providerLanguageEvidenceSchema).optional(),
+  sourceEvidence: z.array(providerSourceEvidenceSchema).optional(),
+  artwork: providerArtworkInfoSchema.optional(),
   confidence: z.number().min(0).max(1),
   cachePolicy: cachePolicySchema,
   metadata: z.record(z.string(), z.unknown()).optional(),
@@ -135,6 +185,9 @@ export const providerSourceCandidateSchema = z.object({
   status: z.enum(["pending", "probing", "available", "selected", "skipped", "failed", "exhausted"]),
   confidence: z.number().min(0).max(1),
   requiresRuntime: providerRuntimeSchema.optional(),
+  languageEvidence: z.array(providerLanguageEvidenceSchema).optional(),
+  sourceEvidence: z.array(providerSourceEvidenceSchema).optional(),
+  artwork: providerArtworkInfoSchema.optional(),
   cachePolicy: cachePolicySchema.optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 }) satisfies z.ZodType<ProviderSourceCandidate>;
@@ -158,6 +211,9 @@ export const providerVariantCandidateSchema = z.object({
   streamIds: z.array(z.string().min(1)).optional(),
   subtitleIds: z.array(z.string().min(1)).optional(),
   selected: z.boolean().optional(),
+  languageEvidence: z.array(providerLanguageEvidenceSchema).optional(),
+  sourceEvidence: z.array(providerSourceEvidenceSchema).optional(),
+  artwork: providerArtworkInfoSchema.optional(),
   confidence: z.number().min(0).max(1),
   metadata: z.record(z.string(), z.unknown()).optional(),
 }) satisfies z.ZodType<ProviderVariantCandidate>;

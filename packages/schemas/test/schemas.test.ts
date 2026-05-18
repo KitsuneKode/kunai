@@ -1,8 +1,12 @@
 import { expect, test } from "bun:test";
 
 import {
+  providerArtworkInfoSchema,
+  providerExternalIdsSchema,
   providerFailureSchema,
   providerHealthSchema,
+  providerLanguageEvidenceSchema,
+  providerReleaseInfoSchema,
   providerSourceCandidateSchema,
   providerTraceEventSchema,
   providerVariantCandidateSchema,
@@ -35,6 +39,47 @@ test("stream candidate schema accepts serialized cache-safe shape", () => {
   expect(parsed.protocol).toBe("hls");
   expect(parsed.flavorLabel).toBe("Neon");
   expect(parsed.cachePolicy.ttlClass).toBe("stream-manifest");
+});
+
+test("provider metadata v2 schemas accept ids release artwork and language evidence", () => {
+  const externalIds = providerExternalIdsSchema.parse({
+    anilistId: "123",
+    malId: "456",
+    tmdbId: "789",
+  });
+  const release = providerReleaseInfoSchema.parse({
+    airDate: "2026-05-19",
+    availableAt: "2026-05-19T12:30:00.000Z",
+    status: "released",
+    providerConfirmed: true,
+  });
+  const artwork = providerArtworkInfoSchema.parse({
+    posterUrl: "https://image.example/poster.jpg",
+    seekBarVttUrl: "https://cdn.example/thumbs.vtt",
+  });
+  const languageEvidence = providerLanguageEvidenceSchema.parse({
+    role: "audio",
+    normalizedLanguage: "ja",
+    nativeLabel: "Sub",
+    confidence: 0.95,
+  });
+
+  const stream = streamCandidateSchema.parse({
+    id: "stream-1",
+    providerId: "allanime",
+    url: "https://example.com/master.m3u8",
+    protocol: "hls",
+    presentation: "sub",
+    languageEvidence: [languageEvidence],
+    artwork,
+    confidence: 0.92,
+    cachePolicy,
+  });
+
+  expect(externalIds.malId).toBe("456");
+  expect(release.providerConfirmed).toBe(true);
+  expect(stream.languageEvidence?.[0]?.nativeLabel).toBe("Sub");
+  expect(stream.artwork?.seekBarVttUrl).toContain("thumbs.vtt");
 });
 
 test("provider source and variant schemas model mirror inventory without forcing a rigid tree", () => {
