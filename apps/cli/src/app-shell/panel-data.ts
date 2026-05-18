@@ -603,7 +603,7 @@ function summarizeJson(value: unknown): string {
   );
 }
 
-function renderProgressBar(percentage: number): string {
+export function renderHistoryProgressBar(percentage: number): string {
   const totalBlocks = 10;
   const filledBlocks = Math.max(
     0,
@@ -623,7 +623,7 @@ function historyProgressDetails(entry: HistoryEntry): {
     return {
       percentage,
       text: `${percentage}% watched`,
-      bar: renderProgressBar(percentage),
+      bar: renderHistoryProgressBar(percentage),
     };
   }
   return { percentage: null, text: "position saved", bar: null };
@@ -767,6 +767,7 @@ function buildHistoryOptionRow(
       detail: `new episode ready  ·  completed ${completedEpisode}  ·  ${entry.provider}  ·  ${timeAgo}`,
       badge: "new",
       tone: "success",
+      posterTitle: entry.title,
     };
   }
   const statusGlyph = isCompleted
@@ -780,9 +781,27 @@ function buildHistoryOptionRow(
     value: id,
     label: entry.type === "series" ? `${entry.title}  ·  ${episode}` : `${entry.title}  ·  movie`,
     detail: `${statusGlyph}  ·  ${entry.provider}  ·  ${timeAgo}`,
-    badge: details.bar ? `${details.bar} ${details.percentage}%` : undefined,
-    tone: isCompleted ? "success" : "neutral",
+    posterTitle: entry.title,
+    historyProgress:
+      details.percentage !== null
+        ? { percentage: details.percentage, completed: isCompleted }
+        : undefined,
+    tone: isCompleted
+      ? "success"
+      : details.percentage !== null && details.percentage < 90
+        ? "warning"
+        : "neutral",
   };
+}
+
+function isContinueWatchingEntry(
+  id: string,
+  entry: HistoryEntry,
+  context: HistoryPickerOptionsContext,
+): boolean {
+  const details = historyProgressDetails(entry);
+  if (details.percentage === null || details.percentage >= 90) return false;
+  return isHistoryPickerContinuable(id, entry, context);
 }
 
 export function buildHistoryPickerOptions(
@@ -790,17 +809,37 @@ export function buildHistoryPickerOptions(
   context: HistoryPickerOptionsContext = {},
 ): readonly ShellPickerOption<string>[] {
   const sorted = sortHistoryEntries(historyEntries);
-  // Only group into sections when there are enough entries to make it meaningful.
-  // With a filter active the caller passes a pre-filtered subset, which may be small;
-  // sections are still useful there (showing which period each match belongs to).
-  const groups = groupHistoryByRecency(sorted);
-
-  // If only one group exists there is nothing meaningful to partition, skip headers.
-  if (groups.length <= 1) {
-    return sorted.map(([id, entry]) => buildHistoryOptionRow(id, entry, context));
-  }
+  const continueWatching = sorted.filter(([id, entry]) =>
+    isContinueWatchingEntry(id, entry, context),
+  );
+  const continueIds = new Set(continueWatching.map(([id]) => id));
+  const remainder = sorted.filter(([id]) => !continueIds.has(id));
 
   const options: ShellPickerOption<string>[] = [];
+
+  if (continueWatching.length > 0) {
+    options.push({
+      value: "section:history-continue-watching",
+      label: "Continue Watching",
+    });
+    for (const [id, entry] of continueWatching) {
+      options.push(buildHistoryOptionRow(id, entry, context));
+    }
+  }
+
+  const groups = groupHistoryByRecency(remainder);
+
+  if (groups.length <= 1 && continueWatching.length === 0) {
+    return remainder.map(([id, entry]) => buildHistoryOptionRow(id, entry, context));
+  }
+
+  if (groups.length <= 1) {
+    for (const [id, entry] of remainder) {
+      options.push(buildHistoryOptionRow(id, entry, context));
+    }
+    return options;
+  }
+
   for (const group of groups) {
     options.push({
       value: `section:history-${group.label.toLowerCase().replace(/\s+/g, "-")}`,

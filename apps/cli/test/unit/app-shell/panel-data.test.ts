@@ -332,9 +332,9 @@ describe("panel-data", () => {
           type: "series",
           season: 1,
           episode: 2,
-          timestamp: 120,
+          timestamp: 300,
           duration: 300,
-          completed: false,
+          completed: true,
           provider: "vidking",
           watchedAt: "2026-04-01T00:00:00.000Z",
         },
@@ -346,9 +346,9 @@ describe("panel-data", () => {
           type: "series",
           season: 2,
           episode: 4,
-          timestamp: 180,
+          timestamp: 300,
           duration: 300,
-          completed: false,
+          completed: true,
           provider: "allanime",
           watchedAt: "2026-04-20T00:00:00.000Z",
         },
@@ -475,9 +475,9 @@ describe("panel-data", () => {
           type: "series",
           season: 1,
           episode: 1,
-          timestamp: 100,
+          timestamp: 300,
           duration: 300,
-          completed: false,
+          completed: true,
           provider: "vidking",
           watchedAt: new Date(now - 3_600_000).toISOString(),
         },
@@ -489,9 +489,9 @@ describe("panel-data", () => {
           type: "series",
           season: 1,
           episode: 1,
-          timestamp: 100,
+          timestamp: 300,
           duration: 300,
-          completed: false,
+          completed: true,
           provider: "vidking",
           watchedAt: new Date(now - DAY_MS * 30).toISOString(),
         },
@@ -505,6 +505,51 @@ describe("panel-data", () => {
     expect(sectionValues).toContain("Earlier");
   });
 
+  test("buildHistoryPickerOptions surfaces Continue Watching before recency groups", () => {
+    const now = Date.now();
+    const DAY_MS = 86_400_000;
+    const options = buildHistoryPickerOptions([
+      [
+        "completed-today",
+        {
+          title: "Finished Today",
+          type: "series",
+          season: 1,
+          episode: 1,
+          timestamp: 300,
+          duration: 300,
+          completed: true,
+          provider: "vidking",
+          watchedAt: new Date(now - 3_600_000).toISOString(),
+        },
+      ],
+      [
+        "in-progress-week",
+        {
+          title: "Still Watching",
+          type: "series",
+          season: 1,
+          episode: 4,
+          timestamp: 120,
+          duration: 300,
+          completed: false,
+          provider: "vidking",
+          watchedAt: new Date(now - DAY_MS * 3).toISOString(),
+        },
+      ],
+    ]);
+
+    const sectionLabels = options
+      .filter((o) => String(o.value).startsWith("section:"))
+      .map((o) => o.label);
+    expect(sectionLabels[0]).toBe("Continue Watching");
+    expect(options.some((o) => o.value === "in-progress-week")).toBe(true);
+    expect(options.find((o) => o.value === "in-progress-week")?.historyProgress?.percentage).toBe(
+      40,
+    );
+    expect(options.find((o) => o.value === "in-progress-week")?.posterTitle).toBe("Still Watching");
+  });
+
   test("buildHistoryPickerOptions omits section headers when all entries are in the same period", () => {
     const options = buildHistoryPickerOptions([
       [
@@ -514,9 +559,9 @@ describe("panel-data", () => {
           type: "series",
           season: 1,
           episode: 2,
-          timestamp: 120,
+          timestamp: 300,
           duration: 300,
-          completed: false,
+          completed: true,
           provider: "vidking",
           watchedAt: "2026-04-01T00:00:00.000Z",
         },
@@ -528,9 +573,9 @@ describe("panel-data", () => {
           type: "series",
           season: 2,
           episode: 4,
-          timestamp: 180,
+          timestamp: 300,
           duration: 300,
-          completed: false,
+          completed: true,
           provider: "allanime",
           watchedAt: "2026-04-20T00:00:00.000Z",
         },
