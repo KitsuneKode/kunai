@@ -104,9 +104,14 @@ export function getRootOverlaySubtitle({
   if (overlay.type === "season_picker") return `Current season ${overlay.currentSeason}`;
   if (overlay.type === "episode_picker") {
     const watched = overlay.options.filter((option) => option.tone === "success").length;
-    return watched > 0
-      ? `Season ${overlay.season}  ·  ${watched}/${overlay.options.length} watched`
-      : `Season ${overlay.season}  ·  Choose an episode`;
+    const total = overlay.options.length;
+    const progress = total > 0 ? Math.round((watched / total) * 100) : 0;
+    const parts: string[] = [];
+    if (state.currentTitle?.name) parts.push(state.currentTitle.name);
+    parts.push(`S${String(overlay.season).padStart(2, "0")}`);
+    parts.push(`${total} eps`);
+    if (progress > 0) parts.push(`${progress}% complete`);
+    return parts.join("  ·  ");
   }
   if (overlay.type === "subtitle_picker") return `${overlay.options.length} tracks available`;
   if (overlay.type === "source_picker") return `${overlay.options.length} sources available`;
