@@ -1,4 +1,5 @@
 import type { BrowseShellOption, ShellPanelLine } from "@/app-shell/types";
+import type { SearchResult } from "@/domain/types";
 
 export type DetailsPanelPrimary = {
   title: string;
@@ -22,6 +23,126 @@ export type DetailsPanelData = {
   primary: DetailsPanelPrimary;
   secondary: DetailsPanelSecondary | null; // null = still loading
 };
+
+function isSearchResultValue(value: unknown): value is SearchResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    "type" in value &&
+    "title" in value
+  );
+}
+
+function parseEpisodeProgress(detail: string | undefined): {
+  watchedEpisodes?: number;
+  totalEpisodes?: number;
+} {
+  if (!detail) return {};
+  const match = detail.match(/(\d+)\s*of\s*(\d+)\s*eps?/i);
+  if (match) {
+    return {
+      watchedEpisodes: Number(match[1]),
+      totalEpisodes: Number(match[2]),
+    };
+  }
+  const percentMatch = detail.match(/(\d+)%/);
+  if (percentMatch) {
+    return { watchedEpisodes: Number(percentMatch[1]) };
+  }
+  return {};
+}
+
+export function buildDetailsPanelDataFromBrowseOption<T>(
+  option: BrowseShellOption<T> | undefined,
+): DetailsPanelData {
+  if (!option) {
+    return {
+      primary: {
+        title: "No selection",
+        type: "series",
+        synopsis: "Search for a title to preview details here.",
+      },
+      secondary: null,
+    };
+  }
+
+  const meta = option.previewMeta ?? [];
+  const typeLabel = meta.find((value) => value === "Series" || value === "Movie");
+  const year = meta.find((value) => /^\d{4}$/.test(value));
+  const genres = meta.filter(
+    (value) =>
+      value !== typeLabel &&
+      value !== year &&
+      !value.endsWith(" episodes") &&
+      !/(?:★|\d(?:\.\d)?\/10)/.test(value),
+  );
+  return {
+    primary: {
+      title: option.previewTitle ?? option.label,
+      type: typeLabel === "Movie" ? "movie" : "series",
+      year,
+      genres: genres.length > 0 ? genres.slice(0, 3) : undefined,
+      synopsis: option.previewBody || undefined,
+      posterPath: option.previewImageUrl ?? null,
+    },
+    secondary: null,
+  };
+}
+
+export function resolveBrowseDetailsSecondary<T>(
+  option: BrowseShellOption<T> | undefined,
+  {
+    providerName,
+  }: {
+    providerName?: string;
+  } = {},
+): DetailsPanelSecondary {
+  if (!option) {
+    return { seriesState: null };
+  }
+
+  const progressFact = option.previewFacts?.find(
+    (fact) => fact.label === "Local progress" || fact.label === "Watch history",
+  );
+  const progress = parseEpisodeProgress(progressFact?.detail);
+
+  let subtitleLanguages: string[] | undefined;
+  let seriesState: DetailsPanelSecondary["seriesState"] = null;
+
+  if (isSearchResultValue(option.value)) {
+    const result = option.value;
+    if (result.subtitleAvailability === "hardsub") {
+      subtitleLanguages = ["hardsub"];
+    } else if (result.subtitleAvailability === "softsub") {
+      subtitleLanguages = ["softsub"];
+    }
+    if (result.type === "series") {
+      const progressPct =
+        progress.watchedEpisodes && progress.totalEpisodes
+          ? progress.watchedEpisodes / progress.totalEpisodes
+          : 0;
+      if (progressPct >= 1) {
+        seriesState = "complete";
+      } else if (progress.watchedEpisodes && progress.watchedEpisodes > 0) {
+        seriesState = "upcoming";
+      }
+    }
+    if (!progress.totalEpisodes && result.episodeCount) {
+      progress.totalEpisodes = result.episodeCount;
+    }
+  }
+
+  const providers = providerName ? [providerName] : undefined;
+
+  return {
+    seriesState,
+    watchedEpisodes: progress.watchedEpisodes,
+    totalEpisodes: progress.totalEpisodes,
+    providers,
+    subtitleLanguages,
+  };
+}
 
 const POSTER_AVAILABLE = "Poster available for companion preview";
 const POSTER_MISSING = "Poster unavailable from this provider";
