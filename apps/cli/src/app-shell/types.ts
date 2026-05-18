@@ -77,6 +77,8 @@ export type FooterAction = {
   action: ShellAction;
   disabled?: boolean;
   reason?: string;
+  /** Mark as the single primary action — renders key in amber instead of dim. */
+  primary?: boolean;
 };
 
 export type PlaybackShellState = {

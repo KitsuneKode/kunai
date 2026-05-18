@@ -58,4 +58,16 @@ describe("selectFooterActions", () => {
     expect(selected.at(-1)?.action).toBe("command-mode");
     expect(selected.at(-1)?.label).toContain("more");
   });
+
+  test("selectFooterActions preserves primary flag on first action", () => {
+    const actions: readonly FooterAction[] = [
+      { key: "enter", label: "play", action: "search", primary: true },
+      { key: "/", label: "commands", action: "command-mode" },
+      { key: "q", label: "quit", action: "quit" },
+    ];
+    const visible = selectFooterActions(actions, "detailed", 120);
+    expect(visible.length).toBeGreaterThanOrEqual(2);
+    expect(visible[0]?.primary).toBe(true);
+    expect(visible[1]?.primary).toBeFalsy();
+  });
 });

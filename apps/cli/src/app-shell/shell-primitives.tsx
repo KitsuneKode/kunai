@@ -221,7 +221,9 @@ export function Footer({
                 marginRight={index === visibleActions.length - 1 ? 0 : 2}
                 marginBottom={1}
               >
-                <Text color={palette.teal}>{hotkeyLabel(keyDisplay)}</Text>
+                <Text color={action.primary ? palette.amber : palette.dim}>
+                  {hotkeyLabel(keyDisplay)}
+                </Text>
                 <Text color={palette.text}> {truncateLine(action.label, 18)}</Text>
               </Box>
             );

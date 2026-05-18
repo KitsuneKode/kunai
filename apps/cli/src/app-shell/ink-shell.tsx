@@ -2901,6 +2901,7 @@ function BrowseShell<T>({
             key: "enter",
             label: options.length > 0 && !queryDirty ? "open" : "search",
             action: "search",
+            primary: true,
           },
           { key: "↑↓", label: "navigate", action: "search" },
           {
