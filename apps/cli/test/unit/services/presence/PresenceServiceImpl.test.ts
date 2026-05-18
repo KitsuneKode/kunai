@@ -4,7 +4,7 @@ import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import {
-  buildDiscordRpcNodeBridgeScript,
+  __testing as presenceTesting,
   buildDiscordActivity,
   buildPresenceSnapshot,
   describePresenceConfiguration,
@@ -24,11 +24,17 @@ function createConfig(partial: Partial<KitsuneConfig>): ConfigService {
   };
 }
 
-function createDiagnostics(): DiagnosticsStore & { messages: string[] } {
+function createDiagnostics(): DiagnosticsStore & {
+  messages: string[];
+  events: Parameters<DiagnosticsStore["record"]>[0][];
+} {
   const messages: string[] = [];
+  const events: Parameters<DiagnosticsStore["record"]>[0][] = [];
   return {
     messages,
+    events,
     record: (event) => {
+      events.push(event);
       messages.push(event.message);
     },
     getRecent: () => [],
@@ -43,11 +49,13 @@ describe("PresenceServiceImpl", () => {
   const originalSetInterval = globalThis.setInterval;
   const originalClearInterval = globalThis.clearInterval;
   const originalDateNow = Date.now;
+  const originalImportDiscordRpc = presenceTesting.runtime.importDiscordRpc;
 
   afterEach(() => {
     globalThis.setInterval = originalSetInterval;
     globalThis.clearInterval = originalClearInterval;
     Date.now = originalDateNow;
+    presenceTesting.runtime.importDiscordRpc = originalImportDiscordRpc;
   });
 
   test("stays disabled by default", async () => {
@@ -348,6 +356,44 @@ describe("PresenceServiceImpl", () => {
     expect(service.getSnapshot().detail).toBe("connected to local Discord client");
   });
 
+  test("connects through Bun-native discord-rpc without a Node bridge", async () => {
+    const diagnostics = createDiagnostics();
+    const loginCalls: string[] = [];
+
+    class FakeDiscordClient {
+      constructor(readonly options: { transport: "ipc" }) {}
+      async login(input: { clientId: string }) {
+        loginCalls.push(`${this.options.transport}:${input.clientId}`);
+      }
+      async setActivity() {}
+      async clearActivity() {}
+      async destroy() {}
+      on() {}
+    }
+
+    presenceTesting.runtime.importDiscordRpc = async () => ({
+      Client: FakeDiscordClient,
+    });
+
+    const service = new PresenceServiceImpl({
+      config: createConfig({
+        presenceProvider: "discord",
+        presenceDiscordClientId: "bun-client-id",
+      }),
+      diagnosticsStore: diagnostics,
+    });
+
+    const snapshot = await service.connect();
+
+    expect(snapshot.status).toBe("ready");
+    expect(loginCalls).toEqual(["ipc:bun-client-id"]);
+    expect(diagnostics.events.at(-1)).toMatchObject({
+      category: "presence",
+      message: "Discord presence connected",
+      context: { provider: "discord", transport: "bun-discord-rpc" },
+    });
+  });
+
   test("shutdown clears Discord activity before destroying the client", async () => {
     const diagnostics = createDiagnostics();
     const service = new PresenceServiceImpl({
@@ -414,17 +460,19 @@ describe("PresenceServiceImpl", () => {
     expect(service.getStatus()).toBe("idle");
   });
 
-  test("node bridge clears Discord activity before destroy on parent signal", () => {
-    const script = buildDiscordRpcNodeBridgeScript();
+  test("reports unavailable when the discord-rpc module cannot provide a client", async () => {
+    const diagnostics = createDiagnostics();
+    presenceTesting.runtime.importDiscordRpc = async () => ({});
 
-    const destroyStart = script.indexOf("const destroyClient = async () => {");
-    const clearCall = script.indexOf("await client.clearActivity()", destroyStart);
-    const destroyCall = script.indexOf("await client.destroy()", destroyStart);
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnosticsStore: diagnostics,
+    });
 
-    expect(destroyStart).toBeGreaterThanOrEqual(0);
-    expect(clearCall).toBeGreaterThan(destroyStart);
-    expect(destroyCall).toBeGreaterThan(clearCall);
-    expect(script).toContain("process.on('SIGTERM', async () => { await destroyClient();");
-    expect(script).toContain("process.on('SIGINT', async () => { await destroyClient();");
+    const snapshot = await service.connect();
+
+    expect(snapshot.status).toBe("unavailable");
+    expect(snapshot.detail).toContain("Discord RPC package did not expose a client");
+    expect(diagnostics.messages).toContain("Discord presence unavailable");
   });
 });

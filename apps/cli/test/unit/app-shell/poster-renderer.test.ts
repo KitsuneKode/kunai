@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { __testing as rendererTesting, renderPoster } from "@/app-shell/poster-renderer";
+import {
+  __testing as rendererTesting,
+  renderPoster,
+  resolveAppShellPosterCapability,
+} from "@/app-shell/poster-renderer";
 import type { ImageCapability } from "@/image";
 
 const originalRuntime = {
@@ -71,6 +75,25 @@ describe("app-shell poster renderer", () => {
     if (result.kind === "text") {
       expect(result.placeholder).toBe("ASCII_PREVIEW");
     }
+  });
+
+  test("normalizes Windows Terminal sixel capability to Ink-safe chafa symbols", () => {
+    expect(
+      resolveAppShellPosterCapability({
+        terminal: "windows-terminal",
+        protocol: "sixel",
+        renderer: "chafa-sixel",
+        available: true,
+        dependency: "chafa",
+        reason: "Windows Terminal detected with chafa",
+      }),
+    ).toMatchObject({
+      terminal: "windows-terminal",
+      protocol: "symbols",
+      renderer: "chafa-symbols",
+      available: true,
+      reason: "Windows Terminal detected with chafa; using Ink-safe chafa symbols",
+    });
   });
 
   test("returns none when image capability is unavailable", async () => {

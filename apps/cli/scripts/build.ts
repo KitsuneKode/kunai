@@ -15,6 +15,7 @@ const ROOT = join(import.meta.dirname, "..");
 const DIST = join(ROOT, "dist");
 const ENTRY = join(ROOT, "src/main.ts");
 const BIN = join(DIST, "kunai.js");
+const REACT_DEVTOOLS_STUB = join(ROOT, "src/infra/build/react-devtools-core-stub.ts");
 
 const clean = process.argv.includes("--clean");
 
@@ -86,6 +87,16 @@ async function main(): Promise<void> {
      * @kunai/schemas, @kunai/types, etc.
      */
     packages: "bundle",
+    plugins: [
+      {
+        name: "kunai-release-stubs",
+        setup(build) {
+          build.onResolve({ filter: /^react-devtools-core$/ }, () => ({
+            path: REACT_DEVTOOLS_STUB,
+          }));
+        },
+      },
+    ],
 
     naming: {
       entry: "kunai.js",
@@ -95,6 +106,12 @@ async function main(): Promise<void> {
 
     sourcemap: "none",
     minify: false,
+
+    define: {
+      // Ink can optionally load react-devtools-core when DEV=true. Kunai release
+      // builds should not require that debug package.
+      "process.env.DEV": '"false"',
+    },
 
     /**
      * IMPORTANT:

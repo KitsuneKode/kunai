@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { ImageCapability } from "@/image";
 import { detectImageCapability, isChafaAvailable } from "@/image";
+import { getKunaiPaths } from "@kunai/storage";
 
 // ── Dependency check ───────────────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ type CapabilityNoticeState = {
   readonly fingerprint: string;
 };
 
-const NOTICE_DIR = join(process.env.HOME ?? "~", ".config", "kunai");
+const NOTICE_DIR = getKunaiPaths().configDir;
 const NOTICE_FILE = join(NOTICE_DIR, "capability-notice.json");
 
 function capabilityFingerprint(snapshot: CapabilitySnapshot): string {

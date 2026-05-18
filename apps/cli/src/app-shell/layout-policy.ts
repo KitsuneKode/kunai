@@ -125,12 +125,15 @@ export function getBrowseCommandPaletteMaxVisible(
 ): number {
   // Row accounting for commandMode=true in BrowseShell:
   // AppRoot/header safety(4), browse chrome(10-13), command input chrome(4),
-  // command footer(5), and a small resize/Ink buffer(2). Keep the list bounded
+  // command footer(5), and a small resize/Ink buffer(3). Keep the list bounded
   // on small terminals, but let tall terminals show enough commands to feel
-  // useful instead of turning the palette into a tiny peephole.
+  // useful instead of turning the palette into a tiny peephole. The extra
+  // buffer row absorbs transient root banners, such as streak or presence
+  // notices, which can otherwise make Ink reconcile the bottom "more" row over
+  // the last visible command for a frame.
   const browseChromeRows = 1 + (hasSubtitle ? 1 : 0) + (hasFilters ? 2 : 0) + 9;
-  const availableRows = rows - 4 - browseChromeRows - 4 - 5 - 2;
-  return Math.max(1, Math.min(16, availableRows));
+  const availableRows = rows - 4 - browseChromeRows - 4 - 5 - 3;
+  return Math.max(1, Math.min(15, availableRows));
 }
 
 export function getCommandPaletteVisibleCommandCount({

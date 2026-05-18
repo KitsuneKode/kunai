@@ -18,7 +18,8 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 
 - **TTY / disable**: non-TTY stdout or `KUNAI_POSTER=0|false` → no posters.
 - **Overrides**: `KUNAI_IMAGE_PROTOCOL=auto|none|kitty|sixel|symbols` (invalid values fall back to auto with optional debug log).
-- **Auto path**: Kitty/Ghostty → `kitty-native`; Windows Terminal + `chafa` → sixel; WezTerm + `chafa` → sixel; otherwise `chafa` symbols if available.
+- **Auto path**: Kitty/Ghostty → `kitty-native`; Windows Terminal + `chafa` → sixel for one-shot output; WezTerm + `chafa` → sixel; otherwise `chafa` symbols if available.
+- **Ink app shell**: non-Kitty sixel capabilities are normalized to `chafa` symbols before rendering so poster output stays inside Ink's layout instead of corrupting or shifting the interactive shell.
 
 Details live in `apps/cli/src/image/capability.ts`.
 

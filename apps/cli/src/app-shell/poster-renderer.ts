@@ -1,4 +1,5 @@
 import { detectImageCapability } from "@/image";
+import type { ImageCapability } from "@/image";
 import { ensurePngBytes } from "@/image/convert";
 import { debugImage } from "@/image/debug";
 
@@ -21,6 +22,20 @@ const runtime: PosterRuntime = {
   which: (command) => Bun.which(command),
   spawn: (command, options) => Bun.spawn(command, options),
 };
+
+export function resolveAppShellPosterCapability(capability: ImageCapability): ImageCapability {
+  if (!capability.available || capability.renderer !== "chafa-sixel") return capability;
+  const reason =
+    capability.terminal === "windows-terminal"
+      ? "Windows Terminal detected with chafa; using Ink-safe chafa symbols"
+      : `${capability.reason}; using Ink-safe chafa symbols`;
+  return {
+    ...capability,
+    protocol: "symbols",
+    renderer: "chafa-symbols",
+    reason,
+  };
+}
 
 let nextId = 1;
 function allocId(): number {
@@ -186,7 +201,7 @@ export async function renderPoster(
 ): Promise<PosterResult> {
   try {
     if (!allowKitty) return { kind: "none" };
-    const capability = runtime.detectImageCapability();
+    const capability = resolveAppShellPosterCapability(runtime.detectImageCapability());
     if (!capability.available || capability.renderer === "none") return { kind: "none" };
     if (capability.renderer === "kitty-native") {
       return await renderKitty(data, rows, cols);
