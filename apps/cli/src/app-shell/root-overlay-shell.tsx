@@ -66,7 +66,7 @@ import {
 } from "./root-overlay-model";
 import { type RootOwnedOverlay } from "./root-shell-state";
 import { CommandPalette, useShellInput } from "./shell-command-ui";
-import { InlineBadge, ShellFooter } from "./shell-primitives";
+import { ContextStrip, ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import type { FooterAction, ShellPanelLine } from "./types";
 
@@ -1309,9 +1309,7 @@ export function RootOverlayShell({
     return (
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
-          <Box>
-            <InlineBadge label="panel downloads" tone="success" />
-          </Box>
+          <ContextStrip items={[{ label: "panel downloads", tone: "info" }]} />
           <DownloadManagerContent
             container={container}
             onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
@@ -1392,38 +1390,30 @@ export function RootOverlayShell({
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
       <Box flexDirection="column" flexGrow={1}>
-        <Box>
-          <InlineBadge
-            label={`panel ${overlay.type === "provider_picker" ? "provider" : overlay.type}`}
-            tone="success"
-          />
-          {overlay.type === "provider_picker" ||
-          overlay.type === "history" ||
-          overlay.type === "notifications" ||
-          overlay.type === "settings" ? (
-            <InlineBadge
-              label={`${
+        <ContextStrip
+          items={[
+            {
+              label: `panel ${overlay.type === "provider_picker" ? "provider" : overlay.type}`,
+              tone: "info",
+            },
+            {
+              label:
                 overlay.type === "provider_picker"
-                  ? filteredProviderOptions.length
+                  ? `${filteredProviderOptions.length} options`
                   : overlay.type === "history"
-                    ? filteredHistoryOptions.length
+                    ? `${filteredHistoryOptions.length} options`
                     : overlay.type === "notifications"
                       ? notificationActionDedupKey
-                        ? filteredNotificationActionOptions.length
-                        : filteredNotificationOptions.length
-                      : filteredSettingsOptions.length
-              } options`}
-              tone="neutral"
-            />
-          ) : isRootMediaPickerOverlay(overlay) ? (
-            <InlineBadge label={`${filteredGenericPickerOptions.length} options`} tone="neutral" />
-          ) : (
-            <InlineBadge
-              label={`${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`}
-              tone="neutral"
-            />
-          )}
-        </Box>
+                        ? `${filteredNotificationActionOptions.length} actions`
+                        : `${filteredNotificationOptions.length} options`
+                      : overlay.type === "settings"
+                        ? `${filteredSettingsOptions.length} options`
+                        : isRootMediaPickerOverlay(overlay)
+                          ? `${filteredGenericPickerOptions.length} options`
+                          : `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
+            },
+          ]}
+        />
         <OverlayPanel
           overlay={overlayPanel}
           width={Math.max(24, (stdout.columns ?? 80) - 8)}

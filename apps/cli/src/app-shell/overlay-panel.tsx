@@ -13,7 +13,6 @@ import React from "react";
 import { PickerOptionRow } from "./overlay-picker-row";
 import { renderHistoryProgressBar } from "./panel-data";
 import { PosterInitialBlock } from "./poster-initial-block";
-import { Badge } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
@@ -1143,11 +1142,11 @@ export function OverlayPanel({
           </Box>
           {overlay.type === "settings" ? (
             <Box marginTop={1}>
-              <Badge
-                label={overlay.dirty ? "s save changes" : "s close"}
-                tone={overlay.dirty ? "success" : "neutral"}
-              />
-              <Badge label={overlay.dirty ? "esc discard" : "esc close"} tone="warning" />
+              <Text color={overlay.dirty ? palette.amber : palette.dim}>
+                {overlay.dirty ? "s save" : "s close"}
+              </Text>
+              <Text color={palette.dim}>{"  "}</Text>
+              <Text color={palette.dim}>{overlay.dirty ? "esc discard" : "esc close"}</Text>
             </Box>
           ) : null}
         </>

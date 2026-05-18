@@ -203,17 +203,19 @@ export function CommandPalette({
     return (
       <Box key={command.id} flexDirection="column" width={contentWidth + 4}>
         <Box width={contentWidth + 4}>
-          <Text color={selected ? palette.teal : palette.gray}>{selected ? "❯ " : "  "}</Text>
+          <Text color={selected ? palette.amber : palette.gray}>{selected ? "❯ " : "  "}</Text>
           <Text
-            color={selected ? palette.teal : command.enabled ? palette.text : palette.gray}
-            bold={selected}
+            color={!command.enabled ? palette.gray : selected ? palette.amber : palette.text}
+            bold={selected && command.enabled}
+            dimColor={!command.enabled}
           >
             {truncateLine(alias, aliasWidth).padEnd(aliasWidth)}
           </Text>
-          <Text color={selected ? palette.teal : palette.gray}> </Text>
+          <Text color={palette.gray}> </Text>
           <Text
             wrap="truncate"
             color={command.enabled ? (selected ? "white" : palette.muted) : palette.gray}
+            dimColor={!command.enabled}
           >
             {detail}
           </Text>

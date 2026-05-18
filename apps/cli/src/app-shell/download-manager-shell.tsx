@@ -187,7 +187,7 @@ export function DownloadManagerContent({
     const nameStr = `${job.titleName}${job.episode ? ` S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}` : ""}`;
     const statusColor =
       job.status === "running"
-        ? palette.green
+        ? palette.amber
         : job.status === "completed"
           ? palette.green
           : job.status === "failed"
@@ -201,7 +201,7 @@ export function DownloadManagerContent({
     const metaWidth = Math.max(8, shellWidth - nameWidth - progressWidth - 4);
     return (
       <Box key={job.id} flexDirection="row">
-        <Text color={isSelected ? palette.teal : palette.gray}>{isSelected ? "❯ " : "  "}</Text>
+        <Text color={isSelected ? palette.amber : palette.gray}>{isSelected ? "❯ " : "  "}</Text>
         <Box width={nameWidth}>
           <Text color={isSelected ? "white" : undefined} bold={isSelected}>
             {truncateLine(nameStr, nameWidth - 2)}

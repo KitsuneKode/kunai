@@ -54,18 +54,17 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
           return (
             <Box key={item.id} width={maxWidth}>
               <Box flexShrink={1} flexGrow={1}>
-                <Text
-                  backgroundColor={isActive ? palette.teal : undefined}
-                  color={isActive ? "black" : palette.text}
-                  bold={isActive}
-                  wrap="truncate"
-                >
-                  {isActive ? "  ❯ " : "    "}
-                  {truncateLabel(item.title, titleBudget)}
+                <Text bold={isActive} wrap="truncate">
+                  <Text color={isActive ? palette.amber : palette.gray}>
+                    {isActive ? "  ❯ " : "    "}
+                  </Text>
+                  <Text color={isActive ? "white" : palette.text}>
+                    {truncateLabel(item.title, titleBudget)}
+                  </Text>
                 </Text>
               </Box>
               <Box flexShrink={0}>
-                <Text color={isActive ? palette.teal : palette.gray} dimColor={!isActive}>
+                <Text color={isActive ? palette.amber : palette.gray} dimColor={!isActive}>
                   {` ${rating.padEnd(7)} ${item.year}`}
                 </Text>
               </Box>

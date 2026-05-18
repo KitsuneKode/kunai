@@ -120,9 +120,15 @@ export function ErrorShell({
   });
 
   return (
-    <Box flexDirection="row" marginTop={1}>
+    <Box
+      flexDirection="row"
+      marginTop={1}
+      borderStyle="round"
+      borderColor={palette.red}
+      paddingX={1}
+    >
       <Text color={palette.red}>{"│ "}</Text>
-      <Box flexDirection="column">
+      <Box flexDirection="column" flexGrow={1}>
         <Text color={palette.red} bold>
           Playback failed
         </Text>
