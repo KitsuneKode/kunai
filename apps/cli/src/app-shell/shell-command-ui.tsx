@@ -197,25 +197,34 @@ export function CommandPalette({
     const selected = absoluteIndex === model.selectedIndex;
     const alias = `/${command.aliases[0]}`;
     const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
-    const reason = !command.enabled && command.reason ? ` · ${command.reason}` : "";
     const detailWidth = Math.max(10, contentWidth - aliasWidth - 7);
-    const detail = truncateLine(`${command.description}${reason}`, detailWidth).padEnd(detailWidth);
+    const detail = truncateLine(command.description, detailWidth).padEnd(detailWidth);
+    const showReason = !command.enabled && (selected || command.reason);
     return (
-      <Box key={command.id} width={contentWidth + 4}>
-        <Text color={selected ? palette.teal : palette.gray}>{selected ? "❯ " : "  "}</Text>
-        <Text
-          color={selected ? palette.teal : command.enabled ? palette.text : palette.gray}
-          bold={selected}
-        >
-          {truncateLine(alias, aliasWidth).padEnd(aliasWidth)}
-        </Text>
-        <Text color={selected ? palette.teal : palette.gray}> </Text>
-        <Text
-          wrap="truncate"
-          color={command.enabled ? (selected ? "white" : palette.muted) : palette.gray}
-        >
-          {detail}
-        </Text>
+      <Box key={command.id} flexDirection="column" width={contentWidth + 4}>
+        <Box width={contentWidth + 4}>
+          <Text color={selected ? palette.teal : palette.gray}>{selected ? "❯ " : "  "}</Text>
+          <Text
+            color={selected ? palette.teal : command.enabled ? palette.text : palette.gray}
+            bold={selected}
+          >
+            {truncateLine(alias, aliasWidth).padEnd(aliasWidth)}
+          </Text>
+          <Text color={selected ? palette.teal : palette.gray}> </Text>
+          <Text
+            wrap="truncate"
+            color={command.enabled ? (selected ? "white" : palette.muted) : palette.gray}
+          >
+            {detail}
+          </Text>
+        </Box>
+        {showReason ? (
+          <Box paddingLeft={4}>
+            <Text color={palette.dim} dimColor>
+              {command.reason ?? "unavailable"}
+            </Text>
+          </Box>
+        ) : null}
       </Box>
     );
   };
