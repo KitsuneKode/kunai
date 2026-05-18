@@ -2097,7 +2097,15 @@ function BrowseShell<T>({
     "Search for a title — or try /trending to see what's popular",
   );
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
-  const [idleFocused, setIdleFocused] = useState(false);
+  // In zen/minimal mode, auto-focus the continue-watching row if there's a resumable title and no initial results
+  const [idleFocused, setIdleFocused] = useState(
+    () =>
+      !!(
+        _settings?.minimalMode &&
+        idleContext?.continueWatching?.titleId &&
+        (!initialResults || initialResults.length === 0)
+      ),
+  );
   const requestIdRef = useRef(0);
   const showPoster = viewport.wideBrowse || viewport.mediumBrowse;
   const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
@@ -2841,7 +2849,7 @@ function BrowseShell<T>({
                 <Text color={palette.gray}>/filters</Text> for all tokens
               </Text>
             ) : null}
-            {idleContext && !viewport.ultraCompact ? (
+            {idleContext && (!viewport.ultraCompact || !!idleContext.continueWatching?.titleId) ? (
               <Box flexDirection="column" marginTop={1} gap={0}>
                 {idleContext.continueWatching && !idleContext.playlistNext ? (
                   <Text color={idleFocused ? "white" : palette.muted}>

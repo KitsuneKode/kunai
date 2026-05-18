@@ -27,12 +27,16 @@ export function LibraryShell({
   const [autoDownload, setAutoDownload] = useState(container.config.autoDownload);
   const viewport = useDebouncedViewportPolicy("picker");
 
-  useInput((input) => {
+  useInput((input, key) => {
+    if (key.tab) {
+      setTab((prev) => (prev === "library" ? "queue" : "library"));
+      return;
+    }
     if (input === "1" || input === "l") {
       setTab("library");
       return;
     }
-    if (input === "2" || input === "q") {
+    if (input === "2") {
       setTab("queue");
       return;
     }
@@ -91,7 +95,13 @@ export function LibraryShell({
           <LibraryTab container={container} />
         )}
       </Box>
-      {/* No ShellFooter here — RootOverlayShell owns the single footer */}
+      <Box marginTop={1}>
+        <Text color={palette.dim} dimColor>
+          {tab === "library"
+            ? "↑↓ navigate · ↵ open · x delete · p protect · Tab switch"
+            : "Tab switch to library · d toggle downloads · a auto-download"}
+        </Text>
+      </Box>
     </Box>
   );
 }
@@ -131,9 +141,16 @@ function LibraryTab({ container }: { container: Container }) {
   // Compute derived data unconditionally so hooks stay stable.
   // Guard all operations inside useInput so they no-op when data isn't ready.
   const shelf = entries ? createOfflineLibraryEngine().buildShelf(entries) : null;
-  const safeIndex = shelf ? Math.min(selectedIndex, shelf.groups.length - 1) : 0;
-  const groups = shelf ? shelf.groups.slice(0, 15) : [];
-  const selectedGroup = groups[safeIndex] ?? null;
+  const totalGroups = shelf ? shelf.groups.length : 0;
+  const maxGroups = Math.max(8, viewport.maxVisibleRows - 6);
+  const safeIndex = totalGroups > 0 ? Math.min(selectedIndex, totalGroups - 1) : 0;
+  const windowStart = Math.max(
+    0,
+    Math.min(safeIndex - Math.floor(maxGroups / 2), totalGroups - maxGroups),
+  );
+  const windowEnd = Math.min(totalGroups, windowStart + maxGroups);
+  const groups = shelf ? shelf.groups.slice(windowStart, windowEnd) : [];
+  const selectedGroup = totalGroups > 0 ? (shelf?.groups[safeIndex] ?? null) : null;
 
   useInput((input, key) => {
     if (loading || !entries || entries.length === 0 || groups.length === 0) return;
@@ -144,7 +161,7 @@ function LibraryTab({ container }: { container: Container }) {
     }
     if (key.downArrow) {
       setConfirmDeleteKey(null);
-      setSelectedIndex((prev) => Math.min(groups.length - 1, prev + 1));
+      setSelectedIndex((prev) => Math.min(totalGroups - 1, prev + 1));
       return;
     }
     if (input === "x" || key.delete) {
@@ -252,50 +269,47 @@ function LibraryTab({ container }: { container: Container }) {
         <Text color={palette.gray}>{shelf.summary}</Text>
       </Box>
       <Box flexDirection="column">
-        {groups.map((group, index) => (
-          <Box key={group.key} flexDirection="column">
-            <Box>
-              <Text color={index === safeIndex ? palette.teal : palette.gray}>
-                {index === safeIndex ? "❯ " : "  "}
-              </Text>
-              <Text color={index === safeIndex ? "white" : undefined} bold={index === safeIndex}>
-                {truncateLine(group.label, 36)}
-              </Text>
-              {group.readyCount > 0 ? (
-                <Text color={palette.green}>{`  ${group.readyCount}▶`}</Text>
-              ) : null}
-              {group.issueCount > 0 ? (
-                <Text color={palette.amber}>{` ${group.issueCount}⚠`}</Text>
-              ) : null}
-              <Text color={palette.muted} dimColor>
-                {"  ·  "}
-                {group.nextPlayableEpisodeLabel ?? "no playable files"}
-              </Text>
-              {confirmDeleteKey === group.key ? (
-                <Text color={palette.amber} bold>
-                  {"  "}x again to delete
+        {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
+        {groups.map((group, index) => {
+          const absoluteIndex = windowStart + index;
+          const selected = absoluteIndex === safeIndex;
+          return (
+            <Box key={group.key} flexDirection="column">
+              <Box>
+                <Text color={selected ? palette.teal : palette.gray}>{selected ? "❯ " : "  "}</Text>
+                <Text color={selected ? "white" : undefined} bold={selected}>
+                  {truncateLine(group.label, 36)}
                 </Text>
+                {group.readyCount > 0 ? (
+                  <Text color={palette.green}>{`  ${group.readyCount}▶`}</Text>
+                ) : null}
+                {group.issueCount > 0 ? (
+                  <Text color={palette.amber}>{` ${group.issueCount}⚠`}</Text>
+                ) : null}
+                <Text color={palette.muted} dimColor>
+                  {"  ·  "}
+                  {group.nextPlayableEpisodeLabel ?? "no playable files"}
+                </Text>
+                {confirmDeleteKey === group.key ? (
+                  <Text color={palette.amber} bold>
+                    {"  "}x again to delete
+                  </Text>
+                ) : null}
+              </Box>
+              {selected ? (
+                <Box marginLeft={2}>
+                  <Text color={palette.gray} dimColor>
+                    {truncateLine(
+                      `${group.artifactSummary}  ·  ${group.detail}`,
+                      Math.max(40, Math.min(110, (viewport.columns ?? 80) - 6)),
+                    )}
+                  </Text>
+                </Box>
               ) : null}
             </Box>
-            {index === safeIndex ? (
-              <Box marginLeft={2}>
-                <Text color={palette.gray} dimColor>
-                  {truncateLine(
-                    `${group.artifactSummary}  ·  ${group.detail}`,
-                    Math.max(40, Math.min(110, (viewport.columns ?? 80) - 6)),
-                  )}
-                </Text>
-              </Box>
-            ) : null}
-          </Box>
-        ))}
-        {shelf.groups.length > 15 ? (
-          <Box marginTop={1}>
-            <Text color={palette.gray} dimColor>
-              and {shelf.groups.length - 15} more titles...
-            </Text>
-          </Box>
-        ) : null}
+          );
+        })}
+        {windowEnd < totalGroups ? <Text color={palette.gray}> ▼ ...</Text> : null}
       </Box>
       {selectedGroup && confirmDeleteKey === selectedGroup.key ? (
         <Box marginTop={1}>
@@ -339,7 +353,7 @@ function LibraryTab({ container }: { container: Container }) {
             return null;
           })()}
           <DetailLine label="Files" value={selectedGroup.artifactSummary} tone="neutral" />
-          {selectedGroup.entries.slice(0, 3).map((entry) => (
+          {selectedGroup.entries.slice(0, 6).map((entry) => (
             <DetailLine
               key={entry.jobId}
               label={entry.episodeLabel}
