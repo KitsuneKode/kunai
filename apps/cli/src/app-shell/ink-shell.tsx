@@ -71,11 +71,12 @@ import {
 } from "./shell-command-ui";
 import { getCommandLabel, InputField, ShellFrame } from "./shell-frame";
 import {
-  BrowseTitle,
   ContextStrip,
   LocalSection,
   ResizeBlocker,
   ShellFooter,
+  selectFooterActions,
+  TerminalSizeChip,
 } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
@@ -1134,7 +1135,14 @@ function AppRoot({ container }: { container: Container }) {
                     ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  u ${state.autoskipSessionPaused ? "resume autoskip" : "pause autoskip"}  ·  e episodes  ·  k streams  ·  d download  ·  r recover`
                     : undefined,
                 commands: resolveCommandContext(state, "activePlayback"),
-                footerMode: "detailed",
+                footerMode: "minimal",
+                qualityLabel: (() => {
+                  const result = state.stream?.providerResolveResult;
+                  const selected = result?.streams.find(
+                    (candidate) => candidate.id === result.selectedStreamId,
+                  );
+                  return selected?.qualityLabel ?? selected?.container;
+                })(),
                 audioTrack: state.stream?.audioLanguages?.length
                   ? state.stream.audioLanguages.join(", ")
                   : undefined,
@@ -2029,14 +2037,6 @@ function BrowseShell<T>({
     });
   }, [isCalendarView, calendarDayFilter, options]);
 
-  const showPoster = viewport.breakpoint === "wide" || viewport.breakpoint === "medium";
-  const { poster } = usePosterPreview(displayOptions[selectedIndex]?.previewImageUrl, {
-    rows: viewport.breakpoint === "wide" ? 11 : 9,
-    cols: viewport.breakpoint === "wide" ? 26 : 16,
-    enabled: showPoster,
-    debounceMs: 120,
-  });
-
   const clearResults = useCallback(() => {
     setOptions([]);
     setSelectedIndex(0);
@@ -2563,8 +2563,16 @@ function BrowseShell<T>({
     <Box flexDirection="column" flexGrow={1}>
       <Box flexDirection="column" flexGrow={1}>
         <Box justifyContent="space-between">
-          <BrowseTitle mode={mode} />
+          <ContextStrip
+            items={[
+              { label: APP_LABEL, tone: "warning" },
+              { label: "browse" },
+              { label: provider, tone: "info" },
+              { label: mode === "anime" ? "anime" : "series" },
+            ]}
+          />
           <Box>
+            <TerminalSizeChip columns={viewport.columns} rows={viewport.rows} />
             {searchState === "loading" ? (
               <>
                 <InlineDotMatrixLoader variant="flux-columns" active onColor={palette.teal} />
@@ -2591,22 +2599,20 @@ function BrowseShell<T>({
             ))}
           </Box>
         ) : null}
-        <Box marginTop={1}>
-          <ContextStrip
-            items={[
-              { label: `Provider ${provider}`, tone: "info" },
-              { label: mode === "anime" ? "Anime" : "Series" },
-              ...(activeOverlay ? [{ label: activeOverlay.title, tone: "success" } as const] : []),
-              ...(queryDirty && displayOptions.length > 0
-                ? [{ label: "Results need refresh", tone: "warning" } as const]
-                : []),
-              ...activeFilterBadges.map((filter) => ({
-                label: `Filter ${filter}`,
-                tone: "info" as const,
-              })),
-            ]}
-          />
-        </Box>
+        {activeOverlay || (queryDirty && displayOptions.length > 0) ? (
+          <Box marginTop={1}>
+            <ContextStrip
+              items={[
+                ...(activeOverlay
+                  ? [{ label: activeOverlay.title, tone: "success" } as const]
+                  : []),
+                ...(queryDirty && displayOptions.length > 0
+                  ? [{ label: "Results need refresh", tone: "warning" } as const]
+                  : []),
+              ]}
+            />
+          </Box>
+        ) : null}
 
         <InputField
           label="Search title"
@@ -2749,17 +2755,13 @@ function BrowseShell<T>({
                       </Text>
                     ) : null}
                     <Box width={rowWidth}>
-                      <Text
-                        backgroundColor={selected ? palette.teal : undefined}
-                        color={selected ? "black" : "white"}
-                        bold={selected}
-                        dimColor={!selected}
-                        wrap="truncate"
-                      >
-                        <Text color={selected ? "black" : palette.gray}>
+                      <Text bold={selected} dimColor={!selected} wrap="truncate">
+                        <Text color={selected ? palette.amber : palette.gray}>
                           {selected ? "❯ " : "  "}
                         </Text>
-                        {truncateLine(rowText, rowWidth - 2).padEnd(rowWidth - 2)}
+                        <Text color={selected ? "white" : undefined}>
+                          {truncateLine(rowText, rowWidth - 2).padEnd(rowWidth - 2)}
+                        </Text>
                       </Text>
                     </Box>
                   </Box>
@@ -2776,12 +2778,12 @@ function BrowseShell<T>({
                 flexDirection="column"
                 width={previewWidth}
               >
-                {showPoster && poster.kind !== "none" ? (
-                  <Box flexDirection="column" marginBottom={1}>
-                    <Text>{poster.placeholder}</Text>
-                  </Box>
-                ) : null}
-                <DetailsPaneUI data={companionDetails} width={previewWidth} />
+                <DetailsPaneUI
+                  data={companionDetails}
+                  width={previewWidth}
+                  posterRows={viewport.breakpoint === "wide" ? 11 : 9}
+                  posterCols={viewport.breakpoint === "wide" ? 26 : 16}
+                />
               </Box>
             ) : null}
           </Box>
@@ -2897,16 +2899,19 @@ function BrowseShell<T>({
             : []),
           { key: "esc", label: "clear/back", action: "quit" },
         ];
-        const visibleBrowseFooterActions =
-          viewport.breakpoint === "narrow"
-            ? allBrowseFooterActions.slice(0, 3)
-            : allBrowseFooterActions;
+        const visibleBrowseFooterActions = selectFooterActions(
+          allBrowseFooterActions,
+          effectiveFooterMode,
+          viewport.columns,
+          viewport.breakpoint === "narrow" ? 3 : 5,
+        );
         return (
           <ShellFooter
             taskLabel={options.length > 0 && !queryDirty ? "Browse" : "Search"}
             mode={effectiveFooterMode}
             commandMode={commandMode}
             actions={visibleBrowseFooterActions}
+            terminalWidth={viewport.columns}
           />
         );
       })()}

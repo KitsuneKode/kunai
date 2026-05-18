@@ -13,6 +13,7 @@ export type DetailsPanelPrimary = {
 export type DetailsPanelSecondary = {
   seriesState: "airing" | "ended" | "complete" | "upcoming" | null;
   nextAirDate?: string;
+  seasonLabel?: string;
   watchedEpisodes?: number;
   totalEpisodes?: number;
   providers?: string[];
@@ -110,6 +111,9 @@ export function resolveBrowseDetailsSecondary<T>(
   let subtitleLanguages: string[] | undefined;
   let seriesState: DetailsPanelSecondary["seriesState"] = null;
 
+  const airingHint = option.previewMeta?.some((value) => /airing|releasing|ongoing/i.test(value));
+  const endedHint = option.previewMeta?.some((value) => /ended|complete|finished/i.test(value));
+
   if (isSearchResultValue(option.value)) {
     const result = option.value;
     if (result.subtitleAvailability === "hardsub") {
@@ -124,6 +128,10 @@ export function resolveBrowseDetailsSecondary<T>(
           : 0;
       if (progressPct >= 1) {
         seriesState = "complete";
+      } else if (endedHint) {
+        seriesState = "ended";
+      } else if (airingHint) {
+        seriesState = "airing";
       } else if (progress.watchedEpisodes && progress.watchedEpisodes > 0) {
         seriesState = "upcoming";
       }
@@ -131,12 +139,20 @@ export function resolveBrowseDetailsSecondary<T>(
     if (!progress.totalEpisodes && result.episodeCount) {
       progress.totalEpisodes = result.episodeCount;
     }
+  } else if (airingHint) {
+    seriesState = "airing";
+  } else if (endedHint) {
+    seriesState = "ended";
   }
 
   const providers = providerName ? [providerName] : undefined;
+  const seasonLabel =
+    option.previewMeta?.find((value) => /^S\d+\b/i.test(value)) ??
+    option.previewFacts?.find((fact) => fact.label === "Season")?.detail;
 
   return {
     seriesState,
+    seasonLabel,
     watchedEpisodes: progress.watchedEpisodes,
     totalEpisodes: progress.totalEpisodes,
     providers,

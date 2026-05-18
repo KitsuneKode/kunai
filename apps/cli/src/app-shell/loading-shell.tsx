@@ -19,10 +19,9 @@ import {
 import type { StageRailItem } from "./loading-shell-runtime";
 import type { PosterResult, PosterState } from "./poster-types";
 import { ShellFrame } from "./shell-frame";
-import { ContextStrip, DetailLine, LocalSection } from "./shell-primitives";
+import { ContextStrip, DetailLine, selectFooterActions } from "./shell-primitives";
 import { APP_LABEL, palette } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
-import { usePosterPreview } from "./use-poster-preview";
 import { useViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
@@ -172,6 +171,63 @@ function StageRail({ items }: { items: readonly StageRailItem[] }) {
   );
 }
 
+export function buildPlaybackSignalRail(
+  state: Pick<LoadingShellState, "qualityLabel" | "downloadStatus" | "subtitleTrack">,
+): string[] {
+  const lines: string[] = [];
+  if (state.qualityLabel?.trim()) {
+    const fpsMatch = state.qualityLabel.match(/(\d+)\s*fps\b/i);
+    const resolution = state.qualityLabel
+      .replace(/\s*[·|]\s*\d+\s*fps\b/gi, "")
+      .replace(/\d+\s*fps\b/gi, "")
+      .trim();
+    if (resolution) {
+      lines.push(fpsMatch ? `${resolution} · ${fpsMatch[1]}fps` : resolution);
+    } else if (fpsMatch) {
+      lines.push(`${fpsMatch[1]}fps`);
+    }
+  }
+  if (state.downloadStatus?.trim()) {
+    const speed = state.downloadStatus.replace(/^dl:\s*/i, "").trim();
+    if (speed) lines.push(speed.includes("↓") ? speed : `${speed} ↓`);
+  }
+  if (state.subtitleTrack?.trim()) {
+    const track = state.subtitleTrack.trim();
+    lines.push(/^sub\b/i.test(track) ? track : `sub ${track}`);
+  }
+  return lines;
+}
+
+function renderPlaybackProgressBar(
+  currentPosition: number,
+  duration: number,
+  width: number,
+): string {
+  const safeDuration = duration > 0 ? duration : 1;
+  const ratio = Math.min(1, Math.max(0, currentPosition / safeDuration));
+  const filled = Math.floor(ratio * width);
+  const markerIndex = Math.min(width - 1, filled);
+  const bar = "━".repeat(markerIndex) + "╸" + "━".repeat(Math.max(0, width - markerIndex - 1));
+  return bar.slice(0, width);
+}
+
+const PlaybackSignalRail = React.memo(function PlaybackSignalRail({
+  lines,
+}: {
+  lines: readonly string[];
+}) {
+  if (lines.length === 0) return null;
+  return (
+    <Box flexDirection="column" alignItems="flex-end">
+      {lines.map((line) => (
+        <Text key={line} color={palette.dim} dimColor>
+          {line}
+        </Text>
+      ))}
+    </Box>
+  );
+});
+
 const BufferHealthBadge = React.memo(function BufferHealthBadge({
   health,
 }: {
@@ -252,14 +308,6 @@ export const LoadingShell = React.memo(function LoadingShell({
   const loadingViewport = useViewportPolicy("playback");
   const terminalColumns = loadingViewport.columns;
   const barWidth = Math.min(48, Math.max(12, Math.floor(terminalColumns * 0.45)));
-  const { poster, posterState } = usePosterPreview(state.posterUrl, {
-    rows: 10,
-    cols: 22,
-    enabled: state.operation === "playing",
-    debounceMs: 90,
-    variant: "detail",
-  });
-
   React.useEffect(() => {
     if (memoryPanelPinned) return undefined;
     if (!memoryPanelVisible) return undefined;
@@ -383,16 +431,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   });
 
   const isPlaying = state.operation === "playing";
-  const showPosterCompanion = shouldShowLoadingPosterCompanion({
-    operation: state.operation,
-    columns: terminalColumns,
-    posterUrl: state.posterUrl,
-    posterKind: poster.kind,
-    posterState,
-  });
-  const infoWidth = showPosterCompanion
-    ? Math.max(52, Math.min(82, terminalColumns - 36))
-    : Math.min(76, Math.max(40, terminalColumns - 12));
+  const infoWidth = Math.min(76, Math.max(40, terminalColumns - 12));
+  const playbackSignalLines = buildPlaybackSignalRail(state);
 
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
   const loadingIssue = normalizeLoadingIssue(state.latestIssue);
@@ -419,94 +459,14 @@ export const LoadingShell = React.memo(function LoadingShell({
   const fallbackLabel = state.fallbackProviderName
     ? `fallback ${state.fallbackProviderName}`
     : "fallback";
+  const playingFooterActions: readonly FooterAction[] = [
+    { key: "space", label: "pause", action: "command-mode", primary: true },
+    { key: "/", label: "commands", action: "command-mode" },
+    { key: "q", label: "stop", action: "quit" },
+  ];
   const footerActions: readonly FooterAction[] =
     state.operation === "playing"
-      ? [
-          { key: "/", label: "commands", action: "command-mode" },
-          { key: "q", label: "stop", action: "quit" },
-          {
-            key: "m",
-            label: "memory",
-            action: "memory",
-          },
-          {
-            key: "n",
-            label: "next",
-            action: "next",
-            disabled: !onNext && !state.hasNextEpisode,
-            reason: state.nextEpisodeLabel ? undefined : "No next episode available.",
-          },
-          {
-            key: "p",
-            label: "previous",
-            action: "previous",
-            disabled: !onPrevious && !state.hasPreviousEpisode,
-            reason: state.previousEpisodeLabel ? undefined : "No previous episode available.",
-          },
-          {
-            key: "a",
-            label: state.autoplayPaused ? "☐ autoplay" : "☑ autoplay",
-            action: "toggle-autoplay",
-            disabled: !onToggleAutoplay,
-            reason: "Autoplay is unavailable for this title.",
-          },
-          {
-            key: "u",
-            label: state.autoskipPaused ? "☐ autoskip" : "☑ autoskip",
-            action: "toggle-autoskip",
-            disabled: !onToggleAutoskip,
-            reason: "Autoskip is unavailable for this playback.",
-          },
-          {
-            key: "e",
-            label: "episodes",
-            action: "pick-episode",
-            disabled: !onPickEpisode,
-            reason: "Episode picker is unavailable for this title.",
-          },
-          {
-            key: "k",
-            label: "streams",
-            action: "streams",
-            disabled: !onPickStreams,
-            reason: "No stream picker is available.",
-          },
-          {
-            key: "o",
-            label: "source",
-            action: "source",
-            disabled: !onPickSource,
-            reason: "No source picker is available.",
-          },
-          {
-            key: "v",
-            label: "quality",
-            action: "quality",
-            disabled: !onPickQuality,
-            reason: "No quality picker is available.",
-          },
-          {
-            key: "f",
-            label: fallbackLabel,
-            action: "fallback",
-            disabled: !state.fallbackAvailable || !onFallback,
-            reason: "No fallback provider is available.",
-          },
-          {
-            key: "S",
-            label: "search",
-            action: "back-to-search",
-            disabled: !onReturnToSearch,
-            reason: "Search is unavailable during this playback state.",
-          },
-          {
-            key: "r",
-            label: "recover",
-            action: "recover",
-            disabled: !onRecover,
-            reason: "Recovery is unavailable.",
-          },
-        ]
+      ? selectFooterActions(playingFooterActions, "minimal")
       : [
           { key: "/", label: "commands", action: "command-mode" },
           ...(state.fallbackAvailable
@@ -523,19 +483,6 @@ export const LoadingShell = React.memo(function LoadingShell({
           { key: "d", label: "diagnostics", action: "diagnostics" },
           { key: "?", label: "help", action: "help" },
         ];
-
-  const statusItems = React.useMemo(() => {
-    const items: { label: string; tone: "neutral" | "info" | "success" | "warning" | "error" }[] =
-      [];
-    if (providerLine) items.push({ label: providerLine, tone: "info" });
-    if (state.downloadStatus) items.push({ label: `dl: ${state.downloadStatus}`, tone: "info" });
-    if (state.subtitleStatus)
-      items.push({
-        label: state.subtitleStatus,
-        tone: subtitleReady ? "success" : "warning",
-      });
-    return items;
-  }, [providerLine, state.downloadStatus, state.subtitleStatus, subtitleReady]);
 
   return (
     <ShellFrame
@@ -554,7 +501,7 @@ export const LoadingShell = React.memo(function LoadingShell({
             : "Playback bootstrap"
       }
       footerActions={footerActions}
-      footerMode={state.footerMode ?? "detailed"}
+      footerMode={isPlaying ? "minimal" : (state.footerMode ?? "detailed")}
       commands={state.commands ?? []}
       inputLocked={!state.onCommandAction}
       escapeAction={null}
@@ -566,11 +513,7 @@ export const LoadingShell = React.memo(function LoadingShell({
         state.onCommandAction?.(action);
       }}
     >
-      <Box
-        flexDirection={showPosterCompanion ? "row" : "column"}
-        justifyContent="space-between"
-        flexGrow={1}
-      >
+      <Box flexDirection="column" justifyContent="space-between" flexGrow={1}>
         <Box flexDirection="column" width={infoWidth} justifyContent="center" flexGrow={1}>
           {/* ── Resolving / Loading ───────────────────────────────────────── */}
           {!isPlaying && (
@@ -678,81 +621,62 @@ export const LoadingShell = React.memo(function LoadingShell({
 
           {/* ── Playing ───────────────────────────────────────────────────── */}
           {isPlaying && (
-            <>
-              {/* Status context strip */}
-              {statusItems.length > 0 && (
-                <Box marginTop={0} flexDirection="column">
-                  <ContextStrip items={statusItems} />
-                </Box>
-              )}
-
-              {/* Playback telemetry */}
-              <LocalSection title="Now playing" tone="success" marginTop={1}>
-                {state.currentPosition !== undefined &&
-                state.duration !== undefined &&
-                state.duration > 0 ? (
-                  <Text color={palette.teal}>
-                    {formatTimestamp(state.currentPosition)} / {formatTimestamp(state.duration)}
-                    {"  "}
-                    <Text color={palette.gray}>
-                      ({Math.round((state.currentPosition / state.duration) * 100)}%)
-                    </Text>
+            <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="center">
+              <Box flexDirection="row" justifyContent="space-between" alignItems="flex-start">
+                <Box flexDirection="column" flexGrow={1} marginRight={2}>
+                  <Text bold color="white">
+                    {state.title}
                   </Text>
-                ) : null}
-                <Box marginTop={1} flexDirection="column">
-                  {state.qualityLabel && (
-                    <DetailLine label="Quality" value={state.qualityLabel} tone="neutral" />
-                  )}
-                  {state.bufferHealth && (
+                  {state.subtitle ? (
+                    <Text color={palette.dim} dimColor>
+                      {state.subtitle}
+                    </Text>
+                  ) : null}
+                  {state.bufferHealth === "stalled" || state.bufferHealth === "buffering" ? (
                     <Box marginTop={1}>
                       <BufferHealthBadge health={state.bufferHealth} />
                     </Box>
-                  )}
-                  {showPlaybackRuntimeStrip && (
-                    <Box marginTop={1} flexDirection="column">
-                      {memoryPanelVisible && memoryLine && (
-                        <DetailLine label="Memory" value={memoryLine} tone="neutral" />
-                      )}
-                      {runtimeHealthLine && (
-                        <DetailLine
-                          label={runtimeHealthLine.label}
-                          value={runtimeHealthLine.detail ?? ""}
-                          tone={runtimeHealthLine.tone ?? "neutral"}
-                        />
-                      )}
-                    </Box>
-                  )}
-                  {state.audioTrack && (
-                    <DetailLine label="Audio" value={state.audioTrack} tone="neutral" />
-                  )}
-                  {state.subtitleTrack && (
-                    <DetailLine label="Subtitles" value={state.subtitleTrack} tone="neutral" />
-                  )}
+                  ) : null}
                 </Box>
-              </LocalSection>
-            </>
+                <PlaybackSignalRail lines={playbackSignalLines} />
+              </Box>
+              {state.currentPosition !== undefined &&
+              state.duration !== undefined &&
+              state.duration > 0 ? (
+                <Box marginTop={2} flexDirection="column">
+                  <Text>
+                    <Text color={palette.amber}>{formatTimestamp(state.currentPosition)}</Text>
+                    <Text color={palette.dim}>
+                      {" "}
+                      {renderPlaybackProgressBar(
+                        state.currentPosition,
+                        state.duration,
+                        barWidth,
+                      )}{" "}
+                    </Text>
+                    <Text color={palette.dim} dimColor>
+                      {formatTimestamp(state.duration)} total
+                    </Text>
+                  </Text>
+                </Box>
+              ) : null}
+              {memoryPanelVisible && showPlaybackRuntimeStrip ? (
+                <Box marginTop={2} flexDirection="column">
+                  {memoryLine ? (
+                    <DetailLine label="Memory" value={memoryLine} tone="neutral" />
+                  ) : null}
+                  {runtimeHealthLine ? (
+                    <DetailLine
+                      label={runtimeHealthLine.label}
+                      value={runtimeHealthLine.detail ?? ""}
+                      tone={runtimeHealthLine.tone ?? "neutral"}
+                    />
+                  ) : null}
+                </Box>
+              ) : null}
+            </Box>
           )}
         </Box>
-
-        {showPosterCompanion ? (
-          <Box marginLeft={2} flexDirection="column" width={28} justifyContent="flex-end">
-            <Text color={palette.amber}>Now showing</Text>
-            <Box marginTop={1}>
-              {poster.kind !== "none" ? (
-                <Text>{poster.placeholder}</Text>
-              ) : (
-                <Box flexDirection="column">
-                  <Text color={posterState === "loading" ? palette.info : palette.gray} dimColor>
-                    {posterState === "loading" ? "Loading artwork…" : "Artwork unavailable"}
-                  </Text>
-                  <Text color={palette.gray} dimColor>
-                    Controls stay live while artwork catches up.
-                  </Text>
-                </Box>
-              )}
-            </Box>
-          </Box>
-        ) : null}
       </Box>
     </ShellFrame>
   );
