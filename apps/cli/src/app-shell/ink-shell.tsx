@@ -2097,6 +2097,7 @@ function BrowseShell<T>({
     "Search for a title — or try /trending to see what's popular",
   );
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
+  const [idleFocused, setIdleFocused] = useState(false);
   const requestIdRef = useRef(0);
   const showPoster = viewport.wideBrowse || viewport.mediumBrowse;
   const { poster, posterState } = usePosterPreview(options[selectedIndex]?.previewImageUrl, {
@@ -2116,6 +2117,7 @@ function BrowseShell<T>({
     setResultSubtitle("");
     setSelectedDetail("Search for a title — or try /trending to see what's popular");
     setActiveFilterBadges([]);
+    setIdleFocused(false);
   }, []);
 
   const updateQuery = useCallback(
@@ -2147,6 +2149,7 @@ function BrowseShell<T>({
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setSearchState("loading");
+    setIdleFocused(false);
     setErrorMessage(null);
     setEmptyMessage("Searching…");
     setSelectedDetail("Finding titles and available matches…");
@@ -2519,15 +2522,8 @@ function BrowseShell<T>({
       return;
     }
 
-    if (
-      input === "r" &&
-      options.length === 0 &&
-      searchState === "idle" &&
-      idleContext?.continueWatching?.titleId
-    ) {
-      onResolve("continue");
-      return;
-    }
+    const canFocusContinue =
+      options.length === 0 && searchState === "idle" && !!idleContext?.continueWatching?.titleId;
 
     if (key.tab) {
       onResolve("toggle-mode");
@@ -2535,6 +2531,10 @@ function BrowseShell<T>({
     }
 
     if (key.escape) {
+      if (idleFocused) {
+        setIdleFocused(false);
+        return;
+      }
       if (options.length > 0 || searchState === "error" || searchState === "loading") {
         clearResults();
         return;
@@ -2544,6 +2544,16 @@ function BrowseShell<T>({
         return;
       }
       onCancel();
+      return;
+    }
+
+    if (key.return && idleFocused && canFocusContinue) {
+      onResolve("continue");
+      return;
+    }
+
+    if (key.upArrow && idleFocused) {
+      setIdleFocused(false);
       return;
     }
 
@@ -2569,6 +2579,10 @@ function BrowseShell<T>({
     }
 
     if (key.downArrow && options.length === 0) {
+      if (canFocusContinue && historyIndex === -1) {
+        setIdleFocused(true);
+        return;
+      }
       if (historyIndex <= 0) {
         setHistoryIndex(-1);
         setQuery(draftQuery);
@@ -2579,6 +2593,10 @@ function BrowseShell<T>({
       setHistoryIndex(nextIndex);
       setQuery(history[nextIndex] ?? "");
       return;
+    }
+
+    if (idleFocused) {
+      setIdleFocused(false);
     }
   });
 
@@ -2826,19 +2844,25 @@ function BrowseShell<T>({
             {idleContext && !viewport.ultraCompact ? (
               <Box flexDirection="column" marginTop={1} gap={0}>
                 {idleContext.continueWatching && !idleContext.playlistNext ? (
-                  <Text color={palette.muted}>
-                    {"⏸  "}
-                    <Text color="white">{idleContext.continueWatching.title}</Text>
+                  <Text color={idleFocused ? "white" : palette.muted}>
+                    {idleFocused ? "❯ ⏸ " : "  ⏸ "}
+                    <Text color={idleFocused ? "white" : "white"} bold={idleFocused}>
+                      {idleContext.continueWatching.title}
+                    </Text>
                     {idleContext.continueWatching.ep ? (
-                      <Text color={palette.muted}>{`  ${idleContext.continueWatching.ep}`}</Text>
+                      <Text color={idleFocused ? palette.teal : palette.muted}>
+                        {`  ${idleContext.continueWatching.ep}`}
+                      </Text>
                     ) : null}
                     {idleContext.continueWatching.remainingLabel ? (
-                      <Text
-                        color={palette.dim}
-                      >{`  · ${idleContext.continueWatching.remainingLabel}`}</Text>
+                      <Text color={palette.dim}>
+                        {`  · ${idleContext.continueWatching.remainingLabel}`}
+                      </Text>
                     ) : null}
-                    {idleContext.continueWatching.titleId ? (
-                      <Text color={palette.teal}>{" · [r] resume"}</Text>
+                    {idleFocused ? (
+                      <Text color={palette.teal}>{" · ↵ resume"}</Text>
+                    ) : idleContext.continueWatching.titleId ? (
+                      <Text color={palette.dim}>{" · ↓ to select"}</Text>
                     ) : (
                       <Text color={palette.dim}>{" · continue watching"}</Text>
                     )}
