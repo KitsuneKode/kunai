@@ -4,11 +4,14 @@
 // Manages watch history and playback positions.
 // =============================================================================
 
+import type { MediaKind } from "@kunai/types";
+
 import type { ContentType } from "../../domain/types";
 
 export interface HistoryEntry {
   title: string;
   type: ContentType;
+  mediaKind?: MediaKind;
   season: number;
   episode: number;
   timestamp: number; // seconds

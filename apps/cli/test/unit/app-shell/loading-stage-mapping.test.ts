@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   getProviderResolveWaitPresentation,
+  getStageAnimationVariant,
   normalizeLoadingIssue,
   renderStageRail,
   resolveStageFromOperation,
@@ -66,6 +67,12 @@ describe("loading shell 3-stage mapping", () => {
   test("stage rail turns active stage amber for non-issue warnings", () => {
     const rail = renderStageRail("finding-stream", null);
     expect(rail[0]!.tone).toBe("info");
+  });
+
+  test("each stage maps to a distinct animation variant", () => {
+    expect(getStageAnimationVariant("finding-stream")).toBe("echo-ring");
+    expect(getStageAnimationVariant("preparing-player")).toBe("neon-drift");
+    expect(getStageAnimationVariant("starting-playback")).toBe("core-spiral");
   });
 });
 

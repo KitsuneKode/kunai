@@ -1348,6 +1348,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             await historyStore.save(title.id, {
               title: title.name,
               type: title.type,
+              mediaKind: stateManager.getState().mode === "anime" ? "anime" : title.type,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
               timestamp: historyTimestamp,

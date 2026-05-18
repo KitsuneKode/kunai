@@ -35,7 +35,7 @@ export class SqliteHistoryStoreImpl implements HistoryStore {
     this.repository.upsertProgress({
       title: {
         id,
-        kind: entry.type,
+        kind: entry.mediaKind ?? entry.type,
         title: entry.title,
       },
       episode: {
@@ -63,6 +63,7 @@ function toHistoryEntry(progress: HistoryProgress): HistoryEntry {
   return {
     title: progress.title,
     type: progress.mediaKind === "movie" ? "movie" : "series",
+    mediaKind: progress.mediaKind,
     season: progress.season ?? 1,
     episode: progress.episode ?? progress.absoluteEpisode ?? 1,
     timestamp: progress.positionSeconds,

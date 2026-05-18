@@ -122,6 +122,11 @@ describe("command registry contexts", () => {
     expect(parseCommand("/docs")?.id).toBe("docs");
   });
 
+  test("resolves /c and /continue aliases to the continue command", () => {
+    expect(parseCommand("/c")?.id).toBe("continue");
+    expect(parseCommand("/continue")?.id).toBe("continue");
+  });
+
   test("keeps root overlay command order focused on first-run actions", () => {
     expect([...COMMAND_CONTEXTS.rootOverlay].slice(0, 10)).toEqual([
       "continue",
