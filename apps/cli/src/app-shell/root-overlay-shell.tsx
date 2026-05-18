@@ -20,10 +20,10 @@ import type {
   QuitNearEndThresholdMode,
   RecoveryMode,
 } from "@/services/persistence/ConfigService";
-import { Box, useInput, useStdout } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useEffect, useState } from "react";
 
-import { resolveCommandContext } from "./commands";
+import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
 import { DownloadManagerContent } from "./download-manager-shell";
 import { LibraryShell } from "./library-shell";
 import {
@@ -67,7 +67,118 @@ import {
 import { type RootOwnedOverlay } from "./root-shell-state";
 import { CommandPalette, useShellInput } from "./shell-command-ui";
 import { InlineBadge, ShellFooter } from "./shell-primitives";
+import { palette } from "./shell-theme";
 import type { FooterAction, ShellPanelLine } from "./types";
+
+const HELP_TABS = ["Navigation", "Playback", "Commands", "About"] as const;
+type HelpTab = (typeof HELP_TABS)[number];
+
+const HELP_TAB_ROWS: Record<HelpTab, readonly { key: string; desc: string }[]> = {
+  Navigation: [
+    { key: "↑↓  jk", desc: "move through list" },
+    { key: "enter", desc: "select / play" },
+    { key: "esc  q", desc: "back / quit" },
+    { key: "/", desc: "open command palette" },
+    { key: "tab", desc: "toggle mode (anime / series)" },
+  ],
+  Playback: [
+    { key: "space", desc: "pause / resume" },
+    { key: "← →", desc: "seek 5 seconds" },
+    { key: "[ ]", desc: "seek 85 seconds (op skip)" },
+    { key: "n  p", desc: "next / previous episode" },
+    { key: "s", desc: "cycle subtitle track" },
+    { key: "q", desc: "stop and return to browse" },
+  ],
+  Commands: [
+    { key: "/history", desc: "watch history" },
+    { key: "/continue", desc: "continue watching" },
+    { key: "/discover", desc: "recommendations" },
+    { key: "/calendar", desc: "airing schedule" },
+    { key: "/settings", desc: "preferences" },
+    { key: "/diagnostics", desc: "system diagnostics" },
+  ],
+  About: [{ key: "runtime", desc: "Bun + Ink" }],
+} as const;
+
+function HelpShell({
+  commandMode,
+  commandInput,
+  commandCursor,
+  commands,
+  highlightedIndex,
+  footerActions,
+}: {
+  commandMode: boolean;
+  commandInput: string;
+  commandCursor: number;
+  commands: readonly ResolvedAppCommand[];
+  highlightedIndex: number;
+  footerActions: readonly FooterAction[];
+}) {
+  const [activeTab, setActiveTab] = useState<HelpTab>("Navigation");
+
+  useInput(
+    (input, key) => {
+      if (commandMode) return;
+      if (key.tab) {
+        setActiveTab((prev) => {
+          const idx = HELP_TABS.indexOf(prev);
+          return HELP_TABS[(idx + 1) % HELP_TABS.length] ?? "Navigation";
+        });
+      }
+    },
+    { isActive: !commandMode },
+  );
+
+  const rows = HELP_TAB_ROWS[activeTab];
+
+  return (
+    <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
+      <Box flexDirection="column" flexGrow={1} paddingX={1} marginTop={1}>
+        <Text color={palette.amber} bold>
+          {"▸ Help"}
+        </Text>
+        <Text color={palette.gray}>{"Tab cycles sections · Esc closes"}</Text>
+        {/* Tab strip */}
+        <Box flexDirection="row" marginTop={1} marginBottom={0}>
+          {HELP_TABS.map((tab) => (
+            <Box key={tab} marginRight={3} flexDirection="column">
+              <Text color={activeTab === tab ? palette.amber : palette.dim}>{tab}</Text>
+              {activeTab === tab ? (
+                <Text color={palette.amber}>{"─".repeat(tab.length)}</Text>
+              ) : null}
+            </Box>
+          ))}
+        </Box>
+        {/* Tab content */}
+        <Box flexDirection="column" marginTop={1}>
+          {rows.map((row) => (
+            <Box key={row.key} flexDirection="row" marginBottom={0}>
+              <Text color={palette.amber}>{row.key.padEnd(16)}</Text>
+              <Text color={palette.dim}>{row.desc}</Text>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+      <Box flexDirection="column">
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            cursor={commandCursor}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
+          />
+        ) : null}
+        <ShellFooter
+          taskLabel={"Help  ·  Tab cycles sections, Esc closes"}
+          actions={footerActions}
+          mode="detailed"
+          commandMode={commandMode}
+        />
+      </Box>
+    </Box>
+  );
+}
 
 function nextSelectableIndex(
   options: readonly { value: unknown }[],
@@ -1262,6 +1373,19 @@ export function RootOverlayShell({
           />
         </Box>
       </Box>
+    );
+  }
+
+  if (overlay.type === "help") {
+    return (
+      <HelpShell
+        commandMode={commandMode}
+        commandInput={commandInput}
+        commandCursor={commandCursor}
+        commands={commands}
+        highlightedIndex={highlightedIndex}
+        footerActions={footerActions}
+      />
     );
   }
 
