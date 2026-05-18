@@ -5,6 +5,7 @@ import React from "react";
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { PlaybackRecommendationRailItem } from "./types";
+import { useViewportPolicy } from "./use-viewport-policy";
 
 export type PostPlayShellProps = {
   title: string;
@@ -34,16 +35,27 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       ? Math.round((watchedEpisodes / totalEpisodes) * 100)
       : undefined;
 
-  const showRecommendations = recommendations.length > 0;
+  const viewport = useViewportPolicy("playback");
+  const showRecommendations =
+    recommendations.length > 0 && viewport.breakpoint !== "narrow" && !viewport.ultraCompact;
   const recHeading =
-    postPlayState.kind === "series-complete"
-      ? "because you finished this"
-      : "if you want something else";
+    postPlayState.kind === "series-complete" ? "because you finished this" : "you might also like";
+  const isMovie = episodeLabel === "Movie";
+  const progressBarWidth = Math.min(40, Math.max(16, viewport.columns - 24));
+  const seriesProgressBar =
+    progress !== undefined
+      ? (() => {
+          const filled = Math.floor((progress / 100) * progressBarWidth);
+          return `${"█".repeat(filled)}${"░".repeat(Math.max(0, progressBarWidth - filled))}`;
+        })()
+      : null;
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       {resumeLabel ? (
         <Text color={palette.amber}>⏸ stopped early</Text>
+      ) : isMovie ? (
+        <Text color={palette.green}>✓ movie complete</Text>
       ) : (
         <Text color={palette.green}>✓ episode complete</Text>
       )}
@@ -71,7 +83,13 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         </Box>
       ) : null}
 
-      {!resumeLabel && postPlayState.kind === "mid-series" && (
+      {isMovie && !resumeLabel ? (
+        <Box marginTop={2} flexDirection="column">
+          <Text color={palette.dim}>↵ replay · / search for another title</Text>
+        </Box>
+      ) : null}
+
+      {!resumeLabel && !isMovie && postPlayState.kind === "mid-series" && (
         <Box
           marginTop={2}
           flexDirection="column"
@@ -113,9 +131,11 @@ export const PostPlayShell = React.memo(function PostPlayShell({
             </Box>
           ) : null}
           {progress !== undefined && totalEpisodes && watchedEpisodes !== undefined ? (
-            <Text color={palette.dim}>
-              {watchedEpisodes} of {totalEpisodes} eps · {progress}%
-            </Text>
+            <Box marginTop={1} flexDirection="column">
+              <Text color={palette.dim}>
+                {seriesProgressBar} {watchedEpisodes} of {totalEpisodes} eps overall · {progress}%
+              </Text>
+            </Box>
           ) : null}
         </Box>
       )}
@@ -135,16 +155,29 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       {showRecommendations ? (
         <Box marginTop={2} flexDirection="column">
           <Text color={palette.dim}>{recHeading}</Text>
-          {recommendations.slice(0, 3).map((rec, index) => (
-            <Box key={rec.id} marginTop={index === 0 ? 1 : 0}>
-              <Text color={palette.dim}>{`${index + 1}. `}</Text>
-              <Text>
-                {truncateLine(rec.title, 42)}
-                {rec.year ? <Text color={palette.dim}>{` (${rec.year})`}</Text> : null}
-              </Text>
-            </Box>
-          ))}
+          {postPlayState.kind === "series-complete" ? (
+            <Text color={palette.muted}>
+              {recommendations
+                .slice(0, 3)
+                .map((rec) => truncateLine(rec.title, 28))
+                .join("  ·  ")}
+            </Text>
+          ) : (
+            recommendations.slice(0, 3).map((rec, index) => (
+              <Box key={rec.id} marginTop={index === 0 ? 1 : 0}>
+                <Text color={palette.dim}>{`${index + 1}. `}</Text>
+                <Text>
+                  {truncateLine(rec.title, 42)}
+                  {rec.year ? <Text color={palette.dim}>{` (${rec.year})`}</Text> : null}
+                </Text>
+              </Box>
+            ))
+          )}
         </Box>
+      ) : viewport.breakpoint === "narrow" && recommendations.length > 0 ? (
+        <Text color={palette.dim} dimColor>
+          widen terminal for recommendations
+        </Text>
       ) : null}
     </Box>
   );

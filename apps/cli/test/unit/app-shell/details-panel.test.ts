@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildBrowseCompanionPanel, buildBrowseDetailsPanel } from "@/app-shell/details-panel";
+import {
+  buildBrowseDetailsPanel,
+  buildDetailsPanelDataFromBrowseOption,
+  resolveBrowseDetailsSecondary,
+} from "@/app-shell/details-panel";
 import type { BrowseShellOption } from "@/app-shell/types";
 
 describe("buildBrowseDetailsPanel", () => {
@@ -92,13 +96,12 @@ describe("buildBrowseDetailsPanel", () => {
       previewNote: "Press Enter to open this title.",
     };
 
-    const panel = buildBrowseCompanionPanel(option, {
-      selectedDetail: "Series · A young swordsman joins the demon slayer corps.",
-    });
+    const panel = buildDetailsPanelDataFromBrowseOption(option);
+    const secondary = resolveBrowseDetailsSecondary(option);
 
-    expect(panel.title).toBe("Demon Slayer");
-    expect(panel.metaLine).toBe("2019  ·  Series  ·  8.5/10 TMDB");
-    expect(panel.facts).toEqual([]);
+    expect(panel.primary.title).toBe("Demon Slayer");
+    expect(panel.primary.year).toBe("2019");
+    expect(secondary.providers).toBeUndefined();
   });
 
   test("keeps missing companion artwork honest without surfacing debug state", () => {
@@ -108,11 +111,9 @@ describe("buildBrowseDetailsPanel", () => {
       previewMeta: ["Movie", "2024"],
     };
 
-    const panel = buildBrowseCompanionPanel(option, {
-      selectedDetail: "Movie",
-    });
+    const panel = buildDetailsPanelDataFromBrowseOption(option);
 
-    expect(panel.metaLine).toBe("2024  ·  Movie");
-    expect(panel.facts).toEqual([]);
+    expect(panel.primary.type).toBe("movie");
+    expect(panel.primary.year).toBe("2024");
   });
 });

@@ -20,7 +20,7 @@ export function buildPostPlayInputFromPlaybackContext(
     return {
       hasNextEpisode: false,
       isSeasonFinale: false,
-      isSeriesComplete: false,
+      isSeriesComplete: true,
       isCaughtUpOnAiring: false,
     };
   }

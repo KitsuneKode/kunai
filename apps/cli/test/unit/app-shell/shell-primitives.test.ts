@@ -56,7 +56,7 @@ describe("selectFooterActions", () => {
       selected.filter((action) => action.action !== "command-mode").length,
     ).toBeLessThanOrEqual(4);
     expect(selected.at(-1)?.action).toBe("command-mode");
-    expect(selected.at(-1)?.label).toContain("more");
+    expect(selected.some((action) => action.label.includes("more"))).toBe(false);
   });
 
   test("selectFooterActions preserves primary flag on first action", () => {

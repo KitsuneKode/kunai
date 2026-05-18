@@ -171,13 +171,6 @@ export type BrowseDetailsPanel = {
   imageUrl?: string;
 };
 
-export type BrowseCompanionPanel = {
-  title: string;
-  metaLine: string;
-  body: string;
-  facts: readonly ShellPanelLine[];
-};
-
 export function buildBrowseDetailsPanel<T>(
   option: BrowseShellOption<T> | undefined,
 ): BrowseDetailsPanel {
@@ -256,31 +249,6 @@ export function buildBrowseDetailsPanel<T>(
   };
 }
 
-export function buildBrowseCompanionPanel<T>(
-  option: BrowseShellOption<T> | undefined,
-  {
-    selectedDetail,
-  }: {
-    selectedDetail: string;
-  },
-): BrowseCompanionPanel {
-  if (!option) {
-    return {
-      title: "No selection yet",
-      metaLine: "Ready to search",
-      body: "Type a title and press Enter to search.",
-      facts: selectedDetail ? [{ label: "Context", detail: selectedDetail }] : [],
-    };
-  }
-
-  return {
-    title: option.previewTitle ?? option.label,
-    metaLine: buildPreviewMetaLine(option),
-    body: option.previewBody || "No overview available yet.",
-    facts: buildCompanionFacts(option),
-  };
-}
-
 export function buildPreviewMetaLine<T>(option: BrowseShellOption<T>): string {
   const meta = option.previewMeta ?? [];
   const type = meta.find((value) => value === "Series" || value === "Movie");
@@ -330,18 +298,6 @@ function getStructuredPreviewFacts<T>(option: BrowseShellOption<T>): ShellPanelL
       tone: option.previewImageUrl ? "success" : "warning",
     },
   ];
-}
-
-function buildCompanionFacts<T>(option: BrowseShellOption<T>): ShellPanelLine[] {
-  const facts: ShellPanelLine[] = [];
-  const providerFacts = option.previewFacts ?? [];
-
-  for (const fact of providerFacts) {
-    if (fact.label === "Poster" || fact.label === "Rating") continue;
-    facts.push(fact);
-  }
-
-  return facts;
 }
 
 function uniqueStrings(values: readonly (string | undefined)[]): string[] {
