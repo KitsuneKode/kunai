@@ -638,6 +638,31 @@ function sortHistoryEntries(
   );
 }
 
+const DAY_MS = 86_400_000;
+
+/** Groups sorted history entries into recency buckets (Today / This Week / Earlier). */
+export function groupHistoryByRecency(
+  entries: ReadonlyArray<[string, HistoryEntry]>,
+): { label: string; items: ReadonlyArray<[string, HistoryEntry]> }[] {
+  const now = Date.now();
+  const today: [string, HistoryEntry][] = [];
+  const week: [string, HistoryEntry][] = [];
+  const earlier: [string, HistoryEntry][] = [];
+
+  for (const pair of entries) {
+    const age = now - (new Date(pair[1].watchedAt).getTime() || 0);
+    if (age < DAY_MS) today.push(pair);
+    else if (age < DAY_MS * 7) week.push(pair);
+    else earlier.push(pair);
+  }
+
+  return [
+    ...(today.length ? [{ label: "Today", items: today }] : []),
+    ...(week.length ? [{ label: "This Week", items: week }] : []),
+    ...(earlier.length ? [{ label: "Earlier", items: earlier }] : []),
+  ];
+}
+
 export function buildHistoryPanelLines(
   historyEntries: ReadonlyArray<[string, HistoryEntry]>,
 ): readonly ShellPanelLine[] {
@@ -651,18 +676,26 @@ export function buildHistoryPanelLines(
     ];
   }
 
-  return sortHistoryEntries(historyEntries)
-    .slice(0, 10)
-    .map(([titleId, entry]: [string, HistoryEntry]) => {
+  const sorted = sortHistoryEntries(historyEntries).slice(0, 30);
+  const groups = groupHistoryByRecency(sorted);
+  const lines: ShellPanelLine[] = [];
+
+  for (const group of groups) {
+    lines.push({ label: `─── ${group.label}`, detail: "", tone: "info" });
+    for (const [titleId, entry] of group.items) {
       const details = historyProgressDetails(entry);
-      return {
+      const initial = entry.title.trim().charAt(0).toUpperCase() || "?";
+      lines.push({
         label:
           entry.type === "series"
-            ? `${entry.title}  ·  S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
-            : `${entry.title}  ·  movie`,
+            ? `${initial}  ${entry.title}  ·  S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
+            : `${initial}  ${entry.title}  ·  movie`,
         detail: `${details.bar ? `${details.bar} ` : ""}${details.text}  ·  provider ${entry.provider}  ·  id ${titleId}  ·  ${new Date(entry.watchedAt).toLocaleDateString()}`,
-      };
-    });
+      });
+    }
+  }
+
+  return lines;
 }
 
 function relativeTime(date: Date): string {
@@ -706,51 +739,78 @@ export function isHistoryPickerContinuable(
   );
 }
 
+function buildHistoryOptionRow(
+  id: string,
+  entry: HistoryEntry,
+  context: HistoryPickerOptionsContext,
+): ShellPickerOption<string> {
+  const details = historyProgressDetails(entry);
+  const isCompleted = details.percentage !== null && details.percentage >= 95;
+  const decision = reconcileContinueHistory({
+    titleId: id,
+    entries: [[id, entry]],
+    nextRelease: context.nextReleases?.get(id) ?? null,
+  });
+  const episode =
+    entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
+  if (decision.kind === "new-episode") {
+    const nextEpisode =
+      typeof decision.episode === "number"
+        ? formatSeriesEpisode(decision.season ?? entry.season, decision.episode)
+        : episode;
+    const completedEpisode =
+      entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
+    const timeAgo = relativeTime(new Date(entry.watchedAt));
+    return {
+      value: id,
+      label: `${entry.title}  ·  ${nextEpisode}`,
+      detail: `new episode ready  ·  completed ${completedEpisode}  ·  ${entry.provider}  ·  ${timeAgo}`,
+      badge: "new",
+      tone: "success",
+    };
+  }
+  const statusGlyph = isCompleted
+    ? "✓ complete"
+    : entry.timestamp > 10
+      ? `⏸ ${formatTimestamp(entry.timestamp)}`
+      : "▶ start";
+  const timeAgo = relativeTime(new Date(entry.watchedAt));
+
+  return {
+    value: id,
+    label: entry.type === "series" ? `${entry.title}  ·  ${episode}` : `${entry.title}  ·  movie`,
+    detail: `${statusGlyph}  ·  ${entry.provider}  ·  ${timeAgo}`,
+    badge: details.bar ? `${details.bar} ${details.percentage}%` : undefined,
+    tone: isCompleted ? "success" : "neutral",
+  };
+}
+
 export function buildHistoryPickerOptions(
   historyEntries: ReadonlyArray<[string, HistoryEntry]>,
   context: HistoryPickerOptionsContext = {},
 ): readonly ShellPickerOption<string>[] {
-  return sortHistoryEntries(historyEntries).map(([id, entry]: [string, HistoryEntry]) => {
-    const details = historyProgressDetails(entry);
-    const isCompleted = details.percentage !== null && details.percentage >= 95;
-    const decision = reconcileContinueHistory({
-      titleId: id,
-      entries: [[id, entry]],
-      nextRelease: context.nextReleases?.get(id) ?? null,
-    });
-    const episode =
-      entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
-    if (decision.kind === "new-episode") {
-      const nextEpisode =
-        typeof decision.episode === "number"
-          ? formatSeriesEpisode(decision.season ?? entry.season, decision.episode)
-          : episode;
-      const completedEpisode =
-        entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
-      const timeAgo = relativeTime(new Date(entry.watchedAt));
-      return {
-        value: id,
-        label: `${entry.title}  ·  ${nextEpisode}`,
-        detail: `new episode ready  ·  completed ${completedEpisode}  ·  ${entry.provider}  ·  ${timeAgo}`,
-        badge: "new",
-        tone: "success",
-      };
-    }
-    const statusGlyph = isCompleted
-      ? "✓ complete"
-      : entry.timestamp > 10
-        ? `⏸ ${formatTimestamp(entry.timestamp)}`
-        : "▶ start";
-    const timeAgo = relativeTime(new Date(entry.watchedAt));
+  const sorted = sortHistoryEntries(historyEntries);
+  // Only group into sections when there are enough entries to make it meaningful.
+  // With a filter active the caller passes a pre-filtered subset, which may be small;
+  // sections are still useful there (showing which period each match belongs to).
+  const groups = groupHistoryByRecency(sorted);
 
-    return {
-      value: id,
-      label: entry.type === "series" ? `${entry.title}  ·  ${episode}` : `${entry.title}  ·  movie`,
-      detail: `${statusGlyph}  ·  ${entry.provider}  ·  ${timeAgo}`,
-      badge: details.bar ? `${details.bar} ${details.percentage}%` : undefined,
-      tone: isCompleted ? "success" : "neutral",
-    };
-  });
+  // If only one group exists there is nothing meaningful to partition, skip headers.
+  if (groups.length <= 1) {
+    return sorted.map(([id, entry]) => buildHistoryOptionRow(id, entry, context));
+  }
+
+  const options: ShellPickerOption<string>[] = [];
+  for (const group of groups) {
+    options.push({
+      value: `section:history-${group.label.toLowerCase().replace(/\s+/g, "-")}`,
+      label: group.label,
+    });
+    for (const [id, entry] of group.items) {
+      options.push(buildHistoryOptionRow(id, entry, context));
+    }
+  }
+  return options;
 }
 
 export function buildProviderPickerOptions({

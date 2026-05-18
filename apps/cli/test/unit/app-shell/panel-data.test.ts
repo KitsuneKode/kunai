@@ -7,6 +7,7 @@ import {
   buildHelpPanelLines,
   buildHistoryPanelLines,
   buildProviderPickerOptions,
+  groupHistoryByRecency,
 } from "@/app-shell/panel-data";
 import { createInitialState } from "@/domain/session/SessionState";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
@@ -292,7 +293,9 @@ describe("panel-data", () => {
       ],
     ]);
 
-    expect(lines[0]?.label).toContain("Newer Show");
+    // Section headers appear before item rows; find the first row with a title
+    const firstItemLine = lines.find((l) => l.label.includes("Show"));
+    expect(firstItemLine?.label).toContain("Newer Show");
   });
 
   test("buildProviderPickerOptions marks current provider", () => {
@@ -394,6 +397,187 @@ describe("panel-data", () => {
     expect(options[0]?.detail).toContain("new episode ready");
     expect(options[0]?.badge).toBe("new");
     expect(options[0]?.tone).toBe("success");
+  });
+
+  describe("groupHistoryByRecency", () => {
+    const DAY_MS = 86_400_000;
+
+    function makeEntry(watchedAt: string) {
+      return {
+        title: "Test Show",
+        type: "series" as const,
+        season: 1,
+        episode: 1,
+        timestamp: 100,
+        duration: 300,
+        completed: false,
+        provider: "vidking",
+        watchedAt,
+      };
+    }
+
+    test("places an entry watched 1 hour ago in Today", () => {
+      const now = Date.now();
+      const items: [string, ReturnType<typeof makeEntry>][] = [
+        ["a", makeEntry(new Date(now - 3_600_000).toISOString())],
+      ];
+      const groups = groupHistoryByRecency(items);
+      expect(groups).toHaveLength(1);
+      expect(groups[0]?.label).toBe("Today");
+      expect(groups[0]?.items).toHaveLength(1);
+    });
+
+    test("places an entry watched 3 days ago in This Week", () => {
+      const now = Date.now();
+      const items: [string, ReturnType<typeof makeEntry>][] = [
+        ["b", makeEntry(new Date(now - DAY_MS * 3).toISOString())],
+      ];
+      const groups = groupHistoryByRecency(items);
+      expect(groups).toHaveLength(1);
+      expect(groups[0]?.label).toBe("This Week");
+    });
+
+    test("places an entry watched 30 days ago in Earlier", () => {
+      const now = Date.now();
+      const items: [string, ReturnType<typeof makeEntry>][] = [
+        ["c", makeEntry(new Date(now - DAY_MS * 30).toISOString())],
+      ];
+      const groups = groupHistoryByRecency(items);
+      expect(groups).toHaveLength(1);
+      expect(groups[0]?.label).toBe("Earlier");
+    });
+
+    test("returns all three groups when entries span all periods", () => {
+      const now = Date.now();
+      const items: [string, ReturnType<typeof makeEntry>][] = [
+        ["today", makeEntry(new Date(now - 3_600_000).toISOString())],
+        ["week", makeEntry(new Date(now - DAY_MS * 3).toISOString())],
+        ["earlier", makeEntry(new Date(now - DAY_MS * 30).toISOString())],
+      ];
+      const groups = groupHistoryByRecency(items);
+      expect(groups).toHaveLength(3);
+      expect(groups.map((g) => g.label)).toEqual(["Today", "This Week", "Earlier"]);
+    });
+
+    test("returns empty array for empty input", () => {
+      expect(groupHistoryByRecency([])).toHaveLength(0);
+    });
+  });
+
+  test("buildHistoryPickerOptions adds section headers when entries span multiple periods", () => {
+    const now = Date.now();
+    const DAY_MS = 86_400_000;
+    const options = buildHistoryPickerOptions([
+      [
+        "today",
+        {
+          title: "Today Show",
+          type: "series",
+          season: 1,
+          episode: 1,
+          timestamp: 100,
+          duration: 300,
+          completed: false,
+          provider: "vidking",
+          watchedAt: new Date(now - 3_600_000).toISOString(),
+        },
+      ],
+      [
+        "earlier",
+        {
+          title: "Earlier Show",
+          type: "series",
+          season: 1,
+          episode: 1,
+          timestamp: 100,
+          duration: 300,
+          completed: false,
+          provider: "vidking",
+          watchedAt: new Date(now - DAY_MS * 30).toISOString(),
+        },
+      ],
+    ]);
+
+    const sectionValues = options
+      .filter((o) => typeof o.value === "string" && o.value.startsWith("section:"))
+      .map((o) => o.label);
+    expect(sectionValues).toContain("Today");
+    expect(sectionValues).toContain("Earlier");
+  });
+
+  test("buildHistoryPickerOptions omits section headers when all entries are in the same period", () => {
+    const options = buildHistoryPickerOptions([
+      [
+        "older",
+        {
+          title: "Older Show",
+          type: "series",
+          season: 1,
+          episode: 2,
+          timestamp: 120,
+          duration: 300,
+          completed: false,
+          provider: "vidking",
+          watchedAt: "2026-04-01T00:00:00.000Z",
+        },
+      ],
+      [
+        "newer",
+        {
+          title: "Newer Show",
+          type: "series",
+          season: 2,
+          episode: 4,
+          timestamp: 180,
+          duration: 300,
+          completed: false,
+          provider: "allanime",
+          watchedAt: "2026-04-20T00:00:00.000Z",
+        },
+      ],
+    ]);
+
+    // Both entries are in "Earlier" → only 1 group → no section headers
+    expect(options.every((o) => !String(o.value).startsWith("section:"))).toBe(true);
+  });
+
+  test("buildHistoryPanelLines emits recency section headers", () => {
+    const now = Date.now();
+    const DAY_MS = 86_400_000;
+    const lines = buildHistoryPanelLines([
+      [
+        "today",
+        {
+          title: "Today Show",
+          type: "series",
+          season: 1,
+          episode: 1,
+          timestamp: 100,
+          duration: 300,
+          completed: false,
+          provider: "vidking",
+          watchedAt: new Date(now - 3_600_000).toISOString(),
+        },
+      ],
+      [
+        "earlier",
+        {
+          title: "Earlier Show",
+          type: "series",
+          season: 1,
+          episode: 1,
+          timestamp: 100,
+          duration: 300,
+          completed: false,
+          provider: "vidking",
+          watchedAt: new Date(now - DAY_MS * 30).toISOString(),
+        },
+      ],
+    ]);
+
+    const sectionLabels = lines.filter((l) => l.tone === "info").map((l) => l.label);
+    expect(sectionLabels).toContain("─── Today");
+    expect(sectionLabels).toContain("─── Earlier");
   });
 
   test("buildDiagnosticsPanelLines exposes memory trend as a runtime-only diagnostic", () => {
