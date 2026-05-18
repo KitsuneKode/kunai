@@ -39,7 +39,7 @@ import { buildBrowseCompanionPanel, buildBrowseDetailsPanel } from "./details-pa
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { ExitShell } from "./exit-shell";
-import { registerExitHandler, requestHardExit, runExitHandlers } from "./graceful-exit";
+import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { deleteAllKittyImages } from "./image-pane";
 import { getBrowseCommandPaletteMaxVisible, getPickerLayout } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
@@ -955,14 +955,10 @@ function AppRoot({ container }: { container: Container }) {
     void container.playerControl.returnToSearchFromPlayback("playback-shell-shift-s");
   }, [container]);
 
+  const onExitDone = useCallback(() => requestHardExit(0), []);
+
   if (exiting) {
-    return (
-      <ExitShell
-        onDone={() => {
-          void runExitHandlers().finally(() => process.exit(0));
-        }}
-      />
-    );
+    return <ExitShell onDone={onExitDone} />;
   }
 
   return (

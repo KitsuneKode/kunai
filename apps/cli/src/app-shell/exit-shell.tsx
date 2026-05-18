@@ -6,7 +6,7 @@ import { palette } from "./shell-theme";
 type ExitStep = "dim" | "footer-gone" | "fox" | "closing" | "done";
 
 const STEP_TIMINGS: Record<ExitStep, number> = {
-  dim: 0,
+  dim: 0, // initial state — not scheduled, here for completeness
   "footer-gone": 40,
   fox: 80,
   closing: 120,
