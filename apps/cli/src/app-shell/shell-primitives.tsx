@@ -432,6 +432,17 @@ export const BrowseTitle = React.memo(function BrowseTitle({ mode }: { mode: "se
  * Designed empty state for panels with no data.
  * Provides a consistent visual treatment across the shell instead of raw dim text.
  */
+export function TerminalSizeChip({ columns, rows }: { columns: number; rows: number }) {
+  const isBlocked = columns < 60 || rows < 20;
+  const isSuboptimal = !isBlocked && columns < 80;
+  const color = isBlocked ? palette.red : isSuboptimal ? palette.amber : palette.dim;
+  return (
+    <Text color={color} dimColor={!isBlocked && !isSuboptimal}>
+      {columns}×{rows}
+    </Text>
+  );
+}
+
 export const EmptyState = React.memo(function EmptyState({
   icon = "○",
   title,
