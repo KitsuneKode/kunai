@@ -111,6 +111,37 @@ describe("ResultEnrichmentService", () => {
     ).toEqual([{ label: "new S01E06", tone: "info" }]);
   });
 
+  test("uses provider release metadata without probing schedule cache", async () => {
+    const releaseLookups: string[] = [];
+    const service = new ResultEnrichmentService({
+      historyStore: { getAll: async () => ({}) },
+      offlineLibraryService: {
+        validateCompletedArtifacts: async () => [],
+      },
+      getCachedNextRelease: (searchResult) => {
+        releaseLookups.push(searchResult.id);
+        return null;
+      },
+      now: () => 1,
+      ttlMs: 1_000,
+    });
+
+    const enrichments = await service.enrichResults([
+      result({
+        release: {
+          status: "released",
+          providerConfirmed: true,
+          availableAt: "2026-05-19T12:00:00.000Z",
+        },
+      }),
+    ]);
+
+    expect(releaseLookups).toEqual([]);
+    expect(enrichments.get("series:title-1")?.badges).toEqual([
+      { label: "provider confirmed", tone: "success" },
+    ]);
+  });
+
   test("uses cached next-release data without probing schedules for unrelated results", async () => {
     const releaseLookups: string[] = [];
     const service = new ResultEnrichmentService({

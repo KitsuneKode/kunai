@@ -7,6 +7,7 @@ import type { SearchResult } from "@/domain/types";
 import type { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
 import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
 import { formatTimestamp, isFinished } from "@/services/persistence/HistoryStore";
+import type { ProviderReleaseInfo } from "@kunai/types";
 
 export type ResultEnrichmentBadgeTone = "success" | "info" | "warning" | "neutral";
 
@@ -103,6 +104,8 @@ export function buildResultEnrichment(input: {
   readonly offlineStatuses?: readonly string[];
 }): ResultEnrichment {
   const badges: ResultEnrichmentBadge[] = [];
+  const providerReleaseBadge = badgeForProviderRelease(input.result.release);
+  if (providerReleaseBadge) badges.push(providerReleaseBadge);
   if (input.historyEntry) {
     badges.push(
       ...badgesForHistoryDecision(
@@ -118,6 +121,14 @@ export function buildResultEnrichment(input: {
     badges.push({ label: "offline issue", tone: "warning" });
   }
   return { badges };
+}
+
+function badgeForProviderRelease(
+  release: ProviderReleaseInfo | undefined,
+): ResultEnrichmentBadge | null {
+  if (!release || release.status === "unknown") return null;
+  if (release.status === "upcoming") return { label: "upcoming", tone: "info" };
+  return { label: release.providerConfirmed ? "provider confirmed" : "released", tone: "success" };
 }
 
 function resolveHistoryDecision(input: {
