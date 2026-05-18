@@ -25,6 +25,10 @@ export const palette = {
   // Discovery / recommendation accent
   lavender: tokens.lavender,
 
+  // Series-complete milestone
+  purple: tokens.purple,
+  purpleDim: tokens.purpleDim,
+
   green: tokens.green,
   red: tokens.red,
 

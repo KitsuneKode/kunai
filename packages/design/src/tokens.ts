@@ -36,6 +36,10 @@ export const tokens = {
   lavender: "#c4b5e8",
   lavenderDim: "#4e4068",
 
+  // Series-complete milestone — never reuse for any other purpose
+  purple: "#a855f7",
+  purpleDim: "#4c1d95",
+
   // Text scale — warm cream, softer at extremes
   text: "#e8ddd0",
   textDim: "#c8bba8",

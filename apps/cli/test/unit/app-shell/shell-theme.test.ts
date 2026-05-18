@@ -14,3 +14,12 @@ describe("hotkeyLabel", () => {
     expect(hotkeyLabel("↻§r")).toBe("↻");
   });
 });
+
+describe("palette", () => {
+  const { palette } = require("@/app-shell/shell-theme");
+
+  test("palette exposes purple token for series-complete milestone color", () => {
+    expect(palette.purple).toBeDefined();
+    expect(palette.purple).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+});
