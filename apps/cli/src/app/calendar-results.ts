@@ -47,17 +47,14 @@ function toCalendarSearchResult(
   const groupLabel = describeCalendarGroup(item.releaseAt);
   const timeLabel = describeCalendarTime(item);
   const badgeLabel = describeCalendarBadge(item, dayLabel);
-  const episodeLabel =
-    typeof item.episode === "number"
-      ? `${formatCalendarEpisodeCode(item)}${item.episodeTitle ? ` · ${item.episodeTitle}` : ""}`
-      : "Scheduled release";
+  const episodeLine = formatCalendarEpisodeLine(item);
 
   return {
     id: item.titleId,
     type: item.type === "movie" ? "movie" : "series",
     title: item.titleName,
     year,
-    overview: `${dayLabel}. ${episodeLabel}. ${releaseLabel}. Availability is checked only when you choose playback.`,
+    overview: episodeLine ? `${episodeLine} · ${releaseLabel}` : `${releaseLabel}`,
     posterPath: item.posterPath ?? null,
     metadataSource: `${source} calendar · ${dayLabel} · ${badgeLabel} · ${item.releasePrecision}`,
     rating: typeof item.averageScore === "number" ? item.averageScore / 10 : undefined,
@@ -67,7 +64,7 @@ function toCalendarSearchResult(
     displayBadge: isInWatchlist?.(item.titleId)
       ? "wl"
       : typeof item.episode === "number"
-        ? `EP ${item.episode}`
+        ? `E${item.episode}`
         : undefined,
     episodeCount: item.episode,
   };
@@ -140,19 +137,17 @@ function describeCalendarGroup(releaseAt: string | null): string {
   const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" })
     .format(release)
     .toUpperCase();
-  const day = new Intl.DateTimeFormat(undefined, { day: "2-digit" }).format(release);
+  const day = new Intl.DateTimeFormat(undefined, { day: "numeric" }).format(release);
   const relative = describeCalendarDay(releaseAt);
-  return relative === "Today" || relative === "Tomorrow"
-    ? `${weekday} ${day} · ${relative}`
-    : `${weekday} ${day}`;
+  const base = `${weekday} ${day}`;
+  return relative === "Today" || relative === "Tomorrow" ? `${base} · ${relative}` : base;
 }
 
 function describeCalendarTime(item: CatalogScheduleItem): string | undefined {
   if (!item.releaseAt || item.releasePrecision !== "timestamp") return undefined;
   return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
-    hour12: false,
   }).format(new Date(item.releaseAt));
 }
 
@@ -167,8 +162,17 @@ function formatCalendarEpisodeCode(item: CatalogScheduleItem): string {
   if (typeof item.season === "number" && typeof item.episode === "number") {
     return `S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`;
   }
-  if (typeof item.episode === "number") return `Episode ${item.episode}`;
-  return "Scheduled release";
+  if (typeof item.episode === "number") return `E${String(item.episode).padStart(2, "0")}`;
+  return "";
+}
+
+function formatCalendarEpisodeLine(item: CatalogScheduleItem): string {
+  const code = formatCalendarEpisodeCode(item);
+  if (!code && !item.episodeTitle) return "";
+  if (item.episodeTitle?.trim()) {
+    return code ? `${code} · ${item.episodeTitle.trim()}` : item.episodeTitle.trim();
+  }
+  return code;
 }
 
 function compareCalendarItems(left: CatalogScheduleItem, right: CatalogScheduleItem): number {
@@ -189,4 +193,8 @@ function isSameLocalDay(releaseAt: string | null, nowMs: number): boolean {
     release.getMonth() === now.getMonth() &&
     release.getDate() === now.getDate()
   );
+}
+
+export function isCalendarSearchResult(result: SearchResult): boolean {
+  return result.metadataSource?.includes(" calendar · ") ?? false;
 }

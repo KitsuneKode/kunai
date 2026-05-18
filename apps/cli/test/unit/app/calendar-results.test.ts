@@ -88,11 +88,10 @@ test("loadCalendarResults maps releasing-today items into playable browse candid
     popularity: 1000,
     displayGroup: expect.stringContaining("Today"),
     displayTime: expect.any(String),
-    displayBadge: "EP 29",
+    displayBadge: "E29",
   });
-  expect(results.results[0]?.overview).toContain("Today. Episode 29 · A new journey");
+  expect(results.results[0]?.overview).toContain("E29 · A new journey");
   expect(results.results[0]?.overview).toContain("airs today at");
-  expect(results.results[0]?.overview).toContain("Availability is checked only when you choose");
   expect(results.results[1]?.metadataSource).toContain("Tomorrow");
   expect(results.results[1]?.metadataSource).toContain("airs tomorrow");
   expect(results.results[1]?.overview).toContain("airs tomorrow at");
@@ -128,4 +127,5 @@ test("loadCalendarResults distinguishes already released rows from timed upcomin
   expect(results.results[0]?.metadataSource).toBe("TMDB calendar · Today · new today · date");
   expect(results.results[0]?.overview).toContain("S05E03");
   expect(results.results[0]?.overview).toContain("available today");
+  expect(results.results[0]?.overview).not.toContain("Availability is checked");
 });

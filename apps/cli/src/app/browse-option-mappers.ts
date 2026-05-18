@@ -1,4 +1,5 @@
 import type { BrowseShellOption } from "@/app-shell/types";
+import { isCalendarSearchResult } from "@/app/calendar-results";
 import type { ListService } from "@/domain/lists/ListService";
 import type { SearchResult, TitleAliasKind } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
@@ -19,6 +20,44 @@ function toPosterUrl(posterPath: string | null): string | undefined {
 function formatRating(rating: number | null | undefined): string | undefined {
   if (typeof rating !== "number" || rating <= 0) return undefined;
   return `${rating.toFixed(1)}/10 TMDB`;
+}
+
+function toCalendarBrowseOption(
+  result: SearchResult,
+  listService?: ListService,
+): BrowseShellOption<SearchResult> {
+  const inWatchlist = listService?.isInWatchlist(result.id) ?? false;
+  const posterUrl = toPosterUrl(result.posterPath);
+  const episodeDetail =
+    result.overview?.trim() ||
+    (result.year ? `${result.type === "series" ? "Series" : "Movie"} · ${result.year}` : "");
+
+  return {
+    value: result,
+    label: result.title,
+    detail: episodeDetail,
+    previewTitle: result.title,
+    previewMeta: [
+      result.type === "series" ? "Series" : "Movie",
+      result.year || undefined,
+      result.displayTime,
+      formatRating(result.rating),
+    ].filter((value): value is string => Boolean(value)),
+    previewGroup: result.displayGroup,
+    previewTime: result.displayTime,
+    previewBadge: inWatchlist ? "wl" : result.displayBadge,
+    previewFacts: [
+      {
+        label: "Release",
+        detail: result.overview || "Schedule details unavailable",
+        tone: "info" as const,
+      },
+    ],
+    previewImageUrl: posterUrl,
+    previewRating: formatRating(result.rating),
+    previewBody: result.overview || "No schedule details available.",
+    previewNote: "Press Enter to open this release.",
+  };
 }
 
 function buildHistoryBadge(entry: HistoryEntry | null | undefined): string | undefined {
@@ -43,6 +82,10 @@ export function toBrowseResultOption(
   enrichment?: ResultEnrichment | null,
   listService?: ListService,
 ): BrowseShellOption<SearchResult> {
+  if (isCalendarSearchResult(result)) {
+    return toCalendarBrowseOption(result, listService);
+  }
+
   const historyBadge = buildHistoryBadge(historyEntry);
   const enrichmentBadges = enrichment?.badges ?? [];
   const inWatchlist = listService?.isInWatchlist(result.id) ?? false;

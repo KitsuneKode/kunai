@@ -34,6 +34,17 @@ import {
   parseBrowseFilterQuery,
 } from "./browse-filters";
 import { resolveIdleContinueAction } from "./browse-idle-actions";
+import {
+  buildCalendarDaysFromOptions,
+  buildCalendarRenderRows,
+  CalendarDayStrip,
+  CalendarScheduleRow,
+  CalendarTypeTabs,
+  CALENDAR_TYPE_TABS,
+  filterCalendarOptionsByDay,
+  filterCalendarOptionsByType,
+  type CalendarTypeTab,
+} from "./calendar-ui";
 import type { ResolvedAppCommand } from "./commands";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { DetailsPaneUI } from "./details-pane-ui";
@@ -1984,8 +1995,9 @@ function BrowseShell<T>({
     "Search for a title — or try /trending to see what's popular",
   );
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
-  // Calendar day strip filter — null means "show all days"
+  // Calendar filters — null day means "show all days"
   const [calendarDayFilter, setCalendarDayFilter] = useState<string | null>(null);
+  const [calendarTypeTab, setCalendarTypeTab] = useState<CalendarTypeTab>("All");
   // In zen/minimal mode, auto-focus the continue-watching row if there's a resumable title and no initial results
   const [idleFocused, setIdleFocused] = useState(
     () =>
@@ -2006,36 +2018,19 @@ function BrowseShell<T>({
   const isCalendarView =
     options.some((opt) => opt.previewGroup !== undefined) || resultSubtitle.includes("schedule");
 
-  // Derive the ordered day list directly from options so labels always match previewGroup (locale-safe)
   const calendarDays = useMemo(() => {
-    if (!isCalendarView) return [] as Array<{ label: string; isToday: boolean }>;
-    const seen = new Set<string>();
-    const days: Array<{ label: string; isToday: boolean }> = [];
-    for (const opt of options) {
-      if (!opt.previewGroup) continue;
-      // previewGroup is e.g. "MON 19" or "MON 19 · Today"
-      const separatorIdx = opt.previewGroup.indexOf(" · ");
-      const weekdayDay =
-        separatorIdx >= 0 ? opt.previewGroup.slice(0, separatorIdx) : opt.previewGroup;
-      const relative = separatorIdx >= 0 ? opt.previewGroup.slice(separatorIdx + 3) : "";
-      if (!weekdayDay || seen.has(weekdayDay)) continue;
-      seen.add(weekdayDay);
-      days.push({ label: weekdayDay, isToday: relative === "Today" });
-    }
-    return days;
-  }, [isCalendarView, options]);
+    if (!isCalendarView) return [];
+    return buildCalendarDaysFromOptions(options, viewport.breakpoint === "narrow");
+  }, [isCalendarView, options, viewport.breakpoint]);
 
-  // Filter options to the selected calendar day when a day filter is active
   const displayOptions = useMemo(() => {
-    if (!isCalendarView || calendarDayFilter === null) return options;
-    return options.filter((opt) => {
-      if (!opt.previewGroup) return false;
-      const separatorIdx = opt.previewGroup.indexOf(" · ");
-      const weekdayDay =
-        separatorIdx >= 0 ? opt.previewGroup.slice(0, separatorIdx) : opt.previewGroup;
-      return weekdayDay === calendarDayFilter;
-    });
-  }, [isCalendarView, calendarDayFilter, options]);
+    if (!isCalendarView) return options;
+    const scheduleOptions = options as readonly BrowseShellOption<
+      import("@/domain/types").SearchResult
+    >[];
+    const typed = filterCalendarOptionsByType(scheduleOptions, calendarTypeTab);
+    return filterCalendarOptionsByDay(typed, calendarDayFilter) as typeof options;
+  }, [calendarDayFilter, calendarTypeTab, isCalendarView, options]);
 
   const clearResults = useCallback(() => {
     setOptions([]);
@@ -2048,6 +2043,7 @@ function BrowseShell<T>({
     setSelectedDetail("Search for a title — or try /trending to see what's popular");
     setActiveFilterBadges([]);
     setCalendarDayFilter(null);
+    setCalendarTypeTab("All");
     setIdleFocused(false);
   }, []);
 
@@ -2466,21 +2462,30 @@ function BrowseShell<T>({
     // Calendar day strip navigation — left/right arrows when in calendar mode
     if (isCalendarView && calendarDays.length > 0 && key.leftArrow) {
       setCalendarDayFilter((current) => {
-        if (current === null) return calendarDays[calendarDays.length - 1]?.label ?? null;
-        const idx = calendarDays.findIndex((d) => d.label === current);
-        return idx > 0 ? (calendarDays[idx - 1]?.label ?? current) : current;
+        if (current === null) return calendarDays[calendarDays.length - 1]?.key ?? null;
+        const idx = calendarDays.findIndex((d) => d.key === current);
+        return idx > 0 ? (calendarDays[idx - 1]?.key ?? current) : current;
       });
       setSelectedIndex(0);
       return;
     }
     if (isCalendarView && calendarDays.length > 0 && key.rightArrow) {
       setCalendarDayFilter((current) => {
-        if (current === null) return calendarDays[0]?.label ?? null;
-        const idx = calendarDays.findIndex((d) => d.label === current);
-        return idx < calendarDays.length - 1 ? (calendarDays[idx + 1]?.label ?? current) : current;
+        if (current === null) return calendarDays[0]?.key ?? null;
+        const idx = calendarDays.findIndex((d) => d.key === current);
+        return idx < calendarDays.length - 1 ? (calendarDays[idx + 1]?.key ?? current) : current;
       });
       setSelectedIndex(0);
       return;
+    }
+
+    if (isCalendarView && !commandMode) {
+      const tabIndex = Number(input) - 1;
+      if (tabIndex >= 0 && tabIndex < CALENDAR_TYPE_TABS.length) {
+        setCalendarTypeTab(CALENDAR_TYPE_TABS[tabIndex] ?? "All");
+        setSelectedIndex(0);
+        return;
+      }
     }
 
     if (key.escape) {
@@ -2650,55 +2655,9 @@ function BrowseShell<T>({
         ) : null}
 
         {isCalendarView && calendarDays.length > 0 && !ultraCompact ? (
-          <Box flexDirection="column" marginTop={1} marginBottom={1}>
-            {/* Day strip */}
-            <Box flexDirection="row" flexWrap="wrap">
-              {calendarDays.map((day) => {
-                const isSelected = calendarDayFilter === day.label;
-                return (
-                  <Box key={day.label} marginRight={3} flexDirection="column">
-                    <Text
-                      color={
-                        isSelected ? palette.teal : day.isToday ? palette.amber : palette.muted
-                      }
-                      bold={isSelected || day.isToday}
-                    >
-                      {day.isToday ? "◉ " : isSelected ? "● " : "  "}
-                      {day.label}
-                    </Text>
-                    {isSelected ? (
-                      <Text color={palette.teal}>{"─".repeat(day.label.length + 2)}</Text>
-                    ) : null}
-                  </Box>
-                );
-              })}
-              {calendarDayFilter !== null ? (
-                <Box marginLeft={1} alignSelf="flex-start">
-                  <Text color={palette.dim} dimColor>
-                    esc · all days
-                  </Text>
-                </Box>
-              ) : (
-                <Box marginLeft={1} alignSelf="flex-start">
-                  <Text color={palette.dim} dimColor>
-                    ← → to filter day
-                  </Text>
-                </Box>
-              )}
-            </Box>
-            {/* Type tabs — visual only; interaction deferred */}
-            {!compact ? (
-              <Box flexDirection="row" marginTop={1}>
-                {(["All", "Anime", "TV", "Movies"] as const).map((tab) => (
-                  <Box key={tab} marginRight={3} flexDirection="column">
-                    <Text color={tab === "All" ? palette.amber : palette.muted}>{tab}</Text>
-                    {tab === "All" ? (
-                      <Text color={palette.amber}>{"─".repeat(tab.length)}</Text>
-                    ) : null}
-                  </Box>
-                ))}
-              </Box>
-            ) : null}
+          <Box flexDirection="column">
+            <CalendarDayStrip days={calendarDays} selectedDayKey={calendarDayFilter} />
+            <CalendarTypeTabs activeTab={calendarTypeTab} compact={compact} />
           </Box>
         ) : null}
 
@@ -2722,51 +2681,55 @@ function BrowseShell<T>({
             {/* Result list */}
             <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
               {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
-              {visibleOptions.map((option, index) => {
-                const optionIndex = windowStart + index;
-                const selected = optionIndex === selectedIndex;
-                const previousGroup =
-                  optionIndex > 0 ? displayOptions[optionIndex - 1]?.previewGroup : null;
-                const showGroupHeader =
-                  option.previewGroup && option.previewGroup !== previousGroup;
-                const metaText = option.previewBadge ?? option.previewMeta?.[0];
-                const metaWidth = metaText ? Math.min(12, Math.max(6, metaText.length)) : 0;
-                const timeText = option.previewTime ?? "";
-                const timeWidth = option.previewTime ? 6 : 0;
-                const titleBudget = Math.max(12, rowWidth - metaWidth - timeWidth - 6);
-                const titleText = truncateLine(option.label, titleBudget);
-                const metaSegment = metaText ? truncateLine(metaText, metaWidth) : "";
-                const titleSegment = timeText
-                  ? `${timeText.padEnd(timeWidth)}  ${titleText}`
-                  : titleText;
-                const rowText = metaText
-                  ? `${titleSegment.padEnd(titleBudget + timeWidth + (timeText ? 2 : 0))} ${metaSegment.padStart(metaWidth)}`
-                  : titleSegment;
+              {isCalendarView
+                ? buildCalendarRenderRows(
+                    displayOptions as readonly BrowseShellOption<
+                      import("@/domain/types").SearchResult
+                    >[],
+                    windowStart,
+                    windowEnd,
+                  ).map((row) => (
+                    <CalendarScheduleRow
+                      key={`${row.option.label}-${row.optionIndex}-${row.timeLabel}`}
+                      option={row.option}
+                      selected={row.optionIndex === selectedIndex}
+                      rowWidth={rowWidth}
+                      showTimeHeader={row.showTimeHeader}
+                      showTbdHeader={row.showTbdHeader}
+                      timeLabel={row.timeLabel}
+                    />
+                  ))
+                : visibleOptions.map((option, index) => {
+                    const optionIndex = windowStart + index;
+                    const selected = optionIndex === selectedIndex;
+                    const metaText = option.previewBadge ?? option.previewMeta?.[0];
+                    const metaWidth = metaText ? Math.min(12, Math.max(6, metaText.length)) : 0;
+                    const titleBudget = Math.max(12, rowWidth - metaWidth - 6);
+                    const titleText = truncateLine(option.label, titleBudget);
+                    const metaSegment = metaText ? truncateLine(metaText, metaWidth) : "";
+                    const rowText = metaText
+                      ? `${titleText.padEnd(titleBudget)} ${metaSegment.padStart(metaWidth)}`
+                      : titleText;
 
-                return (
-                  <Box
-                    key={`${option.label}-${option.detail ?? ""}`}
-                    flexDirection="column"
-                    width={rowWidth}
-                  >
-                    {showGroupHeader ? (
-                      <Text color={palette.amber} bold>
-                        {`  ${option.previewGroup}`}
-                      </Text>
-                    ) : null}
-                    <Box width={rowWidth}>
-                      <Text bold={selected} dimColor={!selected} wrap="truncate">
-                        <Text color={selected ? palette.amber : palette.gray}>
-                          {selected ? "❯ " : "  "}
-                        </Text>
-                        <Text color={selected ? "white" : undefined}>
-                          {truncateLine(rowText, rowWidth - 2).padEnd(rowWidth - 2)}
-                        </Text>
-                      </Text>
-                    </Box>
-                  </Box>
-                );
-              })}
+                    return (
+                      <Box
+                        key={`${option.label}-${option.detail ?? ""}`}
+                        flexDirection="column"
+                        width={rowWidth}
+                      >
+                        <Box width={rowWidth}>
+                          <Text bold={selected} dimColor={!selected} wrap="truncate">
+                            <Text color={selected ? palette.amber : palette.gray}>
+                              {selected ? "❯ " : "  "}
+                            </Text>
+                            <Text color={selected ? "white" : undefined}>
+                              {truncateLine(rowText, rowWidth - 2).padEnd(rowWidth - 2)}
+                            </Text>
+                          </Text>
+                        </Box>
+                      </Box>
+                    );
+                  })}
               {windowEnd < displayOptions.length ? <Text color={palette.gray}> ▼ ...</Text> : null}
             </Box>
 
