@@ -16,6 +16,7 @@ import {
   shouldShowLoadingElapsed,
   stageLabel,
 } from "./loading-shell-runtime";
+import type { StageRailItem } from "./loading-shell-runtime";
 import type { PosterResult, PosterState } from "./poster-types";
 import { ShellFrame } from "./shell-frame";
 import { ContextStrip, DetailLine, LocalSection } from "./shell-primitives";
@@ -143,21 +144,14 @@ function useRuntimeHealthLine(
   return healthLine;
 }
 
-function StageRail({
-  items,
-}: {
-  items: readonly {
-    label: string;
-    tone: "neutral" | "info" | "success" | "warning" | "error";
-  }[];
-}) {
+function StageRail({ items }: { items: readonly StageRailItem[] }) {
   return (
     <Box flexDirection="row">
       {items.map((item, i) => (
         <React.Fragment key={item.label}>
           {i > 0 ? (
             <Text color={palette.dim} dimColor>
-              {" ── "}
+              {"  "}
             </Text>
           ) : null}
           <Text
@@ -165,18 +159,14 @@ function StageRail({
               item.tone === "success"
                 ? palette.green
                 : item.tone === "info"
-                  ? palette.teal
+                  ? palette.amber
                   : item.tone === "warning"
                     ? palette.amber
                     : palette.dim
             }
+            dimColor={item.tone === "neutral"}
           >
-            {item.tone === "success"
-              ? "✓ "
-              : item.tone === "info" || item.tone === "warning"
-                ? "◉ "
-                : "· "}
-            {item.label}
+            {item.glyph} {item.label}
           </Text>
         </React.Fragment>
       ))}

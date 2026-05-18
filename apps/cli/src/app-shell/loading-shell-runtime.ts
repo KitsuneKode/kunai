@@ -1,4 +1,4 @@
-import type { LoadingShellState, ShellStatusTone } from "./types";
+import type { LoadingShellStage, LoadingShellState, ShellStatusTone } from "./types";
 
 export type LoadingShellTimerPolicy = {
   readonly animate: boolean;
@@ -44,13 +44,34 @@ export function shouldShowPlaybackRuntimeStrip(input: {
   );
 }
 
-// ── 3-stage loading UX ──────────────────────────────────────────────────────
+// ── 4-stage loading UX ──────────────────────────────────────────────────────
 
-const STAGE_ORDER: readonly LoadingShellState["stage"][] = [
+const STAGE_ORDER: LoadingShellStage[] = [
   "finding-stream",
+  "preparing-provider",
   "preparing-player",
   "starting-playback",
 ];
+
+const STAGE_GLYPHS: Record<LoadingShellStage, string> = {
+  "finding-stream": "◐",
+  "preparing-provider": "◓",
+  "preparing-player": "◑",
+  "starting-playback": "◒",
+};
+
+const STAGE_LABELS: Record<LoadingShellStage, string> = {
+  "finding-stream": "Resolving",
+  "preparing-provider": "Providers",
+  "preparing-player": "Stream",
+  "starting-playback": "Player",
+};
+
+export type StageRailItem = {
+  label: string;
+  glyph: string;
+  tone: "neutral" | "info" | "success" | "warning" | "error";
+};
 
 export function resolveStageFromOperation(
   operation: LoadingShellState["operation"],
@@ -73,6 +94,8 @@ export function stageLabel(stage: LoadingShellState["stage"]): string {
   switch (stage) {
     case "finding-stream":
       return "finding stream";
+    case "preparing-provider":
+      return "preparing providers";
     case "preparing-player":
       return "preparing player";
     case "starting-playback":
@@ -86,6 +109,8 @@ export function stageDescription(stage: LoadingShellState["stage"]): string {
   switch (stage) {
     case "finding-stream":
       return "Resolving title metadata, provider data, direct links, and subtitles.";
+    case "preparing-provider":
+      return "Selecting provider, resolving direct links, and verifying stream availability.";
     case "preparing-player":
       return "Loading skip timing, building player arguments, and opening IPC socket.";
     case "starting-playback":
@@ -96,25 +121,23 @@ export function stageDescription(stage: LoadingShellState["stage"]): string {
 }
 
 export function renderStageRail(
-  activeStage: LoadingShellState["stage"],
+  activeStage: LoadingShellStage,
   latestIssue: string | null | undefined,
-): readonly { label: string; tone: "neutral" | "info" | "success" | "warning" | "error" }[] {
+): StageRailItem[] {
   const issue = normalizeLoadingIssue(latestIssue);
-  const activeIndex = activeStage ? STAGE_ORDER.indexOf(activeStage) : -1;
-  return STAGE_ORDER.map((stage, index) => {
-    const isActive = index === activeIndex;
-    const isPast = index < activeIndex;
-    let tone: "neutral" | "info" | "success" | "warning" | "error" = isPast
-      ? "success"
-      : isActive
-        ? issue
-          ? "warning"
-          : "info"
-        : "neutral";
-    return {
-      label: stageLabel(stage),
-      tone,
-    };
+  const activeIdx = STAGE_ORDER.indexOf(activeStage);
+  return STAGE_ORDER.map((stage, i) => {
+    if (i < activeIdx) {
+      return { label: STAGE_LABELS[stage], glyph: "✓", tone: "success" };
+    }
+    if (i === activeIdx) {
+      return {
+        label: STAGE_LABELS[stage],
+        glyph: STAGE_GLYPHS[stage],
+        tone: issue ? "warning" : "info",
+      };
+    }
+    return { label: STAGE_LABELS[stage], glyph: "·", tone: "neutral" };
   });
 }
 
@@ -233,6 +256,8 @@ export function getStageAnimationVariant(
   switch (stage) {
     case "finding-stream":
       return "echo-ring";
+    case "preparing-provider":
+      return "pulse-grid";
     case "preparing-player":
       return "neon-drift";
     case "starting-playback":

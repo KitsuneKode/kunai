@@ -5,6 +5,7 @@ import {
   getProviderResolveWaitPresentation,
   normalizeLoadingIssue,
   normalizeProviderDetail,
+  renderStageRail,
   shouldShowPlaybackRuntimeStrip,
   shouldShowLoadingElapsed,
 } from "@/app-shell/loading-shell-runtime";
@@ -191,5 +192,27 @@ VmSwap:\t128 kB
         appSwapBytes: 7_118_108 * 1024,
       }),
     ).toBe("App 9.8 GiB · mpv 601.7 MiB · total 10.4 GiB · heap 80.0/128.0 MiB · swap 6.8 GiB");
+  });
+});
+
+describe("renderStageRail — 4-stage spec", () => {
+  test("active stage uses ◐/◓/◑/◒ glyph prefix", () => {
+    const items = renderStageRail("finding-stream", null);
+    const activeItem = items.find((i) => i.tone === "info" || i.tone === "warning");
+    expect(activeItem?.glyph).toMatch(/[◐◓◑◒]/u);
+  });
+
+  test("completed stages show ✓ prefix", () => {
+    const items = renderStageRail("preparing-player", null);
+    const done = items.filter((i) => i.tone === "success");
+    expect(done.length).toBeGreaterThan(0);
+    done.forEach((i) => expect(i.glyph).toBe("✓"));
+  });
+
+  test("pending stages show · prefix in dim tone", () => {
+    const items = renderStageRail("finding-stream", null);
+    const pending = items.filter((i) => i.tone === "neutral");
+    expect(pending.length).toBeGreaterThan(0);
+    pending.forEach((i) => expect(i.glyph).toBe("·"));
   });
 });

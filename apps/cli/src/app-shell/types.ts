@@ -117,13 +117,17 @@ export type PlaybackRecommendationRailItem = {
   readonly episodeCount?: number;
 };
 
-export type LoadingShellStage = "finding-stream" | "preparing-player" | "starting-playback";
+export type LoadingShellStage =
+  | "finding-stream" // ◐ Resolving
+  | "preparing-provider" // ◓ Providers  (new)
+  | "preparing-player" // ◑ Stream
+  | "starting-playback"; // ◒ Player
 
 export type LoadingShellState = {
   title: string;
   subtitle?: string;
   operation: "resolving" | "playing" | "loading";
-  /** High-level stage label for the 3-stage loading UX. */
+  /** High-level stage label for the 4-stage loading UX. */
   stage?: LoadingShellStage;
   /** Human-readable sub-status within the current stage (e.g. "Resolving direct link…"). */
   stageDetail?: string;
