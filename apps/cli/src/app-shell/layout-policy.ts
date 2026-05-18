@@ -1,8 +1,11 @@
 export type ShellViewportKind = "browse" | "picker" | "playback";
 
+export type ShellViewportBreakpoint = "narrow" | "medium" | "wide" | "blocked";
+
 export type ShellViewportPolicy = {
   columns: number;
   rows: number;
+  breakpoint: ShellViewportBreakpoint;
   compact: boolean;
   ultraCompact: boolean;
   tooSmall: boolean;
@@ -13,21 +16,24 @@ export type ShellViewportPolicy = {
   maxVisibleRows: number;
 };
 
-/** Minimum dimensions per shell kind. Picker needs more rows for list + header + footer. */
+const GLOBAL_BLOCKED_MIN_COLS = 60;
+const GLOBAL_BLOCKED_MIN_ROWS = 20;
+
+/** Minimum dimensions per shell kind. */
 const KIND_MINIMUMS: Record<ShellViewportKind, { minColumns: number; minRows: number }> = {
-  browse: { minColumns: 80, minRows: 20 },
-  picker: { minColumns: 80, minRows: 24 },
-  playback: { minColumns: 92, minRows: 22 },
+  browse: { minColumns: 60, minRows: 20 },
+  picker: { minColumns: 60, minRows: 20 },
+  playback: { minColumns: 60, minRows: 20 },
 };
 
 /**
  * Compute viewport policy for a given shell kind and terminal dimensions.
  *
  * Breakpoints:
- * - ultraCompact: <92 cols or <28 rows  (list-only, no companion, minimal chrome)
- * - compact:      <110 cols or <34 rows (reduced chrome, no side companion)
- * - mediumBrowse: 110-139 cols + >=30 rows  (compact side companion with small poster)
- * - wideBrowse:     140+ cols + >=30 rows   (full side companion with poster)
+ * - blocked: <60 cols or <20 rows → show resize blocker, no content
+ * - narrow:  60–79 cols → companion hidden, compact footer
+ * - medium:  80–119 cols → compact companion below list
+ * - wide:    120+ cols → full companion right pane with poster
  */
 export function getShellViewportPolicy(
   kind: ShellViewportKind,
@@ -36,55 +42,48 @@ export function getShellViewportPolicy(
   options: { forceCompact?: boolean } = {},
 ): ShellViewportPolicy {
   const forceCompact = options.forceCompact ?? false;
-  const compact = forceCompact || columns < 110 || rows < 34;
-  const ultraCompact = forceCompact || columns < 92 || rows < 28;
-  const wideBrowse = !forceCompact && kind === "browse" && columns >= 140 && rows >= 30;
-  const mediumBrowse =
-    !forceCompact && kind === "browse" && !wideBrowse && columns >= 110 && rows >= 30;
+
+  const blocked =
+    forceCompact || columns < GLOBAL_BLOCKED_MIN_COLS || rows < GLOBAL_BLOCKED_MIN_ROWS;
+  const narrow = !blocked && columns < 80;
+  const medium = !blocked && !narrow && columns < 120;
+  const wide = !blocked && !narrow && !medium;
+
+  const breakpoint: ShellViewportBreakpoint = blocked
+    ? "blocked"
+    : narrow
+      ? "narrow"
+      : medium
+        ? "medium"
+        : "wide";
+
+  // Legacy compat flags — derived from new breakpoints so existing callers still work
+  const compact = blocked || narrow;
+  const ultraCompact = blocked;
+
+  // Browse companion flags
+  // wideBrowse: right-pane companion at wide (120+) — kept as compat flag for existing callers
+  // mediumBrowse: compact companion below list at medium (80–119) — kept as compat flag for existing callers
+  const wideBrowse = !blocked && kind === "browse" && wide;
+  const mediumBrowse = !blocked && kind === "browse" && medium;
 
   const { minColumns, minRows } = KIND_MINIMUMS[kind];
+  const tooSmall = blocked || columns < minColumns || rows < minRows;
 
-  if (kind === "picker") {
-    return {
-      columns,
-      rows,
-      compact,
-      ultraCompact,
-      tooSmall: columns < minColumns || rows < minRows,
-      wideBrowse: false,
-      mediumBrowse: false,
-      minColumns,
-      minRows,
-      maxVisibleRows: Math.max(5, rows - (ultraCompact ? 18 : compact ? 22 : 26)),
-    };
-  }
-
-  if (kind === "browse") {
-    return {
-      columns,
-      rows,
-      compact,
-      ultraCompact,
-      tooSmall: columns < minColumns || rows < minRows,
-      wideBrowse,
-      mediumBrowse,
-      minColumns,
-      minRows,
-      maxVisibleRows: Math.max(5, rows - (compact ? 13 : 18)),
-    };
-  }
+  const maxVisibleRowsBase = blocked || narrow ? 10 : medium ? 14 : 18;
 
   return {
     columns,
     rows,
+    breakpoint,
     compact,
     ultraCompact,
-    tooSmall: columns < minColumns || rows < minRows,
-    wideBrowse: false,
-    mediumBrowse: false,
+    tooSmall,
+    wideBrowse,
+    mediumBrowse,
     minColumns,
     minRows,
-    maxVisibleRows: Math.max(4, rows - (ultraCompact ? 16 : compact ? 18 : 20)),
+    maxVisibleRows: Math.max(5, rows - maxVisibleRowsBase),
   };
 }
 
@@ -113,7 +112,7 @@ export function getPickerLayout(
   const companionWidth = showCompanion ? Math.max(30, Math.floor(innerWidth * 0.32)) : 0;
   const listWidth = showCompanion ? Math.max(36, innerWidth - companionWidth - 3) : innerWidth;
   const rowWidth = Math.max(20, listWidth - 4);
-  const maxVisible = Math.max(5, rows - (columns < 92 || rows < 28 ? 18 : columns < 110 ? 22 : 26));
+  const maxVisible = Math.max(5, rows - (columns < 80 || rows < 20 ? 10 : columns < 120 ? 14 : 18));
 
   return { innerWidth, listWidth, companionWidth, rowWidth, showCompanion, maxVisible };
 }
