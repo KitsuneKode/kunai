@@ -1,5 +1,28 @@
 import type { BrowseShellOption, ShellPanelLine } from "@/app-shell/types";
 
+export type DetailsPanelPrimary = {
+  title: string;
+  type: "movie" | "series";
+  year?: string;
+  genres?: string[];
+  synopsis?: string;
+  posterPath?: string | null;
+};
+
+export type DetailsPanelSecondary = {
+  seriesState: "airing" | "ended" | "complete" | "upcoming" | null;
+  nextAirDate?: string;
+  watchedEpisodes?: number;
+  totalEpisodes?: number;
+  providers?: string[];
+  subtitleLanguages?: string[];
+};
+
+export type DetailsPanelData = {
+  primary: DetailsPanelPrimary;
+  secondary: DetailsPanelSecondary | null; // null = still loading
+};
+
 const POSTER_AVAILABLE = "Poster available for companion preview";
 const POSTER_MISSING = "Poster unavailable from this provider";
 const LOCAL_FACT_LABELS = new Set(["Local progress", "Offline"]);
