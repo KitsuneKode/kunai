@@ -2,6 +2,12 @@ import type { SessionState } from "@/domain/session/SessionState";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+export type ErrorScenario =
+  | { kind: "provider-timeout"; providerName: string; elapsedSec: number }
+  | { kind: "stream-broken"; attempt: number; maxAttempts: number }
+  | { kind: "network-offline" }
+  | { kind: "title-unavailable"; title: string };
+
 import { LocalSection } from "./shell-primitives";
 import { palette } from "./shell-theme";
 
@@ -71,12 +77,63 @@ export function RootIdleShell({ state }: { state: SessionState }) {
   );
 }
 
+function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
+  switch (scenario.kind) {
+    case "provider-timeout":
+      return (
+        <Box flexDirection="column">
+          <Text color={palette.amber}>
+            {"◌  timed out after "}
+            {scenario.elapsedSec}
+            {"s"}
+          </Text>
+          <Text color={palette.dim} dimColor>
+            {scenario.providerName}
+          </Text>
+          <Text color={palette.dim} dimColor>
+            r retry · /fallback for another provider
+          </Text>
+        </Box>
+      );
+    case "stream-broken":
+      return (
+        <Box flexDirection="column">
+          <Text color={palette.amber}>{"⚠  stream interrupted"}</Text>
+          <Text color={palette.dim} dimColor>
+            {`attempt ${scenario.attempt} of ${scenario.maxAttempts}`}
+          </Text>
+          <Text color={palette.dim} dimColor>
+            r retry · /recover to refresh the stream
+          </Text>
+        </Box>
+      );
+    case "network-offline":
+      return (
+        <Box flexDirection="column">
+          <Text color={palette.dim}>{"○  offline"}</Text>
+          <Text color={palette.amber}>/library for downloaded titles</Text>
+        </Box>
+      );
+    case "title-unavailable":
+      return (
+        <Box flexDirection="column">
+          <Text color={palette.dim}>{`◌  ${scenario.title} not found`}</Text>
+          <Text color={palette.dim} dimColor>
+            r retry · /watchlist to save for later
+          </Text>
+        </Box>
+      );
+  }
+}
+
 export function ErrorShell({
   message,
+  scenario,
   onResolve,
   onRetry,
 }: {
   message: string;
+  scenario?: ErrorScenario;
   onResolve: () => void;
   onRetry?: () => void;
 }) {
@@ -97,7 +154,11 @@ export function ErrorShell({
         <Text color={palette.red} bold>
           Playback failed
         </Text>
-        <Text color={palette.text}>{message}</Text>
+        {scenario ? (
+          <ScenarioDetail scenario={scenario} />
+        ) : (
+          <Text color={palette.text}>{message}</Text>
+        )}
         <Box marginTop={1}>
           <Text color={palette.gray} dimColor>
             {onRetry ? "r retry  ·  Enter / Esc dismiss" : "Enter / Esc to continue"}
