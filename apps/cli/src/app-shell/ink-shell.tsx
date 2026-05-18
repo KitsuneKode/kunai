@@ -2680,7 +2680,7 @@ function BrowseShell<T>({
           </Box>
         ) : null}
 
-        {tooSmall ? (
+        {viewport.breakpoint === "blocked" ? (
           <ResizeBlocker
             columns={viewport.columns}
             rows={viewport.rows}
@@ -2909,11 +2909,8 @@ function BrowseShell<T>({
       {_settings?.discoverShowOnStartup && (
         <Text color={palette.dim}>/ recommendation · based on your history</Text>
       )}
-      <ShellFooter
-        taskLabel={options.length > 0 && !queryDirty ? "Browse" : "Search"}
-        mode={effectiveFooterMode}
-        commandMode={commandMode}
-        actions={[
+      {(() => {
+        const allBrowseFooterActions: readonly FooterAction[] = [
           {
             key: "enter",
             label: options.length > 0 && !queryDirty ? "open" : "search",
@@ -2937,8 +2934,20 @@ function BrowseShell<T>({
             ? [{ key: "q", label: "queue", action: "playlist" as const }]
             : []),
           { key: "esc", label: "clear/back", action: "quit" },
-        ]}
-      />
+        ];
+        const visibleBrowseFooterActions =
+          viewport.breakpoint === "narrow"
+            ? allBrowseFooterActions.slice(0, 3)
+            : allBrowseFooterActions;
+        return (
+          <ShellFooter
+            taskLabel={options.length > 0 && !queryDirty ? "Browse" : "Search"}
+            mode={effectiveFooterMode}
+            commandMode={commandMode}
+            actions={visibleBrowseFooterActions}
+          />
+        );
+      })()}
     </Box>
   );
 }
