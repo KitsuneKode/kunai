@@ -17,7 +17,7 @@ SLICE_ID: P2
 SLICE_STATUS: in-progress
 SLICE_OWNER: codex
 SLICE_LAST_UPDATED: 2026-05-19
-SLICE_CURRENT_TASK: P2-T1
+SLICE_CURRENT_TASK: P2-T5
 SLICE_BLOCKERS: none
 ```
 
@@ -61,12 +61,14 @@ Add optional structured fields:
 
 ### P2-T1: Add Additive Shared Types
 
-- [ ] Add `ProviderExternalIds`, `ProviderReleaseInfo`, `ProviderArtworkInfo`, and language/source evidence types in `packages/types/src/index.ts`.
-- [ ] Add optional fields to `TitleIdentity`, `ProviderSearchResult`, `ProviderEpisodeOption`, `ProviderResolveResult`, `StreamCandidate`, `ProviderSourceCandidate`, and `ProviderVariantCandidate` only where useful.
-- [ ] Preserve all existing fields.
-- [ ] Run `bun run --cwd packages/types test`.
-- [ ] Run `bun run --cwd packages/types typecheck`.
-- [ ] Commit with message `feat(types): add provider metadata v2 fields`.
+- [x] Add `ProviderExternalIds`, `ProviderReleaseInfo`, `ProviderArtworkInfo`, and language/source evidence types in `packages/types/src/index.ts`.
+- [x] Add optional fields to `TitleIdentity`, `ProviderSearchResult`, `ProviderEpisodeOption`, `ProviderResolveResult`, `StreamCandidate`, `ProviderSourceCandidate`, and `ProviderVariantCandidate` only where useful.
+- [x] Preserve all existing fields.
+- [x] Run `bun run --cwd packages/types test`.
+- [x] Run `bun run --cwd packages/types typecheck`.
+- [x] Commit with message `feat(types): add provider metadata v2 fields`.
+
+Completed in `e23604a`.
 
 Minimum type shape:
 
@@ -95,29 +97,35 @@ export interface ProviderArtworkInfo {
 
 ### P2-T2: Add Schemas And Compatibility Tests
 
-- [ ] Add matching schemas in `packages/schemas/src/index.ts`.
-- [ ] Add tests proving old payloads still parse.
-- [ ] Add tests proving new optional fields parse.
-- [ ] Run `bun run --cwd packages/schemas test`.
-- [ ] Run `bun run --cwd packages/schemas typecheck`.
-- [ ] Commit with message `feat(schemas): validate provider metadata v2 fields`.
+- [x] Add matching schemas in `packages/schemas/src/index.ts`.
+- [x] Add tests proving old payloads still parse.
+- [x] Add tests proving new optional fields parse.
+- [x] Run `bun run --cwd packages/schemas test`.
+- [x] Run `bun run --cwd packages/schemas typecheck`.
+- [x] Commit with message `feat(schemas): validate provider metadata v2 fields`.
+
+Completed in `1aef4fb`.
 
 ### P2-T3: Thread App-Domain Fields
 
-- [ ] Add optional external ID/release/artwork fields to `TitleInfo`, `SearchResult`, and `EpisodeInfo` in `apps/cli/src/domain/types.ts`.
-- [ ] Thread fields through provider adapters without requiring them.
-- [ ] Add unit tests in `apps/cli/test/unit/services/providers/provider-registry.test.ts` or a new adapter test if one exists.
-- [ ] Run `bun run --cwd apps/cli test:unit`.
-- [ ] Commit with message `feat(cli): preserve provider metadata through adapters`.
+- [x] Add optional external ID/release/artwork fields to `TitleInfo`, `SearchResult`, and `EpisodeInfo` in `apps/cli/src/domain/types.ts`.
+- [x] Thread fields through provider adapters without requiring them.
+- [x] Add unit tests in `apps/cli/test/unit/services/providers/provider-registry.test.ts` or a new adapter test if one exists.
+- [x] Run `bun run --cwd apps/cli test:unit`.
+- [x] Commit with message `feat(cli): preserve provider metadata through adapters`.
+
+Completed in `ffb583e`.
 
 ### P2-T4: Add History Fields Safely
 
-- [ ] Add nullable columns through a new migration id, for example `00x_data_history_external_ids`.
-- [ ] Add optional fields to `HistoryProgressInput` and `HistoryProgress`.
-- [ ] Update `HistoryRepository.upsertProgress` and row mapping compatibly.
-- [ ] Add storage tests for old rows and new rows.
-- [ ] Run `bun run --cwd packages/storage test`.
-- [ ] Commit with message `feat(storage): persist provider external ids in history`.
+- [x] Add nullable columns through a new migration id, for example `00x_data_history_external_ids`.
+- [x] Add optional fields to `HistoryProgressInput` and `HistoryProgress`.
+- [x] Update `HistoryRepository.upsertProgress` and row mapping compatibly.
+- [x] Add storage tests for old rows and new rows.
+- [x] Run `bun run --cwd packages/storage test`.
+- [x] Commit with message `feat(storage): persist provider external ids in history`.
+
+Completed in `716bb12`.
 
 ### P2-T5: Make Third-Party Metadata Fetch Fallback-Only
 
