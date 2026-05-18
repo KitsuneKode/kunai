@@ -9,6 +9,7 @@ import {
   shouldShowPlaybackRuntimeStrip,
   shouldShowLoadingElapsed,
 } from "@/app-shell/loading-shell-runtime";
+import type { LoadingShellStage } from "@/app-shell/types";
 import {
   formatRuntimeMemory,
   parseProcStatus,
@@ -214,5 +215,11 @@ describe("renderStageRail — 4-stage spec", () => {
     const pending = items.filter((i) => i.tone === "neutral");
     expect(pending.length).toBeGreaterThan(0);
     pending.forEach((i) => expect(i.glyph).toBe("·"));
+  });
+
+  test("unknown stage falls back to first stage as active", () => {
+    const items = renderStageRail("unknown-stage" as LoadingShellStage, null);
+    expect(items[0]?.tone).toBe("info");
+    expect(items[1]?.tone).toBe("neutral");
   });
 });

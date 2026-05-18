@@ -46,7 +46,10 @@ export function shouldShowPlaybackRuntimeStrip(input: {
 
 // ── 4-stage loading UX ──────────────────────────────────────────────────────
 
-const STAGE_ORDER: LoadingShellStage[] = [
+// Note: "preparing-provider" is wired in type/records but not yet emitted by any caller.
+// Callers currently jump from "finding-stream" to "preparing-player".
+// Will be connected when provider-resolution telemetry is plumbed in.
+const STAGE_ORDER: readonly LoadingShellStage[] = [
   "finding-stream",
   "preparing-provider",
   "preparing-player",
@@ -126,11 +129,13 @@ export function renderStageRail(
 ): StageRailItem[] {
   const issue = normalizeLoadingIssue(latestIssue);
   const activeIdx = STAGE_ORDER.indexOf(activeStage);
+  // Unknown stage: treat as first stage active to avoid silent all-neutral rail
+  const safeIdx = activeIdx === -1 ? 0 : activeIdx;
   return STAGE_ORDER.map((stage, i) => {
-    if (i < activeIdx) {
+    if (i < safeIdx) {
       return { label: STAGE_LABELS[stage], glyph: "✓", tone: "success" };
     }
-    if (i === activeIdx) {
+    if (i === safeIdx) {
       return {
         label: STAGE_LABELS[stage],
         glyph: STAGE_GLYPHS[stage],

@@ -158,11 +158,9 @@ function StageRail({ items }: { items: readonly StageRailItem[] }) {
             color={
               item.tone === "success"
                 ? palette.green
-                : item.tone === "info"
+                : item.tone === "info" || item.tone === "warning"
                   ? palette.amber
-                  : item.tone === "warning"
-                    ? palette.amber
-                    : palette.dim
+                  : palette.dim
             }
             dimColor={item.tone === "neutral"}
           >
