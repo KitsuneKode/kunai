@@ -71,6 +71,20 @@ describe("offline-library helpers", () => {
     ).toContain("subtitles cached");
   });
 
+  test("secondary line distinguishes completed videos with sidecar notes", () => {
+    expect(
+      formatOfflineSecondaryLine(
+        minimalJob({
+          id: "1",
+          status: "completed-with-notes",
+          artifactStatus: "optional-missing",
+          outputPath: "/downloads/x.mp4",
+        }),
+        "ready",
+      ),
+    ).toContain("video ready, optional artwork missing");
+  });
+
   test("offline shelf copy surfaces readiness before filesystem noise", () => {
     const job = minimalJob({
       id: "1",

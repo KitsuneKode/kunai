@@ -39,10 +39,10 @@ export class OfflineLibraryService {
 
     const entries: OfflineLibraryEntry[] = [];
     for (const job of completed) {
-      if (isArtifactCacheFresh(job) && job.artifactStatus) {
+      if (isArtifactCacheFresh(job) && isOfflineArtifactStatus(job.artifactStatus)) {
         entries.push({
           job,
-          status: job.artifactStatus as OfflineArtifactStatus,
+          status: job.artifactStatus,
         });
         continue;
       }
@@ -66,7 +66,9 @@ export class OfflineLibraryService {
   > {
     const job = this.deps.downloadService.getJob(jobId);
     if (!job) return { status: "not-found" };
-    if (job.status !== "completed") return { status: "not-completed", job };
+    if (job.status !== "completed" && job.status !== "completed-with-notes") {
+      return { status: "not-completed", job };
+    }
 
     const artifactStatus = await resolveOfflineArtifactStatus(job);
     if (artifactStatus !== "ready") return { status: artifactStatus, job };
@@ -95,6 +97,10 @@ export class OfflineLibraryService {
     });
     return true;
   }
+}
+
+function isOfflineArtifactStatus(value: unknown): value is OfflineArtifactStatus {
+  return value === "ready" || value === "missing" || value === "invalid-file";
 }
 
 function dedupeCompletedJobs(jobs: readonly DownloadJobRecord[]): readonly DownloadJobRecord[] {

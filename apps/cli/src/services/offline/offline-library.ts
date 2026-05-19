@@ -135,6 +135,7 @@ export function formatOfflineSecondaryLine(
     typeof job.fileSize === "number" ? `${(job.fileSize / 1_048_576).toFixed(1)} MB` : null;
   const duration = formatOfflineMediaDuration(job.durationMs);
   const subtitleLabel = job.subtitlePath ? "subtitles cached" : "no subtitles cached";
+  const sidecarNote = formatDownloadSidecarNote(job);
   const timingLabel = job.introSkipJson ? "timing cached" : null;
   const artworkLabel = job.thumbnailPath
     ? "thumbnail ready"
@@ -146,6 +147,7 @@ export function formatOfflineSecondaryLine(
     duration,
     sizeMb,
     subtitleLabel,
+    sidecarNote,
     timingLabel,
     artworkLabel,
     basename(dirname(job.outputPath)),
@@ -171,11 +173,26 @@ export function formatOfflineShelfDetail(
     formatOfflineMediaDuration(job.durationMs),
     typeof job.fileSize === "number" ? `${(job.fileSize / 1_048_576).toFixed(1)} MB` : null,
     job.subtitlePath ? "subtitles cached" : "no subtitles cached",
+    formatDownloadSidecarNote(job),
     job.introSkipJson ? "timing cached" : null,
     job.thumbnailPath ? "thumbnail ready" : job.posterUrl ? "poster cached" : null,
     status === "ready" ? basename(dirname(job.outputPath)) : offlineStatusLabel(status),
   ].filter(Boolean);
   return parts.join(" · ");
+}
+
+function formatDownloadSidecarNote(job: DownloadJobRecord): string | null {
+  if (job.status === "repairable") {
+    return job.artifactStatus === "expected-missing"
+      ? "video ready, sidecar repair needed"
+      : "sidecar repair needed";
+  }
+  if (job.status === "completed-with-notes") {
+    return job.artifactStatus === "optional-missing"
+      ? "video ready, optional artwork missing"
+      : "video ready with notes";
+  }
+  return null;
 }
 
 export function formatOfflineMediaDuration(durationMs?: number): string | null {

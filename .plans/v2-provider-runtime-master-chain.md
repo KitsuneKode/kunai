@@ -18,8 +18,8 @@ Update this block as work proceeds. Keep commits scoped to one slice unless a te
 TRACKER_STATUS: in-progress
 TRACKER_OWNER: codex
 TRACKER_LAST_UPDATED: 2026-05-19
-TRACKER_CURRENT_SLICE: P5-download-artifact-recovery
-TRACKER_NEXT_SLICE: P5-T1-recovery-state-model
+TRACKER_CURRENT_SLICE: P6-search-filter-state
+TRACKER_NEXT_SLICE: P6-T1-filter-domain
 TRACKER_BLOCKERS: none
 ```
 
@@ -51,7 +51,7 @@ Status values:
 | P2  | [Provider Contract V2](./provider-contract-v2.md)                           | implemented | additive contracts and schemas                         |
 | P3  | [Provider Evidence Fixtures](./provider-evidence-fixtures.md)               | implemented | fixture tests, no runtime behavior change              |
 | P4  | [Provider UI Projection Contract](./provider-ui-projection-contract.md)     | implemented | projection types, mapper, shell wiring, diagnostics    |
-| P5  | [Download Artifact Recovery](./download-artifact-recovery.md)               | planned     | storage/service sidecar status                         |
+| P5  | [Download Artifact Recovery](./download-artifact-recovery.md)               | implemented | storage/service sidecar status                         |
 | P6  | [Search Filter State](./search-filter-state.md)                             | planned     | search intent/filter domain                            |
 | P7  | [Cache and MPV Runtime Policy](./cache-and-mpv-runtime.md)                  | planned     | cache identity/diagnostics                             |
 | P8  | [Post-Playback Fast Path](./post-playback-fast-path.md)                     | planned     | UX latency fix, no provider contract dependency        |

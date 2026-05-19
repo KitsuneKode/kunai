@@ -14,10 +14,10 @@
 
 ```text
 SLICE_ID: P5
-SLICE_STATUS: planned
-SLICE_OWNER: unassigned
-SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P5-T1
+SLICE_STATUS: implemented
+SLICE_OWNER: codex
+SLICE_LAST_UPDATED: 2026-05-19
+SLICE_CURRENT_TASK: none
 SLICE_BLOCKERS: none
 ```
 
@@ -47,28 +47,34 @@ Do not change provider resolution in this slice.
 
 ### P5-T1: Expand Storage Statuses Additively
 
-- [ ] Extend `DownloadJobStatus` with `completed-with-notes` and `repairable`.
-- [ ] Extend artifact status with `optional-missing`, `expected-missing`, `failed`, and `not-applicable`.
-- [ ] Add nullable repair metadata through a new migration.
-- [ ] Add storage tests for old rows and new statuses.
-- [ ] Run `bun run --cwd packages/storage test`.
-- [ ] Commit with message `feat(storage): add repairable download artifact states`.
+- [x] Extend `DownloadJobStatus` with `completed-with-notes` and `repairable`.
+- [x] Extend artifact status with `optional-missing`, `expected-missing`, `failed`, and `not-applicable`.
+- [x] Add nullable repair metadata through a new migration.
+- [x] Add storage tests for old rows and new statuses.
+- [x] Run `bun run --cwd packages/storage test`.
+- [x] Commit with message `feat(storage): add repairable download artifact states`.
 
 ### P5-T2: Teach DownloadService Sidecar Semantics
 
-- [ ] Mark hardsub/no-external-subtitle as `not-applicable` or `optional-missing`.
-- [ ] Mark expected soft subtitle failure as `repairable` without redownloading video.
-- [ ] Keep required video failure as `failed`.
-- [ ] Add service tests for hardsub, softsub missing, optional artwork missing, and repair retry.
-- [ ] Run `bun run --cwd apps/cli test:unit`.
-- [ ] Commit with message `feat(downloads): preserve video when sidecars fail`.
+- [x] Mark hardsub/no-external-subtitle as `not-applicable` or `optional-missing`.
+- [x] Mark expected soft subtitle failure as `repairable` without redownloading video.
+- [x] Keep required video failure as `failed`.
+- [x] Add service tests for hardsub, softsub missing, optional artwork missing, and repair retry.
+- [x] Run `bun run --cwd apps/cli test:unit`.
+- [x] Commit with message `feat(downloads): preserve video when sidecars fail`.
 
 ### P5-T3: Surface Recovery Clearly
 
-- [ ] Update `/downloads` or download panel copy to separate video failure from sidecar notes.
-- [ ] Add diagnostics copy for repairable sidecars.
-- [ ] Run `bun run --cwd apps/cli test:unit`.
-- [ ] Commit with message `feat(downloads): show repairable sidecar status`.
+- [x] Update `/downloads` or download panel copy to separate video failure from sidecar notes.
+- [x] Add diagnostics copy for repairable sidecars.
+- [x] Run `bun run --cwd apps/cli test:unit`.
+- [x] Commit with message `feat(downloads): show repairable sidecar status`.
+
+## Implementation Notes
+
+- Storage migration `015_data_download_jobs_repair_metadata` is additive and does not rewrite existing rows.
+- `DownloadService.retry()` repairs `repairable` and `completed-with-notes` sidecars without re-running `yt-dlp`; only ordinary failed/aborted jobs are requeued for a full download.
+- `/downloads`, diagnostics, and offline-library copy now distinguish required video failure from optional sidecar notes.
 
 ## Stop Conditions
 

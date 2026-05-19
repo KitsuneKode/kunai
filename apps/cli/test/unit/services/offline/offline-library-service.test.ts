@@ -120,6 +120,23 @@ describe("OfflineLibraryService", () => {
     });
   });
 
+  test("completed downloads with optional sidecar notes remain playable", async () => {
+    const record = job({
+      status: "completed-with-notes",
+      artifactStatus: "optional-missing",
+    });
+    const service = new OfflineLibraryService({
+      downloadService: {
+        getJob: () => record,
+      } as unknown as DownloadService,
+      historyStore: {} as HistoryStore,
+    });
+
+    const playable = await service.getPlayableSource(record.id);
+
+    expect(playable.status).toBe("ready");
+  });
+
   test("persists offline playback progress to history", async () => {
     const saves: { id: string; entry: HistoryEntry }[] = [];
     const service = new OfflineLibraryService({

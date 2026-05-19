@@ -778,7 +778,7 @@ export async function openOfflineLibraryGroupPicker(
       return;
     }
     const job = container.downloadService.getJob(picked.id);
-    if (!job || job.status !== "completed") continue;
+    if (!job || (job.status !== "completed" && job.status !== "completed-with-notes")) continue;
 
     const playable = await container.offlineLibraryService.getPlayableSource(job.id);
     const artifactStatus = playable.status === "ready" ? "ready" : playable.status;
@@ -808,8 +808,11 @@ export async function openOfflineLibraryGroupPicker(
         { value: "reveal", label: "Reveal folder", detail: dirname(job.outputPath) },
         {
           value: "retry",
-          label: "Re-download",
-          detail: "Queue a fresh attempt from stored download intent",
+          label: job.status === "completed-with-notes" ? "Repair sidecars" : "Re-download",
+          detail:
+            job.status === "completed-with-notes"
+              ? "Retry optional subtitle or artwork sidecars without replacing the video"
+              : "Queue a fresh attempt from stored download intent",
         },
         {
           value: "delete-artifact",
@@ -872,10 +875,13 @@ export async function openOfflineLibraryGroupPicker(
       continue;
     }
     if (action === "retry") {
-      container.downloadService.retry(job.id);
+      await container.downloadService.retry(job.id);
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
-        note: `Re-download queued: ${formatOfflineJobListingTitle(job)}`,
+        note:
+          job.status === "completed-with-notes"
+            ? `Sidecar repair checked: ${formatOfflineJobListingTitle(job)}`
+            : `Re-download queued: ${formatOfflineJobListingTitle(job)}`,
       });
       void container.downloadService.processQueue();
       continue;

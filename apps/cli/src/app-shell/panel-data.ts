@@ -411,7 +411,7 @@ export function buildDiagnosticsPanelLines({
     {
       label: "Queue",
       detail: downloadSummary
-        ? `${downloadSummary.active} active  ·  ${downloadSummary.failed ?? 0} failed  ·  ${downloadSummary.completed} completed`
+        ? `${downloadSummary.active} active  ·  ${downloadSummary.failed ?? 0} need attention  ·  ${downloadSummary.completed} completed`
         : "queue status unavailable",
       tone: downloadSummary && downloadSummary.active > 0 ? "info" : "neutral",
     },
@@ -556,7 +556,7 @@ function buildDiagnosticsHealthSummary({
       label: "Downloads",
       detail: downloadSummary
         ? failedDownloads > 0
-          ? `Needs attention  ·  ${failedDownloads} failed job${failedDownloads === 1 ? "" : "s"}`
+          ? `Needs attention  ·  ${failedDownloads} download job${failedDownloads === 1 ? "" : "s"}`
           : downloadSummary.active > 0
             ? `OK  ·  ${downloadSummary.active} active job${downloadSummary.active === 1 ? "" : "s"}`
             : "OK  ·  queue idle"

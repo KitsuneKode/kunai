@@ -102,7 +102,11 @@ export function DownloadManagerContent({
       }
       if (confirmingDeleteIndex === selectedIndex) {
         setConfirmingDeleteIndex(null);
-        const deleteArtifact = job.status === "failed" || job.status === "completed";
+        const deleteArtifact =
+          job.status === "failed" ||
+          job.status === "repairable" ||
+          job.status === "completed" ||
+          job.status === "completed-with-notes";
         void container.downloadService.deleteJob(job.id, { deleteArtifact });
         return;
       }
@@ -116,15 +120,15 @@ export function DownloadManagerContent({
       const job = allJobs[selectedIndex];
       if (!job) return;
 
-      if (key.return && job.status === "completed") {
+      if (key.return && (job.status === "completed" || job.status === "completed-with-notes")) {
         void import("./workflows").then(({ playCompletedDownload }) =>
           playCompletedDownload(container, job.id),
         );
         return;
       }
 
-      if (job.status === "failed" || job.status === "aborted") {
-        container.downloadService.retry(job.id);
+      if (job.status === "failed" || job.status === "repairable" || job.status === "aborted") {
+        void container.downloadService.retry(job.id);
         void container.downloadService.processQueue();
       }
       return;
@@ -162,9 +166,13 @@ export function DownloadManagerContent({
           ? "⏳ queued"
           : job.status === "completed"
             ? "✓ done"
-            : job.status === "failed"
-              ? "✗ failed"
-              : "— aborted";
+            : job.status === "completed-with-notes"
+              ? "✓ notes"
+              : job.status === "repairable"
+                ? "↻ repair"
+                : job.status === "failed"
+                  ? "✗ failed"
+                  : "— aborted";
     const progressMeta =
       job.status === "running"
         ? [
@@ -174,27 +182,32 @@ export function DownloadManagerContent({
           ]
             .filter(Boolean)
             .join(" · ")
-        : job.status === "completed"
+        : job.status === "completed" || job.status === "completed-with-notes"
           ? [
               job.completedAt ? new Date(job.completedAt).toLocaleDateString() : null,
+              job.status === "completed-with-notes" ? "sidecar note" : null,
               job.subtitlePath ? "subs" : job.subtitleUrl ? "no subs" : null,
             ]
               .filter(Boolean)
               .join(" · ")
-          : job.status === "failed"
-            ? truncateLine(job.errorMessage ?? "Failed", 28)
-            : job.status;
+          : job.status === "repairable"
+            ? truncateLine(job.errorMessage ?? "Video ready · repair sidecar", 34)
+            : job.status === "failed"
+              ? truncateLine(job.errorMessage ?? "Failed", 28)
+              : job.status;
     const nameStr = `${job.titleName}${job.episode ? ` S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}` : ""}`;
     const statusColor =
       job.status === "running"
         ? palette.amber
         : job.status === "completed"
           ? palette.green
-          : job.status === "failed"
-            ? palette.red
-            : job.status === "aborted"
-              ? palette.muted
-              : palette.amber;
+          : job.status === "completed-with-notes" || job.status === "repairable"
+            ? palette.amber
+            : job.status === "failed"
+              ? palette.red
+              : job.status === "aborted"
+                ? palette.muted
+                : palette.amber;
     // Proportional columns: name takes ~45%, progress is fixed 28, meta takes remainder
     const nameWidth = Math.max(20, Math.min(40, Math.floor(shellWidth * 0.45)));
     const progressWidth = 28;
@@ -262,7 +275,7 @@ export function DownloadManagerContent({
             palette.green,
           )}
           {renderSection(
-            "✗ Failed",
+            "⚠ Needs Attention",
             failedJobs,
             activeJobs.length + queuedJobs.length + completedJobs.length,
             palette.red,
@@ -282,13 +295,15 @@ export function DownloadManagerContent({
           const hints =
             selected.status === "running"
               ? "x to abort"
-              : selected.status === "failed" || selected.status === "aborted"
-                ? "r to retry  ·  x to delete"
-                : selected.status === "completed"
-                  ? "enter to play  ·  x to delete"
-                  : selected.status === "queued"
-                    ? "x to remove from queue"
-                    : null;
+              : selected.status === "repairable"
+                ? "r to repair sidecar  ·  x to delete"
+                : selected.status === "failed" || selected.status === "aborted"
+                  ? "r to retry  ·  x to delete"
+                  : selected.status === "completed" || selected.status === "completed-with-notes"
+                    ? "enter to play  ·  x to delete"
+                    : selected.status === "queued"
+                      ? "x to remove from queue"
+                      : null;
           return hints ? (
             <Box marginTop={1}>
               <Text color={palette.muted} dimColor>
