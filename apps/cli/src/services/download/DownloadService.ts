@@ -116,6 +116,16 @@ type ArtifactValidationResult = {
   readonly durationMs?: number;
 };
 
+type DownloadSidecarResult = {
+  readonly artifact: "subtitle" | "artwork";
+  readonly status: Extract<
+    DownloadArtifactStatus,
+    "ready" | "not-applicable" | "optional-missing" | "expected-missing" | "failed"
+  >;
+  readonly message?: string;
+  readonly repairMetadataJson?: string;
+};
+
 export class DownloadService {
   private queueWorkerRunning = false;
   private reconciledStartupJobs = false;
@@ -283,10 +293,13 @@ export class DownloadService {
     const failed = this.listFailed(20);
     const running = active.filter((job) => job.status === "running").length;
     const queued = active.filter((job) => job.status === "queued").length;
+    const repairable = failed.filter((job) => job.status === "repairable").length;
+    const terminalFailed = failed.length - repairable;
     const parts: string[] = [];
     if (running > 0) parts.push(`${running} running`);
     if (queued > 0) parts.push(`${queued} queued`);
-    if (failed.length > 0) parts.push(`${failed.length} failed`);
+    if (repairable > 0) parts.push(`${repairable} repairable`);
+    if (terminalFailed > 0) parts.push(`${terminalFailed} failed`);
     return parts.length > 0 ? parts.join(" / ") : null;
   }
 
@@ -303,11 +316,20 @@ export class DownloadService {
       job.titleId === input.titleId &&
       (input.season === undefined || job.season === input.season) &&
       (input.episode === undefined || job.episode === input.episode) &&
-      (job.status === "queued" || job.status === "running" || job.status === "completed");
+      (job.status === "queued" ||
+        job.status === "running" ||
+        job.status === "completed" ||
+        job.status === "completed-with-notes" ||
+        job.status === "repairable");
     return this.listActive(500).some(matches) || this.listCompleted(500).some(matches);
   }
 
-  retry(jobId: string): void {
+  async retry(jobId: string): Promise<void> {
+    const job = this.deps.repo.get(jobId);
+    if (job?.status === "repairable" || job?.status === "completed-with-notes") {
+      await this.repairSidecars(job);
+      return;
+    }
     this.deps.repo.requeue(jobId, new Date().toISOString());
   }
 
@@ -326,10 +348,10 @@ export class DownloadService {
 
     try {
       const downloaded = await this.executeYtDlpDownload(next);
-      await this.downloadSubtitleIfAvailable(downloaded);
+      const subtitleResult = await this.downloadSubtitleIfAvailable(downloaded);
       await this.persistOutputFileSize(downloaded);
       const completedAt = new Date().toISOString();
-      this.deps.repo.complete(next.id, completedAt);
+      this.persistCompletedDownloadWithSidecarResult(next.id, subtitleResult, completedAt);
       this.emit({ type: "complete", jobId: next.id });
       const completed = this.deps.repo.get(next.id) ?? null;
       if (completed) {
@@ -770,8 +792,15 @@ export class DownloadService {
     return null;
   }
 
-  private async downloadSubtitleIfAvailable(job: DownloadJobRecord): Promise<void> {
-    if (!job.subtitleUrl) return;
+  private async downloadSubtitleIfAvailable(
+    job: DownloadJobRecord,
+  ): Promise<DownloadSidecarResult> {
+    if (!job.subtitleUrl) {
+      return {
+        artifact: "subtitle",
+        status: "not-applicable",
+      };
+    }
     try {
       const policy = buildDownloadStreamPolicy(job.headers);
       const res = await fetch(job.subtitleUrl, {
@@ -779,7 +808,11 @@ export class DownloadService {
         signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) {
-        return;
+        return buildRepairableSidecarResult(
+          job,
+          "subtitle",
+          `subtitle request failed: ${res.status}`,
+        );
       }
       const targetPath = resolveSubtitleArtifactPath({
         videoOutputPath: job.outputPath,
@@ -787,20 +820,117 @@ export class DownloadService {
         contentType: res.headers.get("content-type"),
       });
       const data = await res.arrayBuffer();
-      if (data.byteLength <= 0) return;
+      if (data.byteLength <= 0) {
+        return buildRepairableSidecarResult(job, "subtitle", "subtitle response was empty");
+      }
       await writeAtomicBytes(targetPath, data);
       this.deps.repo.updateOfflineMetadata(
         job.id,
         { subtitlePath: targetPath },
         new Date().toISOString(),
       );
-    } catch {
-      // subtitle download is best-effort; writeAtomicBytes handles its own temp cleanup
+      return {
+        artifact: "subtitle",
+        status: "ready",
+      };
+    } catch (error) {
+      return buildRepairableSidecarResult(
+        job,
+        "subtitle",
+        error instanceof Error ? error.message : "subtitle download failed",
+      );
     }
   }
 
-  private async generateThumbnailIfAvailable(job: DownloadJobRecord): Promise<void> {
-    if (!this.deps.ffmpegAvailable) return;
+  private persistCompletedDownloadWithSidecarResult(
+    jobId: string,
+    result: DownloadSidecarResult,
+    updatedAt: string,
+  ): void {
+    if (result.status === "expected-missing" || result.status === "failed") {
+      this.deps.repo.markRepairable(
+        jobId,
+        {
+          artifactStatus: result.status,
+          message: result.message ?? `${result.artifact} sidecar needs repair`,
+          repairMetadataJson:
+            result.repairMetadataJson ??
+            JSON.stringify({ artifact: result.artifact, message: result.message }),
+        },
+        updatedAt,
+      );
+      return;
+    }
+    if (result.status === "optional-missing") {
+      this.deps.repo.completeWithNotes(
+        jobId,
+        {
+          artifactStatus: "optional-missing",
+          message: result.message ?? `${result.artifact} sidecar was unavailable`,
+          repairMetadataJson: result.repairMetadataJson,
+        },
+        updatedAt,
+      );
+      return;
+    }
+    this.deps.repo.complete(jobId, updatedAt);
+  }
+
+  private async repairSidecars(job: DownloadJobRecord): Promise<void> {
+    const output = await stat(job.outputPath).catch(() => null);
+    const repairedAt = new Date().toISOString();
+    if (!output?.isFile() || output.size <= 0) {
+      this.deps.repo.fail(
+        job.id,
+        "download artifact missing before sidecar repair",
+        true,
+        repairedAt,
+        "artifact-missing",
+      );
+      return;
+    }
+
+    const subtitleResult = await this.downloadSubtitleIfAvailable(job);
+    this.persistCompletedDownloadWithSidecarResult(job.id, subtitleResult, repairedAt);
+    const refreshed = this.deps.repo.get(job.id);
+    if (refreshed?.status === "completed") {
+      runBackgroundTask({
+        task: "download.prepareOfflineArtwork.repair",
+        category: "download",
+        logger: this.deps.logger,
+        context: { titleId: refreshed.titleId, jobId: refreshed.id },
+        run: () => this.prepareOfflineArtwork(refreshed),
+      });
+    }
+  }
+
+  private maybeMarkOptionalArtworkMissing(job: DownloadJobRecord, message: string): void {
+    const refreshed = this.deps.repo.get(job.id);
+    if (!refreshed || refreshed.status !== "completed") return;
+    this.deps.repo.completeWithNotes(
+      job.id,
+      {
+        artifactStatus: "optional-missing",
+        message,
+        repairMetadataJson: JSON.stringify({
+          artifact: "artwork",
+          outputPath: job.outputPath,
+          posterUrl: job.posterUrl,
+        }),
+      },
+      new Date().toISOString(),
+    );
+  }
+
+  private async generateThumbnailIfAvailable(
+    job: DownloadJobRecord,
+  ): Promise<DownloadSidecarResult> {
+    if (!this.deps.ffmpegAvailable) {
+      return {
+        artifact: "artwork",
+        status: "not-applicable",
+      };
+    }
     const targetPath = resolveThumbnailArtifactPath(job.outputPath);
     const tempPath = `${targetPath}.tmp.${job.id}`;
     try {
@@ -811,7 +941,7 @@ export class DownloadService {
           { thumbnailPath: targetPath },
           new Date().toISOString(),
         );
-        return;
+        return { artifact: "artwork", status: "ready" };
       }
       await rm(tempPath, { force: true }).catch(() => {});
 
@@ -843,17 +973,25 @@ export class DownloadService {
         }
         await waitForExit(proc.exited, 1_000).catch(() => false);
         await rm(tempPath, { force: true }).catch(() => {});
-        return;
+        return { artifact: "artwork", status: "optional-missing", message: "thumbnail timed out" };
       }
       const exitCode = await proc.exited.catch(() => 1);
       if (exitCode !== 0) {
         await rm(tempPath, { force: true }).catch(() => {});
-        return;
+        return {
+          artifact: "artwork",
+          status: "optional-missing",
+          message: "thumbnail generation failed",
+        };
       }
       const thumbnailStat = await stat(tempPath).catch(() => null);
       if (!thumbnailStat?.isFile() || thumbnailStat.size <= 0) {
         await rm(tempPath, { force: true }).catch(() => {});
-        return;
+        return {
+          artifact: "artwork",
+          status: "optional-missing",
+          message: "thumbnail output was empty",
+        };
       }
       await rename(tempPath, targetPath);
       this.deps.repo.updateOfflineMetadata(
@@ -861,28 +999,43 @@ export class DownloadService {
         { thumbnailPath: targetPath },
         new Date().toISOString(),
       );
-    } catch (error) {
+      return { artifact: "artwork", status: "ready" };
+    } catch {
       this.deps.logger.debug("Offline thumbnail generation skipped", {
         jobId: job.id,
-        error: error instanceof Error ? error.message : String(error),
       });
       await rm(tempPath, { force: true }).catch(() => {});
+      return {
+        artifact: "artwork",
+        status: "optional-missing",
+        message: "thumbnail generation failed",
+      };
     }
   }
 
   private async prepareOfflineArtwork(job: DownloadJobRecord): Promise<void> {
-    await this.generateThumbnailIfAvailable(job);
+    const thumbnail = await this.generateThumbnailIfAvailable(job);
+    if (thumbnail.status === "optional-missing") {
+      this.maybeMarkOptionalArtworkMissing(
+        job,
+        thumbnail.message ?? "Artwork could not be generated",
+      );
+    }
     const refreshed = this.deps.repo.get(job.id) ?? job;
     if (refreshed.thumbnailPath || !this.deps.config.offlineArtworkCacheEnabled) return;
     try {
       const posterPath = await cacheOfflinePosterArtwork({ job: refreshed });
-      if (!posterPath) return;
+      if (!posterPath) {
+        this.maybeMarkOptionalArtworkMissing(job, "Poster artwork could not be cached");
+        return;
+      }
       this.deps.repo.updateOfflineMetadata(
         job.id,
         { thumbnailPath: posterPath },
         new Date().toISOString(),
       );
     } catch (error) {
+      this.maybeMarkOptionalArtworkMissing(job, "Poster artwork could not be cached");
       this.deps.logger.debug("Offline poster artwork cache skipped", {
         jobId: job.id,
         error: error instanceof Error ? error.message : String(error),
@@ -1137,4 +1290,24 @@ function resolveSubtitleLanguage(stream: StreamInfo): string | null {
   if (candidate?.language) return candidate.language;
   if (stream.hardSubLanguage) return stream.hardSubLanguage;
   return null;
+}
+
+function buildRepairableSidecarResult(
+  job: DownloadJobRecord,
+  artifact: "subtitle" | "artwork",
+  message: string,
+): DownloadSidecarResult {
+  return {
+    artifact,
+    status: "expected-missing",
+    message,
+    repairMetadataJson: JSON.stringify({
+      artifact,
+      message,
+      outputPath: job.outputPath,
+      subtitleUrl: job.subtitleUrl,
+      subtitleLanguage: job.subtitleLanguage,
+      posterUrl: job.posterUrl,
+    }),
+  };
 }

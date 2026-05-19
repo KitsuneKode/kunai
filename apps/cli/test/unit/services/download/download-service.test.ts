@@ -360,6 +360,199 @@ describe("DownloadService", () => {
     expect(completed?.subtitleLanguage).toBeUndefined();
   });
 
+  test("completes hardsub downloads without requiring an external subtitle sidecar", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    spawnSpy.mockImplementation((command: string[]) => {
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf("Duration: 00:00:10.00\n"),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+    globalThis.fetch = mock(async () => {
+      throw new Error("hardsub downloads must not fetch an external subtitle sidecar");
+    }) as unknown as typeof fetch;
+
+    const job = await service.enqueue({
+      title: { id: "anime:1", type: "series", name: "Example Anime" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: {
+        url: "https://example.com/hardsub.m3u8",
+        headers: {},
+        timestamp: 0,
+        hardSubLanguage: "en",
+      },
+      providerId: "allanime",
+      mode: "anime",
+      audioPreference: "sub",
+      subtitlePreference: "en",
+    });
+    await service.processQueue();
+
+    const completed = repo.get(job.id);
+    expect(completed?.status).toBe("completed");
+    expect(completed?.subtitleLanguage).toBe("en");
+    expect(completed?.subtitlePath).toBeUndefined();
+  });
+
+  test("keeps completed video repairable when an expected subtitle sidecar fails", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () => ({
+        stream: {
+          url: "https://fresh.example/master.m3u8",
+          headers: { Referer: "https://fresh.example" },
+          timestamp: 0,
+          subtitle: "https://fresh.example/subs/en.vtt",
+          subtitleList: [{ url: "https://fresh.example/subs/en.vtt", language: "en" }],
+        },
+        providerId: "vidking",
+        selectionChanged: false,
+      }),
+    });
+    spawnSpy.mockImplementation((command: string[]) => {
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf("Duration: 00:00:10.00\n"),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 503 }),
+    ) as unknown as typeof fetch;
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 5, name: "Episode 5" },
+      providerId: "vidking",
+      mode: "series",
+      audioPreference: "original",
+      subtitlePreference: "en",
+    });
+    await service.processQueue();
+
+    const repairable = repo.get(job.id);
+    expect(repairable?.status).toBe("repairable");
+    expect(repairable?.artifactStatus).toBe("expected-missing");
+    expect(repairable?.repairMetadataJson).toContain("subtitle");
+    expect(existsSync(repairable?.outputPath ?? "")).toBe(true);
+  });
+
+  test("repairs missing subtitle sidecars without re-downloading the video", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () => ({
+        stream: {
+          url: "https://fresh.example/master.m3u8",
+          headers: { Referer: "https://fresh.example" },
+          timestamp: 0,
+          subtitle: "https://fresh.example/subs/en.vtt",
+          subtitleList: [{ url: "https://fresh.example/subs/en.vtt", language: "en" }],
+        },
+        providerId: "vidking",
+        selectionChanged: false,
+      }),
+    });
+    let ytDlpCalls = 0;
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] !== "yt-dlp") {
+        return { stdout: streamOf(""), stderr: streamOf(""), exited: Promise.resolve(0) } as never;
+      }
+      ytDlpCalls += 1;
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf("Duration: 00:00:10.00\n"),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+    let subtitleAttempts = 0;
+    globalThis.fetch = mock(async () => {
+      subtitleAttempts += 1;
+      if (subtitleAttempts === 1) return new Response("", { status: 503 });
+      return new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi");
+    }) as unknown as typeof fetch;
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 6, name: "Episode 6" },
+      providerId: "vidking",
+      mode: "series",
+      audioPreference: "original",
+      subtitlePreference: "en",
+    });
+    await service.processQueue();
+    expect(repo.get(job.id)?.status).toBe("repairable");
+
+    await service.retry(job.id);
+
+    const repaired = repo.get(job.id);
+    expect(ytDlpCalls).toBe(1);
+    expect(repaired?.status).toBe("completed");
+    expect(repaired?.subtitlePath).toBeDefined();
+    expect(existsSync(repaired?.subtitlePath ?? "")).toBe(true);
+  });
+
+  test("records optional artwork misses without marking the video failed", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      ffmpegAvailable: true,
+      downloadPath: tempDir,
+    });
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] === "ffmpeg") {
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf("thumbnail failed"),
+          exited: Promise.resolve(1),
+        } as never;
+      }
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf("Duration: 00:00:10.00\n"),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 7, name: "Episode 7" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    await service.processQueue();
+    await waitUntil(() => repo.get(job.id)?.status === "completed-with-notes");
+
+    const completed = repo.get(job.id);
+    expect(completed?.status).toBe("completed-with-notes");
+    expect(completed?.artifactStatus).toBe("optional-missing");
+    expect(existsSync(completed?.outputPath ?? "")).toBe(true);
+  });
+
   test("marks zero-byte artifacts invalid instead of completed", async () => {
     const service = buildService({
       repo,
