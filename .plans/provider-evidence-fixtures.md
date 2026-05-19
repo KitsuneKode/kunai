@@ -14,10 +14,10 @@
 
 ```text
 SLICE_ID: P3
-SLICE_STATUS: in-progress
+SLICE_STATUS: completed
 SLICE_OWNER: codex
 SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P3-T4
+SLICE_CURRENT_TASK: done
 SLICE_BLOCKERS: none
 ```
 
@@ -85,11 +85,14 @@ Completed in `50b711a`.
 
 ### P3-T4: Add Negative Fixtures
 
-- [ ] Add one no-stream or blocked-host fixture.
-- [ ] Add one expired locator or parse-missing fixture.
-- [ ] Assert these produce structured failures, not thrown generic errors.
-- [ ] Run `bun run --cwd packages/providers test`.
-- [ ] Commit with message `test(providers): add negative provider fixtures`.
+- [x] Add one no-stream or blocked-host fixture.
+- [x] Add one expired locator or parse-missing fixture.
+- [x] Assert these produce structured failures, not thrown generic errors.
+- [x] Run `bun run --cwd packages/providers typecheck`.
+- [x] Run `bun run --cwd packages/providers test`.
+- [x] Commit with message `test(providers): add negative provider fixtures`.
+
+Completed in `fa55414`.
 
 ## Stop Conditions
 
