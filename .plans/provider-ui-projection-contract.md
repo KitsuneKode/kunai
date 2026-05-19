@@ -14,10 +14,10 @@
 
 ```text
 SLICE_ID: P4
-SLICE_STATUS: planned
-SLICE_OWNER: unassigned
-SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P4-T1
+SLICE_STATUS: implemented
+SLICE_OWNER: codex
+SLICE_LAST_UPDATED: 2026-05-19
+SLICE_CURRENT_TASK: none
 SLICE_BLOCKERS: none
 ```
 
@@ -158,12 +158,12 @@ Each action should include:
 
 ### Task 1: Define Projection Types
 
-- [ ] Add UI projection types near playback/domain boundaries, not inside provider modules.
-- [ ] Keep provider-native fields as display metadata.
-- [ ] Keep normalized fields as logic metadata.
-- [ ] Add compile-time tests or contract tests.
-- [ ] Run `bun run --cwd apps/cli typecheck`.
-- [ ] Commit with message `feat(playback): add source inventory projection types`.
+- [x] Add UI projection types near playback/domain boundaries, not inside provider modules.
+- [x] Keep provider-native fields as display metadata.
+- [x] Keep normalized fields as logic metadata.
+- [x] Add compile-time tests or contract tests.
+- [x] Run `bun run --cwd apps/cli typecheck`.
+- [x] Commit with message `feat(playback): add source inventory projection types`.
 
 Minimum type shape:
 
@@ -207,13 +207,13 @@ export interface PlaybackRecoveryActionView {
 
 ### Task 2: Build Projection Mapper
 
-- [ ] Create a pure mapper from `ProviderResolveResult` to `PlaybackSourceInventoryView`.
-- [ ] Handle anime sub/dub/hardsub/softsub cases.
-- [ ] Handle series/movie source/server language cases.
-- [ ] Handle missing optional data without throwing.
-- [ ] Add fixture-backed tests.
-- [ ] Run `bun run --cwd apps/cli test:unit`.
-- [ ] Commit with message `feat(playback): project provider inventory for UI`.
+- [x] Create a pure mapper from `ProviderResolveResult` to `PlaybackSourceInventoryView`.
+- [x] Handle anime sub/dub/hardsub/softsub cases.
+- [x] Handle series/movie source/server language cases.
+- [x] Handle missing optional data without throwing.
+- [x] Add fixture-backed tests.
+- [x] Run `bun run --cwd apps/cli test:unit`.
+- [x] Commit with message `feat(playback): project provider inventory for UI`.
 
 Mapper signature:
 
@@ -232,20 +232,20 @@ export function buildPlaybackSourceInventoryView(
 
 ### Task 3: Wire Shell Components To Projection
 
-- [ ] Update source, language, quality, and subtitle pickers to consume the projection model.
-- [ ] Keep existing UI behavior where projection does not yet expose richer choices.
-- [ ] Ensure switching source/language/quality captures current mpv timestamp when restart is required.
-- [ ] Run `bun run --cwd apps/cli test:unit`.
-- [ ] Run `bun run --cwd apps/cli typecheck`.
-- [ ] Commit with message `refactor(shell): render playback choices from projection`.
+- [x] Update source, language, quality, and subtitle pickers to consume the projection model.
+- [x] Keep existing UI behavior where projection does not yet expose richer choices.
+- [x] Ensure switching source/language/quality captures current mpv timestamp when restart is required.
+- [x] Run `bun run --cwd apps/cli test:unit`.
+- [x] Run `bun run --cwd apps/cli typecheck`.
+- [x] Commit with message `refactor(shell): render playback choices from projection`.
 
 ### Task 4: Add Diagnostics Projection Summary
 
-- [ ] Add a compact trace summary derived from the same projection.
-- [ ] Show user-facing warning copy in shell.
-- [ ] Export developer-facing projection details in diagnostics bundle with redaction.
-- [ ] Run `bun run --cwd apps/cli test:unit`.
-- [ ] Commit with message `feat(diagnostics): include source projection summary`.
+- [x] Add a compact trace summary derived from the same projection.
+- [x] Show user-facing warning copy in shell.
+- [x] Export developer-facing projection details in diagnostics bundle with redaction.
+- [x] Run `bun run --cwd apps/cli test:unit`.
+- [x] Commit with message `feat(diagnostics): include source projection summary`.
 
 ## Commit Boundaries
 
