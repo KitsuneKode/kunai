@@ -17,7 +17,7 @@ SLICE_ID: P3
 SLICE_STATUS: in-progress
 SLICE_OWNER: codex
 SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P3-T3
+SLICE_CURRENT_TASK: P3-T4
 SLICE_BLOCKERS: none
 ```
 
@@ -74,11 +74,14 @@ Completed in `b38179f`.
 
 ### P3-T3: Add Miruro Fixture
 
-- [ ] Add Miruro fixture with source list, subtitles, and thumbnail evidence if the research payload proves it.
-- [ ] If thumbnail evidence is absent, add a dossier note saying the field remains unsupported.
-- [ ] Add tests for available fields only.
-- [ ] Run `bun run --cwd packages/providers test`.
-- [ ] Commit with message `test(providers): add miruro evidence fixtures`.
+- [x] Add Miruro fixture with source list, subtitles, and thumbnail evidence if the research payload proves it.
+- [x] If thumbnail evidence is absent, add a dossier note saying the field remains unsupported.
+- [x] Add tests for available fields only.
+- [x] Run `bun run --cwd packages/providers typecheck`.
+- [x] Run `bun run --cwd packages/providers test`.
+- [x] Commit with message `test(providers): add miruro evidence fixtures`.
+
+Completed in `50b711a`.
 
 ### P3-T4: Add Negative Fixtures
 
