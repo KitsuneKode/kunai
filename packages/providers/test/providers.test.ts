@@ -17,6 +17,8 @@ import {
   vidkingProviderModule,
 } from "../src/index";
 
+const FIXTURE_BASE = new URL("./fixtures/", import.meta.url);
+
 test("provider engine exposes registered modules", () => {
   const engine = createProviderEngine({
     modules: [
@@ -262,6 +264,121 @@ test("vidking payload filtering keeps localized flavored sources explicit", () =
   expect(result?.streams[0]?.metadata?.flavorFilter).toBe("Hindi");
 });
 
+test("vidking evidence fixture preserves native server labels beside ISO audio language", async () => {
+  const payload = await readFixture<
+    Parameters<typeof createVidkingResultFromPayload>[0]["payload"]
+  >("vidking/source-payload.json");
+  const expected = await readFixture<{
+    readonly serverLabel: string;
+    readonly nativeLanguageLabel: string;
+    readonly normalizedLanguage: string;
+    readonly sourceHost: string;
+    readonly quality: string;
+  }>("vidking/expected-normalized.json");
+  const result = createVidkingResultFromPayload({
+    input: {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+        year: 2021,
+      },
+      mediaKind: "movie",
+      preferredAudioLanguage: expected.normalizedLanguage,
+      preferredPresentation: "raw",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    payload,
+    sourceQualityFilter: expected.nativeLanguageLabel,
+    server: expected.serverLabel,
+  });
+
+  expect(result?.sources?.[0]).toMatchObject({
+    label: expected.serverLabel,
+    sourceEvidence: [
+      expect.objectContaining({
+        nativeLabel: expected.serverLabel,
+        host: expected.sourceHost,
+      }),
+    ],
+  });
+  expect(result?.streams[0]).toMatchObject({
+    qualityLabel: expected.quality,
+    audioLanguages: [expected.normalizedLanguage],
+    languageEvidence: [
+      expect.objectContaining({
+        nativeLabel: expected.nativeLanguageLabel,
+        normalizedLanguage: expected.normalizedLanguage,
+      }),
+    ],
+  });
+  expect(result?.variants?.[0]?.languageEvidence).toEqual(result?.streams[0]?.languageEvidence);
+});
+
+test("rivestream evidence fixture preserves provider server label and normalized language", async () => {
+  const services = await readFixture<unknown>("rivestream/services-response.json");
+  const source = await readFixture<unknown>("rivestream/source-response.json");
+  const expected = await readFixture<{
+    readonly serverLabel: string;
+    readonly nativeLanguageLabel: string;
+    readonly normalizedLanguage: string;
+    readonly subtitleLanguage: string;
+    readonly sourceHost: string;
+    readonly quality: string;
+  }>("rivestream/expected-normalized.json");
+  const requests: string[] = [];
+  const result = await rivestreamProviderModule.resolve(
+    {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+        year: 2021,
+      },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-05-19T00:00:00.000Z",
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input) => {
+          const url = String(input);
+          requests.push(url);
+          return jsonResponse(url.includes("VideoProviderServices") ? services : source);
+        },
+      },
+    },
+  );
+
+  expect(requests.some((url) => url.includes("VideoProviderServices"))).toBe(true);
+  expect(result.status).toBe("resolved");
+  expect(result.sources?.[0]).toMatchObject({
+    label: expected.serverLabel,
+    sourceEvidence: [
+      expect.objectContaining({
+        nativeLabel: expected.serverLabel,
+        host: expected.sourceHost,
+      }),
+    ],
+  });
+  expect(result.streams[0]).toMatchObject({
+    qualityLabel: expected.quality,
+    audioLanguages: [expected.normalizedLanguage],
+    languageEvidence: [
+      expect.objectContaining({
+        nativeLabel: expected.nativeLanguageLabel,
+        normalizedLanguage: expected.normalizedLanguage,
+      }),
+    ],
+  });
+  expect(result.subtitles[0]?.language).toBe(expected.subtitleLanguage);
+});
+
 test("m3u8 quality extraction exposes sorted playable variants", async () => {
   const streams = await extractQualitiesFromMaster(
     {
@@ -369,3 +486,14 @@ test("allmanga source candidates preserve separate source families", () => {
   expect(sources.map((source) => source.status)).toEqual(["selected", "available"]);
   expect(sources[0]?.metadata?.streamIds).toBe("stream:hls:1080");
 });
+
+async function readFixture<T>(path: string): Promise<T> {
+  return JSON.parse(await Bun.file(new URL(path, FIXTURE_BASE)).text()) as T;
+}
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}

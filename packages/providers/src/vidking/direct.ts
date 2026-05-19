@@ -334,6 +334,16 @@ export function createVidkingResultFromPayload({
     });
   const resolvedSourceId =
     sourceId ?? createSourceId((server as VidkingServer | undefined) ?? "mb-flix");
+  const sourceEvidence = [
+    {
+      sourceId: resolvedSourceId,
+      serverId: server,
+      nativeLabel: server ?? "Videasy",
+      host: "api.videasy.net",
+      confidence: 0.9,
+      metadata: { flavorFilter: sourceQualityFilter },
+    },
+  ];
   const streams = normalizeStreamCandidates({
     payload,
     input,
@@ -364,6 +374,7 @@ export function createVidkingResultFromPayload({
     subtitles: orderedSubtitles,
     selectedStreamId: selectedStream.id,
     sourceId: resolvedSourceId,
+    sourceEvidence,
   });
 
   emitTraceEvent(events, context, {
@@ -421,6 +432,7 @@ export function createVidkingResultFromPayload({
         confidence: 0.9,
         requiresRuntime: "direct-http",
         cachePolicy: policy,
+        sourceEvidence,
         metadata: { server },
       },
     ],
@@ -748,6 +760,33 @@ function normalizeStreamCandidates({
     const streamId = `stream:${VIDKING_PROVIDER_ID}:${hashId(source.url)}`;
     const variantId = `variant:${VIDKING_PROVIDER_ID}:${sourceId}:${source.quality ?? "unknown"}`;
     const protocol = inferProtocol(source.url);
+    const normalizedAudioLanguage = normalizeVidkingAudioLanguage(source, sourceQualityFilter);
+    const languageEvidence = normalizedAudioLanguage
+      ? [
+          {
+            role: "audio" as const,
+            normalizedLanguage: normalizedAudioLanguage,
+            nativeLabel: source.language ?? sourceQualityFilter ?? source.quality,
+            sourceId,
+            confidence: source.language ? 0.85 : 0.65,
+            metadata: {
+              server,
+              quality: source.quality,
+              flavorFilter: sourceQualityFilter,
+            },
+          },
+        ]
+      : undefined;
+    const sourceEvidence = [
+      {
+        sourceId,
+        serverId: server,
+        nativeLabel: server ?? "Videasy",
+        host: "api.videasy.net",
+        confidence: 0.9,
+        metadata: { quality: source.quality, flavorFilter: sourceQualityFilter },
+      },
+    ];
 
     streams.push({
       id: streamId,
@@ -764,12 +803,11 @@ function normalizeStreamCandidates({
             : protocol === "mp4"
               ? "mp4"
               : "unknown",
-      audioLanguages:
-        source.language && normalizeLanguageCode(source.language)
-          ? [normalizeLanguageCode(source.language) as string]
-          : undefined,
+      audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
       qualityLabel: source.quality,
       qualityRank,
+      languageEvidence,
+      sourceEvidence,
       headers: {
         referer: streamReferer,
         origin: streamOrigin,
@@ -850,11 +888,13 @@ function createVariantCandidates({
   subtitles,
   selectedStreamId,
   sourceId,
+  sourceEvidence,
 }: {
   readonly streams: readonly StreamCandidate[];
   readonly subtitles: readonly SubtitleCandidate[];
   readonly selectedStreamId: string;
   readonly sourceId: string;
+  readonly sourceEvidence?: StreamCandidate["sourceEvidence"];
 }): ProviderVariantCandidate[] {
   return streams.map((stream) => ({
     id: stream.variantId ?? stream.id,
@@ -873,6 +913,8 @@ function createVariantCandidates({
     subtitleIds: subtitles.map((subtitle) => subtitle.id),
     selected: stream.id === selectedStreamId,
     confidence: stream.confidence,
+    languageEvidence: stream.languageEvidence,
+    sourceEvidence: stream.sourceEvidence ?? sourceEvidence,
   }));
 }
 
@@ -997,6 +1039,27 @@ function resolveTmdbId(title: TitleIdentity): number | null {
   const raw = title.tmdbId ?? title.id;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeVidkingAudioLanguage(
+  source: VidkingSourcePayload,
+  sourceQualityFilter: string | undefined,
+): string | undefined {
+  return normalizeLanguageCode(
+    source.language ??
+      inferLanguageLabel(sourceQualityFilter) ??
+      inferLanguageLabel(source.quality),
+  );
+}
+
+function inferLanguageLabel(value: string | undefined): string | undefined {
+  const normalized = value?.toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized.includes("hindi")) return "hindi";
+  if (normalized.includes("german")) return "german";
+  if (normalized.includes("spanish")) return "spanish";
+  if (normalized.includes("english")) return "english";
+  return undefined;
 }
 
 function createSourceId(server: VidkingServer | string): string {

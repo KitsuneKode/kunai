@@ -16,6 +16,7 @@ import type {
 
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { normalizeSubtitleLanguage } from "../shared/subtitle-helpers";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 
 export { RIVESTREAM_PROVIDER_ID };
@@ -328,6 +329,31 @@ export const rivestreamProviderModule: CoreProviderModule = {
               const streamId = `stream:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(s.url).toString(36)}`;
               const variantId = `variant:${RIVESTREAM_PROVIDER_ID}:${sourceId}:${qualityStr}`;
               const protocol = s.url.includes(".m3u8") ? "hls" : "mp4";
+              const normalizedAudioLanguage =
+                inferRivestreamAudioLanguage(provider, qualityStr) ??
+                normalizeSubtitleLanguage(input.preferredAudioLanguage);
+              const languageEvidence = normalizedAudioLanguage
+                ? [
+                    {
+                      role: "audio" as const,
+                      normalizedLanguage: normalizedAudioLanguage,
+                      nativeLabel: provider,
+                      sourceId,
+                      confidence: 0.65,
+                      metadata: { quality: qualityStr },
+                    },
+                  ]
+                : undefined;
+              const sourceEvidence = [
+                {
+                  sourceId,
+                  serverId: provider,
+                  nativeLabel: provider,
+                  host: "rivestream.app",
+                  confidence: 0.9,
+                  metadata: { quality: qualityStr },
+                },
+              ];
 
               streams.push({
                 id: streamId,
@@ -337,11 +363,11 @@ export const rivestreamProviderModule: CoreProviderModule = {
                 url: s.url,
                 protocol,
                 container: protocol === "hls" ? "m3u8" : "mp4",
-                audioLanguages: input.preferredAudioLanguage
-                  ? [input.preferredAudioLanguage]
-                  : undefined,
+                audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
                 qualityLabel: qualityStr,
                 qualityRank: parseInt(qualityStr) || 0,
+                languageEvidence,
+                sourceEvidence,
                 headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
                 confidence: 0.95,
                 cachePolicy,
@@ -355,6 +381,9 @@ export const rivestreamProviderModule: CoreProviderModule = {
                 qualityRank: parseInt(qualityStr) || 0,
                 protocol,
                 container: protocol === "hls" ? "m3u8" : "mp4",
+                audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
+                languageEvidence,
+                sourceEvidence,
                 streamIds: [streamId],
                 confidence: 0.95,
               });
@@ -373,13 +402,14 @@ export const rivestreamProviderModule: CoreProviderModule = {
               embeddedCaptions.forEach((sub) => {
                 const subUrl = sub.url || sub.file;
                 const lang = sub.lang || sub.language || sub.label || "unknown";
+                const normalizedLang = normalizeSubtitleLanguage(lang);
                 if (!subUrl) return;
                 subtitles.push({
                   id: `subtitle:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(subUrl).toString(36)}`,
                   providerId: RIVESTREAM_PROVIDER_ID,
                   sourceId,
                   url: subUrl,
-                  language: lang.split(" - ")[0].trim(), // e.g. "English - FlowCast" -> "English"
+                  language: normalizedLang ?? lang.split(" - ")[0].trim(),
                   label: lang,
                   format: subUrl.endsWith(".vtt") ? "vtt" : "srt",
                   source: "provider",
@@ -440,6 +470,15 @@ export const rivestreamProviderModule: CoreProviderModule = {
             confidence: 0.95,
             requiresRuntime: "direct-http",
             cachePolicy,
+            sourceEvidence: [
+              {
+                sourceId,
+                serverId: serverUsed,
+                nativeLabel: serverUsed,
+                host: "rivestream.app",
+                confidence: 0.9,
+              },
+            ],
           },
         ],
         streams,
@@ -493,3 +532,15 @@ export const rivestreamProviderModule: CoreProviderModule = {
     }
   },
 };
+
+function inferRivestreamAudioLanguage(
+  provider: string | undefined,
+  quality: string | undefined,
+): string | undefined {
+  const raw = [provider, quality].filter(Boolean).join(" ").toLowerCase();
+  if (raw.includes("hindi")) return "hi";
+  if (raw.includes("german")) return "de";
+  if (raw.includes("spanish")) return "es";
+  if (raw.includes("english") || raw.includes("flowcast") || raw.includes("primevids")) return "en";
+  return undefined;
+}

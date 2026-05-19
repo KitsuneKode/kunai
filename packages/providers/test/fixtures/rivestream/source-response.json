@@ -1,0 +1,17 @@
+{
+  "data": {
+    "sources": [
+      {
+        "url": "https://cdn.rivestream.example/hindi/1080/index.m3u8",
+        "quality": "HindiCast (1080)",
+        "format": "hls"
+      }
+    ],
+    "captions": [
+      {
+        "url": "https://subs.rivestream.example/en.vtt",
+        "lang": "English - HindiCast"
+      }
+    ]
+  }
+}
