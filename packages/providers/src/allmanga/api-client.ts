@@ -26,6 +26,13 @@ export type AllMangaEpisodeOption = {
   readonly label: string;
   readonly detail?: string;
   readonly totalEpisodeCount?: number;
+  readonly externalIds?: {
+    readonly anilistId?: string;
+    readonly malId?: string;
+  };
+  readonly artwork?: {
+    readonly thumbnailUrl?: string;
+  };
 };
 
 export type StreamLink = {
@@ -471,6 +478,13 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
     label: `Episode ${episodeString}`,
     detail: `Source episode ${episodeString}`,
     totalEpisodeCount: info.episodeCount,
+    externalIds: {
+      anilistId: info.aniListId ? String(info.aniListId) : undefined,
+      malId: info.malId ? String(info.malId) : undefined,
+    },
+    artwork: {
+      thumbnailUrl: info.thumbnail,
+    },
   }));
 }
 

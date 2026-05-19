@@ -1,0 +1,13 @@
+{
+  "data": {
+    "episode": {
+      "episodeString": "1",
+      "sourceUrls": [
+        {
+          "sourceName": "Default",
+          "sourceUrl": "--https://cdn.allmanga.example/dub//1080/master.m3u8"
+        }
+      ]
+    }
+  }
+}

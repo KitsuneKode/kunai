@@ -70,6 +70,43 @@ export const allmangaProviderModule: CoreProviderModule = {
       englishTitle: result.englishTitle,
       nativeTitle: result.nativeTitle,
       altNames: result.altNames,
+      externalIds: {
+        anilistId: result.aniListId ? String(result.aniListId) : undefined,
+        malId: result.malId ? String(result.malId) : undefined,
+      },
+      artwork: {
+        posterUrl: result.posterUrl,
+        backdropUrl: result.bannerUrl,
+        thumbnailUrl: result.posterUrl,
+      },
+      languageEvidence: result.availableAudioModes?.flatMap((mode) =>
+        mode === "sub"
+          ? [
+              {
+                role: "audio" as const,
+                normalizedLanguage: "ja",
+                nativeLabel: "sub",
+                confidence: 0.85,
+                metadata: { translationType: "sub" },
+              },
+              {
+                role: "hardsub" as const,
+                normalizedLanguage: "en",
+                nativeLabel: "sub",
+                confidence: 0.75,
+                metadata: { translationType: "sub" },
+              },
+            ]
+          : [
+              {
+                role: "audio" as const,
+                normalizedLanguage: "en",
+                nativeLabel: "dub",
+                confidence: 0.85,
+                metadata: { translationType: "dub" },
+              },
+            ],
+      ),
     }));
   },
   async listEpisodes(input, context): Promise<readonly ProviderEpisodeOption[] | null> {
@@ -187,13 +224,12 @@ export const allmangaProviderModule: CoreProviderModule = {
         if (!link.url) continue;
 
         const qualityStr = link.quality || "auto";
-        const sourceName = qualityStr.includes("HLS") ? "FM-HLS" : "VID-MP4";
+        const protocol = link.url.includes(".m3u8") ? "hls" : "mp4";
+        const sourceName = qualityStr.includes("HLS") || protocol === "hls" ? "FM-HLS" : "VID-MP4";
         const sourceId = `source:${ALLANIME_PROVIDER_ID}:${sourceName.toLowerCase()}`;
 
         const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
         const variantId = `variant:${ALLANIME_PROVIDER_ID}:${sourceId}:${qualityStr}`;
-
-        const protocol = link.url.includes(".m3u8") ? "hls" : "mp4";
 
         const headers = buildStreamHeaders(link.referer, ALLANIME_REFERER, DEFAULT_UA);
 
@@ -206,9 +242,43 @@ export const allmangaProviderModule: CoreProviderModule = {
           protocol,
           container: protocol === "hls" ? "m3u8" : "mp4",
           audioLanguages: mode === "sub" ? ["ja"] : mode === "dub" ? ["en"] : [],
+          presentation: mode,
           hardSubLanguage: mode === "sub" ? "en" : undefined,
+          subtitleDelivery: mode === "sub" ? "hardcoded" : undefined,
+          subtitleLanguages: mode === "sub" ? ["en"] : undefined,
           qualityLabel: qualityStr,
           qualityRank: parseInt(qualityStr) || 0,
+          languageEvidence: [
+            {
+              role: "audio",
+              normalizedLanguage: mode === "sub" ? "ja" : "en",
+              nativeLabel: mode,
+              sourceId,
+              confidence: 0.85,
+              metadata: { translationType: mode },
+            },
+            ...(mode === "sub"
+              ? [
+                  {
+                    role: "hardsub" as const,
+                    normalizedLanguage: "en",
+                    nativeLabel: mode,
+                    sourceId,
+                    confidence: 0.75,
+                    metadata: { translationType: mode },
+                  },
+                ]
+              : []),
+          ],
+          sourceEvidence: [
+            {
+              sourceId,
+              nativeLabel: sourceName,
+              host: new URL(link.url).hostname,
+              confidence: protocol === "hls" ? 0.95 : 0.85,
+              metadata: { translationType: mode },
+            },
+          ],
           headers,
           confidence: protocol === "hls" ? 0.95 : 0.85,
           cachePolicy,
@@ -222,9 +292,22 @@ export const allmangaProviderModule: CoreProviderModule = {
           qualityRank: parseInt(qualityStr) || 0,
           protocol,
           container: protocol === "hls" ? "m3u8" : "mp4",
-          audioLanguages: [mode],
+          audioLanguages: mode === "sub" ? ["ja"] : ["en"],
+          presentation: mode,
+          hardSubLanguage: mode === "sub" ? "en" : undefined,
+          subtitleDelivery: mode === "sub" ? "hardcoded" : undefined,
           streamIds: [streamId],
           confidence: protocol === "hls" ? 0.95 : 0.85,
+          languageEvidence: [
+            {
+              role: "audio",
+              normalizedLanguage: mode === "sub" ? "ja" : "en",
+              nativeLabel: mode,
+              sourceId,
+              confidence: 0.85,
+              metadata: { translationType: mode },
+            },
+          ],
         });
 
         if (link.subtitle) {
@@ -304,6 +387,11 @@ export const allmangaProviderModule: CoreProviderModule = {
         streams,
         variants,
         subtitles,
+        externalIds: {
+          anilistId: input.title.externalIds?.anilistId ?? input.title.anilistId,
+          malId: input.title.externalIds?.malId ?? input.title.malId,
+        },
+        artwork: input.episode?.artwork,
         cachePolicy,
         trace: createResolveTrace({
           title: input.title,

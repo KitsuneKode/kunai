@@ -1,0 +1,15 @@
+{
+  "data": {
+    "show": {
+      "availableEpisodesDetail": {
+        "sub": ["1", "2"],
+        "dub": ["1"]
+      },
+      "episodeCount": 12,
+      "malId": 12345,
+      "aniListId": 67890,
+      "thumbnail": "https://cdn.allmanga.example/evidence-fox-thumb.webp",
+      "availableEpisodes": { "sub": 2, "dub": 1 }
+    }
+  }
+}

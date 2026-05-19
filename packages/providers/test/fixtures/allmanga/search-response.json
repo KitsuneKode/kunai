@@ -1,0 +1,29 @@
+{
+  "data": {
+    "shows": {
+      "edges": [
+        {
+          "_id": "show-allmanga-evidence",
+          "name": "Evidence Fox",
+          "englishName": "Evidence Fox",
+          "nativeName": "証拠の狐",
+          "thumbnail": "/images/evidence-fox.webp",
+          "banner": "https://cdn.allmanga.example/evidence-fox-banner.webp",
+          "description": "A sanitized fixture that proves provider-native metadata survives.",
+          "malId": 12345,
+          "aniListId": 67890,
+          "score": 74,
+          "averageScore": 76,
+          "popularity": 3210,
+          "type": "TV",
+          "genres": ["Action", "Mystery"],
+          "altNames": ["Evidence Kitsune"],
+          "episodeCount": 12,
+          "season": { "year": 2026, "quarter": "SPRING" },
+          "availableEpisodes": { "sub": 2, "dub": 1 },
+          "__typename": "Show"
+        }
+      ]
+    }
+  }
+}

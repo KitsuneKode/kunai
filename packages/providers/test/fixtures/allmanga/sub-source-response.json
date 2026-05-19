@@ -1,0 +1,17 @@
+{
+  "data": {
+    "episode": {
+      "episodeString": "1",
+      "sourceUrls": [
+        {
+          "sourceName": "Default",
+          "sourceUrl": "--https://cdn.allmanga.example/sub//1080/master.m3u8"
+        },
+        {
+          "sourceName": "Yt-mp4",
+          "sourceUrl": "--https://cdn.allmanga.example/sub/720/video.mp4"
+        }
+      ]
+    }
+  }
+}

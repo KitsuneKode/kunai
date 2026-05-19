@@ -1,0 +1,32 @@
+{
+  "search": {
+    "id": "show-allmanga-evidence",
+    "externalIds": {
+      "anilistId": "67890",
+      "malId": "12345"
+    },
+    "artwork": {
+      "posterUrl": "https://allanime.day/images/evidence-fox.webp",
+      "backdropUrl": "https://cdn.allmanga.example/evidence-fox-banner.webp"
+    },
+    "languageModes": ["sub", "dub"]
+  },
+  "episode": {
+    "externalIds": {
+      "anilistId": "67890",
+      "malId": "12345"
+    },
+    "thumbnailUrl": "https://cdn.allmanga.example/evidence-fox-thumb.webp"
+  },
+  "subResolve": {
+    "audioLanguage": "ja",
+    "hardSubLanguage": "en",
+    "presentation": "sub",
+    "nativeLabel": "sub"
+  },
+  "dubResolve": {
+    "audioLanguage": "en",
+    "presentation": "dub",
+    "nativeLabel": "dub"
+  }
+}
