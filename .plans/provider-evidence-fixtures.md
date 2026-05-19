@@ -14,11 +14,11 @@
 
 ```text
 SLICE_ID: P3
-SLICE_STATUS: planned
-SLICE_OWNER: unassigned
+SLICE_STATUS: in-progress
+SLICE_OWNER: codex
 SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P3-T1
-SLICE_BLOCKERS: fixture payload source confirmation
+SLICE_CURRENT_TASK: P3-T2
+SLICE_BLOCKERS: none
 ```
 
 ## File Ownership
@@ -50,12 +50,15 @@ Do not put secrets, cookies, bearer tokens, or complete signed expiring URLs in 
 
 ### P3-T1: Add AllManga Fixtures
 
-- [ ] Add search fixture with `malId` and `aniListId`.
-- [ ] Add sub/dub source inventory fixture.
-- [ ] Add expected normalized contract output fixture.
-- [ ] Add tests proving IDs and sub/dub/server labels survive normalization.
-- [ ] Run `bun run --cwd packages/providers test`.
-- [ ] Commit with message `test(providers): add allmanga evidence fixtures`.
+- [x] Add search fixture with `malId` and `aniListId`.
+- [x] Add sub/dub source inventory fixture.
+- [x] Add expected normalized contract output fixture.
+- [x] Add tests proving IDs and sub/dub/server labels survive normalization.
+- [x] Run `bun run --cwd packages/providers typecheck`.
+- [x] Run `bun run --cwd packages/providers test`.
+- [x] Commit with message `test(providers): add allmanga evidence fixtures`.
+
+Completed in `e1ed60a`.
 
 ### P3-T2: Add Series/Movie Provider Fixtures
 
