@@ -49,7 +49,12 @@ For playback recovery debugging, prefer stable operation names over free-form lo
 - `provider.resolve.timeline`: provider attempts, retries, and fallback outcome for one resolve.
 - `resolve.cache.hit`, `resolve.cache.miss`, `resolve.cache.stale`: cache decision.
 - `resolve.refetch.failed.cached-fallback`: no fresher source was found, so Kunai kept the current cached stream.
+- `source-inventory.cache.hit`, `source-inventory.cache.miss`, `source-inventory.cache.set`, `source-inventory.cache.invalidated`: source inventory cache decisions. These events use short key hashes, not full key preimages.
+- `post-playback.recommendations.seed`: the post-playback screen rendered from already-prefetched recommendations or an empty rail without waiting for a fresh network request.
+- `post-playback.recommendations.warm`: non-critical recommendation data warmed in the background after the shell was already usable.
+- `post-playback.autonext.prefetch-wait`: auto-next waited briefly for near-EOF prefetch before falling back to normal resolve.
 - `download.artifact.validated`: a completed local download passed artifact validation and persisted local size/duration metadata when available.
+- `download.artifact.repairable`: the main video is usable, but a subtitle/artwork sidecar needs attention.
 - `presence.clear.failed`: Discord presence did not clear cleanly during shutdown or disconnect.
 - `storage.maintenance.startup`: startup storage maintenance pruned disposable cache data and optimized databases.
 
@@ -61,7 +66,9 @@ guessing from timestamps.
 Support bundle sections include the latest operation for each active category,
 including `presence` and `download`, so a report can show whether Discord clear
 failed, a download artifact was validated, or a queue failure happened without
-reading the full event log first.
+reading the full event log first. Bundles also include `insights` for provider
+resolve, source-inventory cache, post-playback timing, and repairable downloads
+so the common questions are visible without reading every event.
 
 Use `/report-issue` for a preview-first issue flow. It asks before writing a redacted diagnostics report bundle and then opens the GitHub issue chooser. Use `/export-diagnostics` when you only want the bundle and do not want to open a browser.
 

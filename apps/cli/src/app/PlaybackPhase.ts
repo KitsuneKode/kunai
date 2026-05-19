@@ -49,7 +49,10 @@ import {
   buildPostPlayInputFromPlaybackContext,
   buildPostPlayNextEpisodeLabel,
 } from "@/app/post-play-input";
-import { loadPostPlaybackRecommendationItems } from "@/app/post-playback-recommendations";
+import {
+  loadPostPlaybackRecommendationItems,
+  seedPostPlaybackRecommendationItems,
+} from "@/app/post-playback-recommendations";
 import {
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
@@ -141,12 +144,18 @@ export type PlaybackOutcome =
       episode?: number;
     };
 
-async function racePrefetchWithTimeout(promise: Promise<void>, timeoutMs: number): Promise<void> {
+async function racePrefetchWithTimeout(
+  promise: Promise<void>,
+  timeoutMs: number,
+): Promise<"completed" | "timed-out"> {
   try {
-    await Promise.race([promise, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
-    return undefined;
+    const result = await Promise.race([
+      promise.then(() => "completed" as const),
+      new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), timeoutMs)),
+    ]);
+    return result;
   } catch {
-    return undefined;
+    return "completed";
   }
 }
 
@@ -1689,7 +1698,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               // Consume an in-progress or completed prefetch so the next loop
               // iteration skips the provider resolve.
               if (prefetchedNextPromise && !prefetchedNextStream) {
-                await racePrefetchWithTimeout(prefetchedNextPromise, 3000);
+                await racePrefetchWithTimeout(prefetchedNextPromise, 500);
               }
               if (prefetchedNextStream) {
                 pendingPrefetchedStream = prefetchedNextStream;
@@ -2082,17 +2091,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               // If a prefetch is still in-flight (e.g. user sought to end quickly),
               // wait briefly for it before falling back to a full resolve.
               if (prefetchedNextPromise && !prefetchedNextStream) {
-                await racePrefetchWithTimeout(prefetchedNextPromise, 3000);
+                const prefetchWaitResult = await racePrefetchWithTimeout(
+                  prefetchedNextPromise,
+                  500,
+                );
                 diagnosticsStore.record({
                   category: "playback",
+                  operation: "post-playback.autonext.prefetch-wait",
                   message: prefetchedNextStream
                     ? "Prefetch completed during auto-advance wait"
-                    : "Prefetch timed out during auto-advance",
+                    : "Prefetch grace window elapsed during auto-advance",
                   context: {
                     titleId: title.id,
                     nextSeason: nextEpisode.season,
                     nextEpisode: nextEpisode.episode,
                     completed: prefetchedNextStream !== null,
+                    waitResult: prefetchWaitResult,
+                    timeoutMs: 500,
                   },
                 });
               }
@@ -2178,6 +2193,47 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const { openPlaybackShell } = await import("../app-shell/ink-shell");
           const shellRuntime = buildShellRuntimeBindings(container);
 
+          const postPlaybackRecommendationWarmupStarted = { current: false };
+          const warmPostPlaybackRecommendations = (mode: ShellMode) => {
+            if (
+              postPlaybackRecommendationWarmupStarted.current ||
+              !container.config.recommendationRailEnabled
+            ) {
+              return;
+            }
+            postPlaybackRecommendationWarmupStarted.current = true;
+            const startedAtMs = Date.now();
+            void loadPostPlaybackRecommendationItems(container, title, mode, null)
+              .then((items) => {
+                diagnosticsStore.record({
+                  category: "playback",
+                  operation: "post-playback.recommendations.warm",
+                  message: "Post-playback recommendations warmed in background",
+                  context: {
+                    titleId: title.id,
+                    mode,
+                    itemCount: items.length,
+                    elapsedMs: Date.now() - startedAtMs,
+                  },
+                });
+                return undefined;
+              })
+              .catch((error) => {
+                diagnosticsStore.record({
+                  category: "playback",
+                  level: "warn",
+                  operation: "post-playback.recommendations.warm",
+                  message: "Post-playback recommendation warmup failed",
+                  context: {
+                    titleId: title.id,
+                    mode,
+                    elapsedMs: Date.now() - startedAtMs,
+                    error: error instanceof Error ? error.message : String(error),
+                  },
+                });
+              });
+          };
+
           postPlayback: while (true) {
             const resumeSeconds = toHistoryTimestamp(
               result,
@@ -2190,14 +2246,29 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               resumeSeconds > 10 &&
               (result.duration <= 0 || resumeSeconds < Math.max(0, result.duration - 5));
             const mode = stateManager.getState().mode;
-            const recommendationRailItems = container.config.recommendationRailEnabled
-              ? await loadPostPlaybackRecommendationItems(
-                  container,
-                  title,
-                  mode,
-                  prefetchedRecommendationItems,
-                )
-              : [];
+            const recommendationRailStartedAtMs = Date.now();
+            const recommendationRailItems = seedPostPlaybackRecommendationItems({
+              enabled: container.config.recommendationRailEnabled,
+              currentTitle: title.name,
+              prefetchedItems: prefetchedRecommendationItems,
+            });
+            diagnosticsStore.record({
+              category: "playback",
+              operation: "post-playback.recommendations.seed",
+              message: "Post-playback recommendations seeded for first paint",
+              context: {
+                titleId: title.id,
+                mode,
+                itemCount: recommendationRailItems.length,
+                elapsedMs: Date.now() - recommendationRailStartedAtMs,
+                prefetched: Boolean(
+                  (prefetchedRecommendationItems as readonly SearchResult[] | null)?.length,
+                ),
+              },
+            });
+            if (recommendationRailItems.length === 0) {
+              warmPostPlaybackRecommendations(mode);
+            }
             const postPlayInput = buildPostPlayInputFromPlaybackContext({
               title,
               currentEpisode,

@@ -12,6 +12,7 @@ export const defaultTtlMsByClass: Readonly<Record<CacheTtlClass, number>> = {
   "direct-media-url": 2 * MINUTE,
   "subtitle-list": DAY,
   "episode-list": 12 * HOUR,
+  "provider-metadata": 7 * DAY,
   "catalog-static": 14 * DAY,
   "catalog-trending": 30 * MINUTE,
   "provider-health": 5 * MINUTE,

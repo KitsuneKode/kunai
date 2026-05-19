@@ -126,6 +126,9 @@ test("ttl and stream cache key helpers encode compatibility inputs", () => {
   expect(key).toContain("english");
   expect(getDefaultTtlMs("stream-manifest")).toBeGreaterThan(0);
   expect(Date.parse(getExpiresAt("stream-manifest"))).toBeGreaterThan(Date.now());
+  expect(getDefaultTtlMs("direct-media-url")).toBeLessThan(getDefaultTtlMs("provider-metadata"));
+  expect(getDefaultTtlMs("stream-manifest")).toBeLessThan(getDefaultTtlMs("provider-metadata"));
+  expect(getDefaultTtlMs("provider-metadata")).toBeLessThan(getDefaultTtlMs("catalog-static"));
 });
 
 test("history repository round trips latest progress", () => {

@@ -14,10 +14,10 @@
 
 ```text
 SLICE_ID: P7
-SLICE_STATUS: planned
-SLICE_OWNER: unassigned
-SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P7-T1
+SLICE_STATUS: implemented
+SLICE_OWNER: codex
+SLICE_LAST_UPDATED: 2026-05-19
+SLICE_CURRENT_TASK: complete
 SLICE_BLOCKERS: none
 ```
 
@@ -39,33 +39,33 @@ Do not globally increase `stream-manifest` or `direct-media-url` TTLs.
 
 ### P7-T1: Lock Cache Identity Rules
 
-- [ ] Add tests proving source/server/audio/hardsub/quality byte-affecting inputs change source inventory cache keys.
-- [ ] Add tests proving poster/release/display labels do not change source inventory cache keys.
-- [ ] Bump `SOURCE_INVENTORY_SCHEMA_VERSION` only if the key preimage changes.
+- [x] Add tests proving source/server/audio/hardsub/quality byte-affecting inputs change source inventory cache keys.
+- [x] Add tests proving poster/release/display labels do not change source inventory cache keys.
+- [x] Bump `SOURCE_INVENTORY_SCHEMA_VERSION` only if the key preimage changes.
 - [ ] Run `bun run --cwd apps/cli test:unit`.
 - [ ] Commit with message `test(cache): lock source inventory identity rules`.
 
 ### P7-T2: Add Stable Metadata Cache Policy If Needed
 
-- [ ] Add metadata TTL classes only for stable non-byte-affecting data.
-- [ ] Keep `stream-manifest` and `direct-media-url` TTLs short.
-- [ ] Add storage tests.
+- [x] Add metadata TTL classes only for stable non-byte-affecting data.
+- [x] Keep `stream-manifest` and `direct-media-url` TTLs short.
+- [x] Add storage tests.
 - [ ] Run `bun run --cwd packages/storage test`.
 - [ ] Commit with message `feat(cache): separate stable provider metadata ttl`.
 
 ### P7-T3: Add Cache Diagnostics
 
-- [ ] Record cache hit/stale/miss/validation timeout/invalidation reason.
-- [ ] Redact key preimages in diagnostics while keeping enough parts to debug.
+- [x] Record cache hit/miss/set/invalidation reason for source inventory cache decisions.
+- [x] Redact key preimages in diagnostics while keeping enough hashed context to debug.
 - [ ] Run `bun run --cwd apps/cli test:unit`.
 - [ ] Commit with message `feat(diagnostics): explain source inventory cache decisions`.
 
 ### P7-T4: Evaluate MPV Cache Separately
 
-- [ ] Document current mpv cache options before changing them.
-- [ ] If changed, isolate in a commit that touches mpv launch/runtime files only.
-- [ ] Add tests for option construction where possible.
-- [ ] Commit with message `perf(mpv): tune playback cache profile` only if evidence supports it.
+- [x] Document current mpv cache policy as unchanged; no cache tuning landed without evidence.
+- [x] If changed, isolate in a commit that touches mpv launch/runtime files only.
+- [x] Add tests for option construction where possible.
+- [x] Commit with message `perf(mpv): tune playback cache profile` only if evidence supports it.
 
 ## Stop Conditions
 

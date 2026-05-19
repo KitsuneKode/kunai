@@ -115,14 +115,14 @@ Use these classes inside provider-local cycling:
 
 ### P1-T1: Add Cycle Types
 
-- [ ] Add cycle candidate and result types to `packages/types/src/provider-cycle.ts`.
-- [ ] Include stable IDs: `sourceId`, `serverId`, `variantId`, `streamId`.
-- [ ] Include user-visible labels separately from normalized identifiers.
-- [ ] Export from `packages/types/src/index.ts`.
-- [ ] Add contract tests in `packages/types/test/contracts.test.ts`.
-- [ ] Run `bun run --cwd packages/types test`.
-- [ ] Run `bun run --cwd packages/types typecheck`.
-- [ ] Commit with message `feat(types): add provider cycle contract`.
+- [x] Add cycle candidate and result types to `packages/types/src/provider-cycle.ts`.
+- [x] Include stable IDs: `sourceId`, `serverId`, `variantId`, `streamId`.
+- [x] Include user-visible labels separately from normalized identifiers.
+- [x] Export from `packages/types/src/index.ts`.
+- [x] Add contract tests in `packages/types/test/contracts.test.ts`.
+- [x] Run `bun run --cwd packages/types test`.
+- [x] Run `bun run --cwd packages/types typecheck`.
+- [x] Commit with message `feat(types): add provider cycle contract`.
 
 Minimum type shape:
 
@@ -186,14 +186,14 @@ The implementing agent may refine names, but it must preserve these concepts and
 
 ### P1-T2: Build Core Cycle Engine
 
-- [ ] Create `packages/core/src/provider-cycle-engine.ts`.
-- [ ] Accept an ordered list of candidates and a `resolveCandidate(candidate, context)` function.
-- [ ] Apply per-candidate timeout, max retry, abort propagation, and stop decisions.
-- [ ] Emit trace events: `source:start`, `source:success`, `source:failed`, `source:skipped`, `retry:scheduled`, `retry:aborted`.
-- [ ] Return the selected stream result plus all attempts.
-- [ ] Run `bun run --cwd packages/core test`.
-- [ ] Run `bun run --cwd packages/core typecheck`.
-- [ ] Commit with message `feat(core): add provider cycle engine`.
+- [x] Create `packages/core/src/provider-cycle-engine.ts`.
+- [x] Accept an ordered list of candidates and a `resolveCandidate(candidate, context)` function.
+- [x] Apply per-candidate timeout, max retry, abort propagation, and stop decisions.
+- [x] Emit trace events: `source:start`, `source:success`, `source:failed`, and `retry:scheduled`.
+- [x] Return the selected stream result plus all attempts.
+- [x] Run `bun run --cwd packages/core test`.
+- [x] Run `bun run --cwd packages/core typecheck`.
+- [x] Commit with message `feat(core): add provider cycle engine`.
 
 Minimum engine shape:
 
@@ -227,14 +227,14 @@ The result type must include `selected`, `attempts`, `events`, and `fallbackRequ
 
 ### P1-T3: Test Stop And Fallback Semantics
 
-- [ ] Add tests for success on first candidate.
-- [ ] Add tests for timeout retry then next candidate.
-- [ ] Add tests for non-retryable parse failure moving to next candidate.
-- [ ] Add tests for user cancel aborting the whole run.
-- [ ] Add tests for explicit fallback provider signal.
-- [ ] Add tests that user cancellation does not produce a health penalty signal.
-- [ ] Run `bun run --cwd packages/core test`.
-- [ ] Commit with message `test(core): cover provider cycle decisions`.
+- [x] Add tests for success on first candidate.
+- [x] Add tests for timeout retry then next candidate.
+- [x] Add tests for non-retryable parse failure moving to next candidate.
+- [x] Add tests for user cancel aborting the whole run.
+- [x] Add tests for explicit fallback provider signal.
+- [x] Add tests that user cancellation does not produce a health penalty signal.
+- [x] Run `bun run --cwd packages/core test`.
+- [x] Commit with message `test(core): cover provider cycle decisions`.
 
 ### P1-T4: Migrate One Provider Behind The Engine
 

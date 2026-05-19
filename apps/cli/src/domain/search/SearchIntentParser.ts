@@ -1,4 +1,5 @@
 import type {
+  FilterState,
   ReleaseFilter,
   SearchIntentFilters,
   SearchIntentMode,
@@ -6,6 +7,7 @@ import type {
   SearchSort,
   WatchFilter,
 } from "./SearchIntent";
+import { filterStateToSearchIntent, normalizeFilterState } from "./SearchIntent";
 
 export type SearchIntentParseError = {
   readonly key: string;
@@ -15,6 +17,7 @@ export type SearchIntentParseError = {
 
 export type ParsedSearchIntentText = {
   readonly query: string;
+  readonly filterState: FilterState;
   readonly filters: SearchIntentFilters;
   readonly sort?: SearchSort;
   readonly mode?: SearchIntentMode;
@@ -39,6 +42,8 @@ export function parseSearchIntentText(text: string): ParsedSearchIntentText {
     watched?: WatchFilter;
     year?: SearchIntentFilters["year"];
     release?: ReleaseFilter;
+    audio?: string;
+    subtitles?: string;
   } = {};
   let mode: SearchIntentMode | undefined;
   let sort: SearchSort | undefined;
@@ -77,6 +82,14 @@ export function parseSearchIntentText(text: string): ParsedSearchIntentText {
       filters.provider = value;
       continue;
     }
+    if (key === "audio" || key === "lang" || key === "language") {
+      filters.audio = value;
+      continue;
+    }
+    if (key === "subtitle" || key === "subtitles" || key === "subs") {
+      filters.subtitles = value;
+      continue;
+    }
     if (key === "downloaded") {
       if (value === "true" || value === "false") filters.downloaded = value === "true";
       else errors.push({ key, value, reason: "unsupported-value" });
@@ -107,13 +120,42 @@ export function parseSearchIntentText(text: string): ParsedSearchIntentText {
     errors.push({ key, value, reason: "unsupported-filter" });
   }
 
-  return {
+  const filterState = normalizeFilterState({
     query: terms.join(" "),
+    mode,
+    type: filters.type,
+    genres: filters.genres,
+    year: filters.year,
+    minRating: filters.minRating,
+    watched: filters.watched,
+    downloaded: filters.downloaded,
+    release: filters.release,
+    audio: filters.audio,
+    subtitles: filters.subtitles,
+    provider: filters.provider,
+    sort,
+  });
+
+  return {
+    query: filterState.query,
+    filterState,
     filters,
     sort,
     mode,
     errors,
   };
+}
+
+export function parseSearchFilterState(text: string): ParsedSearchIntentText["filterState"] {
+  return parseSearchIntentText(text).filterState;
+}
+
+export function parseSearchIntentFromText(
+  text: string,
+  context: { readonly currentMode: SearchIntentMode },
+) {
+  const parsed = parseSearchIntentText(text);
+  return filterStateToSearchIntent(parsed.filterState, context.currentMode);
 }
 
 export function describeSearchIntentFilters(input: {
@@ -129,6 +171,8 @@ export function describeSearchIntentFilters(input: {
     filters.genres?.length ? `genre ${filters.genres.join(",")}` : null,
     typeof filters.minRating === "number" ? `rating >= ${filters.minRating}` : null,
     filters.provider ? `provider ${filters.provider}` : null,
+    filters.audio ? `audio ${filters.audio}` : null,
+    filters.subtitles ? `subtitles ${filters.subtitles}` : null,
     typeof filters.downloaded === "boolean" ? `downloaded ${filters.downloaded}` : null,
     filters.watched ? `watched ${filters.watched}` : null,
     filters.year ? `year ${formatYear(filters.year)}` : null,

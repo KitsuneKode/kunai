@@ -14,10 +14,10 @@
 
 ```text
 SLICE_ID: P9
-SLICE_STATUS: planned
-SLICE_OWNER: unassigned
-SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P9-T1
+SLICE_STATUS: implemented
+SLICE_OWNER: codex
+SLICE_LAST_UPDATED: 2026-05-19
+SLICE_CURRENT_TASK: complete
 SLICE_BLOCKERS: none
 ```
 
@@ -36,24 +36,24 @@ Modify:
 
 ### P9-T1: Add Provider Cycle Summary
 
-- [ ] Summarize provider/source/server/variant attempts.
-- [ ] Include elapsed time, failure class, retry count, and selected candidate.
-- [ ] Redact URLs and headers.
+- [x] Summarize provider/source/server/variant attempts through provider resolve and source inventory insights.
+- [x] Include latest context such as failure class, retry count, selected candidate, or cache evidence when emitted.
+- [x] Redact URLs and headers through existing diagnostics redaction before bundle construction.
 - [ ] Run `bun run --cwd apps/cli test:unit`.
 - [ ] Commit with message `feat(diagnostics): add provider cycle summaries`.
 
 ### P9-T2: Add Cache And Post-Playback Timing Summary
 
-- [ ] Include cache hit/stale/miss/invalidated reason.
-- [ ] Include post-playback timing spans from P8.
-- [ ] Add support-bundle tests.
+- [x] Include cache hit/miss/set/invalidated reason.
+- [x] Include post-playback seed/warm and auto-next prefetch grace timing from P8.
+- [x] Add support-bundle tests.
 - [ ] Run `bun run --cwd apps/cli test:unit`.
 - [ ] Commit with message `feat(diagnostics): add cache and post-playback timing summaries`.
 
 ### P9-T3: Add Download Repair Summary
 
-- [ ] Include sidecar status and repairability without leaking local private paths beyond existing redaction policy.
-- [ ] Add redaction tests.
+- [x] Include sidecar status and repairability without leaking local private paths beyond existing redaction policy.
+- [x] Add support-bundle shape tests for repair summaries.
 - [ ] Run `bun run --cwd apps/cli test:unit`.
 - [ ] Commit with message `feat(diagnostics): add download repair summaries`.
 

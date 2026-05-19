@@ -3,8 +3,8 @@
 This is the canonical design reference for future download/offline/onboarding work.
 
 Status: in progress (`--download`, `/download`, `/downloads`, `/library`, validated
-`--offline`, local poster/timing/duration metadata, local resume progress, and best-effort video thumbnails are implemented;
-daemon extraction and batch downloads are still pending).
+`--offline`, local poster/timing/duration metadata, local resume progress, repairable sidecar states,
+and best-effort video thumbnails are implemented; daemon extraction and batch downloads are still pending).
 
 ## Product Shape
 
@@ -48,6 +48,8 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - Completed downloads persist local file size and, when `ffprobe` is available, playable duration after artifact validation.
 - Thumbnail generation is best-effort and post-completion: failure or missing `ffmpeg` must never fail or delay a completed download.
 - Thumbnail sidecars are written through a temporary file and renamed only after a non-empty image exists.
+- External subtitle/artwork sidecars are repairable metadata, not proof the video failed. If the video artifact validates but an expected sidecar is missing, the job becomes `repairable` and `/downloads` can retry just the sidecar path without re-running `yt-dlp`.
+- If the stream is hard-subbed or no external subtitle URL exists, subtitle sidecar work is marked not-applicable/expected-missing as appropriate; it should not be reported as a full download failure.
 
 ## Desired Offline Behavior
 

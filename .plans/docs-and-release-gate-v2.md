@@ -14,11 +14,11 @@
 
 ```text
 SLICE_ID: P10
-SLICE_STATUS: planned
-SLICE_OWNER: unassigned
-SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P10-T1
-SLICE_BLOCKERS: waits for implemented slices
+SLICE_STATUS: implemented
+SLICE_OWNER: codex
+SLICE_LAST_UPDATED: 2026-05-19
+SLICE_CURRENT_TASK: complete
+SLICE_BLOCKERS: none
 ```
 
 ## File Ownership
@@ -40,22 +40,22 @@ Do not document behavior as shipped before the implementation slice lands.
 
 ### P10-T1: Update Provider Runtime Docs
 
-- [ ] Document global provider fallback vs provider-local cycling.
-- [ ] Document how new providers use the cycle engine.
-- [ ] Document user-control semantics: retry, next server, fallback provider, cancel.
+- [x] Document global provider fallback vs provider-local cycling.
+- [x] Document how new providers use the cycle engine.
+- [x] Document user-control semantics: retry, next server, fallback provider, cancel.
 - [ ] Commit with message `docs: explain provider runtime v2`.
 
 ### P10-T2: Update User-Facing Docs
 
-- [ ] Document filters, downloads, provider fallback, diagnostics, and post-playback latency behavior.
-- [ ] Keep docs concise and truth-based.
+- [x] Document filters, downloads, provider fallback, diagnostics, and post-playback latency behavior.
+- [x] Keep docs concise and truth-based.
 - [ ] Commit with message `docs: update user guide for provider runtime v2`.
 
 ### P10-T3: Update Release Gate
 
-- [ ] Keep live provider smokes opt-in.
-- [ ] Add release checklist: unit tests, build, package check, one provider smoke per engine, Discord smoke only when presence changed.
-- [ ] Update `.plans/plan-implementation-truth.md`.
+- [x] Keep live provider smokes opt-in.
+- [x] Add release checklist: unit tests, build, package check, one provider smoke per engine, Discord smoke only when presence changed.
+- [x] Update `.plans/plan-implementation-truth.md`.
 - [ ] Run `bun run --cwd apps/cli fmt:check`.
 - [ ] Commit with message `docs: document provider runtime v2 release gate`.
 

@@ -95,8 +95,16 @@ Summary:
 | `--jump`                |             | With `-S`, auto-pick *n*th result (1-based)                       |
 | `--debug`               |             | Verbose logging                                                   |
 
-Use `/ export-diagnostics` in the shell (or the command palette) to write a **redacted** JSON snapshot of recent diagnostics next to the process working directory for bug reports.
-Then run `/ report-issue` to open the GitHub issue form with triage guidance.
+Use `/export-diagnostics` in the shell (or the command palette) to write a **redacted** JSON snapshot of recent diagnostics next to the process working directory for bug reports.
+Then run `/report-issue` to open the GitHub issue form with triage guidance.
+
+Browse filters can be typed directly in search, for example:
+
+```text
+type:anime year:2026 rating:7 genre:isekai audio:ja subtitles:en
+```
+
+Filters stack in one structured state. Unsupported filters are reported as local/unsupported evidence instead of being silently treated as provider-applied.
 
 ## Environment
 
@@ -118,6 +126,8 @@ Try a different provider from the shell picker, use provider fallback, or change
 **Downloads are enabled but jobs do not start**
 
 Install `yt-dlp` on your `PATH`, rerun `/setup` if needed, and confirm downloads are enabled. Optional: add `ffprobe` to your `PATH` for post-download validation.
+
+If a completed job says it needs attention, the video may already be playable while a subtitle or artwork sidecar needs repair. Use `/downloads` and retry the job; Kunai repairs sidecars without redownloading the whole video when the artifact is still present.
 
 **Subtitles are missing or not selectable**
 

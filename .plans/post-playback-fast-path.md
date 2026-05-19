@@ -14,10 +14,10 @@
 
 ```text
 SLICE_ID: P8
-SLICE_STATUS: planned
-SLICE_OWNER: unassigned
-SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P8-T1
+SLICE_STATUS: implemented
+SLICE_OWNER: codex
+SLICE_LAST_UPDATED: 2026-05-19
+SLICE_CURRENT_TASK: complete
 SLICE_BLOCKERS: none
 ```
 
@@ -40,16 +40,16 @@ When there is no next episode, recommendation prefetch may not have happened. If
 
 ### P8-T1: Add Non-Blocking Recommendation Seed Helper
 
-- [ ] Add a pure helper that returns prefetched recommendations or an empty list immediately.
-- [ ] Add tests for disabled recommendations, prefetched recommendations, and no prefetch.
+- [x] Add a pure helper that returns prefetched recommendations or an empty list immediately.
+- [x] Add tests for disabled recommendations, prefetched recommendations, and no prefetch.
 - [ ] Run `bun run --cwd apps/cli test:unit`.
 - [ ] Commit with message `test(playback): cover immediate post-playback recommendation seed`.
 
 ### P8-T2: Stop Awaiting Fresh Recommendations Before Shell Open
 
-- [ ] In `PlaybackPhase.ts`, open post-playback with prefetched/cached-only items.
-- [ ] Move fresh recommendation warming to non-blocking cache warm if safe.
-- [ ] Add diagnostics timing for history save, player release, recommendation seed, and shell open.
+- [x] In `PlaybackPhase.ts`, open post-playback with prefetched/cached-only items.
+- [x] Move fresh recommendation warming to non-blocking cache warm if safe.
+- [x] Add diagnostics timing for recommendation seed/warm and auto-next prefetch grace.
 - [ ] Run `bun run --cwd apps/cli test:unit`.
 - [ ] Commit with message `fix(playback): open post-playback menu without recommendation wait`.
 

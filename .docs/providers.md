@@ -44,6 +44,22 @@ User selects title + episode
   -> mpv
 ```
 
+### Fallback Layers
+
+Kunai has two fallback layers, and they should stay separate:
+
+- **Global provider fallback** lives in `@kunai/core` / `PlaybackResolveService`. It chooses the next provider only after the active provider is exhausted, explicitly skipped, or unhealthy for the current request.
+- **Provider-local cycling** lives below a single provider. It tries that provider's source/server/variant candidates before global fallback. The shared `ProviderCycleEngine` contract models candidate IDs, source/server/variant IDs, native labels, normalized language facts, failure classes, retry count, cancellation, and fallback requests.
+
+Current provider migration is incremental. The shared cycle contract and core engine exist for providers that are ready to use it; provider modules that still own their local loops must emit equivalent source/variant trace events and preserve provider-native labels so diagnostics and UI can explain the path.
+
+User-control semantics:
+
+- retry/recover: retry the current playback intent with fresh evidence
+- next server/source: skip the current provider-local candidate when that provider exposes more candidates
+- fallback provider: stop the active provider and let global fallback choose the next compatible provider
+- cancel: abort resolution without marking the provider unhealthy
+
 ## Source Model
 
 Use this conceptual hierarchy:

@@ -20,6 +20,7 @@ export type DiagnosticsSupportBundle = {
   };
   readonly capabilities: Record<string, unknown>;
   readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary;
+  readonly insights: DiagnosticsBundleInsights;
   readonly correlation: DiagnosticsBundleCorrelation;
   readonly sections: Record<string, DiagnosticsBundleSection>;
   readonly eventCount: number;
@@ -31,6 +32,20 @@ export type DiagnosticsBundleCorrelation = {
   readonly playbackCycleIds: readonly string[];
   readonly providerAttemptIds: readonly string[];
   readonly traceIds: readonly string[];
+};
+
+export type DiagnosticsBundleInsights = {
+  readonly providerResolve?: DiagnosticsEventInsight;
+  readonly sourceInventoryCache?: DiagnosticsEventInsight;
+  readonly postPlayback?: DiagnosticsEventInsight;
+  readonly downloadRepair?: DiagnosticsEventInsight;
+};
+
+export type DiagnosticsEventInsight = {
+  readonly eventCount: number;
+  readonly latestMessage?: string;
+  readonly latestOperation?: string;
+  readonly context?: Record<string, unknown>;
 };
 
 export type DiagnosticsBundleSection = {
@@ -86,11 +101,57 @@ export function buildDiagnosticsSupportBundle(
     },
     capabilities,
     playbackSourceInventory,
+    insights: buildBundleInsights(events),
     correlation: buildBundleCorrelation(events),
     sections,
     eventCount: events.length,
     events,
   };
+}
+
+function buildBundleInsights(events: readonly DiagnosticEvent[]): DiagnosticsBundleInsights {
+  const insights: {
+    providerResolve?: DiagnosticsEventInsight;
+    sourceInventoryCache?: DiagnosticsEventInsight;
+    postPlayback?: DiagnosticsEventInsight;
+    downloadRepair?: DiagnosticsEventInsight;
+  } = {};
+  const providerResolve = buildOperationPrefixInsight(events, "provider.resolve.");
+  if (providerResolve) insights.providerResolve = providerResolve;
+  const sourceInventoryCache = buildOperationPrefixInsight(events, "source-inventory.cache.");
+  if (sourceInventoryCache) insights.sourceInventoryCache = sourceInventoryCache;
+  const postPlayback = buildOperationPrefixInsight(events, "post-playback.");
+  if (postPlayback) insights.postPlayback = postPlayback;
+  const downloadRepair = buildOperationPrefixInsight(events, "download.artifact.repairable");
+  if (downloadRepair) insights.downloadRepair = downloadRepair;
+  return insights;
+}
+
+function buildOperationPrefixInsight(
+  events: readonly DiagnosticEvent[],
+  operationPrefix: string,
+): DiagnosticsEventInsight | undefined {
+  const matching = events.filter((event) => event.operation.startsWith(operationPrefix));
+  if (matching.length === 0) return undefined;
+  const latest = matching.at(-1);
+  const insight: DiagnosticsEventInsight = {
+    eventCount: matching.length,
+  };
+  const withLatest =
+    latest === undefined
+      ? insight
+      : {
+          ...insight,
+          latestMessage: latest.message,
+          latestOperation: latest.operation,
+        };
+  if (latest?.context && Object.keys(latest.context).length > 0) {
+    return {
+      ...withLatest,
+      context: redactDiagnosticValue(latest.context) as Record<string, unknown>,
+    };
+  }
+  return withLatest;
 }
 
 function buildBundleCorrelation(events: readonly DiagnosticEvent[]): DiagnosticsBundleCorrelation {

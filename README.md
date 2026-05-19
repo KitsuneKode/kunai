@@ -185,6 +185,7 @@ Ctrl+D            Download selected result (from browse)
 ### Search and discover
 
 - **Search** any title by name. Anime and series modes use different provider sets.
+- **Stack filters** in one query: `type:anime year:2026 rating:7 genre:isekai audio:ja subtitles:en`.
 - **Discover** personalized recommendations and trending titles.
 - **Release calendar** shows what's airing today (provider resolution happens after selection).
 - **Random / Surprise** spins a non-autoplaying tray of cached recommendations.
@@ -196,6 +197,7 @@ Ctrl+D            Download selected result (from browse)
 - **Fallback** (`f`) tries the next compatible provider when the current one fails.
 - **Source / quality picker** switches among already-resolved stream options.
 - **Autoplay** automatically advances to the next episode in a series chain.
+- **Post-playback** controls open from prefetched data first; recommendations warm in the background instead of delaying the menu.
 - **Autoskip** skips intros, recaps, previews, and credits (powered by IntroDB/AniSkip when available).
 - **Episode picker** jump to any episode in the current season.
 - **Subtitle management** picks preferred language first; alternate tracks available in mpv.
@@ -207,6 +209,7 @@ Ctrl+D            Download selected result (from browse)
 - Download queue persists across sessions (backed by SQLite).
 - On restart, interrupted downloads are automatically resumed or retried.
 - Optional post-download integrity checks (`ffprobe`) and thumbnail generation (`ffmpeg`).
+- Repairable sidecars: if the video is valid but subtitles/artwork need attention, retry repairs the sidecar without redownloading the whole video.
 - Default download paths:
   - Linux: `~/.local/share/kunai/downloads`
   - macOS: `~/Library/Application Support/kunai/downloads`
@@ -241,6 +244,7 @@ Enable via `/presence` or `/settings`. Shows what you're watching on your Discor
 ### Diagnostics and recovery
 
 - `/diagnostics` shows current runtime state, recent events, and capability status.
+- Support bundles include provider resolve, source cache, post-playback timing, and repairable download summaries.
 - `kunai --debug` for verbose traces during troubleshooting.
 - `/export-diagnostics` generates a redacted JSON snapshot for issue reports.
 - `/report-issue` opens GitHub issue triage guidance.

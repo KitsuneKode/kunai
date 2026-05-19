@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   applyBrowseResultFilters,
+  clearBrowseResultFilter,
   describeBrowseResultFilters,
   parseBrowseFilterQuery,
 } from "@/app-shell/browse-filters";
@@ -54,7 +55,7 @@ describe("browse filters", () => {
     const parsed = parseBrowseFilterQuery("breaking bad type:series year:2008 rating:9");
 
     expect(parsed.searchQuery).toBe("breaking bad");
-    expect(parsed.filters).toEqual({
+    expect(parsed.filters).toMatchObject({
       type: "series",
       year: "2008",
       minRating: 9,
@@ -135,5 +136,22 @@ describe("browse filters", () => {
         (option) => option.value,
       ),
     ).toEqual(["solo-leveling"]);
+  });
+
+  test("clears one active browse chip without dropping the rest", () => {
+    const parsed = parseBrowseFilterQuery("isekai type:series year:2024 rating:8 genre:action");
+
+    const withoutYear = clearBrowseResultFilter(parsed.filters, "year");
+
+    expect(withoutYear.year).toBeUndefined();
+    expect(describeBrowseResultFilters(withoutYear)).toEqual([
+      "type series",
+      "genre action",
+      "rating >= 8",
+    ]);
+    expect(applyBrowseResultFilters(OPTIONS, withoutYear).map((option) => option.value)).toEqual([
+      "breaking-bad",
+      "better-call-saul",
+    ]);
   });
 });

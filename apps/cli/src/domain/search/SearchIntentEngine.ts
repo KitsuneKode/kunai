@@ -1,4 +1,8 @@
-import { normalizeSearchIntent, type SearchIntent, type SearchIntentMode } from "./SearchIntent";
+import {
+  filterStateToSearchIntent,
+  type SearchIntent,
+  type SearchIntentMode,
+} from "./SearchIntent";
 import {
   describeSearchIntentFilters,
   parseSearchIntentText,
@@ -22,12 +26,7 @@ export function createSearchIntentEngine(): SearchIntentEngine {
   return {
     fromText(text, context) {
       const parsed = parseSearchIntentText(text);
-      const intent = normalizeSearchIntent({
-        query: parsed.query,
-        mode: parsed.mode ?? context.currentMode,
-        filters: parsed.filters,
-        sort: parsed.sort,
-      });
+      const intent = filterStateToSearchIntent(parsed.filterState, context.currentMode);
 
       return {
         intent,

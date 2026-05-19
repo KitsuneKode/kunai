@@ -143,4 +143,67 @@ describe("DiagnosticsSupportBundle", () => {
     expect(bundle.playbackSourceInventory?.qualityOptions[0]?.label).toBe("720p");
     expect(JSON.stringify(bundle.playbackSourceInventory)).not.toContain("private-stream");
   });
+
+  test("summarizes provider cache post-playback and repair diagnostics", () => {
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.1.0",
+      debug: true,
+      now: () => new Date("2026-05-16T00:00:00.000Z"),
+      events: [
+        {
+          timestamp: 1,
+          category: "provider",
+          level: "info",
+          operation: "provider.resolve.timeline",
+          message: "Resolved with fallback",
+          context: { attempts: 2, traceId: "trace-1" },
+        },
+        {
+          timestamp: 2,
+          category: "cache",
+          level: "info",
+          operation: "source-inventory.cache.hit",
+          message: "Source inventory cache hit",
+          context: { keyHash: "abc123" },
+        },
+        {
+          timestamp: 3,
+          category: "playback",
+          level: "info",
+          operation: "post-playback.recommendations.seed",
+          message: "Post-playback recommendations seeded for first paint",
+          context: { itemCount: 3, elapsedMs: 0 },
+        },
+        {
+          timestamp: 4,
+          category: "download",
+          level: "warn",
+          operation: "download.artifact.repairable",
+          message: "Download completed with repairable sidecar",
+          context: { artifact: "subtitle", artifactStatus: "expected-missing" },
+        },
+      ],
+    });
+
+    expect(bundle.insights.providerResolve).toMatchObject({
+      eventCount: 1,
+      latestOperation: "provider.resolve.timeline",
+      context: { attempts: 2 },
+    });
+    expect(bundle.insights.sourceInventoryCache).toMatchObject({
+      eventCount: 1,
+      latestOperation: "source-inventory.cache.hit",
+      context: { keyHash: "abc123" },
+    });
+    expect(bundle.insights.postPlayback).toMatchObject({
+      eventCount: 1,
+      latestOperation: "post-playback.recommendations.seed",
+      context: { itemCount: 3 },
+    });
+    expect(bundle.insights.downloadRepair).toMatchObject({
+      eventCount: 1,
+      latestOperation: "download.artifact.repairable",
+      context: { artifact: "subtitle" },
+    });
+  });
 });

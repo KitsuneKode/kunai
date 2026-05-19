@@ -9,6 +9,10 @@ import {
 describe("diagnostic operation taxonomy", () => {
   test("keeps high-value runtime operations named and user-actionable", () => {
     expect(isKnownDiagnosticOperation("download.artifact.validated")).toBe(true);
+    expect(isKnownDiagnosticOperation("download.artifact.repairable")).toBe(true);
+    expect(isKnownDiagnosticOperation("source-inventory.cache.hit")).toBe(true);
+    expect(isKnownDiagnosticOperation("post-playback.recommendations.seed")).toBe(true);
+    expect(isKnownDiagnosticOperation("post-playback.autonext.prefetch-wait")).toBe(true);
     expect(isKnownDiagnosticOperation("presence.clear.failed")).toBe(true);
     expect(isKnownDiagnosticOperation("resolve.refetch.failed.cached-fallback")).toBe(true);
     expect(isKnownDiagnosticOperation("made.up.operation")).toBe(false);

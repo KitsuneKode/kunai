@@ -155,6 +155,8 @@ function hasAdvancedSearchFilters(intent: SearchIntent): boolean {
       typeof intent.filters.minRating === "number" ||
       intent.filters.year ||
       intent.filters.provider ||
+      intent.filters.audio ||
+      intent.filters.subtitles ||
       typeof intent.filters.downloaded === "boolean" ||
       intent.filters.watched ||
       intent.filters.release ||
@@ -242,6 +244,8 @@ function getUnsupportedFilterKeys(intent: SearchIntent, sourceId: string): reado
       ? "genre"
       : null,
     filters.provider ? "provider" : null,
+    filters.audio ? "audio" : null,
+    filters.subtitles ? "subtitles" : null,
     typeof filters.downloaded === "boolean" ? "downloaded" : null,
     filters.watched ? "watched" : null,
     filters.release ? "release" : null,

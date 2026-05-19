@@ -1,20 +1,21 @@
 import type {
+  FilterState,
+  FilterStateKey,
   ReleaseFilter,
   SearchIntentMode,
   SearchSort,
   SearchIntentTypeFilter,
   WatchFilter,
 } from "@/domain/search/SearchIntent";
-import {
-  describeSearchIntentFilters,
-  parseSearchIntentText,
-} from "@/domain/search/SearchIntentParser";
+import { clearFilterStateKey, describeFilterStateChips } from "@/domain/search/SearchIntent";
+import { parseSearchIntentText } from "@/domain/search/SearchIntentParser";
 
 import type { BrowseShellOption } from "./types";
 
 export type BrowseResultTypeFilter = SearchIntentTypeFilter;
 
 export type BrowseResultFilters = {
+  readonly state: FilterState;
   readonly type: BrowseResultTypeFilter;
   readonly genres?: readonly string[];
   readonly year?: string;
@@ -35,30 +36,35 @@ export type ParsedBrowseFilterQuery = {
 
 export function parseBrowseFilterQuery(query: string): ParsedBrowseFilterQuery {
   const parsedIntent = parseSearchIntentText(query);
-  const type = parsedIntent.filters.type ?? "all";
-  const minRating = parsedIntent.filters.minRating;
-  let year: string | undefined;
-  if (typeof parsedIntent.filters.year === "number") {
-    year = String(parsedIntent.filters.year);
-  }
 
   return {
     searchQuery: parsedIntent.query,
-    filters: {
-      type,
-      ...(parsedIntent.filters.genres?.length ? { genres: parsedIntent.filters.genres } : {}),
-      ...(year ? { year } : {}),
-      ...(typeof minRating === "number" ? { minRating } : {}),
-      ...(parsedIntent.mode ? { mode: parsedIntent.mode } : {}),
-      ...(parsedIntent.filters.provider ? { provider: parsedIntent.filters.provider } : {}),
-      ...(typeof parsedIntent.filters.downloaded === "boolean"
-        ? { downloaded: parsedIntent.filters.downloaded }
-        : {}),
-      ...(parsedIntent.filters.watched ? { watched: parsedIntent.filters.watched } : {}),
-      ...(parsedIntent.filters.release ? { release: parsedIntent.filters.release } : {}),
-      ...(parsedIntent.sort ? { sort: parsedIntent.sort } : {}),
-      ...(parsedIntent.errors.length ? { ignoredFilterCount: parsedIntent.errors.length } : {}),
-    },
+    filters: browseFiltersFromState(parsedIntent.filterState, parsedIntent.errors.length),
+  };
+}
+
+export function browseFiltersFromState(
+  state: FilterState,
+  ignoredFilterCount = 0,
+): BrowseResultFilters {
+  const type = state.type ?? "all";
+  let year: string | undefined;
+  if (typeof state.year === "number") {
+    year = String(state.year);
+  }
+  return {
+    state,
+    type,
+    ...(state.genres.length ? { genres: state.genres } : {}),
+    ...(year ? { year } : {}),
+    ...(typeof state.minRating === "number" ? { minRating: state.minRating } : {}),
+    ...(state.mode ? { mode: state.mode } : {}),
+    ...(state.provider ? { provider: state.provider } : {}),
+    ...(typeof state.downloaded === "boolean" ? { downloaded: state.downloaded } : {}),
+    ...(state.watched ? { watched: state.watched } : {}),
+    ...(state.release ? { release: state.release } : {}),
+    ...(state.sort ? { sort: state.sort } : {}),
+    ...(ignoredFilterCount ? { ignoredFilterCount } : {}),
   };
 }
 
@@ -87,25 +93,20 @@ export function applyBrowseResultFilters<T>(
 }
 
 export function describeBrowseResultFilters(filters: BrowseResultFilters): readonly string[] {
-  const intentBadges = describeSearchIntentFilters({
-    sort: filters.sort,
-    filters: {
-      provider: filters.provider,
-      downloaded: filters.downloaded,
-      watched: filters.watched,
-      release: filters.release,
-    },
-  });
-
   return [
-    filters.mode ? `mode ${filters.mode}` : null,
-    filters.type !== "all" ? `type ${filters.type}` : null,
-    filters.genres?.length ? `genre ${filters.genres.join(",")}` : null,
-    filters.year ? `year ${filters.year}` : null,
-    typeof filters.minRating === "number" ? `rating >= ${filters.minRating}` : null,
-    ...intentBadges,
+    ...describeFilterStateChips(filters.state),
     filters.ignoredFilterCount ? `${filters.ignoredFilterCount} ignored` : null,
   ].filter((value): value is string => Boolean(value));
+}
+
+export function clearBrowseResultFilter(
+  filters: BrowseResultFilters,
+  key: FilterStateKey,
+): BrowseResultFilters {
+  return browseFiltersFromState(
+    clearFilterStateKey(filters.state, key),
+    filters.ignoredFilterCount,
+  );
 }
 
 export function hasBrowseResultFilters(filters: BrowseResultFilters): boolean {

@@ -15,6 +15,19 @@ export interface PostPlaybackRecommendationItem {
   readonly episodeCount?: number;
 }
 
+export function seedPostPlaybackRecommendationItems({
+  enabled,
+  currentTitle,
+  prefetchedItems,
+}: {
+  readonly enabled: boolean;
+  readonly currentTitle: string;
+  readonly prefetchedItems: readonly SearchResult[] | null;
+}): readonly PostPlaybackRecommendationItem[] {
+  if (!enabled || !prefetchedItems?.length) return [];
+  return dedupeRecommendationItems(prefetchedItems, currentTitle);
+}
+
 export async function loadPostPlaybackRecommendationNames(
   container: Pick<
     Container,

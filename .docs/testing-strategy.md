@@ -193,6 +193,26 @@ Prefer dossier-backed fixtures over hand-built guesses.
 | Subtitle or quality extraction | fixture-backed parser tests                                                |
 | Diagnostics/report change      | contract tests for redaction and output shape                              |
 
+## Release Reliability Gate
+
+Default release checks stay deterministic and do not hit live providers or Discord:
+
+```sh
+bun run typecheck
+bun run lint
+bun run fmt:check
+bun run test
+bun run pkg:check
+bun run build
+```
+
+Opt-in release-candidate smoke, run only when provider traffic is acceptable:
+
+- one live provider smoke per active engine/provider family, using isolated XDG data/cache paths
+- one real mpv playback smoke when playback, source switching, or auto-next changed
+- Discord Rich Presence smoke only when presence code/config changed
+- `/export-diagnostics` smoke after recovery/cache/download diagnostics changed
+
 ## Reliability-Seam Expectations
 
 - Fire-and-forget async work must be routed through a background-task guard or have a local cleanup-only comment.

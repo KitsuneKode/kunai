@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import {
   loadPostPlaybackRecommendationItems,
   loadPostPlaybackRecommendationNames,
+  seedPostPlaybackRecommendationItems,
 } from "@/app/post-playback-recommendations";
 
 test("post-playback recommendations use direct TMDB title recommendations for series ids", async () => {
@@ -215,4 +216,71 @@ test("post-playback recommendation items preserve playable identity for queue ac
       posterPath: "/poster.jpg",
     },
   ]);
+});
+
+test("post-playback recommendation seed is immediate and prefetched-only", () => {
+  const items = seedPostPlaybackRecommendationItems({
+    enabled: true,
+    currentTitle: "Breaking Bad",
+    prefetchedItems: [
+      {
+        id: "1396",
+        type: "series",
+        title: "Breaking Bad",
+        year: "2008",
+        overview: "",
+        posterPath: null,
+      },
+      {
+        id: "2",
+        type: "series",
+        title: "Better Call Saul",
+        year: "2015",
+        overview: "A careful follow-up pick.",
+        posterPath: "/poster.jpg",
+      },
+      {
+        id: "2-duplicate",
+        type: "series",
+        title: " Better Call Saul ",
+        year: "2015",
+        overview: "",
+        posterPath: null,
+      },
+    ],
+  });
+
+  expect(items).toEqual([
+    {
+      id: "2",
+      type: "series",
+      title: "Better Call Saul",
+      year: "2015",
+      overview: "A careful follow-up pick.",
+      posterPath: "/poster.jpg",
+    },
+  ]);
+  expect(
+    seedPostPlaybackRecommendationItems({
+      enabled: false,
+      currentTitle: "Breaking Bad",
+      prefetchedItems: [
+        {
+          id: "2",
+          type: "series",
+          title: "Better Call Saul",
+          year: "2015",
+          overview: "",
+          posterPath: null,
+        },
+      ],
+    }),
+  ).toEqual([]);
+  expect(
+    seedPostPlaybackRecommendationItems({
+      enabled: true,
+      currentTitle: "Breaking Bad",
+      prefetchedItems: null,
+    }),
+  ).toEqual([]);
 });

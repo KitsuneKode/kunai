@@ -7,7 +7,7 @@ Use this gate before release candidates and after changes to playback lifecycle,
 Run from the repo root:
 
 ```sh
-bun run fmt
+bun run fmt:check
 bun run lint
 bun run test
 bun run typecheck
@@ -68,6 +68,8 @@ Expected result for each provider:
 
 Do not run live provider smokes in default CI. They are opt-in checks for provider drift and release confidence.
 
+Provider smokes should be run once per touched provider family, not in a loop while developing. Repeated iteration belongs in fixture-backed provider tests and mocked fetch/runtime ports.
+
 ## Discord Presence Gate
 
 Run this only when Discord Rich Presence behavior changed:
@@ -121,6 +123,8 @@ Check:
 - `/diagnostics` shows provider and playback events
 - background presence/cache/timing failures appear as redacted diagnostics instead of disappearing silently
 - next/previous/refresh controls do not leave the terminal or mpv in a stuck state
+- last-episode EOF opens post-playback controls quickly even when recommendations are unavailable
+- auto-next uses a prefetched stream if available and otherwise falls back to normal resolve after a short visible handoff
 
 ## Attention, Queue, And Playlist Gate
 

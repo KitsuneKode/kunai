@@ -71,6 +71,57 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     userAction: "Open /downloads or /library if the artifact later disappears.",
   },
   {
+    operation: "download.artifact.repairable",
+    category: "download",
+    audience: "both",
+    summary: "The primary video is usable, but a subtitle or artwork sidecar needs repair.",
+    userAction:
+      "Open /downloads and retry the job to repair missing sidecars without redownloading video.",
+  },
+  {
+    operation: "source-inventory.cache.hit",
+    category: "cache",
+    audience: "developer",
+    summary: "Source inventory reused a compatible cached provider source projection.",
+  },
+  {
+    operation: "source-inventory.cache.miss",
+    category: "cache",
+    audience: "developer",
+    summary: "Source inventory needed a fresh provider source projection.",
+  },
+  {
+    operation: "source-inventory.cache.set",
+    category: "cache",
+    audience: "developer",
+    summary: "Source inventory stored a provider source projection with a bounded TTL.",
+  },
+  {
+    operation: "source-inventory.cache.invalidated",
+    category: "cache",
+    audience: "developer",
+    summary: "Source inventory invalidated a provider source projection.",
+  },
+  {
+    operation: "post-playback.recommendations.seed",
+    category: "playback",
+    audience: "both",
+    summary: "The post-playback screen used already-prefetched recommendations for first paint.",
+  },
+  {
+    operation: "post-playback.recommendations.warm",
+    category: "playback",
+    audience: "developer",
+    summary: "Post-playback recommendation data warmed in the background after the shell opened.",
+  },
+  {
+    operation: "post-playback.autonext.prefetch-wait",
+    category: "playback",
+    audience: "developer",
+    summary:
+      "Auto-next waited briefly for a near-EOF prefetch before falling back to normal resolve.",
+  },
+  {
     operation: "presence.clear.failed",
     category: "presence",
     audience: "both",

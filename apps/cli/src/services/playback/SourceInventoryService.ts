@@ -34,10 +34,16 @@ export class SourceInventoryService {
     input: SourceInventoryCacheInput,
     now = new Date(),
   ): Promise<ProviderResolveResult | null> {
+    const key = buildSourceInventoryCacheKey(input);
     try {
-      const hit = this.repository.get<ProviderResolveResult>(
-        buildSourceInventoryCacheKey(input),
-        now,
+      const hit = this.repository.get<ProviderResolveResult>(key, now);
+      this.recordCacheDecision(
+        hit ? "source-inventory.cache.hit" : "source-inventory.cache.miss",
+        input,
+        {
+          keyHash: cacheKeyHash(key),
+          reason: hit ? "fresh-entry" : "missing-or-expired",
+        },
       );
       return hit?.inventory ?? null;
     } catch (error) {
@@ -56,15 +62,21 @@ export class SourceInventoryService {
       return;
     }
 
+    const key = buildSourceInventoryCacheKey(input);
     try {
       this.repository.set(
-        buildSourceInventoryCacheKey(input),
+        key,
         input.providerId,
         input.titleId,
         inventory,
         getInventoryExpiresAt(ttlClass, inventory.cachePolicy?.ttlMs, now),
         now.toISOString(),
       );
+      this.recordCacheDecision("source-inventory.cache.set", input, {
+        keyHash: cacheKeyHash(key),
+        ttlClass,
+        expiresAt: getInventoryExpiresAt(ttlClass, inventory.cachePolicy?.ttlMs, now),
+      });
     } catch (error) {
       this.recordCacheFailure("source-inventory.set", input, error);
       // Inventory caching is a performance feature; playback must keep going.
@@ -72,8 +84,13 @@ export class SourceInventoryService {
   }
 
   async delete(input: SourceInventoryCacheInput): Promise<void> {
+    const key = buildSourceInventoryCacheKey(input);
     try {
-      this.repository.delete(buildSourceInventoryCacheKey(input));
+      this.repository.delete(key);
+      this.recordCacheDecision("source-inventory.cache.invalidated", input, {
+        keyHash: cacheKeyHash(key),
+        reason: "manual-delete",
+      });
     } catch (error) {
       this.recordCacheFailure("source-inventory.delete", input, error);
     }
@@ -97,6 +114,29 @@ export class SourceInventoryService {
         mediaKind: input.mediaKind,
         runtime: input.runtime,
         error: error instanceof Error ? error.message : String(error),
+      },
+    });
+  }
+
+  private recordCacheDecision(
+    operation: string,
+    input: SourceInventoryCacheInput,
+    context: Record<string, unknown>,
+  ): void {
+    this.options.diagnosticsStore?.record({
+      level: "info",
+      category: "cache",
+      operation,
+      message: "Source inventory cache decision",
+      providerId: input.providerId,
+      titleId: input.titleId,
+      season: input.season,
+      episode: input.episode ?? input.absoluteEpisode,
+      context: {
+        mediaKind: input.mediaKind,
+        runtime: input.runtime,
+        schemaVersion: input.schemaVersion ?? SOURCE_INVENTORY_SCHEMA_VERSION,
+        ...context,
       },
     });
   }
@@ -137,4 +177,8 @@ function normalizePart(value: string | number | undefined): string {
     return "none";
   }
   return String(value).trim().toLowerCase().replaceAll(/\s+/g, "-");
+}
+
+function cacheKeyHash(key: string): string {
+  return createHash("sha256").update(key).digest("hex").slice(0, 12);
 }

@@ -7,6 +7,7 @@ import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImp
 import {
   buildSourceInventoryCacheKey,
   SourceInventoryService,
+  type SourceInventoryCacheInput,
 } from "@/services/playback/SourceInventoryService";
 import { openKunaiDatabase, runMigrations, SourceInventoryRepository } from "@kunai/storage";
 import type { ProviderResolveResult } from "@kunai/types";
@@ -69,6 +70,49 @@ describe("SourceInventoryService", () => {
     );
   });
 
+  test("locks byte-affecting source inventory identity inputs", () => {
+    const base = {
+      providerId: "vidking",
+      mediaKind: "series" as const,
+      titleId: "127529",
+      season: 1,
+      episode: 2,
+      audioMode: "original",
+      subtitleLanguage: "en",
+      runtime: "direct-http" as const,
+    };
+    const baseKey = buildSourceInventoryCacheKey(base);
+
+    expect(buildSourceInventoryCacheKey({ ...base, audioMode: "dub" })).not.toBe(baseKey);
+    expect(buildSourceInventoryCacheKey({ ...base, subtitleLanguage: "none" })).not.toBe(baseKey);
+    expect(buildSourceInventoryCacheKey({ ...base, episode: 3 })).not.toBe(baseKey);
+    expect(buildSourceInventoryCacheKey({ ...base, absoluteEpisode: 8 })).not.toBe(baseKey);
+    expect(buildSourceInventoryCacheKey({ ...base, runtime: "browser-safe-fetch" })).not.toBe(
+      baseKey,
+    );
+  });
+
+  test("keeps display-only metadata out of source inventory identity", () => {
+    const base = {
+      providerId: "vidking",
+      mediaKind: "series" as const,
+      titleId: "127529",
+      season: 1,
+      episode: 2,
+      audioMode: "original",
+      subtitleLanguage: "en",
+      runtime: "direct-http" as const,
+    };
+
+    const displayOnlyVariants = [
+      { ...base, displayLabel: "Breaking Bad" },
+      { ...base, posterUrl: "https://img.example/poster.jpg" },
+      { ...base, releaseDate: "2026-05-19" },
+    ] as unknown as readonly SourceInventoryCacheInput[];
+
+    expect(new Set(displayOnlyVariants.map(buildSourceInventoryCacheKey)).size).toBe(1);
+  });
+
   test("round trips full provider resolve inventory", async () => {
     const service = new SourceInventoryService(new SourceInventoryRepository(migratedCacheDb()));
     const input = {
@@ -90,6 +134,45 @@ describe("SourceInventoryService", () => {
     expect(hit?.sources?.[0]?.id).toBe("source:vidking:cdn");
     expect(hit?.streams).toHaveLength(2);
     expect(hit?.subtitles[0]?.language).toBe("en");
+  });
+
+  test("records cache hit miss set and invalidation decisions without key preimages", async () => {
+    const diagnosticsStore = new DiagnosticsStoreImpl();
+    const service = new SourceInventoryService(new SourceInventoryRepository(migratedCacheDb()), {
+      diagnosticsStore,
+    });
+    const input = {
+      providerId: "vidking",
+      mediaKind: "series" as const,
+      titleId: "127529",
+      season: 1,
+      episode: 2,
+    };
+
+    await service.get(input, new Date("2026-05-07T00:00:00.000Z"));
+    await service.set(input, makeResolveResult(), new Date("2026-05-07T00:00:00.000Z"));
+    await service.get(input, new Date("2026-05-07T00:01:00.000Z"));
+    await service.delete(input);
+
+    expect(diagnosticsStore.getSnapshot()).toEqual([
+      expect.objectContaining({
+        operation: "source-inventory.cache.miss",
+        context: expect.objectContaining({ reason: "missing-or-expired" }),
+      }),
+      expect.objectContaining({
+        operation: "source-inventory.cache.set",
+        context: expect.objectContaining({ ttlClass: "stream-manifest" }),
+      }),
+      expect.objectContaining({
+        operation: "source-inventory.cache.hit",
+        context: expect.objectContaining({ reason: "fresh-entry" }),
+      }),
+      expect.objectContaining({
+        operation: "source-inventory.cache.invalidated",
+        context: expect.objectContaining({ reason: "manual-delete" }),
+      }),
+    ]);
+    expect(JSON.stringify(diagnosticsStore.getSnapshot())).not.toContain("source-inventory:");
   });
 
   test("records recoverable diagnostics when inventory persistence fails", async () => {

@@ -30,6 +30,7 @@ export type CacheTtlClass =
   | "direct-media-url"
   | "subtitle-list"
   | "episode-list"
+  | "provider-metadata"
   | "catalog-static"
   | "catalog-trending"
   | "provider-health";

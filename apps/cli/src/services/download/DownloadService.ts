@@ -519,7 +519,7 @@ export class DownloadService {
       {
         subtitleUrl: resolved.stream.subtitle ?? null,
         subtitlePath: null,
-        subtitleLanguage,
+        subtitleLanguage: subtitleLanguage ?? (job.subtitleUrl ? null : job.subtitleLanguage),
       },
       updatedAt,
     );
@@ -859,6 +859,18 @@ export class DownloadService {
         },
         updatedAt,
       );
+      this.deps.diagnosticsStore?.record({
+        category: "download",
+        level: result.status === "failed" ? "warn" : "info",
+        operation: "download.artifact.repairable",
+        message: "Download completed with repairable sidecar",
+        context: {
+          jobId,
+          artifact: result.artifact,
+          artifactStatus: result.status,
+          message: result.message ?? null,
+        },
+      });
       return;
     }
     if (result.status === "optional-missing") {
