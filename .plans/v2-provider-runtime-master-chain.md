@@ -19,7 +19,7 @@ TRACKER_STATUS: in-progress
 TRACKER_OWNER: codex
 TRACKER_LAST_UPDATED: 2026-05-19
 TRACKER_CURRENT_SLICE: P3-provider-evidence-fixtures
-TRACKER_NEXT_SLICE: P3-T2-series-provider-evidence-fixtures
+TRACKER_NEXT_SLICE: P3-T3-miruro-evidence-fixtures
 TRACKER_BLOCKERS: none
 ```
 

@@ -17,7 +17,7 @@ SLICE_ID: P3
 SLICE_STATUS: in-progress
 SLICE_OWNER: codex
 SLICE_LAST_UPDATED: 2026-05-18
-SLICE_CURRENT_TASK: P3-T2
+SLICE_CURRENT_TASK: P3-T3
 SLICE_BLOCKERS: none
 ```
 
@@ -62,12 +62,15 @@ Completed in `e1ed60a`.
 
 ### P3-T2: Add Series/Movie Provider Fixtures
 
-- [ ] Add VidKing fixture with source/server labels and quality evidence.
-- [ ] Add Rivestream fixture with source/server labels and quality evidence.
-- [ ] Add expected normalized contract outputs.
-- [ ] Add tests proving native labels are preserved separately from normalized language fields.
-- [ ] Run `bun run --cwd packages/providers test`.
-- [ ] Commit with message `test(providers): add series provider evidence fixtures`.
+- [x] Add VidKing fixture with source/server labels and quality evidence.
+- [x] Add Rivestream fixture with source/server labels and quality evidence.
+- [x] Add expected normalized contract outputs.
+- [x] Add tests proving native labels are preserved separately from normalized language fields.
+- [x] Run `bun run --cwd packages/providers typecheck`.
+- [x] Run `bun run --cwd packages/providers test`.
+- [x] Commit with message `test(providers): add series provider evidence fixtures`.
+
+Completed in `b38179f`.
 
 ### P3-T3: Add Miruro Fixture
 
