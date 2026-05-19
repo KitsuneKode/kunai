@@ -1,0 +1,9 @@
+{
+  "serverLabel": "Kiwi hardsub",
+  "serverId": "kiwi",
+  "audioLanguage": "ja",
+  "hardSubLanguage": "en",
+  "presentation": "sub",
+  "subtitleLanguage": "en",
+  "seekBarVttUrl": "https://cdn.miruro.example/thumbs/evidence.vtt"
+}

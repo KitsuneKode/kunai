@@ -1,0 +1,27 @@
+{
+  "streams": [
+    {
+      "url": "https://cdn.miruro.example/kiwi/1080/index.m3u8",
+      "type": "hls",
+      "quality": "1080p",
+      "referer": "https://www.miruro.tv/watch/evidence",
+      "audio": "Japanese",
+      "fansub": "Kiwi"
+    }
+  ],
+  "subtitles": [
+    {
+      "url": "https://subs.miruro.example/en.vtt",
+      "lang": "English",
+      "label": "English"
+    }
+  ],
+  "thumbnails": [
+    {
+      "url": "https://cdn.miruro.example/thumbs/evidence.vtt",
+      "type": "vtt"
+    }
+  ],
+  "intro": { "start": 90, "end": 180 },
+  "outro": { "start": 1320, "end": 1410 }
+}

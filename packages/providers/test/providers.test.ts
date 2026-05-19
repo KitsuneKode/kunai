@@ -5,6 +5,7 @@ import { createProviderEngine } from "@kunai/core";
 import {
   allmangaProviderModule,
   buildAllmangaSourceCandidates,
+  createMiruroResultFromPayload,
   createVidkingResultFromPayload,
   extractQualitiesFromMaster,
   getProviderMigrationQueue,
@@ -377,6 +378,65 @@ test("rivestream evidence fixture preserves provider server label and normalized
     ],
   });
   expect(result.subtitles[0]?.language).toBe(expected.subtitleLanguage);
+});
+
+test("miruro evidence fixture preserves server evidence subtitles and seek thumbnails", async () => {
+  const sourceData = await readFixture<
+    Parameters<typeof createMiruroResultFromPayload>[0]["sourceData"]
+  >("miruro/source-response.json");
+  const expected = await readFixture<{
+    readonly serverLabel: string;
+    readonly serverId: "kiwi" | "bee";
+    readonly audioLanguage: string;
+    readonly hardSubLanguage: string;
+    readonly presentation: "sub" | "dub";
+    readonly subtitleLanguage: string;
+    readonly seekBarVttUrl: string;
+  }>("miruro/expected-normalized.json");
+
+  const result = createMiruroResultFromPayload({
+    input: {
+      title: {
+        id: "anilist:999",
+        anilistId: "999",
+        kind: "anime",
+        title: "Evidence Fox",
+      },
+      episode: { episode: 1 },
+      mediaKind: "anime",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    sourceData,
+    audioCategory: expected.presentation,
+    serverProfile: {
+      id: expected.serverId,
+      label: expected.serverLabel,
+      subtitleDelivery: "hardcoded",
+      hardSubLanguage: expected.hardSubLanguage,
+    },
+    context: { now: () => "2026-05-19T00:00:00.000Z" },
+  });
+
+  expect(result?.status).toBe("resolved");
+  expect(result?.artwork?.seekBarVttUrl).toBe(expected.seekBarVttUrl);
+  expect(result?.sources?.[0]).toMatchObject({
+    label: expected.serverLabel,
+    artwork: { seekBarVttUrl: expected.seekBarVttUrl },
+    sourceEvidence: [
+      expect.objectContaining({
+        serverId: expected.serverId,
+        nativeLabel: expected.serverLabel,
+      }),
+    ],
+  });
+  expect(result?.streams[0]).toMatchObject({
+    audioLanguages: [expected.audioLanguage],
+    hardSubLanguage: expected.hardSubLanguage,
+    presentation: expected.presentation,
+    artwork: { seekBarVttUrl: expected.seekBarVttUrl },
+  });
+  expect(result?.subtitles[0]?.language).toBe(expected.subtitleLanguage);
 });
 
 test("m3u8 quality extraction exposes sorted playable variants", async () => {
