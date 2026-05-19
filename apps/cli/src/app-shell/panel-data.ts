@@ -11,6 +11,7 @@ import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory"
 import { resolveDownloadFeatureState } from "@/services/download/DownloadFeature";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { formatTimestamp, type HistoryEntry } from "@/services/persistence/HistoryStore";
+import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { describePresenceConfiguration } from "@/services/presence/PresenceServiceImpl";
 import type { CapabilitySnapshot } from "@/ui";
@@ -262,6 +263,11 @@ export function buildDiagnosticsPanelLines({
   const providerTimelineEvent = recentEvents.find(
     (event) => event.operation === "provider.resolve.timeline",
   );
+  const sourceInventorySummary = state.stream?.providerResolveResult
+    ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
+        selectedSubtitleUrl: state.stream.subtitle,
+      })
+    : null;
   const runtimeHealth = buildRuntimeHealthSnapshot({
     recentEvents,
     currentProvider: state.provider,
@@ -325,6 +331,19 @@ export function buildDiagnosticsPanelLines({
             : providerTimelineEvent
               ? "info"
               : "neutral",
+    },
+    {
+      label: "Source inventory",
+      detail: sourceInventorySummary
+        ? formatSourceInventorySummary(sourceInventorySummary)
+        : "not resolved yet",
+      tone: sourceInventorySummary?.warnings.some((warning) => warning.tone === "danger")
+        ? "error"
+        : sourceInventorySummary?.warnings.length
+          ? "warning"
+          : sourceInventorySummary
+            ? "success"
+            : "neutral",
     },
     {
       label: "Playback problem",
@@ -572,6 +591,25 @@ function formatProviderTimelineEvent(event: DiagnosticEvent | undefined): string
     typeof attempts === "number" ? `${attempts} attempts` : null,
     typeof failureClass === "string" && failureClass !== "none" ? failureClass : null,
     typeof primaryFailure === "string" ? primaryFailure : null,
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
+}
+
+function formatSourceInventorySummary(
+  summary: ReturnType<typeof buildPlaybackSourceInventoryDiagnosticsSummary>,
+): string {
+  const selected = summary.selected
+    ? `${summary.selected.sourceId ?? "source?"}/${summary.selected.qualityLabel ?? "quality?"}`
+    : "none";
+  return [
+    summary.status,
+    `selected ${selected}`,
+    `${summary.sourceGroups.length} sources`,
+    `${summary.qualityOptions.length} qualities`,
+    `${summary.languageOptions.length} languages`,
+    `${summary.subtitleOptions.length} subtitle choices`,
+    summary.warnings.length ? `${summary.warnings.length} warnings` : null,
   ]
     .filter(Boolean)
     .join("  ·  ");

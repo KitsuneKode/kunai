@@ -69,4 +69,78 @@ describe("DiagnosticsSupportBundle", () => {
       latestUserAction: "Open /downloads or /library if the artifact later disappears.",
     });
   });
+
+  test("includes playback source inventory summaries without raw media locations", () => {
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.1.0",
+      debug: true,
+      now: () => new Date("2026-05-16T00:00:00.000Z"),
+      playbackSourceInventory: {
+        providerId: "rivestream",
+        status: "resolved",
+        selected: {
+          sourceId: "source-b",
+          streamId: "stream-b",
+          qualityLabel: "720p",
+          audioLanguageCount: 1,
+          subtitleLanguageCount: 1,
+        },
+        sourceGroups: [
+          {
+            id: "source-b",
+            label: "RiveStream",
+            state: "selected",
+            nativeLabelCount: 1,
+            audioLanguageCount: 1,
+            subtitleLanguageCount: 1,
+            candidateCount: 1,
+          },
+        ],
+        languageOptions: [],
+        qualityOptions: [
+          {
+            id: "quality:720p",
+            label: "720p",
+            state: "selected",
+            qualityRank: 720,
+            candidateCount: 1,
+          },
+        ],
+        subtitleOptions: [
+          {
+            id: "subtitle:en",
+            label: "English",
+            state: "selected",
+            delivery: "external",
+            language: "en",
+            candidateCount: 1,
+          },
+        ],
+        recoveryActions: [
+          {
+            id: "retry-current",
+            disabled: false,
+            preservesTimestamp: true,
+            changesCacheIdentity: false,
+          },
+        ],
+        warnings: [],
+        traceSummary: {
+          providerId: "rivestream",
+          selectedStreamId: "stream-b",
+          sourceCount: 1,
+          streamCount: 1,
+          subtitleCount: 1,
+          failureCount: 0,
+          eventCount: 2,
+          cacheHit: false,
+        },
+      },
+      events: [],
+    });
+
+    expect(bundle.playbackSourceInventory?.sourceGroups[0]?.label).toBe("RiveStream");
+    expect(bundle.playbackSourceInventory?.qualityOptions[0]?.label).toBe("720p");
+    expect(JSON.stringify(bundle.playbackSourceInventory)).not.toContain("private-stream");
+  });
 });

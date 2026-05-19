@@ -11,6 +11,7 @@ import {
 } from "@/app-shell/panel-data";
 import { createInitialState } from "@/domain/session/SessionState";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
+import type { ProviderResolveResult } from "@kunai/types";
 
 describe("panel-data", () => {
   test("buildHelpPanelLines returns stable guidance", () => {
@@ -210,6 +211,93 @@ describe("panel-data", () => {
       "vidking failed (timeout) -> rivestream succeeded",
     );
     expect(lines.find((line) => line.label === "Provider timeline")?.tone).toBe("success");
+  });
+
+  test("buildDiagnosticsPanelLines summarizes resolved source inventory for support triage", () => {
+    const providerResolveResult = {
+      status: "resolved",
+      providerId: "rivestream",
+      selectedStreamId: "stream-1",
+      streams: [
+        {
+          id: "stream-1",
+          providerId: "rivestream",
+          sourceId: "source-1",
+          protocol: "hls",
+          container: "m3u8",
+          url: "https://cdn.example/private-stream.m3u8",
+          confidence: 0.9,
+          qualityLabel: "720p",
+          audioLanguages: ["en"],
+          cachePolicy: {
+            ttlClass: "stream-manifest",
+            scope: "local",
+            keyParts: [],
+          },
+        },
+      ],
+      subtitles: [
+        {
+          id: "sub-en",
+          providerId: "rivestream",
+          sourceId: "source-1",
+          url: "https://subs.example/private-en.vtt",
+          language: "en",
+          label: "English",
+          source: "provider",
+          confidence: 0.9,
+          cachePolicy: {
+            ttlClass: "subtitle-list",
+            scope: "local",
+            keyParts: [],
+          },
+        },
+      ],
+      trace: {
+        id: "trace-1",
+        startedAt: "2026-05-19T00:00:00.000Z",
+        cacheHit: false,
+        title: { id: "demo", kind: "series", title: "Demo" },
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    } satisfies ProviderResolveResult;
+    const state = {
+      ...createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      stream: {
+        url: "https://cdn.example/private-stream.m3u8",
+        headers: {},
+        subtitle: "https://subs.example/private-en.vtt",
+        subtitleList: [
+          {
+            url: "https://subs.example/private-en.vtt",
+            display: "English",
+            language: "en",
+          },
+        ],
+        subtitleSource: "provider" as const,
+        timestamp: 0,
+        providerResolveResult,
+      },
+    };
+    const lines = buildDiagnosticsPanelLines({
+      state,
+      recentEvents: [],
+    });
+
+    const sourceInventory = lines.find((line) => line.label === "Source inventory");
+    expect(sourceInventory?.detail).toContain("resolved");
+    expect(sourceInventory?.detail).toContain("1 sources");
+    expect(sourceInventory?.detail).toContain("1 qualities");
+    expect(sourceInventory?.detail).toContain("2 subtitle choices");
+    expect(sourceInventory?.detail).not.toContain("private-stream");
+    expect(sourceInventory?.detail).not.toContain("private-en.vtt");
+    expect(sourceInventory?.tone).toBe("success");
   });
 
   test("buildDiagnosticsPanelLines puts plain-language health summary before technical sections", () => {

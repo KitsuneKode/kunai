@@ -1,3 +1,4 @@
+import type { PlaybackSourceInventoryDiagnosticsSummary } from "../playback/PlaybackSourceInventoryProjection";
 import type { DiagnosticEvent, DiagnosticEventInput } from "./diagnostic-event";
 import type { DiagnosticsSupportBundle } from "./support-bundle";
 
@@ -8,5 +9,6 @@ export interface DiagnosticsService {
   clear(): void;
   buildSupportBundle(input?: {
     readonly capabilities?: Record<string, unknown> | null;
+    readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary | null;
   }): DiagnosticsSupportBundle;
 }

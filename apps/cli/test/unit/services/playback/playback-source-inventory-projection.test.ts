@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { projectPlaybackSourceInventory } from "@/services/playback/PlaybackSourceInventoryProjection";
+import {
+  buildPlaybackSourceInventoryDiagnosticsSummary,
+  projectPlaybackSourceInventory,
+} from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { ProviderResolveResult, ProviderSourceCandidate, StreamCandidate } from "@kunai/types";
 
 const cachePolicy = {
@@ -268,4 +271,73 @@ test("surfaces exhausted provider failures as warnings and disabled retry contro
     state: "failed",
     disabledReason: "No playable stream was exposed for this source.",
   });
+});
+
+test("builds a diagnostics-safe source inventory summary without stream or subtitle URLs", () => {
+  const summary = buildPlaybackSourceInventoryDiagnosticsSummary(
+    {
+      status: "resolved",
+      providerId: "rivestream",
+      selectedStreamId: "stream-b",
+      streams: [
+        stream({
+          id: "stream-b",
+          providerId: "rivestream",
+          sourceId: "source-b",
+          qualityLabel: "720p",
+          audioLanguages: ["en"],
+          url: "https://cdn.example/private-stream.m3u8",
+        }),
+      ],
+      subtitles: [
+        {
+          id: "sub-en",
+          providerId: "rivestream",
+          sourceId: "source-b",
+          url: "https://subs.example/private-en.vtt",
+          language: "en",
+          label: "English",
+          source: "provider",
+          confidence: 0.9,
+          cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+        },
+      ],
+      trace: trace(),
+      failures: [],
+    },
+    { selectedSubtitleUrl: "https://subs.example/private-en.vtt" },
+  );
+
+  expect(summary.selected).toMatchObject({
+    sourceId: "source-b",
+    streamId: "stream-b",
+    qualityLabel: "720p",
+    audioLanguageCount: 1,
+    subtitleLanguageCount: 1,
+  });
+  expect(summary.sourceGroups).toEqual([
+    {
+      id: "source-b",
+      label: "source-b",
+      state: "selected",
+      nativeLabelCount: 1,
+      audioLanguageCount: 1,
+      subtitleLanguageCount: 1,
+      candidateCount: 1,
+    },
+  ]);
+  expect(summary.subtitleOptions.find((option) => option.id === "subtitle:sub-en")).toEqual({
+    id: "subtitle:sub-en",
+    label: "English",
+    state: "selected",
+    delivery: "external",
+    language: "en",
+    candidateCount: 1,
+  });
+  expect(summary.subtitleOptions.find((option) => option.id === "subtitle:off")).toMatchObject({
+    delivery: "off",
+    state: "available",
+  });
+  expect(JSON.stringify(summary)).not.toContain("private-stream");
+  expect(JSON.stringify(summary)).not.toContain("private-en.vtt");
 });

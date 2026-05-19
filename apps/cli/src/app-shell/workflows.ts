@@ -48,6 +48,7 @@ import {
   type HistoryEntry,
   type HistoryStore,
 } from "@/services/persistence/HistoryStore";
+import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
 import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
 import { getKunaiPaths, type DownloadJobRecord } from "@kunai/storage";
@@ -1448,8 +1449,14 @@ async function handleClearHistory(container: Container): Promise<"handled"> {
 async function handleExportDiagnostics(container: Container): Promise<"handled"> {
   const fileName = `kunai-diagnostics-export-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
   const path = join(process.cwd(), fileName);
+  const state = container.stateManager.getState();
   const bundle = container.diagnosticsService.buildSupportBundle({
     capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
+    playbackSourceInventory: state.stream?.providerResolveResult
+      ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
+          selectedSubtitleUrl: state.stream.subtitle,
+        })
+      : null,
   });
   await writeAtomicJson(path, bundle);
   await pruneOldDiagnosticFiles({
@@ -1489,8 +1496,14 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
   if (reportAction === "export-and-open") {
     const fileName = `kunai-diagnostics-report-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
     const path = join(process.cwd(), fileName);
+    const state = container.stateManager.getState();
     const bundle = container.diagnosticsService.buildSupportBundle({
       capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
+      playbackSourceInventory: state.stream?.providerResolveResult
+        ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
+            selectedSubtitleUrl: state.stream.subtitle,
+          })
+        : null,
     });
     await writeAtomicJson(path, bundle);
     const draft = buildIssueReportDraft({ bundle, diagnosticsPath: fileName });

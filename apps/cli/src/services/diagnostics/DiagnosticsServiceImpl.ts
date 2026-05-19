@@ -36,11 +36,14 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
     this.deps.store.clear();
   }
 
-  buildSupportBundle(input?: { readonly capabilities?: Record<string, unknown> | null }) {
+  buildSupportBundle(
+    input?: Parameters<DiagnosticsService["buildSupportBundle"]>[0],
+  ): ReturnType<DiagnosticsService["buildSupportBundle"]> {
     return buildDiagnosticsBundle({
       appVersion: this.deps.appVersion ?? "unknown",
       debug: this.deps.debug ?? false,
       capabilities: input?.capabilities ?? {},
+      playbackSourceInventory: input?.playbackSourceInventory ?? null,
       events: this.deps.store.getSnapshot(),
       now: this.deps.now,
     });

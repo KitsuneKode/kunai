@@ -1,3 +1,4 @@
+import type { PlaybackSourceInventoryDiagnosticsSummary } from "../playback/PlaybackSourceInventoryProjection";
 import type { DiagnosticEvent } from "./diagnostic-event";
 import { getDiagnosticOperation } from "./operation-taxonomy";
 import { redactDiagnosticValue } from "./redaction";
@@ -18,6 +19,7 @@ export type DiagnosticsSupportBundle = {
     readonly bunVersion: string;
   };
   readonly capabilities: Record<string, unknown>;
+  readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary;
   readonly correlation: DiagnosticsBundleCorrelation;
   readonly sections: Record<string, DiagnosticsBundleSection>;
   readonly eventCount: number;
@@ -44,6 +46,7 @@ export type BuildDiagnosticsSupportBundleInput = {
   readonly appVersion: string;
   readonly debug: boolean;
   readonly capabilities?: Record<string, unknown> | null;
+  readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary | null;
   readonly events: readonly DiagnosticEvent[];
   readonly now?: () => Date;
 };
@@ -58,6 +61,12 @@ export function buildDiagnosticsSupportBundle(
     string,
     unknown
   >;
+  const playbackSourceInventory = input.playbackSourceInventory
+    ? (redactDiagnosticValue(
+        input.playbackSourceInventory,
+        redactionOptions,
+      ) as PlaybackSourceInventoryDiagnosticsSummary)
+    : undefined;
   const sections = buildBundleSections(events);
 
   return {
@@ -76,6 +85,7 @@ export function buildDiagnosticsSupportBundle(
       bunVersion: Bun.version,
     },
     capabilities,
+    playbackSourceInventory,
     correlation: buildBundleCorrelation(events),
     sections,
     eventCount: events.length,

@@ -27,6 +27,61 @@ export type PlaybackSourceInventoryProjectionOptions = {
   readonly selectedSubtitleUrl?: string;
 };
 
+export type PlaybackSourceInventoryDiagnosticsSummary = {
+  readonly providerId: string;
+  readonly status: PlaybackSourceInventoryView["status"];
+  readonly selected?: Pick<
+    NonNullable<PlaybackSourceInventoryView["selected"]>,
+    "sourceId" | "streamId" | "variantId" | "qualityLabel" | "presentation"
+  > & {
+    readonly audioLanguageCount: number;
+    readonly subtitleLanguageCount: number;
+  };
+  readonly sourceGroups: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly state: string;
+    readonly nativeLabelCount: number;
+    readonly audioLanguageCount: number;
+    readonly subtitleLanguageCount: number;
+    readonly candidateCount: number;
+  }[];
+  readonly languageOptions: readonly {
+    readonly id: string;
+    readonly role: string;
+    readonly state: string;
+    readonly candidateCount: number;
+  }[];
+  readonly qualityOptions: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly state: string;
+    readonly qualityRank?: number;
+    readonly candidateCount: number;
+  }[];
+  readonly subtitleOptions: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly state: string;
+    readonly delivery: string;
+    readonly language?: string;
+    readonly candidateCount: number;
+  }[];
+  readonly recoveryActions: readonly {
+    readonly id: string;
+    readonly disabled: boolean;
+    readonly preservesTimestamp: boolean;
+    readonly changesCacheIdentity: boolean;
+  }[];
+  readonly warnings: readonly {
+    readonly id: string;
+    readonly tone: string;
+    readonly code?: string;
+    readonly message: string;
+  }[];
+  readonly traceSummary?: PlaybackSourceInventoryView["traceSummary"];
+};
+
 export function projectPlaybackSourceInventory(
   result: ProviderResolveResult,
   options: PlaybackSourceInventoryProjectionOptions = {},
@@ -52,6 +107,71 @@ export function projectPlaybackSourceInventory(
 }
 
 export const buildPlaybackSourceInventoryView = projectPlaybackSourceInventory;
+
+export function buildPlaybackSourceInventoryDiagnosticsSummary(
+  result: ProviderResolveResult,
+  options: PlaybackSourceInventoryProjectionOptions = {},
+): PlaybackSourceInventoryDiagnosticsSummary {
+  const view = projectPlaybackSourceInventory(result, options);
+  return {
+    providerId: view.providerId,
+    status: view.status,
+    selected: view.selected
+      ? {
+          sourceId: view.selected.sourceId,
+          streamId: view.selected.streamId,
+          variantId: view.selected.variantId,
+          qualityLabel: view.selected.qualityLabel,
+          presentation: view.selected.presentation,
+          audioLanguageCount: view.selected.audioLanguages.length,
+          subtitleLanguageCount: view.selected.subtitleLanguages.length,
+        }
+      : undefined,
+    sourceGroups: view.sourceGroups.map((group) => ({
+      id: group.id,
+      label: group.label,
+      state: group.state,
+      nativeLabelCount: group.nativeLabels.length,
+      audioLanguageCount: group.audioLanguages.length,
+      subtitleLanguageCount: group.subtitleLanguages.length,
+      candidateCount: group.candidateCount,
+    })),
+    languageOptions: view.languageOptions.map((option) => ({
+      id: option.id,
+      role: option.role,
+      state: option.state,
+      candidateCount: option.candidateCount,
+    })),
+    qualityOptions: view.qualityOptions.map((option) => ({
+      id: option.id,
+      label: option.label,
+      state: option.state,
+      qualityRank: option.qualityRank,
+      candidateCount: option.candidateCount,
+    })),
+    subtitleOptions: view.subtitleOptions.map((option) => ({
+      id: option.id,
+      label: option.label,
+      state: option.state,
+      delivery: option.delivery,
+      language: option.language,
+      candidateCount: option.candidateCount,
+    })),
+    recoveryActions: view.recoveryActions.map((action) => ({
+      id: action.id,
+      disabled: Boolean(action.disabled),
+      preservesTimestamp: action.preservesTimestamp,
+      changesCacheIdentity: action.changesCacheIdentity,
+    })),
+    warnings: view.warnings.map((warning) => ({
+      id: warning.id,
+      tone: warning.tone,
+      code: warning.code,
+      message: warning.message,
+    })),
+    traceSummary: view.traceSummary,
+  };
+}
 
 function selectStream(
   result: ProviderResolveResult,
