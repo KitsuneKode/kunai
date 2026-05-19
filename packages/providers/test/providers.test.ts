@@ -439,6 +439,80 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
   expect(result?.subtitles[0]?.language).toBe(expected.subtitleLanguage);
 });
 
+test("negative fixture maps blocked vidking host to structured failure", async () => {
+  const blocked = await readFixture<{ readonly status: number; readonly body: unknown }>(
+    "negative/vidking-blocked.json",
+  );
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+      },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-05-19T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async () => jsonResponse(blocked.body, blocked.status),
+      },
+    },
+    { serverEndpoint: "blocked" },
+  );
+
+  expect(result?.status).toBe("exhausted");
+  expect(result?.failures[0]).toMatchObject({
+    code: "blocked",
+    retryable: false,
+  });
+  expect(result?.trace.events?.map((event) => event.type)).toContain("provider:exhausted");
+});
+
+test("negative fixture keeps rivestream parse failures inspectable", async () => {
+  const services = await readFixture<unknown>("negative/rivestream-services-response.json");
+  const malformed = await readTextFixture("negative/rivestream-parse-missing.txt");
+  const result = await rivestreamProviderModule.resolve(
+    {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+      },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-05-19T00:00:00.000Z",
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input) => {
+          const url = String(input);
+          if (url.includes("VideoProviderServices")) return jsonResponse(services);
+          return new Response(malformed, {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      },
+    },
+  );
+
+  expect(result.status).toBe("exhausted");
+  expect(result.failures[0]).toMatchObject({
+    code: "parse-failed",
+    retryable: false,
+  });
+  expect(result.trace.failures[0]?.code).toBe("parse-failed");
+});
+
 test("m3u8 quality extraction exposes sorted playable variants", async () => {
   const streams = await extractQualitiesFromMaster(
     {
@@ -551,9 +625,13 @@ async function readFixture<T>(path: string): Promise<T> {
   return JSON.parse(await Bun.file(new URL(path, FIXTURE_BASE)).text()) as T;
 }
 
-function jsonResponse(value: unknown): Response {
+async function readTextFixture(path: string): Promise<string> {
+  return Bun.file(new URL(path, FIXTURE_BASE)).text();
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
-    status: 200,
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }

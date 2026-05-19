@@ -422,13 +422,24 @@ export const rivestreamProviderModule: CoreProviderModule = {
             // We found sources, break the loop
             break;
           }
-        } catch {
-          // Silently swallow error and try next server
+        } catch (error) {
+          // Isolate provider-server failures, but keep typed evidence for diagnostics.
+          const providerError =
+            error instanceof ProviderHttpError
+              ? error
+              : new ProviderHttpError({
+                  providerId: RIVESTREAM_PROVIDER_ID,
+                  stage: "source:start",
+                  code: "not-found",
+                  message: `Internal server ${provider} failed`,
+                  retryable: true,
+                  cause: error,
+                });
           failures.push({
             providerId: RIVESTREAM_PROVIDER_ID,
-            code: "not-found",
-            message: `Internal server ${provider} failed`,
-            retryable: true,
+            code: providerError.code,
+            message: providerError.message,
+            retryable: providerError.retryable,
             at: context.now(),
           });
         }
@@ -528,7 +539,12 @@ export const rivestreamProviderModule: CoreProviderModule = {
       };
       failures.push(failure);
 
-      return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, failure);
+      return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, failure, {
+        cachePolicy,
+        events,
+        failures,
+        startedAt,
+      });
     }
   },
 };

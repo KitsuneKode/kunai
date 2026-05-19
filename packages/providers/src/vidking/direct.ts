@@ -585,9 +585,9 @@ async function tryVidkingServer(opts: {
           vidkingHealth.recordFailure(server);
           const f: ProviderFailure = {
             providerId: VIDKING_PROVIDER_ID,
-            code: response.status === 504 ? "timeout" : "network-error",
+            code: vidkingStatusToFailureCode(response.status),
             message: `Videasy ${server} returned HTTP ${response.status}`,
-            retryable: true,
+            retryable: response.status !== 401 && response.status !== 403,
             at: context.now(),
           };
           failures.push(f);
@@ -1077,6 +1077,14 @@ function inferProtocol(url: string): StreamCandidate["protocol"] {
   if (lower.includes(".mpd")) return "dash";
   if (lower.includes(".mp4")) return "mp4";
   return "unknown";
+}
+
+function vidkingStatusToFailureCode(status: number): ProviderFailure["code"] {
+  if (status === 408 || status === 504) return "timeout";
+  if (status === 401 || status === 403) return "blocked";
+  if (status === 404) return "not-found";
+  if (status === 429) return "rate-limited";
+  return "network-error";
 }
 
 function inferSubtitleFormat(url: string): SubtitleCandidate["format"] {
