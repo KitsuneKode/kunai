@@ -1,0 +1,271 @@
+import { expect, test } from "bun:test";
+
+import { projectPlaybackSourceInventory } from "@/services/playback/PlaybackSourceInventoryProjection";
+import type { ProviderResolveResult, ProviderSourceCandidate, StreamCandidate } from "@kunai/types";
+
+const cachePolicy = {
+  ttlClass: "stream-manifest",
+  scope: "local",
+  keyParts: [],
+} as const;
+
+function trace(
+  overrides: Partial<ProviderResolveResult["trace"]> = {},
+): ProviderResolveResult["trace"] {
+  return {
+    id: "trace-1",
+    startedAt: "2026-05-19T00:00:00.000Z",
+    cacheHit: false,
+    title: { id: "demo", kind: "anime", title: "Demo" },
+    steps: [],
+    failures: [],
+    ...overrides,
+  };
+}
+
+function stream(overrides: Partial<StreamCandidate>): StreamCandidate {
+  return {
+    id: "stream-1",
+    providerId: "allanime",
+    sourceId: "source-sub",
+    protocol: "hls",
+    container: "m3u8",
+    url: "https://cdn.example/stream.m3u8",
+    confidence: 0.9,
+    cachePolicy,
+    ...overrides,
+  };
+}
+
+function source(overrides: Partial<ProviderSourceCandidate>): ProviderSourceCandidate {
+  return {
+    id: "source-sub",
+    providerId: "allanime",
+    kind: "mirror",
+    label: "Default",
+    status: "available",
+    confidence: 0.9,
+    ...overrides,
+  };
+}
+
+test("projects anime sub dub and hardsub evidence without merging native labels into languages", () => {
+  const view = projectPlaybackSourceInventory({
+    status: "resolved",
+    providerId: "allanime",
+    selectedStreamId: "sub-1080",
+    streams: [
+      stream({
+        id: "sub-1080",
+        sourceId: "source-sub",
+        presentation: "sub",
+        qualityLabel: "1080p",
+        qualityRank: 1080,
+        audioLanguages: ["ja"],
+        hardSubLanguage: "en",
+        subtitleDelivery: "hardcoded",
+        sourceEvidence: [{ nativeLabel: "Sak", serverId: "sak" }],
+        languageEvidence: [
+          { role: "audio", normalizedLanguage: "ja", nativeLabel: "Japanese" },
+          { role: "hardsub", normalizedLanguage: "en", nativeLabel: "English hard subtitles" },
+        ],
+      }),
+      stream({
+        id: "dub-720",
+        sourceId: "source-dub",
+        presentation: "dub",
+        qualityLabel: "720p",
+        qualityRank: 720,
+        audioLanguages: ["en"],
+        sourceEvidence: [{ nativeLabel: "Luf", serverId: "luf" }],
+        languageEvidence: [{ role: "audio", normalizedLanguage: "en", nativeLabel: "English dub" }],
+      }),
+    ],
+    sources: [
+      source({
+        id: "source-sub",
+        label: "Sub server",
+        status: "selected",
+        sourceEvidence: [{ nativeLabel: "Sak" }],
+      }),
+      source({
+        id: "source-dub",
+        label: "Dub server",
+        sourceEvidence: [{ nativeLabel: "Luf" }],
+      }),
+    ],
+    subtitles: [],
+    trace: trace(),
+    failures: [],
+  });
+
+  expect(view.selected).toMatchObject({
+    streamId: "sub-1080",
+    presentation: "sub",
+    audioLanguages: ["ja"],
+    subtitleLanguages: ["en"],
+    subtitleDelivery: "hardcoded",
+  });
+  expect(view.sourceGroups.map((group) => [group.label, group.state])).toEqual([
+    ["Sub server", "selected"],
+    ["Dub server", "available"],
+  ]);
+  expect(view.sourceGroups[0]?.nativeLabels).toContain("Sak");
+  expect(view.languageOptions.find((option) => option.id === "audio:en")).toMatchObject({
+    label: "Audio English",
+    state: "available",
+    nativeLabels: ["English dub"],
+  });
+  expect(view.subtitleOptions.find((option) => option.delivery === "hardcoded")).toMatchObject({
+    language: "en",
+    state: "selected",
+  });
+});
+
+test("projects series provider servers as source evidence and normalized audio separately", () => {
+  const view = projectPlaybackSourceInventory({
+    status: "resolved",
+    providerId: "vidking",
+    selectedStreamId: "hindicast-1080",
+    streams: [
+      stream({
+        id: "hindicast-1080",
+        providerId: "vidking",
+        sourceId: "hindicast",
+        qualityLabel: "1080p",
+        qualityRank: 1080,
+        audioLanguages: ["hi"],
+        sourceEvidence: [{ nativeLabel: "HindiCast (1080)", serverId: "hindicast" }],
+        languageEvidence: [{ role: "audio", normalizedLanguage: "hi", nativeLabel: "HindiCast" }],
+      }),
+      stream({
+        id: "flowcast-720",
+        providerId: "vidking",
+        sourceId: "flowcast",
+        qualityLabel: "720p",
+        qualityRank: 720,
+        audioLanguages: ["en"],
+        sourceEvidence: [{ nativeLabel: "FlowCast (720)", serverId: "flowcast" }],
+        languageEvidence: [{ role: "audio", normalizedLanguage: "en", nativeLabel: "FlowCast" }],
+      }),
+    ],
+    sources: [
+      source({
+        id: "hindicast",
+        providerId: "vidking",
+        label: "HindiCast",
+        status: "selected",
+        sourceEvidence: [{ nativeLabel: "HindiCast (1080)" }],
+      }),
+      source({
+        id: "flowcast",
+        providerId: "vidking",
+        label: "FlowCast",
+        sourceEvidence: [{ nativeLabel: "FlowCast (720)" }],
+      }),
+    ],
+    subtitles: [],
+    trace: trace({ title: { id: "demo", kind: "series", title: "Demo" } }),
+    failures: [],
+  });
+
+  expect(view.sourceGroups[0]).toMatchObject({
+    id: "hindicast",
+    label: "HindiCast",
+    audioLanguages: ["hi"],
+  });
+  expect(view.sourceGroups[0]?.nativeLabels).toContain("HindiCast (1080)");
+  expect(view.languageOptions.find((option) => option.id === "audio:hi")).toMatchObject({
+    label: "Audio Hindi",
+    nativeLabels: ["HindiCast"],
+    sourceIds: ["hindicast"],
+  });
+  expect(view.qualityOptions.map((option) => option.label)).toEqual(["1080p", "720p"]);
+});
+
+test("falls back to stream source ids when provider source inventory is missing", () => {
+  const view = projectPlaybackSourceInventory({
+    status: "resolved",
+    providerId: "rivestream",
+    selectedStreamId: "stream-b",
+    streams: [
+      stream({
+        id: "stream-a",
+        providerId: "rivestream",
+        sourceId: "source-a",
+        qualityLabel: "360p",
+      }),
+      stream({
+        id: "stream-b",
+        providerId: "rivestream",
+        sourceId: "source-b",
+        qualityLabel: "720p",
+      }),
+    ],
+    subtitles: [
+      {
+        id: "sub-en",
+        providerId: "rivestream",
+        sourceId: "source-b",
+        url: "https://subs.example/en.vtt",
+        language: "en",
+        label: "English",
+        source: "provider",
+        confidence: 0.9,
+        cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+      },
+    ],
+    trace: trace(),
+    failures: [],
+  });
+
+  expect(view.sourceGroups.map((group) => [group.id, group.state])).toEqual([
+    ["source-a", "available"],
+    ["source-b", "selected"],
+  ]);
+  expect(view.subtitleOptions.find((option) => option.id === "subtitle:sub-en")).toMatchObject({
+    delivery: "external",
+    sourceIds: ["source-b"],
+    restartRequired: false,
+  });
+});
+
+test("surfaces exhausted provider failures as warnings and disabled retry controls", () => {
+  const view = projectPlaybackSourceInventory({
+    status: "exhausted",
+    providerId: "vidking",
+    streams: [],
+    sources: [
+      source({
+        id: "blocked-source",
+        providerId: "vidking",
+        status: "failed",
+      }),
+    ],
+    subtitles: [],
+    trace: trace({ failures: [] }),
+    failures: [
+      {
+        providerId: "vidking",
+        code: "blocked",
+        message: "Provider returned 403",
+        retryable: false,
+        at: "2026-05-19T00:00:01.000Z",
+      },
+    ],
+  });
+
+  expect(view.warnings.map((warning) => warning.id)).toEqual([
+    "resolve-exhausted",
+    "no-playable-streams",
+  ]);
+  expect(view.warnings[0]?.developerDetail).toBe("blocked: Provider returned 403");
+  expect(view.recoveryActions.find((action) => action.id === "retry-current")).toMatchObject({
+    disabled: true,
+    preservesTimestamp: true,
+  });
+  expect(view.sourceGroups[0]).toMatchObject({
+    state: "failed",
+    disabledReason: "No playable stream was exposed for this source.",
+  });
+});
