@@ -84,6 +84,7 @@ export type PlaybackSubtitleOptionView = {
   readonly label: string;
   readonly state: PlaybackInventoryOptionState;
   readonly delivery: SubtitleDelivery | "off" | "unknown";
+  readonly subtitleUrl?: string;
   readonly language?: string;
   readonly nativeLabels: readonly string[];
   readonly sourceIds: readonly string[];

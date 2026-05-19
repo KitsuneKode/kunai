@@ -51,6 +51,8 @@ export function projectPlaybackSourceInventory(
   };
 }
 
+export const buildPlaybackSourceInventoryView = projectPlaybackSourceInventory;
+
 function selectStream(
   result: ProviderResolveResult,
   preferredStreamId?: string,
@@ -373,6 +375,7 @@ function projectSubtitleOptions(
     label: subtitle.label ?? `Subtitle ${formatLanguageLabel(subtitle.language)}`,
     state: subtitle.url === selectedSubtitleUrl ? "selected" : "available",
     delivery: "external" as const,
+    subtitleUrl: subtitle.url,
     language: subtitle.language,
     nativeLabels: uniqueStrings([subtitle.label]),
     sourceIds: uniqueStrings([subtitle.sourceId]),

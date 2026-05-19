@@ -1,5 +1,10 @@
 import { describeStreamCandidateMediaDetail } from "@/domain/media/media-track-model";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
+import { buildPlaybackSourceInventoryView } from "@/services/playback/PlaybackSourceInventoryProjection";
+import type {
+  PlaybackLanguageOptionView,
+  PlaybackSourceGroupView,
+} from "@/services/playback/PlaybackSourceInventoryView";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
 type SourceOption = {
@@ -164,59 +169,35 @@ export function buildSourcePickerOptions(stream: StreamInfo): readonly SourceOpt
   const result = stream.providerResolveResult;
   if (!result) return [];
 
-  if (result.sources && result.sources.length > 0) {
-    return result.sources.map((source) => ({
-      value: source.id,
-      label:
-        source.status === "selected"
-          ? `${source.label ?? source.host ?? source.id}  ·  current`
-          : (source.label ?? source.host ?? source.id),
-      detail: describeSourceDetail(
-        [source.kind, source.status, source.host],
-        result.streams.filter((candidate) => candidate.sourceId === source.id),
-        result.subtitles.filter((subtitle) => subtitle.sourceId === source.id),
-      ),
-    }));
-  }
-
-  const sourceIds = new Set<string>();
-  const options: SourceOption[] = [];
-  for (const candidate of result.streams) {
-    const sourceId = candidate.sourceId;
-    if (!sourceId || sourceIds.has(sourceId)) continue;
-    sourceIds.add(sourceId);
-    const selected = candidate.id === result.selectedStreamId;
-    options.push({
-      value: sourceId,
-      label: selected ? `${sourceId}  ·  current` : sourceId,
-      detail: describeSourceDetail(
-        [candidate.protocol],
-        result.streams.filter((streamCandidate) => streamCandidate.sourceId === sourceId),
-        result.subtitles.filter((subtitle) => subtitle.sourceId === sourceId),
-      ),
-    });
-  }
-  return options;
+  const projection = buildPlaybackSourceInventoryView(result);
+  return projection.sourceGroups.map((group) => ({
+    value: group.id,
+    label: group.state === "selected" ? `${group.label}  ·  current` : group.label,
+    detail: describeProjectedSourceDetail(group, result),
+  }));
 }
 
 export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityOption[] {
   const result = stream.providerResolveResult;
   if (!result) return [];
 
-  const options = result.streams
+  const projection = buildPlaybackSourceInventoryView(result);
+  return result.streams
     .filter((candidate) => typeof candidate.url === "string" && candidate.url.length > 0)
-    .map((candidate) => ({
-      value: candidate.id,
-      label:
-        candidate.id === result.selectedStreamId
-          ? `${candidate.qualityLabel ?? candidate.container ?? candidate.id}  ·  current`
-          : (candidate.qualityLabel ?? candidate.container ?? candidate.id),
-      detail: describeStreamCandidateMediaDetail(candidate, result.subtitles),
-      rank: candidate.qualityRank ?? 0,
-    }))
-    .sort((left, right) => right.rank - left.rank);
-
-  return options.map(({ rank: _rank, ...option }) => option);
+    .map((candidate) => {
+      const option = projection.qualityOptions.find((qualityOption) =>
+        qualityOption.streamIds.includes(candidate.id),
+      );
+      const label = candidate.qualityLabel ?? candidate.container ?? candidate.id;
+      return {
+        value: candidate.id,
+        label: candidate.id === result.selectedStreamId ? `${label}  ·  current` : label,
+        detail: describeStreamCandidateMediaDetail(candidate, result.subtitles),
+        rank: option?.qualityRank ?? candidate.qualityRank ?? 0,
+      };
+    })
+    .sort((left, right) => right.rank - left.rank)
+    .map(({ rank: _rank, ...option }) => option);
 }
 
 export function applyPreferredStreamSelection(
@@ -292,6 +273,11 @@ function describeLanguages(label: string, values: readonly (string | undefined)[
 }
 
 function buildSubtitleTrackPickerOptions(stream: StreamInfo): readonly MediaTrackPickerOption[] {
+  const projection = stream.providerResolveResult
+    ? buildPlaybackSourceInventoryView(stream.providerResolveResult, {
+        selectedSubtitleUrl: stream.subtitle,
+      })
+    : null;
   const tracks = collectSubtitleTracks(stream);
   const seen = new Set<string>();
   const options: MediaTrackPickerOption[] = [];
@@ -309,6 +295,22 @@ function buildSubtitleTrackPickerOptions(stream: StreamInfo): readonly MediaTrac
     });
   }
 
+  for (const option of projection?.subtitleOptions ?? []) {
+    if (option.delivery !== "external" || !option.subtitleUrl || seen.has(option.subtitleUrl)) {
+      continue;
+    }
+    seen.add(option.subtitleUrl);
+    options.push({
+      value: `subtitle:${encodeURIComponent(option.subtitleUrl)}`,
+      label:
+        option.state === "selected"
+          ? `${formatTrackLanguage(option.language)} subtitle  ·  current`
+          : `${formatTrackLanguage(option.language)} subtitle`,
+      detail:
+        [option.label, option.nativeLabels.join(", ")].filter(Boolean).join("  ·  ") || undefined,
+    });
+  }
+
   return options;
 }
 
@@ -316,81 +318,51 @@ function buildLanguageTrackPickerOptions(stream: StreamInfo): readonly MediaTrac
   const result = stream.providerResolveResult;
   if (!result) return [];
 
-  const sourcesById = new Map((result.sources ?? []).map((source) => [source.id, source]));
-  const audioOptions: MediaTrackPickerOption[] = [];
-  const hardsubOptions: MediaTrackPickerOption[] = [];
-  const seenAudio = new Set<string>();
-  const seenHardsub = new Set<string>();
-
-  for (const candidate of result.streams) {
-    if (!candidate.url) continue;
-    const selected = candidate.id === result.selectedStreamId;
-    for (const language of candidate.audioLanguages ?? []) {
-      const key = normalizeLanguageKey(language);
-      if (!key || seenAudio.has(key)) continue;
-      seenAudio.add(key);
-      audioOptions.push(
-        buildLanguageTrackOption({
-          kind: "audio",
-          language,
-          candidate,
-          selected,
-          sourceLabel: describeCandidateSource(candidate, result.providerId, sourcesById),
-        }),
-      );
-    }
-
-    const hardSubLanguage = candidate.hardSubLanguage;
-    const hardSubKey = normalizeLanguageKey(hardSubLanguage);
-    if (hardSubLanguage && hardSubKey && !seenHardsub.has(hardSubKey)) {
-      seenHardsub.add(hardSubKey);
-      hardsubOptions.push(
-        buildLanguageTrackOption({
-          kind: "hardsub",
-          language: hardSubLanguage,
-          candidate,
-          selected,
-          sourceLabel: describeCandidateSource(candidate, result.providerId, sourcesById),
-        }),
-      );
-    }
-  }
-
-  return [...audioOptions, ...hardsubOptions];
+  const projection = buildPlaybackSourceInventoryView(result);
+  return projection.languageOptions
+    .filter((option) => option.role === "audio" || option.role === "hardsub")
+    .sort((left, right) => mediaTrackRoleRank(left.role) - mediaTrackRoleRank(right.role))
+    .flatMap((option) => buildLanguageTrackOptionFromProjection(option, result));
 }
 
-function buildLanguageTrackOption({
-  kind,
-  language,
-  candidate,
-  selected,
-  sourceLabel,
-}: {
-  readonly kind: "audio" | "hardsub";
-  readonly language: string;
-  readonly candidate: StreamCandidate;
-  readonly selected: boolean;
-  readonly sourceLabel: string;
-}): MediaTrackPickerOption {
-  const displayKind = kind === "audio" ? "Audio" : "Hardsub";
-  const languageLabel = language.toUpperCase();
+function buildLanguageTrackOptionFromProjection(
+  option: PlaybackLanguageOptionView,
+  result: NonNullable<StreamInfo["providerResolveResult"]>,
+): readonly MediaTrackPickerOption[] {
+  const candidate = result.streams.find((streamCandidate) =>
+    option.streamIds.includes(streamCandidate.id),
+  );
+  if (!candidate?.url || !option.language) return [];
+  const sourceLabel = describeProjectedSourceLabel(candidate, result);
   const quality = candidate.qualityLabel ?? candidate.container ?? candidate.id;
-  return {
-    value: `${kind}:${encodeURIComponent(language)}:${encodeURIComponent(candidate.id)}`,
-    label: selected
-      ? `${displayKind} ${languageLabel}  ·  current`
-      : `${displayKind} ${languageLabel}`,
-    detail: `Switches to cached stream inventory  ·  ${sourceLabel}  ·  ${quality}`,
-  };
+  const displayKind = option.role === "audio" ? "Audio" : "Hardsub";
+  const languageLabel = formatTrackLanguage(option.language);
+  return [
+    {
+      value: `${option.role}:${encodeURIComponent(option.language)}:${encodeURIComponent(
+        candidate.id,
+      )}`,
+      label:
+        option.state === "selected"
+          ? `${displayKind} ${languageLabel}  ·  current`
+          : `${displayKind} ${languageLabel}`,
+      detail: `Switches to cached stream inventory  ·  ${sourceLabel}  ·  ${quality}`,
+    },
+  ];
 }
 
-function describeCandidateSource(
+function describeProjectedSourceLabel(
   candidate: StreamCandidate,
-  providerId: string,
-  sourcesById: ReadonlyMap<string, { readonly label?: string; readonly host?: string }>,
+  result: NonNullable<StreamInfo["providerResolveResult"]>,
 ): string {
+  const projection = buildPlaybackSourceInventoryView(result);
+  const group = projection.sourceGroups.find((sourceGroup) =>
+    candidate.sourceId ? sourceGroup.sourceIds.includes(candidate.sourceId) : false,
+  );
+  if (group) return group.label;
+  const sourcesById = new Map((result.sources ?? []).map((source) => [source.id, source]));
   const source = candidate.sourceId ? sourcesById.get(candidate.sourceId) : undefined;
-  return source?.label ?? source?.host ?? candidate.sourceId ?? providerId;
+  return source?.label ?? source?.host ?? candidate.sourceId ?? result.providerId;
 }
 
 function collectSubtitleTracks(stream: StreamInfo): readonly SubtitleTrack[] {
@@ -410,7 +382,25 @@ function uniqueStrings(values: readonly (string | undefined)[]): readonly string
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
-function normalizeLanguageKey(value: string | undefined): string | null {
-  const normalized = value?.trim().toLowerCase();
-  return normalized || null;
+function describeProjectedSourceDetail(
+  group: PlaybackSourceGroupView,
+  result: NonNullable<StreamInfo["providerResolveResult"]>,
+): string {
+  return describeSourceDetail(
+    [group.providerStatus, group.nativeLabels.join("/")],
+    result.streams.filter((candidate) =>
+      candidate.sourceId ? group.sourceIds.includes(candidate.sourceId) : false,
+    ),
+    result.subtitles.filter((subtitle) =>
+      subtitle.sourceId ? group.sourceIds.includes(subtitle.sourceId) : false,
+    ),
+  );
+}
+
+function formatTrackLanguage(language: string | undefined): string {
+  return language ? language.toUpperCase() : "Subtitle";
+}
+
+function mediaTrackRoleRank(role: PlaybackLanguageOptionView["role"]): number {
+  return role === "audio" ? 0 : 1;
 }
