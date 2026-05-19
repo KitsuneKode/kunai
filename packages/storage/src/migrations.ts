@@ -309,6 +309,16 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE history_progress ADD COLUMN external_ids_json TEXT;
     `,
   },
+  {
+    id: "015_data_download_jobs_repair_metadata",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN repair_metadata_json TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_download_jobs_repairable
+        ON download_jobs(status, artifact_status, updated_at DESC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

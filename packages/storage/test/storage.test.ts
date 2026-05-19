@@ -322,6 +322,96 @@ test("download jobs repository supports queue lifecycle", () => {
   db.close();
 });
 
+test("download jobs repository preserves repairable sidecar status without losing completed video", () => {
+  const db = migratedDataDb();
+  const repo = new DownloadJobsRepository(db);
+  const now = "2026-04-29T00:00:00.000Z";
+
+  repo.enqueue({
+    id: "job-sidecar",
+    titleId: "tmdb:sidecar",
+    titleName: "Sidecar Example",
+    mediaKind: "series",
+    season: 1,
+    episode: 2,
+    providerId: "vidking",
+    streamUrl: "https://example.com/master.m3u8",
+    headers: {},
+    outputPath: "/tmp/sidecar.mp4",
+    tempPath: "/tmp/sidecar.mp4.tmp.job-sidecar",
+    createdAt: now,
+    updatedAt: now,
+    completedAt: undefined,
+  });
+
+  repo.markRepairable(
+    "job-sidecar",
+    {
+      artifactStatus: "expected-missing",
+      message: "Subtitle sidecar was expected but missing",
+      repairMetadataJson: JSON.stringify({
+        sidecar: "subtitle",
+        action: "retry-sidecar",
+      }),
+    },
+    "2026-04-29T00:03:00.000Z",
+  );
+
+  const repairable = repo.get("job-sidecar");
+  expect(repairable?.status).toBe("repairable");
+  expect(repairable?.artifactStatus).toBe("expected-missing");
+  expect(repairable?.repairMetadataJson).toContain("retry-sidecar");
+  expect(repo.listFailed(10).map((job) => job.id)).toContain("job-sidecar");
+
+  repo.completeWithNotes(
+    "job-sidecar",
+    {
+      artifactStatus: "optional-missing",
+      message: "Artwork could not be cached",
+      repairMetadataJson: null,
+    },
+    "2026-04-29T00:04:00.000Z",
+  );
+
+  const completedWithNotes = repo.get("job-sidecar");
+  expect(completedWithNotes?.status).toBe("completed-with-notes");
+  expect(completedWithNotes?.artifactStatus).toBe("optional-missing");
+  expect(completedWithNotes?.repairMetadataJson).toBeUndefined();
+  expect(repo.listCompleted(10).map((job) => job.id)).toContain("job-sidecar");
+
+  db.close();
+});
+
+test("download jobs repository keeps legacy artifact rows compatible with repair metadata", () => {
+  const db = migratedDataDb();
+  const repo = new DownloadJobsRepository(db);
+  const now = "2026-04-29T00:00:00.000Z";
+
+  repo.enqueue({
+    id: "job-legacy",
+    titleId: "tmdb:legacy-download",
+    titleName: "Legacy Download",
+    mediaKind: "movie",
+    providerId: "vidking",
+    streamUrl: "https://example.com/movie.m3u8",
+    headers: {},
+    outputPath: "/tmp/legacy.mp4",
+    tempPath: "/tmp/legacy.mp4.tmp.job-legacy",
+    createdAt: now,
+    updatedAt: now,
+    completedAt: undefined,
+  });
+
+  const legacy = repo.get("job-legacy");
+  expect(legacy?.artifactStatus).toBe("pending");
+  expect(legacy?.repairMetadataJson).toBeUndefined();
+
+  repo.markArtifactValidated("job-legacy", "not-applicable", "2026-04-29T00:01:00.000Z");
+  expect(repo.get("job-legacy")?.artifactStatus).toBe("not-applicable");
+
+  db.close();
+});
+
 function makeTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "kunai-storage-"));
   tempDirs.push(dir);

@@ -2,8 +2,23 @@ import type { MediaKind, ProviderId } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
 
-export type DownloadJobStatus = "queued" | "running" | "completed" | "failed" | "aborted";
-export type DownloadArtifactStatus = "pending" | "ready" | "missing" | "invalid-file";
+export type DownloadJobStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "completed-with-notes"
+  | "repairable"
+  | "failed"
+  | "aborted";
+export type DownloadArtifactStatus =
+  | "pending"
+  | "ready"
+  | "missing"
+  | "invalid-file"
+  | "optional-missing"
+  | "expected-missing"
+  | "failed"
+  | "not-applicable";
 
 export interface DownloadJobRecord {
   readonly id: string;
@@ -42,6 +57,7 @@ export interface DownloadJobRecord {
   readonly lastHeartbeatAt?: string;
   readonly failureKind?: string;
   readonly artifactStatus?: DownloadArtifactStatus;
+  readonly repairMetadataJson?: string;
   readonly lastResolvedProviderId?: ProviderId;
   readonly lastValidatedAt?: string;
   readonly createdAt: string;
@@ -86,6 +102,7 @@ interface DownloadJobRow {
   readonly last_heartbeat_at: string | null;
   readonly failure_kind: string | null;
   readonly artifact_status: DownloadArtifactStatus;
+  readonly repair_metadata_json: string | null;
   readonly last_resolved_provider_id: string | null;
   readonly created_at: string;
   readonly updated_at: string;
@@ -278,6 +295,80 @@ export class DownloadJobsRepository {
       .run(updatedAt, updatedAt, updatedAt, id);
   }
 
+  completeWithNotes(
+    id: string,
+    input: {
+      artifactStatus: Extract<DownloadArtifactStatus, "optional-missing" | "not-applicable">;
+      message: string;
+      repairMetadataJson?: string | null;
+    },
+    updatedAt: string,
+  ): void {
+    this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET status = 'completed-with-notes',
+              progress_percent = 100,
+              next_retry_at = NULL,
+              failure_kind = NULL,
+              error_message = ?,
+              artifact_status = ?,
+              repair_metadata_json = ?,
+              updated_at = ?,
+              completed_at = COALESCE(completed_at, ?),
+              last_validated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(
+        input.message,
+        input.artifactStatus,
+        input.repairMetadataJson ?? null,
+        updatedAt,
+        updatedAt,
+        updatedAt,
+        id,
+      );
+  }
+
+  markRepairable(
+    id: string,
+    input: {
+      artifactStatus: Extract<DownloadArtifactStatus, "expected-missing" | "failed">;
+      message: string;
+      repairMetadataJson: string;
+    },
+    updatedAt: string,
+  ): void {
+    this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET status = 'repairable',
+              progress_percent = 100,
+              next_retry_at = NULL,
+              failure_kind = 'sidecar-repairable',
+              error_message = ?,
+              artifact_status = ?,
+              repair_metadata_json = ?,
+              updated_at = ?,
+              completed_at = COALESCE(completed_at, ?),
+              last_validated_at = ?
+          WHERE id = ?
+        `,
+      )
+      .run(
+        input.message,
+        input.artifactStatus,
+        input.repairMetadataJson,
+        updatedAt,
+        updatedAt,
+        updatedAt,
+        id,
+      );
+  }
+
   markArtifactValidated(id: string, status: DownloadArtifactStatus, validatedAt: string): void {
     this.db
       .query(
@@ -357,6 +448,7 @@ export class DownloadJobsRepository {
           SET status = 'queued',
               error_message = NULL,
               failure_kind = NULL,
+              repair_metadata_json = NULL,
               next_retry_at = NULL,
               updated_at = ?
           WHERE id = ?
@@ -422,7 +514,7 @@ export class DownloadJobsRepository {
   listCompleted(limit = 100): readonly DownloadJobRecord[] {
     return this.db
       .query<DownloadJobRow, [number]>(
-        "SELECT * FROM download_jobs WHERE status = 'completed' ORDER BY completed_at DESC LIMIT ?",
+        "SELECT * FROM download_jobs WHERE status IN ('completed', 'completed-with-notes') ORDER BY completed_at DESC LIMIT ?",
       )
       .all(limit)
       .map(mapRow);
@@ -433,7 +525,7 @@ export class DownloadJobsRepository {
       .query<DownloadJobRow, [number]>(
         `
           SELECT * FROM download_jobs
-          WHERE status IN ('failed', 'aborted')
+          WHERE status IN ('failed', 'aborted', 'repairable')
           ORDER BY updated_at DESC
           LIMIT ?
         `,
@@ -495,6 +587,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     lastHeartbeatAt: row.last_heartbeat_at ?? undefined,
     failureKind: row.failure_kind ?? undefined,
     artifactStatus: row.artifact_status ?? "pending",
+    repairMetadataJson: row.repair_metadata_json ?? undefined,
     lastResolvedProviderId: (row.last_resolved_provider_id as ProviderId | null) ?? undefined,
     lastValidatedAt: row.last_validated_at ?? undefined,
     createdAt: row.created_at,
