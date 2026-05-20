@@ -202,6 +202,10 @@ export function normalizeLoadingIssue(issue: string | null | undefined): string 
     normalized === "subtitles attached" ||
     normalized === "subs ready" ||
     normalized === "subtitles ready" ||
+    /^\d+\s+(alternate\s+)?subtitle tracks (are ready in mpv|attached)$/.test(normalized) ||
+    /^\d+\s+late subtitle tracks? attached$/.test(normalized) ||
+    normalized === "primary subtitle is ready" ||
+    normalized === "primary subtitle attached" ||
     normalized === "recoverable provider failures retry before fallback." ||
     normalized.includes("retry before fallback") ||
     normalized.includes("retrying before fallback") ||

@@ -107,13 +107,17 @@ describe("loading shell runtime policy", () => {
 
   test("loading copy does not promote subtitle-ready status into an issue", () => {
     expect(normalizeLoadingIssue("subtitle attached")).toBeNull();
+    expect(normalizeLoadingIssue("25 subtitle tracks attached")).toBeNull();
+    expect(normalizeLoadingIssue("25 alternate subtitle tracks are ready in mpv")).toBeNull();
+    expect(normalizeLoadingIssue("1 late subtitle track attached")).toBeNull();
+    expect(normalizeLoadingIssue("Primary subtitle attached")).toBeNull();
     expect(
       getProviderResolveWaitPresentation({
         elapsedSeconds: 4,
-        latestIssue: "subtitle attached",
-        stageDetail: "Opening provider stream",
+        latestIssue: "25 subtitle tracks attached",
+        stageDetail: "Attaching subtitles",
       }).message,
-    ).toBe("Opening provider stream");
+    ).toBe("Attaching subtitles");
   });
 
   test("loading copy does not promote provider retry progress into an issue", () => {
