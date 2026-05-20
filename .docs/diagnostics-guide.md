@@ -50,6 +50,7 @@ For playback recovery debugging, prefer stable operation names over free-form lo
 - `resolve.cache.hit`, `resolve.cache.miss`, `resolve.cache.stale`: cache decision.
 - `resolve.refetch.failed.cached-fallback`: no fresher source was found, so Kunai kept the current cached stream.
 - `source-inventory.cache.hit`, `source-inventory.cache.miss`, `source-inventory.cache.set`, `source-inventory.cache.invalidated`: source inventory cache decisions. These events use short key hashes, not full key preimages.
+- `mpv.preflight-definitive-failure` / `preflight-definitive-failure`: one-shot mpv launch was stopped early because the stream preflight proved the URL was dead before IPC took ownership.
 - `post-playback.recommendations.seed`: the post-playback screen rendered from already-prefetched recommendations or an empty rail without waiting for a fresh network request.
 - `post-playback.recommendations.warm`: non-critical recommendation data warmed in the background after the shell was already usable.
 - `post-playback.autonext.prefetch-wait`: auto-next waited briefly for near-EOF prefetch before falling back to normal resolve.
@@ -92,6 +93,25 @@ This currently targets Bloodhounds (`tmdb:127529`) and prints a JSON summary wit
 - `Subtitle resolution`: app-level subtitle selection ran after the provider returned stream data.
 - `Skipped history save`: mpv did not report enough position/duration data to persist history.
 - `mpv-in-process-reconnect` (diagnostics): persistent mpv performed or attempted a same-URL `loadfile` reload after a stall or premature EOF; see [.docs/mpv-in-process-reconnect.md](mpv-in-process-reconnect.md).
+- `preflight-definitive-failure`: the legacy/one-shot mpv launcher killed mpv early after a definitive dead-URL preflight. This should be treated as stream failure/fallback evidence, not as a user quit.
+
+## Source Inventory Reasoning
+
+Treat source inventory as layered evidence:
+
+- source/server labels explain where a stream came from;
+- variant labels explain quality, presentation, and provider-specific flavor;
+- public language fields must be ISO-639 language codes only;
+- provider-native labels belong in evidence/metadata and are safe for details or support bundles.
+
+If a diagnostic row shows `language: killjoy`, `language: FlowCast`, or
+`language: H-SUB`, the provider adapter leaked source/presentation evidence into
+the normalized language field. The correct representation is a blank/unknown
+language plus `nativeLabel` or source evidence.
+
+Use [.docs/source-inventory-ui-handoff.md](source-inventory-ui-handoff.md) when
+checking whether a picker, history row, download repair row, or post-playback
+surface should render a source, language, subtitle, or quality fact.
 
 ## Subtitle Reasoning
 

@@ -45,13 +45,13 @@
 
 **Tasks**
 
-- [ ] Add `stableProviderInventoryId(prefix, parts)` for deterministic source/stream/variant IDs.
-- [ ] Add `parseSourceHost(url)` with safe fallback for invalid URLs.
-- [ ] Add `qualityRankFromLabel(label)` and `normalizeQualityLabel(label)`.
-- [ ] Add `createProviderSourceEvidence()` and `createProviderLanguageEvidence()`.
-- [ ] Add `createSourceCandidateFromStream()` and `createVariantCandidateFromStream()`.
-- [ ] Replace `Buffer.from(...).toString("base64url")` in `VariantTreeBuilder` with the shared stable ID helper.
-- [ ] Add tests for deterministic IDs, quality sorting, source evidence, and Bun/Node-safe behavior.
+- [x] Add `stableProviderInventoryId(prefix, parts)` for deterministic source/stream/variant IDs.
+- [x] Add `parseSourceHost(url)` with safe fallback for invalid URLs.
+- [x] Add `qualityRankFromLabel(label)` and `normalizeQualityLabel(label)`.
+- [x] Add `createProviderSourceEvidence()` and `createProviderLanguageEvidence()`.
+- [x] Add `createSourceCandidateFromStream()` and `createVariantCandidateFromStream()`.
+- [x] Replace `Buffer.from(...).toString("base64url")` in `VariantTreeBuilder` with the shared stable ID helper.
+- [x] Add tests for deterministic IDs, quality sorting, source evidence, and Bun/Node-safe behavior.
 
 **Completion Criteria**
 
@@ -70,12 +70,12 @@
 
 **Tasks**
 
-- [ ] Add `normalizeIsoLanguageCode(value)` that returns `undefined` for unknown/non-language labels.
-- [ ] Keep `normalizeSubtitleLanguage()` as a compatibility alias, but route safe callsites to the stricter helper.
-- [ ] Add `languageDisplayName(code)` and keep `subtitleLanguageDisplayName()` as alias.
-- [ ] Treat `sub`, `dub`, `hardsub`, `softsub`, `cc`, `sdh`, `server`, and provider code names as presentation/source evidence, not primary language.
-- [ ] Preserve native labels in `ProviderLanguageEvidence.nativeLabel`.
-- [ ] Add tests for `killjoy`, `HindiCast`, `FlowCast`, `Vietsub`, `Vietnamese`, `Portuguese (BR)`, `pt-br`, `English CC`, and unknown labels.
+- [x] Add `normalizeIsoLanguageCode(value)` that returns `undefined` for unknown/non-language labels.
+- [x] Keep `normalizeSubtitleLanguage()` as a compatibility alias, but route safe callsites to the stricter helper.
+- [x] Add `languageDisplayName(code)` and keep `subtitleLanguageDisplayName()` as alias.
+- [x] Treat `sub`, `dub`, `hardsub`, `softsub`, `cc`, `sdh`, `server`, and provider code names as presentation/source evidence, not primary language.
+- [x] Preserve native labels in `ProviderLanguageEvidence.nativeLabel`.
+- [x] Add tests for `killjoy`, `HindiCast`, `FlowCast`, `Vietsub`, `Vietnamese`, `Portuguese (BR)`, `pt-br`, `English CC`, and unknown labels.
 
 **Completion Criteria**
 
@@ -83,6 +83,9 @@
 - Raw labels remain visible through evidence/metadata for diagnostics and UI detail panels.
 
 ## Phase 3: Provider Failure Classification And Abort Guardrails
+
+**Status:** Core engine classification landed. Provider-package factory extraction is
+still optional unless a provider starts duplicating failure object construction.
 
 **Files**
 
@@ -94,12 +97,12 @@
 
 **Tasks**
 
-- [ ] Add `classifyProviderThrownError(error)` for `cancelled`, `timeout`, `network-error`, `blocked`, `parse-failed`, and `unknown`.
-- [ ] Add `isAbortLikeError(error)` that recognizes DOM abort, Bun abort, timeout abort, and user-cancel messages.
-- [ ] Add `createProviderFailureFromError(providerId, error, at)` for consistent trace entries.
-- [ ] Route provider-local timeout/network catch blocks through the classifier.
-- [ ] Keep provider cycles from retrying user-cancelled and offline errors that cannot recover inside the same request.
-- [ ] Add tests for abort, timeout, DNS/offline, blocked HTTP, parse failure, and empty candidate.
+- [x] Add core cycle classification for `cancelled`, `timeout`, `network-error`, `blocked`, `parse-failed`, and `unknown`.
+- [x] Add abort-like error recognition that recognizes DOM abort, Bun abort, timeout abort, and user-cancel messages.
+- [ ] Add provider-package failure factory for consistent trace entries.
+- [x] Route core timeout/network catch blocks through the classifier.
+- [x] Keep provider cycles from retrying user-cancelled and offline errors that cannot recover inside the same request.
+- [x] Add tests for abort, timeout, DNS/offline, blocked HTTP, parse failure, and empty candidate.
 
 **Completion Criteria**
 
@@ -108,6 +111,10 @@
 - Diagnostics can explain why fallback stopped or moved.
 
 ## Phase 4: Provider Refactor To Shared Inventory
+
+**Status:** Series/movie providers are normalized through the shared helpers.
+Anime providers keep their current specialized hierarchy for now to avoid
+flattening sub/dub/hardsub structure without a provider-specific follow-up.
 
 **Files**
 
@@ -120,13 +127,13 @@
 
 **Tasks**
 
-- [ ] Refactor VidKing source/stream/variant creation to shared helpers.
-- [ ] Refactor Rivestream source/stream/variant creation to shared helpers.
+- [x] Refactor VidKing source/stream/variant creation to shared helpers.
+- [x] Refactor Rivestream source/stream/variant creation to shared helpers.
 - [ ] Refactor AllManga source/stream/variant/sub-dub evidence to shared helpers.
 - [ ] Refactor Miruro source/stream/variant/subtitle evidence to shared helpers.
-- [ ] Ensure selected stream/source IDs are stable and cache-safe.
-- [ ] Preserve provider-specific labels, server names, and source aliases in evidence.
-- [ ] Ensure source inventory includes artwork and seekbar thumbnail facts when provider payload includes them.
+- [x] Ensure selected stream/source IDs are stable and cache-safe.
+- [x] Preserve provider-specific labels, server names, and source aliases in evidence.
+- [x] Ensure source inventory includes artwork and seekbar thumbnail facts when provider payload includes them.
 
 **Completion Criteria**
 
@@ -135,6 +142,11 @@
 - Projection tests show the UI can render source/quality/language controls from inventory alone.
 
 ## Phase 5: Playback Flow Non-Blocking Hardening
+
+**Status:** Reconciled in existing playback code and extended with one-shot mpv
+preflight early abort. Persistent auto-next already sets the mpv loading overlay
+before waiting on prefetch/recommendation work, and post-playback recommendation
+warmup runs in background lanes.
 
 **Files**
 
@@ -147,11 +159,12 @@
 
 **Tasks**
 
-- [ ] Identify any post-end recommendation/history/reconcile work that runs before next-episode OSD/loading feedback.
-- [ ] Move non-critical work onto background lanes with abortable tasks.
-- [ ] Show immediate next-episode intent before any slow provider or recommendation compute.
-- [ ] Do not await recommendation, poster enrichment, history refresh, or notification writes before starting next resolve.
-- [ ] Keep late valid resolve results as cache-only if user has moved away.
+- [x] Identify any post-end recommendation/history/reconcile work that runs before next-episode OSD/loading feedback.
+- [x] Move non-critical work onto background lanes with abortable tasks.
+- [x] Show immediate next-episode intent before any slow provider or recommendation compute.
+- [x] Do not await recommendation, poster enrichment, history refresh, or notification writes before starting next resolve.
+- [x] Keep late valid resolve results as cache-only if user has moved away.
+- [x] Abort one-shot mpv launch early when stream preflight proves the URL is definitively dead before IPC connects.
 
 **Completion Criteria**
 
@@ -160,6 +173,10 @@
 - Tests prove non-critical work is scheduled, not awaited, on the hot path.
 
 ## Phase 6: Download Recovery Alignment
+
+**Status:** Recovery states and sidecar semantics exist in the current codebase.
+This pass did not stage the already-dirty download files; keep follow-up commits
+scoped if the repair sweep work needs to land separately.
 
 **Files**
 
@@ -170,11 +187,11 @@
 
 **Tasks**
 
-- [ ] Store source inventory facts needed for repair: selected stream ID, source ID, variant ID, subtitle expectation, artwork URL, and seekbar VTT URL when available.
-- [ ] Classify completed video with missing optional sidecars as `completed-with-notes` or equivalent existing state, not hard failure.
-- [ ] Treat hardsub-only or unknown-subtitle inventory as “no subtitle sidecar expected.”
-- [ ] Add repair-only path for missing subtitle/artwork sidecars without redownloading video.
-- [ ] Add diagnostics text that distinguishes “subtitle unavailable” from “subtitle failed.”
+- [x] Store source inventory facts needed for repair: selected stream ID, source ID, variant ID, subtitle expectation, artwork URL, and seekbar VTT URL when available.
+- [x] Classify completed video with missing optional sidecars as `completed-with-notes` or equivalent existing state, not hard failure.
+- [x] Treat hardsub-only or unknown-subtitle inventory as “no subtitle sidecar expected.”
+- [x] Add repair-only path for missing subtitle/artwork sidecars without redownloading video.
+- [x] Add diagnostics text that distinguishes “subtitle unavailable” from “subtitle failed.”
 
 **Completion Criteria**
 
@@ -183,6 +200,10 @@
 - Download manager can show recovery action and notes clearly.
 
 ## Phase 7: History Reconciliation And New Episode State
+
+**Status:** New-episode reconciliation exists for released next episodes and keeps
+completed history intact. The naming uses `up-to-date` rather than a separate
+`caught-up` enum.
 
 **Files**
 
@@ -194,11 +215,11 @@
 
 **Tasks**
 
-- [ ] Track known season/episode counts when a title is selected or episode list is loaded.
-- [ ] Distinguish `completed`, `caught-up`, `in-progress`, and `new-episode-available`.
-- [ ] Do not mark a series complete unless the known episode map proves the latest available episode is complete.
-- [ ] When new episode data appears, downgrade `completed/caught-up` to `new-episode-available` without losing prior watched state.
-- [ ] Keep reconciliation stale-friendly: use cached metadata immediately and refresh in background.
+- [x] Track known season/episode counts when a title is selected or episode list is loaded.
+- [x] Distinguish `completed`, `up-to-date`, `in-progress`, and `new-episode-available`.
+- [x] Do not mark a series complete unless the known episode map proves the latest available episode is complete.
+- [x] When new episode data appears, downgrade `completed/up-to-date` to `new-episode-available` without losing prior watched state.
+- [x] Keep reconciliation stale-friendly: use cached metadata immediately and refresh in background.
 
 **Completion Criteria**
 
@@ -207,6 +228,8 @@
 - A network miss does not erase or corrupt useful local history.
 
 ## Phase 8: Recommendation Prewarm And Cache Policy
+
+**Status:** Implemented in existing playback/recommendation services.
 
 **Files**
 
@@ -217,11 +240,11 @@
 
 **Tasks**
 
-- [ ] Add per-title session prewarm when title is selected or playback starts.
-- [ ] Return stale cached recommendation sections immediately on post-playback.
-- [ ] Abort/deprioritize recommendation fetches when playback context changes.
-- [ ] Never block auto-next or post-playback transition on recommendation fetch.
-- [ ] Record cache-hit/stale/network-fallback diagnostics.
+- [x] Add per-title session prewarm when title is selected or playback starts.
+- [x] Return stale cached recommendation sections immediately on post-playback.
+- [x] Abort/deprioritize recommendation fetches when playback context changes.
+- [x] Never block auto-next or post-playback transition on recommendation fetch.
+- [x] Record cache-hit/stale/network-fallback diagnostics.
 
 **Completion Criteria**
 
@@ -239,10 +262,10 @@
 
 **Tasks**
 
-- [ ] Document source inventory fields UI should use for anime and series/movie controls.
-- [ ] Document which fields are safe for compact labels and which are dev-only evidence.
-- [ ] Document no-extra-call expectations for history, episode picker, post-playback, source picker, and diagnostics.
-- [ ] Add diagnostics examples for provider fallback, stale cache, subtitle unavailable, network offline, and abort.
+- [x] Document source inventory fields UI should use for anime and series/movie controls.
+- [x] Document which fields are safe for compact labels and which are dev-only evidence.
+- [x] Document no-extra-call expectations for history, episode picker, post-playback, source picker, and diagnostics.
+- [x] Add diagnostics examples for provider fallback, stale cache, subtitle unavailable, network offline, and abort.
 
 **Completion Criteria**
 

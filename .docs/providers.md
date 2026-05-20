@@ -24,7 +24,7 @@ apps/cli shell
 
 - `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
 - `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
-- `@kunai/providers` — 4 provider modules (`allmanga`, `miruro`, `rivestream`, `vidking`) each implementing `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`) + manifests co-located with modules
+- `@kunai/providers` — 4 provider modules (`allmanga`, `miruro`, `rivestream`, `vidking`) each implementing `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`) + manifests co-located with modules
 - `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
 - `@kunai/schemas` — Zod validation schemas for all shared types
 - `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
@@ -90,6 +90,22 @@ Subtitle policy:
 - providers expose every usable subtitle candidate they found
 - playback should attach all usable subtitle tracks to mpv when possible so users can switch without restarting
 - missing subtitles should be explicit trace/diagnostic information, not a silent absence
+
+Source inventory and language normalization:
+
+- Use `packages/providers/src/shared/source-inventory.ts` for stable source,
+  stream, and variant IDs, quality normalization/ranking, source evidence, and
+  stream-to-source/variant projection.
+- Use strict ISO language fields for public stream/subtitle language data.
+  Provider labels such as `Vietsub`, `H-SUB`, `HindiCast`, `FlowCast`, or
+  site-specific server names belong in evidence/metadata, not in primary
+  language fields.
+- VidKing and Rivestream use the shared helpers for series/movie source
+  inventory. AllManga and Miruro already expose anime-specific sub/dub/hardsub
+  evidence and should be moved further only when the provider hierarchy is kept
+  intact.
+- UI handoff rules live in
+  [.docs/source-inventory-ui-handoff.md](./source-inventory-ui-handoff.md).
 
 ## Provider Types
 
