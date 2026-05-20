@@ -40,6 +40,8 @@ export function DownloadManagerContent({
   const [failedJobs, setFailedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
+  const [repairSweepStatus, setRepairSweepStatus] = useState<string | null>(null);
+  const [repairSweepRunning, setRepairSweepRunning] = useState(false);
 
   const refresh = useCallback(() => {
     const lists = refreshJobLists(container);
@@ -81,6 +83,34 @@ export function DownloadManagerContent({
     }
     if (input === "l" && onNavigateToLibrary) {
       onNavigateToLibrary();
+      return;
+    }
+    if (input.toLowerCase() === "a") {
+      if (repairSweepRunning) return;
+      const repairableCount = failedJobs.filter((job) => job.status === "repairable").length;
+      if (repairableCount === 0) return;
+      setRepairSweepRunning(true);
+      setRepairSweepStatus(
+        `Repairing ${repairableCount} sidecar${repairableCount === 1 ? "" : "s"}...`,
+      );
+      void container.downloadService
+        .repairRepairableSidecars()
+        .then((summary) => {
+          setRepairSweepStatus(
+            summary.checked === 0
+              ? "No repairable sidecars found"
+              : `Repair sweep: ${summary.repaired} repaired, ${summary.stillRepairable} still pending, ${summary.failed} failed`,
+          );
+          refresh();
+          return undefined;
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          setRepairSweepStatus(`Repair sweep failed: ${message}`);
+        })
+        .finally(() => {
+          setRepairSweepRunning(false);
+        });
       return;
     }
     if (key.upArrow) {
@@ -128,8 +158,19 @@ export function DownloadManagerContent({
       }
 
       if (job.status === "failed" || job.status === "repairable" || job.status === "aborted") {
-        void container.downloadService.retry(job.id);
-        void container.downloadService.processQueue();
+        void container.downloadService
+          .retry(job.id)
+          .then(() => {
+            refresh();
+            if (job.status !== "repairable") {
+              void container.downloadService.processQueue();
+            }
+            return undefined;
+          })
+          .catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error);
+            setRepairSweepStatus(`Retry failed: ${message}`);
+          });
       }
       return;
     }
@@ -308,11 +349,19 @@ export function DownloadManagerContent({
             <Box marginTop={1}>
               <Text color={palette.muted} dimColor>
                 {hints}
+                {failedJobs.some((job) => job.status === "repairable")
+                  ? "  ·  a to repair all"
+                  : ""}
               </Text>
             </Box>
           ) : null;
         })()
       )}
+      {repairSweepStatus ? (
+        <Box marginTop={1}>
+          <Text color={palette.amber}>{repairSweepStatus}</Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }

@@ -512,6 +512,145 @@ describe("DownloadService", () => {
     expect(existsSync(repaired?.subtitlePath ?? "")).toBe(true);
   });
 
+  test("repairs all repairable sidecars without re-downloading videos", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () => ({
+        stream: {
+          url: "https://fresh.example/master.m3u8",
+          headers: { Referer: "https://fresh.example" },
+          timestamp: 0,
+          subtitle: "https://fresh.example/subs/en.vtt",
+          subtitleList: [{ url: "https://fresh.example/subs/en.vtt", language: "en" }],
+        },
+        providerId: "vidking",
+        selectionChanged: false,
+      }),
+    });
+    let ytDlpCalls = 0;
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] !== "yt-dlp") {
+        return { stdout: streamOf(""), stderr: streamOf(""), exited: Promise.resolve(0) } as never;
+      }
+      ytDlpCalls += 1;
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf("Duration: 00:00:10.00\n"),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+    let subtitleAttempts = 0;
+    globalThis.fetch = mock(async () => {
+      subtitleAttempts += 1;
+      if (subtitleAttempts <= 2) return new Response("", { status: 503 });
+      return new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi");
+    }) as unknown as typeof fetch;
+
+    const first = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 6, name: "Episode 6" },
+      providerId: "vidking",
+      mode: "series",
+      audioPreference: "original",
+      subtitlePreference: "en",
+    });
+    const second = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 7, name: "Episode 7" },
+      providerId: "vidking",
+      mode: "series",
+      audioPreference: "original",
+      subtitlePreference: "en",
+    });
+    await service.processQueue();
+    await service.processQueue();
+
+    expect(repo.get(first.id)?.status).toBe("repairable");
+    expect(repo.get(second.id)?.status).toBe("repairable");
+
+    const summary = await service.repairRepairableSidecars();
+
+    expect(summary).toEqual({ checked: 2, repaired: 2, stillRepairable: 0, failed: 0 });
+    expect(ytDlpCalls).toBe(2);
+    expect(repo.get(first.id)?.status).toBe("completed");
+    expect(repo.get(second.id)?.status).toBe("completed");
+  });
+
+  test("continues repair sweep when one repairable artifact is missing", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      ffmpegAvailable: false,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () => ({
+        stream: {
+          url: "https://fresh.example/master.m3u8",
+          headers: { Referer: "https://fresh.example" },
+          timestamp: 0,
+          subtitle: "https://fresh.example/subs/en.vtt",
+          subtitleList: [{ url: "https://fresh.example/subs/en.vtt", language: "en" }],
+        },
+        providerId: "vidking",
+        selectionChanged: false,
+      }),
+    });
+    let ytDlpCalls = 0;
+    spawnSpy.mockImplementation((command: string[]) => {
+      ytDlpCalls += 1;
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf("Duration: 00:00:10.00\n"),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+    let subtitleAttempts = 0;
+    globalThis.fetch = mock(async () => {
+      subtitleAttempts += 1;
+      if (subtitleAttempts <= 2) return new Response("", { status: 503 });
+      return new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi");
+    }) as unknown as typeof fetch;
+
+    const first = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 6, name: "Episode 6" },
+      providerId: "vidking",
+      mode: "series",
+      audioPreference: "original",
+      subtitlePreference: "en",
+    });
+    const second = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 7, name: "Episode 7" },
+      providerId: "vidking",
+      mode: "series",
+      audioPreference: "original",
+      subtitlePreference: "en",
+    });
+    await service.processQueue();
+    await service.processQueue();
+
+    const secondOutput = repo.get(second.id)?.outputPath;
+    if (secondOutput) rmSync(secondOutput, { force: true });
+
+    const summary = await service.repairRepairableSidecars();
+
+    expect(summary).toEqual({ checked: 2, repaired: 1, stillRepairable: 0, failed: 1 });
+    expect(ytDlpCalls).toBe(2);
+    expect(repo.get(first.id)?.status).toBe("completed");
+    expect(repo.get(second.id)?.status).toBe("failed");
+    expect(repo.get(second.id)?.failureKind).toBe("artifact-missing");
+  });
+
   test("records optional artwork misses without marking the video failed", async () => {
     const service = buildService({
       repo,

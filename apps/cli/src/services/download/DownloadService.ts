@@ -88,6 +88,13 @@ export type DownloadResolveIntent = {
   readonly selectedQualityLabel?: string;
 };
 
+export type DownloadRepairSummary = {
+  readonly checked: number;
+  readonly repaired: number;
+  readonly stillRepairable: number;
+  readonly failed: number;
+};
+
 export type DownloadResolveResult = {
   readonly stream: StreamInfo;
   readonly providerId: string;
@@ -331,6 +338,59 @@ export class DownloadService {
       return;
     }
     this.deps.repo.requeue(jobId, new Date().toISOString());
+  }
+
+  async repairRepairableSidecars(limit = 100): Promise<DownloadRepairSummary> {
+    const jobs = this.listFailed(limit).filter((job) => job.status === "repairable");
+    let repaired = 0;
+    let stillRepairable = 0;
+    let failed = 0;
+
+    for (const job of jobs) {
+      try {
+        await this.repairSidecars(job);
+        const refreshed = this.deps.repo.get(job.id);
+        if (refreshed?.status === "completed" || refreshed?.status === "completed-with-notes") {
+          repaired += 1;
+        } else if (refreshed?.status === "repairable") {
+          stillRepairable += 1;
+        } else {
+          failed += 1;
+        }
+      } catch (error) {
+        failed += 1;
+        const message = error instanceof Error ? error.message : String(error);
+        this.deps.logger.warn("Download sidecar repair failed", {
+          jobId: job.id,
+          error: message,
+        });
+        this.deps.diagnosticsStore?.record({
+          category: "download",
+          level: "warn",
+          operation: "download.artifact.repairable",
+          message: "Download sidecar repair failed",
+          context: {
+            jobId: job.id,
+            error: message,
+          },
+        });
+      }
+    }
+
+    this.deps.diagnosticsStore?.record({
+      category: "download",
+      level: failed > 0 ? "warn" : "info",
+      operation: "download.artifact.repairable",
+      message: "Download sidecar repair sweep completed",
+      context: {
+        checked: jobs.length,
+        repaired,
+        stillRepairable,
+        failed,
+      },
+    });
+
+    return { checked: jobs.length, repaired, stillRepairable, failed };
   }
 
   async processNextQueued(): Promise<DownloadJobRecord | null> {
