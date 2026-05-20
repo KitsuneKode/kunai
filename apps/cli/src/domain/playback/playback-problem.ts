@@ -1,4 +1,5 @@
 import type { PlaybackFailureClass } from "@/infra/player/playback-failure-classifier";
+import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
 
 export type ErrorScenario =
   | { kind: "provider-timeout"; providerName: string; elapsedSec: number }
@@ -56,6 +57,17 @@ export function buildProviderResolveProblem({
     .map((attempt) => attempt.failure?.message ?? "")
     .filter(Boolean)
     .join(" ");
+
+  if (classifyNetworkFailure(failureMessages) === "offline") {
+    return {
+      stage: "provider-resolve",
+      severity: "blocking",
+      cause: "network-offline",
+      userMessage: "Internet unavailable. Online providers cannot be reached right now.",
+      recommendedAction: "diagnostics",
+      secondaryActions: ["refresh"],
+    };
+  }
 
   if (/net::|ERR_INTERNET|network|ECONNREFUSED|ETIMEDOUT/i.test(failureMessages)) {
     return {
@@ -208,6 +220,7 @@ export function toErrorScenario(
         elapsedSec: 30,
       };
     case "network":
+    case "network-offline":
       return { kind: "network-offline" };
     case "no-stream":
     case "provider-access":

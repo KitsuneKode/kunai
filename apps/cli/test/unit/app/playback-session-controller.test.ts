@@ -221,6 +221,44 @@ describe("resolvePlaybackResultDecision", () => {
   });
 });
 
+describe("resolveAutoplayAdvanceEpisode", () => {
+  test("does not auto-advance after a suspected dead stream even near the end", async () => {
+    const session = createPlaybackSessionState({ autoNextEnabled: true });
+    const next = await resolveAutoplayAdvanceEpisode({
+      result: {
+        watchedSeconds: 1140,
+        duration: 1200,
+        endReason: "eof",
+        lastNonZeroPositionSeconds: 1140,
+        lastNonZeroDurationSeconds: 1200,
+        suspectedDeadStream: true,
+      },
+      title: seriesTitle,
+      currentEpisode: { season: 2, episode: 4 },
+      session,
+      availability: nextSeasonAvailability,
+    });
+
+    expect(next).toBeNull();
+    expect(
+      explainAutoplayBlockReason({
+        result: {
+          watchedSeconds: 1140,
+          duration: 1200,
+          endReason: "eof",
+          lastNonZeroPositionSeconds: 1140,
+          lastNonZeroDurationSeconds: 1200,
+          suspectedDeadStream: true,
+        },
+        title: seriesTitle,
+        currentEpisode: { season: 2, episode: 4 },
+        session,
+        availability: nextSeasonAvailability,
+      }),
+    ).toBe("not-near-end");
+  });
+});
+
 describe("resolvePostPlaybackSessionAction", () => {
   test("toggle-autoplay flips between explicit user pause and active autoplay", () => {
     const session = createPlaybackSessionState({ autoNextEnabled: true });

@@ -197,6 +197,7 @@ export function explainAutoplayBlockReason(args: AutoAdvanceArgs): AutoAdvanceBl
     endPolicy = DEFAULT_PLAYBACK_END_POLICY,
   } = args;
   const thresholdMode = endPolicy.quitNearEndThresholdMode;
+  if (result.suspectedDeadStream) return "not-near-end";
   const nearNaturalEnd = didPlaybackEndNearNaturalEnd(result, timing, thresholdMode);
   const endAllowsAutoplayAdvance =
     result.endReason === "eof" ||

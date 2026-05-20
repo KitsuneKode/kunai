@@ -74,4 +74,18 @@ describe("playback problem model", () => {
       maxAttempts: 3,
     });
   });
+
+  test("maps offline provider resolution to a blocking offline problem", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [{ failure: { message: "getaddrinfo ENOTFOUND api.example.test" } }],
+    });
+
+    expect(problem).toMatchObject({
+      cause: "network-offline",
+      severity: "blocking",
+      recommendedAction: "diagnostics",
+      secondaryActions: ["refresh"],
+    });
+    expect(toErrorScenario(problem)).toEqual({ kind: "network-offline" });
+  });
 });

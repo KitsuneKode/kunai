@@ -112,6 +112,7 @@ export function didPlaybackEndNearNaturalEnd(
   timing?: PlaybackTimingMetadata | null,
   thresholdMode: QuitNearEndThresholdMode = "credits-or-90-percent",
 ): boolean {
+  if (result.suspectedDeadStream) return false;
   if (didPlaybackReachCompletionThreshold(result, timing, thresholdMode)) return true;
 
   // Fallback for sources where mpv never reports a reliable duration (HLS/m3u8).
@@ -411,7 +412,12 @@ export async function getAutoAdvanceEpisode(
     result.endReason === "eof" ||
     (result.endReason === "quit" && endPolicy.quitNearEndBehavior === "continue" && nearNaturalEnd);
 
-  if (!autoNextEnabled || title.type !== "series" || !endAllowsAutoplayAdvance) {
+  if (
+    result.suspectedDeadStream ||
+    !autoNextEnabled ||
+    title.type !== "series" ||
+    !endAllowsAutoplayAdvance
+  ) {
     return null;
   }
 
