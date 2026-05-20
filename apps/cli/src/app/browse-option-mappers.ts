@@ -188,12 +188,12 @@ function normalizeProviderText(value: string | null | undefined): string {
 function decodeHtmlEntities(value: string): string {
   return value
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
     .replace(/&apos;/gi, "'")
     .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">");
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&");
 }
 
 function buildLocalEnrichmentFacts(

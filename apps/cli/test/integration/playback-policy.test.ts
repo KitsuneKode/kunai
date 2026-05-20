@@ -102,8 +102,16 @@ describe("resolveEpisodeAvailability", () => {
       },
     });
 
-    expect(availability.nextEpisode).toEqual({ season: 1, episode: 12 });
-    expect(availability.previousEpisode).toEqual({ season: 1, episode: 1 });
+    expect(availability.nextEpisode).toEqual({
+      season: 1,
+      episode: 12,
+      name: "Episode 12",
+    });
+    expect(availability.previousEpisode).toEqual({
+      season: 1,
+      episode: 1,
+      name: "Episode 1",
+    });
     expect(availability.nextSeasonEpisode).toBeNull();
     expect(availability.upcomingNext).toBeNull();
     expect(availability.animeNextReleaseUnknown).toBe(false);

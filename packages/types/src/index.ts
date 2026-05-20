@@ -413,6 +413,8 @@ export interface ProviderEpisodeListInput {
 export interface ProviderEpisodeOption {
   readonly index: number;
   readonly label: string;
+  /** Canonical episode title when the provider catalog supplies one (separate from display label). */
+  readonly name?: string;
   readonly detail?: string;
   readonly totalEpisodeCount?: number;
   readonly externalIds?: ProviderExternalIds;

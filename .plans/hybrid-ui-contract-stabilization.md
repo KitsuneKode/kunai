@@ -32,7 +32,9 @@ This plan locks the backend and shell contracts needed before the dedicated UI p
 - [x] Test sidecar repair does not redownload video artifacts.
 - [x] Normalize audio/subtitle search filters consistently.
 - [x] Preserve calendar/command surfaces without clutter or stale highlighted browse cards.
-- [ ] Run focused tests and final repo verification.
+- [x] Run focused tests and final repo verification for the first stabilization slice.
+- [x] Preserve selected source/stream identity through playback resolve, cache keys, and download re-resolve.
+- [x] Normalize provider source labels for display without treating provider aliases as languages.
 
 ## UI Agent Handoff
 

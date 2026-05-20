@@ -115,6 +115,17 @@ export async function fetchSeriesData(
   return { seasons, episodes };
 }
 
+/** Read a cached season episode row without network (after fetchEpisodes warmed the cache). */
+export function lookupCachedEpisode(
+  tmdbId: string,
+  season: number,
+  episode: number,
+): EpisodeInfo | undefined {
+  const cached = epCache.get(`${tmdbId}:${season}`);
+  if (!cached) return undefined;
+  return cached.find((row) => row.number === episode);
+}
+
 // Format an EpisodeInfo for display in a picker.
 // Returns a consistent-width string suitable for interactive list pickers.
 export function formatEpisode(ep: EpisodeInfo): string {

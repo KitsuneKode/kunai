@@ -12,3 +12,4 @@
 !provider-*/*-headless.ts
 !provider-*/*-0-ram-scraper.ts
 !skill-*/SKILL.md
+episode-metadata-audit

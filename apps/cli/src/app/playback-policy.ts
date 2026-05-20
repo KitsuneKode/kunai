@@ -253,9 +253,19 @@ export async function resolveEpisodeAvailability({
 
     return {
       previousEpisode: previousOption
-        ? { season: 1, episode: previousOption.index }
+        ? {
+            season: 1,
+            episode: previousOption.index,
+            name: previousOption.name ?? previousOption.label,
+          }
         : previousFallbackEpisode,
-      nextEpisode: nextOption ? { season: 1, episode: nextOption.index } : null,
+      nextEpisode: nextOption
+        ? {
+            season: 1,
+            episode: nextOption.index,
+            name: nextOption.name ?? nextOption.label,
+          }
+        : null,
       nextSeasonEpisode: null,
       upcomingNext: null,
       animeNextReleaseUnknown,

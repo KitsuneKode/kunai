@@ -324,7 +324,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
 
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
-        candidates: buildRivestreamCycleCandidates(providers),
+        candidates: buildRivestreamCycleCandidates(providers, input.preferredSourceId),
         signal: context.signal,
         now: context.now,
         maxAttemptsPerCandidate: 1,
@@ -527,6 +527,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
 
 function buildRivestreamCycleCandidates(
   providers: readonly string[],
+  preferredSourceId?: string,
 ): readonly ProviderCycleCandidate[] {
   return providers.map((provider, index) => {
     const sourceId = `source:${RIVESTREAM_PROVIDER_ID}:${provider}`;
@@ -537,7 +538,7 @@ function buildRivestreamCycleCandidates(
       serverId: provider,
       label: displayRivestreamProviderLabel(provider),
       nativeLabel: provider,
-      priority: index,
+      priority: sourceId === preferredSourceId ? index - 10_000 : index,
       metadata: {
         provider,
         sourceHost: "rivestream.app",

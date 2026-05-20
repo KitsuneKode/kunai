@@ -42,10 +42,6 @@ const DEFAULT_UA =
 const ALLANIME_API_URL = "https://api.allanime.day/api";
 const ALLANIME_REFERER = "https://youtu-chan.com";
 
-/** Cache episode catalog per showId+mode to avoid re-fetching on every resolve. */
-const episodeCatalogCache = new Map<string, { at: number; data: string[] }>();
-const EPISODE_CATALOG_CACHE_TTL_MS = 30 * 60 * 1000;
-
 export const allmangaProviderModule: CoreProviderModule = {
   providerId: ALLANIME_PROVIDER_ID,
   manifest: allanimeManifest,
@@ -183,24 +179,15 @@ export const allmangaProviderModule: CoreProviderModule = {
           : "dub";
       const episodeNum = input.episode?.absoluteEpisode ?? input.episode?.episode ?? 1;
 
-      // Load the catalog to find the exact episode string (e.g. "01" or "1.5")
-      // Cache per showId+mode like Miruro does, with 30min TTL
-      const cacheKey = `${showId}:${mode}`;
-      const cached = episodeCatalogCache.get(cacheKey);
-      let episodes: string[];
-      if (cached && Date.now() - cached.at < EPISODE_CATALOG_CACHE_TTL_MS) {
-        episodes = cached.data;
-      } else {
-        const detail = await loadAvailableEpisodesDetail(
-          ALLANIME_API_URL,
-          ALLANIME_REFERER,
-          DEFAULT_UA,
-          showId,
-          context.signal,
-        );
-        episodes = (detail[mode] ?? []) as string[];
-        episodeCatalogCache.set(cacheKey, { at: Date.now(), data: episodes });
-      }
+      // Same GQL catalog as listEpisodes (showCatalogCache, 45s TTL in api-client).
+      const detail = await loadAvailableEpisodesDetail(
+        ALLANIME_API_URL,
+        ALLANIME_REFERER,
+        DEFAULT_UA,
+        showId,
+        context.signal,
+      );
+      const episodes = (detail[mode] ?? []) as string[];
 
       if (episodes.length === 0) {
         throw new Error(`No ${mode} episodes found for show ${showId}`);
@@ -367,7 +354,10 @@ export const allmangaProviderModule: CoreProviderModule = {
       streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
       variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
 
-      const cycleCandidates = buildAllmangaCycleCandidates(streams, input.qualityPreference);
+      const cycleCandidates = buildAllmangaCycleCandidates(streams, input.qualityPreference, {
+        preferredSourceId: input.preferredSourceId,
+        preferredStreamId: input.preferredStreamId,
+      });
       const cycleResult = await runProviderCycle({
         providerId: ALLANIME_PROVIDER_ID,
         candidates: cycleCandidates,
@@ -515,12 +505,18 @@ export const allmangaProviderModule: CoreProviderModule = {
 export function buildAllmangaCycleCandidates(
   streams: readonly StreamCandidate[],
   qualityPreference: string | undefined,
+  selection: {
+    readonly preferredSourceId?: string;
+    readonly preferredStreamId?: string;
+  } = {},
 ): ProviderCycleCandidate[] {
   return streams.map((stream, index) => {
     const qualityRank = stream.qualityRank ?? (parseInt(stream.qualityLabel ?? "") || 0);
     const qualityBoost =
       qualityPreference && stream.qualityLabel?.includes(qualityPreference) ? -10_000 : 0;
     const hlsBoost = stream.protocol === "hls" ? -1_000 : 0;
+    const selectedStreamBoost = stream.id === selection.preferredStreamId ? -20_000 : 0;
+    const selectedSourceBoost = stream.sourceId === selection.preferredSourceId ? -10_000 : 0;
     return {
       id: `candidate:${stream.id}`,
       providerId: ALLANIME_PROVIDER_ID,
@@ -534,7 +530,13 @@ export function buildAllmangaCycleCandidates(
       normalizedSubtitleLanguage: stream.hardSubLanguage ?? stream.subtitleLanguages?.[0],
       presentation: stream.presentation,
       qualityRank,
-      priority: qualityBoost + hlsBoost - qualityRank + index / 1000,
+      priority:
+        selectedStreamBoost +
+        selectedSourceBoost +
+        qualityBoost +
+        hlsBoost -
+        qualityRank +
+        index / 1000,
       metadata: {
         protocol: stream.protocol,
         sourceHost: stream.sourceEvidence?.[0]?.host,

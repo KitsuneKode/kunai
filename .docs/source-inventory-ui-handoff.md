@@ -32,6 +32,11 @@ Primary UI fields:
   diagnostics.
 - `sourceEvidence[].nativeLabel` / `host`: source/server facts for details and
   support bundles.
+- `ProviderResolveInput.preferredSourceId` / `preferredStreamId`: exact user
+  selection hints. Playback, downloads, and repair re-resolve paths should pass
+  these through when they are known so provider-local cycling can try the
+  intended source first and cache entries do not collapse distinct streams
+  together.
 
 Do not put provider code names such as `killjoy`, `FlowCast`, `HindiCast`,
 `Vietsub`, or `H-SUB` into primary language UI. Those are evidence/source labels,
@@ -83,6 +88,19 @@ provider calls on render:
 
 Fresh provider work belongs behind explicit actions such as recover, refresh,
 repair, download, or play.
+
+## Exact Selection And Cache Identity
+
+Source and stream selection can change the actual bytes, language, subtitle
+delivery, host, or DRM/CDN behavior even when quality looks identical. Treat
+these as cache identity inputs:
+
+- include `source` and `stream` key parts for direct-provider stream caches;
+- persist selected source/stream IDs when enqueueing a download from playback;
+- pass selected IDs into download re-resolve so repair/retry keeps the user's
+  chosen source when it still exists;
+- if a provider cannot honor the exact source, it may fall back, but diagnostics
+  should mark the selection as changed.
 
 ## MPV Bridge And Assets
 

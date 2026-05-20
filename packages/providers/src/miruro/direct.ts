@@ -9,6 +9,8 @@ import {
 import type {
   CachePolicy,
   ProviderCycleCandidate,
+  ProviderEpisodeListInput,
+  ProviderEpisodeOption,
   ProviderFailure,
   ProviderResolveInput,
   ProviderResolveResult,
@@ -379,6 +381,7 @@ export function buildMiruroCycleCandidates({
   targetAudio,
   fallbackAudio,
   preferredSubtitleDelivery,
+  preferredSourceId,
 }: {
   readonly episodes: {
     readonly sub?: readonly MiruroEpisodeEntry[];
@@ -388,6 +391,7 @@ export function buildMiruroCycleCandidates({
   readonly targetAudio: MiruroAudioCategory;
   readonly fallbackAudio: MiruroAudioCategory;
   readonly preferredSubtitleDelivery?: MiruroServerProfile["subtitleDelivery"];
+  readonly preferredSourceId?: string;
 }): ProviderCycleCandidate[] {
   const preferredServer =
     preferredSubtitleDelivery === "embedded"
@@ -416,7 +420,7 @@ export function buildMiruroCycleCandidates({
         normalizedAudioLanguage: audioCategory === "sub" ? "ja" : "en",
         normalizedSubtitleLanguage: serverProfile.hardSubLanguage,
         presentation: audioCategory,
-        priority,
+        priority: sourceId === preferredSourceId ? priority - 10_000 : priority,
         metadata: {
           audioCategory,
           episodeId: episodeEntry.id,
@@ -488,6 +492,51 @@ function xorDecrypt(encrypted: Uint8Array, keyHex: string): Uint8Array {
   return result;
 }
 
+function resolveMiruroAnilistId(title: ProviderEpisodeListInput["title"]): string | null {
+  const anilistId = title.anilistId ?? title.id.replace("anilist:", "");
+  if (!anilistId || Number.isNaN(Number(anilistId))) return null;
+  return anilistId;
+}
+
+/** Shared episode list fetch for listEpisodes + resolve (30m TTL). */
+export async function getMiruroEpisodesResponse(
+  anilistId: string,
+  signal?: AbortSignal,
+): Promise<MiruroEpisodesResponse | null> {
+  const cacheKey = `episodes:${anilistId}`;
+  const cached = episodeCache.get(cacheKey) as MiruroEpisodesResponse | null;
+  if (cached) return cached;
+
+  const epData = (await pipeCall(
+    "episodes",
+    { anilistId: Number(anilistId) },
+    signal,
+  )) as MiruroEpisodesResponse | null;
+  if (epData) episodeCache.set(cacheKey, epData);
+  return epData;
+}
+
+export async function fetchMiruroEpisodeCatalog(
+  anilistId: string,
+  signal?: AbortSignal,
+): Promise<readonly ProviderEpisodeOption[] | null> {
+  const epData = await getMiruroEpisodesResponse(anilistId, signal);
+  const sub = epData?.providers?.kiwi?.episodes?.sub;
+  const dub = epData?.providers?.kiwi?.episodes?.dub;
+  const entries = (sub?.length ? sub : dub) ?? [];
+  if (entries.length === 0) return null;
+
+  return entries.map((entry) => {
+    const title = entry.title?.trim();
+    return {
+      index: entry.number,
+      label: title ? `Episode ${entry.number} · ${title}` : `Episode ${entry.number}`,
+      name: title || undefined,
+      detail: entry.id,
+    };
+  });
+}
+
 async function pipeCall(
   path: string,
   query: Record<string, string | number>,
@@ -535,6 +584,11 @@ async function pipeCall(
 export const miruroProviderModule: CoreProviderModule = {
   providerId: MIRURO_PROVIDER_ID,
   manifest: miruroManifest,
+  async listEpisodes(input, context) {
+    const anilistId = resolveMiruroAnilistId(input.title);
+    if (!anilistId) return null;
+    return fetchMiruroEpisodeCatalog(anilistId, context.signal);
+  },
   async resolve(input, context) {
     if (input.mediaKind !== "anime") {
       return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
@@ -581,17 +635,7 @@ export const miruroProviderModule: CoreProviderModule = {
     });
 
     try {
-      // Step 1: Fetch episode list to get the episodeId (cached 30m)
-      const epCacheKey = `episodes:${anilistId}`;
-      let epData = episodeCache.get(epCacheKey) as MiruroEpisodesResponse | null;
-      if (!epData) {
-        epData = (await pipeCall(
-          "episodes",
-          { anilistId: Number(anilistId) },
-          context.signal,
-        )) as MiruroEpisodesResponse | null;
-        if (epData) episodeCache.set(epCacheKey, epData);
-      }
+      const epData = await getMiruroEpisodesResponse(anilistId, context.signal);
       if (!epData?.providers?.kiwi?.episodes) {
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
           code: "not-found",
@@ -612,6 +656,7 @@ export const miruroProviderModule: CoreProviderModule = {
         fallbackAudio,
         preferredSubtitleDelivery:
           input.preferredSubtitleDelivery === "embedded" ? "embedded" : "hardcoded",
+        preferredSourceId: input.preferredSourceId,
       });
       if (cycleCandidates.length === 0) {
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {

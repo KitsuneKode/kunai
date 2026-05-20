@@ -19,6 +19,7 @@ import {
 } from "@/app-shell/workflows";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { runAutoplayAdvanceCountdown } from "@/app/autoplay-advance-countdown";
+import { episodeInfoFromSelection } from "@/app/episode-info-from-catalog";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
@@ -675,10 +676,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           return { status: "success", value: "back_to_results" };
         }
 
-        episode = {
+        episode = episodeInfoFromSelection({
           season: selection.season,
           episode: selection.episode,
-        };
+          isAnime: stateManager.getState().mode === "anime",
+          titleId: title.id,
+          animeEpisodes: initialAnimeEpisodes,
+        });
         pendingStart =
           selection.startAt !== undefined || selection.suppressResumePrompt
             ? startFromEpisodeSelection(selection)
@@ -2727,9 +2731,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 });
                 continue postPlayback;
               }
+              const pickedEpisode = episodeInfoFromSelection({
+                season: selection.season,
+                episode: selection.episode,
+                isAnime: stateManager.getState().mode === "anime",
+                titleId: title.id,
+                animeEpisodes: currentAnimeEpisodes,
+              });
               stateManager.dispatch({
                 type: "SELECT_EPISODE",
-                episode: { season: selection.season, episode: selection.episode },
+                episode: pickedEpisode,
               });
               playbackSession = this.transitionPlaybackSession(
                 context,
@@ -2742,10 +2753,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   source: "episode-picker",
                 },
               );
-              pendingStart = await startNavigationToEpisode({
-                season: selection.season,
-                episode: selection.episode,
-              });
+              pendingStart = await startNavigationToEpisode(pickedEpisode);
               break postPlayback;
             } else if (postAction === "next" && title.type === "series") {
               if (episodeAvailability.nextEpisode) {

@@ -21,7 +21,7 @@ function animeOptionsFromProviderList(
   episodes: readonly EpisodePickerOption[],
 ): ListOption<EpisodeInfo>[] {
   return episodes.map((ep) => ({
-    value: { season: 1, episode: ep.index, name: ep.label },
+    value: { season: 1, episode: ep.index, name: ep.name ?? ep.label },
     label: ep.label,
     detail: ep.detail,
   }));

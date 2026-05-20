@@ -303,6 +303,54 @@ describe("AllManga provider evidence fixtures", () => {
       presentation: "sub",
     });
   });
+
+  test("source cycle candidates prioritize exact selected stream hints", () => {
+    const streams = [
+      {
+        id: "stream:allmanga:default-1080",
+        providerId: "allanime",
+        sourceId: "source:allanime:fm-hls",
+        variantId: "variant:allanime:fm-hls:1080",
+        url: "https://cdn.example/default/1080.m3u8",
+        protocol: "hls",
+        container: "m3u8",
+        qualityLabel: "1080p",
+        qualityRank: 1080,
+        confidence: 0.95,
+        cachePolicy: {
+          ttlClass: "stream-manifest",
+          scope: "local",
+          keyParts: ["provider", "allmanga", "cycle-candidate"],
+        },
+      },
+      {
+        id: "stream:allmanga:selected-720",
+        providerId: "allanime",
+        sourceId: "source:allanime:vid-mp4",
+        variantId: "variant:allanime:vid-mp4:720",
+        url: "https://cdn.example/selected/720.mp4",
+        protocol: "mp4",
+        container: "mp4",
+        qualityLabel: "720p",
+        qualityRank: 720,
+        confidence: 0.85,
+        cachePolicy: {
+          ttlClass: "stream-manifest",
+          scope: "local",
+          keyParts: ["provider", "allmanga", "cycle-candidate"],
+        },
+      },
+    ] as const;
+
+    const candidates = buildAllmangaCycleCandidates(streams, undefined, {
+      preferredSourceId: "source:allanime:vid-mp4",
+      preferredStreamId: "stream:allmanga:selected-720",
+    });
+
+    expect([...candidates].sort((left, right) => left.priority - right.priority)[0]?.streamId).toBe(
+      "stream:allmanga:selected-720",
+    );
+  });
 });
 
 async function buildBlob(plain: string): Promise<string> {

@@ -59,6 +59,7 @@ export interface EpisodeInfo {
 export interface EpisodePickerOption {
   readonly index: number;
   readonly label: string;
+  readonly name?: string;
   readonly detail?: string;
   /** Total episode count for the series, if known. Used to detect completion. */
   readonly totalEpisodeCount?: number;

@@ -224,6 +224,7 @@ export async function resolveVidkingDirect(
       : [],
     embedReferer: engineOptions.customReferer ?? embedReferer ?? undefined,
     engineOptions,
+    preferredSourceId: input.preferredSourceId,
   });
 
   const cycleResult = await runProviderCycle({
@@ -311,11 +312,13 @@ function buildVidkingCycleCandidates({
   embedServers,
   embedReferer,
   engineOptions,
+  preferredSourceId,
 }: {
   readonly directServers: readonly VidkingServerEndpoint[];
   readonly embedServers: readonly VidkingServerEndpoint[];
   readonly embedReferer?: string;
   readonly engineOptions: VidKingEngineOptions;
+  readonly preferredSourceId?: string;
 }): ProviderCycleCandidate[] {
   const candidates: ProviderCycleCandidate[] = [];
   directServers.forEach((server, index) => {
@@ -337,7 +340,7 @@ function buildVidkingCycleCandidates({
     });
   });
 
-  if (!embedReferer) return candidates;
+  if (!embedReferer) return prioritizePreferredSource(candidates, preferredSourceId);
 
   embedServers.forEach((server, index) => {
     const sourceId = createSourceId(`${server}-embed-ref`);
@@ -359,7 +362,19 @@ function buildVidkingCycleCandidates({
     });
   });
 
-  return candidates;
+  return prioritizePreferredSource(candidates, preferredSourceId);
+}
+
+function prioritizePreferredSource(
+  candidates: readonly ProviderCycleCandidate[],
+  preferredSourceId: string | undefined,
+): ProviderCycleCandidate[] {
+  if (!preferredSourceId) return [...candidates];
+  return candidates.map((candidate) =>
+    candidate.sourceId === preferredSourceId
+      ? { ...candidate, priority: candidate.priority - 10_000 }
+      : candidate,
+  );
 }
 
 function parseVidkingCycleCandidateMetadata(

@@ -86,6 +86,34 @@ describe("DownloadService", () => {
     expect(service.listCompleted(10).some((entry) => entry.id === job.id)).toBe(true);
   });
 
+  test("persists provider source and stream selection for exact re-resolve", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: {
+        url: "https://example.com/master.m3u8",
+        headers: { Referer: "https://example.com" },
+        timestamp: 0,
+      },
+      providerId: "vidking",
+      selectedSourceId: "source-b",
+      selectedStreamId: "stream-b-1080",
+      selectedQualityLabel: "1080p",
+    });
+
+    const stored = repo.get(job.id);
+    expect(stored?.selectedSourceId).toBe("source-b");
+    expect(stored?.selectedStreamId).toBe("stream-b-1080");
+    expect(stored?.selectedQualityLabel).toBe("1080p");
+  });
+
   test("persists artifact duration when ffprobe validation succeeds", async () => {
     const diagnostics: unknown[] = [];
     const service = buildService({

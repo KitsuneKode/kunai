@@ -262,11 +262,15 @@ function normalizeIdPart(value: unknown): string {
 }
 
 function normalizeIdSegment(value: string): string {
-  return value
+  const underscored = value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+    .replace(/[^a-z0-9]+/g, "_");
+  let start = 0;
+  let end = underscored.length;
+  while (start < end && underscored[start] === "_") start += 1;
+  while (end > start && underscored[end - 1] === "_") end -= 1;
+  return underscored.slice(start, end);
 }
 
 function sortObject(value: Record<string, unknown>): Record<string, unknown> {

@@ -412,7 +412,8 @@ export function buildMpvArgs(
     // keep-open=no is intentional: with keep-open=yes, mpv silently pauses at the last
     // frame on natural EOF and never fires the end-file IPC event, so play() hangs and
     // auto-advance is unreachable. keep-open=no fires end-file with reason "eof" reliably.
-    // idle=yes + force-window=immediate keep the process and window visible between episodes.
+    // idle=yes keeps the process alive between episodes; force-window=immediate gives
+    // instant visual feedback while mpv is still resolving the media.
     args.push("--keep-open=no");
     args.push("--idle=yes");
   } else {
