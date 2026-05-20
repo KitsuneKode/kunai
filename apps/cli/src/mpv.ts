@@ -351,7 +351,7 @@ export async function launchMpv(opts: {
 export function shouldAbortLaunchForDefinitivePreflight(
   result: StreamPreflightResult,
   ipcConnected: boolean,
-): boolean {
+): result is Extract<StreamPreflightResult, { status: "unreachable" }> {
   return result.status === "unreachable" && result.definitive && !ipcConnected;
 }
 
