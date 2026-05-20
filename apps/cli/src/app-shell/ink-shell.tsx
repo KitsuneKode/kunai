@@ -77,6 +77,7 @@ import { openSessionPicker } from "./session-picker";
 import {
   CommandPalette,
   fallbackCommandState,
+  getCommandAutocompleteTarget,
   getCommandMatches,
   getHighlightedCommand,
 } from "./shell-command-ui";
@@ -91,6 +92,7 @@ import {
 } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
+import { getNextStreakMilestone } from "./streak-milestone";
 import {
   toShellAction,
   type FooterAction,
@@ -439,8 +441,6 @@ export function useSessionState(stateManager: SessionStateManager) {
  * Holds the identity logo and renders the appropriate shell based on state.
  */
 
-const STREAK_MILESTONES = [3, 7, 14, 30, 50, 100];
-
 function AppRoot({ container }: { container: Container }) {
   const { stateManager } = container;
   const state = useSessionState(stateManager);
@@ -477,7 +477,7 @@ function AppRoot({ container }: { container: Container }) {
       if (currentStreak !== undefined && currentStreak >= 3) {
         const days = currentStreak;
         const lastCelebrated = container.config.lastStreakMilestoneDays ?? 0;
-        const nextMilestone = STREAK_MILESTONES.find((m) => m <= days && m > lastCelebrated);
+        const nextMilestone = getNextStreakMilestone(days, lastCelebrated);
         if (nextMilestone) {
           setStreakMilestoneAlert(`🔥 ${nextMilestone}-day streak! Keep it going.`);
           void container.config.update({ lastStreakMilestoneDays: nextMilestone });
@@ -1703,11 +1703,15 @@ function ListShell<T>({
         return;
       }
       if (key.tab) {
-        const nextIndex = matches.length > 0 ? (highlightedCommandIndex + 1) % matches.length : 0;
-        const target = matches[nextIndex];
+        const target = getCommandAutocompleteTarget(
+          commandInput,
+          actionContext?.commands ?? [],
+          highlightedCommandIndex,
+        );
         if (target) {
-          setHighlightedCommandIndex(nextIndex);
           commandEditor.setValue(target.aliases[0] ?? target.id);
+          const nextIndex = matches.findIndex((candidate) => candidate.id === target.id);
+          setHighlightedCommandIndex(nextIndex >= 0 ? nextIndex : 0);
         }
         return;
       }
@@ -2390,11 +2394,15 @@ function BrowseShell<T>({
         return;
       }
       if (key.tab) {
-        const nextIndex = matches.length > 0 ? (highlightedCommandIndex + 1) % matches.length : 0;
-        const target = matches[nextIndex];
+        const target = getCommandAutocompleteTarget(
+          commandInput,
+          commands,
+          highlightedCommandIndex,
+        );
         if (target) {
-          setHighlightedCommandIndex(nextIndex);
           commandEditor.setValue(target.aliases[0] ?? target.id);
+          const nextIndex = matches.findIndex((candidate) => candidate.id === target.id);
+          setHighlightedCommandIndex(nextIndex >= 0 ? nextIndex : 0);
         }
         return;
       }

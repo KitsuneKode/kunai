@@ -148,7 +148,10 @@ export function buildCommandPickerModel(
       enabled: command.enabled,
       disabledReason: command.reason,
       group: showGrouped ? (CONTEXT_COMMAND_IDS.has(command.id) ? "context" : "global") : undefined,
-      keywords: command.aliases,
+      keywords: command.aliases.map((alias, index) => ({
+        value: alias,
+        weight: index === 0 ? -8 : 6,
+      })),
     })),
   });
 }

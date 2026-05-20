@@ -49,7 +49,9 @@ function filterPickerOptions<TValue extends string>(
   if (!normalized) return options;
 
   return rankFuzzyMatches(options, normalized, (option) => [
-    ...(option.keywords ?? []).map((keyword) => ({ value: keyword, weight: -4 })),
+    ...(option.keywords ?? []).map((keyword) =>
+      typeof keyword === "string" ? { value: keyword, weight: -4 } : keyword,
+    ),
     { value: option.label, weight: 0 },
     { value: option.detail, weight: 12 },
     { value: option.group, weight: 20 },

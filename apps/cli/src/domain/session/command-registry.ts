@@ -501,7 +501,10 @@ export function suggestCommands(
   const pool = COMMANDS.filter((command) => allowed.includes(command.id));
   if (!normalized) return pool;
   return rankFuzzyMatches(pool, normalized, (command) => [
-    ...command.aliases.map((alias) => ({ value: alias, weight: -4 })),
+    ...command.aliases.map((alias, index) => ({
+      value: alias,
+      weight: index === 0 ? -8 : 6,
+    })),
     { value: command.label, weight: 0 },
     { value: command.description, weight: 14 },
   ]);

@@ -1,3 +1,5 @@
+import type { FuzzyMatchTarget } from "./fuzzy-match";
+
 export type PickerModelOption<TValue extends string = string> = {
   readonly id: string;
   readonly value: TValue;
@@ -6,7 +8,7 @@ export type PickerModelOption<TValue extends string = string> = {
   readonly enabled?: boolean;
   readonly disabledReason?: string;
   readonly group?: string;
-  readonly keywords?: readonly string[];
+  readonly keywords?: readonly (string | FuzzyMatchTarget)[];
 };
 
 export type PickerModelItemRow<TValue extends string = string> = {

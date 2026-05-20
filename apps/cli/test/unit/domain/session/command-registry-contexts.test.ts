@@ -4,6 +4,7 @@ import {
   COMMAND_CONTEXTS,
   parseCommand,
   resolveCommandContext,
+  suggestCommands,
   type AppCommandId,
 } from "@/domain/session/command-registry";
 import { createInitialState } from "@/domain/session/SessionState";
@@ -126,6 +127,10 @@ describe("command registry contexts", () => {
   test("resolves /c and /continue aliases to the continue command", () => {
     expect(parseCommand("/c")?.id).toBe("continue");
     expect(parseCommand("/continue")?.id).toBe("continue");
+  });
+
+  test("suggests primary /continue before secondary /config when typing /con", () => {
+    expect(suggestCommands("/con", COMMAND_CONTEXTS.rootOverlay)[0]?.id).toBe("continue");
   });
 
   test("resolves /memory aliases to the playback memory command", () => {

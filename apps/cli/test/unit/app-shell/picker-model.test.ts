@@ -137,4 +137,28 @@ describe("command picker model", () => {
       "calendar",
     );
   });
+
+  test("primary command prefixes beat shorter secondary aliases", () => {
+    const settingsCommand: ResolvedAppCommand = {
+      id: "settings",
+      label: "Settings",
+      aliases: ["settings", "config", "prefs"],
+      description: "Open settings",
+      enabled: true,
+    };
+    const continueCommand: ResolvedAppCommand = {
+      id: "continue",
+      label: "Continue Watching",
+      aliases: ["continue", "c"],
+      description: "Open unfinished and recent watch progress",
+      enabled: true,
+    };
+
+    const model = buildCommandPickerModel("/con", [settingsCommand, continueCommand], 0);
+
+    expect(model.options[0]?.value).toBe("continue");
+    expect(getCommandAutocompleteTarget("/con", [settingsCommand, continueCommand], 0)?.id).toBe(
+      "continue",
+    );
+  });
 });
