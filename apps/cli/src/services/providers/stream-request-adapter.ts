@@ -7,6 +7,8 @@ export interface StreamRequestLike {
   readonly audioPreference: string;
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
+  readonly selectedSourceId?: string;
+  readonly selectedStreamId?: string;
 }
 
 export function streamRequestToResolveInput(
@@ -18,6 +20,8 @@ export function streamRequestToResolveInput(
     title: titleToCoreIdentity(request.title, mode),
     episode: episodeToCoreIdentity(request.episode),
     mediaKind: mode === "anime" ? "anime" : request.title.type,
+    preferredSourceId: normalizeOptionalId(request.selectedSourceId),
+    preferredStreamId: normalizeOptionalId(request.selectedStreamId),
     preferredAudioLanguage: mode === "anime" ? request.audioPreference : undefined,
     preferredSubtitleLanguage: request.subtitlePreference,
     preferredPresentation:
@@ -27,6 +31,11 @@ export function streamRequestToResolveInput(
     intent,
     allowedRuntimes: ["direct-http"],
   };
+}
+
+function normalizeOptionalId(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
 }
 
 function normalizeQualityPreference(value: string | undefined): string | undefined {

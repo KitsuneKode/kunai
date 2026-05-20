@@ -365,14 +365,23 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
         audioPreference: intent.audioPreference,
         subtitlePreference: intent.subtitlePreference,
         qualityPreference: intent.qualityPreference,
+        selectedSourceId: intent.selectedSourceId,
+        selectedStreamId: intent.selectedStreamId,
         recoveryMode: config.recoveryMode,
         signal: controller.signal,
       });
       if (!result.stream) return null;
+      const resolvedStreamId = result.stream.providerResolveResult?.selectedStreamId;
+      const resolvedSourceId = result.stream.providerResolveResult?.streams.find(
+        (candidate) => candidate.id === resolvedStreamId,
+      )?.sourceId;
       return {
         stream: result.stream,
         providerId: result.providerId,
-        selectionChanged: result.providerId !== intent.providerId,
+        selectionChanged:
+          result.providerId !== intent.providerId ||
+          (Boolean(intent.selectedStreamId) && resolvedStreamId !== intent.selectedStreamId) ||
+          (Boolean(intent.selectedSourceId) && resolvedSourceId !== intent.selectedSourceId),
       };
     },
   });

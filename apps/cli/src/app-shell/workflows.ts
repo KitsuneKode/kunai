@@ -19,7 +19,7 @@ import { createContinuationEngine } from "@/domain/continuation/ContinuationEngi
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelectionEngine";
-import type { EpisodePickerOption, TitleInfo } from "@/domain/types";
+import type { EpisodePickerOption, StreamInfo, TitleInfo } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import type { CatalogScheduleService } from "@/services/catalog/CatalogScheduleService";
@@ -1638,6 +1638,9 @@ export async function enqueueCurrentPlaybackDownload({
           : state.currentTitle.type === "movie"
             ? state.movieLanguageProfile.quality
             : state.seriesLanguageProfile.quality,
+      selectedSourceId: getSelectedPlaybackSourceId(state.stream),
+      selectedStreamId: state.stream?.providerResolveResult?.selectedStreamId,
+      selectedQualityLabel: getSelectedPlaybackQualityLabel(state.stream),
       timing,
     });
     container.diagnosticsStore.record({
@@ -1689,6 +1692,20 @@ export async function enqueueCurrentPlaybackDownload({
     });
     return false;
   }
+}
+
+function getSelectedPlaybackSourceId(stream: StreamInfo | null | undefined): string | undefined {
+  const result = stream?.providerResolveResult;
+  const selected = result?.streams.find((candidate) => candidate.id === result.selectedStreamId);
+  return selected?.sourceId;
+}
+
+function getSelectedPlaybackQualityLabel(
+  stream: StreamInfo | null | undefined,
+): string | undefined {
+  const result = stream?.providerResolveResult;
+  const selected = result?.streams.find((candidate) => candidate.id === result.selectedStreamId);
+  return selected?.qualityLabel;
 }
 
 export async function downloadSelectedResult(container: Container): Promise<void> {

@@ -72,6 +72,31 @@ export function normalizeQualityLabel(value: string | number | undefined): strin
   return raw;
 }
 
+export function normalizeProviderDisplayLabel(value: string | undefined): string | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  const lower = raw.toLowerCase();
+  const known: Record<string, string> = {
+    cdn: "CDN",
+    "mb-flix": "MB Flix",
+    "mb flix": "MB Flix",
+    "1movies": "1Movies",
+    downloader2: "Downloader 2",
+    flowcast: "FlowCast",
+    primevids: "PrimeVids",
+    hindicast: "HindiCast",
+    "fm-hls": "FM HLS",
+    "vid-mp4": "VID MP4",
+  };
+  const knownLabel = known[lower];
+  if (knownLabel) return knownLabel;
+  return raw
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b([a-z])/g, (match) => match.toUpperCase());
+}
+
 export function qualityRankFromLabel(value: string | number | undefined): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
   const label = normalizeQualityLabel(value);

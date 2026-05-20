@@ -18,6 +18,7 @@ import {
   getProviderResearchProfile,
   miruroProviderModule,
   normalizeIsoLanguageCode,
+  normalizeProviderDisplayLabel,
   normalizeQualityLabel,
   parseSourceHost,
   providerResearchProfiles,
@@ -639,6 +640,9 @@ test("source inventory helpers create stable ids and provider evidence", () => {
   expect(normalizeQualityLabel("4K")).toBe("2160p");
   expect(qualityRankFromLabel("720p")).toBe(720);
   expect(qualityRankFromLabel("auto")).toBeUndefined();
+  expect(normalizeProviderDisplayLabel("mb-flix")).toBe("MB Flix");
+  expect(normalizeProviderDisplayLabel("primevids")).toBe("PrimeVids");
+  expect(normalizeProviderDisplayLabel("flow_cast")).toBe("Flow Cast");
 
   expect(
     createProviderSourceEvidence({

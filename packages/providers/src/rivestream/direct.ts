@@ -33,6 +33,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createVariantId,
+  normalizeProviderDisplayLabel,
   normalizeQualityLabel,
   qualityRankFromLabel,
 } from "../shared/source-inventory";
@@ -711,7 +712,7 @@ function rivestreamFailureClassFromProviderError(
 }
 
 function displayRivestreamProviderLabel(provider: string): string {
-  return provider.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim() || provider;
+  return normalizeProviderDisplayLabel(provider) ?? provider;
 }
 
 function inferRivestreamAudioLanguage(

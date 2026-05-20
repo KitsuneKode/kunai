@@ -337,6 +337,8 @@ export interface ProviderResolveInput {
   readonly title: TitleIdentity;
   readonly episode?: EpisodeIdentity;
   readonly mediaKind: MediaKind;
+  readonly preferredSourceId?: string;
+  readonly preferredStreamId?: string;
   readonly preferredAudioLanguage?: string;
   readonly preferredSubtitleLanguage?: string;
   readonly preferredPresentation?: StreamPresentation;

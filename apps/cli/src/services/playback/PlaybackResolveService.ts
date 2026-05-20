@@ -101,6 +101,8 @@ export type PlaybackResolveInput = {
   readonly audioPreference: string;
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
+  readonly selectedSourceId?: string;
+  readonly selectedStreamId?: string;
   readonly signal: AbortSignal;
   readonly prefetchedStream?: StreamInfo | null;
   readonly forceHealthCheck?: boolean;
@@ -211,6 +213,8 @@ export class PlaybackResolveService {
         audioPreference: input.audioPreference,
         subtitlePreference: input.subtitlePreference,
         qualityPreference: input.qualityPreference,
+        selectedSourceId: input.selectedSourceId,
+        selectedStreamId: input.selectedStreamId,
       },
       input.mode,
     );
@@ -280,6 +284,8 @@ export class PlaybackResolveService {
         result: engineResult.result,
         title: input.title.name,
         subtitlePreference: input.subtitlePreference,
+        selectedSourceId: input.selectedSourceId,
+        selectedStreamId: input.selectedStreamId,
       });
 
       if (stream) {
@@ -308,6 +314,8 @@ export class PlaybackResolveService {
                     result: a.result,
                     title: input.title.name,
                     subtitlePreference: input.subtitlePreference,
+                    selectedSourceId: input.selectedSourceId,
+                    selectedStreamId: input.selectedStreamId,
                   })
                 : null,
               result: a.result,
@@ -442,6 +450,8 @@ export class PlaybackResolveService {
       audioPreference: input.audioPreference,
       subtitlePreference: input.subtitlePreference,
       qualityPreference: input.qualityPreference,
+      selectedSourceId: input.selectedSourceId,
+      selectedStreamId: input.selectedStreamId,
     });
   }
 }

@@ -18,6 +18,8 @@ test("buildApiStreamResolveCacheKey is stable and encodes prefs", () => {
     audioPreference: "original",
     subtitlePreference: "en",
     qualityPreference: "1080p",
+    selectedSourceId: "source-a",
+    selectedStreamId: "stream-a-1080",
   });
   const b = buildApiStreamResolveCacheKey({
     providerId: "allanime",
@@ -28,12 +30,40 @@ test("buildApiStreamResolveCacheKey is stable and encodes prefs", () => {
     audioPreference: "original",
     subtitlePreference: "en",
     qualityPreference: "1080p",
+    selectedSourceId: "source-a",
+    selectedStreamId: "stream-a-1080",
   });
   expect(a).toContain(":anime:");
   expect(a).toContain(":original:");
   expect(a).toContain(":en");
   expect(a).toContain(":1080p");
+  expect(a).toContain(":source-a");
+  expect(a).toContain(":stream-a-1080");
   expect(a).toBe(b);
+});
+
+test("buildApiStreamResolveCacheKey separates source and stream selections", () => {
+  const common = {
+    providerId: "vidking",
+    providerManifest: vidkingManifest,
+    title: { id: "tmdb:1", type: "series" as const, name: "X" },
+    episode: { season: 2, episode: 7 },
+    mode: "series" as const,
+    audioPreference: "original",
+    subtitlePreference: "en",
+    qualityPreference: "720p",
+  };
+  const sourceA = buildApiStreamResolveCacheKey({
+    ...common,
+    selectedSourceId: "source-a",
+    selectedStreamId: "stream-a-720",
+  });
+  const sourceB = buildApiStreamResolveCacheKey({
+    ...common,
+    selectedSourceId: "source-b",
+    selectedStreamId: "stream-b-720",
+  });
+  expect(sourceA).not.toBe(sourceB);
 });
 
 test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => {
@@ -47,7 +77,7 @@ test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => 
     subtitlePreference: "en",
     qualityPreference: "720p",
   });
-  expect(key).toContain("provider:vidking:series:tmdb:1:2:7:en:720p");
+  expect(key).toContain("provider:vidking:series:tmdb:1:2:7:en:720p:none:none");
 });
 
 test("buildEmbedStreamCacheKey preserves embed URL", () => {

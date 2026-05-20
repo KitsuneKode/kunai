@@ -22,6 +22,8 @@ test("streamRequestToResolveInput preserves provider-native ids for anime resolv
       },
       audioPreference: "sub",
       subtitlePreference: "en",
+      selectedSourceId: " source-a ",
+      selectedStreamId: " stream-a-1080 ",
     },
     "anime",
   );
@@ -36,4 +38,6 @@ test("streamRequestToResolveInput preserves provider-native ids for anime resolv
     tmdbId: "85937",
   });
   expect(input.episode?.release?.availableAt).toBe("2026-05-19T12:00:00.000Z");
+  expect(input.preferredSourceId).toBe("source-a");
+  expect(input.preferredStreamId).toBe("stream-a-1080");
 });

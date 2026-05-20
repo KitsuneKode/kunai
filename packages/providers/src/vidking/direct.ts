@@ -36,6 +36,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createVariantId,
+  normalizeProviderDisplayLabel,
   qualityRankFromLabel,
   normalizeQualityLabel,
 } from "../shared/source-inventory";
@@ -390,7 +391,7 @@ function displayVidkingServerLabel(
   server: VidkingServerEndpoint,
   engineOptions: VidKingEngineOptions,
 ): string {
-  return engineOptions.flavorLabel?.trim() || server;
+  return engineOptions.flavorLabel?.trim() || normalizeProviderDisplayLabel(server) || server;
 }
 
 export function createVidkingResultFromPayload({

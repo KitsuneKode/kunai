@@ -23,6 +23,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { normalizeProviderDisplayLabel } from "../shared/source-inventory";
 import { normalizeIsoLanguageCode, subtitleLanguageDisplayName } from "../shared/subtitle-helpers";
 import {
   loadAvailableEpisodesDetail,
@@ -233,6 +234,7 @@ export const allmangaProviderModule: CoreProviderModule = {
         const qualityStr = link.quality || "auto";
         const protocol = link.url.includes(".m3u8") ? "hls" : "mp4";
         const sourceName = qualityStr.includes("HLS") || protocol === "hls" ? "FM-HLS" : "VID-MP4";
+        const sourceLabel = normalizeProviderDisplayLabel(sourceName) ?? sourceName;
         const sourceId = `source:${ALLANIME_PROVIDER_ID}:${sourceName.toLowerCase()}`;
 
         const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
@@ -280,7 +282,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           sourceEvidence: [
             {
               sourceId,
-              nativeLabel: sourceName,
+              nativeLabel: sourceLabel,
               host: new URL(link.url).hostname,
               confidence: protocol === "hls" ? 0.95 : 0.85,
               metadata: { translationType: mode },
@@ -571,9 +573,5 @@ export function buildAllmangaSourceCandidates(
 
 function formatAllmangaSourceLabel(sourceId: string): string {
   const family = sourceId.split(":").at(-1) ?? sourceId;
-  return family
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join("-");
+  return normalizeProviderDisplayLabel(family) ?? family;
 }
