@@ -30,7 +30,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
-import { looksLikeHiSubtitle, normalizeSubtitleLanguage } from "../shared/subtitle-helpers";
+import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
 
 export { VIDKING_PROVIDER_ID };
@@ -46,7 +46,7 @@ const VIDKING_SERVERS = ["mb-flix", "cdn", "downloader2", "1movies"] as const;
 /** Normalize audio language codes to ISO 639-1. Delegates to the shared language
  *  normalizer which handles both subtitle and audio language code formats. */
 function normalizeLanguageCode(value: string | undefined): string | undefined {
-  return normalizeSubtitleLanguage(value);
+  return normalizeIsoLanguageCode(value);
 }
 
 /** Track server health with 60s cooldown after 2 consecutive failures. */
@@ -941,9 +941,7 @@ function normalizeSubtitleCandidates({
     }
     seen.add(url);
 
-    const language = normalizeSubtitleLanguage(
-      subtitle.lang ?? subtitle.language ?? subtitle.label,
-    );
+    const language = normalizeIsoLanguageCode(subtitle.lang ?? subtitle.language ?? subtitle.label);
     subtitles.push({
       id: `subtitle:${VIDKING_PROVIDER_ID}:${hashId(url)}`,
       providerId: VIDKING_PROVIDER_ID,
@@ -1042,10 +1040,10 @@ function orderSubtitleCandidates(
     return [...subtitles];
   }
 
-  const normalizedPreference = normalizeSubtitleLanguage(preferredLanguage);
+  const normalizedPreference = normalizeIsoLanguageCode(preferredLanguage);
   return [...subtitles].sort((left, right) => {
-    const leftLang = left.language ? normalizeSubtitleLanguage(left.language) : undefined;
-    const rightLang = right.language ? normalizeSubtitleLanguage(right.language) : undefined;
+    const leftLang = left.language ? normalizeIsoLanguageCode(left.language) : undefined;
+    const rightLang = right.language ? normalizeIsoLanguageCode(right.language) : undefined;
     const langDelta =
       Number(leftLang === normalizedPreference) - Number(rightLang === normalizedPreference);
     if (langDelta !== 0) return -langDelta;

@@ -23,7 +23,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
-import { normalizeSubtitleLanguage, subtitleLanguageDisplayName } from "../shared/subtitle-helpers";
+import { normalizeIsoLanguageCode, subtitleLanguageDisplayName } from "../shared/subtitle-helpers";
 import {
   loadAvailableEpisodesDetail,
   resolveAnimeEpisodeString,
@@ -320,14 +320,14 @@ export const allmangaProviderModule: CoreProviderModule = {
         if (link.subtitle) {
           const subSrc = link.subtitles?.find((s) => s.src === link.subtitle);
           const subLang = subSrc?.lang ?? "en";
-          const normalizedLang = normalizeSubtitleLanguage(subLang);
+          const normalizedLang = normalizeIsoLanguageCode(subLang);
           const subId = `subtitle:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.subtitle).toString(36)}`;
           subtitles.push({
             id: subId,
             providerId: ALLANIME_PROVIDER_ID,
             sourceId,
             url: link.subtitle,
-            language: normalizedLang ?? subLang,
+            language: normalizedLang,
             label: normalizedLang
               ? (subtitleLanguageDisplayName(normalizedLang) ?? subLang)
               : subLang,
@@ -343,14 +343,14 @@ export const allmangaProviderModule: CoreProviderModule = {
           for (const extra of link.subtitles) {
             if (extra.src === link.subtitle) continue;
             if (!extra.src) continue;
-            const normLang = normalizeSubtitleLanguage(extra.lang);
+            const normLang = normalizeIsoLanguageCode(extra.lang);
             const extraId = `subtitle:${ALLANIME_PROVIDER_ID}:${Bun.hash(extra.src).toString(36)}`;
             subtitles.push({
               id: extraId,
               providerId: ALLANIME_PROVIDER_ID,
               sourceId,
               url: extra.src,
-              language: normLang ?? extra.lang,
+              language: normLang,
               label: normLang ? (subtitleLanguageDisplayName(normLang) ?? extra.lang) : extra.lang,
               format: "vtt",
               source: "embedded",

@@ -26,7 +26,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
-import { normalizeSubtitleLanguage } from "../shared/subtitle-helpers";
+import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 
 export { RIVESTREAM_PROVIDER_ID };
@@ -605,7 +605,7 @@ async function resolveRivestreamProviderCandidate({
     const protocol = source.url.includes(".m3u8") ? "hls" : "mp4";
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
-      normalizeSubtitleLanguage(input.preferredAudioLanguage);
+      normalizeIsoLanguageCode(input.preferredAudioLanguage);
     const languageEvidence = normalizedAudioLanguage
       ? [
           {
@@ -670,14 +670,14 @@ async function resolveRivestreamProviderCandidate({
   for (const subtitle of embeddedCaptions) {
     const subUrl = subtitle.url || subtitle.file;
     const lang = String(subtitle.lang || subtitle.language || subtitle.label || "unknown");
-    const normalizedLang = normalizeSubtitleLanguage(lang);
+    const normalizedLang = normalizeIsoLanguageCode(lang);
     if (!subUrl) continue;
     subtitles.push({
       id: `subtitle:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(subUrl).toString(36)}`,
       providerId: RIVESTREAM_PROVIDER_ID,
       sourceId,
       url: subUrl,
-      language: normalizedLang ?? (lang.split(" - ")[0]?.trim() || lang),
+      language: normalizedLang,
       label: lang,
       format: subUrl.endsWith(".vtt") ? "vtt" : "srt",
       source: "provider",

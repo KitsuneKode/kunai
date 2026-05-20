@@ -26,7 +26,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
-import { normalizeSubtitleLanguage } from "../shared/subtitle-helpers";
+import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 
 export { MIRURO_PROVIDER_ID };
@@ -355,7 +355,7 @@ function createMiruroSubtitles(
         providerId: MIRURO_PROVIDER_ID,
         sourceId,
         url,
-        language: normalizeSubtitleLanguage(rawLanguage) ?? rawLanguage,
+        language: normalizeIsoLanguageCode(rawLanguage),
         label: subtitle.label ?? rawLanguage,
         format: url.endsWith(".vtt") ? ("vtt" as const) : ("srt" as const),
         source: "provider" as const,

@@ -2,7 +2,7 @@ import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { selectSubtitle } from "@/subtitle";
 import {
   looksLikeHiSubtitle,
-  normalizeSubtitleLanguage,
+  normalizeIsoLanguageCode,
   subtitleLanguageDisplayName,
 } from "@kunai/providers";
 import type { ProviderResolveResult, SubtitleCandidate } from "@kunai/types";
@@ -54,7 +54,7 @@ export function providerResolveResultToStreamInfo(
 }
 
 export function subtitleCandidateToTrack(candidate: SubtitleCandidate): SubtitleTrack {
-  const normalizedLang = normalizeSubtitleLanguage(candidate.language);
+  const normalizedLang = normalizeIsoLanguageCode(candidate.language);
   const displayName = normalizedLang
     ? subtitleLanguageDisplayName(normalizedLang)
     : candidate.label;
@@ -62,7 +62,7 @@ export function subtitleCandidateToTrack(candidate: SubtitleCandidate): Subtitle
   return {
     url: candidate.url,
     display: displayName ?? candidate.label,
-    language: normalizedLang ?? candidate.language,
+    language: normalizedLang,
     release: candidate.syncEvidence,
     sourceKind: candidate.source === "provider" ? "external" : "embedded",
     sourceName: candidate.source,
