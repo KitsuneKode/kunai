@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import type { ProviderCycleCandidate } from "@kunai/types";
 
 import {
+  classifyProviderCycleError,
   createProviderCycleFailureError,
   runProviderCycle,
   type ProviderCycleCandidateContext,
@@ -135,6 +136,44 @@ test("runProviderCycle can return an explicit provider fallback signal", async (
   expect(result.fallbackRequested).toBe(true);
   expect(result.stopReason).toBe("fallback-requested");
   expect(result.attempts).toHaveLength(0);
+});
+
+test("runProviderCycle does not retry network-offline failures inside the same request", async () => {
+  const attempts: string[] = [];
+
+  const result = await runProviderCycle({
+    providerId: "allanime",
+    candidates,
+    maxAttemptsPerCandidate: 3,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      attempts.push(candidate.id);
+      throw new Error("getaddrinfo ENOTFOUND api.allanime.day");
+    },
+  });
+
+  expect(result.selected).toBeUndefined();
+  expect(attempts).toEqual(["source:kiwi", "source:telli"]);
+  expect(result.attempts.map((attempt) => attempt.failure?.failureClass)).toEqual([
+    "candidate-network",
+    "candidate-network",
+  ]);
+  expect(result.attempts.every((attempt) => attempt.failure?.retryable === false)).toBe(true);
+});
+
+test("classifyProviderCycleError keeps blocked and parse failures non-retryable", () => {
+  expect(classifyProviderCycleError(new Error("HTTP 403 blocked"))).toMatchObject({
+    failureClass: "candidate-blocked",
+    retryable: false,
+  });
+  expect(classifyProviderCycleError(new Error("parse failed: missing sources"))).toMatchObject({
+    failureClass: "candidate-parse",
+    retryable: false,
+  });
+  expect(classifyProviderCycleError(new Error("temporary fetch failed"))).toMatchObject({
+    failureClass: "candidate-network",
+    retryable: true,
+  });
 });
 
 function fixedClock(): () => string {

@@ -254,12 +254,13 @@ function toCycleFailure(
     };
   }
 
+  const classified = classifyProviderCycleError(error);
   return {
     providerId: candidate.providerId,
     candidateId: candidate.id,
-    failureClass: classifyUnknownCycleFailure(error),
-    message: error instanceof Error ? error.message : String(error),
-    retryable: true,
+    failureClass: classified.failureClass,
+    message: classified.message,
+    retryable: classified.retryable,
     at: now(),
   };
 }
@@ -278,22 +279,81 @@ function createCancelledFailure(
   };
 }
 
-function classifyUnknownCycleFailure(error: unknown): ProviderCycleFailureClass {
+export function classifyProviderCycleError(error: unknown): {
+  readonly failureClass: ProviderCycleFailureClass;
+  readonly message: string;
+  readonly retryable: boolean;
+} {
   const message =
     error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  if (message.includes("network") || message.includes("fetch")) return "candidate-network";
-  if (message.includes("expired")) return "candidate-expired";
-  if (message.includes("blocked") || message.includes("403")) return "candidate-blocked";
-  if (message.includes("parse")) return "candidate-parse";
-  return "candidate-unknown";
+  if (isAbortError(error)) {
+    return {
+      failureClass: "candidate-user-cancelled",
+      message: "Provider cycle cancelled",
+      retryable: false,
+    };
+  }
+  if (isNetworkOfflineMessage(message)) {
+    return {
+      failureClass: "candidate-network",
+      message: error instanceof Error ? error.message : String(error),
+      retryable: false,
+    };
+  }
+  if (message.includes("network") || message.includes("fetch")) {
+    return {
+      failureClass: "candidate-network",
+      message: error instanceof Error ? error.message : String(error),
+      retryable: true,
+    };
+  }
+  if (message.includes("expired")) {
+    return {
+      failureClass: "candidate-expired",
+      message: error instanceof Error ? error.message : String(error),
+      retryable: true,
+    };
+  }
+  if (message.includes("blocked") || message.includes("403")) {
+    return {
+      failureClass: "candidate-blocked",
+      message: error instanceof Error ? error.message : String(error),
+      retryable: false,
+    };
+  }
+  if (message.includes("parse")) {
+    return {
+      failureClass: "candidate-parse",
+      message: error instanceof Error ? error.message : String(error),
+      retryable: false,
+    };
+  }
+  return {
+    failureClass: "candidate-unknown",
+    message: error instanceof Error ? error.message : String(error),
+    retryable: true,
+  };
 }
 
-function isAbortError(error: unknown): boolean {
+export function isAbortError(error: unknown): boolean {
   return (
     (error instanceof Error && error.name === "AbortError") ||
     (typeof DOMException !== "undefined" &&
       error instanceof DOMException &&
       error.name === "AbortError")
+  );
+}
+
+function isNetworkOfflineMessage(message: string): boolean {
+  return (
+    message.includes("enotfound") ||
+    message.includes("eai_again") ||
+    message.includes("network is unreachable") ||
+    message.includes("network unreachable") ||
+    message.includes("internet disconnected") ||
+    message.includes("offline") ||
+    message.includes("failed to resolve") ||
+    message.includes("could not resolve host")
   );
 }
 
