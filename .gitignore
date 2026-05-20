@@ -7,6 +7,8 @@ next-env.d.ts
 .run.toml
 .claude
 .codex
+.antigravity
+.antigravitycli
 .context
 # output
 out
@@ -66,3 +68,10 @@ stream_cache.json
 .superpowers/
 .context/
 .opencode/
+
+# local UI audit/prototype scratch
+.docs/prototype/
+.docs/prototype-feedback.json
+.docs/prototype-server.js
+.docs/cli-shell-ui-atlas.html
+.docs/ui-audit-master.html
