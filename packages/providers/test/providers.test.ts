@@ -6,15 +6,25 @@ import {
   allmangaProviderModule,
   buildAllmangaSourceCandidates,
   buildMiruroCycleCandidates,
+  createProviderLanguageEvidence,
+  createProviderSourceEvidence,
+  createSourceCandidateFromStream,
+  createStreamId,
+  createVariantCandidateFromStream,
   createMiruroResultFromPayload,
   createVidkingResultFromPayload,
   extractQualitiesFromMaster,
   getProviderMigrationQueue,
   getProviderResearchProfile,
   miruroProviderModule,
+  normalizeIsoLanguageCode,
+  normalizeQualityLabel,
+  parseSourceHost,
   providerResearchProfiles,
+  qualityRankFromLabel,
   resolveVidkingDirect,
   rivestreamProviderModule,
+  stableProviderInventoryId,
   VariantTreeBuilder,
   vidkingProviderModule,
 } from "../src/index";
@@ -606,6 +616,127 @@ test("variant tree builder creates stable grouped variant ordering", () => {
 
   expect(variants.map((variant) => variant.label)).toEqual(["Sub 1080p", "Dub 720p"]);
   expect(variants[0]?.id.startsWith("var_")).toBe(true);
+});
+
+test("source inventory helpers create stable ids and provider evidence", () => {
+  const first = stableProviderInventoryId({
+    prefix: "source",
+    parts: ["vidking", "Kiwi", "https://cdn.example/1080/index.m3u8"],
+  });
+  const second = stableProviderInventoryId({
+    prefix: "source",
+    parts: ["vidking", "Kiwi", "https://cdn.example/1080/index.m3u8"],
+  });
+
+  expect(first).toBe(second);
+  expect(first.startsWith("source_")).toBe(true);
+  expect(
+    createStreamId("vidking", ["https://cdn.example/1080/index.m3u8"]).startsWith("stream_"),
+  ).toBe(true);
+  expect(parseSourceHost("https://cdn.example/1080/index.m3u8")).toBe("cdn.example");
+  expect(parseSourceHost("not a url")).toBeUndefined();
+  expect(normalizeQualityLabel("Full HD")).toBe("1080p");
+  expect(normalizeQualityLabel("4K")).toBe("2160p");
+  expect(qualityRankFromLabel("720p")).toBe(720);
+  expect(qualityRankFromLabel("auto")).toBeUndefined();
+
+  expect(
+    createProviderSourceEvidence({
+      sourceId: "source:vidking:kiwi",
+      serverId: "kiwi",
+      nativeLabel: "kiwi",
+      url: "https://kiwi.example/master.m3u8",
+    }),
+  ).toMatchObject({
+    sourceId: "source:vidking:kiwi",
+    serverId: "kiwi",
+    nativeLabel: "kiwi",
+    host: "kiwi.example",
+  });
+
+  const providerAliasEvidence = createProviderLanguageEvidence({
+    role: "audio",
+    nativeLabel: "HindiCast",
+    sourceId: "source:vidking:hindi",
+  });
+  expect(providerAliasEvidence).toMatchObject({
+    role: "audio",
+    nativeLabel: "HindiCast",
+    sourceId: "source:vidking:hindi",
+  });
+  expect(providerAliasEvidence.normalizedLanguage).toBeUndefined();
+});
+
+test("strict language normalizer keeps provider aliases out of public language fields", () => {
+  expect(normalizeIsoLanguageCode("English CC")).toBe("en");
+  expect(normalizeIsoLanguageCode("Portuguese (BR)")).toBe("pt");
+  expect(normalizeIsoLanguageCode("pt-br")).toBe("pt");
+  expect(normalizeIsoLanguageCode("Vietnamese")).toBe("vi");
+  expect(normalizeIsoLanguageCode("Vietsub")).toBeUndefined();
+  expect(normalizeIsoLanguageCode("HindiCast")).toBeUndefined();
+  expect(normalizeIsoLanguageCode("killjoy")).toBeUndefined();
+  expect(normalizeIsoLanguageCode("FlowCast")).toBeUndefined();
+});
+
+test("source inventory helpers project streams into source and variant candidates", () => {
+  const stream = {
+    id: "stream:vidking:1080",
+    providerId: "vidking",
+    sourceId: "source:vidking:kiwi",
+    url: "https://kiwi.example/master.m3u8",
+    protocol: "hls",
+    container: "m3u8",
+    presentation: "dub",
+    audioLanguages: ["en"],
+    qualityLabel: "1080p",
+    qualityRank: 1080,
+    serverName: "Kiwi",
+    confidence: 0.9,
+    cachePolicy: {
+      ttlClass: "stream-manifest",
+      scope: "local",
+      keyParts: ["vidking", "kiwi"],
+    },
+    sourceEvidence: [
+      createProviderSourceEvidence({
+        sourceId: "source:vidking:kiwi",
+        nativeLabel: "kiwi",
+        url: "https://kiwi.example/master.m3u8",
+      }),
+    ],
+    languageEvidence: [
+      createProviderLanguageEvidence({
+        role: "audio",
+        value: "English",
+        nativeLabel: "English",
+      }),
+    ],
+  } as const;
+
+  const source = createSourceCandidateFromStream({
+    providerId: "vidking",
+    stream,
+    selected: true,
+  });
+  const variant = createVariantCandidateFromStream({
+    providerId: "vidking",
+    stream,
+    selected: true,
+  });
+
+  expect(source).toMatchObject({
+    id: "source:vidking:kiwi",
+    label: "Kiwi",
+    host: "kiwi.example",
+    status: "selected",
+  });
+  expect(variant).toMatchObject({
+    sourceId: "source:vidking:kiwi",
+    label: "Dub 1080p",
+    qualityRank: 1080,
+    selected: true,
+    streamIds: ["stream:vidking:1080"],
+  });
 });
 
 test("allmanga source candidates preserve separate source families", () => {

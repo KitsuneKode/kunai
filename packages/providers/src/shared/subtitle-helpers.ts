@@ -184,10 +184,20 @@ export function normalizeSubtitleLanguage(value: string | undefined): string | u
   return normalized;
 }
 
+export function normalizeIsoLanguageCode(value: string | undefined): string | undefined {
+  const normalized = normalizeSubtitleLanguage(value);
+  if (!normalized) return undefined;
+  return /^[a-z]{2}$/.test(normalized) ? normalized : undefined;
+}
+
 export function subtitleLanguageDisplayName(code: string | undefined): string | undefined {
   if (!code) return undefined;
   const normalized = code.toLowerCase().trim();
   return ISO_2_LANGUAGE_NAME[normalized] ?? normalized;
+}
+
+export function languageDisplayName(code: string | undefined): string | undefined {
+  return subtitleLanguageDisplayName(code);
 }
 
 export function looksLikeHiSubtitle(
