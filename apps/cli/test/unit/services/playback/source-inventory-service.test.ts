@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImpl";
 import {
   buildSourceInventoryCacheKey,
+  buildSourceInventoryCachePreimage,
+  SOURCE_INVENTORY_SCHEMA_VERSION,
   SourceInventoryService,
   type SourceInventoryCacheInput,
 } from "@/services/playback/SourceInventoryService";
@@ -21,6 +23,17 @@ afterEach(() => {
 });
 
 describe("SourceInventoryService", () => {
+  test("uses v2 schema keys for provider metadata inventory", () => {
+    expect(SOURCE_INVENTORY_SCHEMA_VERSION).toBe("v2");
+    expect(
+      buildSourceInventoryCachePreimage({
+        providerId: "allmanga",
+        mediaKind: "anime",
+        titleId: "provider-title",
+      }).startsWith("v2\0"),
+    ).toBe(true);
+  });
+
   test("separates provider audio subtitle and episode dimensions in cache keys", () => {
     const base = {
       providerId: "vidking",

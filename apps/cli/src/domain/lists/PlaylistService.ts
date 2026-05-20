@@ -6,6 +6,7 @@ import type {
 } from "@kunai/storage";
 
 import type { MediaItemIdentity } from "../media/media-item-identity";
+import { planMediaQueuePlacement } from "../queue/QueuePlanner";
 import type { ListService } from "./ListService";
 
 export type { PlaylistItem, PlaylistItemInput };
@@ -36,8 +37,7 @@ export class PlaylistService {
       readonly source: string;
     },
   ): PlaylistItem {
-    const priority =
-      options.placement === "next" ? 100 : options.placement === "after-current-chain" ? 50 : 0;
+    const { priority } = planMediaQueuePlacement(options.placement);
     return this.enqueue({
       title: item.title,
       mediaKind: item.mediaKind,

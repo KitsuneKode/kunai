@@ -87,6 +87,12 @@ export class RecommendationServiceImpl implements RecommendationService {
   }
 
   private readCacheEntry(key: string, ttlMs: number): CacheValue | null {
+    const parsed = this.readAnyCacheEntry(key);
+    if (!parsed) return null;
+    return isCacheExpired(parsed.cachedAt, ttlMs) ? null : parsed;
+  }
+
+  private readAnyCacheEntry(key: string): CacheValue | null {
     const entry = this.cacheRepository.get(key);
     if (!entry) return null;
     try {
@@ -94,7 +100,7 @@ export class RecommendationServiceImpl implements RecommendationService {
       if (!parsed || typeof parsed.cachedAt !== "number" || !Array.isArray(parsed.items)) {
         return null;
       }
-      return isCacheExpired(parsed.cachedAt, ttlMs) ? null : parsed;
+      return parsed;
     } catch {
       return null;
     }
@@ -115,7 +121,8 @@ export class RecommendationServiceImpl implements RecommendationService {
     const segment = type === "movie" ? "movie" : "tv";
     const data = await fetchRecommendationData(`/${segment}/${tmdbId}/recommendations`);
     if (!data) {
-      return { label: "", reason: "similar", items: [] };
+      const stale = this.readAnyCacheEntry(key);
+      return { label: "", reason: "similar", items: stale?.items ?? [] };
     }
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r, segment === "movie" ? "movie" : "tv"))
@@ -133,7 +140,8 @@ export class RecommendationServiceImpl implements RecommendationService {
     }
     const data = await fetchRecommendationData("/trending/all/week");
     if (!data) {
-      return { label: "", reason: "trending", items: [] };
+      const stale = this.readAnyCacheEntry(key);
+      return { label: "", reason: "trending", items: stale?.items ?? [] };
     }
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r))
@@ -193,7 +201,8 @@ export class RecommendationServiceImpl implements RecommendationService {
       .slice(0, 3)
       .map(([genreId]) => genreId);
     if (topGenres.length === 0) {
-      return { label: "", reason: "genre-affinity", items: [] };
+      const stale = this.readAnyCacheEntry(profileKey);
+      return { label: "", reason: "genre-affinity", items: stale?.items ?? [] };
     }
 
     const [movieCandidates, tvCandidates] = await Promise.all([
@@ -237,6 +246,10 @@ export class RecommendationServiceImpl implements RecommendationService {
         `/discover/movie?with_genres=${genres}&sort_by=vote_average.desc&vote_count.gte=200`,
       ).catch(() => null) as Promise<{ results?: Record<string, unknown>[] } | null>,
     ]);
+    if (!tvData && !movieData) {
+      const stale = this.readAnyCacheEntry(key);
+      return { label: "", reason: "genre-affinity", items: stale?.items ?? [] };
+    }
 
     const seen = new Set<string>();
     const items = [...(tvData?.results ?? []), ...(movieData?.results ?? [])]

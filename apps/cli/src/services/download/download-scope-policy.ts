@@ -1,15 +1,8 @@
+import { planEpisodeQueue, type EpisodeQueueScope } from "@/domain/queue/QueuePlanner";
 import type { EpisodeInfo } from "@/domain/types";
 import type { AutoDownloadMode } from "@/services/persistence/ConfigService";
 
-export type DownloadScope =
-  | { readonly type: "current-episode" }
-  | { readonly type: "next-episode" }
-  | { readonly type: "next-n"; readonly count: number }
-  | { readonly type: "current-season-remaining" }
-  | {
-      readonly type: "manual-selection";
-      readonly episodes: readonly { readonly season: number; readonly episode: number }[];
-    };
+export type DownloadScope = EpisodeQueueScope;
 
 export function normalizeAutoDownloadNextCount(count: number | undefined): number {
   if (!Number.isFinite(count)) return 1;
@@ -32,44 +25,5 @@ export function selectEpisodesForDownloadScope(input: {
   readonly nextEpisode?: EpisodeInfo | null;
   readonly seasonEpisodes?: readonly EpisodeInfo[] | null;
 }): readonly EpisodeInfo[] {
-  if (input.scope.type === "current-episode") return [input.currentEpisode];
-  if (input.scope.type === "next-episode") return input.nextEpisode ? [input.nextEpisode] : [];
-  if (input.scope.type === "current-season-remaining") {
-    return remainingSeasonEpisodes(input.currentEpisode, input.seasonEpisodes);
-  }
-  if (input.scope.type === "next-n") {
-    const remaining = remainingSeasonEpisodes(input.currentEpisode, input.seasonEpisodes);
-    if (remaining.length > 0) return remaining.slice(0, input.scope.count);
-    return input.nextEpisode ? [input.nextEpisode].slice(0, input.scope.count) : [];
-  }
-  return dedupeManualSelection(input.scope.episodes).map((episode) => ({
-    season: episode.season,
-    episode: episode.episode,
-  }));
-}
-
-function remainingSeasonEpisodes(
-  currentEpisode: EpisodeInfo,
-  seasonEpisodes: readonly EpisodeInfo[] | null | undefined,
-): readonly EpisodeInfo[] {
-  return (seasonEpisodes ?? [])
-    .filter(
-      (candidate) =>
-        candidate.season === currentEpisode.season && candidate.episode > currentEpisode.episode,
-    )
-    .sort((a, b) => a.episode - b.episode);
-}
-
-function dedupeManualSelection(
-  episodes: readonly { readonly season: number; readonly episode: number }[],
-): readonly { readonly season: number; readonly episode: number }[] {
-  const seen = new Set<string>();
-  const deduped: { season: number; episode: number }[] = [];
-  for (const episode of episodes) {
-    const key = `${episode.season}:${episode.episode}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(episode);
-  }
-  return deduped;
+  return planEpisodeQueue(input).episodes;
 }

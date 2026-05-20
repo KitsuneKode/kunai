@@ -1315,18 +1315,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               container.config.recommendationRailEnabled &&
               prefetchedRecommendationItems === null
             ) {
-              void container.recommendationService
-                .getForTitle(title.id, title.type)
-                .then((section) => {
+              container.backgroundWorkScheduler.enqueue({
+                id: `recommendation-prefetch:${title.type}:${title.id}`,
+                lane: "recommendation-warm",
+                signal: context.signal,
+                run: async () => {
+                  const section = await container.recommendationService.getForTitle(
+                    title.id,
+                    title.type,
+                  );
                   prefetchedRecommendationItems = section.items.filter(
                     (item) => item.title.trim().length > 0,
                   );
-                  return undefined;
-                })
-                .catch(() => {
-                  // best-effort prefetch
-                  return undefined;
-                });
+                },
+              });
+              void container.backgroundWorkScheduler.drain();
             }
           };
 
@@ -1672,7 +1675,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "next" && title.type === "series") {
             if (episodeAvailability.nextEpisode) {
-              pendingStart = await startNavigationToEpisode(episodeAvailability.nextEpisode);
               await applyMpvEpisodeLoadingOverlay(
                 playerControl.getActive(),
                 episodeAvailability.nextEpisode,
@@ -1681,6 +1683,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 type: "SELECT_EPISODE",
                 episode: episodeAvailability.nextEpisode,
               });
+              pendingStart = await startNavigationToEpisode(episodeAvailability.nextEpisode);
               stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
               // Explicit navigation resumes autoplay if it was only interrupted (not user-paused).
               if (playbackSession.autoplayPauseReason === "interrupted") {
@@ -2074,14 +2077,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 note: `S${String(nextEpisode.season).padStart(2, "0")}E${String(nextEpisode.episode).padStart(2, "0")}`,
               });
 
-              pendingStart = await startNavigationToEpisode(nextEpisode);
-
               await applyMpvEpisodeLoadingOverlay(playerControl.getActive(), nextEpisode);
 
               stateManager.dispatch({
                 type: "SELECT_EPISODE",
                 episode: nextEpisode,
               });
+              pendingStart = await startNavigationToEpisode(nextEpisode);
               stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
               playbackSession = {
                 ...playbackSession,
@@ -2203,8 +2205,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
             postPlaybackRecommendationWarmupStarted.current = true;
             const startedAtMs = Date.now();
-            void loadPostPlaybackRecommendationItems(container, title, mode, null)
-              .then((items) => {
+            container.backgroundWorkScheduler.enqueue({
+              id: `post-playback-recommendation-warm:${mode}:${title.id}`,
+              lane: "recommendation-warm",
+              signal: context.signal,
+              run: async () => {
+                const items = await loadPostPlaybackRecommendationItems(
+                  container,
+                  title,
+                  mode,
+                  null,
+                );
                 diagnosticsStore.record({
                   category: "playback",
                   operation: "post-playback.recommendations.warm",
@@ -2216,9 +2227,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     elapsedMs: Date.now() - startedAtMs,
                   },
                 });
-                return undefined;
-              })
-              .catch((error) => {
+              },
+            });
+            void container.backgroundWorkScheduler.drain().then((drainResult) => {
+              for (const failure of drainResult.failed) {
+                if (failure.id !== `post-playback-recommendation-warm:${mode}:${title.id}`) {
+                  continue;
+                }
                 diagnosticsStore.record({
                   category: "playback",
                   level: "warn",
@@ -2228,10 +2243,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     titleId: title.id,
                     mode,
                     elapsedMs: Date.now() - startedAtMs,
-                    error: error instanceof Error ? error.message : String(error),
+                    error: failure.error,
                   },
                 });
-              });
+              }
+              return undefined;
+            });
           };
 
           postPlayback: while (true) {

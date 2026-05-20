@@ -61,6 +61,7 @@ import { TracerImpl } from "./infra/tracer/TracerImpl";
 import type { WorkControlService } from "./infra/work/WorkControlService";
 import { WorkControlServiceImpl } from "./infra/work/WorkControlServiceImpl";
 import { AttentionRefreshWorker } from "./services/attention/AttentionRefreshWorker";
+import { BackgroundWorkScheduler } from "./services/background/BackgroundWorkScheduler";
 import {
   createCatalogScheduleService,
   type CatalogScheduleService,
@@ -181,6 +182,7 @@ export interface Container {
   readonly syncService: SyncService;
   readonly continuationProjectionService: ContinuationProjectionService;
   readonly attentionRefreshWorker: AttentionRefreshWorker;
+  readonly backgroundWorkScheduler: BackgroundWorkScheduler;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;
@@ -405,6 +407,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     flags: featureFlags,
     diagnostics: diagnosticsStore,
   });
+  const backgroundWorkScheduler = new BackgroundWorkScheduler({ maxConcurrent: 2 });
   const durablePlaylistService = new DurablePlaylistService(playlistsRepository);
 
   const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
@@ -484,6 +487,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     syncService,
     continuationProjectionService,
     attentionRefreshWorker,
+    backgroundWorkScheduler,
     shellChrome,
     capabilitySnapshot,
     debugTracePath,

@@ -192,6 +192,55 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
   expect(result.stream!.url).toBe(fallbackStream.url);
 });
 
+test("PlaybackResolveService caches late valid user-navigation results without returning them", async () => {
+  const cache = createMemoryCache(null);
+  const controller = new AbortController();
+  controller.abort();
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "primary" as ProviderId,
+      streams: [
+        {
+          id: "stream:primary:1",
+          providerId: "primary" as ProviderId,
+          url: "https://late.example/stream.m3u8",
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:late",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "primary" as ProviderId,
+    attempts: [{ providerId: "primary" as ProviderId, result: undefined }],
+  });
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: controller.signal,
+    cancellationReason: "user-navigation",
+  });
+
+  expect(result.stream).toBeNull();
+  expect(cache.setKeys.length).toBe(1);
+});
+
 test("PlaybackResolveService records empty provider results as failed attempts", async () => {
   const emptyResult = {
     ...createEmptyProviderResult("primary" as ProviderId),

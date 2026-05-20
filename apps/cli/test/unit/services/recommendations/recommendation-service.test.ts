@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import type { SearchResult } from "@/domain/types";
 import {
   buildRecommendCacheKey,
   isCacheExpired,
@@ -80,6 +81,35 @@ describe("recommendation cache", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("getForTitle returns stale cached recommendations when upstream refresh fails", async () => {
+    const originalFetch = globalThis.fetch;
+    const staleItem = {
+      id: "stale-1",
+      type: "movie",
+      title: "Still Useful",
+      year: "2024",
+      overview: "",
+      posterPath: null,
+    } satisfies SearchResult;
+    const cache = createRecommendationCacheDouble({
+      payloadJson: JSON.stringify({
+        cachedAt: Date.now() - 48 * 60 * 60 * 1000,
+        items: [staleItem],
+      }),
+    });
+    globalThis.fetch = createFetchDouble(async () => new Response("{}", { status: 503 }));
+
+    try {
+      const service = new RecommendationServiceImpl(cache as never);
+      const section = await service.getForTitle("438631", "movie");
+
+      expect(section.items).toEqual([staleItem]);
+      expect(cache.setCalls).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 type FetchHandler = (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>;
@@ -90,11 +120,11 @@ function createFetchDouble(handler: FetchHandler): typeof fetch {
   });
 }
 
-function createRecommendationCacheDouble() {
+function createRecommendationCacheDouble(entry?: { payloadJson: string }) {
   return {
     setCalls: 0,
     get() {
-      return undefined;
+      return entry;
     },
     set() {
       this.setCalls += 1;

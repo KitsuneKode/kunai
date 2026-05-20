@@ -9,7 +9,7 @@ import type {
   ProviderRuntime,
 } from "@kunai/types";
 
-const SOURCE_INVENTORY_SCHEMA_VERSION = "v1";
+export const SOURCE_INVENTORY_SCHEMA_VERSION = "v2";
 
 export type SourceInventoryCacheInput = {
   readonly providerId: string;

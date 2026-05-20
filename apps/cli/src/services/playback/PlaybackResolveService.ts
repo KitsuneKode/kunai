@@ -29,6 +29,10 @@ import {
 import type { ProviderHealthRepository } from "@kunai/storage";
 import type { MediaKind, ProviderHealthDelta } from "@kunai/types";
 
+import {
+  decideResolveResultCommit,
+  type ResolveCancellationReason,
+} from "./ResolveResultCommitPolicy";
 import { StreamHealthService } from "./StreamHealthService";
 
 export type PlaybackResolveFeedback = {
@@ -103,6 +107,7 @@ export type PlaybackResolveInput = {
   readonly preferFreshStream?: boolean;
   readonly preserveCachedStreamOnFreshFailure?: boolean;
   readonly recoveryMode?: RecoveryMode;
+  readonly cancellationReason?: ResolveCancellationReason;
   readonly correlation?: DiagnosticCorrelation;
   readonly onFeedback?: (feedback: PlaybackResolveFeedback) => void;
   readonly onEvent?: (event: PlaybackResolveEvent) => void;
@@ -270,7 +275,7 @@ export class PlaybackResolveService {
       }
     }
 
-    if (engineResult.result && !input.signal.aborted) {
+    if (engineResult.result) {
       const stream = providerResolveResultToStreamInfo({
         result: engineResult.result,
         title: input.title.name,
@@ -278,31 +283,41 @@ export class PlaybackResolveService {
       });
 
       if (stream) {
-        await this.persistResolvedStream(
-          input,
-          engineResult.providerId ?? input.providerId,
-          stream,
-        );
+        const commitDecision = decideResolveResultCommit({
+          hasResolvedStream: true,
+          signalAborted: input.signal.aborted,
+          cancellationReason: input.cancellationReason,
+        });
 
-        return {
-          stream,
-          providerId: engineResult.providerId ?? input.providerId,
-          attempts: engineResult.attempts.map((a) => ({
-            providerId: a.providerId,
-            stream: a.result
-              ? providerResolveResultToStreamInfo({
-                  result: a.result,
-                  title: input.title.name,
-                  subtitlePreference: input.subtitlePreference,
-                })
-              : null,
-            result: a.result,
-            failure: a.failure,
-          })),
-          providerTimeline,
-          cacheStatus: "miss",
-          cacheProvenance: cachedStream ? "refetched" : "fresh",
-        };
+        if (commitDecision.action !== "discard") {
+          await this.persistResolvedStream(
+            input,
+            engineResult.providerId ?? input.providerId,
+            stream,
+          );
+        }
+
+        if (commitDecision.action === "persist-and-return") {
+          return {
+            stream,
+            providerId: engineResult.providerId ?? input.providerId,
+            attempts: engineResult.attempts.map((a) => ({
+              providerId: a.providerId,
+              stream: a.result
+                ? providerResolveResultToStreamInfo({
+                    result: a.result,
+                    title: input.title.name,
+                    subtitlePreference: input.subtitlePreference,
+                  })
+                : null,
+              result: a.result,
+              failure: a.failure,
+            })),
+            providerTimeline,
+            cacheStatus: "miss",
+            cacheProvenance: cachedStream ? "refetched" : "fresh",
+          };
+        }
       }
     }
 
