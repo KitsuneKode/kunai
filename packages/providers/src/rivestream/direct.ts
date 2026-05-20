@@ -427,7 +427,6 @@ export const rivestreamProviderModule: CoreProviderModule = {
         streams: selectedStreams,
         variants: selectedVariants,
         subtitles,
-        sourceId,
         provider: serverUsed,
       } = cycleResult.selected;
       const streams = [...selectedStreams];
