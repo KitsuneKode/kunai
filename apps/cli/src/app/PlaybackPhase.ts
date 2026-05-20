@@ -36,6 +36,8 @@ import {
   resolvePlaybackResultDecision,
   resolvePostPlaybackSessionAction,
   syncPlaybackSessionState,
+  transitionPlaybackSessionPhase,
+  type PlaybackSessionPhaseEvent,
   type PlaybackSessionState,
 } from "@/app/playback-session-controller";
 import {
@@ -352,6 +354,29 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     });
   }
 
+  private transitionPlaybackSession(
+    context: PhaseContext,
+    session: PlaybackSessionState,
+    event: PlaybackSessionPhaseEvent,
+    meta: Record<string, unknown> = {},
+  ): PlaybackSessionState {
+    const nextSession = transitionPlaybackSessionPhase(session, event);
+    if (nextSession.phase !== session.phase) {
+      context.container.diagnosticsStore.record({
+        category: "playback",
+        operation: "playback.session.phase",
+        message: `Playback session phase: ${nextSession.phase}`,
+        context: {
+          from: session.phase,
+          to: nextSession.phase,
+          event,
+          ...meta,
+        },
+      });
+    }
+    return nextSession;
+  }
+
   private async runAutoNextCountdown(
     context: PhaseContext,
     episode: EpisodeInfo,
@@ -663,6 +688,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       }
 
       stateManager.dispatch({ type: "SELECT_EPISODE", episode });
+      playbackSession = this.transitionPlaybackSession(
+        context,
+        playbackSession,
+        "episode-selected",
+        {
+          titleId: title.id,
+          season: episode.season,
+          episode: episode.episode,
+        },
+      );
 
       // Holds a prefetched stream for the upcoming episode (set during near-EOF).
       let pendingPrefetchedStream: import("@/domain/types").StreamInfo | null = null;
@@ -676,6 +711,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       while (true) {
         const currentEpisode = stateManager.getState().currentEpisode;
         if (!currentEpisode) break;
+        playbackSession = this.transitionPlaybackSession(
+          context,
+          playbackSession,
+          "resolve-started",
+          {
+            titleId: title.id,
+            season: currentEpisode.season,
+            episode: currentEpisode.episode,
+            provider: stateManager.getState().provider,
+          },
+        );
 
         const resolveController = new AbortController();
         let resolveAbortIntent: "cancel" | "fallback" | null = null;
@@ -1171,6 +1217,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               attempts: resolveAttempts,
               capabilitySnapshot: container.capabilitySnapshot,
             });
+            playbackSession = this.transitionPlaybackSession(
+              context,
+              playbackSession,
+              "failure-shown",
+              {
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+                cause: problem.cause,
+              },
+            );
             await this.showPlaybackProblem(context, problem);
             stateManager.dispatch({ type: "SET_STREAM", stream: null });
             return { status: "success", value: "back_to_results" };
@@ -1224,6 +1281,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             if (first !== undefined) recentEpisodeStreams.delete(first);
           }
           stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "ready" });
+          playbackSession = this.transitionPlaybackSession(
+            context,
+            playbackSession,
+            "stream-ready",
+            {
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              provider: resolvedProviderId,
+            },
+          );
 
           // Play in MPV — consume the pending resume position on the first play only.
           // Pass loading handle so playStream can update it in-place (no shell flicker).
@@ -1333,6 +1401,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           };
 
+          playbackSession = this.transitionPlaybackSession(
+            context,
+            playbackSession,
+            "playback-started",
+            {
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              provider: resolvedProviderId,
+            },
+          );
+
           const result = await this.playStream(
             preparedStream,
             title,
@@ -1345,6 +1425,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             maybePrefetchNext,
             startIntent.suppressResumePrompt,
             playbackCorrelation,
+          );
+          playbackSession = this.transitionPlaybackSession(
+            context,
+            playbackSession,
+            "playback-ended",
+            {
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              provider: resolvedProviderId,
+              endReason: result.endReason,
+              suspectedDeadStream: result.suspectedDeadStream === true,
+            },
           );
 
           // Save history — use effectiveTiming.current so that a background retry
@@ -1621,6 +1714,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 action: pendingSourceRefreshAction,
               },
             });
+            playbackSession = this.transitionPlaybackSession(
+              context,
+              playbackSession,
+              "recovery-started",
+              {
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+                provider: resolvedProviderId,
+                action: pendingSourceRefreshAction,
+              },
+            );
             continue;
           }
 
@@ -2135,6 +2240,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           await player.releasePersistentSession();
           this.updatePlaybackFeedback(context, { detail: null, note: null });
+          playbackSession = this.transitionPlaybackSession(
+            context,
+            playbackSession,
+            "post-playback-opened",
+            {
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              endReason: result.endReason,
+            },
+          );
 
           // Playlist auto-advance: if catalog autoplay didn't fire, check the
           // user's playlist queue for a cross-title advance.
@@ -2420,6 +2536,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
               const playbackAction = resolvePostPlaybackSessionAction("resume", playbackSession);
               playbackSession = playbackAction.session;
+              playbackSession = this.transitionPlaybackSession(
+                context,
+                playbackSession,
+                "resume-requested",
+                {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  resumeSeconds,
+                },
+              );
               if (!playbackAction.session.autoplayPaused) {
                 stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
               }
@@ -2428,6 +2555,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               pendingStart = startFromBeginning();
               const playbackAction = resolvePostPlaybackSessionAction("replay", playbackSession);
               playbackSession = playbackAction.session;
+              playbackSession = this.transitionPlaybackSession(
+                context,
+                playbackSession,
+                "replay-requested",
+                {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                },
+              );
               if (!playbackAction.session.autoplayPaused) {
                 stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
               }
@@ -2441,6 +2578,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
               pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+              playbackSession = this.transitionPlaybackSession(
+                context,
+                playbackSession,
+                "episode-navigation",
+                {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  fromProvider: resolvedProviderId,
+                  provider: fallback.metadata.id,
+                },
+              );
               diagnosticsStore.record({
                 category: "playback",
                 message: "Switching to fallback provider after shell command",
@@ -2472,6 +2621,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               preferredStreamSelection = streamSelectionFromSource(pickedSource);
               pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+              playbackSession = this.transitionPlaybackSession(
+                context,
+                playbackSession,
+                "episode-navigation",
+                {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  sourceId: preferredStreamSelection.sourceId,
+                },
+              );
               break postPlayback;
             } else if (routedAction === "quality") {
               const qualityOptions = buildQualityPickerOptions(preparedStream);
@@ -2491,6 +2651,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               preferredStreamSelection = streamSelectionFromStream(pickedQualityStreamId);
               pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
+              playbackSession = this.transitionPlaybackSession(
+                context,
+                playbackSession,
+                "episode-navigation",
+                {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  streamId: preferredStreamSelection.streamId,
+                },
+              );
               break postPlayback;
             } else if (routedAction === "streams") {
               const streamOptions = buildStreamPickerOptions(preparedStream);
@@ -2510,6 +2681,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               preferredStreamSelection = streamSelectionFromStream(pickedStreamId);
               pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+              playbackSession = this.transitionPlaybackSession(
+                context,
+                playbackSession,
+                "episode-navigation",
+                {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  streamId: preferredStreamSelection.streamId,
+                },
+              );
               break postPlayback;
             } else if (routedAction === "download") {
               await enqueueCurrentPlaybackDownload({
@@ -2549,6 +2731,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 type: "SELECT_EPISODE",
                 episode: { season: selection.season, episode: selection.episode },
               });
+              playbackSession = this.transitionPlaybackSession(
+                context,
+                playbackSession,
+                "episode-navigation",
+                {
+                  titleId: title.id,
+                  season: selection.season,
+                  episode: selection.episode,
+                  source: "episode-picker",
+                },
+              );
               pendingStart = await startNavigationToEpisode({
                 season: selection.season,
                 episode: selection.episode,
@@ -2561,6 +2754,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   type: "SELECT_EPISODE",
                   episode: episodeAvailability.nextEpisode,
                 });
+                playbackSession = this.transitionPlaybackSession(
+                  context,
+                  playbackSession,
+                  "episode-navigation",
+                  {
+                    titleId: title.id,
+                    season: episodeAvailability.nextEpisode.season,
+                    episode: episodeAvailability.nextEpisode.episode,
+                    source: "next",
+                  },
+                );
                 break postPlayback;
               }
               continue postPlayback;
@@ -2571,6 +2775,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   type: "SELECT_EPISODE",
                   episode: episodeAvailability.previousEpisode,
                 });
+                playbackSession = this.transitionPlaybackSession(
+                  context,
+                  playbackSession,
+                  "episode-navigation",
+                  {
+                    titleId: title.id,
+                    season: episodeAvailability.previousEpisode.season,
+                    episode: episodeAvailability.previousEpisode.episode,
+                    source: "previous",
+                  },
+                );
                 break postPlayback;
               }
               continue postPlayback;
@@ -2583,6 +2798,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   type: "SELECT_EPISODE",
                   episode: episodeAvailability.nextSeasonEpisode,
                 });
+                playbackSession = this.transitionPlaybackSession(
+                  context,
+                  playbackSession,
+                  "episode-navigation",
+                  {
+                    titleId: title.id,
+                    season: episodeAvailability.nextSeasonEpisode.season,
+                    episode: episodeAvailability.nextSeasonEpisode.episode,
+                    source: "next-season",
+                  },
+                );
                 break postPlayback;
               }
               continue postPlayback;

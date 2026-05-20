@@ -15,11 +15,33 @@ import type {
 import type { PlaybackControlAction } from "@/infra/player/PlayerControlService";
 
 export type PlaybackAutoplayPauseReason = "user" | "interrupted" | null;
+export type PlaybackSessionPhase =
+  | "selecting"
+  | "resolving"
+  | "ready"
+  | "playing"
+  | "ending"
+  | "recovering"
+  | "post-playback"
+  | "failed";
+export type PlaybackSessionPhaseEvent =
+  | "episode-selected"
+  | "resolve-started"
+  | "stream-ready"
+  | "playback-started"
+  | "playback-ended"
+  | "recovery-started"
+  | "post-playback-opened"
+  | "failure-shown"
+  | "resume-requested"
+  | "replay-requested"
+  | "episode-navigation";
 export type PlaybackSessionMode = "manual" | "autoplay-chain";
 
 export type PostPlaybackSessionAction = "toggle-autoplay" | "resume" | "replay";
 
 export interface PlaybackSessionState {
+  readonly phase: PlaybackSessionPhase;
   readonly mode: PlaybackSessionMode;
   readonly autoplayPauseReason: PlaybackAutoplayPauseReason;
   readonly autoplayPaused: boolean;
@@ -89,11 +111,43 @@ export function createPlaybackSessionState({
   autoNextEnabled: boolean;
 }): PlaybackSessionState {
   return {
+    phase: "selecting",
     mode: autoNextEnabled ? "autoplay-chain" : "manual",
     autoplayPauseReason: null,
     autoplayPaused: false,
     stopAfterCurrent: false,
   };
+}
+
+export function transitionPlaybackSessionPhase(
+  session: PlaybackSessionState,
+  event: PlaybackSessionPhaseEvent,
+): PlaybackSessionState {
+  const phase = playbackSessionPhaseForEvent(event);
+  return phase === session.phase ? session : { ...session, phase };
+}
+
+function playbackSessionPhaseForEvent(event: PlaybackSessionPhaseEvent): PlaybackSessionPhase {
+  switch (event) {
+    case "episode-selected":
+    case "resolve-started":
+    case "resume-requested":
+    case "replay-requested":
+    case "episode-navigation":
+      return "resolving";
+    case "stream-ready":
+      return "ready";
+    case "playback-started":
+      return "playing";
+    case "playback-ended":
+      return "ending";
+    case "recovery-started":
+      return "recovering";
+    case "post-playback-opened":
+      return "post-playback";
+    case "failure-shown":
+      return "failed";
+  }
 }
 
 function withPauseReason(

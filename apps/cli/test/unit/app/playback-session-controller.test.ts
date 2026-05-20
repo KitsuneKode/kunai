@@ -6,6 +6,7 @@ import {
   explainAutoplayBlockReason,
   explainAutoplayNoNextEpisodeCatalogHint,
   resolveAutoplayAdvanceEpisode,
+  transitionPlaybackSessionPhase,
   resolvePlaybackResultDecision,
   resolvePostPlaybackSessionAction,
   syncPlaybackSessionState,
@@ -41,6 +42,44 @@ const creditsTiming: PlaybackTimingMetadata = {
   credits: [{ startMs: 1_200_000, endMs: null }],
   preview: [],
 };
+
+describe("playback session lifecycle", () => {
+  test("starts in selection and moves through resolving playing ending and post-playback", () => {
+    let session = createPlaybackSessionState({ autoNextEnabled: true });
+    expect(session.phase).toBe("selecting");
+
+    session = transitionPlaybackSessionPhase(session, "episode-selected");
+    expect(session.phase).toBe("resolving");
+
+    session = transitionPlaybackSessionPhase(session, "stream-ready");
+    expect(session.phase).toBe("ready");
+
+    session = transitionPlaybackSessionPhase(session, "playback-started");
+    expect(session.phase).toBe("playing");
+
+    session = transitionPlaybackSessionPhase(session, "playback-ended");
+    expect(session.phase).toBe("ending");
+
+    session = transitionPlaybackSessionPhase(session, "post-playback-opened");
+    expect(session.phase).toBe("post-playback");
+  });
+
+  test("keeps recovery and failure as explicit phases instead of hidden flags", () => {
+    let session = transitionPlaybackSessionPhase(
+      createPlaybackSessionState({ autoNextEnabled: true }),
+      "episode-selected",
+    );
+
+    session = transitionPlaybackSessionPhase(session, "recovery-started");
+    expect(session.phase).toBe("recovering");
+
+    session = transitionPlaybackSessionPhase(session, "failure-shown");
+    expect(session.phase).toBe("failed");
+
+    session = transitionPlaybackSessionPhase(session, "resume-requested");
+    expect(session.phase).toBe("resolving");
+  });
+});
 
 describe("resolvePlaybackResultDecision", () => {
   test("marks manual stop as interrupted autoplay pause unless the user already paused it", () => {
@@ -264,6 +303,7 @@ describe("resolvePostPlaybackSessionAction", () => {
     const session = createPlaybackSessionState({ autoNextEnabled: true });
     expect(resolvePostPlaybackSessionAction("toggle-autoplay", session)).toEqual({
       session: {
+        phase: "selecting",
         mode: "autoplay-chain",
         autoplayPauseReason: "user",
         autoplayPaused: true,
@@ -279,6 +319,7 @@ describe("resolvePostPlaybackSessionAction", () => {
       }),
     ).toEqual({
       session: {
+        phase: "selecting",
         mode: "autoplay-chain",
         autoplayPauseReason: null,
         autoplayPaused: false,
@@ -297,6 +338,7 @@ describe("resolvePostPlaybackSessionAction", () => {
       }),
     ).toEqual({
       session: {
+        phase: "selecting",
         mode: "autoplay-chain",
         autoplayPauseReason: null,
         autoplayPaused: false,
@@ -312,6 +354,7 @@ describe("resolvePostPlaybackSessionAction", () => {
       }),
     ).toEqual({
       session: {
+        phase: "selecting",
         mode: "autoplay-chain",
         autoplayPauseReason: "user",
         autoplayPaused: true,
