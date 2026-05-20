@@ -320,7 +320,7 @@ test("vidking evidence fixture preserves native server labels beside ISO audio l
     ],
   });
   expect(result?.streams[0]).toMatchObject({
-    qualityLabel: expected.quality,
+    qualityLabel: normalizeQualityLabel(expected.quality),
     audioLanguages: [expected.normalizedLanguage],
     languageEvidence: [
       expect.objectContaining({
@@ -385,7 +385,7 @@ test("rivestream evidence fixture preserves provider server label and normalized
     ],
   });
   expect(result.streams[0]).toMatchObject({
-    qualityLabel: expected.quality,
+    qualityLabel: normalizeQualityLabel(expected.quality),
     audioLanguages: [expected.normalizedLanguage],
     languageEvidence: [
       expect.objectContaining({

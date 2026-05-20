@@ -26,6 +26,16 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import {
+  createProviderLanguageEvidence,
+  createProviderSourceEvidence,
+  createSourceCandidateFromStream,
+  createStreamId,
+  createVariantCandidateFromStream,
+  createVariantId,
+  normalizeQualityLabel,
+  qualityRankFromLabel,
+} from "../shared/source-inventory";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 
@@ -446,25 +456,16 @@ export const rivestreamProviderModule: CoreProviderModule = {
         selectedStreamId: selectedStream.id,
         sources: [
           {
-            id: sourceId,
-            providerId: RIVESTREAM_PROVIDER_ID,
-            kind: "provider-api",
-            label: displayRivestreamProviderLabel(serverUsed),
-            host: "rivestream.app",
-            status: "selected",
-            confidence: 0.95,
+            ...createSourceCandidateFromStream({
+              providerId: RIVESTREAM_PROVIDER_ID,
+              stream: selectedStream,
+              kind: "provider-api",
+              selected: true,
+              cachePolicy,
+              label: displayRivestreamProviderLabel(serverUsed),
+              confidence: 0.95,
+            }),
             requiresRuntime: "direct-http",
-            cachePolicy,
-            sourceEvidence: [
-              {
-                sourceId,
-                serverId: serverUsed,
-                nativeLabel: serverUsed,
-                host: "rivestream.app",
-                confidence: 0.9,
-                metadata: { displayLabel: displayRivestreamProviderLabel(serverUsed) },
-              },
-            ],
           },
         ],
         streams,
@@ -600,26 +601,28 @@ async function resolveRivestreamProviderCandidate({
   rawSources.forEach((source) => {
     if (!source.url) return;
     const qualityStr = String(source.quality || source.format || "auto");
-    const streamId = `stream:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(source.url).toString(36)}`;
-    const variantId = `variant:${RIVESTREAM_PROVIDER_ID}:${sourceId}:${qualityStr}`;
+    const qualityLabel = normalizeQualityLabel(qualityStr);
+    const qualityRank = qualityRankFromLabel(qualityStr) ?? 0;
+    const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [source.url]);
+    const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, source.url]);
     const protocol = source.url.includes(".m3u8") ? "hls" : "mp4";
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
       normalizeIsoLanguageCode(input.preferredAudioLanguage);
     const languageEvidence = normalizedAudioLanguage
       ? [
-          {
+          createProviderLanguageEvidence({
             role: "audio" as const,
-            normalizedLanguage: normalizedAudioLanguage,
+            value: normalizedAudioLanguage,
             nativeLabel: provider,
             sourceId,
             confidence: 0.65,
             metadata: { quality: qualityStr },
-          },
+          }),
         ]
       : undefined;
     const sourceEvidence = [
-      {
+      createProviderSourceEvidence({
         sourceId,
         serverId: provider,
         nativeLabel: provider,
@@ -629,7 +632,7 @@ async function resolveRivestreamProviderCandidate({
           quality: qualityStr,
           displayLabel: displayRivestreamProviderLabel(provider),
         },
-      },
+      }),
     ];
 
     streams.push({
@@ -641,8 +644,8 @@ async function resolveRivestreamProviderCandidate({
       protocol,
       container: protocol === "hls" ? "m3u8" : "mp4",
       audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
-      qualityLabel: qualityStr,
-      qualityRank: parseInt(qualityStr) || 0,
+      qualityLabel,
+      qualityRank,
       languageEvidence,
       sourceEvidence,
       headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
@@ -650,20 +653,15 @@ async function resolveRivestreamProviderCandidate({
       cachePolicy,
     });
 
-    variants.push({
-      id: variantId,
-      providerId: RIVESTREAM_PROVIDER_ID,
-      sourceId,
-      qualityLabel: qualityStr,
-      qualityRank: parseInt(qualityStr) || 0,
-      protocol,
-      container: protocol === "hls" ? "m3u8" : "mp4",
-      audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
-      languageEvidence,
-      sourceEvidence,
-      streamIds: [streamId],
-      confidence: 0.95,
-    });
+    const stream = streams[streams.length - 1];
+    if (stream) {
+      variants.push(
+        createVariantCandidateFromStream({
+          providerId: RIVESTREAM_PROVIDER_ID,
+          stream,
+        }),
+      );
+    }
   });
 
   const embeddedCaptions = extractRivestreamCaptions(sourceData.data);
