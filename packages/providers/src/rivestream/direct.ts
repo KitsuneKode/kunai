@@ -1,13 +1,19 @@
 /* oxlint-disable no-shadow */
 
 import {
+  createProviderCycleFailureError,
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
 import type {
+  CachePolicy,
+  ProviderCycleCandidate,
   ProviderFailure,
+  ProviderResolveInput,
+  ProviderRuntimeContext,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
@@ -15,6 +21,10 @@ import type {
 } from "@kunai/types";
 
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
+import {
+  findLastCycleFailure,
+  providerFailureCodeFromCycleFailure,
+} from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { normalizeSubtitleLanguage } from "../shared/subtitle-helpers";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
@@ -54,6 +64,14 @@ type RivestreamRawSubtitle = {
   readonly language?: string;
   readonly file?: string;
   readonly label?: string;
+};
+
+type RivestreamResolvedCandidate = {
+  readonly provider: string;
+  readonly sourceId: string;
+  readonly streams: readonly StreamCandidate[];
+  readonly variants: readonly ProviderVariantCandidate[];
+  readonly subtitles: readonly SubtitleCandidate[];
 };
 
 type AbortSignalConstructorWithAny = typeof AbortSignal & {
@@ -293,161 +311,117 @@ export const rivestreamProviderModule: CoreProviderModule = {
         throw new Error("No providers available");
       }
 
-      // Internal Server Loop
-      const streams: StreamCandidate[] = [];
-      const variants: ProviderVariantCandidate[] = [];
-      const subtitles: SubtitleCandidate[] = [];
-      let sourceId = "";
-      let serverUsed = "";
-
-      for (const provider of providers) {
-        serverUsed = provider;
-        sourceId = `source:${RIVESTREAM_PROVIDER_ID}:${provider}`;
-
-        let url = `${RIVESTREAM_API_BASE}?requestID=${typeStr}VideoProvider&id=${tmdbId}`;
-        if (input.mediaKind === "series") url += `&season=${season}&episode=${episode}`;
-        url += `&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
-
-        try {
-          const fetchSignal = createTimeoutSignal(context.signal, 8000);
-
-          const sourceData = await providerJson<RivestreamSourceResponse>(
-            context,
-            url,
-            {
-              headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
-              signal: fetchSignal,
-            },
-            { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
-          );
-          const rawSources = getRivestreamRawSources(sourceData.data);
-
-          if (rawSources.length > 0) {
-            rawSources.forEach((s) => {
-              if (!s.url) return;
-              const qualityStr = String(s.quality || s.format || "auto");
-              const streamId = `stream:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(s.url).toString(36)}`;
-              const variantId = `variant:${RIVESTREAM_PROVIDER_ID}:${sourceId}:${qualityStr}`;
-              const protocol = s.url.includes(".m3u8") ? "hls" : "mp4";
-              const normalizedAudioLanguage =
-                inferRivestreamAudioLanguage(provider, qualityStr) ??
-                normalizeSubtitleLanguage(input.preferredAudioLanguage);
-              const languageEvidence = normalizedAudioLanguage
-                ? [
-                    {
-                      role: "audio" as const,
-                      normalizedLanguage: normalizedAudioLanguage,
-                      nativeLabel: provider,
-                      sourceId,
-                      confidence: 0.65,
-                      metadata: { quality: qualityStr },
-                    },
-                  ]
-                : undefined;
-              const sourceEvidence = [
-                {
-                  sourceId,
-                  serverId: provider,
-                  nativeLabel: provider,
-                  host: "rivestream.app",
-                  confidence: 0.9,
-                  metadata: { quality: qualityStr },
-                },
-              ];
-
-              streams.push({
-                id: streamId,
-                providerId: RIVESTREAM_PROVIDER_ID,
-                sourceId,
-                variantId,
-                url: s.url,
-                protocol,
-                container: protocol === "hls" ? "m3u8" : "mp4",
-                audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
-                qualityLabel: qualityStr,
-                qualityRank: parseInt(qualityStr) || 0,
-                languageEvidence,
-                sourceEvidence,
-                headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
-                confidence: 0.95,
-                cachePolicy,
-              });
-
-              variants.push({
-                id: variantId,
-                providerId: RIVESTREAM_PROVIDER_ID,
-                sourceId,
-                qualityLabel: qualityStr,
-                qualityRank: parseInt(qualityStr) || 0,
-                protocol,
-                container: protocol === "hls" ? "m3u8" : "mp4",
-                audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
-                languageEvidence,
-                sourceEvidence,
-                streamIds: [streamId],
-                confidence: 0.95,
-              });
+      const cycleResult = await runProviderCycle({
+        providerId: RIVESTREAM_PROVIDER_ID,
+        candidates: buildRivestreamCycleCandidates(providers),
+        signal: context.signal,
+        now: context.now,
+        maxAttemptsPerCandidate: 1,
+        candidateTimeoutMs: 10_000,
+        resolveCandidate: async (candidate) => {
+          const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
+          if (!provider) {
+            throw createProviderCycleFailureError(candidate, {
+              failureClass: "candidate-unsupported",
+              message: `Rivestream candidate ${candidate.id} is missing provider metadata`,
+              retryable: false,
+              at: context.now(),
             });
-
-            // Extract embedded captions if present
-            const responseData = sourceData.data;
-            const embeddedCaptions =
-              responseData &&
-              typeof responseData === "object" &&
-              !Array.isArray(responseData) &&
-              "captions" in responseData
-                ? responseData.captions
-                : undefined;
-            if (Array.isArray(embeddedCaptions)) {
-              embeddedCaptions.forEach((sub) => {
-                const subUrl = sub.url || sub.file;
-                const lang = sub.lang || sub.language || sub.label || "unknown";
-                const normalizedLang = normalizeSubtitleLanguage(lang);
-                if (!subUrl) return;
-                subtitles.push({
-                  id: `subtitle:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(subUrl).toString(36)}`,
-                  providerId: RIVESTREAM_PROVIDER_ID,
-                  sourceId,
-                  url: subUrl,
-                  language: normalizedLang ?? lang.split(" - ")[0].trim(),
-                  label: lang,
-                  format: subUrl.endsWith(".vtt") ? "vtt" : "srt",
-                  source: "provider",
-                  confidence: 0.95,
-                  cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
-                });
-              });
-            }
-
-            // We found sources, break the loop
-            break;
           }
-        } catch (error) {
-          // Isolate provider-server failures, but keep typed evidence for diagnostics.
-          const providerError =
-            error instanceof ProviderHttpError
-              ? error
-              : new ProviderHttpError({
-                  providerId: RIVESTREAM_PROVIDER_ID,
-                  stage: "source:start",
-                  code: "not-found",
-                  message: `Internal server ${provider} failed`,
-                  retryable: true,
-                  cause: error,
-                });
-          failures.push({
-            providerId: RIVESTREAM_PROVIDER_ID,
-            code: providerError.code,
-            message: providerError.message,
-            retryable: providerError.retryable,
-            at: context.now(),
-          });
-        }
+
+          try {
+            return await resolveRivestreamProviderCandidate({
+              candidate,
+              provider,
+              input,
+              context,
+              cachePolicy,
+              tmdbId,
+              typeStr,
+              season,
+              episode,
+              secretKey,
+            });
+          } catch (error) {
+            const providerError =
+              error instanceof ProviderHttpError
+                ? error
+                : new ProviderHttpError({
+                    providerId: RIVESTREAM_PROVIDER_ID,
+                    stage: "source:start",
+                    code: "not-found",
+                    message:
+                      error instanceof Error ? error.message : `Internal server ${provider} failed`,
+                    retryable: true,
+                    cause: error,
+                  });
+            failures.push({
+              providerId: RIVESTREAM_PROVIDER_ID,
+              code: providerError.code,
+              message: providerError.message,
+              retryable: providerError.retryable,
+              at: context.now(),
+            });
+            throw createProviderCycleFailureError(candidate, {
+              failureClass: rivestreamFailureClassFromProviderError(providerError),
+              message: providerError.message,
+              retryable: providerError.retryable,
+              at: context.now(),
+            });
+          }
+        },
+      });
+      events.push(...cycleResult.events);
+
+      if (cycleResult.cancelled) {
+        return createExhaustedResult(
+          input,
+          context,
+          RIVESTREAM_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "Rivestream provider cycling was cancelled",
+            retryable: false,
+          },
+          {
+            cachePolicy,
+            events,
+            failures,
+            startedAt,
+          },
+        );
       }
 
-      if (streams.length === 0) {
-        throw new Error("All internal servers exhausted without returning streams.");
+      if (!cycleResult.selected) {
+        const cycleFailure = findLastCycleFailure(cycleResult.attempts);
+        const failure = cycleFailure
+          ? {
+              code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
+              message: cycleFailure.message,
+              retryable: cycleFailure.retryable,
+            }
+          : {
+              code: "not-found" as const,
+              message: "All internal servers exhausted without returning streams.",
+              retryable: true,
+            };
+        return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, failure, {
+          cachePolicy,
+          events,
+          failures,
+          startedAt,
+        });
       }
+
+      const {
+        streams: selectedStreams,
+        variants: selectedVariants,
+        subtitles,
+        sourceId,
+        provider: serverUsed,
+      } = cycleResult.selected;
+      const streams = [...selectedStreams];
+      const variants = [...selectedVariants];
 
       streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
       variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
@@ -475,7 +449,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
             id: sourceId,
             providerId: RIVESTREAM_PROVIDER_ID,
             kind: "provider-api",
-            label: serverUsed,
+            label: displayRivestreamProviderLabel(serverUsed),
             host: "rivestream.app",
             status: "selected",
             confidence: 0.95,
@@ -488,6 +462,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
                 nativeLabel: serverUsed,
                 host: "rivestream.app",
                 confidence: 0.9,
+                metadata: { displayLabel: displayRivestreamProviderLabel(serverUsed) },
               },
             ],
           },
@@ -548,6 +523,199 @@ export const rivestreamProviderModule: CoreProviderModule = {
     }
   },
 };
+
+function buildRivestreamCycleCandidates(
+  providers: readonly string[],
+): readonly ProviderCycleCandidate[] {
+  return providers.map((provider, index) => {
+    const sourceId = `source:${RIVESTREAM_PROVIDER_ID}:${provider}`;
+    return {
+      id: `candidate:${sourceId}`,
+      providerId: RIVESTREAM_PROVIDER_ID,
+      sourceId,
+      serverId: provider,
+      label: displayRivestreamProviderLabel(provider),
+      nativeLabel: provider,
+      priority: index,
+      metadata: {
+        provider,
+        sourceHost: "rivestream.app",
+      },
+    };
+  });
+}
+
+async function resolveRivestreamProviderCandidate({
+  candidate,
+  provider,
+  input,
+  context,
+  cachePolicy,
+  tmdbId,
+  typeStr,
+  season,
+  episode,
+  secretKey,
+}: {
+  readonly candidate: ProviderCycleCandidate;
+  readonly provider: string;
+  readonly input: ProviderResolveInput;
+  readonly context: ProviderRuntimeContext;
+  readonly cachePolicy: CachePolicy;
+  readonly tmdbId: string;
+  readonly typeStr: "movie" | "tv";
+  readonly season: number;
+  readonly episode: number;
+  readonly secretKey: string;
+}): Promise<RivestreamResolvedCandidate> {
+  const sourceId = candidate.sourceId ?? `source:${RIVESTREAM_PROVIDER_ID}:${provider}`;
+  let url = `${RIVESTREAM_API_BASE}?requestID=${typeStr}VideoProvider&id=${tmdbId}`;
+  if (input.mediaKind === "series") url += `&season=${season}&episode=${episode}`;
+  url += `&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
+
+  const fetchSignal = createTimeoutSignal(context.signal, 8000);
+  const sourceData = await providerJson<RivestreamSourceResponse>(
+    context,
+    url,
+    {
+      headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
+      signal: fetchSignal,
+    },
+    { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
+  );
+  const rawSources = getRivestreamRawSources(sourceData.data);
+  if (rawSources.length === 0) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-empty",
+      message: `Rivestream ${provider} did not return sources`,
+      retryable: true,
+      at: context.now(),
+    });
+  }
+
+  const streams: StreamCandidate[] = [];
+  const variants: ProviderVariantCandidate[] = [];
+  const subtitles: SubtitleCandidate[] = [];
+
+  rawSources.forEach((source) => {
+    if (!source.url) return;
+    const qualityStr = String(source.quality || source.format || "auto");
+    const streamId = `stream:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(source.url).toString(36)}`;
+    const variantId = `variant:${RIVESTREAM_PROVIDER_ID}:${sourceId}:${qualityStr}`;
+    const protocol = source.url.includes(".m3u8") ? "hls" : "mp4";
+    const normalizedAudioLanguage =
+      inferRivestreamAudioLanguage(provider, qualityStr) ??
+      normalizeSubtitleLanguage(input.preferredAudioLanguage);
+    const languageEvidence = normalizedAudioLanguage
+      ? [
+          {
+            role: "audio" as const,
+            normalizedLanguage: normalizedAudioLanguage,
+            nativeLabel: provider,
+            sourceId,
+            confidence: 0.65,
+            metadata: { quality: qualityStr },
+          },
+        ]
+      : undefined;
+    const sourceEvidence = [
+      {
+        sourceId,
+        serverId: provider,
+        nativeLabel: provider,
+        host: "rivestream.app",
+        confidence: 0.9,
+        metadata: {
+          quality: qualityStr,
+          displayLabel: displayRivestreamProviderLabel(provider),
+        },
+      },
+    ];
+
+    streams.push({
+      id: streamId,
+      providerId: RIVESTREAM_PROVIDER_ID,
+      sourceId,
+      variantId,
+      url: source.url,
+      protocol,
+      container: protocol === "hls" ? "m3u8" : "mp4",
+      audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
+      qualityLabel: qualityStr,
+      qualityRank: parseInt(qualityStr) || 0,
+      languageEvidence,
+      sourceEvidence,
+      headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
+      confidence: 0.95,
+      cachePolicy,
+    });
+
+    variants.push({
+      id: variantId,
+      providerId: RIVESTREAM_PROVIDER_ID,
+      sourceId,
+      qualityLabel: qualityStr,
+      qualityRank: parseInt(qualityStr) || 0,
+      protocol,
+      container: protocol === "hls" ? "m3u8" : "mp4",
+      audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
+      languageEvidence,
+      sourceEvidence,
+      streamIds: [streamId],
+      confidence: 0.95,
+    });
+  });
+
+  const embeddedCaptions = extractRivestreamCaptions(sourceData.data);
+  for (const subtitle of embeddedCaptions) {
+    const subUrl = subtitle.url || subtitle.file;
+    const lang = String(subtitle.lang || subtitle.language || subtitle.label || "unknown");
+    const normalizedLang = normalizeSubtitleLanguage(lang);
+    if (!subUrl) continue;
+    subtitles.push({
+      id: `subtitle:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(subUrl).toString(36)}`,
+      providerId: RIVESTREAM_PROVIDER_ID,
+      sourceId,
+      url: subUrl,
+      language: normalizedLang ?? (lang.split(" - ")[0]?.trim() || lang),
+      label: lang,
+      format: subUrl.endsWith(".vtt") ? "vtt" : "srt",
+      source: "provider",
+      confidence: 0.95,
+      cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+    });
+  }
+
+  return { provider, sourceId, streams, variants, subtitles };
+}
+
+function extractRivestreamCaptions(
+  data: RivestreamSourceResponse["data"],
+): readonly RivestreamRawSubtitle[] {
+  if (!data || typeof data !== "object" || Array.isArray(data) || !("captions" in data)) {
+    return [];
+  }
+  return Array.isArray(data.captions) ? data.captions : [];
+}
+
+function rivestreamFailureClassFromProviderError(
+  error: ProviderHttpError,
+):
+  | "candidate-network"
+  | "candidate-empty"
+  | "candidate-timeout"
+  | "candidate-blocked"
+  | "candidate-parse" {
+  if (error.code === "timeout") return "candidate-timeout";
+  if (error.code === "blocked") return "candidate-blocked";
+  if (error.code === "parse-failed") return "candidate-parse";
+  if (error.code === "not-found") return "candidate-empty";
+  return "candidate-network";
+}
+
+function displayRivestreamProviderLabel(provider: string): string {
+  return provider.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim() || provider;
+}
 
 function inferRivestreamAudioLanguage(
   provider: string | undefined,

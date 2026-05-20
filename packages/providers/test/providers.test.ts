@@ -5,6 +5,7 @@ import { createProviderEngine } from "@kunai/core";
 import {
   allmangaProviderModule,
   buildAllmangaSourceCandidates,
+  buildMiruroCycleCandidates,
   createMiruroResultFromPayload,
   createVidkingResultFromPayload,
   extractQualitiesFromMaster,
@@ -227,6 +228,9 @@ test("vidking direct resolver can target a flavored endpoint without broad serve
 
   expect(requestedUrls.every((url) => url.includes("/meine/sources-with-title?"))).toBe(true);
   expect(requestedUrls[0]).toContain("language=german");
+  expect(result?.trace.events?.map((event) => event.type)).toEqual(
+    expect.arrayContaining(["source:start", "source:failed", "provider:exhausted"]),
+  );
   expect(result?.sources?.[0]).toMatchObject({
     id: "source:vidking:videasy:meine",
     label: "Killjoy",
@@ -358,6 +362,9 @@ test("rivestream evidence fixture preserves provider server label and normalized
 
   expect(requests.some((url) => url.includes("VideoProviderServices"))).toBe(true);
   expect(result.status).toBe("resolved");
+  expect(result.trace.events?.map((event) => event.type)).toEqual(
+    expect.arrayContaining(["source:start", "source:success", "provider:success"]),
+  );
   expect(result.sources?.[0]).toMatchObject({
     label: expected.serverLabel,
     sourceEvidence: [
@@ -421,7 +428,7 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
   expect(result?.status).toBe("resolved");
   expect(result?.artwork?.seekBarVttUrl).toBe(expected.seekBarVttUrl);
   expect(result?.sources?.[0]).toMatchObject({
-    label: expected.serverLabel,
+    label: expect.stringContaining(expected.serverLabel),
     artwork: { seekBarVttUrl: expected.seekBarVttUrl },
     sourceEvidence: [
       expect.objectContaining({
@@ -437,6 +444,32 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
     artwork: { seekBarVttUrl: expected.seekBarVttUrl },
   });
   expect(result?.subtitles[0]?.language).toBe(expected.subtitleLanguage);
+});
+
+test("miruro source cycling orders preferred subtitle delivery before fallback audio", () => {
+  const candidates = buildMiruroCycleCandidates({
+    episodes: {
+      sub: [{ id: "sub-1", number: 1 }],
+      dub: [{ id: "dub-1", number: 1 }],
+    },
+    episodeNum: 1,
+    targetAudio: "dub",
+    fallbackAudio: "sub",
+    preferredSubtitleDelivery: "embedded",
+  });
+
+  expect(candidates.map((candidate) => candidate.label)).toEqual([
+    "Dub · Bee softsub · soft sub",
+    "Dub · Kiwi hardsub · hard sub",
+    "Sub · Bee softsub · soft sub",
+    "Sub · Kiwi hardsub · hard sub",
+  ]);
+  expect(candidates.map((candidate) => candidate.normalizedAudioLanguage)).toEqual([
+    "en",
+    "en",
+    "ja",
+    "ja",
+  ]);
 });
 
 test("negative fixture maps blocked vidking host to structured failure", async () => {

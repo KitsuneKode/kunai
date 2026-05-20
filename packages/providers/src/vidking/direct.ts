@@ -1,12 +1,15 @@
 import {
+  createProviderCycleFailureError,
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
 import type {
   CachePolicy,
   EpisodeIdentity,
+  ProviderCycleCandidate,
   ProviderFailure,
   ProviderFetchPort,
   ProviderResolveInput,
@@ -21,6 +24,11 @@ import type {
 } from "@kunai/types";
 
 import { HealthTracker } from "../shared/provider-cache";
+import {
+  appendCycleEventsToResult,
+  findLastCycleFailure,
+  providerFailureCodeFromCycleFailure,
+} from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { looksLikeHiSubtitle, normalizeSubtitleLanguage } from "../shared/subtitle-helpers";
 import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
@@ -46,6 +54,14 @@ const vidkingHealth = new HealthTracker(60_000, 2);
 
 type VidkingServer = (typeof VIDKING_SERVERS)[number];
 type VidkingServerEndpoint = VidkingServer | (string & {});
+
+type VidkingCycleCandidateMetadata = {
+  readonly server: VidkingServerEndpoint;
+  readonly customReferer?: string;
+  readonly flavorLabel?: string;
+  readonly flavorArchetype?: string;
+  readonly retryTier: "direct" | "embed-referer";
+};
 
 export interface VidKingEngineOptions {
   readonly serverEndpoint?: VidkingServerEndpoint;
@@ -149,8 +165,6 @@ export async function resolveVidkingDirect(
     message: "Started VidKing direct Videasy resolution",
   });
 
-  // Tier 1: Fire all healthy servers in parallel, merge all successful results
-  // so multi-audio streams from different servers are all available to the user.
   let activeServers: VidkingServerEndpoint[] = VIDKING_SERVERS.filter((s) =>
     vidkingHealth.shouldTry(s),
   );
@@ -184,10 +198,35 @@ export async function resolveVidkingDirect(
     });
   }
 
-  const serverResults = await Promise.allSettled(
-    activeServers.map((server) =>
-      tryVidkingServer({
-        server,
+  const embedReferer = buildEmbedReferer({
+    tmdbId,
+    mediaKind: input.mediaKind as "movie" | "series",
+    season: input.episode?.season,
+    episode: input.episode?.episode,
+  });
+
+  const cycleCandidates = buildVidkingCycleCandidates({
+    directServers: activeServers,
+    embedServers: embedReferer
+      ? engineOptions.serverEndpoint
+        ? [engineOptions.serverEndpoint]
+        : VIDKING_SERVERS
+      : [],
+    embedReferer: engineOptions.customReferer ?? embedReferer ?? undefined,
+    engineOptions,
+  });
+
+  const cycleResult = await runProviderCycle({
+    providerId: VIDKING_PROVIDER_ID,
+    candidates: cycleCandidates,
+    signal: context.signal,
+    now: context.now,
+    maxAttemptsPerCandidate: 1,
+    candidateTimeoutMs: 20_000,
+    resolveCandidate: async (candidate) => {
+      const metadata = parseVidkingCycleCandidateMetadata(candidate);
+      const result = await tryVidkingServer({
+        server: metadata.server,
         tmdbId,
         input,
         cachePolicy,
@@ -195,107 +234,154 @@ export async function resolveVidkingDirect(
         context,
         failures,
         startedAt,
+        customReferer: metadata.customReferer,
         engineOptions,
-      }),
-    ),
-  );
-
-  const tier1Merged = mergeVidkingResults(serverResults);
-  if (tier1Merged) return tier1Merged;
-
-  // Tier 2: Retry all servers with embed page referer, merge results
-  const embedReferer = buildEmbedReferer({
-    tmdbId,
-    mediaKind: input.mediaKind as "movie" | "series",
-    season: input.episode?.season,
-    episode: input.episode?.episode,
+      });
+      if (!result) {
+        throw createProviderCycleFailureError(candidate, {
+          failureClass: "candidate-empty",
+          message: `Videasy ${metadata.server} did not produce a playable source`,
+          retryable: true,
+          at: context.now(),
+        });
+      }
+      return result;
+    },
   });
-  if (embedReferer) {
-    const retryServers: readonly VidkingServerEndpoint[] = engineOptions.serverEndpoint
-      ? [engineOptions.serverEndpoint]
-      : VIDKING_SERVERS;
-    const embedResults = await Promise.allSettled(
-      retryServers.map((server) =>
-        tryVidkingServer({
-          server,
-          tmdbId,
-          input,
-          cachePolicy,
-          events,
-          context,
-          failures,
-          startedAt,
-          customReferer: engineOptions.customReferer ?? embedReferer,
-          engineOptions,
-        }),
-      ),
+  if (cycleResult.cancelled) {
+    events.push(...cycleResult.events);
+    return createExhaustedResult(
+      input,
+      context,
+      VIDKING_PROVIDER_ID,
+      {
+        code: "cancelled",
+        message: "VidKing source cycling was cancelled",
+        retryable: false,
+      },
+      {
+        cachePolicy,
+        events,
+        failures,
+        sources,
+        startedAt,
+      },
     );
-    const tier2Merged = mergeVidkingResults(embedResults);
-    if (tier2Merged) return tier2Merged;
   }
 
-  return createExhaustedResult(
-    input,
-    context,
-    VIDKING_PROVIDER_ID,
-    {
-      code: "not-found",
-      message: "VidKing direct resolver did not find a playable source",
-      retryable: true,
-    },
-    {
-      cachePolicy,
-      events,
-      failures,
-      sources,
-      startedAt,
-    },
-  );
+  if (cycleResult.selected) {
+    return appendCycleEventsToResult(cycleResult.selected, cycleResult.events);
+  }
+
+  events.push(...cycleResult.events);
+  const cycleFailure = findLastCycleFailure(cycleResult.attempts);
+  const failure = cycleFailure
+    ? {
+        code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
+        message: cycleFailure.message,
+        retryable: cycleFailure.retryable,
+      }
+    : {
+        code: "not-found" as const,
+        message: "VidKing direct resolver did not find a playable source",
+        retryable: true,
+      };
+
+  return createExhaustedResult(input, context, VIDKING_PROVIDER_ID, failure, {
+    cachePolicy,
+    events,
+    failures,
+    sources,
+    startedAt,
+  });
 }
 
-function mergeVidkingResults(
-  serverResults: PromiseSettledResult<ProviderResolveResult | null>[],
-): ProviderResolveResult | null {
-  const successes = serverResults
-    .filter(
-      (s): s is PromiseFulfilledResult<ProviderResolveResult> =>
-        s.status === "fulfilled" && s.value !== null,
-    )
-    .map((s) => s.value);
+function buildVidkingCycleCandidates({
+  directServers,
+  embedServers,
+  embedReferer,
+  engineOptions,
+}: {
+  readonly directServers: readonly VidkingServerEndpoint[];
+  readonly embedServers: readonly VidkingServerEndpoint[];
+  readonly embedReferer?: string;
+  readonly engineOptions: VidKingEngineOptions;
+}): ProviderCycleCandidate[] {
+  const candidates: ProviderCycleCandidate[] = [];
+  directServers.forEach((server, index) => {
+    const sourceId = createSourceId(server);
+    candidates.push({
+      id: `candidate:${sourceId}:direct`,
+      providerId: VIDKING_PROVIDER_ID,
+      sourceId,
+      serverId: server,
+      label: displayVidkingServerLabel(server, engineOptions),
+      nativeLabel: server,
+      priority: index,
+      metadata: {
+        server,
+        flavorLabel: engineOptions.flavorLabel,
+        flavorArchetype: engineOptions.flavorArchetype,
+        retryTier: "direct",
+      } satisfies VidkingCycleCandidateMetadata,
+    });
+  });
 
-  if (successes.length === 0) return null;
-  const first = successes[0];
-  if (!first) return null;
-  if (successes.length === 1) return first;
+  if (!embedReferer) return candidates;
 
-  const seenStreamUrls = new Set<string>();
-  const mergedStreams = [];
-  const seenSubtitleUrls = new Set<string>();
-  const mergedSubtitles = [];
+  embedServers.forEach((server, index) => {
+    const sourceId = createSourceId(`${server}-embed-ref`);
+    candidates.push({
+      id: `candidate:${sourceId}:embed-referer`,
+      providerId: VIDKING_PROVIDER_ID,
+      sourceId,
+      serverId: server,
+      label: `${displayVidkingServerLabel(server, engineOptions)} embed referer`,
+      nativeLabel: server,
+      priority: 100 + index,
+      metadata: {
+        server,
+        customReferer: embedReferer,
+        flavorLabel: engineOptions.flavorLabel,
+        flavorArchetype: engineOptions.flavorArchetype,
+        retryTier: "embed-referer",
+      } satisfies VidkingCycleCandidateMetadata,
+    });
+  });
 
-  for (const result of successes) {
-    for (const stream of result.streams) {
-      if (stream.url && !seenStreamUrls.has(stream.url)) {
-        seenStreamUrls.add(stream.url);
-        mergedStreams.push(stream);
-      }
-    }
-    for (const subtitle of result.subtitles) {
-      if (subtitle.url && !seenSubtitleUrls.has(subtitle.url)) {
-        seenSubtitleUrls.add(subtitle.url);
-        mergedSubtitles.push(subtitle);
-      }
-    }
+  return candidates;
+}
+
+function parseVidkingCycleCandidateMetadata(
+  candidate: ProviderCycleCandidate,
+): VidkingCycleCandidateMetadata {
+  const server = candidate.metadata?.server;
+  if (typeof server !== "string") {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-unsupported",
+      message: `VidKing candidate ${candidate.id} is missing server metadata`,
+      retryable: false,
+      at: new Date().toISOString(),
+    });
   }
-
-  const bestStream = mergedStreams.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0))[0];
-
+  const customReferer = candidate.metadata?.customReferer;
+  const flavorLabel = candidate.metadata?.flavorLabel;
+  const flavorArchetype = candidate.metadata?.flavorArchetype;
+  const retryTier = candidate.metadata?.retryTier;
   return {
-    ...first,
-    streams: mergedStreams,
-    subtitles: mergedSubtitles,
-    selectedStreamId: bestStream?.id ?? first.selectedStreamId,
+    server,
+    customReferer: typeof customReferer === "string" ? customReferer : undefined,
+    flavorLabel: typeof flavorLabel === "string" ? flavorLabel : undefined,
+    flavorArchetype: typeof flavorArchetype === "string" ? flavorArchetype : undefined,
+    retryTier: retryTier === "embed-referer" ? "embed-referer" : "direct",
   };
+}
+
+function displayVidkingServerLabel(
+  server: VidkingServerEndpoint,
+  engineOptions: VidKingEngineOptions,
+): string {
+  return engineOptions.flavorLabel?.trim() || server;
 }
 
 export function createVidkingResultFromPayload({
@@ -310,6 +396,8 @@ export function createVidkingResultFromPayload({
   failures = [],
   streamReferer,
   sourceQualityFilter,
+  sourceDisplayLabel,
+  flavorArchetype,
 }: {
   readonly input: ProviderResolveInput;
   readonly cachePolicy?: CachePolicy;
@@ -322,6 +410,8 @@ export function createVidkingResultFromPayload({
   readonly failures?: readonly ProviderFailure[];
   readonly streamReferer?: string;
   readonly sourceQualityFilter?: string;
+  readonly sourceDisplayLabel?: string;
+  readonly flavorArchetype?: string;
 }): ProviderResolveResult | null {
   const policy =
     cachePolicy ??
@@ -426,14 +516,14 @@ export function createVidkingResultFromPayload({
         id: resolvedSourceId,
         providerId: VIDKING_PROVIDER_ID,
         kind: "provider-api",
-        label: server ?? "Videasy",
+        label: sourceDisplayLabel ?? server ?? "Videasy",
         host: "api.videasy.net",
         status: "selected",
         confidence: 0.9,
         requiresRuntime: "direct-http",
         cachePolicy: policy,
         sourceEvidence,
-        metadata: { server },
+        metadata: { server, flavorArchetype },
       },
     ],
     variants,
@@ -454,6 +544,7 @@ export function createVidkingResultFromPayload({
           providerId: VIDKING_PROVIDER_ID,
           attributes: {
             source: server ?? null,
+            sourceLabel: sourceDisplayLabel ?? null,
             streams: streams.length,
             subtitles: orderedSubtitles.length,
           },
@@ -623,6 +714,8 @@ async function tryVidkingServer(opts: {
           failures,
           streamReferer: customReferer,
           sourceQualityFilter: engineOptions.filterQuality,
+          sourceDisplayLabel: engineOptions.flavorLabel,
+          flavorArchetype: engineOptions.flavorArchetype,
         });
         if (result) {
           vidkingHealth.recordSuccess(server);

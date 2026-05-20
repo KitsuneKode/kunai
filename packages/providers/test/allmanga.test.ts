@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   allmangaProviderModule,
+  buildAllmangaCycleCandidates,
   buildStreamHeaders,
   decodeTobeparsed,
   fetchAllMangaEpisodeCatalog,
@@ -254,6 +255,53 @@ describe("AllManga provider evidence fixtures", () => {
     expect(dub.streams[0]?.url).toContain("/dub/");
     expect(sub.externalIds).toEqual(expected.search.externalIds);
     expect(dub.externalIds).toEqual(expected.search.externalIds);
+    expect(sub.trace.events?.some((event) => event.type === "source:start")).toBe(true);
+    expect(sub.trace.events?.some((event) => event.type === "variant:selected")).toBe(true);
+  });
+
+  test("source cycle candidates preserve native labels separately from normalized language", () => {
+    const candidates = buildAllmangaCycleCandidates(
+      [
+        {
+          id: "stream:allmanga:hls",
+          providerId: "allanime",
+          sourceId: "source:allanime:fm-hls",
+          variantId: "variant:allanime:fm-hls:1080",
+          url: "https://cdn.example/sub/1080.m3u8",
+          protocol: "hls",
+          container: "m3u8",
+          audioLanguages: ["ja"],
+          hardSubLanguage: "en",
+          presentation: "sub",
+          qualityLabel: "1080p",
+          qualityRank: 1080,
+          cachePolicy: {
+            ttlClass: "stream-manifest",
+            scope: "local",
+            keyParts: ["provider", "allmanga", "cycle-candidate"],
+          },
+          sourceEvidence: [
+            {
+              sourceId: "source:allanime:fm-hls",
+              nativeLabel: "FM-HLS",
+              host: "cdn.example",
+              confidence: 0.95,
+            },
+          ],
+          confidence: 0.95,
+        },
+      ],
+      "1080",
+    );
+
+    expect(candidates[0]).toMatchObject({
+      sourceId: "source:allanime:fm-hls",
+      streamId: "stream:allmanga:hls",
+      nativeLabel: "FM-HLS",
+      normalizedAudioLanguage: "ja",
+      normalizedSubtitleLanguage: "en",
+      presentation: "sub",
+    });
   });
 });
 

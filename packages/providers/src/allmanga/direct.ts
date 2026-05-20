@@ -1,12 +1,15 @@
 import {
+  createProviderCycleFailureError,
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
 import type {
-  ProviderFailure,
+  ProviderCycleCandidate,
   ProviderEpisodeOption,
+  ProviderFailure,
   ProviderSourceCandidate,
   ProviderSearchResult,
   ProviderTraceEvent,
@@ -15,6 +18,10 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+import {
+  findLastCycleFailure,
+  providerFailureCodeFromCycleFailure,
+} from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { normalizeSubtitleLanguage, subtitleLanguageDisplayName } from "../shared/subtitle-helpers";
 import {
@@ -358,12 +365,70 @@ export const allmangaProviderModule: CoreProviderModule = {
       streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
       variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
 
-      const selectedStream =
-        streams.find(
-          (s) => s.qualityLabel?.includes(input.qualityPreference || "") || s.protocol === "hls",
-        ) || streams[0];
+      const cycleCandidates = buildAllmangaCycleCandidates(streams, input.qualityPreference);
+      const cycleResult = await runProviderCycle({
+        providerId: ALLANIME_PROVIDER_ID,
+        candidates: cycleCandidates,
+        signal: context.signal,
+        now: context.now,
+        maxAttemptsPerCandidate: 1,
+        candidateTimeoutMs: 2_500,
+        resolveCandidate: async (candidate, cycleContext) => {
+          const stream = streams.find((item) => item.id === candidate.streamId);
+          if (!stream?.url) {
+            throw createProviderCycleFailureError(candidate, {
+              failureClass: "candidate-empty",
+              message: `AllManga candidate ${candidate.id} did not contain a playable URL`,
+              retryable: false,
+              at: context.now(),
+            });
+          }
+          cycleContext.emit({
+            type: "variant:selected",
+            at: context.now(),
+            providerId: ALLANIME_PROVIDER_ID,
+            sourceId: stream.sourceId,
+            variantId: stream.variantId,
+            streamId: stream.id,
+            attempt: cycleContext.attempt,
+            message: stream.qualityLabel ?? candidate.label ?? candidate.id,
+            attributes: {
+              candidateId: candidate.id,
+              presentation: stream.presentation ?? null,
+              qualityRank: stream.qualityRank ?? null,
+            },
+          });
+          return stream;
+        },
+      });
+      events.push(...cycleResult.events);
+      if (cycleResult.cancelled) {
+        return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
+          code: "cancelled",
+          message: "AllManga source cycling was cancelled",
+          retryable: false,
+        });
+      }
+      const selectedStream = cycleResult.selected;
       if (!selectedStream) {
-        throw new Error("No selectable AllManga streams were mapped.");
+        const cycleFailure = findLastCycleFailure(cycleResult.attempts);
+        const failure: ProviderFailure = cycleFailure
+          ? {
+              providerId: ALLANIME_PROVIDER_ID,
+              code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
+              message: cycleFailure.message,
+              retryable: cycleFailure.retryable,
+              at: cycleFailure.at,
+            }
+          : {
+              providerId: ALLANIME_PROVIDER_ID,
+              code: "not-found",
+              message: "No selectable AllManga streams were mapped.",
+              retryable: true,
+              at: context.now(),
+            };
+        failures.push(failure);
+        return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, failure);
       }
       const sourceCandidates = buildAllmangaSourceCandidates(
         streams,
@@ -405,7 +470,11 @@ export const allmangaProviderModule: CoreProviderModule = {
           steps: [
             createTraceStep("provider", "Resolved AllManga through GraphQL payload", {
               providerId: ALLANIME_PROVIDER_ID,
-              attributes: { streams: streams.length },
+              attributes: {
+                streams: streams.length,
+                sourceCycleAttempts: cycleResult.attempts.length,
+                selectedCandidateId: cycleResult.selectedCandidate?.id ?? null,
+              },
             }),
           ],
           events,
@@ -440,6 +509,37 @@ export const allmangaProviderModule: CoreProviderModule = {
     }
   },
 };
+
+export function buildAllmangaCycleCandidates(
+  streams: readonly StreamCandidate[],
+  qualityPreference: string | undefined,
+): ProviderCycleCandidate[] {
+  return streams.map((stream, index) => {
+    const qualityRank = stream.qualityRank ?? (parseInt(stream.qualityLabel ?? "") || 0);
+    const qualityBoost =
+      qualityPreference && stream.qualityLabel?.includes(qualityPreference) ? -10_000 : 0;
+    const hlsBoost = stream.protocol === "hls" ? -1_000 : 0;
+    return {
+      id: `candidate:${stream.id}`,
+      providerId: ALLANIME_PROVIDER_ID,
+      sourceId: stream.sourceId,
+      variantId: stream.variantId,
+      streamId: stream.id,
+      groupId: stream.presentation,
+      label: stream.qualityLabel ?? stream.presentation ?? stream.id,
+      nativeLabel: stream.sourceEvidence?.[0]?.nativeLabel ?? stream.qualityLabel,
+      normalizedAudioLanguage: stream.audioLanguages?.[0],
+      normalizedSubtitleLanguage: stream.hardSubLanguage ?? stream.subtitleLanguages?.[0],
+      presentation: stream.presentation,
+      qualityRank,
+      priority: qualityBoost + hlsBoost - qualityRank + index / 1000,
+      metadata: {
+        protocol: stream.protocol,
+        sourceHost: stream.sourceEvidence?.[0]?.host,
+      },
+    };
+  });
+}
 
 export function buildAllmangaSourceCandidates(
   streams: readonly StreamCandidate[],
