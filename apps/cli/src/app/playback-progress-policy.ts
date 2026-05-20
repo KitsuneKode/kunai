@@ -59,7 +59,10 @@ export function toHistoryTimestamp(
   const trusted = result.lastTrustedProgressSeconds ?? 0;
   if (
     (didPlaybackReachCompletionThreshold(result, timing, thresholdMode) ||
-      (result.endReason === "eof" && result.duration > 0 && trusted <= 0)) &&
+      (result.endReason === "eof" &&
+        result.duration > 0 &&
+        trusted <= 0 &&
+        result.suspectedDeadStream !== true)) &&
     result.duration > 0
   ) {
     return Math.max(result.watchedSeconds, result.duration);

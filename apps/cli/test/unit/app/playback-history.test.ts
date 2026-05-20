@@ -91,6 +91,18 @@ describe("playback-history", () => {
     expect(toHistoryTimestamp(result)).toBe(420);
   });
 
+  test("does not treat suspected dead-stream eof as completed history", () => {
+    const result = {
+      watchedSeconds: 0,
+      duration: 1500,
+      endReason: "eof" as const,
+      suspectedDeadStream: true,
+    };
+
+    expect(shouldPersistHistory(result)).toBe(false);
+    expect(toHistoryTimestamp(result)).toBe(0);
+  });
+
   test("does not persist a demoted eof with no trusted progress", () => {
     const result = {
       watchedSeconds: 0,

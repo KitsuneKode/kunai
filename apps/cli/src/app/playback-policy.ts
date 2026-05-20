@@ -91,6 +91,7 @@ export function didPlaybackReachCompletionThreshold(
   timing?: PlaybackTimingMetadata | null,
   thresholdMode: QuitNearEndThresholdMode = "credits-or-90-percent",
 ): boolean {
+  if (result.suspectedDeadStream) return false;
   if (result.endReason !== "eof" && result.endReason !== "quit") return false;
 
   const trusted = result.lastTrustedProgressSeconds;

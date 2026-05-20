@@ -542,3 +542,101 @@ test("ProviderEngine retries retryable exhausted results before falling back", a
   expect(primaryAttempts).toBe(2);
   expect(resolved.attempts).toHaveLength(1);
 });
+
+test("ProviderEngine does not retry or fallback when the network is offline", async () => {
+  let primaryAttempts = 0;
+  let fallbackAttempts = 0;
+  const offlineProvider: CoreProviderModule = {
+    providerId: "offline",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "offline",
+      displayName: "Offline Provider",
+    }),
+    async resolve(input, context) {
+      primaryAttempts += 1;
+      const failure = {
+        providerId: "offline" as const,
+        code: "network-error" as const,
+        message: "getaddrinfo ENOTFOUND api.example.test",
+        retryable: true,
+        at: context.now(),
+      };
+      return {
+        status: "exhausted",
+        providerId: "offline",
+        streams: [],
+        subtitles: [],
+        trace: {
+          id: "trace:offline",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [failure],
+        },
+        failures: [failure],
+      };
+    },
+  };
+  const fallbackProvider: CoreProviderModule = {
+    providerId: "fallback",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "fallback",
+      displayName: "Fallback Provider",
+    }),
+    async resolve(input, context) {
+      fallbackAttempts += 1;
+      return {
+        status: "resolved",
+        providerId: "fallback",
+        selectedStreamId: "stream:fallback:1",
+        streams: [
+          {
+            id: "stream:fallback:1",
+            providerId: "fallback",
+            url: "https://cdn.example/fallback.m3u8",
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:fallback",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      };
+    },
+  };
+  const engine = createProviderEngine({
+    modules: [offlineProvider, fallbackProvider],
+    maxAttempts: 3,
+    retryDelayMs: 0,
+  });
+
+  const resolved = await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "movie", title: "Demo" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["offline", "fallback"],
+  );
+
+  expect(resolved.result).toBeNull();
+  expect(resolved.attempts).toHaveLength(1);
+  expect(primaryAttempts).toBe(1);
+  expect(fallbackAttempts).toBe(0);
+  expect(resolved.attempts[0]?.failure).toMatchObject({
+    code: "network-error",
+    message: "getaddrinfo ENOTFOUND api.example.test",
+  });
+});

@@ -15,6 +15,9 @@ export function shouldPersistHistory(
     result.watchedSeconds > 10 ||
     trusted > 10 ||
     didPlaybackReachCompletionThreshold(result, timing, thresholdMode) ||
-    (result.endReason === "eof" && result.duration > 0 && trusted <= 0)
+    (result.endReason === "eof" &&
+      result.duration > 0 &&
+      trusted <= 0 &&
+      result.suspectedDeadStream !== true)
   );
 }

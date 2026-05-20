@@ -88,7 +88,13 @@ export class ProviderEngine {
       if (result && isProviderResolveResultResolved(result)) return result;
       if (result) {
         const error = createProviderResolveFailureError(result);
-        if (attempt >= this.maxAttempts || !error.failure.retryable) throw error;
+        if (
+          attempt >= this.maxAttempts ||
+          !error.failure.retryable ||
+          isOfflineNetworkFailure(error.failure)
+        ) {
+          throw error;
+        }
       }
 
       if (signal?.aborted) throw this.abortError();
@@ -146,6 +152,7 @@ export class ProviderEngine {
             ? { result: error.result }
             : {}),
         });
+        if (isOfflineNetworkFailure(failure)) break;
       }
     }
 
@@ -238,6 +245,22 @@ export class ProviderEngine {
     return new ProviderResolveAbortError();
   }
 }
+
+function isOfflineNetworkFailure(failure: ProviderFailure): boolean {
+  if (failure.code !== "network-error") return false;
+  const message = failure.message.toLowerCase();
+  return OFFLINE_NETWORK_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+const OFFLINE_NETWORK_PATTERNS = [
+  "enotfound",
+  "eai_again",
+  "enetunreach",
+  "network is unreachable",
+  "err_internet_disconnected",
+  "err_name_not_resolved",
+  "dns",
+];
 
 export function createProviderEngine(opts: ProviderEngineOptions): ProviderEngine {
   return new ProviderEngine(opts);
