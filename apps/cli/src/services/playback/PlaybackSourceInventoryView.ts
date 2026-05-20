@@ -1,4 +1,5 @@
 import type {
+  ProviderArtworkInfo,
   ProviderId,
   ProviderSourceStatus,
   ResolveErrorCode,
@@ -29,6 +30,7 @@ export type PlaybackSourceSelectionView = {
   readonly streamId?: string;
   readonly variantId?: string;
   readonly qualityLabel?: string;
+  readonly artwork?: ProviderArtworkInfo;
   readonly presentation?: StreamPresentation;
   readonly audioLanguages: readonly string[];
   readonly subtitleLanguages: readonly string[];
@@ -43,6 +45,7 @@ export type PlaybackSourceGroupView = {
   readonly sourceIds: readonly string[];
   readonly streamIds: readonly string[];
   readonly nativeLabels: readonly string[];
+  readonly artwork?: ProviderArtworkInfo;
   readonly presentation?: StreamPresentation;
   readonly audioLanguages: readonly string[];
   readonly subtitleLanguages: readonly string[];
@@ -126,6 +129,7 @@ export type PlaybackTraceSummaryView = {
 export type PlaybackSourceInventoryView = {
   readonly providerId: ProviderId;
   readonly status: "resolved" | "exhausted";
+  readonly artwork?: ProviderArtworkInfo;
   readonly selected?: PlaybackSourceSelectionView;
   readonly sourceGroups: readonly PlaybackSourceGroupView[];
   readonly languageOptions: readonly PlaybackLanguageOptionView[];

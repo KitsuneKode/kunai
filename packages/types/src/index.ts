@@ -213,6 +213,18 @@ export interface ProviderVariantCandidate {
   readonly metadata?: Record<string, unknown>;
 }
 
+export interface ProviderSourceInventory {
+  readonly providerId: ProviderId;
+  readonly selectedStreamId?: string;
+  readonly sources?: readonly ProviderSourceCandidate[];
+  readonly variants?: readonly ProviderVariantCandidate[];
+  readonly streams: readonly StreamCandidate[];
+  readonly subtitles: readonly SubtitleCandidate[];
+  readonly externalIds?: ProviderExternalIds;
+  readonly release?: ProviderReleaseInfo;
+  readonly artwork?: ProviderArtworkInfo;
+}
+
 export type ResolveErrorCode =
   | "provider-unavailable"
   | "unsupported-title"
@@ -406,21 +418,26 @@ export interface ProviderEpisodeOption {
   readonly artwork?: ProviderArtworkInfo;
 }
 
-export interface ProviderResolveResult {
+export interface ProviderResolveResult extends ProviderSourceInventory {
   readonly status: "resolved" | "exhausted";
-  readonly providerId: ProviderId;
-  readonly selectedStreamId?: string;
-  readonly sources?: readonly ProviderSourceCandidate[];
-  readonly variants?: readonly ProviderVariantCandidate[];
-  readonly streams: readonly StreamCandidate[];
-  readonly subtitles: readonly SubtitleCandidate[];
-  readonly externalIds?: ProviderExternalIds;
-  readonly release?: ProviderReleaseInfo;
-  readonly artwork?: ProviderArtworkInfo;
   readonly cachePolicy?: CachePolicy;
   readonly trace: ResolveTrace;
   readonly failures: readonly ProviderFailure[];
   readonly healthDelta?: ProviderHealthDelta;
+}
+
+export function getProviderSourceInventory(result: ProviderResolveResult): ProviderSourceInventory {
+  return {
+    providerId: result.providerId,
+    selectedStreamId: result.selectedStreamId,
+    sources: result.sources,
+    variants: result.variants,
+    streams: result.streams,
+    subtitles: result.subtitles,
+    externalIds: result.externalIds,
+    release: result.release,
+    artwork: result.artwork,
+  };
 }
 
 export function getProviderResolveStatus(

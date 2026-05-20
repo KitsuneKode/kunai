@@ -57,6 +57,7 @@ test("projects anime sub dub and hardsub evidence without merging native labels 
     status: "resolved",
     providerId: "allanime",
     selectedStreamId: "sub-1080",
+    artwork: { posterUrl: "https://image.example/poster.jpg" },
     streams: [
       stream({
         id: "sub-1080",
@@ -67,6 +68,7 @@ test("projects anime sub dub and hardsub evidence without merging native labels 
         audioLanguages: ["ja"],
         hardSubLanguage: "en",
         subtitleDelivery: "hardcoded",
+        artwork: { seekBarVttUrl: "https://cdn.example/seek.vtt" },
         sourceEvidence: [{ nativeLabel: "Sak", serverId: "sak" }],
         languageEvidence: [
           { role: "audio", normalizedLanguage: "ja", nativeLabel: "Japanese" },
@@ -105,6 +107,10 @@ test("projects anime sub dub and hardsub evidence without merging native labels 
   expect(view.selected).toMatchObject({
     streamId: "sub-1080",
     presentation: "sub",
+    artwork: {
+      posterUrl: "https://image.example/poster.jpg",
+      seekBarVttUrl: "https://cdn.example/seek.vtt",
+    },
     audioLanguages: ["ja"],
     subtitleLanguages: ["en"],
     subtitleDelivery: "hardcoded",
@@ -114,6 +120,7 @@ test("projects anime sub dub and hardsub evidence without merging native labels 
     ["Dub server", "available"],
   ]);
   expect(view.sourceGroups[0]?.nativeLabels).toContain("Sak");
+  expect(view.sourceGroups[0]?.artwork?.seekBarVttUrl).toContain("seek.vtt");
   expect(view.languageOptions.find((option) => option.id === "audio:en")).toMatchObject({
     label: "Audio English",
     state: "available",
@@ -286,6 +293,7 @@ test("builds a diagnostics-safe source inventory summary without stream or subti
           sourceId: "source-b",
           qualityLabel: "720p",
           audioLanguages: ["en"],
+          artwork: { seekBarVttUrl: "https://image.example/seek.vtt" },
           url: "https://cdn.example/private-stream.m3u8",
         }),
       ],
@@ -314,6 +322,8 @@ test("builds a diagnostics-safe source inventory summary without stream or subti
     qualityLabel: "720p",
     audioLanguageCount: 1,
     subtitleLanguageCount: 1,
+    hasArtwork: true,
+    hasSeekBarThumbnails: true,
   });
   expect(summary.sourceGroups).toEqual([
     {
@@ -321,6 +331,8 @@ test("builds a diagnostics-safe source inventory summary without stream or subti
       label: "source-b",
       state: "selected",
       nativeLabelCount: 1,
+      hasArtwork: true,
+      hasSeekBarThumbnails: true,
       audioLanguageCount: 1,
       subtitleLanguageCount: 1,
       candidateCount: 1,

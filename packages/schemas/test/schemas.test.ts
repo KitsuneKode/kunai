@@ -8,6 +8,7 @@ import {
   providerLanguageEvidenceSchema,
   providerReleaseInfoSchema,
   providerSourceCandidateSchema,
+  providerSourceInventorySchema,
   providerTraceEventSchema,
   providerVariantCandidateSchema,
   resolveTraceSchema,
@@ -110,6 +111,71 @@ test("provider source and variant schemas model mirror inventory without forcing
   expect(source.kind).toBe("mirror");
   expect(variant.subtitleLanguages).toContain("en");
   expect(variant.subtitleDelivery).toBe("embedded");
+});
+
+test("provider source inventory schema validates selected streams subtitles and artwork together", () => {
+  const inventory = providerSourceInventorySchema.parse({
+    providerId: "miruro",
+    selectedStreamId: "stream-1",
+    sources: [
+      {
+        id: "kiwi",
+        providerId: "miruro",
+        kind: "mirror",
+        label: "Kiwi",
+        status: "selected",
+        confidence: 0.9,
+      },
+    ],
+    streams: [
+      {
+        id: "stream-1",
+        providerId: "miruro",
+        sourceId: "kiwi",
+        url: "https://example.com/master.m3u8",
+        protocol: "hls",
+        qualityLabel: "1080p",
+        audioLanguages: ["ja"],
+        subtitleLanguages: ["en"],
+        confidence: 0.92,
+        cachePolicy,
+      },
+    ],
+    subtitles: [
+      {
+        id: "sub-en",
+        providerId: "miruro",
+        sourceId: "kiwi",
+        url: "https://example.com/subs.vtt",
+        language: "en",
+        source: "provider",
+        confidence: 0.9,
+        cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+      },
+    ],
+    artwork: { seekBarVttUrl: "https://example.com/seek.vtt" },
+  });
+
+  expect(inventory.selectedStreamId).toBe("stream-1");
+  expect(inventory.streams[0]?.audioLanguages).toEqual(["ja"]);
+  expect(inventory.subtitles[0]?.language).toBe("en");
+  expect(inventory.artwork?.seekBarVttUrl).toContain("seek.vtt");
+});
+
+test("cache policy schema accepts provider metadata ttl class", () => {
+  const parsed = streamCandidateSchema.parse({
+    id: "stream-1",
+    providerId: "allanime",
+    protocol: "hls",
+    confidence: 0.9,
+    cachePolicy: {
+      ttlClass: "provider-metadata",
+      scope: "local",
+      keyParts: ["provider", "allanime", "metadata"],
+    },
+  });
+
+  expect(parsed.cachePolicy.ttlClass).toBe("provider-metadata");
 });
 
 test("provider trace event schema validates live retry and runtime events", () => {

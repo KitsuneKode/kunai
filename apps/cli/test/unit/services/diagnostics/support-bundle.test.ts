@@ -84,6 +84,8 @@ describe("DiagnosticsSupportBundle", () => {
           qualityLabel: "720p",
           audioLanguageCount: 1,
           subtitleLanguageCount: 1,
+          hasArtwork: true,
+          hasSeekBarThumbnails: true,
         },
         sourceGroups: [
           {
@@ -91,6 +93,8 @@ describe("DiagnosticsSupportBundle", () => {
             label: "RiveStream",
             state: "selected",
             nativeLabelCount: 1,
+            hasArtwork: true,
+            hasSeekBarThumbnails: true,
             audioLanguageCount: 1,
             subtitleLanguageCount: 1,
             candidateCount: 1,

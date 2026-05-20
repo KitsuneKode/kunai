@@ -57,7 +57,15 @@ Abort semantics:
 
 Cache inventory before selected stream.
 
-Use `ProviderResolveResult` as the source inventory unit whenever possible. It contains the selected stream plus all discovered candidates.
+Use `ProviderResolveResult` as the persisted source inventory unit whenever possible. It extends
+the shared `ProviderSourceInventory` facade, which contains only provider/playback facts:
+selected stream, discovered sources, variants, stream candidates, subtitle candidates,
+external IDs, release facts, and artwork. Resolve bookkeeping such as trace, failures,
+health deltas, and cache policy stays on `ProviderResolveResult`.
+
+Use the facade when a consumer needs the inventory shape without implying that it owns
+resolve lifecycle state. Keep the database cache storing the full resolve result unless
+we intentionally split trace/failure storage later.
 
 Recommended cache concepts:
 

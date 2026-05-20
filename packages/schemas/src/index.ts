@@ -8,6 +8,7 @@ import type {
   ProviderReleaseInfo,
   ProviderSourceCandidate,
   ProviderSourceEvidence,
+  ProviderSourceInventory,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   ResolveTrace,
@@ -33,6 +34,7 @@ export const cacheTtlClassSchema = z.enum([
   "direct-media-url",
   "subtitle-list",
   "episode-list",
+  "provider-metadata",
   "catalog-static",
   "catalog-trending",
   "provider-health",
@@ -217,6 +219,18 @@ export const providerVariantCandidateSchema = z.object({
   confidence: z.number().min(0).max(1),
   metadata: z.record(z.string(), z.unknown()).optional(),
 }) satisfies z.ZodType<ProviderVariantCandidate>;
+
+export const providerSourceInventorySchema = z.object({
+  providerId: z.string().min(1),
+  selectedStreamId: z.string().min(1).optional(),
+  sources: z.array(providerSourceCandidateSchema).optional(),
+  variants: z.array(providerVariantCandidateSchema).optional(),
+  streams: z.array(streamCandidateSchema),
+  subtitles: z.array(subtitleCandidateSchema),
+  externalIds: providerExternalIdsSchema.optional(),
+  release: providerReleaseInfoSchema.optional(),
+  artwork: providerArtworkInfoSchema.optional(),
+}) satisfies z.ZodType<ProviderSourceInventory>;
 
 export const providerFailureSchema = z.object({
   providerId: z.string().min(1),

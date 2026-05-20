@@ -1,5 +1,6 @@
 import type {
   ProviderFailure,
+  ProviderArtworkInfo,
   ProviderLanguageEvidence,
   ProviderResolveResult,
   ProviderSourceCandidate,
@@ -36,12 +37,16 @@ export type PlaybackSourceInventoryDiagnosticsSummary = {
   > & {
     readonly audioLanguageCount: number;
     readonly subtitleLanguageCount: number;
+    readonly hasArtwork: boolean;
+    readonly hasSeekBarThumbnails: boolean;
   };
   readonly sourceGroups: readonly {
     readonly id: string;
     readonly label: string;
     readonly state: string;
     readonly nativeLabelCount: number;
+    readonly hasArtwork: boolean;
+    readonly hasSeekBarThumbnails: boolean;
     readonly audioLanguageCount: number;
     readonly subtitleLanguageCount: number;
     readonly candidateCount: number;
@@ -95,6 +100,7 @@ export function projectPlaybackSourceInventory(
   return {
     providerId: result.providerId,
     status: result.status,
+    artwork: result.artwork,
     selected: selectedStream ? projectSelectedStream(result, selectedStream) : undefined,
     sourceGroups: projectSourceGroups(result, selectedSourceId),
     languageOptions: projectLanguageOptions(result, selectedStream),
@@ -125,6 +131,8 @@ export function buildPlaybackSourceInventoryDiagnosticsSummary(
           presentation: view.selected.presentation,
           audioLanguageCount: view.selected.audioLanguages.length,
           subtitleLanguageCount: view.selected.subtitleLanguages.length,
+          hasArtwork: Boolean(view.selected.artwork),
+          hasSeekBarThumbnails: Boolean(view.selected.artwork?.seekBarVttUrl),
         }
       : undefined,
     sourceGroups: view.sourceGroups.map((group) => ({
@@ -132,6 +140,8 @@ export function buildPlaybackSourceInventoryDiagnosticsSummary(
       label: group.label,
       state: group.state,
       nativeLabelCount: group.nativeLabels.length,
+      hasArtwork: Boolean(group.artwork),
+      hasSeekBarThumbnails: Boolean(group.artwork?.seekBarVttUrl),
       audioLanguageCount: group.audioLanguages.length,
       subtitleLanguageCount: group.subtitleLanguages.length,
       candidateCount: group.candidateCount,
@@ -194,6 +204,7 @@ function projectSelectedStream(
     streamId: stream.id,
     variantId: stream.variantId,
     qualityLabel: stream.qualityLabel,
+    artwork: mergeArtwork(stream.artwork, result.artwork),
     presentation: stream.presentation,
     audioLanguages: uniqueStrings([
       ...(stream.audioLanguages ?? []),
@@ -229,6 +240,11 @@ function projectSourceGroups(
         ...nativeSourceLabels(stream.sourceEvidence),
       ]),
     ]);
+    const sourceArtwork = mergeArtwork(
+      firstDefined(streams.map((stream) => stream.artwork)),
+      source.artwork,
+      result.artwork,
+    );
     return {
       id: source.id,
       label: source.label ?? source.host ?? nativeLabels[0] ?? source.id,
@@ -237,6 +253,7 @@ function projectSourceGroups(
       sourceIds,
       streamIds: streams.map((stream) => stream.id),
       nativeLabels,
+      artwork: sourceArtwork,
       presentation: firstDefined(streams.map((stream) => stream.presentation)),
       audioLanguages: uniqueStrings([
         ...sourceLanguages(source.languageEvidence, "audio"),
@@ -704,6 +721,27 @@ function firstFailureDetail(failures: readonly ProviderFailure[]): string | unde
 
 function firstDefined<T>(values: readonly (T | undefined)[]): T | undefined {
   return values.find((value): value is T => value !== undefined);
+}
+
+function mergeArtwork(
+  ...artworks: readonly (ProviderArtworkInfo | undefined)[]
+): ProviderArtworkInfo | undefined {
+  const merged: {
+    posterUrl?: string;
+    backdropUrl?: string;
+    thumbnailUrl?: string;
+    seekBarVttUrl?: string;
+  } = {};
+  for (const artwork of artworks) {
+    if (!artwork) continue;
+    if (!merged.posterUrl && artwork.posterUrl) merged.posterUrl = artwork.posterUrl;
+    if (!merged.backdropUrl && artwork.backdropUrl) merged.backdropUrl = artwork.backdropUrl;
+    if (!merged.thumbnailUrl && artwork.thumbnailUrl) merged.thumbnailUrl = artwork.thumbnailUrl;
+    if (!merged.seekBarVttUrl && artwork.seekBarVttUrl) {
+      merged.seekBarVttUrl = artwork.seekBarVttUrl;
+    }
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 function uniqueStrings(values: readonly (string | undefined | null)[]): readonly string[] {

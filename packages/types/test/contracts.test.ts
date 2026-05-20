@@ -13,10 +13,15 @@ import type {
   ProviderReleaseInfo,
   ProviderResolveResult,
   ProviderRuntimeContext,
+  ProviderSourceInventory,
   ProviderTraceEvent,
   ResolveTrace,
 } from "../src/index";
-import { classifyProviderFailure, getProviderResolveStatus } from "../src/index";
+import {
+  classifyProviderFailure,
+  getProviderResolveStatus,
+  getProviderSourceInventory,
+} from "../src/index";
 
 test("provider resolve result requires trace and immutable candidate arrays", () => {
   const trace: ResolveTrace = {
@@ -411,4 +416,59 @@ test("provider metadata v2 contract carries native ids release artwork and langu
   expect(result.release?.providerConfirmed).toBe(true);
   expect(result.streams[0]?.languageEvidence?.[0]?.nativeLabel).toBe("Sub");
   expect(result.artwork?.seekBarVttUrl).toContain("thumbs.vtt");
+});
+
+test("provider source inventory facade preserves playable facts without resolve bookkeeping", () => {
+  const result: ProviderResolveResult = {
+    status: "resolved",
+    providerId: "miruro",
+    selectedStreamId: "stream-1",
+    artwork: { seekBarVttUrl: "https://cdn.example/seek.vtt" },
+    streams: [
+      {
+        id: "stream-1",
+        providerId: "miruro",
+        sourceId: "kiwi",
+        url: "https://cdn.example/master.m3u8",
+        protocol: "hls",
+        qualityLabel: "1080p",
+        audioLanguages: ["ja"],
+        subtitleLanguages: ["en"],
+        artwork: { seekBarVttUrl: "https://cdn.example/seek.vtt" },
+        confidence: 0.9,
+        cachePolicy: {
+          ttlClass: "stream-manifest",
+          scope: "local",
+          keyParts: ["provider", "miruro", "1", "sub"],
+        },
+      },
+    ],
+    subtitles: [],
+    trace: {
+      id: "trace-1",
+      startedAt: "2026-05-19T00:00:00.000Z",
+      title: { id: "anilist:1", kind: "anime", title: "Example" },
+      cacheHit: false,
+      steps: [],
+      failures: [],
+    },
+    failures: [
+      {
+        providerId: "miruro",
+        code: "timeout",
+        message: "A fallback source timed out",
+        retryable: true,
+        at: "2026-05-19T00:00:01.000Z",
+      },
+    ],
+  };
+
+  const inventory: ProviderSourceInventory = getProviderSourceInventory(result);
+
+  expect(inventory.providerId).toBe("miruro");
+  expect(inventory.selectedStreamId).toBe("stream-1");
+  expect(inventory.streams[0]?.qualityLabel).toBe("1080p");
+  expect(inventory.artwork?.seekBarVttUrl).toContain("seek.vtt");
+  expect("failures" in inventory).toBe(false);
+  expect("trace" in inventory).toBe(false);
 });

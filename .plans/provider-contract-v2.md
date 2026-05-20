@@ -4,7 +4,10 @@
 
 **Goal:** Let provider-native IDs, release facts, artwork, source labels, language evidence, and thumbnail metadata reach the CLI without redundant third-party lookups.
 
-**Architecture:** Expand existing contracts additively. Do not introduce a parallel `ProviderSourceInventory` if `ProviderResolveResult`, `StreamCandidate`, `ProviderSourceCandidate`, and `ProviderVariantCandidate` can carry the same information cleanly.
+**Architecture:** Expand existing contracts additively. `ProviderResolveResult` remains the
+persisted source-inventory unit, but it now extends a lightweight
+`ProviderSourceInventory` facade so UI/download/recommendation consumers can depend on the
+inventory facts without also depending on resolve lifecycle bookkeeping.
 
 **Tech Stack:** `@kunai/types`, `@kunai/schemas`, `@kunai/core`, `@kunai/providers`, `apps/cli`.
 
@@ -63,6 +66,7 @@ Add optional structured fields:
 
 - [x] Add `ProviderExternalIds`, `ProviderReleaseInfo`, `ProviderArtworkInfo`, and language/source evidence types in `packages/types/src/index.ts`.
 - [x] Add optional fields to `TitleIdentity`, `ProviderSearchResult`, `ProviderEpisodeOption`, `ProviderResolveResult`, `StreamCandidate`, `ProviderSourceCandidate`, and `ProviderVariantCandidate` only where useful.
+- [x] Add a lightweight `ProviderSourceInventory` facade and helper for consumers that need only inventory facts, not trace/failure/health bookkeeping.
 - [x] Preserve all existing fields.
 - [x] Run `bun run --cwd packages/types test`.
 - [x] Run `bun run --cwd packages/types typecheck`.
