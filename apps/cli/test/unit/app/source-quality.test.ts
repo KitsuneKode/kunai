@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   applyPreferredStreamSelection,
+  buildPlaybackControlSummary,
   buildMediaTrackPickerOptions,
   buildQualityPickerOptions,
   buildSourcePickerOptions,
@@ -187,6 +188,47 @@ test("buildQualityPickerOptions exposes audio and hard-subtitle language details
 test("buildQualityPickerOptions shows soft subtitles linked to the selected variant", () => {
   const options = buildQualityPickerOptions(streamWithSubtitles);
   expect(options[0]?.detail).toBe("hls  ·  m3u8  ·  audio ja  ·  hardsub en  ·  soft subs en");
+});
+
+test("buildPlaybackControlSummary exposes compact hybrid UI affordances", () => {
+  const summary = buildPlaybackControlSummary({
+    ...streamWithSubtitles,
+    subtitle: "https://subs.example/en.vtt",
+  });
+
+  expect(summary).toMatchObject({
+    hasInventory: true,
+    sourceCount: 2,
+    streamCount: 3,
+    qualityCount: 3,
+    audioLanguages: ["ja", "en"],
+    hardSubLanguages: ["en"],
+    softSubtitleLanguages: ["en", "fr"],
+    showSourceControl: true,
+    showQualityControl: true,
+    showMediaTrackControl: true,
+    summary: "vidking",
+  });
+  expect(summary.detail).toContain("2 sources");
+  expect(summary.detail).toContain("quality 1080p/720p/480p");
+  expect(summary.detail).toContain("audio ja/en");
+  expect(summary.detail).toContain("soft subs en/fr");
+});
+
+test("buildPlaybackControlSummary keeps one-off direct streams compact", () => {
+  expect(buildPlaybackControlSummary(null)).toEqual({
+    hasInventory: false,
+    sourceCount: 0,
+    streamCount: 0,
+    qualityCount: 0,
+    audioLanguages: [],
+    hardSubLanguages: [],
+    softSubtitleLanguages: [],
+    showSourceControl: false,
+    showQualityControl: false,
+    showMediaTrackControl: false,
+    summary: "direct stream",
+  });
 });
 
 test("buildStreamPickerOptions combines source quality audio and subtitle details", () => {

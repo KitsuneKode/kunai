@@ -25,6 +25,21 @@ type StreamOption = {
   readonly detail?: string;
 };
 
+export type PlaybackControlSummary = {
+  readonly hasInventory: boolean;
+  readonly sourceCount: number;
+  readonly streamCount: number;
+  readonly qualityCount: number;
+  readonly audioLanguages: readonly string[];
+  readonly hardSubLanguages: readonly string[];
+  readonly softSubtitleLanguages: readonly string[];
+  readonly showSourceControl: boolean;
+  readonly showQualityControl: boolean;
+  readonly showMediaTrackControl: boolean;
+  readonly summary: string;
+  readonly detail?: string;
+};
+
 export type MediaTrackPickerOption = {
   readonly value: string;
   readonly label: string;
@@ -198,6 +213,73 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
     })
     .sort((left, right) => right.rank - left.rank)
     .map(({ rank: _rank, ...option }) => option);
+}
+
+export function buildPlaybackControlSummary(stream: StreamInfo | null): PlaybackControlSummary {
+  const result = stream?.providerResolveResult;
+  if (!stream || !result) {
+    return {
+      hasInventory: false,
+      sourceCount: 0,
+      streamCount: 0,
+      qualityCount: 0,
+      audioLanguages: [],
+      hardSubLanguages: [],
+      softSubtitleLanguages: [],
+      showSourceControl: false,
+      showQualityControl: false,
+      showMediaTrackControl: false,
+      summary: "direct stream",
+    };
+  }
+
+  const projection = buildPlaybackSourceInventoryView(result, {
+    selectedSubtitleUrl: stream.subtitle,
+  });
+  const playableStreams = result.streams.filter(
+    (candidate) => typeof candidate.url === "string" && candidate.url.length > 0,
+  );
+  const qualityLabels = uniqueStrings(
+    playableStreams.map((candidate) => candidate.qualityLabel ?? candidate.container),
+  );
+  const audioLanguages = uniqueStrings(
+    playableStreams.flatMap((candidate) => candidate.audioLanguages ?? []),
+  );
+  const hardSubLanguages = uniqueStrings(
+    playableStreams.map((candidate) => candidate.hardSubLanguage),
+  );
+  const softSubtitleLanguages = uniqueStrings(
+    collectSubtitleTracks(stream).map((subtitle) => subtitle.language),
+  );
+  const sourceCount = projection.sourceGroups.length;
+  const languageChoiceCount =
+    audioLanguages.length + hardSubLanguages.length + softSubtitleLanguages.length;
+
+  const detail = [
+    sourceCount > 0 ? `${sourceCount} source${sourceCount === 1 ? "" : "s"}` : null,
+    qualityLabels.length > 0 ? `quality ${formatList(qualityLabels)}` : null,
+    audioLanguages.length > 0 ? `audio ${formatList(audioLanguages)}` : null,
+    hardSubLanguages.length > 0 ? `hardsub ${formatList(hardSubLanguages)}` : null,
+    softSubtitleLanguages.length > 0 ? `soft subs ${formatList(softSubtitleLanguages)}` : null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join("  ·  ");
+
+  return {
+    hasInventory: true,
+    sourceCount,
+    streamCount: playableStreams.length,
+    qualityCount: qualityLabels.length,
+    audioLanguages,
+    hardSubLanguages,
+    softSubtitleLanguages,
+    showSourceControl: sourceCount > 1,
+    showQualityControl: qualityLabels.length > 1 || playableStreams.length > 1,
+    showMediaTrackControl:
+      languageChoiceCount > 1 || softSubtitleLanguages.length > 0 || Boolean(stream.subtitle),
+    summary: result.providerId,
+    detail: detail || undefined,
+  };
 }
 
 export function applyPreferredStreamSelection(
@@ -380,6 +462,10 @@ function collectSubtitleTracks(stream: StreamInfo): readonly SubtitleTrack[] {
 
 function uniqueStrings(values: readonly (string | undefined)[]): readonly string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function formatList(values: readonly string[]): string {
+  return `${values.slice(0, 3).join("/")}${values.length > 3 ? "+" : ""}`;
 }
 
 function describeProjectedSourceDetail(
