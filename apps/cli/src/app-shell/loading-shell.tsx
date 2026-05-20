@@ -19,7 +19,7 @@ import {
 import type { StageRailItem } from "./loading-shell-runtime";
 import type { PosterResult, PosterState } from "./poster-types";
 import { ShellFrame } from "./shell-frame";
-import { ContextStrip, DetailLine, selectFooterActions } from "./shell-primitives";
+import { DetailLine, selectFooterActions } from "./shell-primitives";
 import { APP_LABEL, palette } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 import { useViewportPolicy } from "./use-viewport-policy";
@@ -438,7 +438,6 @@ export const LoadingShell = React.memo(function LoadingShell({
   const loadingIssue = normalizeLoadingIssue(state.latestIssue);
   const stageRailItems = renderStageRail(activeStage, loadingIssue);
   const providerDetail = normalizeProviderDetail(state.details);
-  const providerLine = formatLoadingProviderLine(state);
   const subtitleReady = Boolean(
     state.subtitleStatus?.toLowerCase().includes("attached") ||
     state.subtitleStatus?.toLowerCase().includes("ready"),

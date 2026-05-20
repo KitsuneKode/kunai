@@ -8,7 +8,8 @@ import { palette } from "./shell-theme";
 export type { ErrorScenario } from "@/domain/playback/playback-problem";
 
 export function RootIdleShell({ state }: { state: SessionState }) {
-  const hasSession = !!state.currentTitle;
+  const currentTitle = state.currentTitle;
+  const hasSession = !!currentTitle;
   const currentEpisode = state.currentEpisode
     ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
         state.currentEpisode.episode,
@@ -25,7 +26,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
           <Box marginTop={1}>
             <Text color={palette.amber}>{"⏸  "}</Text>
             <Text color="white" bold>
-              {state.currentTitle!.name}
+              {currentTitle?.name ?? "Current session"}
             </Text>
             {currentEpisode ? <Text color={palette.teal}>{`  ${currentEpisode}`}</Text> : null}
           </Box>

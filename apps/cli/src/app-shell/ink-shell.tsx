@@ -2627,23 +2627,37 @@ function BrowseShell<T>({
           </Box>
         ) : null}
 
-        <InputField
-          label="Search title"
-          value={query}
-          onChange={updateQuery}
-          onSubmit={handleQuerySubmit}
-          placeholder={placeholder}
-          focus={!commandMode}
-          hint={
-            commandMode
-              ? undefined
-              : "Tokens: type:series year:2008 rating:8 · /filters for guided chips"
-          }
-          maxWidth={innerWidth}
-          onRedraw={clearShellScreen}
-        />
+        {isCalendarView ? (
+          <Box marginTop={1} flexDirection="row">
+            <Text color={palette.teal}>◈ </Text>
+            <Text color={palette.text}>schedule</Text>
+            <Text color={palette.dim} dimColor>
+              {"  ·  ← → browse days  ·  1–4 filter type  ·  / commands"}
+            </Text>
+          </Box>
+        ) : (
+          <InputField
+            label="Search title"
+            value={query}
+            onChange={updateQuery}
+            onSubmit={handleQuerySubmit}
+            placeholder={placeholder}
+            focus={!commandMode}
+            hint={
+              commandMode
+                ? undefined
+                : "Tokens: type:series year:2008 rating:8 · /filters for guided chips"
+            }
+            maxWidth={innerWidth}
+            onRedraw={clearShellScreen}
+          />
+        )}
 
-        {queryDirty && displayOptions.length > 0 && !ultraCompact && !commandMode ? (
+        {queryDirty &&
+        displayOptions.length > 0 &&
+        !ultraCompact &&
+        !commandMode &&
+        !isCalendarView ? (
           <Text color={palette.gray}>Query changed · Press Enter to refresh results</Text>
         ) : null}
 

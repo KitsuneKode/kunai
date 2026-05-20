@@ -660,6 +660,16 @@ async function chooseSearchFilterChip(currentQuery: string): Promise<string | nu
         detail: "Edit genre after insertion",
       },
       {
+        value: "audio:ja",
+        label: "Audio language",
+        detail: "Prefer a normalized audio language such as ja, en, hi, or de",
+      },
+      {
+        value: "subtitles:en",
+        label: "Subtitle language",
+        detail: "Prefer subtitle or hard-sub language, using ISO codes where available",
+      },
+      {
         value: "rating:8",
         label: "High rating",
         detail: "Minimum rating out of 10",

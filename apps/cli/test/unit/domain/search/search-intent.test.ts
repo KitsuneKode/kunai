@@ -44,8 +44,8 @@ describe("SearchIntent", () => {
       watched: "unwatched",
       downloaded: false,
       release: "this-week",
-      audio: "ja",
-      subtitles: "en",
+      audio: " JA ",
+      subtitles: " EN ",
       provider: "allanime",
       sort: "rating",
     });

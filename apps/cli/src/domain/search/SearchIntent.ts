@@ -168,12 +168,16 @@ function normalizeFilters(filters: SearchIntentFilters): SearchIntentFilters {
     typeof filters.minRating === "number" && Number.isFinite(filters.minRating)
       ? Math.min(10, Math.max(0, filters.minRating))
       : undefined;
+  const normalizedAudio = filters.audio?.trim().toLowerCase() || undefined;
+  const normalizedSubtitles = filters.subtitles?.trim().toLowerCase() || undefined;
 
   return {
     ...filters,
     ...(normalizedGenres && normalizedGenres.length > 0 ? { genres: normalizedGenres } : {}),
     ...(normalizedMinRating === undefined ? {} : { minRating: normalizedMinRating }),
     ...(normalizedYear === undefined ? {} : { year: normalizedYear }),
+    ...(normalizedAudio ? { audio: normalizedAudio } : {}),
+    ...(normalizedSubtitles ? { subtitles: normalizedSubtitles } : {}),
   };
 }
 

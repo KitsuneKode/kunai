@@ -959,22 +959,19 @@ export function OverlayPanel({
                 </Text>
               </>
             ) : overlay.type === "history-picker" && overlay.filterMode ? (
-              <Box>
-                <Text color={palette.gray}>Tab: </Text>
+              <Box flexDirection="row">
                 {(["all", "watching", "completed"] as const).map((mode) => {
                   const active = overlay.filterMode === mode;
                   return (
-                    <Text key={mode}>
-                      {active ? (
-                        <Text bold color={palette.green}>
-                          {" [" + mode + "] "}
-                        </Text>
-                      ) : (
-                        <Text color={palette.gray}> {mode} </Text>
-                      )}
-                    </Text>
+                    <Box key={mode} marginRight={3} flexDirection="column">
+                      <Text color={active ? palette.amber : palette.muted}>{mode}</Text>
+                      {active ? <Text color={palette.amber}>{"─".repeat(mode.length)}</Text> : null}
+                    </Box>
                   );
                 })}
+                <Text color={palette.dim} dimColor>
+                  Tab cycle
+                </Text>
               </Box>
             ) : (
               <Text color={palette.gray}>
@@ -997,15 +994,15 @@ export function OverlayPanel({
               if (typeof option.value === "string" && option.value.startsWith("section:")) {
                 const isSettings =
                   overlay.type === "settings" || overlay.type === "settings-choice";
-                const headerLabel = isSettings
-                  ? option.label.toUpperCase()
-                  : option.label.toUpperCase();
+                const isHistory = overlay.type === "history-picker";
+                const headerLabel = option.label.toUpperCase();
+                const usesAccent = isSettings || isHistory;
                 return (
                   <Box key={`section-${option.value}`} marginTop={1} flexDirection="column">
-                    <Text color={isSettings ? palette.amber : palette.dim} bold={isSettings}>
+                    <Text color={usesAccent ? palette.amber : palette.dim} bold={usesAccent}>
                       {headerLabel}
                     </Text>
-                    {isSettings ? (
+                    {usesAccent ? (
                       <Text color={palette.amber}>{"─".repeat(headerLabel.length)}</Text>
                     ) : null}
                   </Box>

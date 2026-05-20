@@ -101,17 +101,18 @@ export function CalendarDayStrip({
         {days.map((day) => {
           const isSelected = selectedDayKey === day.key;
           const showTodayMarker = day.isToday;
+          const activeColor = day.isToday ? palette.amber : palette.teal;
           return (
             <Box key={day.key} marginRight={2} flexDirection="column">
               <Text
-                color={isSelected ? palette.amber : showTodayMarker ? palette.amber : palette.muted}
+                color={isSelected ? activeColor : showTodayMarker ? palette.amber : palette.muted}
                 bold={isSelected || showTodayMarker}
               >
                 {showTodayMarker ? "◉ " : isSelected ? "● " : "  "}
                 {day.label}
               </Text>
               {isSelected ? (
-                <Text color={palette.amber}>{"─".repeat(Math.min(day.label.length + 2, 12))}</Text>
+                <Text color={activeColor}>{"─".repeat(Math.min(day.label.length + 2, 12))}</Text>
               ) : null}
             </Box>
           );
