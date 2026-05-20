@@ -8,6 +8,8 @@
 
 **Tech Stack:** Bun, TypeScript, Ink, `bun:sqlite`, `@kunai/storage`, existing `SessionStateManager`, existing `PlaylistRepository`, existing `DownloadService`, existing diagnostics/correlation services.
 
+**Current implementation note — 2026-05-20:** Core foundations are now in code even though many historical checklist boxes below still show their original task text. Implemented pieces include shared media actions, queue recovery, notification storage/service, followed-title refresh planning, durable playlist import/export, `QueuePlanner`, `BackgroundWorkScheduler`, recommendation stale-on-error fallback, and resolve commit policy. The background scheduler coalesces overlapping drains and reports aborts as skipped work, not failed work. Treat unchecked boxes below as historical execution detail unless the plan truth index says the code is still missing.
+
 ---
 
 ## Product Principles

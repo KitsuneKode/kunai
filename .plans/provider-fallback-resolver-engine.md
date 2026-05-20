@@ -16,8 +16,8 @@
 SLICE_ID: P1
 SLICE_STATUS: in-progress
 SLICE_OWNER: codex
-SLICE_LAST_UPDATED: 2026-05-19
-SLICE_CURRENT_TASK: P1-T4
+SLICE_LAST_UPDATED: 2026-05-20
+SLICE_CURRENT_TASK: P1-T5
 SLICE_BLOCKERS: none
 ```
 
@@ -238,24 +238,26 @@ The result type must include `selected`, `attempts`, `events`, and `fallbackRequ
 
 ### P1-T4: Migrate One Provider Behind The Engine
 
-- [ ] Start with `allmanga` because its sub/dub/server split is the clearest.
-- [ ] Convert provider-local server ordering into cycle candidates.
-- [ ] Preserve existing successful stream output.
-- [ ] Preserve ani-cli parity behavior.
-- [ ] Add fixture-backed tests before behavior changes.
-- [ ] Run `bun run --cwd packages/providers test`.
-- [ ] Run `bun run --cwd apps/cli test:unit`.
+- [x] Start with `allmanga` because its sub/dub/server split is the clearest.
+- [x] Convert provider-local server ordering into cycle candidates.
+- [x] Preserve existing successful stream output.
+- [x] Preserve ani-cli parity behavior.
+- [x] Add fixture-backed tests before behavior changes.
+- [x] Run `bun run --cwd packages/providers test`.
+- [x] Run `bun run --cwd apps/cli test:unit`.
 - [ ] Commit with message `refactor(providers): route allmanga source cycling through shared engine`.
+  - Implementation is present in the worktree; commit split is intentionally left as repository hygiene because this branch already contains unrelated dirty files.
 
 ### P1-T5: Migrate Series/Movie Providers
 
-- [ ] Convert `vidking`, `rivestream`, and `miruro` only after fixtures capture their source/server/language semantics.
-- [ ] Preserve source names like `FlowCast`, `HindiCast`, `kiwi`, and provider-native labels in metadata.
-- [ ] Normalize logic fields separately from labels.
+- [x] Convert `vidking`, `rivestream`, and `miruro` only after fixtures capture their source/server/language semantics.
+- [x] Preserve source names like `FlowCast`, `HindiCast`, `kiwi`, and provider-native labels in metadata.
+- [x] Normalize logic fields separately from labels.
 - [ ] Commit each provider separately:
   - `refactor(providers): route vidking source cycling through shared engine`
   - `refactor(providers): route rivestream source cycling through shared engine`
   - `refactor(providers): route miruro source cycling through shared engine`
+  - Implementations are present in the worktree; split commits should stage only the provider files touched by each provider.
 
 ## Commit Boundaries
 
