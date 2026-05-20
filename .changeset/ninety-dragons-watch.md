@@ -2,8 +2,25 @@
 "@kitsunekode/kunai": minor
 ---
 
-Add the foundation for Kunai's local attention layer: shared media actions, recoverable queue sessions, local notification storage, follow/mute preferences, durable playlist storage, and safe playlist import/export helpers.
+Kunai 0.2.0 bundles the beta shell, playback, provider, and offline work landed since 0.1.4.
 
-The notification inbox now has explicit action rows, history and browse rows can be queued without replacing playback, post-playback recommendation picks can be queued with number keys and an explicit details/download action panel, `/playlist` can import/export safe playlist JSON, and the experimental provider availability worker is wired as a cancellable no-network-by-default planning scaffold.
+**Playback and reliability**
 
-The new contracts keep notifications, queues, and playlist exports identity-based so raw stream URLs, provider headers, cookies, tokens, and local paths do not leak into shareable or long-lived user data.
+- Persistent mpv session with clearer playback supervision, recovery modes, dead-stream guards, and provider fallback policy.
+- During playback, the shell now shows a compact facts strip (source inventory, quality/audio/sub tracks, autoplay/autoskip state) plus a short live-key legend so controls are visible without opening the command palette.
+- Source inventory projection for stream, source, quality, and media-track pickers; playback reliability gates and diagnostics correlation.
+
+**Lists, sync, and attention**
+
+- Watchlist, playlists, stats, sync handoffs, notification inbox, queue recovery, and queueable post-playback recommendations.
+- Safe playlist import/export and identity-based notification/queue contracts (no raw stream URLs in durable exports).
+
+**Shell and discover**
+
+- Launch redesign surfaces: post-play hierarchy, loading stages, calendar/discover polish, viewport resize blocker, and calmer footer/command palette behavior (browse search layout unchanged).
+- Onboarding slides, history grouping, continue-watching shelf, and expanded settings section intent copy so choices are harder to misread.
+
+**Providers and offline**
+
+- Provider metadata v2, cycle engine, evidence fixtures, and normalized source inventory across direct providers.
+- Download sidecar repair states, repair-all sweep, and download metadata that preserves selected source/quality on enqueue.

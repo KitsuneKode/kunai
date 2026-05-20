@@ -8,6 +8,8 @@ import {
   buildSourcePickerOptions,
   buildStreamPickerOptions,
   decodeMediaTrackPickerSelection,
+  formatPlaybackSessionFactsStrip,
+  formatPlaybackSessionKeysHint,
   isCurrentStreamSelection,
   streamSelectionFromSource,
   streamSelectionFromStream,
@@ -213,6 +215,41 @@ test("buildPlaybackControlSummary exposes compact hybrid UI affordances", () => 
   expect(summary.detail).toContain("quality 1080p/720p/480p");
   expect(summary.detail).toContain("audio ja/en");
   expect(summary.detail).toContain("soft subs en/fr");
+});
+
+test("formatPlaybackSessionFactsStrip surfaces inventory and session toggles", () => {
+  const strip = formatPlaybackSessionFactsStrip({
+    stream: streamWithSubtitles,
+    autoplayPaused: false,
+    autoskipPaused: true,
+    canToggleAutoplay: true,
+    stopAfterCurrent: true,
+    isSeries: true,
+  });
+
+  expect(strip).toContain("2 sources");
+  expect(strip).toContain("autoplay on");
+  expect(strip).toContain("autoskip paused");
+  expect(strip).toContain("stops after this episode");
+});
+
+test("formatPlaybackSessionKeysHint only advertises source and quality when alternatives exist", () => {
+  const hint = formatPlaybackSessionKeysHint({
+    stream: streamWithSubtitles,
+    canToggleAutoplay: true,
+    hasNextEpisode: true,
+    hasPreviousEpisode: false,
+    isSeries: true,
+    stopAfterCurrent: false,
+  });
+
+  expect(hint).toContain("q stop");
+  expect(hint).toContain("n next");
+  expect(hint).toContain("p —");
+  expect(hint).toContain("k tracks");
+  expect(hint).toContain("o source");
+  expect(hint).toContain("v quality");
+  expect(hint).toContain("/ commands");
 });
 
 test("buildPlaybackControlSummary keeps one-off direct streams compact", () => {

@@ -631,6 +631,24 @@ export const LoadingShell = React.memo(function LoadingShell({
                       {state.subtitle}
                     </Text>
                   ) : null}
+                  {state.playbackFactsStrip ? (
+                    <Box marginTop={1}>
+                      <Text color={palette.teal}>{state.playbackFactsStrip}</Text>
+                    </Box>
+                  ) : null}
+                  {state.playbackKeysHint ? (
+                    <Box marginTop={state.playbackFactsStrip ? 0 : 1}>
+                      <Text color={palette.dim} dimColor>
+                        {state.playbackKeysHint}
+                      </Text>
+                    </Box>
+                  ) : state.controlHint ? (
+                    <Box marginTop={1}>
+                      <Text color={palette.dim} dimColor>
+                        {state.controlHint}
+                      </Text>
+                    </Box>
+                  ) : null}
                   {state.bufferHealth === "stalled" || state.bufferHealth === "buffering" ? (
                     <Box marginTop={1}>
                       <BufferHealthBadge health={state.bufferHealth} />

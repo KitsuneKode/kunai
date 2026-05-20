@@ -282,6 +282,80 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
   };
 }
 
+export type PlaybackSessionControlInput = {
+  readonly stream: StreamInfo | null;
+  readonly autoplayPaused: boolean;
+  readonly autoskipPaused: boolean;
+  readonly canToggleAutoplay: boolean;
+  readonly stopAfterCurrent?: boolean;
+  readonly isSeries?: boolean;
+};
+
+/** Compact inventory + session facts for the playback context strip (no key legend). */
+export function formatPlaybackSessionFactsStrip(input: PlaybackSessionControlInput): string {
+  const control = buildPlaybackControlSummary(input.stream);
+  const parts: string[] = [];
+
+  if (control.detail) {
+    parts.push(control.detail);
+  } else if (control.summary) {
+    parts.push(control.summary);
+  }
+
+  if (input.canToggleAutoplay) {
+    parts.push(input.autoplayPaused ? "autoplay paused" : "autoplay on");
+  }
+  parts.push(input.autoskipPaused ? "autoskip paused" : "autoskip on");
+
+  if (input.isSeries && input.stopAfterCurrent) {
+    parts.push("stops after this episode");
+  }
+
+  return parts.join("  ·  ");
+}
+
+export type PlaybackSessionKeysInput = {
+  readonly stream: StreamInfo | null;
+  readonly canToggleAutoplay: boolean;
+  readonly hasNextEpisode: boolean;
+  readonly hasPreviousEpisode: boolean;
+  readonly isSeries: boolean;
+  readonly stopAfterCurrent: boolean;
+};
+
+/** Short live-key legend shown under playback facts; expanded keys only when useful. */
+export function formatPlaybackSessionKeysHint(input: PlaybackSessionKeysInput): string {
+  const control = buildPlaybackControlSummary(input.stream);
+  const keys = ["q stop"];
+
+  if (input.isSeries) {
+    keys.push(input.hasNextEpisode ? "n next" : "n —");
+    keys.push(input.hasPreviousEpisode ? "p prev" : "p —");
+    keys.push(input.stopAfterCurrent ? "x resume chain" : "x stop after ep");
+  }
+
+  if (input.canToggleAutoplay) {
+    keys.push("a autoplay");
+  }
+  keys.push("u autoskip");
+
+  if (control.showMediaTrackControl) {
+    keys.push("k tracks");
+  }
+  if (control.showSourceControl) {
+    keys.push("o source");
+  }
+  if (control.showQualityControl) {
+    keys.push("v quality");
+  }
+  if (input.isSeries) {
+    keys.push("e episodes");
+  }
+
+  keys.push("/ commands");
+  return keys.join("  ·  ");
+}
+
 export function applyPreferredStreamSelection(
   stream: StreamInfo,
   selection: StreamSelectionIntent,

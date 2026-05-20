@@ -8,6 +8,8 @@ import {
   buildQualityPickerOptions,
   buildSourcePickerOptions,
   decodeMediaTrackPickerSelection,
+  formatPlaybackSessionFactsStrip,
+  formatPlaybackSessionKeysHint,
   isCurrentStreamSelection,
   streamSelectionFromSource,
   streamSelectionFromStream,
@@ -1129,21 +1131,33 @@ function AppRoot({ container }: { container: Container }) {
                       : playbackTelemetrySnapshot
                         ? "healthy"
                         : undefined,
-                stopHint:
+                playbackFactsStrip:
                   state.playbackStatus === "playing" ||
                   state.playbackStatus === "buffering" ||
                   state.playbackStatus === "seeking" ||
                   state.playbackStatus === "stalled"
-                    ? state.currentTitle?.type === "series"
-                      ? `q stop  ·  ${canGoNext ? "n next" : "n unavailable"}  ·  ${canGoPrevious ? "p previous" : "p unavailable"}  ·  ${state.stopAfterCurrent ? "x resume chain" : "x stop after current"}`
-                      : "q stop"
+                    ? formatPlaybackSessionFactsStrip({
+                        stream: state.stream,
+                        autoplayPaused: state.autoplaySessionPaused,
+                        autoskipPaused: state.autoskipSessionPaused,
+                        canToggleAutoplay,
+                        stopAfterCurrent: state.stopAfterCurrent,
+                        isSeries: state.currentTitle?.type === "series",
+                      })
                     : undefined,
-                controlHint:
+                playbackKeysHint:
                   state.playbackStatus === "playing" ||
                   state.playbackStatus === "buffering" ||
                   state.playbackStatus === "seeking" ||
                   state.playbackStatus === "stalled"
-                    ? `${canToggleAutoplay ? (state.autoplaySessionPaused ? "a resume autoplay" : "a pause autoplay") : "a unavailable"}  ·  u ${state.autoskipSessionPaused ? "resume autoskip" : "pause autoskip"}  ·  e episodes  ·  k streams  ·  d download  ·  r recover`
+                    ? formatPlaybackSessionKeysHint({
+                        stream: state.stream,
+                        canToggleAutoplay,
+                        hasNextEpisode: canGoNext,
+                        hasPreviousEpisode: canGoPrevious,
+                        isSeries: state.currentTitle?.type === "series",
+                        stopAfterCurrent: state.stopAfterCurrent,
+                      })
                     : undefined,
                 commands: resolveCommandContext(state, "activePlayback"),
                 footerMode: "minimal",

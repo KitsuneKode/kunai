@@ -352,18 +352,26 @@ export function buildSettingsOptions(
       : "ready to connect. Connect now to verify local Discord IPC.");
 
   return [
-    { value: "section:general", label: "General", detail: "Startup and shell chrome" },
+    {
+      value: "section:general",
+      label: "General",
+      detail: "Launch mode and how much shortcut help the shell shows",
+    },
     {
       value: "defaultMode",
       label: `▸ Default startup mode  ·  ${config.defaultMode}`,
-      detail: "Series or anime when the app launches",
+      detail: "First catalog after launch: series/TV or anime (does not change mid-session mode)",
     },
     {
       value: "footerHints",
       label: `▸ Footer hints  ·  ${config.footerHints}`,
-      detail: "Detailed keeps two lines, minimal keeps only the task line",
+      detail: "Detailed = footer shows key legend; minimal = task line only during playback",
     },
-    { value: "section:discover", label: "Discover", detail: "Home recommendations and surprise" },
+    {
+      value: "section:discover",
+      label: "Discover",
+      detail: "Home recommendations, /random, and startup discover tray",
+    },
     {
       value: "discoverShowOnStartup",
       label: `Discover on startup  ·  ${config.discoverShowOnStartup ? "on" : "off"}`,
@@ -384,18 +392,26 @@ export function buildSettingsOptions(
       label: `Post-playback recommendations  ·  ${config.recommendationRailEnabled ? "on" : "off"}`,
       detail: "Show a compact recommendation rail after finishing playback",
     },
-    { value: "section:providers", label: "Providers", detail: "Default stream sources" },
+    {
+      value: "section:providers",
+      label: "Providers",
+      detail: "Default resolver used before per-title overrides",
+    },
     {
       value: "provider",
       label: `▸ Default provider  ·  ${config.provider}`,
-      detail: "Movies and series provider",
+      detail: "Movies and series: used on new searches until you pick another provider",
     },
     {
       value: "animeProvider",
       label: `▸ Anime provider  ·  ${config.animeProvider}`,
-      detail: "Default anime source",
+      detail: "Anime mode default: used on new anime searches until changed in-session",
     },
-    { value: "section:language", label: "Language", detail: "Audio and subtitle preferences" },
+    {
+      value: "section:language",
+      label: "Language",
+      detail: "Preferred audio/subtitle tracks when a provider exposes choices",
+    },
     {
       value: "animeAudio",
       label: `▸ Anime audio  ·  ${config.animeLanguageProfile.audio}`,
@@ -431,7 +447,11 @@ export function buildSettingsOptions(
       label: `▸ Anime title names  ·  ${config.animeTitlePreference}`,
       detail: "Choose English, Romaji, native, or provider titles in anime search",
     },
-    { value: "section:playback", label: "Playback", detail: "Autoplay, resume, skips, downloads" },
+    {
+      value: "section:playback",
+      label: "Playback",
+      detail: "Autoplay chain, intro skip, recovery, memory panel, and offline downloads",
+    },
     {
       value: "showMemory",
       label: `Memory panel  ·  ${config.showMemory ? "pinned after m" : "temporary after m"}`,

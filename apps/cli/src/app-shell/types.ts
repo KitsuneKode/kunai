@@ -168,6 +168,10 @@ export type LoadingShellState = {
   latestIssue?: string | null;
   stopHint?: string;
   controlHint?: string;
+  /** Inventory + autoplay/autoskip facts for the playing context strip. */
+  playbackFactsStrip?: string;
+  /** Compact live-key legend under playback facts. */
+  playbackKeysHint?: string;
   onCommandAction?: (action: ShellAction) => void;
   commands?: readonly ResolvedAppCommand[];
   footerMode?: ShellFooterMode;
