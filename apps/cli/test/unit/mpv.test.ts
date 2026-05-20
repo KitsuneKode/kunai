@@ -5,6 +5,7 @@ import {
   collectAdditionalSubtitleTracks,
   collectLaunchSubtitleFiles,
   describeSubtitleTrackForMpv,
+  shouldAbortLaunchForDefinitivePreflight,
   shouldApplyStartAtSeek,
 } from "@/mpv";
 
@@ -124,6 +125,29 @@ test("buildMpvArgs keeps mpv alive between files for persistent autoplay chains"
   expect(args).toContain("--keep-open=no");
   expect(args).toContain("--idle=yes");
   expect(args).toContain("--force-window=immediate");
+});
+
+test("shouldAbortLaunchForDefinitivePreflight aborts only before IPC takes over", () => {
+  expect(
+    shouldAbortLaunchForDefinitivePreflight(
+      { status: "unreachable", reason: "HTTP 404", definitive: true },
+      false,
+    ),
+  ).toBe(true);
+  expect(
+    shouldAbortLaunchForDefinitivePreflight(
+      { status: "unreachable", reason: "HTTP 404", definitive: true },
+      true,
+    ),
+  ).toBe(false);
+  expect(
+    shouldAbortLaunchForDefinitivePreflight(
+      { status: "unreachable", reason: "transient fetch failed", definitive: false },
+      false,
+    ),
+  ).toBe(false);
+  expect(shouldAbortLaunchForDefinitivePreflight({ status: "timeout" }, false)).toBe(false);
+  expect(shouldAbortLaunchForDefinitivePreflight({ status: "reachable" }, false)).toBe(false);
 });
 
 test("buildMpvArgs maps language preferences to mpv alang/slang", () => {

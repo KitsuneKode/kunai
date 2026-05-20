@@ -29,6 +29,7 @@ import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
 import { dbg } from "@/logger";
 import { checkStreamPreflight } from "@/services/playback/stream-health-check";
+import type { StreamPreflightResult } from "@/services/playback/stream-health-check";
 import { normalizeSubtitleUrl } from "@/subtitle";
 
 export async function launchMpv(opts: {
@@ -213,7 +214,17 @@ export async function launchMpv(opts: {
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
   }));
 
-  const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000).then((result) => result);
+  const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000).then((result) => {
+    if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
+      dbg("mpv", "preflight-definitive-failure", {
+        reason: result.reason,
+        phase: "launch",
+        ipcConnected: ipcSession !== null,
+      });
+      mpv.kill("SIGTERM");
+    }
+    return result;
+  });
 
   const ipcBootstrap = (async () => {
     const ipcBootstrapStarted = Date.now();
@@ -296,7 +307,7 @@ export async function launchMpv(opts: {
   // This catches dead URLs early so we can skip to fallback without waiting
   // for full mpv startup/shutdown latency.
   const preflightResult = await preflight;
-  if (preflightResult.status === "unreachable" && preflightResult.definitive && !ipcSession) {
+  if (shouldAbortLaunchForDefinitivePreflight(preflightResult, ipcSession !== null)) {
     // Stream is definitively dead and mpv hasn't found it either — abort.
     watchdog.stop();
     await closeIpcSession(ipcSession);
@@ -335,6 +346,13 @@ export async function launchMpv(opts: {
   opts.onControlReady?.(null);
 
   return finalizePlaybackResult(telemetry, { socketPathCleanedUp });
+}
+
+export function shouldAbortLaunchForDefinitivePreflight(
+  result: StreamPreflightResult,
+  ipcConnected: boolean,
+): boolean {
+  return result.status === "unreachable" && result.definitive && !ipcConnected;
 }
 
 /** True when we should seek / pass --start for a resume position (any positive second). */
