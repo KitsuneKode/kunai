@@ -3,7 +3,7 @@ import React from "react";
 
 import type { DetailsPanelData, DetailsPanelSecondary } from "./details-panel";
 import { PosterInitialBlock } from "./poster-initial-block";
-import { truncateLine } from "./shell-text";
+import { truncateAtWord, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { usePosterPreview } from "./use-poster-preview";
 
@@ -88,11 +88,15 @@ export function DetailsPaneUI({
             .filter(Boolean)
             .join(" · ")}
         </Text>
-        {primary.synopsis && (
-          <Box marginTop={1}>
-            <Text color={palette.dim}>{truncateLine(primary.synopsis, (width - 4) * 3)}</Text>
-          </Box>
-        )}
+        <Box marginTop={1}>
+          {primary.synopsis ? (
+            <Text color={palette.dim}>{truncateAtWord(primary.synopsis, (width - 4) * 3)}</Text>
+          ) : (
+            <Text color={palette.dim} dimColor>
+              No synopsis available
+            </Text>
+          )}
+        </Box>
 
         {secondary === null ? (
           <SecondaryZoneShimmer />

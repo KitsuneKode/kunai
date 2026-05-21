@@ -2347,6 +2347,12 @@ function BrowseShell<T>({
   const windowStart = getWindowStart(selectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
+  // The "Series"/"Movie" type is a quiet column only when the result set is
+  // actually mixed; an all-series list never repeats "Series" on every row.
+  const resultsAreMixed =
+    !isCalendarView &&
+    displayOptions.some((option) => option.previewMeta?.[0] === "Series") &&
+    displayOptions.some((option) => option.previewMeta?.[0] === "Movie");
   const showCompanion = showCompanionLayout && !compact && Boolean(selectedOption);
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -2721,7 +2727,9 @@ function BrowseShell<T>({
                 : visibleOptions.map((option, index) => {
                     const optionIndex = windowStart + index;
                     const selected = optionIndex === selectedIndex;
-                    const metaText = option.previewBadge ?? option.previewMeta?.[0];
+                    const metaText =
+                      option.previewBadge ??
+                      (resultsAreMixed ? option.previewMeta?.[0] : undefined);
                     const metaWidth = metaText ? Math.min(12, Math.max(6, metaText.length)) : 0;
                     const titleBudget = Math.max(12, rowWidth - metaWidth - 6);
                     const titleText = truncateLine(option.label, titleBudget);
@@ -2739,7 +2747,7 @@ function BrowseShell<T>({
                         <Box width={rowWidth}>
                           <Text bold={selected} dimColor={!selected} wrap="truncate">
                             <Text color={selected ? palette.amber : palette.gray}>
-                              {selected ? "❯ " : "  "}
+                              {selected ? "▌ " : "  "}
                             </Text>
                             <Text color={selected ? "white" : undefined}>
                               {truncateLine(rowText, rowWidth - 2).padEnd(rowWidth - 2)}
