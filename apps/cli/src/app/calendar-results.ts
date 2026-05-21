@@ -66,6 +66,12 @@ function toCalendarSearchResult(
       : typeof item.episode === "number"
         ? `E${item.episode}`
         : undefined,
+    displayReleaseStatus:
+      item.status === "released"
+        ? "released"
+        : isSameLocalDay(item.releaseAt, Date.now())
+          ? "airing-today"
+          : "upcoming",
     episodeCount: item.episode,
   };
 }

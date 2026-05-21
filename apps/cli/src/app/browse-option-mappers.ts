@@ -46,6 +46,7 @@ function toCalendarBrowseOption(
     previewGroup: result.displayGroup,
     previewTime: result.displayTime,
     previewBadge: inWatchlist ? "wl" : result.displayBadge,
+    releaseStatus: result.displayReleaseStatus,
     previewFacts: [
       {
         label: "Release",

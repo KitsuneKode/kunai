@@ -89,6 +89,8 @@ test("loadCalendarResults maps releasing-today items into playable browse candid
     displayGroup: expect.stringContaining("Today"),
     displayTime: expect.any(String),
     displayBadge: "E29",
+    // status "upcoming" but releasing today → airing-today (not released, not future)
+    displayReleaseStatus: "airing-today",
   });
   expect(results.results[0]?.overview).toContain("E29 · A new journey");
   expect(results.results[0]?.overview).toContain("airs today at");

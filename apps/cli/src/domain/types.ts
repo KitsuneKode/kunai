@@ -129,6 +129,8 @@ export interface SearchResult {
   readonly displayTime?: string;
   /** Optional trailing browse-list badge, such as an episode number. */
   readonly displayBadge?: string;
+  /** Optional release-status for schedule-style result sets (calendar). */
+  readonly displayReleaseStatus?: "released" | "airing-today" | "upcoming";
   readonly episodeCount?: number;
   readonly availableAudioModes?: readonly ("sub" | "dub")[];
   readonly subtitleAvailability?: "hardsub" | "softsub" | "unknown";

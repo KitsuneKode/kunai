@@ -223,6 +223,13 @@ export function CalendarScheduleRow<T>({
 }) {
   const title = truncateLine(option.label, Math.max(16, rowWidth - 14));
   const detail = option.detail ? truncateLine(option.detail, rowWidth - 4) : "";
+  // Release facts, not playable guarantees: ✓ released · ▶ airing today · ○ upcoming.
+  const status =
+    option.releaseStatus === "released"
+      ? { glyph: "✓ ", color: palette.green, dim: true }
+      : option.releaseStatus === "airing-today"
+        ? { glyph: "▶ ", color: palette.amber, dim: false }
+        : { glyph: "○ ", color: palette.muted, dim: true };
 
   return (
     <Box flexDirection="column" width={rowWidth} marginBottom={0}>
@@ -240,13 +247,17 @@ export function CalendarScheduleRow<T>({
           </Text>
         </Box>
       ) : null}
-      <Box width={rowWidth} flexDirection="column">
+      <Box
+        width={rowWidth}
+        flexDirection="column"
+        backgroundColor={selected ? palette.surfaceActive : undefined}
+      >
         <Text bold={selected} dimColor={!selected} wrap="truncate">
-          <Text color={selected ? palette.amber : palette.gray}>{selected ? "❯ " : "  "}</Text>
-          <Text color={selected ? "white" : undefined}>
-            {"▸ "}
-            {title}
+          <Text color={selected ? palette.amber : palette.gray}>{selected ? "▌ " : "  "}</Text>
+          <Text color={status.color} dimColor={status.dim}>
+            {status.glyph}
           </Text>
+          <Text color={selected ? "white" : undefined}>{title}</Text>
           {option.previewBadge ? (
             <Text color={palette.dim}> {`· ${option.previewBadge}`}</Text>
           ) : null}
