@@ -205,8 +205,11 @@ export function CommandPalette({
     const showReason = !command.enabled && (selected || command.reason);
     return (
       <Box key={command.id} flexDirection="column" width={contentWidth + 4}>
-        <Box width={contentWidth + 4}>
-          <Text color={selected ? palette.amber : palette.gray}>{selected ? "❯ " : "  "}</Text>
+        <Box
+          width={contentWidth + 4}
+          backgroundColor={selected ? palette.surfaceActive : undefined}
+        >
+          <Text color={selected ? palette.amber : palette.gray}>{selected ? "▌ " : "  "}</Text>
           <Text
             color={!command.enabled ? palette.gray : selected ? palette.amber : palette.text}
             bold={selected && command.enabled}
@@ -263,9 +266,12 @@ export function CommandPalette({
                     const group = CONTEXT_COMMAND_IDS.has(command.id) ? "context" : "global";
                     if (group !== previousGroup) {
                       rows.push(
-                        <Box key={`group:${group}:${windowStart + index}`}>
-                          <Text color={palette.gray} dimColor>
-                            {COMMAND_GROUP_LABELS[group]}
+                        <Box
+                          key={`group:${group}:${windowStart + index}`}
+                          marginTop={index > 0 ? 1 : 0}
+                        >
+                          <Text color={palette.dim} dimColor>
+                            {COMMAND_GROUP_LABELS[group].toUpperCase()}
                           </Text>
                         </Box>,
                       );
