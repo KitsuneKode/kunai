@@ -1813,7 +1813,7 @@ function ListShell<T>({
                 {visibleOptions.map((option) => {
                   const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
-                  const itemPrefix = isConfirmed ? "✓" : selected ? "❯" : " ";
+                  const itemPrefix = isConfirmed ? "✓" : selected ? "▌" : " ";
                   const itemTone = isConfirmed
                     ? palette.green
                     : selected
@@ -1824,14 +1824,17 @@ function ListShell<T>({
                     : "";
                   const rowText = truncateLine(`${option.label}${secondary}`, rowWidth - 2);
                   return (
-                    <Box key={`${option.label}-${option.detail ?? ""}`} width={rowWidth}>
+                    <Box
+                      key={`${option.label}-${option.detail ?? ""}`}
+                      width={rowWidth}
+                      backgroundColor={selected ? palette.surfaceActive : undefined}
+                    >
                       <Text
-                        backgroundColor={selected ? palette.teal : undefined}
-                        color={selected ? "black" : "white"}
+                        color="white"
                         bold={selected || isConfirmed}
                         dimColor={!selected && !isConfirmed}
                       >
-                        <Text color={selected ? "black" : itemTone}>{`${itemPrefix} `}</Text>
+                        <Text color={itemTone}>{`${itemPrefix} `}</Text>
                         {rowText.padEnd(rowWidth - 2)}
                       </Text>
                     </Box>

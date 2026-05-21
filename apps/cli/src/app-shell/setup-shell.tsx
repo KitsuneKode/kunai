@@ -341,10 +341,14 @@ function PickerSlide({
         {options.map((opt, i) => {
           const selected = i === selectedIndex;
           return (
-            <Box key={opt.value} marginBottom={0}>
-              <Text color={selected ? palette.teal : palette.gray}>{selected ? "❯ " : "  "}</Text>
+            <Box
+              key={opt.value}
+              marginBottom={0}
+              backgroundColor={selected ? palette.surfaceActive : undefined}
+            >
+              <Text color={selected ? palette.amber : palette.gray}>{selected ? "▌ " : "  "}</Text>
               <Box flexDirection="column">
-                <Text color={selected ? palette.teal : palette.text} bold={selected}>
+                <Text color={selected ? palette.amber : palette.text} bold={selected}>
                   {opt.label}
                 </Text>
                 <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
@@ -412,10 +416,14 @@ function DownloadsSlide({
         {opts.map((opt, i) => {
           const selected = i === selectedIndex;
           return (
-            <Box key={opt.label} marginBottom={0}>
-              <Text color={selected ? palette.teal : palette.gray}>{selected ? "❯ " : "  "}</Text>
+            <Box
+              key={opt.label}
+              marginBottom={0}
+              backgroundColor={selected ? palette.surfaceActive : undefined}
+            >
+              <Text color={selected ? palette.amber : palette.gray}>{selected ? "▌ " : "  "}</Text>
               <Box flexDirection="column">
-                <Text color={selected ? palette.teal : palette.text} bold={selected}>
+                <Text color={selected ? palette.amber : palette.text} bold={selected}>
                   {opt.label}
                 </Text>
                 <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
