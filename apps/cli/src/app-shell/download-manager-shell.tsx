@@ -254,8 +254,12 @@ export function DownloadManagerContent({
     const progressWidth = 28;
     const metaWidth = Math.max(8, shellWidth - nameWidth - progressWidth - 4);
     return (
-      <Box key={job.id} flexDirection="row">
-        <Text color={isSelected ? palette.amber : palette.gray}>{isSelected ? "❯ " : "  "}</Text>
+      <Box
+        key={job.id}
+        flexDirection="row"
+        backgroundColor={isSelected ? palette.surfaceActive : undefined}
+      >
+        <Text color={isSelected ? palette.amber : palette.gray}>{isSelected ? "▌ " : "  "}</Text>
         <Box width={nameWidth}>
           <Text color={isSelected ? "white" : undefined} bold={isSelected}>
             {truncateLine(nameStr, nameWidth - 2)}

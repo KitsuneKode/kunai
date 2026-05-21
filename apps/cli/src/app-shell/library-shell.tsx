@@ -282,8 +282,10 @@ function LibraryTab({ container }: { container: Container }) {
           const selected = absoluteIndex === safeIndex;
           return (
             <Box key={group.key} flexDirection="column">
-              <Box>
-                <Text color={selected ? palette.teal : palette.gray}>{selected ? "❯ " : "  "}</Text>
+              <Box backgroundColor={selected ? palette.surfaceActive : undefined}>
+                <Text color={selected ? palette.amber : palette.gray}>
+                  {selected ? "▌ " : "  "}
+                </Text>
                 <Text color={selected ? "white" : undefined} bold={selected}>
                   {truncateLine(group.label, 36)}
                 </Text>

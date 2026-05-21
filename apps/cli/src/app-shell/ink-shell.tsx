@@ -2800,7 +2800,8 @@ function BrowseShell<T>({
               <Box flexDirection="column" marginTop={1} gap={0}>
                 {idleContext.continueWatching && !idleContext.playlistNext ? (
                   <Text color={idleFocused ? "white" : palette.muted}>
-                    {idleFocused ? "❯ ⏸ " : "  ⏸ "}
+                    {idleFocused ? <Text color={palette.amber}>{"▌ "}</Text> : "  "}
+                    {"⏸ "}
                     <Text color={idleFocused ? "white" : "white"} bold={idleFocused}>
                       {idleContext.continueWatching.title}
                     </Text>
