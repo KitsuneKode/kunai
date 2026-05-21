@@ -2,7 +2,7 @@ import { Box, Text, useStdout } from "ink";
 import React from "react";
 
 import { truncateLine } from "./shell-text";
-import { APP_LABEL, hotkeyLabel, palette } from "./shell-theme";
+import { APP_LABEL, contentTintColor, hotkeyLabel, palette } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
 
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
@@ -249,13 +249,34 @@ export const LocalSection = React.memo(function LocalSection({
   );
 });
 
+type ContentKind = "anime" | "series" | "movie";
+
+const CONTENT_FILL: Record<ContentKind, string> = {
+  anime: palette.pinkFill,
+  series: palette.infoFill,
+  movie: palette.lavenderFill,
+};
+
 export const Badge = React.memo(function Badge({
   label,
   tone = "neutral",
+  contentKind,
 }: {
   label: string;
   tone?: BadgeTone;
+  /** When set, the badge uses the content-type tint + fill, overriding tone. */
+  contentKind?: ContentKind;
 }) {
+  if (contentKind) {
+    return (
+      <Box marginRight={1}>
+        <Text color={contentTintColor(contentKind)} backgroundColor={CONTENT_FILL[contentKind]}>
+          {` ${truncateLine(label, 26)} `}
+        </Text>
+      </Box>
+    );
+  }
+
   const color =
     tone === "success"
       ? palette.green
@@ -274,6 +295,83 @@ export const Badge = React.memo(function Badge({
       <Text color={color} bold={tone !== "neutral"}>
         {truncateLine(label, 26)}
       </Text>
+    </Box>
+  );
+});
+
+export type SelectableRowStyle = {
+  readonly prefix: string;
+  readonly color: string;
+  readonly backgroundColor?: string;
+};
+
+/** The single "C" selection treatment: amber rule + amber-tinted fill. */
+export function selectableRowStyle(selected: boolean): SelectableRowStyle {
+  if (selected) {
+    return { prefix: "▌", color: palette.amberSoft, backgroundColor: palette.amberFill };
+  }
+  return { prefix: "  ", color: palette.text };
+}
+
+export const SelectableRow = React.memo(function SelectableRow({
+  selected,
+  children,
+}: {
+  selected: boolean;
+  children: React.ReactNode;
+}) {
+  const style = selectableRowStyle(selected);
+  return (
+    <Box>
+      <Text color={selected ? palette.amber : palette.dim} backgroundColor={style.backgroundColor}>
+        {style.prefix}
+      </Text>
+      <Text color={style.color} backgroundColor={style.backgroundColor}>
+        {children}
+      </Text>
+    </Box>
+  );
+});
+
+/** Pads (or truncates) the label to a fixed column for tabular detail rows. */
+export function detailRowColumns(
+  label: string,
+  value: string,
+  labelWidth: number,
+): { label: string; value: string } {
+  const trimmed =
+    label.length > labelWidth ? truncateLine(label, labelWidth) : label.padEnd(labelWidth);
+  return { label: trimmed, value };
+}
+
+export const DetailRow = React.memo(function DetailRow({
+  label,
+  value,
+  labelWidth = 12,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  labelWidth?: number;
+  tone?: BadgeTone;
+}) {
+  const cols = detailRowColumns(label, value, labelWidth);
+  const valueColor =
+    tone === "success"
+      ? palette.green
+      : tone === "info"
+        ? palette.info
+        : tone === "accent"
+          ? palette.amberSoft
+          : tone === "error"
+            ? palette.red
+            : tone === "warning"
+              ? palette.amber
+              : palette.text;
+  return (
+    <Box>
+      <Text color={palette.muted}>{cols.label}</Text>
+      <Text color={valueColor}> {cols.value}</Text>
     </Box>
   );
 });
