@@ -677,6 +677,15 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
               ) : null}
+              {state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
+                <Box marginTop={1}>
+                  <Text color={palette.amber}>{"▶ "}</Text>
+                  <Text color={palette.dim} dimColor>
+                    {"UP NEXT  "}
+                  </Text>
+                  <Text color={palette.text}>{state.nextEpisodeLabel}</Text>
+                </Box>
+              ) : null}
               {memoryPanelVisible && showPlaybackRuntimeStrip ? (
                 <Box marginTop={2} flexDirection="column">
                   {memoryLine ? (
