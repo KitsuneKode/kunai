@@ -1,4 +1,3 @@
-import { truncateLabel } from "@/design";
 import type { SearchResult } from "@/domain/types";
 import type { RecommendationSection } from "@/services/recommendations/RecommendationService";
 import { Box, Text, useInput } from "ink";
@@ -6,6 +5,7 @@ import React, { useState } from "react";
 
 import { DotMatrixLoader, InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { ResizeBlocker, ShellFooter } from "./shell-primitives";
+import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
@@ -67,7 +67,7 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
                     {"  "}
                   </Text>
                   <Text color={isActive ? "white" : palette.text}>
-                    {truncateLabel(item.title, titleBudget)}
+                    {truncateLine(item.title, titleBudget)}
                   </Text>
                 </Text>
               </Box>
