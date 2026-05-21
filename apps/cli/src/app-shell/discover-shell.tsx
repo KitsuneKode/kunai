@@ -14,9 +14,9 @@ export type DiscoverShellResult = { type: "open"; result: SearchResult } | { typ
 /**
  * Single recommendation section rendered as a horizontal "rail" with a label header.
  *
- * Items are displayed as compact rows with active selection highlighting.
- * The focused section shows the ❯ cursor indicator. Rating and year are rendered
- * as right-aligned metadata when available.
+ * Items are displayed as compact ranked rows with active selection highlighting.
+ * The active row shows the ▌ accent bar in the lavender recommendation accent.
+ * Rating and year are rendered as right-aligned metadata when available.
  */
 const DiscoverSectionView = React.memo(function DiscoverSectionView({
   section,
@@ -34,7 +34,7 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
   const titleBudget = Math.max(16, maxWidth - 18);
   return (
     <Box flexDirection="column" marginBottom={compact ? 0 : 1}>
-      <Text color={isFocused ? palette.amber : palette.muted} bold={isFocused}>
+      <Text color={isFocused ? palette.lavender : palette.muted} bold={isFocused}>
         {isFocused ? "▸ " : "  "}
         {section.label}
         <Text color={palette.gray} dimColor>
@@ -52,11 +52,19 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
           const rating =
             item.rating !== null && item.rating !== undefined ? `★ ${item.rating.toFixed(1)}` : "";
           return (
-            <Box key={item.id} width={maxWidth}>
+            <Box
+              key={item.id}
+              width={maxWidth}
+              backgroundColor={isActive ? palette.surfaceActive : undefined}
+            >
               <Box flexShrink={1} flexGrow={1}>
                 <Text bold={isActive} wrap="truncate">
-                  <Text color={isActive ? palette.amber : palette.gray}>
-                    {isActive ? "  ❯ " : "    "}
+                  <Text color={isActive ? palette.lavender : palette.gray}>
+                    {isActive ? "  ▌ " : "    "}
+                  </Text>
+                  <Text color={palette.dim} dimColor>
+                    {`${idx + 1}`.padStart(2)}
+                    {"  "}
                   </Text>
                   <Text color={isActive ? "white" : palette.text}>
                     {truncateLabel(item.title, titleBudget)}
@@ -64,7 +72,7 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
                 </Text>
               </Box>
               <Box flexShrink={0}>
-                <Text color={isActive ? palette.amber : palette.gray} dimColor={!isActive}>
+                <Text color={isActive ? palette.lavender : palette.gray} dimColor={!isActive}>
                   {` ${rating.padEnd(7)} ${item.year}`}
                 </Text>
               </Box>
@@ -200,7 +208,7 @@ export function DiscoverShell({
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between" paddingX={1}>
       <Box flexDirection="column" flexGrow={1}>
         <Box justifyContent="space-between">
-          <Text bold color={palette.amber}>
+          <Text bold color={palette.lavender}>
             ⬡ Discover
           </Text>
           {refreshing ? (

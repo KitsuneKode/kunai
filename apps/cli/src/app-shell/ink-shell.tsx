@@ -67,6 +67,7 @@ import { OverlayPanel } from "./overlay-panel";
 import type { BrowseOverlay } from "./overlay-panel";
 import { PostPlayShell } from "./post-play-shell";
 import { AppHeader } from "./primitives/AppHeader";
+import { SegmentedControl } from "./primitives/SegmentedControl";
 import {
   clearRootContentSession,
   mountRootContent,
@@ -93,7 +94,7 @@ import {
   selectFooterActions,
 } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
-import { APP_LABEL, palette, statusColor } from "./shell-theme";
+import { APP_LABEL, heatColor, palette, statusColor } from "./shell-theme";
 import { getNextStreakMilestone } from "./streak-milestone";
 import {
   toShellAction,
@@ -3003,11 +3004,11 @@ export function openBrowseShell<T>({
 // ─── StatsShell ─────────────────────────────────────────────────────────────
 
 const HEATMAP_LEVELS = [
-  { char: "·", color: "#3c342c" }, // faint — no activity
-  { char: "░", color: "#2a5a22" }, // low
-  { char: "▒", color: "#3e7832" }, // medium-low
-  { char: "▓", color: "#56a042" }, // medium-high
-  { char: "█", color: "#7bc96e" }, // max (palette.green)
+  { char: "·", color: heatColor(0) }, // faint — no activity
+  { char: "░", color: heatColor(1) }, // low
+  { char: "▒", color: heatColor(2) }, // medium-low
+  { char: "▓", color: heatColor(3) }, // medium-high
+  { char: "█", color: heatColor(4) }, // max (amber ramp peak)
 ] as const;
 
 function heatmapLevel(count: number, max: number) {
@@ -3134,8 +3135,9 @@ function StatsShell({
   const showsRowBudget = Math.max(0, available - fixedRows - 2 /* shows header+margin */);
   const maxTopShows = Math.min(5, showsRowBudget);
 
-  // heatmap weeks that fit (day-label=4 chars, cell=2 chars each)
-  const maxWeeks = Math.max(8, Math.floor((innerWidth - 4) / 2));
+  // heatmap weeks that fit (day-label=4 chars, cell=2 chars each), bounded to
+  // ~12 months (52 weeks) so a wide terminal doesn't stretch it to multiple years.
+  const maxWeeks = Math.min(52, Math.max(8, Math.floor((innerWidth - 4) / 2)));
   const { grid, monthLabels } = useMemo(
     () => buildHeatmapGrid(stats.heatmap, maxWeeks),
     [stats.heatmap, maxWeeks],
@@ -3189,30 +3191,24 @@ function StatsShell({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* Title + window tabs */}
+      {/* Title + segmented filter (kind) and range controls */}
       <Box justifyContent="space-between">
         <Box>
           <Text bold color={palette.amber}>
             Watch Stats
           </Text>
-          <Text color={palette.dim}>{" · "}</Text>
-          {STATS_KINDS.map((k, i) => (
-            <Box key={k} marginRight={1}>
-              <Text color={i === kindIdx ? "white" : palette.dim} bold={i === kindIdx}>
-                {statsKindLabel(k)}
-              </Text>
-            </Box>
-          ))}
+          <Text color={palette.dim}>{"   "}</Text>
+          <SegmentedControl
+            labels={STATS_KINDS.map((k) => statsKindLabel(k))}
+            activeIndex={kindIdx}
+          />
         </Box>
-        <Box>
-          {(["1:30d", "2:90d", "3:all"] as const).map((label, i) => (
-            <Box key={label} marginLeft={1}>
-              <Text color={i === windowIdx ? palette.teal : palette.dim} bold={i === windowIdx}>
-                {label}
-              </Text>
-            </Box>
-          ))}
-        </Box>
+        <SegmentedControl
+          labels={["30d", "90d", "all"]}
+          activeIndex={windowIdx}
+          activeFg={palette.teal}
+          activeBg={palette.tealFill}
+        />
       </Box>
 
       {/* Summary */}
@@ -3254,7 +3250,7 @@ function StatsShell({
                 return (
                   <Text
                     key={cell?.date ?? `${dayLabel}-${week.weekStartDate}`}
-                    color={cell?.color ?? "#3c342c"}
+                    color={cell?.color ?? heatColor(0)}
                   >
                     {(cell?.char ?? " ") + " "}
                   </Text>
@@ -3271,7 +3267,9 @@ function StatsShell({
           <Text color={palette.muted}>Top shows</Text>
           {topShows.map((show) => {
             const ratio = show.totalSeconds / maxShowSeconds;
-            const filled = Math.round(ratio * BAR_WIDTH);
+            // Any watched time keeps at least one block so smaller shows never
+            // collapse to an all-empty bar when one title dominates.
+            const filled = show.totalSeconds > 0 ? Math.max(1, Math.round(ratio * BAR_WIDTH)) : 0;
             const h = Math.floor(show.totalSeconds / 3600);
             const m = Math.floor((show.totalSeconds % 3600) / 60);
             const duration = h > 0 ? `${h}h ${m}m` : `${m}m`;
@@ -3298,7 +3296,7 @@ function StatsShell({
           </Box>
         ) : (
           <Box marginTop={1}>
-            <Text color={palette.gray}>Tab window</Text>
+            <Text color={palette.gray}>1–3 range</Text>
             <Text color={palette.dim}> · </Text>
             <Text color={palette.gray}>⇧Tab filter</Text>
             <Text color={palette.dim}> · </Text>
