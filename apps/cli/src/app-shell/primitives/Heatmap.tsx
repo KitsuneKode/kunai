@@ -22,7 +22,9 @@ export const Heatmap = React.memo(function Heatmap({
         <Box key={row.label}>
           <Text color={palette.muted}>{row.label.padEnd(4)}</Text>
           {row.values.map((value, i) => (
-            <Text key={i} color={heatColor(heatBucket(value, max))}>
+            // Fixed-position grid cell: column index is its stable identity (cells never reorder).
+            // oxlint-disable-next-line react/no-array-index-key
+            <Text key={`${row.label}-${i}`} color={heatColor(heatBucket(value, max))}>
               {` ${cell}`}
             </Text>
           ))}

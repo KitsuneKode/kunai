@@ -66,6 +66,7 @@ import { LoadingShell } from "./loading-shell";
 import { OverlayPanel } from "./overlay-panel";
 import type { BrowseOverlay } from "./overlay-panel";
 import { PostPlayShell } from "./post-play-shell";
+import { AppHeader } from "./primitives/AppHeader";
 import {
   clearRootContentSession,
   mountRootContent,
@@ -90,7 +91,6 @@ import {
   ResizeBlocker,
   ShellFooter,
   selectFooterActions,
-  TerminalSizeChip,
 } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
@@ -747,6 +747,10 @@ function AppRoot({ container }: { container: Container }) {
         : rootContent?.kind === "browse" || rootContent?.kind === "playback"
           ? rootContent.kind
           : state.view;
+  const headerDestination =
+    currentViewLabel === "playback"
+      ? "Now Playing"
+      : currentViewLabel.charAt(0).toUpperCase() + currentViewLabel.slice(1);
   const rootStatusSummary = buildRootStatusSummary({
     state,
     currentViewLabel,
@@ -990,19 +994,18 @@ function AppRoot({ container }: { container: Container }) {
       paddingX={1}
       paddingY={0}
     >
-      {/* Brand + macro status */}
-      <Box justifyContent="space-between">
-        <Text bold color={palette.amber}>
-          {"🦊 Kunai"}
-        </Text>
-        <Text color={statusColor(rootStatusSummary.header.tone)}>
-          {container.config.minimalMode && currentViewLabel === "browse"
+      {/* Single canonical header: brand · destination pill · crumb · status · size */}
+      <AppHeader
+        destination={headerDestination}
+        context={rootStatusSummary.crumb}
+        status={
+          container.config.minimalMode && currentViewLabel === "browse"
             ? undefined
-            : rootStatusSummary.header.label}
-        </Text>
-      </Box>
-      {/* Compact crumb: mode · provider (+ title · episode during playback) */}
-      <Text color={palette.muted}>{rootStatusSummary.crumb}</Text>
+            : rootStatusSummary.header.label
+        }
+        statusColor={statusColor(rootStatusSummary.header.tone)}
+        size={`${shellWidth}×${shellHeight}`}
+      />
       {/* Single transient alert — highest priority wins, null when idle */}
       {rootStatusSummary.alert ? (
         <Text color={statusColor(rootStatusSummary.alert.tone)} dimColor>
@@ -1921,7 +1924,6 @@ function ListShell<T>({
 }
 
 function BrowseShell<T>({
-  mode,
   provider,
   initialQuery,
   initialResults,
@@ -2589,28 +2591,19 @@ function BrowseShell<T>({
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box flexDirection="column" flexGrow={1}>
-        <Box justifyContent="space-between">
-          <ContextStrip
-            items={[
-              { label: APP_LABEL, tone: "warning" },
-              { label: "browse" },
-              { label: provider, tone: "info" },
-              { label: mode === "anime" ? "anime" : "series" },
-            ]}
-          />
-          <Box>
-            <TerminalSizeChip columns={viewport.columns} rows={viewport.rows} />
-            {searchState === "loading" ? (
-              <>
-                <InlineDotMatrixLoader variant="flux-columns" active onColor={palette.teal} />
-                <Text color={palette.teal}> searching</Text>
-              </>
-            ) : searchState === "error" ? (
-              <Text color={palette.red}>search failed</Text>
-            ) : searchState === "ready" && displayOptions.length > 0 ? (
-              <Text color={palette.muted}>{displayOptions.length} results</Text>
-            ) : null}
-          </Box>
+        {/* Brand · destination · provider · mode · size now live in the single
+            AppHeader above; keep only the browse-specific search indicator. */}
+        <Box justifyContent="flex-end">
+          {searchState === "loading" ? (
+            <>
+              <InlineDotMatrixLoader variant="flux-columns" active onColor={palette.teal} />
+              <Text color={palette.teal}> searching</Text>
+            </>
+          ) : searchState === "error" ? (
+            <Text color={palette.red}>search failed</Text>
+          ) : searchState === "ready" && displayOptions.length > 0 ? (
+            <Text color={palette.muted}>{displayOptions.length} results</Text>
+          ) : null}
         </Box>
         {!ultraCompact && resultSubtitle ? (
           <Text color={palette.muted}>{resultSubtitle}</Text>
