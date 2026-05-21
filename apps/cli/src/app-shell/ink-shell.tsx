@@ -535,21 +535,11 @@ function AppRoot({ container }: { container: Container }) {
     };
   }, [container.statsService, container.statsFormatter, container.config]);
 
-  // Clear terminal artifacts when the terminal shrinks to prevent stale content
-  // from lingering outside the new bounds.
-  const prevDimensionsRef = useRef({ cols: stdout.columns ?? 80, rows: stdout.rows ?? 24 });
-  useEffect(() => {
-    const cols = stdout.columns ?? 80;
-    const rows = stdout.rows ?? 24;
-    const prev = prevDimensionsRef.current;
-    if (cols !== prev.cols || rows !== prev.rows) {
-      if (process.stdout.isTTY) {
-        // Clear visible screen only (not scrollback) and move cursor home
-        process.stdout.write("\x1b[2J\x1b[H");
-      }
-    }
-    prevDimensionsRef.current = { cols, rows };
-  }, [stdout.columns, stdout.rows]);
+  // Resize repaint is owned by Ink's reconciler in alternate-screen mode (its
+  // own resize handler clears + relayouts on width decrease, and replaces the
+  // buffer cleanly otherwise). A manual `\x1b[2J\x1b[H` here double-clears and
+  // forces a blank intermediate frame, so it is intentionally omitted — see the
+  // clearShellScreen doctrine above.
   const [playbackTelemetrySnapshot, setPlaybackTelemetrySnapshot] =
     useState<PlaybackTelemetrySnapshot | null>(null);
   const presenceBootTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
