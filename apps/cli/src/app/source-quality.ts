@@ -1,3 +1,4 @@
+import { formatLanguageBadge, formatSourceEvidence } from "@/app/track-format";
 import { describeStreamCandidateMediaDetail } from "@/domain/media/media-track-model";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { buildPlaybackSourceInventoryView } from "@/services/playback/PlaybackSourceInventoryProjection";
@@ -442,12 +443,17 @@ function buildSubtitleTrackPickerOptions(stream: StreamInfo): readonly MediaTrac
     if (!track.url || seen.has(track.url)) continue;
     seen.add(track.url);
     const current = stream.subtitle === track.url;
-    const language = track.language ? track.language.toUpperCase() : "Subtitle";
+    const subtitleBadge = track.language
+      ? formatLanguageBadge({ language: track.language, role: "subtitle" })
+      : "Subtitle";
     const source = track.sourceName ?? track.sourceKind ?? stream.subtitleSource;
     options.push({
       value: `subtitle:${encodeURIComponent(track.url)}`,
-      label: current ? `${language} subtitle  ·  current` : `${language} subtitle`,
-      detail: [track.display, track.release, source].filter(Boolean).join("  ·  ") || undefined,
+      label: current ? `${subtitleBadge}  ·  current` : subtitleBadge,
+      detail:
+        [track.display, track.release, formatSourceEvidence({ nativeLabel: source ?? undefined })]
+          .filter(Boolean)
+          .join("  ·  ") || undefined,
     });
   }
 
@@ -456,14 +462,16 @@ function buildSubtitleTrackPickerOptions(stream: StreamInfo): readonly MediaTrac
       continue;
     }
     seen.add(option.subtitleUrl);
+    const subtitleBadge = option.language
+      ? formatLanguageBadge({ language: option.language, role: "subtitle" })
+      : "Subtitle";
     options.push({
       value: `subtitle:${encodeURIComponent(option.subtitleUrl)}`,
-      label:
-        option.state === "selected"
-          ? `${formatTrackLanguage(option.language)} subtitle  ·  current`
-          : `${formatTrackLanguage(option.language)} subtitle`,
+      label: option.state === "selected" ? `${subtitleBadge}  ·  current` : subtitleBadge,
       detail:
-        [option.label, option.nativeLabels.join(", ")].filter(Boolean).join("  ·  ") || undefined,
+        [option.label, formatSourceEvidence({ nativeLabel: option.nativeLabels.join(", ") })]
+          .filter(Boolean)
+          .join("  ·  ") || undefined,
     });
   }
 
@@ -491,18 +499,22 @@ function buildLanguageTrackOptionFromProjection(
   if (!candidate?.url || !option.language) return [];
   const sourceLabel = describeProjectedSourceLabel(candidate, result);
   const quality = candidate.qualityLabel ?? candidate.container ?? candidate.id;
-  const displayKind = option.role === "audio" ? "Audio" : "Hardsub";
-  const languageLabel = formatTrackLanguage(option.language);
+  // Language badge comes only from the normalized ISO code via the typed seam;
+  // the native source label stays as dim evidence in the detail line.
+  const languageBadge = formatLanguageBadge({ language: option.language, role: option.role });
   return [
     {
       value: `${option.role}:${encodeURIComponent(option.language)}:${encodeURIComponent(
         candidate.id,
       )}`,
-      label:
-        option.state === "selected"
-          ? `${displayKind} ${languageLabel}  ·  current`
-          : `${displayKind} ${languageLabel}`,
-      detail: `Switches to cached stream inventory  ·  ${sourceLabel}  ·  ${quality}`,
+      label: option.state === "selected" ? `${languageBadge}  ·  current` : languageBadge,
+      detail: [
+        "Switches to cached stream inventory",
+        formatSourceEvidence({ nativeLabel: sourceLabel }),
+        quality,
+      ]
+        .filter(Boolean)
+        .join("  ·  "),
     },
   ];
 }
@@ -555,10 +567,6 @@ function describeProjectedSourceDetail(
       subtitle.sourceId ? group.sourceIds.includes(subtitle.sourceId) : false,
     ),
   );
-}
-
-function formatTrackLanguage(language: string | undefined): string {
-  return language ? language.toUpperCase() : "Subtitle";
 }
 
 function mediaTrackRoleRank(role: PlaybackLanguageOptionView["role"]): number {

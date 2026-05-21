@@ -303,14 +303,15 @@ test("buildMediaTrackPickerOptions combines streams and soft subtitle controls",
     "subtitle:https%3A%2F%2Fsubs.example%2Ffr.vtt",
     "subtitle:none",
   ]);
+  // Language badges come from the normalized ISO code + role via the typed seam.
   expect(options.find((option) => option.value === "audio:ja:stream-1080")?.label).toBe(
-    "Audio JA  ·  current",
+    "JA audio  ·  current",
   );
   expect(options.find((option) => option.value === "audio:en:stream-720")?.detail).toContain(
     "Switches to cached stream inventory",
   );
   expect(options.find((option) => option.value === "hardsub:en:stream-1080")?.label).toBe(
-    "Hardsub EN  ·  current",
+    "EN hardsub  ·  current",
   );
   expect(options.find((option) => option.value === "subtitle:none")?.label).toBe("Subtitles off");
 });
