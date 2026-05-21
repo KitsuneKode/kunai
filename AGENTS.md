@@ -61,6 +61,7 @@ Kunai is a terminal-first Bun CLI that finds playable direct-provider video stre
 - Read [.docs/download-offline-onboarding.md](.docs/download-offline-onboarding.md) before changing download, offline library, setup, or onboarding behavior
 - Read [.docs/poster-image-rendering.md](.docs/poster-image-rendering.md) before changing terminal poster previews, chafa or Kitty image output, or image capability detection
 - Read [.docs/quickstart.md](.docs/quickstart.md) only for setup, local run flow, and troubleshooting
+- Read [.docs/prototypes.md](.docs/prototypes.md) for local gitignored UI prototype harnesses (`bun run prototype:serve`)
 - Read [.plans/plan-implementation-truth.md](.plans/plan-implementation-truth.md) when a plan's `Status:` disagrees with the codebase (code wins unless the truth index says otherwise)
 - Read `.plans/*` only when you are actively working on that tracked change
 

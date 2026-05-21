@@ -36,7 +36,8 @@
     "link:global": "bun run --cwd apps/cli link:global",
     "unlink:global": "bun run --cwd apps/cli unlink:global",
     "relink:global": "bun run --cwd apps/cli relink:global",
-    "prepare": "husky"
+    "prepare": "husky",
+    "prototype:serve": "node .prototypes/_harness/server.js"
   },
   "dependencies": {
     "typescript": "^6.0.3"

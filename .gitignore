@@ -69,9 +69,15 @@ stream_cache.json
 .context/
 .opencode/
 
-# local UI audit/prototype scratch
+# local UI prototypes (HTML harnesses, issue registries, feedback)
+.prototypes/
+
+# legacy prototype paths (moved → .prototypes/)
 .docs/prototype/
 .docs/prototype-feedback.json
 .docs/prototype-server.js
 .docs/cli-shell-ui-atlas.html
 .docs/ui-audit-master.html
+.docs/ui-audit-mockups.html
+.docs/implementation-notes.html
+.docs/playback-postplay-phase-workbook.html
