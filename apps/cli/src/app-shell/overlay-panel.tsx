@@ -964,7 +964,6 @@ export function OverlayPanel({
   return (
     <Box marginTop={1} flexDirection="column" paddingX={1}>
       <Text color={accentColor} bold>
-        {"▸ "}
         {overlay.title}
       </Text>
       <Text color={palette.gray}>{overlay.subtitle}</Text>
@@ -1038,14 +1037,9 @@ export function OverlayPanel({
                       : option.tone === "error"
                         ? palette.red
                         : null;
-              const isEpisodePicker = overlay.type === "episode-picker";
-              const episodePrefix = isEpisodePicker
-                ? option.tone === "success"
-                  ? { char: "✓ ", color: palette.green }
-                  : option.tone === "info" || option.badge?.startsWith("▶") || option.badge === "▶"
-                    ? { char: "▶ ", color: palette.amber }
-                    : { char: "○ ", color: palette.dim }
-                : null;
+              // Treatment C: selection is shown by a single accent bar (rendered by
+              // PickerOptionRow) + the elevated surface, not per-row ✓/▶/○ marker soup.
+              // Watched/current/resume state is carried by row tone + trailing badge + detail.
               // Derive dot indicator for settings rows
               const isSettingsOverlay =
                 overlay.type === "settings" || overlay.type === "settings-choice";
@@ -1090,7 +1084,6 @@ export function OverlayPanel({
               const historyPosterWidth = 4;
               const prefixWidth =
                 (isSettingsOverlay && dotChar ? dotChar.length : 0) +
-                (episodePrefix ? episodePrefix.char.length : 0) +
                 (isHistoryPicker && option.posterTitle ? historyPosterWidth + 1 : 0);
               const historyRowWidth = Math.max(0, contentWidth - prefixWidth);
               return (
@@ -1101,11 +1094,6 @@ export function OverlayPanel({
                 >
                   {isSettingsOverlay && dotChar ? (
                     <Text color={selected ? pickerAccent : dotColor}>{dotChar}</Text>
-                  ) : null}
-                  {episodePrefix ? (
-                    <Text color={selected ? pickerAccent : episodePrefix.color}>
-                      {episodePrefix.char}
-                    </Text>
                   ) : null}
                   {isHistoryPicker && option.posterTitle ? (
                     <Box marginRight={1}>
@@ -1144,19 +1132,21 @@ export function OverlayPanel({
               <Text color={palette.gray}> ▼ ...</Text>
             ) : null}
           </Box>
-          <Box marginTop={1}>
-            <Text color={overlay.busy ? palette.amber : palette.gray}>
-              {overlay.busy
-                ? `${busySpinner} ${
-                    overlay.type === "provider"
-                      ? "Updating provider…"
-                      : overlay.type === "history-picker"
-                        ? "Loading history…"
-                        : "Saving settings…"
-                  }`
-                : `${overlay.options.length} items  ·  ↑↓ choose · Enter select · Esc close`}
-            </Text>
-          </Box>
+          {overlay.busy || overlay.type !== "episode-picker" ? (
+            <Box marginTop={1}>
+              <Text color={overlay.busy ? palette.amber : palette.gray}>
+                {overlay.busy
+                  ? `${busySpinner} ${
+                      overlay.type === "provider"
+                        ? "Updating provider…"
+                        : overlay.type === "history-picker"
+                          ? "Loading history…"
+                          : "Saving settings…"
+                    }`
+                  : `${overlay.options.length} items  ·  ↑↓ choose · Enter select · Esc close`}
+              </Text>
+            </Box>
+          ) : null}
           {overlay.type === "settings" ? (
             <Box marginTop={1}>
               <Text color={overlay.dirty ? palette.amber : palette.dim}>

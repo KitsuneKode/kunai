@@ -22,7 +22,7 @@ export function formatPickerDisplayRow(input: {
   readonly width: number;
   readonly selected: boolean;
 }): { readonly prefix: string; readonly text: string; readonly badgeSuffix: string } {
-  const prefix = input.selected ? "❯ " : "  ";
+  const prefix = input.selected ? "▌ " : "  ";
   const row = formatPickerOptionRow({
     label: input.label,
     detail: input.detail,
@@ -49,7 +49,9 @@ export function PickerOptionRow({
   readonly accentColor: string | null;
   readonly pickerAccent: string;
 }) {
-  const prefix = selected ? "❯ " : "  ";
+  // Treatment C: a single accent bar marks the selected row (paired with the
+  // elevated row surface), instead of a chevron stacked under other markers.
+  const prefix = selected ? "▌ " : "  ";
   const badgeSuffix = badge ? `  ${badge}` : "";
   // Budget: width minus prefix (2) and badge
   const contentWidth = Math.max(0, width - prefix.length - badgeSuffix.length);

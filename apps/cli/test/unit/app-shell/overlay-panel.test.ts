@@ -43,7 +43,7 @@ test("formatPickerDisplayRow reserves prefix width before truncating episode row
     selected: true,
   });
 
-  expect(row.prefix).toBe("❯ ");
+  expect(row.prefix).toBe("▌ ");
   expect(row.prefix.length + row.text.length + row.badgeSuffix.length).toBeLessThanOrEqual(64);
 });
 

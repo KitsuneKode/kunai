@@ -519,6 +519,14 @@ export function RootOverlayShell({
       ? overlayStatus
       : subtitle;
   const footerActions: readonly FooterAction[] = [
+    // Media pickers carry their nav keys in the footer so the title can be the
+    // single hint line (no duplicate "Type to filter, Enter to select" guidance).
+    ...(isRootMediaPickerOverlay(overlay)
+      ? ([
+          { key: "↑↓", label: "select", action: "details" as const },
+          { key: "enter", label: "open", action: "details" as const, primary: true },
+        ] satisfies readonly FooterAction[])
+      : []),
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
   ];
@@ -1393,7 +1401,7 @@ export function RootOverlayShell({
         <ContextStrip
           items={[
             {
-              label: `panel ${overlay.type === "provider_picker" ? "provider" : overlay.type}`,
+              label: title,
               tone: "info",
             },
             {
@@ -1445,7 +1453,7 @@ export function RootOverlayShell({
                       ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
                       : "Settings  ·  Type to filter, Enter to edit, ^S saves, Esc closes"
                     : isRootMediaPickerOverlay(overlay)
-                      ? `${title}  ·  Type to filter, Enter to select, Esc closes`
+                      ? title
                       : `${title}  ·  Esc closes and returns to the previous shell state`
           }
           actions={footerActions}
