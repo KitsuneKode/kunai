@@ -70,16 +70,12 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       </Box>
 
       {resumeLabel ? (
-        <Box
-          marginTop={2}
-          flexDirection="column"
-          borderStyle="round"
-          borderColor={palette.amber}
-          paddingX={1}
-          paddingY={0}
-        >
-          <Text color={palette.amber}>↵ resume</Text>
-          <Text color={palette.textDim}>{truncateLine(resumeLabel, 64)}</Text>
+        <Box marginTop={2} flexDirection="column">
+          <Text>
+            <Text color={palette.amber}>{"▌ "}</Text>
+            <Text color={palette.amber}>↵ resume</Text>
+          </Text>
+          <Text color={palette.textDim}>{`  ${truncateLine(resumeLabel, 64)}`}</Text>
         </Box>
       ) : null}
 
@@ -90,19 +86,15 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       ) : null}
 
       {!resumeLabel && !isMovie && postPlayState.kind === "mid-series" && (
-        <Box
-          marginTop={2}
-          flexDirection="column"
-          borderStyle="round"
-          borderColor={palette.amber}
-          paddingX={1}
-          paddingY={0}
-        >
-          <Text color={palette.amber}>▶ up next</Text>
+        <Box marginTop={2} flexDirection="column">
+          <Text>
+            <Text color={palette.amber}>{"▌ "}</Text>
+            <Text color={palette.amber}>▶ up next</Text>
+          </Text>
           {nextEpisodeLabel ? (
-            <Text>{truncateLine(nextEpisodeLabel, 64)}</Text>
+            <Text>{`  ${truncateLine(nextEpisodeLabel, 64)}`}</Text>
           ) : (
-            <Text color={palette.dim}>Next episode</Text>
+            <Text color={palette.dim}>{"  Next episode"}</Text>
           )}
         </Box>
       )}
@@ -178,6 +170,12 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         <Text color={palette.dim} dimColor>
           widen terminal for recommendations
         </Text>
+      ) : recommendations.length === 0 && !viewport.ultraCompact ? (
+        <Box marginTop={2}>
+          <Text color={palette.dim} dimColor>
+            nothing queued
+          </Text>
+        </Box>
       ) : null}
     </Box>
   );
