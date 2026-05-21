@@ -5,6 +5,19 @@ export function truncateLine(value: string, maxLength: number): string {
   return `${value.slice(0, maxLength - 1)}…`;
 }
 
+export function truncateAtWord(value: string, maxLength: number): string {
+  if (maxLength <= 0) return "";
+  if (value.length <= maxLength) return value;
+  if (maxLength <= 1) return "…";
+  const budget = maxLength - 1; // room for the ellipsis
+  const slice = value.slice(0, budget);
+  // Boundary lands exactly between words → keep the whole slice.
+  if (value[budget] === " ") return `${slice.trimEnd()}…`;
+  const lastSpace = slice.lastIndexOf(" ");
+  if (lastSpace <= 0) return truncateLine(value, maxLength); // first word too long → hard cut
+  return `${slice.slice(0, lastSpace)}…`;
+}
+
 export function wrapText(value: string, width: number, maxLines: number): string[] {
   if (width <= 0 || maxLines <= 0) return [];
 

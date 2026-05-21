@@ -1,12 +1,15 @@
 export const tokens = {
-  // Backgrounds — 4-step warm-black surface scale
+  // Backgrounds — warm-black surface scale
   // Tinted toward amber for cohesion; never pure neutral
+  scrim: "#0a0806",
   bg: "#110e0b",
   surface: "#1a1612",
   surfaceElevated: "#241e18",
   surfaceActive: "#2e251e",
+  raised: "#3a2f24",
   border: "#332a22",
   borderDim: "#1e1a15",
+  borderStrong: "#4a3d30",
 
   // Primary brand — fox amber, slightly desaturated for premium feel
   amber: "#f0a050",
@@ -46,6 +49,22 @@ export const tokens = {
   muted: "#95887a",
   dim: "#5c5248",
   faint: "#3c342c",
+
+  // Tinted fills — each accent pre-blended onto bg; terminal stand-in for
+  // opacity, giving badges/selection depth without going loud
+  amberFill: "#2a2012",
+  tealFill: "#13241f",
+  infoFill: "#15243a",
+  pinkFill: "#2a1420",
+  lavenderFill: "#20203a",
+  greenFill: "#16261a",
+  yellowFill: "#2a2410",
+  redFill: "#2e1717",
+  purpleFill: "#2a1c3a",
+
+  // Watch-activity heat ramp — amber, 5-step (matches brand; green stays
+  // reserved for success state)
+  heatRamp: ["#2a2018", "#7a4a10", "#b06a18", "#d68a24", "#f0a050"],
 } as const;
 
 export type TokenName = keyof typeof tokens;

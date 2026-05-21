@@ -39,6 +39,22 @@ export const palette = {
   textDim: tokens.textDim,
   muted: tokens.muted,
   dim: tokens.dim,
+
+  // Expanded surfaces + focus edge
+  scrim: tokens.scrim,
+  raised: tokens.raised,
+  borderStrong: tokens.borderStrong,
+
+  // Tinted fills (depth without loudness)
+  amberFill: tokens.amberFill,
+  tealFill: tokens.tealFill,
+  infoFill: tokens.infoFill,
+  pinkFill: tokens.pinkFill,
+  lavenderFill: tokens.lavenderFill,
+  greenFill: tokens.greenFill,
+  yellowFill: tokens.yellowFill,
+  redFill: tokens.redFill,
+  purpleFill: tokens.purpleFill,
 } as const;
 
 export const APP_LABEL = "🦊 Kunai";
@@ -56,6 +72,18 @@ export function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
     default:
       return palette.teal;
   }
+}
+
+export function contentTintColor(kind: "anime" | "series" | "movie"): string {
+  if (kind === "anime") return palette.pink;
+  if (kind === "movie") return palette.lavender;
+  return palette.info;
+}
+
+export function heatColor(rampIndex: number): string {
+  const ramp = tokens.heatRamp;
+  const clamped = Math.max(0, Math.min(ramp.length - 1, Math.trunc(rampIndex)));
+  return ramp[clamped] ?? ramp[0];
 }
 
 export function hotkeyLabel(key: string): string {
