@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kunai CLI Design Board</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: oklch(0.105 0.013 58);
+      --bg-soft: oklch(0.132 0.015 60);
+      --row: oklch(0.185 0.022 58);
+      --row-strong: oklch(0.225 0.032 58);
+      --line: oklch(0.30 0.026 58);
+      --line-soft: oklch(0.235 0.021 58);
+      --text: oklch(0.88 0.018 76);
+      --muted: oklch(0.66 0.020 72);
+      --dim: oklch(0.45 0.018 68);
+      --focus: oklch(0.78 0.150 67);
+      --teal: oklch(0.75 0.145 178);
+      --green: oklch(0.73 0.155 133);
+      --blue: oklch(0.70 0.122 245);
+      --red: oklch(0.68 0.185 25);
+      --warn: oklch(0.75 0.150 82);
+      --violet: oklch(0.70 0.125 300);
+      --font: "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", ui-monospace, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% 10%, oklch(0.20 0.045 178 / .25), transparent 38rem),
+        radial-gradient(circle at 88% 2%, oklch(0.22 0.06 65 / .18), transparent 32rem),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.42;
+      letter-spacing: 0;
+    }
+
+    main {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 32px 28px 64px;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 {
+      font-size: 28px;
+      line-height: 1.15;
+      font-weight: 850;
+    }
+    h2 {
+      margin: 34px 0 14px;
+      color: var(--focus);
+      font-size: 15px;
+      text-transform: uppercase;
+      letter-spacing: .10em;
+    }
+    h3 {
+      color: var(--text);
+      font-size: 15px;
+      margin-bottom: 5px;
+    }
+
+    .lede {
+      max-width: 92ch;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+    .grid.two { grid-template-columns: 1fr 1fr; }
+    .grid.three { grid-template-columns: repeat(3, 1fr); }
+
+    .panel {
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: oklch(0.122 0.014 58 / .9);
+      overflow: hidden;
+    }
+    .panel.pad { padding: 16px; }
+    .note {
+      padding: 12px 14px;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: oklch(0.14 0.016 58 / .78);
+      color: var(--muted);
+      min-height: 96px;
+    }
+
+    .muted { color: var(--muted); }
+    .dim { color: var(--dim); }
+    .focus { color: var(--focus); }
+    .teal { color: var(--teal); }
+    .green { color: var(--green); }
+    .blue { color: var(--blue); }
+    .red { color: var(--red); }
+    .warn { color: var(--warn); }
+    .violet { color: var(--violet); }
+    .strong { color: var(--text); font-weight: 850; }
+
+    .role-grid {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .role {
+      border: 1px solid oklch(0.35 0.027 60);
+      border-radius: 7px;
+      min-height: 96px;
+      padding: 9px;
+      display: flex;
+      flex-direction: column;
+      justify-content: end;
+      font-size: 11px;
+      color: var(--text);
+    }
+    .role b { font-size: 12px; }
+    .role span { color: oklch(0.25 0.015 60); }
+    .role.dark span { color: var(--muted); }
+
+    .terminal {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--bg);
+      box-shadow: 0 22px 70px oklch(0 0 0 / .28);
+      overflow: hidden;
+    }
+    .term-head,
+    .term-foot {
+      min-height: 42px;
+      padding: 9px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--line-soft);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .term-foot {
+      border-top: 1px solid var(--line-soft);
+      border-bottom: 0;
+      color: var(--muted);
+    }
+    .chip {
+      display: inline-block;
+      background: var(--text);
+      color: var(--bg);
+      padding: 0 7px;
+      font-weight: 850;
+    }
+    .body {
+      padding: 18px 12px;
+      min-height: 380px;
+    }
+    .columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 26px;
+    }
+    .preview {
+      border-left: 1px solid var(--line-soft);
+      padding-left: 24px;
+      min-height: 300px;
+    }
+    .poster {
+      width: 170px;
+      height: 238px;
+      border-radius: 7px;
+      border: 1px solid oklch(0.35 0.045 62);
+      background:
+        radial-gradient(circle at 54% 43%, oklch(0.41 0.08 67), transparent 58px),
+        linear-gradient(135deg, oklch(0.25 0.06 58), oklch(0.15 0.045 160));
+      display: grid;
+      place-items: center;
+      color: var(--focus);
+      text-align: center;
+      font-weight: 900;
+      margin-bottom: 18px;
+    }
+    .section {
+      margin-top: 18px;
+      margin-bottom: 7px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-size: 12px;
+    }
+    .row {
+      min-height: 31px;
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: baseline;
+      padding: 6px 8px;
+      color: var(--muted);
+    }
+    .row.selected {
+      background: var(--row-strong);
+      outline: 1px solid oklch(0.34 0.045 63);
+      color: var(--text);
+    }
+    .mark { color: var(--focus); font-weight: 900; }
+    .right { color: var(--muted); }
+    .facts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 13px;
+    }
+    .fact {
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      min-height: 56px;
+      padding: 8px;
+      color: var(--muted);
+    }
+    .fact b {
+      display: block;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+    .tabs, .days {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+    .tabs .active, .days .active {
+      color: var(--text);
+      border-bottom: 2px solid var(--focus);
+      padding-bottom: 3px;
+      font-weight: 800;
+    }
+    .input-line {
+      margin-top: 10px;
+      border-bottom: 1px solid var(--teal);
+      padding-bottom: 8px;
+    }
+    .key { color: var(--focus); font-weight: 850; }
+    .crumb { color: var(--muted); }
+    .thumb {
+      width: 46px;
+      height: 46px;
+      border-radius: 6px;
+      border: 1px solid var(--line-soft);
+      background: linear-gradient(135deg, oklch(0.25 0.055 65), oklch(0.16 0.045 178));
+      color: var(--focus);
+      font-size: 12px;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+    }
+    .release {
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr) auto;
+      gap: 11px;
+      align-items: center;
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      padding: 9px;
+      color: var(--muted);
+      min-height: 66px;
+    }
+    .release.selected {
+      background: var(--row-strong);
+      border-color: oklch(0.37 0.052 65);
+    }
+    .time-row {
+      display: grid;
+      grid-template-columns: 80px minmax(0, 1fr);
+      gap: 12px;
+      margin: 10px 0;
+      align-items: stretch;
+    }
+    .time {
+      color: var(--text);
+      font-weight: 850;
+      padding-top: 10px;
+    }
+    .mini {
+      min-height: 270px;
+      padding: 15px;
+      border-top: 1px solid var(--line-soft);
+    }
+    .palette-line {
+      padding: 9px 12px;
+      border-radius: 7px;
+      border: 1px solid var(--line-soft);
+      background: oklch(0.13 0.016 58);
+      margin-top: 9px;
+    }
+    .state-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .state-card {
+      min-height: 145px;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: oklch(0.122 0.014 58);
+      padding: 14px;
+    }
+    .heatmap {
+      white-space: pre;
+      color: var(--dim);
+      font-size: 13px;
+      line-height: 1.38;
+    }
+
+    @media (max-width: 1100px) {
+      .grid.two, .grid.three, .columns, .state-strip { grid-template-columns: 1fr; }
+      .preview { border-left: 0; border-top: 1px solid var(--line-soft); padding-left: 0; padding-top: 18px; }
+      .role-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Kunai CLI design board</h1>
+    <p class="lede">
+      Kunai is a user-facing terminal media app. It searches media, resolves direct provider streams, hands playback to mpv, tracks progress, supports recommendations, release calendar, playback recovery, tracks/source selection, watch history, stats, and offline/download flows. The CLI should feel like a premium streaming product translated into a TUI: calm, fast, rich only when it helps a decision, and never like provider logs or a developer dashboard.
+    </p>
+
+    <h2>Color Roles</h2>
+    <section class="panel pad">
+      <h3>Recommended direction: Ember + Teal with clearer state hierarchy</h3>
+      <p class="muted">The screen should not be amber plus beige. Use amber only for focus/action, teal for active process and input, green for playable success, blue for upcoming/info, violet for secondary metadata categories, red for real failure.</p>
+      <div class="role-grid">
+        <div class="role dark" style="background:var(--bg)"><b>bg</b><small>main surface</small><span>terminal base</span></div>
+        <div class="role dark" style="background:var(--row-strong)"><b>row</b><small>selected</small><span>focus band</span></div>
+        <div class="role" style="background:var(--text); color:var(--bg)"><b>text</b><small>primary</small><span>titles</span></div>
+        <div class="role" style="background:var(--muted); color:var(--bg)"><b>muted</b><small>metadata</small><span>facts</span></div>
+        <div class="role" style="background:var(--focus); color:var(--bg)"><b>amber</b><small>focus</small><span>actions</span></div>
+        <div class="role" style="background:var(--teal); color:var(--bg)"><b>teal</b><small>process</small><span>input</span></div>
+        <div class="role" style="background:var(--green); color:var(--bg)"><b>green</b><small>ready</small><span>playable</span></div>
+        <div class="role" style="background:var(--blue); color:var(--bg)"><b>blue</b><small>soon</small><span>upcoming</span></div>
+      </div>
+      <div class="grid three" style="margin-top:14px">
+        <div class="palette-line"><span class="focus">Amber</span> selected row marker, active tab, primary footer key.</div>
+        <div class="palette-line"><span class="teal">Teal</span> cursor, search underline, resolving stream, neutral process.</div>
+        <div class="palette-line"><span class="green">Green</span> ready, available, attached, episode complete.</div>
+        <div class="palette-line"><span class="blue">Blue</span> upcoming, future release, informational timeline state.</div>
+        <div class="palette-line"><span class="warn">Warning</span> paused, expected today, recoverable caution.</div>
+        <div class="palette-line"><span class="red">Red</span> failed, missed, broken, action required only.</div>
+      </div>
+    </section>
+
+    <h2>Post-Playback: Episode Page + Remote</h2>
+    <div class="terminal">
+      <div class="term-head">
+        <div><span class="focus">Kunai</span> · <span class="chip">Post-play</span> · anime · allanime · <span class="teal">DR. STONE</span> · S04E07</div>
+        <div><span class="green">● ready</span> · 180x45</div>
+      </div>
+      <div class="body">
+        <div class="columns">
+          <div>
+            <div class="focus strong">DR. STONE</div>
+            <div class="strong" style="font-size:21px">E31 · Unknown Known</div>
+            <div class="muted">S04E07 · released May 14, 2026 · U/A 16+ · <span class="blue">sub | dub</span></div>
+            <p style="margin-top:18px; max-width:74ch">With the computer completed, the team will need a user interface: a TV.</p>
+
+            <div class="section">Playback result</div>
+            <div><span class="green">✓ episode complete</span><span class="muted"> · watched 24m</span></div>
+            <div><span class="dim">Playback</span> <span class="teal">vidking</span><span class="muted"> · direct-http · cache hit · </span><span class="blue">1080p</span></div>
+            <div><span class="dim">Tracks</span> <span class="muted">Japanese audio · </span><span class="green">English subtitles attached</span></div>
+            <div><span class="dim">Autoplay</span> <span class="warn">paused</span><span class="muted"> · resumes only from explicit action</span></div>
+
+            <div class="section">Next actions</div>
+            <div class="row selected"><div class="mark">▌</div><div><span class="strong">Next episode</span> <span class="blue">E32</span><span class="muted"> · Challengers of Science · 24m</span></div><div class="right">enter</div></div>
+            <div class="row"><div></div><div><span class="strong">Episodes</span> <span class="muted">open season list, current episode stays marked</span></div><div class="right">e</div></div>
+            <div class="row"><div></div><div><span class="strong">Tracks</span> <span class="muted">source, quality, audio, subtitles</span></div><div class="right">t</div></div>
+            <div class="row"><div></div><div><span class="strong">Search</span> <span class="muted">find something else without leaving flow</span></div><div class="right">s</div></div>
+
+            <div class="section">Recommended from this watch</div>
+            <div class="row"><div class="focus">1</div><div><span class="strong">La Brea</span> <span class="violet">survival mystery</span><span class="muted"> · series</span></div><div></div></div>
+            <div class="row"><div class="focus">2</div><div><span class="strong">Agents of S.H.I.E.L.D.</span> <span class="violet">team sci-fi</span><span class="muted"> · series</span></div><div></div></div>
+          </div>
+          <aside class="preview">
+            <div class="poster">DR.<br>STONE</div>
+            <h3>Next episode</h3>
+            <p class="muted"><span class="blue">E32</span> · Challengers of Science</p>
+            <p class="dim" style="margin-top:10px">Poster slot stays reserved. Metadata is anchored below it so image loading cannot move the layout.</p>
+            <div class="facts">
+              <div class="fact"><b>Status</b><span class="green">available</span></div>
+              <div class="fact"><b>Autoplay</b><span class="warn">paused</span></div>
+              <div class="fact"><b>Source</b><span class="teal">vidking</span></div>
+              <div class="fact"><b>Action</b><span class="focus">play next</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div class="term-foot"><div><span class="key">[n]</span> next   <span class="key">[p]</span> previous   <span class="key">[r]</span> replay   <span class="key">[e]</span> episodes   <span class="key">[/]</span> commands</div><div>Post-play</div></div>
+    </div>
+
+    <h2>Browse And Search Results</h2>
+    <div class="terminal">
+      <div class="term-head">
+        <div><span class="focus">Kunai</span> · <span class="chip">Browse</span> · series · <span class="teal">vidking</span> · <span class="warn">3d streak</span></div>
+        <div><span class="green">● ready</span> · 178x41</div>
+      </div>
+      <div class="body">
+        <div class="muted">12 results · TMDB / Videasy</div>
+        <div style="margin-top:18px">Search title</div>
+        <div class="input-line"><span class="teal">⌕</span> the boys<span style="background:var(--teal); color:var(--bg)"> </span></div>
+        <div class="dim" style="margin-top:16px">Tokens: <span class="violet">type:series</span> <span class="blue">year:2008</span> <span class="warn">rating:8</span> · /filters for guided clips</div>
+        <div style="height:1px;background:var(--line-soft);margin:18px 0"></div>
+        <div class="columns">
+          <div>
+            <div class="row selected"><div class="mark">▌</div><div><span class="strong">The Boys (2019)</span><br><span class="violet">superhero satire</span><span class="muted"> · strong match</span></div><div class="blue">series</div></div>
+            <div class="row"><div></div><div>The Boys Presents: Diabolical (2022)</div><div class="blue">series</div></div>
+            <div class="row"><div></div><div>The Hardy Boys (1995)</div><div class="blue">series</div></div>
+            <div class="row"><div></div><div>The Boy's Word: Blood on the Asphalt (2023)</div><div class="blue">series</div></div>
+            <div class="row"><div></div><div>My Life with the Walter Boys (2023)</div><div class="blue">series</div></div>
+          </div>
+          <aside class="preview">
+            <div class="poster">THE<br>BOYS</div>
+            <h3>The Boys</h3>
+            <p class="muted"><span class="blue">series</span> · 2019 · <span class="green">available</span></p>
+            <p class="dim" style="margin-top:10px">Preview confirms the match. Rich cast, trailer, seasons, genres, and provider details open in details sheet via shift+enter.</p>
+            <div class="facts">
+              <div class="fact"><b>Match</b><span class="green">strong</span></div>
+              <div class="fact"><b>Mode</b><span class="blue">series</span></div>
+              <div class="fact"><b>History</b><span class="warn">S01E01</span></div>
+              <div class="fact"><b>Action</b><span class="focus">open</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div class="term-foot"><div><span class="key">[enter]</span> open   <span class="key">[↑↓]</span> navigate   <span class="key">[ctrl+f]</span> filter   <span class="key">[shift+enter]</span> details   <span class="key">[/]</span> commands</div><div>Browse</div></div>
+    </div>
+
+    <h2>Calendar</h2>
+    <div class="terminal">
+      <div class="term-head">
+        <div><span class="focus">Kunai</span> · <span class="chip">Calendar</span> · schedule · tracked + discoverable</div>
+        <div><span class="green">● ready</span> · 5 days</div>
+      </div>
+      <div class="body">
+        <div class="columns">
+          <div>
+            <div class="strong" style="font-size:21px">Friday, May 22</div>
+            <div class="tabs"><span class="active">All</span><span>Anime</span><span>Series</span><span>Movies</span><span>Tracked</span></div>
+            <div class="days"><span>Yesterday</span><span class="active">Today</span><span>Tomorrow</span><span>Weekend</span><span>Next week</span></div>
+            <div class="time-row"><div class="time"><span class="teal">›</span> 03:00<br>am</div><div class="release selected"><div class="thumb">HN</div><div><span class="strong">Hanakappa</span><br><span class="green">aired</span><span class="muted"> · EP 657 · available now · anime</span></div><div class="green">play</div></div></div>
+            <div class="time-row"><div class="time"><span class="teal">›</span> 03:00<br>pm</div><div class="release"><div class="thumb">PK</div><div><span class="strong">Pokemon Horizons: The Series</span><br><span class="warn">today</span><span class="muted"> · EP 137 · expected this afternoon</span></div><div class="warn">expected</div></div></div>
+            <div class="time-row"><div class="time"><span class="teal">›</span> 07:00<br>pm</div><div class="release"><div class="thumb">FR</div><div><span class="strong">Frieren</span><br><span class="blue">soon</span><span class="muted"> · S02E04 · not aired yet · tracked</span></div><div class="blue">upcoming</div></div></div>
+            <div class="time-row"><div class="time"><span class="teal">›</span> 09:00<br>pm</div><div class="release"><div class="thumb">CR</div><div><span class="strong">Coronation Street</span><br><span class="red">missed</span><span class="muted"> · available · not watched</span></div><div class="red">catch up</div></div></div>
+          </div>
+          <aside class="preview">
+            <div class="poster">HANA<br>KAPPA</div>
+            <h3>Hanakappa</h3>
+            <p class="muted">EP 657 aired at 03:00 am. Calendar shows watched/tracked state, availability, provider, and whether it can be played now.</p>
+            <div class="facts">
+              <div class="fact"><b>Status</b><span class="green">available</span></div>
+              <div class="fact"><b>Tracking</b><span class="teal">tracked</span></div>
+              <div class="fact"><b>Type</b><span class="blue">anime</span></div>
+              <div class="fact"><b>Action</b><span class="focus">open episode</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div class="term-foot"><div><span class="key">[tab]</span> type   <span class="key">[←→]</span> day   <span class="key">[enter]</span> open   <span class="key">[shift+enter]</span> details   <span class="key">[/]</span> commands</div><div>Calendar</div></div>
+    </div>
+
+    <h2>Tracks, Command Palette, Stats</h2>
+    <div class="grid three">
+      <div class="terminal">
+        <div class="term-head"><div><span class="focus">Kunai</span> · <span class="chip">Tracks</span></div><div><span class="green">● ready</span></div></div>
+        <div class="mini">
+          <div class="section" style="margin-top:0">Source</div>
+          <div class="row selected"><div class="mark">▌</div><div><span class="teal">vidking</span><span class="muted"> · direct-http · cache hit</span></div><div class="green">current</div></div>
+          <div class="section">Quality</div>
+          <div><span class="blue">1080p</span><span class="muted"> · mp4 · no alternate qualities</span></div>
+          <div class="section">Audio / Subtitles</div>
+          <div><span class="violet">Japanese audio</span> · <span class="green">English subtitles attached</span></div>
+          <div class="dim" style="margin-top:16px">Single-option sections render as facts, not dead pickers.</div>
+        </div>
+        <div class="term-foot"><div><span class="key">[↑↓]</span> select   <span class="key">[enter]</span> apply   <span class="key">[/]</span> commands</div><div>Tracks</div></div>
+      </div>
+
+      <div class="terminal">
+        <div class="term-head"><div><span class="focus">Kunai</span> · <span class="chip">Commands</span></div><div>esc</div></div>
+        <div class="mini">
+          <div class="input-line"><span class="teal">/</span> tracks<span style="background:var(--teal); color:var(--bg)"> </span></div>
+          <div class="section">Playback</div>
+          <div class="row selected"><div class="mark">▌</div><div><span class="strong">Tracks</span><br><span class="muted">source, quality, audio, subtitle details</span></div><div class="right">t</div></div>
+          <div class="row"><div></div><div><span class="strong">Replay</span><br><span class="muted">restart current episode from beginning</span></div><div class="right">r</div></div>
+          <div class="row"><div></div><div><span class="strong">Autoplay</span><br><span class="warn">paused for this chain</span></div><div class="right">a</div></div>
+          <div class="section">Scoped only</div>
+          <div class="dim">No settings/about/provider internals unless typed exactly or globally opened.</div>
+        </div>
+        <div class="term-foot"><div><span class="key">[enter]</span> run   <span class="key">[esc]</span> close</div><div>Commands</div></div>
+      </div>
+
+      <div class="terminal">
+        <div class="term-head"><div><span class="focus">Kunai</span> · <span class="chip">Stats</span></div><div><span class="green">● ready</span></div></div>
+        <div class="mini">
+          <div class="tabs"><span class="active">Overview</span><span>Titles</span></div>
+          <div><span class="warn">3d streak</span><span class="muted"> · 18 episodes · 7h 42m watched</span></div>
+          <div class="dim">This week: 6 ep · 2h 31m · more than last week</div>
+          <div class="heatmap" style="margin-top:12px">May Jun Jul Aug Sep Oct
+Su · · ░ ▒ █ ·
+Mo · · · ░ ▓ ·
+Tu · ░ · · ▒ █
+We · · ░ ▒ █ ·</div>
+          <div style="margin-top:12px">MARRIAGETOXIN <span class="focus">██████░░</span> <span class="green">5 ep</span></div>
+          <div>The Boys       <span class="focus">████░░░░</span> <span class="blue">2 ep</span></div>
+        </div>
+        <div class="term-foot"><div><span class="key">[tab]</span> range   <span class="key">[s]</span> share   <span class="key">[/]</span> commands</div><div>Stats</div></div>
+      </div>
+    </div>
+
+    <h2>Four Required States</h2>
+    <div class="state-strip">
+      <div class="state-card">
+        <h3><span class="teal">Loading</span></h3>
+        <p class="muted">Specific, calm, stable. Example: resolving stream, loading poster, building watch stats. Do not show noisy logs.</p>
+      </div>
+      <div class="state-card">
+        <h3><span class="green">Success</span></h3>
+        <p class="muted">Quiet unless meaningful. Example: episode complete, subtitle attached, source ready, download ready.</p>
+      </div>
+      <div class="state-card">
+        <h3><span class="dim">Empty</span></h3>
+        <p class="muted">Short next action. Example: no stats yet, no recommendations, no library items. No tutorial wall.</p>
+      </div>
+      <div class="state-card">
+        <h3><span class="red">Error</span></h3>
+        <p class="muted">Actionable and scoped. Example: stream did not start, provider failed, poster unavailable. Offer recover/fallback/diagnostics.</p>
+      </div>
+    </div>
+
+    <h2>Anti-Patterns To Avoid</h2>
+    <div class="grid three">
+      <div class="note"><span class="strong">Do not make amber universal.</span><br>Amber is focus/action. If everything is amber or beige, hierarchy collapses.</div>
+      <div class="note"><span class="strong">Do not expose provider internals by default.</span><br>Provider/cache/subtitle counts go to preview, details, or diagnostics unless they affect the immediate decision.</div>
+      <div class="note"><span class="strong">Do not make every value a badge.</span><br>Use text rhythm, selected rows, muted metadata, and preview facts first.</div>
+      <div class="note"><span class="strong">Do not use boxes everywhere.</span><br>Prefer spacing and dividers. Boxes are for preview rail, details sheet, real framed tools, and important state groups.</div>
+      <div class="note"><span class="strong">Do not make modals universal portals.</span><br>Subpanels stay scoped. Return to previous screen for broader navigation.</div>
+      <div class="note"><span class="strong">Do not let images cause layout jumps.</span><br>Reserve poster slots and anchor metadata below the reserved area.</div>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kunai — Sakura systems (onboarding · calendar · library · downloads)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: oklch(0.103 0.014 350); --bg-soft: oklch(0.135 0.018 352);
+    --row: oklch(0.165 0.022 352); --row-sel: oklch(0.218 0.046 356);
+    --line: oklch(0.300 0.030 352); --line-soft: oklch(0.198 0.020 352);
+    --text: oklch(0.948 0.012 350); --text-2: oklch(0.772 0.016 352);
+    --muted: oklch(0.598 0.020 352); --dim: oklch(0.442 0.018 352);
+    --rose: oklch(0.800 0.130 10); --rose-deep: oklch(0.640 0.120 6); --rose-soft: oklch(0.880 0.055 10);
+    --ok: oklch(0.845 0.095 172); --ok-dim: oklch(0.615 0.075 172);
+    --err: oklch(0.625 0.205 25);
+    --font: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; color:var(--text-2); font-family:var(--font); font-size:14px; line-height:1.5; letter-spacing:.1px;
+    background: radial-gradient(circle at 88% -6%, oklch(0.30 0.10 12 / .20), transparent 36rem),
+                radial-gradient(circle at 6% 8%, oklch(0.22 0.06 320 / .14), transparent 32rem),
+                oklch(0.072 0.010 350); }
+  main { max-width:1140px; margin:0 auto; padding:42px 26px 110px; }
+  h1 { font-size:25px; font-weight:700; color:var(--text); margin:0; }
+  .petal { color:var(--rose); }
+  .sub { color:var(--muted); margin:9px 0 0; max-width:88ch; }
+  h2 { margin:58px 0 14px; font-size:12px; font-weight:700; color:var(--rose); text-transform:uppercase; letter-spacing:.18em; }
+  .h2sub { color:var(--muted); font-size:13px; margin:-8px 0 16px; max-width:86ch; }
+  .callout { border-left:2px solid var(--rose); padding:3px 0 3px 14px; margin:16px 0; color:var(--muted); }
+  .callout b { color:var(--text); }
+  .text{color:var(--text)}.t2{color:var(--text-2)}.muted{color:var(--muted)}.dim{color:var(--dim)}
+  .rose{color:var(--rose)}.ok{color:var(--ok)}.err{color:var(--err)}.b{font-weight:700}.med{font-weight:500}
+
+  .term { border:1px solid var(--line); border-radius:10px; background:var(--bg); box-shadow:0 26px 80px oklch(0 0 0 / .5); overflow:hidden; position:relative; }
+  .term::before { content:""; position:absolute; inset:0 0 auto 0; height:1px; background:linear-gradient(90deg,transparent,var(--rose-soft),transparent); opacity:.5; }
+  .head,.foot { display:flex; justify-content:space-between; align-items:center; padding:10px 18px; background:color-mix(in oklab,var(--bg-soft) 86%,transparent); border-bottom:1px solid var(--line-soft); color:var(--muted); font-size:13px; }
+  .foot { border-bottom:0; border-top:1px solid var(--line-soft); }
+  .body { padding:18px 22px 22px; }
+  .brand{color:var(--rose)} .chip{background:var(--text);color:var(--bg);font-weight:700;border-radius:4px;padding:1px 9px}
+  .key{color:var(--rose);font-weight:700} .surface{color:var(--muted)} .crumb{color:var(--muted)}
+  .dot-ok{color:var(--ok)}
+
+  .tabs{display:flex;gap:16px;font-size:13px}
+  .tabs .on{color:var(--text);font-weight:700;border-bottom:2px solid var(--rose);padding-bottom:2px}
+  .tabs .off{color:var(--dim)}
+  .group{display:flex;align-items:center;gap:12px;margin:16px 0 7px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.15em}
+  .group:first-of-type{margin-top:12px} .group::after{content:"";flex:1;height:1px;background:var(--line-soft)}
+  .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.15em;margin:14px 0 6px}
+
+  .split{display:grid;grid-template-columns:1fr 250px;gap:24px}
+  .rail{border-left:1px solid var(--line-soft);padding-left:20px}
+  .poster{height:150px;border-radius:8px;border:1px solid var(--line-soft);background:linear-gradient(150deg,color-mix(in oklab,var(--rose) 26%,var(--bg)),var(--bg));display:flex;align-items:center;justify-content:center;color:var(--rose);font-weight:700;text-align:center;font-size:13px}
+  .fact{display:flex;justify-content:space-between;font-size:13px;padding:2px 0}
+  .fact .k{color:var(--muted)} .fact .v{color:var(--text-2)}
+  .np-meta{font-size:13px;color:var(--muted)}
+  .resume{margin-top:14px;background:var(--row-sel);border-radius:6px;padding:8px 10px;color:var(--text);font-weight:500;display:flex;justify-content:space-between}
+
+  /* generic media row */
+  .row{display:grid;grid-template-columns:18px 1fr 92px 120px;align-items:center;padding:4px 8px 4px 0;border-radius:6px}
+  .row .bar{color:var(--rose);font-weight:700;text-align:center}
+  .row .ttl{color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .ep{color:var(--muted);font-size:13px}
+  .row .st{font-size:13px;white-space:nowrap;text-align:right}
+  .row.sel{background:var(--row-sel)}
+
+  /* ===== onboarding wizard ===== */
+  .wiz-step{color:var(--muted);font-size:13px;letter-spacing:.1em}
+  .wiz-step b{color:var(--rose)}
+  .wiz-h{font-size:22px;font-weight:700;color:var(--text);margin:10px 0 4px;letter-spacing:-.3px}
+  .check{display:flex;align-items:center;gap:10px;padding:4px 0;font-size:14px}
+  .check .ic-ok{color:var(--ok)} .check .ic-warn{color:var(--rose)} .check .ic-pending{color:var(--dim)}
+  .check .c-sub{color:var(--muted);font-size:12px;margin-left:auto}
+  .opt{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:7px;border:1px solid var(--line-soft);margin-top:8px}
+  .opt.sel{border-color:var(--rose);background:var(--row-sel)}
+  .opt .swrow{display:flex;gap:5px;margin-left:auto}
+  .opt .sw{width:18px;height:18px;border-radius:4px;border:1px solid oklch(1 0 0 / .12)}
+  .opt .nm{color:var(--text);font-weight:500} .opt.sel .mk{color:var(--rose);font-weight:700} .opt .mk{color:transparent}
+  .toggle{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;border:1px solid var(--line-soft);margin-top:8px}
+  .pill{margin-left:auto;font-size:12px;border-radius:20px;padding:2px 10px;border:1px solid var(--line)}
+  .pill.on{background:color-mix(in oklab,var(--ok) 22%,var(--bg));color:var(--ok);border-color:transparent}
+  .dotline{display:flex;gap:6px;margin-top:14px}
+  .dotline i{width:7px;height:7px;border-radius:50%;background:var(--line)} .dotline i.on{background:var(--rose)}
+
+  /* ===== calendar ===== */
+  .daytabs{display:flex;gap:16px;font-size:13px;color:var(--dim)}
+  .daytabs .on{color:var(--rose);font-weight:700}
+  .timegrp{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:14px 0 4px}
+  .crow{display:grid;grid-template-columns:18px 60px 1fr 90px 120px;align-items:center;padding:4px 8px 4px 0;border-radius:6px}
+  .crow .tm{color:var(--muted);font-size:13px} .crow .bar{color:var(--rose);text-align:center;font-weight:700}
+  .crow .ttl{color:var(--text);font-weight:500} .crow .code{color:var(--muted);font-size:13px}
+  .crow .st{font-size:13px;text-align:right} .crow.sel{background:var(--row-sel)}
+  .s-aired{color:var(--ok)} .s-today{color:var(--rose)} .s-soon{color:var(--text-2)} .s-later{color:var(--dim)}
+
+  /* ===== library state glyphs ===== */
+  .g-saved{color:var(--dim)} .g-offline{color:var(--ok)} .g-prog{color:var(--rose)} .g-done{color:var(--ok)}
+
+  /* ===== downloads / queue (live, smooth) ===== */
+  .qrow{display:grid;grid-template-columns:1fr 96px 150px 86px;align-items:center;gap:14px;padding:7px 8px;border-radius:6px}
+  .qrow.sel{background:var(--row-sel)}
+  .qrow .qt{color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qrow .qt .qe{color:var(--muted);font-weight:400;font-size:13px}
+  .qrow .qstate{font-size:13px;white-space:nowrap}
+  .qtrack{height:6px;border-radius:3px;background:var(--line);overflow:hidden;position:relative}
+  /* determinate, stateful fill — width AND the % read the same registered value */
+  @property --p1{syntax:"<integer>";inherits:false;initial-value:0}
+  @property --p2{syntax:"<integer>";inherits:false;initial-value:0}
+  .qfill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--rose-deep),var(--rose))}
+  .qfill.b1{width:calc(1% * var(--p1));animation:run1 3.4s cubic-bezier(.32,0,.18,1) forwards}
+  .qfill.b2{width:calc(1% * var(--p2));animation:run2 4.6s cubic-bezier(.32,0,.18,1) forwards}
+  @keyframes run1{from{--p1:0}to{--p1:64}}
+  @keyframes run2{from{--p2:0}to{--p2:41}}
+  .qmeta{color:var(--muted);font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+  .qpct{font-weight:700;font-variant-numeric:tabular-nums}
+  .qpct.b1{counter-reset:pc var(--p1);animation:run1 3.4s cubic-bezier(.32,0,.18,1) forwards}
+  .qpct.b2{counter-reset:pc var(--p2);animation:run2 4.6s cubic-bezier(.32,0,.18,1) forwards}
+  .qpct.b1::after,.qpct.b2::after{content:counter(pc) "%";color:var(--rose)}
+  .qeta{color:var(--dim);font-size:12px}
+  .qdone .qfill{background:var(--ok-dim)} .qfail .qfill{background:color-mix(in oklab,var(--err) 60%,var(--line))}
+  .qsum{display:flex;gap:18px;color:var(--muted);font-size:13px;align-items:center}
+  .qsum b{color:var(--text)}
+</style>
+</head>
+<body>
+<main>
+
+  <h1>Kunai · <span class="petal">❀</span> Sakura systems</h1>
+  <p class="sub">Onboarding, Calendar, Library, and Downloads — same dusk-plum + rose/mint chord as the feel-tour.
+  Library is a <b>unified shelf</b> (saved · downloaded · in-progress), not a file manager. Downloads are
+  <b>live</b> but the motion is eased and the columns are fixed — so it feels alive without the jumpy reflow that
+  made it feel "weird" before.</p>
+
+  <!-- ============ ONBOARDING ============ -->
+  <h2>Onboarding · the first thirty seconds</h2>
+  <p class="h2sub">Four calm steps, each in the Sakura frame, every one skippable. Step one already feels like the product, not a config form.</p>
+
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> <span class="crumb">· welcome</span></span><span class="surface">setup · 1⁄4</span></div>
+    <div class="body">
+      <div class="wiz-step">❮ step <b>1</b> of 4 ❯</div>
+      <div class="wiz-h">Let's get you watching</div>
+      <div class="np-meta">Kunai finds playable streams and hands them to mpv. We'll check a couple of things first.</div>
+      <div style="margin-top:14px">
+        <div class="check"><span class="ic-ok">✓</span> mpv <span class="c-sub">found · /usr/bin/mpv</span></div>
+        <div class="check"><span class="ic-ok">✓</span> cache &amp; data stores <span class="c-sub">ready</span></div>
+        <div class="check"><span class="ic-ok">✓</span> terminal images <span class="c-sub">Kitty protocol · posters on</span></div>
+        <div class="check"><span class="ic-warn">△</span> chafa <span class="c-sub">optional · enables posters on more terminals</span></div>
+      </div>
+      <div class="dotline"><i class="on"></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="foot"><span><span class="key">[enter]</span> continue &nbsp; <span class="key">[s]</span> skip setup &nbsp; <span class="key">[d]</span> how to fix chafa</span><span class="surface">Setup</span></div>
+  </div>
+
+  <div class="term" style="margin-top:22px">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> <span class="crumb">· make it yours</span></span><span class="surface">setup · 3⁄4</span></div>
+    <div class="body">
+      <div class="wiz-step">❮ step <b>3</b> of 4 ❯</div>
+      <div class="wiz-h">Pick your look</div>
+      <div class="opt sel"><span class="mk">▸</span><span class="nm">Sakura</span><span class="muted">— dusk rose, calm</span><span class="swrow"><i class="sw" style="background:var(--rose)"></i><i class="sw" style="background:var(--ok)"></i><i class="sw" style="background:var(--bg-soft)"></i></span></div>
+      <div class="opt"><span class="mk">▸</span><span class="nm">Hearth</span><span class="muted">— fox amber, warm</span><span class="swrow"><i class="sw" style="background:oklch(0.80 0.155 70)"></i><i class="sw" style="background:oklch(0.79 0.15 150)"></i><i class="sw" style="background:oklch(0.135 0.015 58)"></i></span></div>
+      <div class="opt"><span class="mk">▸</span><span class="nm">Ember</span><span class="muted">— warm coral</span><span class="swrow"><i class="sw" style="background:oklch(0.76 0.15 42)"></i><i class="sw" style="background:oklch(0.79 0.15 150)"></i><i class="sw" style="background:oklch(0.136 0.018 40)"></i></span></div>
+
+      <div class="label" style="margin-top:16px">While we're here</div>
+      <div class="toggle"><span class="rose">◈</span> Discord presence <span class="muted">— show friends what you're watching</span><span class="pill on">on</span></div>
+      <div class="toggle"><span class="rose">◈</span> Autoplay next episode <span class="muted">— keep the binge going</span><span class="pill on">on</span></div>
+      <div class="dotline"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>
+    </div>
+    <div class="foot"><span><span class="key">[↑↓]</span> choose &nbsp; <span class="key">[space]</span> toggle &nbsp; <span class="key">[enter]</span> next &nbsp; <span class="key">[b]</span> back</span><span class="surface">Setup</span></div>
+  </div>
+
+  <!-- ============ CALENDAR ============ -->
+  <h2>Calendar · a tabbed vertical schedule</h2>
+  <p class="h2sub">Not search-with-dates. Type tabs across the top, day range below, vertical time groups. State colors stay in the chord: <span class="ok">mint</span> available · <span class="rose">rose</span> expected today · <span class="t2">bright</span> upcoming · <span class="dim">dim</span> later.</p>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">Calendar</span> <span class="crumb">· Today · Fri, May 23</span></span><span><span class="dot-ok">●</span> ready · 178×41</span></div>
+    <div class="body">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="tabs"><span class="on">All</span><span class="off">Anime</span><span class="off">Series</span><span class="off">Movies</span><span class="off">Tracked</span></div>
+        <div class="daytabs">Yesterday <span class="on">Today</span> Tomorrow Weekend Next&nbsp;week</div>
+      </div>
+      <div class="split" style="margin-top:6px">
+        <div>
+          <div class="timegrp">Already aired</div>
+          <div class="crow"><span class="bar"></span><span class="tm">09:00</span><span class="ttl">Kaiju No. 8</span><span class="code">S02E07</span><span class="st s-aired">● available</span></div>
+          <div class="crow sel"><span class="bar">▎</span><span class="tm">11:30</span><span class="ttl">Frieren</span><span class="code">S01E29</span><span class="st s-aired">● available</span></div>
+          <div class="timegrp">Later today</div>
+          <div class="crow"><span class="bar"></span><span class="tm">18:00</span><span class="ttl">The Eminence in Shadow</span><span class="code">S03E04</span><span class="st s-today">◐ expected</span></div>
+          <div class="crow"><span class="bar"></span><span class="tm">21:00</span><span class="ttl">One Piece</span><span class="code">E1142</span><span class="st s-soon">○ upcoming</span></div>
+          <div class="timegrp">Late</div>
+          <div class="crow"><span class="bar"></span><span class="tm">23:30</span><span class="ttl">The Boys</span><span class="code">S05E02</span><span class="st s-later">· 23:30</span></div>
+        </div>
+        <div class="rail">
+          <div class="poster">FRIEREN</div>
+          <div class="label">Frieren · S01E29</div>
+          <div class="np-meta">Anime · aired 11:30 today · 24m</div>
+          <div class="fact" style="margin-top:8px"><span class="k">status</span><span class="v ok">available now</span></div>
+          <div class="fact"><span class="k">tracked</span><span class="v rose">following</span></div>
+          <div class="resume"><span>▸ Watch now</span><span class="rose">enter</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="foot"><span><span class="key">[tab]</span> type &nbsp; <span class="key">[←→]</span> day &nbsp; <span class="key">[enter]</span> open &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Calendar</span></div>
+  </div>
+
+  <!-- ============ LIBRARY ============ -->
+  <h2>Library · your shelf (saved · offline · in progress)</h2>
+  <p class="h2sub">One unified collection. Glyphs carry state: <span class="g-saved">◆ saved</span> (cloud) · <span class="g-offline">↓ offline</span> (with episode count) · <span class="g-prog">▸ in progress</span> · <span class="muted">⚲ protected</span> from cleanup. The rail shows offline depth and the one right action.</p>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">Library</span> <span class="crumb">· 14 titles · 3.2 GB offline</span></span><span><span class="dot-ok">●</span> ready · 178×41</span></div>
+    <div class="body"><div class="split">
+      <div>
+        <div class="tabs"><span class="on">Library</span><span class="off">Queue</span></div>
+        <div class="group">In progress</div>
+        <div class="row sel"><span class="bar">▎</span><span class="ttl">DR. STONE</span><span class="ep">S4</span><span class="st"><span class="g-offline">↓ 7 ep</span></span></div>
+        <div class="row"><span class="bar"></span><span class="ttl">MARRIAGETOXIN</span><span class="ep">S1</span><span class="st"><span class="g-prog">▸ 79%</span></span></div>
+        <div class="group">Downloaded</div>
+        <div class="row"><span class="bar"></span><span class="ttl">Frieren <span class="muted">⚲</span></span><span class="ep">S1</span><span class="st"><span class="g-offline">↓ 4 ep</span></span></div>
+        <div class="row"><span class="bar"></span><span class="ttl">The Pitt</span><span class="ep">S1</span><span class="st"><span class="g-done">✓ 6 ep</span></span></div>
+        <div class="group">Saved</div>
+        <div class="row"><span class="bar"></span><span class="ttl">Solo Leveling</span><span class="ep">S1</span><span class="st"><span class="g-saved">◆ saved</span></span></div>
+        <div class="row"><span class="bar"></span><span class="ttl">Vinland Saga</span><span class="ep">—</span><span class="st"><span class="g-saved">◆ saved</span></span></div>
+      </div>
+      <div class="rail">
+        <div class="poster">DR.<br>STONE</div>
+        <div class="label">DR. STONE</div>
+        <div class="np-meta">Anime · 2026 · Season 4</div>
+        <div class="fact" style="margin-top:8px"><span class="k">offline</span><span class="v ok">7 of 12 episodes</span></div>
+        <div class="fact"><span class="k">size</span><span class="v">1.4 GB</span></div>
+        <div class="fact"><span class="k">progress</span><span class="v rose">E31 · 79%</span></div>
+        <div class="fact"><span class="k">protected</span><span class="v muted">no</span></div>
+        <div class="resume"><span>▸ Resume <span class="muted">offline</span></span><span class="rose">enter</span></div>
+      </div>
+    </div></div>
+    <div class="foot"><span><span class="key">[enter]</span> open &nbsp; <span class="key">[tab]</span> queue &nbsp; <span class="key">[p]</span> protect &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Library</span></div>
+  </div>
+
+  <!-- ============ DOWNLOADS / QUEUE ============ -->
+  <h2>Queue · live, but never jumpy</h2>
+  <p class="h2sub">A determinate, stateful bar — the <b>percentage counts up in lock-step with the fill</b> (both driven by one value), so it reads as real progress, not a spinning loader. The fill is rose while downloading and settles to mint on complete, crimson on failure — so color alone tells you the state. Fixed columns + tabular numbers mean digits never wobble and rows never reflow.</p>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">Queue</span></span>
+      <span class="qsum"><span><b class="rose">2</b> downloading</span><span><b>1</b> queued</span><span><b class="err">1</b> failed</span><span class="muted">· 2.4 MB/s</span></span></div>
+    <div class="body">
+      <div class="tabs" style="margin-bottom:10px"><span class="off">Library</span><span class="on">Queue</span></div>
+
+      <div class="qrow sel">
+        <span class="qt">Solo Leveling <span class="qe">· S01E03</span></span>
+        <span class="qstate"><span class="rose">↓ downloading</span></span>
+        <span class="qtrack"><span class="qfill b1"></span></span>
+        <span class="qmeta"><span class="qpct b1"></span> <span class="qeta">· 1m left</span></span>
+      </div>
+      <div class="qrow">
+        <span class="qt">DR. STONE <span class="qe">· S04E32</span></span>
+        <span class="qstate"><span class="rose">↓ downloading</span></span>
+        <span class="qtrack"><span class="qfill b2"></span></span>
+        <span class="qmeta"><span class="qpct b2"></span> <span class="qeta">· 2m left</span></span>
+      </div>
+      <div class="qrow">
+        <span class="qt">Frieren <span class="qe">· S01E10</span></span>
+        <span class="qstate"><span class="muted">○ queued</span></span>
+        <span class="qtrack"><span class="qfill" style="width:0%"></span></span>
+        <span class="qmeta">— · waiting</span>
+      </div>
+      <div class="qrow qdone">
+        <span class="qt">The Pitt <span class="qe">· S01E06</span></span>
+        <span class="qstate"><span class="ok">✓ complete</span></span>
+        <span class="qtrack"><span class="qfill" style="width:100%"></span></span>
+        <span class="qmeta">412 MB</span>
+      </div>
+      <div class="qrow qfail">
+        <span class="qt">The Boys <span class="qe">· S02E01</span></span>
+        <span class="qstate"><span class="err">✗ failed</span></span>
+        <span class="qtrack"><span class="qfill" style="width:23%"></span></span>
+        <span class="qmeta">source gone</span>
+      </div>
+    </div>
+    <div class="foot"><span><span class="key">[r]</span> retry &nbsp; <span class="key">[x]</span> cancel &nbsp; <span class="key">[tab]</span> library &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Queue</span></div>
+  </div>
+
+  <div class="callout"><b>What killed the "weird dynamic":</b> the old queue likely re-laid-out on every tick (numbers changing width, rows nudging). Here columns are fixed, numbers are tabular, and the only thing that moves is the bar — eased, with a shimmer. Live and calm at once.</div>
+
+</main>
+</body>
+</html>

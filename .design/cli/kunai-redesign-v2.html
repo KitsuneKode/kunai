@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kunai — redesign v2 (warm / hearth)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* ---- warm / hearth base (fox amber) ---- */
+    --bg:        oklch(0.105 0.012 56);
+    --bg-soft:   oklch(0.135 0.015 58);
+    --row:       oklch(0.165 0.018 56);
+    --row-sel:   oklch(0.215 0.042 64);   /* selected band, amber-tinted */
+    --line:      oklch(0.300 0.022 58);
+    --line-soft: oklch(0.205 0.016 58);
+
+    /* ---- neutral text ramp = does ~80% of hierarchy ---- */
+    --text:   oklch(0.940 0.014 82);   /* titles / the one bright thing */
+    --text-2: oklch(0.760 0.016 76);   /* normal body */
+    --muted:  oklch(0.585 0.018 70);   /* metadata: episode, provider, recency */
+    --dim:    oklch(0.430 0.016 66);   /* unavailable / least important */
+
+    /* ---- THE ONLY accent hues. color = state or focus, never identity ---- */
+    --amber:     oklch(0.800 0.155 70);   /* focus · selection · brand */
+    --amber-mid: oklch(0.660 0.130 64);   /* progress fill (in-progress) */
+    --green:     oklch(0.790 0.150 150);  /* ready · complete (the reward) */
+    --green-dim: oklch(0.560 0.090 150);
+    --red:       oklch(0.670 0.190 25);   /* real error only */
+
+    --font: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at 85% -5%, oklch(0.26 0.075 68 / .22), transparent 34rem),
+      radial-gradient(circle at 10% 4%, oklch(0.20 0.05 60 / .14), transparent 30rem),
+      var(--bg);
+    color: var(--text-2);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: .1px;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 40px 26px 90px; }
+
+  h1 { font-size: 25px; font-weight: 700; color: var(--text); margin: 0; letter-spacing: -.2px; }
+  .sub { color: var(--muted); margin: 8px 0 0; max-width: 80ch; }
+  h2 {
+    margin: 52px 0 6px; font-size: 12px; font-weight: 700;
+    color: var(--amber); text-transform: uppercase; letter-spacing: .18em;
+    text-shadow: 0 0 18px oklch(0.80 0.155 70 / .25);
+  }
+  .h2sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+
+  /* color utils */
+  .text   { color: var(--text); }
+  .t2     { color: var(--text-2); }
+  .muted  { color: var(--muted); }
+  .dim    { color: var(--dim); }
+  .amber  { color: var(--amber); }
+  .green  { color: var(--green); }
+  .red    { color: var(--red); }
+  .b      { font-weight: 700; }
+  .med    { font-weight: 500; }
+
+  /* ---- terminal frame ---- */
+  .term {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: 0 26px 80px oklch(0 0 0 / .42);
+    overflow: hidden;
+  }
+  .head, .foot {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 18px;
+    background: oklch(0.125 0.014 58 / .85);
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--muted); font-size: 13px;
+  }
+  .foot { border-bottom: 0; border-top: 1px solid var(--line-soft); }
+  .body { padding: 18px 22px 22px; }
+  .fox { color: var(--amber); }
+  .chip {
+    background: var(--text); color: var(--bg); font-weight: 700;
+    border-radius: 4px; padding: 1px 9px; margin: 0 2px;
+  }
+  .dot { color: var(--green); }            /* status dot only */
+  .key { color: var(--amber); font-weight: 700; }
+  .surface { color: var(--muted); }
+
+  /* ---- recency group header ---- */
+  .group {
+    display: flex; align-items: center; gap: 12px;
+    margin: 20px 0 9px; color: var(--muted);
+    font-size: 11px; text-transform: uppercase; letter-spacing: .16em;
+  }
+  .group:first-child { margin-top: 4px; }
+  .group::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+
+  /* ---- list row ---- */
+  .row {
+    display: grid;
+    grid-template-columns: 18px 1fr 88px 132px 150px;
+    align-items: center; gap: 0;
+    padding: 5px 8px 5px 0; border-radius: 6px;
+  }
+  .row .bar { color: var(--amber); font-weight: 700; text-align: center; }
+  .row .ttl { color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .ep  { color: var(--muted); font-size: 13px; }
+  .row .prog { font-size: 13px; white-space: nowrap; }
+  .row .meta { color: var(--dim); font-size: 12px; text-align: right; white-space: nowrap; }
+  .row.sel  { background: var(--row-sel); }
+  .row.sel .ttl { color: var(--text); }
+  .pbar  { color: var(--amber-mid); letter-spacing: -1px; }
+  .ptrk  { color: var(--line); letter-spacing: -1px; }
+  .pct   { color: var(--muted); }
+  .sel .pct { color: var(--amber); }
+  .done .pbar { color: var(--green-dim); }
+  .done .pct  { color: var(--green); }
+
+  .tabs { display: flex; gap: 18px; margin-bottom: 6px; font-size: 13px; }
+  .tabs .on { color: var(--text); font-weight: 700; border-bottom: 2px solid var(--amber); padding-bottom: 2px; }
+  .tabs .off { color: var(--dim); }
+  .filters { color: var(--dim); font-size: 13px; }
+  .filters .on { color: var(--amber); }
+
+  /* ---- two col for post-play / stats ---- */
+  .split { display: grid; grid-template-columns: 1fr 270px; gap: 26px; }
+  .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .16em; margin: 16px 0 6px; }
+  .poster {
+    height: 150px; border-radius: 8px;
+    background: linear-gradient(150deg, oklch(0.22 0.06 66), oklch(0.15 0.04 60));
+    border: 1px solid var(--line-soft);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--amber); font-weight: 700; text-align: center; font-size: 13px;
+    box-shadow: inset 0 0 40px oklch(0.8 0.15 70 / .08);
+  }
+
+  .action { display: grid; grid-template-columns: 20px 110px 1fr 44px; align-items: baseline; padding: 5px 8px; border-radius: 6px; }
+  .action .ak { color: var(--text); font-weight: 500; }
+  .action .ad { color: var(--muted); font-size: 13px; }
+  .action .sc { color: var(--dim); text-align: right; font-size: 12px; }
+  .action.sel { background: var(--row-sel); }
+  .action.sel .ar { color: var(--amber); font-weight: 700; }
+  .action.sel .sc { color: var(--amber); }
+  .ar { color: transparent; }
+
+  /* heatmap */
+  .heat { display: grid; grid-template-columns: repeat(26, 13px); gap: 3px; margin: 8px 0; }
+  .heat i { height: 13px; border-radius: 2px; background: var(--row); }
+  .heat i.l1 { background: oklch(0.40 0.07 64); }
+  .heat i.l2 { background: oklch(0.55 0.11 66); }
+  .heat i.l3 { background: oklch(0.70 0.14 68); }
+  .heat i.l4 { background: var(--amber); box-shadow: 0 0 8px oklch(0.8 0.15 70 / .4); }
+  .months { display: flex; gap: 30px; color: var(--dim); font-size: 11px; margin-bottom: 3px; }
+
+  .stat-big { font-size: 15px; color: var(--text); font-weight: 500; margin-bottom: 2px; }
+  .flame { filter: saturate(1.1); }
+
+  .legend { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+  .swatch { border: 1px solid var(--line-soft); border-radius: 8px; padding: 11px; }
+  .swatch .cap { height: 30px; border-radius: 5px; margin-bottom: 9px; }
+  .swatch b { color: var(--text); font-size: 13px; }
+  .swatch p { margin: 2px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+
+  .callout { border-left: 2px solid var(--amber); padding: 2px 0 2px 14px; margin: 14px 0; color: var(--muted); }
+  .callout b { color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>Kunai · redesign v2 <span class="muted">— warm / hearth</span></h1>
+  <p class="sub">One disciplined token set. The neutral text ramp (bright → dim) carries hierarchy;
+  color is spent only on <span class="text">focus/selection</span> (amber),
+  <span class="green">ready/complete</span> (green), and <span class="red">errors</span> (red).
+  No color is ever spent on identity — provider, audio language, and episode codes are <span class="muted">muted metadata</span>.</p>
+
+  <div class="callout"><b>The one rule:</b> a title wins by being bright and bold, not by having a hue.
+  Once that holds, the title stops competing with its own episode code, and the few colors left actually mean something.</div>
+
+  <!-- ============ PALETTE ============ -->
+  <h2>The palette</h2>
+  <p class="h2sub">From 7 overlapping hues → 3 semantic colors + a 4-step neutral ramp.</p>
+  <div class="legend">
+    <div class="swatch"><div class="cap" style="background:var(--amber); box-shadow:0 0 22px oklch(0.8 .155 70 / .35)"></div><b>amber</b><p>focus · selection · brand · in-progress. The fox.</p></div>
+    <div class="swatch"><div class="cap" style="background:var(--green)"></div><b>green</b><p>ready · complete · playable. The reward — used sparingly so it lands.</p></div>
+    <div class="swatch"><div class="cap" style="background:var(--red)"></div><b>red</b><p>real, actionable error only. Never decoration.</p></div>
+    <div class="swatch"><div class="cap" style="background:linear-gradient(90deg,var(--text),var(--text-2),var(--muted),var(--dim))"></div><b>text → dim</b><p>title · body · metadata · unavailable. The workhorse.</p></div>
+  </div>
+
+  <!-- ============ HISTORY — CONTINUE ============ -->
+  <h2>History · Continue</h2>
+  <p class="h2sub">The daily entry point. Recency dividers replace the rainbow letter rail. One bright title per row; progress bar is the only color; provider + recency recede to dim.</p>
+  <div class="term">
+    <div class="head">
+      <span><span class="fox">🦊 Kunai</span> · <span class="chip">History</span> <span class="surface">· continue where you left off</span></span>
+      <span><span class="dot">●</span> ready · <span class="muted">🔥 3d</span></span>
+    </div>
+    <div class="body">
+      <div class="tabs">
+        <span class="on">Continue</span><span class="off">Completed</span><span class="off">New episodes</span><span class="off">All</span>
+      </div>
+
+      <div class="group">Today</div>
+      <div class="row sel">
+        <span class="bar">▎</span><span class="ttl">MARRIAGETOXIN</span><span class="ep">S01E05</span>
+        <span class="prog"><span class="pbar">███████</span><span class="ptrk">██</span> <span class="pct">79%</span></span>
+        <span class="meta">allanime · 17m ago</span>
+      </div>
+      <div class="row">
+        <span class="bar"></span><span class="ttl">The Punisher: One Last Kill</span><span class="ep">movie</span>
+        <span class="prog"><span class="pbar">▏</span><span class="ptrk">████████</span> <span class="pct">2%</span></span>
+        <span class="meta">vidking · 3d ago</span>
+      </div>
+
+      <div class="group">This week</div>
+      <div class="row">
+        <span class="bar"></span><span class="ttl">Perfect Crown</span><span class="ep">S01E07</span>
+        <span class="prog"><span class="pbar">█</span><span class="ptrk">███████</span> <span class="pct">15%</span></span>
+        <span class="meta">vidking · 5d ago</span>
+      </div>
+      <div class="row">
+        <span class="bar"></span><span class="ttl">The Eminence in Shadow</span><span class="ep">S01E07</span>
+        <span class="prog"><span class="pbar">███</span><span class="ptrk">█████</span> <span class="pct">39%</span></span>
+        <span class="meta">allanime · 1w ago</span>
+      </div>
+      <div class="row">
+        <span class="bar"></span><span class="ttl">Breaking Bad</span><span class="ep">S05E01</span>
+        <span class="prog"><span class="pbar">▏</span><span class="ptrk">████████</span> <span class="pct">2%</span></span>
+        <span class="meta">vidking · 1w ago</span>
+      </div>
+
+      <div class="group">Earlier</div>
+      <div class="row">
+        <span class="bar"></span><span class="ttl">Solo Leveling</span><span class="ep">S01E01</span>
+        <span class="prog"><span class="pbar">█</span><span class="ptrk">███████</span> <span class="pct">14%</span></span>
+        <span class="meta">allanime · 2w ago</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span><span class="key">[enter]</span> resume &nbsp; <span class="key">[tab]</span> filter &nbsp; <span class="key">[q]</span> queue &nbsp; <span class="key">[/]</span> commands</span>
+      <span class="surface">31 items · History</span>
+    </div>
+  </div>
+
+  <!-- ============ HISTORY — COMPLETED ============ -->
+  <h2>History · Completed</h2>
+  <p class="h2sub">Same skeleton. Full bar + ✓ go green — the only place green appears here — so finishing reads as a quiet reward, not a wall of identical 100% bars.</p>
+  <div class="term">
+    <div class="head">
+      <span><span class="fox">🦊 Kunai</span> · <span class="chip">History</span> <span class="surface">· finished</span></span>
+      <span><span class="dot">●</span> ready · <span class="muted">12 titles</span></span>
+    </div>
+    <div class="body">
+      <div class="tabs">
+        <span class="off">Continue</span><span class="on">Completed</span><span class="off">New episodes</span><span class="off">All</span>
+      </div>
+      <div class="group">Today</div>
+      <div class="row done sel">
+        <span class="bar">▎</span><span class="ttl">The Ramparts of Ice</span><span class="ep">S01E08</span>
+        <span class="prog"><span class="green">✓</span> <span class="pct">complete</span></span>
+        <span class="meta">allanime · 32m ago</span>
+      </div>
+      <div class="row done">
+        <span class="bar"></span><span class="ttl">The Pitt</span><span class="ep">S01E06</span>
+        <span class="prog"><span class="green">✓</span> <span class="pct">complete</span></span>
+        <span class="meta">vidking · 23h ago</span>
+      </div>
+      <div class="group">This week</div>
+      <div class="row done">
+        <span class="bar"></span><span class="ttl">The Warrior Princess and the Barbaric King</span><span class="ep">S01E07</span>
+        <span class="prog"><span class="green">✓</span> <span class="pct">complete</span></span>
+        <span class="meta">allanime · 1d ago</span>
+      </div>
+      <div class="row done">
+        <span class="bar"></span><span class="ttl">Skeleton Knight in Another World</span><span class="ep">S01E03</span>
+        <span class="prog"><span class="green">✓</span> <span class="pct">complete</span></span>
+        <span class="meta">allanime · 3d ago</span>
+      </div>
+      <div class="row done">
+        <span class="bar"></span><span class="ttl">KILL BLUE</span><span class="ep">S01E06</span>
+        <span class="prog"><span class="green">✓</span> <span class="pct">complete</span></span>
+        <span class="meta">allanime · 4d ago</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span><span class="key">[enter]</span> rewatch &nbsp; <span class="key">[tab]</span> filter &nbsp; <span class="key">[x]</span> remove &nbsp; <span class="key">[/]</span> commands</span>
+      <span class="surface">12 items · History</span>
+    </div>
+  </div>
+
+  <!-- ============ STATS ============ -->
+  <h2>Stats · Overview</h2>
+  <p class="h2sub">One amber density ramp for the heatmap and bars (no green/blue/amber mix). Streak number is bright; labels recede. Reads as a single rhythm, not three competing charts.</p>
+  <div class="term">
+    <div class="head">
+      <span><span class="fox">🦊 Kunai</span> · <span class="chip">Stats</span> <span class="surface">· your watch rhythm</span></span>
+      <span><span class="dot">●</span> ready · 180×45</span>
+    </div>
+    <div class="body">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="tabs" style="margin:0"><span class="on">Overview</span><span class="off">Titles</span></div>
+        <div class="filters"><span class="on">All</span> &nbsp;Anime &nbsp;Series &nbsp;Movies &nbsp;&nbsp;·&nbsp;&nbsp; <span class="on">30d</span> &nbsp;90d &nbsp;all</div>
+      </div>
+
+      <div style="margin-top:18px">
+        <div class="stat-big"><span class="flame">🔥</span> <span class="amber b">3-day streak</span></div>
+        <div class="muted">18 episodes · 7h 42m watched &nbsp;·&nbsp; <span class="t2">6 this week</span>, more than last</div>
+      </div>
+
+      <div class="label">Activity</div>
+      <div class="months"><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span></div>
+      <div class="heat">
+        <i></i><i class="l1"></i><i></i><i class="l2"></i><i class="l1"></i><i class="l3"></i><i></i><i class="l1"></i><i class="l4"></i><i class="l2"></i><i></i><i class="l1"></i><i class="l3"></i><i class="l2"></i><i class="l4"></i><i class="l1"></i><i></i><i class="l2"></i><i class="l3"></i><i class="l4"></i><i class="l2"></i><i class="l1"></i><i class="l3"></i><i class="l4"></i><i class="l2"></i><i class="l1"></i>
+      </div>
+
+      <div class="label">Top titles</div>
+      <div class="row"><span class="bar"></span><span class="ttl">MARRIAGETOXIN</span><span></span>
+        <span class="prog"><span class="pbar">███████</span><span class="ptrk">█</span></span><span class="meta">5 ep · 1h 58m</span></div>
+      <div class="row"><span class="bar"></span><span class="ttl">The Boys</span><span></span>
+        <span class="prog"><span class="pbar">████</span><span class="ptrk">████</span></span><span class="meta">2 ep · 52m</span></div>
+      <div class="row"><span class="bar"></span><span class="ttl">Frieren</span><span></span>
+        <span class="prog"><span class="pbar">██</span><span class="ptrk">██████</span></span><span class="meta">1 ep · 24m</span></div>
+    </div>
+    <div class="foot">
+      <span><span class="key">[tab]</span> range &nbsp; <span class="key">[shift+tab]</span> type &nbsp; <span class="key">[s]</span> share &nbsp; <span class="key">[/]</span> commands</span>
+      <span class="surface">Stats</span>
+    </div>
+  </div>
+
+  <!-- ============ POST-PLAY ============ -->
+  <h2>Post-play</h2>
+  <p class="h2sub">The title=episode bug fixed: <span class="text">DR. STONE</span> is bright+bold, the episode code is <span class="muted">muted</span> — they no longer fight. Playback facts are one muted tone; the only color is the green ✓ and the amber selected action.</p>
+  <div class="term">
+    <div class="head">
+      <span><span class="fox">🦊 Kunai</span> · <span class="chip">Post-play</span> <span class="surface">· anime · allanime · DR. STONE · S04E07</span></span>
+      <span><span class="dot">●</span> ready · 180×45</span>
+    </div>
+    <div class="body">
+      <div class="split">
+        <div>
+          <div class="text b" style="font-size:20px; letter-spacing:-.3px">DR. STONE</div>
+          <div class="t2" style="font-size:15px">E31 · Unknown Known</div>
+          <div class="muted" style="font-size:13px">S04E07 · released May 14, 2026 · U/A 16+ · sub | dub</div>
+
+          <div class="muted" style="margin-top:14px"><span class="green">✓</span> episode complete · watched 24m</div>
+          <div class="muted" style="font-size:13px">vidking · direct-http · cache hit · 1080p · JP audio · EN subtitles · autoplay paused</div>
+
+          <div class="label">Next actions</div>
+          <div class="action sel">
+            <span class="ar">▎</span><span class="ak">Next episode</span>
+            <span class="ad"><span class="t2">E32</span> · Challengers of Science · 24m</span><span class="sc">enter</span>
+          </div>
+          <div class="action">
+            <span class="ar">▎</span><span class="ak">Episodes</span><span class="ad">open season list, current stays marked</span><span class="sc">e</span>
+          </div>
+          <div class="action">
+            <span class="ar">▎</span><span class="ak">Tracks</span><span class="ad">source, quality, audio, subtitles</span><span class="sc">t</span>
+          </div>
+          <div class="action">
+            <span class="ar">▎</span><span class="ak">Search</span><span class="ad">find something else without leaving flow</span><span class="sc">s</span>
+          </div>
+        </div>
+        <div>
+          <div class="poster">DR.<br>STONE</div>
+          <div class="label" style="margin-top:14px">Up next</div>
+          <div class="t2" style="font-size:13px">E32 · Challengers of Science</div>
+          <div class="muted" style="font-size:12px; margin-top:6px">Status <span class="green">available</span> · autoplay <span class="muted">paused</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <span><span class="key">[▶ n]</span> next &nbsp; <span class="key">[↻ r]</span> replay &nbsp; <span class="key">[☰ e]</span> episodes &nbsp; <span class="key">[/]</span> commands</span>
+      <span class="surface">Post-play</span>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>

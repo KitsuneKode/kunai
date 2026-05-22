@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kunai — themes v3 (Hearth / Sakura / Ember) + paint-mix stats</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     NEUTRAL FOUNDATION — shared by every theme.
+     The text ramp does ~80% of hierarchy. Themes only swap the
+     accent + the base tint. color = state or focus, never identity.
+     ============================================================ */
+  :root {
+    --text:   oklch(0.940 0.012 80);
+    --text-2: oklch(0.760 0.014 76);
+    --muted:  oklch(0.585 0.016 70);
+    --dim:    oklch(0.430 0.014 66);
+
+    --green:     oklch(0.790 0.150 150);
+    --green-dim: oklch(0.560 0.090 150);
+    --red:       oklch(0.670 0.190 25);
+
+    /* media-type hues — QUARANTINED to the Stats surface only.
+       This is the one place "type" IS the data being shown. */
+    --t-anime:  oklch(0.720 0.140 12);    /* rose   */
+    --t-series: oklch(0.700 0.110 205);   /* teal   */
+    --t-movie:  oklch(0.800 0.130 85);    /* gold   */
+
+    --font: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  }
+
+  /* ---- THEME: HEARTH (fox amber — the baseline) ---- */
+  .t-hearth {
+    --bg: oklch(0.105 0.012 56); --bg-soft: oklch(0.135 0.015 58);
+    --row: oklch(0.165 0.018 56); --row-sel: oklch(0.215 0.042 64);
+    --line: oklch(0.300 0.022 58); --line-soft: oklch(0.205 0.016 58);
+    --accent: oklch(0.800 0.155 70); --accent-mid: oklch(0.660 0.130 64);
+    --glow: oklch(0.80 0.155 70 / .30);
+  }
+  /* ---- THEME: SAKURA (rose primary — full conviction) ---- */
+  .t-sakura {
+    --bg: oklch(0.108 0.012 350); --bg-soft: oklch(0.138 0.018 352);
+    --row: oklch(0.170 0.022 352); --row-sel: oklch(0.225 0.050 358);
+    --line: oklch(0.310 0.028 352); --line-soft: oklch(0.210 0.020 352);
+    --accent: oklch(0.780 0.135 8); --accent-mid: oklch(0.640 0.115 4);
+    --glow: oklch(0.78 0.135 8 / .32);
+  }
+  /* ---- THEME: EMBER (amber + rose blend = warm coral — recommended) ---- */
+  .t-ember {
+    --bg: oklch(0.106 0.013 38); --bg-soft: oklch(0.136 0.018 40);
+    --row: oklch(0.168 0.022 38); --row-sel: oklch(0.220 0.052 42);
+    --line: oklch(0.305 0.028 40); --line-soft: oklch(0.208 0.020 40);
+    --accent: oklch(0.760 0.150 42); --accent-mid: oklch(0.630 0.125 38);
+    --glow: oklch(0.76 0.150 42 / .32);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: oklch(0.07 0.008 50);
+    color: var(--text-2); font-family: var(--font);
+    font-size: 14px; line-height: 1.5; letter-spacing: .1px;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 40px 26px 100px; }
+  h1 { font-size: 25px; font-weight: 700; color: var(--text); margin: 0; }
+  :root { color: var(--text); }
+  .sub { color: var(--muted); margin: 8px 0 0; max-width: 86ch; }
+  h2 { margin: 56px 0 6px; font-size: 12px; font-weight: 700; color: oklch(0.80 0.13 60);
+       text-transform: uppercase; letter-spacing: .18em; }
+  .h2sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; max-width: 86ch; }
+  .callout { border-left: 2px solid oklch(0.76 0.14 50); padding: 3px 0 3px 14px; margin: 16px 0; color: var(--muted); }
+  .callout b { color: var(--text); }
+
+  .text { color: var(--text); } .t2 { color: var(--text-2); }
+  .muted { color: var(--muted); } .dim { color: var(--dim); }
+  .green { color: var(--green); } .red { color: var(--red); }
+  .acc { color: var(--accent); } .b { font-weight: 700; } .med { font-weight: 500; }
+
+  /* ---- terminal frame ---- */
+  .term { border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+          box-shadow: 0 24px 70px oklch(0 0 0 / .45); overflow: hidden; }
+  .head, .foot { display: flex; justify-content: space-between; align-items: center;
+          padding: 10px 18px; background: color-mix(in oklab, var(--bg-soft) 88%, transparent);
+          border-bottom: 1px solid var(--line-soft); color: var(--muted); font-size: 13px; }
+  .foot { border-bottom: 0; border-top: 1px solid var(--line-soft); }
+  .body { padding: 16px 20px 20px; }
+  .fox { color: var(--accent); }
+  .chip { background: var(--text); color: var(--bg); font-weight: 700; border-radius: 4px; padding: 1px 9px; }
+  .key { color: var(--accent); font-weight: 700; }
+  .surface { color: var(--muted); }
+  .dot { color: var(--green); }
+
+  .tabs { display: flex; gap: 16px; font-size: 13px; }
+  .tabs .on { color: var(--text); font-weight: 700; border-bottom: 2px solid var(--accent); padding-bottom: 2px; }
+  .tabs .off { color: var(--dim); }
+  .group { display: flex; align-items: center; gap: 12px; margin: 16px 0 7px; color: var(--muted);
+           font-size: 11px; text-transform: uppercase; letter-spacing: .15em; }
+  .group:first-of-type { margin-top: 12px; }
+  .group::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+
+  /* history list (left) */
+  .row { display: grid; grid-template-columns: 16px 1fr 78px 118px; align-items: center;
+         padding: 4px 8px 4px 0; border-radius: 6px; }
+  .row .bar { color: var(--accent); font-weight: 700; text-align: center; }
+  .row .ttl { color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .ep  { color: var(--muted); font-size: 13px; }
+  .row .prog { font-size: 13px; white-space: nowrap; text-align: right; }
+  .row.sel  { background: var(--row-sel); }
+  .pbar { color: var(--accent-mid); letter-spacing: -1px; }
+  .ptrk { color: var(--line); letter-spacing: -1px; }
+  .pct  { color: var(--muted); } .sel .pct { color: var(--accent); }
+  .done .pbar { color: var(--green-dim); } .done .pct { color: var(--green); }
+
+  /* split + preview rail */
+  .split { display: grid; grid-template-columns: 1fr 256px; gap: 24px; }
+  .rail { border-left: 1px solid var(--line-soft); padding-left: 20px; }
+  .poster { height: 152px; border-radius: 8px;
+            background: linear-gradient(150deg, color-mix(in oklab, var(--accent) 30%, var(--bg)), var(--bg));
+            border: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: center;
+            color: var(--accent); font-weight: 700; text-align: center; font-size: 13px; }
+  .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .15em; margin: 14px 0 6px; }
+  .fact { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
+  .fact .k { color: var(--muted); } .fact .v { color: var(--text-2); }
+  .resume { margin-top: 14px; background: var(--row-sel); border-radius: 6px; padding: 8px 10px;
+            color: var(--text); font-weight: 500; display: flex; justify-content: space-between; }
+  .resume .acc { color: var(--accent); }
+
+  /* stats */
+  .filters { color: var(--dim); font-size: 13px; } .filters .on { color: var(--accent); font-weight: 700; }
+  .stat-line { font-size: 15px; color: var(--text); margin: 16px 0 2px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 40px; max-width: 560px; margin-top: 8px; }
+  .grid2 .k { color: var(--muted); } .grid2 .v { color: var(--text); font-weight: 500; }
+  .compare { color: oklch(0.74 0.10 50); margin-top: 16px; font-size: 13px; }
+
+  /* heatmap — paint-mix. hue = type ratio, lightness = minutes, sat capped. */
+  .hm-months { display: grid; grid-template-columns: 14px repeat(26, 13px); gap: 3px; color: var(--dim); font-size: 11px; margin-bottom: 4px; }
+  .hm-months span { grid-column: span 2; }
+  .hm-row { display: grid; grid-template-columns: 30px repeat(26, 13px); gap: 3px; align-items: center; margin-bottom: 3px; }
+  .hm-row .wd { color: var(--dim); font-size: 11px; }
+  .hm-row i { height: 13px; width: 13px; border-radius: 2px; background: var(--row); }
+  .hm-legend { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; margin-top: 8px; }
+  .hm-legend i { height: 13px; width: 13px; border-radius: 2px; display: inline-block; }
+  .typekey { display: flex; gap: 18px; margin: 6px 0 0; font-size: 12px; }
+  .typekey i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .tbar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; max-width: 420px; margin: 6px 0; }
+  .tbar span { display: block; }
+
+  /* theme picker chips */
+  .themehdr { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+  .themehdr b { color: var(--text); font-size: 15px; }
+  .themehdr .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 20px; padding: 2px 9px; }
+  .swrow { display: flex; gap: 6px; }
+  .sw { width: 22px; height: 22px; border-radius: 5px; border: 1px solid oklch(1 0 0 / .12); }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>Kunai · themes v3</h1>
+  <p class="sub">Same neutral foundation, three accent directions. The text ramp and layout are identical across
+  all three — only the accent hue and base tint change. Glow/shadow are browser-only; each theme is tuned to read
+  on its <em>base color alone</em> so it survives in a real terminal.</p>
+
+  <div class="callout"><b>Discipline check:</b> media-type colors (anime / series / movies) appear <b>only</b> in Stats,
+  where type <i>is</i> the data being charted. Everywhere else type is a muted label — lists never go rainbow again.</div>
+
+  <!-- ===================== THEME GALLERY ===================== -->
+  <h2>1 · Three directions — same History screen</h2>
+  <p class="h2sub">History now follows the spec: a dense list on the left, a <b>preview rail</b> on the right with
+  poster, local progress, last-watched, and the next available episode for the selected title. That's the fix for
+  "feels incomplete."</p>
+
+  <!-- HEARTH -->
+  <div class="t-hearth">
+    <div class="themehdr"><b>Hearth</b><span class="tag">fox amber · the baseline</span>
+      <span class="swrow"><i class="sw" style="background:var(--accent)"></i><i class="sw" style="background:var(--accent-mid)"></i><i class="sw" style="background:var(--green)"></i><i class="sw" style="background:var(--bg-soft)"></i></span></div>
+    <div class="term">
+      <div class="head"><span><span class="fox">🦊 Kunai</span> · <span class="chip">History</span></span>
+        <span><span class="dot">●</span> ready · <span class="muted">🔥 3d</span></span></div>
+      <div class="body"><div class="split">
+        <div>
+          <div class="tabs"><span class="on">Continue</span><span class="off">Completed</span><span class="off">New episodes</span><span class="off">All</span></div>
+          <div class="group">Today</div>
+          <div class="row sel"><span class="bar">▎</span><span class="ttl">MARRIAGETOXIN</span><span class="ep">S01E05</span><span class="prog"><span class="pbar">███████</span><span class="ptrk">██</span> <span class="pct">79%</span></span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">The Punisher: One Last Kill</span><span class="ep">movie</span><span class="prog"><span class="pbar">▏</span><span class="ptrk">████████</span> <span class="pct">2%</span></span></div>
+          <div class="group">This week</div>
+          <div class="row"><span class="bar"></span><span class="ttl">The Eminence in Shadow</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">███</span><span class="ptrk">█████</span> <span class="pct">39%</span></span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Perfect Crown</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">█</span><span class="ptrk">███████</span> <span class="pct">15%</span></span></div>
+        </div>
+        <div class="rail">
+          <div class="poster">MARRIAGE<br>TOXIN</div>
+          <div class="label">MARRIAGETOXIN</div>
+          <div class="fact"><span class="k">progress</span><span class="v acc">S01E05 · 79%</span></div>
+          <div class="fact"><span class="k">last watched</span><span class="v">17m ago</span></div>
+          <div class="fact"><span class="k">provider</span><span class="v">allanime</span></div>
+          <div class="fact"><span class="k">next</span><span class="v">S01E06 · ready</span></div>
+          <div class="resume"><span>▸ Resume <span class="muted">at 18:49</span></span><span class="acc">enter</span></div>
+        </div>
+      </div></div>
+      <div class="foot"><span><span class="key">[enter]</span> resume &nbsp; <span class="key">[tab]</span> filter &nbsp; <span class="key">[/]</span> commands</span><span class="surface">31 items · History</span></div>
+    </div>
+  </div>
+
+  <!-- SAKURA -->
+  <div class="t-sakura" style="margin-top:30px">
+    <div class="themehdr"><b>Sakura</b><span class="tag">rose primary · soft, warm, anime-leaning</span>
+      <span class="swrow"><i class="sw" style="background:var(--accent)"></i><i class="sw" style="background:var(--accent-mid)"></i><i class="sw" style="background:var(--green)"></i><i class="sw" style="background:var(--bg-soft)"></i></span></div>
+    <div class="term">
+      <div class="head"><span><span class="fox">🦊 Kunai</span> · <span class="chip">History</span></span>
+        <span><span class="dot">●</span> ready · <span class="muted">🔥 3d</span></span></div>
+      <div class="body"><div class="split">
+        <div>
+          <div class="tabs"><span class="on">Continue</span><span class="off">Completed</span><span class="off">New episodes</span><span class="off">All</span></div>
+          <div class="group">Today</div>
+          <div class="row sel"><span class="bar">▎</span><span class="ttl">MARRIAGETOXIN</span><span class="ep">S01E05</span><span class="prog"><span class="pbar">███████</span><span class="ptrk">██</span> <span class="pct">79%</span></span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">The Punisher: One Last Kill</span><span class="ep">movie</span><span class="prog"><span class="pbar">▏</span><span class="ptrk">████████</span> <span class="pct">2%</span></span></div>
+          <div class="group">This week</div>
+          <div class="row"><span class="bar"></span><span class="ttl">The Eminence in Shadow</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">███</span><span class="ptrk">█████</span> <span class="pct">39%</span></span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Perfect Crown</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">█</span><span class="ptrk">███████</span> <span class="pct">15%</span></span></div>
+        </div>
+        <div class="rail">
+          <div class="poster">MARRIAGE<br>TOXIN</div>
+          <div class="label">MARRIAGETOXIN</div>
+          <div class="fact"><span class="k">progress</span><span class="v acc">S01E05 · 79%</span></div>
+          <div class="fact"><span class="k">last watched</span><span class="v">17m ago</span></div>
+          <div class="fact"><span class="k">provider</span><span class="v">allanime</span></div>
+          <div class="fact"><span class="k">next</span><span class="v">S01E06 · ready</span></div>
+          <div class="resume"><span>▸ Resume <span class="muted">at 18:49</span></span><span class="acc">enter</span></div>
+        </div>
+      </div></div>
+      <div class="foot"><span><span class="key">[enter]</span> resume &nbsp; <span class="key">[tab]</span> filter &nbsp; <span class="key">[/]</span> commands</span><span class="surface">31 items · History</span></div>
+    </div>
+  </div>
+
+  <!-- EMBER -->
+  <div class="t-ember" style="margin-top:30px">
+    <div class="themehdr"><b>Ember</b><span class="tag">amber × rose = warm coral · recommended (keeps the fox, adds the warmth)</span>
+      <span class="swrow"><i class="sw" style="background:var(--accent)"></i><i class="sw" style="background:var(--accent-mid)"></i><i class="sw" style="background:var(--green)"></i><i class="sw" style="background:var(--bg-soft)"></i></span></div>
+    <div class="term">
+      <div class="head"><span><span class="fox">🦊 Kunai</span> · <span class="chip">History</span></span>
+        <span><span class="dot">●</span> ready · <span class="muted">🔥 3d</span></span></div>
+      <div class="body"><div class="split">
+        <div>
+          <div class="tabs"><span class="on">Continue</span><span class="off">Completed</span><span class="off">New episodes</span><span class="off">All</span></div>
+          <div class="group">Today</div>
+          <div class="row sel"><span class="bar">▎</span><span class="ttl">MARRIAGETOXIN</span><span class="ep">S01E05</span><span class="prog"><span class="pbar">███████</span><span class="ptrk">██</span> <span class="pct">79%</span></span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">The Punisher: One Last Kill</span><span class="ep">movie</span><span class="prog"><span class="pbar">▏</span><span class="ptrk">████████</span> <span class="pct">2%</span></span></div>
+          <div class="group">This week</div>
+          <div class="row"><span class="bar"></span><span class="ttl">The Eminence in Shadow</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">███</span><span class="ptrk">█████</span> <span class="pct">39%</span></span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Perfect Crown</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">█</span><span class="ptrk">███████</span> <span class="pct">15%</span></span></div>
+        </div>
+        <div class="rail">
+          <div class="poster">MARRIAGE<br>TOXIN</div>
+          <div class="label">MARRIAGETOXIN</div>
+          <div class="fact"><span class="k">progress</span><span class="v acc">S01E05 · 79%</span></div>
+          <div class="fact"><span class="k">last watched</span><span class="v">17m ago</span></div>
+          <div class="fact"><span class="k">provider</span><span class="v">allanime</span></div>
+          <div class="fact"><span class="k">next</span><span class="v">S01E06 · ready</span></div>
+          <div class="resume"><span>▸ Resume <span class="muted">at 18:49</span></span><span class="acc">enter</span></div>
+        </div>
+      </div></div>
+      <div class="foot"><span><span class="key">[enter]</span> resume &nbsp; <span class="key">[tab]</span> filter &nbsp; <span class="key">[/]</span> commands</span><span class="surface">31 items · History</span></div>
+    </div>
+  </div>
+
+  <!-- ===================== STATS ===================== -->
+  <h2>2 · Stats — Claude-Code rhythm, our paint-mix identity</h2>
+  <p class="h2sub">Borrows the rhythm of the screen you shared (sparse Mon/Wed/Fri labels, Less▮▮▮More legend, muted range
+  tabs, two-column metrics, one playful comparison line) but the heatmap is <b>ours</b>: each day's <b>hue</b> is the
+  blend of what you watched — anime rose, series teal, movies gold — mixed in oklch. A balanced week becomes a soft
+  violet-gold gradient; a binge of one show stays pure. Brightness = minutes watched, so intensity still reads first.</p>
+
+  <div class="t-ember">
+    <div class="term">
+      <div class="head"><span><span class="fox">🦊 Kunai</span> · <span class="chip">Stats</span> <span class="surface">· your watch rhythm</span></span>
+        <span><span class="dot">●</span> ready · 180×45</span></div>
+      <div class="body">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="tabs"><span class="on">Overview</span><span class="off">Titles</span><span class="off">Genres</span></div>
+          <div class="filters"><span class="on">All time</span> · Last 7d · Last 30d</div>
+        </div>
+
+        <!-- heatmap: hand-tuned oklch blends demonstrating the algorithm -->
+        <div style="margin-top:18px">
+          <div class="hm-months"><span></span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span></div>
+          <div class="hm-row"><span class="wd">Mon</span>
+            <i></i><i style="background:oklch(0.32 0.05 12)"></i><i></i><i style="background:oklch(0.40 0.07 205)"></i><i style="background:oklch(0.30 0.04 12)"></i><i style="background:oklch(0.52 0.09 330)"></i><i></i><i style="background:oklch(0.38 0.06 12)"></i><i style="background:oklch(0.60 0.11 12)"></i><i style="background:oklch(0.46 0.07 320)"></i><i></i><i style="background:oklch(0.34 0.05 205)"></i><i style="background:oklch(0.58 0.10 330)"></i><i style="background:oklch(0.44 0.07 12)"></i><i style="background:oklch(0.66 0.12 85)"></i><i style="background:oklch(0.40 0.06 320)"></i><i></i><i style="background:oklch(0.50 0.08 205)"></i><i style="background:oklch(0.62 0.11 330)"></i><i style="background:oklch(0.70 0.13 12)"></i><i style="background:oklch(0.48 0.08 320)"></i><i style="background:oklch(0.36 0.05 205)"></i><i style="background:oklch(0.58 0.10 12)"></i><i style="background:oklch(0.68 0.12 330)"></i><i style="background:oklch(0.50 0.08 85)"></i><i style="background:oklch(0.40 0.06 12)"></i></div>
+          <div class="hm-row"><span class="wd"></span>
+            <i style="background:oklch(0.28 0.04 205)"></i><i></i><i style="background:oklch(0.42 0.07 12)"></i><i style="background:oklch(0.34 0.05 330)"></i><i></i><i style="background:oklch(0.56 0.10 205)"></i><i style="background:oklch(0.46 0.07 12)"></i><i style="background:oklch(0.64 0.11 330)"></i><i style="background:oklch(0.38 0.06 85)"></i><i></i><i style="background:oklch(0.50 0.08 12)"></i><i style="background:oklch(0.60 0.11 320)"></i><i style="background:oklch(0.44 0.07 205)"></i><i style="background:oklch(0.70 0.13 330)"></i><i style="background:oklch(0.52 0.09 12)"></i><i></i><i style="background:oklch(0.42 0.07 320)"></i><i style="background:oklch(0.66 0.12 205)"></i><i style="background:oklch(0.58 0.10 12)"></i><i style="background:oklch(0.72 0.13 330)"></i><i style="background:oklch(0.48 0.08 85)"></i><i style="background:oklch(0.38 0.06 320)"></i><i style="background:oklch(0.62 0.11 12)"></i><i style="background:oklch(0.54 0.09 205)"></i><i style="background:oklch(0.68 0.12 330)"></i><i></i></div>
+          <div class="hm-row"><span class="wd">Wed</span>
+            <i></i><i style="background:oklch(0.36 0.05 330)"></i><i style="background:oklch(0.48 0.08 12)"></i><i></i><i style="background:oklch(0.58 0.10 205)"></i><i style="background:oklch(0.44 0.07 12)"></i><i style="background:oklch(0.66 0.12 330)"></i><i style="background:oklch(0.30 0.04 85)"></i><i style="background:oklch(0.52 0.09 12)"></i><i style="background:oklch(0.62 0.11 320)"></i><i></i><i style="background:oklch(0.70 0.13 12)"></i><i style="background:oklch(0.50 0.08 205)"></i><i style="background:oklch(0.74 0.14 330)"></i><i style="background:oklch(0.46 0.07 12)"></i><i style="background:oklch(0.34 0.05 320)"></i><i style="background:oklch(0.60 0.11 85)"></i><i></i><i style="background:oklch(0.64 0.11 12)"></i><i style="background:oklch(0.54 0.09 330)"></i><i style="background:oklch(0.72 0.13 205)"></i><i style="background:oklch(0.42 0.07 12)"></i><i style="background:oklch(0.58 0.10 320)"></i><i style="background:oklch(0.68 0.12 12)"></i><i></i><i style="background:oklch(0.50 0.08 330)"></i></div>
+          <div class="hm-row"><span class="wd"></span>
+            <i style="background:oklch(0.30 0.04 12)"></i><i></i><i style="background:oklch(0.44 0.07 205)"></i><i style="background:oklch(0.56 0.10 330)"></i><i style="background:oklch(0.38 0.06 12)"></i><i></i><i style="background:oklch(0.62 0.11 12)"></i><i style="background:oklch(0.48 0.08 320)"></i><i style="background:oklch(0.70 0.13 330)"></i><i style="background:oklch(0.34 0.05 85)"></i><i style="background:oklch(0.54 0.09 12)"></i><i></i><i style="background:oklch(0.66 0.12 205)"></i><i style="background:oklch(0.58 0.10 330)"></i><i style="background:oklch(0.42 0.07 12)"></i><i style="background:oklch(0.72 0.13 320)"></i><i style="background:oklch(0.50 0.08 12)"></i><i></i><i style="background:oklch(0.60 0.11 330)"></i><i style="background:oklch(0.46 0.07 205)"></i><i style="background:oklch(0.68 0.12 12)"></i><i style="background:oklch(0.38 0.06 320)"></i><i></i><i style="background:oklch(0.56 0.10 12)"></i><i style="background:oklch(0.64 0.11 330)"></i><i style="background:oklch(0.48 0.08 85)"></i></div>
+          <div class="hm-row"><span class="wd">Fri</span>
+            <i></i><i style="background:oklch(0.40 0.06 12)"></i><i style="background:oklch(0.52 0.09 330)"></i><i style="background:oklch(0.32 0.05 205)"></i><i></i><i style="background:oklch(0.60 0.11 12)"></i><i style="background:oklch(0.44 0.07 320)"></i><i style="background:oklch(0.68 0.12 330)"></i><i style="background:oklch(0.36 0.05 85)"></i><i style="background:oklch(0.56 0.10 12)"></i><i></i><i style="background:oklch(0.64 0.11 205)"></i><i style="background:oklch(0.74 0.14 330)"></i><i style="background:oklch(0.48 0.08 12)"></i><i style="background:oklch(0.58 0.10 320)"></i><i></i><i style="background:oklch(0.70 0.13 12)"></i><i style="background:oklch(0.50 0.08 330)"></i><i style="background:oklch(0.62 0.11 205)"></i><i style="background:oklch(0.42 0.07 12)"></i><i style="background:oklch(0.66 0.12 320)"></i><i style="background:oklch(0.54 0.09 12)"></i><i></i><i style="background:oklch(0.72 0.13 330)"></i><i style="background:oklch(0.46 0.07 85)"></i><i style="background:oklch(0.58 0.10 12)"></i></div>
+
+          <div class="hm-legend">Less
+            <i style="background:oklch(0.24 0.03 40)"></i><i style="background:oklch(0.40 0.06 40)"></i><i style="background:oklch(0.56 0.10 40)"></i><i style="background:oklch(0.72 0.14 40)"></i>
+            More <span style="margin-left:14px; color:var(--muted)">· hue = what you watched</span>
+          </div>
+          <div class="typekey">
+            <span><i style="background:var(--t-anime)"></i>Anime</span>
+            <span><i style="background:var(--t-series)"></i>Series</span>
+            <span><i style="background:var(--t-movie)"></i>Movies</span>
+            <span><i style="background:oklch(0.60 0.10 330)"></i>Mixed</span>
+          </div>
+        </div>
+
+        <div class="stat-line"><span style="filter:saturate(1.1)">🔥</span> <span class="acc b">2-day streak</span> · longest <span class="text b">30 days</span></div>
+
+        <div class="label">This watch year</div>
+        <!-- type breakdown bar: always-legible companion to the heatmap -->
+        <div class="tbar">
+          <span style="background:var(--t-anime); width:54%"></span>
+          <span style="background:var(--t-series); width:31%"></span>
+          <span style="background:var(--t-movie); width:15%"></span>
+        </div>
+        <div class="muted" style="font-size:12px"><span style="color:var(--t-anime)">54% anime</span> · <span style="color:var(--t-series)">31% series</span> · <span style="color:var(--t-movie)">15% movies</span></div>
+
+        <div class="grid2">
+          <div class="k">Episodes watched</div><div class="v">382</div>
+          <div class="k">Total watch time</div><div class="v">6d 0h 43m</div>
+          <div class="k">Active days</div><div class="v">75<span class="muted">/122</span></div>
+          <div class="k">Most-watched title</div><div class="v">MARRIAGETOXIN</div>
+          <div class="k">Most active day</div><div class="v">May 16</div>
+          <div class="k">Top genre</div><div class="v">Action</div>
+        </div>
+
+        <div class="compare">You've watched as much as <b style="color:var(--text)">4×</b> The Lord of the Rings: Extended Edition.</div>
+      </div>
+      <div class="foot"><span><span class="key">[tab]</span> range &nbsp; <span class="key">[↓]</span> details &nbsp; <span class="key">[s]</span> share &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Stats</span></div>
+    </div>
+  </div>
+
+  <h2>3 · Why this won't become slop</h2>
+  <p class="h2sub" style="max-width:80ch">
+    • One accent per theme + a 3-color state set (green/red + neutral ramp) — never more.<br>
+    • Type-hue is contained to Stats; lists stay neutral so they never go rainbow.<br>
+    • The paint-mix heatmap drives <b>brightness by minutes</b> and only <b>hue by ratio</b>, with capped saturation —
+      so it reads as intensity first, identity second, and mixed days look intentional, not muddy.<br>
+    • Every theme is tuned to read on its base color alone; glow and shadow are browser sugar that the terminal drops without loss.
+  </p>
+
+</main>
+</body>
+</html>

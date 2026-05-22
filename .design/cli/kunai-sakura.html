@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kunai — Sakura, refined (atmosphere tour)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* ---- refined Sakura: dusk plum base, two-step rose, mint success ---- */
+    --bg:        oklch(0.103 0.014 350);
+    --bg-soft:   oklch(0.135 0.018 352);
+    --row:       oklch(0.165 0.022 352);
+    --row-sel:   oklch(0.218 0.046 356);
+    --line:      oklch(0.300 0.030 352);
+    --line-soft: oklch(0.198 0.020 352);
+
+    --text:   oklch(0.948 0.012 350);   /* warm rose-white — titles */
+    --text-2: oklch(0.772 0.016 352);   /* body */
+    --muted:  oklch(0.598 0.020 352);   /* metadata */
+    --dim:    oklch(0.442 0.018 352);   /* least / unavailable */
+
+    --rose:      oklch(0.800 0.130 10);   /* accent · focus · selection · brand */
+    --rose-deep: oklch(0.640 0.120 6);    /* progress fill */
+    --rose-soft: oklch(0.880 0.055 10);   /* hairline / whisper */
+    --ok:        oklch(0.845 0.095 172);  /* mint-jade · ready / complete */
+    --ok-dim:    oklch(0.615 0.075 172);
+    --err:       oklch(0.625 0.205 25);   /* deeper crimson · real error */
+
+    /* media-type hues — Stats surface ONLY */
+    --t-anime:  oklch(0.760 0.130 12);
+    --t-series: oklch(0.760 0.095 185);
+    --t-movie:  oklch(0.820 0.120 80);
+
+    --font: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--text-2); font-family: var(--font);
+    font-size: 14px; line-height: 1.5; letter-spacing: .1px;
+    background:
+      radial-gradient(circle at 88% -6%, oklch(0.30 0.10 12 / .20), transparent 36rem),
+      radial-gradient(circle at 6% 8%, oklch(0.22 0.06 320 / .14), transparent 32rem),
+      oklch(0.072 0.010 350);
+  }
+  main { max-width: 1140px; margin: 0 auto; padding: 42px 26px 110px; }
+  h1 { font-size: 25px; font-weight: 700; color: var(--text); margin: 0; }
+  .petal { color: var(--rose); }
+  .sub { color: var(--muted); margin: 9px 0 0; max-width: 86ch; }
+  h2 { margin: 58px 0 14px; font-size: 12px; font-weight: 700; color: var(--rose);
+       text-transform: uppercase; letter-spacing: .18em; }
+  .callout { border-left: 2px solid var(--rose); padding: 3px 0 3px 14px; margin: 16px 0; color: var(--muted); }
+  .callout b { color: var(--text); }
+
+  .text{color:var(--text)} .t2{color:var(--text-2)} .muted{color:var(--muted)} .dim{color:var(--dim)}
+  .rose{color:var(--rose)} .ok{color:var(--ok)} .err{color:var(--err)} .b{font-weight:700} .med{font-weight:500}
+
+  /* terminal frame */
+  .term { border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+          box-shadow: 0 26px 80px oklch(0 0 0 / .5); overflow: hidden; position: relative; }
+  .term::before { content:""; position:absolute; inset:0 0 auto 0; height:1px;
+          background: linear-gradient(90deg, transparent, var(--rose-soft), transparent); opacity:.5; }
+  .head,.foot { display:flex; justify-content:space-between; align-items:center; padding:10px 18px;
+          background: color-mix(in oklab, var(--bg-soft) 86%, transparent);
+          border-bottom:1px solid var(--line-soft); color:var(--muted); font-size:13px; }
+  .foot { border-bottom:0; border-top:1px solid var(--line-soft); }
+  .body { padding:18px 22px 22px; }
+  .brand { color: var(--rose); }
+  .chip { background: var(--text); color: var(--bg); font-weight:700; border-radius:4px; padding:1px 9px; }
+  .key { color: var(--rose); font-weight:700; }
+  .surface { color: var(--muted); }
+  .dot-ok { color: var(--ok); } .dot-play { color: var(--rose); }
+  .crumb { color: var(--muted); }
+
+  .tabs { display:flex; gap:16px; font-size:13px; }
+  .tabs .on { color:var(--text); font-weight:700; border-bottom:2px solid var(--rose); padding-bottom:2px; }
+  .tabs .off { color:var(--dim); }
+  .group { display:flex; align-items:center; gap:12px; margin:16px 0 7px; color:var(--muted);
+           font-size:11px; text-transform:uppercase; letter-spacing:.15em; }
+  .group:first-of-type{margin-top:12px} .group::after{content:"";flex:1;height:1px;background:var(--line-soft)}
+
+  .row { display:grid; grid-template-columns:16px 1fr 78px 122px; align-items:center; padding:4px 8px 4px 0; border-radius:6px; }
+  .row .bar { color:var(--rose); font-weight:700; text-align:center; }
+  .row .ttl { color:var(--text); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .ep { color:var(--muted); font-size:13px; }
+  .row .prog { font-size:13px; white-space:nowrap; text-align:right; }
+  .row.sel { background:var(--row-sel); }
+  .pbar{color:var(--rose-deep);letter-spacing:-1px} .ptrk{color:var(--line);letter-spacing:-1px}
+  .pct{color:var(--muted)} .sel .pct{color:var(--rose)}
+  .done .pbar{color:var(--ok-dim)} .done .pct{color:var(--ok)}
+
+  .split { display:grid; grid-template-columns:1fr 250px; gap:24px; }
+  .rail { border-left:1px solid var(--line-soft); padding-left:20px; }
+  .poster { height:150px; border-radius:8px; border:1px solid var(--line-soft);
+            background: linear-gradient(150deg, color-mix(in oklab, var(--rose) 26%, var(--bg)), var(--bg));
+            display:flex; align-items:center; justify-content:center; color:var(--rose); font-weight:700; text-align:center; font-size:13px; }
+  .label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.15em; margin:14px 0 6px; }
+  .fact { display:flex; justify-content:space-between; font-size:13px; padding:2px 0; }
+  .fact .k{color:var(--muted)} .fact .v{color:var(--text-2)}
+  .resume { margin-top:14px; background:var(--row-sel); border-radius:6px; padding:8px 10px; color:var(--text); font-weight:500; display:flex; justify-content:space-between; }
+
+  /* input bar */
+  .input { display:flex; align-items:center; gap:10px; font-size:15px; color:var(--text); padding:6px 0 4px; }
+  .input .cur { background:var(--rose); color:var(--bg); width:9px; height:18px; display:inline-block; border-radius:1px; }
+
+  /* now-playing big progress */
+  .np-title { font-size:22px; font-weight:700; color:var(--text); letter-spacing:-.3px; }
+  .np-ep { font-size:15px; color:var(--text-2); }
+  .np-meta { font-size:13px; color:var(--muted); }
+  .scrub { display:flex; align-items:center; gap:12px; margin:14px 0 6px; font-size:13px; }
+  .scrub .bar { flex:1; height:6px; border-radius:3px; background:var(--line); overflow:hidden; }
+  .scrub .bar i { display:block; height:100%; width:52%;
+                  background: linear-gradient(90deg, var(--rose-deep), var(--rose)); }
+  .scrub .t { color:var(--muted); } .scrub .t b{color:var(--text)}
+
+  /* action list (post-play) */
+  .action { display:grid; grid-template-columns:18px 110px 1fr 44px; align-items:baseline; padding:5px 8px; border-radius:6px; }
+  .action .ak{color:var(--text);font-weight:500} .action .ad{color:var(--muted);font-size:13px} .action .sc{color:var(--dim);text-align:right;font-size:12px}
+  .action.sel{background:var(--row-sel)} .action.sel .ar{color:var(--rose);font-weight:700} .action.sel .sc{color:var(--rose)}
+  .ar{color:transparent}
+  .recs { display:flex; gap:10px; margin-top:6px; }
+  .rec { flex:1; border:1px solid var(--line-soft); border-radius:7px; padding:9px 10px; }
+  .rec .rt{color:var(--text);font-weight:500;font-size:13px} .rec .rr{color:var(--muted);font-size:12px}
+
+  /* empty state */
+  .empty { text-align:center; padding:34px 0; }
+  .empty .big { font-size:30px; color:var(--rose); } .empty .h{color:var(--text);font-weight:600;margin-top:8px} .empty .p{color:var(--muted);font-size:13px}
+
+  .legend{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:12px}
+  .sw{border:1px solid var(--line-soft);border-radius:8px;padding:10px}
+  .sw .cap{height:26px;border-radius:5px;margin-bottom:8px} .sw b{color:var(--text);font-size:12px} .sw p{margin:2px 0 0;color:var(--muted);font-size:11px;line-height:1.4}
+</style>
+</head>
+<body>
+<main>
+
+  <h1>Kunai · <span class="petal">❀</span> Sakura, refined</h1>
+  <p class="sub">A dusk-plum base with a two-note chord: <span class="rose">rose</span> for everything you act on,
+  <span class="ok">mint</span> for everything that's ready or done. Crimson is held back for real errors. The whole
+  surface is tuned to read on flat color — gradients and the hairline bloom are browser sugar a terminal drops cleanly.</p>
+
+  <div class="legend">
+    <div class="sw"><div class="cap" style="background:var(--rose)"></div><b>rose</b><p>focus · selection · brand · in-progress</p></div>
+    <div class="sw"><div class="cap" style="background:var(--rose-deep)"></div><b>rose-deep</b><p>progress fill, gives bars depth</p></div>
+    <div class="sw"><div class="cap" style="background:var(--ok)"></div><b>mint</b><p>ready · complete — rose's complement</p></div>
+    <div class="sw"><div class="cap" style="background:var(--err)"></div><b>crimson</b><p>real, actionable error only</p></div>
+    <div class="sw"><div class="cap" style="background:linear-gradient(90deg,var(--text),var(--muted),var(--dim))"></div><b>text→dim</b><p>title · metadata · unavailable</p></div>
+  </div>
+
+  <div class="callout"><b>Why it sticks vs the web:</b> no chrome, no scrolling marketing, no cookie banners — you land
+  directly on <i>continue watching</i>, hit one key, and you're in. Sakura makes that single keystroke feel like a calm
+  place you return to, not a tool you operate.</div>
+
+  <!-- ============ BROWSE / START ============ -->
+  <h2>Browse · the home you land on</h2>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> <span class="crumb">· what are we watching</span></span>
+      <span><span class="dot-ok">●</span> ready · <span class="muted">🔥 3d</span> · 178×41</span></div>
+    <div class="body">
+      <div class="input"><span class="rose">⌕</span> <span class="muted">search anime, series, movies…</span><span class="cur"></span></div>
+      <div class="group">Continue watching</div>
+      <div class="row sel"><span class="bar">▎</span><span class="ttl">MARRIAGETOXIN</span><span class="ep">S01E05</span><span class="prog"><span class="pbar">███████</span><span class="ptrk">██</span> <span class="pct">79%</span></span></div>
+      <div class="row"><span class="bar"></span><span class="ttl">The Eminence in Shadow</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">███</span><span class="ptrk">█████</span> <span class="pct">39%</span></span></div>
+      <div class="row"><span class="bar"></span><span class="ttl">Perfect Crown</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">█</span><span class="ptrk">███████</span> <span class="pct">15%</span></span></div>
+      <div class="group">Releasing today</div>
+      <div class="row"><span class="bar"></span><span class="ttl">Frieren</span><span class="ep">S01E29</span><span class="prog"><span class="ok">● new</span></span></div>
+    </div>
+    <div class="foot"><span><span class="key">[type]</span> search &nbsp; <span class="key">[↑↓]</span> continue &nbsp; <span class="key">[c]</span> calendar &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Browse</span></div>
+  </div>
+
+  <!-- ============ HISTORY ============ -->
+  <h2>History · resume-first, with a rich preview</h2>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">History</span> <span class="crumb">· continue where you left off</span></span>
+      <span><span class="dot-ok">●</span> ready · <span class="muted">🔥 3d</span> · 178×41</span></div>
+    <div class="body"><div class="split">
+      <div>
+        <div class="tabs"><span class="on">Continue</span><span class="off">Completed</span><span class="off">New episodes</span><span class="off">All</span></div>
+        <div class="group">Today</div>
+        <div class="row sel"><span class="bar">▎</span><span class="ttl">MARRIAGETOXIN</span><span class="ep">S01E05</span><span class="prog"><span class="pbar">███████</span><span class="ptrk">██</span> <span class="pct">79%</span></span></div>
+        <div class="row"><span class="bar"></span><span class="ttl">The Punisher: One Last Kill</span><span class="ep">movie</span><span class="prog"><span class="pbar">▏</span><span class="ptrk">████████</span> <span class="pct">2%</span></span></div>
+        <div class="group">This week</div>
+        <div class="row"><span class="bar"></span><span class="ttl">The Eminence in Shadow</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">███</span><span class="ptrk">█████</span> <span class="pct">39%</span></span></div>
+        <div class="row"><span class="bar"></span><span class="ttl">Perfect Crown</span><span class="ep">S01E07</span><span class="prog"><span class="pbar">█</span><span class="ptrk">███████</span> <span class="pct">15%</span></span></div>
+        <div class="row"><span class="bar"></span><span class="ttl">Breaking Bad</span><span class="ep">S05E01</span><span class="prog"><span class="pbar">▏</span><span class="ptrk">████████</span> <span class="pct">2%</span></span></div>
+        <div class="group">Earlier</div>
+        <div class="row"><span class="bar"></span><span class="ttl">Solo Leveling</span><span class="ep">S01E01</span><span class="prog"><span class="pbar">█</span><span class="ptrk">███████</span> <span class="pct">14%</span></span></div>
+      </div>
+      <div class="rail">
+        <div class="poster">MARRIAGE<br>TOXIN</div>
+        <div class="label" style="margin-top:12px">MARRIAGETOXIN</div>
+        <div class="np-meta">Anime · 2026 · 12 episodes · <span class="ok">airing</span></div>
+        <div class="np-meta" style="margin-top:8px">A fake-married pair of assassins keep their cover while picking each other apart.</div>
+        <div class="label" style="margin-top:14px">Your progress</div>
+        <div class="fact"><span class="k">at</span><span class="v rose">S01E05 · 79% · 18:49</span></div>
+        <div class="fact"><span class="k">last watched</span><span class="v">17m ago</span></div>
+        <div class="fact"><span class="k">provider</span><span class="v">allanime</span></div>
+        <div class="fact"><span class="k">next up</span><span class="v ok">S01E06 · ready</span></div>
+        <div class="resume"><span>▸ Resume <span class="muted">at 18:49</span></span><span class="rose">enter</span></div>
+      </div>
+    </div></div>
+    <div class="foot"><span><span class="key">[enter]</span> resume &nbsp; <span class="key">[tab]</span> filter &nbsp; <span class="key">[x]</span> remove &nbsp; <span class="key">[/]</span> commands</span><span class="surface">31 items · History</span></div>
+  </div>
+
+  <!-- ============ NOW PLAYING ============ -->
+  <h2>Now Playing · the control surface (mpv owns the video)</h2>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">Now Playing</span> <span class="crumb">· anime · allanime</span></span>
+      <span><span class="dot-play">▸</span> playing · 178×41</span></div>
+    <div class="body"><div class="split">
+      <div>
+        <div class="np-title">DR. STONE</div>
+        <div class="np-ep">E31 · Unknown Known <span class="muted">· S04E07</span></div>
+        <div class="scrub"><span class="t"><b>12:30</b></span><span class="bar"><i></i></span><span class="t">24:00</span><span class="rose b">52%</span></div>
+        <div class="np-meta">Japanese audio · English subtitles · autoplay <span class="ok">on</span> · autoskip intro <span class="ok">on</span></div>
+        <div class="group">Up next</div>
+        <div class="row"><span class="bar"></span><span class="ttl">E32 · Challengers of Science</span><span class="ep">24m</span><span class="prog"><span class="ok">● ready</span></span></div>
+      </div>
+      <div class="rail">
+        <div class="poster">DR.<br>STONE</div>
+        <div class="label">Session</div>
+        <div class="fact"><span class="k">source</span><span class="v">vidking · 1080p</span></div>
+        <div class="fact"><span class="k">health</span><span class="v ok">stable</span></div>
+        <div class="fact"><span class="k">watched</span><span class="v">12m</span></div>
+      </div>
+    </div></div>
+    <div class="foot"><span><span class="key">[space]</span> pause &nbsp; <span class="key">[q]</span> stop &nbsp; <span class="key">[☰ e]</span> episodes &nbsp; <span class="key">[≋ t]</span> tracks &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Now Playing</span></div>
+  </div>
+
+  <!-- ============ POST-PLAY ============ -->
+  <h2>Post-play · episode page + remote</h2>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">Post-play</span> <span class="crumb">· anime · allanime · DR. STONE · S04E07</span></span>
+      <span><span class="dot-ok">●</span> ready · 178×41</span></div>
+    <div class="body"><div class="split">
+      <div>
+        <div class="np-title">DR. STONE</div>
+        <div class="np-ep">E31 · Unknown Known</div>
+        <div class="np-meta">S04E07 · released May 14, 2026 · U/A 16+ · sub | dub</div>
+        <div class="np-meta" style="margin-top:12px"><span class="ok">✓</span> episode complete · watched 24m</div>
+        <div class="np-meta">vidking · direct-http · cache hit · 1080p · JP audio · EN subtitles</div>
+
+        <div class="label">Next actions</div>
+        <div class="action sel"><span class="ar">▎</span><span class="ak">Next episode</span><span class="ad"><span class="t2">E32</span> · Challengers of Science · 24m</span><span class="sc">enter</span></div>
+        <div class="action"><span class="ar">▎</span><span class="ak">Episodes</span><span class="ad">open season list, current stays marked</span><span class="sc">e</span></div>
+        <div class="action"><span class="ar">▎</span><span class="ak">Tracks</span><span class="ad">source, quality, audio, subtitles</span><span class="sc">t</span></div>
+
+        <div class="label">More from this watch</div>
+        <div class="recs">
+          <div class="rec"><div class="rt">Frieren</div><div class="rr">if you like slow-burn</div></div>
+          <div class="rec"><div class="rt">Vinland Saga</div><div class="rr">science → survival</div></div>
+          <div class="rec"><div class="rt">Heavenly Delusion</div><div class="rr">rebuilding the world</div></div>
+        </div>
+      </div>
+      <div class="rail">
+        <div class="poster">DR.<br>STONE</div>
+        <div class="label">Up next</div>
+        <div class="t2" style="font-size:13px">E32 · Challengers of Science</div>
+        <div class="np-meta" style="margin-top:6px">Status <span class="ok">available</span> · autoplay <span class="muted">paused</span></div>
+      </div>
+    </div></div>
+    <div class="foot"><span><span class="key">[▶ n]</span> next &nbsp; <span class="key">[↻ r]</span> replay &nbsp; <span class="key">[☰ e]</span> episodes &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Post-play</span></div>
+  </div>
+
+  <!-- ============ EPISODE PICKER ============ -->
+  <h2>Episodes · dense list + selected preview</h2>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">Episodes</span> <span class="crumb">· DR. STONE · Season 4</span></span>
+      <span><span class="dot-ok">●</span> ready · 178×41</span></div>
+    <div class="body"><div class="split">
+      <div>
+        <div class="tabs"><span class="off">S1</span><span class="off">S2</span><span class="off">S3</span><span class="on">S4</span></div>
+        <div style="margin-top:10px">
+          <div class="row done"><span class="bar"></span><span class="ttl">E29 · Two Million Years of Being</span><span class="ep">24m</span><span class="prog"><span class="ok">✓</span></span></div>
+          <div class="row done"><span class="bar"></span><span class="ttl">E30 · Light of Hope</span><span class="ep">24m</span><span class="prog"><span class="ok">✓</span></span></div>
+          <div class="row sel"><span class="bar">▎</span><span class="ttl">E31 · Unknown Known</span><span class="ep">24m</span><span class="prog"><span class="pct">current</span></span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">E32 · Challengers of Science</span><span class="ep">24m</span><span class="prog"><span class="ok">ready</span></span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">E33 · Science Future</span><span class="ep">—</span><span class="prog"><span class="dim">Jun 4</span></span></div>
+        </div>
+      </div>
+      <div class="rail">
+        <div class="poster">E31</div>
+        <div class="label">E31 · Unknown Known</div>
+        <div class="np-meta">With the computer completed, the team will need a user interface: a TV.</div>
+        <div class="fact" style="margin-top:8px"><span class="k">aired</span><span class="v">May 14, 2026</span></div>
+        <div class="fact"><span class="k">progress</span><span class="v rose">79% · 18:49</span></div>
+        <div class="resume"><span>▸ Resume</span><span class="rose">enter</span></div>
+      </div>
+    </div></div>
+    <div class="foot"><span><span class="key">[↑↓]</span> select &nbsp; <span class="key">[enter]</span> play &nbsp; <span class="key">[s]</span> season &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Episodes</span></div>
+  </div>
+
+  <!-- ============ EMPTY STATE ============ -->
+  <h2>Empty state · calm, never a wall of text</h2>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">History</span></span><span><span class="dot-ok">●</span> ready · 178×41</span></div>
+    <div class="body"><div class="empty">
+      <div class="big">❀</div>
+      <div class="h">Nothing in progress yet</div>
+      <div class="p">Search a title or open trending — your watch rhythm will grow here.</div>
+    </div></div>
+    <div class="foot"><span><span class="key">[s]</span> search &nbsp; <span class="key">[c]</span> calendar &nbsp; <span class="key">[/]</span> commands</span><span class="surface">History</span></div>
+  </div>
+
+</main>
+</body>
+</html>
