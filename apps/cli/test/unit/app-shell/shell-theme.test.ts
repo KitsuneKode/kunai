@@ -16,31 +16,44 @@ describe("hotkeyLabel", () => {
 });
 
 describe("palette", () => {
-  test("palette exposes purple token for series-complete milestone color", () => {
-    expect(palette.purple).toBeDefined();
-    expect(palette.purple).toMatch(/^#[0-9a-f]{6}$/i);
+  test("exposes semantic accents for the Sakura chord", () => {
+    expect(palette.accent).toMatch(/^#[0-9a-f]{6}$/i); // rose
+    expect(palette.ok).toMatch(/^#[0-9a-f]{6}$/i); // mint
+    expect(palette.danger).toMatch(/^#[0-9a-f]{6}$/i); // crimson
   });
 
-  test("exposes new surface + fill tokens", () => {
-    expect(palette.raised).toBe("#3a2f24");
-    expect(palette.amberFill).toBe("#2a2012");
-    expect(palette.borderStrong).toBe("#4a3d30");
+  test("exposes milestone token for series-complete color", () => {
+    expect(palette.milestone).toBeDefined();
+    expect(palette.milestone).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(palette.purple).toBe(palette.milestone); // deprecated alias
+  });
+
+  test("deprecated color-names alias onto the semantic palette", () => {
+    expect(palette.amber).toBe(palette.accent);
+    expect(palette.green).toBe(palette.ok);
+    expect(palette.red).toBe(palette.danger);
+  });
+
+  test("exposes surface + fill tokens", () => {
+    expect(palette.raised).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(palette.accentFill).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(palette.lineStrong).toMatch(/^#[0-9a-f]{6}$/i);
   });
 });
 
 describe("contentTintColor", () => {
-  test("maps each media kind to its accent", () => {
-    expect(contentTintColor("anime")).toBe(palette.pink);
-    expect(contentTintColor("series")).toBe(palette.info);
-    expect(contentTintColor("movie")).toBe(palette.lavender);
+  test("maps each media kind to its type hue (Stats surface)", () => {
+    expect(contentTintColor("anime")).toBe(palette.typeAnime);
+    expect(contentTintColor("series")).toBe(palette.typeSeries);
+    expect(contentTintColor("movie")).toBe(palette.typeMovie);
   });
 });
 
 describe("heatColor", () => {
-  test("clamps the ramp index to the amber ramp", () => {
-    expect(heatColor(0)).toBe("#2a2018");
-    expect(heatColor(4)).toBe("#f0a050");
-    expect(heatColor(99)).toBe("#f0a050");
-    expect(heatColor(-3)).toBe("#2a2018");
+  test("clamps the ramp index to the rose ramp", () => {
+    expect(heatColor(0)).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(heatColor(4)).toBe(palette.accent); // last step is the full rose
+    expect(heatColor(99)).toBe(palette.accent);
+    expect(heatColor(-3)).toBe(heatColor(0));
   });
 });

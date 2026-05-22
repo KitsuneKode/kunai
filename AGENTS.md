@@ -145,6 +145,7 @@ Unit tests live under `apps/cli/test/unit/`, integration tests under `apps/cli/t
 - [.plans/yt-provider.md](.plans/yt-provider.md): deferred YouTube provider research
 - [.plans/provider-hardening.md](.plans/provider-hardening.md): provider research, hardening, and scraper capability roadmap
 - [.plans/repo-infrastructure.md](.plans/repo-infrastructure.md): completed CI, Husky, lint-staged, and template guardrail status
+- [.plans/sakura-rollout.md](.plans/sakura-rollout.md): Sakura theme migration — sliced multi-agent rollout, release gate, doc cleanup
 - [.plans/kitsune-design-system-and-recommendations.md](.plans/kitsune-design-system-and-recommendations.md): implemented design-token and `/discover` status plus remaining polish
 - [.plans/presence-integrations.md](.plans/presence-integrations.md): Discord presence setup, diagnostics, and activity polish
 - [.plans/catalog-release-schedule-service.md](.plans/catalog-release-schedule-service.md): anime/TV release dates, releasing-today, and shared schedule cache

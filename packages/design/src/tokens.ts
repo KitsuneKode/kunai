@@ -1,70 +1,162 @@
+// Kunai design tokens — "Sakura" theme.
+//
+// Dusk-plum surface, a two-step rose accent, and a mint success color that is
+// rose's complement. The whole system is a two-note chord: rose for everything
+// you act on, mint for everything that is ready or done. Crimson is held back
+// for real, actionable errors.
+//
+// THE ONE RULE: color encodes state or focus, never identity. Titles win by
+// weight, not hue. Provider, audio language, and episode codes are muted text.
+// The single exception is media-type hue (anime/series/movie), allowed ONLY on
+// the Stats surface, where "type" is literally the data being charted.
+//
+// Values are tuned from an oklch design source (see .docs/design-system.md and
+// .design/cli/kunai-sakura*.html) and rounded to sRGB hex for the terminal.
+
+// ---- raw palette (these semantic consts are the source of truth) ----
+
+// Surface scale — dusk plum, faintly rose-tinted, never pure neutral.
+const scrim = "#0c0709";
+const bg = "#140d11";
+const surface = "#1d141a";
+const surfaceElevated = "#271b23";
+const surfaceActive = "#34232e"; // selected band, rose-tinted
+const raised = "#3e2c38";
+const line = "#43303a";
+const lineSoft = "#251a20";
+const lineStrong = "#5c4351";
+
+// Brand / focus / selection / in-progress — rose, two-step for depth.
+const accent = "#f28ea0";
+const accentSoft = "#f6c4cd"; // hairline / whisper
+const accentDeep = "#cb6178"; // progress fill, gives bars body
+const accentDim = "#7c3044";
+const accentGlow = "rgba(242,142,160,0.10)";
+const accentFill = "#2d161e"; // pre-blended onto bg for selection/badge depth
+
+// Ready / complete / available — mint-jade, rose's complement.
+const ok = "#84dcc2";
+const okDim = "#4f9d8b";
+const okFill = "#14241f";
+
+// Real, actionable error — crimson, kept distinct from the soft rose accent.
+const danger = "#e94f4f";
+const dangerDim = "#7c2024";
+const dangerFill = "#2f1414";
+
+// Series-complete milestone — a single deliberate plum. Never reuse elsewhere.
+const milestone = "#b884d6";
+const milestoneDim = "#4a2c5c";
+const milestoneFill = "#241430";
+
+// Text ramp — warm rose-white → faint. Carries ~80% of hierarchy.
+const text = "#f3eaef";
+const textDim = "#cebcc5";
+const muted = "#9a8a93";
+const dim = "#6c5e66";
+const faint = "#463b42";
+
+// Media-type hues — STATS SURFACE ONLY (see THE ONE RULE above).
+const typeAnime = "#ef7d9b"; // rose
+const typeSeries = "#6cc6bf"; // teal
+const typeMovie = "#e7c163"; // gold
+const typeMixed = "#b58ad0"; // plum — the optical blend, for mixed days
+
+// Watch-activity heat ramp — rose, 5-step (brand-aligned; mint stays reserved
+// for success). Stats may overlay type hue per the paint-mix model in the spec.
+const heatRamp = ["#251a20", "#5c2f3f", "#8d4057", "#bf5b74", "#f28ea0"] as const;
+
 export const tokens = {
-  // Backgrounds — warm-black surface scale
-  // Tinted toward amber for cohesion; never pure neutral
-  scrim: "#0a0806",
-  bg: "#110e0b",
-  surface: "#1a1612",
-  surfaceElevated: "#241e18",
-  surfaceActive: "#2e251e",
-  raised: "#3a2f24",
-  border: "#332a22",
-  borderDim: "#1e1a15",
-  borderStrong: "#4a3d30",
+  // ---- surfaces ----
+  scrim,
+  bg,
+  surface,
+  surfaceElevated,
+  surfaceActive,
+  raised,
+  line,
+  lineSoft,
+  lineStrong,
 
-  // Primary brand — fox amber, slightly desaturated for premium feel
-  amber: "#f0a050",
-  amberSoft: "#ffbf80",
-  amberDim: "#7a4a10",
-  amberGlow: "rgba(240,160,80,0.10)",
+  // ---- semantic accents (use these in new code) ----
+  accent,
+  accentSoft,
+  accentDeep,
+  accentDim,
+  accentGlow,
+  accentFill,
+  ok,
+  okDim,
+  okFill,
+  danger,
+  dangerDim,
+  dangerFill,
+  milestone,
+  milestoneDim,
+  milestoneFill,
 
-  // Anime / secondary accent — hot pink, used sparingly
-  pink: "#ff4d8a",
-  pinkSoft: "#ff85aa",
-  pinkDim: "#7a1538",
-  pinkGlow: "rgba(255,77,138,0.10)",
+  // ---- text ----
+  text,
+  textDim,
+  muted,
+  dim,
+  faint,
 
-  // Status — muted teal, less neon than before
-  teal: "#5ad4b5",
-  tealDim: "#1e6050",
-  green: "#7bc96e",
-  greenDim: "#2a5a22",
-  red: "#ff6666",
-  yellow: "#f0c850",
+  // ---- media-type hues (Stats only) ----
+  typeAnime,
+  typeSeries,
+  typeMovie,
+  typeMixed,
 
-  // Informational — quieter blue, recedes when not needed
-  info: "#6a9fd8",
-  infoDim: "#2a4468",
+  heatRamp,
 
-  // Discovery / recommendation accent — soft violet
-  lavender: "#c4b5e8",
-  lavenderDim: "#4e4068",
+  // ============================================================
+  // DEPRECATED color-named aliases — kept so existing consumers
+  // build while surfaces migrate to the semantic names above.
+  // Migration target in parentheses; remove once call sites move.
+  // (Tracked in .plans/sakura-rollout.md)
+  // ============================================================
+  amber: accent, // (→ accent) primary action / focus
+  amberSoft: accentSoft, // (→ accentSoft)
+  amberDim: accentDim, // (→ accentDim)
+  amberGlow: accentGlow, // (→ accentGlow)
+  amberFill: accentFill, // (→ accentFill)
 
-  // Series-complete milestone — never reuse for any other purpose
-  purple: "#a855f7",
-  purpleDim: "#4c1d95",
+  pink: typeAnime, // (→ typeAnime in Stats; elsewhere drop the color)
+  pinkSoft: accentSoft, // (→ accentSoft)
+  pinkDim: accentDim, // (→ accentDim)
+  pinkGlow: accentGlow, // (→ accentGlow)
+  pinkFill: accentFill, // (→ accentFill)
 
-  // Text scale — warm cream, softer at extremes
-  text: "#e8ddd0",
-  textDim: "#c8bba8",
-  muted: "#95887a",
-  dim: "#5c5248",
-  faint: "#3c342c",
+  teal: accent, // (→ accent for cursor/focus; → muted for info text)
+  tealDim: accentDim, // (→ accentDim)
+  tealFill: okFill, // (→ okFill)
 
-  // Tinted fills — each accent pre-blended onto bg; terminal stand-in for
-  // opacity, giving badges/selection depth without going loud
-  amberFill: "#2a2012",
-  tealFill: "#13241f",
-  infoFill: "#15243a",
-  pinkFill: "#2a1420",
-  lavenderFill: "#20203a",
-  greenFill: "#16261a",
-  yellowFill: "#2a2410",
-  redFill: "#2e1717",
-  purpleFill: "#2a1c3a",
+  green: ok, // (→ ok)
+  greenDim: okDim, // (→ okDim)
+  greenFill: okFill, // (→ okFill)
 
-  // Watch-activity heat ramp — amber, 5-step (matches brand; green stays
-  // reserved for success state)
-  heatRamp: ["#2a2018", "#7a4a10", "#b06a18", "#d68a24", "#f0a050"],
+  red: danger, // (→ danger)
+  redFill: dangerFill, // (→ dangerFill)
+
+  yellow: accentDeep, // (→ accentDeep for caution; prefer glyph + text)
+  yellowFill: accentFill, // (→ accentFill)
+
+  info: muted, // (→ muted; blue retired from the chord)
+  infoDim: dim, // (→ dim)
+  infoFill: surfaceElevated, // (→ surfaceElevated)
+
+  lavender: muted, // (→ muted; recommendations are neutral list rows)
+  lavenderDim: dim, // (→ dim)
+  lavenderFill: surfaceElevated, // (→ surfaceElevated)
+
+  purple: milestone, // (→ milestone) series-complete only
+  purpleDim: milestoneDim, // (→ milestoneDim)
+  purpleFill: milestoneFill, // (→ milestoneFill)
+
+  border: line, // (→ line)
+  borderDim: lineSoft, // (→ lineSoft)
+  borderStrong: lineStrong, // (→ lineStrong)
 } as const;
 
 export type TokenName = keyof typeof tokens;

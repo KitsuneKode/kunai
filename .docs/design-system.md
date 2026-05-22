@@ -1,92 +1,111 @@
-# KitsuneSnipe — Terminal Design System
+# Kunai — Terminal Design System (Sakura)
 
-Use this doc when changing terminal styling, ANSI helpers, or interaction presentation. It should stay lightweight: enough to preserve coherence, not so strict that it limits better UI ideas.
+Use this doc when changing terminal styling, color, tokens, layout primitives, or interaction presentation. It is the design contract; source code is the implementation truth. Keep it lightweight — enough to preserve coherence, not so strict it blocks better UI.
+
+Visual reference prototypes live in [`.design/cli/kunai-sakura.html`](../.design/cli/kunai-sakura.html) (feel tour) and [`.design/cli/kunai-sakura-systems.html`](../.design/cli/kunai-sakura-systems.html) (onboarding, calendar, library, queue). The rollout is tracked in [`.plans/sakura-rollout.md`](../.plans/sakura-rollout.md).
 
 ## Source of Truth
 
-- `packages/design/src/tokens.ts` owns shared token values
-- `apps/cli/src/app-shell/shell-theme.ts` adapts tokens for Ink shell surfaces
-- `apps/cli/src/design.ts` owns CLI-facing visual helpers such as badges, truncation, and ANSI-adjacent primitives
-- `apps/cli/src/menu.ts` owns legacy ANSI helpers tied to interactive flows
+- `packages/design/src/tokens.ts` owns shared token values (sRGB hex, tuned from an oklch source).
+- `apps/cli/src/app-shell/shell-theme.ts` adapts tokens into the `palette` consumed by Ink surfaces, plus `statusColor`, `contentTintColor`, `heatColor`.
+- `apps/cli/src/menu.ts` owns legacy ANSI helpers tied to interactive flows.
 
-## Design Goals
+Do not duplicate raw hex anywhere else. New code references semantic palette names.
 
-- Keep the CLI readable in low-noise terminals
-- Make interactive keys obvious at a glance
-- Preserve a consistent fox-amber visual identity
-- Avoid brittle cursor choreography unless it clearly earns its complexity
+## The Theme: Sakura
 
-## Core Tokens
+A dusk-plum surface with a two-note color chord:
+
+- **Rose** — everything you act on: focus, selection, brand, in-progress.
+- **Mint** — everything ready or done: available, complete, healthy. Rose's complement.
+
+Crimson is held back for real, actionable errors. A single plum is reserved for the series-complete milestone and nothing else.
+
+## THE ONE RULE
+
+**Color encodes state or focus — never identity.**
+
+Titles win by _weight_ (bright + bold), not by hue. Provider, audio language, episode codes, and recency are muted text. A list never goes rainbow.
+
+The single exception: **media-type hue** (anime / series / movie) is allowed **only on the Stats surface**, where "type" is literally the data being charted (`contentTintColor`, the paint-mix heatmap). Everywhere else, type is a muted label or glyph.
+
+## Semantic Tokens
+
+Prefer these names in all new code:
 
 ```ts
-tokens.amber;
-tokens.pink;
-tokens.teal;
-tokens.green;
-tokens.red;
+// surfaces (dusk plum, faintly rose-tinted)
+tokens.bg  tokens.surface  tokens.surfaceElevated  tokens.surfaceActive  tokens.raised
+tokens.line  tokens.lineSoft  tokens.lineStrong  tokens.scrim
 
-clr.amber;
-clr.cyan;
-clr.green;
-clr.red;
-clr.dim;
-clr.bold;
-clr.reset;
+// accent — rose, two-step for depth
+tokens.accent       // focus · selection · brand · in-progress
+tokens.accentDeep   // progress fill (gives bars body)
+tokens.accentSoft   // hairline / whisper
+tokens.accentFill   // pre-blended onto bg for selection / badge depth
+
+// state
+tokens.ok      tokens.okDim      // ready · complete · available (mint)
+tokens.danger  tokens.dangerDim  // real, actionable error (crimson)
+tokens.milestone                 // series-complete only (plum)
+
+// text ramp — carries ~80% of hierarchy
+tokens.text  tokens.textDim  tokens.muted  tokens.dim  tokens.faint
+
+// media-type hues — STATS SURFACE ONLY
+tokens.typeAnime  tokens.typeSeries  tokens.typeMovie  tokens.typeMixed
+tokens.heatRamp   // rose, 5-step
 ```
 
-- `amber`: primary brand/action color and key prompts
-- `pink`: anime and discovery accent
-- `teal`: status, cursor, and informational accent
-- `dim`: secondary information
-- `green` / `red`: success and failure states
+Use the helpers, not raw tokens, where one exists:
+
+- `statusColor(tone)` — `success → ok`, `warning → accentDeep`, `error → danger`, `info`/`neutral → muted`.
+- `contentTintColor(kind)` — type hue; **Stats only**.
+- `heatColor(index)` — clamps into the rose ramp.
+
+### Deprecated color-named tokens
+
+`amber*`, `pink*`, `teal`/`cyan`, `info*`, `lavender*`, `green*`, `red*`, `yellow*`, `purple*`, `border*`, `gray` still resolve (aliased to the semantic values) so surfaces build during migration. **Do not introduce new uses.** Migrate call sites to the semantic name shown in the `tokens.ts` / `palette` comments and delete the alias when a family is fully migrated (tracked in `.plans/sakura-rollout.md`).
 
 ## Layout Primitives
 
 ```ts
-box.tl  box.tr
-box.bl  box.br
-box.h
-box.v
-
-sep(width?)
-headerLine(title, sub?)
-shortcuts(pairs)
-progressBar(current, total, width?)
-statusLine(items)
-startSpinner(label)
+sep(width?)  headerLine(title, sub?)  shortcuts(pairs)
+progressBar(current, total, width?)  statusLine(items)  startSpinner(label)
+box.tl box.tr box.bl box.br box.h box.v
 ```
 
-These functions are meant to stay composable. Screen-specific policy should usually live in the caller, but the real test is whether the result stays easy to reuse and reason about.
-
-## Interaction Conventions
-
-- Key labels should stay visually distinct from descriptive text
-- Status lines should summarize available actions, not explain the whole screen
-- Spinners should be used for genuinely pending async work, not as decoration
-- Raw cursor control should be minimal and always cleaned up on exit
+Keep these composable; screen-specific policy lives in the caller.
 
 ## Shell UX Standard
 
-Kunai should feel like a calm, fast media command shell: content-first in normal use, diagnostic-rich only when the user asks for it.
+Kunai feels like a calm, fast media command shell: content-first in normal use, diagnostic-rich only when asked.
 
-- Put the title or active task in the strongest visual position
-- Use one compact context strip per screen for stable state such as provider, mode, episode, subtitle, filters, and active overlay
-- Do not repeat the same state in header, badge rows, detail lines, and footer
-- Use badges only for active filters, warnings/errors, selected/highlighted state, and actionable exceptional state
-- Do not badge internal rendering state such as poster loading, poster ready, or selection preview
-- Keep missing provider data honest but quiet; use dim placeholders unless the missing data blocks the task
-- Keep diagnostics available through diagnostics/help surfaces, not centered in normal browse or playback
-- Let the footer teach live actions; do not duplicate footer instructions inside companion/detail panels
-- Prefer 3-4 footer shortcuts plus `/ commands` over long shortcut sentences
-- Use `amber` for primary action and active selection, `teal` for informational status, `green` only for meaningful success, and `red` only for real failure
+- Put the title/active task in the strongest position; everything else supports that one job.
+- One compact context strip per screen for stable state (provider, mode, episode, filters). Do not repeat the same fact in header, badges, detail lines, and footer.
+- Selection: a rose left rule (`▌`) + `accentFill` band. Unselected rows are calm (no fill, two-space prefix).
+- Progress: `accentDeep → accent` fill while in-progress; settles to `ok` on complete, `danger` on failure — so color alone reads state.
+- Badges only for active filters, warnings/errors, and actionable exceptional state. Never badge rendering state (poster loading/ready, selection preview).
+- Missing data stays honest but quiet (dim placeholder) unless it blocks the task.
+- Footer teaches live actions: prefer 3–4 shortcuts plus `[/] commands`; never duplicate footer instructions in companion panels.
+
+## Surface Contracts (states every surface owns)
+
+Loading · success · empty · error — see [.design/cli/02-state-ux.md](../.design/cli/02-state-ux.md). Failure/recovery surfaces (`playback did not start`, `stream stalled`, `no source`, `provider degraded`, diagnostics) are first-class, not afterthoughts — they are where a scraper app earns trust.
+
+## Portability (degradation order)
+
+The design must read on a plain terminal, not only Kitty + truecolor + 178×41.
+
+- **Poster**: rendered image → letter/initials tile → hidden. Reserve the slot before load; metadata anchored below never jumps.
+- **Color**: truecolor hex → 256-color → 16-color fallback. Token resolution owns this mapping (see rollout plan).
+- **Width**: preview rail collapses before the primary list; on narrow/SSH/tmux keep brand · mode · status, the list/input, and `[/] commands`.
+- **Text**: long romaji/CJK titles truncate cleanly; never reflow the layout. Account for CJK double-width when aligning columns.
+
+## Accessibility
+
+Color is always paired with a glyph or word (`✓ complete`, `✗ failed`, `● ready`), so state survives color-blindness and 16-color terminals. Keep accent/text contrast within readable range on the dusk-plum base.
 
 ## Migration Note
 
-The active CLI shell is Ink-based. If future web or desktop surfaces consume the same visual identity, keep the semantic layer intact:
-
-- color/token naming should carry forward
-- spacing and box conventions should remain recognizable
-- terminal behavior should still optimize for fast scanning and low breakage
-- do not duplicate raw hex values outside `packages/design` unless the value is a deliberate one-off media/runtime constraint
-
-See [.plans/ink-migration.md](../.plans/ink-migration.md) for the larger UI migration track.
+If future web/desktop surfaces consume this identity, keep the semantic layer intact: token naming, the one rule, spacing/box conventions, and fast-scan low-breakage behavior carry forward. See [.plans/sakura-rollout.md](../.plans/sakura-rollout.md) and [.plans/ink-migration.md](../.plans/ink-migration.md).
