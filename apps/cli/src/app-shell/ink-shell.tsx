@@ -1151,11 +1151,13 @@ function AppRoot({ container }: { container: Container }) {
                   state.playbackStatus === "stalled"
                     ? formatPlaybackSessionKeysHint({
                         stream: state.stream,
+                        autoplayPaused: state.autoplaySessionPaused,
+                        autoskipPaused: state.autoskipSessionPaused,
                         canToggleAutoplay,
+                        stopAfterCurrent: state.stopAfterCurrent,
+                        isSeries: state.currentTitle?.type === "series",
                         hasNextEpisode: canGoNext,
                         hasPreviousEpisode: canGoPrevious,
-                        isSeries: state.currentTitle?.type === "series",
-                        stopAfterCurrent: state.stopAfterCurrent,
                       })
                     : undefined,
                 commands: resolveCommandContext(state, "activePlayback"),
