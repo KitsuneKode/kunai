@@ -7,8 +7,8 @@ describe("selectableRowStyle", () => {
   test("selected row uses accent rule + fill background", () => {
     const s = selectableRowStyle(true);
     expect(s.prefix).toBe("▌");
-    expect(s.backgroundColor).toBe(palette.amberFill); // → accentFill
-    expect(s.color).toBe(palette.amberSoft); // → accentSoft
+    expect(s.backgroundColor).toBe(palette.accentFill);
+    expect(s.color).toBe(palette.accentSoft);
   });
   test("unselected row is calm: no fill, two-space prefix", () => {
     const s = selectableRowStyle(false);

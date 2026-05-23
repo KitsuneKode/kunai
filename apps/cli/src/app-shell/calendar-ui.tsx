@@ -101,11 +101,11 @@ export function CalendarDayStrip({
         {days.map((day) => {
           const isSelected = selectedDayKey === day.key;
           const showTodayMarker = day.isToday;
-          const activeColor = day.isToday ? palette.amber : palette.teal;
+          const activeColor = palette.accent;
           return (
             <Box key={day.key} marginRight={2} flexDirection="column">
               <Text
-                color={isSelected ? activeColor : showTodayMarker ? palette.amber : palette.muted}
+                color={isSelected ? activeColor : showTodayMarker ? palette.accent : palette.muted}
                 bold={isSelected || showTodayMarker}
               >
                 {showTodayMarker ? "◉ " : isSelected ? "● " : "  "}
@@ -144,8 +144,8 @@ export function CalendarTypeTabs({
         const active = tab === activeTab;
         return (
           <Box key={tab} marginRight={3} flexDirection="column">
-            <Text color={active ? palette.amber : palette.muted}>{tab}</Text>
-            {active ? <Text color={palette.amber}>{"─".repeat(tab.length)}</Text> : null}
+            <Text color={active ? palette.accent : palette.muted}>{tab}</Text>
+            {active ? <Text color={palette.accent}>{"─".repeat(tab.length)}</Text> : null}
           </Box>
         );
       })}
@@ -226,16 +226,16 @@ export function CalendarScheduleRow<T>({
   // Release facts, not playable guarantees: ✓ released · ▶ airing today · ○ upcoming.
   const status =
     option.releaseStatus === "released"
-      ? { glyph: "✓ ", color: palette.green, dim: true }
+      ? { glyph: "✓ ", color: palette.ok, dim: true }
       : option.releaseStatus === "airing-today"
-        ? { glyph: "▶ ", color: palette.amber, dim: false }
+        ? { glyph: "▶ ", color: palette.accent, dim: false }
         : { glyph: "○ ", color: palette.muted, dim: true };
 
   return (
     <Box flexDirection="column" width={rowWidth} marginBottom={0}>
       {showTimeHeader ? (
         <Box marginTop={1} marginBottom={0}>
-          <Text color={palette.amber} bold>
+          <Text color={palette.text} bold>
             {timeLabel}
           </Text>
         </Box>
@@ -253,7 +253,7 @@ export function CalendarScheduleRow<T>({
         backgroundColor={selected ? palette.surfaceActive : undefined}
       >
         <Text bold={selected} dimColor={!selected} wrap="truncate">
-          <Text color={selected ? palette.amber : palette.gray}>{selected ? "▌ " : "  "}</Text>
+          <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
           <Text color={status.color} dimColor={status.dim}>
             {status.glyph}
           </Text>

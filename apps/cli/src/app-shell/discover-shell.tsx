@@ -15,7 +15,7 @@ export type DiscoverShellResult = { type: "open"; result: SearchResult } | { typ
  * Single recommendation section rendered as a horizontal "rail" with a label header.
  *
  * Items are displayed as compact ranked rows with active selection highlighting.
- * The active row shows the ▌ accent bar in the lavender recommendation accent.
+ * The active row shows the ▌ accent bar for selection (rose accent).
  * Rating and year are rendered as right-aligned metadata when available.
  */
 const DiscoverSectionView = React.memo(function DiscoverSectionView({
@@ -34,16 +34,16 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
   const titleBudget = Math.max(16, maxWidth - 18);
   return (
     <Box flexDirection="column" marginBottom={compact ? 0 : 1}>
-      <Text color={isFocused ? palette.lavender : palette.muted} bold={isFocused}>
+      <Text color={isFocused ? palette.accent : palette.muted} bold={isFocused}>
         {isFocused ? "▸ " : "  "}
         {section.label}
-        <Text color={palette.gray} dimColor>
+        <Text color={palette.dim} dimColor>
           {" "}
           · {section.items.length}
         </Text>
       </Text>
       {section.items.length === 0 ? (
-        <Text color={palette.gray} dimColor>
+        <Text color={palette.dim} dimColor>
           {"    "}Nothing here yet
         </Text>
       ) : (
@@ -59,7 +59,7 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
             >
               <Box flexShrink={1} flexGrow={1}>
                 <Text bold={isActive} wrap="truncate">
-                  <Text color={isActive ? palette.lavender : palette.gray}>
+                  <Text color={isActive ? palette.accent : palette.dim}>
                     {isActive ? "  ▌ " : "    "}
                   </Text>
                   <Text color={palette.dim} dimColor>
@@ -72,7 +72,7 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
                 </Text>
               </Box>
               <Box flexShrink={0}>
-                <Text color={isActive ? palette.lavender : palette.gray} dimColor={!isActive}>
+                <Text color={isActive ? palette.muted : palette.dim} dimColor={!isActive}>
                   {` ${rating.padEnd(7)} ${item.year}`}
                 </Text>
               </Box>
@@ -208,21 +208,21 @@ export function DiscoverShell({
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between" paddingX={1}>
       <Box flexDirection="column" flexGrow={1}>
         <Box justifyContent="space-between">
-          <Text bold color={palette.lavender}>
+          <Text bold color={palette.text}>
             ⬡ Discover
           </Text>
           {refreshing ? (
             <Box>
-              <InlineDotMatrixLoader variant="echo-ring" active onColor={palette.teal} />
-              <Text color={palette.teal}> refreshing</Text>
+              <InlineDotMatrixLoader variant="echo-ring" active onColor={palette.accent} />
+              <Text color={palette.accent}> refreshing</Text>
             </Box>
           ) : refreshError ? (
-            <Text color={palette.red}>refresh failed</Text>
+            <Text color={palette.danger}>refresh failed</Text>
           ) : null}
         </Box>
         {refreshError ? (
           <Box marginTop={1}>
-            <Text color={palette.amber}>{refreshError}</Text>
+            <Text color={palette.danger}>{refreshError}</Text>
             <Text color={palette.dim} dimColor>
               Press r to retry
             </Text>
@@ -231,14 +231,14 @@ export function DiscoverShell({
         <Box marginTop={1} flexDirection="column" flexGrow={1}>
           {visibleSections.length === 0 ? (
             <Box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
-              <DotMatrixLoader variant="echo-ring" active onColor={palette.amber} />
+              <DotMatrixLoader variant="echo-ring" active onColor={palette.accent} />
               <Box marginTop={1}>
                 <Text color={palette.muted}>Loading recommendations…</Text>
               </Box>
             </Box>
           ) : visibleSections.every((s) => s.items.length === 0) ? (
             <Box flexDirection="column" paddingY={2}>
-              <Text color={palette.amber}>{"◈  nothing to discover yet"}</Text>
+              <Text color={palette.muted}>{"◈  nothing to discover yet"}</Text>
               <Text color={palette.dim}>watch something first to get recommendations</Text>
               <Box marginTop={1}>
                 <Text color={palette.dim} dimColor>
@@ -252,7 +252,7 @@ export function DiscoverShell({
                 return (
                   <Box key={section.reason + String(idx)} flexDirection="column" marginBottom={1}>
                     <Text
-                      color={idx === sectionIdx ? palette.amber : palette.muted}
+                      color={idx === sectionIdx ? palette.accent : palette.muted}
                       bold={idx === sectionIdx}
                     >
                       {idx === sectionIdx ? "▸ " : "  "}
@@ -298,7 +298,7 @@ export function DiscoverShell({
         return (
           <Box flexDirection="column" marginBottom={1} paddingX={1}>
             {meta ? (
-              <Text color={palette.amber} dimColor>
+              <Text color={palette.muted} dimColor>
                 {meta}
               </Text>
             ) : null}

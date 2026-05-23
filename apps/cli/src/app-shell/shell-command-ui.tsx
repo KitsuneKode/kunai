@@ -78,17 +78,17 @@ export function LineEditorText({
     return displayValue.length > 0 ? (
       <Text color="white">{displayValue}</Text>
     ) : (
-      <Text color={palette.gray}>{visiblePlaceholder ?? ""}</Text>
+      <Text color={palette.dim}>{visiblePlaceholder ?? ""}</Text>
     );
   }
 
   if (value.length === 0) {
     return (
       <>
-        <Text backgroundColor={palette.teal} color="black">
+        <Text backgroundColor={palette.accent} color="black">
           {" "}
         </Text>
-        {visiblePlaceholder ? <Text color={palette.gray}>{visiblePlaceholder}</Text> : null}
+        {visiblePlaceholder ? <Text color={palette.dim}>{visiblePlaceholder}</Text> : null}
       </>
     );
   }
@@ -99,7 +99,7 @@ export function LineEditorText({
   return (
     <>
       <Text color="white">{before}</Text>
-      <Text backgroundColor={palette.teal} color="black">
+      <Text backgroundColor={palette.accent} color="black">
         {visibleCursor}
       </Text>
       <Text color="white">{after}</Text>
@@ -209,18 +209,18 @@ export function CommandPalette({
           width={contentWidth + 4}
           backgroundColor={selected ? palette.surfaceActive : undefined}
         >
-          <Text color={selected ? palette.amber : palette.gray}>{selected ? "▌ " : "  "}</Text>
+          <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
           <Text
-            color={!command.enabled ? palette.gray : selected ? palette.amber : palette.text}
+            color={!command.enabled ? palette.dim : selected ? palette.accent : palette.text}
             bold={selected && command.enabled}
             dimColor={!command.enabled}
           >
             {truncateLine(alias, aliasWidth).padEnd(aliasWidth)}
           </Text>
-          <Text color={palette.gray}> </Text>
+          <Text color={palette.dim}> </Text>
           <Text
             wrap="truncate"
-            color={command.enabled ? (selected ? "white" : palette.muted) : palette.gray}
+            color={command.enabled ? (selected ? "white" : palette.muted) : palette.dim}
             dimColor={!command.enabled}
           >
             {detail}
@@ -240,7 +240,7 @@ export function CommandPalette({
   return (
     <Box flexDirection="column" marginTop={1} width={width}>
       <Box marginTop={0}>
-        <Text color={palette.teal}>/</Text>
+        <Text color={palette.accent}>/</Text>
         <LineEditorText
           value={input}
           cursor={cursor}
@@ -249,14 +249,14 @@ export function CommandPalette({
           maxWidth={Math.max(8, contentWidth - 2)}
         />
       </Box>
-      <Text color={palette.gray} dimColor>
+      <Text color={palette.dim} dimColor>
         Tab autocomplete · ↑↓ choose · Enter run
         {matches.length > visibleMatches.length ? ` · ${matches.length} commands` : ""}
       </Text>
       <Box flexDirection="column" marginTop={1}>
         {matches.length > 0 ? (
           <>
-            {windowStart > 0 ? <Text color={palette.gray}> ▲ more</Text> : null}
+            {windowStart > 0 ? <Text color={palette.dim}> ▲ more</Text> : null}
             {showGrouped ? (
               <>
                 {(() => {
@@ -288,10 +288,10 @@ export function CommandPalette({
                 return renderCommand(command, absoluteIndex);
               })
             )}
-            {windowEnd < matches.length ? <Text color={palette.gray}> ▼ more</Text> : null}
+            {windowEnd < matches.length ? <Text color={palette.dim}> ▼ more</Text> : null}
           </>
         ) : (
-          <Text color={palette.gray}>No matching commands</Text>
+          <Text color={palette.dim}>No matching commands</Text>
         )}
       </Box>
     </Box>

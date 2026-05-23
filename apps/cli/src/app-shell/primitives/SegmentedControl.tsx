@@ -4,12 +4,12 @@ import React from "react";
 import { segmentGeometry } from "../format/segmented";
 import { palette } from "../shell-theme";
 
-/** Filter/range segmented control: active segment gets an amber-fill pill. */
+/** Filter/range segmented control: active segment gets an accent-fill pill. */
 export const SegmentedControl = React.memo(function SegmentedControl({
   labels,
   activeIndex,
-  activeBg = palette.amberFill,
-  activeFg = palette.amber,
+  activeBg = palette.accentFill,
+  activeFg = palette.accent,
 }: {
   labels: readonly string[];
   activeIndex: number;

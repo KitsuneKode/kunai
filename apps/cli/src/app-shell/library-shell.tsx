@@ -79,15 +79,15 @@ export function LibraryShell({
     <Box flexDirection="column" flexGrow={1}>
       {/* Tab bar */}
       <Box flexDirection="row" columnGap={3}>
-        <Text color={tab === "library" ? palette.teal : palette.gray} bold={tab === "library"}>
+        <Text color={tab === "library" ? palette.accent : palette.dim} bold={tab === "library"}>
           {tab === "library" ? "▸ " : "  "}Library
         </Text>
-        <Text color={tab === "queue" ? palette.teal : palette.gray} bold={tab === "queue"}>
+        <Text color={tab === "queue" ? palette.accent : palette.dim} bold={tab === "queue"}>
           {tab === "queue" ? "▸ " : "  "}Queue
         </Text>
       </Box>
       {/* Single-line status */}
-      <Text color={palette.gray} dimColor>
+      <Text color={palette.dim} dimColor>
         {downloadsEnabled ? "downloads on" : "downloads off"} · auto: {autoLabel}
       </Text>
 
@@ -245,7 +245,7 @@ function LibraryTab({ container }: { container: Container }) {
   if (loading) {
     return (
       <Box flexDirection="column" flexGrow={1} justifyContent="center">
-        <Text color={palette.teal}>◌ Loading offline titles…</Text>
+        <Text color={palette.muted}>◌ Loading offline titles…</Text>
       </Box>
     );
   }
@@ -273,41 +273,41 @@ function LibraryTab({ container }: { container: Container }) {
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box marginBottom={1}>
-        <Text color={palette.gray}>{shelf.summary}</Text>
+        <Text color={palette.dim}>{shelf.summary}</Text>
       </Box>
       <Box flexDirection="column">
-        {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
+        {windowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
         {groups.map((group, index) => {
           const absoluteIndex = windowStart + index;
           const selected = absoluteIndex === safeIndex;
           return (
             <Box key={group.key} flexDirection="column">
               <Box backgroundColor={selected ? palette.surfaceActive : undefined}>
-                <Text color={selected ? palette.amber : palette.gray}>
+                <Text color={selected ? palette.accent : palette.dim}>
                   {selected ? "▌ " : "  "}
                 </Text>
-                <Text color={selected ? "white" : undefined} bold={selected}>
+                <Text color={selected ? palette.text : undefined} bold={selected}>
                   {truncateLine(group.label, 36)}
                 </Text>
                 {group.readyCount > 0 ? (
-                  <Text color={palette.green}>{`  ${group.readyCount}▶`}</Text>
+                  <Text color={palette.ok}>{`  ${group.readyCount}▶`}</Text>
                 ) : null}
                 {group.issueCount > 0 ? (
-                  <Text color={palette.amber}>{` ${group.issueCount}⚠`}</Text>
+                  <Text color={palette.accentDeep}>{` ${group.issueCount}⚠`}</Text>
                 ) : null}
                 <Text color={palette.muted} dimColor>
                   {"  ·  "}
                   {group.nextPlayableEpisodeLabel ?? "no playable files"}
                 </Text>
                 {confirmDeleteKey === group.key ? (
-                  <Text color={palette.amber} bold>
+                  <Text color={palette.accentDeep} bold>
                     {"  "}x again to delete
                   </Text>
                 ) : null}
               </Box>
               {selected ? (
                 <Box marginLeft={2}>
-                  <Text color={palette.gray} dimColor>
+                  <Text color={palette.dim} dimColor>
                     {truncateLine(
                       `${group.artifactSummary}  ·  ${group.detail}`,
                       Math.max(40, Math.min(110, (viewport.columns ?? 80) - 6)),
@@ -318,11 +318,11 @@ function LibraryTab({ container }: { container: Container }) {
             </Box>
           );
         })}
-        {windowEnd < totalGroups ? <Text color={palette.gray}> ▼ ...</Text> : null}
+        {windowEnd < totalGroups ? <Text color={palette.dim}> ▼ ...</Text> : null}
       </Box>
       {selectedGroup && confirmDeleteKey === selectedGroup.key ? (
         <Box marginTop={1}>
-          <Text color={palette.amber}>
+          <Text color={palette.accentDeep}>
             {"⚠ "}Press x again to delete {selectedGroup.titleName} and all local files
           </Text>
         </Box>

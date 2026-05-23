@@ -53,11 +53,11 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       {resumeLabel ? (
-        <Text color={palette.amber}>⏸ stopped early</Text>
+        <Text color={palette.accentDeep}>⏸ stopped early</Text>
       ) : isMovie ? (
-        <Text color={palette.green}>✓ movie complete</Text>
+        <Text color={palette.ok}>✓ movie complete</Text>
       ) : (
-        <Text color={palette.green}>✓ episode complete</Text>
+        <Text color={palette.ok}>✓ episode complete</Text>
       )}
 
       <Box marginTop={1} flexDirection="column">
@@ -72,8 +72,8 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       {resumeLabel ? (
         <Box marginTop={2} flexDirection="column">
           <Text>
-            <Text color={palette.amber}>{"▌ "}</Text>
-            <Text color={palette.amber}>↵ resume</Text>
+            <Text color={palette.accent}>{"▌ "}</Text>
+            <Text color={palette.accent}>↵ resume</Text>
           </Text>
           <Text color={palette.textDim}>{`  ${truncateLine(resumeLabel, 64)}`}</Text>
         </Box>
@@ -88,8 +88,8 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       {!resumeLabel && !isMovie && postPlayState.kind === "mid-series" && (
         <Box marginTop={2} flexDirection="column">
           <Text>
-            <Text color={palette.amber}>{"▌ "}</Text>
-            <Text color={palette.amber}>▶ up next</Text>
+            <Text color={palette.accent}>{"▌ "}</Text>
+            <Text color={palette.accent}>▶ up next</Text>
           </Text>
           {nextEpisodeLabel ? (
             <Text>{`  ${truncateLine(nextEpisodeLabel, 64)}`}</Text>
@@ -101,7 +101,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
 
       {postPlayState.kind === "caught-up" && (
         <Box marginTop={2} flexDirection="column">
-          <Text color={palette.teal}>◉ caught up</Text>
+          <Text color={palette.ok}>◉ caught up</Text>
           {postPlayState.nextAirDate ? (
             <Text color={palette.muted}>
               {"next episode "}
@@ -116,10 +116,10 @@ export const PostPlayShell = React.memo(function PostPlayShell({
 
       {postPlayState.kind === "season-finale" && (
         <Box marginTop={2} flexDirection="column">
-          <Text color={palette.green}>✦ Season {currentSeason ?? "?"} complete</Text>
+          <Text color={palette.ok}>✦ Season {currentSeason ?? "?"} complete</Text>
           {postPlayState.hasNextSeason ? (
             <Box marginTop={1}>
-              <Text color={palette.amber}>↵ continue to next season</Text>
+              <Text color={palette.accent}>↵ continue to next season</Text>
             </Box>
           ) : null}
           {progress !== undefined && totalEpisodes && watchedEpisodes !== undefined ? (
@@ -134,7 +134,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
 
       {postPlayState.kind === "series-complete" && (
         <Box marginTop={2} flexDirection="column">
-          <Text color={palette.purple}>✦ you finished {truncateLine(title, 48)}</Text>
+          <Text color={palette.milestone}>✦ you finished {truncateLine(title, 48)}</Text>
           {totalEpisodes && currentSeason ? (
             <Text color={palette.dim}>
               {totalEpisodes} episodes across {currentSeason} season

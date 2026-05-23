@@ -10,10 +10,10 @@ import { usePosterPreview } from "./use-poster-preview";
 type SeriesStateKey = NonNullable<DetailsPanelSecondary["seriesState"]>;
 
 const SERIES_STATE_COLORS: Record<SeriesStateKey, string> = {
-  airing: palette.teal,
-  ended: palette.green,
-  complete: palette.purple,
-  upcoming: palette.amber,
+  airing: palette.muted,
+  ended: palette.ok,
+  complete: palette.milestone,
+  upcoming: palette.muted,
 };
 
 const SERIES_STATE_LABELS: Record<SeriesStateKey, string> = {
@@ -75,7 +75,7 @@ export function DetailsPaneUI({
           {poster.kind !== "none" ? (
             <Text>{poster.placeholder}</Text>
           ) : primary.posterPath ? (
-            <Text color={posterState === "loading" ? palette.info : palette.dim} dimColor>
+            <Text color={posterState === "loading" ? palette.muted : palette.dim} dimColor>
               {posterState === "loading" ? "Loading poster…" : "[poster]"}
             </Text>
           ) : (

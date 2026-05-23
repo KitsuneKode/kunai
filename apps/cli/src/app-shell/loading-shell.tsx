@@ -156,9 +156,9 @@ function StageRail({ items }: { items: readonly StageRailItem[] }) {
           <Text
             color={
               item.tone === "success"
-                ? palette.green
+                ? palette.ok
                 : item.tone === "info" || item.tone === "warning"
-                  ? palette.amber
+                  ? palette.accentDeep
                   : palette.dim
             }
             dimColor={item.tone === "neutral"}
@@ -235,7 +235,11 @@ const BufferHealthBadge = React.memo(function BufferHealthBadge({
 }) {
   if (!health) return null;
   const color =
-    health === "healthy" ? palette.green : health === "buffering" ? palette.amber : palette.red;
+    health === "healthy"
+      ? palette.ok
+      : health === "buffering"
+        ? palette.accentDeep
+        : palette.danger;
   const label =
     health === "healthy"
       ? "● buffer healthy"
@@ -530,7 +534,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   <DotMatrixLoader
                     variant={getStageAnimationVariant(activeStage)}
                     active={timerPolicy.animate}
-                    onColor={palette.teal}
+                    onColor={palette.accent}
                     offColor={palette.dim}
                   />
                 </Box>
@@ -544,7 +548,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   {/* Provider context — revealed after 2s */}
                   {disclosure.showProvider && providerDetail && (
                     <Box marginTop={1}>
-                      <Text color={palette.gray} dimColor>
+                      <Text color={palette.dim} dimColor>
                         {providerDetail}
                       </Text>
                     </Box>
@@ -552,7 +556,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   {/* Subtitle status — revealed after 2s */}
                   {disclosure.showSubtitleStatus && state.subtitleStatus && (
                     <Box marginTop={1}>
-                      <Text color={subtitleReady ? palette.green : palette.amber}>
+                      <Text color={subtitleReady ? palette.ok : palette.accentDeep}>
                         {state.subtitleStatus}
                       </Text>
                     </Box>
@@ -564,17 +568,17 @@ export const LoadingShell = React.memo(function LoadingShell({
               {disclosure.showDiagnostics && (
                 <Box flexDirection="column" marginTop={2}>
                   {state.trace && (
-                    <Text color={palette.gray} dimColor>
+                    <Text color={palette.dim} dimColor>
                       {state.trace}
                     </Text>
                   )}
                   {shouldShowLoadingElapsed(state.operation, elapsed) && (
-                    <Text color={palette.gray} dimColor>
+                    <Text color={palette.dim} dimColor>
                       {formatElapsed(elapsed)} elapsed
                     </Text>
                   )}
                   {memoryPanelVisible && memoryLine && (
-                    <Text color={palette.gray} dimColor>
+                    <Text color={palette.dim} dimColor>
                       Memory: {memoryLine}
                     </Text>
                   )}
@@ -582,7 +586,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                     <Text
                       color={
                         !runtimeHealthLine.tone || runtimeHealthLine.tone === "neutral"
-                          ? palette.gray
+                          ? palette.dim
                           : palette[runtimeHealthLine.tone as keyof typeof palette]
                       }
                     >
@@ -599,7 +603,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                     {"█".repeat(Math.floor((state.progress / 100) * barWidth))}
                     {"░".repeat(barWidth - Math.floor((state.progress / 100) * barWidth))}
                   </Text>
-                  <Text color={palette.teal}> {Math.round(state.progress)}%</Text>
+                  <Text color={palette.accent}> {Math.round(state.progress)}%</Text>
                 </Box>
               ) : disclosure.showElapsed ? (
                 <Box marginTop={1}>
@@ -612,7 +616,7 @@ export const LoadingShell = React.memo(function LoadingShell({
               {/* Issue warning — always visible immediately if present */}
               {disclosure.showIssue && loadingIssue && (
                 <Box marginTop={1}>
-                  <Text color={palette.amber}>⚠ {loadingIssue}</Text>
+                  <Text color={palette.accentDeep}>⚠ {loadingIssue}</Text>
                 </Box>
               )}
             </Box>
@@ -633,7 +637,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   ) : null}
                   {state.playbackFactsStrip ? (
                     <Box marginTop={1}>
-                      <Text color={palette.teal}>{state.playbackFactsStrip}</Text>
+                      <Text color={palette.muted}>{state.playbackFactsStrip}</Text>
                     </Box>
                   ) : null}
                   {state.playbackKeysHint ? (
@@ -662,7 +666,7 @@ export const LoadingShell = React.memo(function LoadingShell({
               state.duration > 0 ? (
                 <Box marginTop={2} flexDirection="column">
                   <Text>
-                    <Text color={palette.amber}>{formatTimestamp(state.currentPosition)}</Text>
+                    <Text color={palette.accent}>{formatTimestamp(state.currentPosition)}</Text>
                     <Text color={palette.dim}>
                       {" "}
                       {renderPlaybackProgressBar(
@@ -679,7 +683,7 @@ export const LoadingShell = React.memo(function LoadingShell({
               ) : null}
               {state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
                 <Box marginTop={1}>
-                  <Text color={palette.amber}>{"▶ "}</Text>
+                  <Text color={palette.accent}>{"▶ "}</Text>
                   <Text color={palette.dim} dimColor>
                     {"UP NEXT  "}
                   </Text>

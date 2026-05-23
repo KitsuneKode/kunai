@@ -24,11 +24,11 @@ export function RootIdleShell({ state }: { state: SessionState }) {
             {state.mode === "anime" ? "anime" : "series"}
           </Text>
           <Box marginTop={1}>
-            <Text color={palette.amber}>{"⏸  "}</Text>
-            <Text color="white" bold>
+            <Text color={palette.accent}>{"⏸  "}</Text>
+            <Text color={palette.text} bold>
               {currentTitle?.name ?? "Current session"}
             </Text>
-            {currentEpisode ? <Text color={palette.teal}>{`  ${currentEpisode}`}</Text> : null}
+            {currentEpisode ? <Text color={palette.muted}>{`  ${currentEpisode}`}</Text> : null}
           </Box>
           <Box marginTop={1}>
             <Text color={palette.dim} dimColor>
@@ -38,7 +38,9 @@ export function RootIdleShell({ state }: { state: SessionState }) {
         </Box>
       ) : (
         <Box flexDirection="column" gap={0}>
-          <Text color={palette.amber}>{"◈  welcome to kunai"}</Text>
+          <Text color={palette.text} bold>
+            {"◈  welcome to kunai"}
+          </Text>
           <Box marginTop={1}>
             <Text color={palette.dim}>
               {"search for a title to begin  ·  /discover for recommendations"}
@@ -55,8 +57,8 @@ function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
     case "provider-timeout":
       return (
         <Box flexDirection="column">
-          <Text color={palette.amber}>
-            {"◌  timed out after "}
+          <Text color={palette.danger}>
+            {"✗  timed out after "}
             {scenario.elapsedSec}
             {"s"}
           </Text>
@@ -71,7 +73,7 @@ function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
     case "stream-broken":
       return (
         <Box flexDirection="column">
-          <Text color={palette.amber}>{"⚠  stream interrupted"}</Text>
+          <Text color={palette.danger}>{"✗  stream interrupted"}</Text>
           <Text color={palette.dim} dimColor>
             {`attempt ${scenario.attempt} of ${scenario.maxAttempts}`}
           </Text>
@@ -84,7 +86,7 @@ function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
       return (
         <Box flexDirection="column">
           <Text color={palette.dim}>{"○  offline"}</Text>
-          <Text color={palette.amber}>/library for downloaded titles</Text>
+          <Text color={palette.accent}>/library for downloaded titles</Text>
         </Box>
       );
     case "title-unavailable":
@@ -125,12 +127,12 @@ export function ErrorShell({
       flexDirection="row"
       marginTop={1}
       borderStyle="round"
-      borderColor={palette.red}
+      borderColor={palette.danger}
       paddingX={1}
     >
-      <Text color={palette.red}>{"│ "}</Text>
+      <Text color={palette.danger}>{"│ "}</Text>
       <Box flexDirection="column" flexGrow={1}>
-        <Text color={palette.red} bold>
+        <Text color={palette.danger} bold>
           Playback failed
         </Text>
         {scenario ? (
@@ -139,7 +141,7 @@ export function ErrorShell({
           <Text color={palette.text}>{message}</Text>
         )}
         <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
+          <Text color={palette.dim} dimColor>
             {onRetry ? "r retry  ·  Enter / Esc dismiss" : "Enter / Esc to continue"}
           </Text>
         </Box>

@@ -135,17 +135,17 @@ function HelpShell({
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
       <Box flexDirection="column" flexGrow={1} paddingX={1} marginTop={1}>
-        <Text color={palette.amber} bold>
+        <Text color={palette.text} bold>
           {"▸ Help"}
         </Text>
-        <Text color={palette.gray}>{"Tab cycles sections · Esc closes"}</Text>
+        <Text color={palette.dim}>{"Tab cycles sections · Esc closes"}</Text>
         {/* Tab strip */}
         <Box flexDirection="row" marginTop={1} marginBottom={0}>
           {HELP_TABS.map((tab) => (
             <Box key={tab} marginRight={3} flexDirection="column">
-              <Text color={activeTab === tab ? palette.amber : palette.dim}>{tab}</Text>
+              <Text color={activeTab === tab ? palette.accent : palette.dim}>{tab}</Text>
               {activeTab === tab ? (
-                <Text color={palette.amber}>{"─".repeat(tab.length)}</Text>
+                <Text color={palette.accent}>{"─".repeat(tab.length)}</Text>
               ) : null}
             </Box>
           ))}
@@ -154,7 +154,7 @@ function HelpShell({
         <Box flexDirection="column" marginTop={1}>
           {rows.map((row) => (
             <Box key={row.key} flexDirection="row" marginBottom={0}>
-              <Text color={palette.amber}>{row.key.padEnd(16)}</Text>
+              <Text color={palette.text}>{row.key.padEnd(16)}</Text>
               <Text color={palette.dim}>{row.desc}</Text>
             </Box>
           ))}

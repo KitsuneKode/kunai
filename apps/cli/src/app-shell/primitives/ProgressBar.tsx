@@ -8,7 +8,7 @@ export const ProgressBar = React.memo(function ProgressBar({
   value,
   max,
   width = 20,
-  color = palette.teal,
+  color = palette.accentDeep,
 }: {
   value: number;
   max: number;

@@ -1003,9 +1003,14 @@ function AppRoot({ container }: { container: Container }) {
           {truncateLine(rootStatusSummary.alert.text, Math.max(36, shellWidth - 8))}
         </Text>
       ) : null}
-      {/* Presence boot line renders as alert override when it fires */}
+      {/* Presence boot line renders as alert override when it fires.
+          Error/warning tones stay at full intensity so they read as alarms;
+          calm tones (connected/info) dim so they recede. */}
       {presenceBootLine && !rootStatusSummary.alert ? (
-        <Text dimColor color={statusColor(presenceBootLine.tone)}>
+        <Text
+          dimColor={presenceBootLine.tone !== "error" && presenceBootLine.tone !== "warning"}
+          color={statusColor(presenceBootLine.tone)}
+        >
           {truncateLine(presenceBootLine.text, Math.max(36, shellWidth - 8))}
         </Text>
       ) : null}
@@ -1777,7 +1782,7 @@ function ListShell<T>({
     <Box flexDirection="column" paddingX={1}>
       <Box flexDirection="column">
         <Box flexDirection="column">
-          <Text color={confirmed ? palette.green : palette.teal}>
+          <Text bold color={confirmed ? palette.ok : palette.text}>
             {confirmed ? "Selected" : title}
           </Text>
           <Text color={palette.muted}>{confirmed ? selectedLabel : subtitle}</Text>
@@ -1800,7 +1805,7 @@ function ListShell<T>({
           />
         ) : (
           <>
-            <Text color={palette.gray} dimColor>
+            <Text color={palette.dim} dimColor>
               {`${filteredOptions.length > 0 ? index + 1 : 0} of ${filteredOptions.length}`}
             </Text>
             <Box
@@ -1809,16 +1814,16 @@ function ListShell<T>({
               justifyContent="space-between"
             >
               <Box flexDirection="column" width={showSelectionCompanion ? listWidth : undefined}>
-                {windowStart > 0 && <Text color={palette.gray}> ▲ ...</Text>}
+                {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
                 {visibleOptions.map((option) => {
                   const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
                   const itemPrefix = isConfirmed ? "✓" : selected ? "▌" : " ";
                   const itemTone = isConfirmed
-                    ? palette.green
+                    ? palette.ok
                     : selected
-                      ? palette.amber
-                      : palette.gray;
+                      ? palette.accent
+                      : palette.dim;
                   const secondary = option.detail
                     ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 4))}`
                     : "";
@@ -1840,7 +1845,7 @@ function ListShell<T>({
                     </Box>
                   );
                 })}
-                {windowEnd < filteredOptions.length && <Text color={palette.gray}> ▼ ...</Text>}
+                {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
               </Box>
               {!ultraCompact ? (
                 <Box
@@ -1856,7 +1861,7 @@ function ListShell<T>({
                       </Box>
                     ) : selectedOption?.previewImageUrl && posterState === "loading" ? (
                       <Box marginBottom={1}>
-                        <Text color={palette.info} dimColor>
+                        <Text color={palette.muted} dimColor>
                           Loading artwork…
                         </Text>
                       </Box>
@@ -1869,7 +1874,7 @@ function ListShell<T>({
                     </Text>
                     <Box marginTop={1} flexDirection="column">
                       {detailLines.map((line) => (
-                        <Text key={`detail-${selectedLabel}-${line}`} color={palette.info}>
+                        <Text key={`detail-${selectedLabel}-${line}`} color={palette.muted}>
                           {line}
                         </Text>
                       ))}
@@ -2596,11 +2601,11 @@ function BrowseShell<T>({
         <Box justifyContent="flex-end">
           {searchState === "loading" ? (
             <>
-              <InlineDotMatrixLoader variant="flux-columns" active onColor={palette.teal} />
-              <Text color={palette.teal}> searching</Text>
+              <InlineDotMatrixLoader variant="flux-columns" active onColor={palette.accent} />
+              <Text color={palette.accent}> searching</Text>
             </>
           ) : searchState === "error" ? (
-            <Text color={palette.red}>search failed</Text>
+            <Text color={palette.danger}>search failed</Text>
           ) : searchState === "ready" && displayOptions.length > 0 ? (
             <Text color={palette.muted}>{displayOptions.length} results</Text>
           ) : null}
@@ -2610,11 +2615,11 @@ function BrowseShell<T>({
         ) : null}
         {activeFilterBadges.length > 0 && !ultraCompact ? (
           <Box marginTop={1} flexWrap="wrap">
-            <Text color={palette.gray}>Filters </Text>
+            <Text color={palette.dim}>Filters </Text>
             {activeFilterBadges.map((filter) => (
               <Box key={filter} marginRight={2} flexDirection="column">
-                <Text color={palette.amber}>{filter}</Text>
-                <Text color={palette.amber}>{"─".repeat(filter.length)}</Text>
+                <Text color={palette.muted}>{filter}</Text>
+                <Text color={palette.accentSoft}>{"─".repeat(filter.length)}</Text>
               </Box>
             ))}
           </Box>
@@ -2636,7 +2641,7 @@ function BrowseShell<T>({
 
         {isCalendarView ? (
           <Box marginTop={1} flexDirection="row">
-            <Text color={palette.teal}>◈ </Text>
+            <Text color={palette.accent}>◈ </Text>
             <Text color={palette.text}>schedule</Text>
             <Text color={palette.dim} dimColor>
               {"  ·  ← → browse days  ·  1–4 filter type  ·  / commands"}
@@ -2665,18 +2670,18 @@ function BrowseShell<T>({
         !ultraCompact &&
         !commandMode &&
         !isCalendarView ? (
-          <Text color={palette.gray}>Query changed · Press Enter to refresh results</Text>
+          <Text color={palette.dim}>Query changed · Press Enter to refresh results</Text>
         ) : null}
 
         <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
+          <Text color={palette.dim} dimColor>
             {"─".repeat(innerWidth)}
           </Text>
         </Box>
 
         {searchState === "error" && errorMessage ? (
           <Box marginTop={1} flexDirection="column" flexGrow={1}>
-            <Text color={palette.red}>{errorMessage}</Text>
+            <Text color={palette.danger}>{errorMessage}</Text>
             <Text color={palette.muted} dimColor>
               Press Enter to retry or Esc to clear
             </Text>
@@ -2709,7 +2714,7 @@ function BrowseShell<T>({
           >
             {/* Result list */}
             <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
-              {windowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
+              {windowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
               {isCalendarView
                 ? buildCalendarRenderRows(
                     displayOptions as readonly BrowseShellOption<
@@ -2750,7 +2755,7 @@ function BrowseShell<T>({
                       >
                         <Box width={rowWidth}>
                           <Text bold={selected} dimColor={!selected} wrap="truncate">
-                            <Text color={selected ? palette.amber : palette.gray}>
+                            <Text color={selected ? palette.accent : palette.dim}>
                               {selected ? "▌ " : "  "}
                             </Text>
                             <Text color={selected ? "white" : undefined}>
@@ -2761,7 +2766,7 @@ function BrowseShell<T>({
                       </Box>
                     );
                   })}
-              {windowEnd < displayOptions.length ? <Text color={palette.gray}> ▼ ...</Text> : null}
+              {windowEnd < displayOptions.length ? <Text color={palette.dim}> ▼ ...</Text> : null}
             </Box>
 
             {/* Companion pane */}
@@ -2790,12 +2795,12 @@ function BrowseShell<T>({
           </Box>
         ) : (
           <Box marginTop={1} flexGrow={1} flexDirection="column">
-            <Text color={palette.gray}>{emptyMessage}</Text>
+            <Text color={palette.dim}>{emptyMessage}</Text>
             {emptyMessage.includes("trending") ? (
               <Text color={palette.dim} dimColor>
-                Use <Text color={palette.gray}>year:2022</Text> or{" "}
-                <Text color={palette.gray}>type:anime</Text> to narrow ·{" "}
-                <Text color={palette.gray}>/filters</Text> for all tokens
+                Use <Text color={palette.dim}>year:2022</Text> or{" "}
+                <Text color={palette.dim}>type:anime</Text> to narrow ·{" "}
+                <Text color={palette.dim}>/filters</Text> for all tokens
               </Text>
             ) : null}
             {!commandMode &&
@@ -2804,13 +2809,13 @@ function BrowseShell<T>({
               <Box flexDirection="column" marginTop={1} gap={0}>
                 {idleContext.continueWatching && !idleContext.playlistNext ? (
                   <Text color={idleFocused ? "white" : palette.muted}>
-                    {idleFocused ? <Text color={palette.amber}>{"▌ "}</Text> : "  "}
+                    {idleFocused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
                     {"⏸ "}
                     <Text color={idleFocused ? "white" : "white"} bold={idleFocused}>
                       {idleContext.continueWatching.title}
                     </Text>
                     {idleContext.continueWatching.ep ? (
-                      <Text color={idleFocused ? palette.teal : palette.muted}>
+                      <Text color={idleFocused ? palette.accent : palette.muted}>
                         {`  ${idleContext.continueWatching.ep}`}
                       </Text>
                     ) : null}
@@ -2820,7 +2825,7 @@ function BrowseShell<T>({
                       </Text>
                     ) : null}
                     {idleFocused ? (
-                      <Text color={palette.teal}>{" · ↵ resume"}</Text>
+                      <Text color={palette.accent}>{" · ↵ resume"}</Text>
                     ) : idleContext.continueWatching.titleId ? (
                       <Text color={palette.dim}>{" · ↓ to select"}</Text>
                     ) : (
@@ -2829,7 +2834,7 @@ function BrowseShell<T>({
                   </Text>
                 ) : null}
                 {idleContext.playlistNext ? (
-                  <Text color={palette.teal}>
+                  <Text color={palette.accent}>
                     {"▶  "}
                     <Text color="white">{idleContext.playlistNext.title}</Text>
                     {idleContext.playlistNext.ep ? (
@@ -2839,7 +2844,7 @@ function BrowseShell<T>({
                   </Text>
                 ) : null}
                 {idleContext.todayReleaseCount && idleContext.todayReleaseCount > 0 ? (
-                  <Text color={palette.amber}>
+                  <Text color={palette.accentDeep}>
                     {`${idleContext.todayReleaseCount} new episode${idleContext.todayReleaseCount === 1 ? "" : "s"} releasing today`}
                     <Text color={palette.dim}>{" · /notifications to see"}</Text>
                   </Text>
@@ -3197,7 +3202,7 @@ function StatsShell({
       {/* Title + segmented filter (kind) and range controls */}
       <Box justifyContent="space-between">
         <Box>
-          <Text bold color={palette.amber}>
+          <Text bold color={palette.text}>
             Watch Stats
           </Text>
           <Text color={palette.dim}>{"   "}</Text>
@@ -3209,8 +3214,8 @@ function StatsShell({
         <SegmentedControl
           labels={["30d", "90d", "all"]}
           activeIndex={windowIdx}
-          activeFg={palette.teal}
-          activeBg={palette.tealFill}
+          activeFg={palette.accent}
+          activeBg={palette.accentFill}
         />
       </Box>
 
@@ -3218,7 +3223,7 @@ function StatsShell({
       <Box marginTop={1} flexDirection="column">
         {streakDays >= 2 ? (
           <Text>
-            <Text color={palette.amber}>{"🔥 " + streakDays + "d streak"}</Text>
+            <Text color={palette.accentDeep}>{"🔥 " + streakDays + "d streak"}</Text>
             <Text color={palette.muted}>
               {" · " + summaryLine.replace(/🔥 \d+d streak · /, "")}
             </Text>
@@ -3281,7 +3286,7 @@ function StatsShell({
               <Box key={show.titleId}>
                 <Text color={palette.text}>{titleDisplay}</Text>
                 <Text color={palette.dim}>{"  "}</Text>
-                <Text color={palette.teal}>{"█".repeat(filled)}</Text>
+                <Text color={palette.accentDeep}>{"█".repeat(filled)}</Text>
                 <Text color={palette.dim}>{"░".repeat(BAR_WIDTH - filled)}</Text>
                 <Text color={palette.dim}>{`  ${show.episodeCount}ep · ${duration}`}</Text>
               </Box>
@@ -3295,17 +3300,19 @@ function StatsShell({
         <Text color={palette.dim}>{"─".repeat(Math.min(innerWidth, cols - 4))}</Text>
         {copiedFlash ? (
           <Box marginTop={1}>
-            <Text color={palette.teal}>{copiedFlash}</Text>
+            <Text color={copiedFlash.startsWith("Copied") ? palette.ok : palette.danger}>
+              {copiedFlash}
+            </Text>
           </Box>
         ) : (
           <Box marginTop={1}>
-            <Text color={palette.gray}>1–3 range</Text>
+            <Text color={palette.dim}>1–3 range</Text>
             <Text color={palette.dim}> · </Text>
-            <Text color={palette.gray}>⇧Tab filter</Text>
+            <Text color={palette.dim}>⇧Tab filter</Text>
             <Text color={palette.dim}> · </Text>
-            <Text color={palette.gray}>s share</Text>
+            <Text color={palette.dim}>s share</Text>
             <Text color={palette.dim}> · </Text>
-            <Text color={palette.gray}>q back</Text>
+            <Text color={palette.dim}>q back</Text>
           </Box>
         )}
       </Box>

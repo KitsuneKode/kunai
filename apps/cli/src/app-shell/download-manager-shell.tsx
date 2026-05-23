@@ -239,16 +239,16 @@ export function DownloadManagerContent({
     const nameStr = `${job.titleName}${job.episode ? ` S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}` : ""}`;
     const statusColor =
       job.status === "running"
-        ? palette.amber
+        ? palette.accentDeep
         : job.status === "completed"
-          ? palette.green
+          ? palette.ok
           : job.status === "completed-with-notes" || job.status === "repairable"
-            ? palette.amber
+            ? palette.accentDeep
             : job.status === "failed"
-              ? palette.red
+              ? palette.danger
               : job.status === "aborted"
                 ? palette.muted
-                : palette.amber;
+                : palette.accent;
     // Proportional columns: name takes ~45%, progress is fixed 28, meta takes remainder
     const nameWidth = Math.max(20, Math.min(40, Math.floor(shellWidth * 0.45)));
     const progressWidth = 28;
@@ -259,7 +259,7 @@ export function DownloadManagerContent({
         flexDirection="row"
         backgroundColor={isSelected ? palette.surfaceActive : undefined}
       >
-        <Text color={isSelected ? palette.amber : palette.gray}>{isSelected ? "▌ " : "  "}</Text>
+        <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
         <Box width={nameWidth}>
           <Text color={isSelected ? "white" : undefined} bold={isSelected}>
             {truncateLine(nameStr, nameWidth - 2)}
@@ -275,7 +275,7 @@ export function DownloadManagerContent({
         </Box>
         {isConfirming(index) ? (
           <Box marginLeft={1}>
-            <Text color={palette.amber} bold>
+            <Text color={palette.accentDeep} bold>
               {" "}
               x again to confirm delete
             </Text>
@@ -311,25 +311,25 @@ export function DownloadManagerContent({
         />
       ) : (
         <Box flexDirection="column">
-          {renderSection("▶ Active", activeJobs, 0, palette.info)}
-          {renderSection("⏳ Queued", queuedJobs, activeJobs.length, palette.info)}
+          {renderSection("▶ Active", activeJobs, 0, palette.accent)}
+          {renderSection("⏳ Queued", queuedJobs, activeJobs.length, palette.muted)}
           {renderSection(
             "✓ Completed",
             completedJobs,
             activeJobs.length + queuedJobs.length,
-            palette.green,
+            palette.ok,
           )}
           {renderSection(
             "⚠ Needs Attention",
             failedJobs,
             activeJobs.length + queuedJobs.length + completedJobs.length,
-            palette.red,
+            palette.danger,
           )}
         </Box>
       )}
       {confirmingDeleteIndex !== null ? (
         <Box marginTop={1}>
-          <Text color={palette.amber}>
+          <Text color={palette.accentDeep}>
             {"⚠ "}Press x again to confirm delete · any other key cancels
           </Text>
         </Box>
@@ -363,7 +363,7 @@ export function DownloadManagerContent({
       )}
       {repairSweepStatus ? (
         <Box marginTop={1}>
-          <Text color={palette.amber}>{repairSweepStatus}</Text>
+          <Text color={palette.accentDeep}>{repairSweepStatus}</Text>
         </Box>
       ) : null}
     </Box>

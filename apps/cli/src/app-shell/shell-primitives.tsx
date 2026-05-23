@@ -2,7 +2,7 @@ import { Box, Text, useStdout } from "ink";
 import React from "react";
 
 import { truncateLine } from "./shell-text";
-import { APP_LABEL, contentTintColor, hotkeyLabel, palette } from "./shell-theme";
+import { APP_LABEL, hotkeyLabel, palette } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
 
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
@@ -69,13 +69,13 @@ export const InlineBadge = React.memo(function InlineBadge({
 }) {
   const color =
     tone === "info"
-      ? palette.info
+      ? palette.muted
       : tone === "success"
-        ? palette.green
+        ? palette.ok
         : tone === "warning"
-          ? palette.amber
+          ? palette.accentDeep
           : tone === "error"
-            ? palette.red
+            ? palette.danger
             : palette.muted;
 
   return (
@@ -119,8 +119,10 @@ export function Footer({
       <Box flexDirection="column" marginTop={1}>
         <Text color="white">{truncateLine(taskLabel, taskWidth)}</Text>
         <Box marginTop={1} flexDirection="column">
-          <Text color={palette.amber}>Command palette</Text>
-          <Text color={palette.gray}>
+          <Text bold color={palette.text}>
+            Command palette
+          </Text>
+          <Text color={palette.dim}>
             {truncateLine(
               "Type to search · Tab autocomplete · ↑↓ choose · Enter run · Esc close",
               taskWidth,
@@ -145,7 +147,7 @@ export function Footer({
                 marginRight={index === visibleActions.length - 1 ? 0 : 2}
                 marginBottom={1}
               >
-                <Text color={action.primary ? palette.amber : palette.dim}>
+                <Text color={action.primary ? palette.accent : palette.dim}>
                   {hotkeyLabel(keyDisplay)}
                 </Text>
                 <Text color={palette.text}> {truncateLine(action.label, 18)}</Text>
@@ -200,7 +202,7 @@ export const ResizeBlocker = React.memo(function ResizeBlocker({
 }) {
   return (
     <Box marginTop={1} flexDirection="column" paddingX={1}>
-      <Text color={palette.amber}>{message}</Text>
+      <Text color={palette.accentDeep}>{message}</Text>
       <Text color={palette.muted}>
         {`Terminal is ${columns}×${rows}  ·  needs ${minColumns}×${minRows}`}
       </Text>
@@ -230,13 +232,13 @@ export const LocalSection = React.memo(function LocalSection({
       <Text
         color={
           tone === "info"
-            ? palette.info
+            ? palette.muted
             : tone === "success"
-              ? palette.green
+              ? palette.ok
               : tone === "warning"
-                ? palette.amber
+                ? palette.accentDeep
                 : tone === "error"
-                  ? palette.red
+                  ? palette.danger
                   : palette.muted
         }
       >
@@ -252,9 +254,9 @@ export const LocalSection = React.memo(function LocalSection({
 type ContentKind = "anime" | "series" | "movie";
 
 const CONTENT_FILL: Record<ContentKind, string> = {
-  anime: palette.pinkFill,
-  series: palette.infoFill,
-  movie: palette.lavenderFill,
+  anime: palette.surfaceElevated,
+  series: palette.surfaceElevated,
+  movie: palette.surfaceElevated,
 };
 
 export const Badge = React.memo(function Badge({
@@ -270,7 +272,7 @@ export const Badge = React.memo(function Badge({
   if (contentKind) {
     return (
       <Box marginRight={1}>
-        <Text color={contentTintColor(contentKind)} backgroundColor={CONTENT_FILL[contentKind]}>
+        <Text color={palette.muted} backgroundColor={CONTENT_FILL[contentKind]}>
           {` ${truncateLine(label, 26)} `}
         </Text>
       </Box>
@@ -279,16 +281,16 @@ export const Badge = React.memo(function Badge({
 
   const color =
     tone === "success"
-      ? palette.green
+      ? palette.ok
       : tone === "info"
-        ? palette.info
+        ? palette.muted
         : tone === "accent"
-          ? palette.amberSoft
+          ? palette.accentSoft
           : tone === "error"
-            ? palette.red
+            ? palette.danger
             : tone === "warning"
-              ? palette.amber
-              : palette.gray;
+              ? palette.accentDeep
+              : palette.dim;
 
   return (
     <Box marginRight={1}>
@@ -305,10 +307,10 @@ export type SelectableRowStyle = {
   readonly backgroundColor?: string;
 };
 
-/** The single "C" selection treatment: amber rule + amber-tinted fill. */
+/** The single selection treatment: accent rule + accent-tinted fill. */
 export function selectableRowStyle(selected: boolean): SelectableRowStyle {
   if (selected) {
-    return { prefix: "▌", color: palette.amberSoft, backgroundColor: palette.amberFill };
+    return { prefix: "▌", color: palette.accentSoft, backgroundColor: palette.accentFill };
   }
   return { prefix: "  ", color: palette.text };
 }
@@ -323,7 +325,7 @@ export const SelectableRow = React.memo(function SelectableRow({
   const style = selectableRowStyle(selected);
   return (
     <Box>
-      <Text color={selected ? palette.amber : palette.dim} backgroundColor={style.backgroundColor}>
+      <Text color={selected ? palette.accent : palette.dim} backgroundColor={style.backgroundColor}>
         {style.prefix}
       </Text>
       <Text color={style.color} backgroundColor={style.backgroundColor}>
@@ -358,15 +360,15 @@ export const DetailRow = React.memo(function DetailRow({
   const cols = detailRowColumns(label, value, labelWidth);
   const valueColor =
     tone === "success"
-      ? palette.green
+      ? palette.ok
       : tone === "info"
-        ? palette.info
+        ? palette.muted
         : tone === "accent"
-          ? palette.amberSoft
+          ? palette.accentSoft
           : tone === "error"
-            ? palette.red
+            ? palette.danger
             : tone === "warning"
-              ? palette.amber
+              ? palette.accentDeep
               : palette.text;
   return (
     <Box>
@@ -389,18 +391,18 @@ export const ContextStrip = React.memo(function ContextStrip({
       {visibleItems.map((item, index) => {
         const color =
           item.tone === "info"
-            ? palette.info
+            ? palette.muted
             : item.tone === "success"
-              ? palette.green
+              ? palette.ok
               : item.tone === "warning"
-                ? palette.amber
+                ? palette.accentDeep
                 : item.tone === "error"
-                  ? palette.red
+                  ? palette.danger
                   : palette.muted;
 
         return (
           <React.Fragment key={item.label}>
-            {index > 0 ? <Text color={palette.gray}> · </Text> : null}
+            {index > 0 ? <Text color={palette.dim}> · </Text> : null}
             <Text color={color}>{truncateLine(item.label, 34)}</Text>
           </React.Fragment>
         );
@@ -420,21 +422,21 @@ export const DetailLine = React.memo(function DetailLine({
 }) {
   const valueColor =
     tone === "success"
-      ? palette.green
+      ? palette.ok
       : tone === "info"
-        ? palette.info
+        ? palette.muted
         : tone === "accent"
-          ? palette.amberSoft
+          ? palette.accentSoft
           : tone === "error"
-            ? palette.red
+            ? palette.danger
             : tone === "warning"
-              ? palette.amber
+              ? palette.accentDeep
               : "white";
 
   return (
     <Box>
-      <Text color={palette.gray}>{label}</Text>
-      <Text color={palette.gray}> · </Text>
+      <Text color={palette.dim}>{label}</Text>
+      <Text color={palette.dim}> · </Text>
       <Text color={valueColor}>{value}</Text>
     </Box>
   );
@@ -455,7 +457,7 @@ export const BrowseTitle = React.memo(function BrowseTitle({ mode }: { mode: "se
 export function TerminalSizeChip({ columns, rows }: { columns: number; rows: number }) {
   const isBlocked = columns < 60 || rows < 20;
   const isSuboptimal = !isBlocked && columns < 80;
-  const color = isBlocked ? palette.red : isSuboptimal ? palette.amber : palette.dim;
+  const color = isBlocked ? palette.danger : isSuboptimal ? palette.accentDeep : palette.dim;
   return (
     <Text color={color} dimColor={!isBlocked && !isSuboptimal}>
       {columns}×{rows}
@@ -476,13 +478,13 @@ export const EmptyState = React.memo(function EmptyState({
 }) {
   return (
     <Box flexDirection="column" paddingY={1}>
-      <Text color={palette.gray}>
+      <Text color={palette.dim}>
         {icon} {title}
       </Text>
       {subtitle ? <Text color={palette.muted}>{subtitle}</Text> : null}
       {hint ? (
         <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
+          <Text color={palette.dim} dimColor>
             {hint}
           </Text>
         </Box>

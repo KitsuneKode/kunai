@@ -1,7 +1,6 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { hashTitleToColor } from "./poster-renderer";
 import { palette } from "./shell-theme";
 
 export function PosterInitialBlock({
@@ -13,15 +12,7 @@ export function PosterInitialBlock({
   width?: number;
   height?: number;
 }) {
-  const colorKey = hashTitleToColor(title);
-  const color =
-    colorKey === "amber"
-      ? palette.amber
-      : colorKey === "teal"
-        ? palette.teal
-        : colorKey === "purple"
-          ? palette.purple
-          : palette.pink;
+  const color = palette.muted;
   const initial = title.trim().charAt(0).toUpperCase() || "?";
   const pad = Math.max(0, Math.floor((height - 1) / 2));
 

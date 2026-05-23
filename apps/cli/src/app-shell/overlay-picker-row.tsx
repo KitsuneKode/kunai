@@ -63,7 +63,7 @@ export function PickerOptionRow({
 
   return (
     <>
-      <Text color={selected ? pickerAccent : palette.gray}>{prefix}</Text>
+      <Text color={selected ? pickerAccent : palette.dim}>{prefix}</Text>
       <Text color={selected ? pickerAccent : (accentColor ?? palette.text)} wrap="truncate-end">
         {truncatedLabel}
       </Text>
@@ -74,7 +74,7 @@ export function PickerOptionRow({
         </Text>
       ) : null}
       {badgeSuffix ? (
-        <Text color={selected ? pickerAccent : (accentColor ?? palette.gray)} wrap="truncate-end">
+        <Text color={selected ? pickerAccent : (accentColor ?? palette.dim)} wrap="truncate-end">
           {badgeSuffix}
         </Text>
       ) : null}

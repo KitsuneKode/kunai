@@ -85,7 +85,7 @@ function SlideLayout({
         borderBottom={false}
         borderLeft={false}
         borderRight={false}
-        borderColor={palette.gray}
+        borderColor={palette.line}
         marginTop={1}
       >
         <Box paddingTop={1}>{footer}</Box>
@@ -99,8 +99,8 @@ function FooterHint({ parts }: { parts: { key: string; label: string }[] }) {
     <Box gap={1} flexWrap="wrap">
       {parts.map(({ key, label }, i) => (
         <React.Fragment key={key}>
-          {i > 0 ? <Text color={palette.gray}> · </Text> : null}
-          <Text color={palette.teal}>[{key}]</Text>
+          {i > 0 ? <Text color={palette.dim}> · </Text> : null}
+          <Text color={palette.accent}>[{key}]</Text>
           <Text color={palette.muted}> {label}</Text>
         </React.Fragment>
       ))}
@@ -111,7 +111,7 @@ function FooterHint({ parts }: { parts: { key: string; label: string }[] }) {
 function SlideTitle({ text, sub }: { text: string; sub?: string }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text color={palette.teal} bold>
+      <Text color={palette.text} bold>
         {text}
       </Text>
       {sub ? (
@@ -145,12 +145,12 @@ function WelcomeSlide({ width, rows }: { width: number; rows: number }) {
       <Box flexDirection="column" flexGrow={1} justifyContent="center">
         {!isNarrow ? (
           <Box marginBottom={1}>
-            <DotMatrixGrid frame={frame} onColor={palette.teal} offColor={palette.dim} />
+            <DotMatrixGrid frame={frame} onColor={palette.accent} offColor={palette.dim} />
           </Box>
         ) : null}
 
         <Box flexDirection="column" marginBottom={2}>
-          <Text color={palette.teal} bold>
+          <Text color={palette.text} bold>
             🦊 Kunai
           </Text>
           <Text color={palette.text}>Terminal-first streaming.</Text>
@@ -185,9 +185,9 @@ function depIcon(status: DepStatus): string {
 }
 
 function depColor(status: DepStatus): string {
-  if (status === "ok") return palette.green;
-  if (status === "missing") return palette.red;
-  return palette.amber;
+  if (status === "ok") return palette.ok;
+  if (status === "missing") return palette.danger;
+  return palette.accentDeep;
 }
 
 function SystemSlide({
@@ -279,7 +279,13 @@ function SystemSlide({
                 {depIcon(dep.status)}{" "}
               </Text>
               <Text
-                color={dep.status === "ok" ? palette.text : dep.fatal ? palette.red : palette.amber}
+                color={
+                  dep.status === "ok"
+                    ? palette.text
+                    : dep.fatal
+                      ? palette.danger
+                      : palette.accentDeep
+                }
                 bold={dep.status !== "ok"}
               >
                 {dep.name}
@@ -346,9 +352,9 @@ function PickerSlide({
               marginBottom={0}
               backgroundColor={selected ? palette.surfaceActive : undefined}
             >
-              <Text color={selected ? palette.amber : palette.gray}>{selected ? "▌ " : "  "}</Text>
+              <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
               <Box flexDirection="column">
-                <Text color={selected ? palette.amber : palette.text} bold={selected}>
+                <Text color={palette.text} bold={selected}>
                   {opt.label}
                 </Text>
                 <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
@@ -421,9 +427,9 @@ function DownloadsSlide({
               marginBottom={0}
               backgroundColor={selected ? palette.surfaceActive : undefined}
             >
-              <Text color={selected ? palette.amber : palette.gray}>{selected ? "▌ " : "  "}</Text>
+              <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
               <Box flexDirection="column">
-                <Text color={selected ? palette.amber : palette.text} bold={selected}>
+                <Text color={palette.text} bold={selected}>
                   {opt.label}
                 </Text>
                 <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
@@ -488,7 +494,7 @@ function TipsSlide({ width, rows }: { width: number; rows: number }) {
         {TIPS.map((tip) => (
           <Box key={tip.key} flexDirection="column" marginBottom={1}>
             <Box>
-              <Text color={palette.teal} bold>
+              <Text color={palette.text} bold>
                 {tip.title}
               </Text>
             </Box>
@@ -518,7 +524,7 @@ function SlideDots({
       {Array.from({ length: total }, (_, i) => {
         const isCompleted = i < visitedUpTo;
         const isCurrent = i === current;
-        const color = isCurrent ? palette.amber : isCompleted ? palette.teal : palette.dim;
+        const color = isCurrent ? palette.accent : isCompleted ? palette.ok : palette.dim;
         return (
           <Text key={i} color={color}>
             {isCurrent || isCompleted ? "●" : "○"}

@@ -14,7 +14,7 @@ import { PickerOptionRow } from "./overlay-picker-row";
 import { renderHistoryProgressBar } from "./panel-data";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
-import { palette } from "./shell-theme";
+import { palette, statusColor } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 
 export { formatPickerDisplayRow, formatPickerOptionRow } from "./overlay-picker-row";
@@ -896,26 +896,13 @@ export function settingsEqual(
 }
 
 function resolvePanelTone(tone: ShellPanelLine["tone"]): string {
-  switch (tone) {
-    case "success":
-      return palette.green;
-    case "info":
-      return palette.info;
-    case "warning":
-      return palette.amber;
-    case "error":
-      return palette.red;
-    case "neutral":
-    default:
-      return palette.muted;
-  }
+  return statusColor(tone ?? "neutral");
 }
 
 /** Matches panel border/title accents for picker list focus styling. */
 function pickerFocusAccent(type: Extract<BrowseOverlay, { filterQuery: string }>["type"]): string {
-  if (type === "settings" || type === "settings-choice") return palette.green;
-  if (type === "provider") return palette.amber;
-  return palette.teal;
+  if (type === "settings" || type === "settings-choice") return palette.ok;
+  return palette.accent;
 }
 
 export function OverlayPanel({
@@ -950,23 +937,17 @@ export function OverlayPanel({
     : [];
   const pickerAccent = isPickerOverlay
     ? pickerFocusAccent((overlay as Extract<BrowseOverlay, { filterQuery: string }>).type)
-    : palette.teal;
-  const accentColor =
-    overlay.type === "settings" || overlay.type === "settings-choice"
-      ? palette.green
-      : overlay.type === "provider"
-        ? palette.amber
-        : palette.teal;
+    : palette.accent;
   const busySpinner = useBusySpinner(
     isPickerOverlay && Boolean((overlay as { busy?: boolean }).busy),
   );
 
   return (
     <Box marginTop={1} flexDirection="column" paddingX={1}>
-      <Text color={accentColor} bold>
+      <Text color={palette.text} bold>
         {overlay.title}
       </Text>
-      <Text color={palette.gray}>{overlay.subtitle}</Text>
+      <Text color={palette.dim}>{overlay.subtitle}</Text>
       {isPickerOverlay ? (
         <>
           <Box marginTop={1}>
@@ -983,8 +964,10 @@ export function OverlayPanel({
                   const active = overlay.filterMode === mode;
                   return (
                     <Box key={mode} marginRight={3} flexDirection="column">
-                      <Text color={active ? palette.amber : palette.muted}>{mode}</Text>
-                      {active ? <Text color={palette.amber}>{"─".repeat(mode.length)}</Text> : null}
+                      <Text color={active ? palette.accent : palette.muted}>{mode}</Text>
+                      {active ? (
+                        <Text color={palette.accent}>{"─".repeat(mode.length)}</Text>
+                      ) : null}
                     </Box>
                   );
                 })}
@@ -993,7 +976,7 @@ export function OverlayPanel({
                 </Text>
               </Box>
             ) : (
-              <Text color={palette.gray}>
+              <Text color={palette.dim}>
                 {overlay.type === "provider"
                   ? "Type to narrow providers"
                   : overlay.type === "history-picker"
@@ -1005,7 +988,7 @@ export function OverlayPanel({
             )}
           </Box>
           <Box marginTop={1} flexDirection="column">
-            {optionWindowStart > 0 ? <Text color={palette.gray}> ▲ ...</Text> : null}
+            {optionWindowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
             {visibleOptions.map((option, index) => {
               const optionIndex = optionWindowStart + index;
               const selected = optionIndex === overlay.selectedIndex;
@@ -1018,24 +1001,24 @@ export function OverlayPanel({
                 const usesAccent = isSettings || isHistory;
                 return (
                   <Box key={`section-${option.value}`} marginTop={1} flexDirection="column">
-                    <Text color={usesAccent ? palette.amber : palette.dim} bold={usesAccent}>
+                    <Text color={usesAccent ? palette.text : palette.dim} bold={usesAccent}>
                       {headerLabel}
                     </Text>
                     {usesAccent ? (
-                      <Text color={palette.amber}>{"─".repeat(headerLabel.length)}</Text>
+                      <Text color={palette.accent}>{"─".repeat(headerLabel.length)}</Text>
                     ) : null}
                   </Box>
                 );
               }
               const rowAccentColor =
                 option.tone === "success"
-                  ? palette.green
+                  ? palette.ok
                   : option.tone === "warning"
-                    ? palette.amber
+                    ? palette.accentDeep
                     : option.tone === "info"
-                      ? palette.amber
+                      ? palette.muted
                       : option.tone === "error"
-                        ? palette.red
+                        ? palette.danger
                         : null;
               // Treatment C: selection is shown by a single accent bar (rendered by
               // PickerOptionRow) + the elevated surface, not per-row ✓/▶/○ marker soup.
@@ -1064,13 +1047,13 @@ export function OverlayPanel({
                   (lbl.endsWith("· off") || lbl.endsWith("· temporary after m"));
                 if (isDanger) {
                   dotChar = "● ";
-                  dotColor = palette.red;
+                  dotColor = palette.danger;
                 } else if (isWarning) {
                   dotChar = "● ";
-                  dotColor = palette.amber;
+                  dotColor = palette.accentDeep;
                 } else if (isOn) {
                   dotChar = "● ";
-                  dotColor = palette.green;
+                  dotColor = palette.ok;
                 } else if (isOff) {
                   dotChar = "○ ";
                   dotColor = palette.dim;
@@ -1117,9 +1100,7 @@ export function OverlayPanel({
                       />
                     </Text>
                     {isHistoryPicker && option.historyProgress ? (
-                      <Text
-                        color={option.historyProgress.completed ? palette.green : palette.amber}
-                      >
+                      <Text color={option.historyProgress.completed ? palette.ok : palette.accent}>
                         {renderHistoryProgressBar(option.historyProgress.percentage)}
                         {`  ${option.historyProgress.percentage}%`}
                       </Text>
@@ -1129,12 +1110,12 @@ export function OverlayPanel({
               );
             })}
             {optionWindowEnd < overlay.options.length ? (
-              <Text color={palette.gray}> ▼ ...</Text>
+              <Text color={palette.dim}> ▼ ...</Text>
             ) : null}
           </Box>
           {overlay.busy || overlay.type !== "episode-picker" ? (
             <Box marginTop={1}>
-              <Text color={overlay.busy ? palette.amber : palette.gray}>
+              <Text color={overlay.busy ? palette.accent : palette.dim}>
                 {overlay.busy
                   ? `${busySpinner} ${
                       overlay.type === "provider"
@@ -1149,7 +1130,7 @@ export function OverlayPanel({
           ) : null}
           {overlay.type === "settings" ? (
             <Box marginTop={1}>
-              <Text color={overlay.dirty ? palette.amber : palette.dim}>
+              <Text color={overlay.dirty ? palette.accent : palette.dim}>
                 {overlay.dirty ? "s save" : "s close"}
               </Text>
               <Text color={palette.dim}>{"  "}</Text>
@@ -1159,7 +1140,7 @@ export function OverlayPanel({
         </>
       ) : isLineOverlay && overlay.loading ? (
         <Box marginTop={1}>
-          <Text color={palette.amber}>Loading panel…</Text>
+          <Text color={palette.accent}>Loading panel…</Text>
         </Box>
       ) : isLineOverlay ? (
         <Box marginTop={1} flexDirection="column">
@@ -1176,14 +1157,14 @@ export function OverlayPanel({
                 </Text>
                 {line.detail
                   ? wrapText(line.detail, contentWidth, 2).map((detailLine) => (
-                      <Text key={`${line.label}-${detailLine}`} color={palette.gray}>
+                      <Text key={`${line.label}-${detailLine}`} color={palette.dim}>
                         {detailLine}
                       </Text>
                     ))
                   : null}
               </Box>
             ))}
-          <Text color={palette.gray}>
+          <Text color={palette.dim}>
             {overlay.lines.length > maxLines
               ? `Showing ${(overlay.scrollIndex ?? 0) + 1}-${Math.min(
                   (overlay.scrollIndex ?? 0) + maxLines,

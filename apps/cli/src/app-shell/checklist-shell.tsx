@@ -140,7 +140,7 @@ function ChecklistShell<T>({
     <Box flexDirection="column" paddingX={1}>
       <Box flexDirection="column">
         <Box flexDirection="column">
-          <Text color={confirmed ? palette.green : palette.teal}>
+          <Text color={confirmed ? palette.ok : palette.text} bold>
             {confirmed ? "Selected" : title}
           </Text>
           <Text color={palette.muted}>
@@ -148,7 +148,7 @@ function ChecklistShell<T>({
           </Text>
         </Box>
         <Box paddingY={1}>
-          <Text color={palette.teal}>⌕ </Text>
+          <Text color={palette.accent}>⌕ </Text>
           <LineEditorText
             value={filterQuery}
             cursor={filterEditor.cursor}
@@ -172,19 +172,19 @@ function ChecklistShell<T>({
               justifyContent="space-between"
             >
               <Box flexDirection="column" width={showSelectionCompanion ? listWidth : undefined}>
-                {windowStart > 0 && <Text color={palette.gray}> ▲ ...</Text>}
+                {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
                 {visibleOptions.map((option) => {
                   const highlighted = option === selectedOption;
                   const isChecked = selectedSet.has(option.value);
                   const isConfirmed = confirmed && isChecked;
                   const itemPrefix = isChecked ? "☑" : "☐";
                   const itemTone = isConfirmed
-                    ? palette.green
+                    ? palette.ok
                     : highlighted
-                      ? palette.amber
+                      ? palette.accent
                       : isChecked
-                        ? palette.teal
-                        : palette.gray;
+                        ? palette.ok
+                        : palette.dim;
                   const secondary = option.detail
                     ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 6))}`
                     : "";
@@ -192,18 +192,20 @@ function ChecklistShell<T>({
                   return (
                     <Box key={`${option.label}-${option.detail ?? ""}`}>
                       <Text
-                        backgroundColor={highlighted ? palette.teal : undefined}
-                        color={highlighted ? "black" : "white"}
+                        backgroundColor={highlighted ? palette.accentFill : undefined}
+                        color={highlighted ? palette.text : "white"}
                         bold={highlighted || isChecked}
                         dimColor={!highlighted && !isChecked}
                       >
-                        <Text color={highlighted ? "black" : itemTone}>{`${itemPrefix} `}</Text>
+                        <Text
+                          color={highlighted ? palette.accent : itemTone}
+                        >{`${itemPrefix} `}</Text>
                         {rowText}
                       </Text>
                     </Box>
                   );
                 })}
-                {windowEnd < filteredOptions.length && <Text color={palette.gray}> ▼ ...</Text>}
+                {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
               </Box>
             </Box>
           </>

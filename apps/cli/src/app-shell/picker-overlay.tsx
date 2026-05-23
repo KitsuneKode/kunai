@@ -48,7 +48,7 @@ export function PickerOverlay({
           <Text bold color={palette.text}>
             {state.title}
           </Text>
-          <Text color={palette.gray} dimColor>
+          <Text color={palette.dim} dimColor>
             {filteredOptions.length}/{state.options.length}
           </Text>
         </Box>
@@ -66,7 +66,7 @@ export function PickerOverlay({
         </Box>
 
         <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
+          <Text color={palette.dim} dimColor>
             {"─".repeat(contentWidth)}
           </Text>
         </Box>
@@ -74,7 +74,7 @@ export function PickerOverlay({
         <Box marginTop={1} flexDirection="column">
           {filteredOptions.length === 0 ? (
             <Box flexDirection="column">
-              <Text color={palette.gray}>{state.emptyMessage}</Text>
+              <Text color={palette.dim}>{state.emptyMessage}</Text>
               {state.filterQuery.length > 0 ? (
                 <Text color={palette.muted} dimColor>
                   Esc clears the filter
@@ -83,7 +83,7 @@ export function PickerOverlay({
             </Box>
           ) : (
             <>
-              {windowStart > 0 ? <Text color={palette.gray}> more above</Text> : null}
+              {windowStart > 0 ? <Text color={palette.dim}> more above</Text> : null}
               {visibleOptions.map((option, index) => {
                 const absoluteIndex = windowStart + index;
                 const isSelected = absoluteIndex === state.selectedIndex;
@@ -92,20 +92,20 @@ export function PickerOverlay({
                   <Box key={option.value} justifyContent="space-between">
                     <Text
                       color={isSelected ? "black" : toneColor}
-                      backgroundColor={isSelected ? palette.teal : undefined}
+                      backgroundColor={isSelected ? palette.accentFill : undefined}
                       bold={isSelected}
                     >
                       {isSelected ? "❯ " : "  "}
                       {truncateLine(option.label, labelWidth)}
                     </Text>
-                    <Text color={option.tone ? toneColor : palette.gray}>
+                    <Text color={option.tone ? toneColor : palette.dim}>
                       {truncateLine(option.badge ?? option.detail ?? "", detailWidth)}
                     </Text>
                   </Box>
                 );
               })}
               {windowStart + visibleRows < filteredOptions.length ? (
-                <Text color={palette.gray}> more below</Text>
+                <Text color={palette.dim}> more below</Text>
               ) : null}
             </>
           )}
@@ -113,7 +113,7 @@ export function PickerOverlay({
 
         {selected?.detail ? (
           <Box marginTop={1} paddingX={1}>
-            <Text color={palette.gray} dimColor>
+            <Text color={palette.dim} dimColor>
               {truncateLine(selected.detail, contentWidth - 4)}
             </Text>
           </Box>

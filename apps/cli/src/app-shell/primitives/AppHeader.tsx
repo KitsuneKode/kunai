@@ -13,7 +13,7 @@ export const AppHeader = React.memo(function AppHeader({
   destination,
   context,
   status,
-  statusColor = palette.green,
+  statusColor = palette.ok,
   size,
 }: {
   brand?: string;
@@ -27,7 +27,9 @@ export const AppHeader = React.memo(function AppHeader({
   return (
     <Box justifyContent="space-between">
       <Box>
-        <Text color={palette.amber}>{h.brand}</Text>
+        <Text bold color={palette.text}>
+          {h.brand}
+        </Text>
         <Text color={palette.dim}>{"  ·  "}</Text>
         <Text bold color={palette.bg} backgroundColor={palette.text}>
           {h.pill}

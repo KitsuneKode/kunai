@@ -177,7 +177,7 @@ export function InputField({
       </Box>
       <Box marginTop={1} flexDirection="column">
         <Box paddingX={1}>
-          <Text color={focus ? palette.teal : palette.dim}>{focus ? "⌕ " : "› "}</Text>
+          <Text color={focus ? palette.accent : palette.dim}>{focus ? "⌕ " : "› "}</Text>
           <LineEditorText
             value={value}
             cursor={editor.cursor}
@@ -187,14 +187,14 @@ export function InputField({
           />
         </Box>
         <Box>
-          <Text color={focus ? palette.teal : palette.dim} dimColor>
+          <Text color={focus ? palette.accent : palette.dim} dimColor>
             {"─".repeat(Math.max(4, fieldWidth))}
           </Text>
         </Box>
       </Box>
       {renderedHint ? (
         <Box marginTop={1}>
-          <Text color={palette.gray} dimColor>
+          <Text color={palette.dim} dimColor>
             {renderedHint}
           </Text>
         </Box>

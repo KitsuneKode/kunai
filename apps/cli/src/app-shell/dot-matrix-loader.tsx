@@ -172,8 +172,8 @@ export function useDotMatrixAnimation(
 
 export function DotMatrixGrid({
   frame,
-  onColor = palette.teal,
-  offColor = palette.gray,
+  onColor = palette.accent,
+  offColor = palette.dim,
 }: {
   frame: DotMatrixFrame;
   onColor?: string;
@@ -200,7 +200,7 @@ export function DotMatrixGrid({
 
 export function CompactDotMatrix({
   frame,
-  onColor = palette.teal,
+  onColor = palette.accent,
 }: {
   frame: DotMatrixFrame;
   onColor?: string;

@@ -39,7 +39,7 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
       <Text dimColor={isDim} color={palette.dim}>
         {step === "fox" || step === "closing" || step === "done" ? "◉  see you next time" : ""}
       </Text>
-      {(step === "closing" || step === "done") && <Text color={palette.amber}>◈ kunai</Text>}
+      {(step === "closing" || step === "done") && <Text color={palette.accent}>◈ kunai</Text>}
     </Box>
   );
 }
