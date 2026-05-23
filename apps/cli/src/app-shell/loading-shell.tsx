@@ -22,7 +22,7 @@ import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import { StateBlock } from "./primitives/StateBlock";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine, selectFooterActions } from "./shell-primitives";
-import { wrapText } from "./shell-text";
+import { truncateLine } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 import { useViewportPolicy } from "./use-viewport-policy";
@@ -398,7 +398,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       onPickEpisode();
     }
     if (
-      input.toLowerCase() === "k" &&
+      (input.toLowerCase() === "t" || input.toLowerCase() === "k") &&
       state.operation === "playing" &&
       onPickStreams &&
       !state.onCommandAction
@@ -464,6 +464,25 @@ export const LoadingShell = React.memo(function LoadingShell({
     state.subtitleStatus?.toLowerCase().includes("ready"),
   );
 
+  // Active control-surface state, derived from existing playback telemetry — the
+  // playing body renders structured rows (health · tracks · session · up next)
+  // instead of one scattered facts strip. Color = state; weight = hierarchy.
+  const activeTracksLine = isPlaying
+    ? [
+        state.qualityLabel,
+        state.audioTrack ? `audio ${state.audioTrack}` : undefined,
+        state.subtitleTrack ? `subs ${state.subtitleTrack}` : subtitleReady ? "subs on" : undefined,
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join("  ·  ")
+    : "";
+  // Trouble is promoted into the body only while playing: a stalled buffer or a
+  // live issue names what's wrong and surfaces recover/fallback inline.
+  const playbackTrouble =
+    isPlaying && (state.bufferHealth === "stalled" || Boolean(loadingIssue))
+      ? (loadingIssue ?? "Stream stalled")
+      : null;
+
   const waitPresentation = getProviderResolveWaitPresentation({
     elapsedSeconds: elapsed,
     fallbackAvailable: state.fallbackAvailable,
@@ -479,10 +498,13 @@ export const LoadingShell = React.memo(function LoadingShell({
   const fallbackLabel = state.fallbackProviderName
     ? `fallback ${state.fallbackProviderName}`
     : "fallback";
+  const isSeriesPlayback = Boolean(state.hasNextEpisode || state.hasPreviousEpisode);
   const playingFooterActions: readonly FooterAction[] = [
     { key: "space", label: "pause", action: "command-mode", primary: true },
-    { key: "/", label: "commands", action: "command-mode" },
     { key: "q", label: "stop", action: "quit" },
+    ...(isSeriesPlayback ? [{ key: "e", label: "episodes", action: "pick-episode" as const }] : []),
+    { key: "t", label: "tracks", action: "streams" },
+    { key: "/", label: "commands", action: "command-mode" },
   ];
   const footerActions: readonly FooterAction[] =
     state.operation === "playing"
@@ -649,41 +671,53 @@ export const LoadingShell = React.memo(function LoadingShell({
           {isPlaying && (
             <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="flex-start">
               {/* Title/subtitle live in the ShellFrame header — the playing body is
-                  the control surface (facts, progress, up next), not a second title. */}
+                  the control surface (health · tracks · session · up next). */}
               <Box flexDirection="row" justifyContent="space-between" alignItems="flex-start">
                 <Box flexDirection="column" flexGrow={1} marginRight={2}>
-                  {state.playbackFactsStrip ? (
-                    <Text color={palette.muted}>
-                      {wrapText(state.playbackFactsStrip, infoWidth, 1)[0] ??
-                        state.playbackFactsStrip}
+                  {/* Health — primary status line */}
+                  {playbackTrouble ? (
+                    <Text color={palette.danger} bold>
+                      {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
-                  ) : null}
-                  {state.playbackKeysHint ? (
-                    <Text color={palette.dim} dimColor>
-                      {wrapText(state.playbackKeysHint, infoWidth, 1)[0] ?? state.playbackKeysHint}
-                    </Text>
-                  ) : state.controlHint ? (
+                  ) : (
+                    <BufferHealthBadge health={state.bufferHealth ?? "healthy"} />
+                  )}
+
+                  {/* Active tracks — secondary */}
+                  {activeTracksLine ? (
                     <Box marginTop={1}>
-                      <Text color={palette.dim} dimColor>
-                        {state.controlHint}
+                      <Text color={palette.dim}>{"tracks   "}</Text>
+                      <Text color={palette.text}>
+                        {truncateLine(activeTracksLine, infoWidth - 9)}
                       </Text>
                     </Box>
                   ) : null}
-                  {state.bufferHealth === "stalled" || state.bufferHealth === "buffering" ? (
-                    <Box marginTop={1}>
-                      <BufferHealthBadge health={state.bufferHealth} />
-                    </Box>
-                  ) : null}
+
+                  {/* Session toggles — tertiary */}
+                  <Box marginTop={activeTracksLine ? 0 : 1}>
+                    <Text color={palette.dim}>{"session  "}</Text>
+                    <Text color={state.autoplayPaused ? palette.muted : palette.ok}>
+                      {state.autoplayPaused ? "autoplay off" : "autoplay on"}
+                    </Text>
+                    <Text color={palette.dim}>{"  ·  "}</Text>
+                    <Text color={state.autoskipPaused ? palette.muted : palette.ok}>
+                      {state.autoskipPaused ? "autoskip off" : "autoskip on"}
+                    </Text>
+                  </Box>
                 </Box>
                 <PlaybackSignalRail lines={playbackSignalLines} />
               </Box>
+
+              {/* Progress — the prominent current-watch line */}
               {state.currentPosition !== undefined &&
               state.duration !== undefined &&
               state.duration > 0 ? (
                 <Box marginTop={2} flexDirection="column">
                   <Text>
-                    <Text color={palette.accent}>{formatTimestamp(state.currentPosition)}</Text>
-                    <Text color={palette.dim}>
+                    <Text color={palette.accent} bold>
+                      {formatTimestamp(state.currentPosition)}
+                    </Text>
+                    <Text color={palette.accentDeep}>
                       {" "}
                       {renderPlaybackProgressBar(
                         state.currentPosition,
@@ -692,20 +726,37 @@ export const LoadingShell = React.memo(function LoadingShell({
                       )}{" "}
                     </Text>
                     <Text color={palette.dim} dimColor>
-                      {formatTimestamp(state.duration)} total
+                      {formatTimestamp(state.duration)}
                     </Text>
+                    {state.progress !== undefined ? (
+                      <Text color={palette.dim}>{`  ·  ${Math.round(state.progress)}%`}</Text>
+                    ) : null}
                   </Text>
                 </Box>
               ) : null}
+
+              {/* Up next */}
               {state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
                 <Box marginTop={1}>
                   <Text color={palette.accent}>{"▶ "}</Text>
                   <Text color={palette.dim} dimColor>
                     {"up next  "}
                   </Text>
-                  <Text color={palette.text}>{state.nextEpisodeLabel}</Text>
+                  <Text color={palette.text}>
+                    {truncateLine(state.nextEpisodeLabel, infoWidth - 10)}
+                  </Text>
                 </Box>
               ) : null}
+
+              {/* Trouble — promote recovery actions inline only when in trouble */}
+              {playbackTrouble ? (
+                <Box marginTop={1}>
+                  <Text color={palette.dim}>
+                    {"r recover  ·  f fallback  ·  t tracks  ·  d diagnostics"}
+                  </Text>
+                </Box>
+              ) : null}
+
               {memoryPanelVisible && showPlaybackRuntimeStrip ? (
                 <Box marginTop={2} flexDirection="column">
                   {memoryLine ? (
