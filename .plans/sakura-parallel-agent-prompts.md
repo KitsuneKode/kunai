@@ -2,30 +2,28 @@
 
 Use this file to start clean implementation sessions without relying on chat history. Source code is truth. If a plan or design doc disagrees with code, inspect code first and report the mismatch.
 
+## Status
+
+**Foundation Agent: COMPLETE (2026-05-23).** The shared primitives and recovery surface are built, committed, and on branch `design/sakura-rollout`:
+`ContextCard`, `ActionList`/`ActionRow`, `StateBlock`, `PreviewRail` (in `apps/cli/src/app-shell/primitives/`), `playback-recovery-view-model.ts`, and the semantic Sakura palette. **Consume these — do not recreate or edit them.** The Foundation Agent Prompt below is kept for reference only; do not run it.
+
 ## Recommended Execution Order
 
-1. Run **Foundation Agent** first.
-2. After Foundation reports passing targeted checks, run **Agent A** and **Agent B** in parallel.
-3. Run **Agent C** after A/B stabilize, or run **Scout Agent C** now in read-only mode.
+Run **Agent A**, **Agent B**, and **Agent C** as three parallel fresh sessions now. The foundation they depend on already exists.
 
-For real parallel implementation, use separate worktrees so dirty files do not collide:
+This repo does **not** use git worktrees. All three sessions work in the **same working tree on branch `design/sakura-rollout`**; ownership is file-disjoint (see each prompt's Allowed/Forbidden lists), so concurrent edits never touch the same file. Agents do **not** commit — they edit + `bun run typecheck` + report; the **verifier session** reviews the combined diff, runs the full gate (`typecheck && lint && test && build`), and commits.
 
-```sh
-git worktree add ../kunai-sakura-foundation -b sakura-foundation
-git worktree add ../kunai-sakura-search -b sakura-search-details
-git worktree add ../kunai-sakura-tracks -b sakura-tracks-command
-git worktree add ../kunai-sakura-return-loop -b sakura-return-loop
-```
-
-Only create the A/B/C worktrees after Foundation has landed or after you intentionally choose read-only scouting.
+S3 (portability: truecolor→256→16 color fallback, poster→tile→hidden, responsive rail collapse, CJK width) is **cross-cutting** — it touches shared color resolution in `packages/design` and viewport policy that A/B/C all depend on. Do **not** assign S3 to a parallel agent; the verifier handles it after A/B/C land, or as its own sequential slice.
 
 ## Hard Rules For All Agents
 
 - Read `AGENTS.md` first.
 - Runtime is Bun-first: use `bun`, `bunx`, and `bun run`.
+- Stay on branch `design/sakura-rollout`. Do **not** create worktrees, switch branches, or `git stash`.
 - Do not run live provider checks unless explicitly requested.
-- Do not run `fmt` or `lint` unless your prompt explicitly asks for it.
-- Do not commit unless explicitly requested.
+- Do not run `fmt` or `lint` (they write/race across the shared tree). Self-check with `bun run typecheck` only.
+- Do **not** commit. The verifier session commits after reviewing the combined diff.
+- Do **not** edit the shared primitives (`apps/cli/src/app-shell/primitives/ContextCard.tsx`, `ActionList.tsx`, `StateBlock.tsx`, `PreviewRail.tsx`) or `playback-recovery-view-model.ts` — import and consume them.
 - Do not touch `packages/design/src/tokens.ts` or `apps/cli/src/app-shell/shell-theme.ts` unless your prompt explicitly allows it.
 - Do not touch provider implementations unless your prompt explicitly allows it.
 - Do not edit `apps/experiments/*`, docs website files, or archived legacy code.
