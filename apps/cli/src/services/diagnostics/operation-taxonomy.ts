@@ -119,7 +119,14 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     category: "playback",
     audience: "developer",
     summary:
-      "Auto-next waited briefly for a near-EOF prefetch before falling back to normal resolve.",
+      "Auto-next waited for a near-EOF prefetch (up to the episode handoff budget) before falling back to normal resolve.",
+  },
+  {
+    operation: "playback.prefetch-wait",
+    category: "playback",
+    audience: "developer",
+    summary:
+      "Episode navigation waited for an in-flight or urgent next-episode prefetch before foreground resolve.",
   },
   {
     operation: "presence.clear.failed",
