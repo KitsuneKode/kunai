@@ -1,5 +1,6 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
+import type { SearchResult } from "@/domain/types";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -10,7 +11,7 @@ import {
   hasBrowseResultFilters,
   parseBrowseFilterQuery,
 } from "./browse-filters";
-import { resolveIdleContinueAction } from "./browse-idle-actions";
+import { buildBrowseIdleReturnLoopModel, resolveIdleContinueAction } from "./browse-idle-actions";
 import {
   browseResultStatusLine,
   buildPreviewRailModelFromBrowseOption,
@@ -20,9 +21,14 @@ import {
 import { isQueryDirty, normalizeBrowseCommandInput } from "./browse-search-state";
 import {
   buildCalendarDaysFromOptions,
+  buildCalendarEmptyState,
+  buildCalendarErrorState,
+  buildCalendarLoadingState,
+  buildCalendarPreviewRailModel,
   buildCalendarRenderRows,
   CalendarDayStrip,
   CalendarScheduleRow,
+  CalendarScheduleStatus,
   CalendarTypeTabs,
   CALENDAR_TYPE_TABS,
   filterCalendarOptionsByDay,
@@ -54,7 +60,13 @@ import {
 } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
-import { getWindowStart, truncateLine } from "./shell-text";
+import {
+  getWindowStart,
+  measureColumns,
+  padColumnsEnd,
+  padColumnsStart,
+  truncateLine,
+} from "./shell-text";
 import { palette } from "./shell-theme";
 import {
   toShellAction,
@@ -545,16 +557,20 @@ export function BrowseShell<T>({
       variant: "detail",
     },
   );
-  const previewRailModel = buildPreviewRailModelFromBrowseOption(
-    selectedOption,
-    mapPosterPreviewState({
-      hasPosterPath: Boolean(selectedOption?.previewImageUrl),
-      poster,
-      posterState: posterPreviewState,
-    }),
-  );
+  const mappedPosterState = mapPosterPreviewState({
+    hasPosterPath: Boolean(selectedOption?.previewImageUrl),
+    poster,
+    posterState: posterPreviewState,
+  });
+  const previewRailModel = isCalendarView
+    ? buildCalendarPreviewRailModel(
+        selectedOption as BrowseShellOption<SearchResult> | undefined,
+        mappedPosterState,
+      )
+    : buildPreviewRailModelFromBrowseOption(selectedOption, mappedPosterState);
   const showPreviewRail =
     showCompanion &&
+    viewport.previewRail &&
     shouldRenderPreviewRail({ columns: viewport.columns, hasModel: previewRailModel !== null });
   const resultStatus = browseResultStatusLine({
     resultSubtitle,
@@ -562,6 +578,13 @@ export function BrowseShell<T>({
     displayCount: displayOptions.length,
     totalCount: options.length,
   });
+  const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(idleContext, { idleFocused });
+  const calendarSurfaceActive =
+    isCalendarView ||
+    resultSubtitle.toLowerCase().includes("schedule") ||
+    emptyMessage.toLowerCase().includes("schedule");
+  const calendarEmptyModeLabel =
+    calendarTypeTab === "All" ? "calendar" : calendarTypeTab.toLowerCase();
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -694,7 +717,9 @@ export function BrowseShell<T>({
     }
 
     const canFocusContinue =
-      options.length === 0 && searchState === "idle" && !!idleContext?.continueWatching?.titleId;
+      options.length === 0 &&
+      searchState === "idle" &&
+      Boolean(idleReturnLoopModel?.hasSelectableContinue);
 
     if (key.tab) {
       onResolve("toggle-mode");
@@ -914,7 +939,7 @@ export function BrowseShell<T>({
           </Text>
         </Box>
 
-        {searchState === "error" && errorMessage ? (
+        {searchState === "error" && errorMessage && !calendarSurfaceActive ? (
           <Box marginTop={1} flexDirection="column" flexGrow={1}>
             <Text color={palette.danger}>{errorMessage}</Text>
             <Text color={palette.muted} dimColor>
@@ -965,6 +990,7 @@ export function BrowseShell<T>({
                       rowWidth={rowWidth}
                       showTimeHeader={row.showTimeHeader}
                       showTbdHeader={row.showTbdHeader}
+                      showSectionHeader={row.showSectionHeader}
                       timeLabel={row.timeLabel}
                     />
                   ))
@@ -974,12 +1000,17 @@ export function BrowseShell<T>({
                     const metaText =
                       option.previewBadge ??
                       (resultsAreMixed ? option.previewMeta?.[0] : undefined);
-                    const metaWidth = metaText ? Math.min(12, Math.max(6, metaText.length)) : 0;
+                    const metaWidth = metaText
+                      ? Math.min(12, Math.max(6, measureColumns(metaText)))
+                      : 0;
                     const titleBudget = Math.max(12, rowWidth - metaWidth - 6);
                     const titleText = truncateLine(option.label, titleBudget);
                     const metaSegment = metaText ? truncateLine(metaText, metaWidth) : "";
                     const rowText = metaText
-                      ? `${titleText.padEnd(titleBudget)} ${metaSegment.padStart(metaWidth)}`
+                      ? `${padColumnsEnd(titleText, titleBudget)} ${padColumnsStart(
+                          metaSegment,
+                          metaWidth,
+                        )}`
                       : titleText;
 
                     return (
@@ -994,7 +1025,7 @@ export function BrowseShell<T>({
                               {selected ? "▌ " : "  "}
                             </Text>
                             <Text color={selected ? palette.text : palette.textDim}>
-                              {truncateLine(rowText, rowWidth - 2).padEnd(rowWidth - 2)}
+                              {padColumnsEnd(truncateLine(rowText, rowWidth - 2), rowWidth - 2)}
                             </Text>
                           </Text>
                         </Box>
@@ -1026,6 +1057,21 @@ export function BrowseShell<T>({
               </Box>
             ) : null}
           </Box>
+        ) : calendarSurfaceActive && searchState === "error" && errorMessage ? (
+          <CalendarScheduleStatus
+            model={buildCalendarErrorState(errorMessage)}
+            width={Math.min(innerWidth, 72)}
+          />
+        ) : calendarSurfaceActive && searchState === "loading" ? (
+          <CalendarScheduleStatus
+            model={buildCalendarLoadingState()}
+            width={Math.min(innerWidth, 72)}
+          />
+        ) : calendarSurfaceActive && searchState === "ready" ? (
+          <CalendarScheduleStatus
+            model={buildCalendarEmptyState(calendarEmptyModeLabel)}
+            width={Math.min(innerWidth, 72)}
+          />
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
           <Box marginTop={2} flexDirection="column" flexGrow={1}>
             <Text color={palette.dim}>{`◌  no results for "${lastSearchedQuery}"  `}</Text>
@@ -1044,51 +1090,24 @@ export function BrowseShell<T>({
               </Text>
             ) : null}
             {!commandMode &&
-            idleContext &&
-            (!viewport.ultraCompact || !!idleContext.continueWatching?.titleId) ? (
+            idleReturnLoopModel &&
+            (!viewport.ultraCompact || idleReturnLoopModel.hasSelectableContinue) ? (
               <Box flexDirection="column" marginTop={1} gap={0}>
-                {idleContext.continueWatching && !idleContext.playlistNext ? (
-                  <Text color={idleFocused ? palette.text : palette.muted}>
-                    {idleFocused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
-                    {"⏸ "}
-                    <Text color={palette.text} bold={idleFocused}>
-                      {idleContext.continueWatching.title}
+                {idleReturnLoopModel.rows.map((row) => (
+                  <Text key={row.id} color={row.focused ? palette.text : palette.muted}>
+                    {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
+                    <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
+                    <Text color={row.focused ? palette.text : palette.textDim} bold={row.focused}>
+                      {row.title}
                     </Text>
-                    {idleContext.continueWatching.ep ? (
-                      <Text color={idleFocused ? palette.accent : palette.muted}>
-                        {`  ${idleContext.continueWatching.ep}`}
+                    {row.meta ? <Text color={palette.dim}>{`  ${row.meta}`}</Text> : null}
+                    {row.hint ? (
+                      <Text color={row.focused ? palette.accent : palette.dim}>
+                        {` · ${row.hint}`}
                       </Text>
                     ) : null}
-                    {idleContext.continueWatching.remainingLabel ? (
-                      <Text color={palette.dim}>
-                        {`  · ${idleContext.continueWatching.remainingLabel}`}
-                      </Text>
-                    ) : null}
-                    {idleFocused ? (
-                      <Text color={palette.accent}>{" · ↵ resume"}</Text>
-                    ) : idleContext.continueWatching.titleId ? (
-                      <Text color={palette.dim}>{" · ↓ to select"}</Text>
-                    ) : (
-                      <Text color={palette.dim}>{" · continue watching"}</Text>
-                    )}
                   </Text>
-                ) : null}
-                {idleContext.playlistNext ? (
-                  <Text color={palette.accent}>
-                    {"▶  "}
-                    <Text color={palette.text}>{idleContext.playlistNext.title}</Text>
-                    {idleContext.playlistNext.ep ? (
-                      <Text color={palette.muted}>{`  ${idleContext.playlistNext.ep}`}</Text>
-                    ) : null}
-                    <Text color={palette.dim}>{" · up next in playlist"}</Text>
-                  </Text>
-                ) : null}
-                {idleContext.todayReleaseCount && idleContext.todayReleaseCount > 0 ? (
-                  <Text color={palette.accentDeep}>
-                    {`${idleContext.todayReleaseCount} new episode${idleContext.todayReleaseCount === 1 ? "" : "s"} releasing today`}
-                    <Text color={palette.dim}>{" · /notifications to see"}</Text>
-                  </Text>
-                ) : null}
+                ))}
               </Box>
             ) : null}
           </Box>

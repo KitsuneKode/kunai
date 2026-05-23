@@ -482,7 +482,8 @@ describe("panel-data", () => {
     );
 
     expect(options[0]?.label).toContain("S01E07");
-    expect(options[0]?.detail).toContain("new episode ready");
+    expect(options[0]?.detail).toContain("new since E6");
+    expect(options[0]?.detail).toContain("ready when a source resolves");
     expect(options[0]?.badge).toBe("new");
     expect(options[0]?.tone).toBe("success");
   });

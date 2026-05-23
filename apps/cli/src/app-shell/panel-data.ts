@@ -17,6 +17,7 @@ import { describePresenceConfiguration } from "@/services/presence/PresenceServi
 import type { CapabilitySnapshot } from "@/ui";
 import type { NotificationRecord } from "@kunai/storage";
 
+import { describeHistoryReturnLoopDetail } from "./root-history-bridge";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 
 function summarizeHeaderKeys(headers: Record<string, string> | undefined): string {
@@ -799,10 +800,14 @@ function buildHistoryOptionRow(
     const completedEpisode =
       entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
     const timeAgo = relativeTime(new Date(entry.watchedAt));
+    const returnLoopDetail = describeHistoryReturnLoopDetail({
+      entry,
+      nextRelease: context.nextReleases?.get(id) ?? null,
+    });
     return {
       value: id,
       label: `${entry.title}  ·  ${nextEpisode}`,
-      detail: `new episode ready  ·  completed ${completedEpisode}  ·  ${entry.provider}  ·  ${timeAgo}`,
+      detail: `${returnLoopDetail}  ·  completed ${completedEpisode}  ·  ${entry.provider}  ·  ${timeAgo}`,
       badge: "new",
       tone: "success",
       posterTitle: entry.title,

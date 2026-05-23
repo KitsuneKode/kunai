@@ -1,9 +1,6 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { Container } from "@/container";
-import {
-  reconcileContinueHistory,
-  type ContinueHistoryRelease,
-} from "@/domain/continuation/history-reconciliation";
+import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
@@ -52,6 +49,7 @@ import {
   type HistoryPickerOptionsContext,
 } from "./panel-data";
 import {
+  buildRootHistorySelection,
   hasPendingRootHistorySelection,
   resolveRootHistorySelection,
   type RootHistorySelection,
@@ -232,36 +230,6 @@ function readCachedHistoryNextReleases(
     });
   }
   return releases;
-}
-
-function buildRootHistorySelection(
-  selection: RootHistorySelection,
-  context: HistoryPickerOptionsContext,
-): RootHistorySelection {
-  if (selection.entry.type !== "series") return selection;
-  const decision = reconcileContinueHistory({
-    titleId: selection.titleId,
-    entries: [[selection.titleId, selection.entry]],
-    nextRelease: context.nextReleases?.get(selection.titleId) ?? null,
-  });
-  if (decision.kind === "new-episode" && typeof decision.episode === "number") {
-    return {
-      ...selection,
-      targetEpisode: {
-        season: decision.season ?? selection.entry.season,
-        episode: decision.episode,
-        reason: "new-episode",
-      },
-    };
-  }
-  return {
-    ...selection,
-    targetEpisode: {
-      season: selection.entry.season,
-      episode: selection.entry.episode,
-      reason: "resume",
-    },
-  };
 }
 
 export function RootOverlayShell({
@@ -772,7 +740,10 @@ export function RootOverlayShell({
       const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
       const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
       if (selected) {
-        const historySelection = buildRootHistorySelection(selected, historyPickerContext);
+        const historySelection = buildRootHistorySelection(
+          selected,
+          historyPickerContext.nextReleases,
+        );
         const queueEntry =
           historySelection.targetEpisode && historySelection.targetEpisode.reason === "new-episode"
             ? {
@@ -1104,7 +1075,7 @@ export function RootOverlayShell({
         const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
         const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
         resolveRootHistorySelection(
-          selected ? buildRootHistorySelection(selected, historyPickerContext) : null,
+          selected ? buildRootHistorySelection(selected, historyPickerContext.nextReleases) : null,
         );
       } else if (overlay.type === "notifications") {
         if (notificationActionDedupKey) {
