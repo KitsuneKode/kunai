@@ -47,4 +47,25 @@ describe("resolvePostPlayState", () => {
     });
     expect(state.kind).toBe("series-complete");
   });
+
+  test("did-not-start: playback never started overrides completion (no false 'finished')", () => {
+    const state = resolvePostPlayState({
+      hasNextEpisode: false,
+      isSeasonFinale: false,
+      isSeriesComplete: true, // a movie would set this
+      isCaughtUpOnAiring: false,
+      playbackStarted: false,
+    });
+    expect(state.kind).toBe("did-not-start");
+  });
+
+  test("playbackStarted defaults to started: completion semantics preserved when omitted", () => {
+    const state = resolvePostPlayState({
+      hasNextEpisode: false,
+      isSeasonFinale: false,
+      isSeriesComplete: true,
+      isCaughtUpOnAiring: false,
+    });
+    expect(state.kind).toBe("series-complete");
+  });
 });

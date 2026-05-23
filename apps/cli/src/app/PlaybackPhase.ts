@@ -2446,12 +2446,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             if (recommendationRailItems.length === 0) {
               warmPostPlaybackRecommendations(mode);
             }
+            // Playback "started" means mpv reached real content. Exit on load or a
+            // quit within the first seconds (no eof, no resumable position, almost
+            // nothing watched) is NOT a completion — never claim finished/watched.
+            const playbackStarted =
+              result.endReason === "eof" || result.watchedSeconds >= 30 || resumeSeconds > 10;
             const postPlayInput = buildPostPlayInputFromPlaybackContext({
               title,
               currentEpisode,
               availability: episodeAvailability,
               isAnime: mode === "anime",
               nextAirDateHint: catalogAutoplayEndBanner?.replace(/^Caught up ·\s*/i, ""),
+              playbackStarted,
             });
             const postPlayState = resolvePostPlayState(postPlayInput);
             const upcomingEpisode = episodeAvailability.nextEpisode;

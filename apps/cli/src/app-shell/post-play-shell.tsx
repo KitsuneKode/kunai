@@ -42,6 +42,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   const recHeading =
     postPlayState.kind === "series-complete" ? "because you finished this" : "you might also like";
   const isMovie = episodeLabel === "Movie";
+  const didNotStart = postPlayState.kind === "did-not-start";
   const progressBarWidth = Math.min(40, Math.max(16, viewport.columns - 24));
   const seriesProgressBar =
     progress !== undefined
@@ -55,7 +56,9 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     <Box flexDirection="column" paddingX={1}>
       {/* Title + episode context live in the ShellFrame header; the body is the
           "what next" remote, so it leads with the outcome state, not a 2nd title. */}
-      {resumeLabel ? (
+      {didNotStart ? (
+        <Text color={palette.accentDeep}>▢ playback didn’t start</Text>
+      ) : resumeLabel ? (
         <Text color={palette.accentDeep}>⏸ stopped early</Text>
       ) : isMovie ? (
         <Text color={palette.ok}>✓ movie complete</Text>
@@ -63,7 +66,16 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         <Text color={palette.ok}>✓ episode complete</Text>
       )}
 
-      {resumeLabel ? (
+      {didNotStart ? (
+        <Box marginTop={1} flexDirection="column">
+          <Text color={palette.textDim}>nothing was recorded for this title.</Text>
+          <Box marginTop={1}>
+            <Text color={palette.dim}>↵ try again · / search for another title</Text>
+          </Box>
+        </Box>
+      ) : null}
+
+      {!didNotStart && resumeLabel ? (
         <Box marginTop={1} flexDirection="column">
           <Text>
             <Text color={palette.accent}>{"▌ "}</Text>
@@ -73,7 +85,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         </Box>
       ) : null}
 
-      {isMovie && !resumeLabel ? (
+      {!didNotStart && isMovie && !resumeLabel ? (
         <Box marginTop={1} flexDirection="column">
           <Text color={palette.dim}>↵ replay · / search for another title</Text>
         </Box>
@@ -141,7 +153,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         </Box>
       )}
 
-      {showRecommendations ? (
+      {showRecommendations && !didNotStart ? (
         <Box marginTop={1} flexDirection="column">
           <Text color={palette.dim}>{recHeading}</Text>
           {postPlayState.kind === "series-complete" ? (

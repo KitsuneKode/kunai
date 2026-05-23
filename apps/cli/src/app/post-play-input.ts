@@ -9,12 +9,14 @@ export type PostPlayPlaybackContext = {
   readonly availability: EpisodeAvailability;
   readonly isAnime: boolean;
   readonly nextAirDateHint?: string;
+  /** False when mpv never meaningfully started (exit on load / quit in first seconds). */
+  readonly playbackStarted?: boolean;
 };
 
 export function buildPostPlayInputFromPlaybackContext(
   context: PostPlayPlaybackContext,
 ): PostPlayInput {
-  const { title, currentEpisode, availability, nextAirDateHint } = context;
+  const { title, currentEpisode, availability, nextAirDateHint, playbackStarted } = context;
 
   if (title.type !== "series") {
     return {
@@ -22,6 +24,7 @@ export function buildPostPlayInputFromPlaybackContext(
       isSeasonFinale: false,
       isSeriesComplete: true,
       isCaughtUpOnAiring: false,
+      playbackStarted,
     };
   }
 
@@ -58,6 +61,7 @@ export function buildPostPlayInputFromPlaybackContext(
     isCaughtUpOnAiring,
     hasNextSeason,
     nextAirDate,
+    playbackStarted,
   };
 }
 
