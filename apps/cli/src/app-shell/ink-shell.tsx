@@ -1,6 +1,5 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
-import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { switchSessionMode } from "@/app/mode-switch";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import {
@@ -29,42 +28,13 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  applyBrowseResultFilters,
-  describeBrowseResultFilters,
-  hasBrowseResultFilters,
-  parseBrowseFilterQuery,
-} from "./browse-filters";
-import { resolveIdleContinueAction } from "./browse-idle-actions";
-import {
-  buildCalendarDaysFromOptions,
-  buildCalendarRenderRows,
-  CalendarDayStrip,
-  CalendarScheduleRow,
-  CalendarTypeTabs,
-  CALENDAR_TYPE_TABS,
-  filterCalendarOptionsByDay,
-  filterCalendarOptionsByType,
-  type CalendarTypeTab,
-} from "./calendar-ui";
-import type { ResolvedAppCommand } from "./commands";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
-import { DetailsPaneUI } from "./details-pane-ui";
-import {
-  buildBrowseDetailsPanel,
-  buildDetailsPanelDataFromBrowseOption,
-  resolveBrowseDetailsSecondary,
-  type DetailsPanelData,
-} from "./details-panel";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
-import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { deleteAllKittyImages } from "./image-pane";
-import { getBrowseCommandPaletteMaxVisible, getPickerLayout } from "./layout-policy";
+import { getPickerLayout } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
-import { OverlayPanel } from "./overlay-panel";
-import type { BrowseOverlay } from "./overlay-panel";
 import { PostPlayShell } from "./post-play-shell";
 import { AppHeader } from "./primitives/AppHeader";
 import { SegmentedControl } from "./primitives/SegmentedControl";
@@ -85,14 +55,8 @@ import {
   getCommandMatches,
   getHighlightedCommand,
 } from "./shell-command-ui";
-import { getCommandLabel, InputField, ShellFrame } from "./shell-frame";
-import {
-  ContextStrip,
-  LocalSection,
-  ResizeBlocker,
-  ShellFooter,
-  selectFooterActions,
-} from "./shell-primitives";
+import { InputField, ShellFrame } from "./shell-frame";
+import { LocalSection, ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
 import { APP_LABEL, heatColor, palette, statusColor } from "./shell-theme";
 import { getNextStreakMilestone } from "./streak-milestone";
@@ -101,14 +65,10 @@ import {
   type FooterAction,
   type PlaybackShellState,
   type LoadingShellState,
-  type BrowseShellOption,
-  type BrowseShellResult,
-  type BrowseShellSearchResponse,
   type PlaybackShellResult,
   type ShellPanelLine,
   type ShellPickerOption,
   type ShellAction,
-  type ShellFooterMode,
   type ShellStatusTone,
 } from "./types";
 import { usePosterPreview } from "./use-poster-preview";

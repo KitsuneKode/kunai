@@ -36,7 +36,6 @@ function discoverItemToBrowseOption(item: SearchResult): BrowseShellOption<Searc
 const DiscoverSectionView = React.memo(function DiscoverSectionView({
   section,
   isFocused,
-  focusedIndex,
   compact,
   maxWidth,
   sectionOffset,
@@ -44,7 +43,6 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
 }: {
   section: RecommendationSection;
   isFocused: boolean;
-  focusedIndex: number;
   compact: boolean;
   maxWidth: number;
   sectionOffset: number;
@@ -166,7 +164,7 @@ export function DiscoverShell({
     return { sectionIdx: 0, itemIdx: 0 };
   };
 
-  const { sectionIdx, itemIdx } = resolveSectionSelection(selectedGlobalIndex);
+  const { sectionIdx } = resolveSectionSelection(selectedGlobalIndex);
   useInput((input, key) => {
     if (key.escape) {
       onResult({ type: "back" });
@@ -319,7 +317,6 @@ export function DiscoverShell({
                     key={section.reason + String(idx)}
                     section={section}
                     isFocused={idx === sectionIdx}
-                    focusedIndex={itemIdx}
                     compact={viewport.compact}
                     maxWidth={listWidth}
                     sectionOffset={sectionOffsets[idx] ?? 0}
