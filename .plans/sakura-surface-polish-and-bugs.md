@@ -67,13 +67,21 @@ redesigns** (user-chosen).
 - [ ] **C12 — Active playback** → episode control surface (identity, health,
       tracks state, autoplay/autoskip, thumb, up-next; footer w/ episodes+tracks+
       commands). Today sparse + muted. Spec: `active-playback.md`.
-- [~] **C13 — Tracks/quality picker** → scoped/grouped (source/quality/audio/
-  subtitle sections). Today a flat 30-row dump (Img 18). Spec: `tracks-panel.md`. - [x] Backend contract: `domain/playback/track-capabilities.ts`
-  (`buildTrackCapabilities` normalizes the inventory view into sectioned
-  `TrackCapability[]`, tested) — `544e02bc`. - [ ] Render: scoped panel component (section headers, selectable vs fact
-  rows, risk styling). Needs live verification. - [ ] Wire `/tracks` `/source` `/quality` to the panel (deep-link focus),
-  replacing the three flat ListShell pickers; apply selection via existing
-  `streamSelectionFrom*` / subtitle handlers. Needs live verification.
+- [x] **C13 — Tracks/quality picker** → scoped/grouped (source/quality/audio/
+      subtitle sections). Today a flat 30-row dump (Img 18). Spec: `tracks-panel.md`. - [x] Backend contract: `domain/playback/track-capabilities.ts`
+      (`buildTrackCapabilities` normalizes the inventory view into sectioned
+      `TrackCapability[]`, tested) — `544e02bc`. - [x] Render: `TracksPanelShell` (`tracks-panel-shell.tsx`) — section headers,
+      selectable-vs-fact rows, risk hierarchy; pure flatten/nav model
+      (`buildTrackPanelRows`, deep-link index, `sectionvalue` encode) — `c95f666e`. - [x] Wire `/tracks` `/source` `/quality` to the unified `tracks_panel`
+      overlay (deep-link section), replacing the three flat pickers across the
+      active-playback (ink-shell), mid-playback, and post-playback (PlaybackPhase)
+      flows; selection mapped via `streamSelectionFromTrackPick` → restart by
+      section. Removed dead `openSourcePicker`/`openQualityPicker` — `5681b12c`.
+      **Needs live verification** (TTY): panel layout, navigation feel, that a
+      source/quality/audio switch actually restarts at the right stream/resume. - [ ] Follow-up cleanup (deferred, low-risk): the `source_picker` /
+      `quality_picker` `OverlayState` members + their `root-overlay-shell` render
+      branches are now dormant (nothing opens them). Removing them is a reducer-
+      guard cascade — do as its own scoped commit, not mixed with feature work.
 - [ ] **C14 — Post-play = "episode page + remote"** → action rows + preview rail
   - recs + per-state layout. Today sparse text. Spec: `post-playback.md`.
     (A1/A3 are prerequisites.)
