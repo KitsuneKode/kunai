@@ -1,35 +1,50 @@
 import type { SearchResult } from "@/domain/types";
 import type { RecommendationSection } from "@/services/recommendations/RecommendationService";
 import { Box, Text, useInput } from "ink";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 
+import { buildPreviewRailModelFromBrowseOption } from "./browse-preview-rail";
 import { DotMatrixLoader, InlineDotMatrixLoader } from "./dot-matrix-loader";
+import { PreviewRail, shouldRenderPreviewRail } from "./primitives/PreviewRail";
 import { ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import type { BrowseShellOption } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 export type DiscoverShellResult = { type: "open"; result: SearchResult } | { type: "back" };
 
-/**
- * Single recommendation section rendered as a horizontal "rail" with a label header.
- *
- * Items are displayed as compact ranked rows with active selection highlighting.
- * The active row shows the ▌ accent bar for selection (rose accent).
- * Rating and year are rendered as right-aligned metadata when available.
- */
+function discoverItemToBrowseOption(item: SearchResult): BrowseShellOption<SearchResult> {
+  return {
+    value: item,
+    label: item.title,
+    previewTitle: item.title,
+    previewMeta: [
+      item.type === "series" ? "Series" : "Movie",
+      item.year ? String(item.year) : undefined,
+      item.rating !== null && item.rating !== undefined ? `★ ${item.rating.toFixed(1)}` : undefined,
+    ].filter((value): value is string => Boolean(value)),
+    previewBody: item.overview ?? undefined,
+    previewNote: "Press Enter to open this pick.",
+  };
+}
+
 const DiscoverSectionView = React.memo(function DiscoverSectionView({
   section,
   isFocused,
   focusedIndex,
   compact,
   maxWidth,
+  sectionOffset,
+  globalSelectedIndex,
 }: {
   section: RecommendationSection;
   isFocused: boolean;
   focusedIndex: number;
   compact: boolean;
   maxWidth: number;
+  sectionOffset: number;
+  globalSelectedIndex: number;
 }) {
   const titleBudget = Math.max(16, maxWidth - 18);
   return (
@@ -48,7 +63,8 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
         </Text>
       ) : (
         section.items.map((item, idx) => {
-          const isActive = isFocused && idx === focusedIndex;
+          const globalIndex = sectionOffset + idx;
+          const isActive = globalSelectedIndex === globalIndex;
           const rating =
             item.rating !== null && item.rating !== undefined ? `★ ${item.rating.toFixed(1)}` : "";
           return (
@@ -66,13 +82,13 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
                     {`${idx + 1}`.padStart(2)}
                     {"  "}
                   </Text>
-                  <Text color={isActive ? "white" : palette.text}>
+                  <Text color={isActive ? palette.text : palette.textDim}>
                     {truncateLine(item.title, titleBudget)}
                   </Text>
                 </Text>
               </Box>
               <Box flexShrink={0}>
-                <Text color={isActive ? palette.muted : palette.dim} dimColor={!isActive}>
+                <Text color={palette.muted} dimColor={!isActive}>
                   {` ${rating.padEnd(7)} ${item.year}`}
                 </Text>
               </Box>
@@ -97,17 +113,56 @@ export function DiscoverShell({
 }) {
   const [visibleSections, setVisibleSections] =
     useState<readonly RecommendationSection[]>(sections);
-  const [sectionIdx, setSectionIdx] = useState(0);
-  const [itemIdx, setItemIdx] = useState(0);
+  const [selectedGlobalIndex, setSelectedGlobalIndex] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshingSectionIdx, setRefreshingSectionIdx] = useState<number | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const viewport = useDebouncedViewportPolicy("browse");
 
-  const currentSection = visibleSections[sectionIdx];
-  const currentItems = currentSection?.items ?? [];
-  const innerWidth = Math.max(36, viewport.columns - 8);
+  const flatItems = useMemo(
+    () => visibleSections.flatMap((section) => section.items),
+    [visibleSections],
+  );
+  const sectionOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let running = 0;
+    for (const section of visibleSections) {
+      offsets.push(running);
+      running += section.items.length;
+    }
+    return offsets;
+  }, [visibleSections]);
 
+  const selectedItem = flatItems[selectedGlobalIndex];
+  const previewRailModel = buildPreviewRailModelFromBrowseOption(
+    selectedItem ? discoverItemToBrowseOption(selectedItem) : undefined,
+    "none",
+  );
+  const innerWidth = Math.max(36, viewport.columns - 8);
+  const previewWidth = Math.max(28, Math.floor(innerWidth * 0.32));
+  const listWidth = shouldRenderPreviewRail({ columns: viewport.columns, hasModel: true })
+    ? Math.max(40, innerWidth - previewWidth - 4)
+    : innerWidth;
+  const showPreviewRail = shouldRenderPreviewRail({
+    columns: viewport.columns,
+    hasModel: previewRailModel !== null,
+  });
+
+  const resolveSectionSelection = (
+    globalIndex: number,
+  ): { sectionIdx: number; itemIdx: number } => {
+    let cursor = 0;
+    for (let sectionIdx = 0; sectionIdx < visibleSections.length; sectionIdx += 1) {
+      const count = visibleSections[sectionIdx]?.items.length ?? 0;
+      if (globalIndex < cursor + count) {
+        return { sectionIdx, itemIdx: globalIndex - cursor };
+      }
+      cursor += count;
+    }
+    return { sectionIdx: 0, itemIdx: 0 };
+  };
+
+  const { sectionIdx, itemIdx } = resolveSectionSelection(selectedGlobalIndex);
   useInput((input, key) => {
     if (key.escape) {
       onResult({ type: "back" });
@@ -115,7 +170,6 @@ export function DiscoverShell({
     }
     if (input === "r" && !refreshing && refreshingSectionIdx === null) {
       if (onRefreshSection) {
-        // Per-section reroll: refresh only the focused section
         setRefreshingSectionIdx(sectionIdx);
         setRefreshError(null);
         void onRefreshSection(sectionIdx)
@@ -140,8 +194,7 @@ export function DiscoverShell({
         void onRefresh()
           .then((nextSections) => {
             setVisibleSections(nextSections);
-            setSectionIdx(0);
-            setItemIdx(0);
+            setSelectedGlobalIndex(0);
             return undefined;
           })
           .catch((err) => {
@@ -156,38 +209,27 @@ export function DiscoverShell({
       return;
     }
     if (key.upArrow) {
-      if (itemIdx > 0) setItemIdx((i) => i - 1);
-      else if (sectionIdx > 0) {
-        const prevSection = visibleSections[sectionIdx - 1];
-        setSectionIdx((s) => s - 1);
-        setItemIdx((prevSection?.items.length ?? 1) - 1);
-      }
+      if (selectedGlobalIndex > 0) setSelectedGlobalIndex((index) => index - 1);
       return;
     }
     if (key.downArrow) {
-      if (itemIdx < currentItems.length - 1) setItemIdx((i) => i + 1);
-      else if (sectionIdx < visibleSections.length - 1) {
-        setSectionIdx((s) => s + 1);
-        setItemIdx(0);
+      if (selectedGlobalIndex < flatItems.length - 1) {
+        setSelectedGlobalIndex((index) => index + 1);
       }
       return;
     }
     if (key.tab && key.shift) {
-      if (sectionIdx > 0) {
-        setSectionIdx((s) => s - 1);
-        setItemIdx(0);
-      }
+      const prevOffset = sectionOffsets[sectionIdx - 1];
+      if (prevOffset !== undefined) setSelectedGlobalIndex(prevOffset);
       return;
     }
     if (key.tab) {
-      if (sectionIdx < visibleSections.length - 1) {
-        setSectionIdx((s) => s + 1);
-        setItemIdx(0);
-      }
+      const nextOffset = sectionOffsets[sectionIdx + 1];
+      if (nextOffset !== undefined) setSelectedGlobalIndex(nextOffset);
       return;
     }
     if (key.return) {
-      const item = currentSection?.items[itemIdx];
+      const item = flatItems[selectedGlobalIndex];
       if (item) onResult({ type: "open", result: item });
       return;
     }
@@ -228,88 +270,68 @@ export function DiscoverShell({
             </Text>
           </Box>
         ) : null}
-        <Box marginTop={1} flexDirection="column" flexGrow={1}>
-          {visibleSections.length === 0 ? (
-            <Box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
-              <DotMatrixLoader variant="echo-ring" active onColor={palette.accent} />
-              <Box marginTop={1}>
-                <Text color={palette.muted}>Loading recommendations…</Text>
+        <Box
+          marginTop={1}
+          flexDirection={showPreviewRail ? "row" : "column"}
+          flexGrow={1}
+          justifyContent="space-between"
+        >
+          <Box flexDirection="column" width={showPreviewRail ? listWidth : undefined} flexGrow={1}>
+            {visibleSections.length === 0 ? (
+              <Box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
+                <DotMatrixLoader variant="echo-ring" active onColor={palette.accent} />
+                <Box marginTop={1}>
+                  <Text color={palette.muted}>Loading recommendations…</Text>
+                </Box>
               </Box>
-            </Box>
-          ) : visibleSections.every((s) => s.items.length === 0) ? (
-            <Box flexDirection="column" paddingY={2}>
-              <Text color={palette.muted}>{"◈  nothing to discover yet"}</Text>
-              <Text color={palette.dim}>watch something first to get recommendations</Text>
-              <Box marginTop={1}>
-                <Text color={palette.dim} dimColor>
-                  {"  ^ᵔᴥᵔ^  a fox awaits"}
-                </Text>
+            ) : visibleSections.every((s) => s.items.length === 0) ? (
+              <Box flexDirection="column" paddingY={2}>
+                <Text color={palette.muted}>{"◈  nothing to discover yet"}</Text>
+                <Text color={palette.dim}>watch something first to get recommendations</Text>
               </Box>
-            </Box>
-          ) : (
-            visibleSections.map((section, idx) => {
-              if (refreshingSectionIdx === idx) {
-                return (
-                  <Box key={section.reason + String(idx)} flexDirection="column" marginBottom={1}>
-                    <Text
-                      color={idx === sectionIdx ? palette.accent : palette.muted}
-                      bold={idx === sectionIdx}
-                    >
-                      {idx === sectionIdx ? "▸ " : "  "}
-                      {section.label}
-                    </Text>
-                    <Box>
-                      <InlineDotMatrixLoader variant="echo-ring" active onColor={palette.dim} />
-                      <Text color={palette.dim} dimColor>
-                        {" ░░░ rerolling…"}
+            ) : (
+              visibleSections.map((section, idx) => {
+                if (refreshingSectionIdx === idx) {
+                  return (
+                    <Box key={section.reason + String(idx)} flexDirection="column" marginBottom={1}>
+                      <Text
+                        color={idx === sectionIdx ? palette.accent : palette.muted}
+                        bold={idx === sectionIdx}
+                      >
+                        {idx === sectionIdx ? "▸ " : "  "}
+                        {section.label}
                       </Text>
+                      <Box>
+                        <InlineDotMatrixLoader variant="echo-ring" active onColor={palette.dim} />
+                        <Text color={palette.dim} dimColor>
+                          {" ░░░ rerolling…"}
+                        </Text>
+                      </Box>
                     </Box>
-                  </Box>
+                  );
+                }
+                return (
+                  <DiscoverSectionView
+                    key={section.reason + String(idx)}
+                    section={section}
+                    isFocused={idx === sectionIdx}
+                    focusedIndex={itemIdx}
+                    compact={viewport.compact}
+                    maxWidth={listWidth}
+                    sectionOffset={sectionOffsets[idx] ?? 0}
+                    globalSelectedIndex={selectedGlobalIndex}
+                  />
                 );
-              }
-              return (
-                <DiscoverSectionView
-                  key={section.reason + String(idx)}
-                  section={section}
-                  isFocused={idx === sectionIdx}
-                  focusedIndex={itemIdx}
-                  compact={viewport.compact}
-                  maxWidth={innerWidth}
-                />
-              );
-            })
-          )}
+              })
+            )}
+          </Box>
+          {showPreviewRail && previewRailModel ? (
+            <Box marginLeft={2} width={previewWidth}>
+              <PreviewRail model={previewRailModel} width={previewWidth} />
+            </Box>
+          ) : null}
         </Box>
       </Box>
-      {(() => {
-        const focusedItem = currentSection?.items[itemIdx];
-        if (!focusedItem) return null;
-        const meta = [
-          focusedItem.year,
-          focusedItem.rating !== null && focusedItem.rating !== undefined
-            ? `★ ${focusedItem.rating.toFixed(1)}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join("  ");
-        const overview = focusedItem.overview
-          ? focusedItem.overview.slice(0, Math.max(60, innerWidth - 4))
-          : null;
-        return (
-          <Box flexDirection="column" marginBottom={1} paddingX={1}>
-            {meta ? (
-              <Text color={palette.muted} dimColor>
-                {meta}
-              </Text>
-            ) : null}
-            {overview ? (
-              <Text color={palette.muted} dimColor wrap="truncate">
-                {overview}
-              </Text>
-            ) : null}
-          </Box>
-        );
-      })()}
       <ShellFooter
         taskLabel="Discover"
         actions={[

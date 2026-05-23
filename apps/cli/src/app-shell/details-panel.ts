@@ -300,6 +300,36 @@ function getStructuredPreviewFacts<T>(option: BrowseShellOption<T>): ShellPanelL
   ];
 }
 
+export function buildDetailsSheetLines<T>(
+  option: BrowseShellOption<T> | undefined,
+  secondary: DetailsPanelSecondary | null,
+): readonly ShellPanelLine[] {
+  const panel = buildBrowseDetailsPanel(option);
+  const lines: ShellPanelLine[] = [...panel.lines];
+
+  if (secondary?.nextAirDate) {
+    lines.push({ label: "Next air", detail: secondary.nextAirDate });
+  }
+  if (secondary?.seasonLabel) {
+    lines.push({ label: "Season", detail: secondary.seasonLabel });
+  }
+  if (secondary?.watchedEpisodes !== undefined && secondary.totalEpisodes !== undefined) {
+    lines.push({
+      label: "Progress",
+      detail: `${secondary.watchedEpisodes} of ${secondary.totalEpisodes} episodes`,
+      tone: secondary.watchedEpisodes >= secondary.totalEpisodes ? "success" : "neutral",
+    });
+  }
+  if (secondary?.subtitleLanguages?.length) {
+    lines.push({
+      label: "Subtitles",
+      detail: secondary.subtitleLanguages.join(" · "),
+    });
+  }
+
+  return lines;
+}
+
 function uniqueStrings(values: readonly (string | undefined)[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];

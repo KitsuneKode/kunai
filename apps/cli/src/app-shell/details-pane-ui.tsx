@@ -5,6 +5,7 @@ import type { DetailsPanelData, DetailsPanelSecondary } from "./details-panel";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { truncateAtWord, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import type { ShellPanelLine } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
 type SeriesStateKey = NonNullable<DetailsPanelSecondary["seriesState"]>;
@@ -39,6 +40,88 @@ function FactRow({ label, value, width }: { label: string; value: string; width:
     <Box>
       <Text color={palette.dim}>{truncateLine(label, labelWidth).padEnd(labelWidth)}</Text>
       <Text color={palette.text}>{truncateLine(value, width - labelWidth - 2)}</Text>
+    </Box>
+  );
+}
+
+function sheetLineColor(tone: ShellPanelLine["tone"]): string {
+  if (tone === "success") return palette.ok;
+  if (tone === "warning") return palette.accentDeep;
+  if (tone === "error") return palette.danger;
+  if (tone === "info") return palette.muted;
+  return palette.text;
+}
+
+export function DetailsSheetUI({
+  data,
+  lines,
+  width = 48,
+  scrollIndex = 0,
+  maxVisibleLines = 12,
+}: {
+  readonly data: DetailsPanelData;
+  readonly lines: readonly ShellPanelLine[];
+  readonly width?: number;
+  readonly scrollIndex?: number;
+  readonly maxVisibleLines?: number;
+}) {
+  const { primary } = data;
+  const headerLines = [
+    primary.title,
+    [primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
+      .filter(Boolean)
+      .join(" · "),
+    primary.synopsis ? truncateAtWord(primary.synopsis, width * 2) : undefined,
+  ].filter((line): line is string => Boolean(line));
+  const bodyStart = headerLines.length;
+  const scrollable = lines.slice(bodyStart);
+  const maxScroll = Math.max(0, scrollable.length - maxVisibleLines);
+  const clampedScroll = Math.min(scrollIndex, maxScroll);
+  const visible = scrollable.slice(clampedScroll, clampedScroll + maxVisibleLines);
+
+  return (
+    <Box
+      flexDirection="column"
+      width={width}
+      borderStyle="single"
+      borderColor={palette.line}
+      paddingX={1}
+    >
+      <Text color={palette.text} bold>
+        {truncateLine(primary.title, width - 2)}
+      </Text>
+      <Text color={palette.muted}>
+        {[primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
+          .filter(Boolean)
+          .join(" · ")}
+      </Text>
+      {primary.synopsis ? (
+        <Box marginTop={1}>
+          <Text color={palette.dim}>{truncateAtWord(primary.synopsis, width * 2)}</Text>
+        </Box>
+      ) : null}
+      <Box marginTop={1} flexDirection="column">
+        {visible.map((line) =>
+          line.detail === "" && line.label.startsWith("───") ? (
+            <Text key={line.label} color={palette.muted}>
+              {line.label}
+            </Text>
+          ) : (
+            <Box key={`${line.label}:${line.detail ?? ""}`}>
+              <Text color={palette.dim}>{truncateLine(line.label, 14).padEnd(14)}</Text>
+              <Text color={sheetLineColor(line.tone)}>
+                {truncateLine(line.detail ?? "", width - 16)}
+              </Text>
+            </Box>
+          ),
+        )}
+      </Box>
+      {scrollable.length > maxVisibleLines ? (
+        <Text color={palette.dim} dimColor>
+          {clampedScroll > 0 ? "▲ " : ""}
+          {clampedScroll < maxScroll ? "▼ scroll" : ""}
+        </Text>
+      ) : null}
     </Box>
   );
 }
