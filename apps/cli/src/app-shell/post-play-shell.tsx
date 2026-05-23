@@ -2,6 +2,7 @@ import type { PostPlayState } from "@/domain/playback/post-play-state";
 import { Box, Text } from "ink";
 import React from "react";
 
+import { ContextCard } from "./primitives/ContextCard";
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { PlaybackRecommendationRailItem } from "./types";
@@ -87,15 +88,18 @@ export const PostPlayShell = React.memo(function PostPlayShell({
 
       {!resumeLabel && !isMovie && postPlayState.kind === "mid-series" && (
         <Box marginTop={2} flexDirection="column">
-          <Text>
-            <Text color={palette.accent}>{"▌ "}</Text>
-            <Text color={palette.accent}>▶ up next</Text>
-          </Text>
-          {nextEpisodeLabel ? (
-            <Text>{`  ${truncateLine(nextEpisodeLabel, 64)}`}</Text>
-          ) : (
-            <Text color={palette.dim}>{"  Next episode"}</Text>
-          )}
+          <ContextCard
+            selected
+            width={Math.min(42, Math.max(28, viewport.columns - 20))}
+            model={{
+              kind: "next",
+              title: nextEpisodeLabel ?? "Next episode",
+              subtitle: "up next",
+              thumbnailState: "none",
+              stateLabel: "playable",
+              stateTone: "success",
+            }}
+          />
         </Box>
       )}
 

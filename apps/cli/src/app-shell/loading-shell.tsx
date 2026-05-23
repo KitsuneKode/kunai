@@ -17,7 +17,10 @@ import {
   stageLabel,
 } from "./loading-shell-runtime";
 import type { StageRailItem } from "./loading-shell-runtime";
+import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import type { PosterResult, PosterState } from "./poster-types";
+import { buildPlaybackContextCards, ContextCard } from "./primitives/ContextCard";
+import { StateBlock } from "./primitives/StateBlock";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine, selectFooterActions } from "./shell-primitives";
 import { APP_LABEL, palette } from "./shell-theme";
@@ -321,6 +324,10 @@ export const LoadingShell = React.memo(function LoadingShell({
     return () => clearTimeout(timer);
   }, [memoryPanelPinned, memoryPanelVisible]);
 
+  // Recovery surface only applies before/around playback start, not while a
+  // healthy stream is playing (that path has its own buffer badge + controls).
+  const recoveryView = state.operation !== "playing" ? buildPlaybackRecoveryViewModel(state) : null;
+
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestHardExit(0);
@@ -328,6 +335,28 @@ export const LoadingShell = React.memo(function LoadingShell({
     if (key.escape && state.cancellable && onCancel) {
       onCancel();
       return;
+    }
+    // While a failure/recovery surface is shown, its action shortcuts take
+    // precedence so the rows it advertises actually work (footer input is
+    // locked when there is no command action).
+    if (recoveryView) {
+      const rk = input.toLowerCase();
+      if (rk === "r" && onRecover) {
+        onRecover();
+        return;
+      }
+      if (rk === "f" && onFallback) {
+        onFallback();
+        return;
+      }
+      if (rk === "s" && onPickStreams) {
+        onPickStreams();
+        return;
+      }
+      if (rk === "d") {
+        state.onCommandAction?.("diagnostics");
+        return;
+      }
     }
     if (input.toLowerCase() === "q") {
       if (state.operation === "playing" && onStop && !state.onCommandAction) {
@@ -437,6 +466,14 @@ export const LoadingShell = React.memo(function LoadingShell({
   const isPlaying = state.operation === "playing";
   const infoWidth = Math.min(76, Math.max(40, terminalColumns - 12));
   const playbackSignalLines = buildPlaybackSignalRail(state);
+  const playbackContextCards = isPlaying
+    ? buildPlaybackContextCards({
+        nextEpisodeLabel: state.nextEpisodeLabel,
+        previousEpisodeLabel: state.previousEpisodeLabel,
+        hasNextEpisode: state.hasNextEpisode,
+        hasPreviousEpisode: state.hasPreviousEpisode,
+      })
+    : [];
 
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
   const loadingIssue = normalizeLoadingIssue(state.latestIssue);
@@ -613,12 +650,18 @@ export const LoadingShell = React.memo(function LoadingShell({
                 </Box>
               ) : null}
 
-              {/* Issue warning — always visible immediately if present */}
-              {disclosure.showIssue && loadingIssue && (
+              {/* Failure / recovery surface takes priority over the bare issue
+                  line: it names what failed and offers recover/fallback/sources/
+                  diagnostics. Falls back to the quiet warning when not a failure. */}
+              {recoveryView ? (
+                <Box marginTop={1}>
+                  <StateBlock model={recoveryView.state} width={infoWidth} />
+                </Box>
+              ) : disclosure.showIssue && loadingIssue ? (
                 <Box marginTop={1}>
                   <Text color={palette.accentDeep}>⚠ {loadingIssue}</Text>
                 </Box>
-              )}
+              ) : null}
             </Box>
           )}
 
@@ -681,7 +724,15 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
               ) : null}
-              {state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
+              {terminalColumns >= 132 && playbackContextCards.length > 0 ? (
+                <Box marginTop={1} flexDirection="column">
+                  {playbackContextCards.slice(0, 2).map((card, index) => (
+                    <Box key={`${card.kind}-${card.title}`} marginTop={index === 0 ? 0 : 1}>
+                      <ContextCard model={card} width={Math.min(40, infoWidth)} />
+                    </Box>
+                  ))}
+                </Box>
+              ) : state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
                 <Box marginTop={1}>
                   <Text color={palette.accent}>{"▶ "}</Text>
                   <Text color={palette.dim} dimColor>

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildContextCardTile,
+  buildPlaybackContextCards,
   clampContextCardText,
   contextCardGlyph,
 } from "@/app-shell/primitives/ContextCard";
@@ -30,5 +31,18 @@ describe("ContextCard helpers", () => {
     expect(out.endsWith("…")).toBe(true);
     expect(out.startsWith("A very long")).toBe(true);
     expect(clampContextCardText("Short", 18)).toBe("Short");
+  });
+
+  test("builds next and previous context cards without huge labels", () => {
+    const cards = buildPlaybackContextCards({
+      nextEpisodeLabel: "E32 · Challengers of Science · 24m",
+      previousEpisodeLabel: "E30 · Stone to Space · watched",
+      hasNextEpisode: true,
+      hasPreviousEpisode: true,
+    });
+
+    expect(cards.map((card) => card.kind)).toEqual(["next", "previous"]);
+    expect(cards[0]?.stateTone).toBe("success");
+    expect(cards[1]?.stateLabel).toBe("watched");
   });
 });

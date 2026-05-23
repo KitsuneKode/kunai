@@ -55,6 +55,36 @@ export function contextCardGlyph(
   return "·";
 }
 
+export function buildPlaybackContextCards(input: {
+  readonly nextEpisodeLabel?: string;
+  readonly previousEpisodeLabel?: string;
+  readonly hasNextEpisode?: boolean;
+  readonly hasPreviousEpisode?: boolean;
+}): readonly ContextCardModel[] {
+  const cards: ContextCardModel[] = [];
+  if (input.hasNextEpisode && input.nextEpisodeLabel) {
+    cards.push({
+      kind: "next",
+      title: input.nextEpisodeLabel,
+      subtitle: "next",
+      thumbnailState: "none",
+      stateLabel: "playable",
+      stateTone: "success",
+    });
+  }
+  if (input.hasPreviousEpisode && input.previousEpisodeLabel) {
+    cards.push({
+      kind: "previous",
+      title: input.previousEpisodeLabel,
+      subtitle: "previous",
+      thumbnailState: "none",
+      stateLabel: "watched",
+      stateTone: "success",
+    });
+  }
+  return cards;
+}
+
 export function ContextCard({
   model,
   width = 34,

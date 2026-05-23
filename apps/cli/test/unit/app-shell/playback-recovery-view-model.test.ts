@@ -56,6 +56,23 @@ describe("buildPlaybackRecoveryViewModel", () => {
     expect(model?.state.title).toBe("Provider degraded");
   });
 
+  test("no source available keeps diagnostics but does not offer next", () => {
+    const model = buildPlaybackRecoveryViewModel(
+      baseState({
+        operation: "resolving",
+        latestIssue: "No source available",
+        hasNextEpisode: true,
+      }),
+    );
+    expect(model?.state.title).toBe("No playable source");
+    expect(model?.actions.map((action) => action.id)).toEqual([
+      "recover",
+      "sources",
+      "diagnostics",
+    ]);
+    expect(model?.actions.some((action) => action.id === "next")).toBe(false);
+  });
+
   test("healthy playback returns null", () => {
     expect(buildPlaybackRecoveryViewModel(baseState({ bufferHealth: "healthy" }))).toBeNull();
   });
