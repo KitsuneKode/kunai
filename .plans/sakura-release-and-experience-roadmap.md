@@ -19,7 +19,8 @@ Tests: app-shell 265 pass. typecheck/lint clean for Sakura.
 2. **Empty poster box (Now Playing)** — the big bordered void is a **Kitty-graphics region drawn outside Ink** via `image-pane.ts` (NOT `shouldShowLoadingPosterCompanion`, which is dead code in loading-shell.tsx:82 — delete it). Hide/clear the region when there's no poster, or draw a tasteful reserved placeholder. Needs focused investigation of the image pipeline.
 3. **S3 portability** (cross-cutting, in `packages/design` + viewport): truecolor→256→16 color fallback; poster→letter-tile→hidden; preview rail collapses before list on narrow/SSH/tmux; CJK/long-title truncation + double-width column alignment.
 4. **Delete deprecated token aliases** from `packages/design/src/tokens.ts` + `shell-theme.ts` palette (migration done); `grep -rE "palette\.(amber|teal|pink|info|lavender|green|red|gray|yellow|purple)" apps/cli/src` → 0.
-5. **Full gate + manual narrow/non-truecolor terminal pass** (`bun run dev`) → merge `design/sakura-rollout` → main.
+5. **Merge-readiness + install verification** (parallelizable now — disjoint from app-shell): confirm `install.sh`, `README.md`, `docs/users/install-and-update.md`, root + `apps/cli` `package.json` scripts, `turbo.json`, and `.github/workflows/*` are correct so the branch merges cleanly and contributors can build/run/test from a fresh clone. Verify `install.sh` actually works (shellcheck + dry run), `bun install && bun run build && bun run test` succeed from clean, and CI matches the local gate. Note: `install.sh` is currently part of the user's uncommitted pre-existing WIP — decide whether it ships with Sakura or separately.
+6. **Full gate + manual narrow/non-truecolor terminal pass** (`bun run dev`) → merge `design/sakura-rollout` → main.
 
 ## EXPERIENCE TRACK (premium / sticky — parallel or post-release)
 
