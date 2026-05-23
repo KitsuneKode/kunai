@@ -20,6 +20,14 @@ import {
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { runAutoplayAdvanceCountdown } from "@/app/autoplay-advance-countdown";
 import { episodeInfoFromSelection } from "@/app/episode-info-from-catalog";
+import {
+  adoptEpisodePrefetchBundle,
+  EPISODE_PREFETCH_WAIT_BUDGET_MS,
+  EpisodePrefetchHandle,
+  isEpisodePrefetchEligible,
+  type EpisodePrefetchBundle,
+  type EpisodePrefetchTarget,
+} from "@/app/episode-prefetch";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
@@ -146,21 +154,6 @@ export type PlaybackOutcome =
       season?: number;
       episode?: number;
     };
-
-async function racePrefetchWithTimeout(
-  promise: Promise<void>,
-  timeoutMs: number,
-): Promise<"completed" | "timed-out"> {
-  try {
-    const result = await Promise.race([
-      promise.then(() => "completed" as const),
-      new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), timeoutMs)),
-    ]);
-    return result;
-  } catch {
-    return "completed";
-  }
-}
 
 function enqueuePostPlaybackRecommendation(
   container: PhaseContext["container"],
@@ -703,9 +696,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         },
       );
 
-      // Holds a prefetched stream for the upcoming episode (set during near-EOF).
-      let pendingPrefetchedStream: import("@/domain/types").StreamInfo | null = null;
-      let pendingPrefetchedProviderId: string | null = null;
+      const episodePrefetch = new EpisodePrefetchHandle();
 
       // In-memory cache of recently played episode streams so backward navigation
       // (P key) reuses the exact same StreamInfo without provider resolve or cache lookup.
@@ -901,19 +892,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
-          // Use a prefetched stream (prepared during the previous episode's near-EOF
-          // window) or fall back to a full provider resolve. Explicit refresh/recover
-          // bypasses prefetch so it can ask the provider for a fresh source.
-          const consumedPrefetch = sourceRefreshDecision ? null : pendingPrefetchedStream;
-          const consumedPrefetchProviderId = sourceRefreshDecision
+          // Use a prefetched bundle (resolve + optional subtitle prep during near-EOF)
+          // or fall back to a full provider resolve. Explicit refresh/recover bypasses
+          // prefetch so it can ask the provider for a fresh source.
+          const consumedBundle = sourceRefreshDecision
             ? null
-            : pendingPrefetchedProviderId;
-          if (!sourceRefreshDecision) {
-            pendingPrefetchedStream = null;
-            pendingPrefetchedProviderId = null;
-          }
+            : episodePrefetch.takeReadyFor(title.id, currentEpisode, currentProvider.metadata.id);
+          const prefetchWasPrepared = consumedBundle?.prepared === true;
 
-          let stream: StreamInfo | null = consumedPrefetch ?? null;
+          let stream: StreamInfo | null = consumedBundle?.stream ?? null;
           let resolvedProviderId = currentProvider.metadata.id;
           let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
 
@@ -930,42 +917,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             context: { trace: resolveTrace },
           });
 
-          if (consumedPrefetch) {
-            if (
-              consumedPrefetchProviderId &&
-              consumedPrefetchProviderId !== currentProvider.metadata.id
-            ) {
-              diagnosticsStore.record({
-                ...playbackCorrelation,
-                category: "playback",
-                level: "warn",
-                message: "Discarding prefetched stream — provider changed since prefetch",
-                context: {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  prefetchProviderId: consumedPrefetchProviderId,
-                  currentProviderId: currentProvider.metadata.id,
-                },
-              });
-              stream = null;
-            } else {
-              logger.info("Using prefetched stream for episode", {
+          if (consumedBundle) {
+            logger.info("Using prefetched stream for episode", {
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              prepared: prefetchWasPrepared,
+            });
+            diagnosticsStore.record({
+              ...playbackCorrelation,
+              category: "provider",
+              message: prefetchWasPrepared
+                ? "Using prefetched prepared stream"
+                : "Using prefetched stream",
+              context: {
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
-              });
-              diagnosticsStore.record({
-                ...playbackCorrelation,
-                category: "provider",
-                message: "Using prefetched stream",
-                context: {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                },
-              });
-            }
+                prepared: prefetchWasPrepared,
+              },
+            });
           }
 
           // Check in-memory cache for recently played episodes (backward navigation).
@@ -1270,12 +1241,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
-          const preparedStream = await this.preparePlaybackStream(
-            stream,
-            title,
-            currentEpisode,
-            context,
-          );
+          const preparedStream = prefetchWasPrepared
+            ? stream
+            : await this.preparePlaybackStream(stream, title, currentEpisode, context);
           stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
 
           const episodeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
@@ -1302,59 +1270,65 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const startIntent = pendingStart;
           pendingStart = startFromBeginning();
 
-          // Prefetch: start resolving the next episode's stream in the background
-          // when we enter the last ~60 s, so autoplay feels instant.
-          let prefetchedNextStream: import("@/domain/types").StreamInfo | null = null;
-          let prefetchedNextProviderId: string | null = null;
-          let prefetchedNextPromise: Promise<void> | null = null;
           let prefetchedRecommendationItems: readonly SearchResult[] | null = null;
-          const maybePrefetchNext = () => {
-            if (
-              playbackSession.mode !== "autoplay-chain" ||
-              playbackSession.autoplayPaused ||
-              !episodeAvailability.nextEpisode ||
-              title.type !== "series"
-            ) {
-              return;
-            }
+          const buildNextPrefetchTarget = (): EpisodePrefetchTarget | null => {
             const nextEp = episodeAvailability.nextEpisode;
-            const prefetchProviderId = stateManager.getState().provider;
-            const prefetchMetadata = providerRegistry.get(prefetchProviderId);
-            if (!prefetchMetadata) return;
-            const mode = stateManager.getState().mode;
-            const audioPreference =
-              mode === "anime"
-                ? config.animeLanguageProfile.audio
-                : config.seriesLanguageProfile.audio;
-            const subtitlePreference =
-              mode === "anime"
-                ? config.animeLanguageProfile.subtitle
-                : config.seriesLanguageProfile.subtitle;
-            const qualityPreference =
-              mode === "anime"
-                ? config.animeLanguageProfile.quality
-                : config.seriesLanguageProfile.quality;
-            const prefetchCoordinator = new PlaybackResolveCoordinator({
-              engine,
-              cacheStore,
-              providerHealth: container.providerHealth,
+            if (!nextEp) return null;
+            const prefetchMetadata = providerRegistry.get(stateManager.getState().provider);
+            if (!prefetchMetadata) return null;
+            return {
+              titleId: title.id,
+              episode: nextEp,
+              providerId: prefetchMetadata.metadata.id,
+            };
+          };
+          const handoffNextEpisodePrefetch = async (
+            target: EpisodePrefetchTarget,
+            operation: "playback.prefetch-wait" | "post-playback.autonext.prefetch-wait",
+          ) => {
+            await adoptEpisodePrefetchBundle({
+              handle: episodePrefetch,
+              target,
+              run: (signal) => runNextEpisodePrefetch(signal, target.episode),
+              onWaiting: () =>
+                this.updatePlaybackFeedback(context, {
+                  detail: "Finishing next episode…",
+                  note: "Resolving the next stream in the background",
+                }),
+              recordWait: (wait) => {
+                diagnosticsStore.record({
+                  category: "playback",
+                  operation,
+                  message: wait.bundle
+                    ? "Prefetch completed during episode handoff wait"
+                    : "Prefetch grace window elapsed during episode handoff",
+                  context: {
+                    titleId: title.id,
+                    nextSeason: target.episode.season,
+                    nextEpisode: target.episode.episode,
+                    completed: wait.bundle !== null,
+                    waitResult: wait.outcome,
+                    waitedMs: wait.waitedMs,
+                    timeoutMs: EPISODE_PREFETCH_WAIT_BUDGET_MS,
+                    prepared: wait.bundle?.prepared ?? false,
+                  },
+                });
+              },
             });
-            prefetchedNextProviderId = prefetchMetadata.metadata.id;
-            prefetchedNextPromise = prefetchCoordinator
-              .prefetch({
-                title,
-                episode: nextEp,
-                mode,
-                providerId: prefetchMetadata.metadata.id,
-                audioPreference,
-                subtitlePreference,
-                qualityPreference,
-                recoveryMode: config.recoveryMode,
-                signal: context.signal,
-              })
-              .then((result) => {
-                prefetchedNextStream = result;
-                if (result) {
+          };
+          const runNextEpisodePrefetch = (signal: AbortSignal, nextEp: EpisodeInfo) => {
+            const prefetchMetadata = providerRegistry.get(stateManager.getState().provider);
+            if (!prefetchMetadata) {
+              return Promise.resolve(null);
+            }
+            return this.resolveEpisodePrefetchBundle(context, {
+              title,
+              nextEpisode: nextEp,
+              providerId: prefetchMetadata.metadata.id,
+              signal,
+            })
+              .then((bundle) => {
+                if (bundle) {
                   diagnosticsStore.record({
                     category: "playback",
                     message: "Prefetch resolved successfully",
@@ -1363,10 +1337,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                       nextSeason: nextEp.season,
                       nextEpisode: nextEp.episode,
                       providerId: prefetchMetadata.metadata.id,
+                      prepared: bundle.prepared,
                     },
                   });
                 }
-                return undefined;
+                return bundle;
               })
               .catch((err) => {
                 diagnosticsStore.record({
@@ -1381,7 +1356,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     error: err instanceof Error ? err.message : String(err),
                   },
                 });
+                return null;
               });
+          };
+          const maybePrefetchNext = () => {
+            if (
+              !isEpisodePrefetchEligible({
+                titleType: title.type,
+                hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
+                stopAfterCurrent: playbackSession.stopAfterCurrent,
+                sessionMode: playbackSession.mode,
+                autoplayPaused: playbackSession.autoplayPaused,
+              })
+            ) {
+              return;
+            }
+            const target = buildNextPrefetchTarget();
+            if (!target) return;
+            episodePrefetch.schedule(target, (signal) =>
+              runNextEpisodePrefetch(signal, target.episode),
+            );
 
             if (
               container.config.recommendationRailEnabled &&
@@ -1509,8 +1503,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const shouldInvalidateStreamCache =
             result.endReason === "error" || result.suspectedDeadStream === true;
           if (shouldInvalidateStreamCache) {
-            const invalidateProviderId = consumedPrefetch
-              ? (consumedPrefetchProviderId ?? resolvedProviderId)
+            const invalidateProviderId = consumedBundle
+              ? (consumedBundle.target.providerId ?? resolvedProviderId)
               : resolvedProviderId;
             const staleCacheKey = buildApiStreamResolveCacheKey({
               providerId: invalidateProviderId,
@@ -1556,7 +1550,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 exitCode: result.playerExitCode,
                 exitSignal: result.playerExitSignal,
                 suspectedDeadStream: result.suspectedDeadStream === true,
-                wasPrefetched: Boolean(consumedPrefetch),
+                wasPrefetched: Boolean(consumedBundle),
               },
             });
           }
@@ -1807,14 +1801,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 playbackSession = { ...playbackSession, stopAfterCurrent: false };
               }
 
-              // Consume an in-progress or completed prefetch so the next loop
-              // iteration skips the provider resolve.
-              if (prefetchedNextPromise && !prefetchedNextStream) {
-                await racePrefetchWithTimeout(prefetchedNextPromise, 500);
-              }
-              if (prefetchedNextStream) {
-                pendingPrefetchedStream = prefetchedNextStream;
-                pendingPrefetchedProviderId = prefetchedNextProviderId;
+              const prefetchTarget = buildNextPrefetchTarget();
+              if (prefetchTarget) {
+                await handoffNextEpisodePrefetch(prefetchTarget, "playback.prefetch-wait");
               }
               continue;
             }
@@ -1822,6 +1811,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "previous" && title.type === "series") {
             if (episodeAvailability.previousEpisode) {
+              episodePrefetch.cancel("user-navigation");
               pendingStart = await startNavigationToEpisode(episodeAvailability.previousEpisode);
               await applyMpvEpisodeLoadingOverlay(
                 playerControl.getActive(),
@@ -1848,6 +1838,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           if (playbackControlAction === "pick-episode" && confirmedEpisodeSelection) {
+            episodePrefetch.cancel("user-navigation");
             pendingStart = await startNavigationToEpisode(confirmedEpisodeSelection);
             await applyMpvEpisodeLoadingOverlay(
               playerControl.getActive(),
@@ -2166,7 +2157,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: currentEpisode.episode,
                 nextSeason: nextEpisode.season,
                 nextEpisode: nextEpisode.episode,
-                hasPrefetch: prefetchedNextStream !== null,
+                hasPrefetch: episodePrefetch.hasReadyFor({
+                  titleId: title.id,
+                  episode: nextEpisode,
+                  providerId: resolvedProviderId,
+                }),
               });
               diagnosticsStore.record({
                 category: "playback",
@@ -2177,7 +2172,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   episode: currentEpisode.episode,
                   nextSeason: nextEpisode.season,
                   nextEpisode: nextEpisode.episode,
-                  hasPrefetch: prefetchedNextStream !== null,
+                  hasPrefetch: episodePrefetch.hasReadyFor({
+                    titleId: title.id,
+                    episode: nextEpisode,
+                    providerId: resolvedProviderId,
+                  }),
                 },
               });
 
@@ -2199,36 +2198,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stopAfterCurrent: false,
               };
 
-              // If a prefetch is still in-flight (e.g. user sought to end quickly),
-              // wait briefly for it before falling back to a full resolve.
-              if (prefetchedNextPromise && !prefetchedNextStream) {
-                const prefetchWaitResult = await racePrefetchWithTimeout(
-                  prefetchedNextPromise,
-                  500,
-                );
-                diagnosticsStore.record({
-                  category: "playback",
-                  operation: "post-playback.autonext.prefetch-wait",
-                  message: prefetchedNextStream
-                    ? "Prefetch completed during auto-advance wait"
-                    : "Prefetch grace window elapsed during auto-advance",
-                  context: {
-                    titleId: title.id,
-                    nextSeason: nextEpisode.season,
-                    nextEpisode: nextEpisode.episode,
-                    completed: prefetchedNextStream !== null,
-                    waitResult: prefetchWaitResult,
-                    timeoutMs: 500,
-                  },
-                });
-              }
-
-              // If we prefetched the stream, inject it directly so the loop can
-              // skip the provider scrape and call loadfile immediately.
-              if (prefetchedNextStream) {
-                pendingPrefetchedStream = prefetchedNextStream;
-                pendingPrefetchedProviderId = prefetchedNextProviderId;
-              }
+              const autoplayPrefetchTarget: EpisodePrefetchTarget = {
+                titleId: title.id,
+                episode: nextEpisode,
+                providerId: resolvedProviderId,
+              };
+              await handoffNextEpisodePrefetch(
+                autoplayPrefetchTarget,
+                "post-playback.autonext.prefetch-wait",
+              );
 
               continue;
             }
@@ -2922,6 +2900,70 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const timing = await timingAggregator.resolve(title, episode, mode, signal, { providerId });
     cache.set(cacheKey, timing);
     return timing;
+  }
+
+  private async resolveEpisodePrefetchBundle(
+    context: PhaseContext,
+    input: {
+      readonly title: TitleInfo;
+      readonly nextEpisode: EpisodeInfo;
+      readonly providerId: string;
+      readonly signal: AbortSignal;
+    },
+  ): Promise<EpisodePrefetchBundle | null> {
+    const { engine, cacheStore, config, stateManager, providerHealth } = context.container;
+    const mode = stateManager.getState().mode;
+    const subLang =
+      mode === "anime"
+        ? stateManager.getState().animeLanguageProfile.subtitle
+        : stateManager.getState().seriesLanguageProfile.subtitle;
+    const isInteractiveSubtitle = subLang === "interactive" || subLang === "fzf";
+
+    const coordinator = new PlaybackResolveCoordinator({
+      engine,
+      cacheStore,
+      providerHealth,
+    });
+
+    const stream = await coordinator.prefetch({
+      title: input.title,
+      episode: input.nextEpisode,
+      mode,
+      providerId: input.providerId,
+      audioPreference:
+        mode === "anime" ? config.animeLanguageProfile.audio : config.seriesLanguageProfile.audio,
+      subtitlePreference:
+        mode === "anime"
+          ? config.animeLanguageProfile.subtitle
+          : config.seriesLanguageProfile.subtitle,
+      qualityPreference:
+        mode === "anime"
+          ? config.animeLanguageProfile.quality
+          : config.seriesLanguageProfile.quality,
+      recoveryMode: config.recoveryMode,
+      signal: input.signal,
+    });
+
+    if (!stream) return null;
+
+    const target: EpisodePrefetchTarget = {
+      titleId: input.title.id,
+      episode: input.nextEpisode,
+      providerId: input.providerId,
+    };
+
+    if (isInteractiveSubtitle) {
+      return { target, stream, prepared: false };
+    }
+
+    const preparedStream = await this.preparePlaybackStream(
+      stream,
+      input.title,
+      input.nextEpisode,
+      context,
+    );
+
+    return { target, stream: preparedStream, prepared: true };
   }
 
   private async preparePlaybackStream(
