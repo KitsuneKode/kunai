@@ -179,6 +179,14 @@ export class SessionController {
             stateManager.dispatch({ type: "RESET_CONTENT" });
             preserveExistingSearch = true;
           }
+          if (outcome === "back_to_search") {
+            // Returning to a fresh search must drop the finished session's
+            // context: clear currentTitle (so the /download context command is
+            // gone) and reset the autoplay/autoskip pause flags (so the
+            // "autoplay paused" banner does not bleed into the new search).
+            stateManager.dispatch({ type: "RESET_CONTENT" });
+            preserveExistingSearch = false;
+          }
           // "mode_switch" falls through to next iteration
         }
       } catch (e) {
