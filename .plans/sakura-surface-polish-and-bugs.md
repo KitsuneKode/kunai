@@ -29,11 +29,18 @@ redesigns** (user-chosen).
       works for some sizes. Likely the detail/companion variant URL or capability.
       Trace `usePosterPreview` in `browse-shell.tsx` DetailsSheet/companion path.
       Needs live terminal.
-- [ ] **A5 — Shift+Enter details does nothing.** Handler exists
-      (`browse-shell.tsx:702` `key.return && key.shift`). Most terminals don't send a
-      distinct code for Shift+Enter, so `key.shift` is never true. **Decision
-      needed:** rebind to a reliable key (e.g. plain `i` for info) or drop the
-      footer hint. `/details` already works.
+- [ ] **A5 — details key + browse focus-zone model.** Shift+Enter can't be
+      detected (terminals don't send a distinct code). Decided: rebind to `i`.
+      BUT `i` as a plain key would be typed into the query, because browse has no
+      focus zones today — typing always edits the query while arrows navigate
+      results in parallel (`browse-shell.tsx` main `useInput`). So A5 requires a
+      **focus-zone state machine** first: - Zones: `input` (default) → `results` → `filter`. - `input` focused: printable keys edit query; `↓` shifts focus to `results`
+      (context moves down, does NOT hijack/clear input). - `results` focused: `↑/↓` navigate; `i` opens details; `enter` plays/opens;
+      a key returns focus to `input` (`↑` at top of list, or a dedicated key);
+      printable keys do NOT leak into the query. - `filter` bar: reachable as its own zone; `↑/↓` move between filter and
+      results/input cleanly. - Footer reflects the active zone's hotkeys; `i` shown as `[i] details`.
+      **Build with live verification (input-handling = high regression risk).**
+      Implement the zone reducer as a tested pure function, then wire + verify feel.
 - [ ] **A6 — "Screenshot Error" ghost poster** top-right of Now Playing (Img 15).
       Stale Kitty image / failed screenshot region. Same cleanup class as the
       LoadingShell fix; check the Now Playing poster/preview path.
