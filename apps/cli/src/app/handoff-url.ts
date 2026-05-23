@@ -1,3 +1,5 @@
+import type { ShellMode, TitleInfo } from "@/domain/types";
+
 export type KunaiHandoffAction = "play" | "download";
 
 export type KunaiHandoffLaunch = {
@@ -10,6 +12,10 @@ export type KunaiHandoffLaunch = {
 };
 
 const SUPPORTED_DIRECT_TYPES = new Set(["movie", "series"]);
+
+export const KUNAI_INSTALL_URL = "https://github.com/KitsuneKode/kunai#install";
+export const KUNAI_INSTALL_SCRIPT_URL =
+  "https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh";
 
 export function parseKunaiHandoffUrl(value: string): KunaiHandoffLaunch | null {
   let url: URL;
@@ -48,6 +54,24 @@ export function parseKunaiHandoffUrl(value: string): KunaiHandoffLaunch | null {
   };
 }
 
+export function buildKunaiPlaybackHandoffUrl(input: {
+  readonly title: Pick<TitleInfo, "id" | "type" | "name" | "externalIds">;
+  readonly mode: ShellMode;
+}): string | null {
+  const tmdbId = resolveTmdbId(input.title);
+  if (tmdbId && input.mode !== "anime" && !input.title.id.startsWith("anilist:")) {
+    const type = input.title.type === "movie" ? "movie" : "series";
+    return `kunai://play?id=${encodeURIComponent(tmdbId)}&type=${type}`;
+  }
+
+  const search = normalizeSearch(input.title.name);
+  if (!search) return null;
+  if (input.mode === "anime" || input.title.id.startsWith("anilist:")) {
+    return `kunai://play?search=${encodeURIComponent(search)}&mode=anime`;
+  }
+  return `kunai://play?search=${encodeURIComponent(search)}`;
+}
+
 export function describeKunaiHandoffLaunch(handoff: KunaiHandoffLaunch): string {
   const target = handoff.search
     ? `search "${handoff.search}"`
@@ -66,6 +90,13 @@ function resolveHandoffAction(url: URL): KunaiHandoffAction | null {
   if (pathAction === "play" || pathAction === "download") return pathAction;
 
   return null;
+}
+
+function resolveTmdbId(title: Pick<TitleInfo, "id" | "externalIds">): string | null {
+  const fromExternal = title.externalIds?.tmdbId?.trim();
+  if (fromExternal) return fromExternal;
+  const match = /^tmdb:(\d+)$/.exec(title.id.trim());
+  return match?.[1] ?? null;
 }
 
 function normalizeSearch(value: string | null): string | null {
