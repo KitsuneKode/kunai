@@ -45,9 +45,9 @@ The Settings panel is the user-facing onboarding surface. Open it with `/presenc
 - `Presence privacy` chooses full title/episode detail or generic private activity.
 - `Discord client ID` lets the user type a numeric Discord application client id, clear the
   configured id, or rely on `KUNAI_DISCORD_CLIENT_ID`.
-- `Discord open URL` lets the user set or clear an optional safe `https://` or `kunai://` activity
-  button URL. Unsafe schemes are rejected by the presence payload builder, and `kunai://` handoffs
-  still require local confirmation.
+- `Discord open URL` lets the user set or clear a reserved safe `https://` or `kunai://` handoff
+  URL for future Discord buttons. The current activity payload ignores it and builds catalog
+  buttons from title ids instead.
 - `Connect Discord now` saves pending settings and verifies local IPC without requiring playback.
 - `Disconnect Discord` clears the current activity and closes the local IPC client.
 

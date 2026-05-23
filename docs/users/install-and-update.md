@@ -10,6 +10,14 @@ Kunai supports source installs, global package installs, and packaged binary-sty
 ## Install
 
 ```sh
+# Interactive installer (OS detection, optional deps, npm/bun/source)
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+
+# Inspect installer actions first
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
+```
+
+```sh
 npm install -g @kitsunekode/kunai
 kunai
 ```

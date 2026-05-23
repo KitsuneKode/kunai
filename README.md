@@ -15,6 +15,12 @@ kunai -S "Dune"
 ### Install
 
 ```bash
+# Interactive installer (detects OS, optional deps, install method)
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+
+# Inspect installer actions first
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
+
 # npm (recommended)
 npm install -g @kitsunekode/kunai
 
