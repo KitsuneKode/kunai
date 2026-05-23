@@ -131,9 +131,12 @@ describe("poster image helpers", () => {
     );
   });
 
-  test("uses original TMDB size for detail contexts", () => {
+  test("caps TMDB detail posters to resized proxy images", () => {
     expect(resolvePosterUrl("/poster.jpg", { cols: 18, variant: "detail" })).toBe(
-      "https://image.tmdb.org/t/p/original/poster.jpg",
+      "https://image.tmdb.org/t/p/w500/poster.jpg",
+    );
+    expect(resolvePosterUrl("/poster.jpg", { cols: 40, variant: "detail" })).toBe(
+      "https://image.tmdb.org/t/p/w780/poster.jpg",
     );
   });
 

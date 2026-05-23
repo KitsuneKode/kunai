@@ -10,7 +10,7 @@ const MAX_SOURCE_CACHE = 24;
 const TMDB_BASE = "https://image.tmdb.org/t/p";
 
 function getTmdbSize(cols: number, variant: "preview" | "detail"): string {
-  if (variant === "detail") return "original";
+  if (variant === "detail") return cols <= 28 ? "w500" : "w780";
   if (cols <= 18) return "w342";
   if (cols <= 28) return "w500";
   return "original";
