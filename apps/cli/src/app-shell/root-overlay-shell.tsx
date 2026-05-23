@@ -17,6 +17,7 @@ import type {
   QuitNearEndThresholdMode,
   RecoveryMode,
 } from "@/services/persistence/ConfigService";
+import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { Box, Text, useInput, useStdout } from "ink";
 import { useEffect, useState } from "react";
 
@@ -52,6 +53,7 @@ import {
   buildRootHistorySelection,
   hasPendingRootHistorySelection,
   resolveRootHistorySelection,
+  releaseProgressToContinueHistoryRelease,
   type RootHistorySelection,
 } from "./root-history-bridge";
 import {
@@ -219,16 +221,12 @@ function readCachedHistoryNextReleases(
   container: Container,
 ): NonNullable<HistoryPickerOptionsContext["nextReleases"]> {
   const releases = new Map<string, ContinueHistoryRelease>();
-  for (const [titleId, entry] of entries) {
-    if (!titleId.startsWith("anilist:") || entry.type !== "series") continue;
-    const schedule = container.catalogScheduleService.peekNextRelease("anilist", titleId);
-    if (!schedule) continue;
-    releases.set(titleId, {
-      status: schedule.status,
-      releaseAt: schedule.releaseAt,
-      season: schedule.season,
-      episode: schedule.episode,
-    });
+  const projections = container.releaseProgressCache.getByTitleIds(
+    entries.map(([titleId]) => titleId),
+  );
+  for (const [titleId] of entries) {
+    const release = releaseProgressToContinueHistoryRelease(projections.get(titleId));
+    if (release) releases.set(titleId, release);
   }
   return releases;
 }
@@ -590,13 +588,11 @@ export function RootOverlayShell({
     }
 
     let cancelled = false;
-    let ctl: AbortController | null = null;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
     setLoadingAsyncLines(true);
 
     void container.historyStore
       .getAll()
-      .then(async (entries) => {
+      .then((entries) => {
         if (cancelled) return undefined;
         const historyEntries = Object.entries(entries);
         setHistorySelections(
@@ -607,19 +603,7 @@ export function RootOverlayShell({
         );
         setAsyncLines(buildHistoryPanelLines(historyEntries));
         setHistoryNextReleases(readCachedHistoryNextReleases(historyEntries, container));
-        const anilistIds = historyEntries
-          .filter(([titleId, entry]) => titleId.startsWith("anilist:") && entry.type === "series")
-          .map(([titleId]) => titleId);
-        if (anilistIds.length === 0) return undefined;
-        ctl = new AbortController();
-        timeout = setTimeout(() => ctl?.abort(), 3000);
-        await container.catalogScheduleService
-          .prefetchNextReleaseForTitles("anilist", anilistIds, ctl.signal)
-          .catch(() => {});
-        if (timeout) clearTimeout(timeout);
-        timeout = null;
-        if (cancelled) return undefined;
-        setHistoryNextReleases(readCachedHistoryNextReleases(historyEntries, container));
+        enqueueReleaseReconciliation(container, historyEntries, "history");
         return undefined;
       })
       .finally(() => {
@@ -630,8 +614,6 @@ export function RootOverlayShell({
 
     return () => {
       cancelled = true;
-      ctl?.abort();
-      if (timeout) clearTimeout(timeout);
     };
   }, [container, container.historyStore, overlay.type]);
 

@@ -4,6 +4,8 @@ import type {
   CatalogScheduleItem,
   CatalogScheduleMode,
 } from "@/services/catalog/CatalogScheduleService";
+import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
+import type { ReleaseProgressCacheRepository, ReleaseProgressProjection } from "@kunai/storage";
 
 export type CalendarResultBundle = {
   readonly results: readonly SearchResult[];
@@ -11,8 +13,13 @@ export type CalendarResultBundle = {
   readonly emptyMessage: string;
 };
 
+type CalendarContainer = Pick<Container, "stateManager" | "timelineService" | "listService"> & {
+  readonly historyStore?: Pick<HistoryStore, "getAll">;
+  readonly releaseProgressCache?: Pick<ReleaseProgressCacheRepository, "getByTitleIds" | "upsert">;
+};
+
 export async function loadCalendarResults(
-  container: Pick<Container, "stateManager" | "timelineService" | "listService">,
+  container: CalendarContainer,
   signal?: AbortSignal,
 ): Promise<CalendarResultBundle> {
   const mode = container.stateManager.getState().mode;
@@ -20,25 +27,126 @@ export async function loadCalendarResults(
   const items = await loadCalendarWindow(container.timelineService, mode, days, signal);
   const sorted = [...items].sort(compareCalendarItems);
   const isInWatchlist = (titleId: string) => container.listService.isInWatchlist(titleId);
-  const results = sorted.map((item) => toCalendarSearchResult(item, isInWatchlist));
+  let historyMatches = new Map<
+    string,
+    { readonly titleId: string; readonly entry: HistoryEntry }
+  >();
+  if (container.historyStore) {
+    historyMatches = matchCalendarHistory(sorted, await container.historyStore.getAll());
+  }
+  const projectionIds = [
+    ...new Set([
+      ...sorted.map((item) => item.titleId),
+      ...[...historyMatches.values()].map((match) => match.titleId),
+    ]),
+  ];
+  const storedProgress = container.releaseProgressCache?.getByTitleIds(projectionIds) ?? new Map();
+  let releaseProgress = projectProgressForCalendarItems(sorted, historyMatches, storedProgress);
+  if (container.releaseProgressCache?.upsert && container.historyStore) {
+    for (const item of sorted) {
+      const match = historyMatches.get(item.titleId);
+      const entry = match?.entry;
+      if (!entry || item.status !== "released" || typeof item.episode !== "number") continue;
+      if (entry.type !== "series" || item.episode <= entry.episode) continue;
+      if (
+        item.source === "tmdb" &&
+        typeof item.season === "number" &&
+        item.season !== entry.season
+      ) {
+        continue;
+      }
+      const existing = releaseProgress.get(item.titleId);
+      if (existing && existing.latestAiredEpisode && existing.latestAiredEpisode >= item.episode) {
+        continue;
+      }
+      const now = new Date().toISOString();
+      const projection: ReleaseProgressProjection = {
+        titleId: match.titleId,
+        mediaKind: entry.mediaKind ?? (item.type === "anime" ? "anime" : "series"),
+        source: item.source,
+        title: entry.title,
+        anchorSeason: entry.season,
+        anchorEpisode: entry.episode,
+        latestAiredSeason: item.season ?? entry.season,
+        latestAiredEpisode: item.episode,
+        newEpisodeCount: Math.max(0, item.episode - entry.episode),
+        status: "new-episodes",
+        checkedAt: now,
+        nextCheckAt: now,
+        staleAfterAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        latestKnownReleaseAt: item.releaseAt ?? undefined,
+        sourceFingerprint: `calendar:${item.source}:${item.titleId}:${item.episode}:${item.releaseAt ?? "-"}`,
+        errorCount: 0,
+      };
+      container.releaseProgressCache.upsert(projection);
+      releaseProgress = new Map(releaseProgress).set(item.titleId, projection);
+    }
+  }
+  const results = sorted.map((item) =>
+    toCalendarSearchResult(item, isInWatchlist, releaseProgress.get(item.titleId)),
+  );
   const releasedCount = sorted.filter((item) => item.status === "released").length;
   const airingTodayCount = sorted.filter(
     (item) => item.status !== "released" && isSameLocalDay(item.releaseAt, Date.now()),
   ).length;
+  const newEpisodeCount = [...releaseProgress.values()].reduce(
+    (total, projection) => total + activeNewEpisodeCount(projection),
+    0,
+  );
+  const newEpisodeSuffix = newEpisodeCount > 0 ? ` · ${newEpisodeCount} new for you` : "";
 
   return {
     results,
     subtitle:
       results.length > 0
-        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released · ${mode} schedule`
+        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released · ${mode} schedule${newEpisodeSuffix}`
         : `No ${mode} releases found for the next week`,
     emptyMessage: `No ${mode} releases found for the next week. Search and recommendations still work normally.`,
   };
 }
 
+function matchCalendarHistory(
+  items: readonly CatalogScheduleItem[],
+  entries: Record<string, HistoryEntry>,
+): Map<string, { readonly titleId: string; readonly entry: HistoryEntry }> {
+  const matches = new Map<string, { readonly titleId: string; readonly entry: HistoryEntry }>();
+  const indexedEntries = Object.entries(entries);
+  for (const item of items) {
+    const direct = entries[item.titleId];
+    if (direct) {
+      matches.set(item.titleId, { titleId: item.titleId, entry: direct });
+      continue;
+    }
+    const rawId = item.titleId.startsWith(`${item.source}:`)
+      ? item.titleId.slice(item.source.length + 1)
+      : item.titleId;
+    const match = indexedEntries.find(([, entry]) =>
+      item.source === "anilist"
+        ? entry.externalIds?.anilistId === rawId
+        : entry.externalIds?.tmdbId === rawId,
+    );
+    if (match) matches.set(item.titleId, { titleId: match[0], entry: match[1] });
+  }
+  return matches;
+}
+
+function projectProgressForCalendarItems(
+  items: readonly CatalogScheduleItem[],
+  matches: ReadonlyMap<string, { readonly titleId: string }>,
+  storedProgress: ReadonlyMap<string, ReleaseProgressProjection>,
+): Map<string, ReleaseProgressProjection> {
+  const projected = new Map<string, ReleaseProgressProjection>();
+  for (const item of items) {
+    const progress = storedProgress.get(matches.get(item.titleId)?.titleId ?? item.titleId);
+    if (progress) projected.set(item.titleId, progress);
+  }
+  return projected;
+}
+
 function toCalendarSearchResult(
   item: CatalogScheduleItem,
   isInWatchlist?: (titleId: string) => boolean,
+  releaseProgress?: ReleaseProgressProjection,
 ): SearchResult {
   const releaseLabel = describeCalendarRelease(item);
   const source = item.source === "anilist" ? "AniList" : "TMDB";
@@ -61,11 +169,14 @@ function toCalendarSearchResult(
     popularity: item.popularity,
     displayGroup: groupLabel,
     displayTime: timeLabel,
-    displayBadge: isInWatchlist?.(item.titleId)
-      ? "wl"
-      : typeof item.episode === "number"
-        ? `E${item.episode}`
-        : undefined,
+    displayBadge:
+      activeNewEpisodeCount(releaseProgress) > 0
+        ? `${activeNewEpisodeCount(releaseProgress)} new`
+        : isInWatchlist?.(item.titleId)
+          ? "wl"
+          : typeof item.episode === "number"
+            ? `E${item.episode}`
+            : undefined,
     displayReleaseStatus:
       item.status === "released"
         ? "released"
@@ -74,6 +185,13 @@ function toCalendarSearchResult(
           : "upcoming",
     episodeCount: item.episode,
   };
+}
+
+function activeNewEpisodeCount(projection: ReleaseProgressProjection | undefined): number {
+  if (!projection || projection.status !== "new-episodes") return 0;
+  const staleAfterMs = Date.parse(projection.staleAfterAt);
+  if (Number.isFinite(staleAfterMs) && staleAfterMs <= Date.now()) return 0;
+  return Math.max(0, Math.trunc(projection.newEpisodeCount));
 }
 
 async function loadCalendarWindow(

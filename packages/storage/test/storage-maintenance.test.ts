@@ -42,6 +42,8 @@ test("cache maintenance prunes disposable expired rows without touching durable 
     scheduleCache: 1,
     resolveTraces: 1,
     providerHealth: 1,
+    titleProviderHealth: 0,
+    releaseProgress: 0,
   });
   expect(count(dataDb, "history_progress")).toBe(2);
   expect(count(dataDb, "list_items")).toBe(1);

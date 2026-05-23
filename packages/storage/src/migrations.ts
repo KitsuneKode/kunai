@@ -427,6 +427,60 @@ export const cacheMigrations: readonly Migration[] = [
         ON schedule_cache(mode, expires_at);
     `,
   },
+  {
+    id: "007_cache_release_progress",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS release_progress_cache (
+        title_id TEXT PRIMARY KEY,
+        media_kind TEXT NOT NULL,
+        source TEXT NOT NULL,
+        title TEXT NOT NULL,
+        anchor_season INTEGER,
+        anchor_episode INTEGER NOT NULL,
+        latest_aired_season INTEGER,
+        latest_aired_episode INTEGER,
+        new_episode_count INTEGER NOT NULL DEFAULT 0,
+        next_airing_season INTEGER,
+        next_airing_episode INTEGER,
+        next_airing_at TEXT,
+        latest_known_release_at TEXT,
+        status TEXT NOT NULL,
+        checked_at TEXT NOT NULL,
+        next_check_at TEXT NOT NULL,
+        stale_after_at TEXT NOT NULL,
+        source_fingerprint TEXT NOT NULL,
+        error_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_release_progress_next_check
+        ON release_progress_cache(next_check_at ASC);
+
+      CREATE INDEX IF NOT EXISTS idx_release_progress_status
+        ON release_progress_cache(status, new_episode_count DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_release_progress_stale_after
+        ON release_progress_cache(stale_after_at ASC);
+    `,
+  },
+  {
+    id: "008_cache_title_provider_health",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS title_provider_health (
+        title_id TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        health_json TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (title_id, provider_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_title_provider_health_expires_at
+        ON title_provider_health(expires_at ASC);
+    `,
+  },
 ];
 
 export function runMigrations(

@@ -1,6 +1,6 @@
 # Catalog Release Schedule Service Plan
 
-Status: in progress
+Status: implemented core schedule and release-projection path 2026-05-24; TV weekly/season-rollover extension remains
 
 ## Goal
 
@@ -56,6 +56,11 @@ interface CatalogScheduleService {
     days: number,
     signal?: AbortSignal,
   ): Promise<readonly CatalogScheduleItem[]>;
+  prefetchAnimeReleaseProgressForTitles(
+    titleIds: readonly string[],
+    signal: AbortSignal,
+  ): Promise<void>;
+  peekAnimeReleaseProgress(titleId: string): CatalogSeriesReleaseProgress | null;
 }
 ```
 
@@ -68,6 +73,8 @@ interface CatalogScheduleService {
   - 2 hours for next-airing metadata
   - 24 hours for historical released dates
 - Abort unused requests, but cache healthy completed responses even if the UI no longer needs them.
+- Surface typed network/rate-limit/timeout/unavailable failures so reconciliation backs off rather than quietly repeating work.
+- Coalesce background reconciliation under one scheduler identity; AniList progress reads are batch/deduped and TMDB season reads are bounded and sequential.
 
 ## Implementation Slices
 
@@ -91,6 +98,8 @@ Completed in `CatalogScheduleService` with deterministic cache/in-flight tests.
 - Add direct schedule fetch by AniList id for playback pages.
 - When the provider list omits the next episode but AniList says the next airing is future, show that instead of generic uncertainty.
 
+Completed: the reconciliation query reads both `nextAiringEpisode` and finished-series totals, so a completed show still produces accurate catalog-new counts.
+
 ### Slice 4: Shell Surfaces
 
 - Add browse/discover badges:
@@ -111,6 +120,9 @@ Calendar AniList rows are also remapped through the active anime provider before
 playback, so selecting an anime calendar row opens the normal provider-backed
 episode/source flow instead of treating the AniList id as provider-native.
 
+Calendar projection joins also use stored external catalog IDs, so provider-native
+history keys can receive AniList-backed `N new` badges without extra network work.
+
 ### Remaining Calendar Ambition
 
 - Add date-group headers in the picker model so anime can render as `Today`,
@@ -119,6 +131,7 @@ episode/source flow instead of treating the AniList id as provider-native.
   `upcoming`) without provider lookups.
 - Add a popular-airing sort/filter once the picker can expose sort modes cleanly.
 - Expand TV/series beyond `airing today` with a separate TMDB weekly plan.
+- Add TMDB TV-details-backed season rollover; current reconciliation refuses to guess across seasons.
 
 ## Verification
 

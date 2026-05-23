@@ -10,6 +10,18 @@ export type CatalogScheduleType = "anime" | "series" | "movie";
 export type CatalogReleasePrecision = "date" | "timestamp" | "unknown";
 export type CatalogReleaseStatus = "released" | "upcoming" | "unknown";
 export type CatalogScheduleMode = "anime" | "series";
+export type CatalogScheduleFailureClass = "network" | "rate-limited" | "timeout" | "unavailable";
+
+export class CatalogScheduleRequestError extends Error {
+  constructor(
+    readonly failureClass: CatalogScheduleFailureClass,
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "CatalogScheduleRequestError";
+  }
+}
 
 export type CatalogScheduleItem = {
   readonly source: CatalogScheduleSource;
@@ -52,6 +64,24 @@ export type CatalogScheduleLoaders = {
     window: CatalogScheduleWindow,
     signal?: AbortSignal,
   ) => Promise<readonly CatalogScheduleItem[]>;
+  readonly seriesProgress?: (
+    input: CatalogScheduleInput,
+    signal?: AbortSignal,
+  ) => Promise<CatalogSeriesReleaseProgress | null>;
+  readonly animeProgress?: (
+    titleIds: readonly string[],
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyMap<string, CatalogSeriesReleaseProgress | null>>;
+};
+
+export type CatalogSeriesReleaseProgress = {
+  readonly latestAiredSeason?: number;
+  readonly latestAiredEpisode?: number;
+  readonly nextAiringSeason?: number;
+  readonly nextAiringEpisode?: number;
+  readonly nextAiringAt?: string;
+  readonly latestKnownReleaseAt?: string;
+  readonly sourceFingerprint: string;
 };
 
 export type CatalogScheduleCacheStore = {
@@ -104,6 +134,73 @@ export class CatalogScheduleService {
     const persisted = this.loadPersisted<CatalogScheduleItem | null>(key);
     if (persisted.found) return persisted.value;
     return null;
+  }
+
+  peekAnimeReleaseProgress(titleId: string): CatalogSeriesReleaseProgress | null {
+    const rawId = titleId.startsWith("anilist:") ? titleId.slice("anilist:".length) : titleId;
+    const key = `progress:anilist:anime:${rawId}`;
+    const cached = this.cache.get(key);
+    if (cached && cached.expiresAt > this.now())
+      return cached.value as CatalogSeriesReleaseProgress | null;
+    const persisted = this.loadPersisted<CatalogSeriesReleaseProgress | null>(key);
+    return persisted.found ? persisted.value : null;
+  }
+
+  async prefetchAnimeReleaseProgressForTitles(
+    titleIds: readonly string[],
+    signal: AbortSignal,
+    refreshThresholdMs = NEXT_RELEASE_TTL_MS / 2,
+  ): Promise<void> {
+    const nowMs = this.now();
+    const staleIds: string[] = [];
+    for (const titleId of titleIds) {
+      const rawId = titleId.startsWith("anilist:") ? titleId.slice("anilist:".length) : titleId;
+      if (!Number.isFinite(Number(rawId))) continue;
+      const key = `progress:anilist:anime:${rawId}`;
+      const cached = this.cache.get(key);
+      if (cached && cached.expiresAt > nowMs + refreshThresholdMs) continue;
+      if (!cached) {
+        const persisted = this.loadPersisted<CatalogSeriesReleaseProgress | null>(key);
+        const hydrated = this.cache.get(key);
+        if (persisted.found && hydrated && hydrated.expiresAt > nowMs + refreshThresholdMs) {
+          continue;
+        }
+      }
+      staleIds.push(rawId);
+    }
+    if (staleIds.length === 0 || signal.aborted) return;
+
+    const uniqueIds = [...new Set(staleIds)].sort();
+    const inflightKey = `progress-batch:anilist:${uniqueIds.join(",")}`;
+    const active = this.inflight.get(inflightKey);
+    if (active) {
+      await active;
+      return;
+    }
+
+    const task = (this.loaders.animeProgress ?? loadAniListReleaseProgressBatch)(
+      uniqueIds,
+      signal,
+    ).then((progressById) => {
+      for (const titleId of uniqueIds) {
+        const key = `progress:anilist:anime:${titleId}`;
+        const progress = progressById.get(titleId) ?? null;
+        const expiresAt = nowMs + NEXT_RELEASE_TTL_MS;
+        this.cache.set(key, { expiresAt, value: progress });
+        this.persistentCache?.set(key, JSON.stringify(progress), {
+          expiresAt: new Date(expiresAt).toISOString(),
+          now: new Date(nowMs).toISOString(),
+          source: "anilist",
+        });
+      }
+      return undefined;
+    });
+    this.inflight.set(inflightKey, task);
+    try {
+      await task;
+    } finally {
+      this.inflight.delete(inflightKey);
+    }
   }
 
   /**
@@ -212,6 +309,17 @@ export class CatalogScheduleService {
       const item = await this.loaders.nextRelease(input, signal);
       return item ? normalizeScheduleItem(item, this.now()) : null;
     });
+  }
+
+  async getSeriesReleaseProgress(
+    input: CatalogScheduleInput,
+    signal?: AbortSignal,
+  ): Promise<CatalogSeriesReleaseProgress | null> {
+    if (input.source !== "tmdb" || input.type !== "series" || !input.season) return null;
+    const key = `progress:${input.source}:${input.type}:${input.titleId}:${input.season}`;
+    return this.loadCached(key, NEXT_RELEASE_TTL_MS, signal, { source: input.source }, async () =>
+      (this.loaders.seriesProgress ?? loadTmdbSeriesReleaseProgress)(input, signal),
+    );
   }
 
   async loadReleasingToday(
@@ -384,7 +492,57 @@ const defaultCatalogScheduleLoaders: CatalogScheduleLoaders = {
     mode === "anime"
       ? loadAniListReleasingToday(window, signal)
       : loadTmdbAiringToday(window, signal),
+  seriesProgress: loadTmdbSeriesReleaseProgress,
+  animeProgress: loadAniListReleaseProgressBatch,
 };
+
+async function loadAniListReleaseProgressBatch(
+  titleIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<ReadonlyMap<string, CatalogSeriesReleaseProgress | null>> {
+  const ids = titleIds.map(Number).filter(Number.isFinite);
+  if (ids.length === 0) return new Map();
+  const query = `query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){id episodes status nextAiringEpisode{airingAt episode}}}}`;
+  const data = await postAniListGraphql<{
+    readonly data?: {
+      readonly Page?: {
+        readonly media?: readonly {
+          readonly id?: number;
+          readonly episodes?: number | null;
+          readonly status?: string | null;
+          readonly nextAiringEpisode?: {
+            readonly airingAt?: number | null;
+            readonly episode?: number | null;
+          } | null;
+        }[];
+      } | null;
+    };
+  }>({ query, variables: { ids } }, signal);
+  const progress = new Map<string, CatalogSeriesReleaseProgress | null>();
+  for (const media of data?.data?.Page?.media ?? []) {
+    if (!media?.id) continue;
+    const titleId = String(media.id);
+    const airing = media.nextAiringEpisode;
+    if (typeof airing?.episode === "number" && airing.episode > 0) {
+      progress.set(titleId, {
+        latestAiredEpisode: Math.max(0, airing.episode - 1),
+        nextAiringEpisode: airing.episode,
+        nextAiringAt: airing.airingAt ? new Date(airing.airingAt * 1000).toISOString() : undefined,
+        sourceFingerprint: `anilist:${titleId}:ongoing:${airing.episode}:${airing.airingAt ?? "-"}`,
+      });
+      continue;
+    }
+    if (media.status === "FINISHED" && typeof media.episodes === "number" && media.episodes > 0) {
+      progress.set(titleId, {
+        latestAiredEpisode: media.episodes,
+        sourceFingerprint: `anilist:${titleId}:finished:${media.episodes}`,
+      });
+    } else {
+      progress.set(titleId, null);
+    }
+  }
+  return progress;
+}
 
 async function loadAniListNextRelease(
   input: CatalogScheduleInput,
@@ -538,6 +696,46 @@ async function loadTmdbNextRelease(
   };
 }
 
+async function loadTmdbSeriesReleaseProgress(
+  input: CatalogScheduleInput,
+  signal?: AbortSignal,
+): Promise<CatalogSeriesReleaseProgress | null> {
+  if (!input.season) return null;
+  const data = await fetchJson(
+    `${VIDEASY_TMDB_URL}/tv/${input.titleId}/season/${input.season}`,
+    signal,
+  );
+  const episodePayload = readRecord(data).episodes;
+  const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+  const today = formatDateKey(new Date());
+  const normalEpisodes = episodes
+    .map((episode) => ({
+      number: Number(episode.episode_number),
+      releaseAt: readString(episode.air_date),
+    }))
+    .filter(
+      (episode) =>
+        Number.isFinite(episode.number) && episode.number > 0 && episode.releaseAt.length > 0,
+    );
+  const aired = normalEpisodes
+    .filter((episode) => episode.releaseAt <= today)
+    .sort((left, right) => right.number - left.number)[0];
+  const next = normalEpisodes
+    .filter((episode) => episode.releaseAt > today)
+    .sort((left, right) => left.number - right.number)[0];
+  if (!aired && !next) return null;
+
+  return {
+    latestAiredSeason: aired ? input.season : undefined,
+    latestAiredEpisode: aired?.number,
+    nextAiringSeason: next ? input.season : undefined,
+    nextAiringEpisode: next?.number,
+    nextAiringAt: next?.releaseAt,
+    latestKnownReleaseAt: aired?.releaseAt,
+    sourceFingerprint: `tmdb:${input.titleId}:${input.season}:${aired?.number ?? "-"}:${next?.number ?? "-"}`,
+  };
+}
+
 async function loadTmdbAiringToday(
   _window: CatalogScheduleWindow,
   signal?: AbortSignal,
@@ -568,25 +766,48 @@ async function postAniListGraphql<T>(
   body: { readonly query: string; readonly variables?: Record<string, unknown> },
   signal?: AbortSignal,
 ): Promise<T | null> {
-  const response = await fetch(ANILIST_GRAPHQL_URL, {
-    method: "POST",
-    signal: signal ?? AbortSignal.timeout(3500),
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  }).catch(() => null);
-  if (!response?.ok) return null;
-  return (await response.json()) as T;
+  try {
+    const response = await fetch(ANILIST_GRAPHQL_URL, {
+      method: "POST",
+      signal: signal ?? AbortSignal.timeout(3500),
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw catalogResponseError(response.status);
+    return (await response.json()) as T;
+  } catch (error) {
+    throw normalizeCatalogError(error);
+  }
 }
 
 async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
-  const response = await fetch(url, { signal: signal ?? AbortSignal.timeout(3500) }).catch(
-    () => null,
-  );
-  if (!response?.ok) return null;
-  return response.json();
+  try {
+    const response = await fetch(url, { signal: signal ?? AbortSignal.timeout(3500) });
+    if (!response.ok) throw catalogResponseError(response.status);
+    return response.json();
+  } catch (error) {
+    throw normalizeCatalogError(error);
+  }
+}
+
+function catalogResponseError(status: number): CatalogScheduleRequestError {
+  if (status === 429)
+    return new CatalogScheduleRequestError("rate-limited", "catalog rate limited", status);
+  if (status === 408 || status === 504)
+    return new CatalogScheduleRequestError("timeout", "catalog request timed out", status);
+  return new CatalogScheduleRequestError("unavailable", "catalog unavailable", status);
+}
+
+function normalizeCatalogError(error: unknown): Error {
+  if (error instanceof CatalogScheduleRequestError) return error;
+  if (error instanceof Error && error.name === "AbortError") return error;
+  if (error instanceof Error && /timeout|timed out/i.test(error.message)) {
+    return new CatalogScheduleRequestError("timeout", "catalog request timed out");
+  }
+  return new CatalogScheduleRequestError("network", "catalog network request failed");
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

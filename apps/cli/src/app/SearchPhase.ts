@@ -35,6 +35,7 @@ import {
 } from "@/services/catalog/ResultEnrichmentService";
 import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -75,6 +76,7 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
 
 export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   name = "search";
+  private hasQueuedStartupReleaseReconciliation = false;
 
   async execute(
     input: SearchPhaseInput | void,
@@ -198,16 +200,21 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         const browseContext = await loadBrowseDisplayContext(container, currentState.searchResults);
 
         const playlistNextItem = container.playlistService.peekNext();
-        const activeNotifications = container.notificationService.listActive();
-        const todayReleaseCount = activeNotifications.filter(
-          (n) => n.kind === "new-episode",
-        ).length;
+        const releaseSummary = container.releaseProgressCache.summarizeActive();
+        const todayReleaseCount = releaseSummary.episodeCount;
 
         // Find the most-recent in-progress history entry to show a "continue" hint
         let continueWatching: import("@/app-shell/types").BrowseIdleContext["continueWatching"];
         let continueWatchingSelection: HistoryLaunchSelection | null = null;
         try {
           const allHistory = await container.historyStore.getAll();
+          enqueueReleaseReconciliation(
+            container,
+            Object.entries(allHistory),
+            this.hasQueuedStartupReleaseReconciliation ? "browse-idle" : "startup",
+            context.signal,
+          );
+          this.hasQueuedStartupReleaseReconciliation = true;
           const inProgress = Object.entries(allHistory)
             .filter(([, e]) => !e.completed && e.timestamp > 30)
             .sort(
@@ -252,6 +259,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   : undefined,
                 continueWatching,
                 todayReleaseCount,
+                todayReleaseTitleCount: releaseSummary.titleCount,
               }
             : undefined;
 

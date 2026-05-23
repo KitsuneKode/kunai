@@ -22,7 +22,6 @@ import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelection
 import type { EpisodePickerOption, StreamInfo, TitleInfo } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
-import type { CatalogScheduleService } from "@/services/catalog/CatalogScheduleService";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
 import {
@@ -50,8 +49,13 @@ import {
 } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
+import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
-import { getKunaiPaths, type DownloadJobRecord } from "@kunai/storage";
+import {
+  getKunaiPaths,
+  type DownloadJobRecord,
+  type ReleaseProgressCacheRepository,
+} from "@kunai/storage";
 
 import { resolveCommands } from "./commands";
 import { openSessionPicker } from "./session-picker";
@@ -146,6 +150,8 @@ type CompletedDownloadAction =
   | "delete-job"
   | "delete-artifact"
   | "back";
+
+type ReleaseProgressCacheReader = Pick<ReleaseProgressCacheRepository, "getByTitleIds">;
 
 export type SetupWizardResult = "completed" | "cancelled" | "skipped";
 
@@ -316,47 +322,25 @@ function describeDownloadJob(job: DownloadJobRecord): string {
 async function openHistoryShell(
   historyStore: HistoryStore,
   actionContext?: ListShellActionContext,
-  catalogScheduleService?: CatalogScheduleService,
+  releaseProgressCache?: ReleaseProgressCacheReader,
   stateManager?: import("@/domain/session/SessionStateManager").SessionStateManager,
   playlistService?: import("@/domain/lists/PlaylistService").PlaylistService,
 ): Promise<void> {
-  // Proactively refresh schedule cache for all anime history entries in one batch request.
-  // Runs before the loop: first render gets fresh data. 3s timeout degrades gracefully to
-  // cached/no badges rather than blocking the view on a slow or failing network.
-  if (catalogScheduleService) {
-    const allEntries = await historyStore.getAll();
-    const anilistIds = Object.keys(allEntries).filter(
-      (id) => id.startsWith("anilist:") && allEntries[id]?.type === "series",
-    );
-    if (anilistIds.length > 0) {
-      const ctl = new AbortController();
-      const timeout = setTimeout(() => ctl.abort(), 3000);
-      await catalogScheduleService
-        .prefetchNextReleaseForTitles("anilist", anilistIds, ctl.signal)
-        .catch(() => {});
-      clearTimeout(timeout);
-    }
-  }
-
   while (true) {
     const entries = Object.entries(await historyStore.getAll()).sort(
       (a, b) =>
         (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
     );
 
-    // Build new-episode counts + poster paths from the (now-fresh) schedule cache.
+    // Build new-episode counts from the local reconciliation cache only.
     const newEpisodeCounts = new Map<string, number>();
-    const posterPaths = new Map<string, string>();
-    if (catalogScheduleService) {
+    const releaseProgress = releaseProgressCache?.getByTitleIds(entries.map(([id]) => id));
+    if (releaseProgress) {
       for (const [id, entry] of entries) {
-        if (!id.startsWith("anilist:")) continue;
-        const schedule = catalogScheduleService.peekNextRelease("anilist", id);
-        if (!schedule) continue;
-        if (schedule.posterPath) posterPaths.set(id, schedule.posterPath);
-        if (entry.type !== "series" || !schedule.episode) continue;
-        const lastAired = schedule.episode - 1;
-        const lastWatched = entry.episode ?? 0;
-        if (lastAired > lastWatched) newEpisodeCounts.set(id, lastAired - lastWatched);
+        if (entry.type !== "series") continue;
+        const projection = releaseProgress.get(id);
+        if (!projection || projection.status !== "new-episodes") continue;
+        if (projection.newEpisodeCount > 0) newEpisodeCounts.set(id, projection.newEpisodeCount);
       }
     }
 
@@ -367,7 +351,6 @@ async function openHistoryShell(
           value: { type: "entry" as const, id, title: entry.title, entryType: entry.type },
           label: formatHistoryLabel(entry, newCount),
           detail: formatHistoryDetail(entry, newCount),
-          previewImageUrl: posterPaths.get(id),
         };
       }),
       ...(entries.length > 0
@@ -1207,12 +1190,16 @@ const withOverlay = async <T>(
 };
 
 async function handleHistory(container: Container): Promise<"handled"> {
-  const { stateManager, historyStore, catalogScheduleService, playlistService } = container;
+  const { stateManager, historyStore, releaseProgressCache, playlistService } = container;
+  void historyStore.getAll().then((history) => {
+    enqueueReleaseReconciliation(container, Object.entries(history), "history");
+    return undefined;
+  });
   await withOverlay(stateManager, { type: "history" }, () =>
     openHistoryShell(
       historyStore,
       buildPickerActionContext({ container, taskLabel: "Watch history" }),
-      catalogScheduleService,
+      releaseProgressCache,
       stateManager,
       playlistService,
     ),
@@ -2238,7 +2225,7 @@ export async function openSettingsShell({
         await openHistoryShell(
           historyStore,
           actionContext,
-          container?.catalogScheduleService,
+          container?.releaseProgressCache,
           container?.stateManager,
           container?.playlistService,
         );
@@ -2664,7 +2651,7 @@ export async function openSettingsShell({
 // ─── Watchlist ─────────────────────────────────────────────────────────────────
 
 async function handleWatchlist(container: Container): Promise<"handled"> {
-  const { listService, historyStore, catalogScheduleService } = container;
+  const { listService, historyStore, releaseProgressCache } = container;
   const actionContext = buildPickerActionContext({ container, taskLabel: "Watchlist" });
 
   while (true) {
@@ -2674,11 +2661,12 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     const progressMap = new Map<string, string>();
     const nextEpisodeMap = new Map<string, string>();
     const newEpisodeMap = new Map<string, number>();
+    const history = await historyStore.getAll();
+    const releaseProjections = releaseProgressCache.getByTitleIds(
+      items.map((item) => item.titleId),
+    );
     for (const item of items) {
-      const entries = await historyStore.listByTitle(item.titleId);
-      if (entries.length === 0) continue;
-      const sorted = [...entries].sort((a, b) => Date.parse(b.watchedAt) - Date.parse(a.watchedAt));
-      const latest = sorted[0];
+      const latest = history[item.titleId];
       if (!latest) continue;
       const epCode =
         latest.type === "series" && latest.season && latest.episode
@@ -2698,13 +2686,9 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
         if (nextEp) nextEpisodeMap.set(item.titleId, nextEp);
       }
 
-      if (item.titleId.startsWith("anilist:")) {
-        const schedule = catalogScheduleService.peekNextRelease("anilist", item.titleId);
-        if (schedule?.episode) {
-          const lastAired = schedule.episode - 1;
-          const delta = Math.max(0, lastAired - (latest.episode ?? 0));
-          if (delta > 0) newEpisodeMap.set(item.titleId, delta);
-        }
+      const release = releaseProjections.get(item.titleId);
+      if (release?.status === "new-episodes" && release.newEpisodeCount > 0) {
+        newEpisodeMap.set(item.titleId, release.newEpisodeCount);
       }
     }
 

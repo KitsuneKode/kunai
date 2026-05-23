@@ -23,8 +23,17 @@ export type {
   DownloadJobStatus,
 } from "./repositories/download-jobs";
 export { ProviderHealthRepository } from "./repositories/provider-health";
+export { TitleProviderHealthRepository } from "./repositories/title-provider-health";
+export type { TitleProviderHealthRecord } from "./repositories/title-provider-health";
 export { ResolveTraceRepository } from "./repositories/resolve-trace";
 export { RecommendationCacheRepository } from "./repositories/recommendation-cache";
+export { ReleaseProgressCacheRepository } from "./repositories/release-progress-cache";
+export type {
+  ReleaseProgressProjection,
+  ReleaseProgressSource,
+  ReleaseProgressStatus,
+  ReleaseProgressSummary,
+} from "./repositories/release-progress-cache";
 export { ScheduleCacheRepository } from "./repositories/schedule-cache";
 export type { ScheduleCacheEntry, ScheduleCacheSetOptions } from "./repositories/schedule-cache";
 export { SourceInventoryRepository } from "./repositories/source-inventory";

@@ -187,6 +187,7 @@ export type BrowseIdleContext = {
     mediaKind?: "movie" | "series";
   };
   todayReleaseCount?: number;
+  todayReleaseTitleCount?: number;
 };
 
 export type BrowseShellOption<T> = {

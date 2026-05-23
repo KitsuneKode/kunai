@@ -12,6 +12,19 @@ export type DiagnosticOperationCatalogEntry = {
 
 export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEntry[] = [
   {
+    operation: "release-reconciliation.refresh",
+    category: "cache",
+    audience: "developer",
+    summary: "Catalog release progress was refreshed in a bounded background pass.",
+  },
+  {
+    operation: "provider.title-health.suggestion",
+    category: "provider",
+    audience: "both",
+    summary: "Repeated title-scoped failures justify offering a working fallback.",
+    userAction: "Choose the suggested provider for this title, or keep the current provider.",
+  },
+  {
     operation: "playback.recover.requested",
     category: "playback",
     audience: "both",

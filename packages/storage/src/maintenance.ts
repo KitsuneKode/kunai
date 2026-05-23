@@ -18,6 +18,8 @@ export interface CacheMaintenancePruneCounts {
   readonly scheduleCache: number;
   readonly resolveTraces: number;
   readonly providerHealth: number;
+  readonly titleProviderHealth: number;
+  readonly releaseProgress: number;
 }
 
 export interface DatabaseMaintenanceResult {
@@ -34,6 +36,8 @@ const EMPTY_PRUNE_COUNTS: CacheMaintenancePruneCounts = {
   scheduleCache: 0,
   resolveTraces: 0,
   providerHealth: 0,
+  titleProviderHealth: 0,
+  releaseProgress: 0,
 };
 
 export function runDatabaseMaintenance(
@@ -115,6 +119,16 @@ function pruneCacheTables(
       "DELETE FROM provider_health WHERE checked_at <= ?",
       staleProviderHealthBefore,
     );
+    const titleProviderHealth = deleteRows(
+      db,
+      "DELETE FROM title_provider_health WHERE expires_at <= ?",
+      nowIso,
+    );
+    const releaseProgress = deleteRows(
+      db,
+      "DELETE FROM release_progress_cache WHERE stale_after_at <= ?",
+      nowIso,
+    );
 
     return {
       streamCache,
@@ -123,6 +137,8 @@ function pruneCacheTables(
       scheduleCache,
       resolveTraces,
       providerHealth,
+      titleProviderHealth,
+      releaseProgress,
     };
   });
 

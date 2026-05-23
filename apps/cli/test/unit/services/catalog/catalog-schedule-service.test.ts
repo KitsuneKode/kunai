@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildLocalDayWindow,
   CatalogScheduleService,
+  CatalogScheduleRequestError,
   classifyReleaseStatus,
   type CatalogScheduleLoaders,
 } from "@/services/catalog/CatalogScheduleService";
@@ -189,6 +190,107 @@ describe("CatalogScheduleService", () => {
     expect(first[0]?.status).toBe("upcoming");
     expect(lastWindowDays).toBe(7);
     expect(calls).toBe(1);
+  });
+
+  test("loads one cached TMDB season progress payload instead of per-episode requests", async () => {
+    let calls = 0;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        seriesProgress: async (input) => {
+          calls += 1;
+          return {
+            latestAiredSeason: input.season,
+            latestAiredEpisode: 4,
+            latestKnownReleaseAt: "2026-05-08",
+            sourceFingerprint: `tmdb:${input.titleId}:${input.season}:4`,
+          };
+        },
+      }),
+      () => NOW,
+    );
+
+    const first = await service.getSeriesReleaseProgress({
+      source: "tmdb",
+      titleId: "9",
+      titleName: "Series",
+      type: "series",
+      season: 1,
+    });
+    const second = await service.getSeriesReleaseProgress({
+      source: "tmdb",
+      titleId: "9",
+      titleName: "Series",
+      type: "series",
+      season: 1,
+    });
+
+    expect(first?.latestAiredEpisode).toBe(4);
+    expect(second).toEqual(first);
+    expect(calls).toBe(1);
+  });
+
+  test("dedupes overlapping AniList progress batches and retains finished-series totals", async () => {
+    let calls = 0;
+    let releaseLoad!: () => void;
+    const loadStarted = Promise.withResolvers<void>();
+    const service = new CatalogScheduleService(
+      createLoaders({
+        animeProgress: async () => {
+          calls += 1;
+          loadStarted.resolve();
+          await new Promise<void>((resolve) => {
+            releaseLoad = resolve;
+          });
+          return new Map([
+            [
+              "21",
+              {
+                latestAiredEpisode: 28,
+                latestKnownReleaseAt: "2026-05-08T00:00:00.000Z",
+                sourceFingerprint: "anilist:21:finished:28",
+              },
+            ],
+          ]);
+        },
+      }),
+      () => NOW,
+    );
+
+    const first = service.prefetchAnimeReleaseProgressForTitles(
+      ["21"],
+      new AbortController().signal,
+    );
+    await loadStarted.promise;
+    const second = service.prefetchAnimeReleaseProgressForTitles(
+      ["21"],
+      new AbortController().signal,
+    );
+    releaseLoad();
+    await Promise.all([first, second]);
+
+    expect(calls).toBe(1);
+    expect(service.peekAnimeReleaseProgress("21")?.latestAiredEpisode).toBe(28);
+  });
+
+  test("propagates typed transient catalog failures so reconciliation can back off", async () => {
+    const service = new CatalogScheduleService(
+      createLoaders({
+        seriesProgress: async () => {
+          throw new CatalogScheduleRequestError("rate-limited", "catalog rate limited");
+        },
+      }),
+      () => NOW,
+    );
+
+    await expect(
+      service.getSeriesReleaseProgress({
+        source: "tmdb",
+        titleId: "9",
+        titleName: "Series",
+        type: "series",
+        season: 1,
+      }),
+    ).rejects.toMatchObject({ failureClass: "rate-limited" });
   });
 
   test("builds local day windows with stable date keys", () => {

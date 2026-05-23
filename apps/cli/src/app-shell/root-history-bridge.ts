@@ -3,6 +3,7 @@ import {
   type ContinueHistoryRelease,
 } from "@/domain/continuation/history-reconciliation";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { ReleaseProgressProjection } from "@kunai/storage";
 
 export type RootHistorySelection = {
   titleId: string;
@@ -105,5 +106,25 @@ export function buildRootHistorySelection(
       episode: selection.entry.episode,
       reason: "resume",
     },
+  };
+}
+
+export function releaseProgressToContinueHistoryRelease(
+  projection: ReleaseProgressProjection | undefined,
+): ContinueHistoryRelease | null {
+  if (!projection) return null;
+  if (projection.status === "new-episodes" && projection.newEpisodeCount > 0) {
+    return {
+      status: "released",
+      releaseAt: projection.latestKnownReleaseAt ?? null,
+      season: projection.anchorSeason ?? projection.latestAiredSeason,
+      episode: projection.anchorEpisode + 1,
+    };
+  }
+  return {
+    status: projection.status === "upcoming" ? "upcoming" : "unknown",
+    releaseAt: projection.nextAiringAt ?? null,
+    season: projection.nextAiringSeason,
+    episode: projection.nextAiringEpisode,
   };
 }

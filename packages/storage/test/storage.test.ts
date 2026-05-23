@@ -16,6 +16,8 @@ import {
   openKunaiDatabase,
   PlaylistRepository,
   ProviderHealthRepository,
+  TitleProviderHealthRepository,
+  ReleaseProgressCacheRepository,
   ResolveTraceRepository,
   runMigrations,
   ScheduleCacheRepository,
@@ -84,6 +86,7 @@ test("migrations are idempotent and create expected storage tables", () => {
   expect(cacheTables).toContain("stream_cache");
   expect(cacheTables).toContain("provider_health");
   expect(cacheTables).toContain("source_inventory");
+  expect(cacheTables).toContain("title_provider_health");
   expect(cacheTables).toContain("resolve_traces");
   expect(cacheTables).toContain("schedule_cache");
 
@@ -106,6 +109,103 @@ test("schedule cache repository stores and expires catalog payloads by cache key
     repo.get("today:anime:2026-05-15", new Date("2026-05-15T12:30:00.000Z"))?.payloadJson,
   ).toBe(JSON.stringify([{ titleId: "21" }]));
   expect(repo.get("today:anime:2026-05-15", new Date("2026-05-15T14:00:00.000Z"))).toBe(undefined);
+
+  db.close();
+});
+
+test("release progress cache repository stores summaries and due projections", () => {
+  const db = migratedCacheDb();
+  const repo = new ReleaseProgressCacheRepository(db);
+
+  repo.upsert({
+    titleId: "anilist:1",
+    mediaKind: "series",
+    source: "anilist",
+    title: "Demo",
+    anchorSeason: 1,
+    anchorEpisode: 6,
+    latestAiredSeason: 1,
+    latestAiredEpisode: 8,
+    newEpisodeCount: 2,
+    nextAiringSeason: 1,
+    nextAiringEpisode: 9,
+    nextAiringAt: "2026-05-30T10:00:00.000Z",
+    latestKnownReleaseAt: "2026-05-23T10:00:00.000Z",
+    status: "new-episodes",
+    checkedAt: "2026-05-23T10:05:00.000Z",
+    nextCheckAt: "2026-05-23T12:05:00.000Z",
+    staleAfterAt: "2026-05-24T10:05:00.000Z",
+    sourceFingerprint: "anilist:1:8",
+    errorCount: 0,
+  });
+  repo.upsert({
+    titleId: "anilist:2",
+    mediaKind: "series",
+    source: "anilist",
+    title: "Caught Up",
+    anchorSeason: 1,
+    anchorEpisode: 4,
+    latestAiredSeason: 1,
+    latestAiredEpisode: 4,
+    newEpisodeCount: 0,
+    status: "caught-up",
+    checkedAt: "2026-05-23T10:05:00.000Z",
+    nextCheckAt: "2026-05-24T12:05:00.000Z",
+    staleAfterAt: "2026-05-25T10:05:00.000Z",
+    sourceFingerprint: "anilist:2:4",
+    errorCount: 0,
+  });
+
+  expect(repo.getByTitleIds(["anilist:1", "missing"]).get("anilist:1")).toMatchObject({
+    title: "Demo",
+    newEpisodeCount: 2,
+    latestAiredEpisode: 8,
+  });
+  expect(repo.summarizeActive()).toEqual({ titleCount: 1, episodeCount: 2 });
+  expect(repo.listDue("2026-05-23T12:30:00.000Z", 10).map((row) => row.titleId)).toEqual([
+    "anilist:1",
+  ]);
+
+  db.close();
+});
+
+test("release progress cache repository prunes stale derived projections only", () => {
+  const db = migratedCacheDb();
+  const repo = new ReleaseProgressCacheRepository(db);
+
+  repo.upsert({
+    titleId: "anilist:old",
+    mediaKind: "series",
+    source: "anilist",
+    title: "Old",
+    anchorEpisode: 1,
+    newEpisodeCount: 0,
+    status: "unknown",
+    checkedAt: "2026-05-20T00:00:00.000Z",
+    nextCheckAt: "2026-05-20T02:00:00.000Z",
+    staleAfterAt: "2026-05-21T00:00:00.000Z",
+    sourceFingerprint: "old",
+    errorCount: 0,
+  });
+  repo.upsert({
+    titleId: "anilist:fresh",
+    mediaKind: "series",
+    source: "anilist",
+    title: "Fresh",
+    anchorEpisode: 1,
+    newEpisodeCount: 1,
+    status: "new-episodes",
+    checkedAt: "2026-05-23T00:00:00.000Z",
+    nextCheckAt: "2026-05-23T02:00:00.000Z",
+    staleAfterAt: "2026-05-24T00:00:00.000Z",
+    sourceFingerprint: "fresh",
+    errorCount: 0,
+  });
+
+  expect(repo.pruneExpired("2026-05-22T00:00:00.000Z")).toBe(1);
+  expect([...repo.getByTitleIds(["anilist:old", "anilist:fresh"]).keys()]).toEqual([
+    "anilist:fresh",
+  ]);
 
   db.close();
 });
@@ -222,6 +322,24 @@ test("provider health, inventory, and trace repositories round trip typed data",
     recentFailureRate: 0.1,
   });
   expect(healthRepo.get("vidking")?.status).toBe("healthy");
+
+  const titleHealthRepo = new TitleProviderHealthRepository(db);
+  titleHealthRepo.set({
+    titleId: "tmdb:1",
+    providerId: "vidking",
+    failureCount: 2,
+    consecutiveFailures: 2,
+    successfulFallbackCount: 1,
+    cleanSuccessCount: 0,
+    suggestedProviderId: "rivestream",
+    lastFailureAt: "2026-04-29T00:00:00.000Z",
+    expiresAt: "2026-04-30T00:00:00.000Z",
+    updatedAt: "2026-04-29T00:00:00.000Z",
+  });
+  expect(
+    titleHealthRepo.get("tmdb:1", "vidking", new Date("2026-04-29T01:00:00.000Z"))
+      ?.suggestedProviderId,
+  ).toBe("rivestream");
 
   const inventoryRepo = new SourceInventoryRepository(db);
   inventoryRepo.set(

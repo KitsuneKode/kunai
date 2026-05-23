@@ -23,7 +23,7 @@ describe("browse idle actions", () => {
     expect(resolveIdleContinueAction(undefined)).toBe("continue");
   });
 
-  test("buildBrowseIdleReturnLoopModel surfaces ready-for-you-now before generic airing copy", () => {
+  test("buildBrowseIdleReturnLoopModel surfaces catalog-new episodes without implying playability", () => {
     const model = buildBrowseIdleReturnLoopModel(
       {
         continueWatching: {
@@ -33,12 +33,13 @@ describe("browse idle actions", () => {
           mediaKind: "series",
         },
         todayReleaseCount: 2,
+        todayReleaseTitleCount: 1,
       },
       { idleFocused: true },
     );
     expect(model?.rows.map((row) => row.id)).toEqual(["continue", "ready-now"]);
     expect(model?.rows[0]?.hint).toBe("↵ resume first");
-    expect(model?.rows[1]?.title).toContain("ready for you now");
-    expect(model?.rows[1]?.meta).toBe("source confirmed");
+    expect(model?.rows[1]?.title).toBe("2 new episodes · 1 show");
+    expect(model?.rows[1]?.meta).toBe("catalog schedule · sources checked on play");
   });
 });

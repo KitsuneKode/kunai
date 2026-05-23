@@ -27,7 +27,9 @@ import {
   PlaylistRepository,
   PlaylistsRepository,
   ProviderHealthRepository,
+  TitleProviderHealthRepository,
   RecommendationCacheRepository,
+  ReleaseProgressCacheRepository,
   runMigrations,
   ScheduleCacheRepository,
   SourceInventoryRepository,
@@ -95,6 +97,7 @@ import { SyncTokenStore } from "./services/persistence/SyncTokenStore";
 import { MediaTrackService } from "./services/playback/MediaTrackService";
 import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
+import { TitleProviderHealthService } from "./services/playback/TitleProviderHealthService";
 import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
@@ -102,6 +105,8 @@ import type { ProviderRegistry } from "./services/providers/ProviderRegistry";
 import { createProviderRegistry } from "./services/providers/ProviderRegistry";
 import type { RecommendationService } from "./services/recommendations/RecommendationService";
 import { RecommendationServiceImpl } from "./services/recommendations/RecommendationServiceImpl";
+import { loadCatalogProgress } from "./services/release-reconciliation/catalog-progress";
+import { ReleaseReconciliationService } from "./services/release-reconciliation/ReleaseReconciliationService";
 import { SEARCH_SERVICE_DEFINITIONS } from "./services/search/definitions";
 import type { SearchRegistry } from "./services/search/SearchRegistry";
 import { SearchRegistryImpl } from "./services/search/SearchRegistry";
@@ -150,6 +155,7 @@ export interface Container {
   readonly mediaTrackService: MediaTrackService;
   readonly featureFlags: AttentionFeatureFlags;
   readonly providerHealth: ProviderHealthRepository;
+  readonly titleProviderHealth: TitleProviderHealthService;
   readonly downloadService: DownloadService;
   readonly offlineLibraryService: OfflineLibraryService;
   readonly notificationService: NotificationService;
@@ -163,6 +169,8 @@ export interface Container {
 
   // Schedule/release tracking
   readonly catalogScheduleService: CatalogScheduleService;
+  readonly releaseProgressCache: ReleaseProgressCacheRepository;
+  readonly releaseReconciliationService: ReleaseReconciliationService;
   readonly timelineService: TimelineService;
   readonly resultEnrichmentService: ResultEnrichmentService;
   readonly updateService: UpdateService;
@@ -249,7 +257,11 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const providerHealth = new ProviderHealthRepository(cacheDb);
+  const titleProviderHealth = new TitleProviderHealthService(
+    new TitleProviderHealthRepository(cacheDb),
+  );
   const scheduleCache = new ScheduleCacheRepository(cacheDb);
+  const releaseProgressCache = new ReleaseProgressCacheRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
   const listRepository = new ListRepository(dataDb);
   const playlistRepository = new PlaylistRepository(dataDb);
@@ -354,6 +366,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
         engine,
         cacheStore,
         providerHealth,
+        sourceInventory,
+        titleProviderHealth,
         diagnostics: diagnosticsService,
       });
       const controller = new AbortController();
@@ -426,6 +440,11 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   const recommendationService = new RecommendationServiceImpl(recommendationCache);
   const catalogScheduleService = createCatalogScheduleService(scheduleCache);
+  const releaseReconciliationService = new ReleaseReconciliationService({
+    repository: releaseProgressCache,
+    loadProgress: (candidates, signal) =>
+      loadCatalogProgress(catalogScheduleService, candidates, signal),
+  });
   const timelineService = new TimelineService(catalogScheduleService);
   const resultEnrichmentService = new ResultEnrichmentService({
     historyStore,
@@ -472,6 +491,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     mediaTrackService,
     featureFlags,
     providerHealth,
+    titleProviderHealth,
     downloadService,
     offlineLibraryService,
     notificationService,
@@ -479,6 +499,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     stateManager,
     recommendationService,
     catalogScheduleService,
+    releaseProgressCache,
+    releaseReconciliationService,
     timelineService,
     resultEnrichmentService,
     updateService,

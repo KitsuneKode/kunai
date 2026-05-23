@@ -57,16 +57,16 @@ export function buildBrowseIdleReturnLoopModel(
 
   const readyCount = idleContext.todayReleaseCount ?? 0;
   if (readyCount > 0) {
+    const titleCount = idleContext.todayReleaseTitleCount ?? 0;
+    const showSuffix =
+      titleCount > 0 ? ` · ${titleCount} ${titleCount === 1 ? "show" : "shows"}` : "";
     rows.push({
       id: "ready-now",
-      glyph: "✓",
-      glyphColor: palette.ok,
-      title:
-        readyCount === 1
-          ? "1 episode ready for you now"
-          : `${readyCount} episodes ready for you now`,
-      meta: "source confirmed",
-      hint: "/calendar for schedule · /notifications for alerts",
+      glyph: "✦",
+      glyphColor: palette.accent,
+      title: `${readyCount === 1 ? "1 new episode" : `${readyCount} new episodes`}${showSuffix}`,
+      meta: "catalog schedule · sources checked on play",
+      hint: "/calendar for schedule · /history for shows",
       focused: false,
     });
   }

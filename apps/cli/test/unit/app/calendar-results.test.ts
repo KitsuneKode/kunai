@@ -5,6 +5,8 @@ import { loadCalendarResults } from "@/app/calendar-results";
 function withCalendarServices(input: {
   readonly stateManager: { readonly getState: () => { readonly mode: "anime" | "series" } };
   readonly timelineService: Record<string, unknown>;
+  readonly releaseProgressCache?: Record<string, unknown>;
+  readonly historyStore?: Record<string, unknown>;
 }) {
   return {
     ...input,
@@ -130,4 +132,149 @@ test("loadCalendarResults distinguishes already released rows from timed upcomin
   expect(results.results[0]?.overview).toContain("S05E03");
   expect(results.results[0]?.overview).toContain("available today");
   expect(results.results[0]?.overview).not.toContain("Availability is checked");
+});
+
+test("loadCalendarResults surfaces cached new-episode counts without fetching providers", async () => {
+  const releaseAt = new Date("2099-05-23T12:00:00.000Z").toISOString();
+  const results = await loadCalendarResults(
+    withCalendarServices({
+      stateManager: { getState: () => ({ mode: "anime" }) },
+      timelineService: {
+        loadReleasingToday: async () => [
+          {
+            source: "anilist",
+            titleId: "anilist:21",
+            titleName: "Frieren",
+            type: "anime",
+            episode: 31,
+            releaseAt,
+            releasePrecision: "timestamp",
+            status: "released",
+            posterPath: null,
+          },
+        ],
+      },
+      releaseProgressCache: {
+        getByTitleIds: (ids: readonly string[]) =>
+          new Map(
+            ids.map((id) => [
+              id,
+              {
+                titleId: id,
+                mediaKind: "anime",
+                source: "anilist",
+                title: "Frieren",
+                anchorSeason: 1,
+                anchorEpisode: 28,
+                latestAiredSeason: 1,
+                latestAiredEpisode: 31,
+                newEpisodeCount: 3,
+                status: "new-episodes",
+                checkedAt: "2099-05-23T11:00:00.000Z",
+                nextCheckAt: "2099-05-23T14:00:00.000Z",
+                staleAfterAt: "2099-05-24T11:00:00.000Z",
+                sourceFingerprint: "anilist:21:31",
+                errorCount: 0,
+              },
+            ]),
+          ),
+      },
+    }) as never,
+  );
+
+  expect(results.subtitle).toContain("3 new for you");
+  expect(results.results[0]?.displayBadge).toBe("3 new");
+});
+
+test("loadCalendarResults projects already-loaded released rows without another schedule fetch", async () => {
+  const writes: unknown[] = [];
+  const results = await loadCalendarResults(
+    withCalendarServices({
+      stateManager: { getState: () => ({ mode: "anime" }) },
+      timelineService: {
+        loadReleasingToday: async () => [
+          {
+            source: "anilist",
+            titleId: "anilist:21",
+            titleName: "Frieren",
+            type: "anime",
+            episode: 31,
+            releaseAt: "2026-05-23T10:00:00.000Z",
+            releasePrecision: "timestamp",
+            status: "released",
+          },
+        ],
+      },
+      historyStore: {
+        getAll: async () => ({
+          "anilist:21": {
+            title: "Frieren",
+            type: "series",
+            mediaKind: "anime",
+            season: 1,
+            episode: 28,
+            timestamp: 1200,
+            duration: 1400,
+            completed: true,
+            provider: "allmanga",
+            watchedAt: "2026-05-20T00:00:00.000Z",
+          },
+        }),
+      },
+      releaseProgressCache: {
+        getByTitleIds: () => new Map(),
+        upsert: (projection: unknown) => writes.push(projection),
+      },
+    }) as never,
+  );
+
+  expect(writes).toHaveLength(1);
+  expect(results.results[0]?.displayBadge).toBe("3 new");
+});
+
+test("loadCalendarResults joins AniList schedule rows to provider-native history identities", async () => {
+  const writes: Array<{ titleId?: string }> = [];
+  const results = await loadCalendarResults(
+    withCalendarServices({
+      stateManager: { getState: () => ({ mode: "anime" }) },
+      timelineService: {
+        loadReleasingToday: async () => [
+          {
+            source: "anilist",
+            titleId: "21",
+            titleName: "Frieren",
+            type: "anime",
+            episode: 31,
+            releaseAt: "2026-05-23T10:00:00.000Z",
+            releasePrecision: "timestamp",
+            status: "released",
+          },
+        ],
+      },
+      historyStore: {
+        getAll: async () => ({
+          "allmanga:opaque": {
+            title: "Frieren",
+            type: "series",
+            mediaKind: "anime",
+            externalIds: { anilistId: "21" },
+            season: 1,
+            episode: 28,
+            timestamp: 1200,
+            duration: 1400,
+            completed: true,
+            provider: "allmanga",
+            watchedAt: "2026-05-20T00:00:00.000Z",
+          },
+        }),
+      },
+      releaseProgressCache: {
+        getByTitleIds: () => new Map(),
+        upsert: (projection: { titleId?: string }) => writes.push(projection),
+      },
+    }) as never,
+  );
+
+  expect(writes[0]?.titleId).toBe("allmanga:opaque");
+  expect(results.results[0]?.displayBadge).toBe("3 new");
 });

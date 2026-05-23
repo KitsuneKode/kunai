@@ -1,6 +1,6 @@
 # Attention Queue Notifications Audit
 
-Status: action center and playlist exchange foundation implemented.
+Status: action center, playlist exchange, and catalog-new shelf foundation implemented.
 
 ## Confirmed Contracts
 
@@ -13,10 +13,11 @@ Status: action center and playlist exchange foundation implemented.
 - `/history` and browse recommendation/search rows support `q` to queue the selected item without replacing active playback.
 - Post-playback recommendation rail keeps identity-bearing items and supports `1`-`3` to queue visible picks without resolving streams, autoplaying, or leaving the post-playback context.
 - `/playlist` can snapshot the runtime queue to a durable playlist and import/export safe Kunai playlist JSON from the playlist exchange folder.
+- Browse idle, history, and calendar surface cache-derived `N new` release state without creating provider-confirmed notices or resolving streams.
 
 ## Remaining Production Work
 
-- Add visible Continue Watching/New Episode shelves using cached projections first, then provider availability only inside the experimental budget.
+- Expand the implemented cached Continue Watching/New Episode surfaces with richer sorting and detail actions; provider availability remains separate and experimental.
 - Decide whether post-playback recommendation rows should later expose download/detail actions; queue is implemented, but download should wait for a shared confirmation path so it does not surprise-resolve providers from the rail.
 - Add manual smoke for queue recovery, browse queueing, provider availability dry-run, and playlist export before release.
 
