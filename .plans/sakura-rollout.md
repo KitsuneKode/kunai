@@ -49,7 +49,7 @@ Done when no `palette.{amber,pink,teal,cyan,info,lavender,green,red,yellow,gray,
 
 The real product for a scraper app. Draw + implement, using `danger` + glyph + one recovery action:
 
-Implementation plan: [.plans/sakura-shared-primitives-recovery-plan.md](sakura-shared-primitives-recovery-plan.md)
+Implementation plan: [.plans/sakura-shared-primitives-recovery-plan.md](sakura-shared-primitives-recovery-plan.md) — **COMPLETE (2026-05-23)**: shared primitives (ContextCard/ActionList/StateBlock/PreviewRail) + playback-recovery view model built and wired into LoadingShell + playback/post-play. 954 tests / build green.
 
 - `Playback did not start` (never marks watched, never offers next as primary).
 - `Stream stalled` (promote recover/fallback into body+footer while relevant).

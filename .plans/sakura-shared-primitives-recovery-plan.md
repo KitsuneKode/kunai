@@ -1,5 +1,7 @@
 # Sakura Shared Primitives And Recovery Implementation Plan
 
+> **Status: COMPLETE (2026-05-23).** Tasks 1–10 landed: ContextCard, ActionList, StateBlock, PreviewRail, playback-recovery view model, wired into LoadingShell (recovery surface) and playback/post-play (ContextCard), footer collapse test added. Two bugs in this plan's own sample tests were fixed during implementation (smart initials, robust truncation). typecheck/lint/test (954)/build green. Next: S3 portability, S4 search/tracks/palette, S5 return loop — parallelizable.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the shared UI primitives and playback recovery surface needed before the rest of the Sakura redesign is parallelized.

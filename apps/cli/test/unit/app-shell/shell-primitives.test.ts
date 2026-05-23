@@ -70,4 +70,20 @@ describe("selectFooterActions", () => {
     expect(visible[0]?.primary).toBe(true);
     expect(visible[1]?.primary).toBeFalsy();
   });
+
+  test("recovery footer keeps commands while prioritizing recover and fallback", () => {
+    const actions: readonly FooterAction[] = [
+      { key: "r", label: "recover", action: "recover", primary: true },
+      { key: "f", label: "fallback", action: "fallback" },
+      { key: "s", label: "sources", action: "streams" },
+      { key: "d", label: "diagnostics", action: "diagnostics" },
+      { key: "/", label: "commands", action: "command-mode" },
+    ];
+
+    const visible = selectFooterActions(actions, "detailed", 80);
+
+    expect(visible.at(0)?.action).toBe("recover");
+    expect(visible.some((action) => action.action === "command-mode")).toBe(true);
+    expect(visible.length).toBeLessThanOrEqual(4);
+  });
 });
