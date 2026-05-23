@@ -4,6 +4,7 @@ import React from "react";
 
 import { DotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
+import { clearRenderedPosterImages } from "./image-pane";
 import {
   getLoadingDisclosure,
   getLoadingShellTimerPolicy,
@@ -18,12 +19,11 @@ import {
 } from "./loading-shell-runtime";
 import type { StageRailItem } from "./loading-shell-runtime";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
-import type { PosterResult, PosterState } from "./poster-types";
 import { StateBlock } from "./primitives/StateBlock";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine, selectFooterActions } from "./shell-primitives";
 import { wrapText } from "./shell-text";
-import { APP_LABEL, palette } from "./shell-theme";
+import { APP_LABEL, palette, statusColor } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 import { useViewportPolicy } from "./use-viewport-policy";
 
@@ -77,28 +77,6 @@ export function formatLoadingProviderLine(
   const id = state.providerId?.trim();
   if (name && id && name !== id) return `${name} (${id})`;
   return name || id || null;
-}
-
-export function shouldShowLoadingPosterCompanion({
-  operation,
-  columns,
-  posterUrl,
-  posterKind,
-  posterState,
-}: {
-  operation: LoadingShellState["operation"];
-  columns: number;
-  posterUrl?: string;
-  posterKind: PosterResult["kind"];
-  posterState: PosterState;
-}): boolean {
-  if (operation !== "playing" || columns < 130) return false;
-  return Boolean(
-    posterUrl ||
-    posterKind !== "none" ||
-    posterState === "loading" ||
-    posterState === "unavailable",
-  );
 }
 
 function useRuntimeMemoryLine(refreshMs: number | null): string {
@@ -295,6 +273,16 @@ export const LoadingShell = React.memo(function LoadingShell({
 }) {
   const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
   const memoryPanelPinned = Boolean(state.showMemory && memoryPanelVisible);
+
+  // The playback bootstrap + Now Playing surfaces never render a poster, so any
+  // Kitty image still placed by the prior surface (picker/browse/details) would
+  // linger as an empty bordered region — its placeholder cells get overwritten
+  // by this frame but the out-of-band image placement is not. usePosterPreview's
+  // cleanup intentionally skips clearing (to avoid flashing on episode switch),
+  // so this surface owns the clear on entry. Cache + terminal stay in sync.
+  React.useEffect(() => {
+    clearRenderedPosterImages();
+  }, []);
   const timerPolicy = getLoadingShellTimerPolicy({
     operation: state.operation,
     memoryPanelVisible,
@@ -616,7 +604,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                       color={
                         !runtimeHealthLine.tone || runtimeHealthLine.tone === "neutral"
                           ? palette.dim
-                          : palette[runtimeHealthLine.tone as keyof typeof palette]
+                          : statusColor(runtimeHealthLine.tone)
                       }
                     >
                       {runtimeHealthLine.label}: {runtimeHealthLine.detail}
