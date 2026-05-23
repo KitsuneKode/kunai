@@ -217,7 +217,7 @@ test("buildPlaybackControlSummary exposes compact hybrid UI affordances", () => 
   expect(summary.detail).toContain("soft subs en/fr");
 });
 
-test("formatPlaybackSessionFactsStrip surfaces inventory and session toggles", () => {
+test("formatPlaybackSessionFactsStrip surfaces stream inventory only", () => {
   const strip = formatPlaybackSessionFactsStrip({
     stream: streamWithSubtitles,
     autoplayPaused: false,
@@ -228,14 +228,15 @@ test("formatPlaybackSessionFactsStrip surfaces inventory and session toggles", (
   });
 
   expect(strip).toContain("2 sources");
-  expect(strip).toContain("autoplay on");
-  expect(strip).toContain("autoskip paused");
-  expect(strip).toContain("stops after this episode");
+  expect(strip).not.toContain("autoplay");
+  expect(strip).not.toContain("autoskip");
 });
 
-test("formatPlaybackSessionKeysHint only advertises source and quality when alternatives exist", () => {
+test("formatPlaybackSessionKeysHint lists session state and only available nav keys", () => {
   const hint = formatPlaybackSessionKeysHint({
     stream: streamWithSubtitles,
+    autoplayPaused: false,
+    autoskipPaused: true,
     canToggleAutoplay: true,
     hasNextEpisode: true,
     hasPreviousEpisode: false,
@@ -243,9 +244,12 @@ test("formatPlaybackSessionKeysHint only advertises source and quality when alte
     stopAfterCurrent: false,
   });
 
+  expect(hint).toContain("autoplay on");
+  expect(hint).toContain("autoskip paused");
   expect(hint).toContain("q stop");
   expect(hint).toContain("n next");
-  expect(hint).toContain("p —");
+  expect(hint).not.toContain("p prev");
+  expect(hint).not.toContain("—");
   expect(hint).toContain("k tracks");
   expect(hint).toContain("o source");
   expect(hint).toContain("v quality");

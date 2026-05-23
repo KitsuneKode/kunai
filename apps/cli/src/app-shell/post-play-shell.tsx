@@ -52,7 +52,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       : null;
 
   return (
-    <Box flexDirection="column" flexGrow={1} paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       {/* Title + episode context live in the ShellFrame header; the body is the
           "what next" remote, so it leads with the outcome state, not a 2nd title. */}
       {resumeLabel ? (
@@ -64,7 +64,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       )}
 
       {resumeLabel ? (
-        <Box marginTop={2} flexDirection="column">
+        <Box marginTop={1} flexDirection="column">
           <Text>
             <Text color={palette.accent}>{"▌ "}</Text>
             <Text color={palette.accent}>↵ resume</Text>
@@ -74,13 +74,13 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       ) : null}
 
       {isMovie && !resumeLabel ? (
-        <Box marginTop={2} flexDirection="column">
+        <Box marginTop={1} flexDirection="column">
           <Text color={palette.dim}>↵ replay · / search for another title</Text>
         </Box>
       ) : null}
 
       {!resumeLabel && !isMovie && postPlayState.kind === "mid-series" && (
-        <Box marginTop={2} flexDirection="column">
+        <Box marginTop={1} flexDirection="column">
           <ContextCard
             selected
             width={Math.min(42, Math.max(28, viewport.columns - 20))}
@@ -97,7 +97,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       )}
 
       {postPlayState.kind === "caught-up" && (
-        <Box marginTop={2} flexDirection="column">
+        <Box marginTop={1} flexDirection="column">
           <Text color={palette.ok}>◉ caught up</Text>
           {postPlayState.nextAirDate ? (
             <Text color={palette.muted}>
@@ -112,7 +112,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       )}
 
       {postPlayState.kind === "season-finale" && (
-        <Box marginTop={2} flexDirection="column">
+        <Box marginTop={1} flexDirection="column">
           <Text color={palette.ok}>✦ Season {currentSeason ?? "?"} complete</Text>
           {postPlayState.hasNextSeason ? (
             <Box marginTop={1}>
@@ -130,7 +130,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       )}
 
       {postPlayState.kind === "series-complete" && (
-        <Box marginTop={2} flexDirection="column">
+        <Box marginTop={1} flexDirection="column">
           <Text color={palette.milestone}>✦ you finished {truncateLine(title, 48)}</Text>
           {totalEpisodes && currentSeason ? (
             <Text color={palette.dim}>
@@ -142,7 +142,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       )}
 
       {showRecommendations ? (
-        <Box marginTop={2} flexDirection="column">
+        <Box marginTop={1} flexDirection="column">
           <Text color={palette.dim}>{recHeading}</Text>
           {postPlayState.kind === "series-complete" ? (
             <Text color={palette.muted}>
@@ -164,13 +164,9 @@ export const PostPlayShell = React.memo(function PostPlayShell({
           )}
         </Box>
       ) : viewport.breakpoint === "narrow" && recommendations.length > 0 ? (
-        <Text color={palette.dim} dimColor>
-          widen terminal for recommendations
-        </Text>
-      ) : recommendations.length === 0 && !viewport.ultraCompact ? (
-        <Box marginTop={2}>
+        <Box marginTop={1}>
           <Text color={palette.dim} dimColor>
-            nothing queued
+            widen terminal for recommendations
           </Text>
         </Box>
       ) : null}

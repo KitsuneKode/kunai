@@ -22,6 +22,7 @@ import type { PosterResult, PosterState } from "./poster-types";
 import { StateBlock } from "./primitives/StateBlock";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine, selectFooterActions } from "./shell-primitives";
+import { wrapText } from "./shell-text";
 import { APP_LABEL, palette } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 import { useViewportPolicy } from "./use-viewport-policy";
@@ -664,14 +665,15 @@ export const LoadingShell = React.memo(function LoadingShell({
               <Box flexDirection="row" justifyContent="space-between" alignItems="flex-start">
                 <Box flexDirection="column" flexGrow={1} marginRight={2}>
                   {state.playbackFactsStrip ? (
-                    <Text color={palette.muted}>{state.playbackFactsStrip}</Text>
+                    <Text color={palette.muted}>
+                      {wrapText(state.playbackFactsStrip, infoWidth, 1)[0] ??
+                        state.playbackFactsStrip}
+                    </Text>
                   ) : null}
                   {state.playbackKeysHint ? (
-                    <Box marginTop={state.playbackFactsStrip ? 1 : 0}>
-                      <Text color={palette.dim} dimColor>
-                        {state.playbackKeysHint}
-                      </Text>
-                    </Box>
+                    <Text color={palette.dim} dimColor>
+                      {wrapText(state.playbackKeysHint, infoWidth, 1)[0] ?? state.playbackKeysHint}
+                    </Text>
                   ) : state.controlHint ? (
                     <Box marginTop={1}>
                       <Text color={palette.dim} dimColor>

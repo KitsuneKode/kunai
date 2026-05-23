@@ -292,69 +292,68 @@ export type PlaybackSessionControlInput = {
   readonly isSeries?: boolean;
 };
 
-/** Compact inventory + session facts for the playback context strip (no key legend). */
+/** Stream inventory for the playback context strip (session toggles live on the keys line). */
 export function formatPlaybackSessionFactsStrip(input: PlaybackSessionControlInput): string {
   const control = buildPlaybackControlSummary(input.stream);
-  const parts: string[] = [];
+  if (control.detail) return control.detail;
+  return control.summary;
+}
 
-  if (control.detail) {
-    parts.push(control.detail);
-  } else if (control.summary) {
-    parts.push(control.summary);
-  }
+export type PlaybackSessionKeysInput = PlaybackSessionControlInput & {
+  readonly hasNextEpisode: boolean;
+  readonly hasPreviousEpisode: boolean;
+};
 
+function appendPlaybackSessionStatusChips(
+  parts: string[],
+  input: Pick<
+    PlaybackSessionKeysInput,
+    "autoplayPaused" | "autoskipPaused" | "canToggleAutoplay" | "stopAfterCurrent" | "isSeries"
+  >,
+): void {
   if (input.canToggleAutoplay) {
     parts.push(input.autoplayPaused ? "autoplay paused" : "autoplay on");
   }
   parts.push(input.autoskipPaused ? "autoskip paused" : "autoskip on");
-
   if (input.isSeries && input.stopAfterCurrent) {
-    parts.push("stops after this episode");
+    parts.push("stops after ep");
   }
-
-  return parts.join("  ·  ");
 }
 
-export type PlaybackSessionKeysInput = {
-  readonly stream: StreamInfo | null;
-  readonly canToggleAutoplay: boolean;
-  readonly hasNextEpisode: boolean;
-  readonly hasPreviousEpisode: boolean;
-  readonly isSeries: boolean;
-  readonly stopAfterCurrent: boolean;
-};
-
-/** Short live-key legend shown under playback facts; expanded keys only when useful. */
+/** Session state + live-key legend (one line; omit nav keys when unavailable). */
 export function formatPlaybackSessionKeysHint(input: PlaybackSessionKeysInput): string {
   const control = buildPlaybackControlSummary(input.stream);
-  const keys = ["q stop"];
+  const parts: string[] = [];
+
+  appendPlaybackSessionStatusChips(parts, input);
+  parts.push("q stop");
 
   if (input.isSeries) {
-    keys.push(input.hasNextEpisode ? "n next" : "n —");
-    keys.push(input.hasPreviousEpisode ? "p prev" : "p —");
-    keys.push(input.stopAfterCurrent ? "x resume chain" : "x stop after ep");
+    if (input.hasNextEpisode) parts.push("n next");
+    if (input.hasPreviousEpisode) parts.push("p prev");
+    parts.push(input.stopAfterCurrent ? "x resume chain" : "x stop after");
   }
 
   if (input.canToggleAutoplay) {
-    keys.push("a autoplay");
+    parts.push("a autoplay");
   }
-  keys.push("u autoskip");
+  parts.push("u autoskip");
 
   if (control.showMediaTrackControl) {
-    keys.push("k tracks");
+    parts.push("k tracks");
   }
   if (control.showSourceControl) {
-    keys.push("o source");
+    parts.push("o source");
   }
   if (control.showQualityControl) {
-    keys.push("v quality");
+    parts.push("v quality");
   }
   if (input.isSeries) {
-    keys.push("e episodes");
+    parts.push("e episodes");
   }
 
-  keys.push("/ commands");
-  return keys.join("  ·  ");
+  parts.push("/ commands");
+  return parts.join(" · ");
 }
 
 export function applyPreferredStreamSelection(
