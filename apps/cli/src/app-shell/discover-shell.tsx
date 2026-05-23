@@ -24,8 +24,12 @@ function discoverItemToBrowseOption(item: SearchResult): BrowseShellOption<Searc
       item.year ? String(item.year) : undefined,
       item.rating !== null && item.rating !== undefined ? `★ ${item.rating.toFixed(1)}` : undefined,
     ].filter((value): value is string => Boolean(value)),
-    previewBody: item.overview ?? undefined,
+    previewBody: item.overview?.trim() || undefined,
     previewNote: "Press Enter to open this pick.",
+    previewFacts:
+      item.rating !== null && item.rating !== undefined
+        ? [{ label: "Rating", detail: `${item.rating.toFixed(1)}/10`, tone: "neutral" as const }]
+        : undefined,
   };
 }
 

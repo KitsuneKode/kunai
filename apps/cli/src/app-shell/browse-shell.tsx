@@ -12,8 +12,9 @@ import {
 } from "./browse-filters";
 import { resolveIdleContinueAction } from "./browse-idle-actions";
 import {
-  filterBrowseOptionsByResultFilter,
+  browseResultStatusLine,
   buildPreviewRailModelFromBrowseOption,
+  filterBrowseOptionsByResultFilter,
   mapPosterPreviewState,
 } from "./browse-preview-rail";
 import { isQueryDirty, normalizeBrowseCommandInput } from "./browse-search-state";
@@ -555,6 +556,12 @@ export function BrowseShell<T>({
   const showPreviewRail =
     showCompanion &&
     shouldRenderPreviewRail({ columns: viewport.columns, hasModel: previewRailModel !== null });
+  const resultStatus = browseResultStatusLine({
+    resultSubtitle,
+    resultFilter,
+    displayCount: displayOptions.length,
+    totalCount: options.length,
+  });
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -812,12 +819,19 @@ export function BrowseShell<T>({
             </>
           ) : searchState === "error" ? (
             <Text color={palette.danger}>search failed</Text>
-          ) : searchState === "ready" && displayOptions.length > 0 ? (
-            <Text color={palette.muted}>{displayOptions.length} results</Text>
           ) : null}
         </Box>
-        {!ultraCompact && resultSubtitle ? (
-          <Text color={palette.muted}>{resultSubtitle}</Text>
+        {!ultraCompact && (resultStatus.primary || resultStatus.secondary) ? (
+          <Box justifyContent="space-between">
+            {resultStatus.primary ? (
+              <Text color={palette.muted}>{resultStatus.primary}</Text>
+            ) : (
+              <Box />
+            )}
+            {resultStatus.secondary ? (
+              <Text color={palette.muted}>{resultStatus.secondary}</Text>
+            ) : null}
+          </Box>
         ) : null}
         {searchState === "ready" && options.length > 0 && !isCalendarView && !ultraCompact ? (
           <InputField

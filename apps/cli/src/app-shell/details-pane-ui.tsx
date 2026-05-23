@@ -34,8 +34,10 @@ function SecondaryZoneShimmer() {
   );
 }
 
+const DETAIL_FACT_LABEL_WIDTH = 10;
+
 function FactRow({ label, value, width }: { label: string; value: string; width: number }) {
-  const labelWidth = Math.min(14, Math.max(8, label.length + 1));
+  const labelWidth = Math.min(DETAIL_FACT_LABEL_WIDTH, Math.max(6, label.length + 1));
   return (
     <Box>
       <Text color={palette.dim}>{truncateLine(label, labelWidth).padEnd(labelWidth)}</Text>
@@ -108,9 +110,11 @@ export function DetailsSheetUI({
             </Text>
           ) : (
             <Box key={`${line.label}:${line.detail ?? ""}`}>
-              <Text color={palette.dim}>{truncateLine(line.label, 14).padEnd(14)}</Text>
+              <Text color={palette.dim}>
+                {truncateLine(line.label, DETAIL_FACT_LABEL_WIDTH).padEnd(DETAIL_FACT_LABEL_WIDTH)}
+              </Text>
               <Text color={sheetLineColor(line.tone)}>
-                {truncateLine(line.detail ?? "", width - 16)}
+                {truncateLine(line.detail ?? "", width - DETAIL_FACT_LABEL_WIDTH - 2)}
               </Text>
             </Box>
           ),
