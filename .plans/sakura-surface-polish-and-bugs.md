@@ -67,8 +67,13 @@ redesigns** (user-chosen).
 - [ ] **C12 — Active playback** → episode control surface (identity, health,
       tracks state, autoplay/autoskip, thumb, up-next; footer w/ episodes+tracks+
       commands). Today sparse + muted. Spec: `active-playback.md`.
-- [ ] **C13 — Tracks/quality picker** → scoped/grouped (source/quality/audio/
-      subtitle sections). Today a flat 30-row dump (Img 18). Spec: `tracks-panel.md`.
+- [~] **C13 — Tracks/quality picker** → scoped/grouped (source/quality/audio/
+  subtitle sections). Today a flat 30-row dump (Img 18). Spec: `tracks-panel.md`. - [x] Backend contract: `domain/playback/track-capabilities.ts`
+  (`buildTrackCapabilities` normalizes the inventory view into sectioned
+  `TrackCapability[]`, tested) — `544e02bc`. - [ ] Render: scoped panel component (section headers, selectable vs fact
+  rows, risk styling). Needs live verification. - [ ] Wire `/tracks` `/source` `/quality` to the panel (deep-link focus),
+  replacing the three flat ListShell pickers; apply selection via existing
+  `streamSelectionFrom*` / subtitle handlers. Needs live verification.
 - [ ] **C14 — Post-play = "episode page + remote"** → action rows + preview rail
   - recs + per-state layout. Today sparse text. Spec: `post-playback.md`.
     (A1/A3 are prerequisites.)
