@@ -18,7 +18,11 @@ import {
   filterBrowseOptionsByResultFilter,
   mapPosterPreviewState,
 } from "./browse-preview-rail";
-import { isQueryDirty, normalizeBrowseCommandInput } from "./browse-search-state";
+import {
+  isQueryDirty,
+  normalizeBrowseCommandInput,
+  resolveDetailsOverlaySubmitValue,
+} from "./browse-search-state";
 import {
   buildCalendarDaysFromOptions,
   buildCalendarEmptyState,
@@ -598,6 +602,18 @@ export function BrowseShell<T>({
 
       if (key.escape) {
         closeOverlay();
+        return;
+      }
+
+      if (key.return && activeOverlay.type === "details") {
+        const value = resolveDetailsOverlaySubmitValue({
+          detailsOpen: true,
+          searchReady: searchState === "ready",
+          selectedOption,
+        });
+        if (value !== null) {
+          onSubmit(value);
+        }
         return;
       }
 

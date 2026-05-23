@@ -5,6 +5,7 @@ import {
   browseSearchReducer,
   createInitialBrowseSearchState,
   isQueryDirty,
+  resolveDetailsOverlaySubmitValue,
 } from "@/app-shell/browse-search-state";
 import type { BrowseShellOption } from "@/app-shell/types";
 
@@ -51,5 +52,44 @@ describe("filterBrowseOptionsByResultFilter", () => {
     ];
     expect(filterOptions(options, "movie").map((option) => option.label)).toEqual(["Dune"]);
     expect(filterOptions(options, "").length).toBe(2);
+  });
+});
+
+describe("resolveDetailsOverlaySubmitValue", () => {
+  test("lets the details sheet continue into the selected title flow", () => {
+    const selected = {
+      value: "series-1",
+      label: "Frieren",
+    };
+
+    expect(
+      resolveDetailsOverlaySubmitValue({
+        detailsOpen: true,
+        searchReady: true,
+        selectedOption: selected,
+      }),
+    ).toBe("series-1");
+  });
+
+  test("does not submit when details are closed or results are still loading", () => {
+    const selected = {
+      value: "series-1",
+      label: "Frieren",
+    };
+
+    expect(
+      resolveDetailsOverlaySubmitValue({
+        detailsOpen: false,
+        searchReady: true,
+        selectedOption: selected,
+      }),
+    ).toBeNull();
+    expect(
+      resolveDetailsOverlaySubmitValue({
+        detailsOpen: true,
+        searchReady: false,
+        selectedOption: selected,
+      }),
+    ).toBeNull();
   });
 });

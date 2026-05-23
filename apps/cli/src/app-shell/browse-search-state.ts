@@ -91,6 +91,19 @@ export function isQueryDirty(state: BrowseSearchUiState): boolean {
   return state.queryDraft.trim() !== state.submittedQuery.trim();
 }
 
+export function resolveDetailsOverlaySubmitValue<TValue>({
+  detailsOpen,
+  searchReady,
+  selectedOption,
+}: {
+  readonly detailsOpen: boolean;
+  readonly searchReady: boolean;
+  readonly selectedOption: { readonly value: TValue } | null | undefined;
+}): TValue | null {
+  if (!detailsOpen || !searchReady) return null;
+  return selectedOption?.value ?? null;
+}
+
 export function normalizeBrowseCommandInput(nextValue: string): {
   readonly value: string;
   readonly openCommandPalette: boolean;
