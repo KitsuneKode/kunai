@@ -19,7 +19,7 @@ A dusk-plum surface with a two-note color chord:
 - **Rose** — everything you act on: focus, selection, brand, in-progress.
 - **Mint** — everything ready or done: available, complete, healthy. Rose's complement.
 
-Crimson is held back for real, actionable errors. A single plum is reserved for the series-complete milestone and nothing else.
+A vivid **alarm red** is held back for real, actionable errors — deliberately brighter and more saturated than the soft rose so an error never reads as "just part of the theme". A single plum is reserved for the series-complete milestone and nothing else.
 
 ## THE ONE RULE
 

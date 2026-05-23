@@ -39,10 +39,11 @@ const ok = "#84dcc2";
 const okDim = "#4f9d8b";
 const okFill = "#14241f";
 
-// Real, actionable error — crimson, kept distinct from the soft rose accent.
-const danger = "#e94f4f";
-const dangerDim = "#7c2024";
-const dangerFill = "#2f1414";
+// Real, actionable error — a vivid alarm red. Deliberately brighter and more
+// saturated than the soft rose accent so an error never reads as "just theme".
+const danger = "#ff5454";
+const dangerDim = "#9a2222";
+const dangerFill = "#371414";
 
 // Series-complete milestone — a single deliberate plum. Never reuse elsewhere.
 const milestone = "#b884d6";
