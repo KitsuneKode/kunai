@@ -88,12 +88,21 @@
   /* ===== calendar ===== */
   .daytabs{display:flex;gap:16px;font-size:13px;color:var(--dim)}
   .daytabs .on{color:var(--rose);font-weight:700}
+  .weekstrip{display:grid;grid-template-columns:repeat(7,minmax(38px,1fr));gap:8px;margin-top:12px;max-width:560px}
+  .wday{border-radius:7px;border:1px solid var(--line-soft);padding:6px 8px;color:var(--muted);font-size:12px;min-height:40px}
+  .wday b{display:block;color:var(--text-2);font-size:13px}
+  .wday .mk{display:block;color:var(--dim);letter-spacing:2px;margin-top:3px}
+  .wday.on{border-color:color-mix(in oklab,var(--rose) 42%,var(--line));background:var(--row-sel)}
+  .wday.on b{color:var(--text)}
+  .wday .mk.has{color:var(--rose)}
+  .bandtitle{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:16px 0 6px}
   .timegrp{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:14px 0 4px}
-  .crow{display:grid;grid-template-columns:18px 60px 1fr 90px 120px;align-items:center;padding:4px 8px 4px 0;border-radius:6px}
+  .crow{display:grid;grid-template-columns:18px 1.4fr 84px 150px 150px;align-items:center;padding:5px 8px 5px 0;border-radius:6px;column-gap:10px}
   .crow .tm{color:var(--muted);font-size:13px} .crow .bar{color:var(--rose);text-align:center;font-weight:700}
   .crow .ttl{color:var(--text);font-weight:500} .crow .code{color:var(--muted);font-size:13px}
   .crow .st{font-size:13px;text-align:right} .crow.sel{background:var(--row-sel)}
-  .s-aired{color:var(--ok)} .s-today{color:var(--rose)} .s-soon{color:var(--text-2)} .s-later{color:var(--dim)}
+  .s-available{color:var(--ok)} .s-countdown{color:var(--rose)} .s-resolving{color:var(--dim)} .s-future{color:var(--dim)}
+  .since{color:var(--muted);font-size:13px}
 
   /* ===== library state glyphs ===== */
   .g-saved{color:var(--dim)} .g-offline{color:var(--ok)} .g-prog{color:var(--rose)} .g-done{color:var(--ok)}
@@ -172,37 +181,46 @@
   </div>
 
   <!-- ============ CALENDAR ============ -->
-  <h2>Calendar · a tabbed vertical schedule</h2>
-  <p class="h2sub">Not search-with-dates. Type tabs across the top, day range below, vertical time groups. State colors stay in the chord: <span class="ok">mint</span> available · <span class="rose">rose</span> expected today · <span class="t2">bright</span> upcoming · <span class="dim">dim</span> later.</p>
+  <h2>Calendar · release-aware return loop</h2>
+  <p class="h2sub">Not search-with-dates. Calendar separates broadcast time from provider availability, shows a week at a glance, and puts tracked shows first: <span class="ok">mint</span> playable now · <span class="rose">rose</span> countdown today · <span class="dim">dim</span> aired but not scrapeable yet.</p>
   <div class="term">
-    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">Calendar</span> <span class="crumb">· Today · Fri, May 23</span></span><span><span class="dot-ok">●</span> ready · 178×41</span></div>
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">Calendar</span> <span class="crumb">· Spring 2026 · week 7</span></span><span><span class="dot-ok">●</span> ready · 178×41</span></div>
     <div class="body">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div class="tabs"><span class="on">All</span><span class="off">Anime</span><span class="off">Series</span><span class="off">Movies</span><span class="off">Tracked</span></div>
-        <div class="daytabs">Yesterday <span class="on">Today</span> Tomorrow Weekend Next&nbsp;week</div>
+        <div class="daytabs">‹ week <span class="on">Fri 23</span> week ›</div>
+      </div>
+      <div class="weekstrip" aria-label="week at a glance">
+        <div class="wday"><b>Mon</b><span class="mk">·</span></div>
+        <div class="wday"><b>Tue</b><span class="mk has">●</span></div>
+        <div class="wday"><b>Wed</b><span class="mk">·</span></div>
+        <div class="wday"><b>Thu</b><span class="mk has">●</span></div>
+        <div class="wday on"><b>Fri</b><span class="mk has">●●</span></div>
+        <div class="wday"><b>Sat</b><span class="mk">·</span></div>
+        <div class="wday"><b>Sun</b><span class="mk">·</span></div>
       </div>
       <div class="split" style="margin-top:6px">
         <div>
-          <div class="timegrp">Already aired</div>
-          <div class="crow"><span class="bar"></span><span class="tm">09:00</span><span class="ttl">Kaiju No. 8</span><span class="code">S02E07</span><span class="st s-aired">● available</span></div>
-          <div class="crow sel"><span class="bar">▎</span><span class="tm">11:30</span><span class="ttl">Frieren</span><span class="code">S01E29</span><span class="st s-aired">● available</span></div>
-          <div class="timegrp">Later today</div>
-          <div class="crow"><span class="bar"></span><span class="tm">18:00</span><span class="ttl">The Eminence in Shadow</span><span class="code">S03E04</span><span class="st s-today">◐ expected</span></div>
-          <div class="crow"><span class="bar"></span><span class="tm">21:00</span><span class="ttl">One Piece</span><span class="code">E1142</span><span class="st s-soon">○ upcoming</span></div>
-          <div class="timegrp">Late</div>
-          <div class="crow"><span class="bar"></span><span class="tm">23:30</span><span class="ttl">The Boys</span><span class="code">S05E02</span><span class="st s-later">· 23:30</span></div>
+          <div class="bandtitle">For you · releasing today</div>
+          <div class="crow sel"><span class="bar">▎</span><span class="ttl">Frieren</span><span class="code">S01E29</span><span class="st s-available">✓ available</span><span class="since">3 new since E5 · allanime</span></div>
+          <div class="crow"><span class="bar"></span><span class="ttl">Eminence in Shadow</span><span class="code">S03E04</span><span class="st s-countdown">◷ in 3h 20m</span><span class="since">tracked · provider pending</span></div>
+          <div class="crow"><span class="bar"></span><span class="ttl">One Piece</span><span class="code">E1142</span><span class="st s-resolving">◐ aired · resolving</span><span class="since">broadcasted · not playable yet</span></div>
+          <div class="bandtitle">Also today</div>
+          <div class="crow"><span class="bar"></span><span class="ttl">Kaiju No. 8</span><span class="code">S02E07</span><span class="st s-available">✓ available</span><span class="since">vidking</span></div>
+          <div class="crow"><span class="bar"></span><span class="ttl">The Boys</span><span class="code">S05E02</span><span class="st s-future">· 23:30</span><span class="since">series · not tracked</span></div>
         </div>
         <div class="rail">
           <div class="poster">FRIEREN</div>
           <div class="label">Frieren · S01E29</div>
           <div class="np-meta">Anime · aired 11:30 today · 24m</div>
           <div class="fact" style="margin-top:8px"><span class="k">status</span><span class="v ok">available now</span></div>
-          <div class="fact"><span class="k">tracked</span><span class="v rose">following</span></div>
+          <div class="fact"><span class="k">return</span><span class="v rose">3 new since E5</span></div>
+          <div class="fact"><span class="k">source</span><span class="v">allanime ready</span></div>
           <div class="resume"><span>▸ Watch now</span><span class="rose">enter</span></div>
         </div>
       </div>
     </div>
-    <div class="foot"><span><span class="key">[tab]</span> type &nbsp; <span class="key">[←→]</span> day &nbsp; <span class="key">[enter]</span> open &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Calendar</span></div>
+    <div class="foot"><span><span class="key">[tab]</span> type &nbsp; <span class="key">[←→]</span> day &nbsp; <span class="key">[enter]</span> open &nbsp; <span class="key">[shift+enter]</span> details &nbsp; <span class="key">[/]</span> commands</span><span class="surface">Calendar</span></div>
   </div>
 
   <!-- ============ LIBRARY ============ -->

@@ -48,17 +48,42 @@ Do not make normal screens feel like logs, dashboards, or provider inspectors.
 - Do not add full boxes around every group. Use spacing, alignment, muted bands, and line rhythm first.
 - Do not let a modal become a portal to the whole app.
 
-## Color Semantics
+## Visual Identity
+
+Canonical direction: `Sakura`.
+
+Kunai uses a dusk-plum base with a tight two-note chord:
+
+- Rose for brand, focus, selected rows, primary keys, active progress, and in-progress states.
+- Mint for ready, playable, available, attached, complete, and finished states.
+- Crimson for real actionable failure only.
+- Warm text ramp for titles, body, metadata, and unavailable/lower-confidence text.
+
+This replaces the earlier amber/teal exploration. The goal is not more color. The goal is stronger identity with less cognitive load.
 
 The palette should stay restrained. Color communicates state and action, not decoration.
 
-- Amber/gold: primary action, focus, active tab, selected row marker.
-- Teal: information, cursor, neutral active process.
-- Green: meaningful success, playable/ready/available.
-- Amber warning: expected today, paused, recoverable caution.
-- Blue/info: upcoming soon or informational state.
-- Red: real failure, missed/error state when actionable.
-- Dim: unavailable, later, low confidence, secondary metadata.
+### Sakura Tokens
+
+- Background: dusk plum, near black but not pure black.
+- Surface: slightly lifted dusk plum for headers, footers, selected row bands, and preview rails.
+- Text: warm rose-white for titles and important values.
+- Body: muted warm gray/rose for normal copy.
+- Dim: lower-confidence, unavailable, later, and secondary metadata.
+- Rose: brand, selected row marker, active tab, primary footer key, in-progress, expected-today, active playback/progress.
+- Rose-deep: determinate progress fill.
+- Rose-soft: hairline accents only.
+- Mint: meaningful success, playable/ready/available, subtitle attached, download ready, episode complete.
+- Crimson: failed, missed, blocked, broken, action required.
+
+### Color Discipline
+
+- Rose is not decoration. If everything is rose, hierarchy collapses.
+- Mint is reserved for actual readiness or completion. Do not use it for neutral positive copy.
+- Crimson is rare. Do not use it for absence, disabled, or low-priority states.
+- Media-type hues are allowed only in Stats data visualization. Normal lists, pickers, calendar rows, playback surfaces, and command palettes must not become color-coded by anime/series/movie.
+- Provider/source details stay muted unless they are the selected object or the user's current decision.
+- Metadata should usually be text-ramp hierarchy, not color.
 
 ## Glyph Rules
 

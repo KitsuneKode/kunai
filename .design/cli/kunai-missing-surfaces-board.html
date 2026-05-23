@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kunai Sakura Missing Surfaces Board</title>
+<style>
+  :root {
+    --bg: oklch(0.086 0.014 348);
+    --panel: oklch(0.116 0.018 350);
+    --panel-2: oklch(0.148 0.022 352);
+    --row: oklch(0.178 0.030 354);
+    --line: oklch(0.292 0.034 352);
+    --line-soft: oklch(0.210 0.024 352);
+    --text: oklch(0.940 0.010 350);
+    --body: oklch(0.780 0.016 350);
+    --muted: oklch(0.590 0.020 350);
+    --dim: oklch(0.430 0.018 350);
+    --rose: oklch(0.790 0.132 10);
+    --rose-soft: oklch(0.875 0.060 12);
+    --mint: oklch(0.830 0.105 168);
+    --cyan: oklch(0.770 0.105 205);
+    --crimson: oklch(0.640 0.210 25);
+    --amber: oklch(0.820 0.135 78);
+    --font: ui-monospace, "SFMono-Regular", "JetBrains Mono", "Cascadia Code", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at 84% -4%, oklch(0.260 0.090 18 / .22), transparent 34rem),
+      radial-gradient(circle at 10% 0%, oklch(0.230 0.060 325 / .16), transparent 30rem),
+      var(--bg);
+    color: var(--body);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 44px 28px 120px; }
+  h1 { margin: 0; color: var(--text); font-size: 25px; line-height: 1.2; letter-spacing: -0.02em; }
+  h2 { margin: 54px 0 12px; color: var(--rose); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; }
+  h3 { margin: 0 0 8px; color: var(--text); font-size: 16px; }
+  p { margin: 0; max-width: 88ch; color: var(--muted); }
+  b { color: var(--text); }
+  .lead { margin-top: 10px; color: var(--body); }
+  .rose { color: var(--rose); }
+  .mint { color: var(--mint); }
+  .cyan { color: var(--cyan); }
+  .crimson { color: var(--crimson); }
+  .amber { color: var(--amber); }
+  .muted { color: var(--muted); }
+  .dim { color: var(--dim); }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 22px;
+  }
+  .summary article {
+    border: 1px solid var(--line-soft);
+    background: color-mix(in oklab, var(--panel) 86%, transparent);
+    border-radius: 9px;
+    padding: 13px 14px;
+  }
+  .summary .k { color: var(--rose); font-size: 11px; text-transform: uppercase; letter-spacing: .16em; }
+  .summary .v { margin-top: 6px; color: var(--text); font-weight: 700; }
+  .summary .d { margin-top: 3px; color: var(--muted); font-size: 12px; }
+
+  .board {
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--panel);
+    box-shadow: 0 28px 90px oklch(0 0 0 / .42);
+    overflow: hidden;
+    margin-top: 16px;
+  }
+  .head, .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .foot { border-top: 1px solid var(--line-soft); border-bottom: 0; }
+  .chip { background: var(--text); color: var(--bg); font-weight: 800; border-radius: 4px; padding: 1px 8px; }
+  .brand { color: var(--rose); }
+  .dot { color: var(--mint); }
+  .body { padding: 18px 20px 22px; }
+  .key { color: var(--rose); font-weight: 800; }
+
+  .grid-2 { display: grid; grid-template-columns: minmax(0, 1.2fr) 300px; gap: 22px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .section-label {
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    margin: 16px 0 7px;
+  }
+  .rule { height: 1px; background: var(--line-soft); margin: 16px 0; }
+
+  .rail {
+    border-left: 1px solid var(--line-soft);
+    padding-left: 18px;
+  }
+  .poster {
+    height: 166px;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    background:
+      radial-gradient(circle at 50% 45%, color-mix(in oklab, var(--rose) 34%, transparent), transparent 38%),
+      linear-gradient(145deg, color-mix(in oklab, var(--rose) 20%, var(--panel)), color-mix(in oklab, var(--mint) 10%, var(--panel)));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--rose-soft);
+    font-weight: 800;
+    text-align: center;
+  }
+  .fact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .fact {
+    border: 1px solid var(--line-soft);
+    border-radius: 7px;
+    padding: 8px 10px;
+    min-height: 54px;
+  }
+  .fact .k { color: var(--muted); font-size: 12px; }
+  .fact .v { color: var(--text); font-weight: 700; margin-top: 2px; }
+  .context-stack { display: grid; gap: 8px; margin-top: 14px; }
+  .context-card {
+    display: grid;
+    grid-template-columns: 46px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    min-height: 54px;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    padding: 7px 9px;
+    background: color-mix(in oklab, var(--panel-2) 58%, transparent);
+    overflow: hidden;
+  }
+  .context-card .thumb {
+    width: 46px;
+    height: 36px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--rose-soft);
+    font-weight: 800;
+    font-size: 11px;
+    background:
+      radial-gradient(circle at 50% 44%, color-mix(in oklab, var(--rose) 35%, transparent), transparent 45%),
+      color-mix(in oklab, var(--row) 70%, var(--panel));
+  }
+  .context-card .ctitle {
+    color: var(--text);
+    font-weight: 800;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .context-card .cmeta {
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .context-card .cstate {
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .context-card.primary { border-color: color-mix(in oklab, var(--rose) 42%, var(--line)); background: var(--row); }
+  .context-card .ok { color: var(--mint); }
+  .context-card .wait { color: var(--amber); }
+
+  .row {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    min-height: 32px;
+    padding: 4px 8px 4px 0;
+    border-radius: 6px;
+  }
+  .row.selected { background: var(--row); }
+  .row .bar { color: var(--rose); font-weight: 800; text-align: center; }
+  .row .title { color: var(--text); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .meta { color: var(--muted); font-size: 13px; }
+  .row .right { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .row .right.primary { color: var(--rose); }
+  .row .right.ok { color: var(--mint); }
+  .row .right.danger { color: var(--crimson); }
+
+  .status-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    gap: 12px;
+    align-items: start;
+    border-top: 1px solid var(--line-soft);
+    padding: 12px 0;
+  }
+  .status-row:first-child { border-top: 0; padding-top: 0; }
+  .status-row .name { color: var(--text); font-weight: 800; }
+  .status-row .copy { color: var(--muted); }
+  .status-row .action { color: var(--rose); font-weight: 800; text-align: right; }
+
+  .mini-card {
+    border: 1px solid var(--line-soft);
+    border-radius: 9px;
+    background: color-mix(in oklab, var(--panel-2) 70%, transparent);
+    padding: 13px 14px;
+  }
+  .mini-card .tag { color: var(--rose); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
+  .mini-card .title { margin-top: 7px; color: var(--text); font-weight: 800; }
+  .mini-card .copy { margin-top: 4px; color: var(--muted); font-size: 13px; }
+
+  .tabs { display: flex; gap: 16px; align-items: center; color: var(--dim); font-size: 13px; }
+  .tabs .on { color: var(--text); font-weight: 800; border-bottom: 2px solid var(--rose); padding-bottom: 2px; }
+  .weekstrip {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 7px;
+    margin: 14px 0 16px;
+  }
+  .day {
+    border: 1px solid var(--line-soft);
+    border-radius: 7px;
+    padding: 6px 8px;
+    min-height: 42px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .day b { display: block; color: var(--body); font-size: 13px; }
+  .day.on { background: var(--row); border-color: color-mix(in oklab, var(--rose) 44%, var(--line)); }
+  .day .marks { color: var(--rose); letter-spacing: 2px; }
+
+  .calendar-row {
+    display: grid;
+    grid-template-columns: 78px 1fr 145px 165px;
+    gap: 12px;
+    align-items: center;
+    padding: 5px 8px;
+    border-radius: 6px;
+  }
+  .calendar-row.selected { background: var(--row); }
+  .calendar-row .time { color: var(--body); font-weight: 800; }
+  .calendar-row .title { color: var(--text); font-weight: 800; }
+  .calendar-row .meta { color: var(--muted); font-size: 13px; }
+  .calendar-row .state { text-align: right; font-size: 13px; white-space: nowrap; }
+
+  .split-input {
+    border-bottom: 1px solid color-mix(in oklab, var(--mint) 56%, var(--line));
+    padding: 8px 0 10px;
+    display: grid;
+    grid-template-columns: 110px 1fr 140px;
+    gap: 12px;
+  }
+  .split-input .label { color: var(--muted); }
+  .split-input .value { color: var(--text); }
+  .split-input .hint { color: var(--dim); text-align: right; }
+  .split-input.secondary { opacity: .64; border-color: var(--line-soft); }
+
+  .palette {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .swatch {
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    min-height: 74px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: end;
+    color: var(--bg);
+    font-weight: 800;
+    font-size: 11px;
+  }
+  .swatch small { display: block; color: color-mix(in oklab, currentColor 65%, transparent); font-weight: 600; }
+
+  .implementation {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .todo {
+    border: 1px solid var(--line-soft);
+    border-radius: 9px;
+    padding: 13px 14px;
+    background: color-mix(in oklab, var(--panel) 80%, transparent);
+  }
+  .todo .n { color: var(--rose); font-weight: 800; }
+  .todo .t { color: var(--text); font-weight: 800; }
+  .todo ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+
+  @media (max-width: 900px) {
+    .summary, .grid-3, .implementation { grid-template-columns: 1fr; }
+    .grid-2 { grid-template-columns: 1fr; }
+    .rail { border-left: 0; border-top: 1px solid var(--line-soft); padding-left: 0; padding-top: 18px; }
+    .calendar-row { grid-template-columns: 70px 1fr; }
+    .calendar-row .state, .calendar-row .meta { text-align: left; }
+    .palette { grid-template-columns: repeat(4, 1fr); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="rose">Kunai Sakura</span> missing surfaces board</h1>
+  <p class="lead">This board is for the redesign after the S1 color pass. It separates what is already safe from what still needs product design, state contracts, and implementation structure.</p>
+
+  <div class="summary">
+    <article>
+      <div class="k">Done</div>
+      <div class="v">S1 token migration</div>
+      <div class="d">Color names moved toward semantic roles. This makes future UI work safer.</div>
+    </article>
+    <article>
+      <div class="k">Not Done</div>
+      <div class="v">Interaction feel</div>
+      <div class="d">Failure states, picker logic, details, search focus, and return loops still need contracts.</div>
+    </article>
+    <article>
+      <div class="k">Risk</div>
+      <div class="v">Pretty but shallow</div>
+      <div class="d">A palette alone cannot fix cognitive load, dead actions, layout jump, or confusing states.</div>
+    </article>
+    <article>
+      <div class="k">Next</div>
+      <div class="v">S2 then S4/S5</div>
+      <div class="d">Recovery surfaces first, then daily surfaces and habit loops.</div>
+    </article>
+  </div>
+
+  <h2>Why S1 Was Color Only</h2>
+  <div class="board">
+    <div class="body">
+      <div class="status-row">
+        <div class="name">S1 intent</div>
+        <div class="copy">Replace deprecated palette call sites with semantic roles so later redesign work does not fight old color names.</div>
+        <div class="action">good foundation</div>
+      </div>
+      <div class="status-row">
+        <div class="name">What it cannot fix</div>
+        <div class="copy">It does not decide if a command belongs in a modal, if a picker should open, if a search edit refetches, or how an error recovers.</div>
+        <div class="action">needs S2/S4/S5</div>
+      </div>
+      <div class="status-row">
+        <div class="name">How feel improves</div>
+        <div class="copy">A screen should be built from stable primitives: footer, media list, preview rail, action rows, state block, capability rows, details sheet.</div>
+        <div class="action">shared first</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>S2 Release Gate: Failure And Recovery</h2>
+  <p>These are the most important missing UX states. They protect trust in a scraper app because the user needs to know what failed, what was preserved, and what action is safe.</p>
+
+  <div class="board">
+    <div class="head"><span><span class="brand">Kunai</span> · <span class="chip">Playback issue</span> · vidking · The Boys S01E01</span><span><span class="crimson">● stream stalled</span> · 178×41</span></div>
+    <div class="body grid-2">
+      <section>
+        <div class="section-label">Current episode</div>
+        <h3>The Boys</h3>
+        <p>S01E01 · provider vidking · subtitles attached · watched progress preserved</p>
+
+        <div class="section-label">Problem</div>
+        <div class="status-row">
+          <div class="name"><span class="crimson">● Stream stalled</span></div>
+          <div class="copy">mpv is open, but playback has not advanced for 30s. Kunai should not mark this watched or push next as primary.</div>
+          <div class="action">recover</div>
+        </div>
+        <div class="status-row">
+          <div class="name"><span class="amber">◐ Provider degraded</span></div>
+          <div class="copy">Trying another source quietly. This is inline status, not a scary full-screen error.</div>
+          <div class="action">fallback</div>
+        </div>
+        <div class="status-row">
+          <div class="name"><span class="crimson">× No source</span></div>
+          <div class="copy">All known sources failed. Offer diagnostics and source switch. Do not loop into the same dead URL.</div>
+          <div class="action">sources</div>
+        </div>
+      </section>
+
+      <aside class="rail">
+        <div class="poster">THE<br>BOYS</div>
+        <div class="fact-grid">
+          <div class="fact"><div class="k">Progress</div><div class="v">06:42 saved</div></div>
+          <div class="fact"><div class="k">Watched</div><div class="v">not marked</div></div>
+          <div class="fact"><div class="k">Action</div><div class="v">recover</div></div>
+          <div class="fact"><div class="k">Details</div><div class="v">diagnostics</div></div>
+        </div>
+      </aside>
+    </div>
+    <div class="foot"><span><span class="key">[r]</span> recover &nbsp; <span class="key">[f]</span> fallback &nbsp; <span class="key">[s]</span> sources &nbsp; <span class="key">[/]</span> commands</span><span>Playback issue</span></div>
+  </div>
+
+  <h2>S4 Daily Surface: Search Results And Details</h2>
+  <p>Search needs more than a prettier list. The missing behavior is query state separate from result filtering, a stable preview rail, and a details sheet for people who want cast, genres, seasons, trailers, or evidence before opening.</p>
+
+  <div class="board">
+    <div class="head"><span><span class="brand">Kunai</span> · <span class="chip">Browse</span> · series · vidking</span><span><span class="dot">● ready</span> · 12 results</span></div>
+    <div class="body">
+      <div class="split-input">
+        <div class="label">Search title</div>
+        <div class="value">The Boys<span class="mint">█</span></div>
+        <div class="hint">enter to search</div>
+      </div>
+      <div class="split-input secondary">
+        <div class="label">Filter results</div>
+        <div class="value">hidden until focused · filters current result set only</div>
+        <div class="hint">ctrl+f</div>
+      </div>
+      <div class="rule"></div>
+
+      <div class="grid-2">
+        <section>
+          <div class="row selected"><div class="bar">▌</div><div><div class="title">The Boys (2019)</div><div class="meta">series · superhero · exact match</div></div><div class="right">series</div></div>
+          <div class="row"><div class="bar"></div><div><div class="title">The Boys Presents: Diabolical (2022)</div><div class="meta">animated anthology · related</div></div><div class="right">series</div></div>
+          <div class="row"><div class="bar"></div><div><div class="title">The Hardy Boys (1995)</div><div class="meta">mystery · older match</div></div><div class="right">series</div></div>
+          <div class="row"><div class="bar"></div><div><div class="title">My Life with the Walter Boys (2023)</div><div class="meta">drama · title similar</div></div><div class="right">series</div></div>
+        </section>
+        <aside class="rail">
+          <div class="poster">THE<br>BOYS</div>
+          <h3 style="margin-top:14px;">The Boys</h3>
+          <p>series · 2019 · 4 seasons · adult superhero satire</p>
+          <p style="margin-top:10px;">A vigilante group takes on corrupt superheroes. Preview confirms the selected match before playback.</p>
+          <div class="fact-grid">
+            <div class="fact"><div class="k">Provider</div><div class="v">ready</div></div>
+            <div class="fact"><div class="k">Details</div><div class="v">shift+enter</div></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+    <div class="foot"><span><span class="key">[enter]</span> open &nbsp; <span class="key">[↑↓]</span> navigate &nbsp; <span class="key">[ctrl+f]</span> filter &nbsp; <span class="key">[shift+enter]</span> details &nbsp; <span class="key">[/]</span> commands</span><span>Browse</span></div>
+  </div>
+
+  <h2>S4 Daily Surface: Tracks Panel</h2>
+  <p>Tracks should stop feeling like multiple dead pickers. The panel needs grouped capabilities, facts for single-option sections, and clear disabled reasons when the backend cannot provide choices.</p>
+
+  <div class="board">
+    <div class="head"><span><span class="brand">Kunai</span> · <span class="chip">Tracks</span> · DR. STONE · S04E07</span><span><span class="dot">● ready</span></span></div>
+    <div class="body grid-2">
+      <section>
+        <div class="section-label">Current stream</div>
+        <div class="row selected"><div class="bar">▌</div><div><div class="title">VID MP4</div><div class="meta">allanime · direct-http · cache hit</div></div><div class="right ok">current</div></div>
+
+        <div class="section-label">Capabilities</div>
+        <div class="row"><div class="bar"></div><div><div class="title">Quality</div><div class="meta">single option, render as fact instead of opening picker</div></div><div class="right">1080p</div></div>
+        <div class="row"><div class="bar"></div><div><div class="title">Audio</div><div class="meta">Japanese · English unavailable from this provider</div></div><div class="right">ja</div></div>
+        <div class="row"><div class="bar"></div><div><div class="title">Subtitles</div><div class="meta">151 attached to mpv, choose inside player</div></div><div class="right ok">attached</div></div>
+        <div class="row"><div class="bar"></div><div><div class="title">Hard subtitles</div><div class="meta">provider stream is hardsubbed</div></div><div class="right">en</div></div>
+      </section>
+      <aside class="rail">
+        <div class="mini-card">
+          <div class="tag">Rule</div>
+          <div class="title">No dead picker</div>
+          <div class="copy">If there is only one option, show it as a fact. If unavailable, show why. Open a picker only when choice exists.</div>
+        </div>
+        <div class="mini-card" style="margin-top:10px;">
+          <div class="tag">Backend contract</div>
+          <div class="title">Normalize first</div>
+          <div class="copy">UI gets source, quality, audio, subtitle, hardsub sections with current, locked, unavailable, and failed states.</div>
+        </div>
+      </aside>
+    </div>
+    <div class="foot"><span><span class="key">[↑↓]</span> select &nbsp; <span class="key">[enter]</span> change available choice &nbsp; <span class="key">[esc]</span> close &nbsp; <span class="key">[/]</span> commands</span><span>Tracks</span></div>
+  </div>
+
+  <h2>S4 Daily Surface: Scoped Command Palette</h2>
+  <p>The command palette should feel powerful without becoming a portal out of the current task. Scope is the UX: post-play sees post-play actions, a picker sees picker actions, global appears only when explicitly expanded.</p>
+
+  <div class="board">
+    <div class="body grid-3">
+      <article class="mini-card">
+        <div class="tag">PPS scope</div>
+        <div class="title">Next, replay, episodes, tracks, search</div>
+        <div class="copy">Commands keep the user inside the post-playback decision. Global actions are hidden behind "more".</div>
+      </article>
+      <article class="mini-card">
+        <div class="tag">Picker scope</div>
+        <div class="title">Open, filter, sort, close</div>
+        <div class="copy">Picker commands do not jump to unrelated surfaces. Escape always returns to the parent context.</div>
+      </article>
+      <article class="mini-card">
+        <div class="tag">Global scope</div>
+        <div class="title">Settings, history, diagnostics</div>
+        <div class="copy">Global commands exist, but must not be the default list while the user is making a local choice.</div>
+      </article>
+    </div>
+  </div>
+
+  <h2>S5 Return Loop: Post-Play, Browse, Calendar, History</h2>
+  <p>The product should not just play a stream. It should make the next useful thing obvious without guilt copy or clutter. This is the habit loop still missing after S1.</p>
+
+  <div class="board">
+    <div class="head"><span><span class="brand">Kunai</span> · <span class="chip">Post-play</span> · anime · allanime · DR. STONE</span><span><span class="dot">● ready</span> · 180×45</span></div>
+    <div class="body grid-2">
+      <section>
+        <h3>DR. STONE</h3>
+        <p>E31 · Unknown Known · watched 24m · sub | dub</p>
+        <div class="section-label">Playback result</div>
+        <p><span class="mint">✓ episode complete</span> · next episode available · autoplay paused</p>
+
+        <div class="section-label">Next actions</div>
+        <div class="row selected"><div class="bar">▌</div><div><div class="title">Next episode</div><div class="meta">E32 · Challengers of Science · 24m</div></div><div class="right primary">enter</div></div>
+        <div class="row"><div class="bar"></div><div><div class="title">Episodes</div><div class="meta">open season list, current episode stays marked</div></div><div class="right">e</div></div>
+        <div class="row"><div class="bar"></div><div><div class="title">Tracks</div><div class="meta">source, quality, audio, subtitles</div></div><div class="right">t</div></div>
+        <div class="row"><div class="bar"></div><div><div class="title">Search</div><div class="meta">find something else without leaving the flow</div></div><div class="right">s</div></div>
+
+        <div class="section-label">Recommended from this watch</div>
+        <div class="row"><div class="bar"></div><div><div class="title">La Brea</div><div class="meta">survival mystery · series</div></div><div class="right">1</div></div>
+        <div class="row"><div class="bar"></div><div><div class="title">Agents of S.H.I.E.L.D.</div><div class="meta">team sci-fi · series</div></div><div class="right">2</div></div>
+      </section>
+      <aside class="rail">
+        <div class="poster">DR.<br>STONE</div>
+        <h3 style="margin-top:14px;">Next episode</h3>
+        <p>E32 · Challengers of Science</p>
+        <div class="fact-grid">
+          <div class="fact"><div class="k">State</div><div class="v">available</div></div>
+          <div class="fact"><div class="k">Autoplay</div><div class="v">paused</div></div>
+        </div>
+        <div class="section-label">Context cards</div>
+        <div class="context-stack">
+          <div class="context-card primary">
+            <div class="thumb">E32</div>
+            <div>
+              <div class="ctitle">Challengers of Science</div>
+              <div class="cmeta">next · 24m · playable</div>
+            </div>
+            <div class="cstate ok">▶</div>
+          </div>
+          <div class="context-card">
+            <div class="thumb">E30</div>
+            <div>
+              <div class="ctitle">Stone to Space</div>
+              <div class="cmeta">previous · watched</div>
+            </div>
+            <div class="cstate ok">✓</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <div class="foot"><span><span class="key">[enter]</span> next &nbsp; <span class="key">[r]</span> replay &nbsp; <span class="key">[e]</span> episodes &nbsp; <span class="key">[t]</span> tracks &nbsp; <span class="key">[s]</span> search &nbsp; <span class="key">[/]</span> commands</span><span>PPS</span></div>
+  </div>
+
+  <h2>S5 Return Loop: Calendar Built For This App</h2>
+  <p>Calendar must not conflate broadcast with provider availability. The core states are available, countdown, aired resolving, future, and failed. It should show "new since your E5" when the show is tracked.</p>
+
+  <div class="board">
+    <div class="head"><span><span class="brand">Kunai</span> · <span class="chip">Calendar</span> · schedule · tracked + discoverable</span><span><span class="dot">● ready</span> · week</span></div>
+    <div class="body grid-2">
+      <section>
+        <div class="tabs"><span class="on">All</span><span>Anime</span><span>Series</span><span>Movies</span><span>Tracked</span></div>
+        <div class="weekstrip">
+          <div class="day"><b>Mon</b><span class="marks">·</span></div>
+          <div class="day"><b>Tue</b><span class="marks">●</span></div>
+          <div class="day"><b>Wed</b><span class="marks">·</span></div>
+          <div class="day"><b>Thu</b><span class="marks">●</span></div>
+          <div class="day on"><b>Fri</b><span class="marks">●●</span></div>
+          <div class="day"><b>Sat</b><span class="marks">·</span></div>
+          <div class="day"><b>Sun</b><span class="marks">·</span></div>
+        </div>
+
+        <div class="section-label">For you</div>
+        <div class="calendar-row selected"><div class="time">18:00</div><div><div class="title">Frieren</div><div class="meta">S02E04 · 3 new since E5</div></div><div class="state mint">✓ available</div><div class="meta">allanime</div></div>
+        <div class="calendar-row"><div class="time">21:30</div><div><div class="title">Eminence in Shadow</div><div class="meta">S03E04 · tracked</div></div><div class="state amber">◷ in 3h 20m</div><div class="meta">not playable yet</div></div>
+        <div class="calendar-row"><div class="time">22:00</div><div><div class="title">One Piece</div><div class="meta">E1142 · broadcast happened</div></div><div class="state dim">◐ aired · resolving</div><div class="meta">waiting provider</div></div>
+
+        <div class="section-label">Also today</div>
+        <div class="calendar-row"><div class="time">23:30</div><div><div class="title">The Boys</div><div class="meta">S05E02 · series</div></div><div class="state dim">· future</div><div class="meta">track available</div></div>
+      </section>
+      <aside class="rail">
+        <div class="poster">FRIEREN</div>
+        <h3 style="margin-top:14px;">Frieren</h3>
+        <p>S02E04 · playable now · 3 new since your E5</p>
+        <div class="fact-grid">
+          <div class="fact"><div class="k">Broadcast</div><div class="v">aired</div></div>
+          <div class="fact"><div class="k">Provider</div><div class="v">available</div></div>
+          <div class="fact"><div class="k">Tracking</div><div class="v">tracked</div></div>
+          <div class="fact"><div class="k">Action</div><div class="v">watch</div></div>
+        </div>
+      </aside>
+    </div>
+    <div class="foot"><span><span class="key">[tab]</span> type &nbsp; <span class="key">[←→]</span> day &nbsp; <span class="key">[enter]</span> open &nbsp; <span class="key">[shift+enter]</span> details &nbsp; <span class="key">[/]</span> commands</span><span>Calendar</span></div>
+  </div>
+
+  <h2>S3 Portability And Stability</h2>
+  <p>This is the work that makes the design feel professional across terminals. It is not glamorous, but it prevents broken layouts, flicker, and image-related jumping.</p>
+  <div class="grid-3">
+    <article class="mini-card">
+      <div class="tag">Poster fallback</div>
+      <div class="title">image → letter tile → hidden</div>
+      <div class="copy">Always reserve the poster slot. Metadata anchors below it so late images do not move text.</div>
+    </article>
+    <article class="mini-card">
+      <div class="tag">Color fallback</div>
+      <div class="title">truecolor → 256 → 16</div>
+      <div class="copy">Centralize terminal color adaptation. Screens consume semantic roles only.</div>
+    </article>
+    <article class="mini-card">
+      <div class="tag">Responsive fallback</div>
+      <div class="title">rail collapses first</div>
+      <div class="copy">Narrow terminal keeps header, main list, active state, and commands. Preview is optional.</div>
+    </article>
+  </div>
+
+  <h2>Color Strategy Still Missing</h2>
+  <p>S1 made names semantic, but hierarchy is still weak if most text is muted and amber. The next pass should tune where colors appear, not add more colors.</p>
+  <div class="board">
+    <div class="body">
+      <div class="palette">
+        <div class="swatch" style="background:var(--bg); color:var(--text);"><span>bg</span><small>never pure black</small></div>
+        <div class="swatch" style="background:var(--panel-2); color:var(--text);"><span>surface</span><small>subtle depth</small></div>
+        <div class="swatch" style="background:var(--text);"><span>text</span><small>titles by weight</small></div>
+        <div class="swatch" style="background:var(--muted);"><span>muted</span><small>metadata</small></div>
+        <div class="swatch" style="background:var(--rose);"><span>rose</span><small>focus/action</small></div>
+        <div class="swatch" style="background:var(--mint);"><span>mint</span><small>playable/done</small></div>
+        <div class="swatch" style="background:var(--amber);"><span>amber</span><small>waiting/countdown</small></div>
+        <div class="swatch" style="background:var(--crimson);"><span>crimson</span><small>real failure</small></div>
+      </div>
+      <div class="rule"></div>
+      <p><b>Rule:</b> color should label state and focus. Hierarchy comes from text weight, row rhythm, spacing, and stable layout. Do not make every title blue, every source teal, or every metadata fact a badge.</p>
+    </div>
+  </div>
+
+  <h2>Implementation Slices After The Board</h2>
+  <div class="implementation">
+    <article class="todo">
+      <div><span class="n">01</span> <span class="t">Shared primitives first</span></div>
+      <ul>
+        <li>Footer action model and collapse rules.</li>
+        <li>StateBlock for loading, empty, error, success.</li>
+        <li>PreviewRail with stable poster reservation.</li>
+        <li>MediaList, ActionList, PickerSurface, CapabilityRows.</li>
+      </ul>
+    </article>
+    <article class="todo">
+      <div><span class="n">02</span> <span class="t">Recovery surfaces</span></div>
+      <ul>
+        <li>Playback did not start, stream stalled, no source, provider degraded.</li>
+        <li>Recover/fallback/sources/diagnostics are explicit and scoped.</li>
+        <li>Never mark watched on unresolved failure.</li>
+      </ul>
+    </article>
+    <article class="todo">
+      <div><span class="n">03</span> <span class="t">Daily surfaces</span></div>
+      <ul>
+        <li>Search query vs result-filter separation.</li>
+        <li>Tracks capability normalization.</li>
+        <li>Scoped command palette.</li>
+        <li>DetailsSheet for rich media information.</li>
+      </ul>
+    </article>
+    <article class="todo">
+      <div><span class="n">04</span> <span class="t">Return loop and portability</span></div>
+      <ul>
+        <li>Browse ready-for-you-now, Calendar new-since-current, History resume.</li>
+        <li>Poster and color fallback, narrow terminal behavior, CJK truncation.</li>
+        <li>Targeted reducer/view-model tests before visual wiring.</li>
+      </ul>
+    </article>
+  </div>
+</main>
+</body>
+</html>

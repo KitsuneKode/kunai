@@ -17,6 +17,7 @@ Before screen-specific implementation, create or refine shared primitives:
 - `CapabilityRows`
 - `MediaList`
 - `DetailsSheet`
+- `ThemeTokens`
 
 Shared primitives must encode the contracts in:
 
@@ -28,6 +29,7 @@ Shared primitives must encode the contracts in:
 Recommended shared work before parallel screen edits:
 
 - footer action model and collapse behavior
+- Sakura theme token model and terminal color adapter
 - preview rail stable poster slot
 - state block contract for loading/empty/error/success
 - media list row view model
@@ -118,6 +120,7 @@ Each implemented surface must pass:
 - Stats are motivational/product-facing, not diagnostics.
 - History is resume-first and deletion is never the primary action.
 - Library/downloads separate ready offline items from queue/failure management.
+- Sakura token discipline is preserved: rose focus/progress, mint ready/complete, crimson failure, media-type hues only in Stats.
 - Reducers/view model builders have targeted tests when state transitions are nontrivial.
 
 ## Suggested Verification

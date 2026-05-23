@@ -4,6 +4,8 @@ Status: **in progress** — foundation landed (tokens + theme contract). Slices 
 
 Goal: ship the Sakura design system (dusk plum · rose · mint) as the next Kunai version, then keep it future-proof. Source code is truth; the design contract is [.docs/design-system.md](../.docs/design-system.md); visual reference is [`.design/cli/kunai-sakura*.html`](../.design/cli/).
 
+Parallel handoff prompts: [.plans/sakura-parallel-agent-prompts.md](sakura-parallel-agent-prompts.md)
+
 ## Guiding rules (apply to every slice)
 
 - **THE ONE RULE**: color = state or focus, never identity. Titles win by weight. Media-type hue only on Stats.
@@ -46,6 +48,8 @@ Done when no `palette.{amber,pink,teal,cyan,info,lavender,green,red,yellow,gray,
 ## S2 · Failure & recovery surfaces (release gate)
 
 The real product for a scraper app. Draw + implement, using `danger` + glyph + one recovery action:
+
+Implementation plan: [.plans/sakura-shared-primitives-recovery-plan.md](sakura-shared-primitives-recovery-plan.md)
 
 - `Playback did not start` (never marks watched, never offers next as primary).
 - `Stream stalled` (promote recover/fallback into body+footer while relevant).

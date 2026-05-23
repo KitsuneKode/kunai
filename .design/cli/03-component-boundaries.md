@@ -10,6 +10,25 @@ Do not create separate list, footer, preview, or picker systems per screen.
 
 ## Shared Primitives
 
+### ThemeTokens
+
+Owns semantic role names, not raw colors:
+
+- background, surface, line, text, body, muted, dim
+- rose, roseDeep, roseSoft
+- mint, mintDim
+- crimson
+- statsAnime, statsSeries, statsMovie
+
+Rules:
+
+- Sakura is the canonical direction.
+- Rose means brand, focus, selected rows, primary keys, active progress, and in-progress states.
+- Mint means ready, available, attached, complete, and playable.
+- Crimson means real actionable failure.
+- Media-type hues are confined to Stats and charts. Do not turn normal browse/search metadata into a rainbow.
+- Screen code should consume token roles. Do not hardcode exploration colors inside surfaces.
+
 ### ShellFrame
 
 Owns:
@@ -122,6 +141,32 @@ type PreviewRailModel = {
   facts: Array<{ label: string; value: string; tone?: string }>;
 };
 ```
+
+### ContextCard
+
+Owns:
+
+- compact next/previous/now/related rows
+- fixed card height
+- thumbnail or initials fallback
+- one-line title and one-line metadata clamp
+- small state glyph
+
+Used by:
+
+- active playback next/previous context
+- post-playback next/previous context
+- compact "now showing" rails
+- related/recommendation context where a full preview rail is too heavy
+
+Rules:
+
+- Do not render huge `next` / `prev` labels.
+- Do not let long titles increase card height.
+- Use thumbnail when available, initials when not, and text-only only as the narrowest fallback.
+- Hide previous context before next context on narrow terminals.
+- Hide thumbnails before hiding the card.
+- Context cards orient the user. They should not compete with the primary selected action.
 
 ### DetailsSheet
 

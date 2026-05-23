@@ -1,20 +1,12 @@
 # Kunai CLI Design Reference Bundle
 
-This file bundles the current CLI/TUI design specs for external review, design tooling, and parallel-agent handoff. Source code remains implementation truth; this document captures the intended visual and interaction contract.
+Generated from `.design/cli` on 2026-05-23. Source code remains the truth; this bundle exists so another design or implementation agent can ingest the current CLI design direction in one file.
 
-Generated from `.design/cli` on 2026-05-22.
-
-## How To Use This Bundle
-
-- Treat this as the taste and interaction reference for the Kunai CLI redesign.
-- Use `.design/cli/00-principles.md` for product feel and color semantics.
-- Use `.design/cli/implementation-split.md` for parallel-agent ownership.
-- Keep visuals realistic to terminal constraints: monospace, limited color, stable dimensions, no web-only decoration.
-- When implementation disagrees with this bundle, inspect source code first and update the design specs intentionally.
+Canonical visual direction: Sakura. Rose is focus/progress/action, mint is ready/complete/playable, crimson is real failure, and media-type hues are restricted to Stats/data visualization. Calendar distinguishes broadcast state from provider availability.
 
 ---
 
-# Source: .design/cli/00-principles.md
+## 00-principles.md
 
 # Kunai CLI Design Principles
 
@@ -66,17 +58,42 @@ Do not make normal screens feel like logs, dashboards, or provider inspectors.
 - Do not add full boxes around every group. Use spacing, alignment, muted bands, and line rhythm first.
 - Do not let a modal become a portal to the whole app.
 
-## Color Semantics
+## Visual Identity
+
+Canonical direction: `Sakura`.
+
+Kunai uses a dusk-plum base with a tight two-note chord:
+
+- Rose for brand, focus, selected rows, primary keys, active progress, and in-progress states.
+- Mint for ready, playable, available, attached, complete, and finished states.
+- Crimson for real actionable failure only.
+- Warm text ramp for titles, body, metadata, and unavailable/lower-confidence text.
+
+This replaces the earlier amber/teal exploration. The goal is not more color. The goal is stronger identity with less cognitive load.
 
 The palette should stay restrained. Color communicates state and action, not decoration.
 
-- Amber/gold: primary action, focus, active tab, selected row marker.
-- Teal: information, cursor, neutral active process.
-- Green: meaningful success, playable/ready/available.
-- Amber warning: expected today, paused, recoverable caution.
-- Blue/info: upcoming soon or informational state.
-- Red: real failure, missed/error state when actionable.
-- Dim: unavailable, later, low confidence, secondary metadata.
+### Sakura Tokens
+
+- Background: dusk plum, near black but not pure black.
+- Surface: slightly lifted dusk plum for headers, footers, selected row bands, and preview rails.
+- Text: warm rose-white for titles and important values.
+- Body: muted warm gray/rose for normal copy.
+- Dim: lower-confidence, unavailable, later, and secondary metadata.
+- Rose: brand, selected row marker, active tab, primary footer key, in-progress, expected-today, active playback/progress.
+- Rose-deep: determinate progress fill.
+- Rose-soft: hairline accents only.
+- Mint: meaningful success, playable/ready/available, subtitle attached, download ready, episode complete.
+- Crimson: failed, missed, blocked, broken, action required.
+
+### Color Discipline
+
+- Rose is not decoration. If everything is rose, hierarchy collapses.
+- Mint is reserved for actual readiness or completion. Do not use it for neutral positive copy.
+- Crimson is rare. Do not use it for absence, disabled, or low-priority states.
+- Media-type hues are allowed only in Stats data visualization. Normal lists, pickers, calendar rows, playback surfaces, and command palettes must not become color-coded by anime/series/movie.
+- Provider/source details stay muted unless they are the selected object or the user's current decision.
+- Metadata should usually be text-ramp hierarchy, not color.
 
 ## Glyph Rules
 
@@ -125,7 +142,7 @@ Loading should be subtle and non-blocking. Error states should be actionable. Em
 
 ---
 
-# Source: .design/cli/01-shell-footer-contract.md
+## 01-shell-footer-contract.md
 
 # Shell And Footer Contract
 
@@ -253,7 +270,7 @@ Rules:
 
 ---
 
-# Source: .design/cli/02-state-ux.md
+## 02-state-ux.md
 
 # State UX Contract
 
@@ -295,7 +312,9 @@ provider scrape resolve cache subtitle status startup wait...
 Success should usually be quiet.
 
 - Do not celebrate every normal state.
-- Use green only for meaningful ready/available/playable states.
+- Use mint only for meaningful ready/available/playable/complete states.
+- Use rose for active focus, active progress, and expected-near-term states.
+- Use crimson only for actionable failure.
 - Prefer stable body updates over banners.
 - Toasts are only for short-lived confirmations.
 
@@ -421,6 +440,17 @@ Search errors should distinguish:
 
 If partial results exist, show them and mark the degraded source quietly.
 
+## Calendar Family
+
+Calendar states must separate broadcast/release timing from provider availability.
+
+- `available` means Kunai can reasonably open or resolve the episode now.
+- `aired · resolving` means the episode has broadcast, but no playable provider result is ready yet.
+- Countdown states should use relative time for same-day releases, such as `in 3h 20m`.
+- Calendar should prioritize the return loop: tracked shows, saved titles, and `new since E#` context before generic releases.
+
+Do not send users into a dead playback attempt from an `aired · resolving` row. Offer details, refresh, track/untrack, or wait-copy instead.
+
 ## Details Sheet
 
 Details should be scrollable and resilient to missing metadata.
@@ -522,7 +552,7 @@ Start watching and progress will appear here.
 
 ---
 
-# Source: .design/cli/03-component-boundaries.md
+## 03-component-boundaries.md
 
 # Component Boundaries And State Ownership
 
@@ -535,6 +565,25 @@ Shared behavior belongs in shared primitives. Screen files provide view models a
 Do not create separate list, footer, preview, or picker systems per screen.
 
 ## Shared Primitives
+
+### ThemeTokens
+
+Owns semantic role names, not raw colors:
+
+- background, surface, line, text, body, muted, dim
+- rose, roseDeep, roseSoft
+- mint, mintDim
+- crimson
+- statsAnime, statsSeries, statsMovie
+
+Rules:
+
+- Sakura is the canonical direction.
+- Rose means brand, focus, selected rows, primary keys, active progress, and in-progress states.
+- Mint means ready, available, attached, complete, and playable.
+- Crimson means real actionable failure.
+- Media-type hues are confined to Stats and charts. Do not turn normal browse/search metadata into a rainbow.
+- Screen code should consume token roles. Do not hardcode exploration colors inside surfaces.
 
 ### ShellFrame
 
@@ -875,7 +924,7 @@ Prefer testing view model builders and reducers:
 
 ---
 
-# Source: .design/cli/surfaces/post-playback.md
+## surfaces/post-playback.md
 
 # Post-Playback Surface
 
@@ -1003,7 +1052,7 @@ Never mark watched or offer next as primary if playback never started.
 
 ---
 
-# Source: .design/cli/surfaces/active-playback.md
+## surfaces/active-playback.md
 
 # Active Playback
 
@@ -1072,7 +1121,7 @@ Once playing, compress it into health context or hide it.
 
 ---
 
-# Source: .design/cli/surfaces/tracks-panel.md
+## surfaces/tracks-panel.md
 
 # Tracks Panel
 
@@ -1150,7 +1199,7 @@ If no rows can change, `enter` should not open a dead picker.
 
 ---
 
-# Source: .design/cli/surfaces/episode-season-picker.md
+## surfaces/episode-season-picker.md
 
 # Episode And Season Picker
 
@@ -1226,7 +1275,7 @@ On narrow terminals, keep:
 
 ---
 
-# Source: .design/cli/surfaces/recommendations-viewer.md
+## surfaces/recommendations-viewer.md
 
 # Recommendations Viewer
 
@@ -1289,7 +1338,7 @@ This surface should reuse the same `MediaList + PreviewRail` pattern as search/b
 
 ---
 
-# Source: .design/cli/surfaces/search-details-calendar.md
+## surfaces/search-details-calendar.md
 
 # Search, Details, And Calendar
 
@@ -1400,15 +1449,28 @@ Preview stays short. Details is where depth lives.
 
 ## Calendar
 
-Calendar is not search results with dates. It is a tabbed vertical schedule.
+Calendar is not search results with dates. It is a tabbed vertical schedule and a return-loop surface for tracked media.
+
+The calendar must distinguish broadcast state from playable availability. A release can have aired but still not be playable through any provider Kunai can resolve. Do not label something `available` until the provider contract says it can be opened or resolved with reasonable confidence.
 
 ### Layout
 
 - Header: Calendar mode and schedule context.
 - Type tabs: `All`, `Anime`, `Series`, `Movies`, `Tracked`.
-- Day range: five visible day controls such as `Yesterday`, `Today`, `Tomorrow`, `Weekend`, `Next week`.
-- Main list: vertical time groups.
-- Preview rail: selected release details.
+- Week strip: seven day cells with release markers and a selected day.
+- Main list: `For you` first, then `Also today`.
+- Vertical time groups or release bands, depending on density.
+- Preview rail: selected release details, countdown, availability, and return-loop context.
+
+### Priority Bands
+
+Use this order:
+
+1. `For you`: tracked shows, new episodes since the user's last watched episode, or saved titles.
+2. `Also today`: non-tracked releases for the selected type/day.
+3. `Later`: future releases when there is enough room.
+
+The important user-facing fact is not only `S01E29`. It is `3 new since E5`, `available now`, or `in 3h 20m`.
 
 ### Controls
 
@@ -1423,29 +1485,44 @@ Calendar is not search results with dates. It is a tabbed vertical schedule.
 
 ### State Colors
 
-- Green: aired / available / playable.
-- Amber: expected today.
-- Blue/info: upcoming soon.
-- Dim: later / not actionable yet.
-- Red: missed or metadata failure, only when useful.
+Calendar uses the canonical Sakura token model:
+
+- Mint: provider-available / playable now.
+- Rose: countdown today, active near-term, selected/focused release.
+- Text/body: normal upcoming release when it does not require attention.
+- Dim: aired but not provider-available yet, provider pending, resolving, later, or not actionable yet.
+- Crimson: missed or metadata failure, only when useful.
+
+Recommended release states:
+
+```text
+✓ available          playable on a provider now
+◷ in 3h 20m          countdown to today's drop
+◐ aired · resolving  broadcast happened, provider availability is not ready yet
+· Fri                future release
+× failed             metadata/provider failure, only if actionable
+```
+
+Do not open dead playback from `aired · resolving`. Offer refresh, track, details, or wait-copy instead.
 
 ### Release Row Data
 
 Rows may show:
 
-- time group
 - title
 - episode code
-- aired/expected/upcoming state
+- availability state
+- countdown or scheduled date
+- new-since-current context
 - tracked/watched state
-- availability
 - type
+- provider only when it changes the decision
 
 Keep rows scannable. Put long details in preview/details.
 
 ---
 
-# Source: .design/cli/surfaces/stats-history-library.md
+## surfaces/stats-history-library.md
 
 # Stats, History, And Library
 
@@ -1748,7 +1825,7 @@ Avoid:
 
 ---
 
-# Source: .design/cli/surfaces/command-palette.md
+## surfaces/command-palette.md
 
 # Command Palette Scope
 
@@ -1813,7 +1890,7 @@ Use groups only when relevant:
 
 ---
 
-# Source: .design/cli/implementation-split.md
+## implementation-split.md
 
 # Implementation Split
 
@@ -1834,6 +1911,7 @@ Before screen-specific implementation, create or refine shared primitives:
 - `CapabilityRows`
 - `MediaList`
 - `DetailsSheet`
+- `ThemeTokens`
 
 Shared primitives must encode the contracts in:
 
@@ -1845,6 +1923,7 @@ Shared primitives must encode the contracts in:
 Recommended shared work before parallel screen edits:
 
 - footer action model and collapse behavior
+- Sakura theme token model and terminal color adapter
 - preview rail stable poster slot
 - state block contract for loading/empty/error/success
 - media list row view model
@@ -1935,6 +2014,7 @@ Each implemented surface must pass:
 - Stats are motivational/product-facing, not diagnostics.
 - History is resume-first and deletion is never the primary action.
 - Library/downloads separate ready offline items from queue/failure management.
+- Sakura token discipline is preserved: rose focus/progress, mint ready/complete, crimson failure, media-type hues only in Stats.
 - Reducers/view model builders have targeted tests when state transitions are nontrivial.
 
 ## Suggested Verification

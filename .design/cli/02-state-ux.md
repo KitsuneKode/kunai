@@ -38,7 +38,9 @@ provider scrape resolve cache subtitle status startup wait...
 Success should usually be quiet.
 
 - Do not celebrate every normal state.
-- Use green only for meaningful ready/available/playable states.
+- Use mint only for meaningful ready/available/playable/complete states.
+- Use rose for active focus, active progress, and expected-near-term states.
+- Use crimson only for actionable failure.
 - Prefer stable body updates over banners.
 - Toasts are only for short-lived confirmations.
 
@@ -163,6 +165,17 @@ Search errors should distinguish:
 - partial results available
 
 If partial results exist, show them and mark the degraded source quietly.
+
+## Calendar Family
+
+Calendar states must separate broadcast/release timing from provider availability.
+
+- `available` means Kunai can reasonably open or resolve the episode now.
+- `aired · resolving` means the episode has broadcast, but no playable provider result is ready yet.
+- Countdown states should use relative time for same-day releases, such as `in 3h 20m`.
+- Calendar should prioritize the return loop: tracked shows, saved titles, and `new since E#` context before generic releases.
+
+Do not send users into a dead playback attempt from an `aired · resolving` row. Offer details, refresh, track/untrack, or wait-copy instead.
 
 ## Details Sheet
 
