@@ -13,6 +13,7 @@ import {
   isCurrentStreamSelection,
   streamSelectionFromSource,
   streamSelectionFromStream,
+  streamSelectionFromTrackPick,
 } from "@/app/source-quality";
 import type { StreamInfo } from "@/domain/types";
 
@@ -379,4 +380,27 @@ test("applyPreferredStreamSelection falls back to best quality in preferred sour
   expect(next.audioLanguages).toBeUndefined();
   expect(next.hardSubLanguage).toBeUndefined();
   expect(next.providerResolveResult?.selectedStreamId).toBe("stream-480-source-b");
+});
+
+test("streamSelectionFromTrackPick maps each panel section to a restart intent", () => {
+  expect(streamSelectionFromTrackPick({ section: "source", value: "source-b" })).toEqual({
+    sourceId: "source-b",
+    streamId: null,
+  });
+  expect(streamSelectionFromTrackPick({ section: "quality", value: "stream-720" })).toEqual({
+    sourceId: null,
+    streamId: "stream-720",
+  });
+  expect(streamSelectionFromTrackPick({ section: "audio", value: "stream-jp" })).toEqual({
+    sourceId: null,
+    streamId: "stream-jp",
+  });
+  expect(streamSelectionFromTrackPick({ section: "hardsub", value: "stream-en" })).toEqual({
+    sourceId: null,
+    streamId: "stream-en",
+  });
+  // Subtitles attach in mpv — no pre-play restart path.
+  expect(
+    streamSelectionFromTrackPick({ section: "subtitle", value: "https://x/sub.vtt" }),
+  ).toBeNull();
 });

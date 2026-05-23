@@ -3,16 +3,10 @@ import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/li
 import { switchSessionMode } from "@/app/mode-switch";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import {
-  buildMediaTrackPickerOptions,
-  buildQualityPickerOptions,
-  buildSourcePickerOptions,
-  decodeMediaTrackPickerSelection,
   formatPlaybackSessionFactsStrip,
   formatPlaybackSessionKeysHint,
   isCurrentStreamSelection,
-  streamSelectionFromSource,
-  streamSelectionFromStream,
-  type StreamSelectionIntent,
+  streamSelectionFromTrackPick,
 } from "@/app/source-quality";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { Container } from "@/container";
@@ -183,77 +177,22 @@ async function openPlaybackStreamSelectionPicker(
   const stream = container.stateManager.getState().stream;
   if (!stream) return;
 
-  const picker =
-    action === "source"
-      ? {
-          type: "source_picker" as const,
-          options: buildSourcePickerOptions(stream),
-          toSelection: streamSelectionFromSource,
-          controlAction: "pick-source" as const,
-        }
-      : action === "quality"
-        ? {
-            type: "quality_picker" as const,
-            options: buildQualityPickerOptions(stream),
-            toSelection: streamSelectionFromStream,
-            controlAction: "pick-quality" as const,
-          }
-        : {
-            type: "quality_picker" as const,
-            options: buildMediaTrackPickerOptions(stream),
-            toSelection: streamSelectionFromStream,
-            controlAction: "pick-stream" as const,
-          };
-
-  if (picker.options.length === 0) return;
-  const value = await openSessionPicker(container.stateManager, {
-    type: picker.type,
-    options: picker.options.map((option) => ({
-      value: option.value,
-      label: option.label,
-      detail: option.detail,
-    })),
-  });
-  if (!value) return;
-
-  if (action === "streams") {
-    const mediaSelection = decodeMediaTrackPickerSelection(value);
-    if (!mediaSelection) return;
-    if (mediaSelection.kind === "subtitle" || mediaSelection.kind === "subtitle-off") {
-      const subtitleUrl = mediaSelection.kind === "subtitle" ? mediaSelection.subtitleUrl : null;
-      const selected = await container.playerControl.selectCurrentSubtitle(
-        {
-          subtitleUrl,
-          subtitleTracks: stream.subtitleList,
-        },
-        reason,
-      );
-      if (selected) {
-        container.stateManager.dispatch({
-          type: "SET_STREAM",
-          stream: { ...stream, subtitle: subtitleUrl ?? undefined },
-        });
-      }
-      return;
-    }
-    const selection = streamSelectionFromStream(mediaSelection.streamId);
-    if (isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {
-      return;
-    }
-    await container.playerControl.selectCurrentPlaybackStream("pick-stream", selection, reason);
-    return;
-  }
-
-  const selection: StreamSelectionIntent = picker.toSelection(value);
+  // One unified Tracks panel for all three commands; /source and /quality
+  // deep-link a section, /streams opens the whole surface.
+  const initialSection =
+    action === "source" ? "source" : action === "quality" ? "quality" : undefined;
+  const { openTracksPanel } = await import("./workflows");
+  const picked = await openTracksPanel(stream, { initialSection }, container);
+  const selection = picked ? streamSelectionFromTrackPick(picked) : null;
+  if (!picked || !selection) return;
   if (isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {
     return;
   }
 
-  await container.playerControl.selectCurrentPlaybackStream(
-    picker.controlAction,
-    selection,
-    reason,
-  );
+  // Source switches restart the episode; quality/audio/hardsub swap the active
+  // stream in place. Subtitles attach in mpv, so they never resolve here.
+  const controlAction = picked.section === "source" ? "pick-source" : "pick-quality";
+  await container.playerControl.selectCurrentPlaybackStream(controlAction, selection, reason);
 }
 
 async function openActivePlaybackEpisodePicker(

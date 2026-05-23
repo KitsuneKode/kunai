@@ -2,6 +2,12 @@ import { useLineEditor } from "@/app-shell/line-editor";
 import type { Container } from "@/container";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
+import {
+  encodeTrackSelection,
+  initialSelectableIndexForSection,
+  selectableCapabilityAt,
+  selectableTrackCount,
+} from "@/domain/playback/track-capabilities";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
@@ -69,6 +75,7 @@ import { type RootOwnedOverlay } from "./root-shell-state";
 import { CommandPalette, useShellInput } from "./shell-command-ui";
 import { ContextStrip, ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
+import { TracksPanelShell } from "./tracks-panel-shell";
 import type { FooterAction, ShellPanelLine } from "./types";
 
 const HELP_TABS = ["Navigation", "Playback", "Commands", "About"] as const;
@@ -298,6 +305,10 @@ export function RootOverlayShell({
   );
   const overlayResetKey = getRootOverlayResetKey(overlay);
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
+  const tracksInitialIndex =
+    overlay.type === "tracks_panel"
+      ? initialSelectableIndexForSection(overlay.groups, overlay.initialSection)
+      : 0;
   const commands = resolveCommandContext(state, "rootOverlay");
   const historyPickerContext: HistoryPickerOptionsContext = { nextReleases: historyNextReleases };
   const settingsSeriesProviderOptions = buildSettingsProviderOptions({
@@ -558,7 +569,9 @@ export function RootOverlayShell({
               -1,
               1,
             )
-          : overlayInitialIndex,
+          : overlay.type === "tracks_panel"
+            ? tracksInitialIndex
+            : overlayInitialIndex,
     );
     setAsyncLines(null);
     setLoadingAsyncLines(false);
@@ -578,6 +591,7 @@ export function RootOverlayShell({
     overlay.type,
     overlayResetKey,
     overlayInitialIndex,
+    tracksInitialIndex,
     initialHistoryFilterMode,
     providerInitialIndex,
   ]);
@@ -674,6 +688,35 @@ export function RootOverlayShell({
 
   useInput((input, key) => {
     if (commandMode) {
+      return;
+    }
+    if (overlay.type === "tracks_panel") {
+      // Self-contained: navigation runs over switchable rows only and the
+      // selection resolves through the picker bridge (RESOLVE/CANCEL_PICKER).
+      const count = selectableTrackCount(overlay.groups);
+      if (key.escape) {
+        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+        return;
+      }
+      if (key.return) {
+        if (count === 0) return; // facts only — never resolve a dead picker
+        const capability = selectableCapabilityAt(overlay.groups, selectedIndex);
+        if (!capability) return;
+        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        container.stateManager.dispatch({
+          type: "RESOLVE_PICKER",
+          id: overlay.id,
+          value: encodeTrackSelection(capability.section, capability.value),
+        });
+        return;
+      }
+      if ((key.upArrow || key.downArrow) && count > 0) {
+        setSelectedIndex((current) =>
+          key.upArrow ? (current - 1 + count) % count : (current + 1) % count,
+        );
+        return;
+      }
       return;
     }
     if (key.escape) {
@@ -1340,6 +1383,60 @@ export function RootOverlayShell({
         highlightedIndex={highlightedIndex}
         footerActions={footerActions}
       />
+    );
+  }
+
+  if (overlay.type === "tracks_panel") {
+    const switchableCount = selectableTrackCount(overlay.groups);
+    return (
+      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
+        <Box flexDirection="column" flexGrow={1}>
+          <ContextStrip
+            items={[
+              { label: title, tone: "info" },
+              { label: effectiveSubtitle, tone: "neutral" },
+            ]}
+          />
+          <TracksPanelShell
+            groups={overlay.groups}
+            selectedIndex={Math.min(selectedIndex, Math.max(switchableCount - 1, 0))}
+            width={Math.max(24, (stdout.columns ?? 80) - 8)}
+          />
+        </Box>
+
+        <Box flexDirection="column">
+          {commandMode ? (
+            <CommandPalette
+              input={commandInput}
+              cursor={commandCursor}
+              commands={commands}
+              highlightedIndex={highlightedIndex}
+            />
+          ) : null}
+          <ShellFooter
+            taskLabel={
+              switchableCount > 0
+                ? "Tracks  ·  ↑↓ select, Enter changes, Esc closes"
+                : "Tracks  ·  facts only, Esc closes"
+            }
+            actions={
+              switchableCount > 0
+                ? [
+                    { key: "↑↓", label: "select", action: "details" as const },
+                    { key: "enter", label: "change", action: "details" as const, primary: true },
+                    { key: "/", label: "commands", action: "command-mode" as const },
+                    { key: "esc", label: "close", action: "quit" as const },
+                  ]
+                : [
+                    { key: "/", label: "commands", action: "command-mode" as const },
+                    { key: "esc", label: "close", action: "quit" as const },
+                  ]
+            }
+            mode="detailed"
+            commandMode={commandMode}
+          />
+        </Box>
+      </Box>
     );
   }
 

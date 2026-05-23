@@ -6,6 +6,7 @@
 // =============================================================================
 
 import type { PlaybackProblem } from "../playback/playback-problem";
+import type { TrackCapabilityGroup, TrackCapabilitySection } from "../playback/track-capabilities";
 import type { EpisodeInfo, SearchResult, StreamInfo, TitleInfo } from "../types";
 import type { AppCommandId } from "./command-registry";
 import { rankFuzzyMatches } from "./fuzzy-match";
@@ -88,6 +89,12 @@ export type OverlayState =
   | ({ type: "season_picker"; currentSeason: number } & PickerOverlayState)
   | ({ type: "episode_picker"; season: number; initialIndex?: number } & PickerOverlayState)
   | ({ type: "recommendation_picker" } & PickerOverlayState)
+  | {
+      type: "tracks_panel";
+      id: string;
+      groups: readonly TrackCapabilityGroup[];
+      initialSection?: TrackCapabilitySection;
+    }
   | { type: "history"; initialFilterMode?: "all" | "watching" | "completed" }
   | { type: "notifications" }
   | { type: "downloads" }

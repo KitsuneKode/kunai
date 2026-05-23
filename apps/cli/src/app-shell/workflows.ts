@@ -11,6 +11,7 @@ import {
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/handoff-url";
+import { buildStreamInventoryView } from "@/app/source-quality";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
@@ -19,6 +20,12 @@ import { createContinuationEngine } from "@/domain/continuation/ContinuationEngi
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelectionEngine";
+import {
+  buildTrackCapabilities,
+  decodeTrackSelection,
+  type DecodedTrackSelection,
+  type TrackCapabilitySection,
+} from "@/domain/playback/track-capabilities";
 import type { EpisodePickerOption, StreamInfo, TitleInfo } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
@@ -58,7 +65,7 @@ import {
 } from "@kunai/storage";
 
 import { resolveCommands } from "./commands";
-import { openSessionPicker } from "./session-picker";
+import { createSessionPickerId, openSessionPicker, waitForSessionPicker } from "./session-picker";
 import { runSetupFlow } from "./setup-shell";
 import type { ShellAction } from "./types";
 
@@ -1867,68 +1874,26 @@ export async function openSubtitlePicker(
   });
 }
 
-export async function openSourcePicker(
-  entries: ReadonlyArray<{
-    value: string;
-    label: string;
-    detail?: string;
-  }>,
-  actionContext?: ListShellActionContext,
-  container?: Container,
-): Promise<string | null> {
-  if (container) {
-    return await openSessionPicker(container.stateManager, {
-      type: "source_picker",
-      options: entries.map((entry) => ({
-        value: entry.value,
-        label: entry.label,
-        detail: entry.detail,
-      })),
-    });
-  }
-
-  return chooseFromListShell({
-    title: "Choose source",
-    subtitle: `${entries.length} sources available`,
-    actionContext,
-    options: entries.map((entry) => ({
-      value: entry.value,
-      label: entry.label,
-      detail: entry.detail,
-    })),
+/**
+ * Open the unified Tracks panel and await a switchable selection. `/tracks`
+ * opens the whole surface; `/source` and `/quality` deep-link focus into their
+ * section. Returns the decoded `{ section, value }` the caller applies through
+ * the existing stream-selection handlers, or null when the user backs out (or
+ * there was nothing switchable to resolve).
+ */
+export async function openTracksPanel(
+  stream: StreamInfo | null,
+  options: { initialSection?: TrackCapabilitySection },
+  container: Container,
+): Promise<DecodedTrackSelection | null> {
+  const groups = buildTrackCapabilities(buildStreamInventoryView(stream));
+  const id = createSessionPickerId("tracks_panel");
+  container.stateManager.dispatch({
+    type: "OPEN_OVERLAY",
+    overlay: { type: "tracks_panel", id, groups, initialSection: options.initialSection },
   });
-}
-
-export async function openQualityPicker(
-  entries: ReadonlyArray<{
-    value: string;
-    label: string;
-    detail?: string;
-  }>,
-  actionContext?: ListShellActionContext,
-  container?: Container,
-): Promise<string | null> {
-  if (container) {
-    return await openSessionPicker(container.stateManager, {
-      type: "quality_picker",
-      options: entries.map((entry) => ({
-        value: entry.value,
-        label: entry.label,
-        detail: entry.detail,
-      })),
-    });
-  }
-
-  return chooseFromListShell({
-    title: "Choose quality",
-    subtitle: `${entries.length} quality options available`,
-    actionContext,
-    options: entries.map((entry) => ({
-      value: entry.value,
-      label: entry.label,
-      detail: entry.detail,
-    })),
-  });
+  const resolved = await waitForSessionPicker(container.stateManager, id);
+  return resolved ? decodeTrackSelection(resolved) : null;
 }
 
 export async function openSeasonPicker(

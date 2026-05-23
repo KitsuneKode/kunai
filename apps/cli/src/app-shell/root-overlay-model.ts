@@ -96,6 +96,7 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay, _state: SessionSt
   if (overlay.type === "source_picker") return "Choose source";
   if (overlay.type === "quality_picker") return "Choose quality";
   if (overlay.type === "recommendation_picker") return "Recommendations";
+  if (overlay.type === "tracks_panel") return "Tracks";
   return "Provider";
 }
 
@@ -141,5 +142,14 @@ export function getRootOverlaySubtitle({
     return `${overlay.options.length} quality options available`;
   if (overlay.type === "recommendation_picker")
     return `${overlay.options.length} picks based on your watch history`;
+  if (overlay.type === "tracks_panel") {
+    const switchable = overlay.groups.reduce(
+      (sum, group) => sum + group.rows.filter((row) => row.enabled).length,
+      0,
+    );
+    return switchable > 0
+      ? `${switchable} switchable ${switchable === 1 ? "option" : "options"} · source, quality, audio, subtitles`
+      : "source, quality, audio, subtitles · nothing to switch";
+  }
   return `Current provider ${state.provider}`;
 }

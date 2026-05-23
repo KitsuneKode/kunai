@@ -124,8 +124,10 @@ export function buildTrackCapabilities(
     if (option.role !== "audio" && option.role !== "hardsub") continue;
     push({
       section: option.role,
+      // Switching audio/hardsub means switching to the stream that carries it,
+      // so the value is the target stream id — applied via streamSelectionFromStream.
       label: option.label,
-      value: option.id,
+      value: option.streamIds[0] ?? option.id,
       selected: option.state === "selected",
       enabled: option.state === "available",
       reason: option.disabledReason,

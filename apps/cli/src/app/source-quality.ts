@@ -1,10 +1,12 @@
 import { formatLanguageBadge, formatSourceEvidence } from "@/app/track-format";
 import { describeStreamCandidateMediaDetail } from "@/domain/media/media-track-model";
+import type { TrackCapabilitySection } from "@/domain/playback/track-capabilities";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { buildPlaybackSourceInventoryView } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type {
   PlaybackLanguageOptionView,
   PlaybackSourceGroupView,
+  PlaybackSourceInventoryView,
 } from "@/services/playback/PlaybackSourceInventoryView";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
@@ -69,6 +71,29 @@ export function streamSelectionFromSource(sourceId: string): StreamSelectionInte
 
 export function streamSelectionFromStream(streamId: string): StreamSelectionIntent {
   return { sourceId: null, streamId };
+}
+
+/**
+ * Map a unified Tracks-panel selection to a restart intent. Source switches by
+ * source id; quality/audio/hardsub all resolve to a concrete stream id (audio
+ * and hardsub are carried by the stream that hosts them). Subtitles attach in
+ * mpv and have no pre-play restart path, so they return null — the panel never
+ * resolves a dead pick.
+ */
+export function streamSelectionFromTrackPick(picked: {
+  readonly section: TrackCapabilitySection;
+  readonly value: string;
+}): StreamSelectionIntent | null {
+  switch (picked.section) {
+    case "source":
+      return streamSelectionFromSource(picked.value);
+    case "quality":
+    case "audio":
+    case "hardsub":
+      return streamSelectionFromStream(picked.value);
+    case "subtitle":
+      return null;
+  }
 }
 
 export function isCurrentStreamSelection(
@@ -179,6 +204,18 @@ function decodeLanguageTrackSelection(
   } catch {
     return null;
   }
+}
+
+/**
+ * The normalized inventory view for the current stream, or null when nothing is
+ * resolved yet. Single source the unified Tracks panel renders from.
+ */
+export function buildStreamInventoryView(
+  stream: StreamInfo | null,
+): PlaybackSourceInventoryView | null {
+  const result = stream?.providerResolveResult;
+  if (!result) return null;
+  return buildPlaybackSourceInventoryView(result, { selectedSubtitleUrl: stream?.subtitle });
 }
 
 export function buildSourcePickerOptions(stream: StreamInfo): readonly SourceOption[] {

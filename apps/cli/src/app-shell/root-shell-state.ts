@@ -18,7 +18,8 @@ export type RootOwnedOverlay = Extract<
       | "subtitle_picker"
       | "source_picker"
       | "quality_picker"
-      | "recommendation_picker";
+      | "recommendation_picker"
+      | "tracks_panel";
   }
 >;
 
@@ -48,7 +49,8 @@ export function isRootOwnedOverlay(
     overlay?.type === "subtitle_picker" ||
     overlay?.type === "source_picker" ||
     overlay?.type === "quality_picker" ||
-    overlay?.type === "recommendation_picker"
+    overlay?.type === "recommendation_picker" ||
+    overlay?.type === "tracks_panel"
   );
 }
 

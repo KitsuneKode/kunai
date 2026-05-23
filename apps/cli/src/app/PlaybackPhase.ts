@@ -10,8 +10,7 @@ import { resolveCommandContext } from "@/app-shell/commands";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import type { PlaybackRecommendationRailItem } from "@/app-shell/types";
 import {
-  openQualityPicker,
-  openSourcePicker,
+  openTracksPanel,
   buildPickerActionContext,
   openSubtitlePicker,
   handleShellAction,
@@ -71,12 +70,8 @@ import {
 import { createResolveTraceStub } from "@/app/resolve-trace";
 import {
   applyPreferredStreamSelection,
-  buildQualityPickerOptions,
-  buildSourcePickerOptions,
-  buildStreamPickerOptions,
   emptyStreamSelectionIntent,
-  streamSelectionFromSource,
-  streamSelectionFromStream,
+  streamSelectionFromTrackPick,
 } from "@/app/source-quality";
 import {
   createSourceRefreshCooldownState,
@@ -1956,38 +1951,36 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               continue;
             }
-            const sourceOptions = buildSourcePickerOptions(preparedStream);
-            if (sourceOptions.length > 0) {
-              const pickedSource = await openSourcePicker(
-                sourceOptions,
-                buildPickerActionContext({
-                  container,
-                  taskLabel: "Choose source",
-                }),
-                container,
+            const picked = await openTracksPanel(
+              preparedStream,
+              { initialSection: "source" },
+              container,
+            );
+            const selection = picked ? streamSelectionFromTrackPick(picked) : null;
+            if (picked && selection) {
+              preferredStreamSelection = selection;
+              const restartResume = toHistoryTimestamp(
+                result,
+                effectiveTiming.current,
+                config.quitNearEndThresholdMode,
               );
-              if (pickedSource) {
-                preferredStreamSelection = streamSelectionFromSource(pickedSource);
-                pendingStart = startEpisodeNavigation({
-                  targetResumeSeconds: toHistoryTimestamp(
-                    result,
-                    effectiveTiming.current,
-                    config.quitNearEndThresholdMode,
-                  ),
-                });
-                diagnosticsStore.record({
-                  category: "playback",
-                  message: "Source override selected",
-                  context: {
-                    sourceId: pickedSource,
-                    titleId: title.id,
-                    season: currentEpisode.season,
-                    episode: currentEpisode.episode,
-                    resumeSeconds: pendingStart.resumePromptAt,
-                  },
-                });
-                continue;
-              }
+              pendingStart =
+                picked.section === "source"
+                  ? startEpisodeNavigation({ targetResumeSeconds: restartResume })
+                  : startAtResumePoint(restartResume, { suppressResumePrompt: true });
+              diagnosticsStore.record({
+                category: "playback",
+                message: "Track override selected",
+                context: {
+                  section: picked.section,
+                  sourceId: selection.sourceId ?? undefined,
+                  streamId: selection.streamId ?? undefined,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                },
+              });
+              continue;
             }
           }
 
@@ -2014,38 +2007,32 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               continue;
             }
-            const streamOptions = buildStreamPickerOptions(preparedStream);
-            if (streamOptions.length > 0) {
-              const pickedStreamId = await openQualityPicker(
-                streamOptions,
-                buildPickerActionContext({
-                  container,
-                  taskLabel: "Choose stream",
-                }),
-                container,
+            const picked = await openTracksPanel(preparedStream, {}, container);
+            const selection = picked ? streamSelectionFromTrackPick(picked) : null;
+            if (picked && selection) {
+              preferredStreamSelection = selection;
+              const restartResume = toHistoryTimestamp(
+                result,
+                effectiveTiming.current,
+                config.quitNearEndThresholdMode,
               );
-              if (pickedStreamId) {
-                preferredStreamSelection = streamSelectionFromStream(pickedStreamId);
-                pendingStart = startEpisodeNavigation({
-                  targetResumeSeconds: toHistoryTimestamp(
-                    result,
-                    effectiveTiming.current,
-                    config.quitNearEndThresholdMode,
-                  ),
-                });
-                diagnosticsStore.record({
-                  category: "playback",
-                  message: "Stream override selected",
-                  context: {
-                    streamId: pickedStreamId,
-                    titleId: title.id,
-                    season: currentEpisode.season,
-                    episode: currentEpisode.episode,
-                    resumeSeconds: pendingStart.resumePromptAt,
-                  },
-                });
-                continue;
-              }
+              pendingStart =
+                picked.section === "source"
+                  ? startEpisodeNavigation({ targetResumeSeconds: restartResume })
+                  : startAtResumePoint(restartResume, { suppressResumePrompt: true });
+              diagnosticsStore.record({
+                category: "playback",
+                message: "Track override selected",
+                context: {
+                  section: picked.section,
+                  sourceId: selection.sourceId ?? undefined,
+                  streamId: selection.streamId ?? undefined,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                },
+              });
+              continue;
             }
           }
 
@@ -2073,39 +2060,36 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               continue;
             }
-            const qualityOptions = buildQualityPickerOptions(preparedStream);
-            if (qualityOptions.length > 0) {
-              const pickedQualityStreamId = await openQualityPicker(
-                qualityOptions,
-                buildPickerActionContext({
-                  container,
-                  taskLabel: "Choose quality",
-                }),
-                container,
+            const picked = await openTracksPanel(
+              preparedStream,
+              { initialSection: "quality" },
+              container,
+            );
+            const selection = picked ? streamSelectionFromTrackPick(picked) : null;
+            if (picked && selection) {
+              preferredStreamSelection = selection;
+              const restartResume = toHistoryTimestamp(
+                result,
+                effectiveTiming.current,
+                config.quitNearEndThresholdMode,
               );
-              if (pickedQualityStreamId) {
-                preferredStreamSelection = streamSelectionFromStream(pickedQualityStreamId);
-                pendingStart = startAtResumePoint(
-                  toHistoryTimestamp(
-                    result,
-                    effectiveTiming.current,
-                    config.quitNearEndThresholdMode,
-                  ),
-                  { suppressResumePrompt: true },
-                );
-                diagnosticsStore.record({
-                  category: "playback",
-                  message: "Quality override selected",
-                  context: {
-                    streamId: pickedQualityStreamId,
-                    titleId: title.id,
-                    season: currentEpisode.season,
-                    episode: currentEpisode.episode,
-                    resumeSeconds: pendingStart.startAt,
-                  },
-                });
-                continue;
-              }
+              pendingStart =
+                picked.section === "source"
+                  ? startEpisodeNavigation({ targetResumeSeconds: restartResume })
+                  : startAtResumePoint(restartResume, { suppressResumePrompt: true });
+              diagnosticsStore.record({
+                category: "playback",
+                message: "Track override selected",
+                context: {
+                  section: picked.section,
+                  sourceId: selection.sourceId ?? undefined,
+                  streamId: selection.streamId ?? undefined,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                },
+              });
+              continue;
             }
           }
 
@@ -2654,24 +2638,31 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 },
               });
               break postPlayback;
-            } else if (routedAction === "source") {
-              const sourceOptions = buildSourcePickerOptions(preparedStream);
-              if (sourceOptions.length === 0) {
+            } else if (
+              routedAction === "source" ||
+              routedAction === "quality" ||
+              routedAction === "streams"
+            ) {
+              // Unified Tracks panel: /source and /quality deep-link a section,
+              // /streams opens the whole surface. The user may switch any
+              // section from the same panel, so restart semantics follow the
+              // picked section, not the command that opened it.
+              const initialSection =
+                routedAction === "source"
+                  ? "source"
+                  : routedAction === "quality"
+                    ? "quality"
+                    : undefined;
+              const picked = await openTracksPanel(preparedStream, { initialSection }, container);
+              const selection = picked ? streamSelectionFromTrackPick(picked) : null;
+              if (!picked || !selection) {
                 continue postPlayback;
               }
-              const pickedSource = await openSourcePicker(
-                sourceOptions,
-                buildPickerActionContext({
-                  container,
-                  taskLabel: "Choose source",
-                }),
-                container,
-              );
-              if (!pickedSource) {
-                continue postPlayback;
-              }
-              preferredStreamSelection = streamSelectionFromSource(pickedSource);
-              pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+              preferredStreamSelection = selection;
+              pendingStart =
+                picked.section === "source"
+                  ? startEpisodeNavigation({ targetResumeSeconds: resumeSeconds })
+                  : startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
               playbackSession = this.transitionPlaybackSession(
                 context,
                 playbackSession,
@@ -2680,67 +2671,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  sourceId: preferredStreamSelection.sourceId,
-                },
-              );
-              break postPlayback;
-            } else if (routedAction === "quality") {
-              const qualityOptions = buildQualityPickerOptions(preparedStream);
-              if (qualityOptions.length === 0) {
-                continue postPlayback;
-              }
-              const pickedQualityStreamId = await openQualityPicker(
-                qualityOptions,
-                buildPickerActionContext({
-                  container,
-                  taskLabel: "Choose quality",
-                }),
-                container,
-              );
-              if (!pickedQualityStreamId) {
-                continue postPlayback;
-              }
-              preferredStreamSelection = streamSelectionFromStream(pickedQualityStreamId);
-              pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
-              playbackSession = this.transitionPlaybackSession(
-                context,
-                playbackSession,
-                "episode-navigation",
-                {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  streamId: preferredStreamSelection.streamId,
-                },
-              );
-              break postPlayback;
-            } else if (routedAction === "streams") {
-              const streamOptions = buildStreamPickerOptions(preparedStream);
-              if (streamOptions.length === 0) {
-                continue postPlayback;
-              }
-              const pickedStreamId = await openQualityPicker(
-                streamOptions,
-                buildPickerActionContext({
-                  container,
-                  taskLabel: "Choose stream",
-                }),
-                container,
-              );
-              if (!pickedStreamId) {
-                continue postPlayback;
-              }
-              preferredStreamSelection = streamSelectionFromStream(pickedStreamId);
-              pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
-              playbackSession = this.transitionPlaybackSession(
-                context,
-                playbackSession,
-                "episode-navigation",
-                {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  streamId: preferredStreamSelection.streamId,
+                  ...(selection.sourceId
+                    ? { sourceId: selection.sourceId }
+                    : { streamId: selection.streamId }),
                 },
               );
               break postPlayback;
