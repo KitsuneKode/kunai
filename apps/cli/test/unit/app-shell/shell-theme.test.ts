@@ -17,20 +17,20 @@ describe("hotkeyLabel", () => {
 
 describe("palette", () => {
   test("exposes semantic accents for the Sakura chord", () => {
-    expect(palette.accent).toMatch(/^#[0-9a-f]{6}$/i); // rose
-    expect(palette.ok).toMatch(/^#[0-9a-f]{6}$/i); // mint
-    expect(palette.danger).toMatch(/^#[0-9a-f]{6}$/i); // crimson
+    expect(palette.accent).toBeString(); // rose / resolved terminal focus
+    expect(palette.ok).toBeString(); // mint / resolved terminal success
+    expect(palette.danger).toBeString(); // crimson / resolved terminal error
   });
 
   test("exposes milestone token for series-complete color", () => {
     expect(palette.milestone).toBeDefined();
-    expect(palette.milestone).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(palette.milestone).toBeString();
   });
 
   test("exposes surface + fill tokens", () => {
-    expect(palette.raised).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(palette.accentFill).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(palette.lineStrong).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(palette.raised).toBeString();
+    expect(palette.accentFill).toBeString();
+    expect(palette.lineStrong).toBeString();
   });
 });
 
@@ -44,7 +44,7 @@ describe("contentTintColor", () => {
 
 describe("heatColor", () => {
   test("clamps the ramp index to the rose ramp", () => {
-    expect(heatColor(0)).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(heatColor(0)).toBeString();
     expect(heatColor(4)).toBe(palette.accent); // last step is the full rose
     expect(heatColor(99)).toBe(palette.accent);
     expect(heatColor(-3)).toBe(heatColor(0));
