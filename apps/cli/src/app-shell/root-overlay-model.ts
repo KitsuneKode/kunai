@@ -97,8 +97,10 @@ export function getRootOverlaySubtitle({
   if (overlay.type === "diagnostics") return "Current runtime snapshot and recent events";
   if (overlay.type === "downloads")
     return "Live download queue, failed retries, and completed jobs";
-  if (overlay.type === "library") return "Offline titles, download queue, and quick settings";
-  if (overlay.type === "history") return "Recent playback positions without leaving the shell";
+  if (overlay.type === "library")
+    return "Offline library · resume-ready downloads · queue and cleanup controls";
+  if (overlay.type === "history")
+    return "Resume-first · new since last watched · continue without leaving the shell";
   if (overlay.type === "notifications")
     return "New episodes, queue recovery, downloads, and app notices";
   if (overlay.type === "settings")

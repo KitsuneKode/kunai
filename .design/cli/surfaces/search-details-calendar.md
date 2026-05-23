@@ -114,7 +114,7 @@ The calendar must distinguish broadcast state from playable availability. A rele
 ### Layout
 
 - Header: Calendar mode and schedule context.
-- Type tabs: `All`, `Anime`, `Series`, `Movies`, `Tracked`.
+- Type tabs: `All`, `Anime`, `TV`, `Movies`, `Tracked` (keyboard `1`–`5`).
 - Week strip: seven day cells with release markers and a selected day.
 - Main list: `For you` first, then `Also today`.
 - Vertical time groups or release bands, depending on density.

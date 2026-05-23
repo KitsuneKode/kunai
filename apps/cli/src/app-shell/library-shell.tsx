@@ -1,5 +1,6 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
-import { DetailLine, EmptyState, ResizeBlocker } from "@/app-shell/shell-primitives";
+import { StateBlock } from "@/app-shell/primitives/StateBlock";
+import { DetailLine, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
@@ -118,6 +119,7 @@ function LibraryTab({ container }: { container: Container }) {
     readonly import("@/services/offline/offline-library").OfflineLibraryEntry[] | null
   >(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryEntry>>({});
@@ -134,11 +136,15 @@ function LibraryTab({ container }: { container: Container }) {
         if (cancelled) return undefined;
         setEntries(result);
         setHistoryMap(history);
+        setLoadError(null);
         setLoading(false);
         return undefined;
       })
-      .catch(() => {
-        if (!cancelled) setLoading(false);
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : String(error));
+          setLoading(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -245,7 +251,27 @@ function LibraryTab({ container }: { container: Container }) {
   if (loading) {
     return (
       <Box flexDirection="column" flexGrow={1} justifyContent="center">
-        <Text color={palette.muted}>◌ Loading offline titles…</Text>
+        <StateBlock
+          model={{
+            kind: "loading",
+            title: "Loading offline library",
+            detail: "Reading completed downloads and resume positions.",
+          }}
+        />
+      </Box>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <StateBlock
+          model={{
+            kind: "error",
+            title: "Offline library unavailable",
+            detail: loadError,
+          }}
+        />
       </Box>
     );
   }
@@ -253,14 +279,16 @@ function LibraryTab({ container }: { container: Container }) {
   if (!entries || entries.length === 0) {
     return (
       <Box flexDirection="column" flexGrow={1}>
-        <EmptyState
-          icon="📂"
-          title="No offline titles yet"
-          subtitle="Queue downloads from playback with / → Download current episode"
+        <StateBlock
+          model={{
+            kind: "empty",
+            title: "No offline titles yet",
+            detail: "Queue downloads from playback with / → Download current episode.",
+          }}
         />
         <Box marginTop={1}>
           <Text color={palette.muted} dimColor>
-            Switch to Queue (2) to see active downloads
+            Switch to Queue (Tab) to see active downloads
           </Text>
         </Box>
       </Box>

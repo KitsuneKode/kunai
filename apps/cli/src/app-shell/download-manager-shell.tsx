@@ -1,4 +1,5 @@
-import { EmptyState, ResizeBlocker } from "@/app-shell/shell-primitives";
+import { StateBlock } from "@/app-shell/primitives/StateBlock";
+import { ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
@@ -261,7 +262,7 @@ export function DownloadManagerContent({
       >
         <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
         <Box width={nameWidth}>
-          <Text color={isSelected ? "white" : undefined} bold={isSelected}>
+          <Text color={isSelected ? palette.text : undefined} bold={isSelected}>
             {truncateLine(nameStr, nameWidth - 2)}
           </Text>
         </Box>
@@ -303,11 +304,13 @@ export function DownloadManagerContent({
   return (
     <Box flexDirection="column" flexGrow={1}>
       {allJobs.length === 0 ? (
-        <EmptyState
-          icon="⬇"
-          title="No active or recent downloads"
-          subtitle="Queue episodes from playback with / → Download current episode"
-          hint="Completed downloads appear in / → Offline Library"
+        <StateBlock
+          model={{
+            kind: "empty",
+            title: "No active or recent downloads",
+            detail:
+              "Queue episodes from playback with / → Download current episode. Completed files live in Offline Library.",
+          }}
         />
       ) : (
         <Box flexDirection="column">
