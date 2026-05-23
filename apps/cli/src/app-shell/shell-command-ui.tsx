@@ -186,7 +186,6 @@ export function CommandPalette({
     maxRows: Math.max(1, maxVisible),
     totalMatches: matches.length,
     grouped: showGrouped,
-    windowMayStartAfterFirst: model.selectedIndex > 0,
   });
   const windowStart = getWindowStart(model.selectedIndex, matches.length, visibleCount);
   const windowEnd = Math.min(windowStart + visibleCount, matches.length);
@@ -256,7 +255,9 @@ export function CommandPalette({
       <Box flexDirection="column" marginTop={1}>
         {matches.length > 0 ? (
           <>
-            {windowStart > 0 ? <Text color={palette.dim}> ▲ more</Text> : null}
+            {/* Reserve the scroll-affordance line so paging never shifts the whole
+                list vertically (the palette renders on every surface). */}
+            <Text color={palette.dim}>{windowStart > 0 ? " ▲ more" : " "}</Text>
             {showGrouped ? (
               <>
                 {(() => {
@@ -288,7 +289,7 @@ export function CommandPalette({
                 return renderCommand(command, absoluteIndex);
               })
             )}
-            {windowEnd < matches.length ? <Text color={palette.dim}> ▼ more</Text> : null}
+            <Text color={palette.dim}>{windowEnd < matches.length ? " ▼ more" : " "}</Text>
           </>
         ) : (
           <Text color={palette.dim}>No matching commands</Text>

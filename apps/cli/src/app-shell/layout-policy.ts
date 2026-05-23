@@ -147,16 +147,16 @@ export function getCommandPaletteVisibleCommandCount({
   maxRows,
   totalMatches,
   grouped,
-  windowMayStartAfterFirst,
 }: {
   readonly maxRows: number;
   readonly totalMatches: number;
   readonly grouped: boolean;
-  readonly windowMayStartAfterFirst: boolean;
 }): number {
   if (totalMatches <= 0) return 0;
   const groupHeaderRows = grouped ? 3 : 0;
-  const scrollIndicatorRows = (windowMayStartAfterFirst ? 1 : 0) + (totalMatches > 1 ? 1 : 0);
+  // The ▲/▼ scroll-affordance lines are always rendered (as blank placeholders
+  // when inactive) so paging never shifts the palette vertically — reserve both.
+  const scrollIndicatorRows = 2;
   const available = maxRows - groupHeaderRows - scrollIndicatorRows;
   return Math.max(1, Math.min(totalMatches, available));
 }

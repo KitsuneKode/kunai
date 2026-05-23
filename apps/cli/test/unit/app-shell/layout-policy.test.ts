@@ -89,7 +89,6 @@ describe("getShellViewportPolicy", () => {
         maxRows: 5,
         totalMatches: 25,
         grouped: true,
-        windowMayStartAfterFirst: false,
       }),
     ).toBe(1);
     expect(
@@ -97,7 +96,6 @@ describe("getShellViewportPolicy", () => {
         maxRows: 8,
         totalMatches: 25,
         grouped: false,
-        windowMayStartAfterFirst: true,
       }),
     ).toBe(6);
   });
