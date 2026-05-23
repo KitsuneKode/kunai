@@ -10,15 +10,23 @@ Tests: app-shell 265 pass. typecheck/lint clean for Sakura.
 
 ## RELEASE PATH (do in order → then merge to main)
 
-1. **Wire Agent C's return-loop exports into `browse-shell.tsx`** — BIGGEST GAP. These are built + tested but nothing calls them (dead until wired):
+> **Status 2026-05-23 (verifier):** Items 1–4 landed on `design/sakura-rollout`
+> (commits `5c83bbd0` S3 portability + token-alias removal, `ffd8851f` Now
+> Playing poster clear, `d25cf474` Agent C return-loop wiring). Gate green:
+> typecheck 8/8, test 1004/0, build ok, lint 0 errors. Remaining: **5**
+> (merge-readiness/install verification — entangled with the user's uncommitted
+> WIP) and **6** (manual narrow/non-truecolor pass → merge). Do NOT merge until
+> the WIP-vs-Sakura split is decided (see "NOT OURS" below).
+
+1. ~~**Wire Agent C's return-loop exports into `browse-shell.tsx`**~~ — DONE (`d25cf474`). These were built + tested but nothing called them (dead until wired):
    - `buildBrowseIdleReturnLoopModel` (browse-idle-actions.ts) → browse idle still renders old inline copy
    - `buildCalendarPreviewRailModel` → swap in when `isCalendarView`
    - calendar section headers (`buildCalendarRenderRows` sets `showSectionHeader`) → pass into `CalendarScheduleRow`
    - calendar loading/empty/error (`CalendarScheduleStatus` + `buildCalendar*State()`) → calendar empty path still plain text
    - history "new since E#" (`formatNewSinceEpisodeLabel`/`describeHistoryReturnLoopDetail` in root-history-bridge.ts) → root overlay still uses old row copy; a duplicate `buildRootHistorySelection` remains in the overlay until consolidated
-2. **Empty poster box (Now Playing)** — the big bordered void is a **Kitty-graphics region drawn outside Ink** via `image-pane.ts` (NOT `shouldShowLoadingPosterCompanion`, which is dead code in loading-shell.tsx:82 — delete it). Hide/clear the region when there's no poster, or draw a tasteful reserved placeholder. Needs focused investigation of the image pipeline.
-3. **S3 portability** (cross-cutting, in `packages/design` + viewport): truecolor→256→16 color fallback; poster→letter-tile→hidden; preview rail collapses before list on narrow/SSH/tmux; CJK/long-title truncation + double-width column alignment.
-4. **Delete deprecated token aliases** from `packages/design/src/tokens.ts` + `shell-theme.ts` palette (migration done); `grep -rE "palette\.(amber|teal|pink|info|lavender|green|red|gray|yellow|purple)" apps/cli/src` → 0.
+2. ~~**Empty poster box (Now Playing)**~~ — DONE (`ffd8851f`). Root cause: the Now Playing/bootstrap surfaces render no poster, but a Kitty image placed by the prior surface (picker/browse/details) stayed uploaded — `usePosterPreview` cleanup deliberately skips clearing, and nothing cleared it on entry. Fix: `LoadingShell` clears rendered poster images on mount (cache + terminal in sync). Deleted the dead `shouldShowLoadingPosterCompanion`; runtime-health line now uses `statusColor()`.
+3. ~~**S3 portability**~~ — DONE (`5c83bbd0`). truecolor→256→16 fallback via `packages/design/src/color-resolution.ts` (`tokens` now level-resolved, `rawTokens` is the literal set); preview rail collapses before list on narrow/SSH/tmux; CJK/long-title truncation + double-width alignment via display-column helpers in `shell-text.ts`.
+4. ~~**Delete deprecated token aliases**~~ — DONE (`5c83bbd0`). Removed from `tokens.ts`, `shell-theme.ts`, and the `color-resolution.ts` fallback table; `grep -rE "palette\.(amber|teal|pink|info|lavender|green|red|gray|yellow|purple)" apps/cli/src` → 0.
 5. **Merge-readiness + install verification** (parallelizable now — disjoint from app-shell): confirm `install.sh`, `README.md`, `docs/users/install-and-update.md`, root + `apps/cli` `package.json` scripts, `turbo.json`, and `.github/workflows/*` are correct so the branch merges cleanly and contributors can build/run/test from a fresh clone. Verify `install.sh` actually works (shellcheck + dry run), `bun install && bun run build && bun run test` succeed from clean, and CI matches the local gate. Note: `install.sh` is currently part of the user's uncommitted pre-existing WIP — decide whether it ships with Sakura or separately.
 6. **Full gate + manual narrow/non-truecolor terminal pass** (`bun run dev`) → merge `design/sakura-rollout` → main.
 
