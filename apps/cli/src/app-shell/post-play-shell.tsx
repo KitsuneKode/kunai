@@ -53,6 +53,8 @@ export const PostPlayShell = React.memo(function PostPlayShell({
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
+      {/* Title + episode context live in the ShellFrame header; the body is the
+          "what next" remote, so it leads with the outcome state, not a 2nd title. */}
       {resumeLabel ? (
         <Text color={palette.accentDeep}>⏸ stopped early</Text>
       ) : isMovie ? (
@@ -60,15 +62,6 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       ) : (
         <Text color={palette.ok}>✓ episode complete</Text>
       )}
-
-      <Box marginTop={1} flexDirection="column">
-        <Text bold>{truncateLine(title, 72)}</Text>
-        {episodeLabel ? (
-          <Text color={palette.dim} dimColor>
-            {episodeLabel}
-          </Text>
-        ) : null}
-      </Box>
 
       {resumeLabel ? (
         <Box marginTop={2} flexDirection="column">

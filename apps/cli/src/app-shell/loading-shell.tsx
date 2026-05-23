@@ -19,7 +19,6 @@ import {
 import type { StageRailItem } from "./loading-shell-runtime";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import type { PosterResult, PosterState } from "./poster-types";
-import { buildPlaybackContextCards, ContextCard } from "./primitives/ContextCard";
 import { StateBlock } from "./primitives/StateBlock";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine, selectFooterActions } from "./shell-primitives";
@@ -466,14 +465,6 @@ export const LoadingShell = React.memo(function LoadingShell({
   const isPlaying = state.operation === "playing";
   const infoWidth = Math.min(76, Math.max(40, terminalColumns - 12));
   const playbackSignalLines = buildPlaybackSignalRail(state);
-  const playbackContextCards = isPlaying
-    ? buildPlaybackContextCards({
-        nextEpisodeLabel: state.nextEpisodeLabel,
-        previousEpisodeLabel: state.previousEpisodeLabel,
-        hasNextEpisode: state.hasNextEpisode,
-        hasPreviousEpisode: state.hasPreviousEpisode,
-      })
-    : [];
 
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
   const loadingIssue = normalizeLoadingIssue(state.latestIssue);
@@ -667,24 +658,16 @@ export const LoadingShell = React.memo(function LoadingShell({
 
           {/* ── Playing ───────────────────────────────────────────────────── */}
           {isPlaying && (
-            <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="center">
+            <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="flex-start">
+              {/* Title/subtitle live in the ShellFrame header — the playing body is
+                  the control surface (facts, progress, up next), not a second title. */}
               <Box flexDirection="row" justifyContent="space-between" alignItems="flex-start">
                 <Box flexDirection="column" flexGrow={1} marginRight={2}>
-                  <Text bold color="white">
-                    {state.title}
-                  </Text>
-                  {state.subtitle ? (
-                    <Text color={palette.dim} dimColor>
-                      {state.subtitle}
-                    </Text>
-                  ) : null}
                   {state.playbackFactsStrip ? (
-                    <Box marginTop={1}>
-                      <Text color={palette.muted}>{state.playbackFactsStrip}</Text>
-                    </Box>
+                    <Text color={palette.muted}>{state.playbackFactsStrip}</Text>
                   ) : null}
                   {state.playbackKeysHint ? (
-                    <Box marginTop={state.playbackFactsStrip ? 0 : 1}>
+                    <Box marginTop={state.playbackFactsStrip ? 1 : 0}>
                       <Text color={palette.dim} dimColor>
                         {state.playbackKeysHint}
                       </Text>
@@ -724,19 +707,11 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
               ) : null}
-              {terminalColumns >= 132 && playbackContextCards.length > 0 ? (
-                <Box marginTop={1} flexDirection="column">
-                  {playbackContextCards.slice(0, 2).map((card, index) => (
-                    <Box key={`${card.kind}-${card.title}`} marginTop={index === 0 ? 0 : 1}>
-                      <ContextCard model={card} width={Math.min(40, infoWidth)} />
-                    </Box>
-                  ))}
-                </Box>
-              ) : state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
+              {state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
                 <Box marginTop={1}>
                   <Text color={palette.accent}>{"▶ "}</Text>
                   <Text color={palette.dim} dimColor>
-                    {"UP NEXT  "}
+                    {"up next  "}
                   </Text>
                   <Text color={palette.text}>{state.nextEpisodeLabel}</Text>
                 </Box>
