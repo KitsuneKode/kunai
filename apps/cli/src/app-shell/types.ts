@@ -227,6 +227,7 @@ export type ShellPickerOption<T> = {
   value: T;
   label: string;
   detail?: string;
+  previewImageUrl?: string;
   tone?: ShellStatusTone;
   badge?: string;
   /** Title used for poster initials in history picker rows. */

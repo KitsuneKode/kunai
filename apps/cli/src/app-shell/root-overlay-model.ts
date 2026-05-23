@@ -3,6 +3,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { buildSettingsSummary } from "./overlay-panel";
 import type { RootOwnedOverlay } from "./root-shell-state";
+import type { ShellPickerOption } from "./types";
 
 export function isRootChoiceOverlay(
   overlay: RootOwnedOverlay,
@@ -57,6 +58,27 @@ export function getRootOverlayResetKey(overlay: RootOwnedOverlay): string {
 
 export function getRootOverlayInitialIndex(overlay: RootOwnedOverlay): number {
   return overlay.type === "episode_picker" ? Math.max(0, overlay.initialIndex ?? 0) : 0;
+}
+
+export function buildRootGenericPickerOptions(
+  overlay: Extract<
+    RootOwnedOverlay,
+    | { type: "season_picker" }
+    | { type: "episode_picker" }
+    | { type: "subtitle_picker" }
+    | { type: "source_picker" }
+    | { type: "quality_picker" }
+    | { type: "recommendation_picker" }
+  >,
+): readonly ShellPickerOption<string>[] {
+  return overlay.options.map((option) => ({
+    value: option.value,
+    label: option.label,
+    detail: option.detail,
+    previewImageUrl: option.previewImageUrl,
+    tone: option.tone,
+    badge: option.badge,
+  }));
 }
 
 export function getRootOverlayTitle(overlay: RootOwnedOverlay, state: SessionState): string {

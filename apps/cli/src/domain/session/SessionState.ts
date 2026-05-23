@@ -66,6 +66,7 @@ export interface OverlayPickerOption {
   readonly value: string;
   readonly label: string;
   readonly detail?: string;
+  readonly previewImageUrl?: string;
   readonly tone?: "neutral" | "info" | "success" | "warning" | "error";
   readonly badge?: string;
 }

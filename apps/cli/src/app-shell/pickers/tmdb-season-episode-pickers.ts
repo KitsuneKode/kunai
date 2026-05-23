@@ -3,10 +3,12 @@ import type { ListShellActionContext } from "@/app-shell/pickers/list-shell-type
 import { openSessionPicker } from "@/app-shell/session-picker";
 import { describeEpisodeWatchPresentation } from "@/app/playback-episode-picker";
 import type { Container } from "@/container";
+import type { OverlayPickerOption } from "@/domain/session/SessionState";
 import { isFinished } from "@/services/persistence/HistoryStore";
-import type { EpisodeInfo } from "@/tmdb";
+import type { EpisodeInfo, SeasonSummary } from "@/tmdb";
 
 type EpisodeStatusEntry = { readonly tone: "success" | "warning"; readonly badge: string };
+type SeasonPickerEntry = number | Pick<SeasonSummary, "number" | "name" | "posterPath">;
 
 async function buildEpisodeStatusMap(
   container: Container | undefined,
@@ -46,23 +48,49 @@ async function buildEpisodeStatusMap(
   return map;
 }
 
+function normalizeSeasonEntry(season: SeasonPickerEntry): Pick<SeasonSummary, "number" | "name"> & {
+  readonly posterPath?: string;
+} {
+  if (typeof season === "number") {
+    return { number: season, name: `Season ${season}` };
+  }
+  return {
+    number: season.number,
+    name: season.name || `Season ${season.number}`,
+    posterPath: season.posterPath,
+  };
+}
+
+export function buildSeasonPickerOptions(
+  seasons: readonly SeasonPickerEntry[],
+  currentSeason: number,
+): OverlayPickerOption[] {
+  return seasons.map((season) => {
+    const entry = normalizeSeasonEntry(season);
+    return {
+      value: String(entry.number),
+      label: entry.number === currentSeason ? `${entry.name}  ·  current` : entry.name,
+      previewImageUrl: entry.posterPath,
+    };
+  });
+}
+
 export async function chooseSeasonFromOptions(
-  seasons: readonly number[],
+  seasons: readonly SeasonPickerEntry[],
   currentSeason: number,
   actionContext?: ListShellActionContext,
   container?: Container,
 ): Promise<number | null> {
   if (seasons.length === 0) return null;
-  if (seasons.length === 1) return seasons[0] ?? currentSeason;
+  if (seasons.length === 1) return normalizeSeasonEntry(seasons[0] ?? currentSeason).number;
+
+  const options = buildSeasonPickerOptions(seasons, currentSeason);
 
   if (container) {
     const picked = await openSessionPicker(container.stateManager, {
       type: "season_picker",
       currentSeason,
-      options: seasons.map((season) => ({
-        value: String(season),
-        label: season === currentSeason ? `Season ${season}  ·  current` : `Season ${season}`,
-      })),
+      options,
     });
     return picked ? Number.parseInt(picked, 10) : null;
   }
@@ -71,10 +99,43 @@ export async function chooseSeasonFromOptions(
     title: "Choose season",
     subtitle: `Current season ${currentSeason}`,
     actionContext,
-    options: seasons.map((season) => ({
-      value: season,
-      label: season === currentSeason ? `Season ${season}  ·  current` : `Season ${season}`,
+    options: options.map((option) => ({
+      value: Number.parseInt(option.value, 10),
+      label: option.label,
+      previewImageUrl: option.previewImageUrl,
     })),
+  });
+}
+
+export async function buildEpisodePickerOptions({
+  episodes,
+  season,
+  currentEpisode,
+  container,
+  titleId,
+}: {
+  episodes: readonly EpisodeInfo[];
+  season: number;
+  currentEpisode: number;
+  container?: Container;
+  titleId?: string;
+}): Promise<OverlayPickerOption[]> {
+  const episodeStatus = await buildEpisodeStatusMap(container, titleId, season, episodes);
+  return episodes.map((episode) => {
+    const status = episodeStatus.get(episode.number);
+    return {
+      value: String(episode.number),
+      label: `Episode ${episode.number}  ·  ${episode.name}`,
+      detail: episode.airDate || "unknown year",
+      tone: status?.tone ?? (episode.number === currentEpisode ? "info" : undefined),
+      badge:
+        episode.number === currentEpisode
+          ? status?.badge
+            ? `▶ ${status.badge}`
+            : "▶"
+          : status?.badge,
+      previewImageUrl: episode.stillPath,
+    };
   });
 }
 
@@ -88,11 +149,17 @@ export async function chooseEpisodeFromOptions(
 ): Promise<EpisodeInfo | null> {
   if (episodes.length === 0) return null;
 
-  const episodeStatus = await buildEpisodeStatusMap(container, titleId, season, episodes);
+  const options = await buildEpisodePickerOptions({
+    episodes,
+    season,
+    currentEpisode,
+    container,
+    titleId,
+  });
 
   let watchedSubtitle: string | null = null;
-  if (episodeStatus.size > 0) {
-    const finishedCount = [...episodeStatus.values()].filter((s) => s.tone === "success").length;
+  if (options.length > 0) {
+    const finishedCount = options.filter((option) => option.tone === "success").length;
     if (finishedCount > 0) {
       watchedSubtitle = `${finishedCount}/${episodes.length} watched`;
     }
@@ -106,37 +173,24 @@ export async function chooseEpisodeFromOptions(
         0,
         episodes.findIndex((episode) => episode.number === currentEpisode),
       ),
-      options: episodes.map((episode) => {
-        const status = episodeStatus.get(episode.number);
-        return {
-          value: String(episode.number),
-          label: `Episode ${episode.number}  ·  ${episode.name}`,
-          detail: episode.airDate || "unknown year",
-          tone: status?.tone ?? (episode.number === currentEpisode ? "info" : undefined),
-          badge:
-            episode.number === currentEpisode
-              ? status?.badge
-                ? `▶ ${status.badge}`
-                : "▶"
-              : status?.badge,
-        };
-      }),
+      options,
     });
     if (!picked) return null;
     return episodes.find((episode) => String(episode.number) === picked) ?? null;
   }
 
+  const fallbackEpisode = episodes[0];
+  if (!fallbackEpisode) return null;
+
   return chooseFromListShell({
     title: "Choose episode",
     subtitle: `Season ${season}  ·  ${watchedSubtitle ?? `Current episode ${currentEpisode}`}`,
     actionContext,
-    options: episodes.map((episode) => ({
-      value: episode,
-      label:
-        episode.number === currentEpisode
-          ? `Episode ${episode.number}  ·  ${episode.name}  ·  current`
-          : `Episode ${episode.number}  ·  ${episode.name}`,
-      detail: episode.airDate || "unknown year",
+    options: options.map((option) => ({
+      value: episodes.find((episode) => String(episode.number) === option.value) ?? fallbackEpisode,
+      label: option.label,
+      detail: option.detail,
+      previewImageUrl: option.previewImageUrl,
     })),
   });
 }

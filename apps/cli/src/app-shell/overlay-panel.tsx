@@ -16,6 +16,7 @@ import { PosterInitialBlock } from "./poster-initial-block";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
+import { usePosterPreview } from "./use-poster-preview";
 
 export { formatPickerDisplayRow, formatPickerOptionRow } from "./overlay-picker-row";
 
@@ -80,6 +81,11 @@ export type BrowseOverlay =
       selectedIndex: number;
       busy?: boolean;
     };
+
+export function getOverlayPickerPreviewImageUrl(overlay: BrowseOverlay): string | undefined {
+  if (overlay.type !== "episode-picker") return undefined;
+  return overlay.options[overlay.selectedIndex]?.previewImageUrl;
+}
 
 type SettingsAction =
   | `section:${string}`
@@ -941,6 +947,16 @@ export function OverlayPanel({
   const busySpinner = useBusySpinner(
     isPickerOverlay && Boolean((overlay as { busy?: boolean }).busy),
   );
+  const pickerPreviewImageUrl = getOverlayPickerPreviewImageUrl(overlay);
+  const { poster: pickerPoster, posterState: pickerPosterState } = usePosterPreview(
+    pickerPreviewImageUrl,
+    {
+      rows: 6,
+      cols: 16,
+      enabled: overlay.type === "episode-picker" && Boolean(pickerPreviewImageUrl),
+      debounceMs: 120,
+    },
+  );
 
   return (
     <Box marginTop={1} flexDirection="column" paddingX={1}>
@@ -1113,6 +1129,17 @@ export function OverlayPanel({
               <Text color={palette.dim}> ▼ ...</Text>
             ) : null}
           </Box>
+          {overlay.type === "episode-picker" && pickerPreviewImageUrl ? (
+            <Box marginTop={1} flexDirection="column">
+              {pickerPoster.kind !== "none" ? (
+                <Text>{pickerPoster.placeholder}</Text>
+              ) : pickerPosterState === "loading" ? (
+                <Text color={palette.muted} dimColor>
+                  Loading artwork…
+                </Text>
+              ) : null}
+            </Box>
+          ) : null}
           {overlay.busy || overlay.type !== "episode-picker" ? (
             <Box marginTop={1}>
               <Text color={overlay.busy ? palette.accent : palette.dim}>

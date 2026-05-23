@@ -50,7 +50,7 @@ import {
 } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
-import { fetchEpisodes, fetchSeasons, type EpisodeInfo } from "@/tmdb";
+import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
 import { getKunaiPaths, type DownloadJobRecord } from "@kunai/storage";
 
 import { resolveCommands } from "./commands";
@@ -1950,7 +1950,7 @@ export async function openSeasonPicker(
   actionContext?: ListShellActionContext,
   container?: Container,
 ): Promise<number | null> {
-  const seasons = await fetchSeasons(tmdbId);
+  const seasons = await fetchSeasonSummaries(tmdbId);
   if (!seasons) return null;
   return chooseSeasonFromOptions(seasons, currentSeason, actionContext, container);
 }

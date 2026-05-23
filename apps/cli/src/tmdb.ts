@@ -16,17 +16,25 @@ export type EpisodeInfo = {
   name: string;
   airDate: string;
   overview: string;
+  stillPath?: string;
 };
 
 export type SeasonInfo = {
   number: number;
   name: string;
+  posterPath?: string;
   episodes: EpisodeInfo[];
+};
+
+export type SeasonSummary = {
+  number: number;
+  name: string;
+  posterPath?: string;
 };
 
 // In-memory cache: `${tmdbId}:${season}` → EpisodeInfo[]
 const epCache = new Map<string, EpisodeInfo[]>();
-const seasonCache = new Map<string, number[]>();
+const seasonCache = new Map<string, SeasonSummary[]>();
 
 async function fetchJson(url: string): Promise<unknown> {
   const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
@@ -34,9 +42,9 @@ async function fetchJson(url: string): Promise<unknown> {
   return res.json();
 }
 
-// Returns the list of season numbers for a series (excludes specials).
+// Returns season metadata for a series (excludes specials).
 // Returns null if both the proxy and direct TMDB API are unreachable.
-export async function fetchSeasons(tmdbId: string): Promise<number[] | null> {
+export async function fetchSeasonSummaries(tmdbId: string): Promise<SeasonSummary[] | null> {
   const key = tmdbId;
   const cachedSeasons = seasonCache.get(key);
   if (cachedSeasons) return cachedSeasons;
@@ -50,17 +58,28 @@ export async function fetchSeasons(tmdbId: string): Promise<number[] | null> {
     const payload = readRecord(data);
     const seasons = Array.isArray(payload.seasons) ? payload.seasons.map(readRecord) : [];
 
-    const nums = seasons
+    const summaries = seasons
       .filter((s) => Number(s.season_number) > 0 && Number(s.episode_count) > 0)
-      .map((s) => Number(s.season_number))
-      .sort((a, b) => a - b);
+      .map((s) => ({
+        number: Number(s.season_number),
+        name: readString(s.name) || `Season ${Number(s.season_number)}`,
+        posterPath: readString(s.poster_path) || undefined,
+      }))
+      .sort((a, b) => a.number - b.number);
 
-    seasonCache.set(key, nums);
-    return nums;
+    seasonCache.set(key, summaries);
+    return summaries;
   } catch {
     // Don't cache failures — a retry after reconnect should try again.
     return null;
   }
+}
+
+// Returns the list of season numbers for a series (excludes specials).
+// Returns null if both the proxy and direct TMDB API are unreachable.
+export async function fetchSeasons(tmdbId: string): Promise<number[] | null> {
+  const summaries = await fetchSeasonSummaries(tmdbId);
+  return summaries?.map((season) => season.number) ?? null;
 }
 
 // Returns episode list for a specific season.
@@ -82,6 +101,7 @@ export async function fetchEpisodes(tmdbId: string, season: number): Promise<Epi
       name: typeof e.name === "string" && e.name ? e.name : `Episode ${Number(e.episode_number)}`,
       airDate: typeof e.air_date === "string" ? e.air_date : "",
       overview: (typeof e.overview === "string" ? e.overview : "").slice(0, 100),
+      stillPath: readString(e.still_path) || undefined,
     }));
 
     epCache.set(key, eps);
@@ -96,6 +116,10 @@ function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 // Fetches seasons + first season episodes in parallel — reduces perceived latency.

@@ -55,6 +55,7 @@ import {
   type RootHistorySelection,
 } from "./root-history-bridge";
 import {
+  buildRootGenericPickerOptions,
   getRootOverlayInitialIndex,
   getRootOverlayResetKey,
   getRootOverlaySubtitle,
@@ -357,13 +358,7 @@ export function RootOverlayShell({
     overlay.type === "source_picker" ||
     overlay.type === "quality_picker" ||
     overlay.type === "recommendation_picker"
-      ? overlay.options.map((option) => ({
-          value: option.value,
-          label: option.label,
-          detail: option.detail,
-          tone: option.tone,
-          badge: option.badge,
-        }))
+      ? buildRootGenericPickerOptions(overlay)
       : [];
   const filteredProviderOptions = rankFuzzyMatches(providerOptions, filterQuery, (option) => [
     { value: option.label, weight: 0 },

@@ -5,6 +5,7 @@ import {
   buildSettingsOptions,
   formatPickerDisplayRow,
   formatPickerOptionRow,
+  getOverlayPickerPreviewImageUrl,
 } from "@/app-shell/overlay-panel";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
@@ -45,6 +46,22 @@ test("formatPickerDisplayRow reserves prefix width before truncating episode row
 
   expect(row.prefix).toBe("▌ ");
   expect(row.prefix.length + row.text.length + row.badgeSuffix.length).toBeLessThanOrEqual(64);
+});
+
+test("episode picker overlay resolves selected preview artwork", () => {
+  expect(
+    getOverlayPickerPreviewImageUrl({
+      type: "episode-picker",
+      title: "Choose episode",
+      subtitle: "Season 1",
+      filterQuery: "",
+      selectedIndex: 1,
+      options: [
+        { value: "1", label: "Episode 1", previewImageUrl: "/still-1.jpg" },
+        { value: "2", label: "Episode 2", previewImageUrl: "/still-2.jpg" },
+      ],
+    }),
+  ).toBe("/still-2.jpg");
 });
 
 test("settings expose Discord presence onboarding actions", () => {
