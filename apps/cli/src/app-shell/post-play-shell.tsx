@@ -70,7 +70,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         <Box marginTop={1} flexDirection="column">
           <Text color={palette.textDim}>nothing was recorded for this title.</Text>
           <Box marginTop={1}>
-            <Text color={palette.dim}>↵ try again · / search for another title</Text>
+            <Text color={palette.dim}>↵ try again · s search for another title</Text>
           </Box>
         </Box>
       ) : null}

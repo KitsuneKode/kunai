@@ -1238,6 +1238,15 @@ function buildPostPlayFooterActions(
   const quitAction: FooterAction = { key: "q", label: "quit", action: "quit" };
 
   switch (postPlayState.kind) {
+    case "did-not-start":
+      // Nothing played — the primary action is to retry the same episode, never
+      // advance to "next". Replay re-resolves and replays the current episode.
+      return [
+        { key: "r", label: "try again", action: "replay", primary: true },
+        { key: "s", label: "search", action: "search" },
+        quitAction,
+        commandAction,
+      ];
     case "caught-up":
       return [
         { key: "w", label: "watchlist", action: "watchlist", primary: true },
@@ -1336,6 +1345,10 @@ function PlaybackShell({
       escapeAction="back-to-results"
       onUnhandledInput={(input, key) => {
         if (key.return || input === "c") {
+          if (postPlayState.kind === "did-not-start") {
+            onResolve("replay"); // try again — retry the same episode, never advance
+            return;
+          }
           if (postPlayState.kind === "mid-series") {
             onResolve(canResume ? "resume" : "next");
             return;
