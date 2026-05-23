@@ -192,6 +192,194 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
   expect(result.stream!.url).toBe(fallbackStream.url);
 });
 
+test("PlaybackResolveService reuses source inventory before a provider resolve", async () => {
+  let providerCalls = 0;
+  const inventory = {
+    get: async (): Promise<ProviderResolveResult> => ({
+      status: "resolved",
+      providerId: "primary" as ProviderId,
+      streams: [
+        {
+          id: "stream:inventory:1",
+          providerId: "primary" as ProviderId,
+          url: "https://inventory.example/stream.m3u8",
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: {
+            ttlClass: "stream-manifest" as const,
+            scope: "local" as const,
+            keyParts: [],
+          },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:inventory",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie" as const, title: "Test Movie" },
+        cacheHit: true,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    }),
+    set: async () => {},
+    delete: async () => {},
+  };
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    { onCandidateIds: () => (providerCalls += 1) },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    sourceInventory: inventory,
+    streamHealthService: {
+      check: async () => ({
+        healthy: true,
+        checked: true,
+        strategy: "hls-manifest-get",
+      }),
+    } as never,
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(result.stream?.url).toBe("https://inventory.example/stream.m3u8");
+  expect(providerCalls).toBe(0);
+});
+
+test("PlaybackResolveService resolves fresh when cached inventory lacks an explicit source choice", async () => {
+  let providerCalls = 0;
+  const inventory = {
+    get: async (): Promise<ProviderResolveResult> => ({
+      status: "resolved",
+      providerId: "primary" as ProviderId,
+      streams: [
+        {
+          id: "stream:inventory:other",
+          sourceId: "source:other",
+          providerId: "primary" as ProviderId,
+          url: "https://inventory.example/other.m3u8",
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: {
+            ttlClass: "stream-manifest" as const,
+            scope: "local" as const,
+            keyParts: [],
+          },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:inventory",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie" as const, title: "Test Movie" },
+        cacheHit: true,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    }),
+    set: async () => {},
+    delete: async () => {},
+  };
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    { onCandidateIds: () => (providerCalls += 1) },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    sourceInventory: inventory,
+  });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    selectedSourceId: "source:selected",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(providerCalls).toBe(1);
+});
+
+test("PlaybackResolveService records the classified primary failure when fallback succeeds", async () => {
+  const failures: string[] = [];
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "fallback" as ProviderId,
+      streams: [
+        {
+          id: "stream:fallback",
+          providerId: "fallback" as ProviderId,
+          url: "https://fallback.example/stream.m3u8",
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:fallback",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "fallback" as ProviderId,
+    attempts: [
+      {
+        providerId: "primary" as ProviderId,
+        failure: {
+          providerId: "primary" as ProviderId,
+          code: "parse-failed",
+          message: "schema changed",
+          retryable: true,
+          at: new Date().toISOString(),
+        },
+      },
+      { providerId: "fallback" as ProviderId, result: undefined },
+    ],
+  });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    titleProviderHealth: {
+      recordFailure: (_titleId, _providerId, _fallbackId, kind) => failures.push(kind),
+      recordCleanSuccess: () => {},
+    },
+  });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(failures).toEqual(["parse"]);
+});
+
 test("PlaybackResolveService caches late valid user-navigation results without returning them", async () => {
   const cache = createMemoryCache(null);
   const controller = new AbortController();

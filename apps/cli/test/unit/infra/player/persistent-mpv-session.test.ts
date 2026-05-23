@@ -109,8 +109,8 @@ describe("persistent mpv prefetch trigger", () => {
     ).toBe(1140);
   });
 
-  test("falls back to the final sixty seconds when no credible credits timing exists", () => {
-    expect(resolveNearEofPrefetchTriggerSeconds(1500)).toBe(1440);
+  test("uses the adaptive ninety-percent fallback when no credible credits timing exists", () => {
+    expect(resolveNearEofPrefetchTriggerSeconds(1500)).toBe(1350);
     expect(
       resolveNearEofPrefetchTriggerSeconds(1500, {
         tmdbId: "tmdb:1",
@@ -120,7 +120,7 @@ describe("persistent mpv prefetch trigger", () => {
         preview: [],
         credits: [{ startMs: 120_000, endMs: 180_000 }],
       }),
-    ).toBe(1440);
+    ).toBe(1350);
   });
 
   test("does not prefetch tiny or live-like durations", () => {

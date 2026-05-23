@@ -33,7 +33,12 @@ import {
   decideResolveResultCommit,
   type ResolveCancellationReason,
 } from "./ResolveResultCommitPolicy";
+import type { SourceInventoryService } from "./SourceInventoryService";
 import { StreamHealthService } from "./StreamHealthService";
+import type {
+  CountableTitleProviderFailure,
+  TitleProviderHealthService,
+} from "./TitleProviderHealthService";
 
 export type PlaybackResolveFeedback = {
   readonly detail?: string | null;
@@ -63,6 +68,10 @@ export type PlaybackResolveEvent =
       readonly strategy: "hls-manifest-get" | "head-then-range";
       readonly healthy: boolean;
       readonly ageMs?: number;
+    }
+  | {
+      readonly type: "source-inventory-hit";
+      readonly providerId: string;
     }
   | {
       readonly type: "attempt";
@@ -138,6 +147,11 @@ export class PlaybackResolveService {
       readonly providerHealth?: ProviderHealthRepository;
       readonly streamHealth?: StreamHealthChecker;
       readonly streamHealthService?: StreamHealthService;
+      readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
+      readonly titleProviderHealth?: Pick<
+        TitleProviderHealthService,
+        "recordFailure" | "recordCleanSuccess"
+      >;
     },
   ) {}
 
@@ -219,6 +233,52 @@ export class PlaybackResolveService {
       input.mode,
     );
 
+    const inventoryInput = {
+      providerId: input.providerId,
+      mediaKind: resolveInput.mediaKind,
+      titleId: input.title.id,
+      season: input.episode.season,
+      episode: input.episode.episode,
+      audioMode: input.audioPreference,
+      subtitleLanguage: input.subtitlePreference,
+    };
+    const inventoryResult = await this.deps.sourceInventory?.get(inventoryInput);
+    if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
+      const inventoryStream = providerResolveResultToStreamInfo({
+        result: inventoryResult,
+        title: input.title.name,
+        subtitlePreference: input.subtitlePreference,
+        selectedSourceId: input.selectedSourceId,
+        selectedStreamId: input.selectedStreamId,
+      });
+      if (inventoryStream) {
+        input.onEvent?.({ type: "source-inventory-hit", providerId: input.providerId });
+        const health = await this.checkCachedStreamHealth(inventoryStream, true, input.signal);
+        if (health.checked) {
+          input.onEvent?.({
+            type: "cache-health-check",
+            providerId: input.providerId,
+            strategy:
+              health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+            healthy: health.healthy,
+            ageMs: health.ageMs,
+          });
+        }
+        if (health.healthy) {
+          input.onEvent?.({ type: "cache-hit-validated", providerId: input.providerId });
+          await this.persistResolvedStream(input, input.providerId, inventoryStream);
+          return {
+            stream: { ...inventoryStream, cacheProvenance: "revalidated" },
+            providerId: input.providerId,
+            attempts: [],
+            cacheStatus: "hit",
+            cacheProvenance: "revalidated",
+          };
+        }
+        await this.deps.sourceInventory?.delete(inventoryInput);
+      }
+    }
+
     const recoveryMode = input.recoveryMode ?? "guided";
     const primaryHealth = this.deps.providerHealth?.get(input.providerId);
     const recoveryDecision = decideRecovery({
@@ -280,6 +340,10 @@ export class PlaybackResolveService {
     }
 
     if (engineResult.result) {
+      await this.deps.sourceInventory?.set(
+        { ...inventoryInput, providerId: engineResult.providerId ?? input.providerId },
+        engineResult.result,
+      );
       const stream = providerResolveResultToStreamInfo({
         result: engineResult.result,
         title: input.title.name,
@@ -289,6 +353,21 @@ export class PlaybackResolveService {
       });
 
       if (stream) {
+        const resolvedProviderId = engineResult.providerId ?? input.providerId;
+        const primaryFailureKind = titleProviderFailureFromAttempts(
+          engineResult.attempts,
+          input.providerId,
+        );
+        if (primaryFailureKind && resolvedProviderId !== input.providerId) {
+          this.deps.titleProviderHealth?.recordFailure(
+            input.title.id,
+            input.providerId,
+            resolvedProviderId,
+            primaryFailureKind,
+          );
+        } else if (resolvedProviderId === input.providerId) {
+          this.deps.titleProviderHealth?.recordCleanSuccess(input.title.id, input.providerId);
+        }
         const commitDecision = decideResolveResultCommit({
           hasResolvedStream: true,
           signalAborted: input.signal.aborted,
@@ -327,6 +406,19 @@ export class PlaybackResolveService {
           };
         }
       }
+    }
+
+    const primaryFailureKind = titleProviderFailureFromAttempts(
+      engineResult.attempts,
+      input.providerId,
+    );
+    if (primaryFailureKind) {
+      this.deps.titleProviderHealth?.recordFailure(
+        input.title.id,
+        input.providerId,
+        undefined,
+        primaryFailureKind,
+      );
     }
 
     if (cachedStream && input.preserveCachedStreamOnFreshFailure === true) {
@@ -453,6 +545,46 @@ export class PlaybackResolveService {
       selectedSourceId: input.selectedSourceId,
       selectedStreamId: input.selectedStreamId,
     });
+  }
+}
+
+function inventoryMatchesSelection(
+  inventory: { readonly streams: readonly { readonly id: string; readonly sourceId?: string }[] },
+  input: Pick<PlaybackResolveInput, "selectedSourceId" | "selectedStreamId">,
+): boolean {
+  if (
+    input.selectedStreamId &&
+    !inventory.streams.some((stream) => stream.id === input.selectedStreamId)
+  ) {
+    return false;
+  }
+  if (
+    input.selectedSourceId &&
+    !inventory.streams.some((stream) => stream.sourceId === input.selectedSourceId)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function titleProviderFailureFromAttempts(
+  attempts: readonly ProviderEngineResolveAttempt[],
+  providerId: string,
+): CountableTitleProviderFailure | null {
+  const attempt = attempts.find((candidate) => candidate.providerId === providerId);
+  const failure = attempt?.failure ?? attempt?.result?.failures[0];
+  if (!failure) return null;
+  switch (classifyProviderFailure(failure).failureClass) {
+    case "timeout":
+      return "timeout";
+    case "provider-parse":
+      return "parse";
+    case "provider-empty":
+      return "no-streams";
+    case "expired-stream":
+      return "dead-stream";
+    default:
+      return null;
   }
 }
 

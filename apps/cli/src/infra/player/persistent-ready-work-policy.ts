@@ -28,7 +28,10 @@ export function resolveNearEofPrefetchTriggerSeconds(
   timing?: PlaybackTimingMetadata | null,
 ): number | null {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 60) return null;
-  const fallbackTrigger = Math.max(0, durationSeconds - 60);
+  const fallbackTrigger = Math.max(
+    0,
+    Math.max(durationSeconds - 180, Math.min(durationSeconds - 60, durationSeconds * 0.9)),
+  );
   const creditsStart = (timing?.credits ?? [])
     .map((segment) => segment.startMs)
     .filter((startMs): startMs is number => typeof startMs === "number" && Number.isFinite(startMs))

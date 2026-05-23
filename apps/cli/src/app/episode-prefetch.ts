@@ -1,12 +1,18 @@
 import type { EpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
 
-/** Max time to wait for an in-flight next-episode prefetch before foreground resolve. */
+/** Maximum extended handoff wait after concrete readiness progress. */
 export const EPISODE_PREFETCH_WAIT_BUDGET_MS = 8_000;
+export const EPISODE_PREFETCH_DEFAULT_WAIT_BUDGET_MS = 3_000;
 
 export type EpisodePrefetchTarget = {
   readonly titleId: string;
   readonly episode: EpisodeInfo;
   readonly providerId: string;
+  readonly sourceId?: string;
+  readonly streamId?: string;
+  readonly audioPreference?: string;
+  readonly qualityPreference?: string;
+  readonly subtitlePreference?: string;
 };
 
 export type EpisodePrefetchBundle = {
@@ -24,22 +30,49 @@ export type EpisodePrefetchWaitResult = {
   readonly waitedMs: number;
 };
 
+export type EpisodePrefetchProgress = {
+  readonly exactStreamCacheHit?: boolean;
+  readonly sourceInventoryHit?: boolean;
+  readonly candidateStreamsReturned?: boolean;
+  readonly fallbackAttemptStarted?: boolean;
+  readonly streamValidationActive?: boolean;
+  readonly videoReady?: boolean;
+  readonly timingReady?: boolean;
+  readonly subtitleReady?: boolean;
+};
+
 export function episodePrefetchKey(titleId: string, episode: EpisodeInfo): string {
   return `${titleId}:${episode.season}:${episode.episode}`;
 }
 
 export function matchesEpisodePrefetchTarget(
   target: EpisodePrefetchTarget,
-  titleId: string,
-  episode: EpisodeInfo,
-  providerId: string,
+  requested: EpisodePrefetchTarget,
 ): boolean {
   return (
-    target.titleId === titleId &&
-    target.episode.season === episode.season &&
-    target.episode.episode === episode.episode &&
-    target.providerId === providerId
+    target.titleId === requested.titleId &&
+    target.episode.season === requested.episode.season &&
+    target.episode.episode === requested.episode.episode &&
+    target.providerId === requested.providerId &&
+    target.sourceId === requested.sourceId &&
+    target.streamId === requested.streamId &&
+    target.audioPreference === requested.audioPreference &&
+    target.qualityPreference === requested.qualityPreference
   );
+}
+
+export function resolveEpisodePrefetchWaitBudget(progress?: EpisodePrefetchProgress): number {
+  if (
+    progress?.exactStreamCacheHit ||
+    progress?.sourceInventoryHit ||
+    progress?.candidateStreamsReturned ||
+    progress?.fallbackAttemptStarted ||
+    progress?.streamValidationActive ||
+    progress?.videoReady
+  ) {
+    return EPISODE_PREFETCH_WAIT_BUDGET_MS;
+  }
+  return EPISODE_PREFETCH_DEFAULT_WAIT_BUDGET_MS;
 }
 
 export function isEpisodePrefetchEligible(input: {
@@ -75,27 +108,18 @@ export class EpisodePrefetchHandle {
   }
 
   hasReadyFor(target: EpisodePrefetchTarget): boolean {
-    return (
-      this.ready !== null &&
-      matchesEpisodePrefetchTarget(
-        this.ready.target,
-        target.titleId,
-        target.episode,
-        target.providerId,
-      )
-    );
+    return this.ready !== null && matchesEpisodePrefetchTarget(this.ready.target, target);
   }
 
-  takeReadyFor(
-    titleId: string,
-    episode: EpisodeInfo,
-    providerId: string,
-  ): EpisodePrefetchBundle | null {
+  takeReadyFor(target: EpisodePrefetchTarget): EpisodePrefetchBundle | null {
     if (!this.ready) return null;
-    if (!matchesEpisodePrefetchTarget(this.ready.target, titleId, episode, providerId)) {
+    if (!matchesEpisodePrefetchTarget(this.ready.target, target)) {
       return null;
     }
-    const bundle = this.ready;
+    const bundle =
+      this.ready.target.subtitlePreference !== target.subtitlePreference
+        ? { ...this.ready, target, prepared: false }
+        : this.ready;
     this.ready = null;
     this.activeTarget = null;
     return bundle;
@@ -105,12 +129,7 @@ export class EpisodePrefetchHandle {
     return (
       this.inFlight !== null &&
       this.activeTarget !== null &&
-      matchesEpisodePrefetchTarget(
-        this.activeTarget,
-        target.titleId,
-        target.episode,
-        target.providerId,
-      )
+      matchesEpisodePrefetchTarget(this.activeTarget, target)
     );
   }
 
@@ -134,15 +153,7 @@ export class EpisodePrefetchHandle {
       try {
         const bundle = await run(abortController.signal);
         if (generation !== this.generation) return null;
-        if (
-          bundle &&
-          matchesEpisodePrefetchTarget(
-            bundle.target,
-            target.titleId,
-            target.episode,
-            target.providerId,
-          )
-        ) {
+        if (bundle && matchesEpisodePrefetchTarget(bundle.target, target)) {
           this.ready = bundle;
           return bundle;
         }
@@ -193,14 +204,7 @@ export class EpisodePrefetchHandle {
 
   private peekReady(target: EpisodePrefetchTarget): EpisodePrefetchBundle | null {
     if (!this.ready) return null;
-    if (
-      !matchesEpisodePrefetchTarget(
-        this.ready.target,
-        target.titleId,
-        target.episode,
-        target.providerId,
-      )
-    ) {
+    if (!matchesEpisodePrefetchTarget(this.ready.target, target)) {
       return null;
     }
     return this.ready;
@@ -235,10 +239,13 @@ export async function adoptEpisodePrefetchBundle(input: {
   readonly target: EpisodePrefetchTarget;
   readonly run: (signal: AbortSignal) => Promise<EpisodePrefetchBundle | null>;
   readonly budgetMs?: number;
+  readonly progress?: EpisodePrefetchProgress;
+  readonly getProgress?: () => EpisodePrefetchProgress | undefined;
   readonly onWaiting?: () => void;
   readonly recordWait?: (result: EpisodePrefetchWaitResult) => void;
 }): Promise<EpisodePrefetchBundle | null> {
-  const budgetMs = input.budgetMs ?? EPISODE_PREFETCH_WAIT_BUDGET_MS;
+  const budgetMs =
+    input.budgetMs ?? resolveEpisodePrefetchWaitBudget(input.getProgress?.() ?? input.progress);
   const shouldAnnounceWait =
     input.handle.hasReadyFor(input.target) || input.handle.isInFlightFor(input.target);
   if (shouldAnnounceWait) {

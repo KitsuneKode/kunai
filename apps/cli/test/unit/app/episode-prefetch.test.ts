@@ -5,6 +5,7 @@ import {
   EPISODE_PREFETCH_WAIT_BUDGET_MS,
   isEpisodePrefetchEligible,
   matchesEpisodePrefetchTarget,
+  resolveEpisodePrefetchWaitBudget,
 } from "@/app/episode-prefetch";
 import type { EpisodeInfo, StreamInfo } from "@/domain/types";
 
@@ -20,6 +21,11 @@ const target = {
   titleId: "show-1",
   episode: ep(1, 2),
   providerId: "prov-a",
+  sourceId: "source-a",
+  streamId: "stream-a",
+  audioPreference: "original",
+  qualityPreference: "1080p",
+  subtitlePreference: "en",
 };
 
 describe("episode prefetch eligibility", () => {
@@ -120,14 +126,38 @@ describe("EpisodePrefetchHandle", () => {
     };
     handle.schedule(target, async () => bundle);
     await handle.awaitFor(target, async () => bundle, 2_000);
-    const taken = handle.takeReadyFor(target.titleId, target.episode, target.providerId);
+    const taken = handle.takeReadyFor(target);
     expect(taken?.stream.url).toContain("take.m3u8");
     expect(handle.hasReadyFor(target)).toBe(false);
   });
 
-  test("matchesEpisodePrefetchTarget compares season and episode", () => {
-    expect(matchesEpisodePrefetchTarget(target, "show-1", ep(1, 2), "prov-a")).toBe(true);
-    expect(matchesEpisodePrefetchTarget(target, "show-1", ep(1, 3), "prov-a")).toBe(false);
-    expect(matchesEpisodePrefetchTarget(target, "show-1", ep(1, 2), "prov-b")).toBe(false);
+  test("exact-match adoption rejects changed provider, stream, audio, or quality intent", () => {
+    expect(matchesEpisodePrefetchTarget(target, target)).toBe(true);
+    expect(matchesEpisodePrefetchTarget(target, { ...target, episode: ep(1, 3) })).toBe(false);
+    expect(matchesEpisodePrefetchTarget(target, { ...target, providerId: "prov-b" })).toBe(false);
+    expect(matchesEpisodePrefetchTarget(target, { ...target, streamId: "stream-b" })).toBe(false);
+    expect(matchesEpisodePrefetchTarget(target, { ...target, audioPreference: "dub" })).toBe(false);
+    expect(matchesEpisodePrefetchTarget(target, { ...target, qualityPreference: "720p" })).toBe(
+      false,
+    );
+  });
+
+  test("soft subtitle changes reuse video but mark subtitle preparation stale", async () => {
+    const handle = new EpisodePrefetchHandle();
+    const bundle = { target, stream: mockStream("https://example.com/sub.m3u8"), prepared: true };
+    handle.schedule(target, async () => bundle);
+    await handle.awaitFor(target, async () => bundle, 2_000);
+
+    const adopted = handle.takeReadyFor({ ...target, subtitlePreference: "es" });
+
+    expect(adopted?.stream.url).toContain("sub.m3u8");
+    expect(adopted?.prepared).toBe(false);
+  });
+
+  test("wait budget extends only when video-readiness progress exists", () => {
+    expect(resolveEpisodePrefetchWaitBudget()).toBe(3_000);
+    expect(resolveEpisodePrefetchWaitBudget({ timingReady: true })).toBe(3_000);
+    expect(resolveEpisodePrefetchWaitBudget({ sourceInventoryHit: true })).toBe(8_000);
+    expect(resolveEpisodePrefetchWaitBudget({ fallbackAttemptStarted: true })).toBe(8_000);
   });
 });

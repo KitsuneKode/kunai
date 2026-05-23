@@ -13,7 +13,9 @@ import {
   type PlaybackResolveOutput,
   type StreamHealthChecker,
 } from "./PlaybackResolveService";
+import type { SourceInventoryService } from "./SourceInventoryService";
 import type { StreamHealthService } from "./StreamHealthService";
+import type { TitleProviderHealthService } from "./TitleProviderHealthService";
 
 export type PlaybackResolveProvenance =
   | "fresh"
@@ -34,6 +36,11 @@ export type PlaybackResolveCoordinatorDeps = {
   readonly streamHealth?: StreamHealthChecker;
   readonly streamHealthService?: StreamHealthService;
   readonly diagnostics?: DiagnosticsService;
+  readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
+  readonly titleProviderHealth?: Pick<
+    TitleProviderHealthService,
+    "recordFailure" | "recordCleanSuccess"
+  >;
 };
 
 export class PlaybackResolveCoordinator {
@@ -73,6 +80,8 @@ export class PlaybackResolveCoordinator {
       providerHealth: this.deps.providerHealth,
       streamHealth: this.deps.streamHealth,
       streamHealthService: this.deps.streamHealthService,
+      sourceInventory: this.deps.sourceInventory,
+      titleProviderHealth: this.deps.titleProviderHealth,
     });
   }
 
@@ -84,7 +93,8 @@ export class PlaybackResolveCoordinator {
       event.type === "cache-miss" ||
       event.type === "cache-stale" ||
       event.type === "cache-hit-validated" ||
-      event.type === "fresh-source-failed-using-cache"
+      event.type === "fresh-source-failed-using-cache" ||
+      event.type === "source-inventory-hit"
     ) {
       const operationByType = {
         "cache-hit": "resolve.cache.hit",
@@ -92,6 +102,7 @@ export class PlaybackResolveCoordinator {
         "cache-stale": "resolve.cache.stale",
         "cache-hit-validated": "resolve.cache.hit.validated",
         "fresh-source-failed-using-cache": "resolve.refetch.failed.cached-fallback",
+        "source-inventory-hit": "source-inventory.cache.hit",
       } as const;
       this.deps.diagnostics.record({
         ...input.correlation,
