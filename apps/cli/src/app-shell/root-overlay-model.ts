@@ -81,7 +81,7 @@ export function buildRootGenericPickerOptions(
   }));
 }
 
-export function getRootOverlayTitle(overlay: RootOwnedOverlay, state: SessionState): string {
+export function getRootOverlayTitle(overlay: RootOwnedOverlay, _state: SessionState): string {
   if (overlay.type === "help") return "Help";
   if (overlay.type === "about") return "About";
   if (overlay.type === "diagnostics") return "Diagnostics";
@@ -91,9 +91,7 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay, state: SessionSta
   if (overlay.type === "notifications") return "Notifications";
   if (overlay.type === "settings") return "Settings";
   if (overlay.type === "season_picker") return "Choose season";
-  if (overlay.type === "episode_picker") {
-    return state.currentTitle?.name ?? "Choose episode";
-  }
+  if (overlay.type === "episode_picker") return "Choose episode";
   if (overlay.type === "subtitle_picker") return "Choose subtitles";
   if (overlay.type === "source_picker") return "Choose source";
   if (overlay.type === "quality_picker") return "Choose quality";
