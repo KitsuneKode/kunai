@@ -2,10 +2,9 @@ import { tokens } from "@kunai/design";
 
 import type { ShellStatus } from "./types";
 
-// palette maps token values to the property names used throughout app-shell.
-// New code should prefer the SEMANTIC names (accent / ok / danger / line / …).
-// The color-named keys below them are deprecated aliases kept so existing
-// surfaces build during the Sakura migration (see .plans/sakura-rollout.md).
+// palette maps token values to the semantic property names used throughout
+// app-shell (accent / ok / danger / line / …). Color encodes state or focus,
+// never identity — see .docs/design-system.md.
 export const palette = {
   // ---- surfaces ----
   bg: tokens.bg,
@@ -44,33 +43,6 @@ export const palette = {
   textDim: tokens.textDim,
   muted: tokens.muted,
   dim: tokens.dim,
-
-  // ---- DEPRECATED color-named aliases (migrate to semantic names) ----
-  amber: tokens.amber, // → accent
-  amberSoft: tokens.amberSoft, // → accentSoft
-  pink: tokens.pink, // → typeAnime (Stats) / drop elsewhere
-  cyan: tokens.teal, // → accent (focus) / muted (info)
-  teal: tokens.teal, // → accent (focus) / muted (info)
-  info: tokens.info, // → muted
-  infoDim: tokens.infoDim, // → dim
-  lavender: tokens.lavender, // → muted
-  purple: tokens.purple, // → milestone
-  purpleDim: tokens.purpleDim, // → milestoneDim
-  green: tokens.green, // → ok
-  red: tokens.red, // → danger
-  gray: tokens.dim, // → dim
-  borderStrong: tokens.borderStrong, // → lineStrong
-
-  // deprecated tinted fills
-  amberFill: tokens.amberFill, // → accentFill
-  tealFill: tokens.tealFill, // → okFill
-  infoFill: tokens.infoFill, // → surfaceElevated
-  pinkFill: tokens.pinkFill, // → accentFill
-  lavenderFill: tokens.lavenderFill, // → surfaceElevated
-  greenFill: tokens.greenFill, // → okFill
-  yellowFill: tokens.yellowFill, // → accentFill
-  redFill: tokens.redFill, // → dangerFill
-  purpleFill: tokens.purpleFill, // → milestoneFill
 } as const;
 
 export const APP_LABEL = "🦊 Kunai";

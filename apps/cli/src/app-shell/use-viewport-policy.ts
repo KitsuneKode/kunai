@@ -3,11 +3,19 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   getShellViewportPolicy,
+  type ShellTerminalProfile,
   type ShellViewportKind,
   type ShellViewportPolicy,
 } from "./layout-policy";
 
 const RESIZE_DEBOUNCE_MS = 120;
+type ShellEnv = Record<string, string | undefined>;
+
+export function getShellTerminalProfile(env: ShellEnv = process.env): ShellTerminalProfile {
+  if (env.SSH_CONNECTION || env.SSH_TTY || env.TMUX || env.STY) return "constrained";
+  if (/^(?:screen|tmux)(?:-|$)/i.test(env.TERM ?? "")) return "constrained";
+  return "local";
+}
 
 /**
  * Returns a live viewport policy that re-evaluates on every terminal resize.
@@ -18,7 +26,10 @@ export function useViewportPolicy(
   options: { forceCompact?: boolean } = {},
 ): ShellViewportPolicy {
   const { stdout } = useStdout();
-  return getShellViewportPolicy(kind, stdout.columns ?? 80, stdout.rows ?? 24, options);
+  return getShellViewportPolicy(kind, stdout.columns ?? 80, stdout.rows ?? 24, {
+    ...options,
+    terminalProfile: getShellTerminalProfile(),
+  });
 }
 
 /**
@@ -54,5 +65,8 @@ export function useDebouncedViewportPolicy(
     };
   }, [cols, rows, settled.cols, settled.rows]);
 
-  return getShellViewportPolicy(kind, settled.cols, settled.rows, options);
+  return getShellViewportPolicy(kind, settled.cols, settled.rows, {
+    ...options,
+    terminalProfile: getShellTerminalProfile(),
+  });
 }

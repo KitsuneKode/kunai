@@ -7,7 +7,7 @@ import { requestHardExit } from "./graceful-exit";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
 import { CommandPalette, LineEditorText, useShellInput } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
-import { truncateLine } from "./shell-text";
+import { measureColumns, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { FooterAction, ShellAction, ShellFooterMode, ShellStatus } from "./types";
 
@@ -73,6 +73,10 @@ export function ShellFrame({
   const cols = terminalWidthProp ?? stdout.columns ?? 80;
   const rows = terminalRowsProp ?? stdout.rows ?? 24;
   const commandWidth = Math.min(92, Math.max(36, Math.floor(cols * 0.62)));
+  const statusLabel = status?.label;
+  const statusWidth = statusLabel ? measureColumns(statusLabel) : 0;
+  const titleWidth = Math.max(12, cols - statusWidth - (statusLabel ? 3 : 0));
+  const subtitleWidth = Math.max(12, cols - 2);
 
   return (
     <Box
@@ -84,11 +88,11 @@ export function ShellFrame({
       <Box flexDirection="column" flexGrow={1}>
         <Box justifyContent="space-between">
           <Text bold color={palette.text}>
-            {title}
+            {truncateLine(title, titleWidth)}
           </Text>
-          {status ? <Text color={statusColor(status.tone)}>{status.label}</Text> : null}
+          {statusLabel ? <Text color={statusColor(status.tone)}>{statusLabel}</Text> : null}
         </Box>
-        <Text color={palette.muted}>{subtitle}</Text>
+        <Text color={palette.muted}>{truncateLine(subtitle, subtitleWidth)}</Text>
         <Box marginTop={1} flexDirection="column" flexGrow={1}>
           {children}
         </Box>

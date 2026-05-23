@@ -25,13 +25,6 @@ describe("palette", () => {
   test("exposes milestone token for series-complete color", () => {
     expect(palette.milestone).toBeDefined();
     expect(palette.milestone).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(palette.purple).toBe(palette.milestone); // deprecated alias
-  });
-
-  test("deprecated color-names alias onto the semantic palette", () => {
-    expect(palette.amber).toBe(palette.accent);
-    expect(palette.green).toBe(palette.ok);
-    expect(palette.red).toBe(palette.danger);
   });
 
   test("exposes surface + fill tokens", () => {

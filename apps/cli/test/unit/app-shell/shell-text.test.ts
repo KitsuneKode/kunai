@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { truncateAtWord } from "@/app-shell/shell-text";
+import {
+  measureColumns,
+  padColumnsEnd,
+  padColumnsStart,
+  truncateAtWord,
+  truncateLine,
+} from "@/app-shell/shell-text";
 
 describe("truncateAtWord", () => {
   test("returns input when it fits", () => {
@@ -16,5 +22,28 @@ describe("truncateAtWord", () => {
   test("handles tiny widths", () => {
     expect(truncateAtWord("anything", 1)).toBe("…");
     expect(truncateAtWord("anything", 0)).toBe("");
+  });
+});
+
+describe("terminal column text helpers", () => {
+  test("truncates CJK titles by display columns instead of UTF-16 length", () => {
+    const truncated = truncateLine("葬送のフリーレン season finale", 12);
+
+    expect(truncated).toBe("葬送のフリ…");
+    expect(measureColumns(truncated)).toBeLessThanOrEqual(12);
+  });
+
+  test("pads double-width titles to a stable terminal column width", () => {
+    const padded = padColumnsEnd("推し", 6);
+
+    expect(padded).toBe("推し  ");
+    expect(measureColumns(padded)).toBe(6);
+  });
+
+  test("left-pads double-width metadata to a stable terminal column width", () => {
+    const padded = padColumnsStart("映画", 6);
+
+    expect(padded).toBe("  映画");
+    expect(measureColumns(padded)).toBe(6);
   });
 });

@@ -1,16 +1,19 @@
 export type ShellViewportKind = "browse" | "picker" | "playback";
 
 export type ShellViewportBreakpoint = "narrow" | "medium" | "wide" | "blocked";
+export type ShellTerminalProfile = "local" | "constrained";
 
 export type ShellViewportPolicy = {
   columns: number;
   rows: number;
+  terminalProfile: ShellTerminalProfile;
   breakpoint: ShellViewportBreakpoint;
   compact: boolean;
   ultraCompact: boolean;
   tooSmall: boolean;
   wideBrowse: boolean;
   mediumBrowse: boolean;
+  previewRail: boolean;
   minColumns: number;
   minRows: number;
   maxVisibleRows: number;
@@ -39,9 +42,10 @@ export function getShellViewportPolicy(
   kind: ShellViewportKind,
   columns: number,
   rows: number,
-  options: { forceCompact?: boolean } = {},
+  options: { forceCompact?: boolean; terminalProfile?: ShellTerminalProfile } = {},
 ): ShellViewportPolicy {
   const forceCompact = options.forceCompact ?? false;
+  const terminalProfile = options.terminalProfile ?? "local";
 
   const blocked =
     forceCompact || columns < GLOBAL_BLOCKED_MIN_COLS || rows < GLOBAL_BLOCKED_MIN_ROWS;
@@ -66,6 +70,8 @@ export function getShellViewportPolicy(
   // mediumBrowse: compact companion below list at medium (80–119) — kept as compat flag for existing callers
   const wideBrowse = !blocked && kind === "browse" && wide;
   const mediumBrowse = !blocked && kind === "browse" && medium;
+  const previewRail =
+    wideBrowse && terminalProfile === "local" && columns >= 140 && rows >= GLOBAL_BLOCKED_MIN_ROWS;
 
   const { minColumns, minRows } = KIND_MINIMUMS[kind];
   const tooSmall = blocked || columns < minColumns || rows < minRows;
@@ -75,12 +81,14 @@ export function getShellViewportPolicy(
   return {
     columns,
     rows,
+    terminalProfile,
     breakpoint,
     compact,
     ultraCompact,
     tooSmall,
     wideBrowse,
     mediumBrowse,
+    previewRail,
     minColumns,
     minRows,
     maxVisibleRows: Math.max(5, rows - maxVisibleRowsBase),

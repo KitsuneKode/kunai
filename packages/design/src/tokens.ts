@@ -110,54 +110,6 @@ export const tokens = {
   typeMixed,
 
   heatRamp,
-
-  // ============================================================
-  // DEPRECATED color-named aliases — kept so existing consumers
-  // build while surfaces migrate to the semantic names above.
-  // Migration target in parentheses; remove once call sites move.
-  // (Tracked in .plans/sakura-rollout.md)
-  // ============================================================
-  amber: accent, // (→ accent) primary action / focus
-  amberSoft: accentSoft, // (→ accentSoft)
-  amberDim: accentDim, // (→ accentDim)
-  amberGlow: accentGlow, // (→ accentGlow)
-  amberFill: accentFill, // (→ accentFill)
-
-  pink: typeAnime, // (→ typeAnime in Stats; elsewhere drop the color)
-  pinkSoft: accentSoft, // (→ accentSoft)
-  pinkDim: accentDim, // (→ accentDim)
-  pinkGlow: accentGlow, // (→ accentGlow)
-  pinkFill: accentFill, // (→ accentFill)
-
-  teal: accent, // (→ accent for cursor/focus; → muted for info text)
-  tealDim: accentDim, // (→ accentDim)
-  tealFill: okFill, // (→ okFill)
-
-  green: ok, // (→ ok)
-  greenDim: okDim, // (→ okDim)
-  greenFill: okFill, // (→ okFill)
-
-  red: danger, // (→ danger)
-  redFill: dangerFill, // (→ dangerFill)
-
-  yellow: accentDeep, // (→ accentDeep for caution; prefer glyph + text)
-  yellowFill: accentFill, // (→ accentFill)
-
-  info: muted, // (→ muted; blue retired from the chord)
-  infoDim: dim, // (→ dim)
-  infoFill: surfaceElevated, // (→ surfaceElevated)
-
-  lavender: muted, // (→ muted; recommendations are neutral list rows)
-  lavenderDim: dim, // (→ dim)
-  lavenderFill: surfaceElevated, // (→ surfaceElevated)
-
-  purple: milestone, // (→ milestone) series-complete only
-  purpleDim: milestoneDim, // (→ milestoneDim)
-  purpleFill: milestoneFill, // (→ milestoneFill)
-
-  border: line, // (→ line)
-  borderDim: lineSoft, // (→ lineSoft)
-  borderStrong: lineStrong, // (→ lineStrong)
 } as const;
 
 export type TokenName = keyof typeof tokens;

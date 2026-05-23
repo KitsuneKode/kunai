@@ -6,6 +6,7 @@ import {
   getPickerLayout,
   getShellViewportPolicy,
 } from "@/app-shell/layout-policy";
+import { getShellTerminalProfile } from "@/app-shell/use-viewport-policy";
 
 describe("getShellViewportPolicy", () => {
   test("marks picker viewports below minimum size as too small", () => {
@@ -118,6 +119,22 @@ describe("getShellViewportPolicy", () => {
     const p = getShellViewportPolicy("browse", 120, 24);
     expect(p.breakpoint).toBe("wide");
     expect(p.wideBrowse).toBe(true);
+  });
+
+  test("preview rail appears after the wide breakpoint so the list keeps priority", () => {
+    expect(getShellViewportPolicy("browse", 128, 30).wideBrowse).toBe(true);
+    expect(getShellViewportPolicy("browse", 128, 30).previewRail).toBe(false);
+    expect(getShellViewportPolicy("browse", 144, 30).previewRail).toBe(true);
+  });
+
+  test("preview rail stays collapsed in constrained SSH or tmux terminals", () => {
+    expect(
+      getShellViewportPolicy("browse", 160, 30, { terminalProfile: "constrained" }).previewRail,
+    ).toBe(false);
+    expect(getShellTerminalProfile({ SSH_TTY: "/dev/pts/4", TERM: "xterm-256color" })).toBe(
+      "constrained",
+    );
+    expect(getShellTerminalProfile({ TMUX: "/tmp/tmux-1000/default,1,0" })).toBe("constrained");
   });
 
   test("blocked: < 60 cols", () => {
