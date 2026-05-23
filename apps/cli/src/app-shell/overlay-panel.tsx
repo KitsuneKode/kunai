@@ -571,7 +571,7 @@ export function buildSettingsOptions(
     {
       value: "presenceDiscordOpenUrl",
       label: `▸ Discord open URL  ·  ${describeDiscordOpenUrl(config)}`,
-      detail: "Optional safe https:// or kunai:// button URL; local handoffs still confirm",
+      detail: "Reserved for future handoffs; catalog buttons are auto-built from title ids",
     },
     {
       value: "presenceConnection",

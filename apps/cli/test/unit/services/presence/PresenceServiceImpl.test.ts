@@ -80,24 +80,37 @@ describe("PresenceServiceImpl", () => {
   test("builds privacy-safe discord activity", () => {
     const activity = {
       mode: "series" as const,
-      title: { id: "1", type: "series" as const, name: "Breaking Bad" },
+      title: {
+        id: "1",
+        type: "series" as const,
+        name: "Breaking Bad",
+        posterUrl: "https://image.example/breaking-bad.jpg",
+      },
       episode: { season: 4, episode: 9 },
       providerId: "vidking",
       startedAtMs: 1000,
+      positionSeconds: 120,
+      durationSeconds: 1500,
     };
 
     expect(buildDiscordActivity(activity, "full")).toMatchObject({
       details: "Breaking Bad",
-      state: "S4 E9 · vidking",
+      state: "S4 E9",
       type: 3,
-      buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
     });
+    expect(buildDiscordActivity(activity, "full").buttons).toBeUndefined();
     expect(buildDiscordActivity(activity, "private")).toMatchObject({
       details: "Watching with Kunai",
       state: "Playing",
       type: 3,
-      buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
+      assets: { large_image: "kunai", large_text: "Kunai" },
     });
+    expect(buildDiscordActivity(activity, "private").buttons).toBeUndefined();
+    expect(buildDiscordActivity(activity, "private")).not.toHaveProperty("timestamps");
+    expect(JSON.stringify(buildDiscordActivity(activity, "private"))).not.toContain("Breaking Bad");
+    expect(JSON.stringify(buildDiscordActivity(activity, "private"))).not.toContain(
+      "image.example",
+    );
   });
 
   test("uses Discord IPC activity shape instead of discord-rpc npm aliases", () => {
@@ -134,18 +147,28 @@ describe("PresenceServiceImpl", () => {
 
       expect(buildDiscordActivity(activity, "full")).toMatchObject({
         timestamps: { start: 880, end: 2380 },
-        assets: { large_image: "kunai", large_text: "Kunai" },
+        assets: { large_image: "kunai" },
+      });
+      expect(buildDiscordActivity(activity, "full").assets).toMatchObject({
+        large_image: "kunai",
+        large_text: "Breaking Bad",
       });
     } finally {
       Date.now = realDateNow;
     }
   });
 
-  test("adds exact progress, media facts, and a safe action button to full presence", () => {
+  test("adds catalog links and safe poster art to full presence", () => {
     const activity = {
       mode: "anime" as const,
-      title: { id: "1", type: "series" as const, name: "Frieren: Beyond Journey's End" },
-      episode: { season: 1, episode: 14 },
+      title: {
+        id: "anilist:154587",
+        type: "series" as const,
+        name: "Frieren: Beyond Journey's End",
+        externalIds: { anilistId: "154587" },
+        posterUrl: "https://image.example/frieren.jpg",
+      },
+      episode: { season: 1, episode: 14, name: "Smells Like Trouble" },
       providerId: "allanime",
       startedAtMs: 1000,
       positionSeconds: 734,
@@ -213,37 +236,38 @@ describe("PresenceServiceImpl", () => {
 
     expect(payload).toMatchObject({
       details: "Frieren: Beyond Journey's End",
-      state: "S1 E14 · 12:14 / 24:00 · 1080p · sub · ja audio · en subs · allanime",
-      buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
+      state: "Smells Like Trouble",
+      buttons: [{ label: "View on AniList", url: "https://anilist.co/anime/154587" }],
+      assets: {
+        large_image: "https://image.example/frieren.jpg",
+        large_text: "Frieren: Beyond Journey's End",
+      },
     });
-    expect(payload.assets).toMatchObject({ large_image: "kunai", large_text: "Kunai" });
     expect(payload).not.toHaveProperty("largeImageKey");
     expect(payload).not.toHaveProperty("smallImageKey");
     expect(JSON.stringify(payload)).not.toContain("signed-provider.example");
   });
 
-  test("adds opt-in Discord handoff button only for safe URLs", () => {
+  test("adds catalog buttons when ids are known", () => {
     const activity = {
       mode: "series" as const,
-      title: { id: "1", type: "series" as const, name: "Demo" },
-      episode: { season: 1, episode: 2 },
+      title: {
+        id: "tmdb:1396",
+        type: "series" as const,
+        name: "Breaking Bad",
+        externalIds: { tmdbId: "1396" },
+      },
+      episode: { season: 4, episode: 9 },
       providerId: "vidking",
       startedAtMs: 1000,
     };
 
-    expect(
-      buildDiscordActivity(activity, "full", { openUrl: "kunai://play/current" }),
-    ).toMatchObject({
-      buttons: [
-        { label: "Open in Kunai", url: "kunai://play/current" },
-        { label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" },
-      ],
-    });
-    expect(
-      buildDiscordActivity(activity, "full", { openUrl: "javascript:alert(1)" }),
-    ).toMatchObject({
-      buttons: [{ label: "Get Kunai", url: "https://github.com/KitsuneKode/kunai" }],
-    });
+    expect(buildDiscordActivity(activity, "full").buttons).toEqual([
+      {
+        label: "View episode on TMDB",
+        url: "https://www.themoviedb.org/tv/1396/season/4/episode/9",
+      },
+    ]);
   });
 
   test("shows paused progress without an advancing Discord timer", () => {
@@ -260,8 +284,9 @@ describe("PresenceServiceImpl", () => {
 
     expect(buildDiscordActivity(activity, "full")).toMatchObject({
       details: "Breaking Bad",
-      state: "S4 E9 · Paused at 12:14 / 24:00 · vidking",
+      state: "S4 E9 · Paused at 12:14 / 24:00",
     });
+    expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("small_image");
     expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("timestamps");
   });
 

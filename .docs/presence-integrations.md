@@ -65,13 +65,22 @@ Presence integrations must never receive:
 - diagnostics payloads
 - local file paths unless the user explicitly opts into that later
 
-`presencePrivacy: "private"` only reports generic Kunai playback. `presencePrivacy: "full"` may include title, episode, mode, provider id, exact playback progress, and provider-safe media facts.
+`presencePrivacy: "private"` only reports generic Kunai playback and the bundled Kunai asset. `presencePrivacy: "full"` may include title, episode, catalog ids, playback timestamps, and safe poster artwork.
 
-Discord activity buttons are URL-only. Kunai therefore uses a safe project link for the public
-button and does not expose stream, subtitle, provider, or local command URLs. An optional
-`presenceDiscordOpenUrl` may add an `Open in Kunai` button only when it is an explicit `https://`
-or `kunai://` URL. Local protocol handoffs are parsed by `kunai --handoff-url <url>` and always
-show a local confirmation picker before taking playback or download action.
+Discord activity buttons are URL-only (max two). During full privacy playback Kunai adds a single
+catalog button when ids are known:
+
+- **View episode on TMDB** for TV with a TMDB id
+- otherwise **View on AniList**, **View on IMDb**, or **View on TMDB** for the series/movie
+
+Play-in-Kunai handoffs are intentionally deferred. `presenceDiscordOpenUrl` remains in settings
+for future use but is not wired into the default activity payload.
+
+Full privacy cards are laid out like music-player presence (Cider-style): show title on
+`details`, episode title (or `S# E#`) on `state`, playback progress via Discord timestamps, and
+the show poster as `assets.large_image` when `title.posterUrl` is a safe `https://` URL (fallback
+asset key `kunai`). Provider stream URLs, subtitle URLs, headers, local paths, and source-specific
+media facts stay out of Discord payloads.
 
 ## Authentication Model
 
@@ -88,14 +97,14 @@ Discord Rich Presence here is local IPC, not OAuth:
 2. Ensure a client id is available via `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID`.
 3. Upload Discord Developer Portal assets with keys `kunai` and `subtitles` when testing artwork.
 4. Set `presenceProvider: "discord"` and preferred `presencePrivacy`.
-5. If testing an `Open in Kunai` button, configure `Discord open URL` in `/presence` and inspect
-   protocol registration first with `kunai --install-protocol-handler --dry-run`.
+5. If checking the deferred handoff setting, configure `Discord open URL` in `/presence` and
+   inspect protocol registration first with `kunai --install-protocol-handler --dry-run`.
 6. Start playback in Kunai.
-7. Confirm Discord activity updates with the current playback timestamp, exact progress label,
-   quality/language facts when available, and safe `Get Kunai` button.
-8. If `presenceDiscordOpenUrl` is configured, confirm the `Open in Kunai` button appears only for
-   the configured handoff URL and does not include stream, subtitle, provider, header, or file data.
-9. For `kunai://` handoffs, register the local handler with `kunai --install-protocol-handler`,
+7. Confirm Discord activity updates with Cider-style title/episode lines, a playback progress bar
+   from timestamps, safe poster artwork, and a catalog button when ids are known.
+8. If `presenceDiscordOpenUrl` is configured, confirm no activity button is emitted yet; the
+   setting is reserved for future local handoffs.
+9. For future `kunai://` handoffs, register the local handler with `kunai --install-protocol-handler`,
    click the button, and confirm Kunai asks before opening playback or queueing a download.
 10. Check `/diagnostics` for presence events.
 11. Pause playback and confirm Discord shows a static paused position instead of a moving timer.

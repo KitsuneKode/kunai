@@ -1,8 +1,8 @@
-import { summarizeMediaTrackForPresence } from "@/domain/media/media-track-model";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 
+import { buildDiscordPosterAsset, buildDiscordPresenceButtons } from "./discord-activity-links";
 import { createDiscordIpcClient, type DiscordPresenceClient } from "./discord-ipc-client";
 import type {
   PresenceBrowseActivity,
@@ -14,7 +14,6 @@ import type {
 } from "./PresenceService";
 
 const DEFAULT_DISCORD_CLIENT_ID = "1502307419047461025";
-const KUNAI_DISCORD_ACTION_URL = "https://github.com/KitsuneKode/kunai";
 const DISCORD_ACTIVITY_TEXT_LIMIT = 128;
 
 /** Shown in diagnostics when IPC/update fails and another consumer may hold the Discord app pipe. */
@@ -116,9 +115,7 @@ export class PresenceServiceImpl implements PresenceService {
     if (!client) return;
 
     try {
-      const payload = buildDiscordActivity(activity, this.deps.config.presencePrivacy, {
-        openUrl: this.deps.config.presenceDiscordOpenUrl,
-      });
+      const payload = buildDiscordActivity(activity, this.deps.config.presencePrivacy);
       const activityHash = stableJsonHash(payload);
       if (activityHash === this.lastActivityHash) {
         this.status = "ready";
@@ -369,73 +366,54 @@ function stableJsonHash(value: Record<string, unknown>): string {
 export function buildDiscordActivity(
   activity: PresencePlaybackActivity,
   privacy: "full" | "private",
-  options: { readonly openUrl?: string } = {},
 ): Record<string, unknown> {
-  const episodeLabel =
-    activity.title.type === "series"
-      ? `Season ${activity.episode.season}, Episode ${activity.episode.episode}`
-      : "Movie";
-  const stateLine =
-    activity.title.type === "series"
-      ? `${episodeLabel} · ${activity.providerId}`
-      : activity.providerId;
+  if (privacy === "private") {
+    return {
+      type: 3,
+      details: "Watching with Kunai",
+      state: activity.paused ? "Paused" : "Playing",
+      assets: { large_image: "kunai", large_text: "Kunai" },
+    };
+  }
+
   const timeline = buildDiscordPlaybackTimeline(activity);
   const progressLabel = formatPlaybackProgressLabel(
     activity.positionSeconds,
     activity.durationSeconds,
   );
-  const mediaSummary = activity.stream ? summarizeMediaTrackForPresence(activity.stream) : {};
-  const mediaParts = compact([
-    progressLabel,
-    mediaSummary.quality,
-    mediaSummary.presentation,
-    mediaSummary.audio,
-    mediaSummary.subtitle,
-  ]);
+  const assets = buildDiscordPosterAsset(activity.title);
+  const buttons = buildDiscordPresenceButtons(activity, privacy);
 
-  const assets = { large_image: "kunai", large_text: "Kunai" };
-
-  if (privacy === "private") {
-    return {
-      type: 3,
-      details: "Watching with Kunai",
-      state: limitDiscordText(
-        activity.paused
-          ? progressLabel
-            ? `Paused at ${progressLabel}`
-            : "Paused"
-          : progressLabel
-            ? `Playing · ${progressLabel}`
-            : "Playing",
-      ),
-      ...(activity.paused ? {} : timeline),
-      assets,
-      buttons: buildDiscordActionButtons(options),
-    };
-  }
-
-  const compactEpisodeLabel =
-    activity.title.type === "series"
-      ? `S${activity.episode.season} E${activity.episode.episode}`
-      : "Movie";
   return {
     type: 3,
     details: limitDiscordText(activity.title.name),
-    state: limitDiscordText(
-      activity.paused
-        ? compact([
-            compactEpisodeLabel,
-            progressLabel ? `Paused at ${progressLabel}` : "Paused",
-            ...mediaParts.slice(1),
-            activity.providerId,
-          ]).join(" · ")
-        : compact([compactEpisodeLabel, ...mediaParts, activity.providerId]).join(" · ") ||
-            stateLine,
-    ),
+    state: limitDiscordText(buildDiscordPlaybackStateLine(activity, progressLabel)),
     ...(activity.paused ? {} : timeline),
     assets,
-    buttons: buildDiscordActionButtons(options),
+    ...(buttons.length > 0 ? { buttons } : {}),
   };
+}
+
+function buildDiscordPlaybackStateLine(
+  activity: PresencePlaybackActivity,
+  progressLabel: string | null,
+): string {
+  if (activity.title.type === "movie") {
+    if (activity.paused) {
+      return progressLabel ? `Paused at ${progressLabel}` : "Paused";
+    }
+    return activity.title.year ?? "Movie";
+  }
+
+  const episodeName = activity.episode.name?.trim();
+  const episodeLabel = episodeName ?? `S${activity.episode.season} E${activity.episode.episode}`;
+  if (activity.paused) {
+    return compact([episodeLabel, progressLabel ? `Paused at ${progressLabel}` : "Paused"]).join(
+      " · ",
+    );
+  }
+
+  return episodeLabel;
 }
 
 export const __testing = {
@@ -482,30 +460,6 @@ function formatMediaTime(seconds: number): string {
     return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
   }
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
-}
-
-function buildDiscordActionButtons(
-  options: {
-    readonly openUrl?: string;
-  } = {},
-): readonly { label: string; url: string }[] {
-  const openUrl = normalizeDiscordActionUrl(options.openUrl);
-  return [
-    ...(openUrl ? [{ label: "Open in Kunai", url: openUrl }] : []),
-    { label: "Get Kunai", url: KUNAI_DISCORD_ACTION_URL },
-  ];
-}
-
-function normalizeDiscordActionUrl(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol === "https:" || url.protocol === "kunai:") return trimmed;
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 function compact(values: readonly (string | undefined | null | false)[]): string[] {
