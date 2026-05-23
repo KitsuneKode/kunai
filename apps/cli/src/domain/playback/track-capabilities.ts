@@ -165,3 +165,124 @@ export function buildTrackCapabilities(
   }
   return groups;
 }
+
+/**
+ * Encoding for routing a panel selection back through the single-string picker
+ * bridge (`RESOLVE_PICKER`). The unit-separator never appears in stream ids or
+ * subtitle URLs, so `section` and `value` round-trip cleanly.
+ */
+export const TRACK_SELECTION_DELIMITER = "\u001f";
+
+export type DecodedTrackSelection = {
+  readonly section: TrackCapabilitySection;
+  readonly value: string;
+};
+
+export function encodeTrackSelection(section: TrackCapabilitySection, value: string): string {
+  return `${section}${TRACK_SELECTION_DELIMITER}${value}`;
+}
+
+export function decodeTrackSelection(encoded: string): DecodedTrackSelection | null {
+  const at = encoded.indexOf(TRACK_SELECTION_DELIMITER);
+  if (at <= 0) return null;
+  const section = encoded.slice(0, at);
+  const value = encoded.slice(at + 1);
+  if (!value) return null;
+  if (!SECTION_ORDER.includes(section as TrackCapabilitySection)) return null;
+  return { section: section as TrackCapabilitySection, value };
+}
+
+/**
+ * A flattened, render-ready stream of panel rows. Section headers and empty
+ * notices interleave with capability rows so the panel renders top-to-bottom in
+ * one pass. Selectable (enabled) rows carry a contiguous `selectableIndex` so
+ * navigation can track a single highlighted index without re-deriving it.
+ */
+export type TrackPanelRow =
+  | { readonly kind: "header"; readonly group: TrackCapabilityGroup }
+  | { readonly kind: "empty"; readonly group: TrackCapabilityGroup; readonly reason: string }
+  | {
+      readonly kind: "row";
+      readonly group: TrackCapabilityGroup;
+      readonly capability: TrackCapability;
+      /** Present only when the row is a switchable target. */
+      readonly selectableIndex?: number;
+    };
+
+export function buildTrackPanelRows(
+  groups: readonly TrackCapabilityGroup[],
+): readonly TrackPanelRow[] {
+  const out: TrackPanelRow[] = [];
+  let selectableIndex = 0;
+  for (const group of groups) {
+    out.push({ kind: "header", group });
+    if (group.rows.length === 0) {
+      out.push({
+        kind: "empty",
+        group,
+        reason: group.emptyReason ?? "no options exposed by this provider",
+      });
+      continue;
+    }
+    for (const capability of group.rows) {
+      if (capability.enabled) {
+        out.push({ kind: "row", group, capability, selectableIndex });
+        selectableIndex += 1;
+      } else {
+        out.push({ kind: "row", group, capability });
+      }
+    }
+  }
+  return out;
+}
+
+export function selectableTrackCount(groups: readonly TrackCapabilityGroup[]): number {
+  let count = 0;
+  for (const group of groups) {
+    for (const row of group.rows) {
+      if (row.enabled) count += 1;
+    }
+  }
+  return count;
+}
+
+export function anyTrackSelectable(groups: readonly TrackCapabilityGroup[]): boolean {
+  return selectableTrackCount(groups) > 0;
+}
+
+/**
+ * Deep-link target: the selectable index of the first switchable row in
+ * `section` (used by `/source` and `/quality`), or 0 when the section has no
+ * switchable row or no section is requested.
+ */
+export function initialSelectableIndexForSection(
+  groups: readonly TrackCapabilityGroup[],
+  section?: TrackCapabilitySection,
+): number {
+  if (!section) return 0;
+  let selectableIndex = 0;
+  for (const group of groups) {
+    for (const row of group.rows) {
+      if (!row.enabled) continue;
+      if (group.section === section) return selectableIndex;
+      selectableIndex += 1;
+    }
+  }
+  return 0;
+}
+
+/** The capability at a selectable index, or null when out of range. */
+export function selectableCapabilityAt(
+  groups: readonly TrackCapabilityGroup[],
+  index: number,
+): TrackCapability | null {
+  let selectableIndex = 0;
+  for (const group of groups) {
+    for (const row of group.rows) {
+      if (!row.enabled) continue;
+      if (selectableIndex === index) return row;
+      selectableIndex += 1;
+    }
+  }
+  return null;
+}

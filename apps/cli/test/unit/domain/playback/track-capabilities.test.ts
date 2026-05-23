@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildTrackCapabilities } from "@/domain/playback/track-capabilities";
+import {
+  anyTrackSelectable,
+  buildTrackCapabilities,
+  buildTrackPanelRows,
+  decodeTrackSelection,
+  encodeTrackSelection,
+  initialSelectableIndexForSection,
+  selectableCapabilityAt,
+  selectableTrackCount,
+} from "@/domain/playback/track-capabilities";
 import type {
   PlaybackQualityOptionView,
   PlaybackSourceGroupView,
@@ -145,5 +154,69 @@ describe("buildTrackCapabilities", () => {
     )[0];
     expect(preplay?.rows[0]?.enabled).toBe(true);
     expect(preplay?.selectable).toBe(true);
+  });
+});
+
+describe("track selection encoding", () => {
+  test("round-trips section and value, including values containing colons", () => {
+    const encoded = encodeTrackSelection("subtitle", "https://cdn/sub.vtt?x=1");
+    const decoded = decodeTrackSelection(encoded);
+    expect(decoded).toEqual({ section: "subtitle", value: "https://cdn/sub.vtt?x=1" });
+  });
+
+  test("rejects malformed or unknown-section payloads", () => {
+    expect(decodeTrackSelection("no-delimiter")).toBeNull();
+    expect(decodeTrackSelection(encodeTrackSelection("source", ""))).toBeNull();
+    expect(decodeTrackSelection("bogusvalue")).toBeNull();
+  });
+});
+
+describe("track panel rows + navigation", () => {
+  const groups = buildTrackCapabilities(
+    view({
+      sourceGroups: [
+        sourceGroup({ id: "a", state: "selected" }),
+        sourceGroup({ id: "b", state: "available" }),
+        sourceGroup({ id: "c", state: "failed" }),
+      ],
+      qualityOptions: [
+        quality({ id: "q1080", state: "selected" }),
+        quality({ id: "q720", label: "720p", state: "available" }),
+      ],
+    }),
+  );
+
+  test("flattens into headers + rows with contiguous selectable indices", () => {
+    const rows = buildTrackPanelRows(groups);
+    expect(rows.filter((r) => r.kind === "header").map((r) => r.group.section)).toEqual([
+      "source",
+      "quality",
+    ]);
+    const selectable = rows.filter((r) => r.kind === "row" && r.selectableIndex !== undefined);
+    // b (source) + q720 (quality) are the only switchable rows.
+    expect(selectable.map((r) => (r.kind === "row" ? r.selectableIndex : -1))).toEqual([0, 1]);
+    expect(selectableTrackCount(groups)).toBe(2);
+    expect(anyTrackSelectable(groups)).toBe(true);
+  });
+
+  test("deep-links to the first switchable row of a section", () => {
+    expect(initialSelectableIndexForSection(groups, "source")).toBe(0);
+    expect(initialSelectableIndexForSection(groups, "quality")).toBe(1);
+    expect(initialSelectableIndexForSection(groups, "audio")).toBe(0);
+    expect(initialSelectableIndexForSection(groups)).toBe(0);
+  });
+
+  test("resolves the capability at a selectable index", () => {
+    expect(selectableCapabilityAt(groups, 0)?.value).toBe("b");
+    expect(selectableCapabilityAt(groups, 1)?.value).toBe("q720");
+    expect(selectableCapabilityAt(groups, 2)).toBeNull();
+  });
+
+  test("a fact-only inventory has no selectable rows", () => {
+    const factGroups = buildTrackCapabilities(
+      view({ sourceGroups: [sourceGroup({ state: "selected" })] }),
+    );
+    expect(anyTrackSelectable(factGroups)).toBe(false);
+    expect(selectableCapabilityAt(factGroups, 0)).toBeNull();
   });
 });
