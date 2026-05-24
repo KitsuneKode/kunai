@@ -61,6 +61,7 @@ import {
 } from "@/app/post-play-input";
 import {
   loadPostPlaybackRecommendationItems,
+  type PostPlaybackRecommendationItem,
   seedPostPlaybackRecommendationItems,
 } from "@/app/post-playback-recommendations";
 import {
@@ -2339,61 +2340,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const { openPlaybackShell } = await import("../app-shell/ink-shell");
           const shellRuntime = buildShellRuntimeBindings(container);
 
-          const postPlaybackRecommendationWarmupStarted = { current: false };
-          const warmPostPlaybackRecommendations = (mode: ShellMode) => {
-            if (
-              postPlaybackRecommendationWarmupStarted.current ||
-              !container.config.recommendationRailEnabled
-            ) {
-              return;
-            }
-            postPlaybackRecommendationWarmupStarted.current = true;
-            const startedAtMs = Date.now();
-            container.backgroundWorkScheduler.enqueue({
-              id: `post-playback-recommendation-warm:${mode}:${title.id}`,
-              lane: "recommendation-warm",
-              signal: context.signal,
-              run: async () => {
-                const items = await loadPostPlaybackRecommendationItems(
-                  container,
-                  title,
-                  mode,
-                  null,
-                );
-                diagnosticsStore.record({
-                  category: "playback",
-                  operation: "post-playback.recommendations.warm",
-                  message: "Post-playback recommendations warmed in background",
-                  context: {
-                    titleId: title.id,
-                    mode,
-                    itemCount: items.length,
-                    elapsedMs: Date.now() - startedAtMs,
-                  },
-                });
-              },
-            });
-            void container.backgroundWorkScheduler.drain().then((drainResult) => {
-              for (const failure of drainResult.failed) {
-                if (failure.id !== `post-playback-recommendation-warm:${mode}:${title.id}`) {
-                  continue;
-                }
-                diagnosticsStore.record({
-                  category: "playback",
-                  level: "warn",
-                  operation: "post-playback.recommendations.warm",
-                  message: "Post-playback recommendation warmup failed",
-                  context: {
-                    titleId: title.id,
-                    mode,
-                    elapsedMs: Date.now() - startedAtMs,
-                    error: failure.error,
-                  },
-                });
-              }
-              return undefined;
-            });
-          };
+          // Loaded once per post-play session when the synchronous seed is empty.
+          // null = not yet attempted; [] = attempted (within budget) but empty.
+          let postPlaybackLoadedRecommendations: readonly PostPlaybackRecommendationItem[] | null =
+            null;
+          // Bound how long the post-play surface waits for a live recommendation
+          // load before painting without it (the seed handles the fast path).
+          const POST_PLAYBACK_RECOMMENDATION_BUDGET_MS = 1200;
 
           postPlayback: while (true) {
             const resumeSeconds = toHistoryTimestamp(
@@ -2408,7 +2361,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               (result.duration <= 0 || resumeSeconds < Math.max(0, result.duration - 5));
             const mode = stateManager.getState().mode;
             const recommendationRailStartedAtMs = Date.now();
-            const recommendationRailItems = seedPostPlaybackRecommendationItems({
+            let recommendationRailItems = seedPostPlaybackRecommendationItems({
               enabled: container.config.recommendationRailEnabled,
               currentTitle: title.name,
               prefetchedItems: prefetchedRecommendationItems,
@@ -2427,8 +2380,38 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 ),
               },
             });
-            if (recommendationRailItems.length === 0) {
-              warmPostPlaybackRecommendations(mode);
+            if (
+              recommendationRailItems.length === 0 &&
+              container.config.recommendationRailEnabled
+            ) {
+              // Seed was empty (nothing prefetched). Briefly await a live load so
+              // the post-play surface can actually show recommendations instead of
+              // warming results into the void with no re-render path (A3). Loaded
+              // at most once per session, capped by a budget so the screen paints.
+              if (postPlaybackLoadedRecommendations === null) {
+                const loadStartedAtMs = Date.now();
+                postPlaybackLoadedRecommendations = await Promise.race([
+                  loadPostPlaybackRecommendationItems(container, title, mode, null),
+                  Bun.sleep(POST_PLAYBACK_RECOMMENDATION_BUDGET_MS).then(
+                    () => [] as readonly PostPlaybackRecommendationItem[],
+                  ),
+                ]).catch(() => [] as readonly PostPlaybackRecommendationItem[]);
+                diagnosticsStore.record({
+                  category: "playback",
+                  operation: "post-playback.recommendations.load",
+                  message: "Post-playback recommendations loaded before first paint",
+                  context: {
+                    titleId: title.id,
+                    mode,
+                    itemCount: postPlaybackLoadedRecommendations.length,
+                    elapsedMs: Date.now() - loadStartedAtMs,
+                    timedOut: postPlaybackLoadedRecommendations.length === 0,
+                  },
+                });
+              }
+              if (postPlaybackLoadedRecommendations.length > 0) {
+                recommendationRailItems = postPlaybackLoadedRecommendations;
+              }
             }
             // Playback "started" means mpv reached real content. Exit on load or a
             // quit within the first seconds (no eof, no resumable position, almost
