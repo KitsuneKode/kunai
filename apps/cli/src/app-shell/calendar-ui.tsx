@@ -5,7 +5,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { StateBlock, type StateBlockModel } from "./primitives/StateBlock";
-import { truncateLine } from "./shell-text";
+import { measureColumns, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
 export type CalendarDay = {
@@ -417,7 +417,7 @@ export function CalendarTypeTabs({
         );
       })}
       <Text color={palette.dim} dimColor>
-        {"1–5 filter type"}
+        {"⇥ Tab cycles type"}
       </Text>
     </Box>
   );
@@ -505,9 +505,24 @@ export function CalendarScheduleRow<T>({
   timeLabel: string;
   nowMs?: number;
 }) {
-  const title = truncateLine(option.label, Math.max(16, rowWidth - 22));
   const presentation = calendarReleaseRowPresentation(option, nowMs);
   const detail = option.detail ? truncateLine(option.detail, rowWidth - 4) : "";
+
+  // Bound the title by the *measured* width of everything else on the row
+  // (marker + glyph + availability label + badge) so the composed line can never
+  // exceed rowWidth and wrap into the next row (B10: garbled/interleaved rows).
+  const badgeText =
+    option.previewBadge === "wl"
+      ? " · tracked"
+      : option.previewBadge
+        ? ` · ${option.previewBadge}`
+        : "";
+  const reservedColumns =
+    2 + // selection marker "▌ "
+    measureColumns(presentation.glyph) +
+    measureColumns(` ${presentation.label}`) +
+    measureColumns(badgeText);
+  const title = truncateLine(option.label, Math.max(8, rowWidth - reservedColumns - 1));
 
   return (
     <Box flexDirection="column" width={rowWidth} marginBottom={0}>

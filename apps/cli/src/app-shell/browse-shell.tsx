@@ -737,6 +737,19 @@ export function BrowseShell<T>({
       searchState === "idle" &&
       Boolean(idleReturnLoopModel?.hasSelectableContinue);
 
+    // Calendar: Tab / Shift+Tab cycle the type tabs (All · Anime · TV · Movies ·
+    // Tracked). Mode toggle is unavailable while browsing the schedule.
+    if (isCalendarView && !commandMode && key.tab) {
+      const dir = key.shift ? -1 : 1;
+      setCalendarTypeTab((current) => {
+        const idx = CALENDAR_TYPE_TABS.indexOf(current);
+        const next = (idx + dir + CALENDAR_TYPE_TABS.length) % CALENDAR_TYPE_TABS.length;
+        return CALENDAR_TYPE_TABS[next] ?? "All";
+      });
+      setSelectedIndex(0);
+      return;
+    }
+
     if (key.tab) {
       onResolve("toggle-mode");
       return;
@@ -760,15 +773,6 @@ export function BrowseShell<T>({
       });
       setSelectedIndex(0);
       return;
-    }
-
-    if (isCalendarView && !commandMode) {
-      const tabIndex = Number(input) - 1;
-      if (tabIndex >= 0 && tabIndex < CALENDAR_TYPE_TABS.length) {
-        setCalendarTypeTab(CALENDAR_TYPE_TABS[tabIndex] ?? "All");
-        setSelectedIndex(0);
-        return;
-      }
     }
 
     if (key.escape) {
@@ -920,7 +924,7 @@ export function BrowseShell<T>({
             <Text color={palette.accent}>◈ </Text>
             <Text color={palette.text}>schedule</Text>
             <Text color={palette.dim} dimColor>
-              {"  ·  ← → browse days  ·  1–4 filter type  ·  / commands"}
+              {"  ·  ← → browse days  ·  ⇥ Tab filter type  ·  / commands"}
             </Text>
           </Box>
         ) : (
