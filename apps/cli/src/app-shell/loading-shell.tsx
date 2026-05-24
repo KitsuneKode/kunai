@@ -25,6 +25,7 @@ import { DetailLine, selectFooterActions } from "./shell-primitives";
 import { truncateLine } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
+import { usePosterPreview } from "./use-poster-preview";
 import { useViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
@@ -433,6 +434,17 @@ export const LoadingShell = React.memo(function LoadingShell({
 
   const isPlaying = state.operation === "playing";
   const infoWidth = Math.min(76, Math.max(40, terminalColumns - 12));
+  // Poster rail on wide terminals — paints a real image where the prior surface's
+  // stale Kitty placement would otherwise bleed through (A6 ghost).
+  const showPlaybackPoster =
+    isPlaying && loadingViewport.breakpoint === "wide" && Boolean(state.posterUrl);
+  const { poster: playbackPoster } = usePosterPreview(state.posterUrl, {
+    rows: 11,
+    cols: 18,
+    enabled: showPlaybackPoster,
+    debounceMs: 120,
+    variant: "detail",
+  });
 
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
   const loadingIssue = normalizeLoadingIssue(state.latestIssue);
@@ -660,125 +672,134 @@ export const LoadingShell = React.memo(function LoadingShell({
 
           {/* ── Playing ───────────────────────────────────────────────────── */}
           {isPlaying && (
-            <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="flex-start">
-              {/* Control deck (.prototypes/playback-postplay): progress leads,
+            <Box marginTop={1} flexDirection="row" flexGrow={1}>
+              <Box flexDirection="column" flexGrow={1}>
+                {/* Control deck (.prototypes/playback-postplay): progress leads,
                   then a single NOW facts line + GO key-hints, then the mpv hint.
                   Title/episode live in the ShellFrame header. */}
-              <Text color={palette.lineSoft}>{"─".repeat(Math.min(infoWidth, barWidth + 16))}</Text>
+                <Text color={palette.lineSoft}>
+                  {"─".repeat(Math.min(infoWidth, barWidth + 16))}
+                </Text>
 
-              {/* Progress — the prominent current-watch line */}
-              {state.currentPosition !== undefined &&
-              state.duration !== undefined &&
-              state.duration > 0 ? (
-                <Box marginTop={1}>
-                  <Text>
-                    <Text color={palette.accent} bold>
-                      {formatTimestamp(state.currentPosition)}
+                {/* Progress — the prominent current-watch line */}
+                {state.currentPosition !== undefined &&
+                state.duration !== undefined &&
+                state.duration > 0 ? (
+                  <Box marginTop={1}>
+                    <Text>
+                      <Text color={palette.accent} bold>
+                        {formatTimestamp(state.currentPosition)}
+                      </Text>
+                      <Text color={palette.accentDeep}>
+                        {" "}
+                        {renderPlaybackProgressBar(
+                          state.currentPosition,
+                          state.duration,
+                          barWidth,
+                        )}{" "}
+                      </Text>
+                      <Text color={palette.dim} dimColor>
+                        {formatTimestamp(state.duration)}
+                      </Text>
+                      {state.progress !== undefined ? (
+                        <Text color={palette.dim}>{`  ·  ${Math.round(state.progress)}%`}</Text>
+                      ) : null}
                     </Text>
-                    <Text color={palette.accentDeep}>
-                      {" "}
-                      {renderPlaybackProgressBar(
-                        state.currentPosition,
-                        state.duration,
-                        barWidth,
-                      )}{" "}
-                    </Text>
-                    <Text color={palette.dim} dimColor>
-                      {formatTimestamp(state.duration)}
-                    </Text>
-                    {state.progress !== undefined ? (
-                      <Text color={palette.dim}>{`  ·  ${Math.round(state.progress)}%`}</Text>
-                    ) : null}
-                  </Text>
-                </Box>
-              ) : null}
-
-              {/* NOW — facts on one line (quality · subs · session). */}
-              <Box marginTop={2}>
-                <Text color={palette.dim}>{"NOW  "}</Text>
-                {activeTracksLine ? (
-                  <Text
-                    color={palette.text}
-                  >{`${truncateLine(activeTracksLine, infoWidth - 32)} · `}</Text>
+                  </Box>
                 ) : null}
-                <Text color={state.autoskipPaused ? palette.muted : palette.ok}>
-                  {state.autoskipPaused ? "autoskip off" : "autoskip"}
-                </Text>
-                <Text color={palette.dim}>{" · "}</Text>
-                <Text color={state.autoplayPaused ? palette.muted : palette.ok}>
-                  {state.autoplayPaused ? "autoplay off" : "autoplay"}
-                </Text>
-              </Box>
 
-              {/* GO — live key hints (footer carries the essentials). */}
-              <Box>
-                <Text color={palette.dim}>{"GO   "}</Text>
-                <Text color={palette.textDim}>
-                  {truncateLine(
-                    [
-                      state.hasNextEpisode ? "n next" : null,
-                      state.hasPreviousEpisode ? "p prev" : null,
-                      "i skip",
-                      "o source",
-                      "v quality",
-                      "e episodes",
-                      "t tracks",
-                    ]
-                      .filter((part): part is string => Boolean(part))
-                      .join("  ·  "),
-                    infoWidth - 5,
-                  )}
-                </Text>
-              </Box>
-
-              {/* Health/trouble only surfaces when there is something to act on. */}
-              {playbackTrouble ? (
-                <Box marginTop={1} flexDirection="column">
-                  <Text color={palette.danger} bold>
-                    {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
+                {/* NOW — facts on one line (quality · subs · session). */}
+                <Box marginTop={2}>
+                  <Text color={palette.dim}>{"NOW  "}</Text>
+                  {activeTracksLine ? (
+                    <Text
+                      color={palette.text}
+                    >{`${truncateLine(activeTracksLine, infoWidth - 32)} · `}</Text>
+                  ) : null}
+                  <Text color={state.autoskipPaused ? palette.muted : palette.ok}>
+                    {state.autoskipPaused ? "autoskip off" : "autoskip"}
                   </Text>
-                  <Text color={palette.dim}>
-                    {"r recover  ·  f fallback  ·  t tracks  ·  d diagnostics"}
+                  <Text color={palette.dim}>{" · "}</Text>
+                  <Text color={state.autoplayPaused ? palette.muted : palette.ok}>
+                    {state.autoplayPaused ? "autoplay off" : "autoplay"}
                   </Text>
                 </Box>
-              ) : state.bufferHealth === "buffering" || state.bufferHealth === "stalled" ? (
-                <Box marginTop={1}>
-                  <BufferHealthBadge health={state.bufferHealth} />
+
+                {/* GO — live key hints (footer carries the essentials). */}
+                <Box>
+                  <Text color={palette.dim}>{"GO   "}</Text>
+                  <Text color={palette.textDim}>
+                    {truncateLine(
+                      [
+                        state.hasNextEpisode ? "n next" : null,
+                        state.hasPreviousEpisode ? "p prev" : null,
+                        "i skip",
+                        "o source",
+                        "v quality",
+                        "e episodes",
+                        "t tracks",
+                      ]
+                        .filter((part): part is string => Boolean(part))
+                        .join("  ·  "),
+                      infoWidth - 5,
+                    )}
+                  </Text>
                 </Box>
-              ) : null}
 
-              {/* mpv ownership hint — Kunai owns session, mpv owns the video. */}
-              <Box marginTop={1}>
-                <Text color={palette.dim} dimColor>
-                  mpv focused — Kunai shortcuts stay live · / for full commands
-                </Text>
-              </Box>
+                {/* Health/trouble only surfaces when there is something to act on. */}
+                {playbackTrouble ? (
+                  <Box marginTop={1} flexDirection="column">
+                    <Text color={palette.danger} bold>
+                      {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
+                    </Text>
+                    <Text color={palette.dim}>
+                      {"r recover  ·  f fallback  ·  t tracks  ·  d diagnostics"}
+                    </Text>
+                  </Box>
+                ) : state.bufferHealth === "buffering" || state.bufferHealth === "stalled" ? (
+                  <Box marginTop={1}>
+                    <BufferHealthBadge health={state.bufferHealth} />
+                  </Box>
+                ) : null}
 
-              {/* Up next */}
-              {state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
+                {/* mpv ownership hint — Kunai owns session, mpv owns the video. */}
                 <Box marginTop={1}>
-                  <Text color={palette.accent}>{"▶ "}</Text>
                   <Text color={palette.dim} dimColor>
-                    {"up next  "}
-                  </Text>
-                  <Text color={palette.text}>
-                    {truncateLine(state.nextEpisodeLabel, infoWidth - 10)}
+                    mpv focused — Kunai shortcuts stay live · / for full commands
                   </Text>
                 </Box>
-              ) : null}
 
-              {memoryPanelVisible && showPlaybackRuntimeStrip ? (
-                <Box marginTop={2} flexDirection="column">
-                  {memoryLine ? (
-                    <DetailLine label="Memory" value={memoryLine} tone="neutral" />
-                  ) : null}
-                  {runtimeHealthLine ? (
-                    <DetailLine
-                      label={runtimeHealthLine.label}
-                      value={runtimeHealthLine.detail ?? ""}
-                      tone={runtimeHealthLine.tone ?? "neutral"}
-                    />
-                  ) : null}
+                {/* Up next */}
+                {state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
+                  <Box marginTop={1}>
+                    <Text color={palette.accent}>{"▶ "}</Text>
+                    <Text color={palette.dim} dimColor>
+                      {"up next  "}
+                    </Text>
+                    <Text color={palette.text}>
+                      {truncateLine(state.nextEpisodeLabel, infoWidth - 10)}
+                    </Text>
+                  </Box>
+                ) : null}
+
+                {memoryPanelVisible && showPlaybackRuntimeStrip ? (
+                  <Box marginTop={2} flexDirection="column">
+                    {memoryLine ? (
+                      <DetailLine label="Memory" value={memoryLine} tone="neutral" />
+                    ) : null}
+                    {runtimeHealthLine ? (
+                      <DetailLine
+                        label={runtimeHealthLine.label}
+                        value={runtimeHealthLine.detail ?? ""}
+                        tone={runtimeHealthLine.tone ?? "neutral"}
+                      />
+                    ) : null}
+                  </Box>
+                ) : null}
+              </Box>
+              {showPlaybackPoster && playbackPoster.kind !== "none" ? (
+                <Box marginLeft={2} flexShrink={0}>
+                  <Text>{playbackPoster.placeholder}</Text>
                 </Box>
               ) : null}
             </Box>
