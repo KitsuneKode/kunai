@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import type { PosterResult } from "../poster-types";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import { buildContextCardTile } from "./ContextCard";
@@ -50,24 +51,29 @@ function factColor(tone: PreviewFact["tone"]): string {
 export function PreviewRail({
   model,
   width = 32,
+  poster,
 }: {
   readonly model: PreviewRailModel;
   readonly width?: number;
+  /** Rendered poster (chafa/Kitty placeholder). When ready, shown instead of the letter tile. */
+  readonly poster?: PosterResult;
 }) {
   const facts = visiblePreviewFacts(model.facts).slice(0, 4);
   const posterLabel = getPreviewPosterLabel(model);
+  const hasPosterImage = poster !== undefined && poster.kind !== "none";
   return (
-    <Box
-      flexDirection="column"
-      width={width}
-      borderStyle="single"
-      borderColor={palette.line}
-      paddingX={1}
-    >
-      <Box minHeight={6} justifyContent="center">
-        <Text color={model.posterState === "loading" ? palette.muted : palette.accent} bold>
-          {posterLabel}
-        </Text>
+    <Box flexDirection="column" width={width}>
+      {/* Borderless poster slot — height-reserved so the metadata below never
+          jumps when artwork resolves. Renders the real poster; falls back to a
+          quiet letter tile only while loading or when no art is available. */}
+      <Box minHeight={hasPosterImage ? undefined : 6} justifyContent="center">
+        {hasPosterImage ? (
+          <Text>{poster.placeholder}</Text>
+        ) : (
+          <Text color={model.posterState === "loading" ? palette.muted : palette.dim} bold>
+            {posterLabel}
+          </Text>
+        )}
       </Box>
       <Box marginTop={1} flexDirection="column">
         <Text color={palette.text} bold>

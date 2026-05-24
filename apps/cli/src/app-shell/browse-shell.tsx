@@ -554,8 +554,8 @@ export function BrowseShell<T>({
   const { poster, posterState: posterPreviewState } = usePosterPreview(
     selectedOption?.previewImageUrl ?? undefined,
     {
-      rows: 6,
-      cols: 16,
+      rows: 9,
+      cols: Math.max(14, Math.min(20, previewWidth - 6)),
       enabled: Boolean(selectedOption?.previewImageUrl),
       debounceMs: 90,
       variant: "detail",
@@ -1064,7 +1064,7 @@ export function BrowseShell<T>({
                 width={previewWidth}
               >
                 {showPreviewRail && previewRailModel ? (
-                  <PreviewRail model={previewRailModel} width={previewWidth} />
+                  <PreviewRail model={previewRailModel} width={previewWidth} poster={poster} />
                 ) : (
                   <DetailsSheetUI
                     data={companionDetails}
