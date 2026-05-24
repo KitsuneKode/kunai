@@ -13,6 +13,7 @@ import React from "react";
 import { PickerOptionRow } from "./overlay-picker-row";
 import { renderHistoryProgressBar } from "./panel-data";
 import { PosterInitialBlock } from "./poster-initial-block";
+import type { PosterResult, PosterState } from "./poster-types";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
@@ -911,6 +912,56 @@ function pickerFocusAccent(type: Extract<BrowseOverlay, { filterQuery: string }>
   return palette.accent;
 }
 
+// Right-hand preview rail for the episode picker. The poster slot is height-
+// reserved so the metadata below it never jumps when artwork resolves (spec:
+// episode-season-picker.md). Falls back to a quiet placeholder before/without art.
+const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
+  poster,
+  posterState,
+  option,
+  width,
+}: {
+  poster: PosterResult;
+  posterState: PosterState;
+  option: ShellPickerOption<string> | undefined;
+  width: number;
+}) {
+  const badgeColor =
+    option?.tone === "success"
+      ? palette.ok
+      : option?.tone === "warning"
+        ? palette.accentDeep
+        : option?.tone === "error"
+          ? palette.danger
+          : palette.muted;
+  return (
+    <Box flexDirection="column" width={width} marginLeft={2} flexShrink={0}>
+      <Box height={6} width={width}>
+        {poster.kind !== "none" ? (
+          <Text>{poster.placeholder}</Text>
+        ) : (
+          <Text color={palette.dim} dimColor>
+            {posterState === "loading" ? "loading artwork…" : "no preview art"}
+          </Text>
+        )}
+      </Box>
+      {option ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={palette.text} bold wrap="truncate-end">
+            {option.label}
+          </Text>
+          {option.badge ? <Text color={badgeColor}>{option.badge}</Text> : null}
+          {option.detail ? (
+            <Text color={palette.dim} wrap="truncate-end">
+              {option.detail}
+            </Text>
+          ) : null}
+        </Box>
+      ) : null}
+    </Box>
+  );
+});
+
 export function OverlayPanel({
   overlay,
   width,
@@ -957,6 +1008,14 @@ export function OverlayPanel({
       debounceMs: 120,
     },
   );
+  // Two-pane episode picker: dense list (left) + anchored preview rail (right).
+  // The rail hides first on narrow terminals (spec: responsive). When shown it
+  // takes a fixed column so the list width — and every row — stays stable.
+  const railColumnWidth = 20;
+  const showPreviewRail = overlay.type === "episode-picker" && contentWidth >= 56;
+  const listContentWidth = showPreviewRail
+    ? Math.max(18, contentWidth - railColumnWidth - 2)
+    : contentWidth;
 
   return (
     <Box marginTop={1} flexDirection="column" paddingX={1}>
@@ -1003,143 +1062,144 @@ export function OverlayPanel({
               </Text>
             )}
           </Box>
-          <Box marginTop={1} flexDirection="column">
-            {optionWindowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
-            {visibleOptions.map((option, index) => {
-              const optionIndex = optionWindowStart + index;
-              const selected = optionIndex === overlay.selectedIndex;
-              // Section separator — render as a non-selectable group header
-              if (typeof option.value === "string" && option.value.startsWith("section:")) {
-                const isSettings =
+          <Box marginTop={1} flexDirection="row">
+            <Box flexDirection="column" flexGrow={1}>
+              {optionWindowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+              {visibleOptions.map((option, index) => {
+                const optionIndex = optionWindowStart + index;
+                const selected = optionIndex === overlay.selectedIndex;
+                // Section separator — render as a non-selectable group header
+                if (typeof option.value === "string" && option.value.startsWith("section:")) {
+                  const isSettings =
+                    overlay.type === "settings" || overlay.type === "settings-choice";
+                  const isHistory = overlay.type === "history-picker";
+                  const headerLabel = option.label.toUpperCase();
+                  const usesAccent = isSettings || isHistory;
+                  return (
+                    <Box key={`section-${option.value}`} marginTop={1} flexDirection="column">
+                      <Text color={usesAccent ? palette.text : palette.dim} bold={usesAccent}>
+                        {headerLabel}
+                      </Text>
+                      {usesAccent ? (
+                        <Text color={palette.accent}>{"─".repeat(headerLabel.length)}</Text>
+                      ) : null}
+                    </Box>
+                  );
+                }
+                const rowAccentColor =
+                  option.tone === "success"
+                    ? palette.ok
+                    : option.tone === "warning"
+                      ? palette.accentDeep
+                      : option.tone === "info"
+                        ? palette.muted
+                        : option.tone === "error"
+                          ? palette.danger
+                          : null;
+                // Treatment C: selection is shown by a single accent bar (rendered by
+                // PickerOptionRow) + the elevated surface, not per-row ✓/▶/○ marker soup.
+                // Watched/current/resume state is carried by row tone + trailing badge + detail.
+                // Derive dot indicator for settings rows
+                const isSettingsOverlay =
                   overlay.type === "settings" || overlay.type === "settings-choice";
-                const isHistory = overlay.type === "history-picker";
-                const headerLabel = option.label.toUpperCase();
-                const usesAccent = isSettings || isHistory;
+                let dotChar = "";
+                let dotColor: string = palette.dim;
+                if (isSettingsOverlay) {
+                  const lbl = option.label;
+                  const isChoice = lbl.startsWith("▸");
+                  const isDanger = option.tone === "error";
+                  const isWarning = option.tone === "warning";
+                  const isSuccess = option.tone === "success";
+                  const isOn =
+                    !isChoice &&
+                    !isDanger &&
+                    (lbl.endsWith("· on") ||
+                      lbl.endsWith("· enabled") ||
+                      lbl.endsWith("· pinned after m") ||
+                      isSuccess);
+                  const isOff =
+                    !isChoice &&
+                    !isDanger &&
+                    (lbl.endsWith("· off") || lbl.endsWith("· temporary after m"));
+                  if (isDanger) {
+                    dotChar = "● ";
+                    dotColor = palette.danger;
+                  } else if (isWarning) {
+                    dotChar = "● ";
+                    dotColor = palette.accentDeep;
+                  } else if (isOn) {
+                    dotChar = "● ";
+                    dotColor = palette.ok;
+                  } else if (isOff) {
+                    dotChar = "○ ";
+                    dotColor = palette.dim;
+                  } else if (!isChoice) {
+                    dotChar = "● ";
+                    dotColor = palette.dim;
+                  }
+                }
+                const effectiveLabel = isSettingsOverlay && dotChar ? option.label : option.label;
+                const isHistoryPicker = overlay.type === "history-picker";
+                const historyPosterWidth = 4;
+                const prefixWidth =
+                  (isSettingsOverlay && dotChar ? dotChar.length : 0) +
+                  (isHistoryPicker && option.posterTitle ? historyPosterWidth + 1 : 0);
+                const historyRowWidth = Math.max(0, listContentWidth - prefixWidth);
                 return (
-                  <Box key={`section-${option.value}`} marginTop={1} flexDirection="column">
-                    <Text color={usesAccent ? palette.text : palette.dim} bold={usesAccent}>
-                      {headerLabel}
-                    </Text>
-                    {usesAccent ? (
-                      <Text color={palette.accent}>{"─".repeat(headerLabel.length)}</Text>
+                  <Box
+                    key={`${option.value}-${optionIndex}`}
+                    backgroundColor={selected ? palette.surfaceActive : undefined}
+                    flexDirection="row"
+                  >
+                    {isSettingsOverlay && dotChar ? (
+                      <Text color={selected ? pickerAccent : dotColor}>{dotChar}</Text>
                     ) : null}
+                    {isHistoryPicker && option.posterTitle ? (
+                      <Box marginRight={1}>
+                        <PosterInitialBlock
+                          title={option.posterTitle}
+                          width={historyPosterWidth}
+                          height={3}
+                        />
+                      </Box>
+                    ) : null}
+                    <Box flexDirection="column" flexGrow={1}>
+                      <Text bold={selected} wrap="truncate-end">
+                        <PickerOptionRow
+                          label={effectiveLabel}
+                          detail={option.detail}
+                          badge={option.badge}
+                          width={historyRowWidth}
+                          selected={selected}
+                          accentColor={rowAccentColor}
+                          pickerAccent={pickerAccent}
+                        />
+                      </Text>
+                      {isHistoryPicker && option.historyProgress ? (
+                        <Text
+                          color={option.historyProgress.completed ? palette.ok : palette.accent}
+                        >
+                          {renderHistoryProgressBar(option.historyProgress.percentage)}
+                          {`  ${option.historyProgress.percentage}%`}
+                        </Text>
+                      ) : null}
+                    </Box>
                   </Box>
                 );
-              }
-              const rowAccentColor =
-                option.tone === "success"
-                  ? palette.ok
-                  : option.tone === "warning"
-                    ? palette.accentDeep
-                    : option.tone === "info"
-                      ? palette.muted
-                      : option.tone === "error"
-                        ? palette.danger
-                        : null;
-              // Treatment C: selection is shown by a single accent bar (rendered by
-              // PickerOptionRow) + the elevated surface, not per-row ✓/▶/○ marker soup.
-              // Watched/current/resume state is carried by row tone + trailing badge + detail.
-              // Derive dot indicator for settings rows
-              const isSettingsOverlay =
-                overlay.type === "settings" || overlay.type === "settings-choice";
-              let dotChar = "";
-              let dotColor: string = palette.dim;
-              if (isSettingsOverlay) {
-                const lbl = option.label;
-                const isChoice = lbl.startsWith("▸");
-                const isDanger = option.tone === "error";
-                const isWarning = option.tone === "warning";
-                const isSuccess = option.tone === "success";
-                const isOn =
-                  !isChoice &&
-                  !isDanger &&
-                  (lbl.endsWith("· on") ||
-                    lbl.endsWith("· enabled") ||
-                    lbl.endsWith("· pinned after m") ||
-                    isSuccess);
-                const isOff =
-                  !isChoice &&
-                  !isDanger &&
-                  (lbl.endsWith("· off") || lbl.endsWith("· temporary after m"));
-                if (isDanger) {
-                  dotChar = "● ";
-                  dotColor = palette.danger;
-                } else if (isWarning) {
-                  dotChar = "● ";
-                  dotColor = palette.accentDeep;
-                } else if (isOn) {
-                  dotChar = "● ";
-                  dotColor = palette.ok;
-                } else if (isOff) {
-                  dotChar = "○ ";
-                  dotColor = palette.dim;
-                } else if (!isChoice) {
-                  dotChar = "● ";
-                  dotColor = palette.dim;
-                }
-              }
-              const effectiveLabel = isSettingsOverlay && dotChar ? option.label : option.label;
-              const isHistoryPicker = overlay.type === "history-picker";
-              const historyPosterWidth = 4;
-              const prefixWidth =
-                (isSettingsOverlay && dotChar ? dotChar.length : 0) +
-                (isHistoryPicker && option.posterTitle ? historyPosterWidth + 1 : 0);
-              const historyRowWidth = Math.max(0, contentWidth - prefixWidth);
-              return (
-                <Box
-                  key={`${option.value}-${optionIndex}`}
-                  backgroundColor={selected ? palette.surfaceActive : undefined}
-                  flexDirection="row"
-                >
-                  {isSettingsOverlay && dotChar ? (
-                    <Text color={selected ? pickerAccent : dotColor}>{dotChar}</Text>
-                  ) : null}
-                  {isHistoryPicker && option.posterTitle ? (
-                    <Box marginRight={1}>
-                      <PosterInitialBlock
-                        title={option.posterTitle}
-                        width={historyPosterWidth}
-                        height={3}
-                      />
-                    </Box>
-                  ) : null}
-                  <Box flexDirection="column" flexGrow={1}>
-                    <Text bold={selected} wrap="truncate-end">
-                      <PickerOptionRow
-                        label={effectiveLabel}
-                        detail={option.detail}
-                        badge={option.badge}
-                        width={historyRowWidth}
-                        selected={selected}
-                        accentColor={rowAccentColor}
-                        pickerAccent={pickerAccent}
-                      />
-                    </Text>
-                    {isHistoryPicker && option.historyProgress ? (
-                      <Text color={option.historyProgress.completed ? palette.ok : palette.accent}>
-                        {renderHistoryProgressBar(option.historyProgress.percentage)}
-                        {`  ${option.historyProgress.percentage}%`}
-                      </Text>
-                    ) : null}
-                  </Box>
-                </Box>
-              );
-            })}
-            {optionWindowEnd < overlay.options.length ? (
-              <Text color={palette.dim}> ▼ ...</Text>
-            ) : null}
-          </Box>
-          {overlay.type === "episode-picker" && pickerPreviewImageUrl ? (
-            <Box marginTop={1} flexDirection="column">
-              {pickerPoster.kind !== "none" ? (
-                <Text>{pickerPoster.placeholder}</Text>
-              ) : pickerPosterState === "loading" ? (
-                <Text color={palette.muted} dimColor>
-                  Loading artwork…
-                </Text>
+              })}
+              {optionWindowEnd < overlay.options.length ? (
+                <Text color={palette.dim}> ▼ ...</Text>
               ) : null}
             </Box>
-          ) : null}
+            {showPreviewRail ? (
+              <EpisodePreviewRail
+                poster={pickerPoster}
+                posterState={pickerPosterState}
+                option={overlay.options[overlay.selectedIndex]}
+                width={railColumnWidth}
+              />
+            ) : null}
+          </Box>
           {overlay.busy || overlay.type !== "episode-picker" ? (
             <Box marginTop={1}>
               <Text color={overlay.busy ? palette.accent : palette.dim}>
