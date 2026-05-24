@@ -124,29 +124,26 @@ function useRuntimeHealthLine(
   return healthLine;
 }
 
+// Vertical "Mission" checklist (.prototypes/playback-postplay 'Mission card'):
+// one stage per line with its status glyph, so bootstrap reads as a checklist
+// being ticked off rather than a horizontal breadcrumb.
 function StageRail({ items }: { items: readonly StageRailItem[] }) {
   return (
-    <Box flexDirection="row">
-      {items.map((item, i) => (
-        <React.Fragment key={item.label}>
-          {i > 0 ? (
-            <Text color={palette.dim} dimColor>
-              {"  "}
-            </Text>
-          ) : null}
-          <Text
-            color={
-              item.tone === "success"
-                ? palette.ok
-                : item.tone === "info" || item.tone === "warning"
-                  ? palette.accentDeep
-                  : palette.dim
-            }
-            dimColor={item.tone === "neutral"}
-          >
-            {item.glyph} {item.label}
-          </Text>
-        </React.Fragment>
+    <Box flexDirection="column">
+      {items.map((item) => (
+        <Text
+          key={item.label}
+          color={
+            item.tone === "success"
+              ? palette.ok
+              : item.tone === "info" || item.tone === "warning"
+                ? palette.accentDeep
+                : palette.dim
+          }
+          dimColor={item.tone === "neutral"}
+        >
+          {item.glyph} {item.label}
+        </Text>
       ))}
     </Box>
   );
@@ -565,6 +562,18 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                   <Box marginTop={1}>
                     <StageRail items={stageRailItems} />
+                  </Box>
+                  {/* Session toggles surfaced early so autoplay/autoskip intent is
+                      visible before playback starts (Mission card). */}
+                  <Box marginTop={1}>
+                    <Text color={palette.dim}>{"session  "}</Text>
+                    <Text color={state.autoskipPaused ? palette.muted : palette.ok}>
+                      {state.autoskipPaused ? "autoskip off" : "autoskip on"}
+                    </Text>
+                    <Text color={palette.dim}>{" · "}</Text>
+                    <Text color={state.autoplayPaused ? palette.muted : palette.ok}>
+                      {state.autoplayPaused ? "autoplay off" : "autoplay on"}
+                    </Text>
                   </Box>
                   {/* Provider context — revealed after 2s */}
                   {disclosure.showProvider && providerDetail && (
