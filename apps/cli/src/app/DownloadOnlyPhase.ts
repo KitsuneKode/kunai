@@ -19,15 +19,6 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
   ): Promise<PhaseResult<"queued" | "back">> {
     const { container } = context;
     const state = container.stateManager.getState();
-    const provider = container.providerRegistry.get(state.provider);
-    const isAnime = state.mode === "anime";
-    const animeEpisodes =
-      isAnime && provider?.listEpisodes
-        ? ((await provider
-            .listEpisodes({ title: input.title }, context.signal)
-            .catch(() => null)) ?? undefined)
-        : undefined;
-
     const eligibility = container.downloadService.getEnqueueEligibility();
     if (!eligibility.allowed) {
       container.diagnosticsStore.record({
@@ -41,6 +32,15 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
       });
       return { status: "success", value: "back" };
     }
+
+    const provider = container.providerRegistry.get(state.provider);
+    const isAnime = state.mode === "anime";
+    const animeEpisodes =
+      isAnime && provider?.listEpisodes
+        ? ((await provider
+            .listEpisodes({ title: input.title }, context.signal)
+            .catch(() => null)) ?? undefined)
+        : undefined;
 
     let episodes: readonly EpisodeInfo[] | null;
 

@@ -23,6 +23,9 @@ import {
   HistoryRepository,
   ListRepository,
   NotificationRepository,
+  OfflineAssetsRepository,
+  OfflineMaintenanceJobsRepository,
+  OfflineTitlePoliciesRepository,
   openKunaiDatabase,
   PlaylistRepository,
   PlaylistsRepository,
@@ -83,6 +86,7 @@ import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
 import { DownloadService } from "./services/download/DownloadService";
 import { NotificationService } from "./services/notifications/NotificationService";
+import { OfflineAssetService } from "./services/offline/OfflineAssetService";
 import { OfflineLibraryService } from "./services/offline/OfflineLibraryService";
 import type { CacheStore } from "./services/persistence/CacheStore";
 import type { ConfigService } from "./services/persistence/ConfigService";
@@ -157,6 +161,9 @@ export interface Container {
   readonly providerHealth: ProviderHealthRepository;
   readonly titleProviderHealth: TitleProviderHealthService;
   readonly downloadService: DownloadService;
+  readonly offlineAssetService: OfflineAssetService;
+  readonly offlineTitlePolicies: OfflineTitlePoliciesRepository;
+  readonly offlineMaintenanceJobs: OfflineMaintenanceJobsRepository;
   readonly offlineLibraryService: OfflineLibraryService;
   readonly notificationService: NotificationService;
   readonly presence: PresenceService;
@@ -263,6 +270,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const scheduleCache = new ScheduleCacheRepository(cacheDb);
   const releaseProgressCache = new ReleaseProgressCacheRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
+  const offlineAssets = new OfflineAssetsRepository(dataDb);
+  const offlineTitlePolicies = new OfflineTitlePoliciesRepository(dataDb);
+  const offlineMaintenanceJobs = new OfflineMaintenanceJobsRepository(dataDb);
   const listRepository = new ListRepository(dataDb);
   const playlistRepository = new PlaylistRepository(dataDb);
   const notificationRepository = new NotificationRepository(dataDb);
@@ -352,6 +362,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   });
 
   const providerRegistry = createProviderRegistry(engine);
+  const offlineAssetService = new OfflineAssetService(offlineAssets);
 
   const downloadService = new DownloadService({
     repo: downloadJobs,
@@ -361,6 +372,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     ffprobeAvailable: Boolean(Bun.which("ffprobe")),
     ffmpegAvailable: Boolean(Bun.which("ffmpeg")),
     diagnosticsStore,
+    onCompletedArtifact: (job) => {
+      offlineAssetService.adoptCompletedJob(job);
+    },
     resolveDownloadStream: async (intent) => {
       const resolver = new PlaybackResolveCoordinator({
         engine,
@@ -402,6 +416,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const offlineLibraryService = new OfflineLibraryService({
     downloadService,
     historyStore,
+    offlineAssetService,
   });
   const notificationService = new NotificationService({
     repo: notificationRepository,
@@ -493,6 +508,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     providerHealth,
     titleProviderHealth,
     downloadService,
+    offlineAssetService,
+    offlineTitlePolicies,
+    offlineMaintenanceJobs,
     offlineLibraryService,
     notificationService,
     presence,

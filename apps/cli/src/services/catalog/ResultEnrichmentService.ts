@@ -22,7 +22,7 @@ export type ResultEnrichment = {
 
 export type ResultEnrichmentServiceDeps = {
   readonly historyStore: Pick<HistoryStore, "getAll">;
-  readonly offlineLibraryService: Pick<OfflineLibraryService, "validateCompletedArtifacts">;
+  readonly offlineLibraryService: Pick<OfflineLibraryService, "peekRecordedArtifactStatuses">;
   readonly getCachedNextRelease?: (result: SearchResult) => ContinueHistoryRelease | null;
   readonly now?: () => number;
   readonly ttlMs?: number;
@@ -65,7 +65,10 @@ export class ResultEnrichmentService {
 
     const [historyResult, offlineResult] = await Promise.allSettled([
       this.deps.historyStore.getAll(),
-      this.deps.offlineLibraryService.validateCompletedArtifacts(300),
+      this.deps.offlineLibraryService.peekRecordedArtifactStatuses(
+        missing.map((result) => result.id),
+        300,
+      ),
     ]);
     const history = historyResult.status === "fulfilled" ? historyResult.value : {};
     const offlineEntries = offlineResult.status === "fulfilled" ? offlineResult.value : [];
@@ -81,7 +84,7 @@ export class ResultEnrichmentService {
         historyEntry,
         nextRelease,
         offlineStatuses: offlineEntries
-          .filter((entry) => entry.job.titleId === result.id)
+          .filter((entry) => entry.titleId === result.id)
           .map((entry) => entry.status),
       });
       const key = resultEnrichmentKey(result);
@@ -116,7 +119,9 @@ export function buildResultEnrichment(input: {
   if (input.offlineStatuses?.includes("ready")) {
     badges.push({ label: "downloaded", tone: "success" });
   } else if (
-    input.offlineStatuses?.some((status) => status === "missing" || status === "invalid-file")
+    input.offlineStatuses?.some(
+      (status) => status === "missing" || status === "invalid-file" || status === "repairable",
+    )
   ) {
     badges.push({ label: "offline issue", tone: "warning" });
   }

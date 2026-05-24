@@ -5,7 +5,6 @@ import {
   ResultEnrichmentService,
   buildResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
-import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 
 function result(patch: Partial<SearchResult> = {}): SearchResult {
@@ -40,13 +39,12 @@ describe("ResultEnrichmentService", () => {
     const service = new ResultEnrichmentService({
       historyStore: { getAll: async () => ({ "title-1": history() }) },
       offlineLibraryService: {
-        validateCompletedArtifacts: async () =>
-          [
-            {
-              status: "ready",
-              job: { titleId: "title-1" },
-            },
-          ] as unknown as readonly OfflineLibraryEntry[],
+        peekRecordedArtifactStatuses: async () => [
+          {
+            status: "ready",
+            titleId: "title-1",
+          },
+        ],
       },
       now: () => 1,
       ttlMs: 1_000,
@@ -66,7 +64,7 @@ describe("ResultEnrichmentService", () => {
         getAll: async () => ({ "title-1": history({ completed: false, timestamp: 300 }) }),
       },
       offlineLibraryService: {
-        validateCompletedArtifacts: async () => {
+        peekRecordedArtifactStatuses: async () => {
           throw new Error("offline unavailable");
         },
       },
@@ -116,7 +114,7 @@ describe("ResultEnrichmentService", () => {
     const service = new ResultEnrichmentService({
       historyStore: { getAll: async () => ({}) },
       offlineLibraryService: {
-        validateCompletedArtifacts: async () => [],
+        peekRecordedArtifactStatuses: async () => [],
       },
       getCachedNextRelease: (searchResult) => {
         releaseLookups.push(searchResult.id);
@@ -151,7 +149,7 @@ describe("ResultEnrichmentService", () => {
         }),
       },
       offlineLibraryService: {
-        validateCompletedArtifacts: async () => [],
+        peekRecordedArtifactStatuses: async () => [],
       },
       getCachedNextRelease: (searchResult) => {
         releaseLookups.push(searchResult.id);
@@ -178,12 +176,12 @@ describe("ResultEnrichmentService", () => {
     expect(enrichments.get("series:anilist:2")?.badges).toEqual([]);
   });
 
-  test("uses cached enrichments within the ttl", async () => {
+  test("uses recorded artifact statuses once within the ttl without validating files", async () => {
     let offlineCalls = 0;
     const service = new ResultEnrichmentService({
       historyStore: { getAll: async () => ({}) },
       offlineLibraryService: {
-        validateCompletedArtifacts: async () => {
+        peekRecordedArtifactStatuses: async () => {
           offlineCalls += 1;
           return [];
         },
@@ -203,6 +201,15 @@ describe("ResultEnrichmentService", () => {
       buildResultEnrichment({
         result: result(),
         offlineStatuses: ["missing"],
+      }).badges,
+    ).toEqual([{ label: "offline issue", tone: "warning" }]);
+  });
+
+  test("marks repairable local sidecars as offline issues", () => {
+    expect(
+      buildResultEnrichment({
+        result: result(),
+        offlineStatuses: ["repairable"],
       }).badges,
     ).toEqual([{ label: "offline issue", tone: "warning" }]);
   });

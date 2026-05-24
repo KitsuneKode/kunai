@@ -12,6 +12,7 @@ import {
   type OfflineArtifactStatus,
   type OfflineLibraryEntry,
 } from "./offline-library";
+import type { OfflineAssetService, RecordedOfflineStatus } from "./OfflineAssetService";
 
 const ARTIFACT_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -23,10 +24,28 @@ function isArtifactCacheFresh(job: DownloadJobRecord): boolean {
 export type OfflineLibraryServiceDeps = {
   readonly downloadService: DownloadService;
   readonly historyStore: HistoryStore;
+  readonly offlineAssetService?: OfflineAssetService;
 };
 
 export class OfflineLibraryService {
   constructor(private readonly deps: OfflineLibraryServiceDeps) {}
+
+  async peekRecordedArtifactStatuses(
+    titleIds: readonly string[],
+    limit = 300,
+  ): Promise<readonly RecordedOfflineStatus[]> {
+    if (this.deps.offlineAssetService) {
+      return this.deps.offlineAssetService.peekStatusesByTitleIds(titleIds);
+    }
+    const wanted = new Set(titleIds);
+    if (wanted.size === 0) return [];
+    return dedupeCompletedJobs(this.deps.downloadService.listCompleted(limit))
+      .filter((job) => wanted.has(job.titleId) && isOfflineArtifactStatus(job.artifactStatus))
+      .map((job) => ({
+        titleId: job.titleId,
+        status: job.artifactStatus as OfflineArtifactStatus,
+      }));
+  }
 
   async listCompletedEntries(limit = 60): Promise<readonly OfflineLibraryEntry[]> {
     return this.validateCompletedArtifacts(limit);

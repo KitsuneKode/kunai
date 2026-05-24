@@ -73,6 +73,9 @@ describe("ConfigServiceImpl", () => {
     expect(service.recoveryMode).toBe("guided");
     expect(service.artworkPreviewsEnabled).toBe(true);
     expect(service.offlineArtworkCacheEnabled).toBe(true);
+    expect(service.offlineFreeSpaceReserveBytes).toBe(2 * 1024 * 1024 * 1024);
+    expect(service.offlineUnknownEpisodeEstimateBytes).toBe(768 * 1024 * 1024);
+    expect(service.offlineDefaultRunwayTarget).toBe(2);
     expect(service.autoCleanupGraceDays).toBe(7);
     expect(service.protectedDownloadJobIds).toEqual([]);
     expect(service.updateChecksEnabled).toBe(true);
@@ -89,6 +92,9 @@ describe("ConfigServiceImpl", () => {
       recoveryMode: "fallback-first",
       artworkPreviewsEnabled: false,
       offlineArtworkCacheEnabled: false,
+      offlineFreeSpaceReserveBytes: 100,
+      offlineUnknownEpisodeEstimateBytes: 200,
+      offlineDefaultRunwayTarget: 5,
       autoCleanupGraceDays: 3,
       protectedDownloadJobIds: ["job-a", "job-a", " job-b "],
       updateChecksEnabled: false,
@@ -99,12 +105,15 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).downloadsEnabled).toBe(true);
     expect((await store.load()).downloadPath).toBe("~/Videos/Kunai");
     expect((await store.load()).downloadOnboardingDismissed).toBe(true);
-    expect((await store.load()).autoDownload).toBe("next");
+    expect((await store.load()).autoDownload).toBe("off");
     expect((await store.load()).autoDownloadNextCount).toBe(3);
     expect((await store.load()).autoCleanupWatched).toBe(true);
     expect((await store.load()).recoveryMode).toBe("fallback-first");
     expect((await store.load()).artworkPreviewsEnabled).toBe(false);
     expect((await store.load()).offlineArtworkCacheEnabled).toBe(false);
+    expect((await store.load()).offlineFreeSpaceReserveBytes).toBe(100);
+    expect((await store.load()).offlineUnknownEpisodeEstimateBytes).toBe(200);
+    expect((await store.load()).offlineDefaultRunwayTarget).toBe(5);
     expect((await store.load()).autoCleanupGraceDays).toBe(3);
     expect((await store.load()).protectedDownloadJobIds).toEqual(["job-a", "job-b"]);
     expect((await store.load()).updateChecksEnabled).toBe(false);
@@ -131,6 +140,18 @@ describe("ConfigServiceImpl", () => {
     await service.save();
 
     expect((await store.load()).autoDownloadNextCount).toBe(1);
+  });
+
+  test("disables legacy streaming auto-download authority on load and update", async () => {
+    const store = new MemoryConfigStore({ autoDownload: "season" });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.autoDownload).toBe("off");
+
+    await service.update({ autoDownload: "next" });
+    await service.save();
+
+    expect((await store.load()).autoDownload).toBe("off");
   });
 
   test("normalizes legacy subtitle defaults back to english on load", async () => {

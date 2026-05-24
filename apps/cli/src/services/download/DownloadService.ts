@@ -30,6 +30,11 @@ import {
   pickActiveDownloadForPlayback,
   type PlaybackDownloadMatchInput,
 } from "./playback-download-match";
+import {
+  DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
+  DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
+  evaluateStorageAdmission,
+} from "./StorageBudgetPolicy";
 import { buildDownloadStreamPolicy } from "./stream-policy";
 import { resolveSubtitleArtifactPath } from "./subtitle-artifact-path";
 
@@ -45,13 +50,21 @@ export type DownloadEnqueueEligibility =
   | { readonly allowed: true }
   | {
       readonly allowed: false;
-      readonly code: "downloads-disabled" | "yt-dlp-missing" | "insufficient-disk";
+      readonly code:
+        | "downloads-disabled"
+        | "yt-dlp-missing"
+        | "insufficient-disk"
+        | "duplicate-intent";
       readonly reason: string;
     };
 
 export class DownloadEnqueueRejectedError extends Error {
   constructor(
-    readonly code: "downloads-disabled" | "yt-dlp-missing" | "insufficient-disk",
+    readonly code:
+      | "downloads-disabled"
+      | "yt-dlp-missing"
+      | "insufficient-disk"
+      | "duplicate-intent",
     readonly reason: string,
   ) {
     super(reason);
@@ -173,6 +186,7 @@ export class DownloadService {
       readonly ffmpegAvailable?: boolean;
       readonly abortGraceMs?: number;
       readonly diagnosticsStore?: Pick<DiagnosticsStore, "record">;
+      readonly onCompletedArtifact?: (job: DownloadJobRecord) => Promise<void> | void;
     },
   ) {}
 
@@ -211,6 +225,17 @@ export class DownloadService {
     if (!eligibility.allowed) {
       throw new DownloadEnqueueRejectedError(eligibility.code, eligibility.reason);
     }
+    const existing = this.deps.repo.findBlockingEpisodeIntent({
+      titleId: input.title.id,
+      season: input.episode?.season,
+      episode: input.episode?.episode,
+    });
+    if (existing) {
+      throw new DownloadEnqueueRejectedError(
+        "duplicate-intent",
+        "A playable or active offline copy already exists for this episode.",
+      );
+    }
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
     const outputPath = this.resolveOutputPath(input);
@@ -218,11 +243,20 @@ export class DownloadService {
     await mkdir(dirname(outputPath), { recursive: true });
 
     const diskStats = await statfs(dirname(outputPath));
-    const availableGB = (diskStats.bavail * diskStats.bsize) / (1024 * 1024 * 1024);
-    if (availableGB < 2) {
+    const availableBytes = diskStats.bavail * diskStats.bsize;
+    const storage = evaluateStorageAdmission({
+      availableBytes,
+      reserveBytes:
+        this.deps.config.offlineFreeSpaceReserveBytes ?? DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
+      unknownEpisodeEstimateBytes:
+        this.deps.config.offlineUnknownEpisodeEstimateBytes ??
+        DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
+    });
+    if (!storage.allowed) {
+      const availableGB = availableBytes / (1024 * 1024 * 1024);
       throw new DownloadEnqueueRejectedError(
         "insufficient-disk",
-        `Only ${availableGB.toFixed(1)}GB free on download volume. At least 2GB required.`,
+        `Only ${availableGB.toFixed(1)}GB free on download volume after the offline safety reserve.`,
       );
     }
 
@@ -319,16 +353,7 @@ export class DownloadService {
     readonly season?: number;
     readonly episode?: number;
   }): boolean {
-    const matches = (job: DownloadJobRecord) =>
-      job.titleId === input.titleId &&
-      (input.season === undefined || job.season === input.season) &&
-      (input.episode === undefined || job.episode === input.episode) &&
-      (job.status === "queued" ||
-        job.status === "running" ||
-        job.status === "completed" ||
-        job.status === "completed-with-notes" ||
-        job.status === "repairable");
-    return this.listActive(500).some(matches) || this.listCompleted(500).some(matches);
+    return this.deps.repo.findBlockingEpisodeIntent(input) !== undefined;
   }
 
   async retry(jobId: string): Promise<void> {
@@ -415,6 +440,7 @@ export class DownloadService {
       this.emit({ type: "complete", jobId: next.id });
       const completed = this.deps.repo.get(next.id) ?? null;
       if (completed) {
+        await this.deps.onCompletedArtifact?.(completed);
         runBackgroundTask({
           task: "download.prepareOfflineArtwork",
           category: "download",
@@ -965,6 +991,9 @@ export class DownloadService {
     const subtitleResult = await this.downloadSubtitleIfAvailable(job);
     this.persistCompletedDownloadWithSidecarResult(job.id, subtitleResult, repairedAt);
     const refreshed = this.deps.repo.get(job.id);
+    if (refreshed) {
+      await this.deps.onCompletedArtifact?.(refreshed);
+    }
     if (refreshed?.status === "completed") {
       runBackgroundTask({
         task: "download.prepareOfflineArtwork.repair",

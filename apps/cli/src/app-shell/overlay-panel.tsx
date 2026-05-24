@@ -471,21 +471,14 @@ export function buildSettingsOptions(
       detail: "Choose how aggressively Kunai retries and switches providers",
     },
     {
-      value: "autoDownload",
-      label: `▸ Auto-download  ·  ${config.autoDownload}`,
-      detail: "Queue future episodes for offline viewing after playback",
+      value: "section:offline-continuation",
+      label: "Offline continuation",
+      detail: "Enable Keep watching offline per title; streaming never downloads automatically",
     },
     {
       value: "downloadsEnabled",
       label: `Offline downloads  ·  ${config.downloadsEnabled ? "enabled" : "off"}`,
       detail: "Enable local completed downloads and the offline library surface",
-    },
-    {
-      value: "autoDownloadNextCount",
-      label: `▸ Auto-download next count  ·  ${config.autoDownloadNextCount} ${
-        config.autoDownloadNextCount === 1 ? "episode" : "episodes"
-      }`,
-      detail: "When Auto-download is Next, keep more than one future episode staged",
     },
     {
       value: "autoCleanupWatched",

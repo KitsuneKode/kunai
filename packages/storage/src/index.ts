@@ -22,6 +22,27 @@ export type {
   DownloadJobRecord,
   DownloadJobStatus,
 } from "./repositories/download-jobs";
+export {
+  createOfflineAssetIdentityKey,
+  OfflineAssetsRepository,
+} from "./repositories/offline-assets";
+export type {
+  OfflineAssetArtworkRecord,
+  OfflineAssetInput,
+  OfflineAssetRecord,
+  OfflineAssetSidecarState,
+  OfflineAssetState,
+  OfflineAssetTrackKind,
+  OfflineAssetTrackRecord,
+} from "./repositories/offline-assets";
+export { OfflineTitlePoliciesRepository } from "./repositories/offline-title-policies";
+export type { OfflineTitlePolicyRecord } from "./repositories/offline-title-policies";
+export { OfflineMaintenanceJobsRepository } from "./repositories/offline-maintenance-jobs";
+export type {
+  OfflineMaintenanceJobRecord,
+  OfflineMaintenanceOperation,
+  OfflineMaintenanceStatus,
+} from "./repositories/offline-maintenance-jobs";
 export { ProviderHealthRepository } from "./repositories/provider-health";
 export { TitleProviderHealthRepository } from "./repositories/title-provider-health";
 export type { TitleProviderHealthRecord } from "./repositories/title-provider-health";

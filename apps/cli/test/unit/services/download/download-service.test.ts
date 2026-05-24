@@ -51,6 +51,24 @@ describe("DownloadService", () => {
     ).rejects.toBeInstanceOf(DownloadEnqueueRejectedError);
   });
 
+  test("rejects a duplicate episode intent through the indexed admission guard", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const input = {
+      title: { id: "tmdb:1", type: "series" as const, name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      providerId: "vidking",
+    };
+
+    await service.enqueue(input);
+    await expect(service.enqueue(input)).rejects.toMatchObject({ code: "duplicate-intent" });
+    expect(repo.listQueued(10)).toHaveLength(1);
+  });
+
   test("processes successful queue entries", async () => {
     const service = buildService({
       repo,

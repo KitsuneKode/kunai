@@ -14,6 +14,9 @@ import {
   HistoryRepository,
   ListRepository,
   openKunaiDatabase,
+  OfflineAssetsRepository,
+  OfflineMaintenanceJobsRepository,
+  OfflineTitlePoliciesRepository,
   PlaylistRepository,
   ProviderHealthRepository,
   TitleProviderHealthRepository,
@@ -83,6 +86,11 @@ test("migrations are idempotent and create expected storage tables", () => {
   expect(dataTables).toContain("history_progress");
   expect(dataTables).toContain("playback_events");
   expect(dataTables).toContain("download_jobs");
+  expect(dataTables).toContain("offline_assets");
+  expect(dataTables).toContain("offline_asset_tracks");
+  expect(dataTables).toContain("offline_asset_artwork");
+  expect(dataTables).toContain("offline_title_policies");
+  expect(dataTables).toContain("offline_maintenance_jobs");
   expect(cacheTables).toContain("stream_cache");
   expect(cacheTables).toContain("provider_health");
   expect(cacheTables).toContain("source_inventory");
@@ -439,6 +447,152 @@ test("download jobs repository supports queue lifecycle", () => {
   expect(done?.posterUrl).toBe("https://img.example/poster.jpg");
   expect(done?.thumbnailPath).toBe("/tmp/example.thumbnail.jpg");
   expect(done?.introSkipJson).toBe(JSON.stringify({ openings: [] }));
+
+  db.close();
+});
+
+test("download jobs repository finds one blocking episode intent without scanning lists", () => {
+  const db = migratedDataDb();
+  const repo = new DownloadJobsRepository(db);
+  const now = "2026-04-29T00:00:00.000Z";
+
+  repo.enqueue({
+    id: "job-ready",
+    titleId: "tmdb:series",
+    titleName: "Example",
+    mediaKind: "series",
+    season: 1,
+    episode: 2,
+    providerId: "vidking",
+    streamUrl: "",
+    headers: {},
+    outputPath: "/tmp/example-s01e02.mp4",
+    tempPath: "/tmp/example-s01e02.tmp",
+    createdAt: now,
+    updatedAt: now,
+    completedAt: undefined,
+  });
+  repo.complete("job-ready", "2026-04-29T00:01:00.000Z");
+
+  expect(
+    repo.findBlockingEpisodeIntent({ titleId: "tmdb:series", season: 1, episode: 2 })?.id,
+  ).toBe("job-ready");
+  expect(
+    repo.findBlockingEpisodeIntent({ titleId: "tmdb:series", season: 1, episode: 3 }),
+  ).toBeUndefined();
+
+  db.close();
+});
+
+test("offline asset manifest stores one durable playable identity without provider secrets", () => {
+  const db = migratedDataDb();
+  const repo = new OfflineAssetsRepository(db);
+  const first = repo.upsertPlayable({
+    titleId: "tmdb:movie",
+    titleName: "Movie",
+    mediaKind: "movie",
+    profileKey: "original:en:best",
+    filePath: "/tmp/movie.mp4",
+    state: "ready",
+    byteSize: 42,
+    updatedAt: "2026-04-29T00:00:00.000Z",
+  });
+  const second = repo.upsertPlayable({
+    titleId: "tmdb:movie",
+    titleName: "Movie",
+    mediaKind: "movie",
+    profileKey: "original:en:best",
+    filePath: "/tmp/movie-new.mp4",
+    state: "ready",
+    byteSize: 52,
+    updatedAt: "2026-04-29T00:01:00.000Z",
+  });
+
+  expect(second.id).toBe(first.id);
+  expect(repo.listTitleAssets("tmdb:movie")).toHaveLength(1);
+  expect(second.filePath).toBe("/tmp/movie-new.mp4");
+  expect(JSON.stringify(second)).not.toContain("streamUrl");
+  expect(JSON.stringify(second)).not.toContain("headers");
+
+  db.close();
+});
+
+test("offline asset refresh preserves explicit user protection", () => {
+  const db = migratedDataDb();
+  const repo = new OfflineAssetsRepository(db);
+  const input = {
+    titleId: "tmdb:series",
+    titleName: "Series",
+    mediaKind: "series" as const,
+    season: 1,
+    episode: 2,
+    profileKey: "series:original:none:best",
+    filePath: "/tmp/series-s01e02.mp4",
+    state: "ready" as const,
+    updatedAt: "2026-04-29T00:00:00.000Z",
+  };
+  const first = repo.upsertPlayable({ ...input, protected: true });
+  const refreshed = repo.upsertPlayable({
+    ...input,
+    state: "repairable",
+    updatedAt: "2026-04-29T00:01:00.000Z",
+  });
+
+  expect(refreshed.id).toBe(first.id);
+  expect(refreshed.protected).toBe(true);
+  expect(refreshed.state).toBe("repairable");
+
+  db.close();
+});
+
+test("offline title policies and maintenance jobs persist explicit bounded authority", () => {
+  const db = migratedDataDb();
+  const assets = new OfflineAssetsRepository(db);
+  const policies = new OfflineTitlePoliciesRepository(db);
+  const maintenance = new OfflineMaintenanceJobsRepository(db);
+  const now = "2026-04-29T00:00:00.000Z";
+  const asset = assets.upsertPlayable({
+    titleId: "anilist:1",
+    titleName: "Demo",
+    mediaKind: "anime",
+    season: 1,
+    episode: 5,
+    profileKey: "original:en:best",
+    filePath: "/tmp/demo-e5.mp4",
+    state: "ready",
+    updatedAt: now,
+  });
+
+  policies.upsert({
+    titleId: "anilist:1",
+    mediaKind: "anime",
+    titleName: "Demo",
+    enrolled: true,
+    runwayTarget: 3,
+    profileJson: JSON.stringify({ audio: "original", subtitle: "en", quality: "best" }),
+    cleanupJson: JSON.stringify({ mode: "keep-last-watched", count: 1 }),
+    updatedAt: now,
+  });
+  expect(policies.listEnrolled(10)[0]?.runwayTarget).toBe(3);
+
+  const initial = maintenance.enqueueUnique({
+    assetId: asset.id,
+    operation: "repair-subtitle",
+    now,
+  });
+  const duplicate = maintenance.enqueueUnique({
+    assetId: asset.id,
+    operation: "repair-subtitle",
+    now,
+  });
+  expect(duplicate.id).toBe(initial.id);
+  maintenance.complete(initial.id, "2026-04-29T00:01:00.000Z");
+  const retry = maintenance.enqueueUnique({
+    assetId: asset.id,
+    operation: "repair-subtitle",
+    now: "2026-04-29T00:02:00.000Z",
+  });
+  expect(retry.id).not.toBe(initial.id);
 
   db.close();
 });

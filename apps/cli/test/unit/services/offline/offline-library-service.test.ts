@@ -81,6 +81,26 @@ describe("OfflineLibraryService", () => {
     expect(entries).toEqual([{ job: broken, status: "missing" }]);
   });
 
+  test("peeks recorded statuses without reading or rewriting artifacts", async () => {
+    let validations = 0;
+    const recorded = job({ artifactStatus: "ready" });
+    const pending = job({ id: "pending", artifactStatus: "pending", titleId: "title-2" });
+    const service = new OfflineLibraryService({
+      downloadService: {
+        listCompleted: () => [recorded, pending],
+        markArtifactValidated: () => {
+          validations += 1;
+        },
+      } as unknown as DownloadService,
+      historyStore: {} as HistoryStore,
+    });
+
+    const entries = await service.peekRecordedArtifactStatuses(["title-1", "title-2"]);
+
+    expect(entries).toEqual([{ titleId: "title-1", status: "ready" }]);
+    expect(validations).toBe(0);
+  });
+
   test("builds a local playback source with subtitle sidecar and timing metadata", async () => {
     const record = job({
       subtitlePath: "/tmp/demo.srt",

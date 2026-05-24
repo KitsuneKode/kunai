@@ -25,7 +25,6 @@ export function LibraryShell({
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadsEnabled, setDownloadsEnabled] = useState(container.config.downloadsEnabled);
-  const [autoDownload, setAutoDownload] = useState(container.config.autoDownload);
   const viewport = useDebouncedViewportPolicy("picker");
 
   useInput((input, key) => {
@@ -48,18 +47,6 @@ export function LibraryShell({
       void container.config.save();
       return;
     }
-    if (input === "a" || input === "A") {
-      const next =
-        autoDownload === "off"
-          ? ("next" as const)
-          : autoDownload === "next"
-            ? ("season" as const)
-            : ("off" as const);
-      setAutoDownload(next);
-      void container.config.update({ autoDownload: next });
-      void container.config.save();
-      return;
-    }
   });
 
   if (viewport.tooSmall) {
@@ -72,9 +59,6 @@ export function LibraryShell({
       />
     );
   }
-
-  const autoLabel =
-    autoDownload === "next" ? "next ep" : autoDownload === "season" ? "season" : "off";
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -89,7 +73,7 @@ export function LibraryShell({
       </Box>
       {/* Single-line status */}
       <Text color={palette.dim} dimColor>
-        {downloadsEnabled ? "downloads on" : "downloads off"} · auto: {autoLabel}
+        {downloadsEnabled ? "downloads on" : "downloads off"} · runway: title opt-in
       </Text>
 
       <Box marginTop={1} flexDirection="column" flexGrow={1}>
@@ -107,7 +91,7 @@ export function LibraryShell({
         <Text color={palette.dim} dimColor>
           {tab === "library"
             ? "↑↓ navigate · ↵ open · x delete · p protect · Tab switch"
-            : "Tab switch to library · d toggle downloads · a auto-download"}
+            : "Tab switch to library · d toggle downloads"}
         </Text>
       </Box>
     </Box>

@@ -319,6 +319,95 @@ export const dataMigrations: readonly Migration[] = [
         ON download_jobs(status, artifact_status, updated_at DESC);
     `,
   },
+  {
+    id: "016_data_download_job_episode_intent_index",
+    database: "data",
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_download_jobs_episode_intent
+        ON download_jobs(title_id, season, episode, status, updated_at DESC);
+    `,
+  },
+  {
+    id: "017_data_offline_library_assets",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS offline_assets (
+        id TEXT PRIMARY KEY,
+        identity_key TEXT NOT NULL UNIQUE,
+        title_id TEXT NOT NULL,
+        title_name TEXT NOT NULL,
+        media_kind TEXT NOT NULL,
+        season INTEGER,
+        episode INTEGER,
+        profile_key TEXT NOT NULL,
+        origin_job_id TEXT REFERENCES download_jobs(id) ON DELETE SET NULL,
+        file_path TEXT NOT NULL,
+        state TEXT NOT NULL,
+        byte_size INTEGER,
+        duration_ms INTEGER,
+        timing_json TEXT,
+        last_validated_at TEXT,
+        protected INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_offline_assets_title_episode
+        ON offline_assets(title_id, season, episode, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_offline_assets_ready_title
+        ON offline_assets(state, title_id, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS offline_asset_tracks (
+        asset_id TEXT NOT NULL REFERENCES offline_assets(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        language TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        state TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(asset_id, kind, language)
+      );
+
+      CREATE TABLE IF NOT EXISTS offline_asset_artwork (
+        asset_id TEXT NOT NULL REFERENCES offline_assets(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        state TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(asset_id, kind)
+      );
+
+      CREATE TABLE IF NOT EXISTS offline_title_policies (
+        title_id TEXT PRIMARY KEY,
+        media_kind TEXT NOT NULL,
+        title_name TEXT NOT NULL,
+        enrolled INTEGER NOT NULL DEFAULT 0,
+        runway_target INTEGER NOT NULL DEFAULT 0,
+        profile_json TEXT NOT NULL,
+        cleanup_json TEXT NOT NULL,
+        paused_reason TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_offline_title_policies_enrolled
+        ON offline_title_policies(enrolled, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS offline_maintenance_jobs (
+        id TEXT PRIMARY KEY,
+        asset_id TEXT NOT NULL REFERENCES offline_assets(id) ON DELETE CASCADE,
+        operation TEXT NOT NULL,
+        status TEXT NOT NULL,
+        error_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_offline_maintenance_active_operation
+        ON offline_maintenance_jobs(asset_id, operation)
+        WHERE status IN ('queued', 'running');
+      CREATE INDEX IF NOT EXISTS idx_offline_maintenance_runnable
+        ON offline_maintenance_jobs(status, created_at ASC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

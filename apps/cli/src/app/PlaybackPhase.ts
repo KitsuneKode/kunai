@@ -112,10 +112,6 @@ import {
   createCorrelationId,
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
-import {
-  resolveAutoDownloadScope,
-  selectEpisodesForDownloadScope,
-} from "@/services/download/download-scope-policy";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { PlaybackResolveCoordinator } from "@/services/playback/PlaybackResolveCoordinator";
@@ -595,7 +591,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     let sessionSoftProviderId: string | null = null;
     const sourceRefreshCooldown = createSourceRefreshCooldownState();
     let pendingSourceRefreshAction: SourceRefreshAction | null = null;
-    let autoDownloadSeasonQueued = false;
 
     try {
       // Episode selection (for series)
@@ -1618,107 +1613,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 wasPrefetched: Boolean(consumedBundle),
               },
             });
-          }
-
-          const autoDownloadScope = resolveAutoDownloadScope({
-            mode: config.autoDownload,
-            nextCount: config.autoDownloadNextCount,
-          });
-          if (title.type === "series" && autoDownloadScope) {
-            const enqueueAutoDownload = async (targetEpisode: EpisodeInfo) => {
-              if (
-                container.downloadService.hasJobForEpisode({
-                  titleId: title.id,
-                  season: targetEpisode.season,
-                  episode: targetEpisode.episode,
-                })
-              ) {
-                return false;
-              }
-              await container.downloadService.enqueue({
-                title,
-                episode: targetEpisode,
-                providerId: resolvedProviderId,
-                mode: stateManager.getState().mode,
-                posterUrl: title.posterUrl,
-                audioPreference:
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.audio
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.audio
-                      : config.seriesLanguageProfile.audio,
-                subtitlePreference:
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.subtitle
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.subtitle
-                      : config.seriesLanguageProfile.subtitle,
-                qualityPreference:
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.quality
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.quality
-                      : config.seriesLanguageProfile.quality,
-              });
-              return true;
-            };
-
-            try {
-              if (
-                !(autoDownloadScope.type === "current-season-remaining" && autoDownloadSeasonQueued)
-              ) {
-                if (autoDownloadScope.type === "current-season-remaining") {
-                  autoDownloadSeasonQueued = true;
-                }
-                const needsSeasonEpisodes =
-                  autoDownloadScope.type === "current-season-remaining" ||
-                  autoDownloadScope.type === "next-n";
-                const seasonEpisodes = needsSeasonEpisodes
-                  ? (await fetchEpisodes(title.id, currentEpisode.season))?.map((candidate) => ({
-                      season: currentEpisode.season,
-                      episode: candidate.number,
-                      name: candidate.name,
-                      airDate: candidate.airDate,
-                      overview: candidate.overview,
-                    }))
-                  : null;
-                const targets = selectEpisodesForDownloadScope({
-                  scope: autoDownloadScope,
-                  currentEpisode,
-                  nextEpisode: episodeAvailability.nextEpisode,
-                  seasonEpisodes,
-                });
-                let queuedCount = 0;
-                for (const targetEpisode of targets) {
-                  if (await enqueueAutoDownload(targetEpisode)) {
-                    queuedCount += 1;
-                  }
-                }
-                if (queuedCount > 0) {
-                  this.updatePlaybackFeedback(context, {
-                    note:
-                      autoDownloadScope.type === "current-season-remaining"
-                        ? `⬇ Season ${currentEpisode.season} auto-queued (${queuedCount} episodes)`
-                        : queuedCount === 1
-                          ? "⬇ Next episode auto-queued for offline"
-                          : `⬇ Next ${queuedCount} episodes auto-queued for offline`,
-                  });
-                  void container.downloadService.processQueue();
-                }
-              }
-            } catch (error) {
-              diagnosticsStore.record({
-                category: "download",
-                message: "Auto-download queue failed",
-                context: {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  mode: config.autoDownload,
-                  error: String(error),
-                },
-              });
-            }
           }
 
           const playbackControlAction = playerControl.consumeLastAction();

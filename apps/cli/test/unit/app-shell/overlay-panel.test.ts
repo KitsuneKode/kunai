@@ -104,14 +104,14 @@ test("settings expose discover and offline controls that already exist in config
   expect(values).toContain("discoverMode");
   expect(values).toContain("discoverItemLimit");
   expect(values).toContain("downloadsEnabled");
-  expect(values).toContain("autoDownloadNextCount");
+  expect(values).toContain("section:offline-continuation");
   expect(values).toContain("recoveryMode");
   expect(values).toContain("autoCleanupGraceDays");
   expect(values).toContain("downloadPath");
   expect(options.find((option) => option.value === "discoverMode")?.label).toContain("anime-only");
-  expect(options.find((option) => option.value === "autoDownloadNextCount")?.label).toContain(
-    "3 episodes",
-  );
+  expect(
+    options.find((option) => option.value === "section:offline-continuation")?.detail,
+  ).toContain("per title");
   expect(options.find((option) => option.value === "downloadPath")?.label).toContain("configured");
   expect(options.find((option) => option.value === "recoveryMode")?.label).toContain("manual");
 });

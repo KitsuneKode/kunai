@@ -5,6 +5,11 @@
 // =============================================================================
 
 export type { KitsuneConfig } from "./ConfigService";
+import {
+  DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
+  DEFAULT_OFFLINE_RUNWAY_TARGET,
+  DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
+} from "../download/StorageBudgetPolicy";
 import type { KitsuneConfig } from "./ConfigService";
 
 export interface ConfigStore {
@@ -55,6 +60,9 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   recoveryMode: "guided",
   artworkPreviewsEnabled: true,
   offlineArtworkCacheEnabled: true,
+  offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
+  offlineUnknownEpisodeEstimateBytes: DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
+  offlineDefaultRunwayTarget: DEFAULT_OFFLINE_RUNWAY_TARGET,
   autoCleanupGraceDays: 7,
   protectedDownloadJobIds: [],
   onboardingVersion: 0,

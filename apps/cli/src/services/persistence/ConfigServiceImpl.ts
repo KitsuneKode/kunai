@@ -3,6 +3,11 @@
 // =============================================================================
 
 import { normalizeAutoDownloadNextCount } from "@/services/download/download-scope-policy";
+import {
+  DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
+  DEFAULT_OFFLINE_RUNWAY_TARGET,
+  DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
+} from "@/services/download/StorageBudgetPolicy";
 
 import type {
   ConfigService,
@@ -66,7 +71,17 @@ export class ConfigServiceImpl implements ConfigService {
       animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
       movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
+      autoDownload: "off",
       autoDownloadNextCount: normalizeAutoDownloadNextCount(loaded.autoDownloadNextCount),
+      offlineFreeSpaceReserveBytes: normalizeBytes(
+        loaded.offlineFreeSpaceReserveBytes,
+        DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
+      ),
+      offlineUnknownEpisodeEstimateBytes: normalizeBytes(
+        loaded.offlineUnknownEpisodeEstimateBytes,
+        DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
+      ),
+      offlineDefaultRunwayTarget: normalizeRunwayTarget(loaded.offlineDefaultRunwayTarget),
       protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
     };
@@ -214,6 +229,18 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.offlineArtworkCacheEnabled;
   }
 
+  get offlineFreeSpaceReserveBytes(): number {
+    return this.config.offlineFreeSpaceReserveBytes;
+  }
+
+  get offlineUnknownEpisodeEstimateBytes(): number {
+    return this.config.offlineUnknownEpisodeEstimateBytes;
+  }
+
+  get offlineDefaultRunwayTarget(): number {
+    return this.config.offlineDefaultRunwayTarget;
+  }
+
   get autoCleanupGraceDays(): number {
     return this.config.autoCleanupGraceDays;
   }
@@ -313,6 +340,26 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.autoDownloadNextCount !== undefined
         ? { autoDownloadNextCount: normalizeAutoDownloadNextCount(partial.autoDownloadNextCount) }
         : null),
+      ...(partial.autoDownload !== undefined ? { autoDownload: "off" as const } : null),
+      ...(partial.offlineFreeSpaceReserveBytes !== undefined
+        ? {
+            offlineFreeSpaceReserveBytes: normalizeBytes(
+              partial.offlineFreeSpaceReserveBytes,
+              DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
+            ),
+          }
+        : null),
+      ...(partial.offlineUnknownEpisodeEstimateBytes !== undefined
+        ? {
+            offlineUnknownEpisodeEstimateBytes: normalizeBytes(
+              partial.offlineUnknownEpisodeEstimateBytes,
+              DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
+            ),
+          }
+        : null),
+      ...(partial.offlineDefaultRunwayTarget !== undefined
+        ? { offlineDefaultRunwayTarget: normalizeRunwayTarget(partial.offlineDefaultRunwayTarget) }
+        : null),
       ...(partial.protectedDownloadJobIds !== undefined
         ? { protectedDownloadJobIds: normalizeStringList(partial.protectedDownloadJobIds) }
         : null),
@@ -358,4 +405,14 @@ function normalizeStringList(values: readonly string[] | undefined): readonly st
 
 function normalizeRecoveryMode(value: unknown): RecoveryMode {
   return value === "fallback-first" || value === "manual" ? value : "guided";
+}
+
+function normalizeBytes(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.trunc(value));
+}
+
+function normalizeRunwayTarget(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_OFFLINE_RUNWAY_TARGET;
+  return Math.max(1, Math.min(24, Math.trunc(value)));
 }

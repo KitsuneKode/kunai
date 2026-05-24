@@ -87,9 +87,12 @@ export interface KitsuneConfig {
   presenceDiscordOpenUrl: string;
   /** Optional offline download feature gate. Default off until the user opts in. */
   downloadsEnabled: boolean;
-  /** Queue future episodes automatically after playback. Default off. */
+  /**
+   * Legacy streaming auto-download preference. Non-off stored values normalize to off;
+   * automatic downloads require explicit per-title offline-continuation enrollment.
+   */
   autoDownload: AutoDownloadMode;
-  /** When autoDownload is "next", optionally keep the next N episodes queued. Default 1. */
+  /** Legacy bounded batch preference retained for config compatibility only. */
   autoDownloadNextCount: number;
   /** Surface completed watched downloads as cleanup candidates after the grace period. Default false. */
   autoCleanupWatched: boolean;
@@ -99,6 +102,12 @@ export interface KitsuneConfig {
   artworkPreviewsEnabled: boolean;
   /** Best-effort cache poster artwork for downloaded entries. Default true. */
   offlineArtworkCacheEnabled: boolean;
+  /** Bytes reserved on the download volume before accepting additional offline media. */
+  offlineFreeSpaceReserveBytes: number;
+  /** Conservative byte estimate used when an episode size is unknown before download. */
+  offlineUnknownEpisodeEstimateBytes: number;
+  /** Default future local episode target offered when enrolling a title. */
+  offlineDefaultRunwayTarget: number;
   /** Days to keep watched downloads before startup cleanup may suggest them. */
   autoCleanupGraceDays: number;
   /** Completed download job ids protected from watched-download cleanup suggestions. */

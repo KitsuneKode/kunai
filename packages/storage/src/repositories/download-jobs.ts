@@ -484,6 +484,33 @@ export class DownloadJobsRepository {
     return row === null ? undefined : mapRow(row);
   }
 
+  findBlockingEpisodeIntent(input: {
+    readonly titleId: string;
+    readonly season?: number;
+    readonly episode?: number;
+  }): DownloadJobRecord | undefined {
+    const row = this.db
+      .query<DownloadJobRow, [string, number | null, number | null, number | null, number | null]>(
+        `
+          SELECT * FROM download_jobs
+          WHERE title_id = ?
+            AND (? IS NULL OR season = ?)
+            AND (? IS NULL OR episode = ?)
+            AND status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable')
+          ORDER BY updated_at DESC
+          LIMIT 1
+        `,
+      )
+      .get(
+        input.titleId,
+        input.season ?? null,
+        input.season ?? null,
+        input.episode ?? null,
+        input.episode ?? null,
+      );
+    return row === null ? undefined : mapRow(row);
+  }
+
   listQueued(limit = 20): readonly DownloadJobRecord[] {
     return this.db
       .query<DownloadJobRow, [number]>(
