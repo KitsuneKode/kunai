@@ -4,7 +4,8 @@ This is the canonical design reference for future download/offline/onboarding wo
 
 Status: in progress (`--download`, `/download`, `/downloads`, `/library`, validated
 `--offline`, local poster/timing/duration metadata, local resume progress, repairable sidecar states,
-and best-effort video thumbnails are implemented; daemon extraction and batch downloads are still pending).
+best-effort video thumbnails, confirmation-gated manual profiles, and title-scoped offline runway
+decisions are implemented; richer per-title policy editing and daemon extraction are still pending).
 
 ## Product Shape
 
@@ -36,6 +37,11 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - Downloads use **`yt-dlp`**; **`ffprobe`** on `PATH` is optional for validating completed artifacts.
 - **`ffmpeg`** on `PATH` is optional for generating local `*.thumbnail.jpg` sidecars after a successful download.
 - Downloads are opt-in and blocked at enqueue time when feature gates are not usable.
+- Manual download-only actions show the effective audio/subtitle/quality/artwork/location profile
+  before enqueue. Provider stream resolution begins only after that confirmation; anime title
+  selection does not scrape provider episode lists merely to render the confirmation path.
+- Manual confirmation can enroll a series title in bounded `Keep watching offline`; that policy
+  applies only to downloaded playback continuity and never turns streamed playback into hidden downloads.
 - HLS size is reported honestly as unknown when content length cannot be known.
 - Temporary files use a `.tmp.*` suffix and are renamed only after a clean exit.
 - Abort terminates active download processes (`yt-dlp`), deletes temporary files, and persists an aborted job state.
@@ -66,6 +72,9 @@ Layering rule: UI asks services for capability/state; services do not render UI.
   copy exists; downloaded state is a badge/action, not a silent hijack.
 - Continue-style flows may prefer a ready local file before provider resolution, but online
   continuation must remain an explicit action when local episodes are exhausted or broken.
+- History/Continue rows may promote a cached downloaded next episode and show cached `N new`;
+  until a direct local row action is selected, the row says to open `/library` for local playback
+  rather than silently changing an ordinary history continuation.
 - Local playback uses the same persisted/session autoskip policy as online playback so intro,
   recap, preview, and credits behavior does not unexpectedly change between streamed and
   downloaded files.

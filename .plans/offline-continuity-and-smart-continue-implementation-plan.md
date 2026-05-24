@@ -32,13 +32,25 @@ Implemented:
 - Continue projection can surface offline-ready next episodes and cached `N new` badges while preserving unfinished resume precedence.
 - Release reconciliation candidates carry attention priority for selected, enrolled, visible, stale, and dormant titles.
 - Power Saver setting suppresses passive release reconciliation, next-episode prefetch, recommendation warming, runway refill, and optional artwork preparation.
+- Manual download-only actions now present a confirmation profile before enqueue, optionally enroll
+  a title for bounded offline continuation, and no longer query anime provider episode lists merely
+  to reach confirmation. CLI `--download` also defers anime provider-native mapping until after
+  the user confirms the profile.
+- History's Continue Watching section now consumes bulk local/cached continuation projections,
+  ranks downloaded-next and cached `N new` rows without provider/filesystem work, reads only the
+  next ready offline candidate per title, and keeps local playback copy explicit through `/library`.
+- History activation and queue shortcuts target the projected episode instead of the prior watched
+  anchor when an offline-ready or catalog-new projection is selected.
+- Support bundles now summarize offline runway, capacity pauses, and bounded maintenance passes
+  through redacted diagnostics taxonomy entries.
 
 Remaining before calling the full platform complete:
 
-- Manual download profile confirmation UI is still minimal; richer subtitle/artwork/profile choices should be added before treating downloads as a premium management surface.
-- Continue Watching panel ranking and History chronological separation need a dedicated shell pass using the new projection fields.
-- Offline library/download-manager UI still needs the unified constrained-online/offline experience, repair affordance polish, cleanup policy editing, and capacity copy.
-- Diagnostics should expose the new maintenance/runway decisions in support bundles without leaking URLs.
+- Manual download confirmation currently reviews inherited playback preferences; editable subtitle,
+  artwork, destination, and cleanup profiles remain a dedicated premium-management pass.
+- Offline library/download-manager UI still needs title-level cleanup policy editing and a direct
+  History-row local-play action from the History surface; low-space queue copy and repair affordances
+  are now explicit.
 - Manual product smoke with real mpv/download/offline playback remains release-time verification, not a deterministic unit gate.
 
 ---

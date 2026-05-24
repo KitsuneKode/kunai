@@ -199,6 +199,8 @@ Keep deeper detail in a diagnostics overlay:
 - scrape timing
 - retry and fallback history
 - capability state for `mpv`, Playwright, and image backends
+- offline runway, storage-reserve pauses, and maintenance waiting reasons; expose bounded
+  decision summaries only, never local paths, stream URLs, request headers, or subtitle URLs
 
 Autoplay and next/previous actions should follow real episode availability from provider or metadata catalogs, not guessed episode numbers.
 

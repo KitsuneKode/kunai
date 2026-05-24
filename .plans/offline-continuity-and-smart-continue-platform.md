@@ -1,6 +1,7 @@
 # Offline Continuity And Smart Continue Platform
 
-Status: partially implemented; core storage, runway, reconciliation priority, and power-saver gates landed
+Status: partially implemented; core storage, confirmation gate, smart History projection, runway,
+redacted diagnostics, reconciliation priority, and power-saver gates landed
 
 Date: 2026-05-24
 
