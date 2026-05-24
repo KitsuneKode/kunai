@@ -18,12 +18,11 @@ redesigns** (user-chosen).
 - [x] **A2 — session context bleeds into fresh search.** "autoplay paused" banner
   - `/download` context active after returning from playback. Fixed `68ee5a16`:
     `SessionController.ts` now dispatches `RESET_CONTENT` on `back_to_search`.
-- [ ] **A3 — post-play recommendations never show.** `PostPlayShell` supports
-      `recommendations` and `PlaybackPhase.ts:2509` passes `recommendationRailItems`,
-      but they're seeded synchronously and only _warmed_ fire-and-forget
-      (`PlaybackPhase.ts:2447`) — post-play opens before warm completes and there's
-      **no re-render when recs arrive**. Fix: refresh the post-play shell when the
-      warm finishes (or await a short budget before first paint when seed is empty).
+- [x] **A3 — post-play recommendations never show.** `649e8930`: the seed-empty
+      path warmed recs into a background task whose result was only logged (no
+      re-render path). Replaced with a budgeted live load (≤1200ms) before first
+      paint, loaded at most once per post-play session, so the rail is populated
+      when the shell opens. **Needs live confirm** recs render after a finish.
 - [ ] **A4 — search-result poster never renders.** Companion shows only the
       letter tile (Img 8/9). Episode stills DO render in the picker, so the pipeline
       works for some sizes. Likely the detail/companion variant URL or capability.
@@ -55,9 +54,11 @@ redesigns** (user-chosen).
 - [ ] **B9 — palette overflows/corrupts layout** on results/playback (Img 10,
       "moreloads" overlap). Palette taller than its slot collides with the list.
       Needs a bounded fixed-height container; verify against `maxVisible` budget.
-- [ ] **B10 — calendar layout garbled** (Img 23/24). Day labels, titles, and
-      availability strings overlap/interleave — broken column composition in
-      `calendar-ui.tsx` / `calendar-results.ts`. Highest-visibility layout bug.
+- [x] **B10 — calendar layout garbled** (Img 23/24). `6fd9020d`: `CalendarScheduleRow`
+      guessed the title budget as `rowWidth-22`, so long availability labels +
+      badges overflowed and wrapped into the next row. Now the title is truncated
+      to the measured remaining width after marker+glyph+label+badge so the line
+      always fits. **Needs live-terminal confirm** the interleave is gone.
 
 ## C. Surface redesigns (spec exists, not implemented)
 
@@ -93,8 +94,9 @@ redesigns** (user-chosen).
   - recs + per-state layout. Today sparse text. Spec: `post-playback.md`.
     (A1/A3 are prerequisites.)
 - [ ] **C15 — History** consistency polish (Img 20). Spec: `stats-history-library.md`.
-- [ ] **C16 — Calendar tabs** → Tab/Shift+Tab segmented tabs (like Claude Code),
-      not "1 2 3 4". Pairs with B10.
+- [x] **C16 — Calendar tabs** → `6fd9020d`: Tab/Shift+Tab cycle the type tabs
+      (number keys removed; mode toggle suppressed in calendar view); tab strip +
+      footer hints updated. Pairs with B10.
 
 ## D. Cross-cutting
 
