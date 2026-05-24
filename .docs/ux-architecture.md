@@ -116,6 +116,9 @@ Title details should be honest about data quality:
 - show overview, poster availability, rating, episode count, and provider facts when the source returned them
 - promote local progress, offline availability, and broken local artifact state near the title summary when known
 - show calendar entries as release facts, not playable guarantees
+- show cached offline-ready History continuation as an explicit local action only when a durable
+  downloaded job is addressable; Enter may launch that local file, while ordinary History actions
+  retain their online intent
 - show explicit unavailable placeholders when a provider-native result does not expose those fields
 - keep actual Kitty/Ghostty image rendering outside the Ink render tree until the image-pane service owns layout, clearing, and flicker control
 - never require image support for selection, playback, or episode navigation

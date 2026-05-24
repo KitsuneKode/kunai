@@ -4,8 +4,9 @@ This is the canonical design reference for future download/offline/onboarding wo
 
 Status: in progress (`--download`, `/download`, `/downloads`, `/library`, validated
 `--offline`, local poster/timing/duration metadata, local resume progress, repairable sidecar states,
-best-effort video thumbnails, confirmation-gated manual profiles, and title-scoped offline runway
-decisions are implemented; richer per-title policy editing and daemon extraction are still pending).
+best-effort video thumbnails, editable confirmation-gated manual profiles, title-scoped offline
+runway decisions, cleanup preferences, and explicit History local handoff are implemented; daemon
+extraction is still pending).
 
 ## Product Shape
 
@@ -38,10 +39,15 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - **`ffmpeg`** on `PATH` is optional for generating local `*.thumbnail.jpg` sidecars after a successful download.
 - Downloads are opt-in and blocked at enqueue time when feature gates are not usable.
 - Manual download-only actions show the effective audio/subtitle/quality/artwork/location profile
-  before enqueue. Provider stream resolution begins only after that confirmation; anime title
-  selection does not scrape provider episode lists merely to render the confirmation path.
+  before enqueue. The confirmation can cycle subtitle/quality, toggle artwork, choose the configured
+  or default destination, set bounded runway intent, and choose watched-cleanup suggestions. Set a
+  new destination path in Settings. Provider stream resolution begins only after final confirmation;
+  anime title selection does not scrape provider episode lists merely to render the confirmation path.
 - Manual confirmation can enroll a series title in bounded `Keep watching offline`; that policy
   applies only to downloaded playback continuity and never turns streamed playback into hidden downloads.
+- One-off series downloads still store the selected title cleanup/profile intent for local management,
+  but do not schedule offline runway work unless `Keep watching offline` was selected and do not
+  revoke an existing title enrollment.
 - HLS size is reported honestly as unknown when content length cannot be known.
 - Temporary files use a `.tmp.*` suffix and are renamed only after a clean exit.
 - Abort terminates active download processes (`yt-dlp`), deletes temporary files, and persists an aborted job state.
@@ -72,9 +78,13 @@ Layering rule: UI asks services for capability/state; services do not render UI.
   copy exists; downloaded state is a badge/action, not a silent hijack.
 - Continue-style flows may prefer a ready local file before provider resolution, but online
   continuation must remain an explicit action when local episodes are exhausted or broken.
-- History/Continue rows may promote a cached downloaded next episode and show cached `N new`;
-  until a direct local row action is selected, the row says to open `/library` for local playback
-  rather than silently changing an ordinary history continuation.
+- History/Continue rows may promote a cached downloaded next episode and show cached `N new`.
+  When durable local identity exists, Enter explicitly plays that downloaded episode through the
+  validated offline path. Otherwise the row directs the user to `/library`; ordinary online history
+  playback is never silently replaced.
+- Offline title actions may choose to keep the latest watched local episode or apply a configured
+  grace window to cleanup suggestions. The global cleanup setting remains the master gate and these
+  controls do not delete files as a side effect of selection.
 - Local playback uses the same persisted/session autoskip policy as online playback so intro,
   recap, preview, and credits behavior does not unexpectedly change between streamed and
   downloaded files.

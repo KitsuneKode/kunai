@@ -1,7 +1,8 @@
 # Offline Continuity And Smart Continue Platform
 
-Status: partially implemented; core storage, confirmation gate, smart History projection, runway,
-redacted diagnostics, reconciliation priority, and power-saver gates landed
+Status: implemented platform foundation; storage, editable confirmation, smart History local handoff,
+runway, cleanup controls, redacted diagnostics, reconciliation priority, and power-saver gates landed.
+Real mpv/offline interactive smoke remains a bounded release check.
 
 Date: 2026-05-24
 

@@ -19,6 +19,7 @@ Landed in scoped commits:
 - `74074cdf feat: establish capacity-safe offline asset foundation`
 - `e7fa5d18 feat: fill enrolled offline continuation runway safely`
 - `8e6ae10 feat: add power-aware smart continuation`
+- `5bbce1f feat: complete offline continuity controls`
 
 Implemented:
 
@@ -38,20 +39,30 @@ Implemented:
   the user confirms the profile.
 - History's Continue Watching section now consumes bulk local/cached continuation projections,
   ranks downloaded-next and cached `N new` rows without provider/filesystem work, reads only the
-  next ready offline candidate per title, and keeps local playback copy explicit through `/library`.
+  next ready offline candidate per title, and keeps local playback explicit: addressable offline
+  rows play locally on Enter while non-addressable downloaded rows direct users to `/library`.
 - History activation and queue shortcuts target the projected episode instead of the prior watched
   anchor when an offline-ready or catalog-new projection is selected.
 - Support bundles now summarize offline runway, capacity pauses, and bounded maintenance passes
   through redacted diagnostics taxonomy entries.
+- Manual download confirmation now edits subtitle, quality, artwork, approved destination, runway,
+  and watched-cleanup intent before any provider stream work; an arbitrary new destination remains
+  a Settings action. One-off series confirmation stores title cleanup/profile intent without
+  granting runway authority or revoking existing enrollment; partially successful batches retain
+  that confirmed intent for already-queued local work.
+- Per-title offline library controls now persist cleanup preference and feed the existing bounded
+  cleanup-candidate evaluation through one bulk policy read and one bounded recent-history read,
+  replacing startup per-title history fan-out.
+- Offline-ready History rows carrying a durable local job identity now say that Enter plays the
+  downloaded episode and route explicitly through validated local playback; ordinary History
+  selections remain online and are never silently hijacked.
+- A deterministic local handoff test covers offline playback history/runway scheduling without
+  opening mpv or contacting a provider.
 
 Remaining before calling the full platform complete:
 
-- Manual download confirmation currently reviews inherited playback preferences; editable subtitle,
-  artwork, destination, and cleanup profiles remain a dedicated premium-management pass.
-- Offline library/download-manager UI still needs title-level cleanup policy editing and a direct
-  History-row local-play action from the History surface; low-space queue copy and repair affordances
-  are now explicit.
-- Manual product smoke with real mpv/download/offline playback remains release-time verification, not a deterministic unit gate.
+- Manual product smoke with real mpv/download/offline playback remains release-time verification,
+  not a deterministic unit gate. Automated checks use local fakes intentionally.
 
 ---
 
