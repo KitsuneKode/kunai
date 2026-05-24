@@ -10,6 +10,39 @@
 
 ---
 
+## Implementation Status
+
+**Last reconciled:** 2026-05-24
+
+Landed in scoped commits:
+
+- `74074cdf feat: establish capacity-safe offline asset foundation`
+- `e7fa5d18 feat: fill enrolled offline continuation runway safely`
+- `8e6ae10 feat: add power-aware smart continuation`
+
+Implemented:
+
+- Hidden passive work removed from download-only, browse enrichment, and streamed playback auto-download paths.
+- Download admission now has an indexed episode-intent lookup before enqueueing duplicate work.
+- Durable offline asset, sidecar/artwork, per-title policy, and maintenance job storage exists.
+- Completed download jobs lazily adopt into the offline asset model and browse enrichment reads recorded status without filesystem validation.
+- Storage budget policy blocks automatic runway work when local capacity is too low.
+- Offline runway refill is title-enrollment driven, scheduler-deduped, and catalog/cache based; it does not scan all history or call providers from UI paths.
+- Offline maintenance is persisted and local-first; Power Saver suppresses optional repair/artwork work.
+- Continue projection can surface offline-ready next episodes and cached `N new` badges while preserving unfinished resume precedence.
+- Release reconciliation candidates carry attention priority for selected, enrolled, visible, stale, and dormant titles.
+- Power Saver setting suppresses passive release reconciliation, next-episode prefetch, recommendation warming, runway refill, and optional artwork preparation.
+
+Remaining before calling the full platform complete:
+
+- Manual download profile confirmation UI is still minimal; richer subtitle/artwork/profile choices should be added before treating downloads as a premium management surface.
+- Continue Watching panel ranking and History chronological separation need a dedicated shell pass using the new projection fields.
+- Offline library/download-manager UI still needs the unified constrained-online/offline experience, repair affordance polish, cleanup policy editing, and capacity copy.
+- Diagnostics should expose the new maintenance/runway decisions in support bundles without leaking URLs.
+- Manual product smoke with real mpv/download/offline playback remains release-time verification, not a deterministic unit gate.
+
+---
+
 ## Read First
 
 Before changing code, read these in order:

@@ -1,6 +1,6 @@
 # Offline Continuity And Smart Continue Platform
 
-Status: approved design, implementation pending
+Status: partially implemented; core storage, runway, reconciliation priority, and power-saver gates landed
 
 Date: 2026-05-24
 
