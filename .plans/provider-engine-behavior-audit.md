@@ -1,6 +1,6 @@
 # Provider Engine Behavior Audit
 
-Status: implemented in local-first slices; live provider smoke not run
+Status: implemented in local-first slices; one approval-gated provider smoke run on 2026-05-25
 
 Date: 2026-05-24
 
@@ -667,7 +667,10 @@ For implementation slices later:
 - `bun run fmt:check`
 - `bun run test`
 
-Manual live provider smoke is deliberately excluded until requested.
+An approval-gated live provider smoke was run on 2026-05-25 after implementation:
+VidKing, Rivestream, and AllManga resolved successfully; Miruro failed as a
+classified network error from this environment. Routine live provider smoke
+remains excluded, and real mpv playback smoke remains manual.
 
 ## Open Policy Questions
 

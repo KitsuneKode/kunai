@@ -11,9 +11,11 @@
 **Source Audit:** [.plans/provider-engine-behavior-audit.md](./provider-engine-behavior-audit.md)
 
 **Current status (2026-05-25):** Tasks 1-9 are implemented as local-first
-deterministic slices. Tasks 10-11 remain deferred and unimplemented. No live
-provider smoke, remote telemetry, Cloudflare Worker, or aggregate health service
-was run or built.
+deterministic slices. Tasks 10-11 remain deferred and unimplemented. One
+approval-gated provider smoke was run on 2026-05-25: VidKing, Rivestream, and
+AllManga resolved successfully; Miruro failed as a classified network error
+from this environment. No remote telemetry, Cloudflare Worker, aggregate health
+service, or real mpv playback smoke was run or built.
 
 Implemented refinements:
 
