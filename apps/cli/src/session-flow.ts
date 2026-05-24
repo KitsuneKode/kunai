@@ -14,7 +14,7 @@ import {
   formatTimestamp,
   isFinished,
 } from "@/services/persistence/HistoryStore";
-import { fetchEpisodes, fetchSeriesData } from "@/tmdb";
+import { type EpisodeInfo, fetchEpisodes, fetchSeriesData } from "@/tmdb";
 
 export type EpisodeSelection = {
   season: number;
@@ -206,11 +206,42 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
     animeEpisodes: opts.animeEpisodes,
   });
 
+  // Resolve real episode names so each choice says *what* it plays, not just a
+  // code. Anime names come from the in-memory list; series names from one
+  // (cached) TMDB fetch per season. TMDB stubs unknown titles as "Episode N" —
+  // those are dropped so we never show a redundant name.
+  const seasonEpisodeCache = new Map<number, readonly EpisodeInfo[] | null>();
+  const loadSeasonEpisodes = async (season: number): Promise<readonly EpisodeInfo[] | null> => {
+    if (seasonEpisodeCache.has(season)) return seasonEpisodeCache.get(season) ?? null;
+    const episodes = await fetchEpisodes(opts.currentId, season).catch(() => null);
+    seasonEpisodeCache.set(season, episodes);
+    return episodes;
+  };
+  const resolveEpisodeName = async (
+    season: number,
+    episode: number,
+  ): Promise<string | undefined> => {
+    const raw = opts.isAnime
+      ? opts.animeEpisodes?.find((option) => option.index === episode)?.name
+      : (await loadSeasonEpisodes(season))?.find((entry) => entry.number === episode)?.name;
+    const name = raw?.trim();
+    return name && !/^episode\s+\d+$/i.test(name) ? name : undefined;
+  };
+
+  const currentName = finished
+    ? undefined
+    : await resolveEpisodeName(history.season, history.episode);
+  const nextName = nextEpisode
+    ? await resolveEpisodeName(nextEpisode.season, nextEpisode.episode)
+    : undefined;
+  const withName = (base: string, name: string | undefined): string =>
+    name ? `${base} · ${name}` : base;
+
   const choice = (await openListShell({
     title: "Where to start?",
-    subtitle: opts.isAnime
-      ? "Choose the starting episode"
-      : "Choose the starting season and episode",
+    subtitle: `${history.title} · choose the starting ${
+      opts.isAnime ? "episode" : "season and episode"
+    }`,
     actionContext: createPickerActionContext(opts.container, "Choose starting point"),
     options: [
       ...(!finished
@@ -218,12 +249,12 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
             {
               value: "resume" as const,
               label: `▶ Resume S${history.season}E${history.episode}`,
-              detail: `Continue from ${resumeAt}`,
+              detail: withName(`Continue from ${resumeAt}`, currentName),
             },
             {
               value: "restart" as const,
               label: `↻ Restart S${history.season}E${history.episode}`,
-              detail: "Start the current episode from the beginning",
+              detail: withName("Start the current episode from the beginning", currentName),
             },
           ]
         : []),
@@ -233,7 +264,7 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
           ? `⏭ Next episode  S${nextEpisode.season}E${nextEpisode.episode}`
           : "⏭ Next episode unavailable",
         detail: nextEpisode
-          ? "Advance to the next released episode"
+          ? withName("Advance to the next released episode", nextName)
           : "No later released episode is available yet",
       },
       {
