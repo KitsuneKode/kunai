@@ -2,7 +2,6 @@ import type { PostPlayState } from "@/domain/playback/post-play-state";
 import { Box, Text } from "ink";
 import React from "react";
 
-import { ContextCard } from "./primitives/ContextCard";
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { PlaybackRecommendationRailItem } from "./types";
@@ -20,6 +19,52 @@ export type PostPlayShellProps = {
   currentSeason?: number;
 };
 
+// Thin labelled divider used between the action hero and the discovery picks,
+// matching the prototype's "──── optional discovery ────" separators.
+function Divider({ label, width }: { label?: string; width: number }) {
+  if (!label) {
+    return <Text color={palette.lineSoft}>{"─".repeat(Math.max(4, width))}</Text>;
+  }
+  const side = Math.max(2, Math.floor((width - label.length - 2) / 2));
+  return (
+    <Text color={palette.lineSoft}>
+      {"─".repeat(side)}
+      <Text color={palette.dim}>{` ${label} `}</Text>
+      {"─".repeat(Math.max(2, width - side - label.length - 2))}
+    </Text>
+  );
+}
+
+// Numbered, inline picks ("1 Title · 2 Title · 3 Title") — the prototype's
+// actionable discovery row (1–3 select). Kept compact so it never dominates the
+// action hero above it.
+function NumberedPicks({
+  items,
+  width,
+  highlightHeading,
+}: {
+  items: readonly PlaybackRecommendationRailItem[];
+  width: number;
+  highlightHeading: string;
+}) {
+  if (items.length === 0) return null;
+  const picks = items.slice(0, 3);
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Divider label={highlightHeading} width={width} />
+      <Box marginTop={1} flexDirection="column">
+        {picks.map((rec, index) => (
+          <Box key={rec.id} flexDirection="row">
+            <Text color={palette.accent} bold>{`${index + 1} `}</Text>
+            <Text color={palette.text}>{truncateLine(rec.title, width - 8)}</Text>
+            {rec.year ? <Text color={palette.dim}>{` (${rec.year})`}</Text> : null}
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 export const PostPlayShell = React.memo(function PostPlayShell({
   title,
   episodeLabel,
@@ -31,150 +76,162 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   watchedEpisodes,
   currentSeason,
 }: PostPlayShellProps) {
+  const viewport = useViewportPolicy("playback");
+  const bodyWidth = Math.min(56, Math.max(28, viewport.columns - 24));
   const progress =
     totalEpisodes && watchedEpisodes !== undefined && totalEpisodes > 0
       ? Math.round((watchedEpisodes / totalEpisodes) * 100)
       : undefined;
-
-  const viewport = useViewportPolicy("playback");
-  const showRecommendations =
-    recommendations.length > 0 && viewport.breakpoint !== "narrow" && !viewport.ultraCompact;
-  const recHeading =
-    postPlayState.kind === "series-complete" ? "because you finished this" : "you might also like";
-  const isMovie = episodeLabel === "Movie";
-  const didNotStart = postPlayState.kind === "did-not-start";
-  const progressBarWidth = Math.min(40, Math.max(16, viewport.columns - 24));
   const seriesProgressBar =
     progress !== undefined
       ? (() => {
-          const filled = Math.floor((progress / 100) * progressBarWidth);
-          return `${"█".repeat(filled)}${"░".repeat(Math.max(0, progressBarWidth - filled))}`;
+          const filled = Math.floor((progress / 100) * bodyWidth);
+          return `${"█".repeat(filled)}${"░".repeat(Math.max(0, bodyWidth - filled))}`;
         })()
       : null;
 
-  return (
-    <Box flexDirection="column" paddingX={1}>
-      {/* Title + episode context live in the ShellFrame header; the body is the
-          "what next" remote, so it leads with the outcome state, not a 2nd title. */}
-      {didNotStart ? (
-        <Text color={palette.accentDeep}>▢ playback didn’t start</Text>
-      ) : resumeLabel ? (
-        <Text color={palette.accentDeep}>⏸ stopped early</Text>
-      ) : isMovie ? (
-        <Text color={palette.ok}>✓ movie complete</Text>
-      ) : (
-        <Text color={palette.ok}>✓ episode complete</Text>
-      )}
+  const showRecommendations =
+    recommendations.length > 0 && viewport.breakpoint !== "narrow" && !viewport.ultraCompact;
+  const isMovie = episodeLabel === "Movie";
+  const didNotStart = postPlayState.kind === "did-not-start";
 
-      {didNotStart ? (
+  // ── playback didn't start ──────────────────────────────────────────────
+  if (didNotStart) {
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        <Text color={palette.accentDeep} bold>
+          ▢ playback didn’t start
+        </Text>
         <Box marginTop={1} flexDirection="column">
           <Text color={palette.textDim}>nothing was recorded for this title.</Text>
           <Box marginTop={1}>
             <Text color={palette.dim}>↵ try again · s search for another title</Text>
           </Box>
         </Box>
-      ) : null}
+      </Box>
+    );
+  }
 
-      {!didNotStart && resumeLabel ? (
-        <Box marginTop={1} flexDirection="column">
-          <Text>
-            <Text color={palette.accent}>{"▌ "}</Text>
-            <Text color={palette.accent}>↵ resume</Text>
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      {/* ── Resume hero (stopped early) ──────────────────────────────────── */}
+      {resumeLabel ? (
+        <Box flexDirection="column">
+          <Text color={palette.accentDeep} bold>
+            ⏸ stopped early
           </Text>
-          <Text color={palette.textDim}>{`  ${truncateLine(resumeLabel, 64)}`}</Text>
-        </Box>
-      ) : null}
-
-      {!didNotStart && isMovie && !resumeLabel ? (
-        <Box marginTop={1} flexDirection="column">
-          <Text color={palette.dim}>↵ replay · / search for another title</Text>
-        </Box>
-      ) : null}
-
-      {!resumeLabel && !isMovie && postPlayState.kind === "mid-series" && (
-        <Box marginTop={1} flexDirection="column">
-          <ContextCard
-            selected
-            width={Math.min(42, Math.max(28, viewport.columns - 20))}
-            model={{
-              kind: "next",
-              title: nextEpisodeLabel ?? "Next episode",
-              subtitle: "up next",
-              thumbnailState: "none",
-              stateLabel: "playable",
-              stateTone: "success",
-            }}
-          />
-        </Box>
-      )}
-
-      {postPlayState.kind === "caught-up" && (
-        <Box marginTop={1} flexDirection="column">
-          <Text color={palette.ok}>◉ caught up</Text>
-          {postPlayState.nextAirDate ? (
-            <Text color={palette.muted}>
-              {"next episode "}
-              {postPlayState.nextAirDate}
+          {seriesProgressBar ? (
+            <Box marginTop={1}>
+              <Text color={palette.accentDeep}>{seriesProgressBar}</Text>
+              <Text color={palette.dim}>{`  ${progress}% of season`}</Text>
+            </Box>
+          ) : null}
+          <Box marginTop={1} flexDirection="column">
+            <Text>
+              <Text color={palette.accent}>{"▌ "}</Text>
+              <Text color={palette.accent} bold>
+                ↵ resume
+              </Text>
+              <Text color={palette.dim}>{"  same stream · same position"}</Text>
             </Text>
+            <Text color={palette.textDim}>{`  ${truncateLine(resumeLabel, bodyWidth)}`}</Text>
+          </Box>
+        </Box>
+      ) : null}
+
+      {/* ── Movie complete ───────────────────────────────────────────────── */}
+      {!resumeLabel && isMovie ? (
+        <Box flexDirection="column">
+          <Text color={palette.ok} bold>
+            ✓ movie complete
+          </Text>
+          <Box marginTop={1}>
+            <Text color={palette.dim}>↵ replay · / search for another title</Text>
+          </Box>
+        </Box>
+      ) : null}
+
+      {/* ── Mid-series: NEXT hero ────────────────────────────────────────── */}
+      {!resumeLabel && !isMovie && postPlayState.kind === "mid-series" ? (
+        <Box flexDirection="column">
+          <Text color={palette.ok}>✓ episode complete</Text>
+          <Box marginTop={1} flexDirection="column">
+            <Text>
+              <Text color={palette.dim}>{"NEXT  "}</Text>
+              <Text color={palette.accent} bold>
+                {truncateLine(nextEpisodeLabel ?? "Next episode", bodyWidth - 6)}
+              </Text>
+            </Text>
+            <Text color={palette.textDim}>↵ continue · n next · r replay</Text>
+          </Box>
+        </Box>
+      ) : null}
+
+      {/* ── Caught up ────────────────────────────────────────────────────── */}
+      {postPlayState.kind === "caught-up" ? (
+        <Box flexDirection="column">
+          <Text color={palette.ok} bold>
+            ◉ caught up
+          </Text>
+          {postPlayState.nextAirDate ? (
+            <Text color={palette.muted}>{`next broadcast · ${postPlayState.nextAirDate}`}</Text>
           ) : null}
           <Box marginTop={1}>
             <Text color={palette.dim}>w watchlist · /calendar for releases</Text>
           </Box>
         </Box>
-      )}
+      ) : null}
 
-      {postPlayState.kind === "season-finale" && (
-        <Box marginTop={1} flexDirection="column">
-          <Text color={palette.ok}>✦ Season {currentSeason ?? "?"} complete</Text>
+      {/* ── Season finale ────────────────────────────────────────────────── */}
+      {postPlayState.kind === "season-finale" ? (
+        <Box flexDirection="column">
+          <Text color={palette.ok} bold>
+            ✦ Season {currentSeason ?? "?"} complete
+          </Text>
           {postPlayState.hasNextSeason ? (
             <Box marginTop={1}>
-              <Text color={palette.accent}>↵ continue to next season</Text>
+              <Text color={palette.accent} bold>
+                ↵ continue to next season
+              </Text>
             </Box>
           ) : null}
-          {progress !== undefined && totalEpisodes && watchedEpisodes !== undefined ? (
+          {seriesProgressBar && totalEpisodes && watchedEpisodes !== undefined ? (
             <Box marginTop={1} flexDirection="column">
+              <Text color={palette.accentDeep}>{seriesProgressBar}</Text>
               <Text color={palette.dim}>
-                {seriesProgressBar} {watchedEpisodes} of {totalEpisodes} eps overall · {progress}%
+                {watchedEpisodes} of {totalEpisodes} eps overall · {progress}%
               </Text>
             </Box>
           ) : null}
         </Box>
-      )}
+      ) : null}
 
-      {postPlayState.kind === "series-complete" && (
-        <Box marginTop={1} flexDirection="column">
-          <Text color={palette.milestone}>✦ you finished {truncateLine(title, 48)}</Text>
+      {/* ── Series complete (milestone) ──────────────────────────────────── */}
+      {postPlayState.kind === "series-complete" ? (
+        <Box flexDirection="column">
+          <Text color={palette.milestone} bold>
+            ✦ SERIES COMPLETE
+          </Text>
+          <Text color={palette.text}>{truncateLine(title, bodyWidth)}</Text>
           {totalEpisodes && currentSeason ? (
             <Text color={palette.dim}>
-              {totalEpisodes} episodes across {currentSeason} season
-              {currentSeason === 1 ? "" : "s"}
+              {totalEpisodes} episodes · {currentSeason} season{currentSeason === 1 ? "" : "s"}
             </Text>
           ) : null}
         </Box>
-      )}
+      ) : null}
 
-      {showRecommendations && !didNotStart ? (
-        <Box marginTop={1} flexDirection="column">
-          <Text color={palette.dim}>{recHeading}</Text>
-          {postPlayState.kind === "series-complete" ? (
-            <Text color={palette.muted}>
-              {recommendations
-                .slice(0, 3)
-                .map((rec) => truncateLine(rec.title, 28))
-                .join("  ·  ")}
-            </Text>
-          ) : (
-            recommendations.slice(0, 3).map((rec, index) => (
-              <Box key={rec.id} marginTop={index === 0 ? 1 : 0}>
-                <Text color={palette.dim}>{`${index + 1}. `}</Text>
-                <Text>
-                  {truncateLine(rec.title, 42)}
-                  {rec.year ? <Text color={palette.dim}>{` (${rec.year})`}</Text> : null}
-                </Text>
-              </Box>
-            ))
-          )}
-        </Box>
+      {/* ── Discovery picks ──────────────────────────────────────────────── */}
+      {showRecommendations ? (
+        <NumberedPicks
+          items={recommendations}
+          width={bodyWidth}
+          highlightHeading={
+            postPlayState.kind === "series-complete"
+              ? "because you finished this"
+              : "you might also like"
+          }
+        />
       ) : viewport.breakpoint === "narrow" && recommendations.length > 0 ? (
         <Box marginTop={1}>
           <Text color={palette.dim} dimColor>
