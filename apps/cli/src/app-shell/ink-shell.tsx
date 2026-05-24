@@ -1299,7 +1299,7 @@ function PlaybackShell({
           if (postPlayState.kind === "series-complete") {
             const item = recommendations[0];
             if (item) {
-              onResolve({ type: "queue-recommendation", item });
+              onResolve({ type: "open-recommendation-actions", items: recommendations });
             }
             return;
           }
@@ -1311,7 +1311,10 @@ function PlaybackShell({
         if (input === "1" || input === "2" || input === "3") {
           const item = recommendations[Number(input) - 1];
           if (item) {
-            onResolve({ type: "queue-recommendation", item });
+            onResolve({
+              type: "open-recommendation-actions",
+              items: [item, ...recommendations.filter((candidate) => candidate.id !== item.id)],
+            });
           }
         }
       }}

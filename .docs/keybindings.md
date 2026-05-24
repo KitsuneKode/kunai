@@ -103,7 +103,7 @@ already opens settings in the playback loading/resolving shell.
 | `a`   | Toggle autoplay                                                    |
 | `d`   | Download current episode                                           |
 | `i`   | Recommendation pick actions, when the rail is visible              |
-| `1-3` | Queue visible recommendation pick, when the rail is visible        |
+| `1-3` | Recommendation pick actions, when the rail is visible              |
 | `?`   | Help                                                               |
 | `s`   | Fresh search                                                       |
 | `q`   | Quit                                                               |
