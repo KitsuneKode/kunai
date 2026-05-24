@@ -30,6 +30,30 @@ describe("BackgroundWorkScheduler", () => {
     expect(order).toEqual(["playback", "recommendation"]);
   });
 
+  test("runs explicit user downloads before offline runway replenishment", async () => {
+    const order: string[] = [];
+    const scheduler = new BackgroundWorkScheduler({ maxConcurrent: 1 });
+
+    scheduler.enqueue({
+      id: "offline-runway:title-1",
+      lane: "offline-runway",
+      run: () => {
+        order.push("runway");
+      },
+    });
+    scheduler.enqueue({
+      id: "download:manual",
+      lane: "user-requested-download",
+      run: () => {
+        order.push("manual");
+      },
+    });
+
+    await scheduler.drain();
+
+    expect(order).toEqual(["manual", "runway"]);
+  });
+
   test("dedupes queued work by id and keeps the newer lane priority", async () => {
     const order: string[] = [];
     const scheduler = new BackgroundWorkScheduler({ maxConcurrent: 1 });

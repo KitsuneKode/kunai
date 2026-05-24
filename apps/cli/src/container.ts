@@ -88,6 +88,8 @@ import { DownloadService } from "./services/download/DownloadService";
 import { NotificationService } from "./services/notifications/NotificationService";
 import { OfflineAssetService } from "./services/offline/OfflineAssetService";
 import { OfflineLibraryService } from "./services/offline/OfflineLibraryService";
+import { OfflineMaintenanceService } from "./services/offline/OfflineMaintenanceService";
+import { OfflineRunwayService } from "./services/offline/OfflineRunwayService";
 import type { CacheStore } from "./services/persistence/CacheStore";
 import type { ConfigService } from "./services/persistence/ConfigService";
 import { ConfigServiceImpl } from "./services/persistence/ConfigServiceImpl";
@@ -165,6 +167,8 @@ export interface Container {
   readonly offlineTitlePolicies: OfflineTitlePoliciesRepository;
   readonly offlineMaintenanceJobs: OfflineMaintenanceJobsRepository;
   readonly offlineLibraryService: OfflineLibraryService;
+  readonly offlineMaintenanceService: OfflineMaintenanceService;
+  readonly offlineRunwayService: OfflineRunwayService;
   readonly notificationService: NotificationService;
   readonly presence: PresenceService;
 
@@ -418,6 +422,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     historyStore,
     offlineAssetService,
   });
+  const offlineMaintenanceService = new OfflineMaintenanceService({
+    jobs: offlineMaintenanceJobs,
+    assets: offlineAssetService,
+  });
   const notificationService = new NotificationService({
     repo: notificationRepository,
     getMutedTitleIds: () =>
@@ -459,6 +467,15 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     repository: releaseProgressCache,
     loadProgress: (candidates, signal) =>
       loadCatalogProgress(catalogScheduleService, candidates, signal),
+  });
+  const offlineRunwayService = new OfflineRunwayService({
+    policies: offlineTitlePolicies,
+    assets: offlineAssetService,
+    historyStore,
+    releaseProgressCache,
+    downloadService,
+    scheduler: backgroundWorkScheduler,
+    diagnostics: diagnosticsStore,
   });
   const timelineService = new TimelineService(catalogScheduleService);
   const resultEnrichmentService = new ResultEnrichmentService({
@@ -512,6 +529,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     offlineTitlePolicies,
     offlineMaintenanceJobs,
     offlineLibraryService,
+    offlineMaintenanceService,
+    offlineRunwayService,
     notificationService,
     presence,
     stateManager,

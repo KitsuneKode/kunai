@@ -13,6 +13,18 @@ export type RecordedOfflineStatus = {
 export class OfflineAssetService {
   constructor(private readonly assets: OfflineAssetsRepository) {}
 
+  getAsset(id: string): OfflineAssetRecord | undefined {
+    return this.assets.get(id);
+  }
+
+  listTitleAssets(titleId: string): readonly OfflineAssetRecord[] {
+    return this.assets.listTitleAssets(titleId);
+  }
+
+  markValidation(id: string, state: OfflineAssetState, validatedAt: string): void {
+    this.assets.markValidation(id, state, validatedAt);
+  }
+
   adoptCompletedJob(job: DownloadJobRecord): OfflineAssetRecord | null {
     if (job.status !== "completed" && job.status !== "completed-with-notes") return null;
     const state = recordedAssetState(job);

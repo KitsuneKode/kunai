@@ -2,6 +2,7 @@ export type BackgroundWorkLane =
   | "playback-critical"
   | "next-episode-prefetch"
   | "user-requested-download"
+  | "offline-runway"
   | "recommendation-warm"
   | "attention-refresh"
   | "maintenance-cleanup";
@@ -23,6 +24,7 @@ const LANE_PRIORITY: Record<BackgroundWorkLane, number> = {
   "playback-critical": 100,
   "next-episode-prefetch": 80,
   "user-requested-download": 70,
+  "offline-runway": 60,
   "recommendation-warm": 40,
   "attention-refresh": 30,
   "maintenance-cleanup": 10,

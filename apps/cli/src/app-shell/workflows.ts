@@ -111,7 +111,16 @@ export async function playCompletedDownload(container: Container, jobId: string)
       skipCredits: container.config.skipCredits,
     },
   });
-  await container.offlineLibraryService.savePlaybackHistory(playable.source, result);
+  const persisted = await container.offlineLibraryService.savePlaybackHistory(
+    playable.source,
+    result,
+  );
+  if (persisted) {
+    container.offlineRunwayService.enqueueEvaluation(
+      playable.source.titleId,
+      "offline-playback-complete",
+    );
+  }
 }
 
 export function waitForOverlayClose(
@@ -142,6 +151,7 @@ type DownloadJobAction =
   | { type: "search-online" }
   | { type: "protect-group" }
   | { type: "unprotect-group" }
+  | { type: "toggle-continuation" }
   | { type: "delete-group" }
   | { type: "back" };
 type OfflineLibraryGroupAction =
@@ -610,6 +620,7 @@ export async function openOfflineLibraryGroupPicker(
     const first = entries[0]?.job;
     if (!first) return;
     const historyEntries = await container.historyStore.listByTitle(first.titleId);
+    const offlinePolicy = container.offlineTitlePolicies.get(first.titleId);
     const continuation = createContinuationEngine().decide({
       titleName: first.titleName,
       networkAvailable: true,
@@ -640,7 +651,11 @@ export async function openOfflineLibraryGroupPicker(
           .join("  ·  "),
         previewImageUrl: resolveOfflineJobPreviewImage(entry.job),
       })),
-      ...buildOfflineGroupActions(entries, container.config.protectedDownloadJobIds),
+      ...buildOfflineGroupActions(
+        entries,
+        container.config.protectedDownloadJobIds,
+        offlinePolicy?.enrolled === true,
+      ),
       { value: { type: "back" as const }, label: "Back to titles" },
     ];
     const picked = await chooseFromListShell({
@@ -704,6 +719,33 @@ export async function openOfflineLibraryGroupPicker(
     }
     if (picked.type === "download-more") {
       await queueMoreOfflineTitleEpisodes(container, first, actionContext);
+      continue;
+    }
+    if (picked.type === "toggle-continuation") {
+      const enrolling = offlinePolicy?.enrolled !== true;
+      container.offlineTitlePolicies.upsert({
+        titleId: first.titleId,
+        mediaKind: first.mediaKind,
+        titleName: first.titleName,
+        enrolled: enrolling,
+        runwayTarget: container.config.offlineDefaultRunwayTarget,
+        profileJson: JSON.stringify({
+          audio: first.animeLang ?? "original",
+          subtitle: first.subLang ?? "none",
+          quality: first.selectedQualityLabel ?? "best",
+        }),
+        cleanupJson: JSON.stringify({ mode: "keep-last-watched", count: 1 }),
+        updatedAt: new Date().toISOString(),
+      });
+      if (enrolling) {
+        container.offlineRunwayService.enqueueEvaluation(first.titleId, "policy-change");
+      }
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: enrolling
+          ? `Keeping ${first.titleName} ready offline within your runway limit.`
+          : `Stopped offline continuation for ${first.titleName}. Existing files stay local.`,
+      });
       continue;
     }
     if (picked.type === "search-online") {
@@ -889,6 +931,7 @@ export async function openOfflineLibraryGroupPicker(
 function buildOfflineGroupActions(
   entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
   protectedJobIds: readonly string[] = [],
+  continuationEnrolled = false,
 ): ShellOption<DownloadJobAction>[] {
   const missingCount = entries.filter((entry) => entry.status !== "ready").length;
   const protectedSet = new Set(protectedJobIds);
@@ -904,6 +947,13 @@ function buildOfflineGroupActions(
       value: { type: "download-more" },
       label: "Download more episodes",
       detail: "Open the download episode picker for this title",
+    },
+    {
+      value: { type: "toggle-continuation" },
+      label: continuationEnrolled ? "Stop keeping offline" : "Keep watching offline",
+      detail: continuationEnrolled
+        ? "Stop filling future local episodes; keep files already downloaded"
+        : "Keep a bounded local runway after you finish downloaded episodes",
     },
     {
       value: { type: "check-integrity" },
