@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { selectDownloadCleanupCandidates } from "@/services/download/download-cleanup-policy";
+import {
+  parseOfflineTitleCleanupPreference,
+  selectDownloadCleanupCandidates,
+} from "@/services/download/download-cleanup-policy";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import type { DownloadJobRecord } from "@kunai/storage";
 
@@ -45,6 +48,13 @@ function watched(patch: Partial<HistoryEntry> = {}): HistoryEntry {
 }
 
 describe("download cleanup policy", () => {
+  test("preserves an explicit immediate cleanup suggestion grace", () => {
+    expect(parseOfflineTitleCleanupPreference('{"mode":"cleanup-watched","graceDays":0}')).toEqual({
+      mode: "cleanup-watched",
+      graceDays: 0,
+    });
+  });
+
   test("selects watched completed downloads after the grace period", () => {
     const record = job();
     const candidates = selectDownloadCleanupCandidates({
@@ -90,6 +100,41 @@ describe("download cleanup policy", () => {
       ]),
       nowMs: Date.parse("2026-05-14T00:00:00.000Z"),
       graceDays: 2,
+    });
+
+    expect(candidates).toEqual([]);
+  });
+
+  test("title policy can retain the latest watched local episode while suggesting older copies", () => {
+    const older = job({ id: "older", episode: 2 });
+    const newest = job({ id: "newest", episode: 3 });
+    const candidates = selectDownloadCleanupCandidates({
+      jobs: [older, newest],
+      historyByTitle: new Map([
+        [
+          "title-1",
+          [
+            watched({ episode: 2, watchedAt: "2026-05-08T00:00:00.000Z" }),
+            watched({ episode: 3, watchedAt: "2026-05-10T00:00:00.000Z" }),
+          ],
+        ],
+      ]),
+      nowMs: Date.parse("2026-05-14T00:00:00.000Z"),
+      graceDays: 2,
+      titlePolicies: new Map([["title-1", { mode: "keep-last-watched", count: 1 }]]),
+    });
+
+    expect(candidates.map((candidate) => candidate.job.id)).toEqual(["older"]);
+  });
+
+  test("title policy cleanup grace overrides the global cleanup suggestion window", () => {
+    const record = job();
+    const candidates = selectDownloadCleanupCandidates({
+      jobs: [record],
+      historyByTitle: new Map([[record.titleId, [watched()]]]),
+      nowMs: Date.parse("2026-05-14T00:00:00.000Z"),
+      graceDays: 2,
+      titlePolicies: new Map([["title-1", { mode: "cleanup-watched", graceDays: 7 }]]),
     });
 
     expect(candidates).toEqual([]);

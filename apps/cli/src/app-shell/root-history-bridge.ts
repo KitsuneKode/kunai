@@ -9,6 +9,7 @@ import type { ReleaseProgressProjection } from "@kunai/storage";
 export type RootHistorySelection = {
   titleId: string;
   entry: HistoryEntry;
+  localJobId?: string;
   targetEpisode?: {
     season: number;
     episode: number;
@@ -95,6 +96,7 @@ export function buildRootHistorySelection(
         episode: action.episode,
         reason: "offline-ready",
       },
+      localJobId: action.jobId,
     };
   }
   const decision = reconcileContinueHistory({

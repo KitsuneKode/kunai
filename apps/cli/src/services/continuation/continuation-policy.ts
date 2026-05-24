@@ -10,7 +10,12 @@ export type ContinuationNextRelease = {
 
 export type ContinuationAction =
   | { readonly kind: "resume"; readonly season: number; readonly episode: number }
-  | { readonly kind: "play-local"; readonly season: number; readonly episode: number }
+  | {
+      readonly kind: "play-local";
+      readonly season: number;
+      readonly episode: number;
+      readonly jobId?: string;
+    }
   | { readonly kind: "select-online"; readonly season: number; readonly episode: number }
   | { readonly kind: "manage-offline" };
 
@@ -75,7 +80,11 @@ export function projectContinuationState(input: {
   readonly releaseProgress?: { readonly newEpisodeCount: number; readonly stale?: boolean } | null;
   readonly offline?: {
     readonly enrolled: boolean;
-    readonly readyNextEpisodes: readonly { readonly season: number; readonly episode: number }[];
+    readonly readyNextEpisodes: readonly {
+      readonly season: number;
+      readonly episode: number;
+      readonly jobId?: string;
+    }[];
   } | null;
 }): ContinuationProjection {
   const entries = input.entries
@@ -115,7 +124,12 @@ export function projectContinuationState(input: {
         sourceEntry: latest,
       },
       input,
-      { kind: "play-local", season: localNext.season, episode: localNext.episode },
+      {
+        kind: "play-local",
+        season: localNext.season,
+        episode: localNext.episode,
+        jobId: localNext.jobId,
+      },
     );
   }
 

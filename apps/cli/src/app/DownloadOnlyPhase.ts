@@ -19,7 +19,21 @@ export type DownloadConfirmationProfile = {
   readonly outputDirectory?: string;
   readonly enrollKeepWatchingOffline: boolean;
   readonly runwayTarget?: number;
+  readonly cleanupPolicy: OfflineCleanupPolicy;
 };
+
+export type OfflineCleanupPolicy =
+  | { readonly mode: "keep-last-watched"; readonly count: number }
+  | { readonly mode: "cleanup-watched"; readonly graceDays: number };
+
+export type DownloadConfirmationEditAction =
+  | "cycle-subtitle"
+  | "cycle-quality"
+  | "toggle-artwork"
+  | "toggle-destination"
+  | "increase-runway"
+  | "decrease-runway"
+  | "toggle-cleanup";
 
 type DownloadOnlyPhaseDependencies = {
   readonly pickEpisodes?: (args: {
@@ -108,6 +122,37 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
     const confirmedTitle = this.deps.prepareConfirmedTitle
       ? await this.deps.prepareConfirmedTitle(input.title, context)
       : input.title;
+    const existingPolicy =
+      confirmedTitle.type !== "movie"
+        ? container.offlineTitlePolicies.get(confirmedTitle.id)
+        : undefined;
+    const persistSeriesPolicy = () => {
+      if (confirmedTitle.type === "movie") return;
+      const enrolled = profile.enrollKeepWatchingOffline || existingPolicy?.enrolled === true;
+      container.offlineTitlePolicies.upsert({
+        titleId: confirmedTitle.id,
+        titleName: confirmedTitle.name,
+        mediaKind: state.mode === "anime" ? "anime" : "series",
+        enrolled,
+        runwayTarget: profile.enrollKeepWatchingOffline
+          ? (profile.runwayTarget ?? container.config.offlineDefaultRunwayTarget)
+          : (existingPolicy?.runwayTarget ??
+            profile.runwayTarget ??
+            container.config.offlineDefaultRunwayTarget),
+        profileJson: JSON.stringify({
+          audio: profile.audioPreference,
+          subtitle: profile.subtitlePreference,
+          quality: profile.qualityPreference,
+          cacheArtwork: profile.cacheArtwork,
+        }),
+        cleanupJson: JSON.stringify(profile.cleanupPolicy),
+        pausedReason: profile.enrollKeepWatchingOffline ? undefined : existingPolicy?.pausedReason,
+        updatedAt: new Date().toISOString(),
+      });
+      if (profile.enrollKeepWatchingOffline) {
+        container.offlineRunwayService.enqueueEvaluation(confirmedTitle.id, "policy-change");
+      }
+    };
 
     let queuedCount = 0;
     let lastJobId: string | undefined;
@@ -146,6 +191,7 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
             ? `Queued ${queuedCount} download(s), then stopped: ${message}`
             : `Download failed: ${message}`,
       });
+      if (queuedCount > 0) persistSeriesPolicy();
       void container.downloadService.processQueue();
       return { status: "success", value: queuedCount > 0 ? "queued" : "back" };
     }
@@ -164,24 +210,7 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
         runwayTarget: profile.runwayTarget ?? null,
       },
     });
-    if (profile.enrollKeepWatchingOffline && confirmedTitle.type !== "movie") {
-      container.offlineTitlePolicies.upsert({
-        titleId: confirmedTitle.id,
-        titleName: confirmedTitle.name,
-        mediaKind: state.mode === "anime" ? "anime" : "series",
-        enrolled: true,
-        runwayTarget: profile.runwayTarget ?? container.config.offlineDefaultRunwayTarget,
-        profileJson: JSON.stringify({
-          audio: profile.audioPreference,
-          subtitle: profile.subtitlePreference,
-          quality: profile.qualityPreference,
-          cacheArtwork: profile.cacheArtwork,
-        }),
-        cleanupJson: JSON.stringify({ mode: "keep-last-watched", count: 1 }),
-        updatedAt: new Date().toISOString(),
-      });
-      container.offlineRunwayService.enqueueEvaluation(confirmedTitle.id, "policy-change");
-    }
+    persistSeriesPolicy();
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note:
@@ -235,6 +264,45 @@ function buildDownloadConfirmationProfile(
     outputDirectory: input.outputDirectory || context.container.config.downloadPath || undefined,
     enrollKeepWatchingOffline: false,
     runwayTarget: context.container.config.offlineDefaultRunwayTarget,
+    cleanupPolicy: { mode: "keep-last-watched", count: 1 },
+  };
+}
+
+export function updateDownloadConfirmationProfile(
+  profile: DownloadConfirmationProfile,
+  action: DownloadConfirmationEditAction,
+  configuredOutputDirectory?: string,
+  configuredCleanupGraceDays = 7,
+): DownloadConfirmationProfile {
+  if (action === "cycle-subtitle") {
+    const options = ["en", "none", "interactive"];
+    const current = Math.max(0, options.indexOf(profile.subtitlePreference));
+    return { ...profile, subtitlePreference: options[(current + 1) % options.length] ?? "en" };
+  }
+  if (action === "cycle-quality") {
+    const options = ["best", "1080p", "720p"];
+    const current = Math.max(0, options.indexOf(profile.qualityPreference ?? "best"));
+    return { ...profile, qualityPreference: options[(current + 1) % options.length] ?? "best" };
+  }
+  if (action === "toggle-artwork") return { ...profile, cacheArtwork: !profile.cacheArtwork };
+  if (action === "toggle-destination") {
+    return {
+      ...profile,
+      outputDirectory: profile.outputDirectory ? undefined : configuredOutputDirectory || undefined,
+    };
+  }
+  if (action === "increase-runway") {
+    return { ...profile, runwayTarget: Math.min(10, (profile.runwayTarget ?? 1) + 1) };
+  }
+  if (action === "decrease-runway") {
+    return { ...profile, runwayTarget: Math.max(1, (profile.runwayTarget ?? 1) - 1) };
+  }
+  return {
+    ...profile,
+    cleanupPolicy:
+      profile.cleanupPolicy.mode === "cleanup-watched"
+        ? { mode: "keep-last-watched", count: 1 }
+        : { mode: "cleanup-watched", graceDays: configuredCleanupGraceDays },
   };
 }
 
@@ -249,38 +317,97 @@ async function confirmDownloadProfile({
   readonly profile: DownloadConfirmationProfile;
   readonly container: PhaseContext["container"];
 }): Promise<DownloadConfirmationProfile | null> {
-  const target = profile.outputDirectory ? "configured folder" : "default offline library";
-  const profileDetail = [
-    `${profile.audioPreference} audio`,
-    `${profile.subtitlePreference} subtitles`,
-    profile.qualityPreference ? `${profile.qualityPreference} quality` : null,
-    profile.cacheArtwork ? "artwork cached" : "no artwork cache",
-    target,
-    "space checked before queue and start",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const selection = await chooseFromListShell<"queue" | "runway" | "back">({
-    title: `Download ${title.name}?`,
-    subtitle: `${episodes.length} ${episodes.length === 1 ? "item" : "items"} selected · no provider stream work before confirmation`,
-    actionContext: buildPickerActionContext({ container, taskLabel: `Download: ${title.name}` }),
-    options: [
-      { value: "back", label: "Back", detail: "No download queued and no provider stream work" },
-      { value: "queue", label: "Queue download", detail: profileDetail },
-      ...(title.type !== "movie"
-        ? [
-            {
-              value: "runway" as const,
-              label: "Queue and keep watching offline",
-              detail: `${profileDetail} · keep up to ${profile.runwayTarget ?? 1} released episodes ready`,
-            },
-          ]
-        : []),
-    ],
-  });
-  if (!selection || selection === "back") return null;
-  return {
-    ...profile,
-    enrollKeepWatchingOffline: selection === "runway",
-  };
+  let draft = profile;
+  while (true) {
+    const target = draft.outputDirectory ? "configured folder" : "default offline library";
+    const cleanup =
+      draft.cleanupPolicy.mode === "cleanup-watched"
+        ? `cleanup suggestions after ${draft.cleanupPolicy.graceDays} days`
+        : "keep last watched local";
+    const profileDetail = [
+      `${draft.audioPreference} audio`,
+      `${draft.subtitlePreference} subtitles`,
+      draft.qualityPreference ? `${draft.qualityPreference} quality` : null,
+      draft.cacheArtwork ? "artwork cached" : "no artwork cache",
+      target,
+      cleanup,
+      "space checked before queue and start",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const selection = await chooseFromListShell<
+      "queue" | "runway" | "back" | DownloadConfirmationEditAction
+    >({
+      title: `Download ${title.name}?`,
+      subtitle: `${episodes.length} ${episodes.length === 1 ? "item" : "items"} selected · profile edits are local until you queue`,
+      actionContext: buildPickerActionContext({ container, taskLabel: `Download: ${title.name}` }),
+      options: [
+        { value: "back", label: "Back", detail: "No download queued and no provider stream work" },
+        { value: "queue", label: "Queue download", detail: profileDetail },
+        ...(title.type !== "movie"
+          ? [
+              {
+                value: "runway" as const,
+                label: "Queue and keep watching offline",
+                detail: `${profileDetail} · keep up to ${draft.runwayTarget ?? 1} released episodes ready`,
+              },
+            ]
+          : []),
+        {
+          value: "cycle-subtitle",
+          label: `Subtitles: ${draft.subtitlePreference}`,
+          detail: "Cycle downloaded subtitle preference",
+        },
+        {
+          value: "cycle-quality",
+          label: `Quality: ${draft.qualityPreference ?? "best"}`,
+          detail: "Cycle stored download quality preference",
+        },
+        {
+          value: "toggle-artwork",
+          label: `Artwork cache: ${draft.cacheArtwork ? "on" : "off"}`,
+          detail: "Include title artwork in offline assets",
+        },
+        ...(container.config.downloadPath.trim()
+          ? [
+              {
+                value: "toggle-destination" as const,
+                label: `Destination: ${target}`,
+                detail:
+                  "Switch between configured folder and default library; set new paths in Settings",
+              },
+            ]
+          : []),
+        ...(title.type !== "movie"
+          ? [
+              {
+                value: "increase-runway" as const,
+                label: `Offline runway: ${draft.runwayTarget ?? 1} episode(s)`,
+                detail: "Increase bounded target; disk checks can pause new downloads",
+              },
+              {
+                value: "decrease-runway" as const,
+                label: "Reduce offline runway",
+                detail: "Reduce the ready-ahead target by one episode",
+              },
+              {
+                value: "toggle-cleanup" as const,
+                label: `After watching: ${cleanup}`,
+                detail: "Controls explicit cleanup suggestions; files are not deleted here",
+              },
+            ]
+          : []),
+      ],
+    });
+    if (!selection || selection === "back") return null;
+    if (selection === "queue" || selection === "runway") {
+      return { ...draft, enrollKeepWatchingOffline: selection === "runway" };
+    }
+    draft = updateDownloadConfirmationProfile(
+      draft,
+      selection,
+      container.config.downloadPath,
+      container.config.autoCleanupGraceDays,
+    );
+  }
 }

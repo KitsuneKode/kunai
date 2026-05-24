@@ -74,7 +74,7 @@ test("continuation policy prefers ready offline continuation while retaining cat
     titleId: "tmdb:1",
     entries: [["tmdb:1", { ...baseEntry, episode: 5, timestamp: 1200, completed: true }]],
     releaseProgress: { newEpisodeCount: 3 },
-    offline: { enrolled: true, readyNextEpisodes: [{ season: 1, episode: 6 }] },
+    offline: { enrolled: true, readyNextEpisodes: [{ season: 1, episode: 6, jobId: "job-6" }] },
   });
 
   expect(projection).toMatchObject({
@@ -82,7 +82,7 @@ test("continuation policy prefers ready offline continuation while retaining cat
     season: 1,
     episode: 6,
     badge: "3 new",
-    primaryAction: { kind: "play-local", season: 1, episode: 6 },
+    primaryAction: { kind: "play-local", season: 1, episode: 6, jobId: "job-6" },
     freshness: "cached",
   });
 });

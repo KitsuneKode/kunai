@@ -76,7 +76,7 @@ describe("root history bridge return loop", () => {
       season: 1,
       episode: 6,
       sourceEntry: entry,
-      primaryAction: { kind: "play-local", season: 1, episode: 6 },
+      primaryAction: { kind: "play-local", season: 1, episode: 6, jobId: "job-6" },
       secondaryActions: [],
       freshness: "local",
     };
@@ -90,6 +90,7 @@ describe("root history bridge return loop", () => {
       episode: 6,
       reason: "offline-ready",
     });
+    expect(selection.localJobId).toBe("job-6");
   });
 
   test("release projections target the first unwatched aired episode without altering history", () => {

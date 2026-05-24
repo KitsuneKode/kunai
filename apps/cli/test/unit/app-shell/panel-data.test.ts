@@ -525,6 +525,40 @@ describe("panel-data", () => {
     expect(options[1]?.detail).toContain("download ready in /library");
   });
 
+  test("buildHistoryPickerOptions names the explicit local action when an offline job is addressable", () => {
+    const completed = {
+      title: "Weekly Show",
+      type: "series" as const,
+      season: 1,
+      episode: 5,
+      timestamp: 1440,
+      duration: 1440,
+      completed: true,
+      provider: "allanime",
+      watchedAt: "2026-05-10T00:00:00.000Z",
+    };
+    const options = buildHistoryPickerOptions([["anilist:123", completed]], {
+      projections: new Map([
+        [
+          "anilist:123",
+          {
+            kind: "offline-ready",
+            titleId: "anilist:123",
+            title: "Weekly Show",
+            season: 1,
+            episode: 6,
+            sourceEntry: completed,
+            badge: "1 new",
+            freshness: "local",
+            primaryAction: { kind: "play-local", season: 1, episode: 6, jobId: "job-6" },
+          },
+        ],
+      ]),
+    });
+
+    expect(options[1]?.detail).toContain("enter plays downloaded episode");
+  });
+
   describe("groupHistoryByRecency", () => {
     const DAY_MS = 86_400_000;
 

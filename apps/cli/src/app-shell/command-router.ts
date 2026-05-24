@@ -5,8 +5,11 @@ import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import type { ShellAction } from "./types";
-import { handleShellAction } from "./workflows";
-import { resolveQuitWithDownloadQueue } from "./workflows";
+import {
+  handleShellAction,
+  playCompletedDownload,
+  resolveQuitWithDownloadQueue,
+} from "./workflows";
 
 type RoutedActionResult =
   | "handled"
@@ -71,6 +74,10 @@ async function openRootHistorySelection(
   });
   const selection = await selectionPromise;
   if (!selection) return "handled";
+  if (selection.localJobId) {
+    await playCompletedDownload(container, selection.localJobId);
+    return "handled";
+  }
   const providerMetadata = container.providerRegistry.get(selection.entry.provider);
   if (providerMetadata) {
     stateManager.dispatch({

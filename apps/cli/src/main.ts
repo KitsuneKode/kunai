@@ -36,7 +36,10 @@ import { createContainer, type ShellChrome } from "@/container";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
-import { selectDownloadCleanupCandidates } from "@/services/download/download-cleanup-policy";
+import {
+  parseOfflineTitleCleanupPreference,
+  selectDownloadCleanupCandidates,
+} from "@/services/download/download-cleanup-policy";
 import { checkDeps } from "@/ui";
 
 const KUNAI_VERSION = "0.1.0";
@@ -258,6 +261,11 @@ async function maybeOpenStartupHistory(
   const selection = await selectionPromise;
   container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
   if (!selection) return null;
+  if (selection.localJobId) {
+    const { playCompletedDownload } = await import("./app-shell/workflows");
+    await playCompletedDownload(container, selection.localJobId);
+    return null;
+  }
 
   applyHistorySelectionProvider(container, selection);
   return {
@@ -409,19 +417,36 @@ async function maybeRunAutoCleanupDownloads(
   const graceDays = Math.max(0, config.autoCleanupGraceDays);
   const nowMs = Date.now();
   const jobs = downloadService.listCompleted(500);
-  const historyEntries = await Promise.all(
-    [...new Set(jobs.map((job) => job.titleId))].map(async (titleId) => {
-      const entries = await historyStore.listByTitle(titleId).catch(() => []);
-      return [titleId, entries] as const;
-    }),
+  const titleIds = new Set(jobs.map((job) => job.titleId));
+  const historyByTitle = new Map<
+    string,
+    import("@/services/persistence/HistoryStore").HistoryEntry[]
+  >();
+  const recentHistory = await historyStore.listRecent(1_000).catch(() => []);
+  for (const [titleId, entry] of recentHistory) {
+    if (!titleIds.has(titleId)) continue;
+    const entries = historyByTitle.get(titleId) ?? [];
+    entries.push(entry);
+    historyByTitle.set(titleId, entries);
+  }
+  const titlePolicies = new Map(
+    container.offlineTitlePolicies
+      .listByTitleIds([...titleIds])
+      .map((policy) => [policy.titleId, parseOfflineTitleCleanupPreference(policy.cleanupJson)])
+      .filter(
+        (
+          entry,
+        ): entry is [string, NonNullable<ReturnType<typeof parseOfflineTitleCleanupPreference>>] =>
+          Boolean(entry[1]),
+      ),
   );
-  const historyByTitle = new Map(historyEntries);
   const candidates = selectDownloadCleanupCandidates({
     jobs,
     historyByTitle,
     nowMs,
     graceDays,
     pinnedJobIds: new Set(config.protectedDownloadJobIds),
+    titlePolicies,
   });
   for (const candidate of candidates) {
     logger.info("Watched download cleanup candidate", {

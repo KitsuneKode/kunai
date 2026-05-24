@@ -36,6 +36,10 @@ import {
   getRuntimeMemorySamples,
   summarizeRuntimeMemoryTrend,
 } from "@/services/diagnostics/runtime-memory";
+import {
+  parseOfflineTitleCleanupPreference,
+  type OfflineTitleCleanupPreference,
+} from "@/services/download/download-cleanup-policy";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
@@ -152,6 +156,7 @@ type DownloadJobAction =
   | { type: "protect-group" }
   | { type: "unprotect-group" }
   | { type: "toggle-continuation" }
+  | { type: "edit-cleanup" }
   | { type: "delete-group" }
   | { type: "back" };
 type OfflineLibraryGroupAction =
@@ -655,6 +660,7 @@ export async function openOfflineLibraryGroupPicker(
         entries,
         container.config.protectedDownloadJobIds,
         offlinePolicy?.enrolled === true,
+        parseOfflineTitleCleanupPreference(offlinePolicy?.cleanupJson),
       ),
       { value: { type: "back" as const }, label: "Back to titles" },
     ];
@@ -734,7 +740,8 @@ export async function openOfflineLibraryGroupPicker(
           subtitle: first.subLang ?? "none",
           quality: first.selectedQualityLabel ?? "best",
         }),
-        cleanupJson: JSON.stringify({ mode: "keep-last-watched", count: 1 }),
+        cleanupJson:
+          offlinePolicy?.cleanupJson ?? JSON.stringify({ mode: "keep-last-watched", count: 1 }),
         updatedAt: new Date().toISOString(),
       });
       if (enrolling) {
@@ -745,6 +752,51 @@ export async function openOfflineLibraryGroupPicker(
         note: enrolling
           ? `Keeping ${first.titleName} ready offline within your runway limit.`
           : `Stopped offline continuation for ${first.titleName}. Existing files stay local.`,
+      });
+      continue;
+    }
+    if (picked.type === "edit-cleanup") {
+      const policy = await chooseFromListShell<OfflineTitleCleanupPreference>({
+        title: `After watching ${first.titleName}`,
+        subtitle:
+          "Controls cleanup suggestions only; local files stay until you explicitly delete them",
+        actionContext,
+        options: [
+          {
+            value: { mode: "keep-last-watched", count: 1 },
+            label: "Keep latest watched episode",
+            detail: "Keep one watched local fallback and suggest older watched files",
+          },
+          {
+            value: { mode: "cleanup-watched", graceDays: container.config.autoCleanupGraceDays },
+            label: `Suggest cleanup after ${container.config.autoCleanupGraceDays} days`,
+            detail: "Uses your cleanup grace window when cleanup suggestions are enabled",
+          },
+        ],
+      });
+      if (!policy) continue;
+      container.offlineTitlePolicies.upsert({
+        titleId: first.titleId,
+        mediaKind: first.mediaKind,
+        titleName: first.titleName,
+        enrolled: offlinePolicy?.enrolled === true,
+        runwayTarget: offlinePolicy?.runwayTarget ?? container.config.offlineDefaultRunwayTarget,
+        profileJson:
+          offlinePolicy?.profileJson ??
+          JSON.stringify({
+            audio: first.animeLang ?? "original",
+            subtitle: first.subLang ?? "none",
+            quality: first.selectedQualityLabel ?? "best",
+          }),
+        cleanupJson: JSON.stringify(policy),
+        updatedAt: new Date().toISOString(),
+      });
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          policy.mode === "keep-last-watched"
+            ? `Keeping one watched local episode for ${first.titleName}.`
+            : `Cleanup suggestions for ${first.titleName} use a ${policy.graceDays}-day grace.`,
       });
       continue;
     }
@@ -932,6 +984,7 @@ function buildOfflineGroupActions(
   entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
   protectedJobIds: readonly string[] = [],
   continuationEnrolled = false,
+  cleanupPreference?: OfflineTitleCleanupPreference,
 ): ShellOption<DownloadJobAction>[] {
   const missingCount = entries.filter((entry) => entry.status !== "ready").length;
   const protectedSet = new Set(protectedJobIds);
@@ -954,6 +1007,14 @@ function buildOfflineGroupActions(
       detail: continuationEnrolled
         ? "Stop filling future local episodes; keep files already downloaded"
         : "Keep a bounded local runway after you finish downloaded episodes",
+    },
+    {
+      value: { type: "edit-cleanup" },
+      label: "After watching",
+      detail:
+        cleanupPreference?.mode === "cleanup-watched"
+          ? `Suggest cleanup after ${cleanupPreference.graceDays} days`
+          : "Keep the latest watched local episode",
     },
     {
       value: { type: "check-integrity" },

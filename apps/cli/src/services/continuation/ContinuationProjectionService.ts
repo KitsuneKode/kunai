@@ -17,7 +17,11 @@ export class ContinuationProjectionService {
     } | null;
     readonly offline?: {
       readonly enrolled: boolean;
-      readonly readyNextEpisodes: readonly { readonly season: number; readonly episode: number }[];
+      readonly readyNextEpisodes: readonly {
+        readonly season: number;
+        readonly episode: number;
+        readonly jobId?: string;
+      }[];
     } | null;
   }): ContinuationProjection {
     return projectContinuationState(input);

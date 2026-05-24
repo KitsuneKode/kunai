@@ -255,10 +255,14 @@ function readCachedHistoryProjections(
         episode: entry.episode,
       })),
   );
-  const nextReadyByTitle = new Map<string, { season: number; episode: number }>();
+  const nextReadyByTitle = new Map<string, { season: number; episode: number; jobId?: string }>();
   for (const asset of nextReadyAssets) {
     if (asset.season === undefined || asset.episode === undefined) continue;
-    nextReadyByTitle.set(asset.titleId, { season: asset.season, episode: asset.episode });
+    nextReadyByTitle.set(asset.titleId, {
+      season: asset.season,
+      episode: asset.episode,
+      jobId: asset.originJobId,
+    });
   }
   const projections = new Map();
   for (const [titleId, entry] of entries) {

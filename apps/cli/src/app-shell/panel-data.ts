@@ -799,10 +799,12 @@ function buildHistoryOptionRow(
   const episode =
     entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
   if (projection?.kind === "offline-ready") {
+    const directLocalPlay =
+      projection.primaryAction?.kind === "play-local" && Boolean(projection.primaryAction.jobId);
     return {
       value: id,
       label: `${entry.title}  ·  ${formatSeriesEpisode(projection.season, projection.episode)}`,
-      detail: `download ready in /library  ·  ${projection.badge ?? "next episode ready"}  ·  completed ${episode}  ·  ${relativeTime(new Date(entry.watchedAt))}`,
+      detail: `${directLocalPlay ? "enter plays downloaded episode" : "download ready in /library"}  ·  ${projection.badge ?? "next episode ready"}  ·  completed ${episode}  ·  ${relativeTime(new Date(entry.watchedAt))}`,
       badge: projection.badge ?? "offline",
       tone: "success",
       posterTitle: entry.title,
