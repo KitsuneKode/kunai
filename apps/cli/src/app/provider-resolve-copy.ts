@@ -35,6 +35,6 @@ export function describeProviderResolveAttemptNote({
 
 export function describeProviderResolveProviderNote(isFallback: boolean): string {
   return isFallback
-    ? "Trying the next compatible provider now."
+    ? "Trying another source."
     : "Recoverable provider failures retry before fallback.";
 }

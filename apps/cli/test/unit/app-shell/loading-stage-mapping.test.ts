@@ -105,16 +105,16 @@ describe("provider resolve wait presentation", () => {
       elapsedSeconds: 36,
       latestIssue: "vidking: CDN request timed out",
     });
-    expect(result.message).toBe("Issue: vidking: CDN request timed out");
+    expect(result.message).toBe("Slow source");
     expect(result.tone).toBe("warning");
   });
 
-  test("elapsed >= 20 without issue triggers degradation hint", () => {
+  test("elapsed >= 20 without issue identifies a slow source", () => {
     const result = getProviderResolveWaitPresentation({
       elapsedSeconds: 25,
       fallbackAvailable: true,
     });
-    expect(result.message).toContain("degraded");
+    expect(result.message).toContain("Slow source");
     expect(result.tone).toBe("warning");
     expect(result.footerTask).toContain("fallback");
   });

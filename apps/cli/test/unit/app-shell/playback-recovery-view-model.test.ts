@@ -44,7 +44,7 @@ describe("buildPlaybackRecoveryViewModel", () => {
     expect(model?.state.title).toBe("Playback did not start");
   });
 
-  test("provider degraded is warning, not hard error", () => {
+  test("slow provider source is warning, not hard error", () => {
     const model = buildPlaybackRecoveryViewModel(
       baseState({
         operation: "resolving",
@@ -53,7 +53,7 @@ describe("buildPlaybackRecoveryViewModel", () => {
       }),
     );
     expect(model?.state.kind).toBe("info");
-    expect(model?.state.title).toBe("Provider degraded");
+    expect(model?.state.title).toBe("Slow source");
   });
 
   test("no source available keeps diagnostics but does not offer next", () => {
@@ -64,7 +64,7 @@ describe("buildPlaybackRecoveryViewModel", () => {
         hasNextEpisode: true,
       }),
     );
-    expect(model?.state.title).toBe("No playable source");
+    expect(model?.state.title).toBe("No playable source found");
     expect(model?.actions.map((action) => action.id)).toEqual([
       "recover",
       "sources",

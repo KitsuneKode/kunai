@@ -1,3 +1,5 @@
+import { classifyProviderResolveUserState } from "@/app/provider-resolve-user-state";
+
 import type { LoadingShellStage, LoadingShellState, ShellStatusTone } from "./types";
 
 export type LoadingShellTimerPolicy = {
@@ -161,20 +163,31 @@ export function getProviderResolveWaitPresentation(input: {
   const issue = normalizeLoadingIssue(input.latestIssue);
 
   if (issue) {
+    const classified = classifyProviderResolveUserState({
+      issue,
+      elapsedSeconds: input.elapsedSeconds,
+    });
     return {
-      message: input.stageDetail ? `${input.stageDetail} · Issue: ${issue}` : `Issue: ${issue}`,
+      message: classified
+        ? input.stageDetail
+          ? `${input.stageDetail} · ${classified.title}`
+          : classified.title
+        : input.stageDetail
+          ? `${input.stageDetail} · Issue: ${issue}`
+          : `Issue: ${issue}`,
       tone: "warning",
       footerTask: `Playback bootstrap  ·  ${fallbackHint}q / Esc cancel`,
     };
   }
 
   if (input.elapsedSeconds >= 20) {
+    const slowSource = classifyProviderResolveUserState({ elapsedSeconds: input.elapsedSeconds });
     return {
       message: input.stageDetail
-        ? `${input.stageDetail} · Provider/CDN may be degraded.`
-        : "Provider/CDN may be degraded. Try fallback or open diagnostics.",
+        ? `${input.stageDetail} · ${slowSource?.title ?? "Slow source"}`
+        : `${slowSource?.title ?? "Slow source"}. Try fallback or open diagnostics.`,
       tone: "warning",
-      footerTask: `Provider/CDN degraded  ·  ${fallbackHint}Esc cancel · d diagnostics`,
+      footerTask: `Slow source  ·  ${fallbackHint}Esc cancel · d diagnostics`,
     };
   }
 

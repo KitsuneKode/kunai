@@ -1,3 +1,5 @@
+import { classifyProviderResolveUserState } from "@/app/provider-resolve-user-state";
+
 import type { ActionRowModel } from "./primitives/ActionList";
 import type { StateBlockModel } from "./primitives/StateBlock";
 import type { LoadingShellState } from "./types";
@@ -29,8 +31,9 @@ export function buildPlaybackRecoveryViewModel(
     issue.includes("source unavailable") ||
     issue.includes("quality variants unavailable");
   const degraded = issue.includes("degraded") || issue.includes("fallback");
+  const classified = classifyProviderResolveUserState({ issue: state.latestIssue });
 
-  if (!stalled && !didNotStart && !noSource && !degraded) return null;
+  if (!stalled && !didNotStart && !noSource && !degraded && !classified) return null;
 
   const actions: ActionRowModel[] = [];
   if (stalled || didNotStart || noSource) {
@@ -74,8 +77,8 @@ export function buildPlaybackRecoveryViewModel(
     : didNotStart
       ? "Playback did not start"
       : noSource
-        ? "No playable source"
-        : "Provider degraded";
+        ? "No playable source found"
+        : (classified?.title ?? "Provider issue for this title");
 
   return {
     state: {
@@ -84,7 +87,8 @@ export function buildPlaybackRecoveryViewModel(
       detail:
         stalled || didNotStart || noSource
           ? "Progress is preserved. Kunai will not mark this episode watched until playback recovers."
-          : "Kunai is trying a safer path. You can fallback or inspect diagnostics.",
+          : (classified?.detail ??
+            "Kunai is trying a safer path. You can fallback or inspect diagnostics."),
       actions,
     },
     actions,

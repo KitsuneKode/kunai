@@ -34,8 +34,6 @@ describe("provider resolve copy", () => {
     expect(describeProviderResolveProviderNote(false)).toBe(
       "Recoverable provider failures retry before fallback.",
     );
-    expect(describeProviderResolveProviderNote(true)).toBe(
-      "Trying the next compatible provider now.",
-    );
+    expect(describeProviderResolveProviderNote(true)).toBe("Trying another source.");
   });
 });

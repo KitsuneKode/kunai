@@ -87,7 +87,7 @@ describe("loading shell runtime policy", () => {
         latestIssue: "vidking: CDN request timed out",
       }),
     ).toEqual({
-      message: "Issue: vidking: CDN request timed out",
+      message: "Slow source",
       tone: "warning",
       footerTask: "Playback bootstrap  ·  f fallback · q / Esc cancel",
     });
@@ -99,9 +99,9 @@ describe("loading shell runtime policy", () => {
         fallbackAvailable: true,
       }),
     ).toEqual({
-      message: "Provider/CDN may be degraded. Try fallback or open diagnostics.",
+      message: "Slow source. Try fallback or open diagnostics.",
       tone: "warning",
-      footerTask: "Provider/CDN degraded  ·  f fallback · Esc cancel · d diagnostics",
+      footerTask: "Slow source  ·  f fallback · Esc cancel · d diagnostics",
     });
   });
 
