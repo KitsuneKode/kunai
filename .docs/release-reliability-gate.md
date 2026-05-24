@@ -53,7 +53,7 @@ Anime providers:
 
 ```sh
 bun run test:live:allanime
-bun run test:live:miruro
+bun run test:live:miruro 1159 21 "One Piece"
 ```
 
 Expected result for each provider:

@@ -549,8 +549,9 @@ async function pipeCall(
   const encoded = bytesToBase64url(new TextEncoder().encode(JSON.stringify(payload)));
   const url = `${PIPE_URL}?e=${encoded}`;
 
+  let res: Response;
   try {
-    const res = await fetch(url, {
+    res = await fetch(url, {
       signal: signal ?? AbortSignal.timeout(20_000),
       headers: {
         "User-Agent": USER_AGENT,
@@ -562,23 +563,25 @@ async function pipeCall(
         "sec-fetch-site": "same-origin",
       },
     });
-    if (!res.ok) return null;
-
-    const body = await res.text();
-    if (!body.startsWith("bh4YNPj7") && res.headers.get("x-obfuscated") !== "2") return null;
-
-    const raw = base64urlToBytes(body);
-    const decrypted = xorDecrypt(raw, PIPE_KEY);
-    let json: string;
-    if (decrypted[0] === 31 && decrypted[1] === 139) {
-      json = new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer));
-    } else {
-      json = new TextDecoder().decode(decrypted);
-    }
-    return JSON.parse(json);
-  } catch {
-    return null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "request failed";
+    throw new Error(`Miruro pipe network request failed: ${message}`, { cause: error });
   }
+
+  if (!res.ok) return null;
+
+  const body = await res.text();
+  if (!body.startsWith("bh4YNPj7") && res.headers.get("x-obfuscated") !== "2") return null;
+
+  const raw = base64urlToBytes(body);
+  const decrypted = xorDecrypt(raw, PIPE_KEY);
+  let json: string;
+  if (decrypted[0] === 31 && decrypted[1] === 139) {
+    json = new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer));
+  } else {
+    json = new TextDecoder().decode(decrypted);
+  }
+  return JSON.parse(json);
 }
 
 export const miruroProviderModule: CoreProviderModule = {

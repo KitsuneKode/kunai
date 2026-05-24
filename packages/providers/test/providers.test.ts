@@ -12,6 +12,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createMiruroResultFromPayload,
+  getMiruroEpisodesResponse,
   createVidkingResultFromPayload,
   extractQualitiesFromMaster,
   getProviderMigrationQueue,
@@ -481,6 +482,21 @@ test("miruro source cycling orders preferred subtitle delivery before fallback a
     "ja",
     "ja",
   ]);
+});
+
+test("miruro episode lookup preserves network failures as provider evidence", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    throw new TypeError("ConnectionRefused");
+  }) as unknown as typeof fetch;
+
+  try {
+    await expect(getMiruroEpisodesResponse("999001")).rejects.toThrow(
+      "Miruro pipe network request failed",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("negative fixture maps blocked vidking host to structured failure", async () => {

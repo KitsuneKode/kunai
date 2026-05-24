@@ -9,9 +9,10 @@ import {
 } from "./provider-smoke";
 
 const profile = createProviderSmokeProfile("rivestream");
+const args = process.argv.slice(1);
 
-const season = Number(process.argv[2] ?? "1");
-const episode = Number(process.argv[3] ?? "1");
+const season = Number(args[0] ?? "1");
+const episode = Number(args[1] ?? "1");
 const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const { createContainer } = await import("@/container");

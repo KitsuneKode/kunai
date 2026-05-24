@@ -9,8 +9,11 @@ import {
 } from "./provider-smoke";
 
 const profile = createProviderSmokeProfile("miruro");
+const args = process.argv.slice(1);
 
-const episode = Number(process.argv[2] ?? "1");
+const episode = Number(args[0] ?? "1159");
+const titleId = args[1] ?? "21";
+const titleName = args.slice(2).join(" ") || "One Piece";
 const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const { createContainer } = await import("@/container");
@@ -27,9 +30,9 @@ if (clearCache) {
 }
 
 const title: TitleInfo = {
-  id: "101922",
+  id: titleId,
   type: "series",
-  name: "Demon Slayer: Kimetsu no Yaiba",
+  name: titleName,
 };
 
 let resolveError: unknown = null;

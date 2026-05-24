@@ -10,7 +10,7 @@ Run them only when network access is intentional. Prefer one focused provider wh
 bun run test:live:vidking 1 2
 bun run test:live:rivestream
 bun run test:live:allanime "Kimetsu no Yaiba" SJms742bSTrcyJZay
-bun run test:live:miruro
+bun run test:live:miruro 1159 21 "One Piece"
 KUNAI_LIVE_DISCORD_PRESENCE=1 bun run test:live:discord
 ```
 

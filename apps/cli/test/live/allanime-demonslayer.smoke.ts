@@ -9,13 +9,14 @@ import {
 } from "./provider-smoke";
 
 const profile = createProviderSmokeProfile("allanime");
+const args = process.argv.slice(1);
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
 const { searchRegistry, providerRegistry, config } = container;
 
-const query = process.argv[2] ?? "Kimetsu no Yaiba";
-const fixtureTitleId = process.argv[3] ?? "SJms742bSTrcyJZay";
+const query = args[0] ?? "Kimetsu no Yaiba";
+const fixtureTitleId = args[1] ?? "SJms742bSTrcyJZay";
 
 const search = await searchTitles(query, {
   mode: "anime",
