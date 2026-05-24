@@ -26,6 +26,7 @@ test("maps AniList trending anime to the active provider-native id before playba
     mode: "anime",
     providerId: "allanime",
     animeLanguageProfile: { audio: "original", subtitle: "en" },
+    searchProviderNative: async () => [],
     providerRegistry: {
       get: () => ({
         metadata: {

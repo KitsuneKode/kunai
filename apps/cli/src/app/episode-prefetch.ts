@@ -34,6 +34,7 @@ export type EpisodePrefetchProgress = {
   readonly exactStreamCacheHit?: boolean;
   readonly sourceInventoryHit?: boolean;
   readonly candidateStreamsReturned?: boolean;
+  readonly providerResolveActive?: boolean;
   readonly fallbackAttemptStarted?: boolean;
   readonly streamValidationActive?: boolean;
   readonly videoReady?: boolean;
@@ -66,6 +67,7 @@ export function resolveEpisodePrefetchWaitBudget(progress?: EpisodePrefetchProgr
     progress?.exactStreamCacheHit ||
     progress?.sourceInventoryHit ||
     progress?.candidateStreamsReturned ||
+    progress?.providerResolveActive ||
     progress?.fallbackAttemptStarted ||
     progress?.streamValidationActive ||
     progress?.videoReady

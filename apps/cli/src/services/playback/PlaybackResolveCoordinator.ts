@@ -155,6 +155,23 @@ export class PlaybackResolveCoordinator {
           userVisible: event.userVisible,
         },
       });
+      return;
+    }
+
+    if (event.type === "provider-resolve-started") {
+      this.deps.diagnostics.record({
+        ...input.correlation,
+        category: "provider",
+        operation: "provider.resolve.started",
+        message: "Provider resolution started",
+        providerId: event.providerId,
+        titleId: input.title.id,
+        season: input.episode.season,
+        episode: input.episode.episode,
+        context: {
+          candidateCount: event.candidateCount,
+        },
+      });
     }
   }
 

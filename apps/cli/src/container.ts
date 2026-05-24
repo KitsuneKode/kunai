@@ -102,6 +102,7 @@ import { StorageMaintenanceService } from "./services/persistence/StorageMainten
 import { SyncTokenStore } from "./services/persistence/SyncTokenStore";
 import { MediaTrackService } from "./services/playback/MediaTrackService";
 import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
+import { PlaybackResolveWorkService } from "./services/playback/PlaybackResolveWorkService";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import { TitleProviderHealthService } from "./services/playback/TitleProviderHealthService";
 import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
@@ -158,6 +159,7 @@ export interface Container {
   readonly diagnosticsService: DiagnosticsService;
   readonly storageMaintenance: StorageMaintenanceService;
   readonly sourceInventory: SourceInventoryService;
+  readonly playbackResolveWork: PlaybackResolveWorkService;
   readonly mediaTrackService: MediaTrackService;
   readonly featureFlags: AttentionFeatureFlags;
   readonly providerHealth: ProviderHealthRepository;
@@ -367,6 +369,16 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   const providerRegistry = createProviderRegistry(engine);
   const offlineAssetService = new OfflineAssetService(offlineAssets);
+  const playbackResolveWork = new PlaybackResolveWorkService(
+    new PlaybackResolveCoordinator({
+      engine,
+      cacheStore,
+      providerHealth,
+      sourceInventory,
+      titleProviderHealth,
+      diagnostics: diagnosticsService,
+    }),
+  );
 
   const downloadService = new DownloadService({
     repo: downloadJobs,
@@ -380,28 +392,23 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       offlineAssetService.adoptCompletedJob(job);
     },
     resolveDownloadStream: async (intent) => {
-      const resolver = new PlaybackResolveCoordinator({
-        engine,
-        cacheStore,
-        providerHealth,
-        sourceInventory,
-        titleProviderHealth,
-        diagnostics: diagnosticsService,
-      });
       const controller = new AbortController();
-      const result = await resolver.resolve({
-        title: intent.title,
-        episode: intent.episode ?? { season: 1, episode: 1 },
-        mode: intent.mode,
-        providerId: intent.providerId,
-        audioPreference: intent.audioPreference,
-        subtitlePreference: intent.subtitlePreference,
-        qualityPreference: intent.qualityPreference,
-        selectedSourceId: intent.selectedSourceId,
-        selectedStreamId: intent.selectedStreamId,
-        recoveryMode: config.recoveryMode,
-        signal: controller.signal,
-      });
+      const result = await playbackResolveWork.resolve(
+        {
+          title: intent.title,
+          episode: intent.episode ?? { season: 1, episode: 1 },
+          mode: intent.mode,
+          providerId: intent.providerId,
+          audioPreference: intent.audioPreference,
+          subtitlePreference: intent.subtitlePreference,
+          qualityPreference: intent.qualityPreference,
+          selectedSourceId: intent.selectedSourceId,
+          selectedStreamId: intent.selectedStreamId,
+          recoveryMode: config.recoveryMode,
+          signal: controller.signal,
+        },
+        { intentKind: "download", budgetLane: "background" },
+      );
       if (!result.stream) return null;
       const resolvedStreamId = result.stream.providerResolveResult?.selectedStreamId;
       const resolvedSourceId = result.stream.providerResolveResult?.streams.find(
@@ -522,6 +529,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     diagnosticsService,
     storageMaintenance,
     sourceInventory,
+    playbackResolveWork,
     mediaTrackService,
     featureFlags,
     providerHealth,

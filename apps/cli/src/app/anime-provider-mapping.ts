@@ -8,6 +8,7 @@ export type AnimeProviderMappingContext = {
   readonly animeLanguageProfile: import("@/services/persistence/ConfigService").MediaLanguageProfile;
   readonly providerRegistry: ProviderRegistry;
   readonly signal?: AbortSignal;
+  readonly searchProviderNative?: typeof searchAllManga;
 };
 
 const ALLMANGA_API_URL = "https://api.allanime.day/api";
@@ -25,6 +26,7 @@ export async function mapAnimeDiscoveryResultToProviderNative(
 
   const discoveryAniListId = parseInt(result.id, 10);
   const provider = context.providerRegistry.get(context.providerId);
+  const searchProviderNative = context.searchProviderNative ?? searchAllManga;
 
   // Tier 1: Direct AniList ID match via API (fast, accurate)
   if (!isNaN(discoveryAniListId)) {
@@ -34,7 +36,7 @@ export async function mapAnimeDiscoveryResultToProviderNative(
         ? ("sub" as const)
         : ("dub" as const);
     for (const query of providerSearchQueries(result)) {
-      const matches = await searchAllManga(
+      const matches = await searchProviderNative(
         ALLMANGA_API_URL,
         ALLMANGA_REFERER,
         ALLMANGA_UA,

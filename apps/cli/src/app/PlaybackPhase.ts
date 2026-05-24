@@ -114,7 +114,6 @@ import {
 } from "@/services/diagnostics/correlation";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
-import { PlaybackResolveCoordinator } from "@/services/playback/PlaybackResolveCoordinator";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
@@ -568,7 +567,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     PlaybackPhase.lateSubtitleInflight.clear();
     const {
       providerRegistry,
-      engine,
       stateManager,
       logger,
       historyStore,
@@ -1013,122 +1011,120 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 // best-effort; a failed cache delete should not block recovery
               }
             }
-            const playbackResolver = new PlaybackResolveCoordinator({
-              engine,
-              cacheStore,
-              providerHealth: container.providerHealth,
-              sourceInventory: container.sourceInventory,
-              titleProviderHealth: container.titleProviderHealth,
-              diagnostics: container.diagnosticsService,
-            });
-            const resolveResult = await playbackResolver.resolve({
-              title,
-              episode: currentEpisode,
-              mode: stateManager.getState().mode,
-              providerId: currentProvider.metadata.id,
-              audioPreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.audio
-                  : title.type === "movie"
-                    ? config.movieLanguageProfile.audio
-                    : config.seriesLanguageProfile.audio,
-              subtitlePreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.subtitle
-                  : title.type === "movie"
-                    ? config.movieLanguageProfile.subtitle
-                    : config.seriesLanguageProfile.subtitle,
-              qualityPreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.quality
-                  : title.type === "movie"
-                    ? config.movieLanguageProfile.quality
-                    : config.seriesLanguageProfile.quality,
-              recoveryMode: config.recoveryMode,
-              preferFreshStream: sourceRefreshDecision?.kind === "refresh",
-              preserveCachedStreamOnFreshFailure: sourceRefreshDecision?.kind === "refresh",
-              signal: resolveController.signal,
-              correlation: playbackCorrelation,
-              onFeedback: (feedback) => this.updatePlaybackFeedback(context, feedback),
-              onEvent: (event) => {
-                if (event.type === "cache-hit" || event.type === "cache-miss") {
-                  const hit = event.type === "cache-hit";
-                  if (hit) {
-                    logger.info("Provider resolve cache hit", {
-                      provider: event.providerId,
-                      titleId: title.id,
-                      season: currentEpisode.season,
-                      episode: currentEpisode.episode,
+            const resolveResult = await container.playbackResolveWork.resolve(
+              {
+                title,
+                episode: currentEpisode,
+                mode: stateManager.getState().mode,
+                providerId: currentProvider.metadata.id,
+                audioPreference:
+                  stateManager.getState().mode === "anime"
+                    ? config.animeLanguageProfile.audio
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.audio
+                      : config.seriesLanguageProfile.audio,
+                subtitlePreference:
+                  stateManager.getState().mode === "anime"
+                    ? config.animeLanguageProfile.subtitle
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.subtitle
+                      : config.seriesLanguageProfile.subtitle,
+                qualityPreference:
+                  stateManager.getState().mode === "anime"
+                    ? config.animeLanguageProfile.quality
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.quality
+                      : config.seriesLanguageProfile.quality,
+                recoveryMode: config.recoveryMode,
+                preferFreshStream: sourceRefreshDecision?.kind === "refresh",
+                preserveCachedStreamOnFreshFailure: sourceRefreshDecision?.kind === "refresh",
+                signal: resolveController.signal,
+                correlation: playbackCorrelation,
+                onFeedback: (feedback) => this.updatePlaybackFeedback(context, feedback),
+                onEvent: (event) => {
+                  if (event.type === "cache-hit" || event.type === "cache-miss") {
+                    const hit = event.type === "cache-hit";
+                    if (hit) {
+                      logger.info("Provider resolve cache hit", {
+                        provider: event.providerId,
+                        titleId: title.id,
+                        season: currentEpisode.season,
+                        episode: currentEpisode.episode,
+                      });
+                    }
+                    diagnosticsStore.record({
+                      ...playbackCorrelation,
+                      category: "cache",
+                      message: hit ? "Provider resolve cache hit" : "Provider resolve cache miss",
+                      context: {
+                        provider: event.providerId,
+                        titleId: title.id,
+                        season: currentEpisode.season,
+                        episode: currentEpisode.episode,
+                      },
+                    });
+                    return;
+                  }
+
+                  if (event.type === "fresh-source-failed-using-cache") {
+                    this.updatePlaybackFeedback(context, {
+                      detail: "No fresher source found. Continuing current stream.",
+                      note: "The cached stream stayed available, so playback can resume.",
+                    });
+                    return;
+                  }
+
+                  if (event.type === "cache-health-check") {
+                    diagnosticsStore.record({
+                      ...playbackCorrelation,
+                      category: "cache",
+                      message: event.healthy
+                        ? "Cached stream health check passed"
+                        : "Cached stream health check failed",
+                      context: {
+                        provider: event.providerId,
+                        titleId: title.id,
+                        season: currentEpisode.season,
+                        episode: currentEpisode.episode,
+                        strategy: event.strategy,
+                        ageMs: event.ageMs,
+                      },
+                    });
+                    return;
+                  }
+
+                  if (event.type === "attempt") {
+                    stateManager.dispatch({
+                      type: "SET_RESOLVE_RETRY_COUNT",
+                      count: Math.max(0, event.attempt - 1),
+                    });
+                    this.updatePlaybackFeedback(context, {
+                      detail: describeProviderResolveAttemptDetail(event),
+                      note: describeProviderResolveAttemptNote(event),
+                    });
+                    return;
+                  }
+
+                  if (event.type === "failure") {
+                    this.updatePlaybackFeedback(context, {
+                      detail: event.retryable
+                        ? `Recoverable provider issue (${event.attempt}/${event.maxAttempts})`
+                        : "Provider returned a non-recoverable issue",
+                      note: event.issue,
+                    });
+                  } else if (event.type === "cache-stale") {
+                    this.updatePlaybackFeedback(context, {
+                      detail: "Cached stream expired, refetching…",
+                      note: null,
                     });
                   }
-                  diagnosticsStore.record({
-                    ...playbackCorrelation,
-                    category: "cache",
-                    message: hit ? "Provider resolve cache hit" : "Provider resolve cache miss",
-                    context: {
-                      provider: event.providerId,
-                      titleId: title.id,
-                      season: currentEpisode.season,
-                      episode: currentEpisode.episode,
-                    },
-                  });
-                  return;
-                }
-
-                if (event.type === "fresh-source-failed-using-cache") {
-                  this.updatePlaybackFeedback(context, {
-                    detail: "No fresher source found. Continuing current stream.",
-                    note: "The cached stream stayed available, so playback can resume.",
-                  });
-                  return;
-                }
-
-                if (event.type === "cache-health-check") {
-                  diagnosticsStore.record({
-                    ...playbackCorrelation,
-                    category: "cache",
-                    message: event.healthy
-                      ? "Cached stream health check passed"
-                      : "Cached stream health check failed",
-                    context: {
-                      provider: event.providerId,
-                      titleId: title.id,
-                      season: currentEpisode.season,
-                      episode: currentEpisode.episode,
-                      strategy: event.strategy,
-                      ageMs: event.ageMs,
-                    },
-                  });
-                  return;
-                }
-
-                if (event.type === "attempt") {
-                  stateManager.dispatch({
-                    type: "SET_RESOLVE_RETRY_COUNT",
-                    count: Math.max(0, event.attempt - 1),
-                  });
-                  this.updatePlaybackFeedback(context, {
-                    detail: describeProviderResolveAttemptDetail(event),
-                    note: describeProviderResolveAttemptNote(event),
-                  });
-                  return;
-                }
-
-                if (event.type === "failure") {
-                  this.updatePlaybackFeedback(context, {
-                    detail: event.retryable
-                      ? `Recoverable provider issue (${event.attempt}/${event.maxAttempts})`
-                      : "Provider returned a non-recoverable issue",
-                    note: event.issue,
-                  });
-                } else if (event.type === "cache-stale") {
-                  this.updatePlaybackFeedback(context, {
-                    detail: "Cached stream expired, refetching…",
-                    note: null,
-                  });
-                }
+                },
               },
-            });
+              {
+                intentKind: sourceRefreshDecision?.kind === "recover" ? "recovery" : "playback",
+                budgetLane: "user-blocking",
+              },
+            );
 
             stream = resolveResult.stream;
             resolvedProviderId = resolveResult.providerId;
@@ -2795,15 +2791,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       readonly signal: AbortSignal;
     },
   ): Promise<EpisodePrefetchBundle | null> {
-    const {
-      engine,
-      cacheStore,
-      config,
-      stateManager,
-      providerHealth,
-      sourceInventory,
-      titleProviderHealth,
-    } = context.container;
+    const { config, stateManager, playbackResolveWork } = context.container;
     const mode = stateManager.getState().mode;
     const subLang =
       mode === "anime"
@@ -2811,41 +2799,38 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         : stateManager.getState().seriesLanguageProfile.subtitle;
     const isInteractiveSubtitle = subLang === "interactive" || subLang === "fzf";
 
-    const coordinator = new PlaybackResolveCoordinator({
-      engine,
-      cacheStore,
-      providerHealth,
-      sourceInventory,
-      titleProviderHealth,
-    });
-
-    const stream = await coordinator.prefetch({
-      title: input.title,
-      episode: input.nextEpisode,
-      mode,
-      providerId: input.providerId,
-      audioPreference:
-        mode === "anime" ? config.animeLanguageProfile.audio : config.seriesLanguageProfile.audio,
-      subtitlePreference:
-        mode === "anime"
-          ? config.animeLanguageProfile.subtitle
-          : config.seriesLanguageProfile.subtitle,
-      qualityPreference:
-        mode === "anime"
-          ? config.animeLanguageProfile.quality
-          : config.seriesLanguageProfile.quality,
-      recoveryMode: config.recoveryMode,
-      signal: input.signal,
-      onEvent: (event) => {
-        if (event.type === "cache-hit" || event.type === "cache-hit-validated") {
-          input.onProgress?.({ exactStreamCacheHit: true });
-        } else if (event.type === "source-inventory-hit") {
-          input.onProgress?.({ sourceInventoryHit: true, streamValidationActive: true });
-        } else if (event.type === "attempt" && event.attempt > 1) {
-          input.onProgress?.({ fallbackAttemptStarted: true });
-        }
+    const stream = await playbackResolveWork.prefetch(
+      {
+        title: input.title,
+        episode: input.nextEpisode,
+        mode,
+        providerId: input.providerId,
+        audioPreference:
+          mode === "anime" ? config.animeLanguageProfile.audio : config.seriesLanguageProfile.audio,
+        subtitlePreference:
+          mode === "anime"
+            ? config.animeLanguageProfile.subtitle
+            : config.seriesLanguageProfile.subtitle,
+        qualityPreference:
+          mode === "anime"
+            ? config.animeLanguageProfile.quality
+            : config.seriesLanguageProfile.quality,
+        recoveryMode: config.recoveryMode,
+        signal: input.signal,
+        onEvent: (event) => {
+          if (event.type === "cache-hit" || event.type === "cache-hit-validated") {
+            input.onProgress?.({ exactStreamCacheHit: true });
+          } else if (event.type === "source-inventory-hit") {
+            input.onProgress?.({ sourceInventoryHit: true, streamValidationActive: true });
+          } else if (event.type === "provider-resolve-started") {
+            input.onProgress?.({ providerResolveActive: true });
+          } else if (event.type === "attempt" && event.attempt > 1) {
+            input.onProgress?.({ fallbackAttemptStarted: true });
+          }
+        },
       },
-    });
+      { intentKind: "prefetch", budgetLane: "near-need" },
+    );
 
     if (!stream) return null;
     input.onProgress?.({ videoReady: true, candidateStreamsReturned: true });

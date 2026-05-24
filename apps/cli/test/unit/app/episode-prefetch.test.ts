@@ -158,6 +158,7 @@ describe("EpisodePrefetchHandle", () => {
     expect(resolveEpisodePrefetchWaitBudget()).toBe(3_000);
     expect(resolveEpisodePrefetchWaitBudget({ timingReady: true })).toBe(3_000);
     expect(resolveEpisodePrefetchWaitBudget({ sourceInventoryHit: true })).toBe(8_000);
+    expect(resolveEpisodePrefetchWaitBudget({ providerResolveActive: true })).toBe(8_000);
     expect(resolveEpisodePrefetchWaitBudget({ fallbackAttemptStarted: true })).toBe(8_000);
   });
 });

@@ -74,6 +74,11 @@ export type PlaybackResolveEvent =
       readonly providerId: string;
     }
   | {
+      readonly type: "provider-resolve-started";
+      readonly providerId: string;
+      readonly candidateCount: number;
+    }
+  | {
       readonly type: "attempt";
       readonly providerId: string;
       readonly providerName: string;
@@ -320,12 +325,40 @@ export class PlaybackResolveService {
       detail: `Resolving via ${providerName}`,
       note: describeProviderResolveProviderNote(false),
     });
+    input.onEvent?.({
+      type: "provider-resolve-started",
+      providerId: input.providerId,
+      candidateCount: compatibleIds.length,
+    });
 
     const engineResult = await this.deps.engine.resolveWithFallback(
       resolveInput,
       compatibleIds,
       input.signal,
     );
+    engineResult.attempts.forEach((attempt, index) => {
+      const attemptedName =
+        this.deps.engine.getManifest(attempt.providerId)?.displayName ?? attempt.providerId;
+      input.onEvent?.({
+        type: "attempt",
+        providerId: attempt.providerId,
+        providerName: attemptedName,
+        attempt: index + 1,
+        maxAttempts: compatibleIds.length,
+      });
+      const failure = attempt.failure ?? attempt.result?.failures[0];
+      if (failure) {
+        input.onEvent?.({
+          type: "failure",
+          providerId: attempt.providerId,
+          providerName: attemptedName,
+          attempt: index + 1,
+          maxAttempts: compatibleIds.length,
+          issue: classifyProviderFailure(failure).failureClass,
+          retryable: failure.retryable,
+        });
+      }
+    });
     const providerTimeline = buildProviderTimeline(
       engineResult,
       input.providerId,
@@ -334,7 +367,10 @@ export class PlaybackResolveService {
 
     // Persist provider health deltas from all attempts
     for (const attempt of engineResult.attempts) {
-      if (attempt.result?.healthDelta) {
+      if (
+        attempt.result?.healthDelta &&
+        !attempt.result.failures.some((failure) => isOfflineNetworkFailure(failure))
+      ) {
         this.persistProviderHealthDelta(attempt.result.healthDelta);
       }
     }
@@ -586,6 +622,25 @@ function titleProviderFailureFromAttempts(
     default:
       return null;
   }
+}
+
+function isOfflineNetworkFailure(failure: {
+  readonly code: string;
+  readonly message: string;
+}): boolean {
+  if (failure.code !== "network-error") return false;
+  const message = failure.message.toLowerCase();
+  return (
+    message.includes("enotfound") ||
+    message.includes("eai_again") ||
+    message.includes("enetunreach") ||
+    message.includes("network is unreachable") ||
+    message.includes("err_internet_disconnected") ||
+    message.includes("err_name_not_resolved") ||
+    message.includes("could not resolve host") ||
+    message.includes("failed to resolve") ||
+    message.includes("offline")
+  );
 }
 
 function buildProviderTimeline(

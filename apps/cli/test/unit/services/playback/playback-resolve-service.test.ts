@@ -362,7 +362,8 @@ test("PlaybackResolveService records the classified primary failure when fallbac
     engine,
     cacheStore: createMemoryCache(null),
     titleProviderHealth: {
-      recordFailure: (_titleId, _providerId, _fallbackId, kind) => failures.push(kind),
+      recordFailure: (_titleId, _providerId, _fallbackId, kind) =>
+        failures.push(typeof kind === "string" ? kind : kind.errorClass),
       recordCleanSuccess: () => {},
     },
   });
@@ -472,8 +473,20 @@ test("PlaybackResolveService records empty provider results as failed attempts",
 test("PlaybackResolveService reuses fresh cached stream without health check", async () => {
   const freshStream = { ...stream, timestamp: Date.now() };
   const cache = createMemoryCache(freshStream);
-  const engine = createMockEngine({ result: null, providerId: null, attempts: [] });
-  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+  let providerCalls = 0;
+  let healthCalls = 0;
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    { onCandidateIds: () => (providerCalls += 1) },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    streamHealth: async () => {
+      healthCalls += 1;
+      return true;
+    },
+  });
 
   const events: string[] = [];
   const result = await service.resolve({
@@ -490,6 +503,8 @@ test("PlaybackResolveService reuses fresh cached stream without health check", a
   expect(result.cacheStatus).toBe("hit");
   expect(result.stream?.cacheProvenance).toBe("cached");
   expect(events).toEqual(["cache-hit"]);
+  expect(healthCalls).toBe(0);
+  expect(providerCalls).toBe(0);
 });
 
 test("PlaybackResolveService force-validates fresh cached stream after suspected dead playback", async () => {
@@ -550,7 +565,14 @@ test("PlaybackResolveService force-validates fresh cached stream after suspected
     onEvent: (e) => events.push(e.type),
   });
 
-  expect(events).toEqual(["cache-health-check", "cache-stale", "cache-miss", "recovery-decision"]);
+  expect(events).toEqual([
+    "cache-health-check",
+    "cache-stale",
+    "cache-miss",
+    "recovery-decision",
+    "provider-resolve-started",
+    "attempt",
+  ]);
   expect(result.cacheStatus).toBe("miss");
   expect(result.cacheProvenance).toBe("refetched");
   expect(result.stream?.url).toBe(fallbackStream.url);
@@ -837,6 +859,49 @@ test("PlaybackResolveService persists consecutive provider failures before marki
   const health = providerHealth.get("primary" as ProviderId);
   expect(health?.consecutiveFailures).toBe(5);
   expect(health?.status).toBe("down");
+});
+
+test("PlaybackResolveService does not poison provider health for offline network results", async () => {
+  const providerHealth = createMemoryProviderHealth();
+  const offlineResult = {
+    ...createEmptyProviderResult("primary" as ProviderId),
+    failures: [
+      {
+        providerId: "primary" as ProviderId,
+        code: "network-error" as const,
+        message: "getaddrinfo ENOTFOUND provider.example",
+        retryable: false,
+        at: new Date().toISOString(),
+      },
+    ],
+    healthDelta: {
+      providerId: "primary" as ProviderId,
+      outcome: "failure" as const,
+      at: new Date().toISOString(),
+    },
+  };
+  const engine = createMockEngine({
+    result: null,
+    providerId: null,
+    attempts: [{ providerId: "primary" as ProviderId, result: offlineResult }],
+  });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    providerHealth: providerHealth as never,
+  });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(providerHealth.get("primary" as ProviderId)).toBeUndefined();
 });
 
 test("PlaybackResolveService passes abort signal into stale cache health checks", async () => {
