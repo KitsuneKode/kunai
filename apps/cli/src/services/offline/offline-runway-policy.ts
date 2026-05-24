@@ -40,12 +40,13 @@ export function planOfflineRunway(input: {
       skipReason: "no-watched-cursor",
     };
   }
+  const watchedCursor = input.watchedCursor;
 
   const existing = new Set(
     input.existingEpisodes.map((episode) => episodeKey(episode.season, episode.episode)),
   );
   const readyOrActiveCount = input.existingEpisodes.filter((episode) =>
-    isAfterCursor(episode, input.watchedCursor!),
+    isAfterCursor(episode, watchedCursor),
   ).length;
   const deficit = Math.max(0, target - readyOrActiveCount);
   if (deficit === 0) {
@@ -53,7 +54,7 @@ export function planOfflineRunway(input: {
   }
 
   const eligible = dedupeEpisodes(input.availableReleasedEpisodes)
-    .filter((episode) => isAfterCursor(episode, input.watchedCursor!))
+    .filter((episode) => isAfterCursor(episode, watchedCursor))
     .filter((episode) => !existing.has(episodeKey(episode.season, episode.episode)));
   if (eligible.length === 0) {
     return {
