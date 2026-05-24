@@ -12,7 +12,6 @@ import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-ma
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import { buildStreamInventoryView } from "@/app/source-quality";
-import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
@@ -69,6 +68,7 @@ import {
 } from "@kunai/storage";
 
 import { resolveCommands } from "./commands";
+import { buildDiagnosticsPanelLines } from "./panel-data";
 import { createSessionPickerId, openSessionPicker, waitForSessionPicker } from "./session-picker";
 import { runSetupFlow } from "./setup-shell";
 import type { ShellAction } from "./types";
@@ -330,11 +330,6 @@ function formatHistoryDetail(entry: HistoryEntry, newEpisodeCount = 0): string {
   const watched = relativeHistoryDate(entry.watchedAt);
   const finishedLabel = isFinished(entry) && newEpisodeCount === 0 ? "  ·  up to date" : "";
   return `${watched}${finishedLabel}  ·  provider ${entry.provider}`;
-}
-
-function summarizeHeaderKeys(headers: Record<string, string> | undefined): string {
-  const keys = Object.keys(headers ?? {});
-  return keys.length > 0 ? keys.join(", ") : "none";
 }
 
 function describeDownloadJob(job: DownloadJobRecord): string {
@@ -1412,7 +1407,6 @@ async function handleStaticOverlay(
 
 async function handleDiagnostics(container: Container): Promise<"handled"> {
   const { stateManager, diagnosticsStore } = container;
-  const state = stateManager.getState();
   const memoryLine = getRuntimeMemoryLine();
   const memoryTrend = summarizeRuntimeMemoryTrend(getRuntimeMemorySamples());
   diagnosticsStore.record({
@@ -1421,51 +1415,23 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
     message: "Runtime memory sample",
     context: { memory: memoryLine, trend: memoryTrend.detail, source: "diagnostics-command" },
   });
-  const recentEvents = diagnosticsStore.getRecent(6);
+  const lines = buildDiagnosticsPanelLines({
+    state: stateManager.getState(),
+    recentEvents: diagnosticsStore.getRecent(10),
+    memorySamples: getRuntimeMemorySamples(),
+    capabilitySnapshot: container.capabilitySnapshot,
+    downloadSummary: {
+      active: container.downloadService.listActive(200).length,
+      completed: container.downloadService.listCompleted(200).length,
+      failed: container.downloadService.listFailed(200).length,
+    },
+    presenceSnapshot: container.presence.getSnapshot(),
+  });
   await withOverlay(stateManager, { type: "diagnostics" }, () =>
     openStaticInfoShell({
       title: "Diagnostics",
-      subtitle: "Current shell state snapshot",
-      lines: [
-        { label: "Mode and provider", detail: `${state.mode}  ·  ${state.provider}` },
-        { label: "View and playback", detail: `${state.view}  ·  ${state.playbackStatus}` },
-        {
-          label: "Subtitle state",
-          detail: describePlaybackSubtitleStatus(
-            state.stream,
-            state.mode === "anime"
-              ? state.animeLanguageProfile.subtitle
-              : state.seriesLanguageProfile.subtitle,
-          ),
-        },
-        {
-          label: "Selected subtitle URL",
-          detail: state.stream?.subtitle ?? "not found or disabled",
-        },
-        { label: "Subtitle tracks", detail: String(state.stream?.subtitleList?.length ?? 0) },
-        { label: "Stream URL", detail: state.stream?.url ?? "not resolved yet" },
-        { label: "Header keys", detail: summarizeHeaderKeys(state.stream?.headers) },
-        {
-          label: "Search state",
-          detail: `${state.searchState}  ·  ${state.searchResults.length} results`,
-        },
-        { label: "Memory", detail: memoryLine },
-        { label: memoryTrend.label, detail: memoryTrend.detail },
-        {
-          label: "Startup capabilities",
-          detail: container.capabilitySnapshot?.issues?.length
-            ? container.capabilitySnapshot.issues
-                .map((i) => `${String(i.id)} (${String(i.severity)})`)
-                .join("  ·  ")
-            : "no startup capability issues",
-        },
-        ...recentEvents.map((event) => ({
-          label: `${new Date(event.timestamp).toLocaleTimeString()}  ·  ${event.category}`,
-          detail: event.context
-            ? `${event.message}  ·  ${JSON.stringify(event.context)}`
-            : event.message,
-        })),
-      ],
+      subtitle: "Health summary and redacted runtime evidence",
+      lines,
     }),
   );
   return "handled";
