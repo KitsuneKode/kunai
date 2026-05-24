@@ -161,6 +161,16 @@ export async function runProviderCycle<TResolved>(
           };
         }
 
+        if (failure.failureClass === "candidate-network" && !failure.retryable) {
+          return {
+            attempts,
+            events,
+            stopReason: "network-offline",
+            fallbackRequested: false,
+            cancelled: false,
+          };
+        }
+
         if (!failure.retryable || attemptNumber >= maxAttemptsPerCandidate) {
           break;
         }

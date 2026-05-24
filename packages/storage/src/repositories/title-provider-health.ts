@@ -8,6 +8,10 @@ export type TitleProviderHealthRecord = {
   readonly successfulFallbackCount: number;
   readonly cleanSuccessCount: number;
   readonly suggestedProviderId?: string;
+  readonly errorClass?: "timeout" | "no-streams" | "dead-stream" | "parse";
+  readonly sourceId?: string;
+  readonly serverId?: string;
+  readonly networkConfidence?: "unknown" | "healthy" | "limited" | "offline";
   readonly lastFailureAt?: string;
   readonly severeUntil?: string;
   readonly expiresAt: string;

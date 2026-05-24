@@ -153,9 +153,9 @@ test("runProviderCycle does not retry network-offline failures inside the same r
   });
 
   expect(result.selected).toBeUndefined();
-  expect(attempts).toEqual(["source:kiwi", "source:telli"]);
+  expect(attempts).toEqual(["source:kiwi"]);
+  expect(result.stopReason).toBe("network-offline");
   expect(result.attempts.map((attempt) => attempt.failure?.failureClass)).toEqual([
-    "candidate-network",
     "candidate-network",
   ]);
   expect(result.attempts.every((attempt) => attempt.failure?.retryable === false)).toBe(true);

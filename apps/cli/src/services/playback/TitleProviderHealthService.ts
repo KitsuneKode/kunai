@@ -1,5 +1,7 @@
 import type { TitleProviderHealthRepository } from "@kunai/storage";
 
+import { decideProviderHealthWrite, type ProviderHealthEvidence } from "./ProviderHealthEvidence";
+
 const NORMAL_RETENTION_MS = 24 * 60 * 60 * 1000;
 const SEVERE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -16,8 +18,12 @@ export class TitleProviderHealthService {
     titleId: string,
     providerId: string,
     successfulFallbackProviderId: string | undefined,
-    kind: CountableTitleProviderFailure,
+    input: CountableTitleProviderFailure | ProviderHealthEvidence,
   ): void {
+    const evidence = typeof input === "string" ? { errorClass: input } : input;
+    const writeDecision = decideProviderHealthWrite(evidence);
+    if (writeDecision.action === "skip") return;
+    const kind = writeDecision.evidence.errorClass;
     const now = this.now();
     const existing = this.repository.get(titleId, providerId, now);
     const severe = kind === "parse";
@@ -40,6 +46,10 @@ export class TitleProviderHealthService {
       successfulFallbackCount: fallbackCount,
       cleanSuccessCount: 0,
       suggestedProviderId,
+      errorClass: kind,
+      sourceId: writeDecision.evidence.sourceId,
+      serverId: writeDecision.evidence.serverId,
+      networkConfidence: writeDecision.evidence.networkConfidence,
       lastFailureAt: now.toISOString(),
       severeUntil: severe
         ? new Date(now.getTime() + SEVERE_RETENTION_MS).toISOString()

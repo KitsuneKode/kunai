@@ -43,4 +43,31 @@ describe("TitleProviderHealthService", () => {
     service.recordCleanSuccess("tmdb:1", "vidking");
     expect(service.getSwitchSuggestion("tmdb:1", "vidking")).toBeNull();
   });
+
+  test("stores scoped failure evidence while ignoring offline network failures", () => {
+    const repository = new MemoryRepo();
+    const service = new TitleProviderHealthService(
+      repository,
+      () => new Date("2026-05-23T12:00:00.000Z"),
+    );
+
+    service.recordFailure("tmdb:1", "vidking", undefined, {
+      errorClass: "network-offline",
+      networkConfidence: "offline",
+    });
+    expect(repository.rows.size).toBe(0);
+
+    service.recordFailure("tmdb:1", "vidking", undefined, {
+      errorClass: "dead-stream",
+      sourceId: "source:kiwi",
+      serverId: "kiwi",
+      networkConfidence: "healthy",
+    });
+    expect(repository.rows.get("tmdb:1:vidking")).toMatchObject({
+      errorClass: "dead-stream",
+      sourceId: "source:kiwi",
+      serverId: "kiwi",
+      networkConfidence: "healthy",
+    });
+  });
 });

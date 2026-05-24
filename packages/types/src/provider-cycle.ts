@@ -19,7 +19,12 @@ export type ProviderCycleIntent =
   | "fallback-provider"
   | "cancel";
 
-export type ProviderCycleStopReason = "resolved" | "exhausted" | "fallback-requested" | "cancelled";
+export type ProviderCycleStopReason =
+  | "resolved"
+  | "exhausted"
+  | "network-offline"
+  | "fallback-requested"
+  | "cancelled";
 
 export interface ProviderCycleCandidate {
   readonly id: string;

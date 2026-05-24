@@ -169,7 +169,10 @@ test("release progress cache repository stores summaries and due projections", (
     newEpisodeCount: 2,
     latestAiredEpisode: 8,
   });
-  expect(repo.summarizeActive()).toEqual({ titleCount: 1, episodeCount: 2 });
+  expect(repo.summarizeActive("2026-05-23T12:30:00.000Z")).toEqual({
+    titleCount: 1,
+    episodeCount: 2,
+  });
   expect(repo.listDue("2026-05-23T12:30:00.000Z", 10).map((row) => row.titleId)).toEqual([
     "anilist:1",
   ]);
