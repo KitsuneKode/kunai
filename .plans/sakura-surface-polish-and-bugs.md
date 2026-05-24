@@ -8,6 +8,13 @@ render the old generic list UI. Specs exist; implementation lagged.
 Derived from a full live-terminal review (2026-05-24). Order: **bugs first, then
 redesigns** (user-chosen).
 
+> **The real visual target is the HTML mockups, not these `.md` specs.** See
+> `.prototypes/` (manifest maps screen→source): `shell-atlas/atlas-harness-v1.html`,
+> `playback-postplay/workbench-rec-v1.html`, `ui-audit/mockups-rec-v1.html`,
+> `calendar-schedule/calendar-rec-v1.html`; plus `.design/cli/*.html`. Build from
+> those (`bun run prototype:serve`); the `.md` specs are lossy summaries that
+> caused visual drift (sloppy border, letter-tile, sparse post-play).
+
 ## A. Correctness bugs
 
 - [x] **A1 — false "complete" when playback didn't start.** A movie exited on
@@ -23,11 +30,12 @@ redesigns** (user-chosen).
       re-render path). Replaced with a budgeted live load (≤1200ms) before first
       paint, loaded at most once per post-play session, so the rail is populated
       when the shell opens. **Needs live confirm** recs render after a finish.
-- [ ] **A4 — search-result poster never renders.** Companion shows only the
-      letter tile (Img 8/9). Episode stills DO render in the picker, so the pipeline
-      works for some sizes. Likely the detail/companion variant URL or capability.
-      Trace `usePosterPreview` in `browse-shell.tsx` DetailsSheet/companion path.
-      Needs live terminal.
+- [x] **A4 — search-result poster never renders.** `c57b1ceb`: root cause was
+      `PreviewRail` only ever drawing the letter tile (`buildContextCardTile`) +
+      a stray single-line border — the poster `browse-shell` already resolved was
+      never passed in. Now renders the real chafa/Kitty poster in a borderless,
+      height-reserved slot (matches the earlier version the user preferred).
+      **Needs live confirm** the poster paints at their size.
 - [ ] **A5 — details key + browse focus-zone model.** Shift+Enter can't be
       detected (terminals don't send a distinct code). Decided: rebind to `i`.
       BUT `i` as a plain key would be typed into the query, because browse has no
@@ -51,9 +59,11 @@ redesigns** (user-chosen).
 - [x] **B8 — command palette "dancing" on paging.** Fixed `53f08fae`: ▲/▼ "more"
       lines always reserved. **Remaining:** disabled-command reason line + group-header
       margins still shift height by a row — fold into palette polish.
-- [ ] **B9 — palette overflows/corrupts layout** on results/playback (Img 10,
-      "moreloads" overlap). Palette taller than its slot collides with the list.
-      Needs a bounded fixed-height container; verify against `maxVisible` budget.
+- [~] **B9 — palette overflows/corrupts layout** on results/playback (Img 10/30/31).
+  `27223b06`: the companion preview stayed rendered with the palette open and
+  its taller content overlapped/garbled the palette rows — now hidden while
+  command mode is active. **Remaining:** the in-palette "▼ more"/row collision
+  ("moreloads") if it persists after the B8 reserved-line fix — needs live confirm.
 - [x] **B10 — calendar layout garbled** (Img 23/24). `6fd9020d`: `CalendarScheduleRow`
       guessed the title budget as `rowWidth-22`, so long availability labels +
       badges overflowed and wrapped into the next row. Now the title is truncated
@@ -90,9 +100,12 @@ redesigns** (user-chosen).
       `quality_picker` `OverlayState` members + their `root-overlay-shell` render
       branches are now dormant (nothing opens them). Removing them is a reducer-
       guard cascade — do as its own scoped commit, not mixed with feature work.
-- [ ] **C14 — Post-play = "episode page + remote"** → action rows + preview rail
-  - recs + per-state layout. Today sparse text. Spec: `post-playback.md`.
-    (A1/A3 are prerequisites.)
+- [x] **C14 — Post-play = "episode page + remote"** → `e79b7dbf`: rebuilt
+      `post-play-shell.tsx` to `.prototypes/playback-postplay/workbench-rec-v1.html`
+      — per-state heroes (⏸ stopped early + resume / NEXT <ep> / ✦ SERIES COMPLETE
+      / ◉ caught up / season finale w/ progress), labelled discovery divider, and
+      numbered inline picks (1·2·3). **Needs live verify** + the 1–3 pick keybinds
+      may still need wiring in the playback shell input handler.
 - [ ] **C15 — History** consistency polish (Img 20). Spec: `stats-history-library.md`.
 - [x] **C16 — Calendar tabs** → `6fd9020d`: Tab/Shift+Tab cycle the type tabs
       (number keys removed; mode toggle suppressed in calendar view); tab strip +
