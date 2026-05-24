@@ -61,12 +61,19 @@ redesigns** (user-chosen).
 
 ## C. Surface redesigns (spec exists, not implemented)
 
-- [ ] **C11 — Episode/Season picker** → two-pane: dense list + right preview rail
-      (thumb/season-poster/meta/states). Today flat list + misplaced thumb.
-      Spec: `episode-season-picker.md`.
-- [ ] **C12 — Active playback** → episode control surface (identity, health,
-      tracks state, autoplay/autoskip, thumb, up-next; footer w/ episodes+tracks+
-      commands). Today sparse + muted. Spec: `active-playback.md`.
+- [x] **C11 — Episode/Season picker** → two-pane: dense list + right preview rail.
+      `faafed26`: `OverlayPanel` episode-picker now renders the list left + a
+      height-reserved preview rail right (`EpisodePreviewRail`); rail hides <56
+      cols. All gated on episode-picker (provider/history/settings unchanged).
+      Spec: `episode-season-picker.md`. **Needs live verify** (poster placement,
+      no metadata jump on artwork load). Follow-up: `[s] season` footer binding
+      not wired (needs season-switch-from-episode-picker plumbing).
+- [x] **C12 — Active playback** → episode control surface. `ce69dc0c`: playing
+      body in `loading-shell.tsx` now renders structured rows (health → tracks →
+      session → progress → up next), promotes trouble inline, footer = pause·stop·
+      episodes·tracks·commands, `t` opens tracks. From existing state, no new
+      plumbing. Spec: `active-playback.md`. **Needs live verify** (hierarchy/feel,
+      thumbnail slot is still absent — body has no poster; revisit if desired).
 - [x] **C13 — Tracks/quality picker** → scoped/grouped (source/quality/audio/
       subtitle sections). Today a flat 30-row dump (Img 18). Spec: `tracks-panel.md`. - [x] Backend contract: `domain/playback/track-capabilities.ts`
       (`buildTrackCapabilities` normalizes the inventory view into sectioned
