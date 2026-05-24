@@ -34,13 +34,14 @@ export function buildContextCardTile(title: string): string {
     .split(/\s+/u)
     .filter(Boolean);
 
-  if (words.length === 0) return "??";
-  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
+  const first = words[0];
+  if (!first) return "??";
+  if (words.length === 1) return first.slice(0, 2).toUpperCase();
 
   // Keep the first word's initial, then the next word that isn't a connective
   // stopword: "The Boys" → "TB", but "Challengers of Science" → "CS".
-  const first = words[0]!;
-  const second = words.slice(1).find((w) => !TILE_STOPWORDS.has(w.toLowerCase())) ?? words[1]!;
+  const second =
+    words.slice(1).find((w) => !TILE_STOPWORDS.has(w.toLowerCase())) ?? words[1] ?? first;
   return `${first.slice(0, 1)}${second.slice(0, 1)}`.toUpperCase();
 }
 
