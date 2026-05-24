@@ -11,7 +11,7 @@ export type HistoryLaunchSelection = {
   readonly targetEpisode?: {
     readonly season: number;
     readonly episode: number;
-    readonly reason: "resume" | "new-episode";
+    readonly reason: "resume" | "new-episode" | "offline-ready";
   };
 };
 
@@ -69,10 +69,11 @@ export function selectLocalContinueCandidate(
       if (entry.status !== "ready") return false;
       if (entry.job.titleId !== selection.titleId) return false;
       if (selection.entry.type === "movie") return entry.job.mediaKind === "movie";
+      const target = selection.targetEpisode ?? selection.entry;
       return (
         entry.job.mediaKind !== "movie" &&
-        entry.job.season === selection.entry.season &&
-        entry.job.episode === selection.entry.episode
+        entry.job.season === target.season &&
+        entry.job.episode === target.episode
       );
     }) ?? null
   );

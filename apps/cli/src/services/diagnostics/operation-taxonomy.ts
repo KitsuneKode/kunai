@@ -92,6 +92,34 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
       "Open /downloads and retry the job to repair missing sidecars without redownloading video.",
   },
   {
+    operation: "download.capacity.start",
+    category: "download",
+    audience: "both",
+    summary:
+      "A queued download paused before provider work because reserved disk space was reached.",
+    userAction: "Free disk space or remove offline titles, then retry the paused download.",
+  },
+  {
+    operation: "download.profile.confirmed",
+    category: "download",
+    audience: "developer",
+    summary: "A manual download profile was confirmed before provider stream resolution.",
+  },
+  {
+    operation: "offline-runway.evaluate",
+    category: "download",
+    audience: "both",
+    summary: "Kunai evaluated a title-scoped offline continuation runway within capacity limits.",
+    userAction: "Open /library to change this title's offline continuation preference.",
+  },
+  {
+    operation: "offline-maintenance.process",
+    category: "offline",
+    audience: "both",
+    summary: "Kunai processed a bounded offline maintenance pass.",
+    userAction: "Open /downloads for repairs waiting on network access or Power Saver settings.",
+  },
+  {
     operation: "source-inventory.cache.hit",
     category: "cache",
     audience: "developer",

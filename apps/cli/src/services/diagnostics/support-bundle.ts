@@ -39,6 +39,7 @@ export type DiagnosticsBundleInsights = {
   readonly sourceInventoryCache?: DiagnosticsEventInsight;
   readonly postPlayback?: DiagnosticsEventInsight;
   readonly downloadRepair?: DiagnosticsEventInsight;
+  readonly offlineContinuity?: DiagnosticsEventInsight;
 };
 
 export type DiagnosticsEventInsight = {
@@ -115,6 +116,7 @@ function buildBundleInsights(events: readonly DiagnosticEvent[]): DiagnosticsBun
     sourceInventoryCache?: DiagnosticsEventInsight;
     postPlayback?: DiagnosticsEventInsight;
     downloadRepair?: DiagnosticsEventInsight;
+    offlineContinuity?: DiagnosticsEventInsight;
   } = {};
   const providerResolve = buildOperationPrefixInsight(events, "provider.resolve.");
   if (providerResolve) insights.providerResolve = providerResolve;
@@ -124,6 +126,12 @@ function buildBundleInsights(events: readonly DiagnosticEvent[]): DiagnosticsBun
   if (postPlayback) insights.postPlayback = postPlayback;
   const downloadRepair = buildOperationPrefixInsight(events, "download.artifact.repairable");
   if (downloadRepair) insights.downloadRepair = downloadRepair;
+  const offlineContinuity = buildOperationInsight(events, [
+    "download.capacity.start",
+    "offline-runway.evaluate",
+    "offline-maintenance.process",
+  ]);
+  if (offlineContinuity) insights.offlineContinuity = offlineContinuity;
   return insights;
 }
 
@@ -152,6 +160,24 @@ function buildOperationPrefixInsight(
     };
   }
   return withLatest;
+}
+
+function buildOperationInsight(
+  events: readonly DiagnosticEvent[],
+  operations: readonly string[],
+): DiagnosticsEventInsight | undefined {
+  const allowed = new Set(operations);
+  const matching = events.filter((event) => allowed.has(event.operation));
+  if (matching.length === 0) return undefined;
+  const latest = matching.at(-1);
+  const insight: DiagnosticsEventInsight = {
+    eventCount: matching.length,
+    latestMessage: latest?.message,
+    latestOperation: latest?.operation,
+  };
+  return latest?.context
+    ? { ...insight, context: redactDiagnosticValue(latest.context) as Record<string, unknown> }
+    : insight;
 }
 
 function buildBundleCorrelation(events: readonly DiagnosticEvent[]): DiagnosticsBundleCorrelation {

@@ -5,6 +5,7 @@ import {
 } from "@/domain/continuation/history-reconciliation";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
+import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory";
@@ -755,6 +756,7 @@ function relativeTime(date: Date): string {
 
 export type HistoryPickerOptionsContext = {
   readonly nextReleases?: ReadonlyMap<string, ContinueHistoryRelease>;
+  readonly projections?: ReadonlyMap<string, ContinuationProjection>;
 };
 
 function formatSeriesEpisode(season: number, episode: number): string {
@@ -766,6 +768,14 @@ export function isHistoryPickerContinuable(
   entry: HistoryEntry,
   context: HistoryPickerOptionsContext = {},
 ): boolean {
+  const projection = context.projections?.get(titleId);
+  if (
+    projection?.kind === "resume-unfinished" ||
+    projection?.kind === "offline-ready" ||
+    projection?.kind === "next-released"
+  ) {
+    return true;
+  }
   const details = historyProgressDetails(entry);
   const isCompleted = details.percentage !== null && details.percentage >= 95;
   if (!isCompleted) return true;
@@ -785,13 +795,24 @@ function buildHistoryOptionRow(
 ): ShellPickerOption<string> {
   const details = historyProgressDetails(entry);
   const isCompleted = details.percentage !== null && details.percentage >= 95;
+  const projection = context.projections?.get(id);
+  const episode =
+    entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
+  if (projection?.kind === "offline-ready") {
+    return {
+      value: id,
+      label: `${entry.title}  ·  ${formatSeriesEpisode(projection.season, projection.episode)}`,
+      detail: `download ready in /library  ·  ${projection.badge ?? "next episode ready"}  ·  completed ${episode}  ·  ${relativeTime(new Date(entry.watchedAt))}`,
+      badge: projection.badge ?? "offline",
+      tone: "success",
+      posterTitle: entry.title,
+    };
+  }
   const decision = reconcileContinueHistory({
     titleId: id,
     entries: [[id, entry]],
     nextRelease: context.nextReleases?.get(id) ?? null,
   });
-  const episode =
-    entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
   if (decision.kind === "new-episode") {
     const nextEpisode =
       typeof decision.episode === "number"
@@ -808,7 +829,7 @@ function buildHistoryOptionRow(
       value: id,
       label: `${entry.title}  ·  ${nextEpisode}`,
       detail: `${returnLoopDetail}  ·  completed ${completedEpisode}  ·  ${entry.provider}  ·  ${timeAgo}`,
-      badge: "new",
+      badge: projection?.badge ?? "new",
       tone: "success",
       posterTitle: entry.title,
     };
@@ -842,6 +863,8 @@ function isContinueWatchingEntry(
   entry: HistoryEntry,
   context: HistoryPickerOptionsContext,
 ): boolean {
+  const projection = context.projections?.get(id);
+  if (projection?.kind === "offline-ready" || projection?.kind === "next-released") return true;
   const details = historyProgressDetails(entry);
   if (details.percentage === null || details.percentage >= 90) return false;
   return isHistoryPickerContinuable(id, entry, context);
@@ -852,9 +875,18 @@ export function buildHistoryPickerOptions(
   context: HistoryPickerOptionsContext = {},
 ): readonly ShellPickerOption<string>[] {
   const sorted = sortHistoryEntries(historyEntries);
-  const continueWatching = sorted.filter(([id, entry]) =>
-    isContinueWatchingEntry(id, entry, context),
-  );
+  const continueWatching = sorted
+    .filter(([id, entry]) => isContinueWatchingEntry(id, entry, context))
+    .sort(([leftId], [rightId]) => {
+      const rank = (id: string) => {
+        const kind = context.projections?.get(id)?.kind;
+        if (kind === "resume-unfinished") return 0;
+        if (kind === "offline-ready") return 1;
+        if (kind === "next-released") return 2;
+        return 3;
+      };
+      return rank(leftId) - rank(rightId);
+    });
   const continueIds = new Set(continueWatching.map(([id]) => id));
   const remainder = sorted.filter(([id]) => !continueIds.has(id));
 

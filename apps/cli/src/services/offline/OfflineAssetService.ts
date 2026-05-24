@@ -3,6 +3,7 @@ import type {
   OfflineAssetRecord,
   OfflineAssetsRepository,
   OfflineAssetState,
+  OfflineNextReadyCursor,
 } from "@kunai/storage";
 
 export type RecordedOfflineStatus = {
@@ -19,6 +20,16 @@ export class OfflineAssetService {
 
   listTitleAssets(titleId: string): readonly OfflineAssetRecord[] {
     return this.assets.listTitleAssets(titleId);
+  }
+
+  listByTitleIds(titleIds: readonly string[]): readonly OfflineAssetRecord[] {
+    return this.assets.listByTitleIds(titleIds);
+  }
+
+  listNextReadyByTitleCursors(
+    cursors: readonly OfflineNextReadyCursor[],
+  ): readonly OfflineAssetRecord[] {
+    return this.assets.listNextReadyByTitleCursors(cursors);
   }
 
   markValidation(id: string, state: OfflineAssetState, validatedAt: string): void {

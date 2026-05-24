@@ -210,4 +210,36 @@ describe("DiagnosticsSupportBundle", () => {
       context: { artifact: "subtitle" },
     });
   });
+
+  test("summarizes bounded offline continuity decisions without leaking locations", () => {
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.1.0",
+      debug: true,
+      events: [
+        {
+          timestamp: 1,
+          category: "download",
+          level: "warn",
+          operation: "download.capacity.start",
+          message: "Download paused before start because free space is reserved",
+          context: { titleId: "anilist:1", outputPath: `${process.env.HOME}/secret/show.mkv` },
+        },
+        {
+          timestamp: 2,
+          category: "download",
+          level: "info",
+          operation: "offline-runway.evaluate",
+          message: "Offline continuation runway evaluated",
+          context: { titleId: "anilist:1", target: 2, enqueued: 1 },
+        },
+      ],
+    });
+
+    expect(bundle.insights.offlineContinuity).toMatchObject({
+      eventCount: 2,
+      latestOperation: "offline-runway.evaluate",
+      context: { target: 2, enqueued: 1 },
+    });
+    expect(JSON.stringify(bundle)).not.toContain(`${process.env.HOME}/secret`);
+  });
 });

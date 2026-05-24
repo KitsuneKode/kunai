@@ -28,6 +28,7 @@ export class OfflineMaintenanceService {
         job: OfflineMaintenanceJobRecord,
         operation: Exclude<OfflineMaintenanceOperation, "validate-file">,
       ) => Promise<void>;
+      readonly diagnostics?: { record(input: Record<string, unknown>): void };
     },
   ) {}
 
@@ -76,6 +77,14 @@ export class OfflineMaintenanceService {
         );
         summary.failed += 1;
       }
+    }
+    if (summary.checked > 0) {
+      this.deps.diagnostics?.record({
+        category: "offline",
+        operation: "offline-maintenance.process",
+        message: "Offline maintenance pass completed",
+        context: summary,
+      });
     }
     return summary;
   }

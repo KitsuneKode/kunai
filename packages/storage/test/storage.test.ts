@@ -545,6 +545,44 @@ test("offline asset refresh preserves explicit user protection", () => {
   db.close();
 });
 
+test("offline assets repository projects only the next ready asset after each cursor", () => {
+  const db = migratedDataDb();
+  const repo = new OfflineAssetsRepository(db);
+  const now = "2026-04-29T00:00:00.000Z";
+  for (const episode of [5, 6, 7]) {
+    repo.upsertPlayable({
+      titleId: "anilist:1",
+      titleName: "Demo",
+      mediaKind: "anime",
+      season: 1,
+      episode,
+      profileKey: "original:en:best",
+      filePath: `/tmp/demo-e${episode}.mp4`,
+      state: "ready",
+      updatedAt: now,
+    });
+  }
+  repo.upsertPlayable({
+    titleId: "anilist:2",
+    titleName: "Other",
+    mediaKind: "anime",
+    season: 1,
+    episode: 3,
+    profileKey: "original:en:best",
+    filePath: "/tmp/other-e3.mp4",
+    state: "ready",
+    updatedAt: now,
+  });
+
+  const projected = repo.listNextReadyByTitleCursors([
+    { titleId: "anilist:1", season: 1, episode: 5 },
+    { titleId: "anilist:2", season: 1, episode: 3 },
+  ]);
+
+  expect(projected.map((asset) => [asset.titleId, asset.episode])).toEqual([["anilist:1", 6]]);
+  db.close();
+});
+
 test("offline title policies and maintenance jobs persist explicit bounded authority", () => {
   const db = migratedDataDb();
   const assets = new OfflineAssetsRepository(db);

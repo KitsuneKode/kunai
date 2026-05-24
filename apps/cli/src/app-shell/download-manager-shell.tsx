@@ -201,11 +201,17 @@ export function DownloadManagerContent({
         ? Math.max(0, Math.min(totalBlocks, Math.round((job.progressPercent / 100) * totalBlocks)))
         : 0;
     const percent = Math.max(0, Math.min(100, Math.round(job.progressPercent ?? 0)));
+    const pausedForSpace =
+      job.status === "queued" &&
+      Boolean(job.nextRetryAt) &&
+      Boolean(job.errorMessage?.toLowerCase().includes("space"));
     const progressCore =
       job.status === "running" && typeof job.progressPercent === "number"
         ? `[${"█".repeat(filled)}${"░".repeat(totalBlocks - filled)}] ${percent}%`
         : job.status === "queued"
-          ? "⏳ queued"
+          ? pausedForSpace
+            ? "‖ low space"
+            : "⏳ queued"
           : job.status === "completed"
             ? "✓ done"
             : job.status === "completed-with-notes"
@@ -232,11 +238,13 @@ export function DownloadManagerContent({
             ]
               .filter(Boolean)
               .join(" · ")
-          : job.status === "repairable"
-            ? truncateLine(job.errorMessage ?? "Video ready · repair sidecar", 34)
-            : job.status === "failed"
-              ? truncateLine(job.errorMessage ?? "Failed", 28)
-              : job.status;
+          : job.status === "queued" && pausedForSpace
+            ? `paused · retry after ${new Date(job.nextRetryAt ?? job.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+            : job.status === "repairable"
+              ? truncateLine(job.errorMessage ?? "Video ready · repair sidecar", 34)
+              : job.status === "failed"
+                ? truncateLine(job.errorMessage ?? "Failed", 28)
+                : job.status;
     const nameStr = `${job.titleName}${job.episode ? ` S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}` : ""}`;
     const statusColor =
       job.status === "running"

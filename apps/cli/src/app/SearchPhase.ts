@@ -43,6 +43,8 @@ export type SearchPhaseInput = {
   preserveExistingSearch?: boolean;
   /** 1-based index into search results; skips the browse shell when in range (use with bootstrap search). */
   autoPickSearchResultIndex?: number;
+  /** Return catalog identity without anime provider mapping; callers can map after an explicit action gate. */
+  deferAnimeProviderMapping?: boolean;
 };
 
 export const SEARCH_BROWSE_COMMAND_IDS = [
@@ -543,13 +545,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         const originalSelected = outcome.value;
-        const selected = await mapAnimeDiscoveryResultToProviderNative(originalSelected, {
-          mode: stateManager.getState().mode,
-          providerId: stateManager.getState().provider,
-          animeLanguageProfile: container.config.animeLanguageProfile,
-          providerRegistry,
-          signal: context.signal,
-        });
+        const deferAnimeProviderMapping =
+          !!input && "deferAnimeProviderMapping" in input && input.deferAnimeProviderMapping;
+        const selected = deferAnimeProviderMapping
+          ? originalSelected
+          : await mapAnimeDiscoveryResultToProviderNative(originalSelected, {
+              mode: stateManager.getState().mode,
+              providerId: stateManager.getState().provider,
+              animeLanguageProfile: container.config.animeLanguageProfile,
+              providerRegistry,
+              signal: context.signal,
+            });
         const selectedIndex = stateManager
           .getState()
           .searchResults.findIndex((result) => result.id === originalSelected.id);

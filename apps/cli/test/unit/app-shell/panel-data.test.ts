@@ -488,6 +488,43 @@ describe("panel-data", () => {
     expect(options[0]?.tone).toBe("success");
   });
 
+  test("buildHistoryPickerOptions presents cached offline-ready projections with the full new count", () => {
+    const completed = {
+      title: "Weekly Show",
+      type: "series" as const,
+      season: 1,
+      episode: 5,
+      timestamp: 1440,
+      duration: 1440,
+      completed: true,
+      provider: "allanime",
+      watchedAt: "2026-05-10T00:00:00.000Z",
+    };
+    const options = buildHistoryPickerOptions([["anilist:123", completed]], {
+      projections: new Map([
+        [
+          "anilist:123",
+          {
+            kind: "offline-ready",
+            titleId: "anilist:123",
+            title: "Weekly Show",
+            season: 1,
+            episode: 6,
+            sourceEntry: completed,
+            badge: "3 new",
+            freshness: "cached",
+            primaryAction: { kind: "play-local", season: 1, episode: 6 },
+          },
+        ],
+      ]),
+    });
+
+    expect(options[0]?.label).toBe("Continue Watching");
+    expect(options[1]?.label).toContain("S01E06");
+    expect(options[1]?.badge).toBe("3 new");
+    expect(options[1]?.detail).toContain("download ready in /library");
+  });
+
   describe("groupHistoryByRecency", () => {
     const DAY_MS = 86_400_000;
 

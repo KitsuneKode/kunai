@@ -2,6 +2,7 @@ import {
   reconcileContinueHistory,
   type ContinueHistoryRelease,
 } from "@/domain/continuation/history-reconciliation";
+import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import type { ReleaseProgressProjection } from "@kunai/storage";
 
@@ -11,7 +12,7 @@ export type RootHistorySelection = {
   targetEpisode?: {
     season: number;
     episode: number;
-    reason: "resume" | "new-episode";
+    reason: "resume" | "new-episode" | "offline-ready";
   };
 };
 
@@ -82,8 +83,20 @@ export function describeHistoryReturnLoopDetail(input: {
 export function buildRootHistorySelection(
   selection: RootHistorySelection,
   nextReleases: ReadonlyMap<string, ContinueHistoryRelease> | undefined,
+  projections?: ReadonlyMap<string, ContinuationProjection>,
 ): RootHistorySelection {
   if (selection.entry.type !== "series") return selection;
+  const action = projections?.get(selection.titleId)?.primaryAction;
+  if (action?.kind === "play-local") {
+    return {
+      ...selection,
+      targetEpisode: {
+        season: action.season,
+        episode: action.episode,
+        reason: "offline-ready",
+      },
+    };
+  }
   const decision = reconcileContinueHistory({
     titleId: selection.titleId,
     entries: [[selection.titleId, selection.entry]],

@@ -64,4 +64,27 @@ describe("OfflineMaintenanceService", () => {
     expect(summary.waitingPowerSaver).toBe(1);
     expect(running).toBe(0);
   });
+
+  test("records one bounded maintenance summary instead of per-artifact noise", async () => {
+    const events: Record<string, unknown>[] = [];
+    const service = new OfflineMaintenanceService({
+      jobs: {
+        enqueueUnique: () => job("repair-subtitle"),
+        listRunnable: () => [job("repair-subtitle")],
+        markRunning: () => {},
+        complete: () => {},
+        fail: () => {},
+      },
+      assets: { getAsset: () => undefined, markValidation: () => {} },
+      diagnostics: { record: (event) => events.push(event) },
+    });
+
+    await service.processNext(1, { networkAllowed: false, powerSaver: false });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      operation: "offline-maintenance.process",
+      context: { checked: 1, waitingNetwork: 1 },
+    });
+  });
 });

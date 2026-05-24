@@ -33,7 +33,7 @@ import {
 } from "@/app/launch-entry";
 import { SessionController } from "@/app/SessionController";
 import { createContainer, type ShellChrome } from "@/container";
-import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { selectDownloadCleanupCandidates } from "@/services/download/download-cleanup-policy";
@@ -337,6 +337,7 @@ async function maybeRunDownloadMode(
         {
           initialQuery: args.search,
           autoPickSearchResultIndex: args.jump ?? (args.quick && args.search ? 1 : undefined),
+          deferAnimeProviderMapping: true,
         },
         { container, signal: new AbortController().signal },
       );
@@ -347,7 +348,30 @@ async function maybeRunDownloadMode(
   }
 
   const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
-  const result = await new DownloadOnlyPhase().execute(
+  const result = await new DownloadOnlyPhase({
+    prepareConfirmedTitle: async (title, context) => {
+      const state = context.container.stateManager.getState();
+      if (state.mode !== "anime") return title;
+      const selected =
+        state.searchResults.find((candidate) => candidate.id === title.id) ??
+        searchResultFromTitle(title);
+      const { mapAnimeDiscoveryResultToProviderNative } =
+        await import("@/app/anime-provider-mapping");
+      const { chooseSearchResultTitle } = await import("@/app/browse-option-mappers");
+      const { titleInfoFromSearchResult } = await import("@/app/title-info");
+      const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
+        mode: state.mode,
+        providerId: state.provider,
+        animeLanguageProfile: context.container.config.animeLanguageProfile,
+        providerRegistry: context.container.providerRegistry,
+        signal: context.signal,
+      });
+      return titleInfoFromSearchResult(
+        mapped,
+        chooseSearchResultTitle(mapped, context.container.config.animeTitlePreference),
+      );
+    },
+  }).execute(
     { title: searchResult.value, outputDirectory: args.downloadPath },
     { container, signal: new AbortController().signal },
   );
@@ -357,6 +381,23 @@ async function maybeRunDownloadMode(
     await container.downloadService.drainQueue(24 * 60 * 60 * 1000);
   }
   return true;
+}
+
+function searchResultFromTitle(title: TitleInfo): SearchResult {
+  return {
+    id: title.id,
+    type: title.type,
+    title: title.name,
+    titleAliases: title.titleAliases,
+    year: title.year ?? "",
+    overview: title.overview ?? "",
+    posterPath: title.posterUrl ?? null,
+    episodeCount: title.episodeCount,
+    externalIds: title.externalIds,
+    release: title.release,
+    artwork: title.artwork,
+    languageEvidence: title.languageEvidence,
+  };
 }
 
 async function maybeRunAutoCleanupDownloads(

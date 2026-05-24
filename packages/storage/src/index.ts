@@ -29,6 +29,7 @@ export {
 export type {
   OfflineAssetArtworkRecord,
   OfflineAssetInput,
+  OfflineNextReadyCursor,
   OfflineAssetRecord,
   OfflineAssetSidecarState,
   OfflineAssetState,

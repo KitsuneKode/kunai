@@ -6,6 +6,7 @@ import {
   formatNewSinceEpisodeLabel,
   releaseProgressToContinueHistoryRelease,
 } from "@/app-shell/root-history-bridge";
+import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 
 function seriesEntry(partial: Partial<HistoryEntry> = {}): HistoryEntry {
@@ -62,6 +63,32 @@ describe("root history bridge return loop", () => {
       season: 1,
       episode: 6,
       reason: "new-episode",
+    });
+  });
+
+  test("buildRootHistorySelection targets an offline-ready projection before release cache", () => {
+    const entry = seriesEntry();
+    const projection: ContinuationProjection = {
+      titleId: "anilist:1",
+      kind: "offline-ready",
+      title: "Test Anime",
+      badge: "3 new",
+      season: 1,
+      episode: 6,
+      sourceEntry: entry,
+      primaryAction: { kind: "play-local", season: 1, episode: 6 },
+      secondaryActions: [],
+      freshness: "local",
+    };
+    const selection = buildRootHistorySelection(
+      { titleId: "anilist:1", entry },
+      undefined,
+      new Map([["anilist:1", projection]]),
+    );
+    expect(selection.targetEpisode).toEqual({
+      season: 1,
+      episode: 6,
+      reason: "offline-ready",
     });
   });
 

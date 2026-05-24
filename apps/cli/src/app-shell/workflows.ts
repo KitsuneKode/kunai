@@ -1763,22 +1763,26 @@ export async function downloadSelectedResult(container: Container): Promise<void
     });
     return;
   }
-  const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
-    mode: state.mode,
-    providerId: state.provider,
-    animeLanguageProfile: container.config.animeLanguageProfile,
-    providerRegistry,
-    signal: new AbortController().signal,
-  });
   const title = titleInfoFromSearchResult(
-    mapped,
-    chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+    selected,
+    chooseSearchResultTitle(selected, container.config.animeTitlePreference),
   );
   const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
-  await new DownloadOnlyPhase().execute(
-    { title },
-    { container, signal: new AbortController().signal },
-  );
+  await new DownloadOnlyPhase({
+    prepareConfirmedTitle: async () => {
+      const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
+        mode: state.mode,
+        providerId: state.provider,
+        animeLanguageProfile: container.config.animeLanguageProfile,
+        providerRegistry,
+        signal: new AbortController().signal,
+      });
+      return titleInfoFromSearchResult(
+        mapped,
+        chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+      );
+    },
+  }).execute({ title }, { container, signal: new AbortController().signal });
 }
 
 async function resolveTimingSnapshot(container: Container) {

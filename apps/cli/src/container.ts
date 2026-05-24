@@ -425,6 +425,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const offlineMaintenanceService = new OfflineMaintenanceService({
     jobs: offlineMaintenanceJobs,
     assets: offlineAssetService,
+    diagnostics: diagnosticsStore,
   });
   const notificationService = new NotificationService({
     repo: notificationRepository,

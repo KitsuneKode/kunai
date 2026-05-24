@@ -47,6 +47,12 @@ export interface OfflineAssetInput {
   readonly updatedAt: string;
 }
 
+export interface OfflineNextReadyCursor {
+  readonly titleId: string;
+  readonly season: number;
+  readonly episode: number;
+}
+
 export interface OfflineAssetTrackRecord {
   readonly assetId: string;
   readonly kind: OfflineAssetTrackKind;
@@ -170,6 +176,55 @@ export class OfflineAssetsRepository {
         `SELECT * FROM offline_assets WHERE title_id IN (${placeholders}) ORDER BY updated_at DESC`,
       )
       .all(...ids)
+      .map(mapAssetRow);
+  }
+
+  listNextReadyByTitleCursors(
+    cursors: readonly OfflineNextReadyCursor[],
+  ): readonly OfflineAssetRecord[] {
+    const unique = new Map<string, OfflineNextReadyCursor>();
+    for (const cursor of cursors) {
+      if (!cursor.titleId) continue;
+      unique.set(cursor.titleId, cursor);
+    }
+    const rows = [...unique.values()];
+    if (rows.length === 0) return [];
+    const placeholders = rows.map(() => "(?, ?, ?)").join(", ");
+    const params = rows.flatMap((row) => [
+      row.titleId,
+      row.season.toString(),
+      row.episode.toString(),
+    ]);
+    return this.db
+      .query<OfflineAssetRow, string[]>(
+        `WITH requested(title_id, season_cursor, episode_cursor) AS (VALUES ${placeholders}),
+        ranked AS (
+          SELECT offline_assets.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY offline_assets.title_id
+              ORDER BY offline_assets.season ASC, offline_assets.episode ASC, offline_assets.updated_at DESC
+            ) AS row_number
+          FROM offline_assets
+          JOIN requested ON requested.title_id = offline_assets.title_id
+          WHERE offline_assets.state = 'ready'
+            AND offline_assets.season IS NOT NULL
+            AND offline_assets.episode IS NOT NULL
+            AND (
+              offline_assets.season > requested.season_cursor
+              OR (
+                offline_assets.season = requested.season_cursor
+                AND offline_assets.episode > requested.episode_cursor
+              )
+            )
+        )
+        SELECT id, identity_key, title_id, title_name, media_kind, season, episode, profile_key,
+          origin_job_id, file_path, state, byte_size, duration_ms, timing_json, last_validated_at,
+          protected, created_at, updated_at
+        FROM ranked
+        WHERE row_number = 1
+        ORDER BY title_id ASC`,
+      )
+      .all(...params)
       .map(mapAssetRow);
   }
 

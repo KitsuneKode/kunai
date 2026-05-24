@@ -225,17 +225,83 @@ function getLatestPresenceErrorDetail(container: Container): string | null {
 
 function readCachedHistoryNextReleases(
   entries: ReadonlyArray<[string, RootHistorySelection["entry"]]>,
-  container: Container,
+  cachedProgress: ReadonlyMap<string, import("@kunai/storage").ReleaseProgressProjection>,
 ): NonNullable<HistoryPickerOptionsContext["nextReleases"]> {
   const releases = new Map<string, ContinueHistoryRelease>();
-  const projections = container.releaseProgressCache.getByTitleIds(
-    entries.map(([titleId]) => titleId),
-  );
   for (const [titleId] of entries) {
-    const release = releaseProgressToContinueHistoryRelease(projections.get(titleId));
+    const release = releaseProgressToContinueHistoryRelease(cachedProgress.get(titleId));
     if (release) releases.set(titleId, release);
   }
   return releases;
+}
+
+function readCachedHistoryProjections(
+  entries: ReadonlyArray<[string, RootHistorySelection["entry"]]>,
+  container: Container,
+  cachedProgress: ReadonlyMap<string, import("@kunai/storage").ReleaseProgressProjection>,
+): NonNullable<HistoryPickerOptionsContext["projections"]> {
+  const titleIds = entries.map(([titleId]) => titleId);
+  const policies = new Map(
+    container.offlineTitlePolicies
+      .listByTitleIds(titleIds)
+      .map((policy) => [policy.titleId, policy]),
+  );
+  const nextReadyAssets = container.offlineAssetService.listNextReadyByTitleCursors(
+    entries
+      .filter(([, entry]) => entry.type === "series")
+      .map(([titleId, entry]) => ({
+        titleId,
+        season: entry.season,
+        episode: entry.episode,
+      })),
+  );
+  const nextReadyByTitle = new Map<string, { season: number; episode: number }>();
+  for (const asset of nextReadyAssets) {
+    if (asset.season === undefined || asset.episode === undefined) continue;
+    nextReadyByTitle.set(asset.titleId, { season: asset.season, episode: asset.episode });
+  }
+  const projections = new Map();
+  for (const [titleId, entry] of entries) {
+    const releaseProgress = cachedProgress.get(titleId);
+    const nextRelease = releaseProgressToContinueHistoryRelease(releaseProgress);
+    const policy = policies.get(titleId);
+    projections.set(
+      titleId,
+      container.continuationProjectionService.project({
+        titleId,
+        entries,
+        nextRelease:
+          nextRelease &&
+          nextRelease.season !== undefined &&
+          nextRelease.episode !== undefined &&
+          entry.type === "series"
+            ? {
+                season: nextRelease.season,
+                episode: nextRelease.episode,
+                released: nextRelease.status === "released",
+                availableAt: nextRelease.releaseAt ?? undefined,
+              }
+            : null,
+        releaseProgress: releaseProgress
+          ? {
+              newEpisodeCount: releaseProgress.newEpisodeCount,
+              stale: Date.parse(releaseProgress.staleAfterAt) <= Date.now(),
+            }
+          : null,
+        offline:
+          policy || nextReadyByTitle.has(titleId)
+            ? {
+                enrolled: policy?.enrolled === true,
+                readyNextEpisodes: (() => {
+                  const nextReady = nextReadyByTitle.get(titleId);
+                  return nextReady ? [nextReady] : [];
+                })(),
+              }
+            : null,
+      }),
+    );
+  }
+  return projections;
 }
 
 export function RootOverlayShell({
@@ -298,6 +364,9 @@ export function RootOverlayShell({
   const [historyNextReleases, setHistoryNextReleases] = useState<
     NonNullable<HistoryPickerOptionsContext["nextReleases"]>
   >(new Map());
+  const [historyProjections, setHistoryProjections] = useState<
+    NonNullable<HistoryPickerOptionsContext["projections"]>
+  >(new Map());
   const initialHistoryFilterMode =
     overlay.type === "history" ? (overlay.initialFilterMode ?? "all") : "all";
   const [historyFilterMode, setHistoryFilterMode] = useState<"all" | "watching" | "completed">(
@@ -310,7 +379,10 @@ export function RootOverlayShell({
       ? initialSelectableIndexForSection(overlay.groups, overlay.initialSection)
       : 0;
   const commands = resolveCommandContext(state, "rootOverlay");
-  const historyPickerContext: HistoryPickerOptionsContext = { nextReleases: historyNextReleases };
+  const historyPickerContext: HistoryPickerOptionsContext = {
+    nextReleases: historyNextReleases,
+    projections: historyProjections,
+  };
   const settingsSeriesProviderOptions = buildSettingsProviderOptions({
     providers: container.providerRegistry
       .getAll()
@@ -584,6 +656,7 @@ export function RootOverlayShell({
     setNotificationActionDedupKey(null);
     setHistorySelections([]);
     setHistoryNextReleases(new Map());
+    setHistoryProjections(new Map());
     setHistoryFilterMode(initialHistoryFilterMode);
   }, [
     container.config,
@@ -615,8 +688,14 @@ export function RootOverlayShell({
             entry,
           })),
         );
+        const cachedProgress = container.releaseProgressCache.getByTitleIds(
+          historyEntries.map(([titleId]) => titleId),
+        );
+        const nextReleases = readCachedHistoryNextReleases(historyEntries, cachedProgress);
+        const projections = readCachedHistoryProjections(historyEntries, container, cachedProgress);
         setAsyncLines(buildHistoryPanelLines(historyEntries));
-        setHistoryNextReleases(readCachedHistoryNextReleases(historyEntries, container));
+        setHistoryNextReleases(nextReleases);
+        setHistoryProjections(projections);
         enqueueReleaseReconciliation(container, historyEntries, "history");
         return undefined;
       })
@@ -763,17 +842,23 @@ export function RootOverlayShell({
         const historySelection = buildRootHistorySelection(
           selected,
           historyPickerContext.nextReleases,
+          historyPickerContext.projections,
         );
-        const queueEntry =
-          historySelection.targetEpisode && historySelection.targetEpisode.reason === "new-episode"
-            ? {
-                ...historySelection.entry,
-                season: historySelection.targetEpisode.season,
-                episode: historySelection.targetEpisode.episode,
-                timestamp: 0,
-                completed: false,
-              }
-            : historySelection.entry;
+        const queueEntry = historySelection.targetEpisode
+          ? {
+              ...historySelection.entry,
+              season: historySelection.targetEpisode.season,
+              episode: historySelection.targetEpisode.episode,
+              timestamp:
+                historySelection.targetEpisode.reason === "resume"
+                  ? historySelection.entry.timestamp
+                  : 0,
+              completed:
+                historySelection.targetEpisode.reason === "resume"
+                  ? historySelection.entry.completed
+                  : false,
+            }
+          : historySelection.entry;
         container.playlistService.enqueueMediaItem(
           mediaItemFromHistoryEntry(historySelection.titleId, queueEntry),
           { placement: "end", source: "history" },
@@ -1100,7 +1185,13 @@ export function RootOverlayShell({
         const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
         const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
         resolveRootHistorySelection(
-          selected ? buildRootHistorySelection(selected, historyPickerContext.nextReleases) : null,
+          selected
+            ? buildRootHistorySelection(
+                selected,
+                historyPickerContext.nextReleases,
+                historyPickerContext.projections,
+              )
+            : null,
         );
       } else if (overlay.type === "notifications") {
         if (notificationActionDedupKey) {
