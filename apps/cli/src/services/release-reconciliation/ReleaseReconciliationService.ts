@@ -8,6 +8,7 @@ import type {
   ExistingReleaseProjection,
   ReleaseReconciliationCandidate,
   ReleaseReconciliationHistoryRow,
+  ReleaseReconciliationAttention,
   ReleaseReconciliationSkip,
   ReleaseReconciliationTrigger,
 } from "./types";
@@ -47,6 +48,7 @@ export type ReleaseReconciliationInput = {
   readonly now: string;
   readonly historyRows: readonly ReleaseReconciliationHistoryRow[];
   readonly mutedTitleIds?: ReadonlySet<string>;
+  readonly attentionByTitleId?: ReadonlyMap<string, ReleaseReconciliationAttention>;
   readonly signal?: AbortSignal;
 };
 
@@ -69,6 +71,7 @@ export class ReleaseReconciliationService {
       historyRows: input.historyRows,
       existingProjections,
       mutedTitleIds: input.mutedTitleIds,
+      attentionByTitleId: input.attentionByTitleId,
     });
 
     if (plan.candidates.length === 0 || input.signal?.aborted) {

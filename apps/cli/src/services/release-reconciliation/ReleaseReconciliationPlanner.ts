@@ -7,6 +7,7 @@ import {
 import type {
   ExistingReleaseProjection,
   ReleaseReconciliationCandidate,
+  ReleaseReconciliationAttention,
   ReleaseReconciliationHistoryRow,
   ReleaseReconciliationSkip,
   ReleaseReconciliationTrigger,
@@ -26,6 +27,7 @@ export type PlanReleaseReconciliationCandidatesInput = {
   readonly historyRows: readonly ReleaseReconciliationHistoryRow[];
   readonly existingProjections: ReadonlyMap<string, ExistingReleaseProjection>;
   readonly mutedTitleIds?: ReadonlySet<string>;
+  readonly attentionByTitleId?: ReadonlyMap<string, ReleaseReconciliationAttention>;
 };
 
 export type ReleaseReconciliationCandidatePlan = {
@@ -67,7 +69,9 @@ export function planReleaseReconciliationCandidates(
 
   const planned: ReleaseReconciliationCandidate[] = [];
   const budget = RECONCILIATION_TRIGGER_BUDGETS[input.trigger];
-  const sortedGroups = [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right));
+  const sortedGroups = [...grouped.entries()].sort((left, right) =>
+    compareCandidateGroups(left, right, input),
+  );
 
   for (const [, rows] of sortedGroups) {
     const first = rows[0];
@@ -104,10 +108,47 @@ export function planReleaseReconciliationCandidates(
       absoluteEpisode: highest.absoluteEpisode,
       anchorSeason: highest.season,
       anchorEpisode: highest.episode,
+      attention: attentionForTitle(first.titleId, input.attentionByTitleId),
     });
   }
 
   return { candidates: planned, skipped };
+}
+
+function compareCandidateGroups(
+  [, leftRows]: readonly [string, ReleaseReconciliationHistoryRow[]],
+  [, rightRows]: readonly [string, ReleaseReconciliationHistoryRow[]],
+  input: PlanReleaseReconciliationCandidatesInput,
+): number {
+  const left = leftRows[0];
+  const right = rightRows[0];
+  if (!left || !right) return 0;
+  const rank =
+    attentionRank(attentionForTitle(left.titleId, input.attentionByTitleId)) -
+    attentionRank(attentionForTitle(right.titleId, input.attentionByTitleId));
+  if (rank !== 0) return rank;
+  const leftDue = input.existingProjections.get(left.titleId)?.nextCheckAt ?? "";
+  const rightDue = input.existingProjections.get(right.titleId)?.nextCheckAt ?? "";
+  const due = leftDue.localeCompare(rightDue);
+  if (due !== 0) return due;
+  const recent = (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0);
+  if (recent !== 0) return recent;
+  return left.titleId.localeCompare(right.titleId);
+}
+
+function attentionForTitle(
+  titleId: string,
+  attentionByTitleId?: ReadonlyMap<string, ReleaseReconciliationAttention>,
+): ReleaseReconciliationAttention {
+  return attentionByTitleId?.get(titleId) ?? "dormant-history";
+}
+
+function attentionRank(attention: ReleaseReconciliationAttention): number {
+  if (attention === "selected-title") return 0;
+  if (attention === "offline-enrolled") return 1;
+  if (attention === "continue-visible") return 2;
+  if (attention === "visible-stale") return 3;
+  return 4;
 }
 
 function pickHighestRow(

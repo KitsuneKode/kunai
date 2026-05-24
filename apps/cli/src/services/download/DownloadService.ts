@@ -441,13 +441,15 @@ export class DownloadService {
       const completed = this.deps.repo.get(next.id) ?? null;
       if (completed) {
         await this.deps.onCompletedArtifact?.(completed);
-        runBackgroundTask({
-          task: "download.prepareOfflineArtwork",
-          category: "download",
-          logger: this.deps.logger,
-          context: { titleId: completed.titleId, jobId: completed.id },
-          run: () => this.prepareOfflineArtwork(completed),
-        });
+        if (!this.deps.config.powerSaverMode) {
+          runBackgroundTask({
+            task: "download.prepareOfflineArtwork",
+            category: "download",
+            logger: this.deps.logger,
+            context: { titleId: completed.titleId, jobId: completed.id },
+            run: () => this.prepareOfflineArtwork(completed),
+          });
+        }
       }
       return completed;
     } catch (error) {
@@ -994,7 +996,7 @@ export class DownloadService {
     if (refreshed) {
       await this.deps.onCompletedArtifact?.(refreshed);
     }
-    if (refreshed?.status === "completed") {
+    if (refreshed?.status === "completed" && !this.deps.config.powerSaverMode) {
       runBackgroundTask({
         task: "download.prepareOfflineArtwork.repair",
         category: "download",

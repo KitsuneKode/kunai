@@ -124,6 +124,7 @@ type SettingsAction =
   | "presenceDiscordOpenUrl"
   | "presenceConnection"
   | "downloadsEnabled"
+  | "powerSaverMode"
   | "autoDownloadNextCount"
   | "autoCleanupGraceDays"
   | "downloadPath"
@@ -479,6 +480,11 @@ export function buildSettingsOptions(
       value: "downloadsEnabled",
       label: `Offline downloads  ·  ${config.downloadsEnabled ? "enabled" : "off"}`,
       detail: "Enable local completed downloads and the offline library surface",
+    },
+    {
+      value: "powerSaverMode",
+      label: `Power Saver  ·  ${config.powerSaverMode ? "on" : "off"}`,
+      detail: "Pause speculative prefetch, passive refresh, artwork warming, and runway refills",
     },
     {
       value: "autoCleanupWatched",

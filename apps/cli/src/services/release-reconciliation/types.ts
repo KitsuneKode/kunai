@@ -9,6 +9,12 @@ export type ReleaseReconciliationTrigger =
   | "post-playback";
 
 export type ReleaseReconciliationSource = "anilist" | "tmdb";
+export type ReleaseReconciliationAttention =
+  | "selected-title"
+  | "offline-enrolled"
+  | "continue-visible"
+  | "visible-stale"
+  | "dormant-history";
 
 export type ReleaseReconciliationHistoryRow = EpisodeCursor & {
   readonly titleId: string;
@@ -27,6 +33,7 @@ export type ReleaseReconciliationCandidate = EpisodeCursor & {
   readonly title: string;
   readonly anchorSeason?: number;
   readonly anchorEpisode: number;
+  readonly attention: ReleaseReconciliationAttention;
 };
 
 export type ReleaseReconciliationSkipReason =

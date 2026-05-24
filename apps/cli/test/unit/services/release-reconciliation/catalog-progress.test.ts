@@ -17,6 +17,7 @@ function candidate(
     episode: 2,
     anchorSeason: 1,
     anchorEpisode: 2,
+    attention: "dormant-history",
   };
 }
 

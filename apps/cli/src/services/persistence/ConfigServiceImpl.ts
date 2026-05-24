@@ -305,6 +305,14 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.minimalMode;
   }
 
+  get powerSaverMode(): boolean {
+    return this.config.powerSaverMode;
+  }
+
+  get powerSaverAllowManualArtwork(): boolean {
+    return this.config.powerSaverAllowManualArtwork;
+  }
+
   get sync(): KitsuneConfig["sync"] {
     return this.config.sync;
   }

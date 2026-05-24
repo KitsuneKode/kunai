@@ -68,3 +68,21 @@ test("continuation policy reports upcoming next episode without autoplaying it",
     availableAt: "2026-05-24T12:00:00.000Z",
   });
 });
+
+test("continuation policy prefers ready offline continuation while retaining catalog new count", () => {
+  const projection = projectContinuationState({
+    titleId: "tmdb:1",
+    entries: [["tmdb:1", { ...baseEntry, episode: 5, timestamp: 1200, completed: true }]],
+    releaseProgress: { newEpisodeCount: 3 },
+    offline: { enrolled: true, readyNextEpisodes: [{ season: 1, episode: 6 }] },
+  });
+
+  expect(projection).toMatchObject({
+    kind: "offline-ready",
+    season: 1,
+    episode: 6,
+    badge: "3 new",
+    primaryAction: { kind: "play-local", season: 1, episode: 6 },
+    freshness: "cached",
+  });
+});

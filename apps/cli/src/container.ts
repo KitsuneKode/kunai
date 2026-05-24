@@ -476,6 +476,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     downloadService,
     scheduler: backgroundWorkScheduler,
     diagnostics: diagnosticsStore,
+    isPowerSaver: () => config.powerSaverMode,
   });
   const timelineService = new TimelineService(catalogScheduleService);
   const resultEnrichmentService = new ResultEnrichmentService({

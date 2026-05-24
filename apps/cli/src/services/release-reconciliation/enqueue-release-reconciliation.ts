@@ -6,7 +6,11 @@ import type { ReleaseReconciliationHistoryRow, ReleaseReconciliationTrigger } fr
 
 type ReleaseReconciliationContainer = Pick<
   Container,
-  "backgroundWorkScheduler" | "releaseReconciliationService" | "diagnosticsStore"
+  | "backgroundWorkScheduler"
+  | "releaseReconciliationService"
+  | "diagnosticsStore"
+  | "offlineTitlePolicies"
+  | "config"
 >;
 
 export function enqueueReleaseReconciliation(
@@ -15,8 +19,24 @@ export function enqueueReleaseReconciliation(
   trigger: ReleaseReconciliationTrigger,
   signal?: AbortSignal,
 ): void {
+  if (
+    container.config.powerSaverMode &&
+    (trigger === "startup" || trigger === "browse-idle" || trigger === "post-playback")
+  ) {
+    return;
+  }
   const historyRows = toReleaseReconciliationHistoryRows(entries);
   if (historyRows.length === 0 || signal?.aborted) return;
+  const attentionByTitleId = new Map(
+    historyRows.map((row) => [
+      row.titleId,
+      container.offlineTitlePolicies.get(row.titleId)?.enrolled
+        ? ("offline-enrolled" as const)
+        : trigger === "history"
+          ? ("continue-visible" as const)
+          : ("dormant-history" as const),
+    ]),
+  );
 
   container.backgroundWorkScheduler.enqueue({
     id: "release-reconciliation",
@@ -27,6 +47,7 @@ export function enqueueReleaseReconciliation(
         trigger,
         now: new Date().toISOString(),
         historyRows,
+        attentionByTitleId,
         signal: workSignal,
       });
       container.diagnosticsStore.record({

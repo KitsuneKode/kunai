@@ -115,4 +115,28 @@ describe("ReleaseReconciliationPlanner", () => {
     expect(plan.candidates).toHaveLength(RECONCILIATION_TRIGGER_BUDGETS["browse-idle"]);
     expect(plan.skipped.filter((skip) => skip.reason === "budget-exhausted")).toHaveLength(5);
   });
+
+  test("prioritizes selected and enrolled titles before dormant history within a budget", () => {
+    const plan = planReleaseReconciliationCandidates({
+      trigger: "post-playback",
+      now: "2026-05-23T12:00:00.000Z",
+      historyRows: [
+        row({ titleId: "anilist:1", externalIds: { anilistId: "1" } }),
+        row({ titleId: "anilist:2", externalIds: { anilistId: "2" } }),
+        row({ titleId: "anilist:3", externalIds: { anilistId: "3" } }),
+      ],
+      attentionByTitleId: new Map([
+        ["anilist:1", "dormant-history"],
+        ["anilist:2", "offline-enrolled"],
+        ["anilist:3", "selected-title"],
+      ]),
+      existingProjections: new Map(),
+    });
+
+    expect(plan.candidates).toHaveLength(1);
+    expect(plan.candidates[0]).toMatchObject({
+      titleId: "anilist:3",
+      attention: "selected-title",
+    });
+  });
 });

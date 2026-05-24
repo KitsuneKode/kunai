@@ -76,6 +76,8 @@ describe("ConfigServiceImpl", () => {
     expect(service.offlineFreeSpaceReserveBytes).toBe(2 * 1024 * 1024 * 1024);
     expect(service.offlineUnknownEpisodeEstimateBytes).toBe(768 * 1024 * 1024);
     expect(service.offlineDefaultRunwayTarget).toBe(2);
+    expect(service.powerSaverMode).toBe(false);
+    expect(service.powerSaverAllowManualArtwork).toBe(true);
     expect(service.autoCleanupGraceDays).toBe(7);
     expect(service.protectedDownloadJobIds).toEqual([]);
     expect(service.updateChecksEnabled).toBe(true);
@@ -95,6 +97,8 @@ describe("ConfigServiceImpl", () => {
       offlineFreeSpaceReserveBytes: 100,
       offlineUnknownEpisodeEstimateBytes: 200,
       offlineDefaultRunwayTarget: 5,
+      powerSaverMode: true,
+      powerSaverAllowManualArtwork: false,
       autoCleanupGraceDays: 3,
       protectedDownloadJobIds: ["job-a", "job-a", " job-b "],
       updateChecksEnabled: false,
@@ -114,6 +118,8 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).offlineFreeSpaceReserveBytes).toBe(100);
     expect((await store.load()).offlineUnknownEpisodeEstimateBytes).toBe(200);
     expect((await store.load()).offlineDefaultRunwayTarget).toBe(5);
+    expect((await store.load()).powerSaverMode).toBe(true);
+    expect((await store.load()).powerSaverAllowManualArtwork).toBe(false);
     expect((await store.load()).autoCleanupGraceDays).toBe(3);
     expect((await store.load()).protectedDownloadJobIds).toEqual(["job-a", "job-b"]);
     expect((await store.load()).updateChecksEnabled).toBe(false);

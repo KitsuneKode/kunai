@@ -104,6 +104,7 @@ test("settings expose discover and offline controls that already exist in config
   expect(values).toContain("discoverMode");
   expect(values).toContain("discoverItemLimit");
   expect(values).toContain("downloadsEnabled");
+  expect(values).toContain("powerSaverMode");
   expect(values).toContain("section:offline-continuation");
   expect(values).toContain("recoveryMode");
   expect(values).toContain("autoCleanupGraceDays");

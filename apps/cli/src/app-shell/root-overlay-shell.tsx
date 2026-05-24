@@ -979,6 +979,11 @@ export function RootOverlayShell({
           setSettingsError(null);
           return;
         }
+        if (picked.value === "powerSaverMode") {
+          setSettingsDraft({ ...settingsDraft, powerSaverMode: !settingsDraft.powerSaverMode });
+          setSettingsError(null);
+          return;
+        }
         if (picked.value === "autoCleanupWatched") {
           setSettingsDraft({
             ...settingsDraft,

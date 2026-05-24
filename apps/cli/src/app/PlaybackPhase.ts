@@ -1387,6 +1387,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
           };
           const maybePrefetchNext = () => {
+            if (container.config.powerSaverMode) {
+              return;
+            }
             if (
               !isEpisodePrefetchEligible({
                 titleType: title.type,
