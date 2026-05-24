@@ -2,7 +2,11 @@ import type { Container } from "@/container";
 import { toEpisodeCursor } from "@/domain/media/episode-cursor";
 import { isFinished, type HistoryEntry } from "@/services/persistence/HistoryStore";
 
-import type { ReleaseReconciliationHistoryRow, ReleaseReconciliationTrigger } from "./types";
+import type {
+  ReleaseReconciliationAttention,
+  ReleaseReconciliationHistoryRow,
+  ReleaseReconciliationTrigger,
+} from "./types";
 
 type ReleaseReconciliationContainer = Pick<
   Container,
@@ -13,29 +17,40 @@ type ReleaseReconciliationContainer = Pick<
   | "config"
 >;
 
+const POWER_SAVER_PASSIVE_TRIGGERS: ReadonlySet<ReleaseReconciliationTrigger> = new Set([
+  "startup",
+  "browse-idle",
+  "history",
+  "calendar",
+  "post-playback",
+]);
+
 export function enqueueReleaseReconciliation(
   container: ReleaseReconciliationContainer,
   entries: readonly (readonly [string, HistoryEntry])[],
   trigger: ReleaseReconciliationTrigger,
   signal?: AbortSignal,
 ): void {
-  if (
-    container.config.powerSaverMode &&
-    (trigger === "startup" || trigger === "browse-idle" || trigger === "post-playback")
-  ) {
+  if (container.config.powerSaverMode && POWER_SAVER_PASSIVE_TRIGGERS.has(trigger)) {
     return;
   }
   const historyRows = toReleaseReconciliationHistoryRows(entries);
   if (historyRows.length === 0 || signal?.aborted) return;
+  const enrolledTitleIds = new Set(
+    container.offlineTitlePolicies
+      .listByTitleIds(historyRows.map((row) => row.titleId))
+      .filter((policy) => policy.enrolled)
+      .map((policy) => policy.titleId),
+  );
   const attentionByTitleId = new Map(
-    historyRows.map((row) => [
-      row.titleId,
-      container.offlineTitlePolicies.get(row.titleId)?.enrolled
-        ? ("offline-enrolled" as const)
+    historyRows.map((row) => {
+      const attention: ReleaseReconciliationAttention = enrolledTitleIds.has(row.titleId)
+        ? "offline-enrolled"
         : trigger === "history"
-          ? ("continue-visible" as const)
-          : ("dormant-history" as const),
-    ]),
+          ? "continue-visible"
+          : "dormant-history";
+      return [row.titleId, attention];
+    }),
   );
 
   container.backgroundWorkScheduler.enqueue({

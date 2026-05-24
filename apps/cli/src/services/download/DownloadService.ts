@@ -34,6 +34,7 @@ import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
   evaluateStorageAdmission,
+  estimateAllowedNewAssets,
 } from "./StorageBudgetPolicy";
 import { buildDownloadStreamPolicy } from "./stream-policy";
 import { resolveSubtitleArtifactPath } from "./subtitle-artifact-path";
@@ -242,21 +243,11 @@ export class DownloadService {
     const tempPath = `${outputPath}.tmp.${id}`;
     await mkdir(dirname(outputPath), { recursive: true });
 
-    const diskStats = await statfs(dirname(outputPath));
-    const availableBytes = diskStats.bavail * diskStats.bsize;
-    const storage = evaluateStorageAdmission({
-      availableBytes,
-      reserveBytes:
-        this.deps.config.offlineFreeSpaceReserveBytes ?? DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
-      unknownEpisodeEstimateBytes:
-        this.deps.config.offlineUnknownEpisodeEstimateBytes ??
-        DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
-    });
+    const storage = await this.evaluateStorageForPath(outputPath);
     if (!storage.allowed) {
-      const availableGB = availableBytes / (1024 * 1024 * 1024);
       throw new DownloadEnqueueRejectedError(
         "insufficient-disk",
-        `Only ${availableGB.toFixed(1)}GB free on download volume after the offline safety reserve.`,
+        this.formatInsufficientDiskMessage(storage.requiredBytes),
       );
     }
 
@@ -356,6 +347,19 @@ export class DownloadService {
     return this.deps.repo.findBlockingEpisodeIntent(input) !== undefined;
   }
 
+  async estimateAvailableEpisodeSlots(outputDirectory?: string): Promise<number> {
+    const baseDir = outputDirectory?.trim() || this.resolveDefaultDownloadDirectory();
+    await mkdir(baseDir, { recursive: true });
+    const diskStats = await statfs(baseDir);
+    return estimateAllowedNewAssets({
+      availableBytes: diskStats.bavail * diskStats.bsize,
+      reserveBytes: this.offlineFreeSpaceReserveBytes(),
+      unknownEpisodeEstimateBytes: this.offlineUnknownEpisodeEstimateBytes(),
+      alreadyReservedBytes: this.estimateActiveReservationBytes(),
+      maxAssets: 50,
+    });
+  }
+
   async retry(jobId: string): Promise<void> {
     const job = this.deps.repo.get(jobId);
     if (job?.status === "repairable" || job?.status === "completed-with-notes") {
@@ -427,6 +431,27 @@ export class DownloadService {
     const now = new Date().toISOString();
     const next = this.selectEligibleQueuedJob(now);
     if (!next) {
+      return null;
+    }
+    const storage = await this.evaluateStorageForPath(next.outputPath, next.id);
+    if (!storage.allowed) {
+      const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      this.deps.repo.pause(
+        next.id,
+        this.formatInsufficientDiskMessage(storage.requiredBytes),
+        retryAt,
+        now,
+      );
+      this.deps.diagnosticsStore?.record({
+        category: "download",
+        level: "warn",
+        operation: "download.capacity.start",
+        message: "Download start delayed because storage reserve would be breached",
+        context: {
+          jobId: next.id,
+          requiredBytes: storage.requiredBytes,
+        },
+      });
       return null;
     }
     this.deps.repo.markRunning(next.id, now);
@@ -1253,9 +1278,7 @@ export class DownloadService {
   private resolveOutputPath(input: EnqueueDownloadInput): string {
     const configuredBase = input.outputDirectory?.trim() || this.deps.config.downloadPath.trim();
     const baseDir =
-      configuredBase.length > 0
-        ? configuredBase
-        : join(dirname(getKunaiPaths().dataDbPath), "downloads");
+      configuredBase.length > 0 ? configuredBase : this.resolveDefaultDownloadDirectory();
     const titleName = sanitizePathPart(input.title.name) || "Untitled";
     const yearSuffix = normalizeYear(input.title.year);
 
@@ -1273,6 +1296,50 @@ export class DownloadService {
     const seasonFolder = `Season ${String(season).padStart(2, "0")}`;
     const episodeFile = `${titleName} - S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}${DOWNLOAD_FILE_EXT}`;
     return join(baseDir, seriesFolder, seasonFolder, episodeFile);
+  }
+
+  private resolveDefaultDownloadDirectory(): string {
+    const configuredBase = this.deps.config.downloadPath.trim();
+    return configuredBase.length > 0
+      ? configuredBase
+      : join(dirname(getKunaiPaths().dataDbPath), "downloads");
+  }
+
+  private async evaluateStorageForPath(outputPath: string, excludeJobId?: string) {
+    await mkdir(dirname(outputPath), { recursive: true });
+    const diskStats = await statfs(dirname(outputPath));
+    return evaluateStorageAdmission({
+      availableBytes: diskStats.bavail * diskStats.bsize,
+      reserveBytes: this.offlineFreeSpaceReserveBytes(),
+      unknownEpisodeEstimateBytes: this.offlineUnknownEpisodeEstimateBytes(),
+      alreadyReservedBytes: this.estimateActiveReservationBytes(excludeJobId),
+    });
+  }
+
+  private estimateActiveReservationBytes(excludeJobId?: string): number {
+    return this.listActive(200)
+      .filter((job) => job.id !== excludeJobId)
+      .reduce(
+        (total, job) => total + (job.fileSize ?? this.offlineUnknownEpisodeEstimateBytes()),
+        0,
+      );
+  }
+
+  private offlineFreeSpaceReserveBytes(): number {
+    return (
+      this.deps.config.offlineFreeSpaceReserveBytes ?? DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES
+    );
+  }
+
+  private offlineUnknownEpisodeEstimateBytes(): number {
+    return (
+      this.deps.config.offlineUnknownEpisodeEstimateBytes ?? DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES
+    );
+  }
+
+  private formatInsufficientDiskMessage(requiredBytes: number): string {
+    const requiredGB = requiredBytes / (1024 * 1024 * 1024);
+    return `Download paused because the offline safety reserve needs ${requiredGB.toFixed(1)}GB available on the download volume.`;
   }
 }
 

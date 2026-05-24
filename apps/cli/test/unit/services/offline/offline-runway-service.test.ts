@@ -58,6 +58,8 @@ function createService(overrides: Record<string, unknown> = {}) {
         mode: "anime",
       }),
       hasJobForEpisode: () => false,
+      listActive: () => [],
+      estimateAvailableEpisodeSlots: async () => 1,
       enqueue: async (input: unknown) => {
         enqueued.push(input);
         return {} as never;
@@ -107,6 +109,8 @@ describe("OfflineRunwayService", () => {
           mode: "anime",
         }),
         hasJobForEpisode: () => false,
+        listActive: () => [],
+        estimateAvailableEpisodeSlots: async () => 1,
         enqueue: async () => {
           throw new DownloadEnqueueRejectedError("insufficient-disk", "full");
         },
@@ -118,5 +122,48 @@ describe("OfflineRunwayService", () => {
 
     expect(result.skipReason).toBe("low-space");
     expect(policyWrites[0]).toMatchObject({ pausedReason: "low-space" });
+  });
+
+  test("counts queued and running jobs toward the local runway before enqueueing more", async () => {
+    const { service, enqueued } = createService({
+      assets: {
+        listTitleAssets: () => [
+          {
+            season: 1,
+            episode: 5,
+            state: "ready",
+            originJobId: "source-job",
+          },
+        ],
+      },
+      downloadService: {
+        getJob: () => ({
+          id: "source-job",
+          providerId: "allanime",
+          mediaKind: "anime",
+          mode: "anime",
+        }),
+        hasJobForEpisode: () => false,
+        listActive: () => [
+          {
+            titleId: "anilist:1",
+            season: 1,
+            episode: 6,
+            status: "queued",
+          },
+        ],
+        estimateAvailableEpisodeSlots: async () => 2,
+        enqueue: async (input: unknown) => {
+          enqueued.push(input);
+          return {} as never;
+        },
+        processQueue: async () => {},
+      },
+    });
+
+    const result = await service.evaluateTitle("anilist:1", "offline-playback-complete");
+
+    expect(result.skipReason).toBe("already-healthy");
+    expect(enqueued).toEqual([]);
   });
 });

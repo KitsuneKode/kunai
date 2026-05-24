@@ -79,6 +79,18 @@ export class OfflineTitlePoliciesRepository {
       .all(limit)
       .map(mapPolicyRow);
   }
+
+  listByTitleIds(titleIds: readonly string[]): readonly OfflineTitlePolicyRecord[] {
+    const uniqueTitleIds = [...new Set(titleIds)].filter((titleId) => titleId.length > 0);
+    if (uniqueTitleIds.length === 0) return [];
+    const placeholders = uniqueTitleIds.map(() => "?").join(", ");
+    return this.db
+      .query<OfflineTitlePolicyRow, string[]>(
+        `SELECT * FROM offline_title_policies WHERE title_id IN (${placeholders})`,
+      )
+      .all(...uniqueTitleIds)
+      .map(mapPolicyRow);
+  }
 }
 
 function mapPolicyRow(row: OfflineTitlePolicyRow): OfflineTitlePolicyRecord {

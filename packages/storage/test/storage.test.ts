@@ -574,6 +574,9 @@ test("offline title policies and maintenance jobs persist explicit bounded autho
     updatedAt: now,
   });
   expect(policies.listEnrolled(10)[0]?.runwayTarget).toBe(3);
+  expect(policies.listByTitleIds(["missing", "anilist:1"]).map((item) => item.titleId)).toEqual([
+    "anilist:1",
+  ]);
 
   const initial = maintenance.enqueueUnique({
     assetId: asset.id,

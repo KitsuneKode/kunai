@@ -42,7 +42,12 @@ export class OfflineRunwayService {
       readonly releaseProgressCache: Pick<ReleaseProgressCacheRepository, "getByTitleIds">;
       readonly downloadService: Pick<
         DownloadService,
-        "getJob" | "hasJobForEpisode" | "enqueue" | "processQueue"
+        | "getJob"
+        | "hasJobForEpisode"
+        | "enqueue"
+        | "processQueue"
+        | "listActive"
+        | "estimateAvailableEpisodeSlots"
       >;
       readonly scheduler: Pick<BackgroundWorkScheduler, "enqueue" | "drain">;
       readonly diagnostics?: { record(input: Record<string, unknown>): void };
@@ -112,13 +117,28 @@ export class OfflineRunwayService {
           ]
         : [],
     );
+    const activeEpisodes: OfflineRunwayExistingEpisode[] = this.deps.downloadService
+      .listActive(200)
+      .filter((job) => job.titleId === titleId)
+      .flatMap((job) =>
+        job.season !== undefined && job.episode !== undefined
+          ? [
+              {
+                season: job.season,
+                episode: job.episode,
+                state: job.status === "running" ? "running" : "queued",
+              },
+            ]
+          : [],
+      );
     const availableReleasedEpisodes = releasedEpisodesAfterCursor(cursor, projection);
+    const allowedNewAssets = await this.deps.downloadService.estimateAvailableEpisodeSlots();
     const plan = planOfflineRunway({
       policy: { enrolled: policy.enrolled, target: policy.runwayTarget },
       watchedCursor: cursor,
-      existingEpisodes,
+      existingEpisodes: [...existingEpisodes, ...activeEpisodes],
       availableReleasedEpisodes,
-      storage: { allowedNewAssets: 1 },
+      storage: { allowedNewAssets },
     });
     let enqueued = 0;
     try {

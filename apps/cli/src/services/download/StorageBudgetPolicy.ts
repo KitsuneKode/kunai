@@ -14,11 +14,29 @@ export type StorageAdmission =
       readonly requiredBytes: number;
     };
 
+export function estimateAllowedNewAssets(input: {
+  readonly availableBytes: number;
+  readonly reserveBytes: number;
+  readonly unknownEpisodeEstimateBytes: number;
+  readonly alreadyReservedBytes?: number;
+  readonly maxAssets?: number;
+}): number {
+  const availableBytes = nonNegativeBytes(input.availableBytes);
+  const reserveBytes = nonNegativeBytes(input.reserveBytes);
+  const estimate = nonNegativeBytes(input.unknownEpisodeEstimateBytes);
+  const alreadyReservedBytes = nonNegativeBytes(input.alreadyReservedBytes ?? 0);
+  if (estimate === 0) return input.maxAssets ?? 0;
+  const remaining = availableBytes - reserveBytes - alreadyReservedBytes;
+  if (remaining < estimate) return 0;
+  return Math.max(0, Math.min(input.maxAssets ?? 100, Math.floor(remaining / estimate)));
+}
+
 export function evaluateStorageAdmission(input: {
   readonly availableBytes: number;
   readonly estimatedBytes?: number;
   readonly reserveBytes: number;
   readonly unknownEpisodeEstimateBytes: number;
+  readonly alreadyReservedBytes?: number;
 }): StorageAdmission {
   const availableBytes = nonNegativeBytes(input.availableBytes);
   const reserveBytes = nonNegativeBytes(input.reserveBytes);
@@ -26,7 +44,8 @@ export function evaluateStorageAdmission(input: {
     typeof input.estimatedBytes === "number"
       ? nonNegativeBytes(input.estimatedBytes)
       : nonNegativeBytes(input.unknownEpisodeEstimateBytes);
-  const remainingAfterReserve = availableBytes - reserveBytes;
+  const alreadyReservedBytes = nonNegativeBytes(input.alreadyReservedBytes ?? 0);
+  const remainingAfterReserve = availableBytes - reserveBytes - alreadyReservedBytes;
   if (remainingAfterReserve < 0) {
     return { allowed: false, reason: "below-reserve", requiredBytes: reserveBytes };
   }

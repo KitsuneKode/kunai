@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { evaluateStorageAdmission } from "@/services/download/StorageBudgetPolicy";
+import {
+  estimateAllowedNewAssets,
+  evaluateStorageAdmission,
+} from "@/services/download/StorageBudgetPolicy";
 
 test("storage budget admits an unknown episode only when reserve and estimate remain available", () => {
   expect(
@@ -14,6 +17,28 @@ test("storage budget admits an unknown episode only when reserve and estimate re
     estimatedBytes: 2_000,
     remainingBytesAfterReserve: 2_000,
   });
+});
+
+test("storage budget subtracts already reserved active work before admitting another episode", () => {
+  expect(
+    evaluateStorageAdmission({
+      availableBytes: 4_999,
+      reserveBytes: 1_000,
+      unknownEpisodeEstimateBytes: 2_000,
+      alreadyReservedBytes: 2_000,
+    }),
+  ).toEqual({ allowed: false, reason: "unknown-size-too-tight", requiredBytes: 3_000 });
+});
+
+test("storage budget estimates bounded new runway slots after active reservations", () => {
+  expect(
+    estimateAllowedNewAssets({
+      availableBytes: 9_000,
+      reserveBytes: 1_000,
+      unknownEpisodeEstimateBytes: 2_000,
+      alreadyReservedBytes: 2_000,
+    }),
+  ).toBe(3);
 });
 
 test("storage budget rejects a volume below its protected reserve", () => {
