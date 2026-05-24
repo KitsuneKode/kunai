@@ -53,6 +53,11 @@ Kunai has two fallback layers, and they should stay separate:
 
 Current provider migration is incremental. The shared cycle contract and core engine exist for providers that are ready to use it; provider modules that still own their local loops must emit equivalent source/variant trace events and preserve provider-native labels so diagnostics and UI can explain the path.
 
+Classified offline or network-unavailable failures should stop provider-local
+cycling early and prevent global fallback from blaming unrelated providers. Do
+not write negative provider health for offline network evidence, cancellation,
+or manual-diagnostic work.
+
 User-control semantics:
 
 - retry/recover: retry the current playback intent with fresh evidence
@@ -83,6 +88,14 @@ Provider results should eventually include:
 - health deltas for provider/source availability
 
 The app should be able to choose provider, source/mirror, quality/variant, audio, and subtitle when the provider exposes enough information.
+
+Request economy rule: do not add provider calls just to make a richer UI. If a
+provider already receives sources, variants, subtitles, artwork, thumbnails,
+timing hints, external IDs, or native source labels while resolving the selected
+playback intent, preserve those facts in `ProviderResolveResult`,
+source-inventory cache, and diagnostics. If a fact requires another expensive
+endpoint, expose it as unknown/deferred until a user action or budgeted lane
+justifies that request.
 
 Subtitle policy:
 

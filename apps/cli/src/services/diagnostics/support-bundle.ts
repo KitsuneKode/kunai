@@ -1,7 +1,12 @@
 import type { PlaybackSourceInventoryDiagnosticsSummary } from "../playback/PlaybackSourceInventoryProjection";
+import type { ResolveWorkLedgerSnapshot } from "../playback/ResolveWorkLedger";
 import type { DiagnosticEvent } from "./diagnostic-event";
 import { getDiagnosticOperation } from "./operation-taxonomy";
 import { redactDiagnosticValue } from "./redaction";
+import {
+  buildResolveWorkDiagnosticsInsight,
+  type ResolveWorkDiagnosticsInsight,
+} from "./resolve-work-insight";
 
 export type DiagnosticsSupportBundle = {
   readonly exportedAt: string;
@@ -36,6 +41,7 @@ export type DiagnosticsBundleCorrelation = {
 
 export type DiagnosticsBundleInsights = {
   readonly providerResolve?: DiagnosticsEventInsight;
+  readonly resolveWork?: ResolveWorkDiagnosticsInsight;
   readonly sourceInventoryCache?: DiagnosticsEventInsight;
   readonly postPlayback?: DiagnosticsEventInsight;
   readonly downloadRepair?: DiagnosticsEventInsight;
@@ -63,6 +69,7 @@ export type BuildDiagnosticsSupportBundleInput = {
   readonly debug: boolean;
   readonly capabilities?: Record<string, unknown> | null;
   readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary | null;
+  readonly resolveWorkLedgers?: readonly ResolveWorkLedgerSnapshot[] | null;
   readonly events: readonly DiagnosticEvent[];
   readonly now?: () => Date;
 };
@@ -102,7 +109,7 @@ export function buildDiagnosticsSupportBundle(
     },
     capabilities,
     playbackSourceInventory,
-    insights: buildBundleInsights(events),
+    insights: buildBundleInsights(events, input.resolveWorkLedgers ?? undefined),
     correlation: buildBundleCorrelation(events),
     sections,
     eventCount: events.length,
@@ -110,9 +117,13 @@ export function buildDiagnosticsSupportBundle(
   };
 }
 
-function buildBundleInsights(events: readonly DiagnosticEvent[]): DiagnosticsBundleInsights {
+function buildBundleInsights(
+  events: readonly DiagnosticEvent[],
+  resolveWorkLedgers?: readonly ResolveWorkLedgerSnapshot[],
+): DiagnosticsBundleInsights {
   const insights: {
     providerResolve?: DiagnosticsEventInsight;
+    resolveWork?: ResolveWorkDiagnosticsInsight;
     sourceInventoryCache?: DiagnosticsEventInsight;
     postPlayback?: DiagnosticsEventInsight;
     downloadRepair?: DiagnosticsEventInsight;
@@ -120,6 +131,8 @@ function buildBundleInsights(events: readonly DiagnosticEvent[]): DiagnosticsBun
   } = {};
   const providerResolve = buildOperationPrefixInsight(events, "provider.resolve.");
   if (providerResolve) insights.providerResolve = providerResolve;
+  const resolveWork = buildResolveWorkDiagnosticsInsight(resolveWorkLedgers);
+  if (resolveWork) insights.resolveWork = resolveWork;
   const sourceInventoryCache = buildOperationPrefixInsight(events, "source-inventory.cache.");
   if (sourceInventoryCache) insights.sourceInventoryCache = sourceInventoryCache;
   const postPlayback = buildOperationPrefixInsight(events, "post-playback.");

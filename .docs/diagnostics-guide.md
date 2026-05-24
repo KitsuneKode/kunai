@@ -47,6 +47,7 @@ For playback recovery debugging, prefer stable operation names over free-form lo
 - `playback.refresh.requested`: advanced fresh-source request.
 - `playback.refresh.cooldown`: repeated voluntary refresh was rate-limited.
 - `provider.resolve.timeline`: provider attempts, retries, and fallback outcome for one resolve.
+- `resolve.work.insight`: a redacted local resolve-work graph was exported for request economy diagnostics.
 - `resolve.cache.hit`, `resolve.cache.miss`, `resolve.cache.stale`: cache decision.
 - `resolve.refetch.failed.cached-fallback`: no fresher source was found, so Kunai kept the current cached stream.
 - `source-inventory.cache.hit`, `source-inventory.cache.miss`, `source-inventory.cache.set`, `source-inventory.cache.invalidated`: source inventory cache decisions. These events use short key hashes, not full key preimages.
@@ -68,8 +69,15 @@ Support bundle sections include the latest operation for each active category,
 including `presence` and `download`, so a report can show whether Discord clear
 failed, a download artifact was validated, or a queue failure happened without
 reading the full event log first. Bundles also include `insights` for provider
-resolve, source-inventory cache, post-playback timing, and repairable downloads
-so the common questions are visible without reading every event.
+resolve, resolve-work graphs, source-inventory cache, post-playback timing, and
+repairable downloads so the common questions are visible without reading every
+event.
+
+Resolve-work insights are local-only. They summarize one physical resolve per
+ledger, joined lanes/intents, cache provenance, provider attempt graph,
+inventory counts, selected source/stream IDs, stream-health decisions when
+available, and final outcome. They must not include playable URLs, subtitle
+URLs, headers, cookies, tokens, raw title IDs, or arbitrary provider evidence.
 
 Use `/report-issue` for a preview-first issue flow. It asks before writing a redacted diagnostics report bundle and then opens the GitHub issue chooser. Use `/export-diagnostics` when you only want the bundle and do not want to open a browser.
 

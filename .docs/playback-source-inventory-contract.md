@@ -109,6 +109,35 @@ Source and quality pickers must read from cached inventory.
 
 Never let one selected source overwrite another source's inventory. Store the full normalized result, then store user selection as separate playback intent.
 
+## Resolve Work Identity And Request Economy
+
+Playback resolve work is deduped by a local `ResolveWorkKey` owned by the CLI
+playback layer. The key represents output-equivalent playable work: title,
+episode, provider, language preferences, source/stream/quality selection,
+freshness policy, and work purpose. It intentionally does not include the budget
+lane, so an exact near-EOF prefetch and foreground playback request can join the
+same physical resolve.
+
+Budget lane is still recorded in the local ledger:
+
+- `user-blocking`: foreground playback, recovery, and explicit source changes.
+- `near-need`: next-episode prefetch near handoff.
+- `background`: non-critical local maintenance or download work.
+- `manual-diagnostic`: approved debug/live-smoke work only.
+
+Fresh exact stream cache hits return without provider work and without routine
+stream validation. Stale, fragile, recovery, dead-stream, source-inventory, and
+near-handoff paths may validate one selected candidate before use. Browsing
+source, quality, or subtitle options is inspection-only and must not create
+provider/cache network work until the user confirms a selection that requires a
+playable stream.
+
+The resolve ledger records skipped work as deliberately as performed work:
+cache decisions, joined lanes/intents, provider attempts, selected source/stream
+IDs, and counts for already discovered sources, streams, variants, subtitles,
+language facts, artwork, timing hints, and external IDs. It stores hashes and
+classified facts, not raw URLs, headers, cookies, subtitle URLs, or title IDs.
+
 ## Variant Model By Provider Shape
 
 Use the same normalized fields everywhere, but do not force every provider into

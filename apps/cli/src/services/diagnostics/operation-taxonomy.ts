@@ -52,6 +52,12 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     userAction: "Try fallback or report the provider timeline if all attempts fail.",
   },
   {
+    operation: "resolve.work.insight",
+    category: "provider",
+    audience: "developer",
+    summary: "A redacted resolve work graph was exported for request economy diagnostics.",
+  },
+  {
     operation: "resolve.cache.hit",
     category: "cache",
     audience: "developer",

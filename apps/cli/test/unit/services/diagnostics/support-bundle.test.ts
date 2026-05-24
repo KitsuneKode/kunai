@@ -242,4 +242,87 @@ describe("DiagnosticsSupportBundle", () => {
     });
     expect(JSON.stringify(bundle)).not.toContain(`${process.env.HOME}/secret`);
   });
+
+  test("exports a redacted resolve work graph from local ledgers", () => {
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.1.0",
+      debug: true,
+      resolveWorkLedgers: [
+        {
+          resolveWorkKey: "resolve:abc123",
+          mediaIdentityHash: "media456",
+          purpose: "playable",
+          freshnessPolicy: "trust-fresh",
+          initiatingIntent: "prefetch",
+          intents: ["prefetch", "playback"],
+          initiatingBudgetLane: "near-need",
+          joinedBudgetLanes: ["near-need", "user-blocking"],
+          cacheDecisions: ["miss", "inventory-hit"],
+          providerAttempts: [
+            {
+              providerId: "vidking",
+              attempt: 1,
+              maxAttempts: 2,
+              outcome: "failure",
+              issueClass: "timeout",
+            },
+            {
+              providerId: "rivestream",
+              attempt: 2,
+              maxAttempts: 2,
+              outcome: "success",
+            },
+          ],
+          inventory: {
+            hit: true,
+            sourceCount: 2,
+            streamCount: 3,
+            variantCount: 2,
+            subtitleCount: 4,
+            audioLanguageCount: 1,
+            hardSubLanguageCount: 1,
+            hasArtwork: true,
+            selectedSourceId: "source-safe",
+            selectedStreamId: "stream-safe",
+          },
+          outcome: "resolved",
+        },
+      ],
+      events: [
+        {
+          timestamp: 1,
+          category: "provider",
+          level: "info",
+          operation: "resolve.work.insight",
+          message: "Resolve work graph exported",
+          context: {
+            url: "https://cdn.example/private/stream.m3u8?token=secret",
+            cookie: "session=secret",
+          },
+        },
+      ],
+    });
+
+    expect(bundle.insights.resolveWork).toMatchObject({
+      workCount: 1,
+      totals: {
+        providerAttemptCount: 2,
+        sourceCount: 2,
+        streamCount: 3,
+        variantCount: 2,
+        subtitleCount: 4,
+      },
+    });
+    expect(bundle.insights.resolveWork?.physicalWork[0]).toMatchObject({
+      resolveWorkKey: "resolve:abc123",
+      intents: ["prefetch", "playback"],
+      joinedBudgetLanes: ["near-need", "user-blocking"],
+      cacheProvenance: ["miss", "inventory-hit"],
+      requestCounts: { providerAttemptCount: 2 },
+      inventory: { hasArtwork: true, selectedSourceId: "source-safe" },
+    });
+    expect(JSON.stringify(bundle.insights.resolveWork)).not.toContain("cdn.example");
+    expect(JSON.stringify(bundle)).not.toContain("token=secret");
+    expect(JSON.stringify(bundle)).not.toContain("session=secret");
+  });
 });
