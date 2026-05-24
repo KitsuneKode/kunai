@@ -550,7 +550,10 @@ export function BrowseShell<T>({
     !isCalendarView &&
     displayOptions.some((option) => option.previewMeta?.[0] === "Series") &&
     displayOptions.some((option) => option.previewMeta?.[0] === "Movie");
-  const showCompanion = showCompanionLayout && !compact && Boolean(selectedOption);
+  // While the command palette is open, focus belongs to the palette — keep the
+  // companion preview hidden so its (taller) content can't overlap the palette
+  // rows or get clipped against the bottom of the viewport.
+  const showCompanion = showCompanionLayout && !compact && !commandMode && Boolean(selectedOption);
   const { poster, posterState: posterPreviewState } = usePosterPreview(
     selectedOption?.previewImageUrl ?? undefined,
     {
