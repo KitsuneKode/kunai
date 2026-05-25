@@ -192,6 +192,53 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
   expect(result.stream!.url).toBe(fallbackStream.url);
 });
 
+test("PlaybackResolveService does not cache deferred media locators", async () => {
+  const cache = createMemoryCache(null);
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "allanime" as ProviderId,
+      streams: [
+        {
+          id: "stream:allanime:ak:1",
+          providerId: "allanime" as ProviderId,
+          deferredLocator: "allmanga-ak:test-locator",
+          protocol: "dash" as const,
+          container: "mpd" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:deferred",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "allanime" as ProviderId,
+    attempts: [{ providerId: "allanime" as ProviderId, result: undefined }],
+  });
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "anime",
+    providerId: "allanime",
+    audioPreference: "sub",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(result.stream?.deferredLocator).toBe("allmanga-ak:test-locator");
+  expect(cache.setKeys).toHaveLength(0);
+});
+
 test("PlaybackResolveService reuses source inventory before a provider resolve", async () => {
   let providerCalls = 0;
   const inventory = {
@@ -779,6 +826,78 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
   });
 
   expect(observedCandidates).toEqual([["primary", "anime-ok"]]);
+});
+
+test("PlaybackResolveService tries title-scoped successful fallback first", async () => {
+  const cache = createMemoryCache(null);
+  const observedCandidates: ProviderId[][] = [];
+  const engine = createMockEngine(
+    {
+      result: {
+        status: "resolved",
+        providerId: "fallback" as ProviderId,
+        streams: [
+          {
+            id: "stream:fallback:1",
+            providerId: "fallback" as ProviderId,
+            url: "https://fallback.example/stream.m3u8",
+            protocol: "hls" as const,
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:fallback",
+          startedAt: new Date().toISOString(),
+          title: { id: "12345", kind: "series", title: "Test Movie" },
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      },
+      providerId: "fallback" as ProviderId,
+      attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
+    },
+    {
+      modules: [
+        {
+          providerId: "primary" as ProviderId,
+          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+        },
+        {
+          providerId: "fallback" as ProviderId,
+          manifest: createManifest("fallback" as ProviderId, ["series", "movie"]),
+        },
+      ],
+      onCandidateIds: (candidateIds) => observedCandidates.push([...candidateIds]),
+    },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    titleProviderHealth: {
+      recordFailure: () => {},
+      recordCleanSuccess: () => {},
+      getSwitchSuggestion: () => ({
+        providerId: "primary",
+        suggestedProviderId: "fallback",
+      }),
+    },
+  });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(observedCandidates).toEqual([["fallback", "primary"]]);
 });
 
 test("PlaybackResolveService manual recovery mode does not auto-fallback", async () => {

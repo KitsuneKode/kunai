@@ -124,14 +124,11 @@ export class PersistentReadyWorkExecutor {
     if (
       this.deps.getSubtitlesAttachedAtSpawn() &&
       options.primarySubtitle &&
-      options.primarySubtitle === initialOptions.primarySubtitle
+      options.primarySubtitle === initialOptions.primarySubtitle &&
+      collectAdditionalSubtitleTracks(options.primarySubtitle, options.subtitleTracks).length === 0
     ) {
-      const additionalCount = options.subtitleTracks
-        ? collectAdditionalSubtitleTracks(options.primarySubtitle, options.subtitleTracks).length
-        : 0;
-      const trackCount = 1 + additionalCount;
-      options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
-      options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
+      options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount: 1 });
+      options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount: 1 });
     } else {
       await this.deps.subtitleManager.replaceSubtitleInventory(
         ipcSession,

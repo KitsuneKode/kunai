@@ -15,6 +15,7 @@ import type { LocalPlaybackSource } from "@/services/offline/local-playback-sour
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 
+import { materializeDeferredMediaForPlayback } from "./deferred-media-materializer";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { PersistentMpvSession } from "./PersistentMpvSession";
@@ -41,17 +42,22 @@ export class PlayerServiceImpl implements PlayerService {
   ) {}
 
   async play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
+    const materialized = await materializeDeferredMediaForPlayback(stream);
+    const playbackStream = materialized.stream;
+    if (stream.deferredLocator) {
+      options.onPlaybackEvent?.({ type: "media-materialized", kind: "dash-mpd" });
+    }
     options.onPlaybackEvent?.({ type: "launching-player" });
     process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
     process.stderr.write(
-      stream.subtitle
-        ? `Subtitle attached: ${stream.subtitle}\n`
+      playbackStream.subtitle
+        ? `Subtitle attached: ${playbackStream.subtitle}\n`
         : `${options.subtitleStatus ?? "Subtitles not attached"}; playback will start without a subtitle file.\n`,
     );
 
     this.deps.logger.info("Launching MPV", {
       title: options.displayTitle,
-      url: stream.url,
+      url: playbackStream.url,
       startAt: options.startAt,
       resumePromptAt: options.resumePromptAt ?? 0,
     });
@@ -61,19 +67,20 @@ export class PlayerServiceImpl implements PlayerService {
       message: "Launching MPV",
       context: {
         title: options.displayTitle,
-        hasSubtitle: Boolean(stream.subtitle),
-        subtitleUrl: stream.subtitle ?? null,
+        hasSubtitle: Boolean(playbackStream.subtitle),
+        subtitleUrl: playbackStream.subtitle ?? null,
         subtitleStatus: options.subtitleStatus ?? null,
         startAt: options.startAt ?? 0,
         resumePromptAt: options.resumePromptAt ?? 0,
+        deferredMedia: Boolean(stream.deferredLocator),
       },
     });
 
     try {
       const result =
         options.playbackMode === "autoplay-chain"
-          ? await this.playAutoplayChainStream(stream, options)
-          : await this.playOneShotStream(stream, options);
+          ? await this.playAutoplayChainStream(playbackStream, options)
+          : await this.playOneShotStream(playbackStream, options);
 
       this.deps.logger.info("MPV playback complete", {
         watchedSeconds: result.watchedSeconds,
@@ -133,6 +140,8 @@ export class PlayerServiceImpl implements PlayerService {
         lastNonZeroPositionSeconds: 0,
         lastNonZeroDurationSeconds: 0,
       };
+    } finally {
+      await materialized.cleanup();
     }
   }
 

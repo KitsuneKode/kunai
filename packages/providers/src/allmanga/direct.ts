@@ -219,8 +219,13 @@ export const allmangaProviderModule: CoreProviderModule = {
         if (!link.url) continue;
 
         const qualityStr = link.quality || "auto";
-        const protocol = link.url.includes(".m3u8") ? "hls" : "mp4";
-        const sourceName = qualityStr.includes("HLS") || protocol === "hls" ? "FM-HLS" : "VID-MP4";
+        const protocol = link.protocol ?? (link.url.includes(".m3u8") ? "hls" : "mp4");
+        const sourceName =
+          protocol === "dash"
+            ? "Ak"
+            : qualityStr.includes("HLS") || protocol === "hls"
+              ? "FM-HLS"
+              : "VID-MP4";
         const sourceLabel = normalizeProviderDisplayLabel(sourceName) ?? sourceName;
         const sourceId = `source:${ALLANIME_PROVIDER_ID}:${sourceName.toLowerCase()}`;
 
@@ -234,9 +239,10 @@ export const allmangaProviderModule: CoreProviderModule = {
           providerId: ALLANIME_PROVIDER_ID,
           sourceId,
           variantId,
-          url: link.url,
+          ...(link.deferredLocator ? { deferredLocator: link.deferredLocator } : { url: link.url }),
           protocol,
-          container: protocol === "hls" ? "m3u8" : "mp4",
+          container:
+            link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
           audioLanguages: mode === "sub" ? ["ja"] : mode === "dub" ? ["en"] : [],
           presentation: mode,
           hardSubLanguage: mode === "sub" ? "en" : undefined,
@@ -270,7 +276,7 @@ export const allmangaProviderModule: CoreProviderModule = {
             {
               sourceId,
               nativeLabel: sourceLabel,
-              host: new URL(link.url).hostname,
+              host: link.deferredLocator ? "allanime.day" : new URL(link.url).hostname,
               confidence: protocol === "hls" ? 0.95 : 0.85,
               metadata: { translationType: mode },
             },
@@ -287,7 +293,8 @@ export const allmangaProviderModule: CoreProviderModule = {
           qualityLabel: qualityStr,
           qualityRank: parseInt(qualityStr) || 0,
           protocol,
-          container: protocol === "hls" ? "m3u8" : "mp4",
+          container:
+            link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
           audioLanguages: mode === "sub" ? ["ja"] : ["en"],
           presentation: mode,
           hardSubLanguage: mode === "sub" ? "en" : undefined,
@@ -320,7 +327,7 @@ export const allmangaProviderModule: CoreProviderModule = {
             label: normalizedLang
               ? (subtitleLanguageDisplayName(normalizedLang) ?? subLang)
               : subLang,
-            format: "vtt",
+            format: subtitleFormatFromUrl(link.subtitle),
             source: "embedded",
             confidence: 0.9,
             cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
@@ -341,7 +348,7 @@ export const allmangaProviderModule: CoreProviderModule = {
               url: extra.src,
               language: normLang,
               label: normLang ? (subtitleLanguageDisplayName(normLang) ?? extra.lang) : extra.lang,
-              format: "vtt",
+              format: subtitleFormatFromUrl(extra.src),
               source: "embedded",
               confidence: 0.85,
               cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
@@ -367,7 +374,7 @@ export const allmangaProviderModule: CoreProviderModule = {
         candidateTimeoutMs: 2_500,
         resolveCandidate: async (candidate, cycleContext) => {
           const stream = streams.find((item) => item.id === candidate.streamId);
-          if (!stream?.url) {
+          if (!stream?.url && !stream?.deferredLocator) {
             throw createProviderCycleFailureError(candidate, {
               failureClass: "candidate-empty",
               message: `AllManga candidate ${candidate.id} did not contain a playable URL`,
@@ -576,4 +583,12 @@ export function buildAllmangaSourceCandidates(
 function formatAllmangaSourceLabel(sourceId: string): string {
   const family = sourceId.split(":").at(-1) ?? sourceId;
   return normalizeProviderDisplayLabel(family) ?? family;
+}
+
+function subtitleFormatFromUrl(url: string): "srt" | "vtt" | "ass" | "unknown" {
+  const path = url.split("?")[0]?.toLowerCase() ?? "";
+  if (path.endsWith(".ass")) return "ass";
+  if (path.endsWith(".srt")) return "srt";
+  if (path.endsWith(".vtt")) return "vtt";
+  return "unknown";
 }

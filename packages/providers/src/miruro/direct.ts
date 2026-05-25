@@ -32,13 +32,18 @@ import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 
 export { MIRURO_PROVIDER_ID };
-export const MIRURO_REFERER = "https://www.miruro.tv/";
+export const MIRURO_REFERER = "https://miruro.bz/";
+export const MIRURO_PIPE_BASE_URLS = [
+  "https://miruro.bz",
+  "https://miruro.ru",
+  "https://miruro.tv",
+  "https://www.miruro.tv",
+] as const;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
-const PIPE_URL = "https://www.miruro.tv/api/secure/pipe";
 
 /** Cache episode lists per AniList ID. TTL 30 minutes (episode data is stable). */
 const episodeCache = new TTLCache<string, unknown>(1_800_000);
@@ -81,26 +86,24 @@ type MiruroPipeThumbnail = {
 };
 
 export type MiruroAudioCategory = "sub" | "dub";
-export type MiruroServerKey = "kiwi" | "bee";
+export type MiruroServerKey = string;
+export type MiruroSubtitleDelivery = "hardcoded" | "embedded" | "unknown";
 export type MiruroServerProfile = {
   readonly id: MiruroServerKey;
   readonly label: string;
-  readonly subtitleDelivery: "hardcoded" | "embedded";
+  readonly subtitleDelivery: MiruroSubtitleDelivery;
   readonly hardSubLanguage?: string;
 };
 
-const MIRURO_SERVER_PROFILES: Record<MiruroServerKey, MiruroServerProfile> = {
-  kiwi: {
-    id: "kiwi",
-    label: "Kiwi hardsub",
-    subtitleDelivery: "hardcoded",
-    hardSubLanguage: "en",
-  },
-  bee: {
-    id: "bee",
-    label: "Bee softsub",
-    subtitleDelivery: "embedded",
-  },
+const MIRURO_PROVIDER_LABELS: Record<string, string> = {
+  kiwi: "Kiwi",
+  bee: "Bee",
+  ANIMEKAI: "AnimeKai",
+  ANIMEZ: "AnimeZ",
+  hop: "Hop",
+  ZORO: "Zoro",
+  ally: "Ally",
+  dune: "Dune",
 };
 
 export type MiruroResolvePayloadOptions = {
@@ -121,24 +124,26 @@ type MiruroEpisodeEntry = {
   readonly title?: string;
 };
 
+type MiruroProviderEpisodes = {
+  readonly sub?: readonly MiruroEpisodeEntry[];
+  readonly dub?: readonly MiruroEpisodeEntry[];
+};
+
+type MiruroProviderEntry = {
+  readonly meta?: Record<string, unknown>;
+  readonly episodes?: MiruroProviderEpisodes;
+};
+
 type MiruroEpisodesResponse = {
   readonly mappings?: Record<string, unknown>;
-  readonly providers?: {
-    readonly kiwi?: {
-      readonly meta?: Record<string, unknown>;
-      readonly episodes?: {
-        readonly sub?: readonly MiruroEpisodeEntry[];
-        readonly dub?: readonly MiruroEpisodeEntry[];
-      };
-    };
-  };
+  readonly providers?: Record<string, MiruroProviderEntry | undefined>;
 };
 
 type MiruroCycleCandidateMetadata = {
   readonly audioCategory: MiruroAudioCategory;
   readonly episodeId: string;
   readonly serverId: MiruroServerKey;
-  readonly subtitleDelivery: MiruroServerProfile["subtitleDelivery"];
+  readonly subtitleDelivery: MiruroSubtitleDelivery;
 };
 
 function base64urlToBytes(s: string): Uint8Array {
@@ -151,6 +156,10 @@ function bytesToBase64url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function createMiruroPipeRequestUrls(encodedPayload: string): string[] {
+  return MIRURO_PIPE_BASE_URLS.map((baseUrl) => `${baseUrl}/api/secure/pipe?e=${encodedPayload}`);
 }
 
 export function createMiruroResultFromPayload({
@@ -174,12 +183,16 @@ export function createMiruroResultFromPayload({
       qualityPreference: input.qualityPreference,
     });
   const sourceId = `source:${MIRURO_PROVIDER_ID}:pipe:${serverProfile.id}`;
-  const rawStreams = sourceData.streams?.filter((s) => s.type === "hls" && s.url) ?? [];
+  const rawStreams = rankMiruroStreams(
+    sourceData.streams?.filter((s) => s.type === "hls" && s.url) ?? [],
+  );
   if (rawStreams.length === 0) return null;
   const displaySourceLabel = displayMiruroSourceLabel(serverProfile, audioCategory);
+  const subtitleDelivery = inferMiruroSubtitleDelivery(serverProfile, sourceData);
 
   const seekBarVttUrl = firstMiruroThumbnailUrl(sourceData.thumbnails);
   const artwork = seekBarVttUrl ? { seekBarVttUrl } : undefined;
+  const timingMetadata = createMiruroTimingMetadata(sourceData);
   const streams: StreamCandidate[] = [];
   const variants: ProviderVariantCandidate[] = [];
   const subtitles = createMiruroSubtitles(sourceData.subtitles, sourceId, policy);
@@ -214,7 +227,7 @@ export function createMiruroResultFromPayload({
       confidence: 0.9,
       metadata: {
         audioCategory,
-        subtitleDelivery: serverProfile.subtitleDelivery,
+        subtitleDelivery,
       },
     },
   ];
@@ -237,8 +250,8 @@ export function createMiruroResultFromPayload({
       audioLanguages: audioCategory === "sub" ? ["ja"] : ["en"],
       presentation: audioCategory,
       hardSubLanguage: serverProfile.hardSubLanguage,
-      subtitleDelivery: serverProfile.subtitleDelivery,
-      subtitleLanguages: serverProfile.subtitleDelivery === "embedded" ? ["en"] : undefined,
+      subtitleDelivery: subtitleDelivery === "unknown" ? undefined : subtitleDelivery,
+      subtitleLanguages: subtitleDelivery === "embedded" ? ["en"] : undefined,
       flavorArchetype: "Miruro animals",
       flavorLabel: displaySourceLabel,
       qualityLabel: qualityStr,
@@ -252,6 +265,7 @@ export function createMiruroResultFromPayload({
       },
       confidence: 0.95,
       cachePolicy: policy,
+      ...(timingMetadata ? { metadata: timingMetadata } : {}),
     });
 
     variants.push({
@@ -265,8 +279,8 @@ export function createMiruroResultFromPayload({
       audioLanguages: audioCategory === "sub" ? ["ja"] : ["en"],
       presentation: audioCategory,
       hardSubLanguage: serverProfile.hardSubLanguage,
-      subtitleDelivery: serverProfile.subtitleDelivery,
-      subtitleLanguages: serverProfile.subtitleDelivery === "embedded" ? ["en"] : undefined,
+      subtitleDelivery: subtitleDelivery === "unknown" ? undefined : subtitleDelivery,
+      subtitleLanguages: subtitleDelivery === "embedded" ? ["en"] : undefined,
       flavorArchetype: "Miruro animals",
       flavorLabel: displaySourceLabel,
       streamIds: [streamId],
@@ -278,7 +292,6 @@ export function createMiruroResultFromPayload({
     });
   }
 
-  streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
   variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
   const selectedStream =
     streams.find((s) => s.qualityLabel?.includes(input.qualityPreference || "")) ?? streams[0];
@@ -304,7 +317,7 @@ export function createMiruroResultFromPayload({
         artwork,
         metadata: {
           audioCategory,
-          subtitleDelivery: serverProfile.subtitleDelivery,
+          subtitleDelivery,
           server: serverProfile.id,
           nativeLabel: serverProfile.label,
         },
@@ -375,39 +388,58 @@ function firstMiruroThumbnailUrl(
   return thumbnail?.url ?? thumbnail?.file;
 }
 
+function createMiruroTimingMetadata(
+  sourceData: MiruroSourcesResponse,
+): Record<string, unknown> | null {
+  const metadata: Record<string, unknown> = {};
+  const intro = normalizeMiruroTimingSegment(sourceData.intro);
+  const outro = normalizeMiruroTimingSegment(sourceData.outro);
+  if (intro) metadata.intro = intro;
+  if (outro) metadata.outro = outro;
+  return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+function normalizeMiruroTimingSegment(
+  segment: { readonly start: number; readonly end: number } | undefined,
+): { readonly start: number; readonly end: number } | null {
+  if (!segment) return null;
+  if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end)) return null;
+  if (segment.end <= segment.start) return null;
+  return { start: segment.start, end: segment.end };
+}
+
 export function buildMiruroCycleCandidates({
+  providers,
   episodes,
   episodeNum,
   targetAudio,
   fallbackAudio,
-  preferredSubtitleDelivery,
   preferredSourceId,
 }: {
-  readonly episodes: {
-    readonly sub?: readonly MiruroEpisodeEntry[];
-    readonly dub?: readonly MiruroEpisodeEntry[];
-  };
+  readonly providers?: Record<string, MiruroProviderEntry | undefined>;
+  readonly episodes?: MiruroProviderEpisodes;
   readonly episodeNum: number;
   readonly targetAudio: MiruroAudioCategory;
   readonly fallbackAudio: MiruroAudioCategory;
-  readonly preferredSubtitleDelivery?: MiruroServerProfile["subtitleDelivery"];
+  readonly preferredSubtitleDelivery?: MiruroSubtitleDelivery;
   readonly preferredSourceId?: string;
 }): ProviderCycleCandidate[] {
-  const preferredServer =
-    preferredSubtitleDelivery === "embedded"
-      ? MIRURO_SERVER_PROFILES.bee
-      : MIRURO_SERVER_PROFILES.kiwi;
-  const alternateServer =
-    preferredServer.id === "kiwi" ? MIRURO_SERVER_PROFILES.bee : MIRURO_SERVER_PROFILES.kiwi;
   const candidates: ProviderCycleCandidate[] = [];
   const audioOrder: readonly MiruroAudioCategory[] =
     targetAudio === fallbackAudio ? [targetAudio] : [targetAudio, fallbackAudio];
   let priority = 0;
+  const providerEntries = providers
+    ? Object.entries(providers)
+    : [["kiwi", { episodes }] as const, ["bee", { episodes }] as const];
 
   for (const audioCategory of audioOrder) {
-    const episodeEntry = findMiruroEpisodeEntry(episodes[audioCategory], episodeNum);
-    if (!episodeEntry?.id) continue;
-    for (const serverProfile of [preferredServer, alternateServer]) {
+    for (const [providerKey, providerEntry] of providerEntries) {
+      const episodeEntry = findMiruroEpisodeEntry(
+        providerEntry?.episodes?.[audioCategory],
+        episodeNum,
+      );
+      if (!episodeEntry?.id) continue;
+      const serverProfile = createMiruroServerProfile(providerKey);
       const sourceId = `source:${MIRURO_PROVIDER_ID}:pipe:${serverProfile.id}`;
       candidates.push({
         id: `candidate:${sourceId}:${audioCategory}:${episodeEntry.id}`,
@@ -440,7 +472,7 @@ function findMiruroEpisodeEntry(
   episodeNum: number,
 ): MiruroEpisodeEntry | undefined {
   if (!episodeList?.length) return undefined;
-  return episodeList.find((entry) => entry.number === episodeNum) ?? episodeList[episodeNum - 1];
+  return episodeList.find((entry) => entry.number === episodeNum);
 }
 
 function parseMiruroCycleCandidateMetadata(
@@ -454,7 +486,8 @@ function parseMiruroCycleCandidateMetadata(
   if (
     (audioCategory !== "sub" && audioCategory !== "dub") ||
     typeof episodeId !== "string" ||
-    (serverId !== "kiwi" && serverId !== "bee")
+    typeof serverId !== "string" ||
+    serverId.length === 0
   ) {
     throw createProviderCycleFailureError(candidate, {
       failureClass: "candidate-unsupported",
@@ -468,7 +501,10 @@ function parseMiruroCycleCandidateMetadata(
     audioCategory,
     episodeId,
     serverId,
-    subtitleDelivery: metadata.subtitleDelivery === "embedded" ? "embedded" : "hardcoded",
+    subtitleDelivery:
+      metadata.subtitleDelivery === "embedded" || metadata.subtitleDelivery === "hardcoded"
+        ? metadata.subtitleDelivery
+        : "unknown",
   };
 }
 
@@ -477,8 +513,65 @@ function displayMiruroSourceLabel(
   audioCategory: MiruroAudioCategory,
 ): string {
   const audioLabel = audioCategory === "dub" ? "Dub" : "Sub";
-  const subLabel = serverProfile.subtitleDelivery === "embedded" ? "soft sub" : "hard sub";
+  const subLabel =
+    serverProfile.subtitleDelivery === "embedded"
+      ? "soft sub"
+      : serverProfile.subtitleDelivery === "hardcoded"
+        ? "hard sub"
+        : "subtitles unknown";
   return `${audioLabel} · ${serverProfile.label} · ${subLabel}`;
+}
+
+function createMiruroServerProfile(providerKey: string): MiruroServerProfile {
+  return {
+    id: providerKey,
+    label: MIRURO_PROVIDER_LABELS[providerKey] ?? normalizeMiruroProviderLabel(providerKey),
+    subtitleDelivery: "unknown",
+  };
+}
+
+function normalizeMiruroProviderLabel(providerKey: string): string {
+  const spaced = providerKey.replace(/[_-]+/g, " ").trim();
+  if (!spaced) return "Unknown";
+  return spaced.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function inferMiruroSubtitleDelivery(
+  serverProfile: MiruroServerProfile,
+  sourceData: MiruroSourcesResponse,
+): MiruroSubtitleDelivery {
+  if (sourceData.subtitles?.some((subtitle) => subtitle.url || subtitle.file)) return "embedded";
+  return serverProfile.subtitleDelivery;
+}
+
+function rankMiruroStreams(streams: readonly MiruroPipeStream[]): MiruroPipeStream[] {
+  return streams
+    .map((stream, index) => ({ stream, index }))
+    .sort((a, b) => {
+      const activeDelta = Number(b.stream.isActive === true) - Number(a.stream.isActive === true);
+      if (activeDelta !== 0) return activeDelta;
+      const cdnDelta = Number(isMiruroCdnStream(b.stream)) - Number(isMiruroCdnStream(a.stream));
+      if (cdnDelta !== 0) return cdnDelta;
+      const qualityDelta =
+        qualityRankFromMiruroStream(b.stream) - qualityRankFromMiruroStream(a.stream);
+      if (qualityDelta !== 0) return qualityDelta;
+      return a.index - b.index;
+    })
+    .map(({ stream }) => stream);
+}
+
+function isMiruroCdnStream(stream: MiruroPipeStream): boolean {
+  if (!stream.url) return false;
+  try {
+    const host = new URL(stream.url).hostname.toLowerCase();
+    return host.includes("uwucdn") || host.includes("owocdn");
+  } catch {
+    return false;
+  }
+}
+
+function qualityRankFromMiruroStream(stream: MiruroPipeStream): number {
+  return parseInt(stream.quality ?? "") || stream.resolution?.height || 0;
 }
 
 function xorDecrypt(encrypted: Uint8Array, keyHex: string): Uint8Array {
@@ -547,25 +640,37 @@ async function pipeCall(
 
   const payload = { path, method: "GET" as const, query: q, body: null, version: "0.2.0" };
   const encoded = bytesToBase64url(new TextEncoder().encode(JSON.stringify(payload)));
-  const url = `${PIPE_URL}?e=${encoded}`;
+  let lastError: unknown;
+  let res: Response | null = null;
 
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      signal: signal ?? AbortSignal.timeout(20_000),
-      headers: {
-        "User-Agent": USER_AGENT,
-        Referer: MIRURO_REFERER,
-        Origin: MIRURO_REFERER.slice(0, -1),
-        Accept: "application/json, text/plain, */*",
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "request failed";
-    throw new Error(`Miruro pipe network request failed: ${message}`, { cause: error });
+  for (const url of createMiruroPipeRequestUrls(encoded)) {
+    const baseUrl = new URL(url).origin;
+    try {
+      const candidate = await fetch(url, {
+        signal: signal ?? AbortSignal.timeout(20_000),
+        headers: {
+          "User-Agent": USER_AGENT,
+          Referer: `${baseUrl}/`,
+          Origin: baseUrl,
+          Accept: "application/json, text/plain, */*",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-site": "same-origin",
+        },
+      });
+      if (candidate.ok) {
+        res = candidate;
+        break;
+      }
+      lastError = new Error(`HTTP ${candidate.status}`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (!res) {
+    const message = lastError instanceof Error ? lastError.message : "request failed";
+    throw new Error(`Miruro pipe network request failed: ${message}`, { cause: lastError });
   }
 
   if (!res.ok) return null;
@@ -639,7 +744,7 @@ export const miruroProviderModule: CoreProviderModule = {
 
     try {
       const epData = await getMiruroEpisodesResponse(anilistId, context.signal);
-      if (!epData?.providers?.kiwi?.episodes) {
+      if (!epData?.providers || Object.keys(epData.providers).length === 0) {
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
           code: "not-found",
           message: "No episode data from miruro pipe API",
@@ -653,12 +758,10 @@ export const miruroProviderModule: CoreProviderModule = {
           : "sub";
       const fallbackAudio = targetAudio === "dub" ? "sub" : "dub";
       const cycleCandidates = buildMiruroCycleCandidates({
-        episodes: epData.providers.kiwi.episodes,
+        providers: epData.providers,
         episodeNum,
         targetAudio,
         fallbackAudio,
-        preferredSubtitleDelivery:
-          input.preferredSubtitleDelivery === "embedded" ? "embedded" : "hardcoded",
         preferredSourceId: input.preferredSourceId,
       });
       if (cycleCandidates.length === 0) {
@@ -678,7 +781,7 @@ export const miruroProviderModule: CoreProviderModule = {
         candidateTimeoutMs: 20_000,
         resolveCandidate: async (candidate) => {
           const metadata = parseMiruroCycleCandidateMetadata(candidate, context);
-          const serverProfile = MIRURO_SERVER_PROFILES[metadata.serverId];
+          const serverProfile = createMiruroServerProfile(metadata.serverId);
           const srcCacheKey = `sources:${metadata.episodeId}:${metadata.audioCategory}:${metadata.serverId}`;
           let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
           if (!srcData) {
@@ -699,7 +802,9 @@ export const miruroProviderModule: CoreProviderModule = {
           if (rawStreams.length === 0) {
             throw createProviderCycleFailureError(candidate, {
               failureClass: "candidate-empty",
-              message: `${serverProfile.label} returned no HLS streams`,
+              message:
+                `${serverProfile.label} ` +
+                `(${metadata.serverId}/${metadata.audioCategory}) returned no HLS streams`,
               retryable: true,
               at: context.now(),
             });
@@ -719,7 +824,9 @@ export const miruroProviderModule: CoreProviderModule = {
           if (!result) {
             throw createProviderCycleFailureError(candidate, {
               failureClass: "candidate-empty",
-              message: `${serverProfile.label} did not produce a selectable stream`,
+              message:
+                `${serverProfile.label} ` +
+                `(${metadata.serverId}/${metadata.audioCategory}) did not produce a selectable stream`,
               retryable: true,
               at: context.now(),
             });

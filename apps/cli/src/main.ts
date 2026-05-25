@@ -117,7 +117,8 @@ export function parseArgs(argv: string[]): {
     } else if (arg === "-i" || arg === "--id") {
       args.id = argv[++i];
     } else if (arg === "-t" || arg === "--type") {
-      args.type = argv[++i];
+      const rawType = argv[++i];
+      args.type = rawType === "tv" ? "series" : rawType;
     } else if (arg === "-a" || arg === "--anime") {
       args.anime = true;
     } else if (arg === "-m" || arg === "--minimal") {

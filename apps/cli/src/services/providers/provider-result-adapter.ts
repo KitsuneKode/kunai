@@ -28,7 +28,11 @@ export function providerResolveResultToStreamInfo(
     selectedSourceId: input.selectedSourceId,
     selectedStreamId: input.selectedStreamId,
   });
-  if (!selected?.url) {
+  if (!selected) {
+    return null;
+  }
+  const playableUrl = selected.url ?? selected.deferredLocator;
+  if (!playableUrl) {
     return null;
   }
   const effectiveResult =
@@ -41,7 +45,8 @@ export function providerResolveResultToStreamInfo(
   const subtitleSource = resolveSubtitleSource(result.subtitles, subtitleList);
 
   return {
-    url: selected.url,
+    url: playableUrl,
+    deferredLocator: selected.deferredLocator,
     headers: selected.headers ?? {},
     audioLanguages: selected.audioLanguages ? [...selected.audioLanguages] : undefined,
     hardSubLanguage: selected.hardSubLanguage,

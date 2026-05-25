@@ -4,9 +4,11 @@ import {
   allmangaProviderModule,
   buildAllmangaCycleCandidates,
   buildStreamHeaders,
+  clearAllMangaProviderCachesForTest,
   decodeTobeparsed,
   fetchAllMangaEpisodeCatalog,
   gqlPost,
+  resolveAllMangaAkDeferredLocator,
   resolveAnimeEpisodeString,
   searchAllManga,
 } from "../src/index";
@@ -259,6 +261,50 @@ describe("AllManga provider evidence fixtures", () => {
     expect(sub.trace.events?.some((event) => event.type === "variant:selected")).toBe(true);
   });
 
+  test("Ak DASH source resolves as an opaque deferred stream with subtitles", async () => {
+    await using _fetchMock = await mockAllMangaFetch({ subSourceFixture: "ak-episode-response" });
+    const expected = await readFixture<ExpectedAllMangaContract>("expected-normalized.json");
+
+    const result = await allmangaProviderModule.resolve(
+      {
+        title: {
+          id: "allanime:show-allmanga-evidence",
+          kind: "anime",
+          title: "Evidence Fox",
+          externalIds: expected.search.externalIds,
+        },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      { now: nowFixture, signal: new AbortController().signal },
+    );
+
+    expect(result.status).toBe("resolved");
+    expect(result.streams[0]).toMatchObject({
+      protocol: "dash",
+      container: "mpd",
+      presentation: "sub",
+      qualityLabel: "1080p",
+      audioLanguages: ["ja"],
+    });
+    expect(result.streams[0]?.url).toBeUndefined();
+    expect(result.streams[0]?.deferredLocator).toStartWith("allmanga-ak:");
+    expect(result.streams[0]?.deferredLocator).not.toContain("redacted-video");
+    expect(result.subtitles[0]).toMatchObject({
+      language: "en",
+      format: "ass",
+      source: "embedded",
+    });
+
+    const descriptor = resolveAllMangaAkDeferredLocator(result.streams[0]?.deferredLocator ?? "");
+    expect(descriptor?.video.url).toContain("redacted-video-1080");
+    expect(descriptor?.audio.url).toContain("redacted-audio");
+    expect(descriptor?.duration).toBe(1440);
+  });
+
   test("source cycle candidates preserve native labels separately from normalized language", () => {
     const candidates = buildAllmangaCycleCandidates(
       [
@@ -410,19 +456,28 @@ type ExpectedAllMangaContract = {
   };
 };
 
-async function mockAllMangaFetch(): Promise<Disposable & { readonly calls: readonly string[] }> {
+async function mockAllMangaFetch(
+  options: {
+    readonly subSourceFixture?: "sub-source-response" | "ak-episode-response";
+  } = {},
+): Promise<Disposable & { readonly calls: readonly string[] }> {
+  clearAllMangaProviderCachesForTest();
   const originalFetch = globalThis.fetch;
   const calls: string[] = [];
   const fixtures = {
     search: await readFixture<unknown>("search-response.json"),
     catalog: await readFixture<unknown>("catalog-response.json"),
-    sub: await readFixture<unknown>("sub-source-response.json"),
+    sub: await readFixture<unknown>(`${options.subSourceFixture ?? "sub-source-response"}.json`),
     dub: await readFixture<unknown>("dub-source-response.json"),
+    ak: await readFixture<unknown>("ak-source-response.json"),
   };
 
   globalThis.fetch = (async (input, init) => {
     const url = String(input);
     calls.push(url);
+    if (url.includes("/ak-source")) {
+      return jsonResponse(fixtures.ak);
+    }
     const bodyText = typeof init?.body === "string" ? init.body : "";
     if (url.includes("variables=")) {
       const variablesMatch = /variables=([^&]+)/.exec(url);

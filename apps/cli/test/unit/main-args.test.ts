@@ -10,6 +10,13 @@ test("parseArgs supports download-only mode", () => {
   expect(args.search).toBe("Dune");
 });
 
+test("parseArgs accepts tv as the TMDB series type alias", () => {
+  const args = parseArgs(["-i", "76479", "-t", "tv"]);
+
+  expect(args.id).toBe("76479");
+  expect(args.type).toBe("series");
+});
+
 test("parseArgs supports startup entry routes", () => {
   const resume = parseArgs(["--resume"]);
   const continuePlayback = parseArgs(["--continue"]);

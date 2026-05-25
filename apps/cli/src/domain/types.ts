@@ -67,6 +67,7 @@ export interface EpisodePickerOption {
 
 export interface StreamInfo {
   readonly url: string;
+  readonly deferredLocator?: string;
   readonly headers: Record<string, string>;
   readonly audioLanguages?: string[];
   readonly hardSubLanguage?: string;

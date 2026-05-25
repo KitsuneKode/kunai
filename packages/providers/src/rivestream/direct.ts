@@ -49,6 +49,14 @@ const USER_AGENT =
 
 /** Memoize secretKey per tmdbId — deterministic, expensive to recompute. */
 const secretKeyCache = new Map<string, string>();
+const RIVESTREAM_PROVIDER_SERVICES_TTL_MS = 24 * 60 * 60 * 1000;
+const RIVESTREAM_STATIC_PROVIDER_SERVICES = ["self", "prime"] as const;
+let providerServicesCache:
+  | {
+      readonly providers: readonly string[];
+      readonly expiresAtMs: number;
+    }
+  | undefined;
 
 type RivestreamProviderServicesResponse = {
   readonly data?: unknown;
@@ -302,25 +310,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
       const season = input.episode?.season ?? 1;
       const episode = input.episode?.episode ?? 1;
 
-      // 1. Get Providers
-      const servicesSignal = createTimeoutSignal(context.signal, 8000);
-
-      const provData = await providerJson<RivestreamProviderServicesResponse>(
-        context,
-        `${RIVESTREAM_API_BASE}?requestID=VideoProviderServices&secretKey=rive&proxyMode=undefined`,
-        {
-          headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
-          signal: servicesSignal,
-        },
-        { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
-      );
-      const providers = Array.isArray(provData.data)
-        ? provData.data.filter((provider): provider is string => typeof provider === "string")
-        : [];
-
-      if (providers.length === 0) {
-        throw new Error("No providers available");
-      }
+      const providers = await getRivestreamProviderServices(context);
 
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
@@ -545,6 +535,44 @@ function buildRivestreamCycleCandidates(
       },
     };
   });
+}
+
+async function getRivestreamProviderServices(
+  context: ProviderRuntimeContext,
+): Promise<readonly string[]> {
+  const nowMs = Date.parse(context.now());
+  const cacheNow = Number.isFinite(nowMs) ? nowMs : Date.now();
+  if (providerServicesCache && providerServicesCache.expiresAtMs > cacheNow) {
+    return providerServicesCache.providers;
+  }
+
+  try {
+    const servicesSignal = createTimeoutSignal(context.signal, 8000);
+    const provData = await providerJson<RivestreamProviderServicesResponse>(
+      context,
+      `${RIVESTREAM_API_BASE}?requestID=VideoProviderServices&secretKey=rive&proxyMode=undefined`,
+      {
+        headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
+        signal: servicesSignal,
+      },
+      { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
+    );
+    const providers = Array.isArray(provData.data)
+      ? provData.data.filter((provider): provider is string => typeof provider === "string")
+      : [];
+
+    if (providers.length > 0) {
+      providerServicesCache = {
+        providers,
+        expiresAtMs: cacheNow + RIVESTREAM_PROVIDER_SERVICES_TTL_MS,
+      };
+      return providers;
+    }
+  } catch {
+    // Fall through to the known baseline provider list so source resolution can still try.
+  }
+
+  return RIVESTREAM_STATIC_PROVIDER_SERVICES;
 }
 
 async function resolveRivestreamProviderCandidate({

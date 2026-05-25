@@ -1,5 +1,9 @@
 # Miruro Reverse-Engineering & Backend Report
 
+> **Evidence update (2026-05-25):** Live probe `probe-evidence-2026.ts` shows production `PIPE_KEY` still decodes pipe episodes (1163 for AniList 21). `theanimecommunity.com` episode URL returns only `{ mediaItemID }`, not HLS. Treat §2 “Holy Grail” as **stale/unverified** until a second endpoint yields playable URLs. Current production truth remains Miruro's `/api/secure/pipe` path on the official domains that respond from this egress.
+
+> **Latency audit update (2026-05-25):** Official mirrors `miruro.bz` and `miruro.ru` respond to the pipe endpoint shape while `miruro.tv`, `www.miruro.tv`, and `miruro.to` can close Bun fetch sockets. Pipe inventory can be fast, but direct `uwucdn` / `owocdn` HLS playback currently returns HTTP 403 outside the browser player path in the lab. Do not treat a working browser watch page as proof of direct mpv-compatible playback.
+
 ## Overview
 This report details the successful reverse-engineering of **Miruro.tv**. 
 We initially built a Hybrid Scraper (Playwright + Node Decryption) to bypass their frontend Cloudflare protections, but further research discovered that Miruro is merely a UI wrapper for a massive, unprotected 3rd-party database.

@@ -12,6 +12,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createMiruroResultFromPayload,
+  createMiruroPipeRequestUrls,
   getMiruroEpisodesResponse,
   createVidkingResultFromPayload,
   extractQualitiesFromMaster,
@@ -202,6 +203,43 @@ test("vidking direct resolver retries a failing source and preserves trace evide
   );
 });
 
+test("vidking direct resolver does not retry definitive 404 responses or duplicate year variants for TMDB ids", async () => {
+  const requestedUrls: string[] = [];
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+        year: 2021,
+      },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-05-26T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input) => {
+          requestedUrls.push(String(input));
+          return new Response("", { status: 404 });
+        },
+      },
+    },
+    { serverEndpoint: "missing" },
+  );
+
+  expect(result?.status).toBe("exhausted");
+  expect(requestedUrls).toHaveLength(2);
+  expect(requestedUrls.every((url) => !url.includes("year="))).toBe(true);
+  expect(result?.trace.events?.map((event) => event.type)).not.toContain("retry:scheduled");
+  expect(result?.failures.every((failure) => failure.retryable === false)).toBe(true);
+  expect(result?.failures.every((failure) => failure.code === "not-found")).toBe(true);
+});
+
 test("vidking direct resolver can target a flavored endpoint without broad server probing", async () => {
   const requestedUrls: string[] = [];
   const result = await resolveVidkingDirect(
@@ -334,6 +372,40 @@ test("vidking evidence fixture preserves native server labels beside ISO audio l
   expect(result?.variants?.[0]?.languageEvidence).toEqual(result?.streams[0]?.languageEvidence);
 });
 
+test("rivestream falls back to static provider services when service discovery is unavailable", async () => {
+  const source = await readFixture<unknown>("rivestream/source-response.json");
+  const requests: string[] = [];
+  const result = await rivestreamProviderModule.resolve(
+    {
+      title: {
+        id: "900000",
+        tmdbId: "900000",
+        kind: "movie",
+        title: "Fallback Probe",
+      },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-05-26T00:00:00.000Z",
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input) => {
+          const url = String(input);
+          requests.push(url);
+          if (url.includes("VideoProviderServices")) return new Response("", { status: 503 });
+          return jsonResponse(source);
+        },
+      },
+    },
+  );
+
+  expect(result.status).toBe("resolved");
+  expect(requests.some((url) => url.includes("VideoProviderServices"))).toBe(true);
+  expect(requests.some((url) => url.includes("service=self"))).toBe(true);
+});
+
 test("rivestream evidence fixture preserves provider server label and normalized language", async () => {
   const services = await readFixture<unknown>("rivestream/services-response.json");
   const source = await readFixture<unknown>("rivestream/source-response.json");
@@ -399,6 +471,44 @@ test("rivestream evidence fixture preserves provider server label and normalized
   expect(result.subtitles[0]?.language).toBe(expected.subtitleLanguage);
 });
 
+test("rivestream caches provider services across cold resolves", async () => {
+  const services = await readFixture<unknown>("rivestream/services-response.json");
+  const source = await readFixture<unknown>("rivestream/source-response.json");
+  const requests: string[] = [];
+
+  for (const tmdbId of ["900001", "900002"]) {
+    const result = await rivestreamProviderModule.resolve(
+      {
+        title: {
+          id: tmdbId,
+          tmdbId,
+          kind: "movie",
+          title: `Cache Probe ${tmdbId}`,
+        },
+        mediaKind: "movie",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      {
+        now: () => "2026-05-26T00:00:00.000Z",
+        fetch: {
+          runtime: "direct-http",
+          fetch: async (input) => {
+            const url = String(input);
+            requests.push(url);
+            return jsonResponse(url.includes("VideoProviderServices") ? services : source);
+          },
+        },
+      },
+    );
+
+    expect(result.status).toBe("resolved");
+  }
+
+  expect(requests.filter((url) => url.includes("VideoProviderServices"))).toHaveLength(1);
+  expect(requests.filter((url) => url.includes("VideoProvider&id="))).toHaveLength(2);
+});
+
 test("miruro evidence fixture preserves server evidence subtitles and seek thumbnails", async () => {
   const sourceData = await readFixture<
     Parameters<typeof createMiruroResultFromPayload>[0]["sourceData"]
@@ -454,6 +564,10 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
     hardSubLanguage: expected.hardSubLanguage,
     presentation: expected.presentation,
     artwork: { seekBarVttUrl: expected.seekBarVttUrl },
+    metadata: {
+      intro: { start: 90, end: 180 },
+      outro: { start: 1320, end: 1410 },
+    },
   });
   expect(result?.subtitles[0]?.language).toBe(expected.subtitleLanguage);
 });
@@ -467,20 +581,110 @@ test("miruro source cycling orders preferred subtitle delivery before fallback a
     episodeNum: 1,
     targetAudio: "dub",
     fallbackAudio: "sub",
-    preferredSubtitleDelivery: "embedded",
   });
 
   expect(candidates.map((candidate) => candidate.label)).toEqual([
-    "Dub · Bee softsub · soft sub",
-    "Dub · Kiwi hardsub · hard sub",
-    "Sub · Bee softsub · soft sub",
-    "Sub · Kiwi hardsub · hard sub",
+    "Dub · Kiwi · subtitles unknown",
+    "Dub · Bee · subtitles unknown",
+    "Sub · Kiwi · subtitles unknown",
+    "Sub · Bee · subtitles unknown",
   ]);
   expect(candidates.map((candidate) => candidate.normalizedAudioLanguage)).toEqual([
     "en",
     "en",
     "ja",
     "ja",
+  ]);
+});
+
+test("miruro source cycling builds candidates from every matching provider key", async () => {
+  const fixture = await readFixture<{
+    readonly providers: Parameters<typeof buildMiruroCycleCandidates>[0]["providers"];
+  }>("miruro/multi-provider-episodes.json");
+  const candidates = buildMiruroCycleCandidates({
+    providers: fixture.providers,
+    episodeNum: 1,
+    targetAudio: "sub",
+    fallbackAudio: "dub",
+  });
+
+  expect(candidates.map((candidate) => candidate.serverId)).toEqual(
+    expect.arrayContaining(["ANIMEKAI", "ANIMEZ", "kiwi", "hop"]),
+  );
+  expect(candidates.map((candidate) => candidate.serverId)).not.toContain("ZORO");
+  expect(candidates.every((candidate) => candidate.metadata?.episodeId)).toBe(true);
+  expect(candidates).toContainEqual(
+    expect.objectContaining({
+      serverId: "ANIMEKAI",
+      nativeLabel: "AnimeKai",
+      metadata: expect.objectContaining({
+        audioCategory: "sub",
+        serverId: "ANIMEKAI",
+        subtitleDelivery: "unknown",
+      }),
+    }),
+  );
+});
+
+test("miruro stream selection prefers active CDN HLS over direct kwik candidates", () => {
+  const result = createMiruroResultFromPayload({
+    input: {
+      title: {
+        id: "anilist:999",
+        anilistId: "999",
+        kind: "anime",
+        title: "Evidence Fox",
+      },
+      episode: { episode: 1 },
+      mediaKind: "anime",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    sourceData: {
+      streams: [
+        {
+          url: "https://kwik.cx/f/direct-1080.m3u8",
+          type: "hls",
+          quality: "1080p",
+          isActive: true,
+          referer: "https://kwik.cx/",
+        },
+        {
+          url: "https://vault-15.owocdn.top/inactive-1080/index.m3u8",
+          type: "hls",
+          quality: "1080p",
+          isActive: false,
+          referer: "https://kwik.cx/",
+        },
+        {
+          url: "https://vault-06.uwucdn.top/active-720/index.m3u8",
+          type: "hls",
+          quality: "720p",
+          isActive: true,
+          referer: "https://kwik.cx/",
+        },
+      ],
+    },
+    audioCategory: "sub",
+    serverProfile: {
+      id: "kiwi",
+      label: "Kiwi",
+      subtitleDelivery: "unknown",
+    },
+    context: { now: () => "2026-05-26T00:00:00.000Z" },
+  });
+
+  const selected = result?.streams.find((stream) => stream.id === result.selectedStreamId);
+  expect(new URL(selected?.url ?? "").hostname).toContain("uwucdn");
+  expect(result?.streams).toHaveLength(3);
+});
+
+test("miruro pipe requests prefer reachable official mirrors before legacy tv host", () => {
+  expect(createMiruroPipeRequestUrls("payload")).toEqual([
+    "https://miruro.bz/api/secure/pipe?e=payload",
+    "https://miruro.ru/api/secure/pipe?e=payload",
+    "https://miruro.tv/api/secure/pipe?e=payload",
+    "https://www.miruro.tv/api/secure/pipe?e=payload",
   ]);
 });
 

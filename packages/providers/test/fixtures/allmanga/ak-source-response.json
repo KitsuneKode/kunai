@@ -1,0 +1,58 @@
+{
+  "links": [
+    {
+      "dash": true,
+      "rawUrls": {
+        "duration": 1440,
+        "vids": [
+          {
+            "url": "https://ak-video.example/video-720.mp4?sig=redacted-video-720",
+            "mimeType": "video/mp4",
+            "codecs": "avc1.64001f",
+            "width": 1280,
+            "height": 720,
+            "bandwidth": 2200000,
+            "frameRate": "24000/1001",
+            "segmentBase": {
+              "indexRange": "900-1200",
+              "Initialization": { "range": "0-899" }
+            }
+          },
+          {
+            "url": "https://ak-video.example/video-1080.mp4?sig=redacted-video-1080",
+            "mimeType": "video/mp4",
+            "codecs": "avc1.640028",
+            "width": 1920,
+            "height": 1080,
+            "bandwidth": 5200000,
+            "frameRate": "24000/1001",
+            "segmentBase": {
+              "indexRange": "1000-1400",
+              "Initialization": { "range": "0-999" }
+            }
+          }
+        ],
+        "audios": [
+          {
+            "url": "https://ak-audio.example/audio-ja.mp4?sig=redacted-audio",
+            "mimeType": "audio/mp4",
+            "codecs": "mp4a.40.2",
+            "bandwidth": 128000,
+            "audioSamplingRate": 48000,
+            "language": "ja",
+            "segmentBase": {
+              "indexRange": "700-900",
+              "Initialization": { "range": "0-699" }
+            }
+          }
+        ],
+        "subtitles": [
+          {
+            "lang": "en",
+            "src": "https://ak-subs.example/en.ass"
+          }
+        ]
+      }
+    }
+  ]
+}

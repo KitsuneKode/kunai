@@ -9,7 +9,7 @@ import {
   shouldApplyStartAtSeek,
 } from "@/mpv";
 
-test("buildMpvArgs attaches preferred subtitle first plus additional tracks during initial launch", () => {
+test("buildMpvArgs attaches only the preferred subtitle during initial launch", () => {
   const args = buildMpvArgs(
     {
       url: "https://cdn.example/master.m3u8",
@@ -34,7 +34,6 @@ test("buildMpvArgs attaches preferred subtitle first plus additional tracks duri
   expect(args).toContain("--input-ipc-server=/tmp/kunai-test.sock");
   expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([
     "--sub-file=https://sub.example/en.srt",
-    "--sub-file=https://sub.example/ar.srt",
   ]);
 });
 

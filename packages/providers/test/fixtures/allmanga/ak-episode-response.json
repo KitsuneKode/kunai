@@ -1,0 +1,17 @@
+{
+  "data": {
+    "episode": {
+      "episodeString": "1",
+      "sourceUrls": [
+        {
+          "sourceName": "Ak",
+          "sourceUrl": "--/ak-source"
+        },
+        {
+          "sourceName": "S-mp4",
+          "sourceUrl": "--/empty-mp4-source"
+        }
+      ]
+    }
+  }
+}

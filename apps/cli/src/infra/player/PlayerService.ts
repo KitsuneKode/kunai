@@ -15,6 +15,7 @@ import type { PlaybackSkipKind } from "./playback-skip";
 
 export type PlayerPlaybackEvent =
   | { type: "launching-player" }
+  | { type: "media-materialized"; kind: "dash-mpd" }
   | { type: "mpv-process-started" }
   | { type: "ipc-connected" }
   | { type: "ipc-command-failed"; command: string; error: string }

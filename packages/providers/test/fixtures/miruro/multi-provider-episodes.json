@@ -1,0 +1,30 @@
+{
+  "providers": {
+    "ANIMEKAI": {
+      "episodes": {
+        "sub": [{ "id": "animekai-sub-1", "number": 1 }],
+        "dub": [{ "id": "animekai-dub-1", "number": 1 }]
+      }
+    },
+    "ANIMEZ": {
+      "episodes": {
+        "sub": [{ "id": "animez-sub-1", "number": 1 }]
+      }
+    },
+    "kiwi": {
+      "episodes": {
+        "sub": [{ "id": "kiwi-sub-1", "number": 1 }]
+      }
+    },
+    "hop": {
+      "episodes": {
+        "dub": [{ "id": "hop-dub-1", "number": 1 }]
+      }
+    },
+    "ZORO": {
+      "episodes": {
+        "sub": [{ "id": "zoro-sub-2", "number": 2 }]
+      }
+    }
+  }
+}

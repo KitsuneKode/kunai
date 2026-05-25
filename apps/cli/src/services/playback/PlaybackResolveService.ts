@@ -27,7 +27,12 @@ import {
   type ResolveAttempt,
 } from "@kunai/core";
 import type { ProviderHealthRepository } from "@kunai/storage";
-import type { MediaKind, ProviderHealthDelta } from "@kunai/types";
+import type {
+  MediaKind,
+  ProviderHealthDelta,
+  ProviderId,
+  ProviderResolveResult,
+} from "@kunai/types";
 
 import {
   decideResolveResultCommit,
@@ -156,7 +161,8 @@ export class PlaybackResolveService {
       readonly titleProviderHealth?: Pick<
         TitleProviderHealthService,
         "recordFailure" | "recordCleanSuccess"
-      >;
+      > &
+        Partial<Pick<TitleProviderHealthService, "getSwitchSuggestion">>;
     },
   ) {}
 
@@ -175,9 +181,13 @@ export class PlaybackResolveService {
     }
 
     const cacheKey = this.buildCacheKey(input, input.providerId);
-    const cachedStream = await this.deps.cacheStore.get(cacheKey);
+    let cachedStream = await this.deps.cacheStore.get(cacheKey);
     let cacheBecameStale = false;
-    if (cachedStream && input.preferFreshStream !== true) {
+    if (cachedStream?.deferredLocator) {
+      await this.deps.cacheStore.delete(cacheKey);
+      cachedStream = null;
+      cacheBecameStale = true;
+    } else if (cachedStream && input.preferFreshStream !== true) {
       const health = await this.checkCachedStreamHealth(
         cachedStream,
         input.forceHealthCheck === true,
@@ -249,38 +259,42 @@ export class PlaybackResolveService {
     };
     const inventoryResult = await this.deps.sourceInventory?.get(inventoryInput);
     if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
-      const inventoryStream = providerResolveResultToStreamInfo({
-        result: inventoryResult,
-        title: input.title.name,
-        subtitlePreference: input.subtitlePreference,
-        selectedSourceId: input.selectedSourceId,
-        selectedStreamId: input.selectedStreamId,
-      });
-      if (inventoryStream) {
-        input.onEvent?.({ type: "source-inventory-hit", providerId: input.providerId });
-        const health = await this.checkCachedStreamHealth(inventoryStream, true, input.signal);
-        if (health.checked) {
-          input.onEvent?.({
-            type: "cache-health-check",
-            providerId: input.providerId,
-            strategy:
-              health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
-            healthy: health.healthy,
-            ageMs: health.ageMs,
-          });
-        }
-        if (health.healthy) {
-          input.onEvent?.({ type: "cache-hit-validated", providerId: input.providerId });
-          await this.persistResolvedStream(input, input.providerId, inventoryStream);
-          return {
-            stream: { ...inventoryStream, cacheProvenance: "revalidated" },
-            providerId: input.providerId,
-            attempts: [],
-            cacheStatus: "hit",
-            cacheProvenance: "revalidated",
-          };
-        }
+      if (providerResultHasDeferredStream(inventoryResult)) {
         await this.deps.sourceInventory?.delete(inventoryInput);
+      } else {
+        const inventoryStream = providerResolveResultToStreamInfo({
+          result: inventoryResult,
+          title: input.title.name,
+          subtitlePreference: input.subtitlePreference,
+          selectedSourceId: input.selectedSourceId,
+          selectedStreamId: input.selectedStreamId,
+        });
+        if (inventoryStream) {
+          input.onEvent?.({ type: "source-inventory-hit", providerId: input.providerId });
+          const health = await this.checkCachedStreamHealth(inventoryStream, true, input.signal);
+          if (health.checked) {
+            input.onEvent?.({
+              type: "cache-health-check",
+              providerId: input.providerId,
+              strategy:
+                health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+              healthy: health.healthy,
+              ageMs: health.ageMs,
+            });
+          }
+          if (health.healthy) {
+            input.onEvent?.({ type: "cache-hit-validated", providerId: input.providerId });
+            await this.persistResolvedStream(input, input.providerId, inventoryStream);
+            return {
+              stream: { ...inventoryStream, cacheProvenance: "revalidated" },
+              providerId: input.providerId,
+              attempts: [],
+              cacheStatus: "hit",
+              cacheProvenance: "revalidated",
+            };
+          }
+          await this.deps.sourceInventory?.delete(inventoryInput);
+        }
       }
     }
 
@@ -306,12 +320,21 @@ export class PlaybackResolveService {
       userVisible: recoveryDecision.userVisible,
     });
 
-    const compatibleIds = [input.providerId];
+    const compatibleIds = titleScopedProviderOrder({
+      input,
+      mediaKind: resolveInput.mediaKind,
+      recoveryMode,
+      getManifest: (providerId) => this.deps.engine.getManifest(providerId),
+      suggestion:
+        typeof this.deps.titleProviderHealth?.getSwitchSuggestion === "function"
+          ? this.deps.titleProviderHealth.getSwitchSuggestion(input.title.id, input.providerId)
+          : null,
+    });
     // Add fallback provider ids, filtering by mediaKind so incompatible
     // providers (e.g. series/movie-only for anime) are never attempted.
     if (recoveryMode !== "manual") {
       for (const module of this.deps.engine.modules) {
-        if (module.providerId === input.providerId) continue;
+        if (compatibleIds.includes(module.providerId)) continue;
         if (!module.manifest.mediaKinds.includes(resolveInput.mediaKind)) continue;
         // Skip providers with known-dead health status to avoid wasted attempts,
         // but always allow degraded providers as they may still succeed.
@@ -376,10 +399,12 @@ export class PlaybackResolveService {
     }
 
     if (engineResult.result) {
-      await this.deps.sourceInventory?.set(
-        { ...inventoryInput, providerId: engineResult.providerId ?? input.providerId },
-        engineResult.result,
-      );
+      if (!providerResultHasDeferredStream(engineResult.result)) {
+        await this.deps.sourceInventory?.set(
+          { ...inventoryInput, providerId: engineResult.providerId ?? input.providerId },
+          engineResult.result,
+        );
+      }
       const stream = providerResolveResultToStreamInfo({
         result: engineResult.result,
         title: input.title.name,
@@ -494,6 +519,9 @@ export class PlaybackResolveService {
     providerId: string,
     stream: StreamInfo,
   ): Promise<void> {
+    if (stream.deferredLocator) {
+      return;
+    }
     const persistKey = this.buildCacheKey(input, providerId);
     try {
       await this.deps.cacheStore.set(persistKey, stream);
@@ -601,6 +629,35 @@ function inventoryMatchesSelection(
     return false;
   }
   return true;
+}
+
+function providerResultHasDeferredStream(result: ProviderResolveResult): boolean {
+  return result.streams.some((stream) => Boolean(stream.deferredLocator));
+}
+
+function titleScopedProviderOrder(input: {
+  readonly input: PlaybackResolveInput;
+  readonly mediaKind: MediaKind;
+  readonly recoveryMode: RecoveryMode;
+  readonly getManifest: (
+    providerId: string,
+  ) => { readonly mediaKinds: readonly MediaKind[] } | undefined;
+  readonly suggestion?: { readonly suggestedProviderId: string } | null;
+}): ProviderId[] {
+  const primaryProviderId = input.input.providerId;
+  if (input.recoveryMode === "manual") return [primaryProviderId];
+
+  const suggestedProviderId = input.suggestion?.suggestedProviderId;
+  if (!suggestedProviderId || suggestedProviderId === primaryProviderId) {
+    return [primaryProviderId];
+  }
+
+  const suggestedManifest = input.getManifest(suggestedProviderId);
+  if (!suggestedManifest?.mediaKinds.includes(input.mediaKind)) {
+    return [primaryProviderId];
+  }
+
+  return [suggestedProviderId as ProviderId, primaryProviderId];
 }
 
 function titleProviderFailureFromAttempts(

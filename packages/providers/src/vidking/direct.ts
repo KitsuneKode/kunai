@@ -703,11 +703,15 @@ async function tryVidkingServer(opts: {
             providerId: VIDKING_PROVIDER_ID,
             code: vidkingStatusToFailureCode(response.status),
             message: `Videasy ${server} returned HTTP ${response.status}`,
-            retryable: response.status !== 401 && response.status !== 403,
+            retryable:
+              response.status !== 401 && response.status !== 403 && response.status !== 404,
             at: context.now(),
           };
           failures.push(f);
           emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
+          if (!isRetryableFailure(context, f)) {
+            break;
+          }
           continue;
         }
 
@@ -1106,7 +1110,7 @@ function buildQueryVariants(opts: {
     base.set("episodeId", String(opts.episode.episode));
   }
 
-  if (opts.title.year) {
+  if (!opts.title.tmdbId && opts.title.year) {
     const withYear = new URLSearchParams(base);
     withYear.set("year", String(opts.title.year));
     variants.push(withYear);

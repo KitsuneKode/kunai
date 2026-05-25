@@ -42,6 +42,29 @@ export type StreamLink = {
   readonly subtitle?: string;
   /** All subtitles from the API response with language metadata. */
   readonly subtitles?: readonly { lang: string; src: string }[];
+  readonly protocol?: "hls" | "dash" | "mp4";
+  readonly container?: "m3u8" | "mpd" | "mp4";
+  readonly deferredLocator?: string;
+};
+
+export type AllMangaAkRepresentation = {
+  readonly url: string;
+  readonly mimeType?: string;
+  readonly codecs?: string;
+  readonly width?: number;
+  readonly height?: number;
+  readonly bandwidth?: number;
+  readonly audioSamplingRate?: number;
+  readonly frameRate?: string | number;
+  readonly language?: string;
+  readonly indexRange?: string;
+  readonly initializationRange?: string;
+};
+
+export type AllMangaAkDeferredDescriptor = {
+  readonly video: AllMangaAkRepresentation;
+  readonly audio: AllMangaAkRepresentation;
+  readonly duration?: number;
 };
 
 const ALLMANGA_KEY_RAW = "Xot36i3lK3:v1";
@@ -133,7 +156,28 @@ const HEX: Record<string, string> = {
   "1d": "%",
 };
 
-const KNOWN_SOURCES = new Set(["Default", "Yt-mp4", "S-mp4", "Luf-Mp4", "Fm-mp4"]);
+const KNOWN_SOURCES = new Set(["Default", "Yt-mp4", "S-mp4", "Luf-Mp4", "Fm-mp4", "Ak"]);
+const akDeferredRegistry = new Map<string, AllMangaAkDeferredDescriptor>();
+let akDeferredCounter = 0;
+
+export function registerAllMangaAkDeferredDescriptor(
+  descriptor: AllMangaAkDeferredDescriptor,
+): string {
+  akDeferredCounter += 1;
+  const locator = `allmanga-ak:${Date.now().toString(36)}-${akDeferredCounter.toString(36)}`;
+  akDeferredRegistry.set(locator, descriptor);
+  return locator;
+}
+
+export function resolveAllMangaAkDeferredLocator(
+  locator: string,
+): AllMangaAkDeferredDescriptor | null {
+  return akDeferredRegistry.get(locator) ?? null;
+}
+
+export function releaseAllMangaAkDeferredLocator(locator: string): void {
+  akDeferredRegistry.delete(locator);
+}
 
 export function hexDecode(encoded: string): string {
   let out = "";
@@ -215,6 +259,11 @@ const showCatalogCache = new TTLCache<string, ShowCatalogInfo>(AVAILABLE_EPISODE
 
 /** Cache source resolve results per show+episode+mode. TTL 5 minutes. */
 const sourceCache = new TTLCache<string, StreamLink[]>(300_000);
+
+export function clearAllMangaProviderCachesForTest(): void {
+  showCatalogCache.clear();
+  sourceCache.clear();
+}
 
 type AbortSignalConstructorWithAny = typeof AbortSignal & {
   readonly any?: (signals: readonly AbortSignal[]) => AbortSignal;
@@ -443,7 +492,12 @@ export async function resolveEpisodeSources(opts: {
     }
 
     const sourceName = source.sourceName;
-    const fetcher = sourceName === "Fm-mp4" ? fetchFilemoonLinks : fetchStreamLinks;
+    const fetcher =
+      sourceName === "Fm-mp4"
+        ? fetchFilemoonLinks
+        : sourceName === "Ak"
+          ? fetchAkLinks
+          : fetchStreamLinks;
     apiJobs.push(
       fetcher(decoded, referer, ua, signal)
         .then((links) => links.map((link) => ({ ...link, quality: link.quality || sourceName })))
@@ -716,6 +770,160 @@ async function fetchStreamLinks(
     });
   }
   return links;
+}
+
+type AkRawRepresentation = {
+  readonly url?: string;
+  readonly link?: string;
+  readonly mimeType?: string;
+  readonly codecs?: string;
+  readonly width?: number;
+  readonly height?: number;
+  readonly bandwidth?: number;
+  readonly audioSamplingRate?: number;
+  readonly frameRate?: string | number;
+  readonly language?: string;
+  readonly lang?: string;
+  readonly segmentBase?: {
+    readonly indexRange?: string;
+    readonly Initialization?: { readonly range?: string };
+    readonly initialization?: { readonly range?: string };
+  };
+  readonly indexRange?: string;
+  readonly initRange?: string;
+  readonly initialization?: { readonly range?: string } | string;
+};
+
+type AkSubtitle = {
+  readonly lang?: string;
+  readonly language?: string;
+  readonly src?: string;
+  readonly url?: string;
+};
+
+async function fetchAkLinks(
+  apiPath: string,
+  referer: string,
+  ua: string,
+  signal?: AbortSignal,
+): Promise<StreamLink[]> {
+  const response = await fetch(`https://allanime.day${apiPath}`, {
+    signal: createTimeoutSignal(signal, 15_000),
+    headers: { Referer: referer, "User-Agent": ua },
+  });
+  if (!response.ok) return [];
+
+  let body = await response.text();
+  body = body.replace(/\\u002F/g, "/").replace(/\\\//g, "/");
+  const payload = JSON.parse(body) as {
+    links?: Array<{
+      dash?: boolean;
+      rawUrls?: {
+        vids?: AkRawRepresentation[];
+        audios?: AkRawRepresentation[];
+        subtitles?: AkSubtitle[];
+        duration?: number;
+      };
+      subtitles?: AkSubtitle[];
+    }>;
+    subtitles?: AkSubtitle[];
+  };
+
+  const dashLink =
+    payload.links?.find((link) => link.dash && link.rawUrls) ??
+    payload.links?.find((link) => link.rawUrls);
+  const rawUrls = dashLink?.rawUrls;
+  const video = selectAkVideo(rawUrls?.vids ?? []);
+  const audio = selectAkAudio(rawUrls?.audios ?? []);
+  if (!video || !audio) return [];
+
+  const subtitles = normalizeAkSubtitles(
+    rawUrls?.subtitles ?? dashLink?.subtitles ?? payload.subtitles ?? [],
+  );
+  const deferredLocator = registerAllMangaAkDeferredDescriptor({
+    video,
+    audio,
+    duration: rawUrls?.duration,
+  });
+
+  return [
+    {
+      url: deferredLocator,
+      deferredLocator,
+      quality: `${video.height ?? "auto"}p`,
+      referer,
+      subtitles,
+      subtitle: subtitles.find((subtitle) => subtitle.lang.toLowerCase().startsWith("en"))?.src,
+      protocol: "dash",
+      container: "mpd",
+    },
+  ];
+}
+
+function selectAkVideo(
+  representations: readonly AkRawRepresentation[],
+): AllMangaAkRepresentation | null {
+  return (
+    representations
+      .map(normalizeAkRepresentation)
+      .filter((rep): rep is AllMangaAkRepresentation => Boolean(rep?.url))
+      .sort((left, right) => {
+        const leftScore =
+          (left.height === 1080 ? 10_000_000 : 0) +
+          (left.bandwidth ?? 0) +
+          (left.height ?? 0) * 1000;
+        const rightScore =
+          (right.height === 1080 ? 10_000_000 : 0) +
+          (right.bandwidth ?? 0) +
+          (right.height ?? 0) * 1000;
+        return rightScore - leftScore;
+      })[0] ?? null
+  );
+}
+
+function selectAkAudio(
+  representations: readonly AkRawRepresentation[],
+): AllMangaAkRepresentation | null {
+  return (
+    representations
+      .map(normalizeAkRepresentation)
+      .filter((rep): rep is AllMangaAkRepresentation => Boolean(rep?.url))
+      .sort((left, right) => (right.bandwidth ?? 0) - (left.bandwidth ?? 0))[0] ?? null
+  );
+}
+
+function normalizeAkRepresentation(rep: AkRawRepresentation): AllMangaAkRepresentation | null {
+  const url = rep.url ?? rep.link;
+  if (!url) return null;
+  return {
+    url,
+    mimeType: rep.mimeType,
+    codecs: rep.codecs,
+    width: rep.width,
+    height: rep.height,
+    bandwidth: rep.bandwidth,
+    audioSamplingRate: rep.audioSamplingRate,
+    frameRate: rep.frameRate,
+    language: rep.language ?? rep.lang,
+    indexRange: rep.segmentBase?.indexRange ?? rep.indexRange,
+    initializationRange:
+      typeof rep.initialization === "string"
+        ? rep.initialization
+        : (rep.segmentBase?.Initialization?.range ??
+          rep.segmentBase?.initialization?.range ??
+          rep.initialization?.range ??
+          rep.initRange),
+  };
+}
+
+function normalizeAkSubtitles(
+  subtitles: readonly AkSubtitle[],
+): Array<{ lang: string; src: string }> {
+  return subtitles.flatMap((subtitle) => {
+    const src = subtitle.src ?? subtitle.url;
+    if (!src) return [];
+    return [{ lang: subtitle.lang ?? subtitle.language ?? "unknown", src }];
+  });
 }
 
 async function fetchM3u8Variants({

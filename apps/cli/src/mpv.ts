@@ -282,7 +282,7 @@ export async function launchMpv(opts: {
     emitPlaybackEvent({ type: "ipc-connected" });
     emitPlaybackEvent({ type: "opening-stream" });
     notifyPlayerReady();
-    const trackCount = collectLaunchSubtitleFiles(opts.subtitle, opts.subtitleTracks).length;
+    const trackCount = opts.subtitle ? 1 : 0;
     if (trackCount > 0) {
       emitPlaybackEvent({ type: "subtitle-inventory-ready", trackCount });
       emitPlaybackEvent({ type: "subtitle-attached", trackCount });
@@ -390,8 +390,8 @@ export function buildMpvArgs(
   if (userAgent) args.push(`--user-agent=${userAgent}`);
   if (origin) args.push(`--http-header-fields=Origin: ${origin}`);
 
-  for (const subtitleFile of collectLaunchSubtitleFiles(opts.subtitle, opts.subtitleTracks)) {
-    args.push(`--sub-file=${subtitleFile}`);
+  if (opts.subtitle) {
+    args.push(`--sub-file=${opts.subtitle}`);
   }
 
   const alang = toMpvLanguageToken(opts.audioPreference, { forSubtitle: false });

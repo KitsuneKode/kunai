@@ -105,7 +105,13 @@ import {
 } from "@/infra/player/playback-failure-classifier";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
-import { AniSkipTimingSource, IntroDbTimingSource, PlaybackTimingAggregator } from "@/infra/timing";
+import {
+  AniSkipTimingSource,
+  extractProviderNativeTiming,
+  IntroDbTimingSource,
+  mergeTimingMetadata,
+  PlaybackTimingAggregator,
+} from "@/infra/timing";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
@@ -464,6 +470,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     note?: string | null;
   } {
     switch (event.type) {
+      case "media-materialized":
+        return { detail: event.kind === "dash-mpd" ? "Preparing DASH media" : "Preparing media" };
       case "launching-player":
         return { detail: "Launching player" };
       case "mpv-process-started":
@@ -1232,7 +1240,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Await timing — stream resolve takes much longer so this is nearly free.
           // If IntroDB timed out and returned null, schedule a background retry that
           // injects timing into the running player once it arrives.
-          const playbackTiming = await timingFetch;
+          const playbackTiming = mergeTimingMetadata(
+            await timingFetch,
+            extractProviderNativeTiming(stream, title),
+          );
+          if (playbackTiming) {
+            const timingCacheKey =
+              title.type === "movie"
+                ? `movie:${title.id}`
+                : `series:${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
+            playbackTimingByEpisode.set(timingCacheKey, playbackTiming);
+          }
           // effectiveTiming.current tracks the best timing we have — updated in-place
           // if the background retry resolves while the episode is playing, so all
           // post-playback decisions (history, autoNext, result classification) use it.

@@ -54,6 +54,29 @@ describe("provider result adapter", () => {
     expect(stream?.url).toBe("https://cdn.example/b-1080.m3u8");
     expect(stream?.providerResolveResult?.selectedStreamId).toBe("stream-b-1080");
   });
+
+  test("keeps deferred provider streams playable without exposing signed media urls as stream url", () => {
+    const result = makeResolveResult({
+      streams: [
+        makeStream("stream-ak-1080", "source-ak", undefined, 1080, {
+          protocol: "dash",
+          container: "mpd",
+          deferredLocator: "allmanga-ak:test-locator",
+        }),
+      ],
+      selectedStreamId: "stream-ak-1080",
+    });
+
+    const stream = providerResolveResultToStreamInfo({
+      result,
+      title: "Deferred Ak",
+      subtitlePreference: "none",
+    });
+
+    expect(stream?.url).toBe("allmanga-ak:test-locator");
+    expect(stream?.deferredLocator).toBe("allmanga-ak:test-locator");
+    expect(stream?.url).not.toContain("https://ak-video.example");
+  });
 });
 
 function makeSubtitleCandidate(overrides: Partial<SubtitleCandidate> = {}): SubtitleCandidate {
@@ -73,8 +96,10 @@ function makeSubtitleCandidate(overrides: Partial<SubtitleCandidate> = {}): Subt
   };
 }
 
-function makeResolveResult(): ProviderResolveResult {
-  const streams: StreamCandidate[] = [
+function makeResolveResult(
+  overrides: Partial<ProviderResolveResult> & { streams?: StreamCandidate[] } = {},
+): ProviderResolveResult {
+  const streams: StreamCandidate[] = overrides.streams ?? [
     makeStream("stream-a-1080", "source-a", "https://cdn.example/a-1080.m3u8", 1080),
     makeStream("stream-b-720", "source-b", "https://cdn.example/b-720.m3u8", 720),
     makeStream("stream-b-1080", "source-b", "https://cdn.example/b-1080.m3u8", 1080),
@@ -82,7 +107,7 @@ function makeResolveResult(): ProviderResolveResult {
   return {
     status: "resolved",
     providerId: "test-provider",
-    selectedStreamId: "stream-a-1080",
+    selectedStreamId: overrides.selectedStreamId ?? "stream-a-1080",
     streams,
     subtitles: [],
     cachePolicy: streams[0]?.cachePolicy,
@@ -97,20 +122,22 @@ function makeResolveResult(): ProviderResolveResult {
       failures: [],
     },
     failures: [],
+    ...overrides,
   };
 }
 
 function makeStream(
   id: string,
   sourceId: string,
-  url: string,
+  url: string | undefined,
   qualityRank: number,
+  overrides: Partial<StreamCandidate> = {},
 ): StreamCandidate {
   return {
     id,
     providerId: "test-provider",
     sourceId,
-    url,
+    ...(url ? { url } : {}),
     protocol: "hls",
     container: "m3u8",
     qualityLabel: `${qualityRank}p`,
@@ -121,5 +148,6 @@ function makeStream(
       scope: "local",
       keyParts: ["test-provider", id],
     },
+    ...overrides,
   };
 }
