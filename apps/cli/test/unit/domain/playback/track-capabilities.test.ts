@@ -32,6 +32,7 @@ function sourceGroup(over: Partial<PlaybackSourceGroupView>): PlaybackSourceGrou
     audioLanguages: [],
     subtitleLanguages: [],
     candidateCount: 1,
+    hints: [],
     ...over,
   };
 }
@@ -45,6 +46,7 @@ function quality(over: Partial<PlaybackQualityOptionView>): PlaybackQualityOptio
     streamIds: ["st1"],
     candidateCount: 1,
     restartRequired: false,
+    hints: [],
     ...over,
   };
 }

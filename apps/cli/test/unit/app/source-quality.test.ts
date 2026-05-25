@@ -149,7 +149,14 @@ const streamWithSubtitles: StreamInfo = {
       },
     ],
     streams: streamWithCandidates.providerResolveResult!.streams.map((candidate) =>
-      candidate.id === "stream-1080" ? { ...candidate, variantId: "variant-1080" } : candidate,
+      candidate.id === "stream-1080"
+        ? {
+            ...candidate,
+            variantId: "variant-1080",
+            artwork: { seekBarVttUrl: "https://cdn.example/timing.vtt" },
+            metadata: { intro: { start: 90, end: 180 } },
+          }
+        : candidate,
     ),
   },
 };
@@ -165,6 +172,42 @@ test("buildSourcePickerOptions summarizes quality and language inventory", () =>
   expect(options[0]?.detail).toContain("quality 1080p/720p");
   expect(options[0]?.detail).toContain("audio ja/en");
   expect(options[0]?.detail).toContain("hardsub en");
+});
+
+test("buildSourcePickerOptions includes provider health and host hints", () => {
+  const stream = {
+    ...streamWithCandidates,
+    providerResolveResult: {
+      ...streamWithCandidates.providerResolveResult!,
+      sources: [
+        {
+          id: "source-a",
+          providerId: "vidking",
+          kind: "mirror",
+          status: "selected",
+          host: "fast.example",
+          confidence: 0.9,
+        },
+        {
+          id: "source-b",
+          providerId: "vidking",
+          kind: "mirror",
+          status: "failed",
+          host: "slow.example",
+          confidence: 0.8,
+        },
+      ],
+    },
+  } satisfies StreamInfo;
+
+  const options = buildSourcePickerOptions(stream);
+
+  expect(options.find((option) => option.value === "source-a")?.detail).toContain(
+    "selected  ·  host fast.example",
+  );
+  expect(options.find((option) => option.value === "source-b")?.detail).toContain(
+    "provider marked failed  ·  host slow.example",
+  );
 });
 
 test("buildSourcePickerOptions distinguishes soft subtitles from hardsub inventory", () => {
@@ -184,13 +227,22 @@ test("buildQualityPickerOptions sorts by highest quality first", () => {
 
 test("buildQualityPickerOptions exposes audio and hard-subtitle language details", () => {
   const options = buildQualityPickerOptions(streamWithCandidates);
-  expect(options[0]?.detail).toBe("hls  ·  m3u8  ·  audio ja  ·  hardsub en");
-  expect(options[1]?.detail).toBe("hls  ·  m3u8  ·  audio en");
+  expect(options[0]?.detail).toContain("hls  ·  m3u8  ·  audio ja  ·  hardsub en");
+  expect(options[1]?.detail).toContain("hls  ·  m3u8  ·  audio en");
 });
 
 test("buildQualityPickerOptions shows soft subtitles linked to the selected variant", () => {
   const options = buildQualityPickerOptions(streamWithSubtitles);
-  expect(options[0]?.detail).toBe("hls  ·  m3u8  ·  audio ja  ·  hardsub en  ·  soft subs en");
+  expect(options[0]?.detail).toContain("hls  ·  m3u8  ·  audio ja  ·  hardsub en  ·  soft subs en");
+});
+
+test("buildQualityPickerOptions includes selected host timing and subtitle hints", () => {
+  const options = buildQualityPickerOptions(streamWithSubtitles);
+  expect(options[0]?.detail).toContain("selected");
+  expect(options[0]?.detail).toContain("host cdn.example");
+  expect(options[0]?.detail).toContain("has timing");
+  expect(options[0]?.detail).toContain("seek thumbnails");
+  expect(options[0]?.detail).toContain("1 subtitle");
 });
 
 test("buildPlaybackControlSummary exposes compact hybrid UI affordances", () => {

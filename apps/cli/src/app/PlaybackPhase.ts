@@ -120,6 +120,11 @@ import {
 } from "@/services/diagnostics/correlation";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
+import {
+  createPlaybackStartupTimeline,
+  formatPlaybackStartupTimeline,
+  type PlaybackStartupStage,
+} from "@/services/playback/playback-startup-timeline";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
@@ -171,6 +176,74 @@ function enqueuePostPlaybackRecommendation(
     type: "SET_PLAYBACK_FEEDBACK",
     note: `Queued ${item.title}.`,
   });
+}
+
+export function playbackStartupStageForPlayerEvent(
+  event: PlayerPlaybackEvent,
+): PlaybackStartupStage | null {
+  switch (event.type) {
+    case "media-materialized":
+      return "media-materialized";
+    case "launching-player":
+      return "player-launch";
+    case "mpv-process-started":
+      return "mpv-process-started";
+    case "ipc-connected":
+      return "ipc-connected";
+    case "player-ready":
+      return "player-ready";
+    case "subtitle-attached":
+      return "subtitle-attached";
+    case "playback-progress":
+      return "first-progress";
+    default:
+      return null;
+  }
+}
+
+function summarizeStartupStreamSource(stream: StreamInfo | null | undefined) {
+  if (!stream?.providerResolveResult) return null;
+  const result = stream.providerResolveResult;
+  const selected =
+    result.streams.find((candidate) => candidate.id === result.selectedStreamId) ??
+    result.streams[0];
+  const selectedSource = result.sources?.find((candidate) => candidate.id === selected?.sourceId);
+  return {
+    providerId: result.providerId,
+    sourceId: selected?.sourceId ?? null,
+    streamId: selected?.id ?? null,
+    host: (selected?.url ? safeHostname(selected.url) : null) ?? selectedSource?.host ?? null,
+    subtitleCount: result.subtitles.length,
+    sourceCount: result.sources?.length ?? 0,
+    streamCount: result.streams.length,
+    hasTiming: hasProviderTimingMetadata(selected?.metadata),
+  };
+}
+
+function hasProviderTimingMetadata(metadata: Record<string, unknown> | undefined): boolean {
+  if (!metadata) return false;
+  return (
+    Boolean(metadata.intro) ||
+    Boolean(metadata.outro) ||
+    Boolean(metadata.introStart) ||
+    Boolean(metadata.introEnd) ||
+    Boolean(metadata.outroStart) ||
+    Boolean(metadata.outroEnd)
+  );
+}
+
+function safeHostname(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function formatPlaybackStreamRoute(stream: StreamInfo): string | null {
+  const source = summarizeStartupStreamSource(stream);
+  if (!source) return null;
+  return [source.providerId, source.host ?? source.sourceId].filter(Boolean).join(" / ");
 }
 
 type RecommendationRailPanelAction =
@@ -505,6 +578,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       }
       case "network-sample":
         return {};
+      case "stream-slow":
+        return {
+          detail:
+            event.state === "slow-network-suspected"
+              ? "Slow source (network read)"
+              : "Building playback buffer",
+          note: `${event.secondsBuffering}s buffering`,
+        };
       case "subtitle-inventory-ready":
         return {
           detail: "Attaching subtitles",
@@ -752,8 +833,53 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             sessionSoftProviderId ?? stateManager.getState().provider,
           );
 
+          if (!currentProvider) {
+            return {
+              status: "error",
+              error: {
+                code: "PROVIDER_UNAVAILABLE",
+                message: `Provider ${stateManager.getState().provider} not found`,
+                retryable: false,
+              },
+            };
+          }
+
+          const providerAttemptId = createCorrelationId("provider");
+          const playbackCorrelation: DiagnosticCorrelation = {
+            sessionId: container.sessionId,
+            playbackCycleId: createCorrelationId("playback"),
+            providerAttemptId,
+            traceId: providerAttemptId,
+          };
+          const startupTimeline = createPlaybackStartupTimeline({
+            source: { providerId: currentProvider.metadata.id },
+          });
+          let resolvedProviderId = currentProvider.metadata.id;
+          const recordStartupMark = (stage: PlaybackStartupStage, activeStream?: StreamInfo) => {
+            if (!startupTimeline.mark(stage)) return;
+            const snapshot = startupTimeline.snapshot();
+            diagnosticsStore.record({
+              ...playbackCorrelation,
+              category: "playback",
+              operation: "playback.startup.timeline",
+              message: `Playback startup ${stage}`,
+              providerId: activeStream?.providerResolveResult?.providerId ?? resolvedProviderId,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              context: {
+                stage,
+                summary: formatPlaybackStartupTimeline(snapshot),
+                timeline: snapshot,
+                source: summarizeStartupStreamSource(activeStream),
+              },
+            });
+          };
+          recordStartupMark("episode-bootstrap-started");
+
           // Kick off timing fetch in parallel with everything else — IntroDB is a
           // lightweight API call and should resolve well before stream resolution.
+          recordStartupMark("timing-fetch-started");
           const timingFetch = this.getPlaybackTimingMetadata(
             title,
             currentEpisode,
@@ -790,6 +916,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               loadEpisodes: fetchEpisodes,
             },
           });
+          recordStartupMark("episode-context-ready");
 
           const navigationState = toEpisodeNavigationState(title.type, episodeAvailability, {
             isAnime: stateManager.getState().mode === "anime",
@@ -813,17 +940,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           // Resolve stream with loading UI
-          if (!currentProvider) {
-            return {
-              status: "error",
-              error: {
-                code: "PROVIDER_UNAVAILABLE",
-                message: `Provider ${stateManager.getState().provider} not found`,
-                retryable: false,
-              },
-            };
-          }
-
           stateManager.dispatch({
             type: "SET_PLAYBACK_STATUS",
             status: "loading",
@@ -834,13 +950,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             note: "Esc cancels this resolve and returns to results",
           });
 
-          const providerAttemptId = createCorrelationId("provider");
-          const playbackCorrelation: DiagnosticCorrelation = {
-            sessionId: container.sessionId,
-            playbackCycleId: createCorrelationId("playback"),
-            providerAttemptId,
-            traceId: providerAttemptId,
-          };
           const sourceRefreshAction = pendingSourceRefreshAction;
           pendingSourceRefreshAction = null;
           const sourceRefreshDecision = sourceRefreshAction
@@ -927,8 +1036,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const prefetchWasPrepared = consumedBundle?.prepared === true;
 
           let stream: StreamInfo | null = consumedBundle?.stream ?? null;
-          let resolvedProviderId = currentProvider.metadata.id;
           let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
+          if (stream) recordStartupMark("resolve-complete", stream);
 
           const resolveTrace = createResolveTraceStub({
             title,
@@ -988,6 +1097,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           if (!stream) {
+            recordStartupMark("resolve-started");
             if (sourceRefreshDecision?.kind === "recover") {
               const refreshCacheKey = buildApiStreamResolveCacheKey({
                 providerId: currentProvider.metadata.id,
@@ -1137,6 +1247,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stream = resolveResult.stream;
             resolvedProviderId = resolveResult.providerId;
             resolveAttempts = resolveResult.attempts;
+            if (stream) recordStartupMark("resolve-complete", stream);
 
             for (const [attemptIndex, attempt] of resolveAttempts.entries()) {
               diagnosticsStore.record({
@@ -1180,6 +1291,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
             }
           }
+
+          if (stream) recordStartupMark("resolve-complete", stream);
 
           // TypeScript cannot narrow `stream` across the conditional mutation above.
           if (!stream) {
@@ -1240,8 +1353,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Await timing — stream resolve takes much longer so this is nearly free.
           // If IntroDB timed out and returned null, schedule a background retry that
           // injects timing into the running player once it arrives.
+          recordStartupMark("timing-wait-started", stream);
+          const fetchedPlaybackTiming = await timingFetch;
+          recordStartupMark("timing-ready", stream);
           const playbackTiming = mergeTimingMetadata(
-            await timingFetch,
+            fetchedPlaybackTiming,
             extractProviderNativeTiming(stream, title),
           );
           if (playbackTiming) {
@@ -1281,6 +1397,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const preparedStream = prefetchWasPrepared
             ? stream
             : await this.preparePlaybackStream(stream, title, currentEpisode, context);
+          recordStartupMark("stream-prepared", preparedStream);
           stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
 
           const episodeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
@@ -1466,6 +1583,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             maybePrefetchNext,
             startIntent.suppressResumePrompt,
             playbackCorrelation,
+            (stage) => recordStartupMark(stage, preparedStream),
           );
           playbackSession = this.transitionPlaybackSession(
             context,
@@ -2957,6 +3075,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     onNearEof?: () => void,
     suppressResumePrompt = false,
     correlation?: DiagnosticCorrelation,
+    onStartupMark?: (stage: PlaybackStartupStage) => void,
   ): Promise<PlaybackResult> {
     const { player, stateManager, config } = context.container;
 
@@ -3044,8 +3163,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         skipCredits: config.skipCredits,
         onNearEof,
         onPlaybackEvent: (event) => {
+          const startupStage = playbackStartupStageForPlayerEvent(event);
+          if (startupStage) onStartupMark?.(startupStage);
           if (event.type !== "network-sample") {
-            this.updatePlaybackFeedback(context, this.describePlayerEvent(event));
+            const feedback = this.describePlayerEvent(event);
+            this.updatePlaybackFeedback(
+              context,
+              event.type === "stream-slow" || event.type === "stream-stalled"
+                ? {
+                    ...feedback,
+                    note: [feedback.note, formatPlaybackStreamRoute(stream)]
+                      .filter(Boolean)
+                      .join(" · "),
+                  }
+                : feedback,
+            );
           }
           if (event.type === "network-buffering") {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "buffering" });

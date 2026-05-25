@@ -213,6 +213,35 @@ describe("panel-data", () => {
     expect(lines.find((line) => line.label === "Provider timeline")?.tone).toBe("success");
   });
 
+  test("buildDiagnosticsPanelLines renders playback startup timing summaries", () => {
+    const lines = buildDiagnosticsPanelLines({
+      state: createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      recentEvents: [
+        {
+          timestamp: 1,
+          level: "info",
+          category: "playback",
+          operation: "playback.startup.timeline",
+          message: "Playback startup first-progress",
+          context: {
+            stage: "first-progress",
+            summary:
+              "resolve-complete 420ms (+420ms) -> player-ready 1.4s (+980ms) -> first-progress 2.1s (+700ms)",
+          },
+        },
+      ],
+    });
+
+    expect(lines.find((line) => line.label === "Startup path")?.detail).toContain(
+      "first-progress 2.1s",
+    );
+    expect(lines.find((line) => line.label === "Startup path")?.tone).toBe("success");
+  });
+
   test("buildDiagnosticsPanelLines summarizes resolved source inventory for support triage", () => {
     const providerResolveResult = {
       status: "resolved",
@@ -298,6 +327,94 @@ describe("panel-data", () => {
     expect(sourceInventory?.detail).not.toContain("private-stream");
     expect(sourceInventory?.detail).not.toContain("private-en.vtt");
     expect(sourceInventory?.tone).toBe("success");
+  });
+
+  test("buildDiagnosticsPanelLines includes concise selected source hints", () => {
+    const providerResolveResult = {
+      status: "resolved",
+      providerId: "rivestream",
+      selectedStreamId: "stream-1",
+      streams: [
+        {
+          id: "stream-1",
+          providerId: "rivestream",
+          sourceId: "source-1",
+          protocol: "hls",
+          container: "m3u8",
+          url: "https://cdn.example/private-stream.m3u8",
+          confidence: 0.9,
+          qualityLabel: "720p",
+          artwork: { seekBarVttUrl: "https://cdn.example/timing.vtt" },
+          metadata: { intro: { start: 90, end: 180 } },
+          cachePolicy: {
+            ttlClass: "stream-manifest",
+            scope: "local",
+            keyParts: [],
+          },
+        },
+      ],
+      sources: [
+        {
+          id: "source-1",
+          providerId: "rivestream",
+          kind: "mirror",
+          status: "selected",
+          host: "cdn.example",
+          confidence: 0.9,
+        },
+      ],
+      subtitles: [
+        {
+          id: "sub-en",
+          providerId: "rivestream",
+          sourceId: "source-1",
+          url: "https://subs.example/private-en.vtt",
+          language: "en",
+          source: "provider",
+          confidence: 0.9,
+          cachePolicy: {
+            ttlClass: "subtitle-list",
+            scope: "local",
+            keyParts: [],
+          },
+        },
+      ],
+      trace: {
+        id: "trace-1",
+        startedAt: "2026-05-19T00:00:00.000Z",
+        cacheHit: false,
+        title: { id: "demo", kind: "series", title: "Demo" },
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    } satisfies ProviderResolveResult;
+    const state = {
+      ...createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      stream: {
+        url: "https://cdn.example/private-stream.m3u8",
+        headers: {},
+        subtitle: "https://subs.example/private-en.vtt",
+        timestamp: 0,
+        providerResolveResult,
+      },
+    };
+
+    const sourceInventory = buildDiagnosticsPanelLines({ state, recentEvents: [] }).find(
+      (line) => line.label === "Source inventory",
+    );
+
+    expect(sourceInventory?.detail).toContain("selected source selected");
+    expect(sourceInventory?.detail).toContain("host cdn.example");
+    expect(sourceInventory?.detail).toContain("has timing");
+    expect(sourceInventory?.detail).toContain("seek thumbnails");
+    expect(sourceInventory?.detail).toContain("1 subtitle");
+    expect(sourceInventory?.detail).not.toContain("private-stream");
+    expect(sourceInventory?.detail).not.toContain("private-en.vtt");
   });
 
   test("buildDiagnosticsPanelLines puts plain-language health summary before technical sections", () => {

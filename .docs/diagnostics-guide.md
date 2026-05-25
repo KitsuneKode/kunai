@@ -22,7 +22,7 @@ rg "scraper|provider|subtitle|wyzie|m3u8|playback|cache" debug.log
 
 Open the in-app diagnostics panel with `/diagnostics` to see the current session snapshot and recent runtime events without leaving the shell.
 
-The diagnostics panel starts with a plain-language health summary for Playback, Provider, Cache, Discord, Downloads, and Network. Each row should say whether Kunai is OK, needs attention, or failed, then give one short reason and action. The detailed provider timeline, cache decisions, mpv events, and recent event log stay below the summary for developer debugging.
+The diagnostics panel starts with a plain-language health summary for Playback, Provider, Cache, Discord, Downloads, and Network. Each row should say whether Kunai is OK, needs attention, or failed, then give one short reason and action. The detailed provider timeline, playback startup path, source evidence, cache decisions, mpv events, and recent event log stay below the summary for developer debugging.
 
 Export a redacted support bundle with `/export-diagnostics`. The exported JSON includes app/runtime metadata, startup capability checks, and the bounded diagnostics event buffer. Stream URLs, auth headers, cookies, tokens, and local home-directory prefixes are redacted before writing the file.
 
@@ -55,6 +55,7 @@ For playback recovery debugging, prefer stable operation names over free-form lo
 - `post-playback.recommendations.seed`: the post-playback screen rendered from already-prefetched recommendations or an empty rail without waiting for a fresh network request.
 - `post-playback.recommendations.warm`: non-critical recommendation data warmed in the background after the shell was already usable.
 - `post-playback.autonext.prefetch-wait`: auto-next waited briefly for near-EOF prefetch before falling back to normal resolve.
+- `playback.startup.timeline`: cumulative foreground-startup stages through first observed playback progress. This separates episode-context preparation, timing wait, provider resolve, stream preparation/materialization, mpv launch/readiness, and initial subtitle attachment without exposing stream URLs.
 - `download.artifact.validated`: a completed local download passed artifact validation and persisted local size/duration metadata when available.
 - `download.artifact.repairable`: the main video is usable, but a subtitle/artwork sidecar needs attention.
 - `presence.clear.failed`: Discord presence did not clear cleanly during shutdown or disconnect.

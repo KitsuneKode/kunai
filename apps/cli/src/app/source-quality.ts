@@ -245,7 +245,12 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
       return {
         value: candidate.id,
         label: candidate.id === result.selectedStreamId ? `${label}  ·  current` : label,
-        detail: describeStreamCandidateMediaDetail(candidate, result.subtitles),
+        detail: [
+          describeStreamCandidateMediaDetail(candidate, result.subtitles),
+          ...(option?.hints ?? []),
+        ]
+          .filter(Boolean)
+          .join("  ·  "),
         rank: option?.qualityRank ?? candidate.qualityRank ?? 0,
       };
     })
@@ -595,7 +600,7 @@ function describeProjectedSourceDetail(
   result: NonNullable<StreamInfo["providerResolveResult"]>,
 ): string {
   return describeSourceDetail(
-    [group.providerStatus, group.nativeLabels.join("/")],
+    [...group.hints, group.nativeLabels.join("/")],
     result.streams.filter((candidate) =>
       candidate.sourceId ? group.sourceIds.includes(candidate.sourceId) : false,
     ),

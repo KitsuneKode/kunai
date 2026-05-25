@@ -265,6 +265,9 @@ export function buildDiagnosticsPanelLines({
   const providerTimelineEvent = recentEvents.find(
     (event) => event.operation === "provider.resolve.timeline",
   );
+  const playbackStartupEvent = recentEvents.find(
+    (event) => event.operation === "playback.startup.timeline",
+  );
   const sourceInventorySummary = state.stream?.providerResolveResult
     ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
         selectedSubtitleUrl: state.stream.subtitle,
@@ -333,6 +336,16 @@ export function buildDiagnosticsPanelLines({
             : providerTimelineEvent
               ? "info"
               : "neutral",
+    },
+    {
+      label: "Startup path",
+      detail: formatPlaybackStartupTimelineEvent(playbackStartupEvent),
+      tone:
+        playbackStartupEvent?.context?.stage === "first-progress"
+          ? "success"
+          : playbackStartupEvent
+            ? "info"
+            : "neutral",
     },
     {
       label: "Source inventory",
@@ -598,15 +611,24 @@ function formatProviderTimelineEvent(event: DiagnosticEvent | undefined): string
     .join("  ·  ");
 }
 
+function formatPlaybackStartupTimelineEvent(event: DiagnosticEvent | undefined): string {
+  if (!event) return "no playback startup timeline yet";
+  return typeof event.context?.summary === "string" ? event.context.summary : event.message;
+}
+
 function formatSourceInventorySummary(
   summary: ReturnType<typeof buildPlaybackSourceInventoryDiagnosticsSummary>,
 ): string {
   const selected = summary.selected
     ? `${summary.selected.sourceId ?? "source?"}/${summary.selected.qualityLabel ?? "quality?"}`
     : "none";
+  const selectedSourceHints = summary.sourceGroups.find(
+    (group) => group.state === "selected",
+  )?.hints;
   return [
     summary.status,
     `selected ${selected}`,
+    selectedSourceHints?.length ? `selected source ${selectedSourceHints.join("  ·  ")}` : null,
     `${summary.sourceGroups.length} sources`,
     `${summary.qualityOptions.length} qualities`,
     `${summary.languageOptions.length} languages`,

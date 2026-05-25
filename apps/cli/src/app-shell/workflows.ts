@@ -1417,7 +1417,7 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
   });
   const lines = buildDiagnosticsPanelLines({
     state: stateManager.getState(),
-    recentEvents: diagnosticsStore.getRecent(10),
+    recentEvents: diagnosticsStore.getRecent(25),
     memorySamples: getRuntimeMemorySamples(),
     capabilitySnapshot: container.capabilitySnapshot,
     downloadSummary: {

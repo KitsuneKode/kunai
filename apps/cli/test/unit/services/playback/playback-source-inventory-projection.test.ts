@@ -240,6 +240,107 @@ test("falls back to stream source ids when provider source inventory is missing"
   });
 });
 
+test("projects deterministic source health hints from provider metadata", () => {
+  const summary = buildPlaybackSourceInventoryDiagnosticsSummary({
+    status: "resolved",
+    providerId: "rivestream",
+    selectedStreamId: "stream-a",
+    streams: [
+      stream({
+        id: "stream-a",
+        providerId: "rivestream",
+        sourceId: "source-a",
+        qualityLabel: "1080p",
+        qualityRank: 1080,
+        url: "https://media.example/watch/master.m3u8",
+        artwork: { seekBarVttUrl: "https://media.example/timing.vtt" },
+        metadata: { intro: { start: 90, end: 180 } },
+      }),
+      stream({
+        id: "stream-b",
+        providerId: "rivestream",
+        sourceId: "source-b",
+        qualityLabel: "720p",
+        qualityRank: 720,
+        url: "https://backup.example/watch/master.m3u8",
+      }),
+    ],
+    sources: [
+      source({
+        id: "source-a",
+        providerId: "rivestream",
+        label: "Primary",
+        status: "selected",
+        host: "primary.example",
+      }),
+      source({
+        id: "source-b",
+        providerId: "rivestream",
+        label: "Backup",
+        status: "failed",
+        host: "backup.example",
+      }),
+    ],
+    subtitles: [
+      {
+        id: "sub-en",
+        providerId: "rivestream",
+        sourceId: "source-a",
+        url: "https://subs.example/en.vtt",
+        language: "en",
+        label: "English",
+        source: "provider",
+        confidence: 0.9,
+        cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+      },
+    ],
+    trace: trace(),
+    failures: [],
+  });
+
+  expect(summary.sourceGroups.find((group) => group.id === "source-a")?.hints).toEqual([
+    "selected",
+    "host primary.example",
+    "has timing",
+    "seek thumbnails",
+    "1 subtitle",
+  ]);
+  expect(summary.sourceGroups.find((group) => group.id === "source-b")?.hints).toEqual([
+    "provider marked failed",
+    "host backup.example",
+  ]);
+  expect(summary.qualityOptions.find((option) => option.label === "1080p")?.hints).toEqual([
+    "selected",
+    "host media.example",
+    "has timing",
+    "seek thumbnails",
+    "1 subtitle",
+  ]);
+});
+
+test("does not describe seek thumbnails as provider timing evidence", () => {
+  const summary = buildPlaybackSourceInventoryDiagnosticsSummary({
+    status: "resolved",
+    providerId: "vidking",
+    selectedStreamId: "stream-a",
+    streams: [
+      stream({
+        id: "stream-a",
+        providerId: "vidking",
+        sourceId: "source-a",
+        artwork: { seekBarVttUrl: "https://media.example/seek.vtt" },
+      }),
+    ],
+    subtitles: [],
+    trace: trace(),
+    failures: [],
+  });
+
+  const hints = summary.qualityOptions[0]?.hints ?? [];
+  expect(hints).toContain("seek thumbnails");
+  expect(hints).not.toContain("has timing");
+});
+
 test("surfaces exhausted provider failures as warnings and disabled retry controls", () => {
   const view = projectPlaybackSourceInventory({
     status: "exhausted",
@@ -325,7 +426,7 @@ test("builds a diagnostics-safe source inventory summary without stream or subti
     hasArtwork: true,
     hasSeekBarThumbnails: true,
   });
-  expect(summary.sourceGroups).toEqual([
+  expect(summary.sourceGroups).toMatchObject([
     {
       id: "source-b",
       label: "source-b",

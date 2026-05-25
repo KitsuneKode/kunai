@@ -176,6 +176,15 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
       "Episode navigation waited for an in-flight or urgent next-episode prefetch before foreground resolve.",
   },
   {
+    operation: "playback.startup.timeline",
+    category: "playback",
+    audience: "both",
+    summary:
+      "Playback startup recorded episode context, timing wait, resolve, player readiness, subtitle attachment, and first observed progress stages.",
+    userAction:
+      "Use the slowest measured stage to distinguish episode context, timing, provider, player, or subtitle delay.",
+  },
+  {
     operation: "presence.clear.failed",
     category: "presence",
     audience: "both",

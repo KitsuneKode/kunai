@@ -44,6 +44,7 @@ export type PlaybackSourceInventoryDiagnosticsSummary = {
     readonly id: string;
     readonly label: string;
     readonly state: string;
+    readonly hints: readonly string[];
     readonly nativeLabelCount: number;
     readonly hasArtwork: boolean;
     readonly hasSeekBarThumbnails: boolean;
@@ -61,6 +62,7 @@ export type PlaybackSourceInventoryDiagnosticsSummary = {
     readonly id: string;
     readonly label: string;
     readonly state: string;
+    readonly hints: readonly string[];
     readonly qualityRank?: number;
     readonly candidateCount: number;
   }[];
@@ -139,6 +141,7 @@ export function buildPlaybackSourceInventoryDiagnosticsSummary(
       id: group.id,
       label: group.label,
       state: group.state,
+      hints: group.hints,
       nativeLabelCount: group.nativeLabels.length,
       hasArtwork: Boolean(group.artwork),
       hasSeekBarThumbnails: Boolean(group.artwork?.seekBarVttUrl),
@@ -156,6 +159,7 @@ export function buildPlaybackSourceInventoryDiagnosticsSummary(
       id: option.id,
       label: option.label,
       state: option.state,
+      hints: option.hints,
       qualityRank: option.qualityRank,
       candidateCount: option.candidateCount,
     })),
@@ -245,10 +249,11 @@ function projectSourceGroups(
       source.artwork,
       result.artwork,
     );
+    const state = source.id === selectedSourceId ? "selected" : mapSourceState(source.status);
     return {
       id: source.id,
       label: source.label ?? source.host ?? nativeLabels[0] ?? source.id,
-      state: source.id === selectedSourceId ? "selected" : mapSourceState(source.status),
+      state,
       providerId: result.providerId,
       sourceIds,
       streamIds: streams.map((stream) => stream.id),
@@ -276,6 +281,14 @@ function projectSourceGroups(
       subtitleDelivery: firstDefined(streams.map((stream) => stream.subtitleDelivery)),
       candidateCount: streams.length,
       providerStatus: source.status,
+      hints: buildPlaybackInventoryEvidenceHints({
+        state,
+        providerStatus: source.status,
+        host: source.host ?? firstDefined(source.sourceEvidence?.map((item) => item.host) ?? []),
+        streams,
+        subtitles,
+        artwork: sourceArtwork,
+      }),
       disabledReason:
         streams.length === 0 ? "No playable stream was exposed for this source." : undefined,
     };
@@ -429,6 +442,7 @@ function projectQualityOptions(
       qualityRank: stream.qualityRank,
       sourceIds: new Set<string>(),
       streamIds: new Set<string>(),
+      streams: [],
       candidateCount: 0,
       restartRequired: true,
     };
@@ -437,18 +451,37 @@ function projectQualityOptions(
     }
     if (stream.sourceId) option.sourceIds.add(stream.sourceId);
     option.streamIds.add(stream.id);
+    option.streams.push(stream);
     option.candidateCount += 1;
     groups.set(id, option);
   }
 
   return [...groups.values()]
-    .map((option) => ({
-      ...option,
-      state: selectedStream && option.streamIds.has(selectedStream.id) ? "selected" : option.state,
-      sourceIds: [...option.sourceIds],
-      streamIds: [...option.streamIds],
-      restartRequired: selectedStream ? !option.streamIds.has(selectedStream.id) : true,
-    }))
+    .map((option) => {
+      const { streams, ...publicOption } = option;
+      const state =
+        selectedStream && option.streamIds.has(selectedStream.id) ? "selected" : option.state;
+      const sourceIds = [...option.sourceIds];
+      const subtitles = uniqueSubtitles(
+        streams.flatMap((stream) => subtitlesForStream(stream, result.subtitles)),
+      );
+      return {
+        ...publicOption,
+        state,
+        sourceIds,
+        streamIds: [...option.streamIds],
+        restartRequired: selectedStream ? !option.streamIds.has(selectedStream.id) : true,
+        hints: buildPlaybackInventoryEvidenceHints({
+          state,
+          streams,
+          subtitles,
+          artwork: mergeArtwork(
+            firstDefined(streams.map((stream) => stream.artwork)),
+            result.artwork,
+          ),
+        }),
+      };
+    })
     .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0));
 }
 
@@ -459,6 +492,7 @@ type MutableQualityOption = {
   qualityRank?: number;
   sourceIds: Set<string>;
   streamIds: Set<string>;
+  streams: StreamCandidate[];
   candidateCount: number;
   restartRequired: boolean;
 };
@@ -661,6 +695,70 @@ function projectTraceSummary(result: ProviderResolveResult): PlaybackTraceSummar
   };
 }
 
+export function buildPlaybackInventoryEvidenceHints({
+  state,
+  providerStatus,
+  host,
+  streams,
+  subtitles,
+  artwork,
+}: {
+  readonly state: PlaybackInventoryOptionState;
+  readonly providerStatus?: ProviderSourceCandidate["status"];
+  readonly host?: string;
+  readonly streams: readonly StreamCandidate[];
+  readonly subtitles: readonly SubtitleCandidate[];
+  readonly artwork?: ProviderArtworkInfo;
+}): readonly string[] {
+  return uniqueStrings([
+    stateHint(state, providerStatus),
+    host ? `host ${host}` : streamHostHint(streams),
+    streams.some((stream) => hasProviderTimingHint(stream.metadata)) ? "has timing" : undefined,
+    artwork?.seekBarVttUrl ? "seek thumbnails" : undefined,
+    subtitles.length > 0
+      ? `${subtitles.length} subtitle${subtitles.length === 1 ? "" : "s"}`
+      : undefined,
+  ]);
+}
+
+function hasProviderTimingHint(metadata: Record<string, unknown> | undefined): boolean {
+  if (!metadata) return false;
+  return (
+    Boolean(metadata.intro) ||
+    Boolean(metadata.outro) ||
+    Boolean(metadata.introStart) ||
+    Boolean(metadata.introEnd) ||
+    Boolean(metadata.outroStart) ||
+    Boolean(metadata.outroEnd)
+  );
+}
+
+function stateHint(
+  state: PlaybackInventoryOptionState,
+  providerStatus?: ProviderSourceCandidate["status"],
+): string | undefined {
+  if (state === "selected") return "selected";
+  if (providerStatus === "failed" || state === "failed") return "provider marked failed";
+  if (providerStatus === "exhausted") return "provider exhausted";
+  if (providerStatus === "skipped" || state === "skipped") return "provider skipped";
+  if (state === "disabled") return "disabled";
+  return undefined;
+}
+
+function streamHostHint(streams: readonly StreamCandidate[]): string | undefined {
+  const host = firstDefined(streams.map((stream) => hostFromUrl(stream.url)));
+  return host ? `host ${host}` : undefined;
+}
+
+function hostFromUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    return new URL(value).host;
+  } catch {
+    return undefined;
+  }
+}
+
 function mapSourceState(status: ProviderSourceCandidate["status"]): PlaybackInventoryOptionState {
   if (status === "selected") return "selected";
   if (status === "failed" || status === "exhausted") return "failed";
@@ -680,6 +778,18 @@ function subtitlesForStream(
   }
   if (!stream.sourceId) return [];
   return subtitles.filter((subtitle) => subtitle.sourceId === stream.sourceId);
+}
+
+function uniqueSubtitles(subtitles: readonly SubtitleCandidate[]): readonly SubtitleCandidate[] {
+  const seen = new Set<string>();
+  const unique: SubtitleCandidate[] = [];
+  for (const subtitle of subtitles) {
+    const key = subtitle.id || subtitle.url;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(subtitle);
+  }
+  return unique;
 }
 
 function sourceLanguages(

@@ -52,6 +52,7 @@ export type PlaybackSourceGroupView = {
   readonly subtitleDelivery?: SubtitleDelivery;
   readonly candidateCount: number;
   readonly providerStatus?: ProviderSourceStatus;
+  readonly hints: readonly string[];
   readonly disabledReason?: string;
 };
 
@@ -79,6 +80,7 @@ export type PlaybackQualityOptionView = {
   readonly streamIds: readonly string[];
   readonly candidateCount: number;
   readonly restartRequired: boolean;
+  readonly hints: readonly string[];
   readonly disabledReason?: string;
 };
 
