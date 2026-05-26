@@ -10,7 +10,7 @@ import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
 import { launchMpv, shouldApplyStartAtSeek } from "@/mpv";
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
@@ -34,7 +34,7 @@ export class PlayerServiceImpl implements PlayerService {
     private deps: {
       logger: Logger;
       tracer: Tracer;
-      diagnosticsStore: DiagnosticsStore;
+      diagnostics: Pick<DiagnosticsService, "record">;
       playerControl: PlayerControlService;
       config: ConfigService;
       mpv?: MpvRuntimeOptions;
@@ -51,24 +51,25 @@ export class PlayerServiceImpl implements PlayerService {
     process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
     process.stderr.write(
       playbackStream.subtitle
-        ? `Subtitle attached: ${playbackStream.subtitle}\n`
+        ? "Subtitle attached before playback.\n"
         : `${options.subtitleStatus ?? "Subtitles not attached"}; playback will start without a subtitle file.\n`,
     );
 
     this.deps.logger.info("Launching MPV", {
       title: options.displayTitle,
-      url: playbackStream.url,
+      streamHost: safeUrlHost(playbackStream.url),
       startAt: options.startAt,
       resumePromptAt: options.resumePromptAt ?? 0,
     });
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       ...options.correlation,
       category: "playback",
       message: "Launching MPV",
       context: {
         title: options.displayTitle,
         hasSubtitle: Boolean(playbackStream.subtitle),
-        subtitleUrl: playbackStream.subtitle ?? null,
+        streamHost: safeUrlHost(playbackStream.url),
+        subtitleHost: safeUrlHost(playbackStream.subtitle),
         subtitleStatus: options.subtitleStatus ?? null,
         startAt: options.startAt ?? 0,
         resumePromptAt: options.resumePromptAt ?? 0,
@@ -94,7 +95,7 @@ export class PlayerServiceImpl implements PlayerService {
         lastNonZeroDurationSeconds: result.lastNonZeroDurationSeconds ?? 0,
         lastTrustedProgressSeconds: result.lastTrustedProgressSeconds ?? 0,
       });
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         ...options.correlation,
         category: "playback",
         message: "MPV playback complete",
@@ -122,7 +123,7 @@ export class PlayerServiceImpl implements PlayerService {
         ? "mpv is required for playback. Install mpv and retry."
         : "Run / export-diagnostics and / report-issue if this keeps failing.";
       this.deps.logger.error("MPV playback failed", { error: String(e) });
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         ...options.correlation,
         category: "playback",
         message: "MPV playback failed",
@@ -172,7 +173,7 @@ export class PlayerServiceImpl implements PlayerService {
       title: displayTitle,
       filePath: options.source.filePath,
     });
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "playback",
       message: "Launching local MPV",
       context: {
@@ -214,7 +215,7 @@ export class PlayerServiceImpl implements PlayerService {
       // fall through to launch without a broken sidecar path
     }
     this.deps.logger.warn("Skipping unreadable local subtitle sidecar", { subtitlePath });
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "subtitle",
       message: "Skipping unreadable local subtitle sidecar",
       context: { subtitlePath },
@@ -287,7 +288,7 @@ export class PlayerServiceImpl implements PlayerService {
       skipCredits: options.skipCredits,
       autoNextEnabled: true,
       onPlayerReady: options.onPlayerReady,
-      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
+      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent, options.correlation),
       onMpvActionRequest: (action: "next" | "previous" | "pick-quality" | "refresh") => {
         this.deps.playerControl.signalPlaybackAction(action);
       },
@@ -324,7 +325,7 @@ export class PlayerServiceImpl implements PlayerService {
   ): (event: PlayerPlaybackEvent) => void {
     return (event) => {
       const failureClass = classifyPlaybackFailureFromEvent(event);
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         ...correlation,
         category: "playback",
         message: "MPV runtime event",
@@ -343,4 +344,13 @@ export class PlayerServiceImpl implements PlayerService {
 function formatLocalPlaybackTitle(source: LocalPlaybackSource): string {
   if (source.mediaKind === "movie") return `${source.titleName}  ·  local`;
   return `${source.titleName}  ·  S${String(source.season ?? 1).padStart(2, "0")}E${String(source.episode ?? 1).padStart(2, "0")}  ·  local`;
+}
+
+function safeUrlHost(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
 }

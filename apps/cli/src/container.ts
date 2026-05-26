@@ -354,7 +354,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const player = new PlayerServiceImpl({
     logger,
     tracer,
-    diagnosticsStore,
+    diagnostics: diagnosticsService,
     playerControl,
     config,
     mpv: options?.mpv,
