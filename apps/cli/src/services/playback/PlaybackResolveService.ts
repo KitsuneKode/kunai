@@ -719,6 +719,8 @@ function buildProviderTimeline(
   const timeline = createProviderAttemptTimeline({ traceId });
   let lastFailureClass: ReturnType<typeof classifyProviderFailure>["failureClass"] | null = null;
   let lastFailedProviderId: string | null = null;
+  let timelineOrder = 0;
+  const nextTimelineOrder = () => timelineOrder++;
 
   engineResult.attempts.forEach((attempt, index) => {
     const attemptId = `provider-attempt-${index + 1}`;
@@ -731,7 +733,7 @@ function buildProviderTimeline(
         fromProviderId: lastFailedProviderId,
         toProviderId: attempt.providerId,
         reason: lastFailureClass,
-        at: index * 2,
+        at: nextTimelineOrder(),
       });
     } else {
       timeline.record({
@@ -739,7 +741,7 @@ function buildProviderTimeline(
         attemptId,
         providerId: attempt.providerId,
         reason: attempt.providerId === primaryProviderId ? "primary" : "fallback",
-        at: index * 2,
+        at: nextTimelineOrder(),
       });
     }
 
@@ -753,7 +755,7 @@ function buildProviderTimeline(
         type: "attempt-succeeded",
         attemptId,
         providerId: attempt.providerId,
-        at: index * 2 + 1,
+        at: nextTimelineOrder(),
         cacheHit: attempt.result?.trace.cacheHit,
         streamCount: attempt.result?.streams.length,
       });
@@ -775,7 +777,7 @@ function buildProviderTimeline(
       type: "attempt-failed",
       attemptId,
       providerId: attempt.providerId,
-      at: index * 2 + 1,
+      at: nextTimelineOrder(),
       failureClass: classification.failureClass,
       retryable: classification.fallbackPolicy === "auto-fallback",
       userSummary: failure?.message ?? classification.userSummary,
@@ -791,7 +793,7 @@ function buildProviderTimeline(
     const policy = fallbackPolicyForProviderFailureClass(classification.failureClass);
     timeline.record({
       type: "final-failed",
-      at: engineResult.attempts.length * 2 + 1,
+      at: nextTimelineOrder(),
       userSummary:
         policy === "guided-action"
           ? "Provider needs your choice before Kunai can continue."

@@ -22,7 +22,13 @@ rg "scraper|provider|subtitle|wyzie|m3u8|playback|cache" debug.log
 
 Open the in-app diagnostics panel with `/diagnostics` to see the current session snapshot and recent runtime events without leaving the shell.
 
-The diagnostics panel starts with a plain-language health summary for Playback, Provider, Cache, Discord, Downloads, and Network. Each row should say whether Kunai is OK, needs attention, or failed, then give one short reason and action. The detailed provider timeline, playback startup path, source evidence, cache decisions, mpv events, and recent event log stay below the summary for developer debugging.
+The diagnostics panel starts with a plain-language health summary for Playback,
+Provider, Cache, Discord, Downloads, and Network. Each row should say whether
+Kunai is OK, needs attention, failed, or unknown, then give one short reason and
+action. The detailed provider timeline, correlated IDs, slowest startup stage,
+physical provider attempt evidence, playback startup path, source evidence,
+cache decisions, subtitle attachment outcome, mpv events, and recent event log
+stay below the summary for developer debugging.
 
 Export a redacted support bundle with `/export-diagnostics`. The exported JSON includes app/runtime metadata, startup capability checks, and the bounded diagnostics event buffer. Stream URLs, auth headers, cookies, tokens, and local home-directory prefixes are redacted before writing the file.
 
@@ -81,6 +87,24 @@ available, and final outcome. They must not include playable URLs, subtitle
 URLs, headers, cookies, tokens, raw title IDs, or arbitrary provider evidence.
 
 Use `/report-issue` for a preview-first issue flow. It asks before writing a redacted diagnostics report bundle and then opens the GitHub issue chooser. Use `/export-diagnostics` when you only want the bundle and do not want to open a browser.
+
+## Latency Triage Order
+
+Use `--debug-json` when reproducing provider/playback issues: active-runtime
+diagnostic events flow through the same redacted ingestion path as
+`/diagnostics` and `/export-diagnostics`.
+
+Read latency evidence in this order:
+
+1. Startup path and slowest completed stage.
+2. Correlated physical provider attempts, retries, and fallbacks.
+3. Stream provenance, source inventory, cache, prefetch, and reuse decisions.
+4. mpv readiness, stall, and reconnect evidence.
+5. Subtitle outcome, which may arrive after playback begins.
+
+The app records subtitle availability and late attachment without blocking the
+first playable stream. A late subtitle outcome is useful evidence, not proof
+that provider resolve was slow.
 
 To test Vidking without the Ink shell, run the live provider smoke test:
 
@@ -142,7 +166,7 @@ Current provider behavior:
 ## When Adding Or Fixing Providers
 
 - Log provider-owned milestones with `dbg("provider-id", "...", context)`.
-- Record user-facing runtime facts through `DiagnosticsService` when you need both structured logs and the diagnostics buffer. Use `DiagnosticsStore` directly only for low-level code that has not been migrated yet.
+- Record user-facing runtime facts through `DiagnosticsService`. `DiagnosticsStore` is the bounded backing store for reads/snapshots and diagnostics internals, not the active runtime write boundary.
 - Include `category`, `operation`, failure stage, provider id, title id, and timing/provenance context when available.
 - Provider fallback should emit a provider timeline summary. Retry/fallback progress is informational while work continues; final failure copy should appear only after all configured attempts are exhausted.
 - Preserve the distinction between “source had no data” and “our scraper did not observe data”.

@@ -30,13 +30,17 @@ Start with:
 
 - `apps/cli/src/services/playback/PlaybackResolveService.ts`
 - `apps/cli/src/services/playback/PlaybackResolveCoordinator.ts`
+- `packages/core/src/provider-engine.ts`
 - `apps/cli/src/services/providers/ProviderRegistry.ts`
-- `apps/cli/src/services/playback/playback-source-inventory.ts`
+- `apps/cli/src/services/playback/SourceInventoryService.ts`
 - `.docs/playback-source-inventory-contract.md`
 
 Look for provider attempt timelines, failure codes, selected source inventory,
 cache provenance, and whether a failure is final or still inside retry/fallback.
-Live provider checks stay manual and bounded; do not add them to default CI.
+Physical attempt events come from the core provider engine and are forwarded
+into app diagnostics as `provider.resolve.attempt` and
+`provider.resolve.fallback`. Live provider checks stay manual and bounded; do
+not add them to default CI.
 
 ## Presence And Rich Presence
 
@@ -70,16 +74,27 @@ Start with:
 
 - `apps/cli/src/services/diagnostics/DiagnosticsServiceImpl.ts`
 - `apps/cli/src/services/diagnostics/DiagnosticsStoreImpl.ts`
-- `apps/cli/src/app-shell/diagnostics-shell.tsx`
+- `apps/cli/src/app-shell/panel-data.ts`
+- `apps/cli/src/services/diagnostics/support-bundle.ts`
 
 Prefer structured diagnostics events for user-facing troubleshooting and debug
 JSONL traces for long local sessions. Redaction must preserve enough shape to
 debug host/stage/provenance while removing secrets, tokens, cookies, stream URLs,
 authorization headers, and private home-directory prefixes.
 
+Active runtime writers should call `DiagnosticsService.record()`. Store reads
+remain valid for panel snapshots and support-bundle assembly; direct
+`diagnosticsStore.record()` calls outside diagnostics internals are guarded by
+`apps/cli/test/unit/services/diagnostics/diagnostic-recorder-boundary.test.ts`.
+
 When events cross subsystems, join them by `sessionId`, `playbackCycleId`,
 `providerAttemptId`, and `traceId`. The support bundle `correlation` summary is
 the quickest way to see which IDs are available in an exported report.
+
+For startup latency, inspect the diagnostics panel in this order: Startup path,
+Slowest stage, Provider attempts, Source inventory, Network/mpv rows, then
+Subtitles. This separates first-play delay from late subtitle attachment and
+post-start playback health.
 
 ## Shell And Commands
 
