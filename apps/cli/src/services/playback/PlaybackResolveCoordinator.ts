@@ -3,7 +3,7 @@ import type { StreamInfo } from "@/domain/types";
 import { withDiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { CacheStore } from "@/services/persistence/CacheStore";
-import type { ProviderEngine } from "@kunai/core";
+import type { ProviderEngine, ProviderEngineEvent } from "@kunai/core";
 import type { ProviderHealthRepository } from "@kunai/storage";
 
 import {
@@ -172,6 +172,50 @@ export class PlaybackResolveCoordinator {
           candidateCount: event.candidateCount,
         },
       });
+      return;
+    }
+
+    if (event.type === "provider-engine-event") {
+      const engineEvent = event.event;
+      if (engineEvent.type === "provider-fallback-started") {
+        this.deps.diagnostics.record(
+          withDiagnosticCorrelation(input.correlation, {
+            category: "provider",
+            operation: "provider.resolve.fallback",
+            level: "warn",
+            message: "Provider fallback started",
+            providerAttemptId: input.correlation?.providerAttemptId,
+            providerId: engineEvent.toProviderId,
+            titleId: input.title.id,
+            season: input.episode.season,
+            episode: input.episode.episode,
+            context: {
+              fromProviderId: engineEvent.fromProviderId,
+              toProviderId: engineEvent.toProviderId,
+              failureCode: engineEvent.failure.code,
+              failureMessage: engineEvent.failure.message,
+              retryable: engineEvent.failure.retryable,
+              at: engineEvent.at,
+            },
+          }),
+        );
+        return;
+      }
+
+      this.deps.diagnostics.record(
+        withDiagnosticCorrelation(input.correlation, {
+          category: "provider",
+          operation: "provider.resolve.attempt",
+          level: engineEvent.type === "provider-attempt-failed" ? "warn" : "debug",
+          message: describeProviderEngineEvent(engineEvent.type),
+          providerAttemptId: input.correlation?.providerAttemptId,
+          providerId: engineEvent.providerId,
+          titleId: input.title.id,
+          season: input.episode.season,
+          episode: input.episode.episode,
+          context: providerEngineEventContext(engineEvent),
+        }),
+      );
     }
   }
 
@@ -210,6 +254,66 @@ export class PlaybackResolveCoordinator {
         },
       }),
     );
+  }
+}
+
+function describeProviderEngineEvent(eventType: ProviderEngineEvent["type"]): string {
+  switch (eventType) {
+    case "provider-attempt-started":
+      return "Provider resolve attempt started";
+    case "provider-attempt-succeeded":
+      return "Provider resolve attempt succeeded";
+    case "provider-attempt-failed":
+      return "Provider resolve attempt failed";
+    case "provider-retry-scheduled":
+      return "Provider resolve retry scheduled";
+    default:
+      return "Provider resolve attempt changed";
+  }
+}
+
+function providerEngineEventContext(event: ProviderEngineEvent): Record<string, unknown> {
+  switch (event.type) {
+    case "provider-attempt-started":
+      return {
+        phase: "started",
+        physicalAttempt: event.attempt,
+        at: event.at,
+      };
+    case "provider-attempt-succeeded":
+      return {
+        phase: "succeeded",
+        physicalAttempt: event.attempt,
+        elapsedMs: event.elapsedMs,
+        at: event.at,
+      };
+    case "provider-attempt-failed":
+      return {
+        phase: "failed",
+        physicalAttempt: event.attempt,
+        elapsedMs: event.elapsedMs,
+        failureCode: event.failure.code,
+        failureMessage: event.failure.message,
+        retryable: event.failure.retryable,
+        at: event.at,
+      };
+    case "provider-retry-scheduled":
+      return {
+        phase: "retry-scheduled",
+        nextPhysicalAttempt: event.nextAttempt,
+        delayMs: event.delayMs,
+        at: event.at,
+      };
+    case "provider-fallback-started":
+      return {
+        phase: "fallback-started",
+        fromProviderId: event.fromProviderId,
+        toProviderId: event.toProviderId,
+        failureCode: event.failure.code,
+        failureMessage: event.failure.message,
+        retryable: event.failure.retryable,
+        at: event.at,
+      };
   }
 }
 

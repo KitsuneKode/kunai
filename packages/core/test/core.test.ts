@@ -13,6 +13,7 @@ import {
   ProviderResolveFailureError,
   resolveWithFallback,
   type CoreProviderModule,
+  type ProviderEngineEvent,
 } from "../src/index";
 
 const allanimeManifest = defineProviderManifest({
@@ -541,6 +542,209 @@ test("ProviderEngine retries retryable exhausted results before falling back", a
   expect(resolved.result?.selectedStreamId).toBe("stream:flaky:1");
   expect(primaryAttempts).toBe(2);
   expect(resolved.attempts).toHaveLength(1);
+});
+
+test("ProviderEngine observes physical retries with elapsed timing", async () => {
+  let primaryAttempts = 0;
+  let tick = 0;
+  const events: ProviderEngineEvent[] = [];
+  const now = () => new Date(Date.UTC(2026, 4, 1, 0, 0, 0, tick++)).toISOString();
+  const flakyProvider: CoreProviderModule = {
+    providerId: "flaky",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "flaky",
+      displayName: "Flaky Provider",
+    }),
+    async resolve(input, context) {
+      primaryAttempts += 1;
+      if (primaryAttempts === 1) {
+        const failure = {
+          providerId: "flaky" as const,
+          code: "network-error" as const,
+          message: "temporary upstream wobble",
+          retryable: true,
+          at: context.now(),
+        };
+        return {
+          status: "exhausted",
+          providerId: "flaky",
+          streams: [],
+          subtitles: [],
+          trace: {
+            id: "trace:flaky:empty",
+            startedAt: context.now(),
+            title: input.title,
+            cacheHit: false,
+            steps: [],
+            failures: [failure],
+          },
+          failures: [failure],
+        };
+      }
+
+      return {
+        status: "resolved",
+        providerId: "flaky",
+        selectedStreamId: "stream:flaky:1",
+        streams: [
+          {
+            id: "stream:flaky:1",
+            providerId: "flaky",
+            url: "https://cdn.example/flaky.m3u8",
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:flaky:ok",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      };
+    },
+  };
+  const engine = createProviderEngine({
+    modules: [flakyProvider],
+    maxAttempts: 2,
+    retryDelayMs: 0,
+    now,
+  });
+
+  await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "movie", title: "Demo" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["flaky"],
+    undefined,
+    (event) => events.push(event),
+  );
+
+  expect(events.map((event) => event.type)).toEqual([
+    "provider-attempt-started",
+    "provider-attempt-failed",
+    "provider-retry-scheduled",
+    "provider-attempt-started",
+    "provider-attempt-succeeded",
+  ]);
+  expect(events[1]).toMatchObject({
+    type: "provider-attempt-failed",
+    providerId: "flaky",
+    attempt: 1,
+    failure: { code: "network-error" },
+  });
+  expect(events[1]?.type === "provider-attempt-failed" && events[1].elapsedMs).toBeGreaterThan(0);
+  expect(events[4]).toMatchObject({
+    type: "provider-attempt-succeeded",
+    providerId: "flaky",
+    attempt: 2,
+  });
+});
+
+test("ProviderEngine observes fallback after primary exhaustion", async () => {
+  const events: ProviderEngineEvent[] = [];
+  const emptyProvider: CoreProviderModule = {
+    providerId: "empty",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "empty",
+      displayName: "Empty Provider",
+    }),
+    async resolve(input, context) {
+      const failure = {
+        providerId: "empty" as const,
+        code: "not-found" as const,
+        message: "empty provider had no streams",
+        retryable: false,
+        at: context.now(),
+      };
+      return {
+        status: "exhausted",
+        providerId: "empty",
+        streams: [],
+        subtitles: [],
+        trace: {
+          id: "trace:empty",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [failure],
+        },
+        failures: [failure],
+      };
+    },
+  };
+  const goodProvider: CoreProviderModule = {
+    providerId: "good",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "good",
+      displayName: "Good Provider",
+    }),
+    async resolve(input, context) {
+      return {
+        status: "resolved",
+        providerId: "good",
+        selectedStreamId: "stream:good:1",
+        streams: [
+          {
+            id: "stream:good:1",
+            providerId: "good",
+            url: "https://cdn.example/good.m3u8",
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:good",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      };
+    },
+  };
+  const engine = createProviderEngine({
+    modules: [emptyProvider, goodProvider],
+    maxAttempts: 1,
+    retryDelayMs: 0,
+  });
+
+  await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "movie", title: "Demo" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["empty", "good"],
+    undefined,
+    (event) => events.push(event),
+  );
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "provider-fallback-started",
+      fromProviderId: "empty",
+      toProviderId: "good",
+      failure: expect.objectContaining({ code: "not-found" }),
+    }),
+  );
 });
 
 test("ProviderEngine does not retry or fallback when the network is offline", async () => {

@@ -3,8 +3,8 @@ import { describe, expect, test } from "bun:test";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { PlaybackResolveCoordinator } from "@/services/playback/PlaybackResolveCoordinator";
-import type { ProviderEngine, ProviderEngineResolveOutput } from "@kunai/core";
-import type { ProviderId, ProviderResolveResult } from "@kunai/types";
+import type { ProviderEngine, ProviderEngineEvent, ProviderEngineResolveOutput } from "@kunai/core";
+import type { ProviderId, ProviderResolveInput, ProviderResolveResult } from "@kunai/types";
 
 const title = {
   id: "12345",
@@ -52,6 +52,28 @@ function createMockEngine(resolveWithFallbackResult: ProviderEngineResolveOutput
     getManifest: () => undefined,
     resolve: async () => ({}) as ProviderResolveResult,
     resolveWithFallback: async () => resolveWithFallbackResult,
+  } as unknown as ProviderEngine;
+}
+
+function createObservedMockEngine(
+  resolveWithFallbackResult: ProviderEngineResolveOutput,
+  observedEvents: readonly ProviderEngineEvent[],
+): ProviderEngine {
+  return {
+    modules: [],
+    get: () => undefined,
+    getProviderIds: () => [],
+    getManifest: () => undefined,
+    resolve: async () => ({}) as ProviderResolveResult,
+    resolveWithFallback: async (
+      _input: ProviderResolveInput,
+      _providers: readonly ProviderId[],
+      _signal?: AbortSignal,
+      observer?: (event: ProviderEngineEvent) => void,
+    ) => {
+      observedEvents.forEach((event) => observer?.(event));
+      return resolveWithFallbackResult;
+    },
   } as unknown as ProviderEngine;
 }
 
@@ -297,6 +319,95 @@ describe("PlaybackResolveCoordinator", () => {
         sessionId: "session-1",
         playbackCycleId: "playback-1",
         providerAttemptId: "provider-1",
+      }),
+    );
+  });
+
+  test("records physical provider attempt and fallback evidence", async () => {
+    const events: unknown[] = [];
+    const diagnostics = {
+      record: (event: unknown) => events.push(event),
+      getRecent: () => [],
+      getSnapshot: () => [],
+      clear: () => {},
+      buildSupportBundle: () => {
+        throw new Error("not needed");
+      },
+    } as unknown as DiagnosticsService;
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createObservedMockEngine(createProviderResultAfterFallback(), [
+        {
+          type: "provider-attempt-started",
+          providerId: "vidking" as ProviderId,
+          attempt: 1,
+          at: "2026-05-15T00:00:00.000Z",
+        },
+        {
+          type: "provider-attempt-failed",
+          providerId: "vidking" as ProviderId,
+          attempt: 1,
+          at: "2026-05-15T00:00:02.000Z",
+          elapsedMs: 2000,
+          failure: {
+            providerId: "vidking" as ProviderId,
+            code: "timeout",
+            message: "VidKing timed out",
+            retryable: true,
+            at: "2026-05-15T00:00:02.000Z",
+          },
+        },
+        {
+          type: "provider-fallback-started",
+          fromProviderId: "vidking" as ProviderId,
+          toProviderId: "rivestream" as ProviderId,
+          at: "2026-05-15T00:00:02.001Z",
+          failure: {
+            providerId: "vidking" as ProviderId,
+            code: "timeout",
+            message: "VidKing timed out",
+            retryable: true,
+            at: "2026-05-15T00:00:02.000Z",
+          },
+        },
+      ]),
+      cacheStore: createMemoryCache(null),
+      diagnostics,
+    });
+
+    await coordinator.resolve({
+      ...input(),
+      correlation: {
+        sessionId: "session-1",
+        playbackCycleId: "cycle-1",
+        providerAttemptId: "provider-1",
+      },
+    });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        operation: "provider.resolve.attempt",
+        playbackCycleId: "cycle-1",
+        providerAttemptId: "provider-1",
+        providerId: "vidking",
+        context: expect.objectContaining({
+          phase: "failed",
+          physicalAttempt: 1,
+          elapsedMs: 2000,
+          failureCode: "timeout",
+        }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        operation: "provider.resolve.fallback",
+        playbackCycleId: "cycle-1",
+        providerAttemptId: "provider-1",
+        providerId: "rivestream",
+        context: expect.objectContaining({
+          fromProviderId: "vidking",
+          toProviderId: "rivestream",
+          failureCode: "timeout",
+        }),
       }),
     );
   });

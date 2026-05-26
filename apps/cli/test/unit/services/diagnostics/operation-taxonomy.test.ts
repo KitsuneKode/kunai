@@ -15,6 +15,8 @@ describe("diagnostic operation taxonomy", () => {
     expect(isKnownDiagnosticOperation("post-playback.autonext.prefetch-wait")).toBe(true);
     expect(isKnownDiagnosticOperation("playback.prefetch-wait")).toBe(true);
     expect(isKnownDiagnosticOperation("playback.startup.timeline")).toBe(true);
+    expect(isKnownDiagnosticOperation("provider.resolve.attempt")).toBe(true);
+    expect(isKnownDiagnosticOperation("provider.resolve.fallback")).toBe(true);
     expect(isKnownDiagnosticOperation("presence.clear.failed")).toBe(true);
     expect(isKnownDiagnosticOperation("resolve.refetch.failed.cached-fallback")).toBe(true);
     expect(isKnownDiagnosticOperation("made.up.operation")).toBe(false);

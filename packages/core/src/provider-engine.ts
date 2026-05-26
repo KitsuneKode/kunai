@@ -19,6 +19,7 @@ export interface ProviderEngineOptions {
   readonly maxAttempts?: number;
   readonly attemptTimeoutMs?: number;
   readonly retryDelayMs?: number;
+  readonly now?: () => string;
 }
 
 export interface ProviderEngineResolveAttempt {
@@ -33,6 +34,45 @@ export interface ProviderEngineResolveOutput {
   readonly attempts: readonly ProviderEngineResolveAttempt[];
 }
 
+export type ProviderEngineEvent =
+  | {
+      readonly type: "provider-attempt-started";
+      readonly providerId: ProviderId;
+      readonly attempt: number;
+      readonly at: string;
+    }
+  | {
+      readonly type: "provider-attempt-succeeded";
+      readonly providerId: ProviderId;
+      readonly attempt: number;
+      readonly at: string;
+      readonly elapsedMs: number;
+    }
+  | {
+      readonly type: "provider-attempt-failed";
+      readonly providerId: ProviderId;
+      readonly attempt: number;
+      readonly at: string;
+      readonly elapsedMs: number;
+      readonly failure: ProviderFailure;
+    }
+  | {
+      readonly type: "provider-retry-scheduled";
+      readonly providerId: ProviderId;
+      readonly nextAttempt: number;
+      readonly at: string;
+      readonly delayMs: number;
+    }
+  | {
+      readonly type: "provider-fallback-started";
+      readonly fromProviderId: ProviderId;
+      readonly toProviderId: ProviderId;
+      readonly at: string;
+      readonly failure: ProviderFailure;
+    };
+
+export type ProviderEngineObserver = (event: ProviderEngineEvent) => void;
+
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RETRY_DELAY_MS = 250;
@@ -43,12 +83,14 @@ export class ProviderEngine {
   private readonly maxAttempts: number;
   private readonly attemptTimeoutMs: number;
   private readonly retryDelayMs: number;
+  private readonly now: () => string;
 
   constructor(opts: ProviderEngineOptions) {
     this.modules = opts.modules;
     this.maxAttempts = opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.attemptTimeoutMs = opts.attemptTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retryDelayMs = opts.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+    this.now = opts.now ?? (() => new Date().toISOString());
 
     for (const module of opts.modules) {
       if (this.modulesById.has(module.providerId)) {
@@ -74,6 +116,7 @@ export class ProviderEngine {
     input: ProviderResolveInput,
     providerId: ProviderId,
     signal?: AbortSignal,
+    observer?: ProviderEngineObserver,
   ): Promise<ProviderResolveResult> {
     const module = this.modulesById.get(providerId);
     if (!module) {
@@ -83,32 +126,82 @@ export class ProviderEngine {
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       if (signal?.aborted) throw this.abortError();
 
-      const result = await this.resolveWithTimeout(module, input, signal);
+      const startedAt = this.now();
+      observer?.({ type: "provider-attempt-started", providerId, attempt, at: startedAt });
 
-      if (result && isProviderResolveResultResolved(result)) return result;
-      if (result) {
-        const error = createProviderResolveFailureError(result);
-        if (
-          attempt >= this.maxAttempts ||
-          !error.failure.retryable ||
-          isOfflineNetworkFailure(error.failure)
-        ) {
-          throw error;
+      let failure: ProviderFailure | null = null;
+      let failureError: ProviderResolveFailureError | null = null;
+      try {
+        const result = await this.resolveWithTimeout(module, input, signal);
+        const finishedAt = this.now();
+
+        if (result && isProviderResolveResultResolved(result)) {
+          observer?.({
+            type: "provider-attempt-succeeded",
+            providerId,
+            attempt,
+            at: finishedAt,
+            elapsedMs: elapsedMs(startedAt, finishedAt),
+          });
+          return result;
         }
+
+        failureError = result ? createProviderResolveFailureError(result) : null;
+        failure = failureError
+          ? failureError.failure
+          : {
+              providerId,
+              code: "not-found",
+              message: `Provider ${providerId} did not return a stream`,
+              retryable: true,
+              at: finishedAt,
+            };
+        observer?.({
+          type: "provider-attempt-failed",
+          providerId,
+          attempt,
+          at: finishedAt,
+          elapsedMs: elapsedMs(startedAt, finishedAt),
+          failure,
+        });
+      } catch (error) {
+        if (error instanceof ProviderResolveAbortError) throw error;
+        const finishedAt = this.now();
+        failure = failureFromResolveError(error, providerId, finishedAt);
+        observer?.({
+          type: "provider-attempt-failed",
+          providerId,
+          attempt,
+          at: finishedAt,
+          elapsedMs: elapsedMs(startedAt, finishedAt),
+          failure,
+        });
+        throw error;
       }
 
       if (signal?.aborted) throw this.abortError();
 
-      if (attempt >= this.maxAttempts) {
+      if (attempt >= this.maxAttempts || !failure.retryable || isOfflineNetworkFailure(failure)) {
+        if (failureError) throw failureError;
         throw new ProviderResolveFailureError({
           providerId,
-          code: "not-found",
-          message: `Provider ${providerId} did not return a stream after ${this.maxAttempts} attempts`,
+          code: failure.code,
+          message:
+            attempt >= this.maxAttempts && failure.code === "not-found"
+              ? `Provider ${providerId} did not return a stream after ${this.maxAttempts} attempts`
+              : failure.message,
           retryable: false,
-          at: new Date().toISOString(),
+          at: this.now(),
         });
       }
 
+      observer?.({
+        type: "provider-retry-scheduled",
+        providerId,
+        nextAttempt: attempt + 1,
+        at: this.now(),
+        delayMs: this.retryDelayMs,
+      });
       if (this.retryDelayMs > 0) {
         await this.sleepWithAbort(this.retryDelayMs, signal);
       }
@@ -121,14 +214,16 @@ export class ProviderEngine {
     input: ProviderResolveInput,
     candidateIds: readonly ProviderId[],
     signal?: AbortSignal,
+    observer?: ProviderEngineObserver,
   ): Promise<ProviderEngineResolveOutput> {
     const attempts: ProviderEngineResolveAttempt[] = [];
 
-    for (const providerId of candidateIds) {
+    for (let index = 0; index < candidateIds.length; index++) {
+      const providerId = candidateIds[index]!;
       if (signal?.aborted) break;
 
       try {
-        const result = await this.resolve(input, providerId, signal);
+        const result = await this.resolve(input, providerId, signal, observer);
         attempts.push({ providerId, result });
         return { result, providerId, attempts };
       } catch (error) {
@@ -142,7 +237,7 @@ export class ProviderEngine {
                 code: "unknown",
                 message: error instanceof Error ? error.message : String(error),
                 retryable: true,
-                at: new Date().toISOString(),
+                at: this.now(),
               };
 
         attempts.push({
@@ -153,6 +248,16 @@ export class ProviderEngine {
             : {}),
         });
         if (isOfflineNetworkFailure(failure)) break;
+        const nextProviderId = candidateIds[index + 1];
+        if (nextProviderId) {
+          observer?.({
+            type: "provider-fallback-started",
+            fromProviderId: providerId,
+            toProviderId: nextProviderId,
+            at: this.now(),
+            failure,
+          });
+        }
       }
     }
 
@@ -177,7 +282,7 @@ export class ProviderEngine {
     signal?.addEventListener("abort", onParentAbort, { once: true });
 
     const context: ProviderRuntimeContext = {
-      now: () => new Date().toISOString(),
+      now: this.now,
       signal: attemptSignal,
       retryPolicy: {
         maxAttempts: this.maxAttempts,
@@ -202,7 +307,7 @@ export class ProviderEngine {
                 code: "timeout",
                 message: `Provider did not return a stream within ${Math.round(this.attemptTimeoutMs / 1000)}s`,
                 retryable: true,
-                at: new Date().toISOString(),
+                at: this.now(),
               }),
             );
           }, this.attemptTimeoutMs);
@@ -250,6 +355,28 @@ function isOfflineNetworkFailure(failure: ProviderFailure): boolean {
   if (failure.code !== "network-error") return false;
   const message = failure.message.toLowerCase();
   return OFFLINE_NETWORK_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+function failureFromResolveError(
+  error: unknown,
+  providerId: ProviderId,
+  at: string,
+): ProviderFailure {
+  if (error instanceof ProviderResolveFailureError) return error.failure;
+  return {
+    providerId,
+    code: "unknown",
+    message: error instanceof Error ? error.message : String(error),
+    retryable: true,
+    at,
+  };
+}
+
+function elapsedMs(startedAt: string, finishedAt: string): number {
+  const started = Date.parse(startedAt);
+  const finished = Date.parse(finishedAt);
+  if (!Number.isFinite(started) || !Number.isFinite(finished)) return 0;
+  return Math.max(0, finished - started);
 }
 
 const OFFLINE_NETWORK_PATTERNS = [

@@ -52,6 +52,18 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     userAction: "Try fallback or report the provider timeline if all attempts fail.",
   },
   {
+    operation: "provider.resolve.attempt",
+    category: "provider",
+    audience: "both",
+    summary: "A physical provider resolve attempt changed state with measured time.",
+  },
+  {
+    operation: "provider.resolve.fallback",
+    category: "provider",
+    audience: "both",
+    summary: "Provider resolution moved to another provider after classified failure.",
+  },
+  {
     operation: "resolve.work.insight",
     category: "provider",
     audience: "developer",

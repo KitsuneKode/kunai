@@ -23,6 +23,7 @@ import { providerResolveResultToStreamInfo } from "@/services/providers/provider
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 import {
   type ProviderEngine,
+  type ProviderEngineEvent,
   type ProviderEngineResolveAttempt,
   type ResolveAttempt,
 } from "@kunai/core";
@@ -82,6 +83,10 @@ export type PlaybackResolveEvent =
       readonly type: "provider-resolve-started";
       readonly providerId: string;
       readonly candidateCount: number;
+    }
+  | {
+      readonly type: "provider-engine-event";
+      readonly event: ProviderEngineEvent;
     }
   | {
       readonly type: "attempt";
@@ -358,6 +363,7 @@ export class PlaybackResolveService {
       resolveInput,
       compatibleIds,
       input.signal,
+      (event) => input.onEvent?.({ type: "provider-engine-event", event }),
     );
     engineResult.attempts.forEach((attempt, index) => {
       const attemptedName =
