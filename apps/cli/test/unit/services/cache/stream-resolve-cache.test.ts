@@ -66,6 +66,23 @@ test("buildApiStreamResolveCacheKey separates source and stream selections", () 
   expect(sourceA).not.toBe(sourceB);
 });
 
+test("buildApiStreamResolveCacheKey separates startup priority", () => {
+  const input = {
+    providerId: "vidking",
+    providerManifest: vidkingManifest,
+    title: { id: "tmdb:1", type: "series" as const, name: "X" },
+    episode: { season: 2, episode: 7 },
+    mode: "series" as const,
+    audioPreference: "original",
+    subtitlePreference: "en",
+    qualityPreference: "720p",
+  };
+
+  expect(buildApiStreamResolveCacheKey({ ...input, startupPriority: "fast" })).not.toBe(
+    buildApiStreamResolveCacheKey({ ...input, startupPriority: "quality-first" }),
+  );
+});
+
 test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => {
   const key = buildApiStreamResolveCacheKey({
     providerId: "vidking",
@@ -77,7 +94,7 @@ test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => 
     subtitlePreference: "en",
     qualityPreference: "720p",
   });
-  expect(key).toContain("provider:vidking:series:tmdb:1:2:7:en:720p:none:none");
+  expect(key).toContain("provider:vidking:series:tmdb:1:2:7:en:720p:balanced:none:none");
 });
 
 test("buildEmbedStreamCacheKey preserves embed URL", () => {

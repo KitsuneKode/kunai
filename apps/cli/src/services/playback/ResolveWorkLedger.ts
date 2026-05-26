@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
-import type { ProviderResolveResult } from "@kunai/types";
+import type { ProviderResolveResult, StartupPriority } from "@kunai/types";
 
 export type ResolveBudgetLane = "user-blocking" | "near-need" | "background" | "manual-diagnostic";
 
@@ -19,6 +19,7 @@ export type ResolveWorkIdentityInput = {
   readonly audioPreference: string;
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
+  readonly startupPriority?: StartupPriority;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
   readonly purpose: ResolveWorkPurpose;
@@ -125,6 +126,7 @@ export function buildResolveWorkKey(input: ResolveWorkIdentityInput): string {
     audioPreference: input.audioPreference,
     subtitlePreference: input.subtitlePreference,
     qualityPreference: input.qualityPreference ?? null,
+    startupPriority: input.startupPriority ?? "balanced",
     selectedSourceId: input.selectedSourceId ?? null,
     selectedStreamId: input.selectedStreamId ?? null,
     purpose: input.purpose,

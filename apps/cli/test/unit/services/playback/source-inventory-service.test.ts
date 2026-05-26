@@ -23,14 +23,14 @@ afterEach(() => {
 });
 
 describe("SourceInventoryService", () => {
-  test("uses v2 schema keys for provider metadata inventory", () => {
-    expect(SOURCE_INVENTORY_SCHEMA_VERSION).toBe("v2");
+  test("uses v3 schema keys for provider metadata inventory", () => {
+    expect(SOURCE_INVENTORY_SCHEMA_VERSION).toBe("v3");
     expect(
       buildSourceInventoryCachePreimage({
         providerId: "allmanga",
         mediaKind: "anime",
         titleId: "provider-title",
-      }).startsWith("v2\0"),
+      }).startsWith("v3\0"),
     ).toBe(true);
   });
 
@@ -102,6 +102,23 @@ describe("SourceInventoryService", () => {
     expect(buildSourceInventoryCacheKey({ ...base, absoluteEpisode: 8 })).not.toBe(baseKey);
     expect(buildSourceInventoryCacheKey({ ...base, runtime: "browser-safe-fetch" })).not.toBe(
       baseKey,
+    );
+  });
+
+  test("separates startup priority in source inventory identity", () => {
+    const base = {
+      providerId: "vidking",
+      mediaKind: "series" as const,
+      titleId: "127529",
+      season: 1,
+      episode: 2,
+      audioMode: "original",
+      subtitleLanguage: "en",
+      runtime: "direct-http" as const,
+    };
+
+    expect(buildSourceInventoryCacheKey({ ...base, startupPriority: "fast" })).not.toBe(
+      buildSourceInventoryCacheKey({ ...base, startupPriority: "quality-first" }),
     );
   });
 

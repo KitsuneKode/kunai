@@ -1,5 +1,10 @@
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
-import type { EpisodeIdentity, ProviderResolveInput, TitleIdentity } from "@kunai/types";
+import type {
+  EpisodeIdentity,
+  ProviderResolveInput,
+  StartupPriority,
+  TitleIdentity,
+} from "@kunai/types";
 
 export interface StreamRequestLike {
   readonly title: TitleInfo;
@@ -7,6 +12,7 @@ export interface StreamRequestLike {
   readonly audioPreference: string;
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
+  readonly startupPriority?: StartupPriority;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
 }
@@ -28,6 +34,7 @@ export function streamRequestToResolveInput(
       mode === "anime" ? (request.audioPreference === "dub" ? "dub" : "sub") : "raw",
     preferredSubtitleDelivery: mode === "anime" ? "hardcoded" : "external",
     qualityPreference: normalizeQualityPreference(request.qualityPreference),
+    startupPriority: request.startupPriority ?? "balanced",
     intent,
     allowedRuntimes: ["direct-http"],
   };

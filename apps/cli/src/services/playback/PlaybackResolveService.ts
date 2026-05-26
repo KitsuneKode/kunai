@@ -33,6 +33,7 @@ import type {
   ProviderHealthDelta,
   ProviderId,
   ProviderResolveResult,
+  StartupPriority,
 } from "@kunai/types";
 
 import {
@@ -125,6 +126,7 @@ export type PlaybackResolveInput = {
   readonly audioPreference: string;
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
+  readonly startupPriority?: StartupPriority;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
   readonly signal: AbortSignal;
@@ -247,6 +249,7 @@ export class PlaybackResolveService {
         audioPreference: input.audioPreference,
         subtitlePreference: input.subtitlePreference,
         qualityPreference: input.qualityPreference,
+        startupPriority: input.startupPriority,
         selectedSourceId: input.selectedSourceId,
         selectedStreamId: input.selectedStreamId,
       },
@@ -261,6 +264,7 @@ export class PlaybackResolveService {
       episode: input.episode.episode,
       audioMode: input.audioPreference,
       subtitleLanguage: input.subtitlePreference,
+      startupPriority: input.startupPriority,
     };
     const inventoryResult = await this.deps.sourceInventory?.get(inventoryInput);
     if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
@@ -612,6 +616,7 @@ export class PlaybackResolveService {
       audioPreference: input.audioPreference,
       subtitlePreference: input.subtitlePreference,
       qualityPreference: input.qualityPreference,
+      startupPriority: input.startupPriority,
       selectedSourceId: input.selectedSourceId,
       selectedStreamId: input.selectedStreamId,
     });

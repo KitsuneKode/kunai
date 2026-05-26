@@ -7,9 +7,10 @@ import type {
   MediaKind,
   ProviderResolveResult,
   ProviderRuntime,
+  StartupPriority,
 } from "@kunai/types";
 
-export const SOURCE_INVENTORY_SCHEMA_VERSION = "v2";
+export const SOURCE_INVENTORY_SCHEMA_VERSION = "v3";
 
 export type SourceInventoryCacheInput = {
   readonly providerId: string;
@@ -20,6 +21,7 @@ export type SourceInventoryCacheInput = {
   readonly absoluteEpisode?: number;
   readonly audioMode?: string;
   readonly subtitleLanguage?: string;
+  readonly startupPriority?: StartupPriority;
   readonly runtime?: ProviderRuntime;
   readonly schemaVersion?: string;
 };
@@ -136,6 +138,7 @@ export class SourceInventoryService {
         mediaKind: input.mediaKind,
         runtime: input.runtime,
         schemaVersion: input.schemaVersion ?? SOURCE_INVENTORY_SCHEMA_VERSION,
+        startupPriority: input.startupPriority ?? "balanced",
         ...context,
       },
     });
@@ -159,6 +162,7 @@ export function buildSourceInventoryCachePreimage(input: SourceInventoryCacheInp
     normalizePart(input.absoluteEpisode),
     normalizePart(input.audioMode),
     normalizePart(input.subtitleLanguage),
+    normalizePart(input.startupPriority ?? "balanced"),
     normalizePart(input.runtime),
   ].join("\0");
 }

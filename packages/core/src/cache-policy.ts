@@ -1,4 +1,10 @@
-import type { CachePolicy, EpisodeIdentity, ProviderId, TitleIdentity } from "@kunai/types";
+import type {
+  CachePolicy,
+  EpisodeIdentity,
+  ProviderId,
+  StartupPriority,
+  TitleIdentity,
+} from "@kunai/types";
 
 export interface ProviderCacheKeyInput {
   readonly providerId: ProviderId;
@@ -6,6 +12,7 @@ export interface ProviderCacheKeyInput {
   readonly episode?: Pick<EpisodeIdentity, "season" | "episode" | "absoluteEpisode">;
   readonly subtitleLanguage?: string;
   readonly qualityPreference?: string;
+  readonly startupPriority?: StartupPriority;
 }
 
 export function createProviderCachePolicy(
@@ -32,6 +39,7 @@ export function createProviderCacheKeyParts(input: ProviderCacheKeyInput): reado
     normalizePart(input.episode?.absoluteEpisode),
     normalizePart(input.subtitleLanguage),
     normalizePart(input.qualityPreference),
+    normalizePart(input.startupPriority ?? "balanced"),
   ];
 }
 

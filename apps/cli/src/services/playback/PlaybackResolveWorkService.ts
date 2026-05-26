@@ -71,6 +71,7 @@ export class PlaybackResolveWorkService {
       audioPreference: input.audioPreference,
       subtitlePreference: input.subtitlePreference,
       qualityPreference: input.qualityPreference,
+      startupPriority: input.startupPriority,
       selectedSourceId: input.selectedSourceId,
       selectedStreamId: input.selectedStreamId,
       purpose: resolveWorkPurposeForIntent(request.intentKind),

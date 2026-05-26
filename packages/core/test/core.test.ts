@@ -170,6 +170,7 @@ test("provider cache policy normalizes deterministic key parts", () => {
     title: { id: "TMDB 438631", kind: "movie" },
     subtitleLanguage: "English",
     qualityPreference: "1080p",
+    startupPriority: "fast",
   });
 
   expect(policy.keyParts).toEqual([
@@ -182,6 +183,7 @@ test("provider cache policy normalizes deterministic key parts", () => {
     "none",
     "english",
     "1080p",
+    "fast",
   ]);
   expect(policy.allowStale).toBe(true);
 });

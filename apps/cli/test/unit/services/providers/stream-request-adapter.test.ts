@@ -41,3 +41,22 @@ test("streamRequestToResolveInput preserves provider-native ids for anime resolv
   expect(input.preferredSourceId).toBe("source-a");
   expect(input.preferredStreamId).toBe("stream-a-1080");
 });
+
+test("streamRequestToResolveInput maps startup priority", () => {
+  const input = streamRequestToResolveInput(
+    {
+      title: {
+        id: "1396",
+        type: "series",
+        name: "Breaking Bad",
+      },
+      episode: { season: 1, episode: 2 },
+      audioPreference: "original",
+      subtitlePreference: "en",
+      startupPriority: "fast",
+    },
+    "series",
+  );
+
+  expect(input.startupPriority).toBe("fast");
+});

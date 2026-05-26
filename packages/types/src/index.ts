@@ -39,6 +39,26 @@ export type StreamPresentation = "sub" | "dub" | "raw";
 
 export type SubtitleDelivery = "hardcoded" | "embedded" | "external";
 
+export type StartupPriority = "fast" | "balanced" | "quality-first";
+
+export type ProviderSelectionReason =
+  | "fast-start"
+  | "balanced-1080"
+  | "balanced-ready"
+  | "balanced-budget-expired"
+  | "quality-first"
+  | "explicit-source"
+  | "ak-required"
+  | "provider-fallback";
+
+export interface ProviderSelectionDecision {
+  readonly startupPriority: StartupPriority;
+  readonly reason: ProviderSelectionReason;
+  readonly waitBudgetMs: number;
+  readonly selectedQualityRank?: number;
+  readonly enrichmentLane: "required" | "optional-foreground" | "late";
+}
+
 export interface CachePolicy {
   readonly ttlClass: CacheTtlClass;
   readonly ttlMs?: number;
@@ -344,6 +364,7 @@ export interface ProviderResolveInput {
   readonly preferredPresentation?: StreamPresentation;
   readonly preferredSubtitleDelivery?: SubtitleDelivery;
   readonly qualityPreference?: string;
+  readonly startupPriority?: StartupPriority;
   readonly regionHint?: string;
   readonly intent: "browse" | "focused" | "prefetch" | "play" | "refresh" | "autoplay";
   readonly allowedRuntimes: readonly ProviderRuntime[];
@@ -425,6 +446,7 @@ export interface ProviderEpisodeOption {
 export interface ProviderResolveResult extends ProviderSourceInventory {
   readonly status: "resolved" | "exhausted";
   readonly cachePolicy?: CachePolicy;
+  readonly selectionDecision?: ProviderSelectionDecision;
   readonly trace: ResolveTrace;
   readonly failures: readonly ProviderFailure[];
   readonly healthDelta?: ProviderHealthDelta;

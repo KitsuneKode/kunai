@@ -34,6 +34,12 @@ describe("ResolveWorkLedger", () => {
     );
   });
 
+  test("separates startup priority in work identity", () => {
+    expect(buildResolveWorkKey({ ...identity, startupPriority: "fast" })).not.toBe(
+      buildResolveWorkKey({ ...identity, startupPriority: "quality-first" }),
+    );
+  });
+
   test("records joined lane and intent separately from work identity", () => {
     const ledger = createResolveWorkLedger({
       identity,

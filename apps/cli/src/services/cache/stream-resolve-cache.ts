@@ -7,6 +7,7 @@
 
 import type { TitleInfo, EpisodeInfo } from "@/domain/types";
 import type { CoreProviderManifest } from "@kunai/core";
+import type { StartupPriority } from "@kunai/types";
 
 /** Preimage for API-style resolves (hashed by CacheStore implementation). */
 export function buildApiStreamResolveCacheKey(input: {
@@ -18,6 +19,7 @@ export function buildApiStreamResolveCacheKey(input: {
   readonly audioPreference: string;
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
+  readonly startupPriority?: StartupPriority;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
 }): string {
@@ -39,6 +41,7 @@ function buildManifestDrivenPolicyParts(input: {
   readonly audioPreference: string;
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
+  readonly startupPriority?: StartupPriority;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
 }): readonly string[] {
@@ -52,6 +55,7 @@ function buildManifestDrivenPolicyParts(input: {
     "audio",
     "subtitle",
     "quality",
+    "startup",
     "source",
     "stream",
   ];
@@ -69,6 +73,7 @@ function resolveToken(
     readonly audioPreference: string;
     readonly subtitlePreference: string;
     readonly qualityPreference?: string;
+    readonly startupPriority?: StartupPriority;
     readonly selectedSourceId?: string;
     readonly selectedStreamId?: string;
   },
@@ -91,6 +96,8 @@ function resolveToken(
       return normalizePart(input.subtitlePreference);
     case "quality":
       return normalizePart(input.qualityPreference);
+    case "startup":
+      return normalizePart(input.startupPriority ?? "balanced");
     case "source":
       return normalizePart(input.selectedSourceId);
     case "stream":

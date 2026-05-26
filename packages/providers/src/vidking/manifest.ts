@@ -32,6 +32,7 @@ export const vidkingManifest = defineProviderManifest({
       "episode",
       "subtitle",
       "quality",
+      "startup",
       "source",
       "stream",
     ],

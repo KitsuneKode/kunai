@@ -7,6 +7,7 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import type { CoreProviderManifest, CoreProviderModule } from "@kunai/core";
+import type { StartupPriority } from "@kunai/types";
 
 export interface StreamRequest {
   title: TitleInfo;
@@ -14,6 +15,7 @@ export interface StreamRequest {
   audioPreference: string;
   subtitlePreference: string;
   qualityPreference?: string;
+  startupPriority?: StartupPriority;
 }
 
 export interface EpisodeListRequest {

@@ -38,6 +38,7 @@ export const allanimeManifest = defineProviderManifest({
       "audio",
       "subtitle",
       "quality",
+      "startup",
       "source",
       "stream",
     ],
