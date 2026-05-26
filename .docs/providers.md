@@ -103,6 +103,14 @@ Subtitle policy:
 - providers expose every usable subtitle candidate they found
 - playback should attach all usable subtitle tracks to mpv when possible so users can switch without restarting
 - missing subtitles should be explicit trace/diagnostic information, not a silent absence
+- late subtitle lookup is allowed after playback starts when provider/cache inventory does not include the configured subtitle language; merely having some unrelated subtitle track must not block Wyzie fallback
+
+Startup priority policy:
+
+- `balanced` is the default and prefers a ready 1080p-or-better candidate when available without extra foreground work.
+- `fast` selects the first validated ready stream from the provider-local cycle, even if returned inventory is displayed quality-sorted.
+- `quality-first` may spend a bounded foreground budget on richer candidates such as AllManga `Ak`, but required fallback work is not bounded away when baseline candidates are unusable.
+- Startup priority is part of stream-result cache, source-inventory, and resolve-work identity so `fast` and `quality-first` results do not masquerade as each other.
 
 Source inventory and language normalization:
 

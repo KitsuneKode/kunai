@@ -153,6 +153,8 @@ Treat subtitle state as evidence, not a boolean:
 - `disabled`: user preference is `none`; no provider work is needed.
 - `attached`: a subtitle URL was selected and passed to mpv.
 - `tracks available`: provider exposed tracks, but selection still needs to choose one.
+- `inventory-satisfied`: provider/cache inventory includes a subtitle matching the configured language, so late Wyzie lookup is skipped.
+- `needs-lookup`: playback can start now, then a late Wyzie lookup should attempt to attach matching subtitles when the player is ready.
 - `not found`: provider/embed did not expose subtitle evidence for this item.
 - `api failed`: subtitle inventory lookup failed or returned invalid data.
 - `search not observed`: the scraper saw the stream request before any subtitle request appeared.
@@ -162,6 +164,7 @@ Current provider behavior:
 - API providers can return subtitles directly with the stream.
 - Playwright/embed providers depend on observed network requests from the embed player.
 - Vidking subtitles usually come from either a direct subtitle file request or a `sub.wyzie.io/search` request.
+- If mpv reports that `sub-add` did not answer, treat it as late subtitle attachment evidence, not proof that playback died. Check the late subtitle attach outcome, active player state, and mpv track list before blaming provider resolution.
 
 ## When Adding Or Fixing Providers
 

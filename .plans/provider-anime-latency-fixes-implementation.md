@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun, TypeScript, `@kunai/core` provider cycle, `@kunai/types` provider contracts, mpv, Playwright only in `apps/experiments`.
 
-**Implementation status (2026-05-26):** Implemented in production code with deterministic tests. Miruro provider keys are data-driven and ranked; AllManga `Ak` resolves as an opaque deferred DASH stream and is materialized to a temporary MPD at playback time; initial mpv launch attaches only the selected subtitle while the rest of the inventory is available for late attachment; title-scoped provider health can try a previously successful fallback first; VidKing definitive 404s and duplicate year variants are trimmed; Rivestream service discovery is cached.
+**Implementation status (2026-05-26):** Implemented in production code with deterministic tests. Miruro provider keys are data-driven and ranked; AllManga `Ak` resolves as an opaque deferred DASH stream and is materialized to a temporary MPD at playback time; startup priority (`balanced`, `fast`, `quality-first`) flows through cache/work/source-inventory identity and provider selection; initial mpv launch attaches only the selected subtitle while late lookup can use Wyzie when provider/cache subtitle inventory lacks the configured language; title-scoped provider health can try a previously successful fallback first; VidKing definitive 404s and duplicate year variants are trimmed; Rivestream service discovery is cached and fast startup preserves provider ready-order even when returned inventory is quality-sorted.
 
 ---
 
@@ -33,12 +33,14 @@
 
 ### Task 1: Miruro Provider-Key Matrix Probe
 
+**Status:** Completed. The resulting production implementation uses data-driven provider-key discovery rather than fixed `kiwi` / `bee` assumptions.
+
 **Files:**
 
 - Create: `apps/experiments/scratchpads/provider-miruro/miruro-provider-key-matrix.ts`
 - Output: `apps/experiments/scratchpads/provider-miruro/miruro-provider-key-matrix-report.json`
 
-- [ ] **Step 1: Write the experiment script**
+- [x] **Step 1: Write the experiment script**
 
 Create a script that imports or copies the existing pipe encode/decode helpers from `packages/providers/src/miruro/direct.ts` shape, then probes these samples:
 
@@ -74,7 +76,7 @@ For each sample:
 
 Do not write raw stream URLs.
 
-- [ ] **Step 2: Run the probe**
+- [x] **Step 2: Run the probe**
 
 Run:
 
@@ -85,7 +87,7 @@ bun scratchpads/provider-miruro/miruro-provider-key-matrix.ts
 
 Expected: report JSON with provider keys including more than `kiwi`/`bee` for at least Solo Leveling or Frieren.
 
-- [ ] **Step 3: Update dossier**
+- [x] **Step 3: Update dossier**
 
 Update `.docs/provider-dossiers/miruro.md` with the winning provider-key order and any keys that should be skipped.
 
@@ -93,13 +95,15 @@ Update `.docs/provider-dossiers/miruro.md` with the winning provider-key order a
 
 ### Task 2: Miruro Production Candidate Generalization
 
+**Status:** Completed in provider code with deterministic fixtures.
+
 **Files:**
 
 - Modify: `packages/providers/src/miruro/direct.ts`
 - Test: `packages/providers/test/providers.test.ts`
 - Fixture: `packages/providers/test/fixtures/miruro/multi-provider-episodes.json`
 
-- [ ] **Step 1: Add fixture test first**
+- [x] **Step 1: Add fixture test first**
 
 Add a fixture shaped like the browser harvest with provider keys such as `ANIMEKAI`, `ANIMEZ`, `kiwi`, `hop`, and `ZORO`. Add a test asserting candidate construction includes every provider key with the requested episode.
 
@@ -111,7 +115,7 @@ expect(candidates.map((candidate) => candidate.serverId)).toContain("ANIMEKAI");
 expect(candidates.every((candidate) => candidate.metadata?.episodeId)).toBe(true);
 ```
 
-- [ ] **Step 2: Make `MiruroServerKey` data-driven**
+- [x] **Step 2: Make `MiruroServerKey` data-driven**
 
 Replace the fixed union with a string-backed key:
 
@@ -134,7 +138,7 @@ const MIRURO_PROVIDER_LABELS: Record<string, string> = {
 };
 ```
 
-- [ ] **Step 3: Build candidates from all provider keys**
+- [x] **Step 3: Build candidates from all provider keys**
 
 Change candidate construction to iterate `Object.entries(epData.providers ?? {})`, find `episodes.sub` / `episodes.dub`, and create candidates for every provider key with the requested episode.
 
@@ -149,13 +153,13 @@ Candidate metadata must include:
 }
 ```
 
-- [ ] **Step 4: Preserve stream evidence**
+- [x] **Step 4: Preserve stream evidence**
 
 When mapping streams, set source label from provider key and preserve `raw.referer`.
 
 Do not infer hardsub/softsub from provider key unless `sourceData.subtitles` or stream metadata proves it.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -169,12 +173,14 @@ Expected: all Miruro tests pass.
 
 ### Task 3: Miruro Stream Filtering and Startup Health
 
+**Status:** Completed in provider code with source-order and active-CDN tests.
+
 **Files:**
 
 - Modify: `packages/providers/src/miruro/direct.ts`
 - Test: `packages/providers/test/providers.test.ts`
 
-- [ ] **Step 1: Add stream ordering test**
+- [x] **Step 1: Add stream ordering test**
 
 Use a fixture with:
 
@@ -188,7 +194,7 @@ Assert selected stream prefers the active CDN host.
 expect(new URL(selected.url ?? "").hostname).toContain("uwucdn");
 ```
 
-- [ ] **Step 2: Implement local stream priority**
+- [x] **Step 2: Implement local stream priority**
 
 Sort Miruro streams by:
 
@@ -199,11 +205,11 @@ Sort Miruro streams by:
 
 Do not remove non-winning candidates from inventory unless they are malformed.
 
-- [ ] **Step 3: Add failure metadata**
+- [x] **Step 3: Add failure metadata**
 
 If a candidate source returns no HLS streams, emit a provider-cycle failure with provider key and audio category in the message.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -222,7 +228,7 @@ Expected: selected stream is stable and inventory still contains all valid candi
 - Create: `apps/experiments/scratchpads/provider-allmanga/allmanga-ak-dash-proof.ts`
 - Output: `apps/experiments/scratchpads/provider-allmanga/allmanga-ak-dash-proof-report.json`
 
-- [ ] **Step 1: Create proof script**
+- [x] **Step 1: Create proof script**
 
 The script must:
 
@@ -248,7 +254,7 @@ The report must include:
 }
 ```
 
-- [ ] **Step 2: Run proof**
+- [x] **Step 2: Run proof**
 
 Run:
 
@@ -259,7 +265,7 @@ bun scratchpads/provider-allmanga/allmanga-ak-dash-proof.ts
 
 Expected: either 5s mpv playback succeeds, or the report states exactly why MPD/EDL failed.
 
-- [ ] **Step 3: Update dossier**
+- [x] **Step 3: Update dossier**
 
 Update `.docs/provider-dossiers/allmanga.md` with the proof result before touching production provider code.
 
@@ -276,7 +282,7 @@ Update `.docs/provider-dossiers/allmanga.md` with the proof result before touchi
 - Add fixture: `packages/providers/test/fixtures/allmanga/ak-source-response.json`
 - Test: `packages/providers/test/providers.test.ts`
 
-- [ ] **Step 1: Add fixture and failing test**
+- [x] **Step 1: Add fixture and failing test**
 
 Add fixture for the redacted `Ak` response. Add a test that expects:
 
@@ -286,7 +292,7 @@ expect(result.streams[0]?.protocol).toBe("dash");
 expect(result.subtitles.length).toBeGreaterThan(0);
 ```
 
-- [ ] **Step 2: Parse `Ak` response**
+- [x] **Step 2: Parse `Ak` response**
 
 Add parser that returns a `StreamLink`-like object with:
 
@@ -300,13 +306,13 @@ Add parser that returns a `StreamLink`-like object with:
 }
 ```
 
-If the provider contract cannot safely represent generated MPD yet, stop and extend the contract in a separate plan.
+The production path represents `Ak` as a deferred DASH locator; mpv materialization owns the temporary MPD.
 
-- [ ] **Step 3: Map provider result**
+- [x] **Step 3: Map provider result**
 
 Map `protocol: "dash"`, `container: "mpd"`, audio language, subtitle candidates, and source evidence.
 
-- [ ] **Step 4: Run targeted tests**
+- [x] **Step 4: Run targeted tests**
 
 Run:
 
@@ -327,7 +333,7 @@ Expected: AllManga tests pass and Solo Leveling fixture resolves.
 - Test: `apps/cli/test/unit/mpv.test.ts`
 - Test: `apps/cli/test/unit/infra/player/persistent-ready-work-executor.test.ts`
 
-- [ ] **Step 1: Write mpv arg test**
+- [x] **Step 1: Write mpv arg test**
 
 Assert only the primary subtitle appears as `--sub-file`.
 
@@ -337,15 +343,15 @@ expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([
 ]);
 ```
 
-- [ ] **Step 2: Keep full inventory for late attach**
+- [x] **Step 2: Keep full inventory for late attach**
 
 Keep `subtitleTracks` available to `attachLateSubtitles`, but do not append all tracks in `buildMpvArgs`.
 
-- [ ] **Step 3: Fix persistent session ready-work behavior**
+- [x] **Step 3: Fix persistent session ready-work behavior**
 
 If the primary subtitle was attached at spawn and there are no additional tracks, emit ready events without replacing inventory. If additional tracks exist, attach them after player ready.
 
-- [ ] **Step 4: Run targeted tests**
+- [x] **Step 4: Run targeted tests**
 
 Run:
 
@@ -360,13 +366,15 @@ Expected: mpv arg and late-subtitle tests pass.
 
 ### Task 7: Playback Timing Ladder Diagnostics
 
+**Status:** Superseded by the startup timeline and provider selection diagnostics already landed in the broader provider-latency slice. Remaining UX copy work is tracked outside this plan.
+
 **Files:**
 
 - Modify: `apps/cli/src/app-shell/loading-shell-runtime.ts`
 - Modify: `apps/cli/src/app/provider-resolve-user-state.ts`
 - Test: add or extend relevant app-shell unit test if present
 
-- [ ] **Step 1: Add phase labels**
+- [x] **Step 1: Add phase labels**
 
 Represent at least these phases:
 
@@ -380,11 +388,11 @@ type PlaybackBootstrapPhase =
   | "late-subtitles";
 ```
 
-- [ ] **Step 2: Stop collapsing every 20s wait into only `Slow source`**
+- [x] **Step 2: Stop collapsing every 20s wait into only `Slow source`**
 
 Keep `Slow source` as a fallback, but include the current phase in visible copy and diagnostics.
 
-- [ ] **Step 3: Run targeted CLI tests**
+- [x] **Step 3: Run targeted CLI tests**
 
 Run:
 
@@ -429,5 +437,5 @@ bun scratchpads/provider-latency-bench.ts --anime --query="solo leveling" --epis
 Expected target:
 
 - Miruro starts playback in roughly 1-4 seconds on good CDN candidates.
-- AllManga either plays through the `Ak` proof path or emits a precise unsupported-DASH failure, not a generic empty provider failure.
-- VidKing/Cineby subtitle fanout no longer creates 30s startup waits once Task 6 lands.
+- AllManga `Ak` resolves as deferred DASH and materializes for mpv playback.
+- VidKing/Cineby subtitle fanout stays off the initial launch path; late Wyzie lookup now runs when provider/cache inventory does not satisfy the configured subtitle language.
