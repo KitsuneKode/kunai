@@ -28,6 +28,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { selectReadyStream } from "../shared/startup-selection";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 
@@ -294,15 +295,21 @@ export function createMiruroResultFromPayload({
   }
 
   variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
-  const selectedStream =
-    streams.find((s) => s.qualityLabel?.includes(input.qualityPreference || "")) ?? streams[0];
-  if (!selectedStream) return null;
+  const selectableStreams = streams.slice(0, 1);
+  const selection = selectReadyStream(selectableStreams, {
+    startupPriority: input.startupPriority,
+    qualityPreference: input.qualityPreference,
+    preferredStreamId: input.preferredStreamId,
+    preferredSourceId: input.preferredSourceId,
+  });
+  const selectedStream = selection.selected;
 
   const endedAt = context?.now() ?? new Date().toISOString();
   return {
     status: "resolved",
     providerId: MIRURO_PROVIDER_ID,
     selectedStreamId: selectedStream.id,
+    selectionDecision: selection.decision,
     sources: [
       {
         id: sourceId,

@@ -342,6 +342,7 @@ test("vidking evidence fixture preserves native server labels beside ISO audio l
       mediaKind: "movie",
       preferredAudioLanguage: expected.normalizedLanguage,
       preferredPresentation: "raw",
+      startupPriority: "balanced",
       intent: "play",
       allowedRuntimes: ["direct-http"],
     },
@@ -370,6 +371,41 @@ test("vidking evidence fixture preserves native server labels beside ISO audio l
     ],
   });
   expect(result?.variants?.[0]?.languageEvidence).toEqual(result?.streams[0]?.languageEvidence);
+  expect(result?.selectionDecision).toMatchObject({
+    startupPriority: "balanced",
+    reason: "balanced-1080",
+    selectedQualityRank: 1080,
+  });
+});
+
+test("vidking fixture fast startup keeps the first ready stream", async () => {
+  const payload = await readFixture<
+    Parameters<typeof createVidkingResultFromPayload>[0]["payload"]
+  >("vidking/source-payload.json");
+  const result = createVidkingResultFromPayload({
+    input: {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+        year: 2021,
+      },
+      mediaKind: "movie",
+      startupPriority: "fast",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    payload,
+    server: "Kiwi",
+  });
+
+  expect(result?.selectedStreamId).toBe(result?.streams[0]?.id);
+  expect(result?.selectionDecision).toMatchObject({
+    startupPriority: "fast",
+    reason: "fast-start",
+    selectedQualityRank: result?.streams[0]?.qualityRank,
+  });
 });
 
 test("rivestream falls back to static provider services when service discovery is unavailable", async () => {
@@ -384,6 +420,7 @@ test("rivestream falls back to static provider services when service discovery i
         title: "Fallback Probe",
       },
       mediaKind: "movie",
+      startupPriority: "balanced",
       intent: "play",
       allowedRuntimes: ["direct-http"],
     },
@@ -469,6 +506,47 @@ test("rivestream evidence fixture preserves provider server label and normalized
     ],
   });
   expect(result.subtitles[0]?.language).toBe(expected.subtitleLanguage);
+  expect(result.selectionDecision).toMatchObject({
+    startupPriority: "balanced",
+    reason: "balanced-1080",
+    selectedQualityRank: 1080,
+  });
+});
+
+test("rivestream fixture fast startup keeps the first ready stream", async () => {
+  const services = await readFixture<unknown>("rivestream/services-response.json");
+  const source = await readFixture<unknown>("rivestream/source-response.json");
+  const result = await rivestreamProviderModule.resolve(
+    {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+        year: 2021,
+      },
+      mediaKind: "movie",
+      startupPriority: "fast",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-05-20T00:00:00.000Z",
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input) =>
+          jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
+      },
+    },
+  );
+
+  expect(result.status).toBe("resolved");
+  expect(result.selectedStreamId).toBe(result.streams[0]?.id);
+  expect(result.selectionDecision).toMatchObject({
+    startupPriority: "fast",
+    reason: "fast-start",
+    selectedQualityRank: result.streams[0]?.qualityRank,
+  });
 });
 
 test("rivestream caches provider services across cold resolves", async () => {
@@ -533,6 +611,7 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
       },
       episode: { episode: 1 },
       mediaKind: "anime",
+      startupPriority: "balanced",
       intent: "play",
       allowedRuntimes: ["direct-http"],
     },
@@ -570,6 +649,48 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
     },
   });
   expect(result?.subtitles[0]?.language).toBe(expected.subtitleLanguage);
+  expect(result?.selectionDecision).toMatchObject({
+    startupPriority: "balanced",
+    reason: "balanced-1080",
+    selectedQualityRank: 1080,
+  });
+});
+
+test("miruro fixture fast startup keeps the first ready stream", async () => {
+  const sourceData = await readFixture<
+    Parameters<typeof createMiruroResultFromPayload>[0]["sourceData"]
+  >("miruro/source-response.json");
+  const result = createMiruroResultFromPayload({
+    input: {
+      title: {
+        id: "anilist:999",
+        anilistId: "999",
+        kind: "anime",
+        title: "Evidence Fox",
+      },
+      episode: { episode: 1 },
+      mediaKind: "anime",
+      startupPriority: "fast",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    sourceData,
+    audioCategory: "sub",
+    serverProfile: {
+      id: "kiwi",
+      label: "Kiwi",
+      subtitleDelivery: "hardcoded",
+      hardSubLanguage: "en",
+    },
+    context: { now: () => "2026-05-20T00:00:00.000Z" },
+  });
+
+  expect(result?.selectedStreamId).toBe(result?.streams[0]?.id);
+  expect(result?.selectionDecision).toMatchObject({
+    startupPriority: "fast",
+    reason: "fast-start",
+    selectedQualityRank: result?.streams[0]?.qualityRank,
+  });
 });
 
 test("miruro source cycling orders preferred subtitle delivery before fallback audio", () => {

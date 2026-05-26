@@ -40,6 +40,7 @@ import {
   qualityRankFromLabel,
   normalizeQualityLabel,
 } from "../shared/source-inventory";
+import { selectReadyStream } from "../shared/startup-selection";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
 
@@ -481,7 +482,13 @@ export function createVidkingResultFromPayload({
     cachePolicy: policy,
     sourceId: resolvedSourceId,
   });
-  const selectedStream = selectStreamCandidate(streams, input.qualityPreference);
+  const selection = selectReadyStream(streams, {
+    startupPriority: input.startupPriority,
+    qualityPreference: input.qualityPreference,
+    preferredStreamId: input.preferredStreamId,
+    preferredSourceId: input.preferredSourceId,
+  });
+  const selectedStream = selection.selected;
   const orderedSubtitles = orderSubtitleCandidates(
     subtitles,
     input.preferredSubtitleLanguage ?? "en",
@@ -538,6 +545,7 @@ export function createVidkingResultFromPayload({
     status: "resolved",
     providerId: VIDKING_PROVIDER_ID,
     selectedStreamId: selectedStream.id,
+    selectionDecision: selection.decision,
     sources: [
       {
         id: resolvedSourceId,
@@ -1036,29 +1044,6 @@ function createVariantCandidates({
     }),
     subtitleIds: subtitles.map((subtitle) => subtitle.id),
   }));
-}
-
-function selectStreamCandidate(
-  streams: readonly StreamCandidate[],
-  qualityPreference: string | undefined,
-): StreamCandidate {
-  if (qualityPreference) {
-    const normalized = qualityPreference.toLowerCase();
-    const matched = streams.find((stream) =>
-      stream.qualityLabel?.toLowerCase().includes(normalized),
-    );
-    if (matched) {
-      return matched;
-    }
-  }
-
-  const [best] = [...streams].sort(
-    (left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0),
-  );
-  if (!best) {
-    throw new Error("Cannot select a preferred VidKing stream from an empty candidate list");
-  }
-  return best;
 }
 
 function orderSubtitleCandidates(

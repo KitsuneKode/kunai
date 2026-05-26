@@ -37,6 +37,7 @@ import {
   normalizeQualityLabel,
   qualityRankFromLabel,
 } from "../shared/source-inventory";
+import { selectReadyStream } from "../shared/startup-selection";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 
@@ -427,11 +428,13 @@ export const rivestreamProviderModule: CoreProviderModule = {
       streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
       variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
 
-      const selectedStream =
-        streams.find((s) => s.qualityLabel?.includes(input.qualityPreference || "")) || streams[0];
-      if (!selectedStream) {
-        throw new Error("No selectable Rivestream streams were mapped.");
-      }
+      const selection = selectReadyStream(streams, {
+        startupPriority: input.startupPriority,
+        qualityPreference: input.qualityPreference,
+        preferredStreamId: input.preferredStreamId,
+        preferredSourceId: input.preferredSourceId,
+      });
+      const selectedStream = selection.selected;
 
       emitTraceEvent(events, context, {
         type: "provider:success",
@@ -445,6 +448,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         status: "resolved",
         providerId: RIVESTREAM_PROVIDER_ID,
         selectedStreamId: selectedStream.id,
+        selectionDecision: selection.decision,
         sources: [
           {
             ...createSourceCandidateFromStream({
