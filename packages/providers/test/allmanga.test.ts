@@ -205,11 +205,21 @@ describe("AllManga provider evidence fixtures", () => {
     const expected = await readFixture<ExpectedAllMangaContract>("expected-normalized.json");
 
     const sub = await resolveEvidenceEpisode({
-      title: { externalIds: expected.search.externalIds },
+      title: {
+        id: "allanime:show-allmanga-evidence",
+        kind: "anime",
+        title: "Evidence Fox",
+        externalIds: expected.search.externalIds,
+      },
       preferredAudioLanguage: "ja",
     });
     const dub = await resolveEvidenceEpisode({
-      title: { externalIds: expected.search.externalIds },
+      title: {
+        id: "allanime:show-allmanga-evidence",
+        kind: "anime",
+        title: "Evidence Fox",
+        externalIds: expected.search.externalIds,
+      },
       preferredAudioLanguage: "en",
     });
 

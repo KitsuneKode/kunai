@@ -201,7 +201,7 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
   expect(result.providerId).toBe("fallback");
   expect(result.stream).not.toBeNull();
   expect(result.stream!.url).toBe(fallbackStream.url);
-  expect(observedResolveInput?.startupPriority).toBe("fast");
+  expect((observedResolveInput as ProviderResolveInput | null)?.startupPriority).toBe("fast");
 });
 
 test("PlaybackResolveService does not cache deferred media locators", async () => {

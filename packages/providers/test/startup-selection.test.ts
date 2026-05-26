@@ -6,8 +6,8 @@ import { selectReadyStream } from "../src/shared/startup-selection";
 
 describe("selectReadyStream", () => {
   const candidates = [
-    { id: "720", providerId: "test", qualityRank: 720 },
-    { id: "1080", providerId: "test", qualityRank: 1080 },
+    streamCandidate({ id: "720", qualityRank: 720 }),
+    streamCandidate({ id: "1080", qualityRank: 1080 }),
   ] as const satisfies readonly StreamCandidate[];
 
   test("balanced selects the highest ready quality", () => {
@@ -41,8 +41,8 @@ describe("selectReadyStream", () => {
     ).toBe("explicit-source");
 
     const sourceCandidates = [
-      { id: "720", providerId: "test", sourceId: "source:test:720", qualityRank: 720 },
-      { id: "1080", providerId: "test", sourceId: "source:test:1080", qualityRank: 1080 },
+      streamCandidate({ id: "720", sourceId: "source:test:720", qualityRank: 720 }),
+      streamCandidate({ id: "1080", sourceId: "source:test:1080", qualityRank: 1080 }),
     ] as const satisfies readonly StreamCandidate[];
 
     expect(
@@ -53,3 +53,19 @@ describe("selectReadyStream", () => {
     ).toBe("explicit-source");
   });
 });
+
+function streamCandidate(
+  overrides: Pick<StreamCandidate, "id"> & Partial<StreamCandidate>,
+): StreamCandidate {
+  return {
+    providerId: "test",
+    protocol: "hls",
+    confidence: 1,
+    cachePolicy: {
+      ttlClass: "stream-manifest",
+      scope: "local",
+      keyParts: [],
+    },
+    ...overrides,
+  };
+}
