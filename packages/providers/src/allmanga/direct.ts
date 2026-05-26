@@ -197,6 +197,7 @@ export const allmangaProviderModule: CoreProviderModule = {
       const epStr = resolveAnimeEpisodeString(episodes, episodeNum);
 
       const explicitAk = isExplicitAkSelection(input);
+      let triedAk = explicitAk;
       let links = await resolveEpisodeSources({
         apiUrl: ALLANIME_API_URL,
         referer: ALLANIME_REFERER,
@@ -219,6 +220,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           sourceLane: "ak-only",
           signal: context.signal,
         });
+        triedAk = true;
       }
 
       if (links.length === 0) {
@@ -230,191 +232,216 @@ export const allmangaProviderModule: CoreProviderModule = {
       const subtitles: SubtitleCandidate[] = [];
 
       // Map the links to our strict format
-      for (const link of links) {
-        if (!link.url) continue;
+      const mapLinks = (sourceLinks: typeof links) => {
+        for (const link of sourceLinks) {
+          if (!link.url) continue;
 
-        const qualityStr = link.quality || "auto";
-        const protocol = link.protocol ?? (link.url.includes(".m3u8") ? "hls" : "mp4");
-        const sourceName =
-          protocol === "dash"
-            ? "Ak"
-            : qualityStr.includes("HLS") || protocol === "hls"
-              ? "FM-HLS"
-              : "VID-MP4";
-        const sourceLabel = normalizeProviderDisplayLabel(sourceName) ?? sourceName;
-        const sourceId = `source:${ALLANIME_PROVIDER_ID}:${sourceName.toLowerCase()}`;
+          const qualityStr = link.quality || "auto";
+          const protocol = link.protocol ?? (link.url.includes(".m3u8") ? "hls" : "mp4");
+          const sourceName =
+            protocol === "dash"
+              ? "Ak"
+              : qualityStr.includes("HLS") || protocol === "hls"
+                ? "FM-HLS"
+                : "VID-MP4";
+          const sourceLabel = normalizeProviderDisplayLabel(sourceName) ?? sourceName;
+          const sourceId = `source:${ALLANIME_PROVIDER_ID}:${sourceName.toLowerCase()}`;
 
-        const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
-        const variantId = `variant:${ALLANIME_PROVIDER_ID}:${sourceId}:${qualityStr}`;
+          const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
+          const variantId = `variant:${ALLANIME_PROVIDER_ID}:${sourceId}:${qualityStr}`;
 
-        const headers = buildStreamHeaders(link.referer, ALLANIME_REFERER, DEFAULT_UA);
+          const headers = buildStreamHeaders(link.referer, ALLANIME_REFERER, DEFAULT_UA);
 
-        streams.push({
-          id: streamId,
-          providerId: ALLANIME_PROVIDER_ID,
-          sourceId,
-          variantId,
-          ...(link.deferredLocator ? { deferredLocator: link.deferredLocator } : { url: link.url }),
-          protocol,
-          container:
-            link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
-          audioLanguages: mode === "sub" ? ["ja"] : mode === "dub" ? ["en"] : [],
-          presentation: mode,
-          hardSubLanguage: mode === "sub" ? "en" : undefined,
-          subtitleDelivery: mode === "sub" ? "hardcoded" : undefined,
-          subtitleLanguages: mode === "sub" ? ["en"] : undefined,
-          qualityLabel: qualityStr,
-          qualityRank: parseInt(qualityStr) || 0,
-          languageEvidence: [
-            {
-              role: "audio",
-              normalizedLanguage: mode === "sub" ? "ja" : "en",
-              nativeLabel: mode,
-              sourceId,
-              confidence: 0.85,
-              metadata: { translationType: mode },
-            },
-            ...(mode === "sub"
-              ? [
-                  {
-                    role: "hardsub" as const,
-                    normalizedLanguage: "en",
-                    nativeLabel: mode,
-                    sourceId,
-                    confidence: 0.75,
-                    metadata: { translationType: mode },
-                  },
-                ]
-              : []),
-          ],
-          sourceEvidence: [
-            {
-              sourceId,
-              nativeLabel: sourceLabel,
-              host: link.deferredLocator ? "allanime.day" : new URL(link.url).hostname,
-              confidence: protocol === "hls" ? 0.95 : 0.85,
-              metadata: { translationType: mode },
-            },
-          ],
-          headers,
-          confidence: protocol === "hls" ? 0.95 : 0.85,
-          cachePolicy,
-        });
-
-        variants.push({
-          id: variantId,
-          providerId: ALLANIME_PROVIDER_ID,
-          sourceId,
-          qualityLabel: qualityStr,
-          qualityRank: parseInt(qualityStr) || 0,
-          protocol,
-          container:
-            link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
-          audioLanguages: mode === "sub" ? ["ja"] : ["en"],
-          presentation: mode,
-          hardSubLanguage: mode === "sub" ? "en" : undefined,
-          subtitleDelivery: mode === "sub" ? "hardcoded" : undefined,
-          streamIds: [streamId],
-          confidence: protocol === "hls" ? 0.95 : 0.85,
-          languageEvidence: [
-            {
-              role: "audio",
-              normalizedLanguage: mode === "sub" ? "ja" : "en",
-              nativeLabel: mode,
-              sourceId,
-              confidence: 0.85,
-              metadata: { translationType: mode },
-            },
-          ],
-        });
-
-        if (link.subtitle) {
-          const subSrc = link.subtitles?.find((s) => s.src === link.subtitle);
-          const subLang = subSrc?.lang ?? "en";
-          const normalizedLang = normalizeIsoLanguageCode(subLang);
-          const subId = `subtitle:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.subtitle).toString(36)}`;
-          subtitles.push({
-            id: subId,
+          streams.push({
+            id: streamId,
             providerId: ALLANIME_PROVIDER_ID,
             sourceId,
-            url: link.subtitle,
-            language: normalizedLang,
-            label: normalizedLang
-              ? (subtitleLanguageDisplayName(normalizedLang) ?? subLang)
-              : subLang,
-            format: subtitleFormatFromUrl(link.subtitle),
-            source: "embedded",
-            confidence: 0.9,
-            cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+            variantId,
+            ...(link.deferredLocator
+              ? { deferredLocator: link.deferredLocator }
+              : { url: link.url }),
+            protocol,
+            container:
+              link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
+            audioLanguages: mode === "sub" ? ["ja"] : mode === "dub" ? ["en"] : [],
+            presentation: mode,
+            hardSubLanguage: mode === "sub" ? "en" : undefined,
+            subtitleDelivery: mode === "sub" ? "hardcoded" : undefined,
+            subtitleLanguages: mode === "sub" ? ["en"] : undefined,
+            qualityLabel: qualityStr,
+            qualityRank: parseInt(qualityStr) || 0,
+            languageEvidence: [
+              {
+                role: "audio",
+                normalizedLanguage: mode === "sub" ? "ja" : "en",
+                nativeLabel: mode,
+                sourceId,
+                confidence: 0.85,
+                metadata: { translationType: mode },
+              },
+              ...(mode === "sub"
+                ? [
+                    {
+                      role: "hardsub" as const,
+                      normalizedLanguage: "en",
+                      nativeLabel: mode,
+                      sourceId,
+                      confidence: 0.75,
+                      metadata: { translationType: mode },
+                    },
+                  ]
+                : []),
+            ],
+            sourceEvidence: [
+              {
+                sourceId,
+                nativeLabel: sourceLabel,
+                host: link.deferredLocator ? "allanime.day" : new URL(link.url).hostname,
+                confidence: protocol === "hls" ? 0.95 : 0.85,
+                metadata: { translationType: mode },
+              },
+            ],
+            headers,
+            confidence: protocol === "hls" ? 0.95 : 0.85,
+            cachePolicy,
           });
-        }
 
-        // Add any additional subtitles that weren't the primary picked one
-        if (link.subtitles) {
-          for (const extra of link.subtitles) {
-            if (extra.src === link.subtitle) continue;
-            if (!extra.src) continue;
-            const normLang = normalizeIsoLanguageCode(extra.lang);
-            const extraId = `subtitle:${ALLANIME_PROVIDER_ID}:${Bun.hash(extra.src).toString(36)}`;
+          variants.push({
+            id: variantId,
+            providerId: ALLANIME_PROVIDER_ID,
+            sourceId,
+            qualityLabel: qualityStr,
+            qualityRank: parseInt(qualityStr) || 0,
+            protocol,
+            container:
+              link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
+            audioLanguages: mode === "sub" ? ["ja"] : ["en"],
+            presentation: mode,
+            hardSubLanguage: mode === "sub" ? "en" : undefined,
+            subtitleDelivery: mode === "sub" ? "hardcoded" : undefined,
+            streamIds: [streamId],
+            confidence: protocol === "hls" ? 0.95 : 0.85,
+            languageEvidence: [
+              {
+                role: "audio",
+                normalizedLanguage: mode === "sub" ? "ja" : "en",
+                nativeLabel: mode,
+                sourceId,
+                confidence: 0.85,
+                metadata: { translationType: mode },
+              },
+            ],
+          });
+
+          if (link.subtitle) {
+            const subSrc = link.subtitles?.find((s) => s.src === link.subtitle);
+            const subLang = subSrc?.lang ?? "en";
+            const normalizedLang = normalizeIsoLanguageCode(subLang);
+            const subId = `subtitle:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.subtitle).toString(36)}`;
             subtitles.push({
-              id: extraId,
+              id: subId,
               providerId: ALLANIME_PROVIDER_ID,
               sourceId,
-              url: extra.src,
-              language: normLang,
-              label: normLang ? (subtitleLanguageDisplayName(normLang) ?? extra.lang) : extra.lang,
-              format: subtitleFormatFromUrl(extra.src),
+              url: link.subtitle,
+              language: normalizedLang,
+              label: normalizedLang
+                ? (subtitleLanguageDisplayName(normalizedLang) ?? subLang)
+                : subLang,
+              format: subtitleFormatFromUrl(link.subtitle),
               source: "embedded",
-              confidence: 0.85,
+              confidence: 0.9,
               cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
             });
           }
+
+          // Add any additional subtitles that weren't the primary picked one
+          if (link.subtitles) {
+            for (const extra of link.subtitles) {
+              if (extra.src === link.subtitle) continue;
+              if (!extra.src) continue;
+              const normLang = normalizeIsoLanguageCode(extra.lang);
+              const extraId = `subtitle:${ALLANIME_PROVIDER_ID}:${Bun.hash(extra.src).toString(36)}`;
+              subtitles.push({
+                id: extraId,
+                providerId: ALLANIME_PROVIDER_ID,
+                sourceId,
+                url: extra.src,
+                language: normLang,
+                label: normLang
+                  ? (subtitleLanguageDisplayName(normLang) ?? extra.lang)
+                  : extra.lang,
+                format: subtitleFormatFromUrl(extra.src),
+                source: "embedded",
+                confidence: 0.85,
+                cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+              });
+            }
+          }
         }
+      };
+
+      mapLinks(links);
+
+      if (streams.length === 0 && !explicitAk) {
+        links = await resolveEpisodeSources({
+          apiUrl: ALLANIME_API_URL,
+          referer: ALLANIME_REFERER,
+          ua: DEFAULT_UA,
+          showId,
+          epStr,
+          mode,
+          sourceLane: "ak-only",
+          signal: context.signal,
+        });
+        triedAk = true;
+        mapLinks(links);
       }
 
       // Sort streams so HLS/1080p is at the top
       streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
       variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
 
-      const cycleCandidates = buildAllmangaCycleCandidates(streams, input.qualityPreference, {
-        preferredSourceId: input.preferredSourceId,
-        preferredStreamId: input.preferredStreamId,
-      });
-      const cycleResult = await runProviderCycle({
-        providerId: ALLANIME_PROVIDER_ID,
-        candidates: cycleCandidates,
-        signal: context.signal,
-        now: context.now,
-        maxAttemptsPerCandidate: 1,
-        candidateTimeoutMs: 2_500,
-        resolveCandidate: async (candidate, cycleContext) => {
-          const stream = streams.find((item) => item.id === candidate.streamId);
-          if (!stream?.url && !stream?.deferredLocator) {
-            throw createProviderCycleFailureError(candidate, {
-              failureClass: "candidate-empty",
-              message: `AllManga candidate ${candidate.id} did not contain a playable URL`,
-              retryable: false,
+      const runAllmangaCycle = () =>
+        runProviderCycle({
+          providerId: ALLANIME_PROVIDER_ID,
+          candidates: buildAllmangaCycleCandidates(streams, input.qualityPreference, {
+            preferredSourceId: input.preferredSourceId,
+            preferredStreamId: input.preferredStreamId,
+          }),
+          signal: context.signal,
+          now: context.now,
+          maxAttemptsPerCandidate: 1,
+          candidateTimeoutMs: 2_500,
+          resolveCandidate: async (candidate, cycleContext) => {
+            const stream = streams.find((item) => item.id === candidate.streamId);
+            if (!stream?.url && !stream?.deferredLocator) {
+              throw createProviderCycleFailureError(candidate, {
+                failureClass: "candidate-empty",
+                message: `AllManga candidate ${candidate.id} did not contain a playable URL`,
+                retryable: false,
+                at: context.now(),
+              });
+            }
+            cycleContext.emit({
+              type: "variant:selected",
               at: context.now(),
+              providerId: ALLANIME_PROVIDER_ID,
+              sourceId: stream.sourceId,
+              variantId: stream.variantId,
+              streamId: stream.id,
+              attempt: cycleContext.attempt,
+              message: stream.qualityLabel ?? candidate.label ?? candidate.id,
+              attributes: {
+                candidateId: candidate.id,
+                presentation: stream.presentation ?? null,
+                qualityRank: stream.qualityRank ?? null,
+              },
             });
-          }
-          cycleContext.emit({
-            type: "variant:selected",
-            at: context.now(),
-            providerId: ALLANIME_PROVIDER_ID,
-            sourceId: stream.sourceId,
-            variantId: stream.variantId,
-            streamId: stream.id,
-            attempt: cycleContext.attempt,
-            message: stream.qualityLabel ?? candidate.label ?? candidate.id,
-            attributes: {
-              candidateId: candidate.id,
-              presentation: stream.presentation ?? null,
-              qualityRank: stream.qualityRank ?? null,
-            },
-          });
-          return stream;
-        },
-      });
+            return stream;
+          },
+        });
+
+      let cycleResult = await runAllmangaCycle();
       events.push(...cycleResult.events);
       if (cycleResult.cancelled) {
         return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
@@ -423,7 +450,33 @@ export const allmangaProviderModule: CoreProviderModule = {
           retryable: false,
         });
       }
-      const selectedStream = cycleResult.selected;
+      let selectedStream = cycleResult.selected;
+      if (!selectedStream && !triedAk) {
+        links = await resolveEpisodeSources({
+          apiUrl: ALLANIME_API_URL,
+          referer: ALLANIME_REFERER,
+          ua: DEFAULT_UA,
+          showId,
+          epStr,
+          mode,
+          sourceLane: "ak-only",
+          signal: context.signal,
+        });
+        triedAk = true;
+        mapLinks(links);
+        streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
+        variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
+        cycleResult = await runAllmangaCycle();
+        events.push(...cycleResult.events);
+        if (cycleResult.cancelled) {
+          return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
+            code: "cancelled",
+            message: "AllManga source cycling was cancelled",
+            retryable: false,
+          });
+        }
+        selectedStream = cycleResult.selected;
+      }
       if (!selectedStream) {
         const cycleFailure = findLastCycleFailure(cycleResult.attempts);
         const failure: ProviderFailure = cycleFailure
