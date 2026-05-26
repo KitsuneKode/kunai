@@ -79,7 +79,7 @@ import {
   resolveSourceRefreshDecision,
   type SourceRefreshAction,
 } from "@/app/source-refresh-policy";
-import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
+import { choosePlaybackSubtitle, shouldAttemptLateSubtitleLookup } from "@/app/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import {
@@ -3364,13 +3364,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stateManager.getState().mode === "anime"
         ? stateManager.getState().animeLanguageProfile.subtitle
         : stateManager.getState().seriesLanguageProfile.subtitle;
-    if (
-      requestedSubLang === "none" ||
-      stream.subtitle ||
-      stream.subtitleList?.length ||
-      hardSubSatisfiesSubtitlePreference(stream, requestedSubLang) ||
-      !title.id
-    ) {
+    const lookupDecision = shouldAttemptLateSubtitleLookup({
+      stream,
+      requestedSubLang,
+      hasTitleId: Boolean(title.id),
+    });
+    if (!lookupDecision.attempt) {
+      if (
+        lookupDecision.reason !== "disabled" &&
+        lookupDecision.reason !== "attached" &&
+        lookupDecision.reason !== "hardsub-satisfied"
+      ) {
+        diagnosticsService.record({
+          category: "subtitle",
+          message: "Late subtitle lookup skipped",
+          context: {
+            titleId: title.id,
+            requestedSubLang,
+            reason: lookupDecision.reason,
+            availableTracks: lookupDecision.availableTracks,
+          },
+        });
+      }
       return;
     }
 

@@ -1,7 +1,7 @@
 import { isSubtitlePreferenceDisabled } from "@/domain/media/media-preferences";
 import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
-import { selectSubtitle } from "@/subtitle";
+import { langMatches, selectSubtitle } from "@/subtitle";
 import type { SubtitleEntry } from "@/subtitle";
 
 export type SubtitleDecision = {
@@ -16,6 +16,51 @@ export type SubtitleDecision = {
     | "no-tracks";
   availableTracks: number;
 };
+
+export type LateSubtitleLookupDecision = {
+  attempt: boolean;
+  reason:
+    | "disabled"
+    | "title-missing"
+    | "attached"
+    | "inventory-satisfied"
+    | "hardsub-satisfied"
+    | "needs-lookup";
+  availableTracks: number;
+};
+
+export function shouldAttemptLateSubtitleLookup({
+  stream,
+  requestedSubLang,
+  hasTitleId,
+}: {
+  stream: StreamInfo;
+  requestedSubLang: string;
+  hasTitleId: boolean;
+}): LateSubtitleLookupDecision {
+  const availableTracks = stream.subtitleList?.length ?? 0;
+  if (isSubtitlePreferenceDisabled(requestedSubLang)) {
+    return { attempt: false, reason: "disabled", availableTracks };
+  }
+  if (!hasTitleId) {
+    return { attempt: false, reason: "title-missing", availableTracks };
+  }
+  if (hardSubSatisfiesSubtitlePreference(stream, requestedSubLang)) {
+    return { attempt: false, reason: "hardsub-satisfied", availableTracks };
+  }
+  if (stream.subtitle) {
+    return { attempt: false, reason: "attached", availableTracks };
+  }
+  if (availableTracks > 0) {
+    const hasRequestedTrack = stream.subtitleList?.some((track) =>
+      langMatches(track.language ?? track.display ?? "", requestedSubLang),
+    );
+    if (hasRequestedTrack) {
+      return { attempt: false, reason: "inventory-satisfied", availableTracks };
+    }
+  }
+  return { attempt: true, reason: "needs-lookup", availableTracks };
+}
 
 export async function choosePlaybackSubtitle({
   stream,

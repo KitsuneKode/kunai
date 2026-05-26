@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { choosePlaybackSubtitle } from "@/app/subtitle-selection";
+import { choosePlaybackSubtitle, shouldAttemptLateSubtitleLookup } from "@/app/subtitle-selection";
 import type { StreamInfo } from "@/domain/types";
 
 const BASE_STREAM: StreamInfo = {
@@ -163,5 +163,34 @@ describe("choosePlaybackSubtitle", () => {
     expect(result.subtitle).toBeNull();
     expect(result.reason).toBe("hardsub-satisfied");
     expect(pickerCalls).toBe(0);
+  });
+});
+
+describe("shouldAttemptLateSubtitleLookup", () => {
+  test("tries Wyzie when provider inventory exists but has no matching configured subtitle", () => {
+    expect(
+      shouldAttemptLateSubtitleLookup({
+        stream: {
+          ...BASE_STREAM,
+          subtitle: undefined,
+          subtitleList: [{ url: "https://cdn.example/ar.vtt", language: "ar", display: "Arabic" }],
+        },
+        requestedSubLang: "en",
+        hasTitleId: true,
+      }).attempt,
+    ).toBe(true);
+  });
+
+  test("skips Wyzie when provider inventory already satisfies the configured subtitle", () => {
+    expect(
+      shouldAttemptLateSubtitleLookup({
+        stream: {
+          ...BASE_STREAM,
+          subtitle: "https://cdn.example/en.vtt",
+        },
+        requestedSubLang: "en",
+        hasTitleId: true,
+      }).attempt,
+    ).toBe(false);
   });
 });
