@@ -781,7 +781,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       // In-memory cache of recently played episode streams so backward navigation
       // (P key) reuses the exact same StreamInfo without provider resolve or cache lookup.
-      const recentEpisodeStreams = new Map<string, import("@/domain/types").StreamInfo>();
+      const recentEpisodeStreams = new Map<
+        string,
+        {
+          readonly stream: StreamInfo;
+          readonly selectedProviderId: string;
+          readonly resolvedProviderId: string;
+          readonly provenance: "fresh" | "cache" | "prefetch" | "fallback";
+        }
+      >();
 
       // Inner playback loop
       while (true) {
@@ -1036,6 +1044,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const prefetchWasPrepared = consumedBundle?.prepared === true;
 
           let stream: StreamInfo | null = consumedBundle?.stream ?? null;
+          let streamProvenance: "fresh" | "cache" | "prefetch" | "fallback" = consumedBundle
+            ? "prefetch"
+            : "fresh";
           let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
           if (stream) recordStartupMark("resolve-complete", stream);
 
@@ -1081,16 +1092,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const recentKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
             const recent = recentEpisodeStreams.get(recentKey);
             if (recent) {
-              stream = recent;
-              resolvedProviderId = currentProvider.metadata.id;
+              stream = recent.stream;
+              resolvedProviderId = recent.resolvedProviderId;
+              streamProvenance = recent.provenance;
               diagnosticsStore.record({
                 ...playbackCorrelation,
-                category: "provider",
+                category: "cache",
+                operation: "playback.stream.reused",
                 message: "Using in-memory recent episode stream (backward navigation)",
+                providerId: recent.resolvedProviderId,
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
                 context: {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
+                  provenance: "recent-memory",
+                  originalProvenance: recent.provenance,
+                  selectedProviderId: recent.selectedProviderId,
+                  resolvedProviderId: recent.resolvedProviderId,
                 },
               });
             }
@@ -1246,6 +1264,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             stream = resolveResult.stream;
             resolvedProviderId = resolveResult.providerId;
+            streamProvenance =
+              resolveResult.provenance === "prefetched"
+                ? "prefetch"
+                : resolveResult.provenance.startsWith("cache")
+                  ? "cache"
+                  : resolveResult.providerId !== currentProvider.metadata.id
+                    ? "fallback"
+                    : "fresh";
             resolveAttempts = resolveResult.attempts;
             if (stream) recordStartupMark("resolve-complete", stream);
 
@@ -1401,7 +1427,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
 
           const episodeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
-          recentEpisodeStreams.set(episodeKey, preparedStream);
+          recentEpisodeStreams.set(episodeKey, {
+            stream: preparedStream,
+            selectedProviderId: currentProvider.metadata.id,
+            resolvedProviderId,
+            provenance: streamProvenance,
+          });
           if (recentEpisodeStreams.size > 5) {
             const first = recentEpisodeStreams.keys().next().value;
             if (first !== undefined) recentEpisodeStreams.delete(first);
@@ -3429,10 +3460,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         diagnosticsStore.record({
           category: "subtitle",
+          operation: "subtitle.attach.outcome",
           message: "Late subtitle lookup attached tracks",
           context: {
             titleId: title.id,
-            selected: selectedUrl,
+            outcome: "attached",
+            delivery: "late",
             trackCount: mergedSubtitleList.length,
           },
         });
@@ -3475,6 +3508,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       await Bun.sleep(250);
     }
+    context.container.diagnosticsStore.record({
+      category: "subtitle",
+      operation: "subtitle.attach.outcome",
+      message: "Late subtitle attachment timed out waiting for player",
+      context: {
+        outcome: "player-ready-timeout",
+        delivery: "late",
+        trackCount: attachment.subtitleTracks.length,
+      },
+    });
     return false;
   }
 

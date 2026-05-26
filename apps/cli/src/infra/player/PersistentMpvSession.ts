@@ -850,24 +850,24 @@ export class PersistentMpvSession {
       primarySubtitle: selection.subtitleUrl,
       subtitleTracks: selection.subtitleTracks,
     });
-    if (attached <= 0) return false;
+    if (attached.attachedCount <= 0) return false;
     this.currentCycleOptions().onPlaybackEvent?.({
       type: "late-subtitles-attached",
-      trackCount: attached,
+      trackCount: attached.attachedCount,
     });
     return true;
   }
 
-  private async attachSubtitles(attachment: LateSubtitleAttachment): Promise<number> {
-    const attached = await this.subtitleManager.attachSubtitles(this.ipcSession, attachment);
+  private async attachSubtitles(attachment: LateSubtitleAttachment) {
+    const result = await this.subtitleManager.attachSubtitles(this.ipcSession, attachment);
 
-    if (attached > 0) {
+    if (result.attachedCount > 0) {
       this.currentCycleOptions().onPlaybackEvent?.({
         type: "late-subtitles-attached",
-        trackCount: attached,
+        trackCount: result.attachedCount,
       });
     }
-    return attached;
+    return result;
   }
 
   private currentCycleOptions(): PlayerCycleOptions {

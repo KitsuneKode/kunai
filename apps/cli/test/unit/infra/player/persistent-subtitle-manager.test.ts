@@ -90,11 +90,22 @@ describe("PersistentSubtitleManager", () => {
     expect(attachedCounts).toEqual([2]);
   });
 
-  test("late subtitle attachment counts only successful sub-add commands", async () => {
+  test("late subtitle attachment classifies missing ipc", async () => {
+    const manager = new PersistentSubtitleManager();
+
+    await expect(
+      manager.attachSubtitles(null, { primarySubtitle: "https://subs.example/main.vtt" }),
+    ).resolves.toEqual({
+      status: "no-ipc",
+      attachedCount: 0,
+    });
+  });
+
+  test("late subtitle attachment classifies failed sub-add commands", async () => {
     const { ipc } = createFakeIpc("sub-add");
     const manager = new PersistentSubtitleManager();
 
-    const attached = await manager.attachSubtitles(ipc, {
+    const result = await manager.attachSubtitles(ipc, {
       primarySubtitle: "https://subs.example/main.vtt",
       subtitleTracks: [
         {
@@ -107,6 +118,10 @@ describe("PersistentSubtitleManager", () => {
       ],
     });
 
-    expect(attached).toBe(0);
+    expect(result).toEqual({
+      status: "sub-add-failed",
+      attachedCount: 0,
+      failedTrack: "primary",
+    });
   });
 });

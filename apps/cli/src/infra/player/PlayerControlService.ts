@@ -1,6 +1,7 @@
 import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
 import type { EpisodeInfo, PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
 
+import type { SubtitleAttachmentResult } from "./persistent-subtitle-manager";
 import type { LateSubtitleAttachment } from "./PlayerService";
 
 export type PlaybackControlAction =
@@ -48,7 +49,7 @@ export interface ActivePlayerControl {
   stopCurrentFile?(reason?: string): Promise<void>;
   reloadSubtitles?(): Promise<void>;
   selectSubtitle?(selection: PlaybackSubtitleSelection): Promise<boolean>;
-  attachSubtitles?(attachment: LateSubtitleAttachment): Promise<number>;
+  attachSubtitles?(attachment: LateSubtitleAttachment): Promise<number | SubtitleAttachmentResult>;
   skipCurrentSegment?(): Promise<boolean>;
   updateTiming?(timing: PlaybackTimingMetadata | null): void;
   getTimingSnapshot?(): PlaybackTimingMetadata | null;

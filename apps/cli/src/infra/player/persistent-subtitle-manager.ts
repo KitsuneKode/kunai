@@ -9,6 +9,16 @@ export type PersistentLateSubtitleAttachment = {
   subtitleTracks?: readonly SubtitleTrack[];
 };
 
+export type SubtitleAttachmentResult =
+  | { readonly status: "attached"; readonly attachedCount: number }
+  | { readonly status: "none-requested"; readonly attachedCount: 0 }
+  | { readonly status: "no-ipc"; readonly attachedCount: 0 }
+  | {
+      readonly status: "sub-add-failed";
+      readonly attachedCount: number;
+      readonly failedTrack: "primary" | "additional";
+    };
+
 export class PersistentSubtitleManager {
   private lastTrackList: unknown = null;
   private externalSubtitleIds: number[] = [];
@@ -78,9 +88,16 @@ export class PersistentSubtitleManager {
   async attachSubtitles(
     ipcSession: MpvIpcSession | null,
     attachment: PersistentLateSubtitleAttachment,
-  ): Promise<number> {
-    if (!ipcSession) return 0;
+  ): Promise<SubtitleAttachmentResult> {
+    if (!ipcSession) return { status: "no-ipc", attachedCount: 0 };
     let attached = 0;
+    const additionalTracks = collectAdditionalSubtitleTracks(
+      attachment.primarySubtitle ?? null,
+      attachment.subtitleTracks,
+    );
+    if (!attachment.primarySubtitle && additionalTracks.length === 0) {
+      return { status: "none-requested", attachedCount: 0 };
+    }
 
     if (attachment.primarySubtitle) {
       const primary = describeSubtitleTrackForMpv(
@@ -95,12 +112,10 @@ export class PersistentSubtitleManager {
         primary.language,
       ]);
       if (result.ok) attached += 1;
+      else return { status: "sub-add-failed", attachedCount: attached, failedTrack: "primary" };
     }
 
-    for (const track of collectAdditionalSubtitleTracks(
-      attachment.primarySubtitle ?? null,
-      attachment.subtitleTracks,
-    )) {
+    for (const track of additionalTracks) {
       const result = await ipcSession.send([
         "sub-add",
         track.url,
@@ -109,8 +124,11 @@ export class PersistentSubtitleManager {
         track.language ?? "",
       ]);
       if (result.ok) attached += 1;
+      else return { status: "sub-add-failed", attachedCount: attached, failedTrack: "additional" };
     }
 
-    return attached;
+    return attached > 0
+      ? { status: "attached", attachedCount: attached }
+      : { status: "none-requested", attachedCount: 0 };
   }
 }

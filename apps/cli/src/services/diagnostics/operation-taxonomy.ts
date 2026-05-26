@@ -45,6 +45,12 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     userAction: "Keep watching or use recover after actual failure evidence.",
   },
   {
+    operation: "playback.stream.reused",
+    category: "cache",
+    audience: "developer",
+    summary: "Playback reused an in-memory stream from a recent episode navigation.",
+  },
+  {
     operation: "provider.resolve.timeline",
     category: "provider",
     audience: "both",
@@ -68,6 +74,12 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     category: "provider",
     audience: "developer",
     summary: "A redacted resolve work graph was exported for request economy diagnostics.",
+  },
+  {
+    operation: "subtitle.attach.outcome",
+    category: "subtitle",
+    audience: "both",
+    summary: "Subtitle attachment completed or failed with a classified delivery outcome.",
   },
   {
     operation: "resolve.cache.hit",

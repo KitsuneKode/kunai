@@ -3,6 +3,7 @@ import type { EpisodeInfo, PlaybackTimingMetadata } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 
+import type { SubtitleAttachmentResult } from "./persistent-subtitle-manager";
 import type {
   ActivePlayerControl,
   EpisodeNavigationAvailability,
@@ -277,8 +278,14 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     if (!active) {
       this.deps.diagnosticsStore.record({
         category: "subtitle",
+        operation: "subtitle.attach.outcome",
         message: "Late subtitle attach requested without active player",
-        context: { reason, trackCount: attachment.subtitleTracks?.length ?? 0 },
+        context: {
+          reason,
+          outcome: "no-active-player",
+          delivery: "late",
+          trackCount: attachment.subtitleTracks?.length ?? 0,
+        },
       });
       return false;
     }
@@ -286,8 +293,15 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     if (!active.attachSubtitles) {
       this.deps.diagnosticsStore.record({
         category: "subtitle",
+        operation: "subtitle.attach.outcome",
         message: "Late subtitle attach unavailable for active player",
-        context: { id: active.id, reason, trackCount: attachment.subtitleTracks?.length ?? 0 },
+        context: {
+          id: active.id,
+          reason,
+          outcome: "unsupported",
+          delivery: "late",
+          trackCount: attachment.subtitleTracks?.length ?? 0,
+        },
       });
       return false;
     }
@@ -297,16 +311,41 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       reason,
       async () => await active.attachSubtitles?.(attachment),
     );
-    const attached =
-      typeof attachedRaw === "number" && Number.isFinite(attachedRaw) ? attachedRaw : 0;
-    if (attached <= 0) return false;
-    this.deps.logger.info("Attached late subtitles", { id: active.id, reason, attached });
+    const result = normalizeSubtitleAttachmentResult(attachedRaw);
+    if (result.attachedCount <= 0) {
+      this.deps.diagnosticsStore.record({
+        category: "subtitle",
+        operation: "subtitle.attach.outcome",
+        message: "Late subtitle attachment did not attach tracks",
+        context: {
+          id: active.id,
+          reason,
+          outcome: result.status,
+          delivery: "late",
+          attachedCount: result.attachedCount,
+          failedTrack: "failedTrack" in result ? result.failedTrack : null,
+        },
+      });
+      return false;
+    }
+    this.deps.logger.info("Attached late subtitles", {
+      id: active.id,
+      reason,
+      attached: result.attachedCount,
+    });
     this.deps.diagnosticsStore.record({
       category: "subtitle",
+      operation: "subtitle.attach.outcome",
       message: "Attached late subtitles",
-      context: { id: active.id, reason, attached },
+      context: {
+        id: active.id,
+        reason,
+        outcome: result.status,
+        delivery: "late",
+        attachedCount: result.attachedCount,
+      },
     });
-    return attached > 0;
+    return true;
   }
 
   async skipCurrentSegment(reason = "user-requested"): Promise<boolean> {
@@ -573,6 +612,17 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     this.commandQueue = next.catch(() => {});
     return next;
   }
+}
+
+function normalizeSubtitleAttachmentResult(
+  value: number | SubtitleAttachmentResult | undefined,
+): SubtitleAttachmentResult {
+  if (typeof value === "number") {
+    return value > 0
+      ? { status: "attached", attachedCount: value }
+      : { status: "none-requested", attachedCount: 0 };
+  }
+  return value ?? { status: "no-ipc", attachedCount: 0 };
 }
 
 function compact(values: readonly (string | null | undefined | false)[]): string[] {

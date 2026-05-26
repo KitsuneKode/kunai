@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { PlayerControlServiceImpl } from "@/infra/player/PlayerControlServiceImpl";
 
-function makeService() {
+function makeService(events: unknown[] = []) {
   return new PlayerControlServiceImpl({
     logger: {
       debug() {},
@@ -15,7 +15,9 @@ function makeService() {
       },
     },
     diagnosticsStore: {
-      record() {},
+      record(event: unknown) {
+        events.push(event);
+      },
       getRecent() {
         return [];
       },
@@ -412,6 +414,38 @@ test("PlayerControlServiceImpl prioritizes stop controls over queued subtitle co
 
   resolveAttach(1);
   expect(await attachPromise).toBe(true);
+});
+
+test("PlayerControlServiceImpl records classified late subtitle attachment outcomes", async () => {
+  const events: unknown[] = [];
+  const service = makeService(events);
+
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async attachSubtitles() {
+      return { status: "sub-add-failed", attachedCount: 0, failedTrack: "primary" };
+    },
+  });
+
+  expect(
+    await service.attachLateSubtitles(
+      { primarySubtitle: "https://example.test/sub.vtt", subtitleTracks: [] },
+      "late-subtitle",
+    ),
+  ).toBe(false);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      category: "subtitle",
+      operation: "subtitle.attach.outcome",
+      context: expect.objectContaining({
+        outcome: "sub-add-failed",
+        delivery: "late",
+        attachedCount: 0,
+        failedTrack: "primary",
+      }),
+    }),
+  );
 });
 
 test("PlayerControlServiceImpl runs queued playback commands in FIFO order", async () => {
