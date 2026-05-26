@@ -33,6 +33,7 @@ import type {
   ProviderHealthDelta,
   ProviderId,
   ProviderResolveResult,
+  ProviderSelectionDecision,
   StartupPriority,
 } from "@kunai/types";
 
@@ -84,6 +85,11 @@ export type PlaybackResolveEvent =
       readonly type: "provider-resolve-started";
       readonly providerId: string;
       readonly candidateCount: number;
+    }
+  | {
+      readonly type: "selection-decision";
+      readonly providerId: string;
+      readonly decision: ProviderSelectionDecision;
     }
   | {
       readonly type: "provider-engine-event";
@@ -292,6 +298,7 @@ export class PlaybackResolveService {
             });
           }
           if (health.healthy) {
+            emitSelectionDecision(input, input.providerId, inventoryResult);
             input.onEvent?.({ type: "cache-hit-validated", providerId: input.providerId });
             await this.persistResolvedStream(input, input.providerId, inventoryStream);
             return {
@@ -454,6 +461,7 @@ export class PlaybackResolveService {
         }
 
         if (commitDecision.action === "persist-and-return") {
+          emitSelectionDecision(input, resolvedProviderId, engineResult.result);
           return {
             stream,
             providerId: engineResult.providerId ?? input.providerId,
@@ -644,6 +652,19 @@ function inventoryMatchesSelection(
 
 function providerResultHasDeferredStream(result: ProviderResolveResult): boolean {
   return result.streams.some((stream) => Boolean(stream.deferredLocator));
+}
+
+function emitSelectionDecision(
+  input: PlaybackResolveInput,
+  providerId: string,
+  result: ProviderResolveResult,
+): void {
+  if (!result.selectionDecision) return;
+  input.onEvent?.({
+    type: "selection-decision",
+    providerId,
+    decision: result.selectionDecision,
+  });
 }
 
 function titleScopedProviderOrder(input: {

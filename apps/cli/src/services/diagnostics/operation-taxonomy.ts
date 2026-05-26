@@ -70,6 +70,14 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     summary: "Provider resolution moved to another provider after classified failure.",
   },
   {
+    operation: "provider.selection.decision",
+    category: "provider",
+    audience: "both",
+    summary: "The startup policy selected one ready provider stream.",
+    userAction:
+      "Switch startup preference or source manually if a different tradeoff is preferred.",
+  },
+  {
     operation: "resolve.work.insight",
     category: "provider",
     audience: "developer",

@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
-import type { ProviderResolveResult, StartupPriority } from "@kunai/types";
+import type {
+  ProviderResolveResult,
+  ProviderSelectionDecision,
+  StartupPriority,
+} from "@kunai/types";
 
 export type ResolveBudgetLane = "user-blocking" | "near-need" | "background" | "manual-diagnostic";
 
@@ -68,6 +72,7 @@ export type ResolveWorkLedgerSnapshot = {
     readonly selectedSourceId?: string;
     readonly selectedStreamId?: string;
   };
+  readonly selection?: ProviderSelectionDecision;
   readonly outcome?: "resolved" | "unavailable" | "cancelled";
 };
 
@@ -96,6 +101,7 @@ type ResolveWorkLedgerState = {
     selectedSourceId?: string;
     selectedStreamId?: string;
   };
+  selection?: ProviderSelectionDecision;
   outcome?: "resolved" | "unavailable" | "cancelled";
 };
 
@@ -254,6 +260,13 @@ export function recordProviderInventoryFacts(
     selectedSourceId: result.streams.find((stream) => stream.id === result.selectedStreamId)
       ?.sourceId,
   });
+}
+
+export function recordProviderSelectionDecision(
+  ledger: ResolveWorkLedger,
+  decision: ProviderSelectionDecision,
+): void {
+  ledger.state.selection = decision;
 }
 
 export function finalizeResolveWorkLedger(

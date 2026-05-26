@@ -7,6 +7,7 @@ import {
   recordCacheDecision,
   recordInventoryFacts,
   recordLedgerJoin,
+  recordProviderSelectionDecision,
   recordProviderInventoryFacts,
   recordProviderAttempt,
   resolveWorkPurposeForIntent,
@@ -171,5 +172,29 @@ describe("ResolveWorkLedger", () => {
       selectedStreamId: "stream-main",
     });
     expect(JSON.stringify(snapshot)).not.toContain("private.example");
+  });
+
+  test("records safe provider selection decision evidence", () => {
+    const ledger = createResolveWorkLedger({
+      identity,
+      intent: "playback",
+      budgetLane: "user-blocking",
+    });
+
+    recordProviderSelectionDecision(ledger, {
+      startupPriority: "balanced",
+      reason: "balanced-1080",
+      waitBudgetMs: 1_000,
+      selectedQualityRank: 1080,
+      enrichmentLane: "required",
+    });
+
+    expect(finalizeResolveWorkLedger(ledger).selection).toEqual({
+      startupPriority: "balanced",
+      reason: "balanced-1080",
+      waitBudgetMs: 1_000,
+      selectedQualityRank: 1080,
+      enrichmentLane: "required",
+    });
   });
 });

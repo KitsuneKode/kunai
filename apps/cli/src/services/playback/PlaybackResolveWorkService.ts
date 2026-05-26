@@ -17,6 +17,7 @@ import {
   recordLedgerJoin,
   recordProviderInventoryFacts,
   recordProviderAttempt,
+  recordProviderSelectionDecision,
   resolveWorkPurposeForIntent,
   type ResolveBudgetLane,
   type ResolveFreshnessPolicy,
@@ -241,6 +242,9 @@ function recordResolveEvent(ledger: ResolveWorkLedger, event: PlaybackResolveEve
         outcome: "failure",
         issueClass: event.issue,
       });
+      return;
+    case "selection-decision":
+      recordProviderSelectionDecision(ledger, event.decision);
       return;
     case "cache-health-check":
     case "recovery-decision":

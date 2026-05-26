@@ -175,6 +175,27 @@ export class PlaybackResolveCoordinator {
       return;
     }
 
+    if (event.type === "selection-decision") {
+      this.deps.diagnostics.record({
+        ...input.correlation,
+        category: "provider",
+        operation: "provider.selection.decision",
+        message: "Provider startup selection decision recorded",
+        providerId: event.providerId,
+        titleId: input.title.id,
+        season: input.episode.season,
+        episode: input.episode.episode,
+        context: {
+          startupPriority: event.decision.startupPriority,
+          reason: event.decision.reason,
+          waitBudgetMs: event.decision.waitBudgetMs,
+          selectedQualityRank: event.decision.selectedQualityRank,
+          enrichmentLane: event.decision.enrichmentLane,
+        },
+      });
+      return;
+    }
+
     if (event.type === "provider-engine-event") {
       const engineEvent = event.event;
       if (engineEvent.type === "provider-fallback-started") {

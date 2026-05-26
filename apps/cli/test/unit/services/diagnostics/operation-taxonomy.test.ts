@@ -18,6 +18,7 @@ describe("diagnostic operation taxonomy", () => {
     expect(isKnownDiagnosticOperation("playback.startup.timeline")).toBe(true);
     expect(isKnownDiagnosticOperation("provider.resolve.attempt")).toBe(true);
     expect(isKnownDiagnosticOperation("provider.resolve.fallback")).toBe(true);
+    expect(isKnownDiagnosticOperation("provider.selection.decision")).toBe(true);
     expect(isKnownDiagnosticOperation("subtitle.attach.outcome")).toBe(true);
     expect(isKnownDiagnosticOperation("presence.clear.failed")).toBe(true);
     expect(isKnownDiagnosticOperation("resolve.refetch.failed.cached-fallback")).toBe(true);
@@ -27,6 +28,11 @@ describe("diagnostic operation taxonomy", () => {
       category: "download",
       audience: "both",
       userAction: "Open /downloads or /library if the artifact later disappears.",
+    });
+    expect(getDiagnosticOperation("provider.selection.decision")).toMatchObject({
+      category: "provider",
+      userAction:
+        "Switch startup preference or source manually if a different tradeoff is preferred.",
     });
   });
 

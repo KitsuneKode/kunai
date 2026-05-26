@@ -108,6 +108,44 @@ function createProviderResult(url: string): ProviderEngineResolveOutput {
   };
 }
 
+function createProviderResultWithSelectionDecision(): ProviderEngineResolveOutput {
+  return {
+    result: {
+      status: "resolved",
+      providerId: "fallback" as ProviderId,
+      streams: [
+        {
+          id: "stream:fallback:1",
+          providerId: "fallback" as ProviderId,
+          url: "https://fallback.example/stream.m3u8",
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:selection",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "series", title: "Test Series" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+      selectionDecision: {
+        startupPriority: "balanced",
+        reason: "balanced-1080",
+        waitBudgetMs: 1_000,
+        selectedQualityRank: 1080,
+        enrichmentLane: "required",
+      },
+    },
+    providerId: "fallback" as ProviderId,
+    attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
+  };
+}
+
 function createProviderResultAfterFallback(): ProviderEngineResolveOutput {
   return {
     result: {
@@ -441,6 +479,42 @@ describe("PlaybackResolveCoordinator", () => {
           reason: "normal-primary",
           recoveryMode: "guided",
         }),
+      }),
+    );
+  });
+
+  test("records provider selection decisions through diagnostics", async () => {
+    const events: unknown[] = [];
+    const diagnostics = {
+      record: (event: unknown) => events.push(event),
+      getRecent: () => [],
+      getSnapshot: () => [],
+      clear: () => {},
+      buildSupportBundle: () => {
+        throw new Error("not needed");
+      },
+    } as unknown as DiagnosticsService;
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createMockEngine(createProviderResultWithSelectionDecision()),
+      cacheStore: createMemoryCache(null),
+      diagnostics,
+    });
+
+    await coordinator.resolve(input());
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        category: "provider",
+        operation: "provider.selection.decision",
+        message: "Provider startup selection decision recorded",
+        providerId: "fallback",
+        context: {
+          startupPriority: "balanced",
+          reason: "balanced-1080",
+          waitBudgetMs: 1_000,
+          selectedQualityRank: 1080,
+          enrichmentLane: "required",
+        },
       }),
     );
   });
