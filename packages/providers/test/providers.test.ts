@@ -549,6 +549,76 @@ test("rivestream fixture fast startup keeps the first ready stream", async () =>
   });
 });
 
+test("rivestream fast startup selects provider ready-order before returned quality sort", async () => {
+  const services = { data: ["FlowCast"] };
+  const source = {
+    data: {
+      sources: [
+        {
+          url: "https://cdn.rivestream.example/flowcast/720/index.m3u8",
+          quality: "720p",
+          format: "hls",
+        },
+        {
+          url: "https://cdn.rivestream.example/flowcast/1080/index.m3u8",
+          quality: "1080p",
+          format: "hls",
+        },
+      ],
+    },
+  };
+
+  const resolveWithPriority = (startupPriority: "balanced" | "fast") =>
+    rivestreamProviderModule.resolve(
+      {
+        title: {
+          id: "438631",
+          tmdbId: "438631",
+          kind: "movie",
+          title: "Dune",
+          year: 2021,
+        },
+        mediaKind: "movie",
+        startupPriority,
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      {
+        now: () => "2026-05-22T00:00:00.000Z",
+        fetch: {
+          runtime: "direct-http",
+          fetch: async (input) =>
+            jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
+        },
+      },
+    );
+
+  const fast = await resolveWithPriority("fast");
+  expect(fast.status).toBe("resolved");
+  expect(fast.streams.map((stream) => stream.qualityRank)).toEqual([1080, 720]);
+  expect(fast.streams.find((stream) => stream.id === fast.selectedStreamId)).toMatchObject({
+    qualityRank: 720,
+    url: "https://cdn.rivestream.example/flowcast/720/index.m3u8",
+  });
+  expect(fast.selectionDecision).toMatchObject({
+    startupPriority: "fast",
+    reason: "fast-start",
+    selectedQualityRank: 720,
+  });
+
+  const balanced = await resolveWithPriority("balanced");
+  expect(balanced.status).toBe("resolved");
+  expect(balanced.streams.find((stream) => stream.id === balanced.selectedStreamId)).toMatchObject({
+    qualityRank: 1080,
+    url: "https://cdn.rivestream.example/flowcast/1080/index.m3u8",
+  });
+  expect(balanced.selectionDecision).toMatchObject({
+    startupPriority: "balanced",
+    reason: "balanced-1080",
+    selectedQualityRank: 1080,
+  });
+});
+
 test("rivestream caches provider services across cold resolves", async () => {
   const services = await readFixture<unknown>("rivestream/services-response.json");
   const source = await readFixture<unknown>("rivestream/source-response.json");

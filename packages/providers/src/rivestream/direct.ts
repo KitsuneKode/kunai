@@ -428,7 +428,8 @@ export const rivestreamProviderModule: CoreProviderModule = {
       streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
       variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
 
-      const selection = selectReadyStream(streams, {
+      const selectableStreams = input.startupPriority === "fast" ? selectedStreams : streams;
+      const selection = selectReadyStream(selectableStreams, {
         startupPriority: input.startupPriority,
         qualityPreference: input.qualityPreference,
         preferredStreamId: input.preferredStreamId,
