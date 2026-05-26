@@ -87,7 +87,6 @@ import {
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
 import { resolvePostPlayState } from "@/domain/playback/post-play-state";
-import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type {
   TitleInfo,
   EpisodeInfo,
