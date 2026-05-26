@@ -12,7 +12,7 @@ import type {
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import { cacheOfflinePosterArtwork } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
@@ -186,7 +186,7 @@ export class DownloadService {
       readonly ffprobeAvailable?: boolean;
       readonly ffmpegAvailable?: boolean;
       readonly abortGraceMs?: number;
-      readonly diagnosticsStore?: Pick<DiagnosticsStore, "record">;
+      readonly diagnostics?: Pick<DiagnosticsService, "record">;
       readonly onCompletedArtifact?: (job: DownloadJobRecord) => Promise<void> | void;
     },
   ) {}
@@ -393,7 +393,7 @@ export class DownloadService {
           jobId: job.id,
           error: message,
         });
-        this.deps.diagnosticsStore?.record({
+        this.deps.diagnostics?.record({
           category: "download",
           level: "warn",
           operation: "download.artifact.repairable",
@@ -406,7 +406,7 @@ export class DownloadService {
       }
     }
 
-    this.deps.diagnosticsStore?.record({
+    this.deps.diagnostics?.record({
       category: "download",
       level: failed > 0 ? "warn" : "info",
       operation: "download.artifact.repairable",
@@ -442,7 +442,7 @@ export class DownloadService {
         retryAt,
         now,
       );
-      this.deps.diagnosticsStore?.record({
+      this.deps.diagnostics?.record({
         category: "download",
         level: "warn",
         operation: "download.capacity.start",
@@ -879,7 +879,7 @@ export class DownloadService {
     if (typeof validation.durationMs === "number") {
       this.deps.repo.updateOfflineMetadata(jobId, { durationMs: validation.durationMs }, updatedAt);
     }
-    this.deps.diagnosticsStore?.record({
+    this.deps.diagnostics?.record({
       category: "download",
       level: "info",
       operation: "download.artifact.validated",
@@ -972,7 +972,7 @@ export class DownloadService {
         },
         updatedAt,
       );
-      this.deps.diagnosticsStore?.record({
+      this.deps.diagnostics?.record({
         category: "download",
         level: result.status === "failed" ? "warn" : "info",
         operation: "download.artifact.repairable",

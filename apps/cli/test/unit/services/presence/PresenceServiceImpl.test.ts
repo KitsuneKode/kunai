@@ -62,7 +62,7 @@ describe("PresenceServiceImpl", () => {
     const diagnostics = createDiagnostics();
     const service = new PresenceServiceImpl({
       config: createConfig({ presenceProvider: "off" }),
-      diagnosticsStore: diagnostics,
+      diagnostics: diagnostics,
     });
 
     await service.updatePlayback({
@@ -366,7 +366,7 @@ describe("PresenceServiceImpl", () => {
     const diagnostics = createDiagnostics();
     const service = new PresenceServiceImpl({
       config: createConfig({ presenceProvider: "discord" }),
-      diagnosticsStore: diagnostics,
+      diagnostics: diagnostics,
     });
     const activities: Record<string, unknown>[] = [];
     let intervalCount = 0;
@@ -420,7 +420,7 @@ describe("PresenceServiceImpl", () => {
         presenceProvider: "discord",
         presenceDiscordClientId: "bun-client-id",
       }),
-      diagnosticsStore: diagnostics,
+      diagnostics: diagnostics,
     });
 
     const snapshot = await service.connect();
@@ -438,7 +438,7 @@ describe("PresenceServiceImpl", () => {
     const diagnostics = createDiagnostics();
     const service = new PresenceServiceImpl({
       config: createConfig({ presenceProvider: "discord" }),
-      diagnosticsStore: diagnostics,
+      diagnostics: diagnostics,
     });
     const calls: string[] = [];
 
@@ -470,7 +470,7 @@ describe("PresenceServiceImpl", () => {
     const diagnostics = createDiagnostics();
     const service = new PresenceServiceImpl({
       config: createConfig({ presenceProvider: "discord" }),
-      diagnosticsStore: diagnostics,
+      diagnostics: diagnostics,
     });
     const calls: string[] = [];
     const client = {
@@ -508,7 +508,7 @@ describe("PresenceServiceImpl", () => {
 
     const service = new PresenceServiceImpl({
       config: createConfig({ presenceProvider: "discord" }),
-      diagnosticsStore: diagnostics,
+      diagnostics: diagnostics,
     });
 
     const snapshot = await service.connect();

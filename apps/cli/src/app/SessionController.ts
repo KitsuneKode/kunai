@@ -37,7 +37,7 @@ export class SessionController {
     ]);
     for (const result of cleanupResults) {
       if (result.status === "fulfilled") continue;
-      this.container.diagnosticsStore.record({
+      this.container.diagnosticsService.record({
         category: "session",
         message: "Session shutdown cleanup failed",
         context: { error: String(result.reason) },
@@ -46,7 +46,7 @@ export class SessionController {
   }
 
   async run(bootstrap: SessionBootstrap = {}): Promise<void> {
-    const { logger, tracer, stateManager, diagnosticsStore } = this.container;
+    const { logger, tracer, stateManager, diagnosticsService } = this.container;
     let pendingInitialTitle = bootstrap.initialTitle ?? null;
     let pendingInitialEpisode = bootstrap.initialEpisode ?? null;
     let pendingInitialQuery = bootstrap.initialQuery;
@@ -56,7 +56,7 @@ export class SessionController {
 
     await tracer.span("session", async () => {
       try {
-        diagnosticsStore.record({
+        diagnosticsService.record({
           category: "session",
           message: "Session started",
           sessionId: this.container.sessionId,
@@ -115,7 +115,7 @@ export class SessionController {
             runBackgroundTask({
               task: "presence.updateBrowsingAfterPlayback",
               category: "presence",
-              diagnosticsStore,
+              diagnostics: diagnosticsService,
               context: { sessionId: this.container.sessionId, view: lastView },
               run: () =>
                 this.container.presence.updateBrowsing({
@@ -127,7 +127,7 @@ export class SessionController {
             runBackgroundTask({
               task: "presence.clearAfterPlayback",
               category: "presence",
-              diagnosticsStore,
+              diagnostics: diagnosticsService,
               context: { sessionId: this.container.sessionId, reason: "playback-exited" },
               run: () => this.container.presence.clearPlayback("playback-exited"),
             });
@@ -191,7 +191,7 @@ export class SessionController {
         }
       } catch (e) {
         logger.error("Session fatal error", { error: String(e) });
-        diagnosticsStore.record({
+        diagnosticsService.record({
           category: "session",
           message: "Session fatal error",
           context: { error: String(e) },

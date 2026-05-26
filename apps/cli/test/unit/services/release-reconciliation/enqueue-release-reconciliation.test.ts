@@ -19,7 +19,7 @@ test("release reconciliation triggers share one coalescing scheduler identity", 
       drain: async () => ({ completed: [], failed: [], skipped: [] }),
     },
     releaseReconciliationService: { reconcile: async () => ({ skipped: [] }) },
-    diagnosticsStore: { record: () => {} },
+    diagnosticsService: { record: () => {} },
   };
   const entries = [
     [
@@ -56,7 +56,7 @@ test("power saver suppresses passive release reconciliation from browse and hist
       drain: async () => ({ completed: [], failed: [], skipped: [] }),
     },
     releaseReconciliationService: { reconcile: async () => ({ skipped: [] }) },
-    diagnosticsStore: { record: () => {} },
+    diagnosticsService: { record: () => {} },
   };
   const entries = [
     [
@@ -107,7 +107,7 @@ test("release reconciliation batches offline policy attention lookup once per tr
         return { candidateCount: 0, fetchedCount: 0, writtenCount: 0, skipped: [] };
       },
     },
-    diagnosticsStore: { record: () => {} },
+    diagnosticsService: { record: () => {} },
   };
   const entries = [
     [

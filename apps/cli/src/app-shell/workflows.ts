@@ -95,7 +95,7 @@ export async function playCompletedDownload(container: Container, jobId: string)
     networkAvailable: true,
     preference: "prefer-local",
   });
-  container.diagnosticsStore.record({
+  container.diagnosticsService.record({
     category: "playback",
     message: "Offline source selected (unified play)",
     context: {
@@ -293,7 +293,7 @@ export async function runSetupWizard({
     await container.config.save();
   }
 
-  container.diagnosticsStore.record({
+  container.diagnosticsService.record({
     category: "session",
     message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
     context: { outcome, force },
@@ -688,7 +688,7 @@ export async function openOfflineLibraryGroupPicker(
             ? `Integrity check passed for ${entries.length} local item(s).`
             : `Integrity check found ${issueCount} item(s) needing repair.`,
       });
-      container.diagnosticsStore.record({
+      container.diagnosticsService.record({
         category: "download",
         message: "Offline group integrity checked",
         context: {
@@ -802,7 +802,7 @@ export async function openOfflineLibraryGroupPicker(
         type: "SET_PLAYBACK_FEEDBACK",
         note: `Search prepared for ${first.titleName}. Submit it to continue online.`,
       });
-      container.diagnosticsStore.record({
+      container.diagnosticsService.record({
         category: "search",
         message: "Offline title requested online continuation",
         context: {
@@ -913,7 +913,7 @@ export async function openOfflineLibraryGroupPicker(
           type: "SET_PLAYBACK_FEEDBACK",
           note: `Offline file unavailable: ${artifactStatus}. Check integrity first.`,
         });
-        container.diagnosticsStore.record({
+        container.diagnosticsService.record({
           category: "download",
           message: "Completed download playback blocked",
           context: {
@@ -946,7 +946,7 @@ export async function openOfflineLibraryGroupPicker(
             ? `Integrity check passed: ${formatOfflineJobListingTitle(job)}`
             : `Integrity check failed: ${formatOfflineJobListingTitle(job)} is ${checkedStatus}`,
       });
-      container.diagnosticsStore.record({
+      container.diagnosticsService.record({
         category: "download",
         message: "Offline artifact integrity checked",
         context: { jobId: job.id, artifactStatus: checkedStatus, outputPath: job.outputPath },
@@ -1066,7 +1066,7 @@ async function queueMoreOfflineTitleEpisodes(
     { title },
     { container, signal: new AbortController().signal },
   );
-  container.diagnosticsStore.record({
+  container.diagnosticsService.record({
     category: "download",
     message: "Offline title download-more action completed",
     context: {
@@ -1406,10 +1406,10 @@ async function handleStaticOverlay(
 }
 
 async function handleDiagnostics(container: Container): Promise<"handled"> {
-  const { stateManager, diagnosticsStore } = container;
+  const { stateManager, diagnosticsService, diagnosticsStore } = container;
   const memoryLine = getRuntimeMemoryLine();
   const memoryTrend = summarizeRuntimeMemoryTrend(getRuntimeMemorySamples());
-  diagnosticsStore.record({
+  diagnosticsService.record({
     category: "runtime",
     operation: "runtime.memory.sample",
     message: "Runtime memory sample",
@@ -1502,7 +1502,7 @@ async function handleClearCache(container: Container): Promise<"handled"> {
   });
   if (confirm) {
     await container.cacheStore.clear();
-    container.diagnosticsStore.record({ category: "cache", message: "Stream cache cleared" });
+    container.diagnosticsService.record({ category: "cache", message: "Stream cache cleared" });
   }
   return "handled";
 }
@@ -1518,7 +1518,7 @@ async function handleClearHistory(container: Container): Promise<"handled"> {
   });
   if (confirm) {
     await container.historyStore.clear();
-    container.diagnosticsStore.record({ category: "session", message: "Watch history cleared" });
+    container.diagnosticsService.record({ category: "session", message: "Watch history cleared" });
   }
   return "handled";
 }
@@ -1589,7 +1589,7 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
       prefix: "kunai-diagnostics-report-",
       maxFiles: 10,
     });
-    container.diagnosticsStore.record({
+    container.diagnosticsService.record({
       category: "ui",
       message: "Diagnostics report bundle exported",
       context: { path: fileName, issueTitle: draft.title, tracePath: container.debugTracePath },
@@ -1671,7 +1671,7 @@ export async function enqueueCurrentPlaybackDownload({
       type: "SET_PLAYBACK_FEEDBACK",
       note: `Download unavailable: ${eligibility.reason}`,
     });
-    container.diagnosticsStore.record({
+    container.diagnosticsService.record({
       category: "download",
       message: "Download enqueue blocked by feature gate",
       context: {
@@ -1714,7 +1714,7 @@ export async function enqueueCurrentPlaybackDownload({
       selectedQualityLabel: getSelectedPlaybackQualityLabel(state.stream),
       timing,
     });
-    container.diagnosticsStore.record({
+    container.diagnosticsService.record({
       category: "download",
       message: "Download queued",
       context: {
@@ -1753,7 +1753,7 @@ export async function enqueueCurrentPlaybackDownload({
       type: "SET_PLAYBACK_FEEDBACK",
       note: `Download queue failed: ${message}`,
     });
-    container.diagnosticsStore.record({
+    container.diagnosticsService.record({
       category: "download",
       message: "Download queue failed",
       context: {

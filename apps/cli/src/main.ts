@@ -285,7 +285,7 @@ async function maybeResolveContinueTitle(
     selectContinueHistoryEntryFromRecent(recentEntries) ??
     selectContinueHistoryEntry(await container.historyStore.getAll());
   if (!selection) {
-    container.diagnosticsStore.record({
+    container.diagnosticsService.record({
       category: "session",
       message: "Continue requested but no unfinished history entry was available",
     });
@@ -302,7 +302,7 @@ async function maybeResolveContinueTitle(
       ? recentEntries
       : Object.entries(await container.historyStore.getAll()),
   });
-  container.diagnosticsStore.record({
+  container.diagnosticsService.record({
     category: "session",
     operation: "continuation.project",
     message: "Continue target projected from local history",
@@ -578,7 +578,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   void container.downloadService.processQueue();
   container.updateService.checkInBackground();
   if (capabilitySnapshot.issues.length > 0) {
-    container.diagnosticsStore.record({
+    container.diagnosticsService.record({
       category: "session",
       message: "Startup capability checks",
       context: {
@@ -590,7 +590,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   runBackgroundTask({
     task: "storage.maintenance.startup",
     category: "cache",
-    diagnosticsStore: container.diagnosticsStore,
+    diagnostics: container.diagnosticsService,
     logger,
     run: () => container.storageMaintenance.runStartupMaintenance(),
   });
@@ -631,7 +631,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     const { confirmProtocolHandoff } = await import("./app-shell/workflows");
     const confirmed = await confirmProtocolHandoff(protocolHandoff);
     if (!confirmed) {
-      container.diagnosticsStore.record({
+      container.diagnosticsService.record({
         category: "session",
         message: "Protocol handoff cancelled by local confirmation",
         context: {

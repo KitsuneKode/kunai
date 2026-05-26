@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import { getDefaultTtlMs, SourceInventoryRepository } from "@kunai/storage";
 import type {
   CacheTtlClass,
@@ -27,7 +27,7 @@ export type SourceInventoryCacheInput = {
 export class SourceInventoryService {
   constructor(
     private readonly repository: SourceInventoryRepository,
-    private readonly options: { readonly diagnosticsStore?: DiagnosticsStore } = {},
+    private readonly options: { readonly diagnostics?: Pick<DiagnosticsService, "record"> } = {},
   ) {}
 
   async get(
@@ -101,7 +101,7 @@ export class SourceInventoryService {
     input: SourceInventoryCacheInput,
     error: unknown,
   ): void {
-    this.options.diagnosticsStore?.record({
+    this.options.diagnostics?.record({
       level: "warn",
       category: "cache",
       operation,
@@ -123,7 +123,7 @@ export class SourceInventoryService {
     input: SourceInventoryCacheInput,
     context: Record<string, unknown>,
   ): void {
-    this.options.diagnosticsStore?.record({
+    this.options.diagnostics?.record({
       level: "info",
       category: "cache",
       operation,

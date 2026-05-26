@@ -428,7 +428,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   ): PlaybackSessionState {
     const nextSession = transitionPlaybackSessionPhase(session, event);
     if (nextSession.phase !== session.phase) {
-      context.container.diagnosticsStore.record({
+      context.container.diagnosticsService.record({
         category: "playback",
         operation: "playback.session.phase",
         message: `Playback session phase: ${nextSession.phase}`,
@@ -488,7 +488,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     runBackgroundTask({
       task,
       category: "presence",
-      diagnosticsStore: context.container.diagnosticsStore,
+      diagnostics: context.container.diagnosticsService,
       context: {
         ...correlation,
         titleId: activity.title.id,
@@ -519,12 +519,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   }
 
   private showPlaybackProblem(context: PhaseContext, problem: PlaybackProblem): Promise<void> {
-    const { diagnosticsStore, stateManager } = context.container;
+    const { diagnosticsService, stateManager } = context.container;
     stateManager.dispatch({
       type: "SET_PLAYBACK_PROBLEM",
       problem,
     });
-    diagnosticsStore.record({
+    diagnosticsService.record({
       category: "playback",
       message: problem.userMessage,
       context: {
@@ -661,7 +661,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       historyStore,
       config,
       cacheStore,
-      diagnosticsStore,
+      diagnosticsService,
       playerControl,
       player,
       workControl,
@@ -706,7 +706,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         episodeCount: title.episodeCount ?? null,
         animeEpisodeOptions: initialAnimeEpisodes?.length ?? 0,
       });
-      diagnosticsStore.record({
+      diagnosticsService.record({
         category: "provider",
         message: "Episode selection metadata",
         context: {
@@ -866,7 +866,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const recordStartupMark = (stage: PlaybackStartupStage, activeStream?: StreamInfo) => {
             if (!startupTimeline.mark(stage)) return;
             const snapshot = startupTimeline.snapshot();
-            diagnosticsStore.record({
+            diagnosticsService.record({
               ...playbackCorrelation,
               category: "playback",
               operation: "playback.startup.timeline",
@@ -936,7 +936,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           playerControl.setEpisodeNavigationAvailability(navigationState);
 
           if (episodeAvailability.tmdbUnavailable) {
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "provider",
               message: "TMDB metadata unavailable — episode navigation disabled",
               context: {
@@ -981,7 +981,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               detail: sourceRefreshDecision.message,
               note: "The current stream can be reused without another provider lookup.",
             });
-            diagnosticsStore.record({
+            diagnosticsService.record({
               ...playbackCorrelation,
               category: "playback",
               operation: "playback.refresh.cooldown",
@@ -993,7 +993,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               context: { remainingMs: sourceRefreshDecision.remainingMs },
             });
           } else if (sourceRefreshDecision) {
-            diagnosticsStore.record({
+            diagnosticsService.record({
               ...playbackCorrelation,
               category: "playback",
               operation:
@@ -1056,7 +1056,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             providerId: currentProvider.metadata.id,
             mode: stateManager.getState().mode,
           });
-          diagnosticsStore.record({
+          diagnosticsService.record({
             ...playbackCorrelation,
             category: "provider",
             message: "Resolve trace started",
@@ -1070,7 +1070,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               episode: currentEpisode.episode,
               prepared: prefetchWasPrepared,
             });
-            diagnosticsStore.record({
+            diagnosticsService.record({
               ...playbackCorrelation,
               category: "provider",
               message: prefetchWasPrepared
@@ -1095,7 +1095,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               stream = recent.stream;
               resolvedProviderId = recent.resolvedProviderId;
               streamProvenance = recent.provenance;
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "cache",
                 operation: "playback.stream.reused",
@@ -1188,7 +1188,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                         episode: currentEpisode.episode,
                       });
                     }
-                    diagnosticsStore.record({
+                    diagnosticsService.record({
                       ...playbackCorrelation,
                       category: "cache",
                       message: hit ? "Provider resolve cache hit" : "Provider resolve cache miss",
@@ -1211,7 +1211,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   }
 
                   if (event.type === "cache-health-check") {
-                    diagnosticsStore.record({
+                    diagnosticsService.record({
                       ...playbackCorrelation,
                       category: "cache",
                       message: event.healthy
@@ -1276,7 +1276,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             if (stream) recordStartupMark("resolve-complete", stream);
 
             for (const [attemptIndex, attempt] of resolveAttempts.entries()) {
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "provider",
                 message: attempt.stream
@@ -1304,7 +1304,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
 
             if (stream?.providerResolveResult) {
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "provider",
                 message: "Provider resolve trace completed",
@@ -1335,7 +1335,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     detail: `Trying ${fallback.metadata.name ?? fallback.metadata.id}…`,
                     note: "Fallback provider selected for the rest of this session",
                   });
-                  diagnosticsStore.record({
+                  diagnosticsService.record({
                     category: "provider",
                     message: "Skipping current provider during playback bootstrap",
                     context: {
@@ -1401,7 +1401,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             runBackgroundTask({
               task: "playback.retryTiming",
               category: "playback",
-              diagnosticsStore: container.diagnosticsStore,
+              diagnostics: container.diagnosticsService,
               context: {
                 titleId: title.id,
                 season: currentEpisode.season,
@@ -1481,7 +1481,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   note: "Still preparing a source in the background",
                 }),
               recordWait: (wait) => {
-                diagnosticsStore.record({
+                diagnosticsService.record({
                   category: "playback",
                   operation,
                   message: wait.bundle
@@ -1518,7 +1518,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             })
               .then((bundle) => {
                 if (bundle) {
-                  diagnosticsStore.record({
+                  diagnosticsService.record({
                     category: "playback",
                     message: "Prefetch resolved successfully",
                     context: {
@@ -1533,7 +1533,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 return bundle;
               })
               .catch((err) => {
-                diagnosticsStore.record({
+                diagnosticsService.record({
                   category: "playback",
                   level: "warn",
                   message: "Prefetch resolve failed",
@@ -1672,7 +1672,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               this.updatePlaybackFeedback(context, {
                 note: `${providerSuggestion.providerId} struggled with this title. ${providerSuggestion.suggestedProviderId} worked; choose it from providers for this title.`,
               });
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "provider",
                 operation: "provider.title-health.suggestion",
                 message: "Title-scoped provider switch suggestion available at episode boundary",
@@ -1693,7 +1693,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
             }
           } else {
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "playback",
               message: "Skipped history save",
               context: {
@@ -1763,7 +1763,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 "dead-stream",
               );
             }
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "playback",
               message: result.suspectedDeadStream
                 ? "Stream ended early — cached URL invalidated for next resolve"
@@ -1822,7 +1822,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               result.suspectedDeadStream === true || playbackControlAction === "recover"
                 ? "recover"
                 : "refresh";
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "playback",
               message:
                 pendingSourceRefreshAction === "recover"
@@ -1867,7 +1867,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             if (fallback) {
               sessionSoftProviderId = null;
               stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Switching to fallback provider after playback control request",
                 context: {
@@ -1882,7 +1882,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               continue;
             }
 
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "playback",
               message:
                 "Fallback playback control requested but no compatible provider was available",
@@ -1999,7 +1999,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   config.quitNearEndThresholdMode,
                 ),
               });
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Source override selected",
                 context: {
@@ -2029,7 +2029,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 picked.section === "source"
                   ? startEpisodeNavigation({ targetResumeSeconds: restartResume })
                   : startAtResumePoint(restartResume, { suppressResumePrompt: true });
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Track override selected",
                 context: {
@@ -2055,7 +2055,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   config.quitNearEndThresholdMode,
                 ),
               });
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Stream override selected",
                 context: {
@@ -2081,7 +2081,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 picked.section === "source"
                   ? startEpisodeNavigation({ targetResumeSeconds: restartResume })
                   : startAtResumePoint(restartResume, { suppressResumePrompt: true });
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Track override selected",
                 context: {
@@ -2108,7 +2108,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 ),
                 { suppressResumePrompt: true },
               );
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Quality override selected",
                 context: {
@@ -2138,7 +2138,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 picked.section === "source"
                   ? startEpisodeNavigation({ targetResumeSeconds: restartResume })
                   : startAtResumePoint(restartResume, { suppressResumePrompt: true });
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Track override selected",
                 context: {
@@ -2155,7 +2155,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           // Handle post-playback
-          diagnosticsStore.record({
+          diagnosticsService.record({
             category: "playback",
             message: "Evaluating autoplay advance",
             context: {
@@ -2225,7 +2225,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
             }
 
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "playback",
               message: "Auto-next blocked",
               context: {
@@ -2252,7 +2252,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 autoplayPaused: true,
                 autoplayPauseReason: "user",
               };
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Auto-next countdown cancelled",
                 context: {
@@ -2276,7 +2276,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   buildPrefetchTarget(nextEpisode, resolvedProviderId),
                 ),
               });
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Auto-next advancing to next episode",
                 context: {
@@ -2426,7 +2426,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               currentTitle: title.name,
               prefetchedItems: prefetchedRecommendationItems,
             });
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "playback",
               operation: "post-playback.recommendations.seed",
               message: "Post-playback recommendations seeded for first paint",
@@ -2456,7 +2456,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     () => [] as readonly PostPlaybackRecommendationItem[],
                   ),
                 ]).catch(() => [] as readonly PostPlaybackRecommendationItem[]);
-                diagnosticsStore.record({
+                diagnosticsService.record({
                   category: "playback",
                   operation: "post-playback.recommendations.load",
                   message: "Post-playback recommendations loaded before first paint",
@@ -2668,7 +2668,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   provider: fallback.metadata.id,
                 },
               );
-              diagnosticsStore.record({
+              diagnosticsService.record({
                 category: "playback",
                 message: "Switching to fallback provider after shell command",
                 context: {
@@ -2852,7 +2852,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
             stateManager.dispatch({ type: "SET_STREAM", stream: null });
             this.updatePlaybackFeedback(context, { detail: null, note: null });
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "playback",
               message: "Playback resolve cancelled",
               context: {
@@ -3070,7 +3070,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       providerSubtitleSource: stream.subtitleSource ?? "none",
       providerSubtitleEvidence: stream.subtitleEvidence ?? null,
     });
-    context.container.diagnosticsStore.record({
+    context.container.diagnosticsService.record({
       category: "subtitle",
       message: "Subtitle resolution",
       context: {
@@ -3312,7 +3312,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stream: { ...currentStream, subtitle: undefined },
               });
             }
-            context.container.diagnosticsStore.record({
+            context.container.diagnosticsService.record({
               category: "playback",
               message: "Track changed from mpv",
               context: {
@@ -3353,7 +3353,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     episode: EpisodeInfo;
     context: PhaseContext;
   }): void {
-    const { stateManager, diagnosticsStore, logger } = context.container;
+    const { stateManager, diagnosticsService, logger } = context.container;
     const requestedSubLang =
       stateManager.getState().mode === "anime"
         ? stateManager.getState().animeLanguageProfile.subtitle
@@ -3370,7 +3370,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
     const inflightKey = `${title.id}:${episode.season}:${episode.episode}:${requestedSubLang}`;
     if (PlaybackPhase.lateSubtitleInflight.has(inflightKey)) {
-      diagnosticsStore.record({
+      diagnosticsService.record({
         category: "subtitle",
         message: "Late subtitle lookup skipped (already in flight)",
         context: { inflightKey },
@@ -3379,7 +3379,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     }
     PlaybackPhase.lateSubtitleInflight.add(inflightKey);
 
-    diagnosticsStore.record({
+    diagnosticsService.record({
       category: "subtitle",
       message: "Late subtitle lookup started",
       context: {
@@ -3403,7 +3403,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         if (context.signal.aborted) return;
         if (result.list.length === 0) {
-          diagnosticsStore.record({
+          diagnosticsService.record({
             category: "subtitle",
             message: result.failed ? "Late subtitle lookup failed" : "Late subtitle lookup empty",
             context: {
@@ -3422,7 +3422,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const selected = selectSubtitle(mergedSubtitleList as never, requestedSubLang);
         const selectedUrl = selected?.url ?? result.selected ?? null;
         if (!selectedUrl) {
-          diagnosticsStore.record({
+          diagnosticsService.record({
             category: "subtitle",
             message: "Late subtitle lookup found tracks but no selectable URL",
             context: { titleId: title.id, trackCount: mergedSubtitleList.length },
@@ -3458,7 +3458,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
         }
 
-        diagnosticsStore.record({
+        diagnosticsService.record({
           category: "subtitle",
           operation: "subtitle.attach.outcome",
           message: "Late subtitle lookup attached tracks",
@@ -3472,7 +3472,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       } catch (error) {
         if (context.signal.aborted) return;
         logger.warn("Late subtitle lookup failed", { error: String(error) });
-        diagnosticsStore.record({
+        diagnosticsService.record({
           category: "subtitle",
           message: "Late subtitle lookup failed",
           context: { titleId: title.id, error: String(error) },
@@ -3508,7 +3508,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       await Bun.sleep(250);
     }
-    context.container.diagnosticsStore.record({
+    context.container.diagnosticsService.record({
       category: "subtitle",
       operation: "subtitle.attach.outcome",
       message: "Late subtitle attachment timed out waiting for player",

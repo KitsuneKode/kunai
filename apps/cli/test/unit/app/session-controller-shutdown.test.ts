@@ -22,7 +22,7 @@ describe("SessionController shutdown", () => {
           calls.push("player");
         },
       },
-      diagnosticsStore: {
+      diagnosticsService: {
         record(event: { category?: string; message?: string }) {
           calls.push(`diagnostic:${event.category}:${event.message}`);
         },

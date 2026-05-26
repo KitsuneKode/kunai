@@ -64,7 +64,7 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
     const state = container.stateManager.getState();
     const eligibility = container.downloadService.getEnqueueEligibility();
     if (!eligibility.allowed) {
-      container.diagnosticsStore.record({
+      container.diagnosticsService.record({
         category: "download",
         message: "Download-only enqueue blocked",
         context: { code: eligibility.code, reason: eligibility.reason },
@@ -179,7 +179,7 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
           : error instanceof Error
             ? error.message
             : String(error);
-      container.diagnosticsStore.record({
+      container.diagnosticsService.record({
         category: "download",
         message: "Download-only batch enqueue stopped",
         context: { queuedCount, error: message, titleId: input.title.id },
@@ -196,7 +196,7 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
       return { status: "success", value: queuedCount > 0 ? "queued" : "back" };
     }
 
-    container.diagnosticsStore.record({
+    container.diagnosticsService.record({
       category: "download",
       operation: "download.profile.confirmed",
       message: "Download-only job(s) queued",

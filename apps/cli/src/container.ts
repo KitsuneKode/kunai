@@ -289,9 +289,6 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const followedTitleRepository = new FollowedTitleRepository(dataDb);
   const playlistsRepository = new PlaylistsRepository(dataDb);
   const diagnosticsStore = new DiagnosticsStoreImpl();
-  const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
-    diagnosticsStore,
-  });
   const featureFlags = resolveAttentionFeatureFlags();
   const traceCategories = resolveTraceCategories({
     explicit: process.env.KUNAI_TRACE,
@@ -321,10 +318,13 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     debug,
     traceReporter,
   });
+  const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
+    diagnostics: diagnosticsService,
+  });
   const storageMaintenance = new StorageMaintenanceService({
     dataDb,
     cacheDb,
-    diagnosticsStore,
+    diagnostics: diagnosticsService,
   });
 
   // Lists, playlist, stats, sync
@@ -349,8 +349,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   // Infrastructure services
   const shell = new ShellServiceImpl({ logger, tracer, stateManager });
-  const playerControl = new PlayerControlServiceImpl({ logger, diagnosticsStore });
-  const workControl = new WorkControlServiceImpl({ logger, diagnosticsStore });
+  const playerControl = new PlayerControlServiceImpl({ logger, diagnostics: diagnosticsService });
+  const workControl = new WorkControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const player = new PlayerServiceImpl({
     logger,
     tracer,
@@ -359,7 +359,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     config,
     mpv: options?.mpv,
   });
-  const presence = new PresenceServiceImpl({ config, diagnosticsStore });
+  const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
   // Engine: single source of truth for provider resolution
   const engine = createProviderEngine({
@@ -394,7 +394,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
     ffprobeAvailable: Boolean(Bun.which("ffprobe")),
     ffmpegAvailable: Boolean(Bun.which("ffmpeg")),
-    diagnosticsStore,
+    diagnostics: diagnosticsService,
     onCompletedArtifact: (job) => {
       offlineAssetService.adoptCompletedJob(job);
     },
@@ -439,7 +439,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const offlineMaintenanceService = new OfflineMaintenanceService({
     jobs: offlineMaintenanceJobs,
     assets: offlineAssetService,
-    diagnostics: diagnosticsStore,
+    diagnostics: diagnosticsService,
   });
   const notificationService = new NotificationService({
     repo: notificationRepository,
@@ -466,7 +466,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const continuationProjectionService = new ContinuationProjectionService();
   const attentionRefreshWorker = new AttentionRefreshWorker({
     flags: featureFlags,
-    diagnostics: diagnosticsStore,
+    diagnostics: diagnosticsService,
   });
   const backgroundWorkScheduler = new BackgroundWorkScheduler({ maxConcurrent: 2 });
   const durablePlaylistService = new DurablePlaylistService(playlistsRepository);
@@ -490,7 +490,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     releaseProgressCache,
     downloadService,
     scheduler: backgroundWorkScheduler,
-    diagnostics: diagnosticsStore,
+    diagnostics: diagnosticsService,
     isPowerSaver: () => config.powerSaverMode,
   });
   const timelineService = new TimelineService(catalogScheduleService);
@@ -505,7 +505,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   });
   const updateService = new UpdateService({
     config,
-    diagnostics: diagnosticsStore,
+    diagnostics: diagnosticsService,
     currentVersion: options?.appVersion ?? "0.0.0",
     installMethod: detectInstallMethod({
       cwd: process.cwd(),

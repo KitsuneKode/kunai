@@ -29,7 +29,7 @@ test("StorageMaintenanceService runs cache and data maintenance without throwing
     const service = new StorageMaintenanceService({
       dataDb,
       cacheDb,
-      diagnosticsStore: {
+      diagnostics: {
         record(event: unknown) {
           diagnostics.push(event);
         },

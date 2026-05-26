@@ -4,7 +4,7 @@ import {
   type KunaiDatabase,
 } from "@kunai/storage";
 
-import type { DiagnosticsStore } from "../diagnostics/DiagnosticsStore";
+import type { DiagnosticsService } from "../diagnostics/DiagnosticsService";
 
 export type StorageMaintenanceResult = {
   readonly data: DatabaseMaintenanceResult;
@@ -16,7 +16,7 @@ export class StorageMaintenanceService {
     private readonly deps: {
       readonly dataDb: KunaiDatabase;
       readonly cacheDb: KunaiDatabase;
-      readonly diagnosticsStore?: Pick<DiagnosticsStore, "record">;
+      readonly diagnostics?: Pick<DiagnosticsService, "record">;
       readonly now?: () => Date;
     },
   ) {}
@@ -37,7 +37,7 @@ export class StorageMaintenanceService {
     });
     const result = { data, cache };
 
-    this.deps.diagnosticsStore?.record({
+    this.deps.diagnostics?.record({
       category: "cache",
       operation: "storage.maintenance.startup",
       message: "Storage maintenance completed",

@@ -1,6 +1,6 @@
 import type { DiagnosticCorrelation } from "./correlation";
 import type { DiagnosticCategory } from "./diagnostic-event";
-import type { DiagnosticsStore } from "./DiagnosticsStore";
+import type { DiagnosticsService } from "./DiagnosticsService";
 
 type BackgroundTaskLogger = {
   warn(message: string, context?: Record<string, unknown>): void;
@@ -9,7 +9,7 @@ type BackgroundTaskLogger = {
 export type BackgroundTaskInput = {
   readonly task: string;
   readonly category: DiagnosticCategory;
-  readonly diagnosticsStore?: DiagnosticsStore;
+  readonly diagnostics?: Pick<DiagnosticsService, "record">;
   readonly logger?: BackgroundTaskLogger;
   readonly context?: Record<string, unknown> & DiagnosticCorrelation;
   readonly run: Promise<unknown> | (() => Promise<unknown>);
@@ -29,8 +29,8 @@ export function runBackgroundTask(input: BackgroundTaskInput): void {
       ...contextWithoutPromotedFields(input.context),
     };
 
-    if (input.diagnosticsStore) {
-      input.diagnosticsStore.record({
+    if (input.diagnostics) {
+      input.diagnostics.record({
         level: "warn",
         category: input.category,
         operation: `background.${input.task}`,

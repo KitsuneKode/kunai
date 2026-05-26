@@ -14,17 +14,10 @@ function makeService(events: unknown[] = []) {
         return this;
       },
     },
-    diagnosticsStore: {
+    diagnostics: {
       record(event: unknown) {
         events.push(event);
       },
-      getRecent() {
-        return [];
-      },
-      getSnapshot() {
-        return [];
-      },
-      clear() {},
     },
   });
 }

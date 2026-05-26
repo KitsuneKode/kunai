@@ -1,5 +1,5 @@
 import type { Logger } from "@/infra/logger/Logger";
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 
 import type { ActiveWorkControl, WorkControlService } from "./WorkControlService";
 
@@ -9,7 +9,7 @@ export class WorkControlServiceImpl implements WorkControlService {
   constructor(
     private readonly deps: {
       logger: Logger;
-      diagnosticsStore: DiagnosticsStore;
+      diagnostics: Pick<DiagnosticsService, "record">;
     },
   ) {}
 
@@ -24,7 +24,7 @@ export class WorkControlServiceImpl implements WorkControlService {
   cancelActive(reason = "user-requested"): boolean {
     const active = this.active;
     if (!active) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "session",
         message: "Work cancellation requested without active work",
         context: { reason },
@@ -37,7 +37,7 @@ export class WorkControlServiceImpl implements WorkControlService {
       label: active.label,
       reason,
     });
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "session",
       message: "Cancelling active work",
       context: {

@@ -1,5 +1,5 @@
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 
 import { buildDiscordPosterAsset, buildDiscordPresenceButtons } from "./discord-activity-links";
@@ -39,7 +39,7 @@ export class PresenceServiceImpl implements PresenceService {
   constructor(
     private readonly deps: {
       readonly config: ConfigService;
-      readonly diagnosticsStore: DiagnosticsStore;
+      readonly diagnostics: Pick<DiagnosticsService, "record">;
     },
   ) {
     if (deps.config.presenceProvider === "off") {
@@ -90,7 +90,7 @@ export class PresenceServiceImpl implements PresenceService {
     this.lastActivityHash = null;
     if (client) {
       await client.destroy().catch(() => undefined);
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "presence",
         message: "Discord presence disconnected",
         context: { provider: "discord", reason },
@@ -187,7 +187,7 @@ export class PresenceServiceImpl implements PresenceService {
   private async clearDiscordActivity(client: DiscordPresenceClient, reason: string): Promise<void> {
     try {
       await client.clearActivity();
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "presence",
         message: "Presence cleared",
         context: { provider: "discord", reason },
@@ -251,7 +251,7 @@ export class PresenceServiceImpl implements PresenceService {
       this.unavailableReason = null;
       this.unavailableRetryAtMs = 0;
       this.unavailableBackoffMs = 1_000;
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "presence",
         message: "Discord presence connected",
         context: { provider: "discord", transport: "bun-discord-ipc" },
@@ -275,7 +275,7 @@ export class PresenceServiceImpl implements PresenceService {
     this.unavailableReason = normalizePresenceError(error);
     this.unavailableRetryAtMs = Date.now() + this.unavailableBackoffMs;
     this.unavailableBackoffMs = Math.min(this.unavailableBackoffMs * 2, 60_000);
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "presence",
       message,
       context: {
@@ -295,7 +295,7 @@ export class PresenceServiceImpl implements PresenceService {
       runBackgroundTask({
         task: "presence.heartbeat",
         category: "presence",
-        diagnosticsStore: this.deps.diagnosticsStore,
+        diagnostics: this.deps.diagnostics,
         run: () => this.sendHeartbeat(),
       });
     }, 15_000);
@@ -315,7 +315,7 @@ export class PresenceServiceImpl implements PresenceService {
         runBackgroundTask({
           task: "presence.reconnectFromHeartbeat",
           category: "presence",
-          diagnosticsStore: this.deps.diagnosticsStore,
+          diagnostics: this.deps.diagnostics,
           run: () => this.tryReconnect(),
         });
       }

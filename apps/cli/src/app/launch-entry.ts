@@ -80,7 +80,7 @@ export function selectLocalContinueCandidate(
 }
 
 export async function recordLocalHistorySourceDecision(
-  container: Pick<Container, "offlineLibraryService" | "diagnosticsStore" | "stateManager">,
+  container: Pick<Container, "offlineLibraryService" | "diagnosticsService" | "stateManager">,
   selection: HistoryLaunchSelection,
   reason: "continue" | "history",
 ): Promise<void> {
@@ -96,7 +96,7 @@ export async function recordLocalHistorySourceDecision(
     networkAvailable: true,
     preference: "ask",
   });
-  container.diagnosticsStore.record({
+  container.diagnosticsService.record({
     category: "playback",
     message: "History target has an exact ready local artifact",
     context: {

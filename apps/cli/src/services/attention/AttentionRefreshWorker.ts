@@ -1,5 +1,5 @@
 import type { AttentionFeatureFlags } from "@/domain/features/feature-flags";
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 
 import {
   planAttentionRefresh,
@@ -12,7 +12,7 @@ export type AttentionRefreshWorkerStatus = "disabled" | "planned-only" | "comple
 export interface AttentionRefreshWorkerDeps {
   readonly flags: Pick<AttentionFeatureFlags, "providerAvailabilitySync">;
   readonly refreshAvailability?: (titleId: string, signal: AbortSignal) => Promise<void> | void;
-  readonly diagnostics?: Pick<DiagnosticsStore, "record">;
+  readonly diagnostics?: Pick<DiagnosticsService, "record">;
 }
 
 export interface AttentionRefreshWorkerRunInput {

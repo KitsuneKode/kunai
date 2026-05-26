@@ -10,7 +10,7 @@ describe("runBackgroundTask", () => {
     runBackgroundTask({
       task: "presence.heartbeat",
       category: "presence",
-      diagnosticsStore,
+      diagnostics: diagnosticsStore,
       context: {
         streamUrl: "https://cdn.example/watch/1234567890/master.m3u8?token=secret",
         providerId: "vidking",

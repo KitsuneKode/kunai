@@ -152,7 +152,7 @@ describe("SourceInventoryService", () => {
   test("records cache hit miss set and invalidation decisions without key preimages", async () => {
     const diagnosticsStore = new DiagnosticsStoreImpl();
     const service = new SourceInventoryService(new SourceInventoryRepository(migratedCacheDb()), {
-      diagnosticsStore,
+      diagnostics: diagnosticsStore,
     });
     const input = {
       providerId: "vidking",
@@ -202,7 +202,7 @@ describe("SourceInventoryService", () => {
           throw new Error("database is locked");
         },
       } as never,
-      { diagnosticsStore },
+      { diagnostics: diagnosticsStore },
     );
     const input = {
       providerId: "vidking",

@@ -12,7 +12,7 @@ type ReleaseReconciliationContainer = Pick<
   Container,
   | "backgroundWorkScheduler"
   | "releaseReconciliationService"
-  | "diagnosticsStore"
+  | "diagnosticsService"
   | "offlineTitlePolicies"
   | "config"
 >;
@@ -65,7 +65,7 @@ export function enqueueReleaseReconciliation(
         attentionByTitleId,
         signal: workSignal,
       });
-      container.diagnosticsStore.record({
+      container.diagnosticsService.record({
         category: "cache",
         operation: "release-reconciliation.refresh",
         message: "Release reconciliation refreshed in background",

@@ -173,7 +173,7 @@ describe("DownloadService", () => {
       ytDlpAvailable: true,
       ffprobeAvailable: true,
       downloadPath: tempDir,
-      diagnosticsStore: {
+      diagnostics: {
         record: (event: unknown) => diagnostics.push(event),
       },
     });
@@ -1006,7 +1006,7 @@ function buildService({
   abortGraceMs,
   ffmpegAvailable = false,
   ffprobeAvailable = false,
-  diagnosticsStore,
+  diagnostics,
   configService,
 }: {
   repo: DownloadJobsRepository;
@@ -1017,7 +1017,7 @@ function buildService({
   abortGraceMs?: number;
   ffmpegAvailable?: boolean;
   ffprobeAvailable?: boolean;
-  diagnosticsStore?: ConstructorParameters<typeof DownloadService>[0]["diagnosticsStore"];
+  diagnostics?: ConstructorParameters<typeof DownloadService>[0]["diagnostics"];
   configService?: ConfigService;
 }): DownloadService {
   const defaultConfig = {
@@ -1030,7 +1030,7 @@ function buildService({
     ytDlpAvailable,
     ffprobeAvailable,
     ffmpegAvailable,
-    diagnosticsStore,
+    diagnostics,
     logger: {
       debug() {},
       info() {},

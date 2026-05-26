@@ -61,7 +61,7 @@ if (process.env.KUNAI_LIVE_DISCORD_PRESENCE !== "1") {
   const diagnostics = createDiagnostics();
   const service = new PresenceServiceImpl({
     config: createConfig(),
-    diagnosticsStore: diagnostics,
+    diagnostics: diagnostics,
   });
 
   try {

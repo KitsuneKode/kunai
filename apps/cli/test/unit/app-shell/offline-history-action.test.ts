@@ -34,7 +34,7 @@ test("playCompletedDownload keeps an explicit history local action provider-free
       skipPreview: false,
       skipCredits: false,
     },
-    diagnosticsStore: { record: () => {} },
+    diagnosticsService: { record: () => {} },
     player: {
       playLocal: async () => {
         played += 1;

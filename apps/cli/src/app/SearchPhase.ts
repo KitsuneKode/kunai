@@ -85,7 +85,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
     context: PhaseContext,
   ): Promise<PhaseResult<TitleInfo>> {
     const { container } = context;
-    const { searchRegistry, providerRegistry, stateManager, logger, diagnosticsStore } = container;
+    const { searchRegistry, providerRegistry, stateManager, logger, diagnosticsService } =
+      container;
 
     try {
       const preserveExistingSearch =
@@ -143,7 +144,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             source: search.sourceId,
             filters: searchIntent.chips,
           });
-          diagnosticsStore.record({
+          diagnosticsService.record({
             category: "search",
             message: "Bootstrap search complete",
             context: {
@@ -333,7 +334,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               source: search.sourceId,
               filters: search.evidence,
             });
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "search",
               message: "Search complete",
               context: {
@@ -375,7 +376,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               mode,
               count: results.length,
             });
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "search",
               message: "Discovery list loaded",
               context: {
@@ -473,7 +474,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 note: `Filter added: ${chip}`,
               });
             }
-            diagnosticsStore.record({
+            diagnosticsService.record({
               category: "search",
               message: chip ? "Search filter chip added" : "Search filter help opened",
               context: {
@@ -578,7 +579,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         return { status: "cancelled" };
       }
       logger.error("Search phase error", { error: String(e) });
-      diagnosticsStore.record({
+      diagnosticsService.record({
         category: "search",
         message: "Search phase error",
         context: { error: String(e) },
@@ -601,7 +602,7 @@ async function loadSearchRoute(
   context: PhaseContext,
 ): Promise<void> {
   const { container } = context;
-  const { stateManager, diagnosticsStore, logger } = container;
+  const { stateManager, diagnosticsService, logger } = container;
   stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
   stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
@@ -630,7 +631,7 @@ async function loadSearchRoute(
     mode,
     count: results.length,
   });
-  diagnosticsStore.record({
+  diagnosticsService.record({
     category: "search",
     message: "Search route loaded",
     context: {

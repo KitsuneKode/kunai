@@ -31,7 +31,7 @@ test("DownloadOnlyPhase does not discover provider episodes when downloads are d
           reason: "Downloads are disabled.",
         }),
       },
-      diagnosticsStore: { record: () => {} },
+      diagnosticsService: { record: () => {} },
     },
   } as unknown as PhaseContext;
 
@@ -86,7 +86,7 @@ test("DownloadOnlyPhase does not contact anime providers before download profile
         processQueue: () => {},
       },
       offlineTitlePolicies: { upsert: () => {} },
-      diagnosticsStore: { record: () => {} },
+      diagnosticsService: { record: () => {} },
     },
   } as unknown as PhaseContext;
 
@@ -149,7 +149,7 @@ test("DownloadOnlyPhase schedules a bounded runway evaluation when enrolling kee
           scheduledTitleId = titleId;
         },
       },
-      diagnosticsStore: { record: () => {} },
+      diagnosticsService: { record: () => {} },
     },
   } as unknown as PhaseContext;
 
@@ -224,7 +224,7 @@ test("DownloadOnlyPhase persists the confirmed title cleanup preference with the
         },
       },
       offlineRunwayService: { enqueueEvaluation: () => {} },
-      diagnosticsStore: { record: () => {} },
+      diagnosticsService: { record: () => {} },
     },
   } as unknown as PhaseContext;
 
@@ -287,7 +287,7 @@ test("DownloadOnlyPhase stores a one-off series cleanup choice without enrolling
           scheduled += 1;
         },
       },
-      diagnosticsStore: { record: () => {} },
+      diagnosticsService: { record: () => {} },
     },
   } as unknown as PhaseContext;
 
@@ -347,7 +347,7 @@ test("DownloadOnlyPhase keeps an existing offline runway enrollment during a one
         },
       },
       offlineRunwayService: { enqueueEvaluation: () => {} },
-      diagnosticsStore: { record: () => {} },
+      diagnosticsService: { record: () => {} },
     },
   } as unknown as PhaseContext;
 
@@ -395,7 +395,7 @@ test("DownloadOnlyPhase persists profile intent after a partially queued series 
         },
       },
       offlineRunwayService: { enqueueEvaluation: () => {} },
-      diagnosticsStore: { record: () => {} },
+      diagnosticsService: { record: () => {} },
     },
   } as unknown as PhaseContext;
 

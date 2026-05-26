@@ -20,15 +20,8 @@ function makeService() {
         return this;
       },
     },
-    diagnosticsStore: {
+    diagnostics: {
       record() {},
-      getRecent() {
-        return [];
-      },
-      getSnapshot() {
-        return [];
-      },
-      clear() {},
     },
   });
 }

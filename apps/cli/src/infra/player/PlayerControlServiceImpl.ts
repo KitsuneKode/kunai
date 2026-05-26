@@ -1,7 +1,7 @@
 import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
 import type { EpisodeInfo, PlaybackTimingMetadata } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
-import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
+import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 
 import type { SubtitleAttachmentResult } from "./persistent-subtitle-manager";
 import type {
@@ -57,7 +57,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   constructor(
     private readonly deps: {
       logger: Logger;
-      diagnosticsStore: DiagnosticsStore;
+      diagnostics: Pick<DiagnosticsService, "record">;
     },
   ) {}
 
@@ -195,7 +195,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   async reloadCurrentSubtitles(reason = "user-requested"): Promise<boolean> {
     const active = this.active;
     if (!active) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Subtitle reload requested without active player",
         context: { reason },
@@ -204,7 +204,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     }
 
     if (!active.reloadSubtitles) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Subtitle reload unavailable for active player",
         context: { id: active.id, reason },
@@ -214,7 +214,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
 
     this.lastAction = "reload-subtitles";
     this.deps.logger.info("Reloading active playback subtitles", { id: active.id, reason });
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "playback",
       message: "Reloading active playback subtitles",
       context: { id: active.id, reason },
@@ -233,7 +233,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   ): Promise<boolean> {
     const active = this.active;
     if (!active) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "subtitle",
         message: "Subtitle selection requested without active player",
         context: { reason, hasSubtitle: Boolean(selection.subtitleUrl) },
@@ -242,7 +242,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     }
 
     if (!active.selectSubtitle) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "subtitle",
         message: "Subtitle selection unavailable for active player",
         context: { id: active.id, reason, hasSubtitle: Boolean(selection.subtitleUrl) },
@@ -262,7 +262,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       reason,
       enabled: Boolean(selection.subtitleUrl),
     });
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "subtitle",
       message: "Selected active playback subtitle",
       context: { id: active.id, reason, enabled: Boolean(selection.subtitleUrl) },
@@ -276,7 +276,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   ): Promise<boolean> {
     const active = this.active;
     if (!active) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "subtitle",
         operation: "subtitle.attach.outcome",
         message: "Late subtitle attach requested without active player",
@@ -291,7 +291,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     }
 
     if (!active.attachSubtitles) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "subtitle",
         operation: "subtitle.attach.outcome",
         message: "Late subtitle attach unavailable for active player",
@@ -313,7 +313,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     );
     const result = normalizeSubtitleAttachmentResult(attachedRaw);
     if (result.attachedCount <= 0) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "subtitle",
         operation: "subtitle.attach.outcome",
         message: "Late subtitle attachment did not attach tracks",
@@ -333,7 +333,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       reason,
       attached: result.attachedCount,
     });
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "subtitle",
       operation: "subtitle.attach.outcome",
       message: "Attached late subtitles",
@@ -351,7 +351,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   async skipCurrentSegment(reason = "user-requested"): Promise<boolean> {
     const active = this.active;
     if (!active) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Segment skip requested without active player",
         context: { reason },
@@ -360,7 +360,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     }
 
     if (!active.skipCurrentSegment) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Segment skip unavailable for active player",
         context: { id: active.id, reason },
@@ -369,7 +369,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     }
 
     this.deps.logger.info("Skipping active playback segment", { id: active.id, reason });
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "playback",
       message: "Skipping active playback segment",
       context: { id: active.id, reason },
@@ -417,7 +417,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   ): void {
     const active = this.active;
     if (!active?.updateTiming) return;
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "playback",
       message: "Injecting late timing metadata into active player",
       context: { id: active.id, reason, hasCredits: Boolean((timing?.credits ?? []).length) },
@@ -436,7 +436,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   ): Promise<boolean> {
     const active = this.active;
     if (!active) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Playback control requested without active player",
         context: { action, reason },
@@ -445,7 +445,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     }
 
     this.deps.logger.info("Stopping active playback", { id: active.id, action, reason });
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "playback",
       message: "Stopping active playback",
       context: { id: active.id, action, reason, stopCurrentFile },
@@ -471,7 +471,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   private async showPickerRequest(action: PlaybackControlAction, reason: string): Promise<boolean> {
     const active = this.active;
     if (!active) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Playback picker requested without active player",
         context: { action, reason },
@@ -483,7 +483,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     if (label && active.showOsdMessage) {
       await active.showOsdMessage(label, 2_500);
     }
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "playback",
       message: "Playback picker requested",
       context: { id: active.id, action, reason },
@@ -522,7 +522,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     if (active?.showOsdMessage) {
       await active.showOsdMessage(message, 2_500);
     }
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "playback",
       message: "Rejected unavailable episode navigation request",
       context: {
@@ -543,7 +543,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     try {
       await active.setEpisodeNavigationAvailability(state);
     } catch (error) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Failed to update mpv episode navigation availability",
         context: {
@@ -560,21 +560,21 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     run: () => Promise<T>,
   ): Promise<T> {
     const startedAt = Date.now();
-    this.deps.diagnosticsStore.record({
+    this.deps.diagnostics.record({
       category: "playback",
       message: "Playback priority command started",
       context: { action, reason },
     });
     try {
       const result = await run();
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Playback priority command completed",
         context: { action, reason, elapsedMs: Date.now() - startedAt },
       });
       return result;
     } catch (error) {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Playback priority command failed",
         context: { action, reason, error: String(error), elapsedMs: Date.now() - startedAt },
@@ -586,21 +586,21 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   private enqueueCommand<T>(action: string, reason: string, run: () => Promise<T>): Promise<T> {
     const startedAt = Date.now();
     const next = this.commandQueue.then(async () => {
-      this.deps.diagnosticsStore.record({
+      this.deps.diagnostics.record({
         category: "playback",
         message: "Playback control command started",
         context: { action, reason },
       });
       try {
         const result = await run();
-        this.deps.diagnosticsStore.record({
+        this.deps.diagnostics.record({
           category: "playback",
           message: "Playback control command completed",
           context: { action, reason, elapsedMs: Date.now() - startedAt },
         });
         return result;
       } catch (error) {
-        this.deps.diagnosticsStore.record({
+        this.deps.diagnostics.record({
           category: "playback",
           message: "Playback control command failed",
           context: { action, reason, error: String(error), elapsedMs: Date.now() - startedAt },
