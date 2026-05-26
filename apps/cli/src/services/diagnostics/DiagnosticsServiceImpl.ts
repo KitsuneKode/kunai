@@ -5,6 +5,7 @@ import type { DiagnosticEvent, DiagnosticEventInput } from "./diagnostic-event";
 import { buildDiagnosticsBundle } from "./DiagnosticsBundleBuilder";
 import type { DiagnosticsService } from "./DiagnosticsService";
 import type { DiagnosticsStore } from "./DiagnosticsStore";
+import { redactDiagnosticValue } from "./redaction";
 
 export type DiagnosticsServiceDeps = {
   readonly store: DiagnosticsStore;
@@ -19,9 +20,12 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
   constructor(private readonly deps: DiagnosticsServiceDeps) {}
 
   record(event: DiagnosticEventInput): void {
-    this.deps.store.record(event);
-    this.log(event);
-    this.deps.traceReporter?.record(event);
+    const redactedEvent = redactDiagnosticValue(event, {
+      homeDir: process.env.HOME,
+    }) as DiagnosticEventInput;
+    this.deps.store.record(redactedEvent);
+    this.log(redactedEvent);
+    this.deps.traceReporter?.record(redactedEvent);
   }
 
   getRecent(limit?: number): readonly DiagnosticEvent[] {

@@ -1,19 +1,35 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { Logger } from "@/infra/logger/Logger";
+import { DebugTraceReporter } from "@/services/diagnostics/DebugTraceReporter";
 import { DiagnosticsServiceImpl } from "@/services/diagnostics/DiagnosticsServiceImpl";
 import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImpl";
 
-function createLogger(): Logger & { messages: string[] } {
+type CapturedLog = {
+  readonly level: string;
+  readonly message: string;
+  readonly context?: Record<string, unknown>;
+};
+
+function createLogger(): Logger & { messages: string[]; entries: CapturedLog[] } {
   const messages: string[] = [];
+  const entries: CapturedLog[] = [];
+  const capture = (level: string) => (message: string, context?: Record<string, unknown>) => {
+    messages.push(`${level}:${message}`);
+    entries.push({ level, message, context });
+  };
   return {
     messages,
+    entries,
     child: () => createLogger(),
-    debug: (message) => messages.push(`debug:${message}`),
-    info: (message) => messages.push(`info:${message}`),
-    warn: (message) => messages.push(`warn:${message}`),
-    error: (message) => messages.push(`error:${message}`),
-    fatal: (message) => messages.push(`fatal:${message}`),
+    debug: capture("debug"),
+    info: capture("info"),
+    warn: capture("warn"),
+    error: capture("error"),
+    fatal: capture("fatal"),
   };
 }
 
@@ -39,6 +55,38 @@ describe("DiagnosticsServiceImpl", () => {
       providerId: "vidking",
     });
     expect(logger.messages).toEqual(["info:Playback started"]);
+  });
+
+  test("fans a redacted event out to store logger and trace reporter", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-diagnostics-service-"));
+    try {
+      const filePath = join(dir, "trace.jsonl");
+      const store = new DiagnosticsStoreImpl();
+      const logger = createLogger();
+      const service = new DiagnosticsServiceImpl({
+        store,
+        logger,
+        traceReporter: new DebugTraceReporter({ filePath }),
+      });
+      const signedUrl =
+        "https://cdn.example/stream.m3u8?X-Amz-Signature=secret&Policy=allow&quality=1080p";
+
+      service.record({
+        category: "playback",
+        operation: "playback.startup.timeline",
+        message: "Playback startup resolved",
+        context: { streamUrl: signedUrl },
+      });
+
+      const expectedUrl =
+        "https://cdn.example/stream.m3u8?X-Amz-Signature=[redacted]&Policy=[redacted]&quality=1080p";
+      expect(store.getSnapshot()[0]?.context).toEqual({ streamUrl: expectedUrl });
+      expect(logger.entries[0]?.context).toMatchObject({ streamUrl: expectedUrl });
+      const trace = JSON.parse((await readFile(filePath, "utf8")).trim());
+      expect(trace.context).toEqual({ streamUrl: expectedUrl });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("builds support bundles from the same backing store", () => {

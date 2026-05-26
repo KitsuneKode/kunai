@@ -59,8 +59,8 @@ function redactEmbeddedUrls(value: string): string {
 }
 
 function redactPath(value: string, options: RedactionOptions): string {
-  if (options.homeDir && value.startsWith(options.homeDir)) {
-    return `~${value.slice(options.homeDir.length)}`;
+  if (options.homeDir) {
+    return value.replaceAll(options.homeDir, "~");
   }
   return value;
 }
@@ -73,7 +73,7 @@ function redactUrl(value: string): string {
     url.pathname = redactPathIds(url.pathname);
 
     for (const key of url.searchParams.keys()) {
-      if (SENSITIVE_QUERY_KEYS.has(key.toLowerCase())) {
+      if (isSensitiveQueryKey(key)) {
         url.searchParams.set(key, "[redacted]");
       }
     }
@@ -82,6 +82,17 @@ function redactUrl(value: string): string {
   } catch {
     return "[redacted-url]";
   }
+}
+
+function isSensitiveQueryKey(key: string): boolean {
+  const normalizedKey = key.toLowerCase();
+  return (
+    SENSITIVE_QUERY_KEYS.has(normalizedKey) ||
+    normalizedKey.endsWith("-signature") ||
+    normalizedKey.endsWith("-credential") ||
+    normalizedKey.endsWith("-security-token") ||
+    normalizedKey === "policy"
+  );
 }
 
 function redactPathIds(pathname: string): string {

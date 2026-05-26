@@ -84,6 +84,7 @@ import type { DiagnosticsService } from "./services/diagnostics/DiagnosticsServi
 import { DiagnosticsServiceImpl } from "./services/diagnostics/DiagnosticsServiceImpl";
 import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
+import { redactDiagnosticValue } from "./services/diagnostics/redaction";
 import { DownloadService } from "./services/download/DownloadService";
 import { NotificationService } from "./services/notifications/NotificationService";
 import { OfflineAssetService } from "./services/offline/OfflineAssetService";
@@ -248,7 +249,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   initLogger(debug || process.env.KITSUNE_DEBUG === "1");
 
   // Core infrastructure first (no dependencies on other services)
-  const logger = new StructuredLogger({ debug });
+  const logger = new StructuredLogger({
+    debug,
+    sanitize: (value) => redactDiagnosticValue(value, { homeDir: process.env.HOME }),
+  });
   const sessionId = createCorrelationId("session");
   const tracer = new TracerImpl({
     logger,

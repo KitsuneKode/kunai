@@ -44,6 +44,29 @@ describe("diagnostics redaction", () => {
     });
   });
 
+  test("redacts CloudFront-style signed URL query parameters case-insensitively", () => {
+    const redacted = redactDiagnosticValue({
+      url: "https://cdn.example/stream.m3u8?X-Amz-Signature=secret&x-amz-credential=credential&X-AMZ-SECURITY-TOKEN=session&Policy=allow&quality=1080p",
+    });
+
+    expect(redacted).toEqual({
+      url: "https://cdn.example/stream.m3u8?X-Amz-Signature=[redacted]&x-amz-credential=[redacted]&X-AMZ-SECURITY-TOKEN=[redacted]&Policy=[redacted]&quality=1080p",
+    });
+  });
+
+  test("redacts the home directory when it is embedded in an error sentence", () => {
+    const redacted = redactDiagnosticValue(
+      {
+        error: `Could not open ${process.env.HOME}/Videos/Kunai/Show/S01E01.mp4 after retry`,
+      },
+      { homeDir: process.env.HOME },
+    );
+
+    expect(redacted).toEqual({
+      error: "Could not open ~/Videos/Kunai/Show/S01E01.mp4 after retry",
+    });
+  });
+
   test("truncates long strings to keep diagnostic bundles bounded", () => {
     const redacted = redactDiagnosticValue({ detail: "a".repeat(1200) });
 
