@@ -25,8 +25,10 @@ import {
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { normalizeProviderDisplayLabel } from "../shared/source-inventory";
+import { selectReadyStream } from "../shared/startup-selection";
 import { normalizeIsoLanguageCode, subtitleLanguageDisplayName } from "../shared/subtitle-helpers";
 import {
+  type StreamLink,
   loadAvailableEpisodesDetail,
   resolveAnimeEpisodeString,
   resolveEpisodeSources,
@@ -42,6 +44,54 @@ const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
 const ALLANIME_API_URL = "https://api.allanime.day/api";
 const ALLANIME_REFERER = "https://youtu-chan.com";
+export const ALLMANGA_QUALITY_FIRST_WAIT_BUDGET_MS = 4_000;
+
+export async function collectAllMangaLinksForStartup(
+  input: ProviderResolveInput,
+  request: Omit<Parameters<typeof resolveEpisodeSources>[0], "sourceLane">,
+  options: { readonly qualityFirstWaitMs?: number } = {},
+): Promise<{ readonly links: readonly StreamLink[]; readonly requiredAkFallback: boolean }> {
+  if (isExplicitAkSelection(input)) {
+    return {
+      links: await resolveEpisodeSources({ ...request, sourceLane: "ak-only" }),
+      requiredAkFallback: false,
+    };
+  }
+
+  const baselinePromise = resolveEpisodeSources({ ...request, sourceLane: "baseline" });
+  if ((input.startupPriority ?? "balanced") !== "quality-first") {
+    const baseline = await baselinePromise;
+    if (baseline.length > 0) return { links: baseline, requiredAkFallback: false };
+    return {
+      links: await resolveEpisodeSources({ ...request, sourceLane: "ak-only" }),
+      requiredAkFallback: true,
+    };
+  }
+
+  const optionalAkController = new AbortController();
+  const abortOptionalAk = () => optionalAkController.abort(request.signal?.reason);
+  request.signal?.addEventListener("abort", abortOptionalAk, { once: true });
+  const akPromise = resolveEpisodeSources({
+    ...request,
+    sourceLane: "ak-only",
+    signal: optionalAkController.signal,
+  }).catch(() => [] as StreamLink[]);
+
+  const baseline = await baselinePromise;
+  if (baseline.length === 0) {
+    try {
+      return { links: await akPromise, requiredAkFallback: true };
+    } finally {
+      request.signal?.removeEventListener("abort", abortOptionalAk);
+    }
+  }
+
+  const waitMs = options.qualityFirstWaitMs ?? ALLMANGA_QUALITY_FIRST_WAIT_BUDGET_MS;
+  const ak = await Promise.race([akPromise, Bun.sleep(waitMs).then(() => null)]);
+  request.signal?.removeEventListener("abort", abortOptionalAk);
+  if (ak === null) optionalAkController.abort("quality-first wait budget elapsed");
+  return { links: ak ? [...baseline, ...ak] : baseline, requiredAkFallback: false };
+}
 
 export const allmangaProviderModule: CoreProviderModule = {
   providerId: ALLANIME_PROVIDER_ID,
@@ -196,33 +246,19 @@ export const allmangaProviderModule: CoreProviderModule = {
       }
 
       const epStr = resolveAnimeEpisodeString(episodes, episodeNum);
-
-      const explicitAk = isExplicitAkSelection(input);
-      let triedAk = explicitAk;
-      let links = await resolveEpisodeSources({
+      const startupPriority = input.startupPriority ?? "balanced";
+      const linkResult = await collectAllMangaLinksForStartup(input, {
         apiUrl: ALLANIME_API_URL,
         referer: ALLANIME_REFERER,
         ua: DEFAULT_UA,
         showId,
         epStr,
         mode,
-        sourceLane: explicitAk ? "ak-only" : "baseline",
         signal: context.signal,
       });
-
-      if (links.length === 0 && !explicitAk) {
-        links = await resolveEpisodeSources({
-          apiUrl: ALLANIME_API_URL,
-          referer: ALLANIME_REFERER,
-          ua: DEFAULT_UA,
-          showId,
-          epStr,
-          mode,
-          sourceLane: "ak-only",
-          signal: context.signal,
-        });
-        triedAk = true;
-      }
+      let links = linkResult.links;
+      let triedAk = isExplicitAkSelection(input) || linkResult.requiredAkFallback;
+      let requiredAkFallback = linkResult.requiredAkFallback;
 
       if (links.length === 0) {
         throw new Error(`No streams extracted from AllManga for episode ${epStr}`);
@@ -383,7 +419,7 @@ export const allmangaProviderModule: CoreProviderModule = {
 
       mapLinks(links);
 
-      if (streams.length === 0 && !explicitAk) {
+      if (streams.length === 0 && !triedAk) {
         links = await resolveEpisodeSources({
           apiUrl: ALLANIME_API_URL,
           referer: ALLANIME_REFERER,
@@ -395,6 +431,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           signal: context.signal,
         });
         triedAk = true;
+        requiredAkFallback = true;
         mapLinks(links);
       }
 
@@ -464,6 +501,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           signal: context.signal,
         });
         triedAk = true;
+        requiredAkFallback = true;
         mapLinks(links);
         streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
         variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
@@ -498,9 +536,16 @@ export const allmangaProviderModule: CoreProviderModule = {
         failures.push(failure);
         return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, failure);
       }
+      const selection = selectReadyStream(streams, {
+        startupPriority,
+        qualityPreference: input.qualityPreference,
+        preferredSourceId: input.preferredSourceId,
+        preferredStreamId: input.preferredStreamId,
+        requiredFallback: requiredAkFallback,
+      });
       const sourceCandidates = buildAllmangaSourceCandidates(
         streams,
-        selectedStream.sourceId,
+        selection.selected.sourceId,
         cachePolicy,
       );
 
@@ -515,7 +560,8 @@ export const allmangaProviderModule: CoreProviderModule = {
       return {
         status: "resolved",
         providerId: ALLANIME_PROVIDER_ID,
-        selectedStreamId: selectedStream.id,
+        selectedStreamId: selection.selected.id,
+        selectionDecision: selection.decision,
         sources: sourceCandidates,
         streams,
         variants,
@@ -530,7 +576,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           title: input.title,
           episode: input.episode,
           providerId: ALLANIME_PROVIDER_ID,
-          streamId: selectedStream.id,
+          streamId: selection.selected.id,
           cacheHit: false,
           runtime: "direct-http",
           startedAt,

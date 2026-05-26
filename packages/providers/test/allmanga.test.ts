@@ -13,6 +13,7 @@ import {
   resolveAllMangaAkDeferredLocator,
   resolveAnimeEpisodeString,
   searchAllManga,
+  collectAllMangaLinksForStartup,
 } from "../src/index";
 
 const TEST_KEY_RAW = "Xot36i3lK3:v1";
@@ -252,6 +253,53 @@ describe("AllManga provider evidence fixtures", () => {
     expect(fetchMock.calls.some((url) => url.includes("/ak-source"))).toBe(false);
   });
 
+  test("quality-first startup includes prompt Ak response", async () => {
+    using fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "baseline-ak",
+    });
+
+    const result = await resolveEvidenceEpisode({ startupPriority: "quality-first" });
+
+    expect(result.status).toBe("resolved");
+    expect(result.streams.some((stream) => stream.sourceId === "source:allanime:ak")).toBe(true);
+    expect(result.selectionDecision?.startupPriority).toBe("quality-first");
+    expect(result.selectionDecision?.reason).toBe("quality-first");
+    expect(fetchMock.calls.filter((url) => url.includes("/ak-source"))).toHaveLength(1);
+  });
+
+  test("quality-first startup returns baseline when optional Ak exceeds the bounded wait", async () => {
+    using fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "baseline-ak",
+      akDelayMs: 100,
+    });
+
+    const result = await collectEvidenceLinksForStartup(
+      { startupPriority: "quality-first" },
+      { qualityFirstWaitMs: 5 },
+    );
+
+    expect(result.requiredAkFallback).toBe(false);
+    expect(result.links.some((link) => link.deferredLocator?.startsWith("allmanga-ak:"))).toBe(
+      false,
+    );
+    expect(fetchMock.calls.filter((url) => url.includes("/ak-source"))).toHaveLength(1);
+  });
+
+  test("quality-first startup aborts optional Ak after the bounded wait", async () => {
+    using fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "baseline-ak",
+      akDelayMs: 100,
+    });
+
+    const result = await collectEvidenceLinksForStartup(
+      { startupPriority: "quality-first" },
+      { qualityFirstWaitMs: 5 },
+    );
+
+    expect(result.requiredAkFallback).toBe(false);
+    expect(fetchMock.abortedAkRequests).toBe(1);
+  });
+
   test("result cache policy includes startup priority in key parts", async () => {
     await using _fetchMock = await mockAllMangaFetch();
 
@@ -488,6 +536,38 @@ type ResolveEvidenceEpisodeOverrides = Partial<ProviderResolveInput> & {
   readonly title?: Partial<ProviderResolveInput["title"]>;
 };
 
+async function collectEvidenceLinksForStartup(
+  overrides: ResolveEvidenceEpisodeOverrides = {},
+  options: { readonly qualityFirstWaitMs?: number } = {},
+) {
+  return collectAllMangaLinksForStartup(
+    {
+      episode: { episode: 1 },
+      mediaKind: "anime",
+      preferredAudioLanguage: "ja",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+      ...overrides,
+      title: {
+        id: "allanime:show-allmanga-evidence",
+        kind: "anime",
+        title: "Evidence Fox",
+        ...overrides.title,
+      },
+    },
+    {
+      apiUrl: "https://api.allanime.day/api",
+      referer: "https://youtu-chan.com",
+      ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+      showId: "show-allmanga-evidence",
+      epStr: "1",
+      mode: "sub",
+      signal: new AbortController().signal,
+    },
+    options,
+  );
+}
+
 async function resolveEvidenceEpisode(
   overrides: ResolveEvidenceEpisodeOverrides = {},
 ): Promise<ProviderResolveResult> {
@@ -516,15 +596,18 @@ async function mockAllMangaFetch(
     readonly subSourceFixture?:
       | "sub-source-response"
       | "ak-episode-response"
-      | "mixed-unselectable-baseline-ak";
+      | "mixed-unselectable-baseline-ak"
+      | "baseline-ak";
     readonly akDelayMs?: number;
   } = {},
-): Promise<Disposable & { readonly calls: readonly string[] }> {
+): Promise<Disposable & { readonly calls: readonly string[]; readonly abortedAkRequests: number }> {
   clearAllMangaProviderCachesForTest();
   const originalFetch = globalThis.fetch;
   const calls: string[] = [];
+  let abortedAkRequests = 0;
   const subFixture =
-    options.subSourceFixture === "mixed-unselectable-baseline-ak"
+    options.subSourceFixture === "mixed-unselectable-baseline-ak" ||
+    options.subSourceFixture === "baseline-ak"
       ? {
           data: {
             episode: {
@@ -532,7 +615,10 @@ async function mockAllMangaFetch(
               sourceUrls: [
                 {
                   sourceName: "Default",
-                  sourceUrl: "--/broken-source",
+                  sourceUrl:
+                    options.subSourceFixture === "baseline-ak"
+                      ? "--https://cdn.allmanga.example/sub//1080/master.m3u8"
+                      : "--/broken-source",
                 },
                 {
                   sourceName: "Ak",
@@ -555,6 +641,13 @@ async function mockAllMangaFetch(
     const url = String(input);
     calls.push(url);
     if (url.includes("/ak-source")) {
+      init?.signal?.addEventListener(
+        "abort",
+        () => {
+          abortedAkRequests += 1;
+        },
+        { once: true },
+      );
       if (options.akDelayMs) await Bun.sleep(options.akDelayMs);
       return jsonResponse(fixtures.ak);
     }
@@ -584,6 +677,9 @@ async function mockAllMangaFetch(
 
   return {
     calls,
+    get abortedAkRequests() {
+      return abortedAkRequests;
+    },
     [Symbol.dispose]() {
       globalThis.fetch = originalFetch;
     },
