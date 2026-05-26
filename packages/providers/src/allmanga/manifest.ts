@@ -9,7 +9,7 @@ export const allanimeManifest = defineProviderManifest({
   description: "AllManga-compatible anime API client (sub & dub, no browser needed)",
   domain: "allmanga.to",
   recommended: false,
-  mediaKinds: ["anime", "series"],
+  mediaKinds: ["anime"],
   capabilities: ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
   runtimePorts: [
     {

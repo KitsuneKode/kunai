@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import type { ProviderResolveInput, ProviderResolveResult } from "@kunai/types";
+
 import {
   allmangaProviderModule,
   buildAllmangaCycleCandidates,
@@ -201,38 +203,14 @@ describe("AllManga provider evidence fixtures", () => {
     await using _fetchMock = await mockAllMangaFetch();
     const expected = await readFixture<ExpectedAllMangaContract>("expected-normalized.json");
 
-    const sub = await allmangaProviderModule.resolve(
-      {
-        title: {
-          id: "allanime:show-allmanga-evidence",
-          kind: "anime",
-          title: "Evidence Fox",
-          externalIds: expected.search.externalIds,
-        },
-        episode: { episode: 1 },
-        mediaKind: "anime",
-        preferredAudioLanguage: "ja",
-        intent: "play",
-        allowedRuntimes: ["direct-http"],
-      },
-      { now: nowFixture, signal: new AbortController().signal },
-    );
-    const dub = await allmangaProviderModule.resolve(
-      {
-        title: {
-          id: "allanime:show-allmanga-evidence",
-          kind: "anime",
-          title: "Evidence Fox",
-          externalIds: expected.search.externalIds,
-        },
-        episode: { episode: 1 },
-        mediaKind: "anime",
-        preferredAudioLanguage: "en",
-        intent: "play",
-        allowedRuntimes: ["direct-http"],
-      },
-      { now: nowFixture, signal: new AbortController().signal },
-    );
+    const sub = await resolveEvidenceEpisode({
+      title: { externalIds: expected.search.externalIds },
+      preferredAudioLanguage: "ja",
+    });
+    const dub = await resolveEvidenceEpisode({
+      title: { externalIds: expected.search.externalIds },
+      preferredAudioLanguage: "en",
+    });
 
     expect(sub.status).toBe("resolved");
     expect(dub.status).toBe("resolved");
@@ -261,26 +239,33 @@ describe("AllManga provider evidence fixtures", () => {
     expect(sub.trace.events?.some((event) => event.type === "variant:selected")).toBe(true);
   });
 
+  test("normal playback does not request Ak when a baseline stream is playable", async () => {
+    using fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "sub-source-response",
+      akDelayMs: 100,
+    });
+
+    const result = await resolveEvidenceEpisode({ intent: "play" });
+
+    expect(result.status).toBe("resolved");
+    expect(result.streams[0]?.protocol).toBe("hls");
+    expect(fetchMock.calls.some((url) => url.includes("/ak-source"))).toBe(false);
+  });
+
+  test("normal playback requests Ak as required fallback when baseline is empty", async () => {
+    using fetchMock = await mockAllMangaFetch({ subSourceFixture: "ak-episode-response" });
+
+    const result = await resolveEvidenceEpisode({ intent: "play" });
+
+    expect(result.status).toBe("resolved");
+    expect(result.streams[0]?.deferredLocator).toStartWith("allmanga-ak:");
+    expect(fetchMock.calls.filter((url) => url.includes("/ak-source"))).toHaveLength(1);
+  });
+
   test("Ak DASH source resolves as an opaque deferred stream with subtitles", async () => {
     await using _fetchMock = await mockAllMangaFetch({ subSourceFixture: "ak-episode-response" });
-    const expected = await readFixture<ExpectedAllMangaContract>("expected-normalized.json");
 
-    const result = await allmangaProviderModule.resolve(
-      {
-        title: {
-          id: "allanime:show-allmanga-evidence",
-          kind: "anime",
-          title: "Evidence Fox",
-          externalIds: expected.search.externalIds,
-        },
-        episode: { episode: 1 },
-        mediaKind: "anime",
-        preferredAudioLanguage: "ja",
-        intent: "play",
-        allowedRuntimes: ["direct-http"],
-      },
-      { now: nowFixture, signal: new AbortController().signal },
-    );
+    const result = await resolveEvidenceEpisode({ intent: "play" });
 
     expect(result.status).toBe("resolved");
     expect(result.streams[0]).toMatchObject({
@@ -456,9 +441,37 @@ type ExpectedAllMangaContract = {
   };
 };
 
+type ResolveEvidenceEpisodeOverrides = Partial<ProviderResolveInput> & {
+  readonly title?: Partial<ProviderResolveInput["title"]>;
+};
+
+async function resolveEvidenceEpisode(
+  overrides: ResolveEvidenceEpisodeOverrides = {},
+): Promise<ProviderResolveResult> {
+  const title = {
+    id: "allanime:show-allmanga-evidence",
+    kind: "anime" as const,
+    title: "Evidence Fox",
+    ...overrides.title,
+  };
+  return allmangaProviderModule.resolve(
+    {
+      episode: { episode: 1 },
+      mediaKind: "anime",
+      preferredAudioLanguage: "ja",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+      ...overrides,
+      title,
+    },
+    { now: nowFixture, signal: new AbortController().signal },
+  );
+}
+
 async function mockAllMangaFetch(
   options: {
     readonly subSourceFixture?: "sub-source-response" | "ak-episode-response";
+    readonly akDelayMs?: number;
   } = {},
 ): Promise<Disposable & { readonly calls: readonly string[] }> {
   clearAllMangaProviderCachesForTest();
@@ -476,6 +489,7 @@ async function mockAllMangaFetch(
     const url = String(input);
     calls.push(url);
     if (url.includes("/ak-source")) {
+      if (options.akDelayMs) await Bun.sleep(options.akDelayMs);
       return jsonResponse(fixtures.ak);
     }
     const bodyText = typeof init?.body === "string" ? init.body : "";

@@ -22,7 +22,7 @@ const allanimeManifest = defineProviderManifest({
   description: "Test",
   domain: "allmanga.to",
   recommended: false,
-  mediaKinds: ["anime", "series"],
+  mediaKinds: ["anime"],
   capabilities: ["search", "episode-list", "source-resolve"],
   runtimePorts: [
     {
@@ -158,10 +158,10 @@ test("active direct providers declare cache and runtime boundaries", () => {
   expect(miruroManifest.status).toBe("candidate");
 });
 
-test("anime manifests stay visible to CLI series mode while marked as anime-capable", () => {
-  expect(allanimeManifest.mediaKinds).toContain("anime");
-  expect(allanimeManifest.mediaKinds).toContain("series");
+test("anime provider manifests expose only implemented media kinds", () => {
+  expect(allanimeManifest.mediaKinds).toEqual(["anime"]);
   expect(miruroManifest.mediaKinds).toContain("anime");
+  expect(allanimeManifest.mediaKinds).not.toContain("series");
 });
 
 test("provider cache policy normalizes deterministic key parts", () => {

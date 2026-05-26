@@ -67,6 +67,8 @@ export type AllMangaAkDeferredDescriptor = {
   readonly duration?: number;
 };
 
+export type AllMangaSourceLane = "baseline" | "ak-only";
+
 const ALLMANGA_KEY_RAW = "Xot36i3lK3:v1";
 
 const HEX: Record<string, string> = {
@@ -413,12 +415,14 @@ export async function resolveEpisodeSources(opts: {
   readonly showId: string;
   readonly epStr: string;
   readonly mode: "sub" | "dub";
+  readonly sourceLane?: AllMangaSourceLane;
   readonly signal?: AbortSignal;
 }): Promise<StreamLink[]> {
   const { apiUrl, referer, ua, showId, epStr, mode, signal } = opts;
+  const sourceLane = opts.sourceLane ?? "baseline";
 
   // Check source cache (episode string + mode → StreamLink[])
-  const cacheKey = `${showId}:${epStr}:${mode}`;
+  const cacheKey = `${showId}:${epStr}:${mode}:${sourceLane}`;
   const cached = sourceCache.get(cacheKey);
   if (cached) return cached;
 
@@ -472,6 +476,10 @@ export async function resolveEpisodeSources(opts: {
   const apiJobs: Promise<StreamLink[]>[] = [];
 
   for (const source of rawSources) {
+    if (!acceptsSourceForLane(source.sourceName, sourceLane)) {
+      continue;
+    }
+
     const raw = source.sourceUrl.startsWith("--") ? source.sourceUrl.slice(2) : source.sourceUrl;
     const decoded = hexDecode(raw);
     if (!decoded) {
@@ -513,6 +521,11 @@ export async function resolveEpisodeSources(opts: {
   );
   if (result.length > 0) sourceCache.set(cacheKey, result);
   return result;
+}
+
+function acceptsSourceForLane(sourceName: string, lane: AllMangaSourceLane): boolean {
+  if (lane === "ak-only") return sourceName === "Ak";
+  return sourceName !== "Ak";
 }
 
 export async function fetchAllMangaEpisodeCatalog(opts: {

@@ -10,6 +10,7 @@ import type {
   ProviderCycleCandidate,
   ProviderEpisodeOption,
   ProviderFailure,
+  ProviderResolveInput,
   ProviderSourceCandidate,
   ProviderSearchResult,
   ProviderTraceEvent,
@@ -195,16 +196,30 @@ export const allmangaProviderModule: CoreProviderModule = {
 
       const epStr = resolveAnimeEpisodeString(episodes, episodeNum);
 
-      // Fetch the sources (Decodes Hex and AES)
-      const links = await resolveEpisodeSources({
+      const explicitAk = isExplicitAkSelection(input);
+      let links = await resolveEpisodeSources({
         apiUrl: ALLANIME_API_URL,
         referer: ALLANIME_REFERER,
         ua: DEFAULT_UA,
         showId,
         epStr,
         mode,
+        sourceLane: explicitAk ? "ak-only" : "baseline",
         signal: context.signal,
       });
+
+      if (links.length === 0 && !explicitAk) {
+        links = await resolveEpisodeSources({
+          apiUrl: ALLANIME_API_URL,
+          referer: ALLANIME_REFERER,
+          ua: DEFAULT_UA,
+          showId,
+          epStr,
+          mode,
+          sourceLane: "ak-only",
+          signal: context.signal,
+        });
+      }
 
       if (links.length === 0) {
         throw new Error(`No streams extracted from AllManga for episode ${epStr}`);
@@ -508,6 +523,10 @@ export const allmangaProviderModule: CoreProviderModule = {
     }
   },
 };
+
+function isExplicitAkSelection(input: ProviderResolveInput): boolean {
+  return input.preferredSourceId?.endsWith(":ak") === true;
+}
 
 export function buildAllmangaCycleCandidates(
   streams: readonly StreamCandidate[],
