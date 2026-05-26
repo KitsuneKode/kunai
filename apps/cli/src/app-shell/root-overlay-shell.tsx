@@ -10,6 +10,7 @@ import {
 } from "@/domain/playback/track-capabilities";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
+import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
 import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
 import {
   NotificationActionRouter,
@@ -415,7 +416,13 @@ export function RootOverlayShell({
               state,
               recentEvents: container.diagnosticsStore.getRecent(25),
               capabilitySnapshot: container.capabilitySnapshot,
+              downloadSummary: {
+                active: container.downloadService.listActive(200).length,
+                completed: container.downloadService.listCompleted(200).length,
+                failed: container.downloadService.listFailed(200).length,
+              },
               presenceSnapshot: container.presence.getSnapshot(),
+              memorySamples: getRuntimeMemorySamples(),
             })
           : [];
   const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;

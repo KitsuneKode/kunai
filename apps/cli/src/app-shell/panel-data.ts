@@ -101,6 +101,47 @@ function formatMpvRuntimeDetail(event: DiagnosticEvent | undefined): string {
   return parts.length > 0 ? parts.join("  ·  ") : JSON.stringify(event.context);
 }
 
+type DiagnosticCorrelation = {
+  readonly playbackCycleId?: string;
+  readonly providerAttemptId?: string;
+  readonly traceId?: string;
+};
+
+function findActiveCorrelation(events: readonly DiagnosticEvent[]): DiagnosticCorrelation | null {
+  for (const event of events) {
+    const correlation: DiagnosticCorrelation = {
+      playbackCycleId: event.playbackCycleId,
+      providerAttemptId: event.providerAttemptId,
+      traceId: event.traceId,
+    };
+    if (correlation.playbackCycleId || correlation.providerAttemptId || correlation.traceId) {
+      return correlation;
+    }
+  }
+  return null;
+}
+
+function compactId(value: string): string {
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 8)}…${value.slice(-6)}`;
+}
+
+function formatCorrelation(correlation: DiagnosticCorrelation | null): string {
+  if (!correlation) return "no active correlation yet";
+  return [
+    correlation.playbackCycleId ? `cycle ${compactId(correlation.playbackCycleId)}` : null,
+    correlation.providerAttemptId ? `provider ${compactId(correlation.providerAttemptId)}` : null,
+    correlation.traceId ? `trace ${compactId(correlation.traceId)}` : null,
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
+}
+
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(Math.round(ms / 100) / 10).toFixed(1)}s`;
+}
+
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
   return [
     // ── Global (always available) ──
@@ -268,6 +309,8 @@ export function buildDiagnosticsPanelLines({
   const playbackStartupEvent = recentEvents.find(
     (event) => event.operation === "playback.startup.timeline",
   );
+  const activeCorrelation = findActiveCorrelation(recentEvents);
+  const subtitleOutcome = formatSubtitleOutcome(recentEvents);
   const sourceInventorySummary = state.stream?.providerResolveResult
     ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
         selectedSubtitleUrl: state.stream.subtitle,
@@ -317,6 +360,7 @@ export function buildDiagnosticsPanelLines({
     { label: "Mode", detail: `${state.mode}  ·  ${state.provider}` },
     { label: "View", detail: `${state.view}  ·  ${state.playbackStatus}` },
     { label: "Search", detail: `${state.searchState}  ·  ${state.searchResults.length} results` },
+    { label: "Correlation", detail: formatCorrelation(activeCorrelation) },
 
     // ── Provider ──
     { label: "─── Provider", detail: "", tone: "info" },
@@ -346,6 +390,23 @@ export function buildDiagnosticsPanelLines({
           : playbackStartupEvent
             ? "info"
             : "neutral",
+    },
+    {
+      label: "Slowest stage",
+      detail: findSlowestStartupStage(playbackStartupEvent),
+      tone: playbackStartupEvent ? "info" : "neutral",
+    },
+    {
+      label: "Provider attempts",
+      detail: formatProviderAttemptEvidence(recentEvents),
+      tone: recentEvents.some(
+        (event) =>
+          event.operation === "provider.resolve.attempt" && event.context?.phase === "failed",
+      )
+        ? "warning"
+        : recentEvents.some((event) => event.operation === "provider.resolve.attempt")
+          ? "info"
+          : "neutral",
     },
     {
       label: "Source inventory",
@@ -383,6 +444,18 @@ export function buildDiagnosticsPanelLines({
 
     // ── Subtitles ──
     { label: "─── Subtitles", detail: "", tone: "info" },
+    {
+      label: "Subtitles",
+      detail: subtitleOutcome,
+      tone:
+        subtitleOutcome.includes("failed") ||
+        subtitleOutcome.includes("unsupported") ||
+        subtitleOutcome.includes("no-active-player")
+          ? "warning"
+          : subtitleOutcome === "no subtitle attachment outcome yet"
+            ? "neutral"
+            : "success",
+    },
     { label: "State", detail: subtitleState.label, tone: subtitleState.tone },
     {
       label: "URL",
@@ -427,7 +500,7 @@ export function buildDiagnosticsPanelLines({
       label: "Queue",
       detail: downloadSummary
         ? `${downloadSummary.active} active  ·  ${downloadSummary.failed ?? 0} need attention  ·  ${downloadSummary.completed} completed`
-        : "queue status unavailable",
+        : "Unknown  ·  queue status unavailable",
       tone: downloadSummary && downloadSummary.active > 0 ? "info" : "neutral",
     },
 
@@ -575,8 +648,8 @@ function buildDiagnosticsHealthSummary({
           : downloadSummary.active > 0
             ? `OK  ·  ${downloadSummary.active} active job${downloadSummary.active === 1 ? "" : "s"}`
             : "OK  ·  queue idle"
-        : "OK  ·  queue status unavailable",
-      tone: failedDownloads > 0 ? "warning" : "success",
+        : "Unknown  ·  queue status unavailable",
+      tone: downloadSummary ? (failedDownloads > 0 ? "warning" : "success") : "neutral",
     },
     {
       label: "Network",
@@ -614,6 +687,70 @@ function formatProviderTimelineEvent(event: DiagnosticEvent | undefined): string
 function formatPlaybackStartupTimelineEvent(event: DiagnosticEvent | undefined): string {
   if (!event) return "no playback startup timeline yet";
   return typeof event.context?.summary === "string" ? event.context.summary : event.message;
+}
+
+function findSlowestStartupStage(event: DiagnosticEvent | undefined): string {
+  if (!event?.context) return "no playback startup timing yet";
+  const timeline = event.context.timeline;
+  if (!timeline || typeof timeline !== "object" || !("marks" in timeline)) {
+    return "startup timing marks unavailable";
+  }
+  const marks = Array.isArray(timeline.marks) ? timeline.marks : [];
+  let slowest: { stage: string; deltaMs: number } | null = null;
+  for (const mark of marks) {
+    if (!mark || typeof mark !== "object") continue;
+    const record = mark as Record<string, unknown>;
+    if (typeof record.stage !== "string" || typeof record.deltaMs !== "number") continue;
+    if (!Number.isFinite(record.deltaMs)) continue;
+    if (!slowest || record.deltaMs > slowest.deltaMs) {
+      slowest = { stage: record.stage, deltaMs: record.deltaMs };
+    }
+  }
+  return slowest
+    ? `${slowest.stage} ${formatMs(slowest.deltaMs)}`
+    : "startup timing marks unavailable";
+}
+
+function formatProviderAttemptEvidence(events: readonly DiagnosticEvent[]): string {
+  const attempts = events
+    .filter(
+      (event) =>
+        event.operation === "provider.resolve.attempt" ||
+        event.operation === "provider.resolve.fallback",
+    )
+    .slice(0, 5)
+    .map((event) => {
+      const context = event.context ?? {};
+      if (event.operation === "provider.resolve.fallback") {
+        const from =
+          typeof context.fromProviderId === "string" ? context.fromProviderId : "provider";
+        const to =
+          typeof context.toProviderId === "string" ? context.toProviderId : event.providerId;
+        return `${from} -> ${to} fallback`;
+      }
+      const provider = event.providerId ?? "provider";
+      const phase = typeof context.phase === "string" ? context.phase : "changed";
+      const elapsed =
+        typeof context.elapsedMs === "number" ? ` in ${formatMs(context.elapsedMs)}` : "";
+      const failure =
+        phase === "failed" && typeof context.failureCode === "string"
+          ? ` (${context.failureCode})`
+          : "";
+      return `${provider} ${phase}${elapsed}${failure}`;
+    });
+  return attempts.length > 0 ? attempts.join("  ·  ") : "no physical provider attempts yet";
+}
+
+function formatSubtitleOutcome(events: readonly DiagnosticEvent[]): string {
+  const event = events.find((candidate) => candidate.operation === "subtitle.attach.outcome");
+  if (!event?.context) return "no subtitle attachment outcome yet";
+  const outcome = typeof event.context.outcome === "string" ? event.context.outcome : "unknown";
+  const delivery = typeof event.context.delivery === "string" ? event.context.delivery : "unknown";
+  const attachedCount =
+    typeof event.context.attachedCount === "number"
+      ? `${event.context.attachedCount} attached`
+      : null;
+  return [outcome, delivery, attachedCount].filter(Boolean).join("  ·  ");
 }
 
 function formatSourceInventorySummary(

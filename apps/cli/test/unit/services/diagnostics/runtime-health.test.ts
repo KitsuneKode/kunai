@@ -114,6 +114,28 @@ describe("runtime health diagnostics", () => {
     });
   });
 
+  test("summarizes physical provider attempt telemetry without a legacy resolve-start event", () => {
+    const health = buildRuntimeHealthSnapshot({
+      currentProvider: "vidking",
+      recentEvents: [
+        event(2200, "provider", "Provider resolve attempt failed", {
+          phase: "failed",
+          providerId: "vidking",
+          elapsedMs: 742,
+          failureCode: "timeout",
+          failureMessage: "Provider timed out",
+          retryable: true,
+        }),
+      ],
+    });
+
+    expect(health.provider).toEqual({
+      label: "Provider",
+      detail: "vidking · failed after 742ms · timeout · retryable · Provider timed out",
+      tone: "error",
+    });
+  });
+
   test("summarizes stream stalls as actionable network errors", () => {
     const health = buildRuntimeHealthSnapshot({
       currentProvider: "vidking",

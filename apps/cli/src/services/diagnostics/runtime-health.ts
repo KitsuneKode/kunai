@@ -62,6 +62,26 @@ function formatFailureCode(failure: Record<string, unknown> | null): string | nu
   return parts.filter((part): part is string => Boolean(part)).join(" · ");
 }
 
+function formatProviderAttemptFailure(context: Record<string, unknown> | null): string | null {
+  if (!context) return null;
+  const code = typeof context.failureCode === "string" ? context.failureCode : null;
+  if (!code) return null;
+  const retryable = asBoolean(context.retryable);
+  const message = typeof context.failureMessage === "string" ? context.failureMessage : null;
+  return [
+    code,
+    retryable === true ? "retryable" : retryable === false ? "not retryable" : null,
+    message,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+}
+
+function formatElapsedMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(Math.round(ms / 100) / 10).toFixed(1)}s`;
+}
+
 function summarizeTraceContext(context: Record<string, unknown>): string | null {
   const trace = asRecord(context.trace);
   if (!trace) return null;
@@ -222,11 +242,15 @@ export function summarizeProviderHealth(
   const duration = sinceStartMs === null ? null : `${(sinceStartMs / 1000).toFixed(1)}s`;
 
   if (providerEvent.message.includes("failed") || providerEvent.message.includes("exhausted")) {
-    const failure = formatFailureCode(asRecord(context?.failure));
+    const failure =
+      formatFailureCode(asRecord(context?.failure)) ?? formatProviderAttemptFailure(context);
     const stage = typeof context?.stage === "string" ? ` at ${context.stage}` : "";
+    const attemptElapsedMs = asFiniteNumber(context?.elapsedMs);
+    const resolvedDuration =
+      duration ?? (attemptElapsedMs ? formatElapsedMs(attemptElapsedMs) : null);
     return {
       label: "Provider",
-      detail: `${provider} · failed${stage}${duration ? ` after ${duration}` : ""}${failure ? ` · ${failure}` : ""}`,
+      detail: `${provider} · failed${stage}${resolvedDuration ? ` after ${resolvedDuration}` : ""}${failure ? ` · ${failure}` : ""}`,
       tone: "error",
     };
   }

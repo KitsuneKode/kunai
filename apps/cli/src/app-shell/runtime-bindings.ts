@@ -15,7 +15,14 @@ import {
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 export function buildShellRuntimeBindings(container: Container) {
-  const { providerRegistry, stateManager, diagnosticsStore, historyStore, config } = container;
+  const {
+    providerRegistry,
+    stateManager,
+    diagnosticsStore,
+    diagnosticsService,
+    historyStore,
+    config,
+  } = container;
   const state = stateManager.getState();
   const rawConfig = config.getRaw();
 
@@ -39,7 +46,7 @@ export function buildShellRuntimeBindings(container: Container) {
     }),
     onChangeProvider: async (providerId: string) => {
       stateManager.dispatch({ type: "SET_PROVIDER", provider: providerId });
-      diagnosticsStore.record({
+      diagnosticsService.record({
         category: "ui",
         message: "Provider switched in-shell",
         context: {
@@ -65,7 +72,7 @@ export function buildShellRuntimeBindings(container: Container) {
     loadDiagnosticsPanel: async () => {
       const memoryLine = getRuntimeMemoryLine();
       const memoryTrend = summarizeRuntimeMemoryTrend(getRuntimeMemorySamples());
-      diagnosticsStore.record({
+      diagnosticsService.record({
         category: "runtime",
         operation: "runtime.memory.sample",
         message: "Runtime memory sample",

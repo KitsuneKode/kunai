@@ -242,6 +242,118 @@ describe("panel-data", () => {
     expect(lines.find((line) => line.label === "Startup path")?.tone).toBe("success");
   });
 
+  test("buildDiagnosticsPanelLines surfaces correlated runtime evidence honestly", () => {
+    const lines = buildDiagnosticsPanelLines({
+      state: createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      recentEvents: [
+        {
+          timestamp: 4,
+          level: "info",
+          category: "subtitle",
+          operation: "subtitle.attach.outcome",
+          message: "Attached late subtitles",
+          playbackCycleId: "cycle-42",
+          providerAttemptId: "provider-42",
+          traceId: "trace-42",
+          context: {
+            outcome: "attached",
+            delivery: "late",
+            attachedCount: 2,
+          },
+        },
+        {
+          timestamp: 3,
+          level: "warn",
+          category: "provider",
+          operation: "provider.resolve.fallback",
+          message: "Provider fallback started",
+          playbackCycleId: "cycle-42",
+          providerAttemptId: "provider-42",
+          traceId: "trace-42",
+          providerId: "rivestream",
+          context: {
+            fromProviderId: "vidking",
+            toProviderId: "rivestream",
+          },
+        },
+        {
+          timestamp: 2,
+          level: "warn",
+          category: "provider",
+          operation: "provider.resolve.attempt",
+          message: "Provider resolve attempt failed",
+          playbackCycleId: "cycle-42",
+          providerAttemptId: "provider-42",
+          traceId: "trace-42",
+          providerId: "vidking",
+          context: {
+            phase: "failed",
+            elapsedMs: 742,
+            failureCode: "timeout",
+          },
+        },
+        {
+          timestamp: 1,
+          level: "info",
+          category: "playback",
+          operation: "playback.startup.timeline",
+          message: "Playback startup player-ready",
+          playbackCycleId: "cycle-42",
+          providerAttemptId: "provider-42",
+          traceId: "trace-42",
+          context: {
+            stage: "player-ready",
+            timeline: {
+              startedAtMs: 0,
+              marks: [
+                { stage: "resolve-started", atMs: 100, elapsedMs: 100, deltaMs: 100 },
+                { stage: "resolve-complete", atMs: 950, elapsedMs: 950, deltaMs: 850 },
+                { stage: "player-ready", atMs: 1200, elapsedMs: 1200, deltaMs: 250 },
+              ],
+            },
+          },
+        },
+      ],
+      downloadSummary: null,
+    });
+
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        label: "Correlation",
+        detail: expect.stringContaining("cycle-42"),
+      }),
+    );
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        label: "Slowest stage",
+        detail: expect.stringContaining("resolve-complete 850ms"),
+      }),
+    );
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        label: "Provider attempts",
+        detail: expect.stringContaining("vidking failed in 742ms"),
+      }),
+    );
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        label: "Subtitles",
+        detail: expect.stringContaining("late"),
+      }),
+    );
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        label: "Downloads",
+        detail: expect.stringContaining("Unknown"),
+        tone: "neutral",
+      }),
+    );
+  });
+
   test("buildDiagnosticsPanelLines summarizes resolved source inventory for support triage", () => {
     const providerResolveResult = {
       status: "resolved",
