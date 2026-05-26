@@ -1,6 +1,6 @@
 # Kunai Fast-First Provider Selection And Enrichment Design
 
-**Status:** Approved direction; awaiting written-spec review before implementation planning
+**Status:** Approved for implementation planning
 
 **Date:** 2026-05-26
 
