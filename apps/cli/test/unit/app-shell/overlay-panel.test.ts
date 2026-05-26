@@ -107,6 +107,7 @@ test("settings expose discover and offline controls that already exist in config
   expect(values).toContain("powerSaverMode");
   expect(values).toContain("section:offline-continuation");
   expect(values).toContain("recoveryMode");
+  expect(values).toContain("startupPriority");
   expect(values).toContain("autoCleanupGraceDays");
   expect(values).toContain("downloadPath");
   expect(options.find((option) => option.value === "discoverMode")?.label).toContain("anime-only");
@@ -151,6 +152,14 @@ test("discover and offline settings provide bounded choice overlays", () => {
       animeProviderOptions: [],
     }).options.map((option) => option.value),
   ).toEqual(["guided", "fallback-first", "manual"]);
+  expect(
+    buildSettingsChoiceOverlay({
+      config: DEFAULT_CONFIG,
+      setting: "startupPriority",
+      seriesProviderOptions: [],
+      animeProviderOptions: [],
+    }).options.map((option) => option.value),
+  ).toEqual(["balanced", "fast", "quality-first"]);
   expect(
     buildSettingsChoiceOverlay({
       config,

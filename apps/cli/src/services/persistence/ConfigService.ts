@@ -4,6 +4,8 @@
 // Manages user configuration and preferences.
 // =============================================================================
 
+import type { StartupPriority } from "@kunai/types";
+
 export type QuitNearEndBehavior = "continue" | "pause";
 
 export type QuitNearEndThresholdMode = "credits-or-90-percent" | "percent-only" | "seconds-only";
@@ -102,6 +104,8 @@ export interface KitsuneConfig {
   autoCleanupWatched: boolean;
   /** Playback/provider recovery behavior. Default guided. */
   recoveryMode: RecoveryMode;
+  /** Startup provider selection policy. Default balanced. */
+  startupPriority: StartupPriority;
   /** Render/fetch artwork previews when terminal capability allows it. Default true. */
   artworkPreviewsEnabled: boolean;
   /** Best-effort cache poster artwork for downloaded entries. Default true. */

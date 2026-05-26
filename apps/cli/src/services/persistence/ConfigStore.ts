@@ -60,6 +60,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   autoDownloadNextCount: 1,
   autoCleanupWatched: false,
   recoveryMode: "guided",
+  startupPriority: "balanced",
   artworkPreviewsEnabled: true,
   offlineArtworkCacheEnabled: true,
   offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,

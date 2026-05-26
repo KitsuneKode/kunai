@@ -8,6 +8,7 @@ import {
   DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
+import type { StartupPriority } from "@kunai/types";
 
 import type {
   ConfigService,
@@ -84,6 +85,7 @@ export class ConfigServiceImpl implements ConfigService {
       offlineDefaultRunwayTarget: normalizeRunwayTarget(loaded.offlineDefaultRunwayTarget),
       protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
+      startupPriority: normalizeStartupPriority(loaded.startupPriority),
     };
     return service;
   }
@@ -219,6 +221,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get recoveryMode(): RecoveryMode {
     return this.config.recoveryMode;
+  }
+
+  get startupPriority(): StartupPriority {
+    return this.config.startupPriority;
   }
 
   get artworkPreviewsEnabled(): boolean {
@@ -374,6 +380,9 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.recoveryMode !== undefined
         ? { recoveryMode: normalizeRecoveryMode(partial.recoveryMode) }
         : null),
+      ...(partial.startupPriority !== undefined
+        ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
+        : null),
     };
   }
 
@@ -413,6 +422,10 @@ function normalizeStringList(values: readonly string[] | undefined): readonly st
 
 function normalizeRecoveryMode(value: unknown): RecoveryMode {
   return value === "fallback-first" || value === "manual" ? value : "guided";
+}
+
+function normalizeStartupPriority(value: unknown): StartupPriority {
+  return value === "fast" || value === "quality-first" || value === "balanced" ? value : "balanced";
 }
 
 function normalizeBytes(value: unknown, fallback: number): number {

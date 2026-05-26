@@ -25,6 +25,7 @@ import type {
   RecoveryMode,
 } from "@/services/persistence/ConfigService";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import type { StartupPriority } from "@kunai/types";
 import { Box, Text, useInput, useStdout } from "ink";
 import { useEffect, useState } from "react";
 
@@ -988,6 +989,8 @@ export function RootOverlayShell({
             next.autoDownload = picked.value as AutoDownloadMode;
           } else if (settingsChoice === "recoveryMode") {
             next.recoveryMode = picked.value as RecoveryMode;
+          } else if (settingsChoice === "startupPriority") {
+            next.startupPriority = picked.value as StartupPriority;
           } else if (settingsChoice === "autoDownloadNextCount") {
             next.autoDownloadNextCount = Number(picked.value);
           } else if (settingsChoice === "autoCleanupGraceDays") {

@@ -7,6 +7,7 @@ import type {
 } from "@/services/persistence/ConfigService";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { resolvePresenceClientIdSource } from "@/services/presence/PresenceServiceImpl";
+import type { StartupPriority } from "@kunai/types";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -104,6 +105,7 @@ type SettingsAction =
   | "autoNext"
   | "autoDownload"
   | "recoveryMode"
+  | "startupPriority"
   | "autoCleanupWatched"
   | "resumeStartChoicePrompt"
   | "quitNearEndBehavior"
@@ -272,6 +274,20 @@ const RECOVERY_MODE_OPTIONS: readonly ShellPickerOption<KitsuneConfig["recoveryM
     value: "manual",
     label: "Ask before switching",
     detail: "Never switch providers without asking.",
+  },
+];
+
+const STARTUP_PRIORITY_OPTIONS: readonly ShellPickerOption<StartupPriority>[] = [
+  {
+    value: "balanced",
+    label: "Balanced",
+    detail: "Prefer ready 1080p playback without a long wait.",
+  },
+  { value: "fast", label: "Fast", detail: "Start the first healthy playable source." },
+  {
+    value: "quality-first",
+    label: "Quality first",
+    detail: "Wait longer for stronger quality choices.",
   },
 ];
 
@@ -470,6 +486,11 @@ export function buildSettingsOptions(
       value: "recoveryMode",
       label: `▸ Recovery mode  ·  ${config.recoveryMode}`,
       detail: "Choose how aggressively Kunai retries and switches providers",
+    },
+    {
+      value: "startupPriority",
+      label: `▸ Startup priority  ·  ${config.startupPriority}`,
+      detail: "Choose how long provider startup waits for richer stream choices",
     },
     {
       value: "section:offline-continuation",
@@ -764,6 +785,13 @@ export function buildSettingsChoiceOverlay({
     options = RECOVERY_MODE_OPTIONS.map((option) => ({
       ...option,
       label: option.value === config.recoveryMode ? `${option.label}  ·  current` : option.label,
+    })) as readonly ShellPickerOption<string>[];
+  } else if (setting === "startupPriority") {
+    title = "Startup priority";
+    subtitle = `Current ${config.startupPriority}`;
+    options = STARTUP_PRIORITY_OPTIONS.map((option) => ({
+      ...option,
+      label: option.value === config.startupPriority ? `${option.label}  ·  current` : option.label,
     })) as readonly ShellPickerOption<string>[];
   } else if (setting === "autoDownloadNextCount") {
     title = "Auto-download next count";

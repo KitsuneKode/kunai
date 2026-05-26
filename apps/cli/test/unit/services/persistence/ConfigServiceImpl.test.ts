@@ -46,6 +46,29 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).footerHints).toBe("minimal");
   });
 
+  test("defaults startup priority to balanced and persists fast", async () => {
+    const store = new MemoryConfigStore();
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.startupPriority).toBe("balanced");
+
+    await service.update({ startupPriority: "fast" });
+    await service.save();
+
+    expect((await store.load()).startupPriority).toBe("fast");
+  });
+
+  test("normalizes invalid stored startup priority to balanced", async () => {
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        startupPriority: "turbo" as never,
+      }),
+    );
+
+    expect(service.startupPriority).toBe("balanced");
+    expect(service.getRaw().startupPriority).toBe("balanced");
+  });
+
   test("defaults presence integrations off and persists explicit privacy choices", async () => {
     const store = new MemoryConfigStore();
     const service = await ConfigServiceImpl.load(store);
