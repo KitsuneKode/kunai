@@ -536,7 +536,7 @@ export const allmangaProviderModule: CoreProviderModule = {
         failures.push(failure);
         return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, failure);
       }
-      const selection = selectReadyStream(streams, {
+      const selection = selectReadyStream([selectedStream], {
         startupPriority,
         qualityPreference: input.qualityPreference,
         preferredSourceId: input.preferredSourceId,

@@ -336,6 +336,44 @@ describe("AllManga provider evidence fixtures", () => {
     expect(fetchMock.calls.filter((url) => url.includes("/ak-source"))).toHaveLength(1);
   });
 
+  test("selection stays tied to the provider-cycle validated stream", async () => {
+    await using _fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "cycle-hls-720-mp4-1080",
+    });
+
+    const result = await resolveEvidenceEpisode({ intent: "play", startupPriority: "balanced" });
+    const selectedStream = result.streams.find((stream) => stream.id === result.selectedStreamId);
+
+    expect(result.status).toBe("resolved");
+    expect(result.streams.map((stream) => [stream.protocol, stream.qualityRank])).toEqual([
+      ["mp4", 1080],
+      ["hls", 720],
+    ]);
+    expect(selectedStream).toMatchObject({
+      protocol: "hls",
+      qualityRank: 720,
+    });
+    expect(result.selectionDecision?.selectedQualityRank).toBe(720);
+  });
+
+  test("quality-first baseline-empty required Ak is not bounded by the optional wait", async () => {
+    using fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "ak-episode-response",
+      akDelayMs: 25,
+    });
+
+    const result = await collectEvidenceLinksForStartup(
+      { startupPriority: "quality-first" },
+      { qualityFirstWaitMs: 1 },
+    );
+
+    expect(result.requiredAkFallback).toBe(true);
+    expect(result.links.some((link) => link.deferredLocator?.startsWith("allmanga-ak:"))).toBe(
+      true,
+    );
+    expect(fetchMock.abortedAkRequests).toBe(0);
+  });
+
   test("explicit Ak source selection skips baseline and requests Ak once", async () => {
     using fetchMock = await mockAllMangaFetch({
       subSourceFixture: "mixed-unselectable-baseline-ak",
@@ -597,7 +635,8 @@ async function mockAllMangaFetch(
       | "sub-source-response"
       | "ak-episode-response"
       | "mixed-unselectable-baseline-ak"
-      | "baseline-ak";
+      | "baseline-ak"
+      | "cycle-hls-720-mp4-1080";
     readonly akDelayMs?: number;
   } = {},
 ): Promise<Disposable & { readonly calls: readonly string[]; readonly abortedAkRequests: number }> {
@@ -607,24 +646,37 @@ async function mockAllMangaFetch(
   let abortedAkRequests = 0;
   const subFixture =
     options.subSourceFixture === "mixed-unselectable-baseline-ak" ||
-    options.subSourceFixture === "baseline-ak"
+    options.subSourceFixture === "baseline-ak" ||
+    options.subSourceFixture === "cycle-hls-720-mp4-1080"
       ? {
           data: {
             episode: {
               episodeString: "1",
-              sourceUrls: [
-                {
-                  sourceName: "Default",
-                  sourceUrl:
-                    options.subSourceFixture === "baseline-ak"
-                      ? "--https://cdn.allmanga.example/sub//1080/master.m3u8"
-                      : "--/broken-source",
-                },
-                {
-                  sourceName: "Ak",
-                  sourceUrl: "--/ak-source",
-                },
-              ],
+              sourceUrls:
+                options.subSourceFixture === "cycle-hls-720-mp4-1080"
+                  ? [
+                      {
+                        sourceName: "1080p",
+                        sourceUrl: "--https://cdn.allmanga.example/sub/1080/video.mp4?token=x",
+                      },
+                      {
+                        sourceName: "720p",
+                        sourceUrl: "--https://cdn.allmanga.example/sub/720/master.m3u8",
+                      },
+                    ]
+                  : [
+                      {
+                        sourceName: "Default",
+                        sourceUrl:
+                          options.subSourceFixture === "baseline-ak"
+                            ? "--https://cdn.allmanga.example/sub//1080/master.m3u8"
+                            : "--/broken-source",
+                      },
+                      {
+                        sourceName: "Ak",
+                        sourceUrl: "--/ak-source",
+                      },
+                    ],
             },
           },
         }
