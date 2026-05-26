@@ -181,6 +181,7 @@ export function createMiruroResultFromPayload({
       episode: input.episode,
       subtitleLanguage: input.preferredSubtitleLanguage,
       qualityPreference: input.qualityPreference,
+      startupPriority: input.startupPriority,
     });
   const sourceId = `source:${MIRURO_PROVIDER_ID}:pipe:${serverProfile.id}`;
   const rawStreams = rankMiruroStreams(
@@ -740,6 +741,7 @@ export const miruroProviderModule: CoreProviderModule = {
       episode: input.episode,
       subtitleLanguage: input.preferredSubtitleLanguage,
       qualityPreference: input.qualityPreference,
+      startupPriority: input.startupPriority,
     });
 
     try {

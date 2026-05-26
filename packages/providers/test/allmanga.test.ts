@@ -252,6 +252,19 @@ describe("AllManga provider evidence fixtures", () => {
     expect(fetchMock.calls.some((url) => url.includes("/ak-source"))).toBe(false);
   });
 
+  test("result cache policy includes startup priority in key parts", async () => {
+    await using _fetchMock = await mockAllMangaFetch();
+
+    const fast = await resolveEvidenceEpisode({ startupPriority: "fast" });
+    const qualityFirst = await resolveEvidenceEpisode({ startupPriority: "quality-first" });
+
+    expect(fast.status).toBe("resolved");
+    expect(qualityFirst.status).toBe("resolved");
+    expect(fast.cachePolicy?.keyParts).toContain("fast");
+    expect(qualityFirst.cachePolicy?.keyParts).toContain("quality-first");
+    expect(fast.cachePolicy?.keyParts).not.toEqual(qualityFirst.cachePolicy?.keyParts);
+  });
+
   test("normal playback requests Ak as required fallback when baseline is empty", async () => {
     using fetchMock = await mockAllMangaFetch({ subSourceFixture: "ak-episode-response" });
 

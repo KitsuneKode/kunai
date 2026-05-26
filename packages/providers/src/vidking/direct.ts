@@ -164,6 +164,7 @@ export async function resolveVidkingDirect(
     episode: input.episode,
     subtitleLanguage: input.preferredSubtitleLanguage,
     qualityPreference: input.qualityPreference,
+    startupPriority: input.startupPriority,
   });
   const events: ProviderTraceEvent[] = [];
   const sources: ProviderSourceCandidate[] = [];
@@ -446,6 +447,7 @@ export function createVidkingResultFromPayload({
       episode: input.episode,
       subtitleLanguage: input.preferredSubtitleLanguage,
       qualityPreference: input.qualityPreference,
+      startupPriority: input.startupPriority,
     });
   const resolvedSourceId =
     sourceId ?? createSourceId((server as VidkingServer | undefined) ?? "mb-flix");

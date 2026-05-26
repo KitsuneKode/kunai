@@ -290,6 +290,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
       episode: input.episode,
       subtitleLanguage: input.preferredSubtitleLanguage,
       qualityPreference: input.qualityPreference,
+      startupPriority: input.startupPriority,
     });
 
     emitTraceEvent(events, context, {
