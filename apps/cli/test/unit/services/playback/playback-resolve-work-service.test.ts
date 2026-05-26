@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { PlaybackResolveCoordinatorOutput } from "@/services/playback/PlaybackResolveCoordinator";
 import type { PlaybackResolveInput } from "@/services/playback/PlaybackResolveService";
 import { PlaybackResolveWorkService } from "@/services/playback/PlaybackResolveWorkService";
+import type { ResolveWorkLedgerSnapshot } from "@/services/playback/ResolveWorkLedger";
 
 const baseInput = (): PlaybackResolveInput => ({
   title: { id: "series-1", type: "series", name: "Series" },
@@ -73,6 +74,27 @@ describe("PlaybackResolveWorkService", () => {
     ]);
 
     expect(calls).toBe(2);
+  });
+
+  test("reports completed resolve work ledgers", async () => {
+    const completed: ResolveWorkLedgerSnapshot[] = [];
+    const service = new PlaybackResolveWorkService(
+      {
+        resolve: async () => output,
+      },
+      {
+        onCompletedLedger: (ledger) => completed.push(ledger),
+      },
+    );
+
+    const result = await service.resolve(baseInput(), {
+      intentKind: "playback",
+      budgetLane: "user-blocking",
+    });
+
+    expect(completed).toHaveLength(1);
+    expect(completed[0]).toEqual(result.workLedger);
+    expect(completed[0]).toMatchObject({ outcome: "resolved", intents: ["playback"] });
   });
 
   test("detaches an aborted prefetch consumer without aborting joined foreground work", async () => {

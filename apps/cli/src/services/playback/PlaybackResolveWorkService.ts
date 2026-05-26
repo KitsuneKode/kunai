@@ -51,7 +51,12 @@ type InFlightResolve = {
 export class PlaybackResolveWorkService {
   private readonly inFlight = new Map<string, InFlightResolve>();
 
-  constructor(private readonly coordinator: ResolveCoordinator) {}
+  constructor(
+    private readonly coordinator: ResolveCoordinator,
+    private readonly options: {
+      readonly onCompletedLedger?: (ledger: ResolveWorkLedgerSnapshot) => void;
+    } = {},
+  ) {}
 
   async resolve(
     input: PlaybackResolveInput,
@@ -118,12 +123,14 @@ export class PlaybackResolveWorkService {
       if (output.stream?.providerResolveResult) {
         recordProviderInventoryFacts(ledger, output.stream.providerResolveResult);
       }
+      const workLedger = finalizeResolveWorkLedger(
+        ledger,
+        output.stream ? "resolved" : abortController.signal.aborted ? "cancelled" : "unavailable",
+      );
+      this.options.onCompletedLedger?.(workLedger);
       return {
         ...output,
-        workLedger: finalizeResolveWorkLedger(
-          ledger,
-          output.stream ? "resolved" : abortController.signal.aborted ? "cancelled" : "unavailable",
-        ),
+        workLedger,
       };
     });
     Object.assign(entry, { promise });

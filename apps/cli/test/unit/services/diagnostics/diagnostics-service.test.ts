@@ -7,6 +7,10 @@ import type { Logger } from "@/infra/logger/Logger";
 import { DebugTraceReporter } from "@/services/diagnostics/DebugTraceReporter";
 import { DiagnosticsServiceImpl } from "@/services/diagnostics/DiagnosticsServiceImpl";
 import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImpl";
+import {
+  createResolveWorkLedger,
+  finalizeResolveWorkLedger,
+} from "@/services/playback/ResolveWorkLedger";
 
 type CapturedLog = {
   readonly level: string;
@@ -122,6 +126,34 @@ describe("DiagnosticsServiceImpl", () => {
       playbackCycleIds: ["playback-1"],
       providerAttemptIds: ["provider-1"],
       traceIds: ["trace-1"],
+    });
+  });
+
+  test("exports retained resolve work ledgers in support bundles", () => {
+    const service = new DiagnosticsServiceImpl({
+      store: new DiagnosticsStoreImpl(),
+      logger: createLogger(),
+    });
+    const ledger = createResolveWorkLedger({
+      identity: {
+        title: { id: "series-1", type: "series", name: "Series" },
+        episode: { season: 1, episode: 2 },
+        mode: "series",
+        providerId: "vidking",
+        audioPreference: "original",
+        subtitlePreference: "none",
+        purpose: "playable",
+        freshnessPolicy: "trust-fresh",
+      },
+      intent: "playback",
+      budgetLane: "user-blocking",
+    });
+    const snapshot = finalizeResolveWorkLedger(ledger, "resolved");
+
+    service.recordResolveWorkLedger(snapshot);
+
+    expect(service.buildSupportBundle().insights.resolveWork).toMatchObject({
+      physicalWork: [expect.objectContaining({ resolveWorkKey: snapshot.resolveWorkKey })],
     });
   });
 });

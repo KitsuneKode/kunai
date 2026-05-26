@@ -382,6 +382,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       titleProviderHealth,
       diagnostics: diagnosticsService,
     }),
+    {
+      onCompletedLedger: (ledger) => diagnosticsService.recordResolveWorkLedger(ledger),
+    },
   );
 
   const downloadService = new DownloadService({

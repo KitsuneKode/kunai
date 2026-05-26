@@ -1,9 +1,11 @@
 import type { PlaybackSourceInventoryDiagnosticsSummary } from "../playback/PlaybackSourceInventoryProjection";
+import type { ResolveWorkLedgerSnapshot } from "../playback/ResolveWorkLedger";
 import type { DiagnosticEvent, DiagnosticEventInput } from "./diagnostic-event";
 import type { DiagnosticsSupportBundle } from "./support-bundle";
 
 export interface DiagnosticsService {
   record(event: DiagnosticEventInput): void;
+  recordResolveWorkLedger(ledger: ResolveWorkLedgerSnapshot): void;
   getRecent(limit?: number): readonly DiagnosticEvent[];
   getSnapshot(): readonly DiagnosticEvent[];
   clear(): void;

@@ -1,4 +1,5 @@
 import type { Logger } from "@/infra/logger/Logger";
+import type { ResolveWorkLedgerSnapshot } from "@/services/playback/ResolveWorkLedger";
 
 import type { DebugTraceReporter } from "./DebugTraceReporter";
 import type { DiagnosticEvent, DiagnosticEventInput } from "./diagnostic-event";
@@ -17,6 +18,9 @@ export type DiagnosticsServiceDeps = {
 };
 
 export class DiagnosticsServiceImpl implements DiagnosticsService {
+  private static readonly MAX_RESOLVE_WORK_LEDGERS = 20;
+  private readonly resolveWorkLedgers: ResolveWorkLedgerSnapshot[] = [];
+
   constructor(private readonly deps: DiagnosticsServiceDeps) {}
 
   record(event: DiagnosticEventInput): void {
@@ -26,6 +30,16 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
     this.deps.store.record(redactedEvent);
     this.log(redactedEvent);
     this.deps.traceReporter?.record(redactedEvent);
+  }
+
+  recordResolveWorkLedger(ledger: ResolveWorkLedgerSnapshot): void {
+    this.resolveWorkLedgers.push(ledger);
+    if (this.resolveWorkLedgers.length > DiagnosticsServiceImpl.MAX_RESOLVE_WORK_LEDGERS) {
+      this.resolveWorkLedgers.splice(
+        0,
+        this.resolveWorkLedgers.length - DiagnosticsServiceImpl.MAX_RESOLVE_WORK_LEDGERS,
+      );
+    }
   }
 
   getRecent(limit?: number): readonly DiagnosticEvent[] {
@@ -38,6 +52,7 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
 
   clear(): void {
     this.deps.store.clear();
+    this.resolveWorkLedgers.length = 0;
   }
 
   buildSupportBundle(
@@ -48,6 +63,7 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
       debug: this.deps.debug ?? false,
       capabilities: input?.capabilities ?? {},
       playbackSourceInventory: input?.playbackSourceInventory ?? null,
+      resolveWorkLedgers: this.resolveWorkLedgers,
       events: this.deps.store.getSnapshot(),
       now: this.deps.now,
     });
