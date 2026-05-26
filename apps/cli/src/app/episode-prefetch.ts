@@ -1,4 +1,5 @@
 import type { EpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
+import type { StartupPriority } from "@kunai/types";
 
 /** Maximum extended handoff wait after concrete readiness progress. */
 export const EPISODE_PREFETCH_WAIT_BUDGET_MS = 8_000;
@@ -12,6 +13,7 @@ export type EpisodePrefetchTarget = {
   readonly streamId?: string;
   readonly audioPreference?: string;
   readonly qualityPreference?: string;
+  readonly startupPriority?: StartupPriority;
   readonly subtitlePreference?: string;
 };
 
@@ -58,7 +60,8 @@ export function matchesEpisodePrefetchTarget(
     target.sourceId === requested.sourceId &&
     target.streamId === requested.streamId &&
     target.audioPreference === requested.audioPreference &&
-    target.qualityPreference === requested.qualityPreference
+    target.qualityPreference === requested.qualityPreference &&
+    target.startupPriority === requested.startupPriority
   );
 }
 

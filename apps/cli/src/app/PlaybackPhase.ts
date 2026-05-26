@@ -1031,6 +1031,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               stateManager.getState().mode === "anime"
                 ? config.animeLanguageProfile.quality
                 : config.seriesLanguageProfile.quality,
+            startupPriority: config.startupPriority,
             subtitlePreference:
               stateManager.getState().mode === "anime"
                 ? config.animeLanguageProfile.subtitle
@@ -1140,6 +1141,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     : title.type === "movie"
                       ? config.movieLanguageProfile.quality
                       : config.seriesLanguageProfile.quality,
+                startupPriority: config.startupPriority,
               });
               try {
                 await cacheStore.delete(refreshCacheKey);
@@ -1171,6 +1173,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     : title.type === "movie"
                       ? config.movieLanguageProfile.quality
                       : config.seriesLanguageProfile.quality,
+                startupPriority: config.startupPriority,
                 recoveryMode: config.recoveryMode,
                 preferFreshStream: sourceRefreshDecision?.kind === "refresh",
                 preserveCachedStreamOnFreshFailure: sourceRefreshDecision?.kind === "refresh",
@@ -1747,6 +1750,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   : title.type === "movie"
                     ? config.movieLanguageProfile.quality
                     : config.seriesLanguageProfile.quality,
+              startupPriority: config.startupPriority,
             });
             try {
               await cacheStore.delete(staleCacheKey);
@@ -2982,6 +2986,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           mode === "anime"
             ? config.animeLanguageProfile.quality
             : config.seriesLanguageProfile.quality,
+        startupPriority: config.startupPriority,
         recoveryMode: config.recoveryMode,
         signal: input.signal,
         onEvent: (event) => {
@@ -3012,6 +3017,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         mode === "anime"
           ? config.animeLanguageProfile.quality
           : config.seriesLanguageProfile.quality,
+      startupPriority: config.startupPriority,
       subtitlePreference:
         mode === "anime"
           ? config.animeLanguageProfile.subtitle

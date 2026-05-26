@@ -409,6 +409,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
           audioPreference: intent.audioPreference,
           subtitlePreference: intent.subtitlePreference,
           qualityPreference: intent.qualityPreference,
+          startupPriority: config.startupPriority,
           selectedSourceId: intent.selectedSourceId,
           selectedStreamId: intent.selectedStreamId,
           recoveryMode: config.recoveryMode,

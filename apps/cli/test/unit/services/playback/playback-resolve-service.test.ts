@@ -106,6 +106,7 @@ function createMockEngine(
       readonly manifest: ReturnType<typeof createManifest>;
     }[];
     readonly onCandidateIds?: (candidateIds: readonly ProviderId[]) => void;
+    readonly onResolveInput?: (input: ProviderResolveInput) => void;
   } = {},
 ): ProviderEngine {
   return {
@@ -116,9 +117,10 @@ function createMockEngine(
       options.modules?.find((module) => module.providerId === providerId)?.manifest,
     resolve: async () => ({}) as ProviderResolveResult,
     resolveWithFallback: async (
-      _input: ProviderResolveInput,
+      input: ProviderResolveInput,
       candidateIds: readonly ProviderId[],
     ) => {
+      options.onResolveInput?.(input);
       options.onCandidateIds?.(candidateIds);
       return resolveWithFallbackResult;
     },
@@ -147,34 +149,42 @@ test("PlaybackResolveService returns cached stream without provider resolve", as
 test("PlaybackResolveService falls back to engine on cache miss", async () => {
   const cache = createMemoryCache(null);
   const fallbackStream = { ...stream, url: "https://fallback.example/stream.m3u8" };
-  const engine = createMockEngine({
-    result: {
-      status: "resolved",
-      providerId: "fallback" as ProviderId,
-      streams: [
-        {
-          id: "stream:fallback:1",
-          providerId: "fallback" as ProviderId,
-          url: "https://fallback.example/stream.m3u8",
-          protocol: "hls" as const,
-          confidence: 0.9,
-          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+  let observedResolveInput: ProviderResolveInput | null = null;
+  const engine = createMockEngine(
+    {
+      result: {
+        status: "resolved",
+        providerId: "fallback" as ProviderId,
+        streams: [
+          {
+            id: "stream:fallback:1",
+            providerId: "fallback" as ProviderId,
+            url: "https://fallback.example/stream.m3u8",
+            protocol: "hls" as const,
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:1",
+          startedAt: new Date().toISOString(),
+          title: { id: "12345", kind: "movie", title: "Test Movie" },
+          cacheHit: false,
+          steps: [],
+          failures: [],
         },
-      ],
-      subtitles: [],
-      trace: {
-        id: "trace:1",
-        startedAt: new Date().toISOString(),
-        title: { id: "12345", kind: "movie", title: "Test Movie" },
-        cacheHit: false,
-        steps: [],
         failures: [],
       },
-      failures: [],
+      providerId: "fallback" as ProviderId,
+      attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
     },
-    providerId: "fallback" as ProviderId,
-    attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
-  });
+    {
+      onResolveInput: (input) => {
+        observedResolveInput = input;
+      },
+    },
+  );
   const service = new PlaybackResolveService({ engine, cacheStore: cache });
 
   const result = await service.resolve({
@@ -184,12 +194,14 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
     providerId: "primary",
     audioPreference: "original",
     subtitlePreference: "none",
+    startupPriority: "fast",
     signal: new AbortController().signal,
   });
 
   expect(result.providerId).toBe("fallback");
   expect(result.stream).not.toBeNull();
   expect(result.stream!.url).toBe(fallbackStream.url);
+  expect(observedResolveInput?.startupPriority).toBe("fast");
 });
 
 test("PlaybackResolveService does not cache deferred media locators", async () => {

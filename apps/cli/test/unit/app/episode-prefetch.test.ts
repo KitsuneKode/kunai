@@ -25,6 +25,7 @@ const target = {
   streamId: "stream-a",
   audioPreference: "original",
   qualityPreference: "1080p",
+  startupPriority: "balanced" as const,
   subtitlePreference: "en",
 };
 
@@ -131,7 +132,7 @@ describe("EpisodePrefetchHandle", () => {
     expect(handle.hasReadyFor(target)).toBe(false);
   });
 
-  test("exact-match adoption rejects changed provider, stream, audio, or quality intent", () => {
+  test("exact-match adoption rejects changed provider, stream, audio, quality, or startup intent", () => {
     expect(matchesEpisodePrefetchTarget(target, target)).toBe(true);
     expect(matchesEpisodePrefetchTarget(target, { ...target, episode: ep(1, 3) })).toBe(false);
     expect(matchesEpisodePrefetchTarget(target, { ...target, providerId: "prov-b" })).toBe(false);
@@ -140,6 +141,9 @@ describe("EpisodePrefetchHandle", () => {
     expect(matchesEpisodePrefetchTarget(target, { ...target, qualityPreference: "720p" })).toBe(
       false,
     );
+    expect(
+      matchesEpisodePrefetchTarget(target, { ...target, startupPriority: "quality-first" }),
+    ).toBe(false);
   });
 
   test("soft subtitle changes reuse video but mark subtitle preparation stale", async () => {
