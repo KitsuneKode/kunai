@@ -75,6 +75,19 @@ export function truncateLine(value: string, maxLength: number): string {
   return `${output}${ELLIPSIS}`;
 }
 
+/**
+ * Episode label without the "Episode N · Episode N" duplication that occurs
+ * when a provider returns the placeholder name "Episode N". Returns the real
+ * title when one exists, otherwise just "Episode N".
+ */
+export function dedupeEpisodeLabel(episodeNumber: number, name: string | undefined): string {
+  const trimmed = name?.trim();
+  if (!trimmed || trimmed.toLowerCase() === `episode ${episodeNumber}`) {
+    return `Episode ${episodeNumber}`;
+  }
+  return `Episode ${episodeNumber}  ·  ${trimmed}`;
+}
+
 export function truncateAtWord(value: string, maxLength: number): string {
   if (maxLength <= 0) return "";
   if (measureColumns(value) <= maxLength) return value;

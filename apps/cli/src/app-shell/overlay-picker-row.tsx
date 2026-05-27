@@ -64,7 +64,9 @@ export function PickerOptionRow({
   return (
     <>
       <Text color={selected ? pickerAccent : palette.dim}>{prefix}</Text>
-      <Text color={selected ? pickerAccent : (accentColor ?? palette.text)} wrap="truncate-end">
+      {/* Titles win by weight, never by hue (Sakura): the label stays neutral;
+          only the trailing badge carries the state color (accentColor). */}
+      <Text color={selected ? pickerAccent : palette.text} wrap="truncate-end">
         {truncatedLabel}
       </Text>
       {truncatedDetail ? (

@@ -1,12 +1,28 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  dedupeEpisodeLabel,
   measureColumns,
   padColumnsEnd,
   padColumnsStart,
   truncateAtWord,
   truncateLine,
 } from "@/app-shell/shell-text";
+
+describe("dedupeEpisodeLabel", () => {
+  test("collapses the 'Episode N · Episode N' duplication", () => {
+    expect(dedupeEpisodeLabel(7, "Episode 7")).toBe("Episode 7");
+    expect(dedupeEpisodeLabel(7, "episode 7")).toBe("Episode 7");
+    expect(dedupeEpisodeLabel(7, "  Episode 7  ")).toBe("Episode 7");
+  });
+  test("keeps a real episode title", () => {
+    expect(dedupeEpisodeLabel(7, "The Reckoning")).toBe("Episode 7  ·  The Reckoning");
+  });
+  test("falls back to 'Episode N' when no name is provided", () => {
+    expect(dedupeEpisodeLabel(7, undefined)).toBe("Episode 7");
+    expect(dedupeEpisodeLabel(7, "")).toBe("Episode 7");
+  });
+});
 
 describe("truncateAtWord", () => {
   test("returns input when it fits", () => {

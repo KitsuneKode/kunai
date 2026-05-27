@@ -79,7 +79,7 @@ describe("renderEpisodeWatchProgressBar", () => {
 });
 
 describe("buildEpisodePickerOption", () => {
-  test("adds a progress bar for in-progress episodes", () => {
+  test("in-progress episode: clean detail + percent badge, no inline progress bar", () => {
     const option = buildEpisodePickerOption({
       season: 2,
       episode: 6,
@@ -89,12 +89,13 @@ describe("buildEpisodePickerOption", () => {
       history: WATCHED_ENTRIES[1],
     });
 
-    expect(option.detail).toBe("[██░░░░░░░░]  ·  resume 10:00  ·  17% watched  ·  unknown year");
+    // Row detail stays minimal (air date); the glyph badge carries the state.
+    expect(option.detail).toBe("unknown year");
     expect(option.tone).toBe("warning");
     expect(option.badge).toBe("17%");
   });
 
-  test("marks the current episode with info tone", () => {
+  test("current episode: neutral label + ▸ badge (no ▶ prefix, no rainbow)", () => {
     const option = buildEpisodePickerOption({
       season: 1,
       episode: 2,
@@ -102,9 +103,25 @@ describe("buildEpisodePickerOption", () => {
       current: true,
     });
 
-    expect(option.label).toBe("▶  Episode 2");
-    expect(option.tone).toBe("info");
-    expect(option.badge).toBeUndefined();
+    expect(option.label).toBe("Episode 2");
+    expect(option.tone).toBe("warning");
+    expect(option.badge).toBe("▸");
+  });
+
+  test("watched episode: ✓ badge in success tone", () => {
+    const option = buildEpisodePickerOption({
+      season: 2,
+      episode: 5,
+      label: "Episode 5",
+      baseDetail: "2026-01-01",
+      current: false,
+      history: WATCHED_ENTRIES[0],
+    });
+
+    expect(option.label).toBe("Episode 5");
+    expect(option.detail).toBe("2026-01-01");
+    expect(option.tone).toBe("success");
+    expect(option.badge).toBe("✓");
   });
 });
 
@@ -134,10 +151,10 @@ describe("buildPlaybackEpisodePickerOptions", () => {
       },
       {
         value: "1:2",
-        label: "▶  Episode 2",
+        label: "Episode 2",
         detail: "Source episode 2",
-        tone: "info",
-        badge: undefined,
+        tone: "warning",
+        badge: "▸",
       },
     ]);
   });
@@ -153,9 +170,9 @@ describe("buildPlaybackEpisodePickerOptions", () => {
     expect(result.initialIndex).toBe(1);
     expect(result.options.map((option) => option.value)).toEqual(["1:1", "1:2", "1:3"]);
     expect(result.options[1]).toMatchObject({
-      label: "▶  Episode 2",
-      tone: "info",
-      badge: undefined,
+      label: "Episode 2",
+      tone: "warning",
+      badge: "▸",
     });
   });
 
@@ -189,15 +206,15 @@ describe("buildPlaybackEpisodePickerOptions", () => {
       expect(result.options).toEqual([
         {
           value: "2:5",
-          label: "▶  Episode 5  ·  The Current One",
-          detail: "watched  ·  2w ago  ·  2026-01-01",
+          label: "Episode 5  ·  The Current One",
+          detail: "2026-01-01",
           tone: "success",
-          badge: "watched",
+          badge: "✓",
         },
         {
           value: "2:6",
           label: "Episode 6  ·  The Next One",
-          detail: "[██░░░░░░░░]  ·  resume 10:00  ·  17% watched  ·  unknown year",
+          detail: "unknown year",
           tone: "warning",
           badge: "17%",
         },

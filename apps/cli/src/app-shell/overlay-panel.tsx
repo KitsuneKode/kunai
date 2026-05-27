@@ -15,7 +15,7 @@ import { PickerOptionRow } from "./overlay-picker-row";
 import { renderHistoryProgressBar } from "./panel-data";
 import { PosterInitialBlock } from "./poster-initial-block";
 import type { PosterResult, PosterState } from "./poster-types";
-import { getWindowStart, truncateLine, wrapText } from "./shell-text";
+import { getWindowStart, truncateAtWord, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
@@ -974,14 +974,12 @@ const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
       </Box>
       {option ? (
         <Box flexDirection="column" marginTop={1}>
-          <Text color={palette.text} bold wrap="truncate-end">
-            {option.label}
+          <Text color={palette.text} bold>
+            {truncateAtWord(option.label, Math.max(8, width))}
           </Text>
           {option.badge ? <Text color={badgeColor}>{option.badge}</Text> : null}
           {option.detail ? (
-            <Text color={palette.dim} wrap="truncate-end">
-              {option.detail}
-            </Text>
+            <Text color={palette.dim}>{truncateAtWord(option.detail, Math.max(8, width))}</Text>
           ) : null}
         </Box>
       ) : null}

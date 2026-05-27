@@ -1,3 +1,4 @@
+import { dedupeEpisodeLabel } from "@/app-shell/shell-text";
 import type { ShellPickerOption } from "@/app-shell/types";
 import type { ShellStatusTone } from "@/app-shell/types";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
@@ -102,7 +103,7 @@ export async function buildPlaybackEpisodePickerOptions({
     buildEpisodePickerOption({
       season: currentEpisode.season,
       episode: entry.number,
-      label: `Episode ${entry.number}  ·  ${entry.name}`,
+      label: dedupeEpisodeLabel(entry.number, entry.name),
       baseDetail: entry.airDate || "unknown year",
       releaseBadge: releaseBadges?.get(`${currentEpisode.season}:${entry.number}`),
       current: entry.number === currentEpisode.episode,
@@ -216,20 +217,28 @@ export function buildEpisodePickerOption({
   history?: HistoryEntry;
 }): ShellPickerOption<string> {
   const watch = describeEpisodeWatchPresentation(history);
-  const displayLabel = current ? `▶  ${label}` : label;
+  // Consistent status grammar — the label stays neutral; a single trailing glyph
+  // badge is the only colored element: ✓ watched (mint) · ▸ current (rose) ·
+  // N%/resume in-progress (rose). No "▶" label prefix, no rainbow rows.
+  let badge: string | undefined;
+  let tone: ShellStatusTone | undefined;
+  if (watch.watched) {
+    badge = "✓";
+    tone = "success";
+  } else if (watch.inProgress) {
+    badge = watch.badge;
+    tone = "warning";
+  } else if (current) {
+    badge = "▸";
+    tone = "warning";
+  }
   return {
     value: `${season}:${episode}`,
-    label: displayLabel,
-    detail: mergeEpisodeDetail(history, watch.detail, releaseBadge, baseDetail),
-    tone:
-      watch.tone === "success"
-        ? "success"
-        : current
-          ? "info"
-          : watch.tone === "warning"
-            ? "warning"
-            : undefined,
-    badge: current && watch.badge && watch.badge !== "watched" ? watch.badge : watch.badge,
+    label,
+    // Row detail stays minimal (air date / release badge); the glyph carries state.
+    detail: mergeEpisodeDetail(undefined, undefined, releaseBadge, baseDetail),
+    tone,
+    badge,
   };
 }
 

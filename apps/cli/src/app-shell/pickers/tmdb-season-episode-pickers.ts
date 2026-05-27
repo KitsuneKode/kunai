@@ -1,6 +1,7 @@
 import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell";
 import type { ListShellActionContext } from "@/app-shell/pickers/list-shell-types";
 import { openSessionPicker } from "@/app-shell/session-picker";
+import { dedupeEpisodeLabel } from "@/app-shell/shell-text";
 import { describeEpisodeWatchPresentation } from "@/app/playback-episode-picker";
 import type { Container } from "@/container";
 import type { OverlayPickerOption } from "@/domain/session/SessionState";
@@ -125,15 +126,26 @@ export async function buildEpisodePickerOptions({
     const status = episodeStatus.get(episode.number);
     return {
       value: String(episode.number),
-      label: `Episode ${episode.number}  ·  ${episode.name}`,
+      label: dedupeEpisodeLabel(episode.number, episode.name),
       detail: episode.airDate || "unknown year",
-      tone: status?.tone ?? (episode.number === currentEpisode ? "info" : undefined),
+      // Consistent glyph grammar (label stays neutral; badge is the only color):
+      // ✓ watched (mint) · N% in-progress (rose) · ▸ current (rose).
+      tone:
+        status?.tone === "success"
+          ? "success"
+          : status?.tone === "warning"
+            ? "warning"
+            : episode.number === currentEpisode
+              ? "warning"
+              : undefined,
       badge:
-        episode.number === currentEpisode
-          ? status?.badge
-            ? `▶ ${status.badge}`
-            : "▶"
-          : status?.badge,
+        status?.tone === "success"
+          ? "✓"
+          : status?.tone === "warning"
+            ? status.badge
+            : episode.number === currentEpisode
+              ? "▸"
+              : undefined,
       previewImageUrl: episode.stillPath,
     };
   });
