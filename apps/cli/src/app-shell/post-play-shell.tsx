@@ -261,9 +261,11 @@ function PostPlayRail({
       flexDirection="column"
       width={railWidth}
       paddingLeft={2}
-      borderLeft
       borderStyle="single"
       borderColor={palette.lineSoft}
+      borderTop={false}
+      borderRight={false}
+      borderBottom={false}
     >
       {/* Poster slot — always reserved to prevent layout jump on artwork load */}
       <PosterSlot title={title} width={railWidth - 3} />
@@ -373,16 +375,27 @@ export const PostPlayShell = React.memo(function PostPlayShell({
           </>
         ) : null}
 
-        {/* Narrow hint when recs are hidden */}
+        {/* Narrow: name the picks inline (calm affordance, not a punitive wall). */}
         {!showDiscovery && recommendations.length > 0 ? (
           <Box marginTop={1}>
-            <Text color={palette.dim}>widen terminal for recommendations</Text>
+            <Text color={palette.dim}>
+              {`+${recommendations.length} picks · `}
+              {truncateLine(
+                recommendations
+                  .slice(0, 2)
+                  .map((rec) => rec.title)
+                  .join(" · "),
+                bodyWidth - 14,
+              )}
+            </Text>
           </Box>
         ) : null}
       </Box>
 
-      {/* ── Right rail (wide only) ────────────────────────────────────── */}
-      {showRail ? <PostPlayRail view={view} title={title} railWidth={railWidth} /> : null}
+      {/* ── Right rail (wide only; not on did-not-start — that state stays calm) ── */}
+      {showRail && view.heroKind !== "did-not-start" ? (
+        <PostPlayRail view={view} title={title} railWidth={railWidth} />
+      ) : null}
     </Box>
   );
 });
