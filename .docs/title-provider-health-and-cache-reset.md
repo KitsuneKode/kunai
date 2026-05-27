@@ -16,19 +16,13 @@ Clear cache (`/clear-cache`) today only clears **layer A**. It does **not** clea
 
 ---
 
-## 2. Why title health feels enforced (no override today)
+## 2. Title health behavior (2026-05-27)
 
-### 2.1 Reorder logic (`titleScopedProviderOrder`)
+### 2.1 Advisory only — no silent reorder
 
-When title health has a `suggestedProviderId` (e.g. `rivestream` after VidKing failed with fallback success):
+`titleScopedProviderOrder` keeps the user’s **selected provider first**. When title health has a `suggestedProviderId`, resolve does **not** prepend it; playback notes / Sources UI may show an advisory (“last time Rivestream worked on this title”).
 
-```text
-compatibleIds = [ rivestream, vidking ]   // NOT [ vidking ] alone
-```
-
-So every automatic resolve **hits Rivestream first** even if the user’s selected provider is VidKing. If Rivestream succeeds, VidKing never runs in that session.
-
-There is **no** UI flag `ignoreTitleHealthSuggestion` or “Retry VidKing anyway” wired into resolve today.
+`ignoreTitleHealthSuggestion` on resolve input suppresses that advisory for one attempt.
 
 ### 2.2 When the record is written
 
@@ -60,14 +54,14 @@ If VidKing is **`down`** globally:
 
 ## 3. Weird behaviors checklist
 
-| Symptom                                            | Likely cause                                                            |
-| -------------------------------------------------- | ----------------------------------------------------------------------- |
-| Always starts on Rivestream though I chose VidKing | Title health **C** reorders to `suggestedProviderId` first              |
-| Clear cache didn’t help                            | Only layer **A** cleared; **B/C** remain                                |
-| VidKing never in fallback list                     | Global health **B** `status === "down"`                                 |
-| Same bad stream again                              | Stale **A** until dead-stream invalidation or `preferFreshStream`       |
-| “Struggled with this title” note every episode     | **C** still has `suggestedProviderId` until expiry or 2 clean successes |
-| Parse failures stick a week                        | **C** `severeUntil` / 7d retention for `parse`                          |
+| Symptom                                         | Likely cause                                                             |
+| ----------------------------------------------- | ------------------------------------------------------------------------ |
+| Note says try Rivestream but VidKing still runs | **C** is advisory only; check global **B** `down` or guided fallback cap |
+| Clear cache didn’t help                         | Only layer **A** cleared; **B/C** remain                                 |
+| VidKing never in fallback list                  | Global health **B** `status === "down"`                                  |
+| Same bad stream again                           | Stale **A** until dead-stream invalidation or `preferFreshStream`        |
+| “Struggled with this title” note every episode  | **C** still has `suggestedProviderId` until expiry or 2 clean successes  |
+| Parse failures stick a week                     | **C** `severeUntil` / 7d retention for `parse`                           |
 
 ---
 

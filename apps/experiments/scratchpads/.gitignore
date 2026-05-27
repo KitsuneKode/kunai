@@ -13,3 +13,9 @@
 !provider-*/*-0-ram-scraper.ts
 !skill-*/SKILL.md
 episode-metadata-audit
+
+# Superseded by committed .docs/ + .plans/ (VidKing hardening 2026-05-27). Keep locally only.
+provider-cineby/CINEBY_BROWSER_REVERSE_ENGINEERING_REPORT.md
+provider-cineby/CINEBY_VIDKING_FAILURE_DIAGNOSIS.md
+provider-cineby/CINEBY_VIDKING_FIX_PLAN.md
+provider-cineby/CINEBY_VIDKING_LATENCY_FINDINGS.md

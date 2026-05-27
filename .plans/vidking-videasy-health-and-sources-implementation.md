@@ -1,7 +1,8 @@
 # VidKing / Videasy + Sources UX + Title health — implementation plan
 
 Status: **implemented** (2026-05-27).  
-Depends on: `CINEBY_VIDKING_FIX_PLAN.md`, `.docs/flavor-naming-and-source-inventory-ux.md`, `.docs/title-provider-health-and-cache-reset.md`.
+Depends on: `.docs/flavor-naming-and-source-inventory-ux.md`, `.docs/title-provider-health-and-cache-reset.md`, `.docs/provider-dossiers/vidking.md`.  
+Scratchpad drafts (`apps/experiments/scratchpads/provider-cineby/CINEBY_*.md`) are local-only after this pass.
 
 ### Locked decisions
 

@@ -15,3 +15,5 @@ Scratchpads are intentionally separate from production runtime code:
 - Capture subtitle, audio, hard-sub, quality, header, expiry, timeout, and browser-runtime evidence separately when observed.
 
 Use this folder when a provider changes behavior and we need to learn the request pattern before hardening the app implementation.
+
+**Handoff rule:** When research lands in production, update [`.docs/provider-dossiers/`](/.docs/provider-dossiers/) and the relevant `.docs/*.md` / `.plans/*.md` entry. Transient scratch notes (for example `provider-cineby/CINEBY_*.md` from the 2026-05-27 Videasy pass) stay local — they are gitignored after reconciliation.

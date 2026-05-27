@@ -1,5 +1,16 @@
 # Provider: VidKing
 
+## Production status (2026-05-27)
+
+- **Module:** `packages/providers/src/vidking/direct.ts` + `packages/providers/src/vidking/flavors.ts`
+- **Videasy fetch timeout:** **90s** per server attempt; engine `attemptTimeoutMs` aligned (~300s cap for full cycle).
+- **Default resolve (Phase A):** up to **3** English mirrors in order — **Luffy** (`mb-flix`) → **Zoro** (`cdn`) → **Nami** (`downloader2`); no 4+4 embed fanout on the default path.
+- **Phase B (lazy):** remaining English flavors + preferred audio language (e.g. Brook / German) probed in background via `VidkingLazySourceProbeService`; inventory merges without blocking first play.
+- **Source presentation:** providers emit `source.label` (themed name), `metadata.flavorArchetype` (subtitle), stable `source:vidking:videasy:{endpoint}` ids — shell does not map endpoints.
+- **Title health:** advisory only; does not reorder resolve (see `.docs/title-provider-health-and-cache-reset.md`).
+- **Query parity:** `tmdbId`, season/episode, `year`, `imdbId`, `_t` on Videasy requests.
+- **Handoff docs:** `.docs/flavor-naming-and-source-inventory-ux.md`, `.plans/vidking-videasy-health-and-sources-implementation.md`
+
 ## Summary
 
 - **Media kinds:** Movies, TV Series.
@@ -7,10 +18,10 @@
 - **Episode catalog support:** Yes, proxy to TMDB (`/tv/{id}/season/{s}`).
 - **Stream resolve support:** Yes, via AES-encrypted payloads decrypted via WASM.
 - **Language/audio/subtitle model:** Variable. Often relies on server-derived language aliases (e.g., passing `?language=german`) or multiplexes audio into the `quality` field (`English`, `Hindi`).
-- **Server/source model:** Server-like architecture, but servers often act as distinct language/quality delivery nodes.
+- **Server/source model:** Videasy **endpoints** (`mb-flix`, `cdn`, …) exposed in UI as themed **sources** (Luffy, Zoro, …). Same endpoint → same label and `sourceId` on every episode.
 - **Quality model:** Standard (1080p, 720p). Muxed in the `.m3u8` manifest or passed directly as stream metadata.
 - **Thumbnail/poster support:** Yes. Episode thumbnails via TMDB `still_path`. Seek-bar thumbnails natively available in `#EXT-X-IMAGE-STREAM-INF` within the resolved HLS manifest.
-- **Known failure modes:** Empty WASM keys (`""`) causing decryption faults. Upstream TMDB rate-limiting. HLS manifests missing image streams randomly.
+- **Known failure modes:** Videasy slow responses (>12s historically caused false timeouts — now 90s). Empty WASM keys (`""`) causing decryption faults. Upstream TMDB rate-limiting. HLS manifests missing image streams randomly. Shared endpoints (`meine`, `hdmovie`) need `languageQuery` / `filterQuality` to pick the correct flavor row.
 
 ## User-Facing Capabilities
 
@@ -68,7 +79,9 @@ sequenceDiagram
 
 ## Recommended Contract Changes
 
-- **Needed fields:** Explicit `audioLanguage` derived from `quality` strings or server alias endpoints. `seekBarVTT` field.
+- **Implemented:** Themed `label` + `metadata.flavorArchetype` on `ProviderSourceCandidate`; `flavorLabel` / `serverName` on `StreamCandidate`; registry in `flavors.ts`.
+- **Still open:** Explicit `seekBarVTT` from HLS `#EXT-X-IMAGE-STREAM-INF` in direct resolver (dossier previously claimed this; not wired in `direct.ts` yet).
 - **Cache key dimensions:** `[Provider]_[MediaID]_[Season]_[Episode]_[ISO_Language]`. Language MUST be in the key.
-- **Diagnostics events:** `WASMLoadStart`, `WASMDecryptSuccess`, `WASMDecryptFailed`.
-- **Tests to add:** Deterministic parsing of "HDMovie" payload to ensure "Hindi" is mapped to `audioLanguage: "hi"`, not `quality: "Hindi"`.
+- **Diagnostics events:** `WASMLoadStart`, `WASMDecryptSuccess`, `WASMDecryptFailed` (trace events exist; expand if needed).
+- **Tests:** `packages/providers/test/vidking-flavors.test.ts`, `vidking-bloodhounds` live smoke.
+- **Lab:** `apps/experiments/scratchpads/provider-cineby/` for endpoint discovery; transient `CINEBY_*.md` notes are gitignored after 2026-05-27 reconciliation.

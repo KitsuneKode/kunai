@@ -1,13 +1,20 @@
 # Provider: Cineby
 
+## Production status (2026-05-27)
+
+- **Module:** `packages/providers/src/cineby/index.ts` — **research wrapper** over `resolveVidkingDirect` (not the default beta provider order).
+- **Flavor table:** shared with VidKing via `listVidkingFlavors()`; Cineby **alias** names (Neon, Yoru, …) are diagnostics-only; playback inventory uses **One Piece** themed labels when the wrapper is used (same stable `source:vidking:videasy:{endpoint}` ids).
+- **Selection:** one flavor per resolve from `preferredAudioLanguage` (movies-only flavors skipped on series).
+- **Inherit:** Videasy timeouts, Phase A mirrors, and presentation contract from VidKing — do not maintain a separate decrypt stack.
+
 ## Summary
 
 - **Media kinds:** Movies, TV Series.
 - **Search support:** Yes, proxy to TMDB API.
 - **Episode catalog support:** Yes, TMDB proxy.
-- **Stream resolve support:** Yes, heavily obfuscated Valorant agent aliases routing to VidKing core.
-- **Language/audio/subtitle model:** Language is explicitly tied to the endpoint alias (e.g., `fade` = English, `killjoy` = German).
-- **Server/source model:** "Agents" act as servers.
+- **Stream resolve support:** Yes — delegates to VidKing/Videasy (`packages/providers/src/vidking/direct.ts`).
+- **Language/audio/subtitle model:** Flavor registry maps agent/endpoint + optional `languageQuery` / `filterQuality` (see `flavors.ts`).
+- **Server/source model:** Cineby “agents” are **display aliases** for Videasy endpoints; Kunai **sources** use themed names (Luffy, Brook, …) when resolved through this wrapper.
 - **Quality model:** Derived from the final `.m3u8` manifest.
 - **Thumbnail/poster support:** Yes. TMDB proxies for episodes.
 - **Known failure modes:** Upstream WAF changes to the "Agent" routes. If Cineby changes "killjoy" to another agent, the language routing breaks.
@@ -68,7 +75,8 @@ sequenceDiagram
 
 ## Recommended Contract Changes
 
-- **Needed fields:** Internal lookup table mapping Agent aliases to ISO 639-1 languages.
-- **Cache key dimensions:** `Cineby_[TMDB_ID]_[AgentAlias]`.
-- **Diagnostics events:** WAF Trigger detection.
-- **Tests to add:** Ensure `killjoy` endpoint payload results in `audioLanguage: "de"` in the `ProviderSourceInventory`.
+- **Implemented:** Flavor → endpoint table in `packages/providers/src/vidking/flavors.ts` (`cinebyAlias` field for Neon / Yoru / …).
+- **Cache key dimensions:** Follow VidKing cache policy; wrapper remaps `providerId` to `cineby` on the resolve result.
+- **Diagnostics events:** WAF / timeout evidence same as VidKing.
+- **Tests:** Wrapper inherits VidKing unit/live tests; dedicated Cineby matrix remains in `apps/experiments/scratchpads/provider-cineby/` (local notes gitignored).
+- **Promotion:** Keep `status: research` in manifest until flavor matrix and WAF posture are validated outside lab network.
