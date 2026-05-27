@@ -281,14 +281,19 @@ function projectSourceGroups(
       subtitleDelivery: firstDefined(streams.map((stream) => stream.subtitleDelivery)),
       candidateCount: streams.length,
       providerStatus: source.status,
-      hints: buildPlaybackInventoryEvidenceHints({
-        state,
-        providerStatus: source.status,
-        host: source.host ?? firstDefined(source.sourceEvidence?.map((item) => item.host) ?? []),
-        streams,
-        subtitles,
-        artwork: sourceArtwork,
-      }),
+      hints: uniqueStrings([
+        typeof source.metadata?.flavorArchetype === "string"
+          ? source.metadata.flavorArchetype
+          : undefined,
+        ...buildPlaybackInventoryEvidenceHints({
+          state,
+          providerStatus: source.status,
+          host: source.host ?? firstDefined(source.sourceEvidence?.map((item) => item.host) ?? []),
+          streams,
+          subtitles,
+          artwork: sourceArtwork,
+        }),
+      ]),
       disabledReason:
         streams.length === 0 ? "No playable stream was exposed for this source." : undefined,
     };
@@ -299,18 +304,25 @@ function buildSourceCandidates(result: ProviderResolveResult): readonly Provider
   if (result.sources && result.sources.length > 0) return result.sources;
 
   const sourceIds = uniqueStrings(result.streams.map((stream) => stream.sourceId));
-  return sourceIds.map((sourceId) => ({
-    id: sourceId,
-    providerId: result.providerId,
-    kind: "unknown",
-    label: sourceId,
-    status: result.streams.some(
-      (stream) => stream.sourceId === sourceId && stream.id === result.selectedStreamId,
-    )
-      ? "selected"
-      : "available",
-    confidence: 0,
-  }));
+  return sourceIds.map((sourceId) => {
+    const streams = result.streams.filter((stream) => stream.sourceId === sourceId);
+    const primary = streams[0];
+    const displayLabel = primary?.flavorLabel ?? primary?.serverName ?? sourceId;
+    const subtitle = primary?.flavorArchetype;
+    return {
+      id: sourceId,
+      providerId: result.providerId,
+      kind: "unknown",
+      label: displayLabel,
+      status: streams.some((stream) => stream.id === result.selectedStreamId)
+        ? "selected"
+        : "available",
+      confidence: Math.max(...streams.map((stream) => stream.confidence), 0),
+      metadata: subtitle
+        ? { flavorArchetype: subtitle, flavorLabel: displayLabel }
+        : { flavorLabel: displayLabel },
+    };
+  });
 }
 
 function projectLanguageOptions(
@@ -738,7 +750,7 @@ function stateHint(
   providerStatus?: ProviderSourceCandidate["status"],
 ): string | undefined {
   if (state === "selected") return "selected";
-  if (providerStatus === "failed" || state === "failed") return "provider marked failed";
+  if (providerStatus === "failed" || state === "failed") return "✕ failed";
   if (providerStatus === "exhausted") return "provider exhausted";
   if (providerStatus === "skipped" || state === "skipped") return "provider skipped";
   if (state === "disabled") return "disabled";

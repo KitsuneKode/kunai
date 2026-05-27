@@ -35,7 +35,9 @@ import {
   createVariantId,
   normalizeProviderDisplayLabel,
   normalizeQualityLabel,
+  providerInventorySourceId,
   qualityRankFromLabel,
+  streamPresentationFields,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
@@ -526,18 +528,22 @@ function buildRivestreamCycleCandidates(
   preferredSourceId?: string,
 ): readonly ProviderCycleCandidate[] {
   return providers.map((provider, index) => {
-    const sourceId = `source:${RIVESTREAM_PROVIDER_ID}:${provider}`;
+    const displayLabel = displayRivestreamProviderLabel(provider);
+    const audioSubtitle = inferRivestreamAudioSubtitle(provider);
+    const sourceId = providerInventorySourceId(RIVESTREAM_PROVIDER_ID, provider);
     return {
       id: `candidate:${sourceId}`,
       providerId: RIVESTREAM_PROVIDER_ID,
       sourceId,
       serverId: provider,
-      label: displayRivestreamProviderLabel(provider),
+      label: displayLabel,
       nativeLabel: provider,
       priority: sourceId === preferredSourceId ? index - 10_000 : index,
       metadata: {
         provider,
         sourceHost: "rivestream.app",
+        flavorLabel: displayLabel,
+        flavorArchetype: audioSubtitle,
       },
     };
   });
@@ -604,7 +610,10 @@ async function resolveRivestreamProviderCandidate({
   readonly episode: number;
   readonly secretKey: string;
 }): Promise<RivestreamResolvedCandidate> {
-  const sourceId = candidate.sourceId ?? `source:${RIVESTREAM_PROVIDER_ID}:${provider}`;
+  const displayLabel = displayRivestreamProviderLabel(provider);
+  const audioSubtitle = inferRivestreamAudioSubtitle(provider);
+  const sourceId =
+    candidate.sourceId ?? providerInventorySourceId(RIVESTREAM_PROVIDER_ID, provider);
   let url = `${RIVESTREAM_API_BASE}?requestID=${typeStr}VideoProvider&id=${tmdbId}`;
   if (input.mediaKind === "series") url += `&season=${season}&episode=${episode}`;
   url += `&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
@@ -686,6 +695,7 @@ async function resolveRivestreamProviderCandidate({
       headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
       confidence: 0.95,
       cachePolicy,
+      ...streamPresentationFields({ displayLabel, subtitle: audioSubtitle }),
     });
 
     const stream = streams[streams.length - 1];
@@ -748,6 +758,15 @@ function rivestreamFailureClassFromProviderError(
 
 function displayRivestreamProviderLabel(provider: string): string {
   return normalizeProviderDisplayLabel(provider) ?? provider;
+}
+
+function inferRivestreamAudioSubtitle(provider: string): string {
+  const language = inferRivestreamAudioLanguage(provider, undefined);
+  const label = displayRivestreamProviderLabel(provider);
+  if (language) {
+    return `${language.toUpperCase()} · ${label}`;
+  }
+  return `Rivestream · ${label}`;
 }
 
 function inferRivestreamAudioLanguage(

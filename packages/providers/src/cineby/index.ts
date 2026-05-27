@@ -9,6 +9,7 @@ import type {
 
 import { createExhaustedResult } from "../shared/resolve-helpers";
 import { resolveVidkingDirect, type VidKingEngineOptions } from "../vidking/direct";
+import { listVidkingFlavors, vidkingSourceIdForEndpoint } from "../vidking/flavors";
 
 export const CINEBY_PROVIDER_ID = "cineby" as const;
 
@@ -27,25 +28,14 @@ const DEFAULT_CINEBY_FLAVOR: CinebyFlavor = {
   audioLanguage: "en",
 };
 
-const CINEBY_FLAVORS: readonly CinebyFlavor[] = [
-  DEFAULT_CINEBY_FLAVOR,
-  { label: "Yoru", server: "cdn", audioLanguage: "en" },
-  { label: "Cypher", server: "downloader2", audioLanguage: "en" },
-  { label: "Sage", server: "1movies", audioLanguage: "en" },
-  { label: "Vyse", server: "hdmovie", qualityFilter: "English", audioLanguage: "en" },
-  { label: "Killjoy", server: "meine", languageQuery: "german", audioLanguage: "de" },
-  { label: "Harbor", server: "meine", languageQuery: "italian", audioLanguage: "it" },
-  {
-    label: "Chamber",
-    server: "meine",
-    languageQuery: "french",
-    audioLanguage: "fr",
-    moviesOnly: true,
-  },
-  { label: "Fade", server: "hdmovie", qualityFilter: "Hindi", audioLanguage: "hi" },
-  { label: "Omen", server: "lamovie", audioLanguage: "es" },
-  { label: "Raze", server: "superflix", audioLanguage: "pt" },
-];
+const CINEBY_FLAVORS: readonly CinebyFlavor[] = listVidkingFlavors().map((flavor) => ({
+  label: flavor.cinebyAlias ?? flavor.themeLabel,
+  server: flavor.endpoint as CinebyFlavor["server"],
+  languageQuery: flavor.languageQuery,
+  qualityFilter: flavor.filterQuality,
+  audioLanguage: flavor.audioLanguage,
+  moviesOnly: flavor.moviesOnly,
+}));
 
 export const cinebyManifest = defineProviderManifest({
   id: CINEBY_PROVIDER_ID,
@@ -97,12 +87,16 @@ export const cinebyProviderModule: CoreProviderModule = {
     }
 
     const preferredFlavor = selectCinebyFlavor(input);
+    const registryFlavor = listVidkingFlavors().find(
+      (flavor) => flavor.endpoint === preferredFlavor.server,
+    );
     const result = await resolveVidkingDirect(input, context, {
+      flavorId: registryFlavor?.id,
       serverEndpoint: preferredFlavor.server,
       language: preferredFlavor.languageQuery,
       filterQuality: preferredFlavor.qualityFilter,
-      flavorLabel: preferredFlavor.label,
-      flavorArchetype: "Cineby flavors",
+      flavorLabel: registryFlavor?.themeLabel ?? preferredFlavor.label,
+      flavorArchetype: registryFlavor?.subtitle ?? "Cineby flavors",
     });
 
     if (!result) {
@@ -134,6 +128,11 @@ function remapVidkingResult(
   result: ProviderResolveResult,
   flavor: CinebyFlavor,
 ): ProviderResolveResult {
+  const registryFlavor = listVidkingFlavors().find((entry) => entry.endpoint === flavor.server);
+  const displayLabel = registryFlavor?.themeLabel ?? flavor.label;
+  const subtitle = registryFlavor?.subtitle ?? "Cineby flavors";
+  const stableSourceId = vidkingSourceIdForEndpoint(flavor.server);
+
   const remapEvent = (event: ProviderTraceEvent): ProviderTraceEvent => ({
     ...event,
     providerId: CINEBY_PROVIDER_ID,
@@ -155,23 +154,28 @@ function remapVidkingResult(
     providerId: CINEBY_PROVIDER_ID,
     sources: result.sources?.map((source) => ({
       ...source,
+      id: stableSourceId,
       providerId: CINEBY_PROVIDER_ID,
-      label: flavor.label,
+      label: displayLabel,
       metadata: {
         ...source.metadata,
         upstreamProvider: result.providerId,
-        flavorArchetype: "Cineby flavors",
-        flavorLabel: flavor.label,
+        flavorId: registryFlavor?.id,
+        flavorArchetype: subtitle,
+        flavorLabel: displayLabel,
+        server: flavor.server,
       },
     })),
     streams: result.streams.map((stream) => ({
       ...stream,
       providerId: CINEBY_PROVIDER_ID,
+      sourceId: stableSourceId,
       audioLanguages: [flavor.audioLanguage],
       presentation: "raw",
       subtitleDelivery: "external",
-      flavorArchetype: "Cineby flavors",
-      flavorLabel: flavor.label,
+      flavorArchetype: subtitle,
+      flavorLabel: displayLabel,
+      serverName: displayLabel,
       metadata: {
         ...stream.metadata,
         upstreamProvider: result.providerId,
@@ -180,11 +184,12 @@ function remapVidkingResult(
     variants: result.variants?.map((variant) => ({
       ...variant,
       providerId: CINEBY_PROVIDER_ID,
+      sourceId: stableSourceId,
       presentation: "raw",
       subtitleDelivery: "external",
       audioLanguages: [flavor.audioLanguage],
-      flavorArchetype: "Cineby flavors",
-      flavorLabel: flavor.label,
+      flavorArchetype: subtitle,
+      flavorLabel: displayLabel,
     })),
     trace: {
       ...result.trace,

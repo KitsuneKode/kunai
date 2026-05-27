@@ -206,7 +206,7 @@ test("buildSourcePickerOptions includes provider health and host hints", () => {
     "selected  ·  host fast.example",
   );
   expect(options.find((option) => option.value === "source-b")?.detail).toContain(
-    "provider marked failed  ·  host slow.example",
+    "✕ failed  ·  host slow.example",
   );
 });
 

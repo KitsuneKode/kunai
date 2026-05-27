@@ -106,6 +106,7 @@ import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveC
 import { PlaybackResolveWorkService } from "./services/playback/PlaybackResolveWorkService";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import { TitleProviderHealthService } from "./services/playback/TitleProviderHealthService";
+import { VidkingLazySourceProbeService } from "./services/playback/VidkingLazySourceProbeService";
 import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
@@ -160,6 +161,7 @@ export interface Container {
   readonly diagnosticsService: DiagnosticsService;
   readonly storageMaintenance: StorageMaintenanceService;
   readonly sourceInventory: SourceInventoryService;
+  readonly vidkingLazySourceProbe: VidkingLazySourceProbeService;
   readonly playbackResolveWork: PlaybackResolveWorkService;
   readonly mediaTrackService: MediaTrackService;
   readonly featureFlags: AttentionFeatureFlags;
@@ -321,6 +323,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
     diagnostics: diagnosticsService,
   });
+  const vidkingLazySourceProbe = new VidkingLazySourceProbeService({ sourceInventory });
   const storageMaintenance = new StorageMaintenanceService({
     dataDb,
     cacheDb,
@@ -369,6 +372,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       vidkingProviderModule,
       allmangaProviderModule,
     ],
+    // VidKing Phase A may run up to 3 Videasy sources at 90s each.
+    attemptTimeoutMs: 300_000,
   });
 
   const providerRegistry = createProviderRegistry(engine);
@@ -537,6 +542,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     diagnosticsService,
     storageMaintenance,
     sourceInventory,
+    vidkingLazySourceProbe,
     playbackResolveWork,
     mediaTrackService,
     featureFlags,

@@ -1492,17 +1492,26 @@ async function handleSettings(container: Container): Promise<"handled"> {
 }
 
 async function handleClearCache(container: Container): Promise<"handled"> {
-  const confirm = await chooseFromListShell({
-    title: "Clear stream cache?",
-    subtitle: "This will remove all cached stream URLs.",
+  const choice = await chooseFromListShell<"streams" | "all" | false>({
+    title: "Clear cache?",
+    subtitle: "Stream cache holds resolved URLs. Provider memory remembers per-title failures.",
     options: [
-      { value: true, label: "Yes, clear cache" },
+      { value: "streams", label: "Clear stream cache only" },
+      { value: "all", label: "Clear stream cache and provider memory" },
       { value: false, label: "Cancel" },
     ],
   });
-  if (confirm) {
+  if (choice === "streams" || choice === "all") {
     await container.cacheStore.clear();
     container.diagnosticsService.record({ category: "cache", message: "Stream cache cleared" });
+  }
+  if (choice === "all") {
+    container.providerHealth.clearAll();
+    container.titleProviderHealth.clearAll();
+    container.diagnosticsService.record({
+      category: "cache",
+      message: "Stream cache and provider memory cleared",
+    });
   }
   return "handled";
 }

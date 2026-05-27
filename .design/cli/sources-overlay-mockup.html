@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kunai — Sources overlay mockup</title>
+  <style>
+    :root {
+      --bg: #0c0c0e;
+      --panel: #141418;
+      --border: #2a2a32;
+      --text: #e8e6e3;
+      --muted: #8b8892;
+      --accent: #c9a227;
+      --ok: #6bcf7f;
+      --fail: #e85d5d;
+      --dim: #4a4a55;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      line-height: 1.45;
+    }
+    h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 8px; }
+    .note { color: var(--muted); font-size: 0.8rem; margin-bottom: 24px; max-width: 720px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1100px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .panel-h {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sources overlay — UI concept</h1>
+  <p class="note">
+    Terminal shell mockup for discussion. Hierarchy: <strong>Provider</strong> (VidKing) →
+    <strong>Sources</strong> (flavors) → <strong>Quality</strong> (1080p). Phase A blocks on
+    Luffy; Phase B fills the list after mpv starts playing.
+  </p>
+
+  <div class="grid">
+    <!-- ASCII terminal mock -->
+    <div class="panel">
+      <div class="panel-h">Ink shell — Sources panel (ASCII)</div>
+      <pre style="margin:0;padding:14px;font-size:12px;color:var(--text);overflow:auto">┌─ Sources ──────────────────────────────── VidKing ─┐
+│  Playing: Vincenzo · S01E02                        │
+│  <span style="color:#e8b84a">⚠ VidKing struggled before; Rivestream worked.</span>      │
+│  [ Retry VidKing anyway ]  [ Use Rivestream ]      │
+├────────────────────────────────────────────────────┤
+│ <span style="color:var(--accent)">●</span> <b>Luffy</b>          English · primary     <span style="color:var(--muted)">selected</span> │
+│   Zoro            English · mirror      <span style="color:var(--ok)">available</span>  │
+│   Nami            English · mirror      <span style="color:var(--ok)">available</span>  │
+│ <span style="color:var(--fail)">✕</span> Sanji           English · mirror      <span style="color:var(--fail)">timeout 62s</span> │
+│ <span style="color:var(--dim)">…</span> Brook           German · dub         <span style="color:var(--dim)">probing…</span>   │
+│ <span style="color:var(--dim)">…</span> Shanks          Italian · dub        <span style="color:var(--dim)">probing…</span>   │
+│ <span style="color:var(--dim)">—</span> Law             French · movies only  <span style="color:var(--dim)">disabled</span>   │
+├────────────────────────────────────────────────────┤
+│ ↑↓ select  Enter switch  r retry source  Esc close │
+└────────────────────────────────────────────────────┘
+
+Status bar (footer):
+  Source: Luffy · 1080p · resolving…  →  Source: Luffy · 1080p · 4.2s
+</pre>
+    </div>
+
+    <!-- Styled interactive-ish mock -->
+    <div class="panel">
+      <div class="panel-h">Styled list (closer to target UX)</div>
+      <div style="padding:12px 14px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+          Provider <strong style="color:var(--text)">VidKing</strong> · episode cache building in background
+        </div>
+        <div style="background:#1a1810;border:1px solid #4a4020;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px">
+          <div style="color:#e8b84a;margin-bottom:8px">Title memory: VidKing failed 3× on this show; Naruto worked last time.</div>
+          <button style="background:#2a2820;border:1px solid var(--accent);color:var(--accent);padding:6px 10px;border-radius:6px;font:inherit;cursor:pointer;margin-right:8px">Retry VidKing anyway</button>
+          <button style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 10px;border-radius:6px;font:inherit;cursor:pointer">Switch to Naruto</button>
+        </div>
+
+        <style>
+          .row {
+            display: grid;
+            grid-template-columns: 24px 1fr auto;
+            gap: 8px 12px;
+            align-items: center;
+            padding: 8px 10px;
+            border-radius: 8px;
+            margin-bottom: 4px;
+            font-size: 13px;
+          }
+          .row.sel { background: #1e1c14; border: 1px solid #4a4420; }
+          .row.fail { opacity: 0.75; }
+          .row.dim { opacity: 0.45; }
+          .glyph { text-align: center; font-weight: bold; }
+          .sub { font-size: 11px; color: var(--muted); grid-column: 2; margin-top: -4px; padding-bottom: 4px; }
+          .tag { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+        </style>
+
+        <div class="row sel">
+          <span class="glyph" style="color:var(--accent)">●</span>
+          <div><strong>Luffy</strong></div>
+          <span class="tag">playing</span>
+        </div>
+        <div class="sub" style="padding-left:34px">English · primary · mb-flix</div>
+
+        <div class="row">
+          <span class="glyph" style="color:var(--ok)"> </span>
+          <div>Zoro</div>
+          <span class="tag">ready</span>
+        </div>
+        <div class="sub" style="padding-left:34px">English · mirror · cdn</div>
+
+        <div class="row fail">
+          <span class="glyph" style="color:var(--fail)">✕</span>
+          <div>Sanji</div>
+          <span class="tag" style="color:var(--fail)">failed</span>
+        </div>
+        <div class="sub" style="padding-left:34px;color:var(--fail)">timeout after 62s · not retryable until you press Retry</div>
+
+        <div class="row dim">
+          <span class="glyph" style="color:var(--dim)">…</span>
+          <div>Brook</div>
+          <span class="tag">probing</span>
+        </div>
+        <div class="sub" style="padding-left:34px">German · dub · background probe (Phase B)</div>
+
+        <div class="row dim">
+          <span class="glyph" style="color:var(--dim)">—</span>
+          <div>Law</div>
+          <span class="tag">n/a</span>
+        </div>
+        <div class="sub" style="padding-left:34px">French · movies only · not for TV episodes</div>
+      </div>
+    </div>
+  </div>
+
+  <h2 style="font-size:1rem;margin:32px 0 12px">Phase timeline</h2>
+  <pre style="background:var(--panel);border:1px solid var(--border);padding:14px;border-radius:10px;font-size:12px;max-width:720px">User presses Play
+    │
+    ├─ Phase A (blocking) ─────────────────────────────
+    │    1. Resolve Luffy only (60–90s max)
+    │    2. fail? → Zoro → Nami → Sanji (ordered, not parallel)
+    │    3. success → start mpv immediately
+    │
+    └─ Phase B (lazy, after “playing”) ───────────────
+         4. Probe Zoro, Sanji, Brook, … (short timeout each)
+         5. Update Sources list: ✓ available / ✕ failed / … probing
+         6. User can switch without full provider fallback if already probed
+</pre>
+
+  <h2 style="font-size:1rem;margin:24px 0 12px">Rivestream (Naruto theme) — same panel shape</h2>
+  <pre style="background:var(--panel);border:1px solid var(--border);padding:14px;border-radius:10px;font-size:12px">● Naruto     English · default service
+  Sasuke     English · alternate
+  ✕ Kakashi  not found
+  … Sakura   probing
+</pre>
+
+  <p class="note">Open this file in a browser: file://…/sources-overlay-mockup.html</p>
+</body>
+</html>

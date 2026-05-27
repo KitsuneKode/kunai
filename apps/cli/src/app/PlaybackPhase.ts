@@ -82,6 +82,7 @@ import {
 import { choosePlaybackSubtitle, shouldAttemptLateSubtitleLookup } from "@/app/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import { titleInfoFromSearchResult } from "@/app/title-info";
+import type { Container } from "@/container";
 import {
   buildProviderResolveProblem,
   type PlaybackProblem,
@@ -124,10 +125,13 @@ import {
   formatPlaybackStartupTimeline,
   type PlaybackStartupStage,
 } from "@/services/playback/playback-startup-timeline";
+import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
+import { VIDKING_PROVIDER_ID } from "@kunai/providers";
+import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 const timingAggregator = new PlaybackTimingAggregator([IntroDbTimingSource, AniSkipTimingSource]);
 
@@ -229,6 +233,66 @@ function hasProviderTimingMetadata(metadata: Record<string, unknown> | undefined
     Boolean(metadata.outroStart) ||
     Boolean(metadata.outroEnd)
   );
+}
+
+function scheduleVidkingLazySourceProbes(input: {
+  readonly container: Container;
+  readonly stream: StreamInfo;
+  readonly title: TitleInfo;
+  readonly episode: EpisodeInfo;
+  readonly mode: ShellMode;
+  readonly providerId: string;
+  readonly audioPreference: string;
+  readonly subtitlePreference: string;
+  readonly qualityPreference?: string;
+  readonly startupPriority?: string;
+  readonly onStreamUpdated: (stream: StreamInfo) => void;
+}): void {
+  const result = input.stream.providerResolveResult;
+  if (!result || result.providerId !== VIDKING_PROVIDER_ID) return;
+
+  const resolveInput: ProviderResolveInput = streamRequestToResolveInput(
+    {
+      title: input.title,
+      episode: input.episode,
+      audioPreference: input.audioPreference,
+      subtitlePreference: input.subtitlePreference,
+      qualityPreference: input.qualityPreference,
+      startupPriority: input.startupPriority as ProviderResolveInput["startupPriority"],
+    },
+    input.mode,
+  );
+
+  const context: ProviderRuntimeContext = {
+    now: () => new Date().toISOString(),
+    signal: new AbortController().signal,
+    retryPolicy: { maxAttempts: 1, backoff: "none", delayMs: 0 },
+  };
+
+  const inventoryKey = {
+    providerId: input.providerId,
+    mediaKind: resolveInput.mediaKind,
+    titleId: input.title.id,
+    season: input.episode.season,
+    episode: input.episode.episode,
+    audioMode: input.audioPreference,
+    subtitleLanguage: input.subtitlePreference,
+    startupPriority: input.startupPriority as ProviderResolveInput["startupPriority"],
+  };
+
+  input.container.vidkingLazySourceProbe.schedulePhaseB({
+    resolveInput,
+    context,
+    baseResult: result,
+    inventoryKey,
+    preferredAudioLanguage: input.audioPreference === "original" ? "en" : input.audioPreference,
+    onInventoryUpdated: (inventory) => {
+      input.onStreamUpdated({
+        ...input.stream,
+        providerResolveResult: inventory,
+      });
+    },
+  });
 }
 
 function safeHostname(url: string): string | null {
@@ -1212,6 +1276,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     return;
                   }
 
+                  if (event.type === "title-provider-suggestion") {
+                    const suggestedName =
+                      providerRegistry.get(event.suggestedProviderId)?.metadata.name ??
+                      event.suggestedProviderId;
+                    this.updatePlaybackFeedback(context, {
+                      note: `VidKing struggled on this title before. ${suggestedName} worked — switch providers or retry VidKing.`,
+                    });
+                    return;
+                  }
+
                   if (event.type === "cache-health-check") {
                     diagnosticsService.record({
                       ...playbackCorrelation,
@@ -1317,6 +1391,41 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   cachePolicy: stream.providerResolveResult.cachePolicy,
                 },
               });
+
+              if (stream) {
+                const probeAudioPreference =
+                  stateManager.getState().mode === "anime"
+                    ? config.animeLanguageProfile.audio
+                    : title.type === "movie"
+                      ? config.movieLanguageProfile.audio
+                      : config.seriesLanguageProfile.audio;
+                scheduleVidkingLazySourceProbes({
+                  container,
+                  stream,
+                  title,
+                  episode: currentEpisode,
+                  mode: stateManager.getState().mode,
+                  providerId: resolvedProviderId,
+                  audioPreference: probeAudioPreference,
+                  subtitlePreference:
+                    stateManager.getState().mode === "anime"
+                      ? config.animeLanguageProfile.subtitle
+                      : title.type === "movie"
+                        ? config.movieLanguageProfile.subtitle
+                        : config.seriesLanguageProfile.subtitle,
+                  qualityPreference:
+                    stateManager.getState().mode === "anime"
+                      ? config.animeLanguageProfile.quality
+                      : title.type === "movie"
+                        ? config.movieLanguageProfile.quality
+                        : config.seriesLanguageProfile.quality,
+                  startupPriority: config.startupPriority,
+                  onStreamUpdated: (nextStream) => {
+                    stream = nextStream;
+                    stateManager.dispatch({ type: "SET_STREAM", stream: nextStream });
+                  },
+                });
+              }
             }
           }
 

@@ -122,6 +122,11 @@ export type PlaybackResolveEvent =
   | {
       readonly type: "fresh-source-failed-using-cache";
       readonly providerId: string;
+    }
+  | {
+      readonly type: "title-provider-suggestion";
+      readonly providerId: string;
+      readonly suggestedProviderId: string;
     };
 
 export type PlaybackResolveInput = {
@@ -140,6 +145,7 @@ export type PlaybackResolveInput = {
   readonly forceHealthCheck?: boolean;
   readonly preferFreshStream?: boolean;
   readonly preserveCachedStreamOnFreshFailure?: boolean;
+  readonly ignoreTitleHealthSuggestion?: boolean;
   readonly recoveryMode?: RecoveryMode;
   readonly cancellationReason?: ResolveCancellationReason;
   readonly correlation?: DiagnosticCorrelation;
@@ -336,15 +342,27 @@ export class PlaybackResolveService {
       userVisible: recoveryDecision.userVisible,
     });
 
-    const compatibleIds = titleScopedProviderOrder({
+    const titleSuggestion =
+      input.ignoreTitleHealthSuggestion === true
+        ? null
+        : typeof this.deps.titleProviderHealth?.getSwitchSuggestion === "function"
+          ? this.deps.titleProviderHealth.getSwitchSuggestion(input.title.id, input.providerId)
+          : null;
+
+    if (titleSuggestion) {
+      input.onEvent?.({
+        type: "title-provider-suggestion",
+        providerId: titleSuggestion.providerId,
+        suggestedProviderId: titleSuggestion.suggestedProviderId,
+      });
+    }
+
+    let compatibleIds = titleScopedProviderOrder({
       input,
       mediaKind: resolveInput.mediaKind,
       recoveryMode,
       getManifest: (providerId) => this.deps.engine.getManifest(providerId),
-      suggestion:
-        typeof this.deps.titleProviderHealth?.getSwitchSuggestion === "function"
-          ? this.deps.titleProviderHealth.getSwitchSuggestion(input.title.id, input.providerId)
-          : null,
+      suggestion: titleSuggestion,
     });
     // Add fallback provider ids, filtering by mediaKind so incompatible
     // providers (e.g. series/movie-only for anime) are never attempted.
@@ -358,6 +376,18 @@ export class PlaybackResolveService {
         if (health?.status === "down") continue;
         compatibleIds.push(module.providerId);
       }
+    }
+
+    // R5: guided mode tries primary then at most one fallback provider.
+    if (recoveryMode === "guided" && compatibleIds.length > 2) {
+      const nextFallback = compatibleIds[1];
+      if (nextFallback) {
+        input.onFeedback?.({
+          detail: `Trying ${this.deps.engine.getManifest(nextFallback)?.displayName ?? nextFallback} after ${providerName}`,
+          note: "VidKing sources unavailable on this attempt",
+        });
+      }
+      compatibleIds = compatibleIds.slice(0, 2);
     }
 
     input.onFeedback?.({
@@ -679,17 +709,11 @@ function titleScopedProviderOrder(input: {
   const primaryProviderId = input.input.providerId;
   if (input.recoveryMode === "manual") return [primaryProviderId];
 
-  const suggestedProviderId = input.suggestion?.suggestedProviderId;
-  if (!suggestedProviderId || suggestedProviderId === primaryProviderId) {
-    return [primaryProviderId];
-  }
-
-  const suggestedManifest = input.getManifest(suggestedProviderId);
-  if (!suggestedManifest?.mediaKinds.includes(input.mediaKind)) {
-    return [primaryProviderId];
-  }
-
-  return [suggestedProviderId as ProviderId, primaryProviderId];
+  // Title health is advisory only — never reorder resolve; suggestion is UI-only.
+  void input.suggestion;
+  void input.getManifest;
+  void input.mediaKind;
+  return [primaryProviderId];
 }
 
 function titleProviderFailureFromAttempts(

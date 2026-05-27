@@ -840,7 +840,7 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
   expect(observedCandidates).toEqual([["primary", "anime-ok"]]);
 });
 
-test("PlaybackResolveService tries title-scoped successful fallback first", async () => {
+test("PlaybackResolveService keeps primary first despite title health suggestion", async () => {
   const cache = createMemoryCache(null);
   const observedCandidates: ProviderId[][] = [];
   const engine = createMockEngine(
@@ -909,7 +909,45 @@ test("PlaybackResolveService tries title-scoped successful fallback first", asyn
     signal: new AbortController().signal,
   });
 
-  expect(observedCandidates).toEqual([["fallback", "primary"]]);
+  expect(observedCandidates).toEqual([["primary", "fallback"]]);
+});
+
+test("PlaybackResolveService guided mode caps provider fallbacks to one", async () => {
+  const cache = createMemoryCache(null);
+  const observedCandidates: ProviderId[][] = [];
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    {
+      modules: [
+        {
+          providerId: "primary" as ProviderId,
+          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+        },
+        {
+          providerId: "fallback-a" as ProviderId,
+          manifest: createManifest("fallback-a" as ProviderId, ["series", "movie"]),
+        },
+        {
+          providerId: "fallback-b" as ProviderId,
+          manifest: createManifest("fallback-b" as ProviderId, ["series", "movie"]),
+        },
+      ],
+      onCandidateIds: (candidateIds) => observedCandidates.push([...candidateIds]),
+    },
+  );
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(observedCandidates).toEqual([["primary", "fallback-a"]]);
 });
 
 test("PlaybackResolveService manual recovery mode does not auto-fallback", async () => {

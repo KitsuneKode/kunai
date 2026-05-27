@@ -283,6 +283,8 @@ export const allmangaProviderModule: CoreProviderModule = {
                 : "VID-MP4";
           const sourceLabel = normalizeProviderDisplayLabel(sourceName) ?? sourceName;
           const sourceId = `source:${ALLANIME_PROVIDER_ID}:${sourceName.toLowerCase()}`;
+          const sourceSubtitle =
+            mode === "sub" ? "Japanese · hardsub" : mode === "dub" ? "English · dub" : "AllManga";
 
           const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
           const variantId = `variant:${ALLANIME_PROVIDER_ID}:${sourceId}:${qualityStr}`;
@@ -341,6 +343,9 @@ export const allmangaProviderModule: CoreProviderModule = {
             headers,
             confidence: protocol === "hls" ? 0.95 : 0.85,
             cachePolicy,
+            flavorLabel: sourceLabel,
+            serverName: sourceLabel,
+            flavorArchetype: sourceSubtitle,
           });
 
           variants.push({
@@ -695,6 +700,8 @@ export function buildAllmangaSourceCandidates(
     metadata: {
       sourceFamily: sourceId.split(":").at(-1) ?? sourceId,
       streamIds: sourceStreams.map((stream) => stream.id).join(","),
+      flavorLabel: formatAllmangaSourceLabel(sourceId),
+      flavorArchetype: firstDefined(sourceStreams.map((stream) => stream.flavorArchetype)),
     },
   }));
 }
@@ -702,6 +709,13 @@ export function buildAllmangaSourceCandidates(
 function formatAllmangaSourceLabel(sourceId: string): string {
   const family = sourceId.split(":").at(-1) ?? sourceId;
   return normalizeProviderDisplayLabel(family) ?? family;
+}
+
+function firstDefined<T>(values: readonly (T | undefined)[]): T | undefined {
+  for (const value of values) {
+    if (value !== undefined) return value;
+  }
+  return undefined;
 }
 
 function subtitleFormatFromUrl(url: string): "srt" | "vtt" | "ass" | "unknown" {

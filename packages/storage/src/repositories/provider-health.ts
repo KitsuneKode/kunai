@@ -34,4 +34,8 @@ export class ProviderHealthRepository {
 
     return row === null ? undefined : providerHealthSchema.parse(JSON.parse(row.health_json));
   }
+
+  clearAll(): number {
+    return this.db.query("DELETE FROM provider_health").run().changes;
+  }
 }

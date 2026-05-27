@@ -328,6 +328,8 @@ export function createMiruroResultFromPayload({
           subtitleDelivery,
           server: serverProfile.id,
           nativeLabel: serverProfile.label,
+          flavorLabel: displaySourceLabel,
+          flavorArchetype: `${serverProfile.label} · Miruro`,
         },
       },
     ],

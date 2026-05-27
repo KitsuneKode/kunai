@@ -31,6 +31,79 @@ export function createSourceId(providerId: ProviderId | string, parts: readonly 
   return stableProviderInventoryId({ prefix: "source", parts: [providerId, ...parts] });
 }
 
+/** Colon-delimited source id — stable across episodes for the same backend mirror. */
+export function providerInventorySourceId(
+  providerId: ProviderId | string,
+  sourceKey: string,
+): string {
+  const key = normalizeIdSegment(sourceKey) || "unknown";
+  return `source:${providerId}:${key}`;
+}
+
+export interface PresentedSourceInput {
+  readonly providerId: ProviderId | string;
+  readonly sourceKey: string;
+  readonly displayLabel: string;
+  readonly subtitle?: string;
+  readonly flavorId?: string;
+  readonly kind?: ProviderSourceKind;
+  readonly status: ProviderSourceCandidate["status"];
+  readonly host?: string;
+  readonly confidence: number;
+  readonly cachePolicy?: CachePolicy;
+  readonly requiresRuntime?: ProviderSourceCandidate["requiresRuntime"];
+  readonly sourceEvidence?: readonly ProviderSourceEvidence[];
+  readonly languageEvidence?: readonly ProviderLanguageEvidence[];
+  readonly artwork?: ProviderSourceCandidate["artwork"];
+  readonly extraMetadata?: Record<string, unknown>;
+}
+
+export function presentationMetadata(
+  input: Pick<
+    PresentedSourceInput,
+    "sourceKey" | "displayLabel" | "subtitle" | "flavorId" | "extraMetadata"
+  >,
+): Record<string, unknown> {
+  return compactObject({
+    server: input.sourceKey,
+    flavorId: input.flavorId,
+    flavorLabel: input.displayLabel,
+    flavorArchetype: input.subtitle,
+    ...input.extraMetadata,
+  });
+}
+
+export function createPresentedSourceCandidate(
+  input: PresentedSourceInput,
+): ProviderSourceCandidate {
+  return compactObject({
+    id: providerInventorySourceId(input.providerId, input.sourceKey),
+    providerId: input.providerId,
+    kind: input.kind ?? "provider-api",
+    label: input.displayLabel,
+    host: input.host,
+    status: input.status,
+    confidence: input.confidence,
+    requiresRuntime: input.requiresRuntime,
+    cachePolicy: input.cachePolicy,
+    languageEvidence: input.languageEvidence,
+    sourceEvidence: input.sourceEvidence,
+    artwork: input.artwork,
+    metadata: presentationMetadata(input),
+  });
+}
+
+export function streamPresentationFields(input: {
+  readonly displayLabel: string;
+  readonly subtitle?: string;
+}): Pick<StreamCandidate, "flavorLabel" | "serverName" | "flavorArchetype"> {
+  return compactObject({
+    flavorLabel: input.displayLabel,
+    serverName: input.displayLabel,
+    flavorArchetype: input.subtitle,
+  });
+}
+
 export function createStreamId(providerId: ProviderId | string, parts: readonly unknown[]): string {
   return stableProviderInventoryId({ prefix: "stream", parts: [providerId, ...parts] });
 }
@@ -160,11 +233,16 @@ export function createSourceCandidateFromStream(input: {
       input.label,
     ]);
   const sourceEvidence = input.stream.sourceEvidence?.[0];
+  const displayLabel =
+    input.label ??
+    input.stream.flavorLabel ??
+    input.stream.serverName ??
+    sourceEvidence?.nativeLabel;
   return compactObject({
     id: sourceId,
     providerId: input.providerId,
     kind: input.kind ?? inferSourceKind(input.stream),
-    label: input.label ?? input.stream.serverName ?? sourceEvidence?.nativeLabel,
+    label: displayLabel,
     host: sourceEvidence?.host ?? parseSourceHost(input.stream.url),
     status: input.selected ? ("selected" as const) : ("available" as const),
     confidence: input.confidence ?? input.stream.confidence,
@@ -173,7 +251,12 @@ export function createSourceCandidateFromStream(input: {
     languageEvidence: input.stream.languageEvidence,
     sourceEvidence: input.stream.sourceEvidence,
     artwork: input.stream.artwork,
-    metadata: input.stream.metadata,
+    metadata: compactObject({
+      ...input.stream.metadata,
+      ...(input.stream.flavorArchetype ? { flavorArchetype: input.stream.flavorArchetype } : {}),
+      ...(input.stream.flavorLabel ? { flavorLabel: input.stream.flavorLabel } : {}),
+      ...(displayLabel && !input.stream.flavorLabel ? { flavorLabel: displayLabel } : {}),
+    }),
   });
 }
 

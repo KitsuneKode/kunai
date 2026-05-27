@@ -5,7 +5,10 @@ import { decideProviderHealthWrite, type ProviderHealthEvidence } from "./Provid
 const NORMAL_RETENTION_MS = 24 * 60 * 60 * 1000;
 const SEVERE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
-type Repository = Pick<TitleProviderHealthRepository, "get" | "set" | "delete">;
+type Repository = Pick<
+  TitleProviderHealthRepository,
+  "get" | "set" | "delete" | "deleteAllForTitle" | "deleteAll"
+>;
 export type CountableTitleProviderFailure = "timeout" | "no-streams" | "dead-stream" | "parse";
 
 export class TitleProviderHealthService {
@@ -83,5 +86,17 @@ export class TitleProviderHealthService {
     const record = this.repository.get(titleId, providerId, this.now());
     if (!record?.suggestedProviderId) return null;
     return { providerId, suggestedProviderId: record.suggestedProviderId };
+  }
+
+  clear(titleId: string, providerId?: string): void {
+    if (providerId) {
+      this.repository.delete(titleId, providerId);
+      return;
+    }
+    this.repository.deleteAllForTitle(titleId);
+  }
+
+  clearAll(): void {
+    this.repository.deleteAll();
   }
 }

@@ -67,6 +67,15 @@ export class TitleProviderHealthRepository {
       .run(titleId, providerId);
   }
 
+  deleteAllForTitle(titleId: string): number {
+    return this.db.query("DELETE FROM title_provider_health WHERE title_id = ?").run(titleId)
+      .changes;
+  }
+
+  deleteAll(): number {
+    return this.db.query("DELETE FROM title_provider_health").run().changes;
+  }
+
   pruneExpired(nowIso = new Date().toISOString()): number {
     return this.db.query("DELETE FROM title_provider_health WHERE expires_at <= ?").run(nowIso)
       .changes;
