@@ -3,6 +3,7 @@ import {
   reconcileContinueHistory,
   type ContinueHistoryRelease,
 } from "@/domain/continuation/history-reconciliation";
+import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
@@ -817,8 +818,16 @@ function historyProgressDetails(entry: HistoryEntry): {
   text: string;
   bar: string | null;
 } {
-  if (entry.duration > 0) {
-    const percentage = Math.round((entry.timestamp / entry.duration) * 100);
+  const progress = projectWatchProgress(entry);
+  if (progress.completed) {
+    return {
+      percentage: 100,
+      text: "watched",
+      bar: renderHistoryProgressBar(100),
+    };
+  }
+  if (progress.percentage !== null) {
+    const percentage = progress.percentage;
     return {
       percentage,
       text: `${percentage}% watched`,
@@ -935,8 +944,7 @@ export function isHistoryPickerContinuable(
   ) {
     return true;
   }
-  const details = historyProgressDetails(entry);
-  const isCompleted = details.percentage !== null && details.percentage >= 95;
+  const isCompleted = projectWatchProgress(entry).completed;
   if (!isCompleted) return true;
   return (
     reconcileContinueHistory({
@@ -953,7 +961,7 @@ function buildHistoryOptionRow(
   context: HistoryPickerOptionsContext,
 ): ShellPickerOption<string> {
   const details = historyProgressDetails(entry);
-  const isCompleted = details.percentage !== null && details.percentage >= 95;
+  const isCompleted = projectWatchProgress(entry).completed;
   const projection = context.projections?.get(id);
   const episode =
     entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";

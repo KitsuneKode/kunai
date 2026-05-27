@@ -641,6 +641,7 @@ function AppRoot({ container }: { container: Container }) {
     currentViewLabel === "playback"
       ? "Now Playing"
       : currentViewLabel.charAt(0).toUpperCase() + currentViewLabel.slice(1);
+  const activeNotifications = container.notificationService.listActive();
   const rootStatusSummary = buildRootStatusSummary({
     state,
     currentViewLabel,
@@ -649,6 +650,10 @@ function AppRoot({ container }: { container: Container }) {
     streak,
     syncHealth,
     playlistCount,
+    notificationCount: activeNotifications.length,
+    newEpisodeNotificationCount: activeNotifications.filter(
+      (notification) => notification.kind === "new-episode",
+    ).length,
   });
   const rootOverlay = getRootOwnedOverlay(state);
   const rootSurface = resolveRootShellSurface(state, {

@@ -6,11 +6,14 @@ import { PersistentSubtitleManager } from "@/infra/player/persistent-subtitle-ma
 function createFakeIpc(failCommand?: string): {
   ipc: MpvIpcSession;
   commands: readonly unknown[][];
+  timeouts: readonly (number | undefined)[];
 } {
   const commands: unknown[][] = [];
+  const timeouts: (number | undefined)[] = [];
   const ipc: MpvIpcSession = {
-    async send(command) {
+    async send(command, timeoutMs) {
       commands.push([...command]);
+      timeouts.push(timeoutMs);
       const ok = command[0] !== failCommand;
       return ok
         ? ({
@@ -31,7 +34,7 @@ function createFakeIpc(failCommand?: string): {
     },
     async close() {},
   };
-  return { ipc, commands };
+  return { ipc, commands, timeouts };
 }
 
 describe("PersistentSubtitleManager", () => {
@@ -88,6 +91,26 @@ describe("PersistentSubtitleManager", () => {
       ["sub-add", "https://subs.example/alt.vtt", "auto", "Spanish", "es"],
     ]);
     expect(attachedCounts).toEqual([2]);
+  });
+
+  test("uses a longer mpv deadline for remote subtitle attachment", async () => {
+    const { ipc, timeouts } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+
+    await manager.attachSubtitles(ipc, {
+      primarySubtitle: "https://subs.example/main.vtt",
+      subtitleTracks: [
+        {
+          url: "https://subs.example/main.vtt",
+          display: "English",
+          language: "en",
+          sourceKind: "external",
+          sourceName: "provider",
+        },
+      ],
+    });
+
+    expect(timeouts).toEqual([8_000]);
   });
 
   test("late subtitle attachment classifies missing ipc", async () => {

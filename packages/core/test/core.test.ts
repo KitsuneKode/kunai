@@ -546,6 +546,86 @@ test("ProviderEngine retries retryable exhausted results before falling back", a
   expect(resolved.attempts).toHaveLength(1);
 });
 
+test("ProviderEngine retries thrown retryable provider failures before falling back", async () => {
+  let primaryAttempts = 0;
+  const flakyProvider: CoreProviderModule = {
+    providerId: "flaky",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "flaky",
+      displayName: "Flaky Provider",
+    }),
+    async resolve(input, context) {
+      primaryAttempts += 1;
+      if (primaryAttempts === 1) {
+        throw new ProviderResolveFailureError({
+          providerId: "flaky",
+          code: "timeout",
+          message: "temporary provider timeout",
+          retryable: true,
+          at: context.now(),
+        });
+      }
+
+      return {
+        status: "resolved",
+        providerId: "flaky",
+        selectedStreamId: "stream:flaky:1",
+        streams: [
+          {
+            id: "stream:flaky:1",
+            providerId: "flaky",
+            url: "https://cdn.example/flaky.m3u8",
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:flaky:ok",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      };
+    },
+  };
+  const fallbackProvider: CoreProviderModule = {
+    providerId: "fallback",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "fallback",
+      displayName: "Fallback Provider",
+    }),
+    async resolve() {
+      throw new Error("fallback should not run");
+    },
+  };
+  const engine = createProviderEngine({
+    modules: [flakyProvider, fallbackProvider],
+    maxAttempts: 2,
+    retryDelayMs: 0,
+  });
+
+  const resolved = await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "movie", title: "Demo" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["flaky", "fallback"],
+  );
+
+  expect(resolved.providerId).toBe("flaky");
+  expect(primaryAttempts).toBe(2);
+  expect(resolved.attempts).toHaveLength(1);
+});
+
 test("ProviderEngine observes physical retries with elapsed timing", async () => {
   let primaryAttempts = 0;
   let tick = 0;

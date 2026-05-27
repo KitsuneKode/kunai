@@ -1,3 +1,4 @@
+import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import { formatTimestamp, isFinished } from "@/services/persistence/HistoryStore";
 import type { DownloadJobRecord } from "@kunai/storage";
@@ -19,10 +20,10 @@ export function formatOfflineHistoryProgress(
       : typeof job.durationMs === "number" && job.durationMs > 0
         ? job.durationMs / 1_000
         : null;
-  const percent =
-    durationSeconds && durationSeconds > 0
-      ? Math.max(1, Math.min(99, Math.round((timestampSeconds / durationSeconds) * 100)))
-      : null;
+  const percent = projectWatchProgress({
+    timestamp: timestampSeconds,
+    duration: durationSeconds ?? undefined,
+  }).percentage;
 
   return [`resume ${formatTimestamp(timestampSeconds)}`, percent ? `${percent}% watched` : null]
     .filter(Boolean)

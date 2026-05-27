@@ -1,3 +1,5 @@
+import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+
 export interface StoredPlaylistItemProjectionInput {
   readonly id: string;
   readonly playlistId: string;
@@ -41,17 +43,16 @@ export function projectPlaylistItems({
         entry.episode === item.episode,
     );
     if (!match) return item;
-    const progressPercent =
-      match.durationSeconds && match.durationSeconds > 0
-        ? Math.max(
-            0,
-            Math.min(100, Math.round((match.positionSeconds / match.durationSeconds) * 100)),
-          )
-        : undefined;
+    const projection = projectWatchProgress({
+      timestamp: match.positionSeconds,
+      duration: match.durationSeconds,
+      completed: match.completed,
+    });
+    const progressPercent = projection.percentage ?? undefined;
     return {
       ...item,
       progressPercent,
-      completed: match.completed,
+      completed: projection.completed,
     };
   });
 }

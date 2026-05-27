@@ -3,6 +3,7 @@ import {
   type ContinueHistoryRelease,
   type ContinueHistoryReconciliationDecision,
 } from "@/domain/continuation/history-reconciliation";
+import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { SearchResult } from "@/domain/types";
 import type { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
 import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
@@ -184,10 +185,8 @@ function formatEpisodeBadge(prefix: string, season?: number, episode?: number): 
 }
 
 function formatContinueBadge(entry: HistoryEntry): string {
-  const progress =
-    entry.duration > 0
-      ? ` (${Math.max(1, Math.min(99, Math.round((entry.timestamp / entry.duration) * 100)))}%)`
-      : "";
+  const percentage = projectWatchProgress(entry).percentage;
+  const progress = percentage !== null && percentage < 100 ? ` (${percentage}%)` : "";
   const timestamp = entry.timestamp > 10 ? ` · ${formatTimestamp(entry.timestamp)}` : "";
   const episode =
     entry.type === "series"

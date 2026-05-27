@@ -8,6 +8,7 @@ import {
   listPhaseBLazyProbeFlavorIds,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
+  vidkingSourceIdForFlavor,
   vidkingSourceIdForEndpoint,
 } from "../src/vidking/flavors";
 
@@ -63,5 +64,14 @@ describe("vidking flavors", () => {
 
   test("flavorSourceId matches endpoint source id", () => {
     expect(flavorSourceId("videasy-primary")).toBe(vidkingSourceIdForEndpoint("mb-flix"));
+  });
+
+  test("shared backend endpoints keep distinct flavor source ids", () => {
+    expect(vidkingSourceIdForFlavor("videasy-german")).not.toBe(
+      vidkingSourceIdForFlavor("videasy-italian"),
+    );
+    expect(vidkingSourceIdForFlavor("videasy-english-alt")).not.toBe(
+      vidkingSourceIdForFlavor("videasy-hindi"),
+    );
   });
 });

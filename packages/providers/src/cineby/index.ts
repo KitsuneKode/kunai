@@ -9,7 +9,7 @@ import type {
 
 import { createExhaustedResult } from "../shared/resolve-helpers";
 import { resolveVidkingDirect, type VidKingEngineOptions } from "../vidking/direct";
-import { listVidkingFlavors, vidkingSourceIdForEndpoint } from "../vidking/flavors";
+import { flavorSourceId, listVidkingFlavors, vidkingSourceIdForEndpoint } from "../vidking/flavors";
 
 export const CINEBY_PROVIDER_ID = "cineby" as const;
 
@@ -128,10 +128,18 @@ function remapVidkingResult(
   result: ProviderResolveResult,
   flavor: CinebyFlavor,
 ): ProviderResolveResult {
-  const registryFlavor = listVidkingFlavors().find((entry) => entry.endpoint === flavor.server);
+  const registryFlavor =
+    listVidkingFlavors().find(
+      (entry) =>
+        entry.endpoint === flavor.server &&
+        entry.languageQuery === flavor.languageQuery &&
+        entry.filterQuality === flavor.qualityFilter,
+    ) ?? listVidkingFlavors().find((entry) => entry.endpoint === flavor.server);
   const displayLabel = registryFlavor?.themeLabel ?? flavor.label;
   const subtitle = registryFlavor?.subtitle ?? "Cineby flavors";
-  const stableSourceId = vidkingSourceIdForEndpoint(flavor.server);
+  const stableSourceId = registryFlavor
+    ? flavorSourceId(registryFlavor.id)
+    : vidkingSourceIdForEndpoint(flavor.server);
 
   const remapEvent = (event: ProviderTraceEvent): ProviderTraceEvent => ({
     ...event,

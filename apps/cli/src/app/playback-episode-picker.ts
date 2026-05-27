@@ -1,5 +1,6 @@
 import type { ShellPickerOption } from "@/app-shell/types";
 import type { ShellStatusTone } from "@/app-shell/types";
+import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
 import {
   formatTimestamp,
@@ -169,10 +170,8 @@ export function describeEpisodeWatchPresentation(
     };
   }
 
-  const percent =
-    entry.duration > 0
-      ? Math.max(1, Math.min(99, Math.round((entry.timestamp / entry.duration) * 100)))
-      : null;
+  const progress = projectWatchProgress(entry);
+  const percent = progress.percentage;
   return {
     detail:
       percent === null
@@ -241,12 +240,11 @@ function mergeEpisodeDetail(
   baseDetail?: string,
 ): string | undefined {
   const parts: string[] = [];
-  if (history && history.duration > 0 && !isFinished(history)) {
-    const percentage = Math.max(
-      1,
-      Math.min(99, Math.round((history.timestamp / history.duration) * 100)),
-    );
-    parts.push(renderEpisodeWatchProgressBar(percentage));
+  if (history && !isFinished(history)) {
+    const progress = projectWatchProgress(history);
+    if (progress.percentage !== null && !progress.completed) {
+      parts.push(renderEpisodeWatchProgressBar(progress.percentage));
+    }
   }
   if (watchedDetail) parts.push(watchedDetail);
   if (releaseBadge) parts.push(releaseBadge);

@@ -4,6 +4,8 @@ import { collectAdditionalSubtitleTracks, describeSubtitleTrackForMpv } from "@/
 import type { MpvIpcSession } from "./mpv-ipc";
 import { extractExternalSubtitleIds } from "./subtitle-track-cache";
 
+const MPV_SUBTITLE_ATTACH_TIMEOUT_MS = 8_000;
+
 export type PersistentLateSubtitleAttachment = {
   primarySubtitle?: string | null;
   subtitleTracks?: readonly SubtitleTrack[];
@@ -57,25 +59,19 @@ export class PersistentSubtitleManager {
 
     if (primarySubtitle) {
       const primary = describeSubtitleTrackForMpv(primarySubtitle, subtitleTracks);
-      const result = await ipcSession.send([
-        "sub-add",
-        primarySubtitle,
-        "select",
-        primary.title,
-        primary.language,
-      ]);
+      const result = await ipcSession.send(
+        ["sub-add", primarySubtitle, "select", primary.title, primary.language],
+        MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
+      );
       if (!result.ok) return;
     }
 
     const additionalTracks = collectAdditionalSubtitleTracks(primarySubtitle, subtitleTracks);
     for (const track of additionalTracks) {
-      const result = await ipcSession.send([
-        "sub-add",
-        track.url,
-        "auto",
-        track.display ?? "",
-        track.language ?? "",
-      ]);
+      const result = await ipcSession.send(
+        ["sub-add", track.url, "auto", track.display ?? "", track.language ?? ""],
+        MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
+      );
       if (!result.ok) return;
     }
 
@@ -104,25 +100,19 @@ export class PersistentSubtitleManager {
         attachment.primarySubtitle,
         attachment.subtitleTracks,
       );
-      const result = await ipcSession.send([
-        "sub-add",
-        attachment.primarySubtitle,
-        "select",
-        primary.title,
-        primary.language,
-      ]);
+      const result = await ipcSession.send(
+        ["sub-add", attachment.primarySubtitle, "select", primary.title, primary.language],
+        MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
+      );
       if (result.ok) attached += 1;
       else return { status: "sub-add-failed", attachedCount: attached, failedTrack: "primary" };
     }
 
     for (const track of additionalTracks) {
-      const result = await ipcSession.send([
-        "sub-add",
-        track.url,
-        "auto",
-        track.display ?? "",
-        track.language ?? "",
-      ]);
+      const result = await ipcSession.send(
+        ["sub-add", track.url, "auto", track.display ?? "", track.language ?? ""],
+        MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
+      );
       if (result.ok) attached += 1;
       else return { status: "sub-add-failed", attachedCount: attached, failedTrack: "additional" };
     }

@@ -47,6 +47,7 @@ import {
   resolveVidkingPresentation,
   vidkingEngineOptionsForEndpoint,
   vidkingSourceIdForEndpoint,
+  vidkingSourceIdForPresentation,
 } from "./flavors";
 import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
 
@@ -217,7 +218,7 @@ export async function resolveVidkingDirect(
 
   for (const server of activeServers) {
     const presentation = resolveVidkingPresentation(server, resolvedOptions);
-    const sid = vidkingSourceIdForEndpoint(server);
+    const sid = vidkingSourceIdForPresentation(server, resolvedOptions);
     sources.push({
       id: sid,
       providerId: VIDKING_PROVIDER_ID,
@@ -358,7 +359,7 @@ function buildVidkingCycleCandidates({
   const candidates: ProviderCycleCandidate[] = [];
   directServers.forEach((server, index) => {
     const perServerOptions = vidkingEngineOptionsForEndpoint(server, engineOptions);
-    const sourceId = vidkingSourceIdForEndpoint(server);
+    const sourceId = vidkingSourceIdForPresentation(server, perServerOptions);
     candidates.push({
       id: `candidate:${sourceId}:direct`,
       providerId: VIDKING_PROVIDER_ID,
@@ -381,7 +382,7 @@ function buildVidkingCycleCandidates({
 
   embedServers.forEach((server, index) => {
     const perServerOptions = vidkingEngineOptionsForEndpoint(server, engineOptions);
-    const sourceId = vidkingSourceIdForEndpoint(`${server}-embed-ref`);
+    const sourceId = `${vidkingSourceIdForPresentation(server, perServerOptions)}:embed-ref`;
     candidates.push({
       id: `candidate:${sourceId}:embed-referer`,
       providerId: VIDKING_PROVIDER_ID,
@@ -493,7 +494,16 @@ export function createVidkingResultFromPayload({
       filterQuality: sourceQualityFilter,
     },
   );
-  const resolvedSourceId = sourceId ?? vidkingSourceIdForEndpoint(resolvedServer);
+  const resolvedSourceId =
+    sourceId ??
+    vidkingSourceIdForPresentation(
+      resolvedServer,
+      engineOptions ?? {
+        flavorLabel: sourceDisplayLabel,
+        flavorArchetype,
+        filterQuality: sourceQualityFilter,
+      },
+    );
   const themedLabel = sourceDisplayLabel ?? presentation.themeLabel;
   const themedSubtitle = flavorArchetype ?? presentation.subtitle;
   const sourceEvidence = [
@@ -749,7 +759,9 @@ async function tryVidkingServer(opts: {
     engineOptions = {},
   } = opts;
   const presentation = resolveVidkingPresentation(server, engineOptions);
-  const sourceId = vidkingSourceIdForEndpoint(customReferer ? `${server}-embed-ref` : server);
+  const sourceId = customReferer
+    ? `${vidkingSourceIdForPresentation(server, engineOptions)}:embed-ref`
+    : vidkingSourceIdForPresentation(server, engineOptions);
 
   emitTraceEvent(events, context, {
     type: "source:start",
@@ -1172,7 +1184,7 @@ function buildQueryVariants(opts: {
     _t: String(Date.now()),
   });
 
-  if (opts.title.year) {
+  if (!opts.title.tmdbId && opts.title.year) {
     base.set("year", String(opts.title.year));
   }
   if (opts.title.imdbId) {

@@ -47,9 +47,9 @@
     "@changesets/cli": "^2.31.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.5",
-    "oxfmt": "^0.50.0",
-    "oxlint": "^1.65.0",
-    "turbo": "^2.9.14"
+    "oxfmt": "^0.52.0",
+    "oxlint": "^1.67.0",
+    "turbo": "^2.9.15"
   },
   "lint-staged": {
     "**/*.{ts,tsx}": [

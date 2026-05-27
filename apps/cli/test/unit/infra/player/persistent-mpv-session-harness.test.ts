@@ -167,6 +167,44 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     expect(result.watchedSeconds).toBe(20);
   });
 
+  test("does not classify subtitle command timeouts as player stalls", async () => {
+    const harness = createHarness();
+    const events: unknown[] = [];
+    await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        mpvInProcessStreamReconnectMaxAttempts: 0,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+
+    harness.callbacks().onCommandResult?.({
+      ok: false,
+      command: ["sub-add", "https://subs.example/main.vtt"],
+      requestId: 99,
+      error: "timeout",
+    });
+
+    expect(events).toContainEqual({
+      type: "ipc-command-failed",
+      command: "sub-add",
+      error: "timeout",
+    });
+    expect(events).not.toContainEqual({
+      type: "ipc-stalled",
+      command: "sub-add",
+      error: "timeout",
+    });
+  });
+
   test("resume prompt waits for mpv choice and seeks only after the user chooses resume", async () => {
     const harness = createHarness();
     const session = await PersistentMpvSession.create({

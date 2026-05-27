@@ -16,6 +16,7 @@ import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
+import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelectionEngine";
@@ -303,9 +304,9 @@ export async function runSetupWizard({
 }
 
 function formatHistoryLabel(entry: HistoryEntry, newEpisodeCount = 0): string {
-  const progress = entry.duration
-    ? `${Math.round((entry.timestamp / entry.duration) * 100)}%`
-    : formatTimestamp(entry.timestamp);
+  const projected = projectWatchProgress(entry);
+  const progress =
+    projected.percentage !== null ? `${projected.percentage}%` : formatTimestamp(entry.timestamp);
   if (entry.type === "series") {
     const epLabel = `S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`;
     const newLabel = newEpisodeCount > 0 ? `  ·  +${newEpisodeCount} new` : "";
@@ -526,10 +527,9 @@ async function openEpisodeHistoryShell(
         : typeof ep.episode === "number"
           ? `Episode ${ep.episode}`
           : "Unknown episode";
+    const projected = projectWatchProgress(ep);
     const pct =
-      ep.duration > 0
-        ? `${Math.round((ep.timestamp / ep.duration) * 100)}%`
-        : formatTimestamp(ep.timestamp);
+      projected.percentage !== null ? `${projected.percentage}%` : formatTimestamp(ep.timestamp);
     const statusLabel = isFinished(ep) ? "✓ watched" : pct;
     const dateLabel = relativeHistoryDate(ep.watchedAt);
     return {
@@ -2727,9 +2727,12 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
         latest.type === "series" && latest.season && latest.episode
           ? `S${String(latest.season).padStart(2, "0")}E${String(latest.episode).padStart(2, "0")}`
           : null;
-      const pct =
-        latest.duration > 0 ? Math.round((latest.timestamp / latest.duration) * 100) : null;
-      const statusLabel = isFinished(latest) ? "watched" : pct !== null ? `${pct}%` : "in progress";
+      const progress = projectWatchProgress(latest);
+      const statusLabel = isFinished(latest)
+        ? "watched"
+        : progress.percentage !== null
+          ? `${progress.percentage}%`
+          : "in progress";
       const dateLabel = relativeHistoryDate(latest.watchedAt);
       progressMap.set(item.titleId, [epCode, statusLabel, dateLabel].filter(Boolean).join(" · "));
 

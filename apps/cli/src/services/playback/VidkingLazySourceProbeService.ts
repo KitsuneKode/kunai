@@ -1,10 +1,10 @@
 import {
   getVidkingFlavor,
+  flavorSourceId,
   listPhaseBLazyProbeFlavorIds,
   resolveFlavorEngineOptions,
   resolveVidkingDirect,
   VIDKING_PROVIDER_ID,
-  vidkingSourceIdForEndpoint,
 } from "@kunai/providers";
 import type {
   ProviderResolveInput,
@@ -17,11 +17,13 @@ import type { SourceInventoryService } from "./SourceInventoryService";
 import type { SourceInventoryCacheInput } from "./SourceInventoryService";
 
 const PROBE_CONCURRENCY = 2;
+type VidkingDirectResolver = typeof resolveVidkingDirect;
 
 export class VidkingLazySourceProbeService {
   constructor(
     private readonly options: {
       readonly sourceInventory?: Pick<SourceInventoryService, "set" | "get">;
+      readonly resolveVidkingDirect?: VidkingDirectResolver;
     } = {},
   ) {}
 
@@ -32,9 +34,9 @@ export class VidkingLazySourceProbeService {
     readonly inventoryKey: SourceInventoryCacheInput;
     readonly preferredAudioLanguage?: string;
     readonly onInventoryUpdated?: (result: ProviderResolveResult) => void;
-  }): void {
-    if (input.baseResult.providerId !== VIDKING_PROVIDER_ID) return;
-    void this.runPhaseB(input).catch(() => {
+  }): Promise<void> {
+    if (input.baseResult.providerId !== VIDKING_PROVIDER_ID) return Promise.resolve();
+    return this.runPhaseB(input).catch(() => {
       // Background probes are best-effort.
     });
   }
@@ -50,13 +52,13 @@ export class VidkingLazySourceProbeService {
     const flavorIds = listPhaseBLazyProbeFlavorIds(input.preferredAudioLanguage);
     if (flavorIds.length === 0) return;
 
-    let merged = input.baseResult;
+    let merged = await this.loadCachedInventory(input.inventoryKey, input.baseResult);
     const markProbing = (flavorId: string): ProviderResolveResult => {
       const flavor = getVidkingFlavor(flavorId);
       const options = resolveFlavorEngineOptions(flavorId);
       const endpoint = flavor?.endpoint ?? options?.serverEndpoint ?? flavorId;
       const probingSource: ProviderSourceCandidate = {
-        id: vidkingSourceIdForEndpoint(endpoint),
+        id: flavorSourceId(flavorId),
         providerId: VIDKING_PROVIDER_ID,
         kind: "provider-api",
         label: flavor?.themeLabel ?? options?.flavorLabel ?? endpoint,
@@ -81,6 +83,9 @@ export class VidkingLazySourceProbeService {
         const flavorId = flavorIds[cursor];
         if (!flavorId) break;
         cursor += 1;
+        const sourceId = flavorSourceId(flavorId);
+        if (hasSettledSource(merged, sourceId)) continue;
+
         merged = markProbing(flavorId);
         input.onInventoryUpdated?.(merged);
         await this.persistInventory(input.inventoryKey, merged);
@@ -90,14 +95,13 @@ export class VidkingLazySourceProbeService {
         if (!engineOptions) continue;
 
         const endpoint = flavor?.endpoint ?? engineOptions.serverEndpoint ?? flavorId;
-        const sourceId = vidkingSourceIdForEndpoint(endpoint);
         const themeLabel = flavor?.themeLabel ?? engineOptions.flavorLabel ?? endpoint;
         let probeSources: readonly ProviderSourceCandidate[];
         let probeStreams = merged.streams;
         let probeSubtitles = merged.subtitles;
 
         try {
-          const probeResult = await resolveVidkingDirect(
+          const probeResult = await (this.options.resolveVidkingDirect ?? resolveVidkingDirect)(
             input.resolveInput,
             input.context,
             engineOptions,
@@ -141,6 +145,20 @@ export class VidkingLazySourceProbeService {
     await Promise.all(workers);
   }
 
+  private async loadCachedInventory(
+    key: SourceInventoryCacheInput,
+    base: ProviderResolveResult,
+  ): Promise<ProviderResolveResult> {
+    const cached = await this.options.sourceInventory?.get(key);
+    if (!cached) return base;
+    return mergeInventorySources(
+      base,
+      cached.sources ?? [],
+      [...base.streams, ...cached.streams],
+      [...base.subtitles, ...cached.subtitles],
+    );
+  }
+
   private async persistInventory(
     key: SourceInventoryCacheInput,
     inventory: ProviderResolveResult,
@@ -178,6 +196,11 @@ function failedSource(
       phase: "B",
     },
   };
+}
+
+function hasSettledSource(result: ProviderResolveResult, sourceId: string): boolean {
+  const source = result.sources?.find((candidate) => candidate.id === sourceId);
+  return Boolean(source && source.status !== "pending" && source.status !== "probing");
 }
 
 function mergeInventorySources(

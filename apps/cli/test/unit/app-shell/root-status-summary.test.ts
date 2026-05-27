@@ -38,7 +38,7 @@ describe("buildRootStatusSummary", () => {
       rootStatus: "playing",
     });
 
-    expect(summary.header.label).toBe("Playing · subs ready");
+    expect(summary.header.label).toBe("Playing · subs selected");
     expect(summary.header.tone).toBe("success");
     // Crumb includes mode · provider · title · episode during active playback
     expect(summary.crumb).toContain("anime");
@@ -143,6 +143,27 @@ describe("buildRootStatusSummary", () => {
     // Idle: crumb is just mode · provider, no title or episode
     expect(summary.crumb).toBe("series · vidking");
     expect(summary.alert).toBeNull();
+  });
+
+  test("surfaces active notifications as an idle bell signal", () => {
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: base,
+      currentViewLabel: "search",
+      rootStatus: "ready",
+      notificationCount: 3,
+      newEpisodeNotificationCount: 2,
+    });
+
+    expect(summary.crumb).toContain("🔔 2 new");
+    expect(summary.alert).toEqual({
+      text: "🔔 3 notifications · 2 new episodes · /notifications",
+      tone: "info",
+    });
   });
 
   test("surfaces playback problem state as an alert", () => {

@@ -141,6 +141,19 @@ export function vidkingSourceIdForEndpoint(endpoint: string): string {
   return `source:${VIDKING_PROVIDER_ID}:videasy:${endpoint}`;
 }
 
+function endpointHasMultipleFlavors(endpoint: string): boolean {
+  return FLAVORS.filter((flavor) => flavor.endpoint === endpoint).length > 1;
+}
+
+/** Stable inventory id for a named flavor. Shared backends keep separate user-visible rows. */
+export function vidkingSourceIdForFlavor(flavorId: string): string {
+  const flavor = getVidkingFlavor(flavorId);
+  if (!flavor) return `source:${VIDKING_PROVIDER_ID}:videasy:${flavorId}`;
+  return endpointHasMultipleFlavors(flavor.endpoint)
+    ? `source:${VIDKING_PROVIDER_ID}:videasy:${flavor.id}`
+    : vidkingSourceIdForEndpoint(flavor.endpoint);
+}
+
 export function getVidkingFlavorForEndpoint(
   endpoint: string,
   hints: {
@@ -200,6 +213,19 @@ export function resolveVidkingPresentation(
     subtitle: engineOptions.flavorArchetype?.trim() || endpoint,
     endpoint,
   };
+}
+
+export function vidkingSourceIdForPresentation(
+  endpoint: string,
+  engineOptions: Pick<
+    VidKingEngineOptions,
+    "flavorId" | "flavorLabel" | "flavorArchetype" | "language" | "filterQuality"
+  > = {},
+): string {
+  const presentation = resolveVidkingPresentation(endpoint, engineOptions);
+  return presentation.flavorId
+    ? vidkingSourceIdForFlavor(presentation.flavorId)
+    : vidkingSourceIdForEndpoint(endpoint);
 }
 
 export function vidkingEngineOptionsForEndpoint(
@@ -269,6 +295,5 @@ export function listPhaseBLazyProbeFlavorIds(preferredAudioLanguage?: string): V
 }
 
 export function flavorSourceId(flavorId: string): string {
-  const flavor = getVidkingFlavor(flavorId);
-  return flavor ? vidkingSourceIdForEndpoint(flavor.endpoint) : `source:${flavorId}`;
+  return vidkingSourceIdForFlavor(flavorId);
 }

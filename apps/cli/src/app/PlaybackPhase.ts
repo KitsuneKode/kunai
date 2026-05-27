@@ -246,6 +246,7 @@ function scheduleVidkingLazySourceProbes(input: {
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
   readonly startupPriority?: string;
+  readonly signal?: AbortSignal;
   readonly onStreamUpdated: (stream: StreamInfo) => void;
 }): void {
   const result = input.stream.providerResolveResult;
@@ -265,7 +266,7 @@ function scheduleVidkingLazySourceProbes(input: {
 
   const context: ProviderRuntimeContext = {
     now: () => new Date().toISOString(),
-    signal: new AbortController().signal,
+    signal: input.signal,
     retryPolicy: { maxAttempts: 1, backoff: "none", delayMs: 0 },
   };
 
@@ -1420,6 +1421,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                         ? config.movieLanguageProfile.quality
                         : config.seriesLanguageProfile.quality,
                   startupPriority: config.startupPriority,
+                  signal: resolveController.signal,
                   onStreamUpdated: (nextStream) => {
                     stream = nextStream;
                     stateManager.dispatch({ type: "SET_STREAM", stream: nextStream });

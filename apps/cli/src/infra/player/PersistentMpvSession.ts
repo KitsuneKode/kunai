@@ -590,15 +590,16 @@ export class PersistentMpvSession {
           },
           onCommandResult: (result) => {
             if (result.ok) return;
+            const command = String(result.command[0] ?? "unknown");
             this.currentCycleOptions().onPlaybackEvent?.({
               type: "ipc-command-failed",
-              command: String(result.command[0] ?? "unknown"),
+              command,
               error: result.error,
             });
-            if (result.error === "timeout") {
+            if (result.error === "timeout" && !isSubtitleIpcCommand(command)) {
               this.currentCycleOptions().onPlaybackEvent?.({
                 type: "ipc-stalled",
-                command: String(result.command[0] ?? "unknown"),
+                command,
                 error: result.error,
               });
             }
@@ -1433,6 +1434,10 @@ export class PersistentMpvSession {
       await this.handleSegmentSkipProgress(opts);
     }
   }
+}
+
+function isSubtitleIpcCommand(command: string): boolean {
+  return command === "sub-add" || command === "sub-remove" || command === "sub-reload";
 }
 
 async function unlinkIfExists(path: string): Promise<void> {

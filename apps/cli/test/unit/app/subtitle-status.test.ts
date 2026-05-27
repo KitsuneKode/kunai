@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
+import {
+  describePlaybackSubtitleStatus,
+  projectPlaybackSubtitleState,
+} from "@/app/subtitle-status";
 import type { StreamInfo } from "@/domain/types";
 
 const hardsubStream: StreamInfo = {
@@ -60,4 +63,47 @@ test("describePlaybackSubtitleStatus keeps true missing subtitles explicit", () 
       "en",
     ),
   ).toBe("subtitles not found");
+});
+
+test("projectPlaybackSubtitleState keeps disabled preference from hiding selected subtitles", () => {
+  const state = projectPlaybackSubtitleState(
+    {
+      url: "https://cdn.example/1080.m3u8",
+      headers: {},
+      subtitle: "https://cdn.example/en.vtt",
+      timestamp: Date.now(),
+    },
+    "none",
+  );
+
+  expect(state).toMatchObject({
+    kind: "selected",
+    label: "subtitle selected · preference off",
+    tone: "success",
+  });
+});
+
+test("projectPlaybackSubtitleState exposes late lookup pending and failed states", () => {
+  const stream: StreamInfo = {
+    url: "https://cdn.example/1080.m3u8",
+    headers: {},
+    timestamp: Date.now(),
+  };
+
+  expect(projectPlaybackSubtitleState(stream, "en", { lateLookup: "pending" })).toMatchObject({
+    kind: "late-lookup-pending",
+    label: "subtitle lookup pending",
+  });
+  expect(projectPlaybackSubtitleState(stream, "en", { lateLookup: "failed" })).toMatchObject({
+    kind: "lookup-failed",
+    label: "subtitle lookup failed",
+  });
+});
+
+test("projectPlaybackSubtitleState exposes active mpv attachment separately from selection", () => {
+  expect(projectPlaybackSubtitleState(undefined, "en", { attached: true })).toMatchObject({
+    kind: "attached",
+    label: "subtitle attached",
+    tone: "success",
+  });
 });

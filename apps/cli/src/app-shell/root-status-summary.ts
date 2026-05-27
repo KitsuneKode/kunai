@@ -81,6 +81,8 @@ export function buildRootStatusSummary({
   streak,
   syncHealth,
   playlistCount,
+  notificationCount,
+  newEpisodeNotificationCount,
 }: {
   state: SessionState;
   currentViewLabel: string;
@@ -89,6 +91,8 @@ export function buildRootStatusSummary({
   streak?: number;
   syncHealth?: SyncHealth;
   playlistCount?: number;
+  notificationCount?: number;
+  newEpisodeNotificationCount?: number;
 }): RootStatusSummary {
   const episode = formatEpisode(state);
   const title = state.currentTitle?.name;
@@ -137,6 +141,13 @@ export function buildRootStatusSummary({
     if (playlistCount !== undefined && playlistCount > 0) {
       crumbParts.push(`${playlistCount} queued`);
     }
+    if (notificationCount !== undefined && notificationCount > 0) {
+      crumbParts.push(
+        newEpisodeNotificationCount !== undefined && newEpisodeNotificationCount > 0
+          ? `🔔 ${newEpisodeNotificationCount} new`
+          : `🔔 ${notificationCount}`,
+      );
+    }
   }
   const crumb = crumbParts.join(" · ");
 
@@ -155,6 +166,13 @@ export function buildRootStatusSummary({
     alert = { text: "⚠ stop after current", tone: "warning" };
   } else if (downloadStatus) {
     alert = { text: `⬇ ${downloadStatus}`, tone: "info" };
+  } else if (notificationCount !== undefined && notificationCount > 0) {
+    const countLabel = `${notificationCount} notification${notificationCount === 1 ? "" : "s"}`;
+    const newLabel =
+      newEpisodeNotificationCount !== undefined && newEpisodeNotificationCount > 0
+        ? ` · ${newEpisodeNotificationCount} new episode${newEpisodeNotificationCount === 1 ? "" : "s"}`
+        : "";
+    alert = { text: `🔔 ${countLabel}${newLabel} · /notifications`, tone: "info" };
   }
 
   return {

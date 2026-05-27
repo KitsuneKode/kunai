@@ -7,6 +7,7 @@ import {
 } from "@/app-shell/workflows";
 import { resolveEpisodeAvailability } from "@/app/playback-policy";
 import type { Container } from "@/container";
+import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { EpisodePickerOption } from "@/domain/types";
 import { cyan, dim, yellow } from "@/menu";
 import {
@@ -328,7 +329,7 @@ export async function resolveNextHistoryEpisode(
 }
 
 export function describeHistoryEntry(entry: HistoryEntry): string {
-  const percent = entry.duration ? Math.round((entry.timestamp / entry.duration) * 100) : 0;
+  const percent = projectWatchProgress(entry).percentage ?? 0;
   const resumeAt = formatTimestamp(entry.timestamp);
   return isFinished(entry)
     ? `Last finished: ${cyan(`S${entry.season}E${entry.episode}`)}`

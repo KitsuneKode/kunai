@@ -168,6 +168,7 @@ export class ProviderEngine {
         if (error instanceof ProviderResolveAbortError) throw error;
         const finishedAt = this.now();
         failure = failureFromResolveError(error, providerId, finishedAt);
+        failureError = error instanceof ProviderResolveFailureError ? error : null;
         observer?.({
           type: "provider-attempt-failed",
           providerId,
@@ -176,7 +177,6 @@ export class ProviderEngine {
           elapsedMs: elapsedMs(startedAt, finishedAt),
           failure,
         });
-        throw error;
       }
 
       if (signal?.aborted) throw this.abortError();
@@ -219,7 +219,8 @@ export class ProviderEngine {
     const attempts: ProviderEngineResolveAttempt[] = [];
 
     for (let index = 0; index < candidateIds.length; index++) {
-      const providerId = candidateIds[index]!;
+      const providerId = candidateIds[index];
+      if (!providerId) continue;
       if (signal?.aborted) break;
 
       try {

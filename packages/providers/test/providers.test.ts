@@ -153,7 +153,7 @@ test("vidking direct payload creates selected stream, variants, and subtitle inv
   expect(result?.trace.events?.map((event) => event.type)).toContain("variant:selected");
 });
 
-test("vidking direct resolver retries a failing source and preserves trace evidence", async () => {
+test("vidking direct resolver preserves nonretryable direct failure evidence", async () => {
   const events: unknown[] = [];
   let calls = 0;
   const result = await resolveVidkingDirect(
@@ -187,20 +187,15 @@ test("vidking direct resolver retries a failing source and preserves trace evide
 
   expect(calls).toBeGreaterThan(1);
   expect(result?.streams).toEqual([]);
-  expect(result?.trace.events?.map((event) => event.type)).toContain("retry:scheduled");
+  expect(result?.trace.events?.map((event) => event.type)).not.toContain("retry:scheduled");
+  expect(result?.trace.events?.map((event) => event.type)).toContain("source:failed");
   expect(result?.trace.events?.map((event) => event.type)).toContain("provider:exhausted");
   expect(result?.trace.failures[0]).toMatchObject({
     providerId: "vidking",
     code: "timeout",
-    retryable: true,
+    retryable: false,
   });
-  expect(events).toContainEqual(
-    expect.objectContaining({
-      type: "retry:scheduled",
-      providerId: "vidking",
-      attempt: 2,
-    }),
-  );
+  expect(events).not.toContainEqual(expect.objectContaining({ type: "retry:scheduled" }));
 });
 
 test("vidking direct resolver does not retry definitive 404 responses or duplicate year variants for TMDB ids", async () => {
@@ -282,9 +277,9 @@ test("vidking direct resolver can target a flavored endpoint without broad serve
     expect.arrayContaining(["source:start", "source:failed", "provider:exhausted"]),
   );
   expect(result?.sources?.[0]).toMatchObject({
-    id: "source:vidking:videasy:meine",
-    label: "Killjoy",
-    metadata: { server: "meine", flavorArchetype: "Cineby flavors" },
+    id: "source:vidking:videasy:videasy-german",
+    label: "Brook",
+    metadata: { server: "meine", flavorId: "videasy-german", flavorArchetype: "German · dub" },
   });
 });
 
@@ -352,7 +347,8 @@ test("vidking evidence fixture preserves native server labels beside ISO audio l
   });
 
   expect(result?.sources?.[0]).toMatchObject({
-    label: expected.serverLabel,
+    label: "Chopper",
+    metadata: { server: expected.serverLabel, flavorId: "videasy-hindi" },
     sourceEvidence: [
       expect.objectContaining({
         nativeLabel: expected.serverLabel,
