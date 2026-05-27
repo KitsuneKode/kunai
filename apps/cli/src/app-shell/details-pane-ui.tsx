@@ -1,7 +1,15 @@
+import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { Box, Text } from "ink";
 import React from "react";
 
 import type { DetailsPanelData, DetailsPanelSecondary } from "./details-panel";
+import {
+  buildDetailCastLines,
+  buildDetailFactRows,
+  buildDetailSubtitle,
+  resolvePosterUrl,
+  wrapSynopsis,
+} from "./details-view";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { truncateAtWord, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -226,6 +234,301 @@ export function DetailsPaneUI({
             ) : null}
           </Box>
         )}
+      </Box>
+    </Box>
+  );
+}
+
+// =============================================================================
+// TitleDetailSheetUI — full-surface [i] detail view from a TitleDetail prop
+// =============================================================================
+
+/** Separator drawn between sections of the detail sheet. */
+function SectionDivider({ width }: { readonly width: number }) {
+  return (
+    <Box marginTop={1}>
+      <Text color={palette.line}>{"─".repeat(Math.max(2, width))}</Text>
+    </Box>
+  );
+}
+
+/** One labelled fact row: muted label + text value. */
+function DetailFact({
+  label,
+  value,
+  labelWidth,
+  valueWidth,
+  tone,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly labelWidth: number;
+  readonly valueWidth: number;
+  readonly tone?: "success" | "warning" | "muted";
+}) {
+  const valueColor =
+    tone === "success" ? palette.ok : tone === "warning" ? palette.accentDeep : palette.text;
+  const displayValue = value === "—" ? value : truncateLine(value, valueWidth);
+  return (
+    <Box>
+      <Text color={palette.dim}>{truncateLine(label, labelWidth).padEnd(labelWidth)}</Text>
+      <Text color={value === "—" ? palette.dim : valueColor} dimColor={value === "—"}>
+        {displayValue}
+      </Text>
+    </Box>
+  );
+}
+
+/** Poster slot — always reserves height so metadata never jumps on load. */
+function DetailPosterSlot({
+  detail,
+  posterRows,
+  posterCols,
+}: {
+  readonly detail: TitleDetail;
+  readonly posterRows: number;
+  readonly posterCols: number;
+}) {
+  const posterUrl = resolvePosterUrl(detail);
+  const { poster, posterState } = usePosterPreview(posterUrl, {
+    rows: posterRows,
+    cols: posterCols,
+    enabled: Boolean(posterUrl),
+    debounceMs: 90,
+    variant: "detail",
+  });
+
+  if (poster.kind !== "none") {
+    return (
+      <Box minHeight={posterRows}>
+        <Text>{poster.placeholder}</Text>
+      </Box>
+    );
+  }
+
+  if (posterUrl && posterState === "loading") {
+    return (
+      <Box minHeight={posterRows} alignItems="flex-start">
+        <Text color={palette.muted} dimColor>
+          {"loading poster…"}
+        </Text>
+      </Box>
+    );
+  }
+
+  // No poster — initial-block fallback, same height reserved
+  return (
+    <Box minHeight={posterRows} alignItems="flex-start">
+      <PosterInitialBlock title={detail.title} width={posterCols} height={posterRows} />
+    </Box>
+  );
+}
+
+/** Cast list — up to maxCast rows, voice-actor labelled. */
+function CastSection({
+  detail,
+  innerWidth,
+}: {
+  readonly detail: TitleDetail;
+  readonly innerWidth: number;
+}) {
+  const castLines = buildDetailCastLines(detail, 6);
+  if (castLines.length === 0) return null;
+
+  const labelWidth = 12;
+  const valueWidth = Math.max(8, innerWidth - labelWidth - 2);
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text color={palette.muted}>Cast</Text>
+      {castLines.map((member) => {
+        const nameStr = truncateLine(member.name, labelWidth + valueWidth);
+        const roleStr = member.role
+          ? truncateLine(`as ${member.role}`, Math.max(4, valueWidth - nameStr.length - 3))
+          : undefined;
+        return (
+          <Box key={`${member.name}:${member.role ?? ""}`}>
+            <Text color={palette.text}>{truncateLine(member.name, labelWidth + valueWidth)}</Text>
+            {roleStr ? (
+              <Text color={palette.dim}>
+                {"  "}
+                {roleStr}
+              </Text>
+            ) : null}
+            {member.kind === "voice" ? (
+              <Text color={palette.dim} dimColor>
+                {" "}
+                {"(VA)"}
+              </Text>
+            ) : null}
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+/** Provider-evidence section — availability + subtitle evidence. */
+function ProviderEvidenceSection({
+  providers,
+  subtitleLanguages,
+  innerWidth,
+}: {
+  readonly providers: readonly string[] | undefined;
+  readonly subtitleLanguages: readonly string[] | undefined;
+  readonly innerWidth: number;
+}) {
+  const hasEvidence =
+    (providers && providers.length > 0) || (subtitleLanguages && subtitleLanguages.length > 0);
+  if (!hasEvidence) return null;
+
+  const labelWidth = 10;
+  const valueWidth = Math.max(8, innerWidth - labelWidth - 2);
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text color={palette.muted}>Availability</Text>
+      {providers && providers.length > 0 ? (
+        <DetailFact
+          label={"Provider"}
+          value={providers.join(" · ")}
+          labelWidth={labelWidth}
+          valueWidth={valueWidth}
+        />
+      ) : null}
+      {subtitleLanguages && subtitleLanguages.length > 0 ? (
+        <DetailFact
+          label={"Subtitles"}
+          value={subtitleLanguages.join(" · ")}
+          labelWidth={labelWidth}
+          valueWidth={valueWidth}
+        />
+      ) : null}
+    </Box>
+  );
+}
+
+/**
+ * Full-surface Details sheet rendered from a {@link TitleDetail} domain object.
+ *
+ * Prop shape:
+ * ```ts
+ * {
+ *   detail: TitleDetail;           // required — the domain object to render
+ *   width?: number;                // terminal column budget (default 76)
+ *   posterRows?: number;           // poster height in rows (default 10)
+ *   posterCols?: number;           // poster width in cols (default 20)
+ *   scrollIndex?: number;          // scroll offset for long content
+ *   maxBodyLines?: number;         // max visible scrollable body rows (default 20)
+ *   providers?: readonly string[]; // provider-ready evidence
+ *   subtitleLanguages?: readonly string[]; // subtitle language evidence
+ * }
+ * ```
+ *
+ * Callers wire [i] → mount this with the selected title's TitleDetail.
+ * The component is idle-stable (no timers, no polling effects beyond poster).
+ */
+export function TitleDetailSheetUI({
+  detail,
+  width = 76,
+  posterRows = 10,
+  posterCols = 20,
+  providers,
+  subtitleLanguages,
+}: {
+  readonly detail: TitleDetail;
+  readonly width?: number;
+  readonly posterRows?: number;
+  readonly posterCols?: number;
+  readonly providers?: readonly string[];
+  readonly subtitleLanguages?: readonly string[];
+}) {
+  // Inner content width: border (2) + paddingX (2) = 4 chars overhead
+  const innerWidth = Math.max(16, width - 4);
+  const factLabelWidth = 8;
+  const factValueWidth = Math.max(8, innerWidth - factLabelWidth - 2);
+
+  const subtitle = buildDetailSubtitle(detail);
+  const synopsisLines = wrapSynopsis(detail.synopsis, innerWidth, 4);
+  const factRows = buildDetailFactRows(detail);
+
+  return (
+    <Box
+      flexDirection="column"
+      width={width}
+      borderStyle="single"
+      borderColor={palette.line}
+      paddingX={1}
+    >
+      {/* ---- Poster slot ---- */}
+      <Box marginBottom={1}>
+        <DetailPosterSlot detail={detail} posterRows={posterRows} posterCols={posterCols} />
+      </Box>
+
+      {/* ---- Title (bright + bold — weight carries hierarchy) ---- */}
+      <Text color={palette.text} bold>
+        {truncateLine(detail.title, innerWidth)}
+      </Text>
+
+      {/* ---- Subtitle: type · year · rating ---- */}
+      <Text color={palette.muted}>{truncateLine(subtitle, innerWidth)}</Text>
+
+      {/* ---- Synopsis ---- */}
+      <Box marginTop={1} flexDirection="column">
+        {synopsisLines.length > 0 ? (
+          synopsisLines.map((line, i) => (
+            <Text key={`synopsis:${i}`} color={palette.dim}>
+              {line}
+            </Text>
+          ))
+        ) : (
+          <Text color={palette.dim} dimColor>
+            {"No synopsis available"}
+          </Text>
+        )}
+      </Box>
+
+      {/* ---- Fact rows ---- */}
+      <SectionDivider width={innerWidth} />
+      <Box flexDirection="column" marginTop={1}>
+        {factRows.map((row) => (
+          <DetailFact
+            key={row.label}
+            label={row.label}
+            value={row.value}
+            labelWidth={factLabelWidth}
+            valueWidth={factValueWidth}
+            tone={row.tone}
+          />
+        ))}
+      </Box>
+
+      {/* ---- Cast ---- */}
+      {detail.cast && detail.cast.length > 0 ? (
+        <>
+          <SectionDivider width={innerWidth} />
+          <CastSection detail={detail} innerWidth={innerWidth} />
+        </>
+      ) : null}
+
+      {/* ---- Provider evidence ---- */}
+      {(providers && providers.length > 0) ||
+      (subtitleLanguages && subtitleLanguages.length > 0) ? (
+        <>
+          <SectionDivider width={innerWidth} />
+          <ProviderEvidenceSection
+            providers={providers}
+            subtitleLanguages={subtitleLanguages}
+            innerWidth={innerWidth}
+          />
+        </>
+      ) : null}
+
+      {/* ---- Footer hint ---- */}
+      <Box marginTop={1}>
+        <Text color={palette.dim} dimColor>
+          {"[i] close · [/] commands"}
+        </Text>
       </Box>
     </Box>
   );

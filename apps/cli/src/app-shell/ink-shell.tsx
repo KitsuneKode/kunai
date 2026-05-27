@@ -1344,6 +1344,8 @@ function PlaybackShell({
           totalEpisodes={state.totalEpisodes}
           watchedEpisodes={state.watchedEpisodes}
           currentSeason={state.currentSeason ?? state.season}
+          posterUrl={state.posterUrl}
+          titleDetail={state.titleDetail}
         />
       )}
     </ShellFrame>

@@ -148,18 +148,18 @@ export function useDotMatrixAnimation(
   const frames = React.useMemo(() => generateFrames(variant, 24), [variant]);
   const [frameIdx, setFrameIdx] = React.useState(0);
 
-  // Reset to frame 0 when variant changes so animation starts cleanly
+  // A single effect manages both the variant reset and the timer. Merging them
+  // into one effect eliminates the extra commit that occurred when two separate
+  // effects ran in sequence (first effect: setFrameIdx(0) → commit; second effect:
+  // setInterval → first tick → commit), which caused visible cadence jitter (A7).
   React.useEffect(() => {
     setFrameIdx(0);
-  }, [variant]);
-
-  React.useEffect(() => {
     if (!active) return undefined;
     const timer = setInterval(() => {
       setFrameIdx((f) => (f + 1) % frames.length);
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [active, intervalMs, frames.length]);
+  }, [active, intervalMs, frames.length, frames]);
 
   return (
     frames[frameIdx] ??

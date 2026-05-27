@@ -1,3 +1,4 @@
+import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
 import type { ResolvedAppCommand, AppCommandId } from "./commands";
@@ -111,6 +112,12 @@ export type PlaybackShellState = {
   readonly totalEpisodes?: number;
   readonly watchedEpisodes?: number;
   readonly currentSeason?: number;
+  /**
+   * Rich catalog metadata + best-of-provider artwork (Agent ART). Optional:
+   * surfaces render what is present and show honest placeholders otherwise.
+   * Consumed by the Details sheet and the post-play / episode rails.
+   */
+  readonly titleDetail?: TitleDetail;
 };
 
 export type PlaybackRecommendationRailItem = {

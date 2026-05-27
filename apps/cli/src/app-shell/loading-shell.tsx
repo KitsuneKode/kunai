@@ -19,7 +19,6 @@ import {
 } from "./loading-shell-runtime";
 import type { StageRailItem } from "./loading-shell-runtime";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
-import { StateBlock } from "./primitives/StateBlock";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine, selectFooterActions } from "./shell-primitives";
 import { truncateLine } from "./shell-text";
@@ -189,6 +188,110 @@ function renderPlaybackProgressBar(
   const bar = "━".repeat(markerIndex) + "╸" + "━".repeat(Math.max(0, width - markerIndex - 1));
   return bar.slice(0, width);
 }
+
+// ── Recovery view (§6) ────────────────────────────────────────────────────
+// Renders the Failure & Recovery surface per the Sakura canonical spec:
+//   • one primary safe verb (recover) dominant — never "next" primary after failure
+//   • crimson (danger) ONLY on the live fault line itself
+//   • preserved-progress fact inline so user knows progress is safe
+//   • secondary actions (fallback, sources) at normal weight
+//   • diagnostics behind [d] in dim, never in the primary column
+//
+// This replaces the generic StateBlock for the recovery path so the surface
+// carries the correct visual hierarchy without modifying shared primitives.
+const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
+  model,
+  state,
+  width,
+}: {
+  model: NonNullable<ReturnType<typeof buildPlaybackRecoveryViewModel>>;
+  state: Pick<LoadingShellState, "currentPosition" | "duration" | "progress">;
+  width: number;
+}) {
+  const { state: block } = model;
+  const isLiveFault = block.kind === "error";
+  const titleColor = isLiveFault ? palette.danger : palette.accentDeep;
+  const glyph = isLiveFault ? "×" : "◐";
+
+  // Preserved-progress fact: show saved timestamp if we have it, else % if
+  // available. This is the key trust signal — progress is not lost.
+  const preservedFact: string | null =
+    state.currentPosition !== undefined && state.currentPosition > 0
+      ? `${formatTimestamp(state.currentPosition)} saved`
+      : state.progress !== undefined && state.progress > 0
+        ? `${Math.round(state.progress)}% saved`
+        : null;
+
+  // Split actions: primary (recover), secondary (fallback, sources), diagnostic
+  const primaryAction = block.actions?.find((a) => a.id === "recover");
+  const secondaryActions =
+    block.actions?.filter((a) => a.id !== "recover" && a.id !== "diagnostics") ?? [];
+  const hasDiagnostics = block.actions?.some((a) => a.id === "diagnostics") ?? false;
+
+  const detailWidth = Math.max(10, width - 28);
+
+  return (
+    <Box flexDirection="column">
+      {/* Fault headline — crimson only if live (stalled/no-source/did-not-start) */}
+      <Text color={titleColor} bold>
+        {glyph} {block.title}
+      </Text>
+
+      {/* Preserved progress — the key trust signal */}
+      {preservedFact ? (
+        <Box marginTop={1}>
+          <Text color={palette.muted}>{"progress  "}</Text>
+          <Text color={palette.ok}>{preservedFact}</Text>
+          <Text color={palette.muted}>{" · "}</Text>
+          <Text color={palette.ok}>not marked watched</Text>
+        </Box>
+      ) : (
+        <Box marginTop={1}>
+          <Text color={palette.ok}>progress preserved · not marked watched</Text>
+        </Box>
+      )}
+
+      {/* Primary action — recover, dominant weight */}
+      {primaryAction ? (
+        <Box marginTop={1}>
+          <Text color={palette.accent} bold>
+            {"▌ "}
+          </Text>
+          <Text color={palette.accent} bold>
+            {primaryAction.label.padEnd(16)}
+          </Text>
+          <Text color={palette.muted}>{truncateLine(primaryAction.detail ?? "", detailWidth)}</Text>
+          <Text color={palette.accent}>
+            {primaryAction.shortcut ? `  ${primaryAction.shortcut}` : ""}
+          </Text>
+        </Box>
+      ) : null}
+
+      {/* Secondary actions — fallback / sources, normal weight */}
+      {secondaryActions.length > 0 ? (
+        <Box flexDirection="column">
+          {secondaryActions.map((action) => (
+            <Box key={action.id}>
+              <Text color={palette.dim}>{"  "}</Text>
+              <Text color={palette.textDim}>{action.label.padEnd(16)}</Text>
+              <Text color={palette.dim}>{truncateLine(action.detail ?? "", detailWidth)}</Text>
+              <Text color={palette.dim}>{action.shortcut ? `  ${action.shortcut}` : ""}</Text>
+            </Box>
+          ))}
+        </Box>
+      ) : null}
+
+      {/* Diagnostics — dim, behind [d], never primary */}
+      {hasDiagnostics ? (
+        <Box marginTop={1}>
+          <Text color={palette.dim} dimColor>
+            [d] diagnostics
+          </Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+});
 
 const BufferHealthBadge = React.memo(function BufferHealthBadge({
   health,
@@ -660,7 +763,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   diagnostics. Falls back to the quiet warning when not a failure. */}
               {recoveryView ? (
                 <Box marginTop={1}>
-                  <StateBlock model={recoveryView.state} width={infoWidth} />
+                  <PlaybackRecoveryView model={recoveryView} state={state} width={infoWidth} />
                 </Box>
               ) : disclosure.showIssue && loadingIssue ? (
                 <Box marginTop={1}>
@@ -725,19 +828,19 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
 
-                {/* GO — live key hints (footer carries the essentials). */}
+                {/* GO — live key hints; only list keys that are actually wired. */}
                 <Box>
                   <Text color={palette.dim}>{"GO   "}</Text>
                   <Text color={palette.textDim}>
                     {truncateLine(
                       [
-                        state.hasNextEpisode ? "n next" : null,
-                        state.hasPreviousEpisode ? "p prev" : null,
-                        "i skip",
-                        "o source",
-                        "v quality",
-                        "e episodes",
-                        "t tracks",
+                        state.hasNextEpisode && onNext ? "n next" : null,
+                        state.hasPreviousEpisode && onPrevious ? "p prev" : null,
+                        onSkipSegment ? "b skip" : null,
+                        onPickSource ? "o source" : null,
+                        onPickQuality ? "v quality" : null,
+                        onPickEpisode ? "e episodes" : null,
+                        onPickStreams ? "t tracks" : null,
                       ]
                         .filter((part): part is string => Boolean(part))
                         .join("  ·  "),

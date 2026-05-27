@@ -1,0 +1,14 @@
+# post-play.did-not-start · wide (140×45)
+ DR. STONE                                                                                         ┌──────────────────────────────────┐
+                                                                                                   │  ┌───────────────────────────────┐
+ ▢ playback didn't start                                                                           │  │                               │
+ nothing was recorded for this title                                                               │  │                               │
+                                                                                                   │  │              DS               │
+ ▌ Try again         retry the same episode ↵                                                      │  │                               │
+   Search            find another title s                                                          │  │                               │
+                                                                                                   │  └───────────────────────────────┘
+ ────────────────────────────────────── you might also like ───────────────────────────────────────│                                  │
+                                                                                                   │  DETAILS                         │
+ 1 Frieren · Slow-burn fantasy                                                                     │                                  │
+ 2 Vinland Saga · 2019                                                                             │  season     4                    │
+ 3 Heavenly Delusion · 2023                                                                        └──────────────────────────────────┘
