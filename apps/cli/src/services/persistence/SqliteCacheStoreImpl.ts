@@ -15,9 +15,9 @@ export class SqliteCacheStoreImpl implements CacheStore {
 
   constructor(private readonly repository: StreamCacheRepository) {}
 
-  async get(url: string): Promise<StreamInfo | null> {
+  async get(key: string): Promise<StreamInfo | null> {
     try {
-      const entry = this.repository.get(toCacheKey(url));
+      const entry = this.repository.get(toStorageKey(key));
       const streamInfo = entry?.stream.metadata?.[STREAM_INFO_METADATA_KEY];
       return isStreamInfo(streamInfo) ? streamInfo : null;
     } catch (error) {
@@ -26,14 +26,14 @@ export class SqliteCacheStoreImpl implements CacheStore {
     }
   }
 
-  async set(url: string, stream: StreamInfo): Promise<void> {
+  async set(key: string, stream: StreamInfo): Promise<void> {
     try {
       const now = Date.now();
       const expiresAt = new Date(now + this.ttl).toISOString();
 
       this.repository.set(
-        toCacheKey(url),
-        toStreamCandidate(url, stream, now),
+        toStorageKey(key),
+        toStreamCandidate(key, stream, now),
         expiresAt,
         new Date(now).toISOString(),
       );
@@ -43,8 +43,8 @@ export class SqliteCacheStoreImpl implements CacheStore {
     }
   }
 
-  async delete(url: string): Promise<void> {
-    this.repository.delete(toCacheKey(url));
+  async delete(key: string): Promise<void> {
+    this.repository.delete(toStorageKey(key));
   }
 
   async clear(): Promise<void> {
@@ -64,17 +64,14 @@ export class SqliteCacheStoreImpl implements CacheStore {
   }
 }
 
-function toCacheKey(url: string): string {
-  return `cli-stream:${createHash("sha256").update(url).digest("hex")}`;
+// Hash the opaque resolve key into a stable storage key for the row id.
+function toStorageKey(key: string): string {
+  return `cli-stream:${createHash("sha256").update(key).digest("hex")}`;
 }
 
-function toStreamCandidate(
-  cacheSourceUrl: string,
-  stream: StreamInfo,
-  now: number,
-): StreamCandidate {
+function toStreamCandidate(resolveKey: string, stream: StreamInfo, now: number): StreamCandidate {
   return {
-    id: toCacheKey(cacheSourceUrl),
+    id: toStorageKey(resolveKey),
     providerId: "cli-cache",
     url: stream.url,
     protocol: stream.url.includes(".m3u8") ? "hls" : "unknown",
@@ -85,7 +82,7 @@ function toStreamCandidate(
       ttlClass: "stream-manifest",
       ttlMs: DEFAULT_CACHE_TTL,
       scope: "local",
-      keyParts: [cacheSourceUrl],
+      keyParts: [resolveKey],
     },
     metadata: {
       [STREAM_INFO_METADATA_KEY]: {
