@@ -29,6 +29,7 @@ export type AppCommandId =
   | "stop-after-current"
   | "replay"
   | "recover"
+  | "recompute"
   | "fallback"
   | "streams"
   | "source"
@@ -93,6 +94,7 @@ export const COMMAND_CONTEXTS = {
   ],
   activePlayback: [
     "recover",
+    "recompute",
     "fallback",
     "streams",
     "source",
@@ -139,6 +141,7 @@ export const COMMAND_CONTEXTS = {
     "search",
     "history",
     "recover",
+    "recompute",
     "fallback",
     "streams",
     "source",
@@ -352,6 +355,22 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Recover Playback",
     aliases: ["recover", "fix", "repair", "retry-playback"],
     description: "Refresh the current stream and resume this episode after a playback issue",
+  },
+  {
+    id: "recompute",
+    label: "Recompute Sources",
+    aliases: [
+      "recompute",
+      "refresh-sources",
+      "force-refresh",
+      "bypass-cache",
+      "ignore-cache",
+      "all-sources",
+      "all-servers",
+      "probe-sources",
+    ],
+    description:
+      "Re-resolve on the current provider only: bypass stream cache and provider memory, then probe all VidKing sources",
   },
   {
     id: "fallback",
@@ -749,6 +768,15 @@ function resolveCommandState(
         return {
           enabled: false,
           reason: "Start playback before recovery controls are available.",
+        };
+      }
+      return { enabled: true };
+
+    case "recompute":
+      if (!hasEpisode) {
+        return {
+          enabled: false,
+          reason: "Choose an episode before source recompute is available.",
         };
       }
       return { enabled: true };

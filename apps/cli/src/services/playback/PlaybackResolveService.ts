@@ -32,6 +32,7 @@ import type {
   ProviderFailure,
   ProviderHealthDelta,
   ProviderId,
+  ProviderResolveInput,
   ProviderResolveResult,
   ProviderSelectionDecision,
   StartupPriority,
@@ -148,6 +149,8 @@ export type PlaybackResolveInput = {
   readonly preserveCachedStreamOnFreshFailure?: boolean;
   readonly blockedStreamUrls?: readonly string[];
   readonly ignoreTitleHealthSuggestion?: boolean;
+  readonly ignoreProviderHealth?: boolean;
+  readonly resolveIntent?: ProviderResolveInput["intent"];
   readonly recoveryMode?: RecoveryMode;
   readonly cancellationReason?: ResolveCancellationReason;
   readonly correlation?: DiagnosticCorrelation;
@@ -273,6 +276,7 @@ export class PlaybackResolveService {
         selectedStreamId: input.selectedStreamId,
       },
       input.mode,
+      input.resolveIntent ?? "play",
     );
 
     const inventoryInput = {
@@ -335,7 +339,10 @@ export class PlaybackResolveService {
     }
 
     const recoveryMode = input.recoveryMode ?? "guided";
-    const primaryHealth = this.deps.providerHealth?.get(input.providerId);
+    const primaryHealth =
+      input.ignoreProviderHealth === true
+        ? undefined
+        : this.deps.providerHealth?.get(input.providerId);
     const titleSuggestion =
       input.ignoreTitleHealthSuggestion === true
         ? null
@@ -347,7 +354,11 @@ export class PlaybackResolveService {
       mediaKind: resolveInput.mediaKind,
       recoveryMode,
       modules: this.deps.engine.modules,
-      getProviderHealth: (providerId) => this.deps.providerHealth?.get(providerId),
+      getProviderHealth:
+        input.ignoreProviderHealth === true
+          ? undefined
+          : (providerId) => this.deps.providerHealth?.get(providerId),
+      ignoreProviderHealth: input.ignoreProviderHealth,
       suggestion: titleSuggestion,
     });
     const recoveryDecision = decideRecovery({

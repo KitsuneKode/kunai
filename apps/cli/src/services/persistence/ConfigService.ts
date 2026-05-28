@@ -153,6 +153,11 @@ export interface KitsuneConfig {
   lastStreakMilestoneDays?: number;
   /** Optional runtime tuning overrides. Unset keys fall back to DEFAULT_TUNING / KUNAI_TUNING_* env. */
   tuningOverrides?: Partial<TuningConfig>;
+  /**
+   * Per-title streaming provider chosen explicitly by the user (for example from the
+   * starting-episode picker). Overrides watch-history provider on resume/continue.
+   */
+  titleProviderPreferences: Record<string, string>;
 }
 
 export interface ConfigService extends KitsuneConfig {

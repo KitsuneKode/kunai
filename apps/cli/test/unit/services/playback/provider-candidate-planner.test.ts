@@ -32,6 +32,33 @@ describe("ProviderCandidatePlanner", () => {
     });
   });
 
+  test("can ignore provider health for an explicit recompute", () => {
+    expect(
+      planProviderCandidates({
+        primaryProviderId: "primary" as ProviderId,
+        mediaKind: "series",
+        recoveryMode: "fallback-first",
+        ignoreProviderHealth: true,
+        modules: [
+          module("primary", ["series"]),
+          module("fallback-down", ["series"]),
+          module("fallback-ok", ["series"]),
+        ],
+        getProviderHealth: (providerId) =>
+          providerId === "fallback-down"
+            ? {
+                providerId,
+                status: "down",
+                checkedAt: "2026-05-28T00:00:00.000Z",
+              }
+            : undefined,
+      }),
+    ).toEqual({
+      candidateIds: ["primary", "fallback-down", "fallback-ok"],
+      hasCompatibleFallback: true,
+    });
+  });
+
   test("keeps title health suggestions advisory and caps guided fallback to one", () => {
     expect(
       planProviderCandidates({

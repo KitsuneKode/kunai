@@ -55,6 +55,21 @@ function normalizeLanguageProfile(
   };
 }
 
+function normalizeTitleProviderPreferences(
+  value: Record<string, string> | undefined,
+): Record<string, string> {
+  if (!value || typeof value !== "object") return {};
+  const normalized: Record<string, string> = {};
+  for (const [titleId, providerId] of Object.entries(value)) {
+    if (typeof titleId !== "string" || typeof providerId !== "string") continue;
+    const trimmedTitleId = titleId.trim();
+    const trimmedProviderId = providerId.trim();
+    if (!trimmedTitleId || !trimmedProviderId) continue;
+    normalized[trimmedTitleId] = trimmedProviderId;
+  }
+  return normalized;
+}
+
 export class ConfigServiceImpl implements ConfigService {
   private config: KitsuneConfig;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -91,6 +106,7 @@ export class ConfigServiceImpl implements ConfigService {
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
       ),
+      titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
     };
     return service;
   }
@@ -260,6 +276,10 @@ export class ConfigServiceImpl implements ConfigService {
     return [...this.config.protectedDownloadJobIds];
   }
 
+  get titleProviderPreferences(): Record<string, string> {
+    return { ...this.config.titleProviderPreferences };
+  }
+
   get onboardingVersion(): number {
     return this.config.onboardingVersion;
   }
@@ -396,6 +416,13 @@ export class ConfigServiceImpl implements ConfigService {
         ? {
             mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
               partial.mpvInProcessStreamReconnectMaxAttempts,
+            ),
+          }
+        : null),
+      ...(partial.titleProviderPreferences !== undefined
+        ? {
+            titleProviderPreferences: normalizeTitleProviderPreferences(
+              partial.titleProviderPreferences,
             ),
           }
         : null),

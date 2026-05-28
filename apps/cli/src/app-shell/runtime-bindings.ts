@@ -45,14 +45,21 @@ export function buildShellRuntimeBindings(container: Container) {
       currentProvider: rawConfig.animeProvider,
     }),
     onChangeProvider: async (providerId: string) => {
-      stateManager.dispatch({ type: "SET_PROVIDER", provider: providerId });
-      diagnosticsService.record({
-        category: "ui",
-        message: "Provider switched in-shell",
-        context: {
-          mode: stateManager.getState().mode,
-          provider: providerId,
-        },
+      const fromProviderId = stateManager.getState().provider;
+      if (providerId === fromProviderId) return;
+      const snapshot = stateManager.getState();
+      const { applyUserProviderSwitch } = await import("@/app/playback-provider-switch");
+      await applyUserProviderSwitch({
+        container,
+        fromProviderId,
+        toProviderId: providerId,
+        ...(snapshot.currentTitle && snapshot.currentEpisode
+          ? {
+              title: snapshot.currentTitle,
+              episode: snapshot.currentEpisode,
+              mode: snapshot.mode,
+            }
+          : {}),
       });
     },
     onSaveSettings: async (next: KitsuneConfig) => {

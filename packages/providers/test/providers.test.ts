@@ -283,6 +283,45 @@ test("vidking direct resolver can target a flavored endpoint without broad serve
   });
 });
 
+test("vidking refresh intent cycles the wider flavor source set", async () => {
+  const requestedUrls: string[] = [];
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "438631",
+        tmdbId: "438631",
+        kind: "movie",
+        title: "Dune",
+        year: 2021,
+      },
+      mediaKind: "movie",
+      preferredAudioLanguage: "en",
+      preferredPresentation: "raw",
+      intent: "refresh",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-05-01T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input) => {
+          requestedUrls.push(String(input));
+          return new Response("", { status: 404 });
+        },
+      },
+    },
+  );
+
+  expect(result?.status).toBe("exhausted");
+  expect(requestedUrls.some((url) => url.includes("/hdmovie/sources-with-title?"))).toBe(true);
+  expect(requestedUrls.some((url) => url.includes("/superflix/sources-with-title?"))).toBe(true);
+  const sourceIds = result?.sources?.map((source) => source.id) ?? [];
+  expect(sourceIds).toContain("source:vidking:videasy:mb-flix");
+  expect(sourceIds).toContain("source:vidking:videasy:videasy-english-alt");
+  expect(sourceIds).toContain("source:vidking:videasy:superflix");
+});
+
 test("vidking payload filtering keeps localized flavored sources explicit", () => {
   const result = createVidkingResultFromPayload({
     input: {

@@ -84,4 +84,5 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   syncNudgeDismissedAt: undefined,
   lastWeeklyDigestShownAt: null,
   tuningOverrides: {},
+  titleProviderPreferences: {},
 };

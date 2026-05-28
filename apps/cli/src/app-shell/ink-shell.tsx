@@ -731,6 +731,10 @@ function AppRoot({ container }: { container: Container }) {
         void container.playerControl.recoverCurrentPlayback("playback-loading-command-recover");
         return;
       }
+      if (action === "recompute") {
+        void container.playerControl.recomputeCurrentPlayback("playback-loading-command-recompute");
+        return;
+      }
       if (action === "fallback") {
         const cancelledWork = container.workControl.cancelActive(
           "playback-loading-command-fallback",

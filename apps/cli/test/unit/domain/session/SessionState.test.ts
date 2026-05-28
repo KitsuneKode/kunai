@@ -352,6 +352,8 @@ describe("command availability", () => {
   test("parses playback recovery streams and provider fallback commands", () => {
     expect(parseCommand("/recover")?.id).toBe("recover");
     expect(parseCommand("/fix")?.id).toBe("recover");
+    expect(parseCommand("/recompute")?.id).toBe("recompute");
+    expect(parseCommand("/bypass-cache")?.id).toBe("recompute");
     expect(parseCommand("/streams")?.id).toBe("streams");
     expect(parseCommand("/fallback")?.id).toBe("fallback");
     expect(parseCommand("/f")?.id).toBe("fallback");
@@ -396,6 +398,31 @@ describe("command availability", () => {
 
     const streamCommands = resolveCommands(state, ["streams"]);
     expect(streamCommands[0]?.enabled).toBe(true);
+  });
+
+  test("recompute is available for the current episode even before stream inventory exists", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    expect(resolveCommands(state, ["recompute"])[0]?.enabled).toBe(false);
+
+    state = reduceState(state, {
+      type: "SELECT_TITLE",
+      title: {
+        id: "1396",
+        type: "series",
+        name: "Breaking Bad",
+      },
+    });
+    state = reduceState(state, {
+      type: "SELECT_EPISODE",
+      episode: { season: 1, episode: 2 },
+    });
+
+    const recomputeCommands = resolveCommands(state, ["recompute"]);
+    expect(recomputeCommands[0]?.enabled).toBe(true);
   });
 
   test("recovery is available only during active or failed playback states", () => {

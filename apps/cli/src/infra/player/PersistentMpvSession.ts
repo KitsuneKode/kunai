@@ -458,14 +458,23 @@ export class PersistentMpvSession {
       target?.kill("SIGTERM");
     }
 
-    const closed = await this.waitForProcessClose(target, 1_500);
+    let closed = await this.waitForProcessClose(target, 1_500);
     if (!closed) {
       target?.kill("SIGTERM");
+      closed = await this.waitForProcessClose(target, 1_500);
+    }
+    if (!closed) {
+      target?.kill("SIGKILL");
+      closed = await this.waitForProcessClose(target, 1_000);
     }
 
     await this.handleProcessTermination({
       code: target?.exitCode ?? (closed ? 0 : null),
-      signal: target?.killed ? ("SIGTERM" as NodeJS.Signals) : closed ? null : "SIGTERM",
+      signal: target?.killed
+        ? ("SIGTERM" as NodeJS.Signals)
+        : closed
+          ? null
+          : ("SIGKILL" as NodeJS.Signals),
     });
   }
 

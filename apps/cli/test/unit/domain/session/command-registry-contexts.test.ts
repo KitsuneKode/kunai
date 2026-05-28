@@ -14,6 +14,7 @@ describe("command registry contexts", () => {
   test("keeps active playback commands focused on safe playback actions", () => {
     expect([...COMMAND_CONTEXTS.activePlayback]).toEqual([
       "recover",
+      "recompute",
       "fallback",
       "streams",
       "source",
@@ -94,6 +95,7 @@ describe("command registry contexts", () => {
       "search",
       "history",
       "recover",
+      "recompute",
       "fallback",
       "streams",
       "source",

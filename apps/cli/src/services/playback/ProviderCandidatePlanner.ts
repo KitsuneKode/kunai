@@ -16,6 +16,7 @@ export type ProviderCandidatePlannerInput = {
   readonly getProviderHealth?: (
     providerId: ProviderId,
   ) => Pick<ProviderHealth, "status"> | undefined;
+  readonly ignoreProviderHealth?: boolean;
   readonly suggestion?: {
     readonly providerId?: string;
     readonly suggestedProviderId: string;
@@ -34,7 +35,11 @@ export function planProviderCandidates(
   const compatibleFallbackIds = input.modules
     .filter((module) => module.providerId !== input.primaryProviderId)
     .filter((module) => module.manifest.mediaKinds.includes(input.mediaKind))
-    .filter((module) => input.getProviderHealth?.(module.providerId)?.status !== "down")
+    .filter(
+      (module) =>
+        input.ignoreProviderHealth === true ||
+        input.getProviderHealth?.(module.providerId)?.status !== "down",
+    )
     .map((module) => module.providerId);
 
   const hasCompatibleFallback = compatibleFallbackIds.length > 0;

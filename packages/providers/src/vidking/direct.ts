@@ -43,6 +43,7 @@ import { selectReadyStream } from "../shared/startup-selection";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import {
   getPhaseAVidkingServers,
+  listVidkingFlavors,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
   vidkingEngineOptionsForEndpoint,
@@ -197,10 +198,18 @@ export async function resolveVidkingDirect(
     message: "Started VidKing direct Videasy resolution",
   });
 
-  const phaseAOnly = !resolvedOptions?.serverEndpoint && !resolvedOptions?.customReferer;
+  const exhaustiveRefresh = input.intent === "refresh";
+  const phaseAOnly =
+    !exhaustiveRefresh && !resolvedOptions?.serverEndpoint && !resolvedOptions?.customReferer;
   let activeServers: VidkingServerEndpoint[] = (
     phaseAOnly ? [...VIDKING_PHASE_A_SERVERS] : [...VIDKING_SERVERS]
   ).filter((s) => vidkingHealth.shouldTry(s));
+  const exhaustiveFlavorIds =
+    exhaustiveRefresh && !resolvedOptions?.serverEndpoint
+      ? listVidkingFlavors()
+          .filter((flavor) => input.mediaKind !== "series" || flavor.moviesOnly !== true)
+          .map((flavor) => flavor.id)
+      : [];
 
   // Flavor wrappers can target a specific Videasy-compatible endpoint.
   if (resolvedOptions?.serverEndpoint) {
@@ -216,9 +225,19 @@ export async function resolveVidkingDirect(
     });
   }
 
-  for (const server of activeServers) {
-    const presentation = resolveVidkingPresentation(server, resolvedOptions);
-    const sid = vidkingSourceIdForPresentation(server, resolvedOptions);
+  const probingSourceOptions =
+    exhaustiveFlavorIds.length > 0
+      ? exhaustiveFlavorIds
+          .map((flavorId) => resolveFlavorEngineOptions(flavorId))
+          .filter((options): options is VidKingEngineOptions & { serverEndpoint: string } =>
+            Boolean(options?.serverEndpoint),
+          )
+      : activeServers.map((server) => vidkingEngineOptionsForEndpoint(server, resolvedOptions));
+
+  for (const sourceOptions of probingSourceOptions) {
+    const server = sourceOptions.serverEndpoint ?? "mb-flix";
+    const presentation = resolveVidkingPresentation(server, sourceOptions);
+    const sid = vidkingSourceIdForPresentation(server, sourceOptions);
     sources.push({
       id: sid,
       providerId: VIDKING_PROVIDER_ID,
@@ -244,15 +263,18 @@ export async function resolveVidkingDirect(
   });
 
   const cycleCandidates = buildVidkingCycleCandidates({
-    directServers: activeServers,
+    directServers: exhaustiveFlavorIds.length > 0 ? [] : activeServers,
     embedServers:
       phaseAOnly && !resolvedOptions.customReferer
         ? []
         : embedReferer
           ? resolvedOptions.serverEndpoint
             ? [resolvedOptions.serverEndpoint]
-            : [...VIDKING_SERVERS]
+            : exhaustiveFlavorIds.length > 0
+              ? []
+              : [...VIDKING_SERVERS]
           : [],
+    flavorIds: exhaustiveFlavorIds,
     embedReferer: resolvedOptions.customReferer ?? embedReferer ?? undefined,
     engineOptions: resolvedOptions,
     preferredSourceId: input.preferredSourceId,
@@ -267,8 +289,12 @@ export async function resolveVidkingDirect(
     candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
     resolveCandidate: async (candidate) => {
       const metadata = parseVidkingCycleCandidateMetadata(candidate);
+      const flavorOptions = metadata.flavorId
+        ? (resolveFlavorEngineOptions(metadata.flavorId) ?? {})
+        : {};
       const candidateOptions = vidkingEngineOptionsForEndpoint(metadata.server, {
         ...resolvedOptions,
+        ...flavorOptions,
         flavorLabel: metadata.flavorLabel,
         flavorArchetype: metadata.flavorArchetype,
       });
@@ -346,17 +372,41 @@ export async function resolveVidkingDirect(
 function buildVidkingCycleCandidates({
   directServers,
   embedServers,
+  flavorIds,
   embedReferer,
   engineOptions,
   preferredSourceId,
 }: {
   readonly directServers: readonly VidkingServerEndpoint[];
   readonly embedServers: readonly VidkingServerEndpoint[];
+  readonly flavorIds?: readonly string[];
   readonly embedReferer?: string;
   readonly engineOptions: VidKingEngineOptions;
   readonly preferredSourceId?: string;
 }): ProviderCycleCandidate[] {
   const candidates: ProviderCycleCandidate[] = [];
+  for (const [index, flavorId] of (flavorIds ?? []).entries()) {
+    const flavorOptions = resolveFlavorEngineOptions(flavorId);
+    if (!flavorOptions?.serverEndpoint) continue;
+    const sourceId = vidkingSourceIdForPresentation(flavorOptions.serverEndpoint, flavorOptions);
+    candidates.push({
+      id: `candidate:${sourceId}:direct`,
+      providerId: VIDKING_PROVIDER_ID,
+      sourceId,
+      serverId: flavorOptions.serverEndpoint,
+      label: flavorOptions.flavorLabel ?? flavorOptions.serverEndpoint,
+      nativeLabel: flavorOptions.serverEndpoint,
+      priority: index,
+      metadata: {
+        server: flavorOptions.serverEndpoint,
+        flavorId,
+        flavorLabel: flavorOptions.flavorLabel,
+        flavorArchetype: flavorOptions.flavorArchetype,
+        retryTier: "direct",
+      } satisfies VidkingCycleCandidateMetadata,
+    });
+  }
+
   directServers.forEach((server, index) => {
     const perServerOptions = vidkingEngineOptionsForEndpoint(server, engineOptions);
     const sourceId = vidkingSourceIdForPresentation(server, perServerOptions);

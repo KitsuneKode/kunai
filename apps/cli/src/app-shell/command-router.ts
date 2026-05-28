@@ -44,6 +44,7 @@ type RoutedActionResult =
   | "resume"
   | "replay"
   | "recover"
+  | "recompute"
   | "fallback"
   | "streams"
   | "source"
@@ -202,6 +203,7 @@ export async function routePlaybackShellAction({
   if (action === "resume") return "resume";
   if (action === "replay") return "replay";
   if (action === "recover") return "recover";
+  if (action === "recompute") return "recompute";
   if (action === "fallback") return "fallback";
   if (action === "streams") return "streams";
   if (action === "source") return "source";

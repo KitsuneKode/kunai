@@ -106,11 +106,69 @@ describe("launch entry helpers", () => {
     ).toEqual({ season: 1, episode: 7 });
   });
 
+  test("applyHistorySelectionProvider prefers saved title provider over history", () => {
+    const transitions: unknown[] = [];
+
+    applyHistorySelectionProvider(
+      {
+        config: {
+          getRaw() {
+            return {
+              titleProviderPreferences: { "tmdb:123": "vidking" },
+            };
+          },
+        },
+        providerRegistry: {
+          get(providerId: string) {
+            return {
+              metadata: {
+                id: providerId,
+                isAnimeProvider: providerId === "allanime",
+              },
+            };
+          },
+        },
+        stateManager: {
+          getState() {
+            return { provider: "rivestream", providerSwitchSeq: 0 };
+          },
+          dispatch(transition: unknown) {
+            transitions.push(transition);
+          },
+        },
+      } as never,
+      {
+        titleId: "tmdb:123",
+        entry: history({
+          provider: "rivestream",
+          season: 1,
+          episode: 5,
+        }),
+      },
+    );
+
+    expect(transitions).toContainEqual({
+      type: "SET_MODE",
+      mode: "series",
+      provider: "vidking",
+    });
+    expect(transitions).not.toContainEqual({
+      type: "SET_MODE",
+      mode: "series",
+      provider: "rivestream",
+    });
+  });
+
   test("applyHistorySelectionProvider restores the explicit target episode", () => {
     const transitions: unknown[] = [];
 
     applyHistorySelectionProvider(
       {
+        config: {
+          getRaw() {
+            return { titleProviderPreferences: {} };
+          },
+        },
         providerRegistry: {
           get() {
             return {
@@ -122,6 +180,9 @@ describe("launch entry helpers", () => {
           },
         },
         stateManager: {
+          getState() {
+            return { provider: "allanime", providerSwitchSeq: 0 };
+          },
           dispatch(transition: unknown) {
             transitions.push(transition);
           },

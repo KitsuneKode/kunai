@@ -1193,7 +1193,33 @@ export function RootOverlayShell({
       if (overlay.type === "provider_picker") {
         const picked = filteredProviderOptions[selectedIndex]?.value;
         if (picked && picked !== state.provider) {
-          container.stateManager.dispatch({ type: "SET_PROVIDER", provider: picked });
+          const fromProviderId = state.provider;
+          void (async () => {
+            const { applyUserProviderSwitch } = await import("@/app/playback-provider-switch");
+            await applyUserProviderSwitch({
+              container,
+              fromProviderId,
+              toProviderId: picked,
+              ...(state.currentTitle && state.currentEpisode
+                ? {
+                    title: state.currentTitle,
+                    episode: state.currentEpisode,
+                    mode: state.mode,
+                  }
+                : {}),
+            });
+            const next = container.stateManager.getState();
+            const playbackActive =
+              next.playbackStatus === "loading" ||
+              next.playbackStatus === "ready" ||
+              next.playbackStatus === "buffering" ||
+              next.playbackStatus === "seeking" ||
+              next.playbackStatus === "stalled" ||
+              next.playbackStatus === "playing";
+            if (playbackActive && next.currentEpisode) {
+              void container.playerControl.recomputeCurrentPlayback("provider-picker-switch");
+            }
+          })();
         }
       } else if (overlay.type === "history") {
         const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;

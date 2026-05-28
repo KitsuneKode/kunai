@@ -223,7 +223,8 @@ export function resolvePlaybackResultDecision({
       result.suspectedDeadStream === true ||
       didPlaybackFailToStart(result) ||
       controlAction === "refresh" ||
-      controlAction === "recover",
+      controlAction === "recover" ||
+      controlAction === "recompute",
     shouldFallbackProvider: controlAction === "fallback",
     shouldTreatAsInterrupted,
   };

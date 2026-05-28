@@ -34,6 +34,7 @@ export type ShellAction =
   | "resume"
   | "replay"
   | "recover"
+  | "recompute"
   | "fallback"
   | "streams"
   | "source"
@@ -291,6 +292,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "provider":
     case "replay":
     case "recover":
+    case "recompute":
     case "fallback":
     case "streams":
     case "source":

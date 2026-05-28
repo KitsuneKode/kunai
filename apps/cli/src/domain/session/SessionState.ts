@@ -141,6 +141,8 @@ export interface SessionState {
   readonly stopAfterCurrent: boolean;
 
   readonly stream: StreamInfo | null;
+  /** Bumped on explicit user provider switches so playback can bypass soft fallbacks and stale streams. */
+  readonly providerSwitchSeq: number;
   readonly playbackStatus: PlaybackStatus;
   readonly playbackError: string | null;
   readonly playbackDetail: string | null;
@@ -167,7 +169,7 @@ export type StateTransition =
   | { type: "SET_MODE"; mode: ShellMode; provider: string }
   | { type: "SET_DEFAULT_PROVIDER"; mode: ShellMode; provider: string }
   | { type: "SET_VIEW"; view: ShellView }
-  | { type: "SET_PROVIDER"; provider: string }
+  | { type: "SET_PROVIDER"; provider: string; forceFreshResolve?: boolean }
   | {
       type: "UPDATE_LANGUAGE_PROFILE";
       kind: "anime" | "series" | "movie";
@@ -254,6 +256,7 @@ export function createInitialState(
     autoskipSessionPaused: false,
     stopAfterCurrent: false,
     stream: null,
+    providerSwitchSeq: 0,
     playbackStatus: "idle",
     playbackError: null,
     playbackDetail: null,
@@ -300,7 +303,13 @@ export function reduceState(state: SessionState, transition: StateTransition): S
       return { ...state, view: transition.view };
 
     case "SET_PROVIDER":
-      return { ...state, provider: transition.provider };
+      return {
+        ...state,
+        provider: transition.provider,
+        ...(transition.forceFreshResolve
+          ? { stream: null, providerSwitchSeq: state.providerSwitchSeq + 1 }
+          : {}),
+      };
 
     case "UPDATE_LANGUAGE_PROFILE":
       if (transition.kind === "anime")

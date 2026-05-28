@@ -8,6 +8,7 @@ export type PlaybackControlAction =
   | "stop"
   | "refresh"
   | "recover"
+  | "recompute"
   | "fallback"
   | "pick-stream"
   | "pick-source"
@@ -85,6 +86,7 @@ export interface PlayerControlService {
   stopCurrentPlayback(reason?: string): Promise<boolean>;
   refreshCurrentPlayback(reason?: string): Promise<boolean>;
   recoverCurrentPlayback(reason?: string): Promise<boolean>;
+  recomputeCurrentPlayback(reason?: string): Promise<boolean>;
   fallbackCurrentPlayback(reason?: string): Promise<boolean>;
   pickStreamCurrentPlayback(reason?: string): Promise<boolean>;
   reloadCurrentSubtitles(reason?: string): Promise<boolean>;

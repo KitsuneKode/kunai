@@ -29,6 +29,8 @@ function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | 
       return "Kunai · Refreshing stream…";
     case "recover":
       return "Kunai · Recovering playback…";
+    case "recompute":
+      return "Kunai · Recomputing sources…";
     case "fallback":
       return "Kunai · Trying another source…";
     case "pick-stream":
@@ -185,6 +187,11 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   async recoverCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "recover";
     return this.stopWithAction("recover", reason, true);
+  }
+
+  async recomputeCurrentPlayback(reason = "user-requested"): Promise<boolean> {
+    this.lastAction = "recompute";
+    return this.stopWithAction("recompute", reason, true);
   }
 
   async fallbackCurrentPlayback(reason = "user-requested"): Promise<boolean> {

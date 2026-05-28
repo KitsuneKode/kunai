@@ -39,6 +39,10 @@ import {
   resolveEpisodeAvailability,
   toEpisodeNavigationState,
 } from "@/app/playback-policy";
+import {
+  resolveStreamProviderId,
+  resolveTitleProviderPreference,
+} from "@/app/playback-provider-switch";
 import { resumeSecondsFromHistoryForEpisode } from "@/app/playback-resume-from-history";
 import {
   createPlaybackSessionState,
@@ -170,6 +174,29 @@ export type PlaybackOutcome =
       season?: number;
       episode?: number;
     };
+
+/** Stop background playback work before/after the post-play menu (no new mpv). */
+function preparePostPlaybackSurface(
+  container: PhaseContext["container"],
+  episodePrefetch: EpisodePrefetchHandle,
+  playbackIterationAbort: AbortController,
+): void {
+  playbackIterationAbort.abort();
+  episodePrefetch.cancel("post-playback-menu");
+  container.playerControl.consumeLastAction();
+  container.playerControl.consumePendingStreamSelection();
+  container.playerControl.consumePendingEpisodeSelection();
+  container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+}
+
+async function teardownPlaybackForPostPlayExit(
+  container: PhaseContext["container"],
+  episodePrefetch: EpisodePrefetchHandle,
+  playbackIterationAbort: AbortController,
+): Promise<void> {
+  preparePostPlaybackSurface(container, episodePrefetch, playbackIterationAbort);
+  await container.player.releasePersistentSession();
+}
 
 function enqueuePostPlaybackRecommendation(
   container: PhaseContext["container"],
@@ -751,6 +778,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     let sessionSoftProviderId: string | null = null;
     const sourceRefreshCooldown = createSourceRefreshCooldownState();
     let pendingSourceRefreshAction: SourceRefreshAction | null = null;
+    let pendingRecomputeSources = false;
 
     try {
       // Episode selection (for series)
@@ -791,6 +819,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         },
       });
 
+      let providerSwitchSeqBeforeEpisodePicker = stateManager.getState().providerSwitchSeq;
+
       if (title.type === "series") {
         // Check history for resume
         const history = await historyStore.get(title.id);
@@ -801,6 +831,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             timestamp: history.timestamp,
           });
         }
+
+        const { applyTitleProviderPreferenceToSession } =
+          await import("@/app/playback-provider-switch");
+        applyTitleProviderPreferenceToSession(container, title.id);
+        providerSwitchSeqBeforeEpisodePicker = stateManager.getState().providerSwitchSeq;
 
         // Session-flow owns the current season/episode selection rules until the
         // mounted root shell fully absorbs the picker stack.
@@ -866,9 +901,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       const deadStreamUrls = createDeadStreamUrlLedger();
       let autoSourceRecoverAttempts = 0;
       let autoRecoverEpisodeKey: string | null = null;
+      let consumedProviderSwitchSeq = providerSwitchSeqBeforeEpisodePicker;
 
       // Inner playback loop
       while (true) {
+        const playbackIterationAbort = new AbortController();
         const currentEpisode = stateManager.getState().currentEpisode;
         if (!currentEpisode) break;
         const episodeScopeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
@@ -918,8 +955,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         });
 
         try {
+          const configuredProviderId = stateManager.getState().provider;
+          if (sessionSoftProviderId && sessionSoftProviderId !== configuredProviderId) {
+            sessionSoftProviderId = null;
+          }
           const currentProvider = providerRegistry.get(
-            sessionSoftProviderId ?? stateManager.getState().provider,
+            sessionSoftProviderId ?? configuredProviderId,
           );
 
           if (!currentProvider) {
@@ -1077,6 +1118,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           const sourceRefreshAction = pendingSourceRefreshAction;
           pendingSourceRefreshAction = null;
+          const recomputeSources = pendingRecomputeSources;
+          pendingRecomputeSources = false;
           const sourceRefreshDecision = sourceRefreshAction
             ? resolveSourceRefreshDecision(sourceRefreshCooldown, {
                 action: sourceRefreshAction,
@@ -1203,13 +1246,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
+          const providerSwitchSeq = stateManager.getState().providerSwitchSeq;
+          const pendingUserProviderSwitch = providerSwitchSeq !== consumedProviderSwitchSeq;
+          if (pendingUserProviderSwitch) {
+            consumedProviderSwitchSeq = providerSwitchSeq;
+            sessionSoftProviderId = null;
+            stream = null;
+          }
+
           // Check in-memory cache for recently played episodes (backward navigation).
           // This lets P-navigation reuse the exact same StreamInfo without any
           // provider resolve, cache lookup, or health check.
           if (!stream && !sourceRefreshDecision) {
             const recentKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
             const recent = recentEpisodeStreams.get(recentKey);
-            if (recent) {
+            const recentMatchesProvider =
+              recent?.selectedProviderId === configuredProviderId &&
+              recent.resolvedProviderId === configuredProviderId;
+            if (recent && recentMatchesProvider) {
               stream = recent.stream;
               resolvedProviderId = recent.resolvedProviderId;
               streamProvenance = recent.provenance;
@@ -1247,6 +1301,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
             const sourceRefreshIsRecover = sourceRefreshDecision?.kind === "recover";
             const sourceRefreshIsRefresh = sourceRefreshDecision?.kind === "refresh";
+            const titlePreferredProviderId = resolveTitleProviderPreference(
+              config.getRaw(),
+              title.id,
+            );
+            // Per-title preference picks the default provider and invalidates caches on
+            // switch, but must not force recoveryMode "manual" — that blocks automatic
+            // fallback when the preferred provider has no stream (e.g. VidKing down).
+            const honorExplicitProviderOnly = pendingUserProviderSwitch || recomputeSources;
             const resolveResult = await container.playbackResolveWork.resolve(
               {
                 title,
@@ -1272,10 +1334,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                       ? config.movieLanguageProfile.quality
                       : config.seriesLanguageProfile.quality,
                 startupPriority: config.startupPriority,
-                recoveryMode: config.recoveryMode,
-                preferFreshStream: sourceRefreshIsRefresh || sourceRefreshIsRecover,
+                recoveryMode: honorExplicitProviderOnly ? "manual" : config.recoveryMode,
+                preferFreshStream:
+                  honorExplicitProviderOnly || sourceRefreshIsRefresh || sourceRefreshIsRecover,
                 forceHealthCheck: sourceRefreshIsRecover,
-                preserveCachedStreamOnFreshFailure: sourceRefreshIsRefresh,
+                preserveCachedStreamOnFreshFailure:
+                  sourceRefreshIsRefresh && !honorExplicitProviderOnly,
+                ignoreTitleHealthSuggestion: honorExplicitProviderOnly,
+                ignoreProviderHealth: honorExplicitProviderOnly,
+                resolveIntent: recomputeSources ? "refresh" : "play",
                 blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
                 signal: resolveController.signal,
                 correlation: playbackCorrelation,
@@ -1377,6 +1444,34 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             stream = resolveResult.stream;
             resolvedProviderId = resolveResult.providerId;
+            if (
+              stream &&
+              pendingUserProviderSwitch &&
+              titlePreferredProviderId &&
+              resolvedProviderId !== titlePreferredProviderId
+            ) {
+              const preferredName =
+                providerRegistry.get(titlePreferredProviderId)?.metadata.name ??
+                titlePreferredProviderId;
+              const actualName =
+                providerRegistry.get(resolvedProviderId)?.metadata.name ?? resolvedProviderId;
+              diagnosticsService.record({
+                ...playbackCorrelation,
+                category: "provider",
+                level: "warn",
+                message: "Rejected provider fallback because a per-title preference is set",
+                context: {
+                  titleId: title.id,
+                  preferredProviderId: titlePreferredProviderId,
+                  resolvedProviderId,
+                },
+              });
+              this.updatePlaybackFeedback(context, {
+                detail: `${preferredName} did not resolve for this episode`,
+                note: `Got ${actualName} instead. Use /recompute or switch provider.`,
+              });
+              stream = null;
+            }
             streamProvenance =
               resolveResult.provenance === "prefetched"
                 ? "prefetch"
@@ -1414,6 +1509,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 fallback: resolvedProviderId,
               });
               sessionSoftProviderId = resolvedProviderId;
+              const fallbackName =
+                providerRegistry.get(resolvedProviderId)?.metadata.name ?? resolvedProviderId;
+              this.updatePlaybackFeedback(context, {
+                note: `Using ${fallbackName} for this session. /provider to switch back, then /recompute.`,
+              });
+            } else if (pendingUserProviderSwitch) {
+              const streamProviderId = resolveStreamProviderId(stream);
+              if (streamProviderId && streamProviderId === configuredProviderId) {
+                this.updatePlaybackFeedback(context, {
+                  note: `Resolving via ${providerRegistry.get(configuredProviderId)?.metadata.name ?? configuredProviderId}.`,
+                });
+              }
             }
 
             if (stream?.providerResolveResult) {
@@ -1764,6 +1871,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             startIntent.suppressResumePrompt,
             playbackCorrelation,
             (stage) => recordStartupMark(stage, preparedStream),
+            playbackIterationAbort.signal,
           );
           playbackSession = this.transitionPlaybackSession(
             context,
@@ -1980,16 +2088,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 note: "Press r to try again or switch provider with /provider",
               });
             } else {
+              pendingRecomputeSources = playbackControlAction === "recompute";
               pendingStart = startAtResumePoint(
                 toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
                 { suppressResumePrompt: true },
               );
               pendingSourceRefreshAction =
-                result.suspectedDeadStream === true ||
-                didPlaybackFailToStart(result) ||
-                playbackControlAction === "recover"
+                playbackControlAction === "recompute"
                   ? "recover"
-                  : "refresh";
+                  : result.suspectedDeadStream === true ||
+                      didPlaybackFailToStart(result) ||
+                      playbackControlAction === "recover"
+                    ? "recover"
+                    : "refresh";
               if (isAutoSourceRecover) {
                 autoSourceRecoverAttempts += 1;
               }
@@ -2006,6 +2117,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   episode: currentEpisode.episode,
                   resumeSeconds: pendingStart.startAt,
                   action: pendingSourceRefreshAction,
+                  recomputeSources: pendingRecomputeSources,
                   autoRecover: isAutoSourceRecover,
                   autoRecoverAttempts: autoSourceRecoverAttempts,
                 },
@@ -2502,6 +2614,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           await player.releasePersistentSession();
+          preparePostPlaybackSurface(container, episodePrefetch, playbackIterationAbort);
           this.updatePlaybackFeedback(context, { detail: null, note: null });
           playbackSession = this.transitionPlaybackSession(
             context,
@@ -2774,8 +2887,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
 
             if (routedAction === "quit") {
+              await teardownPlaybackForPostPlayExit(
+                container,
+                episodePrefetch,
+                playbackIterationAbort,
+              );
               return { status: "quit" };
             } else if (typeof routedAction === "object" && routedAction.type === "history-entry") {
+              await teardownPlaybackForPostPlayExit(
+                container,
+                episodePrefetch,
+                playbackIterationAbort,
+              );
               return {
                 status: "success",
                 value: {
@@ -2785,6 +2908,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 },
               };
             } else if (routedAction === "mode-switch") {
+              await teardownPlaybackForPostPlayExit(
+                container,
+                episodePrefetch,
+                playbackIterationAbort,
+              );
               return { status: "success", value: "back_to_search" };
             } else if (routedAction === "toggle-autoplay") {
               const playbackAction = resolvePostPlaybackSessionAction(
@@ -2840,6 +2968,38 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (!playbackAction.session.autoplayPaused) {
                 stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
               }
+              break postPlayback;
+            } else if (routedAction === "recompute") {
+              pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+              pendingSourceRefreshAction = "recover";
+              pendingRecomputeSources = true;
+              autoSourceRecoverAttempts = 0;
+              recentEpisodeStreams.delete(
+                `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
+              );
+              playbackSession = this.transitionPlaybackSession(
+                context,
+                playbackSession,
+                "recovery-started",
+                {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  provider: resolvedProviderId,
+                  action: "recompute",
+                },
+              );
+              diagnosticsService.record({
+                category: "playback",
+                message: "Recomputing provider sources after shell command",
+                context: {
+                  provider: resolvedProviderId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  resumeSeconds,
+                },
+              });
               break postPlayback;
             } else if (routedAction === "fallback") {
               const fallback = providerRegistry
@@ -2922,8 +3082,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               continue postPlayback;
             } else if (routedAction === "back-to-search") {
+              await teardownPlaybackForPostPlayExit(
+                container,
+                episodePrefetch,
+                playbackIterationAbort,
+              );
               return { status: "success", value: "back_to_search" };
             } else if (routedAction === "back-to-results") {
+              await teardownPlaybackForPostPlayExit(
+                container,
+                episodePrefetch,
+                playbackIterationAbort,
+              );
               return { status: "success", value: "back_to_results" };
             } else if (routedAction === "handled") {
               continue postPlayback;
@@ -3039,6 +3209,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               continue postPlayback;
             } else {
+              await teardownPlaybackForPostPlayExit(
+                container,
+                episodePrefetch,
+                playbackIterationAbort,
+              );
               return { status: "success", value: "back_to_search" };
             }
           }
@@ -3304,6 +3479,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     suppressResumePrompt = false,
     correlation?: DiagnosticCorrelation,
     onStartupMark?: (stage: PlaybackStartupStage) => void,
+    playbackIterationSignal?: AbortSignal,
   ): Promise<PlaybackResult> {
     const { player, stateManager, config } = context.container;
 
@@ -3352,6 +3528,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         title,
         episode,
         context,
+        playbackIterationSignal,
       });
       const result = await player.play(stream, {
         url: stream.url,
@@ -3544,12 +3721,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     title,
     episode,
     context,
+    playbackIterationSignal,
   }: {
     stream: StreamInfo;
     title: TitleInfo;
     episode: EpisodeInfo;
     context: PhaseContext;
+    playbackIterationSignal?: AbortSignal;
   }): void {
+    const iterationSignal = playbackIterationSignal ?? context.signal;
     const { stateManager, diagnosticsService, logger } = context.container;
     const requestedSubLang =
       stateManager.getState().mode === "anime"
@@ -3613,7 +3793,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           preferredLang: requestedSubLang,
         });
 
-        if (context.signal.aborted) return;
+        if (iterationSignal.aborted) return;
         if (result.list.length === 0) {
           diagnosticsService.record({
             category: "subtitle",
@@ -3645,6 +3825,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const attached = await this.attachLateSubtitlesWhenPlayerReady(context, {
           primarySubtitle: selectedUrl,
           subtitleTracks: mergedSubtitleList,
+          playbackIterationSignal,
         });
         if (!attached) return;
 
@@ -3682,7 +3863,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           },
         });
       } catch (error) {
-        if (context.signal.aborted) return;
+        if (iterationSignal.aborted) return;
         logger.warn("Late subtitle lookup failed", { error: String(error) });
         diagnosticsService.record({
           category: "subtitle",
@@ -3700,16 +3881,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     attachment: {
       primarySubtitle: string;
       subtitleTracks: readonly SubtitleTrack[];
+      playbackIterationSignal?: AbortSignal;
     },
   ): Promise<boolean> {
     const player = context.container.playerControl;
+    const iterationSignal = attachment.playbackIterationSignal ?? context.signal;
     const deadline = Date.now() + 30_000;
 
-    while (!context.signal.aborted && Date.now() < deadline) {
+    while (!iterationSignal.aborted && Date.now() < deadline) {
       let active = player.getActive();
       if (!active) {
         active = await player.waitForActivePlayer({
-          signal: context.signal,
+          signal: iterationSignal,
           timeoutMs: Math.max(0, deadline - Date.now()),
         });
         if (!active) return false;

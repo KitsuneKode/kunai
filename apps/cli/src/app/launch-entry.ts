@@ -1,3 +1,4 @@
+import { applyTitleProviderPreferenceToSession } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
@@ -121,18 +122,29 @@ export async function recordLocalHistorySourceDecision(
 }
 
 export function applyHistorySelectionProvider(
-  container: Pick<Container, "providerRegistry" | "stateManager">,
+  container: Pick<Container, "config" | "providerRegistry" | "stateManager">,
   selection: HistoryLaunchSelection,
 ): void {
-  const provider = container.providerRegistry.get(selection.entry.provider);
-  if (provider) {
-    container.stateManager.dispatch({
-      type: "SET_MODE",
-      mode: provider.metadata.isAnimeProvider ? "anime" : "series",
-      provider: provider.metadata.id,
-    });
-  } else {
-    container.stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
+  const titleId = selection.titleId;
+  const appliedPreference = applyTitleProviderPreferenceToSession(container, titleId);
+  if (!appliedPreference) {
+    const state = container.stateManager.getState();
+    const keepSessionProvider = state.providerSwitchSeq > 0;
+    if (!keepSessionProvider) {
+      const provider = container.providerRegistry.get(selection.entry.provider);
+      if (provider) {
+        container.stateManager.dispatch({
+          type: "SET_MODE",
+          mode: provider.metadata.isAnimeProvider ? "anime" : "series",
+          provider: provider.metadata.id,
+        });
+      } else {
+        container.stateManager.dispatch({
+          type: "SET_PROVIDER",
+          provider: selection.entry.provider,
+        });
+      }
+    }
   }
   if (selection.entry.type !== "series") return;
   const episode = episodeFromHistorySelection(selection);

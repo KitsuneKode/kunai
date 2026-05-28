@@ -4,10 +4,13 @@ import {
   buildPickerActionContext,
   openAnimeEpisodePicker,
   openAnimeEpisodeListPicker,
+  openProviderPicker,
 } from "@/app-shell/workflows";
 import { resolveEpisodeAvailability } from "@/app/playback-policy";
+import { applyUserProviderSwitch } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { EpisodePickerOption } from "@/domain/types";
 import { cyan, dim, yellow } from "@/menu";
 import {
@@ -15,7 +18,7 @@ import {
   formatTimestamp,
   isFinished,
 } from "@/services/persistence/HistoryStore";
-import { type EpisodeInfo, fetchEpisodes, fetchSeriesData } from "@/tmdb";
+import { fetchEpisodes, fetchSeriesData, type EpisodeInfo as TmdbEpisodeInfo } from "@/tmdb";
 
 export type EpisodeSelection = {
   season: number;
@@ -49,6 +52,7 @@ type NextHistoryEpisodeArgs = {
 };
 
 export type StartingEpisodeChoice = "resume" | "restart" | "next" | "pick";
+export type StartingEpisodePickerChoice = StartingEpisodeChoice | "switch-provider";
 
 export function resolveStartingEpisodeChoice(args: {
   choice: StartingEpisodeChoice;
@@ -81,8 +85,64 @@ export function resolveStartingEpisodeChoice(args: {
   return null;
 }
 
-function createPickerActionContext(container: Container | undefined, taskLabel: string) {
-  return container ? buildPickerActionContext({ container, taskLabel }) : undefined;
+const STARTING_POINT_PICKER_COMMANDS = [
+  "settings",
+  "history",
+  "diagnostics",
+  "help",
+  "about",
+  "quit",
+  "provider",
+] as const;
+
+function createPickerActionContext(
+  container: Container | undefined,
+  taskLabel: string,
+  allowed?: readonly (typeof STARTING_POINT_PICKER_COMMANDS)[number][],
+) {
+  return container
+    ? buildPickerActionContext({
+        container,
+        taskLabel,
+        ...(allowed ? { allowed } : {}),
+      })
+    : undefined;
+}
+
+function describeActiveProvider(container: Container): string {
+  const providerId = container.stateManager.getState().provider;
+  return container.providerRegistry.get(providerId)?.metadata.name ?? providerId;
+}
+
+async function switchProviderFromStartingPicker(
+  container: Container,
+  scope: { readonly title: TitleInfo; readonly episode: EpisodeInfo },
+): Promise<void> {
+  const { stateManager, providerRegistry } = container;
+  const state = stateManager.getState();
+  const fromProviderId = state.provider;
+  const picked = await openProviderPicker({
+    currentProvider: fromProviderId,
+    providers: providerRegistry
+      .getAll()
+      .map((provider) => provider.metadata)
+      .filter((provider) => provider.isAnimeProvider === (state.mode === "anime")),
+    actionContext: buildPickerActionContext({
+      container,
+      taskLabel: "Choose provider",
+      allowed: ["settings", "history", "diagnostics", "help", "about", "quit"],
+    }),
+  });
+  if (!picked || picked === fromProviderId) return;
+
+  await applyUserProviderSwitch({
+    container,
+    fromProviderId,
+    toProviderId: picked,
+    title: scope.title,
+    episode: scope.episode,
+    mode: state.mode,
+  });
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
@@ -211,8 +271,8 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
   // code. Anime names come from the in-memory list; series names from one
   // (cached) TMDB fetch per season. TMDB stubs unknown titles as "Episode N" —
   // those are dropped so we never show a redundant name.
-  const seasonEpisodeCache = new Map<number, readonly EpisodeInfo[] | null>();
-  const loadSeasonEpisodes = async (season: number): Promise<readonly EpisodeInfo[] | null> => {
+  const seasonEpisodeCache = new Map<number, readonly TmdbEpisodeInfo[] | null>();
+  const loadSeasonEpisodes = async (season: number): Promise<readonly TmdbEpisodeInfo[] | null> => {
     if (seasonEpisodeCache.has(season)) return seasonEpisodeCache.get(season) ?? null;
     const episodes = await fetchEpisodes(opts.currentId, season).catch(() => null);
     seasonEpisodeCache.set(season, episodes);
@@ -238,47 +298,87 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
   const withName = (base: string, name: string | undefined): string =>
     name ? `${base} · ${name}` : base;
 
-  const choice = (await openListShell({
-    title: "Where to start?",
-    subtitle: `${history.title} · choose the starting ${
-      opts.isAnime ? "episode" : "season and episode"
-    }`,
-    actionContext: createPickerActionContext(opts.container, "Choose starting point"),
-    options: [
-      ...(!finished
-        ? [
-            {
-              value: "resume" as const,
-              label: `▶ Resume S${history.season}E${history.episode}`,
-              detail: withName(`Continue from ${resumeAt}`, currentName),
-            },
-            {
-              value: "restart" as const,
-              label: `↻ Restart S${history.season}E${history.episode}`,
-              detail: withName("Start the current episode from the beginning", currentName),
-            },
-          ]
-        : []),
-      {
-        value: "next" as const,
-        label: nextEpisode
-          ? `⏭ Next episode  S${nextEpisode.season}E${nextEpisode.episode}`
-          : "⏭ Next episode unavailable",
-        detail: nextEpisode
-          ? withName("Advance to the next released episode", nextName)
-          : "No later released episode is available yet",
-      },
-      {
-        value: "pick" as const,
-        label: opts.isAnime ? "☰ Pick episode…" : "☰ Pick season & episode…",
-        detail: "Choose manually from metadata",
-      },
-    ],
-  })) as "resume" | "restart" | "next" | "pick" | null;
+  const startingScope = opts.isAnime ? "episode" : "season and episode";
+  const titleForProviderSwitch: TitleInfo = {
+    id: opts.currentId,
+    name: history.title,
+    type: "series",
+    ...(opts.animeEpisodeCount !== undefined ? { episodeCount: opts.animeEpisodeCount } : {}),
+  };
+  const episodeForProviderSwitch: EpisodeInfo = {
+    season: opts.isAnime ? 1 : history.season,
+    episode: history.episode,
+  };
+  let choice: StartingEpisodePickerChoice | null = null;
 
-  // Esc should back out of the start picker, not silently launch playback.
-  if (!choice) {
-    return null;
+  while (choice === null) {
+    const providerName = opts.container ? describeActiveProvider(opts.container) : null;
+    const picked = await openListShell<StartingEpisodePickerChoice>({
+      title: "Where to start?",
+      subtitle: providerName
+        ? `${history.title} · ${providerName} · choose the starting ${startingScope}`
+        : `${history.title} · choose the starting ${startingScope}`,
+      actionContext: createPickerActionContext(
+        opts.container,
+        "Choose starting point",
+        opts.container ? [...STARTING_POINT_PICKER_COMMANDS] : undefined,
+      ),
+      options: [
+        ...(!finished
+          ? [
+              {
+                value: "resume" as const,
+                label: `▶ Resume S${history.season}E${history.episode}`,
+                detail: withName(`Continue from ${resumeAt}`, currentName),
+              },
+              {
+                value: "restart" as const,
+                label: `↻ Restart S${history.season}E${history.episode}`,
+                detail: withName("Start the current episode from the beginning", currentName),
+              },
+            ]
+          : []),
+        {
+          value: "next" as const,
+          label: nextEpisode
+            ? `⏭ Next episode  S${nextEpisode.season}E${nextEpisode.episode}`
+            : "⏭ Next episode unavailable",
+          detail: nextEpisode
+            ? withName("Advance to the next released episode", nextName)
+            : "No later released episode is available yet",
+        },
+        {
+          value: "pick" as const,
+          label: opts.isAnime ? "☰ Pick episode…" : "☰ Pick season & episode…",
+          detail: "Choose manually from metadata",
+        },
+        ...(opts.container
+          ? [
+              {
+                value: "switch-provider" as const,
+                label: `⇄ Switch provider  ·  ${providerName ?? opts.container.stateManager.getState().provider}`,
+                detail: "Saved for this title · overrides history provider on resume",
+              },
+            ]
+          : []),
+      ],
+    });
+
+    if (!picked) {
+      return null;
+    }
+
+    if (picked === "switch-provider") {
+      if (opts.container) {
+        await switchProviderFromStartingPicker(opts.container, {
+          title: titleForProviderSwitch,
+          episode: episodeForProviderSwitch,
+        });
+      }
+      continue;
+    }
+
+    choice = picked;
   }
 
   const resolvedChoice = resolveStartingEpisodeChoice({

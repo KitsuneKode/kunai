@@ -954,6 +954,89 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
   expect(observedCandidates).toEqual([["primary", "anime-ok"]]);
 });
 
+test("PlaybackResolveService sends refresh intent and ignores provider health on explicit recompute", async () => {
+  const cache = createMemoryCache(null);
+  const observedCandidates: ProviderId[][] = [];
+  const observedResolveInputs: ProviderResolveInput[] = [];
+  const engine = createMockEngine(
+    {
+      result: {
+        status: "resolved",
+        providerId: "fallback-down" as ProviderId,
+        streams: [
+          {
+            id: "stream:fallback-down:1",
+            providerId: "fallback-down" as ProviderId,
+            url: "https://fallback-down.example/live.m3u8",
+            protocol: "hls" as const,
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:recompute",
+          startedAt: new Date().toISOString(),
+          title: { id: "12345", kind: "series", title: "Test Movie" },
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      },
+      providerId: "fallback-down" as ProviderId,
+      attempts: [{ providerId: "fallback-down" as ProviderId, result: undefined }],
+    },
+    {
+      modules: [
+        {
+          providerId: "primary" as ProviderId,
+          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+        },
+        {
+          providerId: "fallback-down" as ProviderId,
+          manifest: createManifest("fallback-down" as ProviderId, ["series", "movie"]),
+        },
+      ],
+      onResolveInput: (input) => {
+        observedResolveInputs.push(input);
+      },
+      onCandidateIds: (candidateIds) => {
+        observedCandidates.push([...candidateIds]);
+      },
+    },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    providerHealth: createMemoryProviderHealth([
+      {
+        providerId: "fallback-down" as ProviderId,
+        status: "down",
+        checkedAt: "2026-05-28T00:00:00.000Z",
+      },
+    ]) as never,
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    resolveIntent: "refresh",
+    ignoreProviderHealth: true,
+    ignoreTitleHealthSuggestion: true,
+    recoveryMode: "fallback-first",
+  });
+
+  expect(observedResolveInputs[0]?.intent).toBe("refresh");
+  expect(observedCandidates).toEqual([["primary", "fallback-down"]]);
+  expect(result.providerId).toBe("fallback-down");
+});
+
 test("PlaybackResolveService skips a freshly resolved stream that fails preflight and tries fallback provider", async () => {
   const cache = createMemoryCache(null);
   const observedCandidates: ProviderId[][] = [];

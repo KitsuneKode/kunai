@@ -191,6 +191,38 @@ describe("buildRootStatusSummary", () => {
     expect(summary.alert?.tone).toBe("warning");
   });
 
+  test("shows selected and active provider in the crumb when they differ", () => {
+    const base = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        provider: "vidking",
+        playbackStatus: "playing",
+        currentTitle: { id: "demo", name: "Vincenzo", type: "series" },
+        currentEpisode: { season: 1, episode: 5 },
+        stream: {
+          url: "https://example.com/master.m3u8",
+          headers: {},
+          timestamp: 1,
+          providerResolveResult: {
+            status: "resolved",
+            providerId: "rivestream",
+            streams: [],
+            subtitles: [],
+          },
+        } as never,
+      },
+      currentViewLabel: "playback",
+      rootStatus: "playing",
+    });
+
+    expect(summary.crumb).toContain("vidking→rivestream");
+  });
+
   test("uses plain language for download status alert", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },

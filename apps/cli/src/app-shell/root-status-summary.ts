@@ -120,9 +120,17 @@ export function buildRootStatusSummary({
       ? `${humanReadableRootStatus(rootStatus)} · ${subtitleCompact}`
       : humanReadableRootStatus(rootStatus);
 
+  // Crumb: show the provider actually serving the active stream when it differs from the
+  // session selection (for example after recovery fallback or stale shell state).
+  const streamProviderId = state.stream?.providerResolveResult?.providerId;
+  const providerCrumb =
+    isActivePlayback && streamProviderId && streamProviderId !== state.provider
+      ? `${state.provider}→${streamProviderId}`
+      : state.provider;
+
   // Crumb: always mode · provider; add title + episode during playback,
   // or streak + sync health when idle
-  const crumbParts: string[] = [state.mode, state.provider];
+  const crumbParts: string[] = [state.mode, providerCrumb];
   if (isActivePlayback && title) {
     crumbParts.push(title);
     if (episode) crumbParts.push(episode);

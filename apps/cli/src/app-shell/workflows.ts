@@ -1440,12 +1440,13 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
 async function handleProviderPicker(container: Container): Promise<"handled"> {
   const { stateManager, providerRegistry } = container;
   const state = stateManager.getState();
+  const fromProviderId = state.provider;
   const picked = await withOverlay(
     stateManager,
-    { type: "provider_picker", currentProvider: state.provider, isAnime: state.mode === "anime" },
+    { type: "provider_picker", currentProvider: fromProviderId, isAnime: state.mode === "anime" },
     () =>
       openProviderPicker({
-        currentProvider: state.provider,
+        currentProvider: fromProviderId,
         providers: providerRegistry
           .getAll()
           .map((p) => p.metadata)
@@ -1457,8 +1458,26 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
         }),
       }),
   );
-  if (picked && picked !== state.provider) {
-    stateManager.dispatch({ type: "SET_PROVIDER", provider: picked });
+  if (picked && picked !== fromProviderId) {
+    const { applyUserProviderSwitch } = await import("@/app/playback-provider-switch");
+    await applyUserProviderSwitch({
+      container,
+      fromProviderId,
+      toProviderId: picked,
+      ...(state.currentTitle && state.currentEpisode
+        ? { title: state.currentTitle, episode: state.currentEpisode, mode: state.mode }
+        : {}),
+    });
+    const playbackActive =
+      state.playbackStatus === "loading" ||
+      state.playbackStatus === "ready" ||
+      state.playbackStatus === "buffering" ||
+      state.playbackStatus === "seeking" ||
+      state.playbackStatus === "stalled" ||
+      state.playbackStatus === "playing";
+    if (playbackActive && state.currentEpisode) {
+      void container.playerControl.recomputeCurrentPlayback("provider-picker-switch");
+    }
   }
   return "handled";
 }
