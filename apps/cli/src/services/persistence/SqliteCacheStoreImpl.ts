@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { StreamInfo } from "@/domain/types";
+import { dbgErr } from "@/logger";
 import { StreamCacheRepository } from "@kunai/storage";
 import type { StreamCandidate } from "@kunai/types";
 
@@ -19,7 +20,8 @@ export class SqliteCacheStoreImpl implements CacheStore {
       const entry = this.repository.get(toCacheKey(url));
       const streamInfo = entry?.stream.metadata?.[STREAM_INFO_METADATA_KEY];
       return isStreamInfo(streamInfo) ? streamInfo : null;
-    } catch {
+    } catch (error) {
+      dbgErr("cache", "stream-cache-get-failed", error);
       return null;
     }
   }
@@ -35,8 +37,9 @@ export class SqliteCacheStoreImpl implements CacheStore {
         expiresAt,
         new Date(now).toISOString(),
       );
-    } catch {
+    } catch (error) {
       // Cache persistence is a performance feature; playback must keep going if it fails.
+      dbgErr("cache", "stream-cache-set-failed", error);
     }
   }
 
@@ -47,13 +50,17 @@ export class SqliteCacheStoreImpl implements CacheStore {
   async clear(): Promise<void> {
     try {
       this.repository.clear();
-    } catch {}
+    } catch (error) {
+      dbgErr("cache", "stream-cache-clear-failed", error);
+    }
   }
 
   async prune(): Promise<void> {
     try {
       this.repository.pruneExpired();
-    } catch {}
+    } catch (error) {
+      dbgErr("cache", "stream-cache-prune-failed", error);
+    }
   }
 }
 
