@@ -119,6 +119,32 @@ function buildProgressBar(watched: number, total: number, suffix = ""): PostPlay
   return { watched, total, percent, label };
 }
 
+// "S01 E06 — Challengers of Science" → "E06 · Challengers of Science".
+// A placeholder name that just repeats the episode number collapses to the tag.
+function formatUpNextLabel(nextEpisodeLabel: string): string {
+  const match = nextEpisodeLabel.match(/^S\d+\s+(E\d+)\s+—\s+(.+)$/u);
+  if (!match) return nextEpisodeLabel;
+  const tag = match[1] ?? "";
+  const name = match[2]?.trim() ?? "";
+  if (!name || /^episode\s+\d+$/iu.test(name)) return tag || nextEpisodeLabel;
+  return `${tag} · ${name}`;
+}
+
+// Up-next meta: "Status available · autoplay on · 24m" — runtime only when known.
+function buildUpNextMeta(titleDetail: TitleDetail | undefined): string {
+  const parts = ["Status available", "autoplay on"];
+  if (titleDetail?.runtimeMinutes) parts.push(`${titleDetail.runtimeMinutes}m`);
+  return parts.join(" · ");
+}
+
+function buildUpNextCard(
+  nextEpisodeLabel: string | undefined,
+  titleDetail: TitleDetail | undefined,
+): PostPlayUpNextCard | undefined {
+  if (!nextEpisodeLabel) return undefined;
+  return { label: formatUpNextLabel(nextEpisodeLabel), meta: buildUpNextMeta(titleDetail) };
+}
+
 function buildDiscovery(
   recs: readonly PlaybackRecommendationRailItem[],
 ): readonly PostPlayDiscoveryCard[] {
@@ -221,7 +247,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       ],
       discoveryHeading: "you might also like",
       discovery,
-      upNext: nextEpisodeLabel ? { label: nextEpisodeLabel, meta: "up next" } : undefined,
+      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail),
       railFacts: buildSeriesRailFacts(props, progressBar),
       episodeMeta,
     };
@@ -291,12 +317,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       ],
       discoveryHeading: "because you watched this",
       discovery,
-      upNext: nextEpisodeLabel
-        ? {
-            label: nextEpisodeLabel,
-            meta: "Status available · autoplay on",
-          }
-        : undefined,
+      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail),
       railFacts: buildSeriesRailFacts(props, progressBar),
       episodeMeta,
     };

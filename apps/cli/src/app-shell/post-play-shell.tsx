@@ -27,6 +27,7 @@ import {
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { PlaybackRecommendationRailItem } from "./types";
+import { usePosterPreview } from "./use-poster-preview";
 import { useViewportPolicy } from "./use-viewport-policy";
 
 // ── Props ──────────────────────────────────────────────────────────────────────
@@ -41,8 +42,10 @@ export type PostPlayShellProps = {
   totalEpisodes?: number;
   watchedEpisodes?: number;
   currentSeason?: number;
-  /** Optional poster URL — rendered wide-only as a reserved placeholder slot. */
+  /** Optional poster URL — rendered wide-only in the rail artwork slot. */
   posterUrl?: string;
+  /** Optional next-episode thumbnail; preferred over the series poster in the rail. */
+  nextEpisodeThumbUrl?: string;
   /** Optional rich catalog metadata; surfaces what is present, never hangs on absent fields. */
   titleDetail?: TitleDetail;
 };
@@ -218,16 +221,39 @@ function RailLabel({ label }: { readonly label: string }) {
   );
 }
 
-// ── Poster placeholder slot (wide-only; reserved even when no image) ───────────
+// ── Rail artwork (wide-only; reserved height so metadata never jumps) ──────────
 
-function PosterSlot({ title, width }: { readonly title: string; readonly width: number }) {
-  // Width ~28–36 cols; height ~7 rows to reserve space and prevent metadata jump.
-  const initials = title
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .slice(0, 3)
-    .join("");
+function initialsOf(title: string): string {
+  return (
+    title
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w[0]?.toUpperCase() ?? "")
+      .slice(0, 3)
+      .join("") || "?"
+  );
+}
+
+// Renders the real terminal image (kitty or chafa text) for the next-episode
+// thumbnail when available, falling back to the series poster, then to title
+// initials. One image only — two simultaneous poster previews would clobber
+// each other through the shared clearRenderedPosterImages() pass.
+function RailArtwork({
+  url,
+  title,
+  width,
+}: {
+  readonly url?: string;
+  readonly title: string;
+  readonly width: number;
+}) {
+  const innerCols = Math.max(8, width - 2);
+  const { poster, posterState } = usePosterPreview(url, {
+    rows: 5,
+    cols: innerCols,
+    enabled: Boolean(url),
+    variant: "preview",
+  });
 
   return (
     <Box
@@ -238,9 +264,13 @@ function PosterSlot({ title, width }: { readonly title: string; readonly width: 
       borderStyle="single"
       borderColor={palette.lineSoft}
     >
-      <Text color={palette.dim} bold>
-        {initials || "?"}
-      </Text>
+      {poster.kind !== "none" ? (
+        <Text>{poster.placeholder}</Text>
+      ) : (
+        <Text color={palette.dim} bold>
+          {posterState === "loading" ? "…" : initialsOf(title)}
+        </Text>
+      )}
     </Box>
   );
 }
@@ -251,10 +281,12 @@ function PostPlayRail({
   view,
   title,
   railWidth,
+  artworkUrl,
 }: {
   readonly view: PostPlayView;
   readonly title: string;
   readonly railWidth: number;
+  readonly artworkUrl?: string;
 }) {
   return (
     <Box
@@ -267,8 +299,9 @@ function PostPlayRail({
       borderRight={false}
       borderBottom={false}
     >
-      {/* Poster slot — always reserved to prevent layout jump on artwork load */}
-      <PosterSlot title={title} width={railWidth - 3} />
+      {/* Artwork slot — next-episode thumbnail (or series poster) — always
+          reserved to prevent layout jump on artwork load */}
+      <RailArtwork url={artworkUrl} title={title} width={railWidth - 3} />
 
       {/* Up next card */}
       {view.upNext ? (
@@ -301,7 +334,8 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   totalEpisodes,
   watchedEpisodes,
   currentSeason,
-  posterUrl: _posterUrl,
+  posterUrl,
+  nextEpisodeThumbUrl,
   titleDetail,
 }: PostPlayShellProps) {
   const viewport = useViewportPolicy("playback");
@@ -394,7 +428,12 @@ export const PostPlayShell = React.memo(function PostPlayShell({
 
       {/* ── Right rail (wide only; not on did-not-start — that state stays calm) ── */}
       {showRail && view.heroKind !== "did-not-start" ? (
-        <PostPlayRail view={view} title={title} railWidth={railWidth} />
+        <PostPlayRail
+          view={view}
+          title={title}
+          railWidth={railWidth}
+          artworkUrl={nextEpisodeThumbUrl ?? posterUrl}
+        />
       ) : null}
     </Box>
   );
