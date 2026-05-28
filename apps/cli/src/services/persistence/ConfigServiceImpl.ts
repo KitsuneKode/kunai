@@ -430,25 +430,33 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   private savePending: Promise<void> | null = null;
+  private savePendingResolve: (() => void) | null = null;
 
+  // Trailing debounce: every call re-arms the timer so the latest config wins,
+  // and all callers in a burst share one promise that resolves once the write
+  // actually lands. (A previous version cleared the timer but early-returned
+  // without rescheduling, which dropped the write and left the promise hung.)
   async save(): Promise<void> {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
+      this.saveTimer = null;
     }
-    if (this.savePending) {
-      return this.savePending;
+    if (!this.savePending) {
+      this.savePending = new Promise<void>((resolve) => {
+        this.savePendingResolve = resolve;
+      });
     }
-    this.savePending = new Promise<void>((resolve) => {
-      this.saveTimer = setTimeout(async () => {
-        this.saveTimer = null;
-        try {
-          await this.store.save(this.config);
-        } finally {
-          this.savePending = null;
-          resolve();
-        }
-      }, this.saveTimeoutMs);
-    });
+    this.saveTimer = setTimeout(async () => {
+      this.saveTimer = null;
+      const resolve = this.savePendingResolve;
+      this.savePending = null;
+      this.savePendingResolve = null;
+      try {
+        await this.store.save(this.config);
+      } finally {
+        resolve?.();
+      }
+    }, this.saveTimeoutMs);
     return this.savePending;
   }
 
