@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { StreamInfo } from "@/domain/types";
+import { DEFAULT_CACHE_TTL } from "@/services/persistence/CacheStore";
 import { SqliteCacheStoreImpl } from "@/services/persistence/SqliteCacheStoreImpl";
 import { SqliteHistoryStoreImpl } from "@/services/persistence/SqliteHistoryStoreImpl";
 import {
+  getDefaultTtlMs,
   HistoryRepository,
   openKunaiDatabase,
   runMigrations,
@@ -118,6 +120,10 @@ describe("SqliteHistoryStoreImpl", () => {
 });
 
 describe("SqliteCacheStoreImpl", () => {
+  test("uses the shared stream-manifest TTL policy", () => {
+    expect(DEFAULT_CACHE_TTL).toBe(getDefaultTtlMs("stream-manifest"));
+  });
+
   test("round trips full StreamInfo metadata", async () => {
     const db = openTempDb("cache.sqlite");
     runMigrations(db, "cache");

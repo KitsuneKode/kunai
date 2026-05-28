@@ -4,12 +4,9 @@
 // Manages stream URL caching.
 // =============================================================================
 
-import type { StreamInfo } from "../../domain/types";
+import { getDefaultTtlMs } from "@kunai/storage";
 
-export interface CacheEntry {
-  stream: StreamInfo;
-  cachedAt: number;
-}
+import type { StreamInfo } from "../../domain/types";
 
 export interface CacheStore {
   get(url: string): Promise<StreamInfo | null>;
@@ -22,9 +19,6 @@ export interface CacheStore {
   readonly ttl: number;
 }
 
-// Default TTL: 15 minutes (matches CDN token expiration)
-export const DEFAULT_CACHE_TTL = 15 * 60 * 1000;
-
-export function isExpired(entry: CacheEntry, ttl = DEFAULT_CACHE_TTL): boolean {
-  return Date.now() - entry.cachedAt > ttl;
-}
+// Default TTL for stream URLs. Keep this tied to the shared storage policy so
+// cache-store writes and source-inventory writes age out on the same contract.
+export const DEFAULT_CACHE_TTL = getDefaultTtlMs("stream-manifest");
