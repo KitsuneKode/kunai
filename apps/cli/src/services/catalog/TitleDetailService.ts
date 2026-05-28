@@ -72,6 +72,17 @@ export function clearTitleDetailCache(): void {
   detailCache.clear();
 }
 
+/**
+ * Synchronously return a cached `TitleDetail` if one is warm (within TTL), else
+ * `undefined`. Never triggers a fetch — used by surfaces that must not block on
+ * the network (e.g. the post-play rail reads this after an early prefetch).
+ */
+export function peekTitleDetail(id: string, type: ContentType): TitleDetail | undefined {
+  const cached = detailCache.get(cacheKey(id, type));
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.detail;
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------

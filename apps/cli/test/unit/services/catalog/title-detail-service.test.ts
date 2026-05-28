@@ -13,7 +13,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { ARTWORK_PREFERENCE, episodeThumbKey, mergeArtwork } from "@/domain/catalog/title-detail";
-import { clearTitleDetailCache, fetchTitleDetail } from "@/services/catalog/TitleDetailService";
+import {
+  clearTitleDetailCache,
+  fetchTitleDetail,
+  peekTitleDetail,
+} from "@/services/catalog/TitleDetailService";
 
 // ---------------------------------------------------------------------------
 // Helpers to build minimal fake TMDB/AniList API responses
@@ -523,6 +527,30 @@ describe("TitleDetailService — caching", () => {
     await fetchTitleDetail("tmdb:998", "movie");
 
     expect(calls).toBe(2);
+
+    restore();
+  });
+
+  test("peekTitleDetail returns undefined when cold and the cached detail once warm", async () => {
+    const restore = mockFetch((url) => {
+      if (
+        url.includes("/movie/997") &&
+        !url.includes("/credits") &&
+        !url.includes("/external_ids")
+      ) {
+        return jsonResponse(tmdbMoviePayload({ id: 997, title: "Peeked Movie" }));
+      }
+      if (url.includes("/movie/997/credits")) return jsonResponse({ cast: [] });
+      if (url.includes("/movie/997/external_ids")) return jsonResponse({ imdb_id: null });
+      return null;
+    });
+
+    // Cold: never fetched → no blocking, just undefined.
+    expect(peekTitleDetail("tmdb:997", "movie")).toBeUndefined();
+
+    const fetched = await fetchTitleDetail("tmdb:997", "movie");
+    // Warm: same reference the fetch cached, no network call.
+    expect(peekTitleDetail("tmdb:997", "movie")).toBe(fetched);
 
     restore();
   });
