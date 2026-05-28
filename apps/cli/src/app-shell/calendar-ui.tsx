@@ -566,7 +566,7 @@ export function CalendarScheduleRow<T>({
           <Text color={presentation.color} dimColor={presentation.dim}>
             {presentation.glyph}
           </Text>
-          <Text color={selected ? palette.text : undefined}>{title}</Text>
+          <Text color={selected ? palette.text : palette.textDim}>{title}</Text>
           <Text color={presentation.color} dimColor={presentation.dim}>
             {` ${presentation.label}`}
           </Text>

@@ -664,7 +664,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   />
                 </Box>
                 <Box flexDirection="column" flexGrow={1}>
-                  <Text bold color="white">
+                  <Text bold color={palette.text}>
                     {state.stageDetail || stageLabel(activeStage)}
                   </Text>
                   <Box marginTop={1}>
