@@ -83,6 +83,7 @@ import { choosePlaybackSubtitle, shouldAttemptLateSubtitleLookup } from "@/app/s
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
+import { episodeThumbKey } from "@/domain/catalog/title-detail";
 import {
   buildProviderResolveProblem,
   type PlaybackProblem,
@@ -113,6 +114,7 @@ import {
   PlaybackTimingAggregator,
 } from "@/infra/timing";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
+import { fetchTitleDetail } from "@/services/catalog/TitleDetailService";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
   createCorrelationId,
@@ -123,7 +125,9 @@ import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import {
   createPlaybackStartupTimeline,
   formatPlaybackStartupTimeline,
+  formatStartupPhaseBreakdown,
   type PlaybackStartupStage,
+  summarizeStartupPhases,
 } from "@/services/playback/playback-startup-timeline";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
@@ -946,6 +950,30 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 source: summarizeStartupStreamSource(activeStream),
               },
             });
+            // Once the first frame lands, emit a single phase-bucketed breakdown
+            // (resolve vs prepare vs spawn vs first-frame) naming the dominant
+            // cost — this is the autonext "stall" instrument. `autoNext` flags
+            // whether this startup was an auto-advance vs a manual start.
+            if (stage === "first-progress") {
+              const phases = summarizeStartupPhases(snapshot);
+              if (phases) {
+                diagnosticsService.record({
+                  ...playbackCorrelation,
+                  category: "playback",
+                  operation: "playback.startup.phases",
+                  message: `Playback startup phases (${phases.dominant} dominant)`,
+                  providerId: resolvedProviderId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  context: {
+                    autoNext: config.autoNext,
+                    breakdown: formatStartupPhaseBreakdown(phases),
+                    ...phases,
+                  },
+                });
+              }
+            }
           };
           recordStartupMark("episode-bootstrap-started");
 
@@ -2614,6 +2642,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const watchedEpisodes = watchedEntries.filter((entry) =>
               title.type === "series" ? entry.season === currentEpisode.season : true,
             ).length;
+            // Catalog detail for the post-play rail (cached after first fetch;
+            // budgeted so it never blocks the surface — undefined falls back to
+            // honest placeholders and the next open shows it from cache).
+            const postPlayTitleDetail = await Promise.race([
+              fetchTitleDetail(title.id, title.type).catch(() => undefined),
+              new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 800)),
+            ]);
+            // Next-episode still for the post-play rail, when the merged artwork
+            // carries one for that exact season/episode.
+            const nextEpisodeThumbUrl =
+              upcomingEpisode && postPlayTitleDetail?.artwork?.episodeThumbnails
+                ? postPlayTitleDetail.artwork.episodeThumbnails[
+                    episodeThumbKey(upcomingEpisode.season, upcomingEpisode.episode)
+                  ]
+                : undefined;
             const postAction = await openPlaybackShell({
               state: {
                 type: title.type,
@@ -2621,6 +2664,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
                 posterUrl: title.posterUrl,
+                titleDetail: postPlayTitleDetail,
                 provider: resolvedProviderId,
                 subtitleStatus: describeSubtitleStatus(
                   preparedStream,
@@ -2650,6 +2694,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   upcomingEpisode,
                   nextEpisodePickerOption?.label,
                 ),
+                nextEpisodeThumbUrl,
                 totalEpisodes: title.episodeCount ?? shellEpisodePicker.options.length,
                 watchedEpisodes,
                 currentSeason: currentEpisode.season,
