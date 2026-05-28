@@ -209,6 +209,33 @@ When considering a Node → Bun migration:
 
 The full audit and migration plan lives in `.opencode/plans/bun-native-migration.md`.
 
+## Runtime tuning
+
+Runtime durations/budgets that used to be scattered module constants are
+consolidated in `apps/cli/src/services/persistence/tuning.ts`. It is the single
+source of truth: every knob has a `default` plus a `[min, max]` bound, and
+`resolveTuning()` clamps every resolved value.
+
+**Resolution order (last wins):**
+
+1. `DEFAULT_TUNING` (the spec defaults)
+2. config-file override — `tuningOverrides` in `~/.config/kunai/config.json`
+3. `KUNAI_TUNING_*` environment variables
+
+**Env key rule:** `KUNAI_TUNING_<SCREAMING_SNAKE(field)>`. Example:
+`mpvReconnectBaseBackoffMs` → `KUNAI_TUNING_MPV_RECONNECT_BASE_BACKOFF_MS`.
+Non-numeric/`NaN` env values are ignored (fall back to config, then default).
+
+**Consuming tuning:** read resolved values from `config.tuning` (the
+`ConfigService` getter), never the raw `tuningOverrides`. Services that hold a
+`KitsuneConfig` snapshot rather than the `ConfigService` can call
+`resolveTuning(config.tuningOverrides)` directly (see `PersistentMpvSession`).
+
+Add a new knob by adding one entry to `TUNING_SPEC` (and the `TuningConfig`
+interface) — defaults, bounds, env key, and the config getter all follow
+automatically. Migrate remaining hardcoded constants to this namespace
+opportunistically as their files are touched.
+
 ## Comment Rules
 
 - add comments only when control flow, migration seams, or provider behavior would otherwise be easy to misread
