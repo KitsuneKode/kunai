@@ -31,6 +31,7 @@ import { getPickerLayout } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
 import { PostPlayShell } from "./post-play-shell";
 import { AppHeader } from "./primitives/AppHeader";
+import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { SegmentedControl } from "./primitives/SegmentedControl";
 import {
   clearRootContentSession,
@@ -54,7 +55,16 @@ import {
 import { InputField, ShellFrame } from "./shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
-import { APP_LABEL, heatColor, palette, statusColor } from "./shell-theme";
+import { APP_LABEL, palette, statusColor } from "./shell-theme";
+import {
+  buildStatsView,
+  STATS_KINDS,
+  STATS_RANGES,
+  STATS_TABS,
+  statsKindFromIndex,
+  statsRangeFromIndex,
+  statsTabFromIndex,
+} from "./stats-view";
 import { getNextStreakMilestone } from "./streak-milestone";
 import {
   toShellAction,
@@ -373,7 +383,7 @@ function AppRoot({ container }: { container: Container }) {
       }
       setSyncHealth(container.syncService.getHealth());
       try {
-        setPlaylistCount(container.playlistService.getStatus().unplayedCount);
+        setPlaylistCount(container.queueService.getStatus().unplayedCount);
       } catch {
         // best-effort
       }
@@ -406,7 +416,7 @@ function AppRoot({ container }: { container: Container }) {
     refresh();
     const timer = setInterval(refresh, 60_000);
     return () => clearInterval(timer);
-  }, [container.statsService, container.syncService, container.playlistService, container.config]);
+  }, [container.statsService, container.syncService, container.queueService, container.config]);
 
   useEffect(() => {
     const lastShown = container.config.lastWeeklyDigestShownAt;
@@ -1840,68 +1850,6 @@ export { openBrowseShell } from "./browse-shell";
 
 // ─── StatsShell ─────────────────────────────────────────────────────────────
 
-const HEATMAP_LEVELS = [
-  { char: "·", color: heatColor(0) }, // faint — no activity
-  { char: "░", color: heatColor(1) }, // low
-  { char: "▒", color: heatColor(2) }, // medium-low
-  { char: "▓", color: heatColor(3) }, // medium-high
-  { char: "█", color: heatColor(4) }, // max (amber ramp peak)
-] as const;
-
-function heatmapLevel(count: number, max: number) {
-  if (count === 0) return HEATMAP_LEVELS[0];
-  if (max === 0) return HEATMAP_LEVELS[1];
-  const ratio = count / max;
-  if (ratio < 0.25) return HEATMAP_LEVELS[1];
-  if (ratio < 0.5) return HEATMAP_LEVELS[2];
-  if (ratio < 0.75) return HEATMAP_LEVELS[3];
-  return HEATMAP_LEVELS[4];
-}
-
-type HeatmapCell = { char: string; color: string; count: number; date: string };
-type HeatmapWeek = { cells: HeatmapCell[]; weekStartDate: string };
-
-function buildHeatmapGrid(
-  heatmap: readonly import("@/domain/lists/StatsService").DailyActivity[],
-  maxWeeks: number,
-): { grid: HeatmapWeek[]; monthLabels: { weekStartDate: string; label: string }[] } {
-  const byDate = new Map<string, number>();
-  for (const d of heatmap) byDate.set(d.date, d.watchedCount);
-  const maxCount = Math.max(...heatmap.map((d) => d.watchedCount), 1);
-
-  const now = new Date();
-  const endDate = new Date(now);
-  endDate.setHours(0, 0, 0, 0);
-  const startMs = endDate.getTime() - maxWeeks * 7 * 86_400_000;
-  const startDate = new Date(startMs);
-  startDate.setDate(startDate.getDate() - startDate.getDay());
-
-  const grid: HeatmapWeek[] = [];
-  const monthLabels: { weekStartDate: string; label: string }[] = [];
-  const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
-
-  let cur = new Date(startDate);
-  let lastMonth = -1;
-  while (cur.getTime() <= endDate.getTime() && grid.length < maxWeeks) {
-    const weekStartDate = cur.toISOString().slice(0, 10);
-    const cells: HeatmapCell[] = [];
-    for (let day = 0; day < 7; day++) {
-      const dateStr = cur.toISOString().slice(0, 10);
-      const count = byDate.get(dateStr) ?? 0;
-      const level = heatmapLevel(count, maxCount);
-      cells.push({ char: level.char, color: level.color, count, date: dateStr });
-      if (day === 0 && cur.getMonth() !== lastMonth) {
-        monthLabels.push({ weekStartDate, label: MONTHS[cur.getMonth()] ?? "" });
-        lastMonth = cur.getMonth();
-      }
-      cur.setDate(cur.getDate() + 1);
-    }
-    grid.push({ cells, weekStartDate });
-  }
-
-  return { grid, monthLabels };
-}
-
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
     let cmd: string[];
@@ -1922,13 +1870,6 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-const STATS_KINDS = ["all", "series", "anime", "movie"] as const;
-type StatsKind = (typeof STATS_KINDS)[number];
-
-function statsKindLabel(k: StatsKind): string {
-  return k === "all" ? "all" : k === "movie" ? "movies" : k;
-}
-
 function StatsShell({
   statsService,
   statsFormatter,
@@ -1938,46 +1879,40 @@ function StatsShell({
   statsFormatter: import("@/domain/lists/StatsFormatter").StatsFormatter;
   onBack: () => void;
 }) {
-  const [windowIdx, setWindowIdx] = useState(0);
+  const [tabIdx, setTabIdx] = useState(0);
+  const [rangeIdx, setRangeIdx] = useState(0);
   const [kindIdx, setKindIdx] = useState(0);
   const [copiedFlash, setCopiedFlash] = useState<string | null>(null);
   const { stdout } = useStdout();
   const rows = stdout.rows ?? 24;
   const cols = stdout.columns ?? 80;
   const innerWidth = Math.max(30, cols - 6);
+  const available = rows - 4;
 
-  const windows = [30, 90, 99999] as const;
-  const windowDays = windows[windowIdx] ?? 30;
-  const activeKind = STATS_KINDS[kindIdx] ?? "all";
+  const activeTab = statsTabFromIndex(tabIdx);
+  const activeRange = statsRangeFromIndex(rangeIdx);
+  const activeKind = statsKindFromIndex(kindIdx);
+  const windowDays = activeRange === "all" ? 99_999 : activeRange === "7d" ? 7 : 30;
   const mediaKindFilter = activeKind === "all" ? undefined : activeKind;
 
   const stats = useMemo(
     () => statsService.getStats(windowDays, mediaKindFilter),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [windowIdx, kindIdx],
-  );
-  const { current: streakDays } = useMemo(
-    () => statsService.computeStreak(mediaKindFilter),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [kindIdx],
+    [rangeIdx, kindIdx],
   );
 
-  // height budget (AppRoot header = 4 with safety margin)
-  const available = rows - 4;
-  // heatmap = 1 (month labels) + 7 (day rows) + 1 (marginTop) = 9 rows
-  const showHeatmap = available >= 18;
-  // top shows header + N rows + marginTop
-  const fixedRows =
-    2 /* title+margin */ + 2 /* streak+weekly */ + (showHeatmap ? 9 : 0) + 3 /* footer */;
-  const showsRowBudget = Math.max(0, available - fixedRows - 2 /* shows header+margin */);
-  const maxTopShows = Math.min(5, showsRowBudget);
-
-  // heatmap weeks that fit (day-label=4 chars, cell=2 chars each), bounded to
-  // ~12 months (52 weeks) so a wide terminal doesn't stretch it to multiple years.
-  const maxWeeks = Math.min(52, Math.max(8, Math.floor((innerWidth - 4) / 2)));
-  const { grid, monthLabels } = useMemo(
-    () => buildHeatmapGrid(stats.heatmap, maxWeeks),
-    [stats.heatmap, maxWeeks],
+  const view = useMemo(
+    () =>
+      buildStatsView({
+        stats,
+        statsFormatter,
+        tab: activeTab,
+        range: activeRange,
+        kind: activeKind,
+        innerWidth,
+        availableRows: available,
+      }),
+    [stats, statsFormatter, activeTab, activeRange, activeKind, innerWidth, available],
   );
 
   useInput((input, key) => {
@@ -1989,17 +1924,25 @@ function StatsShell({
       onBack();
       return;
     }
+    if (key.leftArrow) {
+      setTabIdx((i) => (i + STATS_TABS.length - 1) % STATS_TABS.length);
+      return;
+    }
+    if (key.rightArrow) {
+      setTabIdx((i) => (i + 1) % STATS_TABS.length);
+      return;
+    }
     if ((key.tab || input === "\t") && key.shift) {
       setKindIdx((i) => (i + 1) % STATS_KINDS.length);
       return;
     }
     if (key.tab || input === "\t") {
-      setWindowIdx((i) => (i + 1) % 3);
+      setRangeIdx((i) => (i + 1) % STATS_RANGES.length);
       return;
     }
-    if (input === "1") setWindowIdx(0);
-    else if (input === "2") setWindowIdx(1);
-    else if (input === "3") setWindowIdx(2);
+    if (input === "1") setRangeIdx(0);
+    else if (input === "2") setRangeIdx(1);
+    else if (input === "3") setRangeIdx(2);
     else if (input === "s") {
       const shareText = [
         statsFormatter.formatSummaryLine(stats),
@@ -2017,114 +1960,181 @@ function StatsShell({
     }
   });
 
-  const summaryLine = statsFormatter.formatSummaryLine(stats);
-  const weeklyLine = statsFormatter.formatWeeklyDigest(stats);
-  const topShows = stats.topShows.slice(0, maxTopShows);
-  const maxShowSeconds = Math.max(...topShows.map((s) => s.totalSeconds), 1);
-  const BAR_WIDTH = 8;
-
-  const titleWidth = maxTopShows > 0 ? Math.max(...topShows.map((s) => s.title.length), 6) : 0;
-  const clampedTitleWidth = Math.min(titleWidth, Math.max(10, innerWidth - BAR_WIDTH - 24));
+  const metricsPairs: {
+    left: (typeof view.metrics)[number] | null;
+    right: (typeof view.metrics)[number] | null;
+  }[] = [];
+  for (let i = 0; i < view.metrics.length; i += 2) {
+    metricsPairs.push({ left: view.metrics[i] ?? null, right: view.metrics[i + 1] ?? null });
+  }
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* Title + segmented filter (kind) and range controls */}
-      <Box justifyContent="space-between">
-        <Box>
-          <Text bold color={palette.text}>
-            Watch Stats
-          </Text>
-          <Text color={palette.dim}>{"   "}</Text>
-          <SegmentedControl
-            labels={STATS_KINDS.map((k) => statsKindLabel(k))}
-            activeIndex={kindIdx}
-          />
-        </Box>
+      <Box justifyContent="space-between" alignItems="flex-start">
+        <ClaudeTabRow labels={view.tabLabels} activeIndex={view.tabIndex} />
         <SegmentedControl
-          labels={["30d", "90d", "all"]}
-          activeIndex={windowIdx}
-          activeFg={palette.accent}
+          labels={view.rangeLabels}
+          activeIndex={view.rangeIndex}
+          activeFg={palette.text}
           activeBg={palette.accentFill}
         />
       </Box>
 
-      {/* Summary */}
-      <Box marginTop={1} flexDirection="column">
-        {streakDays >= 2 ? (
-          <Text>
-            <Text color={palette.accentDeep}>{"🔥 " + streakDays + "d streak"}</Text>
-            <Text color={palette.muted}>
-              {" · " + summaryLine.replace(/🔥 \d+d streak · /, "")}
-            </Text>
-          </Text>
-        ) : (
-          <Text color={palette.muted}>{summaryLine}</Text>
-        )}
-        <Text color={palette.dim}>{weeklyLine}</Text>
+      <Box marginBottom={1}>
+        <SegmentedControl
+          labels={view.kindLabels}
+          activeIndex={view.kindIndex}
+          activeFg={palette.text}
+          activeBg={palette.accentFill}
+        />
       </Box>
 
-      {/* Heatmap */}
-      {showHeatmap && grid.length > 0 ? (
+      {view.state === "empty" ? (
         <Box marginTop={1} flexDirection="column">
-          {/* Month label row */}
-          <Box>
-            <Text color={palette.dim}>{"    "}</Text>
-            {grid.map((week) => {
-              const monthEntry = monthLabels.find((m) => m.weekStartDate === week.weekStartDate);
-              return (
-                <Text key={`month-${week.weekStartDate}`} color={palette.dim}>
-                  {(monthEntry?.label ?? " ") + " "}
-                </Text>
-              );
-            })}
+          <Text bold color={palette.text}>
+            No watch stats yet
+          </Text>
+          <Text color={palette.muted}>Watch an episode and Kunai will build your rhythm here.</Text>
+        </Box>
+      ) : (
+        <>
+          <Box marginTop={1} flexDirection="column">
+            {view.streakHero ? (
+              <Text>
+                <Text color={palette.accentDeep}>{"🔥 " + view.streakHero}</Text>
+                {view.streakDetail ? (
+                  <Text color={palette.muted}>{" · " + view.streakDetail}</Text>
+                ) : null}
+              </Text>
+            ) : (
+              <Text color={palette.muted}>{view.streakDetail}</Text>
+            )}
+            <Text color={palette.dim}>{view.weeklyLine}</Text>
           </Box>
-          {/* Day rows */}
-          {(["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const).map((dayLabel, dayIdx) => (
-            <Box key={dayLabel}>
-              <Text color={palette.dim}>{dayLabel + " "}</Text>
-              {grid.map((week) => {
-                const cell = week.cells[dayIdx];
-                return (
-                  <Text
-                    key={cell?.date ?? `${dayLabel}-${week.weekStartDate}`}
-                    color={cell?.color ?? heatColor(0)}
-                  >
-                    {(cell?.char ?? " ") + " "}
-                  </Text>
-                );
-              })}
-            </Box>
-          ))}
-        </Box>
-      ) : null}
 
-      {/* Top shows */}
-      {topShows.length > 0 ? (
-        <Box marginTop={1} flexDirection="column">
-          <Text color={palette.muted}>Top shows</Text>
-          {topShows.map((show) => {
-            const ratio = show.totalSeconds / maxShowSeconds;
-            // Any watched time keeps at least one block so smaller shows never
-            // collapse to an all-empty bar when one title dominates.
-            const filled = show.totalSeconds > 0 ? Math.max(1, Math.round(ratio * BAR_WIDTH)) : 0;
-            const h = Math.floor(show.totalSeconds / 3600);
-            const m = Math.floor((show.totalSeconds % 3600) / 60);
-            const duration = h > 0 ? `${h}h ${m}m` : `${m}m`;
-            const titleDisplay = show.title.slice(0, clampedTitleWidth).padEnd(clampedTitleWidth);
-            return (
-              <Box key={show.titleId}>
-                <Text color={palette.text}>{titleDisplay}</Text>
-                <Text color={palette.dim}>{"  "}</Text>
-                <Text color={palette.accentDeep}>{"█".repeat(filled)}</Text>
-                <Text color={palette.dim}>{"░".repeat(BAR_WIDTH - filled)}</Text>
-                <Text color={palette.dim}>{`  ${show.episodeCount}ep · ${duration}`}</Text>
+          {view.tab === "overview" ? (
+            <>
+              {view.heatmap ? (
+                <Box marginTop={1} flexDirection="column">
+                  <Box>
+                    <Text color={palette.dim}>{"    "}</Text>
+                    {view.heatmap.grid.map((week) => {
+                      const monthEntry = view.heatmap!.monthLabels.find(
+                        (m) => m.weekStartDate === week.weekStartDate,
+                      );
+                      return (
+                        <Text key={`month-${week.weekStartDate}`} color={palette.dim}>
+                          {(monthEntry?.label ?? " ") + " "}
+                        </Text>
+                      );
+                    })}
+                  </Box>
+                  {view.heatmap.dayLabels.map((dayLabel, dayIdx) => (
+                    <Box key={`dow-${dayIdx}`}>
+                      <Text color={palette.dim}>{(dayLabel || "  ").padEnd(4)}</Text>
+                      {view.heatmap!.grid.map((week) => {
+                        const cell = week.cells[dayIdx];
+                        return (
+                          <Text
+                            key={cell?.date ?? `${dayIdx}-${week.weekStartDate}`}
+                            color={cell?.color ?? palette.dim}
+                          >
+                            {(cell?.char ?? " ") + " "}
+                          </Text>
+                        );
+                      })}
+                    </Box>
+                  ))}
+                  <Box marginTop={1}>
+                    <Text color={palette.muted}>Less </Text>
+                    {view.heatmap.legend.slice(1).map((entry, index) => (
+                      <Text key={`legend-${index}`} color={entry.color}>
+                        {entry.char}
+                      </Text>
+                    ))}
+                    <Text color={palette.muted}> More · hue = what you watched</Text>
+                  </Box>
+                </Box>
+              ) : null}
+
+              {view.typeBreakdownBar.length > 0 ? (
+                <Box marginTop={1} flexDirection="column">
+                  <Text color={palette.muted}>This watch year</Text>
+                  <Box>
+                    {view.typeBreakdownBar.map((segment) => (
+                      <Text
+                        key={segment.color}
+                        color={segment.color}
+                        backgroundColor={segment.color}
+                      >
+                        {"█".repeat(Math.max(1, Math.round((segment.widthPct / 100) * 24)))}
+                      </Text>
+                    ))}
+                  </Box>
+                  {view.typeBreakdownLabel ? (
+                    <Text color={palette.dim}>{view.typeBreakdownLabel}</Text>
+                  ) : null}
+                </Box>
+              ) : null}
+
+              <Box marginTop={1} flexDirection="column">
+                {metricsPairs.map((pair) => (
+                  <Box key={pair.left?.label ?? pair.right?.label ?? "metric-row"}>
+                    <Box width={Math.floor(innerWidth / 2)}>
+                      {pair.left ? (
+                        <>
+                          <Text color={palette.muted}>{pair.left.label.padEnd(18)}</Text>
+                          <Text bold color={palette.text}>
+                            {pair.left.value}
+                            {pair.left.suffix ? (
+                              <Text color={palette.muted}>{pair.left.suffix}</Text>
+                            ) : null}
+                          </Text>
+                        </>
+                      ) : null}
+                    </Box>
+                    <Box width={Math.floor(innerWidth / 2)}>
+                      {pair.right ? (
+                        <>
+                          <Text color={palette.muted}>{pair.right.label.padEnd(18)}</Text>
+                          <Text bold color={palette.text}>
+                            {pair.right.value}
+                            {pair.right.suffix ? (
+                              <Text color={palette.muted}>{pair.right.suffix}</Text>
+                            ) : null}
+                          </Text>
+                        </>
+                      ) : null}
+                    </Box>
+                  </Box>
+                ))}
               </Box>
-            );
-          })}
-        </Box>
-      ) : null}
 
-      {/* Footer */}
+              {view.comparisonLine ? (
+                <Box marginTop={1}>
+                  <Text color={palette.ok}>{view.comparisonLine}</Text>
+                </Box>
+              ) : null}
+            </>
+          ) : null}
+
+          {view.topTitles.length > 0 ? (
+            <Box marginTop={1} flexDirection="column">
+              <Text color={palette.muted}>Top titles</Text>
+              {view.topTitles.map((show) => (
+                <Box key={show.titleId}>
+                  <Text color={palette.text}>{show.title}</Text>
+                  <Text color={palette.dim}>{"  "}</Text>
+                  <Text color={palette.accentDeep}>{show.barFilled}</Text>
+                  <Text color={palette.dim}>{show.barEmpty}</Text>
+                  <Text color={palette.dim}>{`  ${show.meta}`}</Text>
+                </Box>
+              ))}
+            </Box>
+          ) : null}
+        </>
+      )}
+
       <Box marginTop={1} flexDirection="column">
         <Text color={palette.dim}>{"─".repeat(Math.min(innerWidth, cols - 4))}</Text>
         {copiedFlash ? (
@@ -2135,13 +2145,7 @@ function StatsShell({
           </Box>
         ) : (
           <Box marginTop={1}>
-            <Text color={palette.dim}>1–3 range</Text>
-            <Text color={palette.dim}> · </Text>
-            <Text color={palette.dim}>⇧Tab filter</Text>
-            <Text color={palette.dim}> · </Text>
-            <Text color={palette.dim}>s share</Text>
-            <Text color={palette.dim}> · </Text>
-            <Text color={palette.dim}>q back</Text>
+            <Text color={palette.dim}>{view.footerHints}</Text>
           </Box>
         )}
       </Box>

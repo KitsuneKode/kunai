@@ -513,6 +513,23 @@
   </div>
   <div class="note"><b>Changed:</b> redesign-v3's intensity heatmap rescued; intensity ramp recolored to the rose <code>heatRamp</code>, type-hue cells mapped to Sakura's tuned anime/series/movie/mixed set. <b>Owner:</b> Stats view + <code>heatColor</code>/<code>contentTintColor</code> in <code>shell-theme.ts</code>.</div>
 
+  <!-- ============================ HISTORY ============================ -->
+  <h2>9 · History — resume-first return loop</h2>
+  <p class="h2sub"><code>ClaudeTabRow</code> filters (Continue · Completed · New episodes · All), list rows with ep + status + recency, preview rail on wide terminals, <code>ResumeCard</code> under selection. New episodes tab groups under <b class="rose">Ready for you now</b>.</p>
+  <div class="term">
+    <div class="head"><span><span class="brand">🦊 Kunai</span> · <span class="chip">History</span></span><span><span class="dot-ok">●</span> ready · 178×41</span></div>
+    <div class="body">
+      <div class="tabs" style="margin-bottom:14px"><span class="on">Continue</span><span class="off">Completed</span><span class="off">New episodes</span><span class="off">All</span></div>
+      <div class="group"><span>Continue watching</span></div>
+      <div class="row sel"><span class="bar">▌</span><span class="ttl b">Frieren: Beyond Journey's End</span><span class="ep">S01E28</span><span class="st ok">62%</span></div>
+      <div class="row"><span class="bar"> </span><span class="ttl">Blue Lock</span><span class="ep">S01E14</span><span class="st muted">new since E13</span></div>
+      <div class="card" style="margin-top:12px"><span class="rose b">↵ Continue</span><span class="muted"> · same stream · saved position</span></div>
+      <div class="meta" style="margin-top:14px">Resume first, then picks <span class="rose">ready for you now</span> · <span class="dim">/calendar · /history</span></div>
+    </div>
+    <div class="foot"><span><span class="key">[tab]</span> filter &nbsp; <span class="key">[↑↓]</span> select &nbsp; <span class="key">[enter]</span> resume &nbsp; <span class="key">[/]</span> commands</span><span class="surface">History</span></div>
+  </div>
+  <div class="note"><b>Stub:</b> wire to <code>history-shell.tsx</code> + <code>history-view.ts</code>; F1 capture <code>capture-history.tsx</code>. Locked calendar comp: <code>kunai-sakura-calendar-locked.html</code>.</div>
+
   <p class="sub" style="margin-top:48px"><b class="text">Not yet drawn here</b> (lower drift / lower stakes): Library shelf, Downloads queue, onboarding. Add once the core loop above is ratified.</p>
 
 </main>

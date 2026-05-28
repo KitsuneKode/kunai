@@ -127,14 +127,60 @@ function GroupLabel({ label, width }: { readonly label: string; readonly width: 
 
 // ── Discovery cards ───────────────────────────────────────────────────────────
 
+function DiscoveryCard({
+  card,
+  width,
+}: {
+  readonly card: PostPlayDiscoveryCard;
+  readonly width: number;
+}) {
+  const titleWidth = Math.max(8, width - 4);
+  const reasonWidth = Math.max(4, width - 4);
+  return (
+    <Box
+      borderStyle="single"
+      borderColor={palette.lineSoft}
+      paddingX={1}
+      paddingY={0}
+      flexDirection="column"
+      width={width}
+    >
+      <Text color={palette.accent} bold>
+        {String(card.index)}
+      </Text>
+      <Text color={palette.text} bold>
+        {truncateLine(card.title, titleWidth)}
+      </Text>
+      {card.reason ? (
+        <Text color={palette.muted}>{truncateLine(card.reason, reasonWidth)}</Text>
+      ) : null}
+    </Box>
+  );
+}
+
 function DiscoveryCards({
   cards,
   width,
+  layout,
 }: {
   readonly cards: readonly PostPlayDiscoveryCard[];
   readonly width: number;
+  readonly layout: "list" | "cards";
 }) {
   if (cards.length === 0) return null;
+  if (layout === "cards") {
+    const gap = 2;
+    const cardWidth = Math.max(16, Math.floor((width - gap * (cards.length - 1)) / cards.length));
+    return (
+      <Box flexDirection="row" marginTop={1} flexWrap="nowrap">
+        {cards.map((card, index) => (
+          <Box key={card.id} marginRight={index === cards.length - 1 ? 0 : gap}>
+            <DiscoveryCard card={card} width={cardWidth} />
+          </Box>
+        ))}
+      </Box>
+    );
+  }
   return (
     <Box flexDirection="column" marginTop={1}>
       {cards.map((card) => (
@@ -256,14 +302,7 @@ function RailArtwork({
   });
 
   return (
-    <Box
-      width={width}
-      minHeight={7}
-      justifyContent="center"
-      alignItems="center"
-      borderStyle="single"
-      borderColor={palette.lineSoft}
-    >
+    <Box width={width} minHeight={7} justifyContent="center" alignItems="center">
       {poster.kind !== "none" ? (
         <Text>{poster.placeholder}</Text>
       ) : (
@@ -405,7 +444,11 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         {showDiscovery && view.discovery.length > 0 ? (
           <>
             <GroupLabel label={view.discoveryHeading} width={bodyWidth} />
-            <DiscoveryCards cards={view.discovery} width={bodyWidth} />
+            <DiscoveryCards
+              cards={view.discovery}
+              width={bodyWidth}
+              layout={isWide ? "cards" : "list"}
+            />
           </>
         ) : null}
 

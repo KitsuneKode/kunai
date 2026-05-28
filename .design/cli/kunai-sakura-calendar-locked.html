@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kunai — Sakura calendar (LOCKED)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: oklch(0.103 0.014 350); --row: oklch(0.165 0.022 352); --row-sel: oklch(0.218 0.046 356);
+    --line-soft: oklch(0.198 0.020 352); --text: oklch(0.948 0.012 350); --text-2: oklch(0.772 0.016 352);
+    --muted: oklch(0.598 0.020 352); --dim: oklch(0.442 0.018 352);
+    --rose: oklch(0.800 0.130 10); --rose-fill: oklch(0.640 0.120 6);
+    --ok: oklch(0.845 0.095 172); --ok-dim: oklch(0.615 0.075 172);
+    --font: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:var(--font); font-size:14px; color:var(--text-2);
+    background: radial-gradient(circle at 88% -6%, oklch(0.30 0.10 12 / .20), transparent 36rem), oklch(0.072 0.010 350); }
+  main { max-width:960px; margin:0 auto; padding:40px 24px 80px; }
+  h1 { color:var(--text); font-size:22px; margin:0 0 8px; }
+  .sub { color:var(--muted); margin-bottom:32px; max-width:72ch; line-height:1.5; }
+  .term { border:1px solid var(--line-soft); border-radius:10px; background:var(--bg); overflow:hidden; }
+  .head { padding:10px 18px; border-bottom:1px solid var(--line-soft); color:var(--muted); font-size:13px; }
+  .body { padding:18px 22px; }
+  .brand { color:var(--rose); font-weight:700; }
+  .tabs { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .tab { padding:4px 12px; border-radius:5px; font-size:13px; color:var(--muted); font-weight:500; }
+  .tab.on { background:var(--rose-fill); color:var(--text); font-weight:700; }
+  .daystrip { display:flex; align-items:center; gap:16px; margin:12px 0 16px; color:var(--muted); font-size:13px; }
+  .daystrip .day { font-weight:500; letter-spacing:.04em; }
+  .daystrip .day.on { color:var(--rose); font-weight:700; }
+  .daystrip .nav { color:var(--dim); }
+  .group { color:var(--rose); font-size:11px; text-transform:uppercase; letter-spacing:.14em; margin:14px 0 6px; }
+  .row { display:grid; grid-template-columns:52px 1fr 72px 100px; gap:8px; padding:5px 6px; border-radius:6px; align-items:center; }
+  .row.sel { background:var(--row-sel); }
+  .row .t { color:var(--text); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .ep { color:var(--muted); font-size:13px; }
+  .row .st { text-align:right; font-size:13px; white-space:nowrap; }
+  .st.ok { color:var(--ok); } .st.rose { color:var(--rose); } .st.dim { color:var(--dim); }
+  .split { display:grid; grid-template-columns:1fr 240px; gap:24px; margin-top:8px; }
+  .rail { border-left:1px solid var(--line-soft); padding-left:20px; }
+  .poster { height:140px; border-radius:8px; background:linear-gradient(150deg, oklch(0.30 0.10 10 / .35), var(--bg));
+    display:flex; align-items:center; justify-content:center; color:var(--rose); font-weight:700; }
+  .fact { display:flex; justify-content:space-between; font-size:13px; padding:2px 0; }
+  .fact .k { color:var(--muted); }
+  .resume { margin-top:12px; background:var(--row-sel); border-radius:6px; padding:8px 10px; display:flex; justify-content:space-between; color:var(--text); font-weight:500; }
+  .foot { padding:10px 18px; border-top:1px solid var(--line-soft); color:var(--dim); font-size:12px; }
+  .lock { border-left:3px solid var(--rose); padding-left:12px; margin:24px 0; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sakura calendar — <span style="color:var(--rose)">LOCKED</span></h1>
+  <p class="sub">Claude Code tab rhythm + 3–4 day strip + unified timestamp list (anime · series · movies). Rejects canonical 7-day grid. Status: mint = ready · rose = countdown · dim = future.</p>
+
+  <div class="lock"><b>Wide (≥124 cols)</b> — list + borderless preview rail + ResumeCard</div>
+
+  <div class="term">
+    <div class="head"><span class="brand">🦊 Kunai</span> · calendar · anime schedule · 18 this week</div>
+    <div class="body">
+      <div class="tabs">
+        <span class="tab on">All</span><span class="tab">Anime</span><span class="tab">Series</span><span class="tab">Movies</span><span class="tab">Tracked</span>
+      </div>
+      <div class="daystrip">
+        <span class="nav">‹</span>
+        <span class="day">THU 28</span>
+        <span class="day on">FRI 29</span>
+        <span class="day">SAT 30</span>
+        <span class="nav">›</span>
+        <span style="margin-left:auto;color:var(--dim);font-size:12px">← → day · esc all days</span>
+      </div>
+      <div class="group">For you · releasing today</div>
+      <div class="row sel"><span>09:30</span><span class="t">Frieren</span><span class="ep">EP 29</span><span class="st ok">✓ ready</span></div>
+      <div class="row"><span>16:30</span><span class="t">Reborn as a Cat</span><span class="ep">EP 34</span><span class="st rose">◷ in 2h</span></div>
+      <div class="row"><span>19:30</span><span class="t">Dr. Stone</span><span class="ep">EP 07</span><span class="st dim">· 23:30</span></div>
+
+      <div class="split">
+        <div></div>
+        <div class="rail">
+          <div class="poster">Frieren</div>
+          <div style="margin-top:10px;font-weight:700;color:var(--text)">Frieren</div>
+          <div style="color:var(--muted);font-size:13px">Anime · EP 29 · 09:30</div>
+          <div class="fact" style="margin-top:8px"><span class="k">Schedule</span><span style="color:var(--ok)">available now</span></div>
+          <div class="fact"><span class="k">Tracked</span><span style="color:var(--ok)">on your list</span></div>
+          <div class="resume"><span>Resume EP 29</span><span style="color:var(--rose)">enter ↵</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="foot">enter open · tab type · ← → day · / commands</div>
+  </div>
+
+  <div class="lock" style="margin-top:32px"><b>Narrow (72 cols)</b> — 3-day strip, list only, rail facts inline under selection</div>
+</main>
+</body>
+</html>

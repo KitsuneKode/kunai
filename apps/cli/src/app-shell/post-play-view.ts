@@ -17,6 +17,7 @@
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
+import { RETURN_LOOP_POST_PLAY_CAUGHT_UP_CALENDAR } from "./return-loop-copy";
 import type { PlaybackRecommendationRailItem } from "./types";
 
 // ── Hero kind ─────────────────────────────────────────────────────────────────
@@ -344,7 +345,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
         {
           id: "calendar",
           label: "Calendar",
-          detail: "see upcoming broadcasts",
+          detail: RETURN_LOOP_POST_PLAY_CAUGHT_UP_CALENDAR,
           shortcut: "/calendar",
           primary: false,
         },

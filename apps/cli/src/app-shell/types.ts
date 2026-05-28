@@ -207,6 +207,8 @@ export type BrowseShellOption<T> = {
   previewTitle?: string;
   previewMeta?: readonly string[];
   previewGroup?: string;
+  /** ISO date (YYYY-MM-DD) for schedule day dedup and strip labels. */
+  previewDayKey?: string;
   previewTime?: string;
   previewBadge?: string;
   /** Release-status for calendar/schedule rows: released · airing-today · upcoming. */

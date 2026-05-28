@@ -117,7 +117,7 @@ export function Footer({
   if (commandMode) {
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text color="white">{truncateLine(taskLabel, taskWidth)}</Text>
+        <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
         <Box marginTop={1} flexDirection="column">
           <Text bold color={palette.text}>
             Command palette
@@ -135,7 +135,7 @@ export function Footer({
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text color="white">{truncateLine(taskLabel, taskWidth)}</Text>
+      <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
       {visibleActions.length > 0 ? (
         <Box flexWrap="nowrap" marginTop={1}>
           {visibleActions.map((action, index) => {
@@ -444,7 +444,7 @@ export const DetailLine = React.memo(function DetailLine({
 
 export const BrowseTitle = React.memo(function BrowseTitle({ mode }: { mode: "series" | "anime" }) {
   return (
-    <Text bold color="white">
+    <Text bold color={palette.text}>
       {mode === "anime" ? "Browse your favorite anime" : "Browse your favorite movies and series"}
     </Text>
   );

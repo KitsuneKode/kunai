@@ -3,6 +3,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text, useInput, useStdout } from "ink";
 import React, { useState } from "react";
 
+import { StepIndicator } from "./primitives/StepIndicator";
 import { mountRootContent } from "./root-content-state";
 import { palette } from "./shell-theme";
 
@@ -508,30 +509,15 @@ function TipsSlide({ width, rows }: { width: number; rows: number }) {
   );
 }
 
-// ─── Progress dots ────────────────────────────────────────────────────────────
-
-function SlideDots({
-  current,
-  total,
-  visitedUpTo,
-}: {
-  current: number;
-  total: number;
-  visitedUpTo: number;
-}) {
+function WizStepCounter({ current, total }: { readonly current: number; readonly total: number }) {
   return (
-    <Box gap={1} marginBottom={1}>
-      {Array.from({ length: total }, (_, i) => {
-        const isCompleted = i < visitedUpTo;
-        const isCurrent = i === current;
-        const color = isCurrent ? palette.accent : isCompleted ? palette.ok : palette.dim;
-        return (
-          <Text key={i} color={color}>
-            {isCurrent || isCompleted ? "●" : "○"}
-          </Text>
-        );
-      })}
-    </Box>
+    <Text>
+      <Text color={palette.muted}>{"❮ step "}</Text>
+      <Text color={palette.accent} bold>
+        {String(current + 1)}
+      </Text>
+      <Text color={palette.muted}>{` of ${total} ❯`}</Text>
+    </Text>
   );
 }
 
@@ -549,7 +535,6 @@ function SetupShell({
   const rows = stdout.rows ?? 24;
 
   const [slideIdx, setSlideIdx] = useState(0);
-  const [visitedUpTo, setVisitedUpTo] = useState(0);
   const [audioIdx, setAudioIdx] = useState(0);
   const [subtitleIdx, setSubtitleIdx] = useState(0);
   const [downloadsIdx, setDownloadsIdx] = useState(0);
@@ -568,9 +553,7 @@ function SetupShell({
 
   function advance() {
     if (slideIdx < SLIDE_ORDER.length - 1) {
-      const next = slideIdx + 1;
-      setSlideIdx(next);
-      setVisitedUpTo((prev) => Math.max(prev, next));
+      setSlideIdx(slideIdx + 1);
     } else {
       finish("completed", buildPrefs());
     }
@@ -637,8 +620,14 @@ function SetupShell({
   return (
     <Box flexDirection="column" width={cols} height={rows}>
       {/* Slide progress indicator */}
-      <Box paddingX={Math.max(2, Math.floor((cols - Math.min(cols, 80)) / 2) + 3)} paddingTop={1}>
-        <SlideDots current={slideIdx} total={SLIDE_ORDER.length} visitedUpTo={visitedUpTo} />
+      <Box
+        paddingX={Math.max(2, Math.floor((cols - Math.min(cols, 80)) / 2) + 3)}
+        paddingTop={1}
+        flexDirection="column"
+        gap={1}
+      >
+        <WizStepCounter current={slideIdx} total={SLIDE_ORDER.length} />
+        <StepIndicator total={SLIDE_ORDER.length} current={slideIdx} />
       </Box>
 
       {slide === "welcome" ? <WelcomeSlide width={cols} rows={rows - 2} /> : null}
@@ -676,6 +665,19 @@ function SetupShell({
       {slide === "tips" ? <TipsSlide width={cols} rows={rows - 2} /> : null}
     </Box>
   );
+}
+
+// ─── F1 capture harness ───────────────────────────────────────────────────────
+
+/** Ink F1 capture — welcome slide only (no mountRootContent). */
+export function SetupHarnessWelcomeSlide({
+  width = 100,
+  rows = 40,
+}: {
+  width?: number;
+  rows?: number;
+}) {
+  return <WelcomeSlide width={width} rows={rows} />;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

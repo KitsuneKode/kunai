@@ -4,8 +4,17 @@ import type { SearchResult } from "@/domain/types";
 import { Box, Text } from "ink";
 import React from "react";
 
+import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
+import {
+  ListRow,
+  listRowEpColumn,
+  listRowStatusColumn,
+  listRowTimeColumn,
+  listRowTitleColumn,
+} from "./primitives/ListRow";
+import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock, type StateBlockModel } from "./primitives/StateBlock";
-import { measureColumns, truncateLine } from "./shell-text";
+import { RETURN_LOOP_CALENDAR_EMPTY_TAIL } from "./return-loop-copy";
 import { palette } from "./shell-theme";
 
 export type CalendarDay = {
@@ -58,30 +67,46 @@ export function calendarPriorityBandLabel(band: CalendarPriorityBand): string {
 
 export function buildCalendarDaysFromOptions<T>(
   options: readonly BrowseShellOption<T>[],
-  narrow: boolean,
+  _narrow?: boolean,
 ): readonly CalendarDay[] {
   const seen = new Set<string>();
   const days: CalendarDay[] = [];
   for (const option of options) {
     const group = option.previewGroup;
     if (!group) continue;
-    const key = calendarDayKeyFromGroup(group);
+    const key = option.previewDayKey ?? calendarDayKeyFromGroup(group);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     const isToday = group.includes("Today");
-    days.push({ key, label: key, isToday });
+    const label = calendarDayKeyFromGroup(group);
+    days.push({ key, label, isToday });
   }
+  return days;
+}
 
-  if (!narrow || days.length <= 3) {
-    return days;
-  }
-
-  const todayIndex = days.findIndex((day) => day.isToday);
-  if (todayIndex < 0) {
-    return days.slice(0, 3);
-  }
-  const start = Math.max(0, todayIndex - 1);
-  return days.slice(start, start + 3);
+export function windowCalendarDayStrip(
+  days: readonly CalendarDay[],
+  selectedDayKey: string | null,
+  narrow: boolean,
+): {
+  readonly windowDays: readonly CalendarDay[];
+  readonly hasPrev: boolean;
+  readonly hasNext: boolean;
+} {
+  const visible = narrow ? 3 : 4;
+  const activeIndex = Math.max(
+    0,
+    days.findIndex((day) => (selectedDayKey ? day.key === selectedDayKey : day.isToday)),
+  );
+  const start = Math.min(
+    Math.max(0, activeIndex - Math.floor(visible / 2)),
+    Math.max(0, days.length - visible),
+  );
+  return {
+    windowDays: days.slice(start, start + visible),
+    hasPrev: start > 0,
+    hasNext: start + visible < days.length,
+  };
 }
 
 export function calendarDayKeyFromGroup(group: string): string {
@@ -95,8 +120,9 @@ export function filterCalendarOptionsByDay<T>(
 ): readonly BrowseShellOption<T>[] {
   if (dayKey === null) return options;
   return options.filter((option) => {
-    if (!option.previewGroup) return false;
-    return calendarDayKeyFromGroup(option.previewGroup) === dayKey;
+    if (!option.previewGroup && !option.previewDayKey) return false;
+    const key = option.previewDayKey ?? calendarDayKeyFromGroup(option.previewGroup ?? "");
+    return key === dayKey;
   });
 }
 
@@ -245,7 +271,7 @@ export function calendarReleaseRowPresentation<T>(
     return { glyph: "◐ ", color: palette.dim, dim: true, label };
   }
   if (state === "missed") {
-    return { glyph: "· ", color: palette.dim, dim: true, label };
+    return { glyph: "· ", color: palette.dangerDim, dim: true, label };
   }
   if (state === "failed") {
     return { glyph: "× ", color: palette.danger, dim: false, label };
@@ -317,7 +343,7 @@ export function buildCalendarEmptyState(modeLabel: string): StateBlockModel {
   return {
     kind: "empty",
     title: "Nothing on the schedule",
-    detail: `No ${modeLabel} releases matched this day and filter. Try another day or open /discover.`,
+    detail: `No ${modeLabel} releases matched this day and filter. Try another day or open /discover. ${RETURN_LOOP_CALENDAR_EMPTY_TAIL}`,
   };
 }
 
@@ -355,25 +381,13 @@ export function CalendarScheduleStatus({
 export function CalendarDayStrip({
   days,
   selectedDayKey,
+  narrow = false,
 }: {
   days: readonly CalendarDay[];
   selectedDayKey: string | null;
+  narrow?: boolean;
 }) {
-  // Window the days to a single clean row (a flex-wrap over all ~18 days wrapped
-  // into ragged lines that collided with the tabs below). Center on the
-  // selected/today day; ‹ › show there is more to scroll.
-  const MAX_VISIBLE = 10;
-  const activeIndex = Math.max(
-    0,
-    days.findIndex((day) => (selectedDayKey ? day.key === selectedDayKey : day.isToday)),
-  );
-  const start = Math.min(
-    Math.max(0, activeIndex - Math.floor(MAX_VISIBLE / 2)),
-    Math.max(0, days.length - MAX_VISIBLE),
-  );
-  const windowDays = days.slice(start, start + MAX_VISIBLE);
-  const hasPrev = start > 0;
-  const hasNext = start + MAX_VISIBLE < days.length;
+  const { windowDays, hasPrev, hasNext } = windowCalendarDayStrip(days, selectedDayKey, narrow);
 
   return (
     <Box flexDirection="row" marginTop={1} marginBottom={1} alignItems="center">
@@ -383,20 +397,19 @@ export function CalendarDayStrip({
       {windowDays.map((day) => {
         const isSelected = selectedDayKey === day.key;
         const isToday = day.isToday;
-        const marker = isToday ? "◉" : isSelected ? "▸" : "·";
         return (
           <Box key={day.key} marginRight={2}>
             <Text
               color={isSelected || isToday ? palette.accent : palette.muted}
               bold={isSelected || isToday}
             >
-              {`${marker} ${day.label}`}
+              {day.label}
             </Text>
           </Box>
         );
       })}
       <Text color={palette.dim} dimColor>
-        {hasNext ? "› " : "  "}
+        {hasNext ? " ›" : "  "}
       </Text>
       <Box marginLeft={1}>
         <Text color={palette.dim} dimColor>
@@ -415,31 +428,23 @@ export function CalendarTypeTabs({
   compact: boolean;
 }) {
   if (compact) return null;
-  return (
-    <Box flexDirection="row" marginTop={1} marginBottom={1}>
-      {CALENDAR_TYPE_TABS.map((tab) => {
-        const active = tab === activeTab;
-        return (
-          <Box key={tab} marginRight={3} flexDirection="column">
-            <Text color={active ? palette.accent : palette.muted}>{tab}</Text>
-            {active ? <Text color={palette.accent}>{"─".repeat(tab.length)}</Text> : null}
-          </Box>
-        );
-      })}
-      <Text color={palette.dim} dimColor>
-        {"⇥ Tab cycles type"}
-      </Text>
-    </Box>
-  );
+  const labels = CALENDAR_TYPE_TABS.map((tab) => (tab === "TV" ? "Series" : tab));
+  const activeIndex = CALENDAR_TYPE_TABS.indexOf(activeTab);
+  return <ClaudeTabRow labels={labels} activeIndex={activeIndex} hint="⇥ Tab cycles type" />;
 }
 
 type CalendarRenderRow<T> = {
   readonly option: BrowseShellOption<T>;
   readonly optionIndex: number;
-  readonly showTimeHeader: boolean;
-  readonly showTbdHeader: boolean;
-  readonly showSectionHeader: string | null;
   readonly timeLabel: string;
+  readonly episodeCode: string;
+  readonly statusLabel: string;
+  readonly statusColor: string;
+  readonly statusDim: boolean;
+  readonly statusGlyph: string;
+  readonly showDayHeader: boolean;
+  readonly dayHeaderLabel: string | null;
+  readonly showForYouHeaderOnce: boolean;
 };
 
 export function buildCalendarRenderRows<T>(
@@ -447,137 +452,118 @@ export function buildCalendarRenderRows<T>(
   windowStart: number,
   windowEnd: number,
   nowMs: number = Date.now(),
+  selectedDayKey: string | null = null,
+  showForYouHeader = false,
 ): readonly CalendarRenderRow<T>[] {
-  const timed: CalendarRenderRow<T>[] = [];
-  const tbd: CalendarRenderRow<T>[] = [];
-  let lastTime: string | null = null;
-  let lastBand: CalendarPriorityBand | null = null;
-  let tbdHeaderAdded = false;
+  const rows: CalendarRenderRow<T>[] = [];
+  let lastDayHeader: string | null = null;
+  let forYouHeaderShown = false;
 
   for (let index = windowStart; index < windowEnd; index += 1) {
     const option = options[index];
     if (!option) continue;
-    const band = calendarPriorityBand(option);
-    const showSectionHeader = band !== lastBand ? calendarPriorityBandLabel(band) : null;
-    lastBand = band;
-
+    const presentation = calendarReleaseRowPresentation(option, nowMs);
     const releaseState = deriveCalendarReleaseState(option, nowMs);
     const timeLabel =
       releaseState === "countdown"
         ? formatCalendarReleaseStateLabel(releaseState, option, nowMs)
-        : (option.previewTime?.trim() ?? "");
-    const isTbd = timeLabel.length === 0;
+        : option.previewTime?.trim() || "TBD";
+    const dayHeaderLabel =
+      selectedDayKey === null && option.previewGroup
+        ? calendarDayKeyFromGroup(option.previewGroup)
+        : null;
+    const showDayHeader = dayHeaderLabel !== null && dayHeaderLabel !== lastDayHeader;
+    if (showDayHeader) lastDayHeader = dayHeaderLabel;
 
-    if (isTbd) {
-      tbd.push({
-        option,
-        optionIndex: index,
-        showTimeHeader: false,
-        showTbdHeader: !tbdHeaderAdded,
-        showSectionHeader,
-        timeLabel: "",
-      });
-      tbdHeaderAdded = true;
-      continue;
-    }
+    const badge = option.previewBadge;
+    const body = option.previewBody ?? option.detail ?? "";
+    const epMatch = body.match(/(?:S\d+E\d+|E\d+)/i);
+    const episodeCode = badge && badge !== "wl" ? badge : (epMatch?.[0]?.toUpperCase() ?? "");
 
-    const showTimeHeader = timeLabel !== lastTime;
-    lastTime = timeLabel;
-    timed.push({
+    const showForYouHeaderOnce = showForYouHeader && !forYouHeaderShown;
+    if (showForYouHeaderOnce) forYouHeaderShown = true;
+
+    rows.push({
       option,
       optionIndex: index,
-      showTimeHeader,
-      showTbdHeader: false,
-      showSectionHeader,
       timeLabel,
+      episodeCode,
+      statusLabel: presentation.label,
+      statusColor: presentation.color,
+      statusDim: presentation.dim,
+      statusGlyph: presentation.glyph.trim(),
+      showDayHeader,
+      dayHeaderLabel: showDayHeader ? dayHeaderLabel : null,
+      showForYouHeaderOnce,
     });
   }
 
-  return [...timed, ...tbd];
+  return rows;
 }
 
 export function CalendarScheduleRow<T>({
   option,
   selected,
   rowWidth,
-  showTimeHeader,
-  showTbdHeader,
-  showSectionHeader,
+  showDayHeader,
+  dayHeaderLabel,
   timeLabel,
-  nowMs = Date.now(),
+  episodeCode,
+  statusLabel,
+  statusColor,
+  statusDim,
+  statusGlyph,
+  showForYouHeader,
+  showForYouHeaderOnce,
 }: {
   option: BrowseShellOption<T>;
   selected: boolean;
   rowWidth: number;
-  showTimeHeader: boolean;
-  showTbdHeader: boolean;
-  showSectionHeader?: string | null;
+  showDayHeader?: boolean;
+  dayHeaderLabel?: string | null;
   timeLabel: string;
+  episodeCode?: string;
+  statusLabel?: string;
+  statusColor?: string;
+  statusDim?: boolean;
+  statusGlyph?: string;
+  showForYouHeader?: boolean;
+  showForYouHeaderOnce?: boolean;
+  showTimeHeader?: boolean;
+  showTbdHeader?: boolean;
+  showSectionHeader?: string | null;
   nowMs?: number;
 }) {
-  const presentation = calendarReleaseRowPresentation(option, nowMs);
+  const presentation = calendarReleaseRowPresentation(option);
+  const ep = episodeCode ?? option.previewBadge ?? "";
+  const status = statusLabel ?? presentation.label;
+  const color = statusColor ?? presentation.color;
+  const dim = statusDim ?? presentation.dim;
+  const glyph = statusGlyph ?? presentation.glyph.trim();
 
-  // Bound the title by the *measured* width of everything else on the row
-  // (marker + glyph + availability label + badge) so the composed line can never
-  // exceed rowWidth and wrap into the next row (B10: garbled/interleaved rows).
-  const badgeText =
-    option.previewBadge === "wl"
-      ? " · tracked"
-      : option.previewBadge
-        ? ` · ${option.previewBadge}`
-        : "";
-  const reservedColumns =
-    2 + // selection marker "▌ "
-    measureColumns(presentation.glyph) +
-    measureColumns(` ${presentation.label}`) +
-    measureColumns(badgeText);
-  const title = truncateLine(option.label, Math.max(8, rowWidth - reservedColumns - 1));
+  const timeWidth = 7;
+  const epWidth = 8;
+  const statusWidth = Math.min(18, Math.max(12, Math.floor(rowWidth * 0.22)));
+  const titleWidth = Math.max(12, rowWidth - timeWidth - epWidth - statusWidth - 4);
 
   return (
     <Box flexDirection="column" width={rowWidth} marginBottom={0}>
-      {showSectionHeader ? (
-        <Box marginTop={1} marginBottom={0}>
-          <Text color={palette.accentDeep} bold>
-            {showSectionHeader}
-          </Text>
-        </Box>
+      {showForYouHeader && showForYouHeaderOnce ? (
+        <SectionGroup label="For you · releasing today" marginTop={1} />
       ) : null}
-      {showTimeHeader ? (
-        <Box marginTop={1} marginBottom={0}>
-          <Text color={palette.text} bold>
-            {timeLabel}
-          </Text>
-        </Box>
+      {showDayHeader && dayHeaderLabel ? (
+        <SectionGroup label={dayHeaderLabel} marginTop={1} />
       ) : null}
-      {showTbdHeader ? (
-        <Box marginTop={1} marginBottom={0}>
-          <Text color={palette.dim} dimColor>
-            time tbd
-          </Text>
-        </Box>
-      ) : null}
-      <Box
-        width={rowWidth}
-        flexDirection="column"
-        backgroundColor={selected ? palette.surfaceActive : undefined}
-      >
-        <Text bold={selected} dimColor={!selected} wrap="truncate">
-          <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
-          <Text color={presentation.color} dimColor={presentation.dim}>
-            {presentation.glyph}
-          </Text>
-          <Text color={selected ? palette.text : palette.textDim}>{title}</Text>
-          <Text color={presentation.color} dimColor={presentation.dim}>
-            {` ${presentation.label}`}
-          </Text>
-          {option.previewBadge && option.previewBadge !== "wl" ? (
-            <Text color={palette.dim}> {`· ${option.previewBadge}`}</Text>
-          ) : null}
-          {option.previewBadge === "wl" ? (
-            <Text color={palette.accentDeep}> {"· tracked"}</Text>
-          ) : null}
-        </Text>
-      </Box>
+      <ListRow
+        selected={selected}
+        rowWidth={rowWidth}
+        columns={[
+          listRowTimeColumn(timeLabel, timeWidth),
+          listRowTitleColumn(option.label, titleWidth),
+          listRowEpColumn(ep, epWidth),
+          listRowStatusColumn(`${glyph} ${status}`, statusWidth, color, dim),
+        ]}
+      />
     </Box>
   );
 }

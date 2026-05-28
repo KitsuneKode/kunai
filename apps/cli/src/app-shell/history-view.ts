@@ -1,0 +1,431 @@
+// =============================================================================
+// history-view.ts — pure view-model builder for history / continue UI
+//
+// Design authority: .design/cli/surfaces/stats-history-library.md
+// =============================================================================
+
+import { reconcileContinueHistory } from "@/domain/continuation/history-reconciliation";
+import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
+import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+
+import {
+  buildHistoryPickerOptions,
+  groupHistoryByRecency,
+  isHistoryPickerContinuable,
+  type HistoryPickerOptionsContext,
+} from "./panel-data";
+import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail";
+import { RETURN_LOOP_HISTORY_NEW_SECTION } from "./return-loop-copy";
+import { describeHistoryReturnLoopDetail, formatNewSinceEpisodeLabel } from "./root-history-bridge";
+import { getWindowStart } from "./shell-text";
+import { palette } from "./shell-theme";
+import type { ShellPickerOption, ShellStatusTone } from "./types";
+
+export const HISTORY_TABS = ["continue", "completed", "new-episodes", "all"] as const;
+export type HistoryTab = (typeof HISTORY_TABS)[number];
+
+export type HistoryViewState = "loading" | "empty" | "success";
+
+export type HistoryViewRow = {
+  readonly titleId: string;
+  readonly title: string;
+  readonly episodeCode: string;
+  readonly statusLabel: string;
+  readonly statusColor: string;
+  readonly statusDim: boolean;
+  readonly detail: string;
+  readonly recencyLabel: string;
+  readonly badge?: string;
+  readonly tone?: ShellStatusTone;
+  readonly progress: { readonly percentage: number; readonly completed: boolean } | null;
+  readonly resumeAction: string;
+};
+
+export type HistoryRenderItem =
+  | { readonly kind: "section"; readonly label: string }
+  | {
+      readonly kind: "row";
+      readonly row: HistoryViewRow;
+      readonly flatIndex: number;
+      readonly selected: boolean;
+    };
+
+export type HistoryView = {
+  readonly state: HistoryViewState;
+  readonly tab: HistoryTab;
+  readonly tabLabels: readonly string[];
+  readonly tabIndex: number;
+  readonly flatRows: readonly HistoryViewRow[];
+  readonly items: readonly HistoryRenderItem[];
+  readonly rail: PreviewRailModel | null;
+  readonly filterQuery: string;
+  readonly showScrollUp: boolean;
+  readonly showScrollDown: boolean;
+};
+
+export function historyTabLabels(): readonly string[] {
+  return ["Continue", "Completed", "New episodes", "All"];
+}
+
+export function historyTabIndex(tab: HistoryTab): number {
+  return HISTORY_TABS.indexOf(tab);
+}
+
+export function historyTabFromIndex(index: number): HistoryTab {
+  return HISTORY_TABS[Math.max(0, Math.min(HISTORY_TABS.length - 1, index))] ?? "continue";
+}
+
+export function historyTabFromLegacy(mode: "all" | "watching" | "completed"): HistoryTab {
+  if (mode === "watching") return "continue";
+  if (mode === "completed") return "completed";
+  return "all";
+}
+
+export function cycleHistoryTab(tab: HistoryTab): HistoryTab {
+  const index = HISTORY_TABS.indexOf(tab);
+  return HISTORY_TABS[(index + 1) % HISTORY_TABS.length] ?? "continue";
+}
+
+function isHistoryCompleted(entry: HistoryEntry): boolean {
+  return entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
+}
+
+function isHistoryNewEpisode(
+  titleId: string,
+  entry: HistoryEntry,
+  context: HistoryPickerOptionsContext,
+): boolean {
+  const decision = reconcileContinueHistory({
+    titleId,
+    entries: [[titleId, entry]],
+    nextRelease: context.nextReleases?.get(titleId) ?? null,
+  });
+  return decision.kind === "new-episode";
+}
+
+function matchesHistoryTab(
+  titleId: string,
+  entry: HistoryEntry,
+  tab: HistoryTab,
+  context: HistoryPickerOptionsContext,
+): boolean {
+  const completed = isHistoryCompleted(entry);
+  const continuable = isHistoryPickerContinuable(titleId, entry, context);
+  const newEpisode = isHistoryNewEpisode(titleId, entry, context);
+  switch (tab) {
+    case "continue":
+      return continuable && !newEpisode;
+    case "completed":
+      return completed;
+    case "new-episodes":
+      return newEpisode;
+    case "all":
+      return true;
+    default:
+      return true;
+  }
+}
+
+function filterHistoryEntries(
+  historyEntries: ReadonlyArray<[string, HistoryEntry]>,
+  filterQuery: string,
+  tab: HistoryTab,
+  context: HistoryPickerOptionsContext,
+): readonly [string, HistoryEntry][] {
+  const filter = filterQuery.trim().toLowerCase();
+  const base = historyEntries.filter(([titleId, entry]) => {
+    const completed = isHistoryCompleted(entry);
+    const continuable = isHistoryPickerContinuable(titleId, entry, context);
+    const newEpisode = isHistoryNewEpisode(titleId, entry, context);
+
+    if (filter.length > 0) {
+      if (filter === "completed" && completed) return true;
+      if ((filter === "watching" || filter === "continue") && continuable) return true;
+      if ((filter === "new" || filter === "new-episodes") && newEpisode) return true;
+      if (
+        !fuzzyMatch(filter, `${entry.title} ${entry.provider} s${entry.season}e${entry.episode}`)
+      ) {
+        return false;
+      }
+    }
+
+    return matchesHistoryTab(titleId, entry, tab, context);
+  });
+
+  if (filter === "completed" || filter === "watching" || filter === "continue") {
+    return base;
+  }
+
+  return rankFuzzyMatches(
+    base,
+    filter === "new" || filter === "new-episodes" ? "" : filterQuery,
+    ([, entry]) => [
+      { value: entry.title, weight: 0 },
+      { value: entry.provider, weight: 8 },
+      { value: `s${entry.season}e${entry.episode}`, weight: 4 },
+    ],
+  );
+}
+
+function toneColor(tone: ShellStatusTone | undefined): string {
+  if (tone === "success") return palette.ok;
+  if (tone === "warning") return palette.accentDeep;
+  if (tone === "error") return palette.danger;
+  if (tone === "info") return palette.muted;
+  return palette.textDim;
+}
+
+function deriveResumeAction(
+  titleId: string,
+  entry: HistoryEntry,
+  context: HistoryPickerOptionsContext,
+): string {
+  const projection = context.projections?.get(titleId);
+  if (projection?.kind === "offline-ready") return "Play local";
+  const decision = reconcileContinueHistory({
+    titleId,
+    entries: [[titleId, entry]],
+    nextRelease: context.nextReleases?.get(titleId) ?? null,
+  });
+  if (decision.kind === "new-episode") return "Play next";
+  if (decision.kind === "resume") return "Continue";
+  return "Open";
+}
+
+function shellOptionToHistoryRow(
+  titleId: string,
+  entry: HistoryEntry,
+  option: ShellPickerOption<string>,
+  context: HistoryPickerOptionsContext,
+): HistoryViewRow {
+  const labelParts = option.label.split("·").map((part) => part.trim());
+  const title = labelParts[0] ?? option.label;
+  const episodeCode = labelParts[1] ?? (entry.type === "series" ? "series" : "movie");
+  const detailParts = (option.detail ?? "").split("·").map((part) => part.trim());
+  const recencyLabel = detailParts[detailParts.length - 1] ?? "";
+  const progress = option.historyProgress ?? null;
+  const statusLabel =
+    option.badge ??
+    (progress?.completed ? "done" : progress ? `${progress.percentage}%` : (detailParts[0] ?? ""));
+  const decision = reconcileContinueHistory({
+    titleId,
+    entries: [[titleId, entry]],
+    nextRelease: context.nextReleases?.get(titleId) ?? null,
+  });
+  let statusColor = toneColor(option.tone);
+  if (decision.kind === "new-episode") statusColor = palette.ok;
+  if (progress && !progress.completed) statusColor = palette.accentDeep;
+
+  return {
+    titleId,
+    title,
+    episodeCode,
+    statusLabel,
+    statusColor,
+    statusDim: option.tone !== "success" && option.tone !== "warning",
+    detail: option.detail ?? "",
+    recencyLabel,
+    badge: option.badge,
+    tone: option.tone,
+    progress,
+    resumeAction: deriveResumeAction(titleId, entry, context),
+  };
+}
+
+function optionsToFlatRows(
+  options: readonly ShellPickerOption<string>[],
+  entryById: ReadonlyMap<string, HistoryEntry>,
+  context: HistoryPickerOptionsContext,
+): HistoryViewRow[] {
+  const rows: HistoryViewRow[] = [];
+  for (const option of options) {
+    if (typeof option.value === "string" && option.value.startsWith("section:")) continue;
+    const entry = entryById.get(option.value);
+    if (!entry) continue;
+    rows.push(shellOptionToHistoryRow(option.value, entry, option, context));
+  }
+  return rows;
+}
+
+function buildHistorySections(
+  flatRows: readonly HistoryViewRow[],
+  filteredEntries: ReadonlyArray<[string, HistoryEntry]>,
+  tab: HistoryTab,
+): { label: string; rows: HistoryViewRow[] }[] {
+  if (tab === "continue" && flatRows.length > 0) {
+    return [{ label: "Continue watching", rows: [...flatRows] }];
+  }
+  if (tab === "new-episodes" && flatRows.length > 0) {
+    return [{ label: RETURN_LOOP_HISTORY_NEW_SECTION, rows: [...flatRows] }];
+  }
+
+  const rowById = new Map(flatRows.map((row) => [row.titleId, row]));
+  const groups = groupHistoryByRecency(filteredEntries);
+  if (groups.length <= 1) {
+    return flatRows.length > 0 ? [{ label: "", rows: [...flatRows] }] : [];
+  }
+
+  return groups
+    .map((group) => ({
+      label: group.label,
+      rows: group.items
+        .map(([titleId]) => rowById.get(titleId))
+        .filter((row): row is HistoryViewRow => row !== undefined),
+    }))
+    .filter((group) => group.rows.length > 0);
+}
+
+function buildHistoryPreviewRailModel(
+  row: HistoryViewRow,
+  entry: HistoryEntry,
+  titleId: string,
+  context: HistoryPickerOptionsContext,
+  posterState: PreviewPosterState = "none",
+): PreviewRailModel {
+  const decision = reconcileContinueHistory({
+    titleId,
+    entries: [[titleId, entry]],
+    nextRelease: context.nextReleases?.get(titleId) ?? null,
+  });
+  const returnLoopDetail = describeHistoryReturnLoopDetail({
+    entry,
+    nextRelease: context.nextReleases?.get(titleId) ?? null,
+  });
+  const progress = projectWatchProgress(entry);
+  const watchedAt = new Date(entry.watchedAt).toLocaleDateString();
+  const newSince =
+    decision.kind === "new-episode" &&
+    entry.type === "series" &&
+    typeof decision.episode === "number"
+      ? formatNewSinceEpisodeLabel(entry.episode, decision.episode)
+      : null;
+
+  const facts: PreviewRailModel["facts"][number][] = [
+    {
+      label: "Progress",
+      value: row.progress
+        ? `${row.progress.percentage}%`
+        : progress.completed
+          ? "Complete"
+          : "Saved",
+      tone: row.progress?.completed || progress.completed ? "success" : "warning",
+    },
+    { label: "Last watched", value: watchedAt },
+    { label: "Provider", value: entry.provider, tone: "muted" },
+  ];
+  if (returnLoopDetail) {
+    facts.push({ label: "Next", value: returnLoopDetail, tone: "success" });
+  } else if (newSince) {
+    facts.push({ label: "Next", value: newSince, tone: "success" });
+  }
+
+  return {
+    title: row.title,
+    subtitle: row.episodeCode,
+    overview: row.detail,
+    posterState,
+    facts,
+  };
+}
+
+function buildVisibleItems(
+  sections: readonly { label: string; rows: readonly HistoryViewRow[] }[],
+  flatRows: readonly HistoryViewRow[],
+  selectedIndex: number,
+  windowStart: number,
+  windowEnd: number,
+): HistoryRenderItem[] {
+  const visibleIds = new Set(flatRows.slice(windowStart, windowEnd).map((row) => row.titleId));
+  const items: HistoryRenderItem[] = [];
+  for (const section of sections) {
+    const visibleRows = section.rows.filter((row) => visibleIds.has(row.titleId));
+    if (visibleRows.length === 0) continue;
+    if (section.label.trim().length > 0) {
+      items.push({ kind: "section", label: section.label.toUpperCase() });
+    }
+    for (const row of visibleRows) {
+      const flatIndex = flatRows.findIndex((candidate) => candidate.titleId === row.titleId);
+      items.push({
+        kind: "row",
+        row,
+        flatIndex,
+        selected: flatIndex === selectedIndex,
+      });
+    }
+  }
+  return items;
+}
+
+export function buildHistoryView(input: {
+  readonly entries: ReadonlyArray<[string, HistoryEntry]>;
+  readonly tab: HistoryTab;
+  readonly filterQuery: string;
+  readonly selectedIndex: number;
+  readonly maxVisible: number;
+  readonly narrow: boolean;
+  readonly context: HistoryPickerOptionsContext;
+  readonly loading?: boolean;
+}): HistoryView {
+  if (input.loading) {
+    return {
+      state: "loading",
+      tab: input.tab,
+      tabLabels: historyTabLabels(),
+      tabIndex: historyTabIndex(input.tab),
+      flatRows: [],
+      items: [],
+      rail: null,
+      filterQuery: input.filterQuery,
+      showScrollUp: false,
+      showScrollDown: false,
+    };
+  }
+
+  const filtered = filterHistoryEntries(input.entries, input.filterQuery, input.tab, input.context);
+  const options = buildHistoryPickerOptions(filtered, input.context);
+  const entryById = new Map(filtered);
+  const flatRows = optionsToFlatRows(options, entryById, input.context);
+
+  if (flatRows.length === 0) {
+    return {
+      state: "empty",
+      tab: input.tab,
+      tabLabels: historyTabLabels(),
+      tabIndex: historyTabIndex(input.tab),
+      flatRows,
+      items: [],
+      rail: null,
+      filterQuery: input.filterQuery,
+      showScrollUp: false,
+      showScrollDown: false,
+    };
+  }
+
+  const safeSelectedIndex = Math.min(
+    Math.max(input.selectedIndex, 0),
+    Math.max(flatRows.length - 1, 0),
+  );
+  const windowStart = getWindowStart(safeSelectedIndex, flatRows.length, input.maxVisible);
+  const windowEnd = Math.min(windowStart + input.maxVisible, flatRows.length);
+  const sections = buildHistorySections(flatRows, filtered, input.tab);
+  const selectedRow = flatRows[safeSelectedIndex];
+  const selectedEntry = selectedRow ? entryById.get(selectedRow.titleId) : undefined;
+  const rail =
+    selectedRow && selectedEntry && !input.narrow
+      ? buildHistoryPreviewRailModel(selectedRow, selectedEntry, selectedRow.titleId, input.context)
+      : null;
+
+  return {
+    state: "success",
+    tab: input.tab,
+    tabLabels: historyTabLabels(),
+    tabIndex: historyTabIndex(input.tab),
+    flatRows,
+    items: buildVisibleItems(sections, flatRows, safeSelectedIndex, windowStart, windowEnd),
+    rail,
+    filterQuery: input.filterQuery,
+    showScrollUp: windowStart > 0,
+    showScrollDown: windowEnd < flatRows.length,
+  };
+}

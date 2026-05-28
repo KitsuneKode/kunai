@@ -1,3 +1,8 @@
+import {
+  formatReadyForYouNowMeta,
+  RETURN_LOOP_NAV_HINT,
+  RETURN_LOOP_READY_HEADING,
+} from "./return-loop-copy";
 import { palette } from "./shell-theme";
 import type { BrowseIdleContext, ShellAction } from "./types";
 
@@ -58,15 +63,13 @@ export function buildBrowseIdleReturnLoopModel(
   const readyCount = idleContext.todayReleaseCount ?? 0;
   if (readyCount > 0) {
     const titleCount = idleContext.todayReleaseTitleCount ?? 0;
-    const showSuffix =
-      titleCount > 0 ? ` · ${titleCount} ${titleCount === 1 ? "show" : "shows"}` : "";
     rows.push({
       id: "ready-now",
       glyph: "✦",
       glyphColor: palette.accent,
-      title: `${readyCount === 1 ? "1 new episode" : `${readyCount} new episodes`}${showSuffix}`,
-      meta: "catalog schedule · sources checked on play",
-      hint: "/calendar for schedule · /history for shows",
+      title: RETURN_LOOP_READY_HEADING,
+      meta: formatReadyForYouNowMeta(readyCount, titleCount),
+      hint: RETURN_LOOP_NAV_HINT,
       focused: false,
     });
   }

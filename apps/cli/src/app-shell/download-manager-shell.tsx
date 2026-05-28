@@ -1,3 +1,4 @@
+import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
 import { ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
@@ -8,6 +9,11 @@ import type { DownloadJobRecord } from "@kunai/storage";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useState } from "react";
 
+/** Fixed queue columns — matches kunai-sakura-systems.html qrow grid. */
+const QUEUE_STATE_COL = 18;
+const QUEUE_PROGRESS_COL = 22;
+const QUEUE_META_COL = 14;
+
 function refreshJobLists(container: Container) {
   return {
     activeJobs: container.downloadService.listActive(50).filter((j) => j.status === "running"),
@@ -15,6 +21,110 @@ function refreshJobLists(container: Container) {
     completedJobs: container.downloadService.listCompleted(5),
     failedJobs: container.downloadService.listFailed(10),
   };
+}
+
+function queueStatePresentation(job: DownloadJobRecord): { label: string; color: string } {
+  if (job.status === "running") return { label: "↓ downloading", color: palette.accent };
+  if (job.status === "queued") return { label: "○ queued", color: palette.muted };
+  if (job.status === "completed" || job.status === "completed-with-notes") {
+    return { label: "✓ complete", color: palette.ok };
+  }
+  if (job.status === "failed" || job.status === "repairable") {
+    return { label: "✗ failed", color: palette.danger };
+  }
+  return { label: "— aborted", color: palette.dim };
+}
+
+function queueMetaLine(job: DownloadJobRecord): {
+  primary: string;
+  secondary?: string;
+  tone: string;
+} {
+  const percent = Math.max(0, Math.min(100, Math.round(job.progressPercent ?? 0)));
+  if (job.status === "running" && typeof job.progressPercent === "number") {
+    const eta = formatEta(job);
+    return {
+      primary: `${percent}%`,
+      secondary: eta ? `· ${eta}` : undefined,
+      tone: palette.accent,
+    };
+  }
+  if (job.status === "queued") {
+    const pausedForSpace =
+      Boolean(job.nextRetryAt) && Boolean(job.errorMessage?.toLowerCase().includes("space"));
+    return {
+      primary: "—",
+      secondary: pausedForSpace ? "low space" : "waiting",
+      tone: palette.dim,
+    };
+  }
+  if (job.status === "completed" || job.status === "completed-with-notes") {
+    return {
+      primary: job.fileSize ? formatBytes(job.fileSize) : "done",
+      tone: palette.muted,
+    };
+  }
+  if (job.status === "failed" || job.status === "repairable") {
+    return {
+      primary: truncateLine(job.errorMessage ?? "source gone", QUEUE_META_COL),
+      tone: palette.dim,
+    };
+  }
+  return { primary: "—", tone: palette.dim };
+}
+
+function progressBarColor(job: DownloadJobRecord): string {
+  if (job.status === "completed" || job.status === "completed-with-notes") return palette.okDim;
+  if (job.status === "failed" || job.status === "repairable") return palette.dangerDim;
+  return palette.accentDeep;
+}
+
+function progressBarValue(job: DownloadJobRecord): number {
+  if (job.status === "completed" || job.status === "completed-with-notes") return 100;
+  if (job.status === "running" && typeof job.progressPercent === "number") {
+    return Math.max(0, Math.min(100, job.progressPercent));
+  }
+  return 0;
+}
+
+function QueueSummaryHeader({
+  activeCount,
+  queuedCount,
+  failedCount,
+}: {
+  readonly activeCount: number;
+  readonly queuedCount: number;
+  readonly failedCount: number;
+}) {
+  if (activeCount === 0 && queuedCount === 0 && failedCount === 0) return null;
+  return (
+    <Box marginBottom={1} gap={2}>
+      {activeCount > 0 ? (
+        <Text>
+          <Text color={palette.accent} bold>
+            {activeCount}
+          </Text>
+          <Text color={palette.muted}> downloading</Text>
+        </Text>
+      ) : null}
+      {queuedCount > 0 ? (
+        <Text>
+          <Text color={palette.text} bold>
+            {queuedCount}
+          </Text>
+          <Text color={palette.muted}> queued</Text>
+        </Text>
+      ) : null}
+      {failedCount > 0 ? (
+        <Text>
+          <Text color={palette.danger} bold>
+            {failedCount}
+          </Text>
+          <Text color={palette.muted}> failed</Text>
+        </Text>
+      ) : null}
+    </Box>
+  );
 }
 
 /**
@@ -178,7 +288,7 @@ export function DownloadManagerContent({
   });
 
   const { tooSmall, minColumns, minRows } = viewport;
-  const shellWidth = viewport.columns;
+  const shellWidth = viewport.columns ?? 80;
 
   if (tooSmall) {
     return (
@@ -191,123 +301,70 @@ export function DownloadManagerContent({
     );
   }
 
+  const titleCol = Math.max(
+    20,
+    shellWidth - QUEUE_STATE_COL - QUEUE_PROGRESS_COL - QUEUE_META_COL - 4,
+  );
   const isConfirming = (index: number) =>
     confirmingDeleteIndex === index && selectedIndex === index;
+
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
-    const totalBlocks = 10;
-    const filled =
-      job.status === "running" && typeof job.progressPercent === "number"
-        ? Math.max(0, Math.min(totalBlocks, Math.round((job.progressPercent / 100) * totalBlocks)))
-        : 0;
-    const percent = Math.max(0, Math.min(100, Math.round(job.progressPercent ?? 0)));
-    const pausedForSpace =
-      job.status === "queued" &&
-      Boolean(job.nextRetryAt) &&
-      Boolean(job.errorMessage?.toLowerCase().includes("space"));
-    const progressCore =
-      job.status === "running" && typeof job.progressPercent === "number"
-        ? `[${"█".repeat(filled)}${"░".repeat(totalBlocks - filled)}] ${percent}%`
-        : job.status === "queued"
-          ? pausedForSpace
-            ? "‖ low space"
-            : "⏳ queued"
-          : job.status === "completed"
-            ? "✓ done"
-            : job.status === "completed-with-notes"
-              ? "✓ notes"
-              : job.status === "repairable"
-                ? "↻ repair"
-                : job.status === "failed"
-                  ? "✗ failed"
-                  : "— aborted";
-    const progressMeta =
-      job.status === "running"
-        ? [
-            formatEta(job),
-            job.fileSize ? formatBytes(job.fileSize) : null,
-            job.attempt > 1 ? `try ${job.attempt}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-        : job.status === "completed" || job.status === "completed-with-notes"
-          ? [
-              job.completedAt ? new Date(job.completedAt).toLocaleDateString() : null,
-              job.status === "completed-with-notes" ? "sidecar note" : null,
-              job.subtitlePath ? "subs" : job.subtitleUrl ? "no subs" : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")
-          : job.status === "queued" && pausedForSpace
-            ? `paused · retry after ${new Date(job.nextRetryAt ?? job.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-            : job.status === "repairable"
-              ? truncateLine(job.errorMessage ?? "Video ready · repair sidecar", 34)
-              : job.status === "failed"
-                ? truncateLine(job.errorMessage ?? "Failed", 28)
-                : job.status;
-    const nameStr = `${job.titleName}${job.episode ? ` S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}` : ""}`;
-    const statusColor =
-      job.status === "running"
-        ? palette.accentDeep
-        : job.status === "completed"
-          ? palette.ok
-          : job.status === "completed-with-notes" || job.status === "repairable"
-            ? palette.accentDeep
-            : job.status === "failed"
-              ? palette.danger
-              : job.status === "aborted"
-                ? palette.muted
-                : palette.accent;
-    // Proportional columns: name takes ~45%, progress is fixed 28, meta takes remainder
-    const nameWidth = Math.max(20, Math.min(40, Math.floor(shellWidth * 0.45)));
-    const progressWidth = 28;
-    const metaWidth = Math.max(8, shellWidth - nameWidth - progressWidth - 4);
+    const state = queueStatePresentation(job);
+    const meta = queueMetaLine(job);
+    const episodeSuffix =
+      job.episode !== undefined
+        ? ` · S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`
+        : "";
+    const titleLine = truncateLine(`${job.titleName}${episodeSuffix}`, titleCol);
+
     return (
       <Box
         key={job.id}
         flexDirection="row"
+        width={shellWidth}
         backgroundColor={isSelected ? palette.surfaceActive : undefined}
       >
         <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
-        <Box width={nameWidth}>
-          <Text color={isSelected ? palette.text : undefined} bold={isSelected}>
-            {truncateLine(nameStr, nameWidth - 2)}
+        <Box width={titleCol}>
+          <Text color={isSelected ? palette.text : palette.textDim} bold={isSelected}>
+            {titleLine}
           </Text>
         </Box>
-        <Box width={progressWidth}>
-          <Text color={statusColor}>{progressCore}</Text>
+        <Box width={QUEUE_STATE_COL}>
+          <Text color={state.color}>{truncateLine(state.label, QUEUE_STATE_COL - 1)}</Text>
         </Box>
-        <Box width={metaWidth}>
-          <Text color={palette.muted} dimColor>
-            {truncateLine(progressMeta, metaWidth)}
+        <Box width={QUEUE_PROGRESS_COL}>
+          <ProgressBar
+            value={progressBarValue(job)}
+            max={100}
+            width={QUEUE_PROGRESS_COL - 2}
+            color={progressBarColor(job)}
+          />
+        </Box>
+        <Box width={QUEUE_META_COL} flexDirection="row" justifyContent="flex-end">
+          <Text color={meta.tone} bold={job.status === "running"}>
+            {meta.primary}
           </Text>
+          {meta.secondary ? (
+            <Text color={palette.dim} dimColor>
+              {" "}
+              {meta.secondary}
+            </Text>
+          ) : null}
         </Box>
         {isConfirming(index) ? (
-          <Box marginLeft={1}>
-            <Text color={palette.accentDeep} bold>
-              {" "}
-              x again to confirm delete
-            </Text>
-          </Box>
+          <Text color={palette.accentDeep} bold>
+            {"  "}x again
+          </Text>
         ) : null}
       </Box>
     );
   };
 
-  const renderSection = (
-    title: string,
-    jobs: readonly DownloadJobRecord[],
-    offset: number,
-    color: string,
-  ) =>
-    jobs.length > 0 ? (
-      <Box flexDirection="column" marginBottom={1}>
-        <Text color={color} bold>
-          {title} ({jobs.length})
-        </Text>
-        {jobs.map((j, i) => renderJob(j, offset + i))}
-      </Box>
-    ) : null;
+  const failedAttentionCount = failedJobs.filter(
+    (job) => job.status === "failed" || job.status === "repairable",
+  ).length;
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -322,20 +379,12 @@ export function DownloadManagerContent({
         />
       ) : (
         <Box flexDirection="column">
-          {renderSection("▶ Active", activeJobs, 0, palette.accent)}
-          {renderSection("⏳ Queued", queuedJobs, activeJobs.length, palette.muted)}
-          {renderSection(
-            "✓ Completed",
-            completedJobs,
-            activeJobs.length + queuedJobs.length,
-            palette.ok,
-          )}
-          {renderSection(
-            "⚠ Needs Attention",
-            failedJobs,
-            activeJobs.length + queuedJobs.length + completedJobs.length,
-            palette.danger,
-          )}
+          <QueueSummaryHeader
+            activeCount={activeJobs.length}
+            queuedCount={queuedJobs.length}
+            failedCount={failedAttentionCount}
+          />
+          {allJobs.map((job, index) => renderJob(job, index))}
         </Box>
       )}
       {confirmingDeleteIndex !== null ? (
@@ -401,6 +450,6 @@ function formatEta(job: import("@kunai/storage").DownloadJobRecord): string | nu
   const remainingMs = totalEstMs - elapsedMs;
   if (remainingMs <= 0) return null;
   const remainingS = Math.ceil(remainingMs / 1_000);
-  if (remainingS < 60) return `~${remainingS}s left`;
-  return `~${Math.ceil(remainingMs / 60_000)}m left`;
+  if (remainingS < 60) return `${remainingS}s left`;
+  return `${Math.ceil(remainingMs / 60_000)}m left`;
 }

@@ -39,7 +39,7 @@ describe("browse idle actions", () => {
     );
     expect(model?.rows.map((row) => row.id)).toEqual(["continue", "ready-now"]);
     expect(model?.rows[0]?.hint).toBe("↵ resume first");
-    expect(model?.rows[1]?.title).toBe("2 new episodes · 1 show");
-    expect(model?.rows[1]?.meta).toBe("catalog schedule · sources checked on play");
+    expect(model?.rows[1]?.title).toBe("Ready for you now");
+    expect(model?.rows[1]?.meta).toBe("2 new episodes · 1 show");
   });
 });

@@ -2,19 +2,27 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { heatBucket } from "../format/heatmap";
-import { heatColor, palette } from "../shell-theme";
+import { heatColor, palette, statsHeatCellColor } from "../shell-theme";
 
 export type HeatRow = { readonly label: string; readonly values: readonly number[] };
 
-/** Watch-activity heatmap in the amber ramp; values bucketed 0..4. */
+function cellColor(value: number, max: number, tintHex?: string): string {
+  const bucket = heatBucket(value, max);
+  if (tintHex) return statsHeatCellColor(bucket, tintHex);
+  return heatColor(bucket);
+}
+
+/** Watch-activity heatmap; optional tintHex enables Stats paint-mix (type hue × intensity). */
 export const Heatmap = React.memo(function Heatmap({
   rows,
   max,
   cell = "▪",
+  tintHex,
 }: {
   rows: readonly HeatRow[];
   max: number;
   cell?: string;
+  tintHex?: string;
 }) {
   return (
     <Box flexDirection="column">
@@ -24,7 +32,7 @@ export const Heatmap = React.memo(function Heatmap({
           {row.values.map((value, i) => (
             // Fixed-position grid cell: column index is its stable identity (cells never reorder).
             // oxlint-disable-next-line react/no-array-index-key
-            <Text key={`${row.label}-${i}`} color={heatColor(heatBucket(value, max))}>
+            <Text key={`${row.label}-${i}`} color={cellColor(value, max, tintHex)}>
               {` ${cell}`}
             </Text>
           ))}
@@ -33,3 +41,5 @@ export const Heatmap = React.memo(function Heatmap({
     </Box>
   );
 });
+
+export { cellColor as heatmapCellColor };

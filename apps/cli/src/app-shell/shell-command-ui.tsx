@@ -76,7 +76,7 @@ export function LineEditorText({
     const displayValue =
       value.length > 0 && maxWidth ? truncateLine(value, Math.max(1, maxWidth)) : value;
     return displayValue.length > 0 ? (
-      <Text color="white">{displayValue}</Text>
+      <Text color={palette.text}>{displayValue}</Text>
     ) : (
       <Text color={palette.dim}>{visiblePlaceholder ?? ""}</Text>
     );
@@ -98,11 +98,11 @@ export function LineEditorText({
 
   return (
     <>
-      <Text color="white">{before}</Text>
+      <Text color={palette.text}>{before}</Text>
       <Text backgroundColor={palette.accent} color="black">
         {visibleCursor}
       </Text>
-      <Text color="white">{after}</Text>
+      <Text color={palette.text}>{after}</Text>
     </>
   );
 }

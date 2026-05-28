@@ -1,5 +1,3 @@
 # calendar-daystrip · narrow (72×45)
 
- ·     ·      ·     ·     ·     ◉ MON ·     ·     ·     ·        esc ·
-‹MON   TUE    MON   MON   MON    1    MON   SUN   THU   FRI   ›  all
- 10    19     23    18    5           11    26    13    10       days
+‹ MON 18  MON 5  MON 1  MON 11   › esc · all days

@@ -44,6 +44,7 @@ function toCalendarBrowseOption(
       formatRating(result.rating),
     ].filter((value): value is string => Boolean(value)),
     previewGroup: result.displayGroup,
+    previewDayKey: result.displayDayKey,
     previewTime: result.displayTime,
     previewBadge: inWatchlist ? "wl" : result.displayBadge,
     releaseStatus: result.displayReleaseStatus,

@@ -11,6 +11,16 @@ import {
   hasBrowseResultFilters,
   parseBrowseFilterQuery,
 } from "./browse-filters";
+import {
+  browseFocusZoneReducer,
+  createInitialBrowseFocusZone,
+  isBrowseFilterFocused,
+  isBrowseIdleFocused,
+  isBrowseListFocused,
+  type BrowseFocusZone,
+  type BrowseFocusZoneContext,
+  type BrowseFocusZoneEvent,
+} from "./browse-focus-zone";
 import { buildBrowseIdleReturnLoopModel, resolveIdleContinueAction } from "./browse-idle-actions";
 import {
   browseResultStatusLine,
@@ -39,6 +49,7 @@ import {
   filterCalendarOptionsByType,
   type CalendarTypeTab,
 } from "./calendar-ui";
+import { sortCalendarOptions } from "./calendar-view";
 import type { ResolvedAppCommand } from "./commands";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
@@ -54,6 +65,7 @@ import { deleteAllKittyImages } from "./image-pane";
 import { getBrowseCommandPaletteMaxVisible } from "./layout-policy";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
+import { FocusField, FocusFieldLabel } from "./primitives/FocusField";
 import { PreviewRail, shouldRenderPreviewRail } from "./primitives/PreviewRail";
 import { mountRootContent } from "./root-content-state";
 import {
@@ -185,24 +197,26 @@ export function BrowseShell<T>({
   );
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const [resultFilter, setResultFilter] = useState("");
-  const [resultFilterFocused, setResultFilterFocused] = useState(false);
-  // Focus zone: false = query field (text state, typing wins), true = results
-  // list (non-text state, bare hotkeys are live). The query field blurs while
-  // the list is focused so a bare key like `i` never lands in the search box.
-  // See .docs/ux-architecture.md: "if text input is focused, typing wins".
-  const [listFocused, setListFocused] = useState(false);
-  // Calendar filters — null day means "show all days"
-  const [calendarDayFilter, setCalendarDayFilter] = useState<string | null>(null);
-  const [calendarTypeTab, setCalendarTypeTab] = useState<CalendarTypeTab>("All");
-  // In zen/minimal mode, auto-focus the continue-watching row if there's a resumable title and no initial results
-  const [idleFocused, setIdleFocused] = useState(
-    () =>
-      !!(
+  // Focus zones: query (text) → list (bare hotkeys) → filter (local narrow) → idle.
+  // See browse-focus-zone.ts and .docs/ux-architecture.md.
+  const [focusZone, setFocusZone] = useState<BrowseFocusZone>(() =>
+    createInitialBrowseFocusZone({
+      startIdle: !!(
         _settings?.minimalMode &&
         idleContext?.continueWatching?.titleId &&
         (!initialResults || initialResults.length === 0)
       ),
+    }),
   );
+  const focusZoneContextRef = useRef<BrowseFocusZoneContext>({
+    hasResults: false,
+    hasFilterBar: false,
+    canFocusIdle: false,
+    selectedIndex: 0,
+  });
+  // Calendar filters — null day means "show all days"
+  const [calendarDayFilter, setCalendarDayFilter] = useState<string | null>(null);
+  const [calendarTypeTab, setCalendarTypeTab] = useState<CalendarTypeTab>("All");
   const requestIdRef = useRef(0);
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
@@ -216,8 +230,8 @@ export function BrowseShell<T>({
 
   const calendarDays = useMemo(() => {
     if (!isCalendarView) return [];
-    return buildCalendarDaysFromOptions(options, viewport.breakpoint === "narrow");
-  }, [isCalendarView, options, viewport.breakpoint]);
+    return buildCalendarDaysFromOptions(options);
+  }, [isCalendarView, options]);
 
   const displayOptions = useMemo(() => {
     const narrowed = filterBrowseOptionsByResultFilter(options, resultFilter);
@@ -226,7 +240,8 @@ export function BrowseShell<T>({
       import("@/domain/types").SearchResult
     >[];
     const typed = filterCalendarOptionsByType(scheduleOptions, calendarTypeTab);
-    return filterCalendarOptionsByDay(typed, calendarDayFilter) as typeof options;
+    const byDay = filterCalendarOptionsByDay(typed, calendarDayFilter);
+    return sortCalendarOptions(byDay) as typeof options;
   }, [calendarDayFilter, calendarTypeTab, isCalendarView, options, resultFilter]);
 
   const clearResults = useCallback(() => {
@@ -240,10 +255,9 @@ export function BrowseShell<T>({
     setSelectedDetail("Search for a title — or try /trending to see what's popular");
     setActiveFilterBadges([]);
     setResultFilter("");
-    setResultFilterFocused(false);
+    setFocusZone("query");
     setCalendarDayFilter(null);
     setCalendarTypeTab("All");
-    setIdleFocused(false);
   }, []);
 
   const updateQuery = useCallback(
@@ -275,7 +289,7 @@ export function BrowseShell<T>({
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setSearchState("loading");
-    setIdleFocused(false);
+    setFocusZone("query");
     setErrorMessage(null);
     setEmptyMessage("Searching…");
     setSelectedDetail("Finding titles and available matches…");
@@ -298,7 +312,7 @@ export function BrowseShell<T>({
 
       setLastSearchedQuery(rawQuery);
       setResultFilter("");
-      setResultFilterFocused(false);
+      setFocusZone("query");
       addSearchQuery(rawQuery);
       setOptions(filteredOptions);
       setSelectedIndex(0);
@@ -438,7 +452,7 @@ export function BrowseShell<T>({
     const panel = buildBrowseDetailsPanel(selectedOption);
     const sheetLines = buildDetailsSheetLines(selectedOption, companionDetails.secondary);
     setCommandMode(false);
-    setResultFilterFocused(false);
+    setFocusZone("query");
     setActiveOverlay({
       type: "details",
       title: panel.title,
@@ -501,6 +515,11 @@ export function BrowseShell<T>({
     });
   }, [commandInput, commandMode, commands]);
 
+  const selectedOption = displayOptions[selectedIndex];
+  const listFocused = isBrowseListFocused(focusZone);
+  const resultFilterFocused = isBrowseFilterFocused(focusZone);
+  const idleFocused = isBrowseIdleFocused(focusZone);
+
   const queryDirty = isQueryDirty({
     queryDraft: query,
     submittedQuery: lastSearchedQuery,
@@ -511,13 +530,37 @@ export function BrowseShell<T>({
     detailsScroll:
       activeOverlay && "scrollIndex" in activeOverlay ? (activeOverlay.scrollIndex ?? 0) : 0,
   });
-  const selectedOption = displayOptions[selectedIndex];
 
-  // Never strand focus on a list that has emptied (cleared results, new search,
-  // a filter that matched nothing) — hand focus back to the query field.
+  const dispatchFocusZone = useCallback((event: BrowseFocusZoneEvent) => {
+    setFocusZone((current) => browseFocusZoneReducer(current, event, focusZoneContextRef.current));
+  }, []);
+
+  const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(idleContext, { idleFocused });
+  const canFocusContinue =
+    options.length === 0 &&
+    searchState === "idle" &&
+    Boolean(idleReturnLoopModel?.hasSelectableContinue);
+
+  focusZoneContextRef.current = {
+    hasResults: displayOptions.length > 0,
+    hasFilterBar:
+      searchState === "ready" && options.length > 0 && !isCalendarView && !viewport.ultraCompact,
+    canFocusIdle: canFocusContinue,
+    selectedIndex,
+  };
+
+  // Never strand focus on a list that has emptied — hand focus back to query.
   useEffect(() => {
-    if (displayOptions.length === 0 && listFocused) setListFocused(false);
-  }, [displayOptions.length, listFocused]);
+    if (displayOptions.length === 0 && isBrowseListFocused(focusZone)) {
+      setFocusZone((current) =>
+        browseFocusZoneReducer(
+          current,
+          { type: "results-became-empty" },
+          focusZoneContextRef.current,
+        ),
+      );
+    }
+  }, [displayOptions.length, focusZone]);
 
   useEffect(() => {
     const primaryData = buildDetailsPanelDataFromBrowseOption(selectedOption);
@@ -596,7 +639,6 @@ export function BrowseShell<T>({
     displayCount: displayOptions.length,
     totalCount: options.length,
   });
-  const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(idleContext, { idleFocused });
   const calendarSurfaceActive =
     isCalendarView ||
     resultSubtitle.toLowerCase().includes("schedule") ||
@@ -707,7 +749,7 @@ export function BrowseShell<T>({
 
     if ((input === "f" && key.ctrl) || input === "\x06") {
       if (searchState === "ready" && options.length > 0 && !isCalendarView) {
-        setResultFilterFocused(true);
+        dispatchFocusZone({ type: "focus-filter-shortcut" });
         setCommandMode(false);
       }
       return;
@@ -767,7 +809,7 @@ export function BrowseShell<T>({
       return;
     }
 
-    const canFocusContinue =
+    const canFocusContinueInInput =
       options.length === 0 &&
       searchState === "idle" &&
       Boolean(idleReturnLoopModel?.hasSelectableContinue);
@@ -814,11 +856,11 @@ export function BrowseShell<T>({
       // Layered step-back: results focus → query focus → clear results → clear
       // query → cancel. Esc first hands the list's focus back to the search box.
       if (listFocused) {
-        setListFocused(false);
+        dispatchFocusZone({ type: "escape" });
         return;
       }
       if (idleFocused) {
-        setIdleFocused(false);
+        dispatchFocusZone({ type: "escape" });
         return;
       }
       // In calendar view: escape clears day filter before clearing all results
@@ -839,21 +881,19 @@ export function BrowseShell<T>({
       return;
     }
 
-    if (key.return && idleFocused && canFocusContinue) {
+    if (key.return && idleFocused && canFocusContinueInInput) {
       onResolve(resolveIdleContinueAction(idleContext));
       return;
     }
 
     if (key.upArrow && idleFocused) {
-      setIdleFocused(false);
+      dispatchFocusZone({ type: "escape" });
       return;
     }
 
     if (key.downArrow && displayOptions.length > 0) {
       if (!listFocused) {
-        // First ↓ from the query field moves focus into the list at its current
-        // row (no jump) — the entry into the non-text, bare-hotkey zone.
-        setListFocused(true);
+        dispatchFocusZone({ type: "arrow-down" });
         return;
       }
       setSelectedIndex((current) => (current + 1) % displayOptions.length);
@@ -862,15 +902,12 @@ export function BrowseShell<T>({
 
     if (key.upArrow && displayOptions.length > 0) {
       if (!listFocused) {
-        // ↑ from the query field enters the list at its last row.
-        setListFocused(true);
+        dispatchFocusZone({ type: "arrow-up" });
         setSelectedIndex(displayOptions.length - 1);
         return;
       }
       if (selectedIndex === 0) {
-        // ↑ at the top hands focus back to the query field (the escape hatch to
-        // edit the search) instead of wrapping to the bottom.
-        setListFocused(false);
+        dispatchFocusZone({ type: "arrow-up" });
         return;
       }
       setSelectedIndex((current) => current - 1);
@@ -889,8 +926,8 @@ export function BrowseShell<T>({
     }
 
     if (key.downArrow && options.length === 0) {
-      if (canFocusContinue && historyIndex === -1) {
-        setIdleFocused(true);
+      if (canFocusContinueInInput && historyIndex === -1) {
+        dispatchFocusZone({ type: "focus-idle" });
         return;
       }
       if (historyIndex <= 0) {
@@ -906,7 +943,7 @@ export function BrowseShell<T>({
     }
 
     if (idleFocused) {
-      setIdleFocused(false);
+      dispatchFocusZone({ type: "blur-idle" });
     }
   });
 
@@ -938,19 +975,23 @@ export function BrowseShell<T>({
           </Box>
         ) : null}
         {searchState === "ready" && options.length > 0 && !isCalendarView && !ultraCompact ? (
-          <InputField
-            label="Filter results"
-            value={resultFilter}
-            onChange={(next) => {
-              setResultFilter(next);
-              setSelectedIndex(0);
-            }}
-            onSubmit={() => setResultFilterFocused(false)}
-            placeholder="narrows current results only"
-            focus={resultFilterFocused && !commandMode}
-            maxWidth={innerWidth}
-            onRedraw={clearShellScreen}
-          />
+          <FocusField focused={resultFilterFocused && !commandMode} width={innerWidth}>
+            <FocusFieldLabel label="Filter results" focused={resultFilterFocused && !commandMode} />
+            <InputField
+              label="Filter results"
+              value={resultFilter}
+              onChange={(next) => {
+                setResultFilter(next);
+                setSelectedIndex(0);
+                dispatchFocusZone({ type: "focus-filter" });
+              }}
+              onSubmit={() => dispatchFocusZone({ type: "focus-query" })}
+              placeholder="narrows current results only"
+              focus={resultFilterFocused && !commandMode}
+              maxWidth={innerWidth}
+              onRedraw={clearShellScreen}
+            />
+          </FocusField>
         ) : null}
         {activeFilterBadges.length > 0 && !ultraCompact ? (
           <Box marginTop={1} flexWrap="wrap">
@@ -987,21 +1028,30 @@ export function BrowseShell<T>({
             </Text>
           </Box>
         ) : (
-          <InputField
-            label="Search title"
-            value={query}
-            onChange={updateQuery}
-            onSubmit={handleQuerySubmit}
-            placeholder={placeholder}
-            focus={!commandMode && !resultFilterFocused && !listFocused}
-            hint={
-              commandMode
-                ? undefined
-                : "Tokens: type:series year:2008 rating:8 · /filters for guided chips"
-            }
-            maxWidth={innerWidth}
-            onRedraw={clearShellScreen}
-          />
+          <FocusField
+            focused={!commandMode && !resultFilterFocused && !listFocused}
+            width={innerWidth}
+          >
+            <FocusFieldLabel
+              label="Search title"
+              focused={!commandMode && !resultFilterFocused && !listFocused}
+            />
+            <InputField
+              label="Search title"
+              value={query}
+              onChange={updateQuery}
+              onSubmit={handleQuerySubmit}
+              placeholder={placeholder}
+              focus={!commandMode && !resultFilterFocused && !listFocused}
+              hint={
+                commandMode
+                  ? undefined
+                  : "Tokens: type:series year:2008 rating:8 · /filters for guided chips"
+              }
+              maxWidth={innerWidth}
+              onRedraw={clearShellScreen}
+            />
+          </FocusField>
         )}
 
         {queryDirty &&
@@ -1029,8 +1079,12 @@ export function BrowseShell<T>({
 
         {isCalendarView && calendarDays.length > 0 && !ultraCompact ? (
           <Box flexDirection="column">
-            <CalendarDayStrip days={calendarDays} selectedDayKey={calendarDayFilter} />
             <CalendarTypeTabs activeTab={calendarTypeTab} compact={compact} />
+            <CalendarDayStrip
+              days={calendarDays}
+              selectedDayKey={calendarDayFilter}
+              narrow={viewport.breakpoint === "narrow"}
+            />
           </Box>
         ) : null}
 
@@ -1061,16 +1115,25 @@ export function BrowseShell<T>({
                     >[],
                     windowStart,
                     windowEnd,
+                    Date.now(),
+                    calendarDayFilter,
+                    calendarDayFilter === null,
                   ).map((row) => (
                     <CalendarScheduleRow
                       key={`${row.option.label}-${row.optionIndex}-${row.timeLabel}`}
                       option={row.option}
                       selected={row.optionIndex === selectedIndex}
                       rowWidth={rowWidth}
-                      showTimeHeader={row.showTimeHeader}
-                      showTbdHeader={row.showTbdHeader}
-                      showSectionHeader={row.showSectionHeader}
                       timeLabel={row.timeLabel}
+                      episodeCode={row.episodeCode}
+                      statusLabel={row.statusLabel}
+                      statusColor={row.statusColor}
+                      statusDim={row.statusDim}
+                      statusGlyph={row.statusGlyph}
+                      showDayHeader={row.showDayHeader}
+                      dayHeaderLabel={row.dayHeaderLabel}
+                      showForYouHeader={calendarDayFilter === null}
+                      showForYouHeaderOnce={row.showForYouHeaderOnce}
                     />
                   ))
                 : visibleOptions.map((option, index) => {

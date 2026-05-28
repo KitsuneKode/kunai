@@ -126,6 +126,8 @@ export interface SearchResult {
   readonly popularity?: number | null;
   /** Optional browse-list grouping label, used by schedule-style result sets. */
   readonly displayGroup?: string;
+  /** ISO date key for calendar day strip dedup (YYYY-MM-DD). */
+  readonly displayDayKey?: string;
   /** Optional leading browse-list column, such as a release time. */
   readonly displayTime?: string;
   /** Optional trailing browse-list badge, such as an episode number. */

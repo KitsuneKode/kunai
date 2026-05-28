@@ -4,8 +4,14 @@ import { Box, Text, useInput } from "ink";
 import React, { useMemo, useState } from "react";
 
 import { buildPreviewRailModelFromBrowseOption } from "./browse-preview-rail";
+import {
+  discoverSectionHeaderTitle,
+  discoverSectionReasonDetail,
+  discoverSectionReasonLine,
+} from "./discover-reason";
 import { DotMatrixLoader, InlineDotMatrixLoader } from "./dot-matrix-loader";
-import { PreviewRail, shouldRenderPreviewRail } from "./primitives/PreviewRail";
+import { MediaListShell } from "./primitives/MediaListShell";
+import { shouldRenderPreviewRail } from "./primitives/PreviewRail";
 import { ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -14,7 +20,11 @@ import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 export type DiscoverShellResult = { type: "open"; result: SearchResult } | { type: "back" };
 
-function discoverItemToBrowseOption(item: SearchResult): BrowseShellOption<SearchResult> {
+function discoverItemToBrowseOption(
+  item: SearchResult,
+  section?: RecommendationSection,
+): BrowseShellOption<SearchResult> {
+  const reasonLine = section ? discoverSectionReasonLine(section) : undefined;
   return {
     value: item,
     label: item.title,
@@ -25,7 +35,7 @@ function discoverItemToBrowseOption(item: SearchResult): BrowseShellOption<Searc
       item.rating !== null && item.rating !== undefined ? `★ ${item.rating.toFixed(1)}` : undefined,
     ].filter((value): value is string => Boolean(value)),
     previewBody: item.overview?.trim() || undefined,
-    previewNote: "Press Enter to open this pick.",
+    previewNote: reasonLine ?? "Press Enter to open this pick.",
     previewFacts:
       item.rating !== null && item.rating !== undefined
         ? [{ label: "Rating", detail: `${item.rating.toFixed(1)}/10`, tone: "neutral" as const }]
@@ -49,16 +59,27 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
   globalSelectedIndex: number;
 }) {
   const titleBudget = Math.max(16, maxWidth - 18);
+  const reasonLine = discoverSectionReasonLine(section);
+  const reasonDetail = discoverSectionReasonDetail(section);
+  const sectionTitle = discoverSectionHeaderTitle(section);
   return (
     <Box flexDirection="column" marginBottom={compact ? 0 : 1}>
       <Text color={isFocused ? palette.accent : palette.muted} bold={isFocused}>
         {isFocused ? "▸ " : "  "}
-        {section.label}
+        {sectionTitle}
         <Text color={palette.dim} dimColor>
           {" "}
           · {section.items.length}
         </Text>
       </Text>
+      <Box marginLeft={2} flexDirection="column">
+        <Text color={isFocused ? palette.accent : palette.textDim} bold={isFocused}>
+          {reasonLine}
+        </Text>
+        <Text color={palette.dim} dimColor>
+          {reasonDetail}
+        </Text>
+      </Box>
       {section.items.length === 0 ? (
         <Text color={palette.dim} dimColor>
           {"    "}Nothing here yet
@@ -135,21 +156,6 @@ export function DiscoverShell({
     return offsets;
   }, [visibleSections]);
 
-  const selectedItem = flatItems[selectedGlobalIndex];
-  const previewRailModel = buildPreviewRailModelFromBrowseOption(
-    selectedItem ? discoverItemToBrowseOption(selectedItem) : undefined,
-    "none",
-  );
-  const innerWidth = Math.max(36, viewport.columns - 8);
-  const previewWidth = Math.max(28, Math.floor(innerWidth * 0.32));
-  const listWidth = shouldRenderPreviewRail({ columns: viewport.columns, hasModel: true })
-    ? Math.max(40, innerWidth - previewWidth - 4)
-    : innerWidth;
-  const showPreviewRail = shouldRenderPreviewRail({
-    columns: viewport.columns,
-    hasModel: previewRailModel !== null,
-  });
-
   const resolveSectionSelection = (
     globalIndex: number,
   ): { sectionIdx: number; itemIdx: number } => {
@@ -165,6 +171,22 @@ export function DiscoverShell({
   };
 
   const { sectionIdx } = resolveSectionSelection(selectedGlobalIndex);
+  const activeSection = visibleSections[sectionIdx];
+  const selectedItem = flatItems[selectedGlobalIndex];
+  const previewRailModel = buildPreviewRailModelFromBrowseOption(
+    selectedItem ? discoverItemToBrowseOption(selectedItem, activeSection) : undefined,
+    "none",
+  );
+  const innerWidth = Math.max(36, viewport.columns - 8);
+  const previewWidth = Math.max(28, Math.floor(innerWidth * 0.32));
+  const listWidth = shouldRenderPreviewRail({ columns: viewport.columns, hasModel: true })
+    ? Math.max(40, innerWidth - previewWidth - 4)
+    : innerWidth;
+  const showPreviewRail = shouldRenderPreviewRail({
+    columns: viewport.columns,
+    hasModel: previewRailModel !== null,
+  });
+
   useInput((input, key) => {
     if (key.escape) {
       onResult({ type: "back" });
@@ -248,6 +270,54 @@ export function DiscoverShell({
     );
   }
 
+  const listBody =
+    visibleSections.length === 0 ? (
+      <Box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
+        <DotMatrixLoader variant="echo-ring" active onColor={palette.accent} />
+        <Box marginTop={1}>
+          <Text color={palette.muted}>Loading recommendations…</Text>
+        </Box>
+      </Box>
+    ) : visibleSections.every((s) => s.items.length === 0) ? (
+      <Box flexDirection="column" paddingY={2}>
+        <Text color={palette.muted}>{"◈  nothing to discover yet"}</Text>
+        <Text color={palette.dim}>watch something first to get recommendations</Text>
+      </Box>
+    ) : (
+      visibleSections.map((section, idx) => {
+        if (refreshingSectionIdx === idx) {
+          return (
+            <Box key={section.reason + String(idx)} flexDirection="column" marginBottom={1}>
+              <Text
+                color={idx === sectionIdx ? palette.accent : palette.muted}
+                bold={idx === sectionIdx}
+              >
+                {idx === sectionIdx ? "▸ " : "  "}
+                {section.label || discoverSectionReasonDetail(section)}
+              </Text>
+              <Box>
+                <InlineDotMatrixLoader variant="echo-ring" active onColor={palette.dim} />
+                <Text color={palette.dim} dimColor>
+                  {" ░░░ rerolling…"}
+                </Text>
+              </Box>
+            </Box>
+          );
+        }
+        return (
+          <DiscoverSectionView
+            key={section.reason + String(idx)}
+            section={section}
+            isFocused={idx === sectionIdx}
+            compact={viewport.compact}
+            maxWidth={listWidth}
+            sectionOffset={sectionOffsets[idx] ?? 0}
+            globalSelectedIndex={selectedGlobalIndex}
+          />
+        );
+      })
+    );
+
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between" paddingX={1}>
       <Box flexDirection="column" flexGrow={1}>
@@ -272,65 +342,14 @@ export function DiscoverShell({
             </Text>
           </Box>
         ) : null}
-        <Box
-          marginTop={1}
-          flexDirection={showPreviewRail ? "row" : "column"}
-          flexGrow={1}
-          justifyContent="space-between"
-        >
-          <Box flexDirection="column" width={showPreviewRail ? listWidth : undefined} flexGrow={1}>
-            {visibleSections.length === 0 ? (
-              <Box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
-                <DotMatrixLoader variant="echo-ring" active onColor={palette.accent} />
-                <Box marginTop={1}>
-                  <Text color={palette.muted}>Loading recommendations…</Text>
-                </Box>
-              </Box>
-            ) : visibleSections.every((s) => s.items.length === 0) ? (
-              <Box flexDirection="column" paddingY={2}>
-                <Text color={palette.muted}>{"◈  nothing to discover yet"}</Text>
-                <Text color={palette.dim}>watch something first to get recommendations</Text>
-              </Box>
-            ) : (
-              visibleSections.map((section, idx) => {
-                if (refreshingSectionIdx === idx) {
-                  return (
-                    <Box key={section.reason + String(idx)} flexDirection="column" marginBottom={1}>
-                      <Text
-                        color={idx === sectionIdx ? palette.accent : palette.muted}
-                        bold={idx === sectionIdx}
-                      >
-                        {idx === sectionIdx ? "▸ " : "  "}
-                        {section.label}
-                      </Text>
-                      <Box>
-                        <InlineDotMatrixLoader variant="echo-ring" active onColor={palette.dim} />
-                        <Text color={palette.dim} dimColor>
-                          {" ░░░ rerolling…"}
-                        </Text>
-                      </Box>
-                    </Box>
-                  );
-                }
-                return (
-                  <DiscoverSectionView
-                    key={section.reason + String(idx)}
-                    section={section}
-                    isFocused={idx === sectionIdx}
-                    compact={viewport.compact}
-                    maxWidth={listWidth}
-                    sectionOffset={sectionOffsets[idx] ?? 0}
-                    globalSelectedIndex={selectedGlobalIndex}
-                  />
-                );
-              })
-            )}
-          </Box>
-          {showPreviewRail && previewRailModel ? (
-            <Box marginLeft={2} width={previewWidth}>
-              <PreviewRail model={previewRailModel} width={previewWidth} />
-            </Box>
-          ) : null}
+        <Box marginTop={1} flexGrow={1}>
+          <MediaListShell
+            columns={viewport.columns}
+            listWidth={listWidth}
+            railWidth={previewWidth}
+            list={listBody}
+            railModel={showPreviewRail ? previewRailModel : null}
+          />
         </Box>
       </Box>
       <ShellFooter

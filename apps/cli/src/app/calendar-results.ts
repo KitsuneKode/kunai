@@ -168,6 +168,7 @@ function toCalendarSearchResult(
     rating: typeof item.averageScore === "number" ? item.averageScore / 10 : undefined,
     popularity: item.popularity,
     displayGroup: groupLabel,
+    displayDayKey: describeCalendarDayKey(item.releaseAt),
     displayTime: timeLabel,
     displayBadge:
       activeNewEpisodeCount(releaseProgress) > 0
@@ -265,6 +266,16 @@ function describeCalendarGroup(releaseAt: string | null): string {
   const relative = describeCalendarDay(releaseAt);
   const base = `${weekday} ${day}`;
   return relative === "Today" || relative === "Tomorrow" ? `${base} · ${relative}` : base;
+}
+
+function describeCalendarDayKey(releaseAt: string | null): string | undefined {
+  if (!releaseAt) return undefined;
+  const release = new Date(releaseAt);
+  if (Number.isNaN(release.getTime())) return undefined;
+  const y = release.getFullYear();
+  const m = String(release.getMonth() + 1).padStart(2, "0");
+  const d = String(release.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function describeCalendarTime(item: CatalogScheduleItem): string | undefined {

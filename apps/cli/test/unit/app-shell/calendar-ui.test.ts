@@ -12,6 +12,7 @@ import {
   formatReleaseCountdown,
   hasProviderConfirmedAvailability,
   parsePreviewTimeTodayMs,
+  windowCalendarDayStrip,
 } from "@/app-shell/calendar-ui";
 import type { BrowseShellOption } from "@/app-shell/types";
 import type { SearchResult } from "@/domain/types";
@@ -51,7 +52,7 @@ test("calendarDayKeyFromGroup strips relative suffix", () => {
   expect(calendarDayKeyFromGroup("MON 19 · Today")).toBe("MON 19");
 });
 
-test("buildCalendarDaysFromOptions narrows to three days around today", () => {
+test("buildCalendarDaysFromOptions dedupes days by previewDayKey", () => {
   const options = [
     calendarOption({ label: "A", previewGroup: "MON 1" }),
     calendarOption({ label: "B", previewGroup: "TUE 2 · Today" }),
@@ -59,7 +60,19 @@ test("buildCalendarDaysFromOptions narrows to three days around today", () => {
     calendarOption({ label: "D", previewGroup: "THU 4" }),
   ];
   const days = buildCalendarDaysFromOptions(options, true);
-  expect(days.map((day) => day.key)).toEqual(["MON 1", "TUE 2", "WED 3"]);
+  expect(days.map((day) => day.label)).toEqual(["MON 1", "TUE 2", "WED 3", "THU 4"]);
+});
+
+test("windowCalendarDayStrip narrows to three days around today", () => {
+  const options = [
+    calendarOption({ label: "A", previewGroup: "MON 1" }),
+    calendarOption({ label: "B", previewGroup: "TUE 2 · Today" }),
+    calendarOption({ label: "C", previewGroup: "WED 3" }),
+    calendarOption({ label: "D", previewGroup: "THU 4" }),
+  ];
+  const days = buildCalendarDaysFromOptions(options);
+  const windowed = windowCalendarDayStrip(days, null, true);
+  expect(windowed.windowDays.map((day) => day.label)).toEqual(["MON 1", "TUE 2", "WED 3"]);
 });
 
 test("filterCalendarOptionsByType keeps anime rows on Anime tab", () => {
@@ -148,16 +161,16 @@ test("parsePreviewTimeTodayMs rejects invalid clock labels", () => {
   expect(parsePreviewTimeTodayMs("25:99", Date.parse("2026-05-23T08:00:00"))).toBeNull();
 });
 
-test("buildCalendarRenderRows groups timed headers and tbd bucket", () => {
+test("buildCalendarRenderRows emits unified timestamp rows without band headers", () => {
   const options = [
     calendarOption({ label: "Late", previewGroup: "MON 1", displayTime: "9:00 PM" }),
     calendarOption({ label: "Also Late", previewGroup: "MON 1", displayTime: "9:00 PM" }),
     calendarOption({ label: "Unknown", previewGroup: "MON 1" }),
   ];
   const rows = buildCalendarRenderRows(options, 0, options.length);
-  expect(rows[0]?.showTimeHeader).toBe(true);
-  expect(rows[1]?.showTimeHeader).toBe(false);
-  expect(rows[2]?.showTbdHeader).toBe(true);
+  expect(rows[0]?.timeLabel).toBe("9:00 PM");
+  expect(rows[1]?.timeLabel).toBe("9:00 PM");
+  expect(rows[2]?.timeLabel).toBe("TBD");
 });
 
 test("calendarPriorityBand prefers tracked titles in for-you", () => {

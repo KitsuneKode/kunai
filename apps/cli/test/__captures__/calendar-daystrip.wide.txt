@@ -1,3 +1,3 @@
 # calendar-daystrip · wide (140×45)
 
-‹ · MON 10  · TUE 19  · MON 23  · MON 18  · MON 5  ◉ MON 1  · MON 11  · SUN 26  · THU 13  · FRI 10  ›  esc · all days
+‹ MON 18  MON 5  MON 1  MON 11   › esc · all days

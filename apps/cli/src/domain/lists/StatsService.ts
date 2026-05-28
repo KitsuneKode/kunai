@@ -13,12 +13,29 @@ export interface ShowStat {
   readonly totalSeconds: number;
 }
 
+export interface TypeBreakdown {
+  readonly animeSeconds: number;
+  readonly seriesSeconds: number;
+  readonly movieSeconds: number;
+}
+
+export interface DailyKindMix {
+  readonly date: string;
+  readonly animeSeconds: number;
+  readonly seriesSeconds: number;
+  readonly movieSeconds: number;
+}
+
 export interface WatchStats {
   readonly streakDays: number;
   readonly longestStreak: number;
   readonly totalEpisodes: number;
   readonly totalSeconds: number;
   readonly avgEpisodesPerDay: number;
+  readonly activeDays: number;
+  readonly mostActiveDay: string | null;
+  readonly typeBreakdown: TypeBreakdown;
+  readonly dailyKindMix: readonly DailyKindMix[];
   readonly heatmap: readonly DailyActivity[];
   readonly topShows: readonly ShowStat[];
   readonly weeklyBuckets: readonly DailyActivity[];
@@ -178,12 +195,71 @@ export class StatsService {
     const avgEpisodesPerDay =
       activeDays > 0 ? totalsRow.total_episodes / Math.max(1, windowDays) : 0;
 
+    const mostActiveDay =
+      dayRows.length > 0
+        ? dayRows.reduce((best, row) => (row.total_seconds > best.total_seconds ? row : best)).date
+        : null;
+
+    const kindRows = this.db
+      .query<{ media_kind: string; total_seconds: number }, [string]>(
+        `SELECT media_kind,
+                COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
+         FROM history_progress
+         WHERE updated_at >= ?${kindClause}
+         GROUP BY media_kind`,
+      )
+      .all(windowStart);
+
+    let animeSeconds = 0;
+    let seriesSeconds = 0;
+    let movieSeconds = 0;
+    for (const row of kindRows) {
+      if (row.media_kind === "anime") animeSeconds = row.total_seconds;
+      else if (row.media_kind === "series") seriesSeconds = row.total_seconds;
+      else if (row.media_kind === "movie") movieSeconds = row.total_seconds;
+    }
+    const typeBreakdown: TypeBreakdown = { animeSeconds, seriesSeconds, movieSeconds };
+
+    const dailyKindRows = this.db
+      .query<{ date: string; media_kind: string; total_seconds: number }, [string]>(
+        `SELECT date(updated_at) AS date,
+                media_kind,
+                COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
+         FROM history_progress
+         WHERE updated_at >= ?${kindClause}
+         GROUP BY date(updated_at), media_kind
+         ORDER BY date ASC`,
+      )
+      .all(heatmapStart);
+
+    const dailyKindByDate = new Map<string, DailyKindMix>();
+    for (const row of dailyKindRows) {
+      const existing = dailyKindByDate.get(row.date) ?? {
+        date: row.date,
+        animeSeconds: 0,
+        seriesSeconds: 0,
+        movieSeconds: 0,
+      };
+      const next: DailyKindMix = {
+        date: row.date,
+        animeSeconds: existing.animeSeconds + (row.media_kind === "anime" ? row.total_seconds : 0),
+        seriesSeconds:
+          existing.seriesSeconds + (row.media_kind === "series" ? row.total_seconds : 0),
+        movieSeconds: existing.movieSeconds + (row.media_kind === "movie" ? row.total_seconds : 0),
+      };
+      dailyKindByDate.set(row.date, next);
+    }
+
     return {
       streakDays,
       longestStreak,
       totalEpisodes: totalsRow.total_episodes,
       totalSeconds: totalsRow.total_seconds,
       avgEpisodesPerDay: Math.round(avgEpisodesPerDay * 10) / 10,
+      activeDays,
+      mostActiveDay,
+      typeBreakdown,
+      dailyKindMix: [...dailyKindByDate.values()],
       heatmap: heatmapRows.map((r) => ({
         date: r.date,
         watchedCount: r.watched_count,

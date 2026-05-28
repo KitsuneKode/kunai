@@ -8,7 +8,7 @@ import {
   selectableCapabilityAt,
   selectableTrackCount,
 } from "@/domain/playback/track-capabilities";
-import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
+import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
 import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
@@ -27,10 +27,17 @@ import type {
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import type { StartupPriority } from "@kunai/types";
 import { Box, Text, useInput, useStdout } from "ink";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
 import { DownloadManagerContent } from "./download-manager-shell";
+import { HistoryShell } from "./history-shell";
+import {
+  buildHistoryView,
+  cycleHistoryTab,
+  historyTabFromLegacy,
+  type HistoryTab,
+} from "./history-view";
 import { LibraryShell } from "./library-shell";
 import {
   buildNotificationActionOptions,
@@ -50,13 +57,12 @@ import {
 import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
-  buildHistoryPickerOptions,
   buildHelpPanelLines,
   buildHistoryPanelLines,
   buildProviderPickerOptions,
-  isHistoryPickerContinuable,
   type HistoryPickerOptionsContext,
 } from "./panel-data";
+import { shouldRenderPreviewRail } from "./primitives/PreviewRail";
 import {
   buildRootHistorySelection,
   hasPendingRootHistorySelection,
@@ -373,11 +379,11 @@ export function RootOverlayShell({
   const [historyProjections, setHistoryProjections] = useState<
     NonNullable<HistoryPickerOptionsContext["projections"]>
   >(new Map());
-  const initialHistoryFilterMode =
-    overlay.type === "history" ? (overlay.initialFilterMode ?? "all") : "all";
-  const [historyFilterMode, setHistoryFilterMode] = useState<"all" | "watching" | "completed">(
-    initialHistoryFilterMode,
-  );
+  const initialHistoryTab =
+    overlay.type === "history"
+      ? historyTabFromLegacy(overlay.initialFilterMode ?? "all")
+      : ("all" satisfies HistoryTab);
+  const [historyTab, setHistoryTab] = useState<HistoryTab>(initialHistoryTab);
   const overlayResetKey = getRootOverlayResetKey(overlay);
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const tracksInitialIndex =
@@ -466,44 +472,34 @@ export function RootOverlayShell({
       { value: option.badge, weight: 12 },
     ],
   );
-  const filteredHistoryOptions =
-    overlay.type === "history"
-      ? buildHistoryPickerOptions(
-          rankFuzzyMatches(
-            historySelections.filter(({ titleId, entry }) => {
-              const filter = filterQuery.trim().toLowerCase();
-              const isCompleted = entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
-              const isContinuable = isHistoryPickerContinuable(
-                titleId,
-                entry,
-                historyPickerContext,
-              );
-              if (filter.length > 0) {
-                if (filter === "completed" && isCompleted) return true;
-                if (filter === "watching" && isContinuable) return true;
-                return fuzzyMatch(
-                  filter,
-                  `${entry.title} ${entry.provider} s${entry.season}e${entry.episode}`,
-                );
-              }
-
-              if (historyFilterMode === "completed" && !isCompleted) return false;
-              if (historyFilterMode === "watching" && !isContinuable) return false;
-              return true;
-            }),
-            filterQuery.trim().toLowerCase() === "completed" ||
-              filterQuery.trim().toLowerCase() === "watching"
-              ? ""
-              : filterQuery,
-            ({ entry }) => [
-              { value: entry.title, weight: 0 },
-              { value: entry.provider, weight: 8 },
-              { value: `s${entry.season}e${entry.episode}`, weight: 4 },
-            ],
-          ).map(({ titleId, entry }) => [titleId, entry] as const),
-          historyPickerContext,
-        )
-      : [];
+  const historyView = useMemo(
+    () =>
+      buildHistoryView({
+        entries: historySelections.map(({ titleId, entry }) => [titleId, entry] as const),
+        tab: historyTab,
+        filterQuery,
+        selectedIndex,
+        maxVisible: maxLines,
+        narrow: (stdout.columns ?? 80) < 124,
+        context: {
+          nextReleases: historyNextReleases,
+          projections: historyProjections,
+        },
+        loading: overlay.type === "history" ? loadingAsyncLines : false,
+      }),
+    [
+      filterQuery,
+      historyNextReleases,
+      historyProjections,
+      historySelections,
+      historyTab,
+      loadingAsyncLines,
+      maxLines,
+      overlay.type,
+      selectedIndex,
+      stdout.columns,
+    ],
+  );
   const notificationRecords =
     overlay.type === "notifications" ? container.notificationService.listActive() : [];
   const filteredNotificationOptions =
@@ -669,7 +665,7 @@ export function RootOverlayShell({
     setHistorySelections([]);
     setHistoryNextReleases(new Map());
     setHistoryProjections(new Map());
-    setHistoryFilterMode(initialHistoryFilterMode);
+    setHistoryTab(initialHistoryTab);
   }, [
     container.config,
     container.presence,
@@ -677,9 +673,14 @@ export function RootOverlayShell({
     overlayResetKey,
     overlayInitialIndex,
     tracksInitialIndex,
-    initialHistoryFilterMode,
+    initialHistoryTab,
     providerInitialIndex,
   ]);
+
+  useEffect(() => {
+    if (overlay.type !== "history") return;
+    setSelectedIndex(0);
+  }, [historyTab, overlay.type]);
 
   useEffect(() => {
     if (overlay.type !== "history") {
@@ -737,11 +738,11 @@ export function RootOverlayShell({
     if (!notification) return;
     const resolvedAction = actionId ?? getNotificationPrimaryAction(notification);
     const router = new NotificationActionRouter({
-      playlist: container.playlistService,
+      playlist: container.queueService,
       mediaActions: new MediaActionRouter({
         queue: {
           enqueueMediaItem: (item, options) => {
-            container.playlistService.enqueueMediaItem(item, options);
+            container.queueService.enqueueMediaItem(item, options);
           },
         },
       }),
@@ -842,13 +843,11 @@ export function RootOverlayShell({
       return;
     }
     if (overlay.type === "history" && key.tab) {
-      setHistoryFilterMode((prev) =>
-        prev === "all" ? "watching" : prev === "watching" ? "completed" : "all",
-      );
+      setHistoryTab((prev) => cycleHistoryTab(prev));
       return;
     }
     if (overlay.type === "history" && input.toLowerCase() === "q") {
-      const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
+      const picked = historyView.flatRows[selectedIndex]?.titleId ?? null;
       const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
       if (selected) {
         const historySelection = buildRootHistorySelection(
@@ -871,7 +870,7 @@ export function RootOverlayShell({
                   : false,
             }
           : historySelection.entry;
-        container.playlistService.enqueueMediaItem(
+        container.queueService.enqueueMediaItem(
           mediaItemFromHistoryEntry(historySelection.titleId, queueEntry),
           { placement: "end", source: "history" },
         );
@@ -1222,7 +1221,7 @@ export function RootOverlayShell({
           })();
         }
       } else if (overlay.type === "history") {
-        const picked = filteredHistoryOptions[selectedIndex]?.value ?? null;
+        const picked = historyView.flatRows[selectedIndex]?.titleId ?? null;
         const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
         resolveRootHistorySelection(
           selected
@@ -1282,7 +1281,7 @@ export function RootOverlayShell({
           overlay.type === "provider_picker"
             ? filteredProviderOptions.length
             : overlay.type === "history"
-              ? filteredHistoryOptions.length
+              ? historyView.flatRows.length
               : overlay.type === "notifications"
                 ? notificationActionDedupKey
                   ? filteredNotificationActionOptions.length
@@ -1360,14 +1359,11 @@ export function RootOverlayShell({
         }
       : overlay.type === "history"
         ? {
-            type: "history-picker",
+            type: "help",
             title,
             subtitle: effectiveSubtitle,
-            options: filteredHistoryOptions,
-            filterQuery,
-            selectedIndex: Math.min(selectedIndex, Math.max(filteredHistoryOptions.length - 1, 0)),
-            busy: loadingAsyncLines,
-            filterMode: historyFilterMode,
+            lines: [],
+            scrollIndex: 0,
           }
         : overlay.type === "notifications"
           ? {
@@ -1509,6 +1505,56 @@ export function RootOverlayShell({
     );
   }
 
+  if (overlay.type === "history") {
+    const columns = stdout.columns ?? 80;
+    const innerWidth = Math.max(24, columns - 8);
+    const previewWidth = 32;
+    const showRail = shouldRenderPreviewRail({ columns, hasModel: historyView.rail !== null });
+    const listWidth = showRail ? Math.max(48, innerWidth - previewWidth - 4) : innerWidth;
+    const rowWidth = Math.max(20, listWidth - 4);
+
+    return (
+      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
+        <Box flexDirection="column" flexGrow={1}>
+          <ContextStrip
+            items={[
+              { label: title, tone: "info" },
+              {
+                label: loadingAsyncLines
+                  ? "loading history"
+                  : `${historyView.flatRows.length} titles · ${historyView.tabLabels[historyView.tabIndex] ?? "All"}`,
+                tone: "neutral",
+              },
+            ]}
+          />
+          <HistoryShell
+            view={historyView}
+            columns={columns}
+            listWidth={listWidth}
+            rowWidth={rowWidth}
+          />
+        </Box>
+
+        <Box flexDirection="column">
+          {commandMode ? (
+            <CommandPalette
+              input={commandInput}
+              cursor={commandCursor}
+              commands={commands}
+              highlightedIndex={highlightedIndex}
+            />
+          ) : null}
+          <ShellFooter
+            taskLabel="History  ·  Enter resumes, q queues, Tab filters, type to narrow"
+            actions={footerActions}
+            mode="detailed"
+            commandMode={commandMode}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
   if (overlay.type === "help") {
     return (
       <HelpShell
@@ -1589,17 +1635,15 @@ export function RootOverlayShell({
               label:
                 overlay.type === "provider_picker"
                   ? `${filteredProviderOptions.length} options`
-                  : overlay.type === "history"
-                    ? `${filteredHistoryOptions.length} options`
-                    : overlay.type === "notifications"
-                      ? notificationActionDedupKey
-                        ? `${filteredNotificationActionOptions.length} actions`
-                        : `${filteredNotificationOptions.length} options`
-                      : overlay.type === "settings"
-                        ? `${filteredSettingsOptions.length} options`
-                        : isRootMediaPickerOverlay(overlay)
-                          ? `${filteredGenericPickerOptions.length} options`
-                          : `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
+                  : overlay.type === "notifications"
+                    ? notificationActionDedupKey
+                      ? `${filteredNotificationActionOptions.length} actions`
+                      : `${filteredNotificationOptions.length} options`
+                    : overlay.type === "settings"
+                      ? `${filteredSettingsOptions.length} options`
+                      : isRootMediaPickerOverlay(overlay)
+                        ? `${filteredGenericPickerOptions.length} options`
+                        : `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
             },
           ]}
         />
@@ -1623,19 +1667,17 @@ export function RootOverlayShell({
           taskLabel={
             overlay.type === "provider_picker"
               ? "Provider picker  ·  Type to filter, Enter to switch, Esc closes"
-              : overlay.type === "history"
-                ? "History picker  ·  Enter resumes, q queues, type to filter"
-                : overlay.type === "notifications"
-                  ? notificationActionDedupKey
-                    ? "Notification actions  ·  Enter runs, Esc returns"
-                    : "Notifications  ·  Enter acts, a actions, x dismisses"
-                  : overlay.type === "settings"
-                    ? settingsChoice
-                      ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
-                      : "Settings  ·  Type to filter, Enter to edit, ^S saves, Esc closes"
-                    : isRootMediaPickerOverlay(overlay)
-                      ? title
-                      : `${title}  ·  Esc closes and returns to the previous shell state`
+              : overlay.type === "notifications"
+                ? notificationActionDedupKey
+                  ? "Notification actions  ·  Enter runs, Esc returns"
+                  : "Notifications  ·  Enter acts, a actions, x dismisses"
+                : overlay.type === "settings"
+                  ? settingsChoice
+                    ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
+                    : "Settings  ·  Type to filter, Enter to edit, ^S saves, Esc closes"
+                  : isRootMediaPickerOverlay(overlay)
+                    ? title
+                    : `${title}  ·  Esc closes and returns to the previous shell state`
           }
           actions={footerActions}
           mode="detailed"

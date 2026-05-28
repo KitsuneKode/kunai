@@ -1,18 +1,56 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
+import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
+import {
+  ListRow,
+  listRowEpColumn,
+  listRowStatusColumn,
+  listRowTitleColumn,
+} from "@/app-shell/primitives/ListRow";
+import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
+import type { PreviewFact, PreviewRailModel } from "@/app-shell/primitives/PreviewRail";
+import { shouldRenderPreviewRail } from "@/app-shell/primitives/PreviewRail";
+import { ResumeCard } from "@/app-shell/primitives/ResumeCard";
+import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
-import { DetailLine, ResizeBlocker } from "@/app-shell/shell-primitives";
-import { truncateLine } from "@/app-shell/shell-text";
+import { ResizeBlocker } from "@/app-shell/shell-primitives";
+import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import { buildPickerActionContext } from "@/app-shell/workflows";
 import type { Container } from "@/container";
+import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import { formatTimestamp, isFinished } from "@/services/persistence/HistoryStore";
+import { isFinished } from "@/services/persistence/HistoryStore";
+import type { ListItem } from "@kunai/storage";
 import { Box, Text, useInput } from "ink";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type TabId = "library" | "queue";
+
+type LibraryShelfSection = "in-progress" | "downloaded" | "saved";
+
+type LibraryShelfRow =
+  | { readonly kind: "offline"; readonly group: OfflineLibraryShelfGroup }
+  | { readonly kind: "saved"; readonly item: ListItem };
+
+type LibraryRenderItem =
+  | { readonly kind: "section"; readonly label: string }
+  | {
+      readonly kind: "row";
+      readonly row: LibraryShelfRow;
+      readonly flatIndex: number;
+      readonly selected: boolean;
+    };
+
+const SHELF_SECTION_ORDER: readonly {
+  readonly key: LibraryShelfSection;
+  readonly label: string;
+}[] = [
+  { key: "in-progress", label: "In progress" },
+  { key: "downloaded", label: "Downloaded" },
+  { key: "saved", label: "Saved" },
+];
 
 export function LibraryShell({
   container,
@@ -62,16 +100,11 @@ export function LibraryShell({
 
   return (
     <Box flexDirection="column" flexGrow={1}>
-      {/* Tab bar */}
-      <Box flexDirection="row" columnGap={3}>
-        <Text color={tab === "library" ? palette.accent : palette.dim} bold={tab === "library"}>
-          {tab === "library" ? "▸ " : "  "}Library
-        </Text>
-        <Text color={tab === "queue" ? palette.accent : palette.dim} bold={tab === "queue"}>
-          {tab === "queue" ? "▸ " : "  "}Queue
-        </Text>
-      </Box>
-      {/* Single-line status */}
+      <ClaudeTabRow
+        labels={["Library", "Queue"]}
+        activeIndex={tab === "library" ? 0 : 1}
+        hint="Tab switch"
+      />
       <Text color={palette.dim} dimColor>
         {downloadsEnabled ? "downloads on" : "downloads off"} · runway: title opt-in
       </Text>
@@ -102,6 +135,7 @@ function LibraryTab({ container }: { container: Container }) {
   const [entries, setEntries] = useState<
     readonly import("@/services/offline/offline-library").OfflineLibraryEntry[] | null
   >(null);
+  const [watchlist, setWatchlist] = useState<readonly ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -120,6 +154,7 @@ function LibraryTab({ container }: { container: Container }) {
         if (cancelled) return undefined;
         setEntries(result);
         setHistoryMap(history);
+        setWatchlist(container.listService.getWatchlist());
         setLoadError(null);
         setLoading(false);
         return undefined;
@@ -135,22 +170,34 @@ function LibraryTab({ container }: { container: Container }) {
     };
   }, [container]);
 
-  // Compute derived data unconditionally so hooks stay stable.
-  // Guard all operations inside useInput so they no-op when data isn't ready.
   const shelf = entries ? createOfflineLibraryEngine().buildShelf(entries) : null;
-  const totalGroups = shelf ? shelf.groups.length : 0;
-  const maxGroups = Math.max(8, viewport.maxVisibleRows - 6);
-  const safeIndex = totalGroups > 0 ? Math.min(selectedIndex, totalGroups - 1) : 0;
-  const windowStart = Math.max(
-    0,
-    Math.min(safeIndex - Math.floor(maxGroups / 2), totalGroups - maxGroups),
+  const protectedIds = useMemo(
+    () => new Set(container.config.protectedDownloadJobIds),
+    [container.config.protectedDownloadJobIds],
   );
-  const windowEnd = Math.min(totalGroups, windowStart + maxGroups);
-  const groups = shelf ? shelf.groups.slice(windowStart, windowEnd) : [];
-  const selectedGroup = totalGroups > 0 ? (shelf?.groups[safeIndex] ?? null) : null;
+
+  const flatRows = useMemo(
+    () => (shelf ? buildLibraryFlatRows(shelf.groups, watchlist, historyMap) : []),
+    [shelf, watchlist, historyMap],
+  );
+  const sections = useMemo(
+    () => (shelf ? buildLibraryShelfSections(shelf.groups, watchlist, historyMap) : []),
+    [shelf, watchlist, historyMap],
+  );
+
+  const totalRows = flatRows.length;
+  const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
+  const maxVisible = Math.max(8, viewport.maxVisibleRows - 8);
+  const windowStart = getWindowStart(safeIndex, totalRows, maxVisible);
+  const windowEnd = Math.min(windowStart + maxVisible, totalRows);
+  const items = buildVisibleLibraryItems(sections, flatRows, safeIndex, windowStart, windowEnd);
+  const showScrollUp = windowStart > 0;
+  const showScrollDown = windowEnd < totalRows;
+  const selectedRow = totalRows > 0 ? flatRows[safeIndex] : null;
+  const selectedOfflineGroup = selectedRow?.kind === "offline" ? selectedRow.group : null;
 
   useInput((input, key) => {
-    if (loading || !entries || entries.length === 0 || groups.length === 0) return;
+    if (loading || !entries || totalRows === 0) return;
     if (key.upArrow) {
       setConfirmDeleteKey(null);
       setSelectedIndex((prev) => Math.max(0, prev - 1));
@@ -158,31 +205,31 @@ function LibraryTab({ container }: { container: Container }) {
     }
     if (key.downArrow) {
       setConfirmDeleteKey(null);
-      setSelectedIndex((prev) => Math.min(totalGroups - 1, prev + 1));
+      setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
       return;
     }
     if (input === "x" || key.delete) {
-      if (!selectedGroup) return;
-      if (confirmDeleteKey === selectedGroup.key) {
+      if (!selectedOfflineGroup) return;
+      if (confirmDeleteKey === selectedOfflineGroup.key) {
         setConfirmDeleteKey(null);
         const groupEntryIds = entries
-          .filter((e) => e.job.titleId === selectedGroup.titleId)
+          .filter((e) => e.job.titleId === selectedOfflineGroup.titleId)
           .map((e) => e.job.id);
         for (const jobId of groupEntryIds) {
           container.downloadService.deleteJob(jobId, { deleteArtifact: true });
         }
         setEntries((prev) =>
-          prev ? prev.filter((e) => e.job.titleId !== selectedGroup.titleId) : null,
+          prev ? prev.filter((e) => e.job.titleId !== selectedOfflineGroup.titleId) : null,
         );
       } else {
-        setConfirmDeleteKey(selectedGroup.key);
+        setConfirmDeleteKey(selectedOfflineGroup.key);
       }
       return;
     }
     if (input === "p" || input === "P") {
-      if (!selectedGroup) return;
+      if (!selectedOfflineGroup) return;
       const groupEntryIds = entries
-        .filter((e) => e.job.titleId === selectedGroup.titleId)
+        .filter((e) => e.job.titleId === selectedOfflineGroup.titleId)
         .map((e) => e.job.id);
       const protectedSet = new Set(container.config.protectedDownloadJobIds);
       const allProtected = groupEntryIds.every((id) => protectedSet.has(id));
@@ -198,16 +245,16 @@ function LibraryTab({ container }: { container: Container }) {
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
         note: allProtected
-          ? `Removed cleanup protection: ${selectedGroup.titleName}`
-          : `Protected from cleanup: ${selectedGroup.titleName}`,
+          ? `Removed cleanup protection: ${selectedOfflineGroup.titleName}`
+          : `Protected from cleanup: ${selectedOfflineGroup.titleName}`,
       });
       return;
     }
     if (key.return) {
-      if (!selectedGroup) return;
+      if (!selectedOfflineGroup) return;
       const entryById = new Map(entries.map((e) => [e.job.id, e]));
       const groupEntryIdsSet = new Set(
-        entries.filter((e) => e.job.titleId === selectedGroup.titleId).map((e) => e.job.id),
+        entries.filter((e) => e.job.titleId === selectedOfflineGroup.titleId).map((e) => e.job.id),
       );
       const groupEntries = [...entryById.values()].filter((e) => groupEntryIdsSet.has(e.job.id));
       void (async () => {
@@ -217,11 +264,11 @@ function LibraryTab({ container }: { container: Container }) {
           groupEntries,
           buildPickerActionContext({
             container,
-            taskLabel: `Offline: ${selectedGroup.titleName}`,
+            taskLabel: `Offline: ${selectedOfflineGroup.titleName}`,
           }),
           {
-            actionSummary: selectedGroup.actionSummary,
-            artifactSummary: selectedGroup.artifactSummary,
+            actionSummary: selectedOfflineGroup.actionSummary,
+            artifactSummary: selectedOfflineGroup.artifactSummary,
           },
         );
       })();
@@ -260,7 +307,7 @@ function LibraryTab({ container }: { container: Container }) {
     );
   }
 
-  if (!entries || entries.length === 0) {
+  if ((!entries || entries.length === 0) && watchlist.length === 0) {
     return (
       <Box flexDirection="column" flexGrow={1}>
         <StateBlock
@@ -279,111 +326,297 @@ function LibraryTab({ container }: { container: Container }) {
     );
   }
 
-  // TypeScript narrowing: shelf is guaranteed here because loading/empty returned above
   if (!shelf) return null;
 
-  return (
+  const columns = viewport.columns ?? 80;
+  const railWidth = 32;
+  const showRail = shouldRenderPreviewRail({
+    columns,
+    hasModel: selectedOfflineGroup !== null,
+  });
+  const listWidth = showRail ? Math.max(40, columns - railWidth - 4) : columns;
+  const rowWidth = listWidth;
+  const epWidth = 8;
+  const statusWidth = 16;
+  const titleWidth = Math.max(12, rowWidth - epWidth - statusWidth - 4);
+
+  const list = (
     <Box flexDirection="column" flexGrow={1}>
       <Box marginBottom={1}>
         <Text color={palette.dim}>{shelf.summary}</Text>
       </Box>
-      <Box flexDirection="column">
-        {windowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
-        {groups.map((group, index) => {
-          const absoluteIndex = windowStart + index;
-          const selected = absoluteIndex === safeIndex;
-          return (
-            <Box key={group.key} flexDirection="column">
-              <Box backgroundColor={selected ? palette.surfaceActive : undefined}>
-                <Text color={selected ? palette.accent : palette.dim}>
-                  {selected ? "▌ " : "  "}
-                </Text>
-                <Text color={selected ? palette.text : undefined} bold={selected}>
-                  {truncateLine(group.label, 36)}
-                </Text>
-                {group.readyCount > 0 ? (
-                  <Text color={palette.ok}>{`  ${group.readyCount}▶`}</Text>
-                ) : null}
-                {group.issueCount > 0 ? (
-                  <Text color={palette.accentDeep}>{` ${group.issueCount}⚠`}</Text>
-                ) : null}
-                <Text color={palette.muted} dimColor>
-                  {"  ·  "}
-                  {group.nextPlayableEpisodeLabel ?? "no playable files"}
-                </Text>
-                {confirmDeleteKey === group.key ? (
-                  <Text color={palette.accentDeep} bold>
-                    {"  "}x again to delete
-                  </Text>
-                ) : null}
-              </Box>
-              {selected ? (
-                <Box marginLeft={2}>
-                  <Text color={palette.dim} dimColor>
-                    {truncateLine(
-                      `${group.artifactSummary}  ·  ${group.detail}`,
-                      Math.max(40, Math.min(110, (viewport.columns ?? 80) - 6)),
-                    )}
-                  </Text>
-                </Box>
-              ) : null}
-            </Box>
-          );
-        })}
-        {windowEnd < totalGroups ? <Text color={palette.dim}> ▼ ...</Text> : null}
-      </Box>
-      {selectedGroup && confirmDeleteKey === selectedGroup.key ? (
+      {showScrollUp ? <Text color={palette.dim}> ▲ ...</Text> : null}
+      {items.map((item) => {
+        if (item.kind === "section") {
+          return <SectionGroup key={`section-${item.label}`} label={item.label} marginTop={1} />;
+        }
+        const { row, selected } = item;
+        const title =
+          row.kind === "offline"
+            ? formatLibraryTitle(
+                row.group,
+                isLibraryGroupProtected(row.group, entries ?? [], protectedIds),
+              )
+            : row.item.title;
+        const ep =
+          row.kind === "offline"
+            ? formatLibrarySeasonCode(row.group)
+            : formatSavedSeasonCode(row.item);
+        const status = formatLibraryStatus(row, historyMap);
+        return (
+          <ListRow
+            key={
+              row.kind === "offline" ? row.group.key : `saved-${row.item.titleId}-${row.item.id}`
+            }
+            selected={selected}
+            rowWidth={rowWidth}
+            columns={[
+              listRowTitleColumn(title, titleWidth),
+              listRowEpColumn(ep, epWidth),
+              listRowStatusColumn(status.label, statusWidth, status.color, status.dim),
+            ]}
+          />
+        );
+      })}
+      {showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}
+      {selectedOfflineGroup && confirmDeleteKey === selectedOfflineGroup.key ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
-            {"⚠ "}Press x again to delete {selectedGroup.titleName} and all local files
+            {"⚠ "}Press x again to delete {selectedOfflineGroup.titleName} and all local files
           </Text>
         </Box>
       ) : null}
-      {selectedGroup && confirmDeleteKey !== selectedGroup.key ? (
-        <Box marginTop={1} flexDirection="column">
-          {(() => {
-            const hist = historyMap[selectedGroup.titleId];
-            if (!hist) return null;
-            if (!isFinished(hist) && hist.timestamp > 30) {
-              const ep =
-                hist.type === "series"
-                  ? ` S${String(hist.season).padStart(2, "0")}E${String(hist.episode).padStart(2, "0")}`
-                  : "";
-              const at = formatTimestamp(hist.timestamp);
-              return (
-                <DetailLine
-                  label="Resume"
-                  value={`${hist.title}${ep} · paused at ${at}`}
-                  tone="warning"
-                />
-              );
-            }
-            if (isFinished(hist)) {
-              const ep =
-                hist.type === "series"
-                  ? ` S${String(hist.season).padStart(2, "0")}E${String(hist.episode).padStart(2, "0")}`
-                  : "";
-              return (
-                <DetailLine
-                  label="History"
-                  value={`last watched${ep} · ${new Date(hist.watchedAt).toLocaleDateString()}`}
-                  tone="success"
-                />
-              );
-            }
-            return null;
-          })()}
-          <DetailLine label="Files" value={selectedGroup.artifactSummary} tone="neutral" />
-          {selectedGroup.entries.slice(0, 6).map((entry) => (
-            <DetailLine
-              key={entry.jobId}
-              label={entry.episodeLabel}
-              value={entry.detail}
-              tone={entry.playable ? "success" : "warning"}
-            />
-          ))}
-        </Box>
+      {selectedOfflineGroup && confirmDeleteKey !== selectedOfflineGroup.key ? (
+        <ResumeCard
+          label={
+            selectedOfflineGroup.nextPlayableEpisodeLabel
+              ? `▸ Resume ${selectedOfflineGroup.nextPlayableEpisodeLabel} offline`
+              : `▸ Open ${selectedOfflineGroup.titleName}`
+          }
+          action="↵ enter"
+          width={Math.min(rowWidth, 56)}
+        />
       ) : null}
     </Box>
   );
+
+  const railModel =
+    selectedOfflineGroup !== null
+      ? buildLibraryPreviewRailModel(selectedOfflineGroup, historyMap, entries ?? [], protectedIds)
+      : null;
+
+  return (
+    <MediaListShell
+      columns={columns}
+      listWidth={listWidth}
+      railWidth={railWidth}
+      list={list}
+      railModel={railModel}
+    />
+  );
+}
+
+function libraryRowKey(row: LibraryShelfRow): string {
+  return row.kind === "offline" ? row.group.key : `saved:${row.item.titleId}`;
+}
+
+function buildLibraryFlatRows(
+  groups: readonly OfflineLibraryShelfGroup[],
+  watchlist: readonly ListItem[],
+  historyMap: Record<string, HistoryEntry>,
+): LibraryShelfRow[] {
+  const sections = buildLibraryShelfSections(groups, watchlist, historyMap);
+  return sections.flatMap((section) => section.rows);
+}
+
+function buildLibraryShelfSections(
+  groups: readonly OfflineLibraryShelfGroup[],
+  watchlist: readonly ListItem[],
+  historyMap: Record<string, HistoryEntry>,
+): { label: string; rows: LibraryShelfRow[] }[] {
+  const offlineTitleIds = new Set(groups.map((group) => group.titleId));
+  const savedOnly: LibraryShelfRow[] = watchlist
+    .filter((item) => !offlineTitleIds.has(item.titleId))
+    .map((item) => ({ kind: "saved" as const, item }));
+
+  const buckets: Record<LibraryShelfSection, LibraryShelfRow[]> = {
+    "in-progress": [],
+    downloaded: [],
+    saved: savedOnly,
+  };
+
+  for (const group of groups) {
+    buckets[classifyLibrarySection(group, historyMap)].push({ kind: "offline", group });
+  }
+
+  return SHELF_SECTION_ORDER.map(({ key, label }) => ({
+    label,
+    rows: buckets[key],
+  })).filter((section) => section.rows.length > 0);
+}
+
+function buildVisibleLibraryItems(
+  sections: readonly { label: string; rows: readonly LibraryShelfRow[] }[],
+  flatRows: readonly LibraryShelfRow[],
+  selectedIndex: number,
+  windowStart: number,
+  windowEnd: number,
+): LibraryRenderItem[] {
+  const visibleKeys = new Set(
+    flatRows.slice(windowStart, windowEnd).map((row) => libraryRowKey(row)),
+  );
+  const items: LibraryRenderItem[] = [];
+  for (const section of sections) {
+    const visibleRows = section.rows.filter((row) => visibleKeys.has(libraryRowKey(row)));
+    if (visibleRows.length === 0) continue;
+    items.push({ kind: "section", label: section.label });
+    for (const row of visibleRows) {
+      const flatIndex = flatRows.findIndex(
+        (candidate) => libraryRowKey(candidate) === libraryRowKey(row),
+      );
+      items.push({
+        kind: "row",
+        row,
+        flatIndex,
+        selected: flatIndex === selectedIndex,
+      });
+    }
+  }
+  return items;
+}
+
+function classifyLibrarySection(
+  group: OfflineLibraryShelfGroup,
+  historyMap: Record<string, HistoryEntry>,
+): LibraryShelfSection {
+  const hist = historyMap[group.titleId];
+  if (hist && !isFinished(hist) && hist.timestamp > 30) {
+    const pct = hist.duration > 0 ? (hist.timestamp / hist.duration) * 100 : 0;
+    if (pct > 0 && pct < 95) return "in-progress";
+  }
+  if (group.readyCount > 0) return "downloaded";
+  return "saved";
+}
+
+function isLibraryGroupProtected(
+  group: OfflineLibraryShelfGroup,
+  entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
+  protectedIds: ReadonlySet<string>,
+): boolean {
+  return entries
+    .filter((entry) => entry.job.titleId === group.titleId)
+    .some((entry) => protectedIds.has(entry.job.id));
+}
+
+function formatLibraryTitle(group: OfflineLibraryShelfGroup, protectedTitle: boolean): string {
+  const shield = protectedTitle ? " ⚲" : "";
+  return `${group.titleName}${shield}`;
+}
+
+function formatLibrarySeasonCode(group: OfflineLibraryShelfGroup): string {
+  const seasons = new Set(
+    group.entries
+      .map((entry) => entry.episodeLabel.match(/^S(\d+)/)?.[1])
+      .filter((value): value is string => Boolean(value)),
+  );
+  if (seasons.size === 1) {
+    const season = [...seasons][0];
+    return season ? `S${season}` : "—";
+  }
+  if (group.entries.length === 1) return group.entries[0]?.episodeLabel ?? "—";
+  return "—";
+}
+
+function formatSavedSeasonCode(item: ListItem): string {
+  if (typeof item.season === "number") return `S${String(item.season).padStart(2, "0")}`;
+  return "—";
+}
+
+function formatLibraryStatus(
+  row: LibraryShelfRow,
+  historyMap: Record<string, HistoryEntry>,
+): { label: string; color: string; dim: boolean } {
+  if (row.kind === "saved") {
+    return { label: "◆ saved", color: palette.dim, dim: true };
+  }
+  const { group } = row;
+  const hist = historyMap[group.titleId];
+  if (hist && !isFinished(hist) && hist.duration > 0) {
+    const pct = Math.round((hist.timestamp / hist.duration) * 100);
+    if (pct > 0 && pct < 95) {
+      return { label: `▸ ${pct}%`, color: palette.accent, dim: false };
+    }
+  }
+  if (group.readyCount > 0) {
+    return {
+      label: `↓ ${group.readyCount} ${group.readyCount === 1 ? "ep" : "ep"}`,
+      color: palette.ok,
+      dim: false,
+    };
+  }
+  if (group.issueCount > 0) {
+    return { label: `${group.issueCount}⚠`, color: palette.accentDeep, dim: false };
+  }
+  return { label: "◆ saved", color: palette.dim, dim: true };
+}
+
+function buildLibraryPreviewRailModel(
+  group: OfflineLibraryShelfGroup,
+  historyMap: Record<string, HistoryEntry>,
+  entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
+  protectedIds: ReadonlySet<string>,
+): PreviewRailModel {
+  const hist = historyMap[group.titleId];
+  const protectedTitle = isLibraryGroupProtected(group, entries, protectedIds);
+  const sizeBytes = entries
+    .filter((entry) => entry.job.titleId === group.titleId)
+    .reduce((sum, entry) => sum + (entry.job.fileSize ?? 0), 0);
+  const sizeLabel =
+    sizeBytes >= 1_073_741_824
+      ? `${(sizeBytes / 1_073_741_824).toFixed(1)} GB`
+      : sizeBytes > 0
+        ? `${(sizeBytes / 1_048_576).toFixed(1)} MB`
+        : "—";
+
+  const facts: PreviewFact[] = [
+    {
+      label: "offline",
+      value: `${group.readyCount} of ${group.entries.length} episodes`,
+      tone: group.readyCount > 0 ? "success" : "warning",
+    },
+    {
+      label: "size",
+      value: sizeLabel,
+      tone: "muted",
+    },
+  ];
+
+  if (hist && !isFinished(hist) && hist.duration > 0) {
+    const pct = Math.round((hist.timestamp / hist.duration) * 100);
+    const ep =
+      hist.type === "series"
+        ? `E${String(hist.episode).padStart(2, "0")}`
+        : hist.type === "movie"
+          ? "movie"
+          : "";
+    facts.push({
+      label: "progress",
+      value: `${ep} · ${pct}%`.trim(),
+      tone: "warning",
+    });
+  }
+
+  facts.push({
+    label: "protected",
+    value: protectedTitle ? "yes" : "no",
+    tone: protectedTitle ? "success" : "muted",
+  });
+
+  return {
+    title: group.titleName,
+    subtitle: truncateLine(group.artifactSummary, 40),
+    overview: group.detail,
+    posterState: group.previewImageUrl ? "ready" : "none",
+    facts,
+  };
 }
