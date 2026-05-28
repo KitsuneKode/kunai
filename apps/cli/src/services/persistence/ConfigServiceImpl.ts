@@ -88,6 +88,9 @@ export class ConfigServiceImpl implements ConfigService {
       protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
+      mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
+        loaded.mpvInProcessStreamReconnectMaxAttempts,
+      ),
     };
     return service;
   }
@@ -389,6 +392,13 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.startupPriority !== undefined
         ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
         : null),
+      ...(partial.mpvInProcessStreamReconnectMaxAttempts !== undefined
+        ? {
+            mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
+              partial.mpvInProcessStreamReconnectMaxAttempts,
+            ),
+          }
+        : null),
     };
   }
 
@@ -442,4 +452,9 @@ function normalizeBytes(value: unknown, fallback: number): number {
 function normalizeRunwayTarget(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_OFFLINE_RUNWAY_TARGET;
   return Math.max(1, Math.min(24, Math.trunc(value)));
+}
+
+function normalizeMpvReconnectAttempts(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 1;
+  return Math.max(0, Math.min(1, Math.trunc(value)));
 }

@@ -1186,8 +1186,7 @@ function buildPostPlayFooterActions(
 
   switch (postPlayState.kind) {
     case "did-not-start":
-      // Nothing played — the primary action is to retry the same episode, never
-      // advance to "next". Replay re-resolves and replays the current episode.
+      // Nothing played — retry the same episode (provider recover refetch), never advance.
       return [
         { key: "r", label: "try again", action: "replay", primary: true },
         { key: "s", label: "search", action: "search" },
@@ -1294,7 +1293,7 @@ function PlaybackShell({
       onUnhandledInput={(input, key) => {
         if (key.return || input === "c") {
           if (postPlayState.kind === "did-not-start") {
-            onResolve("replay"); // try again — retry the same episode, never advance
+            onResolve("replay"); // try again — recover-refetch same episode, never advance
             return;
           }
           if (postPlayState.kind === "mid-series") {

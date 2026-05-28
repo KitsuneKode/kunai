@@ -7,6 +7,7 @@ import {
   explainAutoplayNoNextEpisodeCatalogHint,
   resolveAutoplayAdvanceEpisode,
   transitionPlaybackSessionPhase,
+  didPlaybackFailToStart,
   resolvePlaybackResultDecision,
   resolvePostPlaybackSessionAction,
   syncPlaybackSessionState,
@@ -180,6 +181,54 @@ describe("resolvePlaybackResultDecision", () => {
 
     expect(decision.shouldRefreshSource).toBe(true);
     expect(decision.shouldFallbackProvider).toBe(false);
+  });
+
+  test("didPlaybackFailToStart detects load failures without treating user quit as failure", () => {
+    expect(
+      didPlaybackFailToStart({
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "error",
+      }),
+    ).toBe(true);
+    expect(
+      didPlaybackFailToStart({
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "unknown",
+        playerExitCode: 1,
+      }),
+    ).toBe(true);
+    expect(
+      didPlaybackFailToStart({
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "quit",
+      }),
+    ).toBe(false);
+    expect(
+      didPlaybackFailToStart({
+        watchedSeconds: 45,
+        duration: 1200,
+        endReason: "error",
+      }),
+    ).toBe(false);
+  });
+
+  test("refreshes source when playback failed to start before post-play", () => {
+    const decision = resolvePlaybackResultDecision({
+      result: {
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "error",
+        playerExitCode: 1,
+      },
+      controlAction: null,
+      session: createPlaybackSessionState({ autoNextEnabled: true }),
+    });
+
+    expect(decision.shouldRefreshSource).toBe(true);
+    expect(decision.shouldTreatAsInterrupted).toBe(false);
   });
 
   test("does not treat a near-end quit as an interruption by default", () => {

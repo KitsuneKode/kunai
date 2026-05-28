@@ -55,6 +55,35 @@ export interface PlaybackResultDecision {
   readonly shouldTreatAsInterrupted: boolean;
 }
 
+/** True when mpv never meaningfully started (load failure, dead URL, immediate exit). */
+export function didPlaybackFailToStart(result: PlaybackResult): boolean {
+  if (result.endReason === "eof" || result.endReason === "quit") {
+    return false;
+  }
+  if (result.suspectedDeadStream === true) {
+    return true;
+  }
+  if (result.watchedSeconds >= 30) {
+    return false;
+  }
+  if ((result.lastNonZeroPositionSeconds ?? 0) > 10) {
+    return false;
+  }
+  if (result.endReason === "error") {
+    return true;
+  }
+  if (
+    result.endReason === "unknown" &&
+    result.watchedSeconds <= 0 &&
+    result.duration <= 0 &&
+    result.playerExitCode !== null &&
+    result.playerExitCode !== 0
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export interface PlaybackActionDecision {
   readonly session: PlaybackSessionState;
 }
@@ -192,6 +221,7 @@ export function resolvePlaybackResultDecision({
     session: withPauseReason(session, nextPauseReason),
     shouldRefreshSource:
       result.suspectedDeadStream === true ||
+      didPlaybackFailToStart(result) ||
       controlAction === "refresh" ||
       controlAction === "recover",
     shouldFallbackProvider: controlAction === "fallback",

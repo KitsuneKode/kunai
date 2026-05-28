@@ -206,7 +206,9 @@ export class PersistentMpvSession {
 
   private playbackStream: StreamInfo;
   private mpvInProcessStreamReconnectEnabled = true;
-  private mpvInProcessStreamReconnectMaxAttempts = 3;
+  private mpvInProcessStreamReconnectMaxAttempts = 1;
+  private reconnectBaseBackoffMs = IN_PROCESS_RECONNECT_BASE_BACKOFF_MS;
+  private reconnectMaxBackoffMs = IN_PROCESS_RECONNECT_MAX_BACKOFF_MS;
   private reconnectTryCount = 0;
   private reconnectBackoffUntilMs = 0;
   private reconnectInFlight = false;

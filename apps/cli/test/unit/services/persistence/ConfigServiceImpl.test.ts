@@ -69,6 +69,17 @@ describe("ConfigServiceImpl", () => {
     expect(service.getRaw().startupPriority).toBe("balanced");
   });
 
+  test("caps persisted same-url mpv reconnect attempts to avoid dead-stream loops", async () => {
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        mpvInProcessStreamReconnectMaxAttempts: 3,
+      }),
+    );
+
+    expect(service.mpvInProcessStreamReconnectMaxAttempts).toBe(1);
+    expect(service.getRaw().mpvInProcessStreamReconnectMaxAttempts).toBe(1);
+  });
+
   test("defaults presence integrations off and persists explicit privacy choices", async () => {
     const store = new MemoryConfigStore();
     const service = await ConfigServiceImpl.load(store);

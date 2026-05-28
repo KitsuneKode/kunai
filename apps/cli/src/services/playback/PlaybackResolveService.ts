@@ -145,6 +145,7 @@ export type PlaybackResolveInput = {
   readonly forceHealthCheck?: boolean;
   readonly preferFreshStream?: boolean;
   readonly preserveCachedStreamOnFreshFailure?: boolean;
+  readonly blockedStreamUrls?: readonly string[];
   readonly ignoreTitleHealthSuggestion?: boolean;
   readonly recoveryMode?: RecoveryMode;
   readonly cancellationReason?: ResolveCancellationReason;
@@ -206,6 +207,11 @@ export class PlaybackResolveService {
       await this.deps.cacheStore.delete(cacheKey);
       cachedStream = null;
       cacheBecameStale = true;
+    } else if (cachedStream && isBlockedStreamUrl(cachedStream.url, input.blockedStreamUrls)) {
+      await this.deps.cacheStore.delete(cacheKey);
+      cachedStream = null;
+      cacheBecameStale = true;
+      input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
     } else if (cachedStream && input.preferFreshStream !== true) {
       const health = await this.checkCachedStreamHealth(
         cachedStream,
@@ -289,6 +295,7 @@ export class PlaybackResolveService {
           subtitlePreference: input.subtitlePreference,
           selectedSourceId: input.selectedSourceId,
           selectedStreamId: input.selectedStreamId,
+          blockedStreamUrls: input.blockedStreamUrls,
         });
         if (inventoryStream) {
           input.onEvent?.({ type: "source-inventory-hit", providerId: input.providerId });
@@ -315,6 +322,12 @@ export class PlaybackResolveService {
               cacheProvenance: "revalidated",
             };
           }
+          await this.deps.sourceInventory?.delete(inventoryInput);
+        } else if (
+          inventoryResult.streams.some((stream) =>
+            isBlockedStreamUrl(stream.url, input.blockedStreamUrls),
+          )
+        ) {
           await this.deps.sourceInventory?.delete(inventoryInput);
         }
       }
@@ -438,6 +451,7 @@ export class PlaybackResolveService {
         subtitlePreference: input.subtitlePreference,
         selectedSourceId: input.selectedSourceId,
         selectedStreamId: input.selectedStreamId,
+        blockedStreamUrls: input.blockedStreamUrls,
       });
 
       if (stream) {
@@ -484,6 +498,7 @@ export class PlaybackResolveService {
                     subtitlePreference: input.subtitlePreference,
                     selectedSourceId: input.selectedSourceId,
                     selectedStreamId: input.selectedStreamId,
+                    blockedStreamUrls: input.blockedStreamUrls,
                   })
                 : null,
               result: a.result,
@@ -651,6 +666,13 @@ function inventoryMatchesSelection(
 
 function providerResultHasDeferredStream(result: ProviderResolveResult): boolean {
   return result.streams.some((stream) => Boolean(stream.deferredLocator));
+}
+
+function isBlockedStreamUrl(
+  url: string | undefined,
+  blockedStreamUrls?: readonly string[],
+): boolean {
+  return Boolean(url && blockedStreamUrls?.includes(url));
 }
 
 function emitSelectionDecision(

@@ -28,6 +28,10 @@ import {
   type EpisodePrefetchTarget,
 } from "@/app/episode-prefetch";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
+import {
+  createDeadStreamUrlLedger,
+  playbackDeadStreamScopeKey,
+} from "@/app/playback-dead-stream-ledger";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
 import {
@@ -41,6 +45,7 @@ import {
   explainAutoplayBlockReason,
   explainAutoplayNoNextEpisodeCatalogHint,
   resolveAutoplayAdvanceEpisode,
+  didPlaybackFailToStart,
   resolvePlaybackResultDecision,
   resolvePostPlaybackSessionAction,
   syncPlaybackSessionState,
@@ -48,6 +53,7 @@ import {
   type PlaybackSessionPhaseEvent,
   type PlaybackSessionState,
 } from "@/app/playback-session-controller";
+import { invalidateEpisodePlaybackCaches } from "@/app/playback-source-cache-invalidation";
 import {
   startAtResumePoint,
   startEpisodeNavigation,
@@ -113,8 +119,7 @@ import {
   mergeTimingMetadata,
   PlaybackTimingAggregator,
 } from "@/infra/timing";
-import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
-import { fetchTitleDetail } from "@/services/catalog/TitleDetailService";
+import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
   createCorrelationId,
@@ -858,11 +863,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           readonly provenance: "fresh" | "cache" | "prefetch" | "fallback";
         }
       >();
+      const deadStreamUrls = createDeadStreamUrlLedger();
+      let autoSourceRecoverAttempts = 0;
+      let autoRecoverEpisodeKey: string | null = null;
 
       // Inner playback loop
       while (true) {
         const currentEpisode = stateManager.getState().currentEpisode;
         if (!currentEpisode) break;
+        const episodeScopeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
+        if (autoRecoverEpisodeKey !== episodeScopeKey) {
+          autoRecoverEpisodeKey = episodeScopeKey;
+          autoSourceRecoverAttempts = 0;
+        }
         playbackSession = this.transitionPlaybackSession(
           context,
           playbackSession,
@@ -920,6 +933,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             };
           }
 
+          const deadStreamScope = playbackDeadStreamScopeKey({
+            titleId: title.id,
+            season: currentEpisode.season,
+            episode: currentEpisode.episode,
+            providerId: currentProvider.metadata.id,
+          });
           const providerAttemptId = createCorrelationId("provider");
           const playbackCorrelation: DiagnosticCorrelation = {
             sessionId: container.sessionId,
@@ -976,6 +995,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           };
           recordStartupMark("episode-bootstrap-started");
+
+          // Warm the catalog-detail cache early (fire-and-forget) so the post-play
+          // rail can read it synchronously instead of racing a cold fetch. Errors
+          // are swallowed; post-play falls back to honest placeholders if it never
+          // resolves, and the next open reads it warm.
+          void fetchTitleDetail(title.id, title.type).catch(() => undefined);
 
           // Kick off timing fetch in parallel with everything else — IntroDB is a
           // lightweight API call and should resolve well before stream resolution.
@@ -1210,37 +1235,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (!stream) {
             recordStartupMark("resolve-started");
             if (sourceRefreshDecision?.kind === "recover") {
-              const refreshCacheKey = buildApiStreamResolveCacheKey({
+              await invalidateEpisodePlaybackCaches({
+                cacheStore,
+                sourceInventory: container.sourceInventory,
                 providerId: currentProvider.metadata.id,
                 title,
                 episode: currentEpisode,
                 mode: stateManager.getState().mode,
-                audioPreference:
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.audio
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.audio
-                      : config.seriesLanguageProfile.audio,
-                subtitlePreference:
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.subtitle
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.subtitle
-                      : config.seriesLanguageProfile.subtitle,
-                qualityPreference:
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.quality
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.quality
-                      : config.seriesLanguageProfile.quality,
-                startupPriority: config.startupPriority,
+                config,
               });
-              try {
-                await cacheStore.delete(refreshCacheKey);
-              } catch {
-                // best-effort; a failed cache delete should not block recovery
-              }
             }
+            const sourceRefreshIsRecover = sourceRefreshDecision?.kind === "recover";
+            const sourceRefreshIsRefresh = sourceRefreshDecision?.kind === "refresh";
             const resolveResult = await container.playbackResolveWork.resolve(
               {
                 title,
@@ -1267,8 +1273,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                       : config.seriesLanguageProfile.quality,
                 startupPriority: config.startupPriority,
                 recoveryMode: config.recoveryMode,
-                preferFreshStream: sourceRefreshDecision?.kind === "refresh",
-                preserveCachedStreamOnFreshFailure: sourceRefreshDecision?.kind === "refresh",
+                preferFreshStream: sourceRefreshIsRefresh || sourceRefreshIsRecover,
+                forceHealthCheck: sourceRefreshIsRecover,
+                preserveCachedStreamOnFreshFailure: sourceRefreshIsRefresh,
+                blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
                 signal: resolveController.signal,
                 correlation: playbackCorrelation,
                 onFeedback: (feedback) => this.updatePlaybackFeedback(context, feedback),
@@ -1860,41 +1868,31 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           const shouldInvalidateStreamCache =
-            result.endReason === "error" || result.suspectedDeadStream === true;
+            result.endReason === "error" ||
+            result.suspectedDeadStream === true ||
+            didPlaybackFailToStart(result);
           if (shouldInvalidateStreamCache) {
             const invalidateProviderId = consumedBundle
               ? (consumedBundle.target.providerId ?? resolvedProviderId)
               : resolvedProviderId;
-            const staleCacheKey = buildApiStreamResolveCacheKey({
+            deadStreamUrls.record(
+              playbackDeadStreamScopeKey({
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+                providerId: invalidateProviderId,
+              }),
+              preparedStream.url,
+            );
+            await invalidateEpisodePlaybackCaches({
+              cacheStore,
+              sourceInventory: container.sourceInventory,
               providerId: invalidateProviderId,
               title,
               episode: currentEpisode,
               mode: stateManager.getState().mode,
-              audioPreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.audio
-                  : title.type === "movie"
-                    ? config.movieLanguageProfile.audio
-                    : config.seriesLanguageProfile.audio,
-              subtitlePreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.subtitle
-                  : title.type === "movie"
-                    ? config.movieLanguageProfile.subtitle
-                    : config.seriesLanguageProfile.subtitle,
-              qualityPreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.quality
-                  : title.type === "movie"
-                    ? config.movieLanguageProfile.quality
-                    : config.seriesLanguageProfile.quality,
-              startupPriority: config.startupPriority,
+              config,
             });
-            try {
-              await cacheStore.delete(staleCacheKey);
-            } catch {
-              // best-effort
-            }
             const recentKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
             recentEpisodeStreams.delete(recentKey);
             if (result.suspectedDeadStream === true) {
@@ -1956,42 +1954,76 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
           if (playbackDecision.shouldRefreshSource) {
-            pendingStart = startAtResumePoint(
-              toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
-              { suppressResumePrompt: true },
-            );
-            pendingSourceRefreshAction =
-              result.suspectedDeadStream === true || playbackControlAction === "recover"
-                ? "recover"
-                : "refresh";
-            diagnosticsService.record({
-              category: "playback",
-              message:
-                pendingSourceRefreshAction === "recover"
-                  ? "Recovery requested for current provider source"
-                  : "Refresh requested for current provider source",
-              context: {
-                provider: resolvedProviderId,
-                titleId: title.id,
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-                resumeSeconds: pendingStart.startAt,
-                action: pendingSourceRefreshAction,
-              },
-            });
-            playbackSession = this.transitionPlaybackSession(
-              context,
-              playbackSession,
-              "recovery-started",
-              {
-                titleId: title.id,
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-                provider: resolvedProviderId,
-                action: pendingSourceRefreshAction,
-              },
-            );
-            continue;
+            const isExplicitSourceRefresh =
+              playbackControlAction === "refresh" || playbackControlAction === "recover";
+            const isAutoSourceRecover =
+              !isExplicitSourceRefresh &&
+              (result.suspectedDeadStream === true || didPlaybackFailToStart(result));
+
+            if (isAutoSourceRecover && autoSourceRecoverAttempts >= 1) {
+              diagnosticsService.record({
+                category: "playback",
+                level: "warn",
+                message:
+                  "Auto-recover already attempted for this episode; opening post-play instead of looping",
+                context: {
+                  provider: resolvedProviderId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  endReason: result.endReason,
+                  watchedSeconds: result.watchedSeconds,
+                },
+              });
+              this.updatePlaybackFeedback(context, {
+                detail: "Could not start playback",
+                note: "Press r to try again or switch provider with /provider",
+              });
+            } else {
+              pendingStart = startAtResumePoint(
+                toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
+                { suppressResumePrompt: true },
+              );
+              pendingSourceRefreshAction =
+                result.suspectedDeadStream === true ||
+                didPlaybackFailToStart(result) ||
+                playbackControlAction === "recover"
+                  ? "recover"
+                  : "refresh";
+              if (isAutoSourceRecover) {
+                autoSourceRecoverAttempts += 1;
+              }
+              diagnosticsService.record({
+                category: "playback",
+                message:
+                  pendingSourceRefreshAction === "recover"
+                    ? "Recovery requested for current provider source"
+                    : "Refresh requested for current provider source",
+                context: {
+                  provider: resolvedProviderId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  resumeSeconds: pendingStart.startAt,
+                  action: pendingSourceRefreshAction,
+                  autoRecover: isAutoSourceRecover,
+                  autoRecoverAttempts: autoSourceRecoverAttempts,
+                },
+              });
+              playbackSession = this.transitionPlaybackSession(
+                context,
+                playbackSession,
+                "recovery-started",
+                {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  provider: resolvedProviderId,
+                  action: pendingSourceRefreshAction,
+                },
+              );
+              continue;
+            }
           }
 
           if (playbackDecision.shouldFallbackProvider) {
@@ -2642,13 +2674,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const watchedEpisodes = watchedEntries.filter((entry) =>
               title.type === "series" ? entry.season === currentEpisode.season : true,
             ).length;
-            // Catalog detail for the post-play rail (cached after first fetch;
-            // budgeted so it never blocks the surface — undefined falls back to
-            // honest placeholders and the next open shows it from cache).
-            const postPlayTitleDetail = await Promise.race([
-              fetchTitleDetail(title.id, title.type).catch(() => undefined),
-              new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 800)),
-            ]);
+            // Catalog detail for the post-play rail. Read synchronously from the
+            // cache the episode-start prefetch warmed — never blocks the surface.
+            // Undefined falls back to honest placeholders; the next open is warm.
+            const postPlayTitleDetail = peekTitleDetail(title.id, title.type);
             // Next-episode still for the post-play rail, when the merged artwork
             // carries one for that exact season/episode.
             const nextEpisodeThumbUrl =
@@ -2789,6 +2818,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               break postPlayback;
             } else if (routedAction === "replay") {
               pendingStart = startFromBeginning();
+              if (postPlayState.kind === "did-not-start") {
+                pendingSourceRefreshAction = "recover";
+                autoSourceRecoverAttempts = 0;
+                recentEpisodeStreams.delete(
+                  `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
+                );
+              }
               const playbackAction = resolvePostPlaybackSessionAction("replay", playbackSession);
               playbackSession = playbackAction.session;
               playbackSession = this.transitionPlaybackSession(

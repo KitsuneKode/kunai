@@ -43,7 +43,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   mpvKunaiScriptPath: "",
   mpvKunaiScriptOpts: {},
   mpvInProcessStreamReconnect: true,
-  mpvInProcessStreamReconnectMaxAttempts: 3,
+  mpvInProcessStreamReconnectMaxAttempts: 1,
   discoverShowOnStartup: false,
   discoverMode: "auto",
   discoverItemLimit: 24,

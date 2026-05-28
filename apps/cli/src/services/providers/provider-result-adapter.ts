@@ -13,6 +13,7 @@ export interface ProviderResultAdapterInput {
   readonly subtitlePreference: string;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
+  readonly blockedStreamUrls?: readonly string[];
 }
 
 export function providerResolveResultToStreamInfo(
@@ -27,6 +28,7 @@ export function providerResolveResultToStreamInfo(
   const selected = selectPreferredStream(result, {
     selectedSourceId: input.selectedSourceId,
     selectedStreamId: input.selectedStreamId,
+    blockedStreamUrls: input.blockedStreamUrls,
   });
   if (!selected) {
     return null;
@@ -69,23 +71,28 @@ function selectPreferredStream(
   selection: {
     readonly selectedSourceId?: string;
     readonly selectedStreamId?: string;
+    readonly blockedStreamUrls?: readonly string[];
   },
 ) {
+  const blockedUrls = new Set(selection.blockedStreamUrls ?? []);
+  const streams = result.streams.filter((stream) => {
+    const playableUrl = stream.url ?? stream.deferredLocator;
+    return !playableUrl || !blockedUrls.has(playableUrl);
+  });
+
   const exact = selection.selectedStreamId
-    ? result.streams.find((stream) => stream.id === selection.selectedStreamId)
+    ? streams.find((stream) => stream.id === selection.selectedStreamId)
     : undefined;
   if (exact) return exact;
 
   const fromSource = selection.selectedSourceId
-    ? [...result.streams]
+    ? [...streams]
         .filter((stream) => stream.sourceId === selection.selectedSourceId)
         .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0))[0]
     : undefined;
   if (fromSource) return fromSource;
 
-  return (
-    result.streams.find((stream) => stream.id === result.selectedStreamId) ?? result.streams[0]
-  );
+  return streams.find((stream) => stream.id === result.selectedStreamId) ?? streams[0];
 }
 
 export function subtitleCandidateToTrack(candidate: SubtitleCandidate): SubtitleTrack {

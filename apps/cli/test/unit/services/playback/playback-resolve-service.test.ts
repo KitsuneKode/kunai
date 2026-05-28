@@ -691,6 +691,120 @@ test("PlaybackResolveService can try a fresh source without deleting a playable 
   expect(result.stream?.url).toBe(cachedStream.url);
 });
 
+test("PlaybackResolveService skips a blocked cached stream during recovery", async () => {
+  const blockedStream = {
+    ...stream,
+    timestamp: Date.now(),
+    url: "https://cdn.example/dead-loop.m3u8",
+  };
+  const cache = createMemoryCache(blockedStream);
+  const freshStreamUrl = "https://cdn.example/refetched-good.m3u8";
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "vidking" as ProviderId,
+      streams: [
+        {
+          id: "stream:vidking:fresh",
+          providerId: "vidking" as ProviderId,
+          url: freshStreamUrl,
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:fresh",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "vidking" as ProviderId,
+    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+  });
+  const events: string[] = [];
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    blockedStreamUrls: [blockedStream.url],
+    onEvent: (event) => events.push(event.type),
+  });
+
+  expect(events).toContain("cache-stale");
+  expect(result.cacheStatus).toBe("miss");
+  expect(result.stream?.url).toBe(freshStreamUrl);
+});
+
+test("PlaybackResolveService selects an alternate provider stream when the preferred URL is blocked", async () => {
+  const blockedUrl = "https://cdn.example/repeated-dead.m3u8";
+  const alternateUrl = "https://cdn.example/source-b.m3u8";
+  const cache = createMemoryCache(null);
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "vidking" as ProviderId,
+      selectedStreamId: "stream:vidking:dead",
+      streams: [
+        {
+          id: "stream:vidking:dead",
+          providerId: "vidking" as ProviderId,
+          url: blockedUrl,
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+        {
+          id: "stream:vidking:alt",
+          providerId: "vidking" as ProviderId,
+          url: alternateUrl,
+          protocol: "hls" as const,
+          confidence: 0.8,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:alt",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "vidking" as ProviderId,
+    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+  });
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    blockedStreamUrls: [blockedUrl],
+  });
+
+  expect(result.stream?.url).toBe(alternateUrl);
+  expect(result.stream?.providerResolveResult?.selectedStreamId).toBe("stream:vidking:alt");
+});
+
 test("PlaybackResolveService validates stale cached stream and returns it when healthy", async () => {
   const staleStream = {
     ...stream,
