@@ -6,6 +6,8 @@
 
 import type { StartupPriority } from "@kunai/types";
 
+import type { TuningConfig } from "./tuning";
+
 export type QuitNearEndBehavior = "continue" | "pause";
 
 export type QuitNearEndThresholdMode = "credits-or-90-percent" | "percent-only" | "seconds-only";
@@ -149,9 +151,13 @@ export interface KitsuneConfig {
   lastWeeklyDigestShownAt?: string | null;
   /** The highest streak milestone (in days) that has already been celebrated. */
   lastStreakMilestoneDays?: number;
+  /** Optional runtime tuning overrides. Unset keys fall back to DEFAULT_TUNING / KUNAI_TUNING_* env. */
+  tuningOverrides?: Partial<TuningConfig>;
 }
 
 export interface ConfigService extends KitsuneConfig {
+  /** Fully-resolved tuning values (defaults < config override < env). */
+  readonly tuning: TuningConfig;
   // Raw config access
   getRaw(): KitsuneConfig;
   update(partial: Partial<KitsuneConfig>): Promise<void>;

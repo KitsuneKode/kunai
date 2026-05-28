@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
+import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import { DEFAULT_TUNING, resolveTuning, tuningEnvKey } from "@/services/persistence/tuning";
 
 describe("resolveTuning", () => {
@@ -42,5 +44,27 @@ describe("resolveTuning", () => {
     expect(tuningEnvKey("mpvReconnectBaseBackoffMs")).toBe(
       "KUNAI_TUNING_MPV_RECONNECT_BASE_BACKOFF_MS",
     );
+  });
+});
+
+describe("ConfigService.tuning", () => {
+  test("exposes resolved defaults with no overrides", async () => {
+    const store = {
+      load: async () => ({ ...DEFAULT_CONFIG }),
+      save: async () => {},
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+    expect(service.tuning).toEqual(DEFAULT_TUNING);
+  });
+
+  test("applies a config-file tuning override", async () => {
+    const store = {
+      load: async () => ({ ...DEFAULT_CONFIG, tuningOverrides: { thumbnailTimeoutMs: 20_000 } }),
+      save: async () => {},
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+    expect(service.tuning.thumbnailTimeoutMs).toBe(20_000);
   });
 });

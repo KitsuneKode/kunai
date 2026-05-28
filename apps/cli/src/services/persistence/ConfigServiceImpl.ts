@@ -22,6 +22,8 @@ import type {
 } from "./ConfigService";
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
+import type { TuningConfig } from "./tuning";
+import { resolveTuning } from "./tuning";
 
 function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
   if (!subLang || subLang === "none" || subLang === "fzf" || subLang === "interactive") {
@@ -317,6 +319,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get powerSaverAllowManualArtwork(): boolean {
     return this.config.powerSaverAllowManualArtwork;
+  }
+
+  get tuning(): TuningConfig {
+    return resolveTuning(this.config.tuningOverrides);
   }
 
   get sync(): KitsuneConfig["sync"] {

@@ -1,6 +1,7 @@
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
+import { resolveTuning } from "@/services/persistence/tuning";
 import { PresenceServiceImpl } from "@/services/presence/PresenceServiceImpl";
 
 type DiscordPresenceSmokePayload = {
@@ -26,6 +27,7 @@ function createConfig(): ConfigService {
   };
   return {
     ...raw,
+    tuning: resolveTuning(raw.tuningOverrides),
     getRaw: () => ({ ...raw }),
     update: async () => undefined,
     save: async () => undefined,

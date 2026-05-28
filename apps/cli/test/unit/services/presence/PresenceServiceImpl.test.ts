@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
+import { resolveTuning } from "@/services/persistence/tuning";
 import {
   __testing as presenceTesting,
   buildDiscordActivity,
@@ -17,6 +18,7 @@ function createConfig(partial: Partial<KitsuneConfig>): ConfigService {
   const raw: KitsuneConfig = { ...DEFAULT_CONFIG, ...partial };
   return {
     ...raw,
+    tuning: resolveTuning(raw.tuningOverrides),
     getRaw: () => ({ ...raw }),
     update: async () => undefined,
     save: async () => undefined,
