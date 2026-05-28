@@ -7,7 +7,7 @@ import {
   FollowedTitleRepository,
   NotificationRepository,
   openKunaiDatabase,
-  PlaylistRepository,
+  QueueRepository,
   PlaylistsRepository,
   runMigrations,
 } from "../src/index";
@@ -20,9 +20,9 @@ afterEach(() => {
   }
 });
 
-test("PlaylistRepository: queue sessions can be marked recoverable and restored", () => {
+test("QueueRepository: queue sessions can be marked recoverable and restored", () => {
   const db = migratedDataDb();
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
 
   repo.createQueueSession({
     id: "session-1",
@@ -50,9 +50,9 @@ test("PlaylistRepository: queue sessions can be marked recoverable and restored"
   db.close();
 });
 
-test("PlaylistRepository: startup recovery only exposes prior active sessions with pending items", () => {
+test("QueueRepository: startup recovery only exposes prior active sessions with pending items", () => {
   const db = migratedDataDb();
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
 
   repo.createQueueSession({
     id: "previous-session",
@@ -86,9 +86,9 @@ test("PlaylistRepository: startup recovery only exposes prior active sessions wi
   db.close();
 });
 
-test("PlaylistRepository: restore moves recoverable queue items into the current session", () => {
+test("QueueRepository: restore moves recoverable queue items into the current session", () => {
   const db = migratedDataDb();
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
 
   repo.createQueueSession({
     id: "previous-session",

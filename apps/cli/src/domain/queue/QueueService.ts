@@ -1,32 +1,32 @@
 import type {
-  PlaylistItem,
-  PlaylistItemInput,
-  PlaylistRepository,
+  QueueEntry,
+  QueueEntryInput,
+  QueueRepository,
   QueueSessionRecord,
 } from "@kunai/storage";
 
+import type { ListService } from "../lists/ListService";
 import type { MediaItemIdentity } from "../media/media-item-identity";
-import { planMediaQueuePlacement } from "../queue/QueuePlanner";
-import type { ListService } from "./ListService";
+import { planMediaQueuePlacement } from "./QueuePlanner";
 
-export type { PlaylistItem, PlaylistItemInput };
+export type { QueueEntry, QueueEntryInput };
 
-export type PlaylistStatus = {
+export type QueueStatus = {
   readonly unplayedCount: number;
-  readonly nextItem: PlaylistItem | undefined;
+  readonly nextItem: QueueEntry | undefined;
   readonly isStale: boolean;
   readonly lastActivityAt: string | undefined;
 };
 
 const STALE_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
 
-export class PlaylistService {
+export class QueueService {
   constructor(
-    private readonly repo: PlaylistRepository,
+    private readonly repo: QueueRepository,
     private readonly sessionId: string,
   ) {}
 
-  enqueue(input: Omit<PlaylistItemInput, "sessionId">): PlaylistItem {
+  enqueue(input: Omit<QueueEntryInput, "sessionId">): QueueEntry {
     return this.repo.enqueue({ ...input, sessionId: this.sessionId });
   }
 
@@ -36,7 +36,7 @@ export class PlaylistService {
       readonly placement: "next" | "after-current-chain" | "end";
       readonly source: string;
     },
-  ): PlaylistItem {
+  ): QueueEntry {
     const { priority } = planMediaQueuePlacement(options.placement);
     return this.enqueue({
       title: item.title,
@@ -50,17 +50,17 @@ export class PlaylistService {
     });
   }
 
-  enqueueBatch(items: Omit<PlaylistItemInput, "sessionId">[]): void {
+  enqueueBatch(items: Omit<QueueEntryInput, "sessionId">[]): void {
     for (const item of items) {
       this.repo.enqueue({ ...item, sessionId: this.sessionId });
     }
   }
 
-  peekNext(): PlaylistItem | undefined {
+  peekNext(): QueueEntry | undefined {
     return this.repo.peekNext(this.sessionId);
   }
 
-  advance(): PlaylistItem | undefined {
+  advance(): QueueEntry | undefined {
     const current = this.repo.peekNext(this.sessionId);
     if (current) {
       this.repo.markPlayed(current.id);
@@ -68,7 +68,7 @@ export class PlaylistService {
     return this.repo.peekNext(this.sessionId);
   }
 
-  getStatus(): PlaylistStatus {
+  getStatus(): QueueStatus {
     const unplayedCount = this.repo.countUnplayed(this.sessionId);
     const nextItem = this.repo.peekNext(this.sessionId);
     const lastActivityAt = this.repo.getLastActivity();
@@ -87,11 +87,11 @@ export class PlaylistService {
     this.repo.clearPlayed(this.sessionId);
   }
 
-  getAll(): PlaylistItem[] {
+  getAll(): QueueEntry[] {
     return this.repo.getAll(this.sessionId);
   }
 
-  getUnplayed(): PlaylistItem[] {
+  getUnplayed(): QueueEntry[] {
     return this.repo.getUnplayed(this.sessionId);
   }
 

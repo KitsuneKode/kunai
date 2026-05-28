@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { KunaiDatabase } from "../sqlite";
 
-export interface PlaylistItem {
+export interface QueueEntry {
   readonly id: string;
   readonly title: string;
   readonly mediaKind: string;
@@ -35,7 +35,7 @@ export interface QueueSessionRecord extends QueueSessionInput {
   readonly itemCount: number;
 }
 
-export interface PlaylistItemInput {
+export interface QueueEntryInput {
   readonly title: string;
   readonly mediaKind: string;
   readonly titleId: string;
@@ -48,7 +48,7 @@ export interface PlaylistItemInput {
   readonly sessionId: string;
 }
 
-interface PlaylistItemRow {
+interface QueueEntryRow {
   readonly id: string;
   readonly title: string;
   readonly media_kind: string;
@@ -75,7 +75,7 @@ interface QueueSessionRow {
   readonly item_count: number;
 }
 
-function mapPlaylistRow(row: PlaylistItemRow): PlaylistItem {
+function mapQueueRow(row: QueueEntryRow): QueueEntry {
   return {
     id: row.id,
     title: row.title,
@@ -106,10 +106,10 @@ function mapQueueSessionRow(row: QueueSessionRow): QueueSessionRecord {
   };
 }
 
-export class PlaylistRepository {
+export class QueueRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
-  enqueue(input: PlaylistItemInput): PlaylistItem {
+  enqueue(input: QueueEntryInput): QueueEntry {
     const id = randomUUID();
     const now = new Date().toISOString();
 
@@ -136,40 +136,40 @@ export class PlaylistRepository {
       );
 
     const row = this.db
-      .query<PlaylistItemRow, [string]>("SELECT * FROM playlist_queue WHERE id = ?")
+      .query<QueueEntryRow, [string]>("SELECT * FROM playlist_queue WHERE id = ?")
       .get(id);
     if (!row) throw new Error(`Playlist item not found after insert: ${id}`);
-    return mapPlaylistRow(row);
+    return mapQueueRow(row);
   }
 
-  getAll(sessionId: string): PlaylistItem[] {
+  getAll(sessionId: string): QueueEntry[] {
     return this.db
-      .query<PlaylistItemRow, [string]>(
+      .query<QueueEntryRow, [string]>(
         `SELECT * FROM playlist_queue WHERE session_id = ?
          ORDER BY COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC`,
       )
       .all(sessionId)
-      .map(mapPlaylistRow);
+      .map(mapQueueRow);
   }
 
-  getUnplayed(sessionId: string): PlaylistItem[] {
+  getUnplayed(sessionId: string): QueueEntry[] {
     return this.db
-      .query<PlaylistItemRow, [string]>(
+      .query<QueueEntryRow, [string]>(
         `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
          ORDER BY COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC`,
       )
       .all(sessionId)
-      .map(mapPlaylistRow);
+      .map(mapQueueRow);
   }
 
-  peekNext(sessionId: string): PlaylistItem | undefined {
+  peekNext(sessionId: string): QueueEntry | undefined {
     const row = this.db
-      .query<PlaylistItemRow, [string]>(
+      .query<QueueEntryRow, [string]>(
         `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
          ORDER BY COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC LIMIT 1`,
       )
       .get(sessionId);
-    return row === null ? undefined : mapPlaylistRow(row);
+    return row === null ? undefined : mapQueueRow(row);
   }
 
   markPlayed(id: string): void {

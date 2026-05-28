@@ -27,7 +27,7 @@ import {
   OfflineMaintenanceJobsRepository,
   OfflineTitlePoliciesRepository,
   openKunaiDatabase,
-  PlaylistRepository,
+  QueueRepository,
   PlaylistsRepository,
   ProviderHealthRepository,
   TitleProviderHealthRepository,
@@ -44,9 +44,9 @@ import {
   type AttentionFeatureFlags,
 } from "./domain/features/feature-flags";
 import { ListService } from "./domain/lists/ListService";
-import { PlaylistService } from "./domain/lists/PlaylistService";
 import { StatsFormatter } from "./domain/lists/StatsFormatter";
 import { StatsService } from "./domain/lists/StatsService";
+import { QueueService } from "./domain/queue/QueueService";
 import type { SessionStateManager } from "./domain/session/SessionStateManager";
 import { SessionStateManagerImpl } from "./domain/session/SessionStateManager";
 import type { Logger } from "./infra/logger/Logger";
@@ -195,13 +195,13 @@ export interface Container {
 
   // Lists, playlist, stats, and sync
   readonly listRepository: ListRepository;
-  readonly playlistRepository: PlaylistRepository;
+  readonly queueRepository: QueueRepository;
   readonly notificationRepository: NotificationRepository;
   readonly followedTitleRepository: FollowedTitleRepository;
   readonly playlistsRepository: PlaylistsRepository;
   readonly durablePlaylistService: DurablePlaylistService;
   readonly listService: ListService;
-  readonly playlistService: PlaylistService;
+  readonly queueService: QueueService;
   readonly statsService: StatsService;
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
@@ -288,7 +288,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const offlineTitlePolicies = new OfflineTitlePoliciesRepository(dataDb);
   const offlineMaintenanceJobs = new OfflineMaintenanceJobsRepository(dataDb);
   const listRepository = new ListRepository(dataDb);
-  const playlistRepository = new PlaylistRepository(dataDb);
+  const queueRepository = new QueueRepository(dataDb);
   const notificationRepository = new NotificationRepository(dataDb);
   const followedTitleRepository = new FollowedTitleRepository(dataDb);
   const playlistsRepository = new PlaylistsRepository(dataDb);
@@ -334,7 +334,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   // Lists, playlist, stats, sync
   const listService = new ListService(listRepository);
-  const playlistService = new PlaylistService(playlistRepository, sessionId);
+  const queueService = new QueueService(queueRepository, sessionId);
   const statsService = new StatsService(dataDb);
   const statsFormatter = new StatsFormatter();
   const syncTokenStore = new SyncTokenStore(paths);
@@ -456,15 +456,15 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       new Set(followedTitleRepository.listByPreference("muted").map((item) => item.titleId)),
   });
   const startupAt = new Date().toISOString();
-  playlistRepository.markActiveQueueSessionsRecoverable(sessionId, startupAt);
-  playlistRepository.createQueueSession({
+  queueRepository.markActiveQueueSessionsRecoverable(sessionId, startupAt);
+  queueRepository.createQueueSession({
     id: sessionId,
     status: "active",
     createdAt: startupAt,
     updatedAt: startupAt,
   });
   notificationService.recordSignals(
-    playlistRepository.listRecoverableQueueSessions().map((queueSession) => ({
+    queueRepository.listRecoverableQueueSessions().map((queueSession) => ({
       type: "queue-recoverable" as const,
       queueSessionId: queueSession.id,
       itemCount: queueSession.itemCount,
@@ -569,13 +569,13 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     resultEnrichmentService,
     updateService,
     listRepository,
-    playlistRepository,
+    queueRepository,
     notificationRepository,
     followedTitleRepository,
     playlistsRepository,
     durablePlaylistService,
     listService,
-    playlistService,
+    queueService,
     statsService,
     statsFormatter,
     syncTokenStore,

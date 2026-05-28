@@ -342,7 +342,7 @@ async function openHistoryShell(
   actionContext?: ListShellActionContext,
   releaseProgressCache?: ReleaseProgressCacheReader,
   stateManager?: import("@/domain/session/SessionStateManager").SessionStateManager,
-  playlistService?: import("@/domain/lists/PlaylistService").PlaylistService,
+  queueService?: import("@/domain/queue/QueueService").QueueService,
 ): Promise<void> {
   while (true) {
     const entries = Object.entries(await historyStore.getAll()).sort(
@@ -427,7 +427,7 @@ async function openHistoryShell(
             },
           ]
         : []),
-      ...(playlistService
+      ...(queueService
         ? [
             {
               value: "queue" as EntryAction,
@@ -477,9 +477,9 @@ async function openHistoryShell(
       continue;
     }
 
-    if (action === "queue" && playlistService) {
+    if (action === "queue" && queueService) {
       const entry = await historyStore.get(picked.id);
-      playlistService.enqueueMediaItem(
+      queueService.enqueueMediaItem(
         {
           titleId: picked.id,
           title: picked.title,
@@ -1303,7 +1303,7 @@ const withOverlay = async <T>(
 };
 
 async function handleHistory(container: Container): Promise<"handled"> {
-  const { stateManager, historyStore, releaseProgressCache, playlistService } = container;
+  const { stateManager, historyStore, releaseProgressCache, queueService } = container;
   void historyStore.getAll().then((history) => {
     enqueueReleaseReconciliation(container, Object.entries(history), "history");
     return undefined;
@@ -1314,7 +1314,7 @@ async function handleHistory(container: Container): Promise<"handled"> {
       buildPickerActionContext({ container, taskLabel: "Watch history" }),
       releaseProgressCache,
       stateManager,
-      playlistService,
+      queueService,
     ),
   );
   return "handled";
@@ -2301,7 +2301,7 @@ export async function openSettingsShell({
           actionContext,
           container?.releaseProgressCache,
           container?.stateManager,
-          container?.playlistService,
+          container?.queueService,
         );
       continue;
     }
@@ -2884,12 +2884,12 @@ async function handleFavorites(container: Container): Promise<"handled"> {
 // ─── Playlist ──────────────────────────────────────────────────────────────────
 
 async function handlePlaylist(container: Container): Promise<"handled"> {
-  const { playlistService, listService } = container;
+  const { queueService, listService } = container;
   const actionContext = buildPickerActionContext({ container, taskLabel: "Playlist" });
 
   while (true) {
-    const status = playlistService.getStatus();
-    const all = playlistService.getAll();
+    const status = queueService.getStatus();
+    const all = queueService.getAll();
 
     type PlAction =
       | { type: "remove"; id: string; title: string }
@@ -2977,7 +2977,7 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
     if (!picked || picked.type === "back") return "handled";
 
     if (picked.type === "refill") {
-      const added = playlistService.refillFromWatchlist(listService);
+      const added = queueService.refillFromWatchlist(listService);
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
         note: added > 0 ? `Added ${added} titles from watchlist.` : "Nothing new to add.",
@@ -3018,7 +3018,7 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
     }
 
     if (picked.type === "clear-played") {
-      playlistService.clearPlayed();
+      queueService.clearPlayed();
       continue;
     }
 
@@ -3032,12 +3032,12 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
           { value: false, label: "Cancel" },
         ],
       });
-      if (confirm) playlistService.clear();
+      if (confirm) queueService.clear();
       continue;
     }
 
     if (picked.type === "remove") {
-      container.playlistRepository.remove(picked.id);
+      container.queueRepository.remove(picked.id);
       continue;
     }
   }
@@ -3146,7 +3146,7 @@ function describeStaleness(lastActivityAt: string): string {
 }
 
 async function handlePlaylistAdd(container: Container): Promise<"handled"> {
-  const { stateManager, playlistService } = container;
+  const { stateManager, queueService } = container;
   const state = stateManager.getState();
 
   const title = state.currentTitle;
@@ -3158,7 +3158,7 @@ async function handlePlaylistAdd(container: Container): Promise<"handled"> {
     return "handled";
   }
 
-  playlistService.enqueue({
+  queueService.enqueue({
     title: title.name,
     mediaKind: state.mode === "anime" ? "anime" : "series",
     titleId: title.id,

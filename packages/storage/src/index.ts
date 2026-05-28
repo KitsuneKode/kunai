@@ -64,15 +64,15 @@ export { StreamCacheRepository } from "./repositories/stream-cache";
 export type { StreamCacheEntry } from "./repositories/stream-cache";
 export { ListRepository } from "./repositories/lists";
 export type { KunaiList, ListItem, ListItemInput, ListKind } from "./repositories/lists";
-export { PlaylistRepository } from "./repositories/playlist";
+export { QueueRepository } from "./repositories/queue";
 export type {
-  PlaylistItem,
-  PlaylistItemInput,
+  QueueEntry,
+  QueueEntryInput,
   QueueItemStatus,
   QueueSessionInput,
   QueueSessionRecord,
   QueueSessionStatus,
-} from "./repositories/playlist";
+} from "./repositories/queue";
 export { NotificationRepository } from "./repositories/notifications";
 export type { NotificationInput, NotificationRecord } from "./repositories/notifications";
 export { FollowedTitleRepository } from "./repositories/followed-titles";

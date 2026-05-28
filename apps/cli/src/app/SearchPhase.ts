@@ -177,7 +177,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         const shellRuntime = buildShellRuntimeBindings(container);
         const browseContext = await loadBrowseDisplayContext(container, currentState.searchResults);
 
-        const playlistNextItem = container.playlistService.peekNext();
+        const playlistNextItem = container.queueService.peekNext();
         const releaseSummary = container.releaseProgressCache.summarizeActive();
         const todayReleaseCount = releaseSummary.episodeCount;
 
@@ -270,7 +270,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const router = new MediaActionRouter({
               queue: {
                 enqueueMediaItem: (item, options) => {
-                  container.playlistService.enqueueMediaItem(item, options);
+                  container.queueService.enqueueMediaItem(item, options);
                 },
               },
             });

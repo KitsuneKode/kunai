@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 
-import { PlaylistService } from "@/domain/lists/PlaylistService";
-import { openKunaiDatabase, PlaylistRepository, runMigrations } from "@kunai/storage";
+import { QueueService } from "@/domain/queue/QueueService";
+import { openKunaiDatabase, QueueRepository, runMigrations } from "@kunai/storage";
 
-test("PlaylistService restores a recoverable queue into the current session explicitly", () => {
+test("QueueService restores a recoverable queue into the current session explicitly", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
 
   repo.createQueueSession({
     id: "old-session",
@@ -30,7 +30,7 @@ test("PlaylistService restores a recoverable queue into the current session expl
     sessionId: "old-session",
   });
 
-  const service = new PlaylistService(repo, "current-session");
+  const service = new QueueService(repo, "current-session");
 
   expect(service.listRecoverableSessions()[0]?.id).toBe("old-session");
   expect(service.restoreRecoverableSession("old-session")).toBe(1);
@@ -41,10 +41,10 @@ test("PlaylistService restores a recoverable queue into the current session expl
   db.close();
 });
 
-test("PlaylistService restore only moves pending items and never autoplays them", () => {
+test("QueueService restore only moves pending items and never autoplays them", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
   repo.createQueueSession({
     id: "old-session",
     status: "recoverable",
@@ -77,7 +77,7 @@ test("PlaylistService restore only moves pending items and never autoplays them"
     sessionId: "old-session",
   });
 
-  const service = new PlaylistService(repo, "current-session");
+  const service = new QueueService(repo, "current-session");
 
   expect(service.restoreRecoverableSession("old-session")).toBe(1);
   expect(service.getAll().map((item) => item.titleId)).toEqual(["tmdb:pending"]);

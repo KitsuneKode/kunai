@@ -17,7 +17,7 @@ import {
   OfflineAssetsRepository,
   OfflineMaintenanceJobsRepository,
   OfflineTitlePoliciesRepository,
-  PlaylistRepository,
+  QueueRepository,
   ProviderHealthRepository,
   TitleProviderHealthRepository,
   ReleaseProgressCacheRepository,
@@ -866,11 +866,11 @@ test("ListRepository: isInList returns false for absent title", () => {
   db.close();
 });
 
-// ─── PlaylistRepository ────────────────────────────────────────────────────────
+// ─── QueueRepository ────────────────────────────────────────────────────────
 
-test("PlaylistRepository: enqueue + peekNext returns first by priority DESC addedAt ASC", () => {
+test("QueueRepository: enqueue + peekNext returns first by priority DESC addedAt ASC", () => {
   const db = migratedDataDb();
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
   const sid = "session-1";
 
   repo.enqueue({
@@ -896,9 +896,9 @@ test("PlaylistRepository: enqueue + peekNext returns first by priority DESC adde
   db.close();
 });
 
-test("PlaylistRepository: markPlayed excludes item from getUnplayed", () => {
+test("QueueRepository: markPlayed excludes item from getUnplayed", () => {
   const db = migratedDataDb();
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
   const sid = "session-2";
 
   const item = repo.enqueue({
@@ -921,9 +921,9 @@ test("PlaylistRepository: markPlayed excludes item from getUnplayed", () => {
   db.close();
 });
 
-test("PlaylistRepository: clear removes all items for session", () => {
+test("QueueRepository: clear removes all items for session", () => {
   const db = migratedDataDb();
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
   const sid = "session-3";
 
   repo.enqueue({
@@ -948,9 +948,9 @@ test("PlaylistRepository: clear removes all items for session", () => {
   db.close();
 });
 
-test("PlaylistRepository: clearPlayed only removes played items", () => {
+test("QueueRepository: clearPlayed only removes played items", () => {
   const db = migratedDataDb();
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
   const sid = "session-4";
 
   const a = repo.enqueue({
@@ -977,9 +977,9 @@ test("PlaylistRepository: clearPlayed only removes played items", () => {
   db.close();
 });
 
-test("PlaylistRepository: getLastActivity returns latest addedAt across sessions", () => {
+test("QueueRepository: getLastActivity returns latest addedAt across sessions", () => {
   const db = migratedDataDb();
-  const repo = new PlaylistRepository(db);
+  const repo = new QueueRepository(db);
 
   expect(repo.getLastActivity()).toBeUndefined();
 

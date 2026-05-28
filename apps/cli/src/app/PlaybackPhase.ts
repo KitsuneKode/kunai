@@ -202,7 +202,7 @@ function enqueuePostPlaybackRecommendation(
   container: PhaseContext["container"],
   item: PlaybackRecommendationRailItem,
 ): void {
-  container.playlistService.enqueueMediaItem(
+  container.queueService.enqueueMediaItem(
     {
       mediaKind: item.type,
       ...(item.sourceId ? { sourceId: item.sourceId } : {}),
@@ -2636,7 +2636,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             !playbackSession.autoplayPaused &&
             !context.signal.aborted
           ) {
-            const nextPlaylistItem = container.playlistService.peekNext();
+            const nextPlaylistItem = container.queueService.peekNext();
             if (nextPlaylistItem) {
               const episodeLabel =
                 nextPlaylistItem.episode !== undefined
@@ -2655,7 +2655,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 isCancelled: () => stateManager.getState().autoplaySessionPaused,
               });
               if (playlistCountdown !== "cancelled") {
-                container.playlistService.advance();
+                container.queueService.advance();
                 const titleInfo: TitleInfo = {
                   id: nextPlaylistItem.titleId,
                   name: nextPlaylistItem.title,
