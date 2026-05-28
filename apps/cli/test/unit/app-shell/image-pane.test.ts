@@ -4,6 +4,7 @@ import {
   __testing as paneTesting,
   clearRenderedPosterImages,
   fetchPoster,
+  playbackPosterSurfacePhase,
   resolvePosterUrl,
 } from "@/app-shell/image-pane";
 import { __testing as posterRendererTesting } from "@/app-shell/poster-renderer";
@@ -96,6 +97,14 @@ describe("app-shell image pane cache", () => {
       }) as unknown as Bun.Subprocess;
     const textResult = await fetchPoster("/abc.jpg", { rows: 4, cols: 8, allowKitty: true });
     expect(textResult.kind).toBe("text");
+  });
+});
+
+describe("playback poster surface cleanup", () => {
+  test("maps bootstrap operations to one phase and playing to its own", () => {
+    expect(playbackPosterSurfacePhase("resolving")).toBe("bootstrap");
+    expect(playbackPosterSurfacePhase("loading")).toBe("bootstrap");
+    expect(playbackPosterSurfacePhase("playing")).toBe("playing");
   });
 });
 

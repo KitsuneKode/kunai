@@ -1,4 +1,5 @@
 import { detectImageCapability } from "@/image";
+import { useEffect } from "react";
 
 import { deleteAllTerminalImages, deleteKittyImage, renderPoster } from "./poster-renderer";
 import { clearPosterSourceCache, fetchPosterSource, resolvePosterUrl } from "./poster-source-cache";
@@ -21,6 +22,40 @@ export function clearRenderedPosterImages(): void {
   deleteAllTerminalImages();
   posterCache.clear();
   posterInflight.clear();
+}
+
+export type PlaybackPosterSurfacePhase = "bootstrap" | "playing";
+
+export function playbackPosterSurfacePhase(
+  operation: "resolving" | "loading" | "playing",
+): PlaybackPosterSurfacePhase {
+  return operation === "playing" ? "playing" : "bootstrap";
+}
+
+/**
+ * Playback bootstrap + Now Playing do not own Kitty placements except the optional
+ * wide playing rail. Clear out-of-band images on surface entry and when operation
+ * becomes "playing" so poster-bearing surfaces (browse, post-play, pickers) cannot
+ * leave ghosts after unmount or in-flight fetches.
+ */
+export function usePlaybackPosterSurfaceCleanup(
+  operation: "resolving" | "loading" | "playing",
+): void {
+  const phase = playbackPosterSurfacePhase(operation);
+  useEffect(() => {
+    clearRenderedPosterImages();
+  }, [phase]);
+}
+
+/** Clears Kitty placements when a short-lived poster surface mounts or unmounts (post-play). */
+export function usePosterSurfaceBoundaryCleanup(active: boolean): void {
+  useEffect(() => {
+    if (!active) return undefined;
+    clearRenderedPosterImages();
+    return () => {
+      clearRenderedPosterImages();
+    };
+  }, [active]);
 }
 
 export const __testing = {

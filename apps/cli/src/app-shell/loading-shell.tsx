@@ -4,7 +4,7 @@ import React from "react";
 
 import { DotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
-import { clearRenderedPosterImages } from "./image-pane";
+import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
 import {
   getLoadingDisclosure,
   getLoadingShellTimerPolicy,
@@ -358,15 +358,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
   const memoryPanelPinned = Boolean(state.showMemory && memoryPanelVisible);
 
-  // The playback bootstrap + Now Playing surfaces never render a poster, so any
-  // Kitty image still placed by the prior surface (picker/browse/details) would
-  // linger as an empty bordered region — its placeholder cells get overwritten
-  // by this frame but the out-of-band image placement is not. usePosterPreview's
-  // cleanup intentionally skips clearing (to avoid flashing on episode switch),
-  // so this surface owns the clear on entry. Cache + terminal stay in sync.
-  React.useEffect(() => {
-    clearRenderedPosterImages();
-  }, []);
+  usePlaybackPosterSurfaceCleanup(state.operation);
   const timerPolicy = getLoadingShellTimerPolicy({
     operation: state.operation,
     memoryPanelVisible,

@@ -26,7 +26,7 @@ import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
-import { deleteAllKittyImages } from "./image-pane";
+import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-pane";
 import { getPickerLayout } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
 import { PostPlayShell } from "./post-play-shell";
@@ -1261,6 +1261,7 @@ function PlaybackShell({
   onChangeProvider?: (providerId: string) => Promise<void>;
   onResolve: (result: PlaybackShellResult) => void;
 }) {
+  usePosterSurfaceBoundaryCleanup(true);
   const playbackViewport = useDebouncedViewportPolicy("playback");
   const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
   const postPlayState = state.postPlayState ?? { kind: "mid-series" as const };

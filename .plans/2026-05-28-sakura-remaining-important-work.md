@@ -24,6 +24,8 @@ Source-of-truth order: **runtime code > `.docs/design-system.md` > this plan**.
 
 ## Task T1 — A6: kill the ghost poster on Now Playing · P0 bug
 
+- [x]
+
 **Symptom:** a stale "Screenshot Error"/leftover poster image lingers top-right once playback starts (mpv takes over). Kitty/terminal-graphics images are positioned out-of-band and survive React unmounts.
 
 **Owner files:** `apps/cli/src/app-shell/image-pane.ts`, `apps/cli/src/app-shell/loading-shell.tsx`, and the active-playback surface in `apps/cli/src/app-shell/ink-shell.tsx` (render path only — coordinate the call site with the lead).
