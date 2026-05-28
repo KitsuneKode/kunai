@@ -212,3 +212,54 @@ episodes for ongoing titles. All citations are `file:line` against the tree at a
    `new-playable-episode` `NotificationSignal` (`NotificationEngine.ts:5`) has no
    producer in scope; either connect it to a provider-availability check or drop it
    to avoid implying a capability that does not exist.
+
+---
+
+## Implementation plan: cross-cour / new-season detection (feature, not a bugfix)
+
+Verified scope (file:line):
+
+- AniList progress query has no `relations`: `CatalogScheduleService.ts:505`.
+- Count model is single-media: `ReleaseReconciliationService.ts:157`
+  (`newEpisodeCount = max(0, latestAired − anchorEpisode)`).
+- TMDB probes only the anchor season: `catalog-progress.ts:62`.
+
+This needs a product decision + a model change, so it is sequenced as a feature:
+
+### Slice 1 — AniList sequel detection (highest value)
+
+1. Extend the batch query (`fetchAniListReleaseProgressBatch`, ~`:505`) with
+   `relations(edgeType:SEQUEL){edges{relationType node{id type status episodes nextAiringEpisode{episode airingAt}}}}`.
+2. Add an optional field to `CatalogSeriesReleaseProgress` (`:~78`):
+   `newSeason?: { mediaId: number; latestAiredEpisode: number; nextAiringEpisode?: number }`,
+   populated when a FINISHED media has a SEQUEL node that is RELEASING or has aired episodes.
+3. Thread it through `CatalogProgressResult` and into the reconciliation row
+   (`ReleaseReconciliationService.ts:155-181`) as a distinct signal — do NOT fold it
+   into `newEpisodeCount` (different media numbering; would corrupt the delta).
+4. Storage: add a `new_season_json` column to the release-progress cache
+   (`packages/storage/src/repositories/release-progress-cache.ts` + a migration).
+5. Tests (TDD): mock the AniList GraphQL response with a SEQUEL relation; assert the
+   `newSeason` signal is produced and that `newEpisodeCount` for the original media
+   stays correct (no negative/absolute-vs-cour corruption).
+
+### Slice 2 — UX surfacing (product decision required)
+
+Decide representation: a "New season" badge/row distinct from the "+N new episodes"
+badge (recommended — matches how Crunchyroll/AniList present sequels), wired in the
+watchlist/continue and "New episodes" history tab. Do not reuse the episode-count
+copy for a season jump.
+
+### Slice 3 — TMDB later-season probing
+
+In `catalog-progress.ts`, when the anchor season is complete, probe
+`anchorSeason + 1` (and surface as `newSeason` for parity with AniList). Requires
+`getSeriesReleaseProgress` to report whether the next season exists/aired.
+
+### Also fold in (cheap correctness wins from this audit)
+
+- Reconcile absolute-vs-cour numbering before the delta so a mismatch can't read as
+  "caught-up" (guard: if `latestAired < anchorEpisode` AND media episode-count axis
+  differs, treat as unknown, not 0).
+- Call `pruneExpired` on the release-progress cache from the maintenance hook.
+- Resolve the calendar/reconciliation same-row write race (single writer or
+  fingerprint-compare before overwrite — `sourceFingerprint` is already stored).
