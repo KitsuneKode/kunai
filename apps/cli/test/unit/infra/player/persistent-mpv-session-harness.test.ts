@@ -372,4 +372,64 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     harness.callbacks().onEndFile({ reason: "quit", observedAt: 18_200 });
     await playbackResult;
   });
+
+  test("reconnect that dies before file-loaded does not block a retry within budget", async () => {
+    const harness = createHarness();
+    const events: unknown[] = [];
+    const session = await PersistentMpvSession.create({
+      stream: createStream({ url: "https://video.example/flaky.m3u8" }),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 2,
+        mpvKunaiScriptOpts: "",
+        tuningOverrides: { mpvReconnectBaseBackoffMs: 100, mpvReconnectMaxBackoffMs: 1000 },
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+
+    const markNetworkable = (base: number) => {
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: base });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: base + 1 });
+      harness
+        .callbacks()
+        .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: base + 2 });
+      harness.callbacks().onPropertyUpdate({
+        name: "demuxer-cache-state",
+        value: { "fw-bytes": 0 },
+        observedAt: base + 3,
+      });
+    };
+
+    const startedCount = () =>
+      events.filter(
+        (e) =>
+          (e as { type?: string }).type === "mpv-in-process-reconnect" &&
+          (e as { phase?: string }).phase === "started",
+      ).length;
+
+    // First play, then a networkish error -> reconnect attempt 1 (loadfile ACKed).
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    markNetworkable(2);
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 6 });
+    await flushAsyncWork();
+    expect(startedCount()).toBe(1);
+
+    // The reloaded stream ACKed loadfile but errors again before file-loaded.
+    // The stale reconnectInFlight flag must not block reconnect attempt 2.
+    markNetworkable(7);
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 12 });
+    await Bun.sleep(250);
+    await flushAsyncWork();
+    expect(startedCount()).toBe(2);
+
+    const playbackResult = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "quit", observedAt: 99_000 });
+    await playbackResult;
+  });
 });

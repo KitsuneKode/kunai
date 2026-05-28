@@ -1241,6 +1241,15 @@ export class PersistentMpvSession {
     const active = this.activeCycle;
     if (!active) return;
 
+    // A reconnect's reload was still pending (loadfile ACKed, awaiting file-loaded)
+    // but we got an end-file instead — the reload itself died (e.g. a dead CDN ACKs
+    // loadfile then emits end-file error with no file-loaded). Clear the in-flight
+    // flag so runSameUrlReconnect's guard does not block the next attempt within budget.
+    if (this.reconnectInFlight) {
+      this.reconnectInFlight = false;
+      this.pendingInProcessReconnect = null;
+    }
+
     this.abortResumeChoiceWaitForCycleEnd();
     this.clearReadyWorkFallback();
     this.pendingReadyWork = null;
