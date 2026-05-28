@@ -7,6 +7,7 @@ import {
   formatPickerOptionRow,
   getOverlayPickerPreviewImageUrl,
 } from "@/app-shell/overlay-panel";
+import { getConfigMetadata } from "@/services/persistence/config-metadata";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
 test("formatPickerOptionRow keeps settings rows within the available width", () => {
@@ -116,6 +117,23 @@ test("settings expose discover and offline controls that already exist in config
   ).toContain("per title");
   expect(options.find((option) => option.value === "downloadPath")?.label).toContain("configured");
   expect(options.find((option) => option.value === "recoveryMode")?.label).toContain("manual");
+});
+
+test("settings rows use metadata labels for key runtime controls", () => {
+  const options = buildSettingsOptions(DEFAULT_CONFIG);
+
+  expect(options.find((option) => option.value === "footerHints")?.label).toContain(
+    getConfigMetadata("footerHints").label,
+  );
+  expect(options.find((option) => option.value === "recoveryMode")?.label).toContain(
+    getConfigMetadata("recoveryMode").label,
+  );
+  expect(options.find((option) => option.value === "startupPriority")?.label).toContain(
+    getConfigMetadata("startupPriority").label,
+  );
+  expect(options.find((option) => option.value === "discoverShowOnStartup")?.label).toContain(
+    getConfigMetadata("discoverShowOnStartup").label,
+  );
 });
 
 test("discover and offline settings provide bounded choice overlays", () => {

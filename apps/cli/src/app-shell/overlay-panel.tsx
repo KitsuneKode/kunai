@@ -1,3 +1,4 @@
+import { getConfigMetadata } from "@/services/persistence/config-metadata";
 import type {
   AutoDownloadMode,
   DiscoverMode,
@@ -335,6 +336,10 @@ export function buildSettingsSummary(config: KitsuneConfig): string {
   return `${config.defaultMode} default  ·  discover ${config.discoverMode}  ·  series ${config.provider}  ·  anime ${config.animeProvider}`;
 }
 
+function configLabel(key: Parameters<typeof getConfigMetadata>[0]): string {
+  return getConfigMetadata(key).label;
+}
+
 function describeDiscordClientId(config: KitsuneConfig): string {
   const source = resolvePresenceClientIdSource(config);
   if (source === "environment") return "env";
@@ -388,7 +393,7 @@ export function buildSettingsOptions(
     },
     {
       value: "footerHints",
-      label: `▸ Footer hints  ·  ${config.footerHints}`,
+      label: `▸ ${configLabel("footerHints")}  ·  ${config.footerHints}`,
       detail: "Detailed = footer shows key legend; minimal = task line only during playback",
     },
     {
@@ -398,7 +403,9 @@ export function buildSettingsOptions(
     },
     {
       value: "discoverShowOnStartup",
-      label: `Discover on startup  ·  ${config.discoverShowOnStartup ? "on" : "off"}`,
+      label: `${configLabel("discoverShowOnStartup")}  ·  ${
+        config.discoverShowOnStartup ? "on" : "off"
+      }`,
       detail: "Open recommendations first instead of the empty search home",
     },
     {
@@ -484,12 +491,12 @@ export function buildSettingsOptions(
     },
     {
       value: "recoveryMode",
-      label: `▸ Recovery mode  ·  ${config.recoveryMode}`,
+      label: `▸ ${configLabel("recoveryMode")}  ·  ${config.recoveryMode}`,
       detail: "Choose how aggressively Kunai retries and switches providers",
     },
     {
       value: "startupPriority",
-      label: `▸ Startup priority  ·  ${config.startupPriority}`,
+      label: `▸ ${configLabel("startupPriority")}  ·  ${config.startupPriority}`,
       detail: "Choose how long provider startup waits for richer stream choices",
     },
     {
