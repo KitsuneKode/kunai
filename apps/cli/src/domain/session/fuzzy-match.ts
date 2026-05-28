@@ -30,16 +30,33 @@ export function fuzzyMatchScore(query: string, target: string): number | null {
   let firstMatch = -1;
   let previousMatch = -1;
   let gapPenalty = 0;
+  let contiguousRun = 0;
+  let bestContiguousRun = 0;
   for (let ti = 0; ti < normalizedTarget.length && qi < normalizedQuery.length; ti++) {
     if (normalizedTarget[ti] === normalizedQuery[qi]) {
       if (firstMatch === -1) firstMatch = ti;
-      if (previousMatch >= 0) gapPenalty += Math.max(0, ti - previousMatch - 1);
+      if (previousMatch >= 0) {
+        const gap = ti - previousMatch - 1;
+        gapPenalty += Math.max(0, gap);
+        contiguousRun = gap === 0 ? contiguousRun + 1 : 1;
+      } else {
+        contiguousRun = 1;
+      }
+      bestContiguousRun = Math.max(bestContiguousRun, contiguousRun);
       previousMatch = ti;
       qi++;
     }
   }
   if (qi !== normalizedQuery.length) return null;
-  return 100 + firstMatch + gapPenalty * 2 + normalizedTarget.length - normalizedQuery.length;
+  const scatterPenalty = (normalizedQuery.length - bestContiguousRun) * 4;
+  return (
+    100 +
+    firstMatch +
+    gapPenalty * 3 +
+    scatterPenalty +
+    normalizedTarget.length -
+    normalizedQuery.length
+  );
 }
 
 export function bestFuzzyMatchScore(
