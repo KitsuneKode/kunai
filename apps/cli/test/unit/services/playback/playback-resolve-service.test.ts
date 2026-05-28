@@ -606,8 +606,7 @@ test("PlaybackResolveService force-validates fresh cached stream after suspected
     engine,
     cacheStore: cache,
     streamHealth: async (url) => {
-      expect(url).toBe(freshStream.url);
-      return false;
+      return url !== freshStream.url;
     },
   });
 
@@ -631,6 +630,7 @@ test("PlaybackResolveService force-validates fresh cached stream after suspected
     "recovery-decision",
     "provider-resolve-started",
     "attempt",
+    "cache-health-check",
   ]);
   expect(result.cacheStatus).toBe("miss");
   expect(result.cacheProvenance).toBe("refetched");
@@ -879,7 +879,7 @@ test("PlaybackResolveService deletes stale cache and refetches when validation f
   const service = new PlaybackResolveService({
     engine,
     cacheStore: cache,
-    streamHealth: async () => false,
+    streamHealth: async (url) => url !== staleStream.url,
   });
 
   const events: string[] = [];
@@ -952,6 +952,143 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
   });
 
   expect(observedCandidates).toEqual([["primary", "anime-ok"]]);
+});
+
+test("PlaybackResolveService skips a freshly resolved stream that fails preflight and tries fallback provider", async () => {
+  const cache = createMemoryCache(null);
+  const observedCandidates: ProviderId[][] = [];
+  const resolvedByProvider = new Map<ProviderId, ProviderResolveResult>([
+    [
+      "primary" as ProviderId,
+      {
+        status: "resolved",
+        providerId: "primary" as ProviderId,
+        selectedStreamId: "stream:primary:dead",
+        streams: [
+          {
+            id: "stream:primary:dead",
+            providerId: "primary" as ProviderId,
+            url: "https://primary.example/dead.m3u8",
+            protocol: "hls" as const,
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:primary",
+          startedAt: new Date().toISOString(),
+          title: { id: "12345", kind: "series", title: "Test Movie" },
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      },
+    ],
+    [
+      "fallback" as ProviderId,
+      {
+        status: "resolved",
+        providerId: "fallback" as ProviderId,
+        selectedStreamId: "stream:fallback:live",
+        streams: [
+          {
+            id: "stream:fallback:live",
+            providerId: "fallback" as ProviderId,
+            url: "https://fallback.example/live.m3u8",
+            protocol: "hls" as const,
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:fallback",
+          startedAt: new Date().toISOString(),
+          title: { id: "12345", kind: "series", title: "Test Movie" },
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      },
+    ],
+  ]);
+  const engine = {
+    modules: [
+      {
+        providerId: "primary" as ProviderId,
+        manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+      },
+      {
+        providerId: "fallback" as ProviderId,
+        manifest: createManifest("fallback" as ProviderId, ["series", "movie"]),
+      },
+    ],
+    get: () => undefined,
+    getProviderIds: () => [],
+    getManifest: (providerId: ProviderId) =>
+      createManifest(
+        providerId,
+        providerId === "primary" || providerId === "fallback" ? ["series", "movie"] : [],
+      ),
+    resolve: async () => ({}) as ProviderResolveResult,
+    resolveWithFallback: async (
+      _input: ProviderResolveInput,
+      candidateIds: readonly ProviderId[],
+    ) => {
+      observedCandidates.push([...candidateIds]);
+      const providerId = candidateIds[0] as ProviderId | undefined;
+      const result = providerId ? resolvedByProvider.get(providerId) : undefined;
+      return {
+        result: result ?? null,
+        providerId: result ? providerId : null,
+        attempts: providerId && result ? [{ providerId, result }] : [],
+      };
+    },
+  } as unknown as ProviderEngine;
+  const healthChecks: string[] = [];
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    streamHealth: async (url) => {
+      healthChecks.push(url);
+      return !url.includes("dead");
+    },
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(observedCandidates).toEqual([["primary", "fallback"], ["fallback"]]);
+  expect(healthChecks).toEqual([
+    "https://primary.example/dead.m3u8",
+    "https://fallback.example/live.m3u8",
+  ]);
+  expect(result.providerId).toBe("fallback");
+  expect(result.stream?.url).toBe("https://fallback.example/live.m3u8");
+  expect(result.attempts).toEqual([
+    expect.objectContaining({
+      providerId: "primary",
+      stream: null,
+      failure: expect.objectContaining({ code: "expired" }),
+    }),
+    expect.objectContaining({
+      providerId: "fallback",
+      stream: expect.objectContaining({ url: "https://fallback.example/live.m3u8" }),
+      failure: undefined,
+    }),
+  ]);
+  expect(result.providerTimeline?.status).toBe("recovered");
+  expect(cache.setKeys).toHaveLength(1);
 });
 
 test("PlaybackResolveService keeps primary first despite title health suggestion", async () => {

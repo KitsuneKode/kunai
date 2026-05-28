@@ -29,6 +29,7 @@ import {
 } from "@kunai/core";
 import type { ProviderHealthRepository } from "@kunai/storage";
 import type {
+  ProviderFailure,
   ProviderHealthDelta,
   ProviderId,
   ProviderResolveResult,
@@ -393,35 +394,136 @@ export class PlaybackResolveService {
       candidateCount: compatibleIds.length,
     });
 
-    const engineResult = await this.deps.engine.resolveWithFallback(
+    let engineResult = await this.deps.engine.resolveWithFallback(
       resolveInput,
       compatibleIds,
       input.signal,
       (event) => input.onEvent?.({ type: "provider-engine-event", event }),
     );
-    engineResult.attempts.forEach((attempt, index) => {
-      const attemptedName =
-        this.deps.engine.getManifest(attempt.providerId)?.displayName ?? attempt.providerId;
-      input.onEvent?.({
-        type: "attempt",
-        providerId: attempt.providerId,
-        providerName: attemptedName,
-        attempt: index + 1,
-        maxAttempts: compatibleIds.length,
-      });
-      const failure = attempt.failure ?? attempt.result?.failures[0];
-      if (failure) {
+    const emitAttempts = (
+      attempts: readonly ProviderEngineResolveAttempt[],
+      offset = 0,
+      maxAttempts = compatibleIds.length,
+    ) => {
+      attempts.forEach((attempt, index) => {
+        const attemptedName =
+          this.deps.engine.getManifest(attempt.providerId)?.displayName ?? attempt.providerId;
         input.onEvent?.({
-          type: "failure",
+          type: "attempt",
           providerId: attempt.providerId,
           providerName: attemptedName,
-          attempt: index + 1,
-          maxAttempts: compatibleIds.length,
-          issue: classifyProviderFailure(failure).failureClass,
-          retryable: failure.retryable,
+          attempt: offset + index + 1,
+          maxAttempts,
+        });
+        const failure = attempt.failure ?? attempt.result?.failures[0];
+        if (failure) {
+          input.onEvent?.({
+            type: "failure",
+            providerId: attempt.providerId,
+            providerName: attemptedName,
+            attempt: offset + index + 1,
+            maxAttempts,
+            issue: classifyProviderFailure(failure).failureClass,
+            retryable: failure.retryable,
+          });
+        }
+      });
+    };
+    emitAttempts(engineResult.attempts);
+    let combinedAttempts = [...engineResult.attempts];
+    let resolvedStream: StreamInfo | null = null;
+    while (engineResult.result) {
+      const candidateStream = providerResolveResultToStreamInfo({
+        result: engineResult.result,
+        title: input.title.name,
+        subtitlePreference: input.subtitlePreference,
+        selectedSourceId: input.selectedSourceId,
+        selectedStreamId: input.selectedStreamId,
+        blockedStreamUrls: input.blockedStreamUrls,
+      });
+
+      if (!candidateStream) break;
+
+      const resolvedProviderId = engineResult.providerId ?? input.providerId;
+      if (
+        candidateStream.deferredLocator ||
+        (!this.deps.streamHealth && !this.deps.streamHealthService)
+      ) {
+        resolvedStream = candidateStream;
+        break;
+      }
+      const health = await this.checkCachedStreamHealth(candidateStream, true, input.signal);
+      if (health.checked) {
+        input.onEvent?.({
+          type: "cache-health-check",
+          providerId: resolvedProviderId,
+          strategy: health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+          healthy: health.healthy,
+          ageMs: health.ageMs,
         });
       }
-    });
+      if (health.healthy) {
+        resolvedStream = candidateStream;
+        break;
+      }
+
+      const failure = createResolvedStreamPreflightFailure(resolvedProviderId);
+      const markedAttempt = markAttemptFailedByPreflight(
+        combinedAttempts,
+        resolvedProviderId,
+        failure,
+      );
+      combinedAttempts = markedAttempt.attempts;
+      input.onEvent?.({
+        type: "failure",
+        providerId: resolvedProviderId,
+        providerName:
+          this.deps.engine.getManifest(resolvedProviderId)?.displayName ?? resolvedProviderId,
+        attempt: markedAttempt.index + 1,
+        maxAttempts: compatibleIds.length,
+        issue: "dead-stream",
+        retryable: true,
+      });
+      await this.deps.cacheStore.delete(this.buildCacheKey(input, resolvedProviderId));
+      await this.deps.sourceInventory?.delete({
+        ...inventoryInput,
+        providerId: resolvedProviderId,
+      });
+      this.deps.titleProviderHealth?.recordFailure(
+        input.title.id,
+        resolvedProviderId,
+        undefined,
+        "dead-stream",
+      );
+
+      const triedProviders = new Set([
+        input.providerId as ProviderId,
+        resolvedProviderId as ProviderId,
+        ...combinedAttempts.map((attempt) => attempt.providerId),
+      ]);
+      const remainingCandidateIds = compatibleIds.filter(
+        (candidateId) => !triedProviders.has(candidateId),
+      );
+      if (!remainingCandidateIds.length || input.signal.aborted) {
+        engineResult = { result: null, providerId: null, attempts: combinedAttempts };
+        break;
+      }
+
+      const nextProviderId = remainingCandidateIds[0] as ProviderId;
+      input.onFeedback?.({
+        detail: `Trying ${this.deps.engine.getManifest(nextProviderId)?.displayName ?? nextProviderId} after a dead stream`,
+        note: "The resolved HLS manifest was not reachable before playback.",
+      });
+      const retryResult = await this.deps.engine.resolveWithFallback(
+        resolveInput,
+        remainingCandidateIds,
+        input.signal,
+        (event) => input.onEvent?.({ type: "provider-engine-event", event }),
+      );
+      emitAttempts(retryResult.attempts, combinedAttempts.length);
+      combinedAttempts = [...combinedAttempts, ...retryResult.attempts];
+      engineResult = { ...retryResult, attempts: combinedAttempts };
+    }
     const providerTimeline = buildProviderTimeline(
       engineResult,
       input.providerId,
@@ -445,14 +547,7 @@ export class PlaybackResolveService {
           engineResult.result,
         );
       }
-      const stream = providerResolveResultToStreamInfo({
-        result: engineResult.result,
-        title: input.title.name,
-        subtitlePreference: input.subtitlePreference,
-        selectedSourceId: input.selectedSourceId,
-        selectedStreamId: input.selectedStreamId,
-        blockedStreamUrls: input.blockedStreamUrls,
-      });
+      const stream = resolvedStream;
 
       if (stream) {
         const resolvedProviderId = engineResult.providerId ?? input.providerId;
@@ -673,6 +768,41 @@ function isBlockedStreamUrl(
   blockedStreamUrls?: readonly string[],
 ): boolean {
   return Boolean(url && blockedStreamUrls?.includes(url));
+}
+
+function createResolvedStreamPreflightFailure(providerId: string): ProviderFailure {
+  return {
+    providerId: providerId as ProviderId,
+    code: "expired",
+    message: "Resolved stream manifest was not reachable before playback",
+    retryable: true,
+    at: new Date().toISOString(),
+  };
+}
+
+function markAttemptFailedByPreflight(
+  attempts: readonly ProviderEngineResolveAttempt[],
+  providerId: string,
+  failure: ProviderFailure,
+): { readonly attempts: ProviderEngineResolveAttempt[]; readonly index: number } {
+  const index = attempts.findLastIndex((attempt) => attempt.providerId === providerId);
+  if (index === -1) {
+    return {
+      attempts: [...attempts, { providerId: providerId as ProviderId, failure }],
+      index: attempts.length,
+    };
+  }
+  return {
+    attempts: attempts.map((attempt, attemptIndex) =>
+      attemptIndex === index
+        ? {
+            providerId: attempt.providerId,
+            failure,
+          }
+        : attempt,
+    ),
+    index,
+  };
 }
 
 function emitSelectionDecision(

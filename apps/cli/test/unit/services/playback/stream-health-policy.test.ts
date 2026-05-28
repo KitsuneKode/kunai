@@ -28,6 +28,21 @@ describe("stream health policy", () => {
     });
   });
 
+  test("checks cached manifests before the nominal stream TTL expires", () => {
+    expect(
+      resolveStreamHealthPolicy({
+        url: "https://cdn.example/a.m3u8",
+        cachedAt: now - 2 * 60_000,
+        now,
+      }),
+    ).toMatchObject({
+      shouldCheck: true,
+      strategy: "hls-manifest-get",
+      reason: "stale-hls",
+      ageMs: 120_000,
+    });
+  });
+
   test("checks fresh cached streams when forced by playback failure", () => {
     expect(
       resolveStreamHealthPolicy({

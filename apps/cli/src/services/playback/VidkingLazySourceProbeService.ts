@@ -216,7 +216,15 @@ function mergeInventorySources(
   return {
     ...base,
     sources: [...byId.values()],
-    streams,
-    subtitles,
+    streams: dedupeById(streams),
+    subtitles: dedupeById(subtitles),
   };
+}
+
+function dedupeById<T extends { readonly id: string }>(items: readonly T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const item of items) {
+    byId.set(item.id, item);
+  }
+  return [...byId.values()];
 }

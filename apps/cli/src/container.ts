@@ -106,6 +106,7 @@ import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveC
 import { PlaybackResolveWorkService } from "./services/playback/PlaybackResolveWorkService";
 import { resolveProviderAttemptTimeoutMs } from "./services/playback/provider-resolve-budget-policy";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
+import { StreamHealthService } from "./services/playback/StreamHealthService";
 import { TitleProviderHealthService } from "./services/playback/TitleProviderHealthService";
 import { VidkingLazySourceProbeService } from "./services/playback/VidkingLazySourceProbeService";
 import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
@@ -377,12 +378,14 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   });
 
   const providerRegistry = createProviderRegistry(engine);
+  const streamHealthService = new StreamHealthService();
   const offlineAssetService = new OfflineAssetService(offlineAssets);
   const playbackResolveWork = new PlaybackResolveWorkService(
     new PlaybackResolveCoordinator({
       engine,
       cacheStore,
       providerHealth,
+      streamHealthService,
       sourceInventory,
       titleProviderHealth,
       diagnostics: diagnosticsService,

@@ -74,6 +74,31 @@ describe("VidkingLazySourceProbeService", () => {
 
     expect(calls).toBe(0);
   });
+
+  test("dedupes streams already present in cached inventory", async () => {
+    const persisted: ProviderResolveResult[] = [];
+    const service = new VidkingLazySourceProbeService({
+      sourceInventory: {
+        get: async () => baseResult(),
+        set: async (_key, inventory) => {
+          persisted.push(inventory);
+        },
+      },
+      resolveVidkingDirect: async () => baseResult(),
+    });
+
+    await service.schedulePhaseB({
+      resolveInput: resolveInput(),
+      context: runtimeContext(),
+      baseResult: baseResult(),
+      inventoryKey,
+      preferredAudioLanguage: "de",
+    });
+
+    const lastPersisted = persisted.at(-1);
+    const streamIds = lastPersisted?.streams.map((stream) => stream.id) ?? [];
+    expect(streamIds).toEqual([...new Set(streamIds)]);
+  });
 });
 
 function resolveInput(): ProviderResolveInput {
