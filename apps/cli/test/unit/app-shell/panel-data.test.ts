@@ -61,12 +61,9 @@ describe("panel-data", () => {
       },
     });
 
-    expect(lines.find((line) => line.label === "State")?.detail).toBe("not resolved yet");
-    expect(lines.find((line) => line.label === "Evidence")?.tone).toBe("warning");
-    expect(lines.find((line) => line.label === "Status")?.detail).toContain(
-      "missing Discord application client id",
-    );
-    expect(lines.find((line) => line.label === "Status")?.tone).toBe("warning");
+    expect(lines.find((line) => line.label === "Subtitles")?.detail).toContain("not resolved yet");
+    expect(lines.find((line) => line.label === "Presence")?.detail).toContain("unavailable");
+    expect(lines.find((line) => line.label === "Presence")?.tone).toBe("warning");
   });
 
   test("buildDiagnosticsPanelLines surfaces the latest playback problem", () => {
@@ -90,10 +87,10 @@ describe("panel-data", () => {
       recentEvents: [],
     });
 
-    const problem = lines.find((line) => line.label === "Playback problem");
-    expect(problem?.detail).toContain("expired-stream");
-    expect(problem?.detail).toContain("refresh");
-    expect(problem?.tone).toBe("warning");
+    const session = lines.find((line) => line.label === "Session");
+    expect(session?.detail).toContain("expired-stream");
+    expect(session?.detail).toContain("refresh");
+    expect(session?.tone).toBe("error");
   });
 
   test("buildDiagnosticsPanelLines surfaces direct provider trace summary", () => {
@@ -148,7 +145,7 @@ describe("panel-data", () => {
     expect(provider?.tone).toBe("success");
   });
 
-  test("buildDiagnosticsPanelLines includes smoke test recipes for manual checks", () => {
+  test("buildDiagnosticsPanelLines points to export commands instead of a smoke-test dump", () => {
     const lines = buildDiagnosticsPanelLines({
       state: createInitialState("vidking", "allanime", {
         anime: { audio: "original", subtitle: "en" },
@@ -158,13 +155,9 @@ describe("panel-data", () => {
       recentEvents: [],
     });
 
-    expect(lines.some((line) => line.label === "─── Smoke tests")).toBe(true);
-    expect(lines.some((line) => line.detail === 'bun run dev -- -S "Dune"')).toBe(true);
-    expect(lines.some((line) => line.detail === 'bun run dev -- -S "Attack on Titan" -a')).toBe(
-      true,
-    );
-    expect(lines.some((line) => line.detail === 'bun run dev -- -S "Dune" --debug')).toBe(true);
-    expect(lines.some((line) => line.detail === "bun run dev -- --discover")).toBe(true);
+    expect(lines.some((line) => line.label === "/export-diagnostics")).toBe(true);
+    expect(lines.some((line) => line.label === "/report-issue")).toBe(true);
+    expect(lines.some((line) => line.label === "─── Smoke tests")).toBe(false);
   });
 
   test("buildDiagnosticsPanelLines renders provider timeline summaries", () => {
@@ -204,13 +197,10 @@ describe("panel-data", () => {
       ],
     });
 
-    expect(lines.find((line) => line.label === "Provider timeline")?.detail).toContain(
-      "Recovered via Rivestream",
-    );
-    expect(lines.find((line) => line.label === "Provider timeline")?.detail).toContain(
+    expect(lines.find((line) => line.label === "Provider")?.detail).toContain("rivestream");
+    expect(lines.find((line) => line.label === "Resolve trace")?.detail).toContain(
       "vidking failed (timeout) -> rivestream succeeded",
     );
-    expect(lines.find((line) => line.label === "Provider timeline")?.tone).toBe("success");
   });
 
   test("buildDiagnosticsPanelLines renders playback startup timing summaries", () => {
@@ -236,10 +226,10 @@ describe("panel-data", () => {
       ],
     });
 
-    expect(lines.find((line) => line.label === "Startup path")?.detail).toContain(
+    expect(lines.find((line) => line.label === "Playback startup")?.detail).toContain(
       "first-progress 2.1s",
     );
-    expect(lines.find((line) => line.label === "Startup path")?.tone).toBe("success");
+    expect(lines.find((line) => line.label === "Playback startup")?.tone).toBe("success");
   });
 
   test("buildDiagnosticsPanelLines surfaces correlated runtime evidence honestly", () => {
@@ -323,19 +313,19 @@ describe("panel-data", () => {
 
     expect(lines).toContainEqual(
       expect.objectContaining({
-        label: "Correlation",
+        label: "Mode",
         detail: expect.stringContaining("cycle-42"),
       }),
     );
     expect(lines).toContainEqual(
       expect.objectContaining({
-        label: "Slowest stage",
+        label: "Playback startup",
         detail: expect.stringContaining("resolve-complete 850ms"),
       }),
     );
     expect(lines).toContainEqual(
       expect.objectContaining({
-        label: "Provider attempts",
+        label: "Resolve trace",
         detail: expect.stringContaining("vidking failed in 742ms"),
       }),
     );
@@ -348,7 +338,7 @@ describe("panel-data", () => {
     expect(lines).toContainEqual(
       expect.objectContaining({
         label: "Downloads",
-        detail: expect.stringContaining("Unknown"),
+        detail: expect.stringContaining("queue idle"),
         tone: "neutral",
       }),
     );
@@ -431,14 +421,14 @@ describe("panel-data", () => {
       recentEvents: [],
     });
 
-    const sourceInventory = lines.find((line) => line.label === "Source inventory");
-    expect(sourceInventory?.detail).toContain("resolved");
-    expect(sourceInventory?.detail).toContain("1 sources");
-    expect(sourceInventory?.detail).toContain("1 qualities");
-    expect(sourceInventory?.detail).toContain("2 subtitle choices");
-    expect(sourceInventory?.detail).not.toContain("private-stream");
-    expect(sourceInventory?.detail).not.toContain("private-en.vtt");
-    expect(sourceInventory?.tone).toBe("success");
+    const provider = lines.find((line) => line.label === "Provider");
+    expect(provider?.detail).toContain("resolved");
+    expect(provider?.detail).toContain("1 sources");
+    expect(provider?.detail).toContain("1 qualities");
+    expect(provider?.detail).toContain("2 subtitle choices");
+    expect(provider?.detail).not.toContain("private-stream");
+    expect(provider?.detail).not.toContain("private-en.vtt");
+    expect(provider?.tone).toBe("success");
   });
 
   test("buildDiagnosticsPanelLines includes concise selected source hints", () => {
@@ -516,17 +506,17 @@ describe("panel-data", () => {
       },
     };
 
-    const sourceInventory = buildDiagnosticsPanelLines({ state, recentEvents: [] }).find(
-      (line) => line.label === "Source inventory",
+    const provider = buildDiagnosticsPanelLines({ state, recentEvents: [] }).find(
+      (line) => line.label === "Provider",
     );
 
-    expect(sourceInventory?.detail).toContain("selected source selected");
-    expect(sourceInventory?.detail).toContain("host cdn.example");
-    expect(sourceInventory?.detail).toContain("has timing");
-    expect(sourceInventory?.detail).toContain("seek thumbnails");
-    expect(sourceInventory?.detail).toContain("1 subtitle");
-    expect(sourceInventory?.detail).not.toContain("private-stream");
-    expect(sourceInventory?.detail).not.toContain("private-en.vtt");
+    expect(provider?.detail).toContain("selected source selected");
+    expect(provider?.detail).toContain("host cdn.example");
+    expect(provider?.detail).toContain("has timing");
+    expect(provider?.detail).toContain("seek thumbnails");
+    expect(provider?.detail).toContain("1 subtitle");
+    expect(provider?.detail).not.toContain("private-stream");
+    expect(provider?.detail).not.toContain("private-en.vtt");
   });
 
   test("buildDiagnosticsPanelLines puts plain-language health summary before technical sections", () => {
@@ -566,15 +556,12 @@ describe("panel-data", () => {
       },
     });
 
+    expect(lines[0]?.label).toMatch(/Diagnostics|issue/);
     expect(lines[0]?.tone).toMatch(/warning|error|success/);
-    expect(lines[1]).toEqual({ label: "─── Health", detail: "", tone: "info" });
-    expect(lines.find((line) => line.label === "Playback")?.detail).toContain("Needs attention");
-    expect(lines.find((line) => line.label === "Cache")?.detail).toContain(
-      "kept current playable stream",
-    );
+    expect(lines.find((line) => line.label === "Session")?.detail).toContain("stalled");
     expect(lines.find((line) => line.label === "Downloads")?.tone).toBe("warning");
-    expect(lines.findIndex((line) => line.label === "Playback")).toBeLessThan(
-      lines.findIndex((line) => line.label === "─── Session"),
+    expect(lines.findIndex((line) => line.label === "Session")).toBeLessThan(
+      lines.findIndex((line) => line.label === "─── Export"),
     );
   });
 
@@ -1048,8 +1035,8 @@ describe("panel-data", () => {
       ],
     });
 
-    expect(lines.find((line) => line.label === "Memory trend")?.detail).toContain("growing");
-    expect(lines.find((line) => line.label === "Memory trend")?.tone).toBe("warning");
-    expect(lines.find((line) => line.label === "Memory")?.detail).toContain("Watch");
+    const memoryTrend = lines.find((line) => line.label === "Memory trend");
+    expect(memoryTrend?.detail?.toLowerCase()).toContain("growing");
+    expect(memoryTrend?.tone).toBe("warning");
   });
 });

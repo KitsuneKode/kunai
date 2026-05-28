@@ -303,7 +303,7 @@ export function buildDiagnosticsPanelLines({
   const streamStallEvent = findRecentMpvEvent(recentEvents, "stream-stalled");
   const seekStallEvent = findRecentMpvEvent(recentEvents, "seek-stalled");
   const ipcStallEvent = findRecentMpvEvent(recentEvents, "ipc-stalled");
-  const presenceEvent = recentEvents.find((event) => event.category === "presence");
+  const _presenceEvent = recentEvents.find((event) => event.category === "presence");
   const providerTimelineEvent = recentEvents.find(
     (event) => event.operation === "provider.resolve.timeline",
   );
@@ -336,238 +336,161 @@ export function buildDiagnosticsPanelLines({
   const issueCount = healthSummary.filter(
     (line) => line.tone === "error" || line.tone === "warning",
   ).length;
-  const overallBanner: ShellPanelLine =
-    issueCount === 0
-      ? {
-          label: "All clear",
-          detail: "No problems detected in recent session events",
-          tone: "success",
-        }
-      : {
-          label: `${issueCount} issue${issueCount === 1 ? "" : "s"} need${issueCount === 1 ? "s" : ""} attention`,
-          detail: "See Health section below for details",
-          tone: issueCount > 2 ? "error" : "warning",
-        };
+
+  const sessionVerdictTone: ShellPanelLine["tone"] = state.playbackProblem
+    ? "error"
+    : state.playbackStatus === "error"
+      ? "error"
+      : state.playbackStatus === "playing"
+        ? "success"
+        : state.playbackStatus === "loading" || state.playbackStatus === "stalled"
+          ? "warning"
+          : "neutral";
+
+  const sessionVerdictDetail = state.playbackProblem
+    ? `${state.playbackProblem.stage}  ·  ${state.playbackProblem.cause}  ·  ${state.playbackProblem.recommendedAction}`
+    : `${state.view}  ·  ${state.playbackStatus}  ·  ${state.searchResults.length} results cached`;
+
+  const providerTraceEvent = recentEvents.find(
+    (event) => event.category === "provider" && event.context?.trace,
+  );
+  const providerFailed = providerTimelineEvent?.context?.status === "failed";
+  const traceStreamCandidates =
+    typeof providerTraceEvent?.context?.streamCandidates === "number"
+      ? providerTraceEvent.context.streamCandidates
+      : 0;
+  const providerVerdictTone: ShellPanelLine["tone"] = providerFailed
+    ? "error"
+    : sourceInventorySummary?.warnings.some((warning) => warning.tone === "danger")
+      ? "error"
+      : sourceInventorySummary?.warnings.length
+        ? "warning"
+        : state.stream?.url || traceStreamCandidates > 0
+          ? "success"
+          : "neutral";
+  const providerVerdictDetail = state.stream?.url
+    ? `${state.provider}  ·  stream resolved  ·  ${sourceInventorySummary ? formatSourceInventorySummary(sourceInventorySummary) : "inventory pending"}  ·  headers ${summarizeHeaderKeys(state.stream?.headers)}`
+    : providerTraceEvent
+      ? `${state.provider}  ·  ${providerTraceEvent.message}  ·  ${typeof providerTraceEvent.context?.streamCandidates === "number" ? `${providerTraceEvent.context.streamCandidates} streams` : "trace recorded"}`
+      : `${state.provider}  ·  ${formatProviderTimelineEvent(providerTimelineEvent)}`;
+
+  const networkIssue =
+    Boolean(bufferingEvent) ||
+    Boolean(streamStallEvent) ||
+    Boolean(seekStallEvent) ||
+    Boolean(ipcStallEvent) ||
+    runtimeHealth.network.tone === "error" ||
+    runtimeHealth.network.tone === "warning";
+  const networkVerdictTone: ShellPanelLine["tone"] = networkIssue ? "warning" : "success";
+  const networkVerdictDetail = networkIssue
+    ? [
+        bufferingEvent ? formatMpvRuntimeDetail(bufferingEvent) : null,
+        streamStallEvent ? formatMpvRuntimeDetail(streamStallEvent) : null,
+        seekStallEvent ? formatMpvRuntimeDetail(seekStallEvent) : null,
+        ipcStallEvent ? formatMpvRuntimeDetail(ipcStallEvent) : null,
+        runtimeHealth.network.detail,
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join("  ·  ")
+    : `${runtimeHealth.network.label}: ${runtimeHealth.network.detail ?? "healthy"}`;
+
+  const startupVerdictTone: ShellPanelLine["tone"] =
+    playbackStartupEvent?.context?.stage === "first-progress"
+      ? "success"
+      : playbackStartupEvent
+        ? "info"
+        : "neutral";
+  const startupVerdictDetail = playbackStartupEvent
+    ? `${formatPlaybackStartupTimelineEvent(playbackStartupEvent)}  ·  slowest: ${findSlowestStartupStage(playbackStartupEvent)}`
+    : "No startup timeline recorded this session";
 
   return [
-    overallBanner,
-
-    // ── Health ──
-    { label: "─── Health", detail: "", tone: "info" },
-    ...healthSummary,
-
-    // ── Session ──
-    { label: "─── Session", detail: "", tone: "info" },
-    { label: "Mode", detail: `${state.mode}  ·  ${state.provider}` },
-    { label: "View", detail: `${state.view}  ·  ${state.playbackStatus}` },
-    { label: "Search", detail: `${state.searchState}  ·  ${state.searchResults.length} results` },
-    { label: "Correlation", detail: formatCorrelation(activeCorrelation) },
-
-    // ── Provider ──
-    { label: "─── Provider", detail: "", tone: "info" },
-    runtimeHealth.provider,
-    runtimeHealth.network,
+    {
+      label:
+        issueCount === 0 ? "Diagnostics" : `${issueCount} open issue${issueCount === 1 ? "" : "s"}`,
+      detail:
+        issueCount === 0
+          ? "Session, provider, network, and startup paths look healthy"
+          : "Review the sections below, then export if you need to share logs",
+      tone: issueCount === 0 ? "success" : issueCount > 2 ? "error" : "warning",
+    },
+    {
+      label: "Session",
+      detail: sessionVerdictDetail,
+      tone: sessionVerdictTone,
+    },
+    {
+      label: "Mode",
+      detail: `${state.mode}  ·  correlation ${formatCorrelation(activeCorrelation)}`,
+      tone: "neutral",
+    },
+    {
+      label: "Provider",
+      detail: providerVerdictDetail,
+      tone: providerVerdictTone,
+    },
+    {
+      label: "Resolve trace",
+      detail: (() => {
+        const attempts = formatProviderAttemptEvidence(recentEvents);
+        if (attempts !== "no physical provider attempts yet") return attempts;
+        return formatProviderTimelineEvent(providerTimelineEvent);
+      })(),
+      tone: providerVerdictTone,
+    },
+    {
+      label: "Network",
+      detail: networkVerdictDetail,
+      tone: networkVerdictTone,
+    },
     runtimeHealth.memory,
     runtimeHealth.memoryTrend,
     {
-      label: "Provider timeline",
-      detail: formatProviderTimelineEvent(providerTimelineEvent),
-      tone:
-        providerTimelineEvent?.context?.status === "failed"
-          ? "error"
-          : providerTimelineEvent?.context?.status === "recovered" ||
-              providerTimelineEvent?.context?.status === "resolved"
-            ? "success"
-            : providerTimelineEvent
-              ? "info"
-              : "neutral",
+      label: "Playback startup",
+      detail: startupVerdictDetail,
+      tone: startupVerdictTone,
     },
-    {
-      label: "Startup path",
-      detail: formatPlaybackStartupTimelineEvent(playbackStartupEvent),
-      tone:
-        playbackStartupEvent?.context?.stage === "first-progress"
-          ? "success"
-          : playbackStartupEvent
-            ? "info"
-            : "neutral",
-    },
-    {
-      label: "Slowest stage",
-      detail: findSlowestStartupStage(playbackStartupEvent),
-      tone: playbackStartupEvent ? "info" : "neutral",
-    },
-    {
-      label: "Provider attempts",
-      detail: formatProviderAttemptEvidence(recentEvents),
-      tone: recentEvents.some(
-        (event) =>
-          event.operation === "provider.resolve.attempt" && event.context?.phase === "failed",
-      )
-        ? "warning"
-        : recentEvents.some((event) => event.operation === "provider.resolve.attempt")
-          ? "info"
-          : "neutral",
-    },
-    {
-      label: "Source inventory",
-      detail: sourceInventorySummary
-        ? formatSourceInventorySummary(sourceInventorySummary)
-        : "not resolved yet",
-      tone: sourceInventorySummary?.warnings.some((warning) => warning.tone === "danger")
-        ? "error"
-        : sourceInventorySummary?.warnings.length
-          ? "warning"
-          : sourceInventorySummary
-            ? "success"
-            : "neutral",
-    },
-    {
-      label: "Playback problem",
-      detail: state.playbackProblem
-        ? `${state.playbackProblem.stage}  ·  ${state.playbackProblem.cause}  ·  ${state.playbackProblem.recommendedAction}`
-        : "none recorded",
-      tone:
-        state.playbackProblem?.severity === "blocking"
-          ? "error"
-          : state.playbackProblem
-            ? "warning"
-            : "success",
-    },
-
-    // ── Stream ──
-    { label: "─── Stream", detail: "", tone: "info" },
-    {
-      label: "Stream URL",
-      detail: state.stream?.url ? "[redacted-url resolved]" : "not resolved yet",
-    },
-    { label: "Header keys", detail: summarizeHeaderKeys(state.stream?.headers) },
-
-    // ── Subtitles ──
-    { label: "─── Subtitles", detail: "", tone: "info" },
     {
       label: "Subtitles",
-      detail: subtitleOutcome,
-      tone:
-        subtitleOutcome.includes("failed") ||
-        subtitleOutcome.includes("unsupported") ||
-        subtitleOutcome.includes("no-active-player")
-          ? "warning"
-          : subtitleOutcome === "no subtitle attachment outcome yet"
-            ? "neutral"
-            : "success",
-    },
-    { label: "State", detail: subtitleState.label, tone: subtitleState.tone },
-    {
-      label: "URL",
-      detail: state.stream?.subtitle ? "[redacted-url attached]" : subtitleState.label,
-    },
-    { label: "Tracks", detail: String(state.stream?.subtitleList?.length ?? 0) },
-    { label: "Source", detail: state.stream?.subtitleSource ?? "none" },
-    {
-      label: "Evidence",
-      detail: state.stream?.subtitleEvidence
-        ? summarizeJson(state.stream.subtitleEvidence)
-        : "no evidence yet",
-      tone: state.stream?.subtitleEvidence ? "neutral" : "warning",
-    },
-
-    // ── Network ──
-    { label: "─── Network", detail: "", tone: "info" },
-    {
-      label: "Buffering",
-      detail: formatMpvRuntimeDetail(bufferingEvent),
-      tone: bufferingEvent ? "warning" : "neutral",
+      detail: `${subtitleState.label}  ·  ${subtitleOutcome}`,
+      tone: subtitleState.tone,
     },
     {
-      label: "Stream stall",
-      detail: formatMpvRuntimeDetail(streamStallEvent),
-      tone: streamStallEvent ? "warning" : "neutral",
-    },
-    {
-      label: "Seek stall",
-      detail: formatMpvRuntimeDetail(seekStallEvent),
-      tone: seekStallEvent ? "warning" : "neutral",
-    },
-    {
-      label: "IPC stall",
-      detail: formatMpvRuntimeDetail(ipcStallEvent),
-      tone: ipcStallEvent ? "warning" : "neutral",
-    },
-
-    // ── Downloads ──
-    { label: "─── Downloads", detail: "", tone: "info" },
-    {
-      label: "Queue",
+      label: "Downloads",
       detail: downloadSummary
-        ? `${downloadSummary.active} active  ·  ${downloadSummary.failed ?? 0} need attention  ·  ${downloadSummary.completed} completed`
-        : "Unknown  ·  queue status unavailable",
-      tone: downloadSummary && downloadSummary.active > 0 ? "info" : "neutral",
+        ? `${downloadSummary.active} active  ·  ${downloadSummary.completed} completed${
+            (downloadSummary.failed ?? 0) > 0 ? `  ·  ${downloadSummary.failed} failed` : ""
+          }`
+        : "queue idle",
+      tone: downloadSummary
+        ? (downloadSummary.failed ?? 0) > 0
+          ? "warning"
+          : downloadSummary.active > 0
+            ? "info"
+            : "success"
+        : "neutral",
     },
-
-    // ── Presence ──
-    { label: "─── Presence", detail: "", tone: "info" },
     {
-      label: "Status",
-      detail: presenceEvent
-        ? `${presenceEvent.message}${presenceEvent.context ? `  ·  ${summarizeJson(presenceEvent.context)}` : ""}`
-        : presenceSnapshot
-          ? `${presenceSnapshot.provider}  ·  ${presenceSnapshot.status}  ·  ${presenceSnapshot.detail}`
-          : "off or not used this session",
+      label: "Presence",
+      detail: presenceSnapshot
+        ? `${presenceSnapshot.provider}  ·  ${presenceSnapshot.status}`
+        : "off this session",
       tone:
         presenceSnapshot?.status === "unavailable" || presenceSnapshot?.status === "error"
           ? "warning"
-          : presenceEvent
-            ? "neutral"
-            : "success",
+          : "neutral",
     },
-
-    // ── Runtime ──
-    { label: "─── Runtime", detail: "", tone: "info" },
     {
       label: "Capabilities",
       detail:
         capabilitySnapshot?.issues.length && capabilitySnapshot.issues.length > 0
-          ? capabilitySnapshot.issues
-              .map((issue) => `${issue.id} (${issue.severity})`)
-              .join("  ·  ")
-          : `mpv ${capabilitySnapshot?.mpv ? "✓" : "✗"}  ·  yt-dlp ${capabilitySnapshot?.ytDlp ? "✓" : "✗"}  ·  chafa ${capabilitySnapshot?.chafa ? "✓" : "✗"}  ·  magick ${capabilitySnapshot?.magick ? "✓" : "✗"}`,
+          ? capabilitySnapshot.issues.map((issue) => issue.id).join("  ·  ")
+          : "Core playback tooling available",
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
     },
-    runtimeHealth.memory,
-    runtimeHealth.memoryTrend,
-
-    // ── Support ──
-    { label: "─── Support", detail: "", tone: "info" },
-    { label: "/export-diagnostics", detail: "Write redacted support bundle" },
-    { label: "/report-issue", detail: "Open GitHub issue reporting" },
-
-    // ── Smoke tests ──
-    { label: "─── Smoke tests", detail: "", tone: "info" },
-    {
-      label: "Series search",
-      detail: 'bun run dev -- -S "Dune"',
-    },
-    {
-      label: "Anime autoplay",
-      detail: 'bun run dev -- -S "Attack on Titan" -a',
-    },
-    {
-      label: "Debug resolve",
-      detail: 'bun run dev -- -S "Dune" --debug',
-    },
-    {
-      label: "Discover home",
-      detail: "bun run dev -- --discover",
-    },
-
-    // ── Event Log ──
-    ...recentEvents.map((event) => ({
-      label: `${new Date(event.timestamp).toLocaleTimeString()}  ·  ${event.category}`,
-      detail: event.context
-        ? `${event.message}  ·  ${summarizeJson(event.context)}`
-        : event.message,
-    })),
+    { label: "─── Export", detail: "", tone: "info" },
+    { label: "/export-diagnostics", detail: "Write a redacted support bundle to disk" },
+    { label: "/report-issue", detail: "Open the GitHub issue template with context" },
   ];
 }
 
