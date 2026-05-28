@@ -10,6 +10,7 @@ import type {
 import { dbg } from "@/logger";
 import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { resolveTuning } from "@/services/persistence/tuning";
 import { checkStreamPreflight } from "@/services/playback/stream-health-check";
 
 import {
@@ -319,6 +320,9 @@ export class PersistentMpvSession {
       typeof maxAttempts === "number" && Number.isFinite(maxAttempts)
         ? Math.max(0, Math.min(12, Math.trunc(maxAttempts)))
         : 3;
+    const tuning = resolveTuning(cfg.tuningOverrides);
+    session.reconnectBaseBackoffMs = tuning.mpvReconnectBaseBackoffMs;
+    session.reconnectMaxBackoffMs = tuning.mpvReconnectMaxBackoffMs;
     if (
       typeof opts.resumeChoiceTimeoutMs === "number" &&
       Number.isFinite(opts.resumeChoiceTimeoutMs)
@@ -1331,10 +1335,7 @@ export class PersistentMpvSession {
     const nextAttempt = this.reconnectTryCount + 1;
     const backoffBefore =
       nextAttempt > 1
-        ? Math.min(
-            IN_PROCESS_RECONNECT_MAX_BACKOFF_MS,
-            IN_PROCESS_RECONNECT_BASE_BACKOFF_MS * 2 ** (nextAttempt - 2),
-          )
+        ? Math.min(this.reconnectMaxBackoffMs, this.reconnectBaseBackoffMs * 2 ** (nextAttempt - 2))
         : 0;
     if (backoffBefore > 0) {
       await Bun.sleep(backoffBefore);
@@ -1385,8 +1386,8 @@ export class PersistentMpvSession {
       this.reconnectBackoffUntilMs =
         Date.now() +
         Math.min(
-          IN_PROCESS_RECONNECT_MAX_BACKOFF_MS,
-          IN_PROCESS_RECONNECT_BASE_BACKOFF_MS * 2 ** (this.reconnectTryCount - 1),
+          this.reconnectMaxBackoffMs,
+          this.reconnectBaseBackoffMs * 2 ** (this.reconnectTryCount - 1),
         );
       opts.onPlaybackEvent?.({
         type: "mpv-in-process-reconnect",
