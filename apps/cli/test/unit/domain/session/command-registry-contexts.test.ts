@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   COMMAND_CONTEXTS,
   parseCommand,
+  resolveCommands,
   resolveCommandContext,
   suggestCommands,
   type AppCommandId,
@@ -151,5 +152,38 @@ describe("command registry contexts", () => {
       "history",
       "setup",
     ] satisfies readonly AppCommandId[]);
+  });
+
+  test("does not offer add-to-playlist until a title is selected", () => {
+    const state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    expect(resolveCommands(state, ["playlist-add"])[0]).toMatchObject({
+      id: "playlist-add",
+      enabled: false,
+      reason: "Select a title before adding it to the playlist.",
+    });
+  });
+
+  test("uses product-consistent labels for queue and recommendations", () => {
+    const state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    expect(resolveCommands(state, ["downloads", "recommendation"])).toEqual([
+      expect.objectContaining({
+        id: "downloads",
+        label: "Download Queue",
+      }),
+      expect.objectContaining({
+        id: "recommendation",
+        label: "Recommendations",
+      }),
+    ]);
   });
 });

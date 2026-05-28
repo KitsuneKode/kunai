@@ -44,7 +44,7 @@ describe("recommendation command", () => {
     });
     expect(resolveCommands(state, ["recommendation"])[0]).toMatchObject({
       id: "recommendation",
-      label: "Discover",
+      label: "Recommendations",
       enabled: true,
     });
   });

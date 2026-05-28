@@ -181,7 +181,7 @@ export const COMMANDS: readonly AppCommand[] = [
   },
   {
     id: "downloads",
-    label: "Queue (Queue)",
+    label: "Download Queue",
     aliases: ["downloads", "download-jobs", "queue", "jobs"],
     description: "Inspect active, queued, and failed download jobs",
   },
@@ -211,7 +211,7 @@ export const COMMANDS: readonly AppCommand[] = [
   },
   {
     id: "recommendation",
-    label: "Discover",
+    label: "Recommendations",
     aliases: ["recommendation", "recommendations", "recs", "suggest", "discover"],
     description: "Personalized recommendations and discovery",
   },
@@ -882,13 +882,20 @@ function resolveCommandState(
     case "favorites":
     case "continue":
     case "playlist":
-    case "playlist-add":
     case "stats":
     case "sync":
     case "sync-connect-anilist":
     case "sync-connect-tmdb":
     case "sync-disconnect":
       return { enabled: true };
+
+    case "playlist-add":
+      return state.currentTitle
+        ? { enabled: true }
+        : {
+            enabled: false,
+            reason: "Select a title before adding it to the playlist.",
+          };
 
     case "previous":
       if (!inSeriesContext) {
