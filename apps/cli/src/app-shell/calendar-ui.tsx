@@ -506,7 +506,6 @@ export function CalendarScheduleRow<T>({
   nowMs?: number;
 }) {
   const presentation = calendarReleaseRowPresentation(option, nowMs);
-  const detail = option.detail ? truncateLine(option.detail, rowWidth - 4) : "";
 
   // Bound the title by the *measured* width of everything else on the row
   // (marker + glyph + availability label + badge) so the composed line can never
@@ -568,12 +567,6 @@ export function CalendarScheduleRow<T>({
             <Text color={palette.accentDeep}> {"· tracked"}</Text>
           ) : null}
         </Text>
-        {detail ? (
-          <Text color={palette.dim} dimColor>
-            {"    "}
-            {detail}
-          </Text>
-        ) : null}
       </Box>
     </Box>
   );
