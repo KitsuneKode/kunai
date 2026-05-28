@@ -104,6 +104,7 @@ import { SyncTokenStore } from "./services/persistence/SyncTokenStore";
 import { MediaTrackService } from "./services/playback/MediaTrackService";
 import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "./services/playback/PlaybackResolveWorkService";
+import { resolveProviderAttemptTimeoutMs } from "./services/playback/provider-resolve-budget-policy";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import { TitleProviderHealthService } from "./services/playback/TitleProviderHealthService";
 import { VidkingLazySourceProbeService } from "./services/playback/VidkingLazySourceProbeService";
@@ -372,8 +373,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       vidkingProviderModule,
       allmangaProviderModule,
     ],
-    // VidKing Phase A may run up to 3 Videasy sources at 90s each.
-    attemptTimeoutMs: 300_000,
+    attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
   });
 
   const providerRegistry = createProviderRegistry(engine);
