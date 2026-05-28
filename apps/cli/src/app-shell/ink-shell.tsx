@@ -900,6 +900,7 @@ function AppRoot({ container }: { container: Container }) {
         }
         statusColor={statusColor(rootStatusSummary.header.tone)}
         size={`${shellWidth}×${shellHeight}`}
+        width={Math.max(0, shellWidth - 2)}
       />
       {/* Single transient alert — highest priority wins, null when idle */}
       {rootStatusSummary.alert ? (
