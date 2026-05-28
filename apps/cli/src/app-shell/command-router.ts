@@ -1,8 +1,11 @@
+import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
 import { episodeFromHistorySelection, recordLocalHistorySourceDecision } from "@/app/launch-entry";
 import { switchSessionMode } from "@/app/mode-switch";
 import type { Container } from "@/container";
+import type { SessionState } from "@/domain/session/SessionState";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
+import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import type { ShellAction } from "./types";
 import {
@@ -10,6 +13,26 @@ import {
   playCompletedDownload,
   resolveQuitWithDownloadQueue,
 } from "./workflows";
+
+export type CommandPaletteSurface = "browse" | "playback" | "list" | "post-play";
+
+export function resolveCommandsForPaletteSurface(
+  state: SessionState,
+  surface: CommandPaletteSurface,
+): readonly ResolvedAppCommand[] {
+  switch (surface) {
+    case "browse":
+      return resolveCommands(state, SEARCH_BROWSE_COMMAND_IDS);
+    case "playback":
+      return resolveCommandContext(state, "activePlayback");
+    case "post-play":
+      return resolveCommandContext(state, "postPlayback");
+    case "list":
+      return resolveCommandContext(state, "rootOverlay");
+    default:
+      return resolveCommands(state, SEARCH_BROWSE_COMMAND_IDS);
+  }
+}
 
 type RoutedActionResult =
   | "handled"

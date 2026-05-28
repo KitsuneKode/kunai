@@ -47,34 +47,9 @@ export type SearchPhaseInput = {
   deferAnimeProviderMapping?: boolean;
 };
 
-export const SEARCH_BROWSE_COMMAND_IDS = [
-  "continue",
-  "filters",
-  "recommendation",
-  "random",
-  "surprise",
-  "calendar",
-  "watchlist",
-  "playlist",
-  "stats",
-  "sync",
-  "library",
-  "downloads",
-  "notifications",
-  "history",
-  "download",
-  "details",
-  "setup",
-  "settings",
-  "trending",
-  "toggle-mode",
-  "provider",
-  "diagnostics",
-  "export-diagnostics",
-  "help",
-  "about",
-  "quit",
-] as const;
+import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
+
+export { SEARCH_BROWSE_COMMAND_IDS };
 
 export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   name = "search";

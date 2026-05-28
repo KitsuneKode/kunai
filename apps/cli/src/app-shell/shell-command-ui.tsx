@@ -129,6 +129,31 @@ const COMMAND_GROUP_LABELS = {
   global: "Global",
 } as const;
 
+export function shouldHideCompanionForCommandPalette(commandMode: boolean): boolean {
+  return commandMode;
+}
+
+export function getPlaybackCommandPaletteMaxVisible(rows: number): number {
+  const playbackChromeRows = 14;
+  const availableRows = rows - 4 - playbackChromeRows - 4 - 5 - 3;
+  return Math.max(1, Math.min(18, availableRows));
+}
+
+export function getListShellCommandPaletteMaxVisible(
+  rows: number,
+  subtitleLineCount: number,
+): number {
+  const subtitleRows = Math.min(subtitleLineCount, 6);
+  const listChromeRows = 1 + subtitleRows + 7 + 1 + 1 + 4;
+  const availableRows = rows - 4 - listChromeRows - 4 - 5 - 3;
+  return Math.max(1, Math.min(18, availableRows));
+}
+
+export function resolveCommandPaletteWidth(shellWidth: number): number {
+  const columns = Math.max(28, shellWidth);
+  return Math.max(28, Math.min(columns, columns - 4) - 4);
+}
+
 export function buildCommandPickerModel(
   input: string,
   commands: readonly ResolvedAppCommand[],
@@ -173,10 +198,9 @@ export function CommandPalette({
 }) {
   const { stdout } = useStdout();
   const terminalRows = stdout.rows ?? 24;
-  // Fallback when caller doesn't pass maxVisible (e.g. ShellFrame). BrowseShell passes an
-  // exact value via computePaletteMaxVisible(); this fallback is for non-browse contexts:
-  // AppRoot header(3) + browse chrome(7) + palette chrome(3) + footer commandMode(5) + groups(3) = 21
-  const maxVisible = maxVisibleProp ?? Math.max(3, terminalRows - 21);
+  const shellColumns = stdout.columns ?? 80;
+  const shellWidth = Math.max(28, width ?? shellColumns);
+  const maxVisible = maxVisibleProp ?? getPlaybackCommandPaletteMaxVisible(terminalRows);
   const model = buildCommandPickerModel(input, commands, highlightedIndex);
   const matches = model.options
     .map((option) => commands.find((command) => command.id === option.value))
@@ -190,10 +214,7 @@ export function CommandPalette({
   const windowStart = getWindowStart(model.selectedIndex, matches.length, visibleCount);
   const windowEnd = Math.min(windowStart + visibleCount, matches.length);
   const visibleMatches = matches.slice(windowStart, windowEnd);
-  const contentWidth = Math.max(
-    28,
-    Math.min(width ?? stdout.columns ?? 80, (stdout.columns ?? 80) - 4) - 4,
-  );
+  const contentWidth = resolveCommandPaletteWidth(Math.min(shellWidth, shellColumns));
 
   const renderCommand = (command: ResolvedAppCommand, absoluteIndex: number) => {
     const selected = absoluteIndex === model.selectedIndex;
@@ -237,7 +258,7 @@ export function CommandPalette({
   };
 
   return (
-    <Box flexDirection="column" marginTop={1} width={width}>
+    <Box flexDirection="column" marginTop={1} width={shellWidth} flexShrink={0}>
       <Box marginTop={0}>
         <Text color={palette.accent}>/</Text>
         <LineEditorText

@@ -5,7 +5,13 @@ import React from "react";
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { requestHardExit } from "./graceful-exit";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
-import { CommandPalette, LineEditorText, useShellInput } from "./shell-command-ui";
+import {
+  CommandPalette,
+  getPlaybackCommandPaletteMaxVisible,
+  LineEditorText,
+  resolveCommandPaletteWidth,
+  useShellInput,
+} from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
 import { measureColumns, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
@@ -72,7 +78,7 @@ export function ShellFrame({
   const { stdout } = useStdout();
   const cols = terminalWidthProp ?? stdout.columns ?? 80;
   const rows = terminalRowsProp ?? stdout.rows ?? 24;
-  const commandWidth = Math.min(92, Math.max(36, Math.floor(cols * 0.62)));
+  const commandWidth = resolveCommandPaletteWidth(cols);
   const statusLabel = status?.label;
   const statusWidth = statusLabel ? measureColumns(statusLabel) : 0;
   const titleWidth = Math.max(12, cols - statusWidth - (statusLabel ? 3 : 0));
@@ -105,7 +111,7 @@ export function ShellFrame({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
-            maxVisible={Math.max(5, Math.min(12, rows - 18))}
+            maxVisible={getPlaybackCommandPaletteMaxVisible(rows)}
             width={commandWidth}
           />
         ) : null}

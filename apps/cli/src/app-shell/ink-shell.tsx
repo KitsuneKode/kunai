@@ -44,6 +44,8 @@ import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
 import { openSessionPicker } from "./session-picker";
 import {
   CommandPalette,
+  getListShellCommandPaletteMaxVisible,
+  shouldHideCompanionForCommandPalette,
   fallbackCommandState,
   getCommandAutocompleteTarget,
   getCommandMatches,
@@ -1558,6 +1560,8 @@ function ListShell<T>({
     rowWidth,
     showCompanion: showSelectionCompanion,
   } = pickerLayout;
+  const showCompanion =
+    showSelectionCompanion && !shouldHideCompanionForCommandPalette(commandMode);
   const selectedLabel = selectedOption?.label ?? "Nothing selected";
   const selectedDetail =
     selectedOption?.detail ??
@@ -1568,7 +1572,7 @@ function ListShell<T>({
   const { poster, posterState } = usePosterPreview(selectedOption?.previewImageUrl, {
     rows: 9,
     cols: Math.max(18, Math.min(30, companionWidth - 4)),
-    enabled: showSelectionCompanion,
+    enabled: showCompanion,
     debounceMs: 120,
   });
 
@@ -1736,11 +1740,11 @@ function ListShell<T>({
               {`${filteredOptions.length > 0 ? index + 1 : 0} of ${filteredOptions.length}`}
             </Text>
             <Box
-              flexDirection={showSelectionCompanion ? "row" : "column"}
+              flexDirection={showCompanion ? "row" : "column"}
               marginTop={1}
               justifyContent="space-between"
             >
-              <Box flexDirection="column" width={showSelectionCompanion ? listWidth : undefined}>
+              <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
                 {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
                 {visibleOptions.map((option) => {
                   const selected = option === selectedOption;
@@ -1762,7 +1766,7 @@ function ListShell<T>({
                       backgroundColor={selected ? palette.surfaceActive : undefined}
                     >
                       <Text
-                        color="white"
+                        color={selected || isConfirmed ? palette.text : palette.textDim}
                         bold={selected || isConfirmed}
                         dimColor={!selected && !isConfirmed}
                       >
@@ -1774,13 +1778,8 @@ function ListShell<T>({
                 })}
                 {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
               </Box>
-              {!ultraCompact ? (
-                <Box
-                  marginLeft={showSelectionCompanion ? 2 : 0}
-                  marginTop={showSelectionCompanion ? 0 : 1}
-                  flexDirection="column"
-                  width={showSelectionCompanion ? companionWidth : undefined}
-                >
+              {!ultraCompact && showCompanion ? (
+                <Box marginLeft={2} flexDirection="column" width={companionWidth}>
                   <LocalSection title="Current Selection" tone="success" marginTop={0}>
                     {poster.kind !== "none" ? (
                       <Box flexDirection="column" marginBottom={1}>
@@ -1793,11 +1792,8 @@ function ListShell<T>({
                         </Text>
                       </Box>
                     ) : null}
-                    <Text bold color="white">
-                      {truncateLine(
-                        selectedLabel,
-                        showSelectionCompanion ? companionWidth : innerWidth,
-                      )}
+                    <Text bold color={palette.text}>
+                      {truncateLine(selectedLabel, companionWidth)}
                     </Text>
                     <Box marginTop={1} flexDirection="column">
                       {detailLines.map((line) => (
@@ -1820,23 +1816,11 @@ function ListShell<T>({
           cursor={commandEditor.cursor}
           commands={actionContext.commands}
           highlightedIndex={highlightedCommandIndex}
-          maxVisible={Math.max(
-            3,
-            // ListShell overhead: AppRoot(4) + title(1) + subtitle-lines + InputField+hint(7) +
-            // count(1) + marginTop(1) + list(4) + palette-chrome(4) + footer(5) + groups(3) = ~30+subtitleLines
-            // Use compact value; subtitle can be many lines so we cap conservatively.
-            viewport.rows -
-              4 -
-              1 -
-              Math.min(subtitle.split("\n").length, 6) -
-              7 -
-              1 -
-              1 -
-              4 -
-              4 -
-              5 -
-              3,
+          maxVisible={getListShellCommandPaletteMaxVisible(
+            viewport.rows,
+            subtitle.split("\n").length,
           )}
+          width={innerWidth}
         />
       ) : null}
       <ShellFooter
