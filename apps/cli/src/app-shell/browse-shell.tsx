@@ -65,7 +65,6 @@ import { deleteAllKittyImages } from "./image-pane";
 import { getBrowseCommandPaletteMaxVisible } from "./layout-policy";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
-import { FocusField, FocusFieldLabel } from "./primitives/FocusField";
 import { PreviewRail, shouldRenderPreviewRail } from "./primitives/PreviewRail";
 import { mountRootContent } from "./root-content-state";
 import {
@@ -975,23 +974,20 @@ export function BrowseShell<T>({
           </Box>
         ) : null}
         {searchState === "ready" && options.length > 0 && !isCalendarView && !ultraCompact ? (
-          <FocusField focused={resultFilterFocused && !commandMode} width={innerWidth}>
-            <FocusFieldLabel label="Filter results" focused={resultFilterFocused && !commandMode} />
-            <InputField
-              label="Filter results"
-              value={resultFilter}
-              onChange={(next) => {
-                setResultFilter(next);
-                setSelectedIndex(0);
-                dispatchFocusZone({ type: "focus-filter" });
-              }}
-              onSubmit={() => dispatchFocusZone({ type: "focus-query" })}
-              placeholder="narrows current results only"
-              focus={resultFilterFocused && !commandMode}
-              maxWidth={innerWidth}
-              onRedraw={clearShellScreen}
-            />
-          </FocusField>
+          <InputField
+            label="Filter results"
+            value={resultFilter}
+            onChange={(next) => {
+              setResultFilter(next);
+              setSelectedIndex(0);
+              dispatchFocusZone({ type: "focus-filter" });
+            }}
+            onSubmit={() => dispatchFocusZone({ type: "focus-query" })}
+            placeholder="narrows current results only"
+            focus={resultFilterFocused && !commandMode}
+            maxWidth={innerWidth}
+            onRedraw={clearShellScreen}
+          />
         ) : null}
         {activeFilterBadges.length > 0 && !ultraCompact ? (
           <Box marginTop={1} flexWrap="wrap">
@@ -1028,30 +1024,21 @@ export function BrowseShell<T>({
             </Text>
           </Box>
         ) : (
-          <FocusField
-            focused={!commandMode && !resultFilterFocused && !listFocused}
-            width={innerWidth}
-          >
-            <FocusFieldLabel
-              label="Search title"
-              focused={!commandMode && !resultFilterFocused && !listFocused}
-            />
-            <InputField
-              label="Search title"
-              value={query}
-              onChange={updateQuery}
-              onSubmit={handleQuerySubmit}
-              placeholder={placeholder}
-              focus={!commandMode && !resultFilterFocused && !listFocused}
-              hint={
-                commandMode
-                  ? undefined
-                  : "Tokens: type:series year:2008 rating:8 · /filters for guided chips"
-              }
-              maxWidth={innerWidth}
-              onRedraw={clearShellScreen}
-            />
-          </FocusField>
+          <InputField
+            label="Search title"
+            value={query}
+            onChange={updateQuery}
+            onSubmit={handleQuerySubmit}
+            placeholder={placeholder}
+            focus={!commandMode && !resultFilterFocused && !listFocused}
+            hint={
+              commandMode
+                ? undefined
+                : "Tokens: type:series year:2008 rating:8 · /filters for guided chips"
+            }
+            maxWidth={innerWidth}
+            onRedraw={clearShellScreen}
+          />
         )}
 
         {queryDirty &&
