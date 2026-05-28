@@ -186,6 +186,11 @@ export function BrowseShell<T>({
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const [resultFilter, setResultFilter] = useState("");
   const [resultFilterFocused, setResultFilterFocused] = useState(false);
+  // Focus zone: false = query field (text state, typing wins), true = results
+  // list (non-text state, bare hotkeys are live). The query field blurs while
+  // the list is focused so a bare key like `i` never lands in the search box.
+  // See .docs/ux-architecture.md: "if text input is focused, typing wins".
+  const [listFocused, setListFocused] = useState(false);
   // Calendar filters — null day means "show all days"
   const [calendarDayFilter, setCalendarDayFilter] = useState<string | null>(null);
   const [calendarTypeTab, setCalendarTypeTab] = useState<CalendarTypeTab>("All");
@@ -508,6 +513,12 @@ export function BrowseShell<T>({
   });
   const selectedOption = displayOptions[selectedIndex];
 
+  // Never strand focus on a list that has emptied (cleared results, new search,
+  // a filter that matched nothing) — hand focus back to the query field.
+  useEffect(() => {
+    if (displayOptions.length === 0 && listFocused) setListFocused(false);
+  }, [displayOptions.length, listFocused]);
+
   useEffect(() => {
     const primaryData = buildDetailsPanelDataFromBrowseOption(selectedOption);
     setCompanionDetails(primaryData);
@@ -702,7 +713,21 @@ export function BrowseShell<T>({
       return;
     }
 
+    // ── Results-zone bindings (list focused = non-text state) ──
+    // Plain Enter plays the highlighted row; these never fire while the query
+    // field is focused, so typing in search is never hijacked.
+    if (listFocused && key.return && !key.shift && selectedOption && searchState === "ready") {
+      onSubmit(selectedOption.value);
+      return;
+    }
+
+    // Details: Shift+Enter works in both zones where the terminal reports it;
+    // bare `i` is the reliable trigger once the list owns focus.
     if (key.return && key.shift && selectedOption && searchState === "ready") {
+      openDetailsOverlay();
+      return;
+    }
+    if (listFocused && input.toLowerCase() === "i" && selectedOption && searchState === "ready") {
       openDetailsOverlay();
       return;
     }
@@ -712,14 +737,21 @@ export function BrowseShell<T>({
       return;
     }
 
-    if ((input === "d" && key.ctrl) || input === "\x04") {
+    // Download: Ctrl+D anywhere, or bare `d` in the results zone.
+    if (
+      (input === "d" && key.ctrl) ||
+      input === "\x04" ||
+      (listFocused && input.toLowerCase() === "d")
+    ) {
       if (selectedOption && displayOptions.length > 0 && !queryDirty && searchState === "ready") {
         onResolve("download");
       }
       return;
     }
 
-    if (input.toLowerCase() === "q") {
+    // Queue: bare `q` only in the results zone (it would otherwise type into the
+    // search box — the latent double-fire this focus model removes).
+    if (listFocused && input.toLowerCase() === "q") {
       if (
         selectedOption &&
         onQueueSelected &&
@@ -779,6 +811,12 @@ export function BrowseShell<T>({
     }
 
     if (key.escape) {
+      // Layered step-back: results focus → query focus → clear results → clear
+      // query → cancel. Esc first hands the list's focus back to the search box.
+      if (listFocused) {
+        setListFocused(false);
+        return;
+      }
       if (idleFocused) {
         setIdleFocused(false);
         return;
@@ -811,13 +849,31 @@ export function BrowseShell<T>({
       return;
     }
 
-    if (key.upArrow && displayOptions.length > 0) {
-      setSelectedIndex((current) => (current - 1 + displayOptions.length) % displayOptions.length);
+    if (key.downArrow && displayOptions.length > 0) {
+      if (!listFocused) {
+        // First ↓ from the query field moves focus into the list at its current
+        // row (no jump) — the entry into the non-text, bare-hotkey zone.
+        setListFocused(true);
+        return;
+      }
+      setSelectedIndex((current) => (current + 1) % displayOptions.length);
       return;
     }
 
-    if (key.downArrow && displayOptions.length > 0) {
-      setSelectedIndex((current) => (current + 1) % displayOptions.length);
+    if (key.upArrow && displayOptions.length > 0) {
+      if (!listFocused) {
+        // ↑ from the query field enters the list at its last row.
+        setListFocused(true);
+        setSelectedIndex(displayOptions.length - 1);
+        return;
+      }
+      if (selectedIndex === 0) {
+        // ↑ at the top hands focus back to the query field (the escape hatch to
+        // edit the search) instead of wrapping to the bottom.
+        setListFocused(false);
+        return;
+      }
+      setSelectedIndex((current) => current - 1);
       return;
     }
 
@@ -937,7 +993,7 @@ export function BrowseShell<T>({
             onChange={updateQuery}
             onSubmit={handleQuerySubmit}
             placeholder={placeholder}
-            focus={!commandMode && !resultFilterFocused}
+            focus={!commandMode && !resultFilterFocused && !listFocused}
             hint={
               commandMode
                 ? undefined
@@ -1043,11 +1099,27 @@ export function BrowseShell<T>({
                         width={rowWidth}
                       >
                         <Box width={rowWidth}>
-                          <Text bold={selected} dimColor={!selected} wrap="truncate">
-                            <Text color={selected ? palette.accent : palette.dim}>
+                          <Text bold={selected && listFocused} dimColor={!selected} wrap="truncate">
+                            <Text
+                              color={
+                                selected
+                                  ? listFocused
+                                    ? palette.accent
+                                    : palette.muted
+                                  : palette.dim
+                              }
+                            >
                               {selected ? "▌ " : "  "}
                             </Text>
-                            <Text color={selected ? palette.text : palette.textDim}>
+                            <Text
+                              color={
+                                selected
+                                  ? listFocused
+                                    ? palette.text
+                                    : palette.muted
+                                  : palette.textDim
+                              }
+                            >
                               {padColumnsEnd(truncateLine(rowText, rowWidth - 2), rowWidth - 2)}
                             </Text>
                           </Text>
@@ -1159,17 +1231,23 @@ export function BrowseShell<T>({
         const allBrowseFooterActions: readonly FooterAction[] = [
           {
             key: "enter",
-            label: options.length > 0 && !queryDirty ? "open" : "search",
+            label: listFocused ? "play" : options.length > 0 && !queryDirty ? "open" : "search",
             action: "search",
             primary: true,
           },
-          { key: "↑↓", label: "navigate", action: "search" },
-          ...(options.length > 0 && !queryDirty && searchState === "ready"
-            ? [
-                { key: "shift+↵", label: "details", action: "details" as const },
-                { key: "ctrl+f", label: "filter", action: "filters" as const },
-              ]
-            : []),
+          {
+            key: "↑↓",
+            label: listFocused ? "navigate · ↑ top → search" : "navigate",
+            action: "search",
+          },
+          ...(listFocused && searchState === "ready"
+            ? [{ key: "i", label: "details", action: "details" as const }]
+            : options.length > 0 && !queryDirty && searchState === "ready"
+              ? [
+                  { key: "shift+↵", label: "details", action: "details" as const },
+                  { key: "ctrl+f", label: "filter", action: "filters" as const },
+                ]
+              : []),
           {
             key: "tab",
             label: getCommandLabel(commands, "toggle-mode", "switch mode"),
