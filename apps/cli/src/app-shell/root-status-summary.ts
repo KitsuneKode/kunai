@@ -166,14 +166,12 @@ export function buildRootStatusSummary({
     alert = { text: "⚠ stop after current", tone: "warning" };
   } else if (downloadStatus) {
     alert = { text: `⬇ ${downloadStatus}`, tone: "info" };
-  } else if (notificationCount !== undefined && notificationCount > 0) {
-    const countLabel = `${notificationCount} notification${notificationCount === 1 ? "" : "s"}`;
-    const newLabel =
-      newEpisodeNotificationCount !== undefined && newEpisodeNotificationCount > 0
-        ? ` · ${newEpisodeNotificationCount} new episode${newEpisodeNotificationCount === 1 ? "" : "s"}`
-        : "";
-    alert = { text: `🔔 ${countLabel}${newLabel} · /notifications`, tone: "info" };
   }
+  // Standing notification count is NOT an alert — the alert slot is reserved for
+  // transient alarms (playback problem, autoplay paused, download progress).
+  // The 🔔 bell in the crumb already carries the count, and /notifications opens
+  // them; surfacing a persistent "N notifications · /notifications" line here
+  // just duplicated the bell and never went away.
 
   return {
     header: {

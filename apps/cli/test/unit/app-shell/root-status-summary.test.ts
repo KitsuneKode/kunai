@@ -145,7 +145,7 @@ describe("buildRootStatusSummary", () => {
     expect(summary.alert).toBeNull();
   });
 
-  test("surfaces active notifications as an idle bell signal", () => {
+  test("carries active notifications in the crumb bell, not a persistent alert", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
@@ -159,11 +159,10 @@ describe("buildRootStatusSummary", () => {
       newEpisodeNotificationCount: 2,
     });
 
+    // The bell in the crumb is the standing signal; the alert slot stays empty
+    // so there is no persistent "N notifications" line under the header.
     expect(summary.crumb).toContain("🔔 2 new");
-    expect(summary.alert).toEqual({
-      text: "🔔 3 notifications · 2 new episodes · /notifications",
-      tone: "info",
-    });
+    expect(summary.alert).toBeNull();
   });
 
   test("surfaces playback problem state as an alert", () => {
