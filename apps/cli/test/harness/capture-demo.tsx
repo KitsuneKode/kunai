@@ -22,7 +22,7 @@ const recs: readonly PlaybackRecommendationRailItem[] = [
 const base: PostPlayShellProps = {
   title: "DR. STONE",
   episodeLabel: "S04E07",
-  nextEpisodeLabel: "E32 · Challengers of Science",
+  nextEpisodeLabel: "S04 E32 — Challengers of Science",
   postPlayState: { kind: "mid-series" },
   recommendations: recs,
   totalEpisodes: 12,

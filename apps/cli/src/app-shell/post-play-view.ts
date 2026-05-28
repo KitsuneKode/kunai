@@ -286,7 +286,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
 
   // ── mid-series ───────────────────────────────────────────────────────────
   if (postPlayState.kind === "mid-series") {
-    const nextLabel = nextEpisodeLabel ?? "Next episode";
+    const nextLabel = nextEpisodeLabel ? formatUpNextLabel(nextEpisodeLabel) : "Next episode";
     return {
       heroKind: "mid-series",
       heroLabel: "✓ episode complete",
