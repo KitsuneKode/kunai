@@ -359,39 +359,49 @@ export function CalendarDayStrip({
   days: readonly CalendarDay[];
   selectedDayKey: string | null;
 }) {
+  // Window the days to a single clean row (a flex-wrap over all ~18 days wrapped
+  // into ragged lines that collided with the tabs below). Center on the
+  // selected/today day; ‹ › show there is more to scroll.
+  const MAX_VISIBLE = 10;
+  const activeIndex = Math.max(
+    0,
+    days.findIndex((day) => (selectedDayKey ? day.key === selectedDayKey : day.isToday)),
+  );
+  const start = Math.min(
+    Math.max(0, activeIndex - Math.floor(MAX_VISIBLE / 2)),
+    Math.max(0, days.length - MAX_VISIBLE),
+  );
+  const windowDays = days.slice(start, start + MAX_VISIBLE);
+  const hasPrev = start > 0;
+  const hasNext = start + MAX_VISIBLE < days.length;
+
   return (
-    <Box flexDirection="column" marginTop={1} marginBottom={1}>
-      <Box flexDirection="row" flexWrap="wrap" alignItems="flex-start">
+    <Box flexDirection="row" marginTop={1} marginBottom={1} alignItems="center">
+      <Text color={palette.dim} dimColor>
+        {hasPrev ? "‹ " : "  "}
+      </Text>
+      {windowDays.map((day) => {
+        const isSelected = selectedDayKey === day.key;
+        const isToday = day.isToday;
+        const marker = isToday ? "◉" : isSelected ? "▸" : "·";
+        return (
+          <Box key={day.key} marginRight={2}>
+            <Text
+              color={isSelected || isToday ? palette.accent : palette.muted}
+              bold={isSelected || isToday}
+            >
+              {`${marker} ${day.label}`}
+            </Text>
+          </Box>
+        );
+      })}
+      <Text color={palette.dim} dimColor>
+        {hasNext ? "› " : "  "}
+      </Text>
+      <Box marginLeft={1}>
         <Text color={palette.dim} dimColor>
-          {"← "}
+          {selectedDayKey !== null ? "esc · all days" : "← → day"}
         </Text>
-        {days.map((day) => {
-          const isSelected = selectedDayKey === day.key;
-          const showTodayMarker = day.isToday;
-          const activeColor = palette.accent;
-          return (
-            <Box key={day.key} marginRight={2} flexDirection="column">
-              <Text
-                color={isSelected ? activeColor : showTodayMarker ? palette.accent : palette.muted}
-                bold={isSelected || showTodayMarker}
-              >
-                {showTodayMarker ? "◉ " : isSelected ? "● " : "  "}
-                {day.label}
-              </Text>
-              {isSelected ? (
-                <Text color={activeColor}>{"─".repeat(Math.min(day.label.length + 2, 12))}</Text>
-              ) : null}
-            </Box>
-          );
-        })}
-        <Text color={palette.dim} dimColor>
-          {" →"}
-        </Text>
-        <Box marginLeft={2}>
-          <Text color={palette.dim} dimColor>
-            {selectedDayKey !== null ? "esc · all days" : "← → filter day"}
-          </Text>
-        </Box>
       </Box>
     </Box>
   );
