@@ -143,24 +143,19 @@ export function useDotMatrixAnimation(
   intervalMs = 80,
   active = true,
 ): DotMatrixFrame {
-  // Memoize frames per variant so they regenerate when variant changes
-  // but stay stable across re-renders. 24 frames × 25 cells = small memory footprint.
   const frames = React.useMemo(() => generateFrames(variant, 24), [variant]);
-  const [frameIdx, setFrameIdx] = React.useState(0);
+  const [tick, setTick] = React.useState(0);
 
-  // A single effect manages both the variant reset and the timer. Merging them
-  // into one effect eliminates the extra commit that occurred when two separate
-  // effects ran in sequence (first effect: setFrameIdx(0) → commit; second effect:
-  // setInterval → first tick → commit), which caused visible cadence jitter (A7).
   React.useEffect(() => {
-    setFrameIdx(0);
+    setTick(0);
     if (!active) return undefined;
     const timer = setInterval(() => {
-      setFrameIdx((f) => (f + 1) % frames.length);
+      setTick((current) => current + 1);
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [active, intervalMs, frames.length, frames]);
+  }, [active, intervalMs, variant]);
 
+  const frameIdx = active ? tick % frames.length : 0;
   return (
     frames[frameIdx] ??
     frames[0] ??
