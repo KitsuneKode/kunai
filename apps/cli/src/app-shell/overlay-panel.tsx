@@ -16,6 +16,7 @@ import { PickerOptionRow } from "./overlay-picker-row";
 import { renderHistoryProgressBar } from "./panel-data";
 import { PosterInitialBlock } from "./poster-initial-block";
 import type { PosterResult, PosterState } from "./poster-types";
+import { BooleanSwitch } from "./primitives/Switch";
 import { getWindowStart, truncateAtWord, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
@@ -1134,47 +1135,27 @@ export function OverlayPanel({
                 // Derive dot indicator for settings rows
                 const isSettingsOverlay =
                   overlay.type === "settings" || overlay.type === "settings-choice";
-                let dotChar = "";
-                let dotColor: string = palette.dim;
-                if (isSettingsOverlay) {
-                  const lbl = option.label;
-                  const isChoice = lbl.startsWith("▸");
-                  const isDanger = option.tone === "error";
-                  const isWarning = option.tone === "warning";
-                  const isSuccess = option.tone === "success";
-                  const isOn =
-                    !isChoice &&
-                    !isDanger &&
-                    (lbl.endsWith("· on") ||
-                      lbl.endsWith("· enabled") ||
-                      lbl.endsWith("· pinned after m") ||
-                      isSuccess);
-                  const isOff =
-                    !isChoice &&
-                    !isDanger &&
-                    (lbl.endsWith("· off") || lbl.endsWith("· temporary after m"));
-                  if (isDanger) {
-                    dotChar = "● ";
-                    dotColor = palette.danger;
-                  } else if (isWarning) {
-                    dotChar = "● ";
-                    dotColor = palette.accentDeep;
-                  } else if (isOn) {
-                    dotChar = "● ";
-                    dotColor = palette.ok;
-                  } else if (isOff) {
-                    dotChar = "○ ";
-                    dotColor = palette.dim;
-                  } else if (!isChoice) {
-                    dotChar = "● ";
-                    dotColor = palette.dim;
-                  }
-                }
-                const effectiveLabel = isSettingsOverlay && dotChar ? option.label : option.label;
+                const settingsLabel = option.label;
+                const isSettingsChoice = isSettingsOverlay && settingsLabel.startsWith("▸");
+                const settingsToggleOn =
+                  isSettingsOverlay &&
+                  !isSettingsChoice &&
+                  (settingsLabel.endsWith("· on") ||
+                    settingsLabel.endsWith("· enabled") ||
+                    settingsLabel.endsWith("· pinned after m") ||
+                    option.tone === "success");
+                const settingsToggleOff =
+                  isSettingsOverlay &&
+                  !isSettingsChoice &&
+                  (settingsLabel.endsWith("· off") ||
+                    settingsLabel.endsWith("· temporary after m"));
+                const showSettingsSwitch =
+                  isSettingsOverlay && (settingsToggleOn || settingsToggleOff);
+                const effectiveLabel = option.label;
                 const isHistoryPicker = overlay.type === "history-picker";
                 const historyPosterWidth = 4;
                 const prefixWidth =
-                  (isSettingsOverlay && dotChar ? dotChar.length : 0) +
+                  (showSettingsSwitch ? 8 : 0) +
                   (isHistoryPicker && option.posterTitle ? historyPosterWidth + 1 : 0);
                 const historyRowWidth = Math.max(0, listContentWidth - prefixWidth);
                 return (
@@ -1183,9 +1164,7 @@ export function OverlayPanel({
                     backgroundColor={selected ? palette.surfaceActive : undefined}
                     flexDirection="row"
                   >
-                    {isSettingsOverlay && dotChar ? (
-                      <Text color={selected ? pickerAccent : dotColor}>{dotChar}</Text>
-                    ) : null}
+                    {showSettingsSwitch ? <BooleanSwitch on={settingsToggleOn} /> : null}
                     {isHistoryPicker && option.posterTitle ? (
                       <Box marginRight={1}>
                         <PosterInitialBlock
