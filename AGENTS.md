@@ -77,8 +77,8 @@ apps/cli/src/menu.ts                 ANSI color helpers used by logs and termina
 apps/cli/src/ui.ts                   dependency checks
 apps/cli/src/tmdb.ts                 TMDB season/episode data with proxy fallback
 apps/cli/src/session-flow.ts         start-episode selection and provider/session flow helpers
-apps/cli/src/history.ts              watch history persistence
-apps/cli/src/config.ts               persisted user config + provider overrides
+apps/cli/src/services/persistence/ConfigService.ts   persisted user config + provider overrides (KitsuneConfig)
+packages/storage/src/repositories/history.ts         SQLite watch history persistence
 apps/cli/src/services/providers/*    active direct-provider adapters and registry
 archive/legacy/apps/cli/src/browser/*        quarantined Playwright interception reference; not active beta runtime
 archive/legacy/apps/cli/src/providers/*      quarantined browser/legacy provider reference; not active beta runtime

@@ -36,7 +36,7 @@ coverage
 # logs
 logs
 logs.*
-_.log
+*.log
 *_log.json
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 *_html.ts

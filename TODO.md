@@ -1,35 +1,33 @@
 # TODO
 
-## Immediate bugs / fixes
+> **Canonical trackers live elsewhere.** This file is intentionally thin to avoid
+> drift. For current status use:
+>
+> - [.plans/roadmap.md](.plans/roadmap.md) — what is in flight and what is next
+> - [.plans/plan-implementation-truth.md](.plans/plan-implementation-truth.md) — reconciled plan-vs-code status (code wins)
+>
+> The old contents of this file described a pre-SQLite / pre-Ink runtime
+> (`history.json`, `stream_cache.json`, fzf binary, "SQLite migration deferred").
+> All of that has shipped — SQLite storage lives in `packages/storage`, the Ink
+> shell is the active runtime. Those entries were removed on 2026-05-28.
 
-- [ ] **Settings pre-search gate** — `[c]` typed at the search prompt goes into the text box instead of opening settings. Fix: show raw-mode key menu BEFORE calling `text()`. Keys: `/` = search, `c` = settings, `a` = toggle anime mode, `q` = quit. See `.plans/roadmap.md`.
+## Legacy bug entries to triage (re-verify against the current runtime)
 
-- [ ] **MPV video reopening bug** — after MPV exits naturally, relaunching the same episode sometimes silently fails. Suspected cause: cached wixmp token expired (AllAnime tokens ~20 min, cache TTL 1 hour). Add logging around cache hits + stream validation before relaunch.
+These predate the Ink + SQLite rewrite and may already be resolved. Do not treat
+as confirmed-open until reproduced on `main`:
 
-- [ ] **CinebyAnime needsClick** — `embedScraper` callback in `index.ts` hardcodes `needsClick: false`, but `cineby.sc/anime` URLs need a click. Detect anime embed URLs and pass `needsClick: true`.
+- **`[c]` settings pre-search gate** — described against the old `text()` prompt
+  flow; the Ink command bar likely supersedes it. Confirm against the current
+  shell before acting.
+- **mpv re-open after natural exit** — original suspect was an expired AllAnime/
+  wixmp token served from a long-lived cache. The CLI stream cache TTL is now
+  15 min (under the ~20 min token lifetime), so this is likely mitigated; re-test
+  and close if it no longer reproduces.
+- **CinebyAnime `needsClick`** — lived on the Playwright embed-scrape path, now
+  quarantined under `archive/legacy/`. Only relevant if/when that path returns.
 
-## Near-term improvements
+## Deferred (tracked in plans, not here)
 
-- [ ] **fzf npm package** — replace fzf binary dependency with `fzf` npm (pure TypeScript). Prerequisite for Ink migration. Package: https://www.npmjs.com/package/fzf
-
-- [ ] **npm publish setup** — verify `apps/cli/src/main.ts` builds to `dist/kunai.js` and the `kunai` bin field points at that artifact. (Task #1 in task list.)
-
-- [ ] **Tests for pure functions** — `formatTimestamp`, `isFinished`, `buildUrl`, cache TTL logic, search result mapping. (Task #5 in task list.)
-
-## Planned (needs spec / discussion)
-
-- [ ] **Ink migration** — full terminal UI rewrite. See `.plans/ink-migration.md`. Prerequisite: fzf npm package.
-
-- [ ] **SQLite migration** — replace `history.json` + `stream_cache.json` + in-memory TMDB cache with `bun:sqlite`. Enables proper TTL tracking per token, not just per URL. Deferred until Ink migration is done.
-
-- [ ] **YouTube provider** — `yt-dlp` + Invidious search. Deferred — read ytfzf source first. See `.plans/yt-provider.md`.
-
-- [ ] **Search service deep refactor** — promote HiAnime to standalone `SearchService`, decouple from CinebyAnime provider. See `.plans/search-service.md`.
-
-- [ ] **Provider hardening** — dossier-first research flow, multi-source inventory, subtitle/quality/dub modeling, and stronger diagnostics. See `.plans/provider-hardening.md`.
-
-## Housekeeping
-
-- [ ] License file + CI workflow (Task #6)
-- [ ] Git hooks (Task #4)
-- [ ] Config files: biome, oxlint, commitlint (Task #3)
+- YouTube provider — [.plans/yt-provider.md](.plans/yt-provider.md)
+- Search service decoupling — [.plans/search-service.md](.plans/search-service.md)
+- Provider hardening — [.plans/provider-hardening.md](.plans/provider-hardening.md)
