@@ -42,6 +42,8 @@ Source-of-truth order: **runtime code > `.docs/design-system.md` > this plan**.
 
 ## Task T2 — A7: loading dot-matrix animation desync · P1 bug
 
+- [x]
+
 **Symptom:** the startup loader animation desyncs / double-renders (part of the autonext jank).
 
 **Owner files:** `apps/cli/src/app-shell/dot-matrix-loader.tsx` (+ its test).
@@ -57,6 +59,8 @@ Source-of-truth order: **runtime code > `.docs/design-system.md` > this plan**.
 ---
 
 ## Task T3 — B9: command palette layout corruption + scope · P1 bug
+
+- [x]
 
 **Symptom:** opening the palette on results/playback overflows or garbles the layout; it can also target the wrong surface.
 
@@ -74,6 +78,8 @@ Source-of-truth order: **runtime code > `.docs/design-system.md` > this plan**.
 
 ## Task T4 — D17: color hierarchy (the "feels flat" fix) · P0 polish, cross-cutting
 
+- [x]
+
 **Symptom:** everything sits at one dusk-plum brightness; nothing leads the eye. Root cause of the recurring "not polished" reaction.
 
 **Split to avoid seam conflicts:**
@@ -89,6 +95,8 @@ Source-of-truth order: **runtime code > `.docs/design-system.md` > this plan**.
 ---
 
 ## Task T5 — fuzzy-match fix · P1
+
+- [x]
 
 **Symptom:** palette/search don't reliably hit the obvious target (e.g. typing the start of a command/title ranks it below noise).
 
@@ -106,6 +114,8 @@ Source-of-truth order: **runtime code > `.docs/design-system.md` > this plan**.
 
 ## Task T6 — Settings as switch/segment rows + `Switch` primitive · P2 surface
 
+- [x]
+
 **Owner files:** new `apps/cli/src/app-shell/primitives/Switch.tsx`; settings option/render in `apps/cli/src/app-shell/panel-data.ts` (`buildSettingsOptions`, ~line 354) and the settings branch of `apps/cli/src/app-shell/overlay-panel.tsx`. Coordinate the overlay render seam with the lead.
 
 **Do:**
@@ -119,6 +129,8 @@ Source-of-truth order: **runtime code > `.docs/design-system.md` > this plan**.
 ---
 
 ## Task T7 — Diagnostics as calm grouped status (not a log dump) · P2 surface
+
+- [x]
 
 **Owner files:** `apps/cli/src/app-shell/panel-data.ts` (`buildDiagnosticsPanelLines`, ~line 286) only. Render path is the shared line-overlay in `overlay-panel.tsx` (don't change the renderer; shape the data into clear `tone`-coded sections).
 
