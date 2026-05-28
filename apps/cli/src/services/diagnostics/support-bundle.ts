@@ -23,6 +23,10 @@ export type DiagnosticsSupportBundle = {
     readonly arch: string;
     readonly bunVersion: string;
   };
+  readonly privacy: {
+    readonly redacted: true;
+    readonly excludes: readonly string[];
+  };
   readonly capabilities: Record<string, unknown>;
   readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary;
   readonly insights: DiagnosticsBundleInsights;
@@ -106,6 +110,10 @@ export function buildDiagnosticsSupportBundle(
       platform: process.platform,
       arch: process.arch,
       bunVersion: Bun.version,
+    },
+    privacy: {
+      redacted: true,
+      excludes: ["stream URLs", "subtitle URLs", "headers", "tokens", "local paths"],
     },
     capabilities,
     playbackSourceInventory,

@@ -30,6 +30,10 @@ describe("DiagnosticsSupportBundle", () => {
     expect(bundle.summary.sections).toEqual(["network", "provider"]);
     expect(bundle.sections.network).toMatchObject({ tone: "warning", eventCount: 1 });
     expect(bundle.sections.provider).toMatchObject({ tone: "neutral", eventCount: 1 });
+    expect(bundle.privacy).toEqual({
+      redacted: true,
+      excludes: ["stream URLs", "subtitle URLs", "headers", "tokens", "local paths"],
+    });
   });
 
   test("summarizes presence and download sections with latest operation details", () => {
