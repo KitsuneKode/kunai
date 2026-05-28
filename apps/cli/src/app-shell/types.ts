@@ -112,6 +112,8 @@ export type PlaybackShellState = {
   readonly totalEpisodes?: number;
   readonly watchedEpisodes?: number;
   readonly currentSeason?: number;
+  /** Next-episode thumbnail for the post-play rail (preferred over the poster). */
+  readonly nextEpisodeThumbUrl?: string;
   /**
    * Rich catalog metadata + best-of-provider artwork (Agent ART). Optional:
    * surfaces render what is present and show honest placeholders otherwise.

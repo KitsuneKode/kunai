@@ -1346,6 +1346,7 @@ function PlaybackShell({
           watchedEpisodes={state.watchedEpisodes}
           currentSeason={state.currentSeason ?? state.season}
           posterUrl={state.posterUrl}
+          nextEpisodeThumbUrl={state.nextEpisodeThumbUrl}
           titleDetail={state.titleDetail}
         />
       )}
