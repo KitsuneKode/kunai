@@ -158,6 +158,16 @@ it cleans up after the structural plans rather than fighting them. Run with
 
 **Gated on a dedicated focused pass (per architecture discussion):** **1b** (consumer migration to the new decision vocabulary — no lossy bridge; needs live verify of history/calendar/discover surfaces). Then Plan S (surfaces, live), Plan F (features, live), Plan Z (live), Plan 4 (PlaybackPhase decomposition, large), Plan R (render rescope, live).
 
+## Plan 4 — PlaybackPhase decomposition: established pattern (continue mechanically)
+
+`apps/cli/src/app/PlaybackPhase.ts` (~3900 lines). **Safe extraction pattern (proven, 1334 tests green):** move cohesive **module-level** helper clusters (NOT closures inside `execute()`) into focused `playback-*.ts` siblings; if a test imports a moved symbol from `PlaybackPhase`, re-export it (`export { x }`). Verify with `bun run typecheck` + full `bun run test` after each move (complete net for these moves).
+
+- ✅ Done: `playback-startup-format.ts` (startup-stage + stream-route formatters).
+- Candidate next cuts (module-level, decreasing safety):
+  1. **Post-play recommendation cluster** — `openPostPlaybackRecommendationActionPanel`, `openRecommendationDetailsPanel`, `confirmAndDownloadPostPlaybackRecommendation`, `recommendationRailItemToSearchResult`, `RecommendationRailPanelAction`, + `enqueuePostPlaybackRecommendation` (move together to avoid a circular import; ~250 lines).
+  2. **Post-play surface helpers** — `applyMpvEpisodeLoadingOverlay`, `preparePostPlaybackSurface`, `teardownPlaybackForPostPlayExit`, `describeSubtitleStatus`.
+- **Do NOT** decompose `execute()` itself (the ~2500-line method) by mechanical move — its inner logic closes over locals; that requires real seam design + **live playback verification** and is its own focused effort.
+
 ## Related
 
 - Memory: [[project_backend_hardening_roadmap]] (backend plans 1-5), [[project_html_mockups]] (prototypes are the visual target), [[project_sakura_canonical]] (design authority), [[project_cli_redesign]] (warm/hearth direction), [[feedback_question_recommendations]].
