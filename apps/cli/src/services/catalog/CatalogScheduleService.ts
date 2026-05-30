@@ -794,11 +794,14 @@ export function summarizeTmdbSeasonEpisodes(
       (episode) =>
         Number.isFinite(episode.number) && episode.number > 0 && episode.releaseAt.length > 0,
     );
+  // Date-only precision: an episode dated *today* is treated as upcoming (its intraday
+  // air time is unknown), consistent with classifyReleaseStatus. Only strictly-past
+  // dates count as aired — avoids a one-day-early "+N new episode".
   const aired = normalEpisodes
-    .filter((episode) => episode.releaseAt <= today)
+    .filter((episode) => episode.releaseAt < today)
     .sort((left, right) => right.number - left.number)[0];
   const next = normalEpisodes
-    .filter((episode) => episode.releaseAt > today)
+    .filter((episode) => episode.releaseAt >= today)
     .sort((left, right) => left.number - right.number)[0];
   return { aired, next };
 }

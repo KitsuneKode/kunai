@@ -55,6 +55,18 @@ test("ignores episodes with no air date or non-positive number", () => {
   expect(summary.next).toBeUndefined();
 });
 
+test("a today-dated episode is upcoming, not aired (date-only precision)", () => {
+  const summary = summarizeTmdbSeasonEpisodes(
+    [
+      { episode_number: 1, air_date: "2026-05-20" },
+      { episode_number: 2, air_date: TODAY },
+    ],
+    TODAY,
+  );
+  expect(summary.aired).toEqual({ number: 1, releaseAt: "2026-05-20" });
+  expect(summary.next).toEqual({ number: 2, releaseAt: TODAY });
+});
+
 test("empty episode list yields nothing", () => {
   expect(summarizeTmdbSeasonEpisodes([], TODAY)).toEqual({});
 });
