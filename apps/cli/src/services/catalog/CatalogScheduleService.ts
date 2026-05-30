@@ -74,6 +74,19 @@ export type CatalogScheduleLoaders = {
   ) => Promise<ReadonlyMap<string, CatalogSeriesReleaseProgress | null>>;
 };
 
+/**
+ * A sequel cour/season detected via AniList SEQUEL relations. AniList models each
+ * cour as a separate media id, so a finished season's history anchor can't see the
+ * next cour by episode delta alone — this is surfaced as a DISTINCT signal (never
+ * folded into a +N episode count, which would corrupt the cross-media numbering).
+ */
+export type AniListSequelSignal = {
+  readonly mediaId: number;
+  readonly latestAiredEpisode?: number;
+  readonly nextAiringEpisode?: number;
+  readonly nextAiringAt?: string;
+};
+
 export type CatalogSeriesReleaseProgress = {
   readonly latestAiredSeason?: number;
   readonly latestAiredEpisode?: number;
@@ -81,6 +94,8 @@ export type CatalogSeriesReleaseProgress = {
   readonly nextAiringEpisode?: number;
   readonly nextAiringAt?: string;
   readonly latestKnownReleaseAt?: string;
+  /** A newer cour/season exists (AniList SEQUEL). Distinct from the episode delta. */
+  readonly newSeason?: AniListSequelSignal;
   readonly sourceFingerprint: string;
 };
 
@@ -505,7 +520,7 @@ async function loadAniListReleaseProgressBatch(
 ): Promise<ReadonlyMap<string, CatalogSeriesReleaseProgress | null>> {
   const ids = titleIds.map(Number).filter(Number.isFinite);
   if (ids.length === 0) return new Map();
-  const query = `query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){id episodes status nextAiringEpisode{airingAt episode}}}}`;
+  const query = `query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){id episodes status nextAiringEpisode{airingAt episode} relations{edges{relationType node{id type status episodes nextAiringEpisode{episode airingAt}}}}}}}`;
   const data = await postAniListGraphql<{
     readonly data?: {
       readonly Page?: {
@@ -517,6 +532,7 @@ async function loadAniListReleaseProgressBatch(
             readonly airingAt?: number | null;
             readonly episode?: number | null;
           } | null;
+          readonly relations?: { readonly edges?: readonly AniListRelationEdge[] | null } | null;
         }[];
       } | null;
     };
@@ -526,25 +542,78 @@ async function loadAniListReleaseProgressBatch(
     if (!media?.id) continue;
     const titleId = String(media.id);
     const airing = media.nextAiringEpisode;
+    const newSeason = extractAniListSequelSignal(media.relations?.edges);
+    const sequelFingerprint = newSeason
+      ? `:seq${newSeason.mediaId}:${newSeason.latestAiredEpisode ?? newSeason.nextAiringEpisode ?? "-"}`
+      : "";
     if (typeof airing?.episode === "number" && airing.episode > 0) {
       progress.set(titleId, {
         latestAiredEpisode: Math.max(0, airing.episode - 1),
         nextAiringEpisode: airing.episode,
         nextAiringAt: airing.airingAt ? new Date(airing.airingAt * 1000).toISOString() : undefined,
-        sourceFingerprint: `anilist:${titleId}:ongoing:${airing.episode}:${airing.airingAt ?? "-"}`,
+        newSeason,
+        sourceFingerprint: `anilist:${titleId}:ongoing:${airing.episode}:${airing.airingAt ?? "-"}${sequelFingerprint}`,
       });
       continue;
     }
     if (media.status === "FINISHED" && typeof media.episodes === "number" && media.episodes > 0) {
       progress.set(titleId, {
         latestAiredEpisode: media.episodes,
-        sourceFingerprint: `anilist:${titleId}:finished:${media.episodes}`,
+        newSeason,
+        sourceFingerprint: `anilist:${titleId}:finished:${media.episodes}${sequelFingerprint}`,
       });
     } else {
       progress.set(titleId, null);
     }
   }
   return progress;
+}
+
+type AniListRelationEdge = {
+  readonly relationType?: string | null;
+  readonly node?: {
+    readonly id?: number | null;
+    readonly type?: string | null;
+    readonly status?: string | null;
+    readonly episodes?: number | null;
+    readonly nextAiringEpisode?: {
+      readonly episode?: number | null;
+      readonly airingAt?: number | null;
+    } | null;
+  } | null;
+};
+
+/**
+ * Pick the immediate sequel cour from AniList relation edges: the first SEQUEL edge
+ * to an ANIME node that is releasing, has aired episodes, or has a known next airing.
+ * Pure — unit-tested without the network.
+ */
+export function extractAniListSequelSignal(
+  edges: readonly AniListRelationEdge[] | null | undefined,
+): AniListSequelSignal | undefined {
+  for (const edge of edges ?? []) {
+    if (edge?.relationType !== "SEQUEL") continue;
+    const node = edge.node;
+    if (!node || typeof node.id !== "number" || node.type !== "ANIME") continue;
+    const airing = node.nextAiringEpisode;
+    const nextEpisode =
+      typeof airing?.episode === "number" && airing.episode > 0 ? airing.episode : undefined;
+    const latestAiredEpisode =
+      nextEpisode !== undefined
+        ? Math.max(0, nextEpisode - 1)
+        : node.status === "FINISHED" && typeof node.episodes === "number" && node.episodes > 0
+          ? node.episodes
+          : undefined;
+    const isReleasing = node.status === "RELEASING";
+    if (!isReleasing && nextEpisode === undefined && (latestAiredEpisode ?? 0) <= 0) continue;
+    return {
+      mediaId: node.id,
+      latestAiredEpisode,
+      nextAiringEpisode: nextEpisode,
+      nextAiringAt: airing?.airingAt ? new Date(airing.airingAt * 1000).toISOString() : undefined,
+    };
+  }
+  return undefined;
 }
 
 async function loadAniListNextRelease(
