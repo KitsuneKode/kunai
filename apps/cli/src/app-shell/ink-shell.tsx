@@ -23,6 +23,7 @@ import { Box, Text, render, useInput, useStdout } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
+import { showsEpisodeLabel } from "./content-kind";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
@@ -628,11 +629,12 @@ function AppRoot({ container }: { container: Container }) {
         : state.playbackStatus === "error"
           ? "error"
           : "ready";
-  const playbackSubtitle = state.currentEpisode
-    ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
-        state.currentEpisode.episode,
-      ).padStart(2, "0")}`
-    : undefined;
+  const playbackSubtitle =
+    state.currentEpisode && showsEpisodeLabel(state.currentTitle)
+      ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
+          state.currentEpisode.episode,
+        ).padStart(2, "0")}`
+      : undefined;
   const playbackSubtitleStatus = describePlaybackSubtitleStatus(
     state.stream,
     state.mode === "anime"

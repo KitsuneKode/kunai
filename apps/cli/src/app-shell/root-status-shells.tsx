@@ -3,6 +3,7 @@ import type { SessionState } from "@/domain/session/SessionState";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import { resolveContentKind, showsEpisodeLabel } from "./content-kind";
 import { palette } from "./shell-theme";
 
 export type { ErrorScenario } from "@/domain/playback/playback-problem";
@@ -10,18 +11,19 @@ export type { ErrorScenario } from "@/domain/playback/playback-problem";
 export function RootIdleShell({ state }: { state: SessionState }) {
   const currentTitle = state.currentTitle;
   const hasSession = !!currentTitle;
-  const currentEpisode = state.currentEpisode
-    ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
-        state.currentEpisode.episode,
-      ).padStart(2, "0")}`
-    : null;
+  const currentEpisode =
+    state.currentEpisode && showsEpisodeLabel(currentTitle)
+      ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
+          state.currentEpisode.episode,
+        ).padStart(2, "0")}`
+      : null;
 
   return (
     <Box flexDirection="column" flexGrow={1}>
       {hasSession ? (
         <Box flexDirection="column" gap={0}>
           <Text color={palette.dim} dimColor>
-            {state.mode === "anime" ? "anime" : "series"}
+            {resolveContentKind(currentTitle, state.mode)}
           </Text>
           <Box marginTop={1}>
             <Text color={palette.accent}>{"⏸  "}</Text>
