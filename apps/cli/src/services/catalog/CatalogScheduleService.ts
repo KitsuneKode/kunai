@@ -80,8 +80,11 @@ export type CatalogScheduleLoaders = {
  * next cour by episode delta alone — this is surfaced as a DISTINCT signal (never
  * folded into a +N episode count, which would corrupt the cross-media numbering).
  */
-export type AniListSequelSignal = {
-  readonly mediaId: number;
+export type NewSeasonSignal = {
+  /** AniList sequel media id, when the newer cour is a separate media (AniList). */
+  readonly mediaId?: number;
+  /** TMDB season number, when the newer season is on the same series (TMDB). */
+  readonly season?: number;
   readonly latestAiredEpisode?: number;
   readonly nextAiringEpisode?: number;
   readonly nextAiringAt?: string;
@@ -94,8 +97,8 @@ export type CatalogSeriesReleaseProgress = {
   readonly nextAiringEpisode?: number;
   readonly nextAiringAt?: string;
   readonly latestKnownReleaseAt?: string;
-  /** A newer cour/season exists (AniList SEQUEL). Distinct from the episode delta. */
-  readonly newSeason?: AniListSequelSignal;
+  /** A newer cour/season exists (AniList SEQUEL or TMDB later season). Distinct from the episode delta. */
+  readonly newSeason?: NewSeasonSignal;
   readonly sourceFingerprint: string;
 };
 
@@ -590,7 +593,7 @@ type AniListRelationEdge = {
  */
 export function extractAniListSequelSignal(
   edges: readonly AniListRelationEdge[] | null | undefined,
-): AniListSequelSignal | undefined {
+): NewSeasonSignal | undefined {
   for (const edge of edges ?? []) {
     if (edge?.relationType !== "SEQUEL") continue;
     const node = edge.node;
@@ -768,18 +771,20 @@ async function loadTmdbNextRelease(
   };
 }
 
-async function loadTmdbSeriesReleaseProgress(
-  input: CatalogScheduleInput,
-  signal?: AbortSignal,
-): Promise<CatalogSeriesReleaseProgress | null> {
-  if (!input.season) return null;
-  const data = await fetchJson(
-    `${VIDEASY_TMDB_URL}/tv/${input.titleId}/season/${input.season}`,
-    signal,
-  );
-  const episodePayload = readRecord(data).episodes;
-  const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
-  const today = formatDateKey(new Date());
+export type TmdbSeasonAiring = {
+  readonly aired?: { readonly number: number; readonly releaseAt: string };
+  readonly next?: { readonly number: number; readonly releaseAt: string };
+};
+
+/**
+ * Partition a TMDB season's episodes into the latest aired and the next upcoming,
+ * by date key. Pure — unit-tested without the network; reused for the anchor season
+ * and for the next-season probe.
+ */
+export function summarizeTmdbSeasonEpisodes(
+  episodes: readonly Record<string, unknown>[],
+  today: string,
+): TmdbSeasonAiring {
   const normalEpisodes = episodes
     .map((episode) => ({
       number: Number(episode.episode_number),
@@ -795,7 +800,31 @@ async function loadTmdbSeriesReleaseProgress(
   const next = normalEpisodes
     .filter((episode) => episode.releaseAt > today)
     .sort((left, right) => left.number - right.number)[0];
+  return { aired, next };
+}
+
+async function loadTmdbSeriesReleaseProgress(
+  input: CatalogScheduleInput,
+  signal?: AbortSignal,
+): Promise<CatalogSeriesReleaseProgress | null> {
+  if (!input.season) return null;
+  const data = await fetchJson(
+    `${VIDEASY_TMDB_URL}/tv/${input.titleId}/season/${input.season}`,
+    signal,
+  );
+  const episodePayload = readRecord(data).episodes;
+  const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+  const today = formatDateKey(new Date());
+  const { aired, next } = summarizeTmdbSeasonEpisodes(episodes, today);
   if (!aired && !next) return null;
+
+  // Cross-season detection: when this season looks complete (has aired, nothing
+  // upcoming within it), probe the next season number so a caught-up viewer can be
+  // told "new season" instead of a permanent "caught-up". Conditional => no overfetch.
+  const newSeason =
+    aired && !next
+      ? await probeTmdbNextSeason(input.titleId, input.season + 1, today, signal)
+      : undefined;
 
   return {
     latestAiredSeason: aired ? input.season : undefined,
@@ -804,8 +833,40 @@ async function loadTmdbSeriesReleaseProgress(
     nextAiringEpisode: next?.number,
     nextAiringAt: next?.releaseAt,
     latestKnownReleaseAt: aired?.releaseAt,
-    sourceFingerprint: `tmdb:${input.titleId}:${input.season}:${aired?.number ?? "-"}:${next?.number ?? "-"}`,
+    newSeason,
+    sourceFingerprint: `tmdb:${input.titleId}:${input.season}:${aired?.number ?? "-"}:${next?.number ?? "-"}${
+      newSeason
+        ? `:s${newSeason.season}:${newSeason.latestAiredEpisode ?? newSeason.nextAiringEpisode ?? "-"}`
+        : ""
+    }`,
   };
+}
+
+/**
+ * Probe a later TMDB season for any aired/upcoming episodes. Returns a season-based
+ * NewSeasonSignal, or undefined when the season doesn't exist (404) or has nothing.
+ */
+async function probeTmdbNextSeason(
+  titleId: string,
+  season: number,
+  today: string,
+  signal?: AbortSignal,
+): Promise<NewSeasonSignal | undefined> {
+  try {
+    const data = await fetchJson(`${VIDEASY_TMDB_URL}/tv/${titleId}/season/${season}`, signal);
+    const episodePayload = readRecord(data).episodes;
+    const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+    const { aired, next } = summarizeTmdbSeasonEpisodes(episodes, today);
+    if (!aired && !next) return undefined;
+    return {
+      season,
+      latestAiredEpisode: aired?.number,
+      nextAiringEpisode: next?.number,
+      nextAiringAt: next?.releaseAt,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 async function loadTmdbAiringToday(
