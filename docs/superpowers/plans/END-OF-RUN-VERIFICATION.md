@@ -25,6 +25,13 @@ chunk; these are the things that need a human watching the live TUI.
       the ternary call sites (scattered mode-based logic).
 - [ ] **Deep intake / play(PlayableRef):** route surfaces through one `play(ref)`;
       confirm a movie's `currentTitle.type` is `"movie"` from every entrypoint.
+- [ ] **Movie from history shows no resume/restart CHOICE (found live 2026-05-29).**
+      Root cause: the resume-vs-restart prompt (`offerResumeStartChoice` /
+      `resumeStartChoicePrompt`) lives only in the persistent/autoplay-chain path
+      (`PlayerServiceImpl.playAutoplayChainStream`). Movies use `playOneShotStream`,
+      which applies `startAt` directly with no choice. Fix: give the one-shot path a
+      resume/restart choice when a saved position exists (or route movies through a
+      shared resume-choice step). Flow+UI → verify live.
 
 > **Sequencing note (found 2026-05-29):** movie continue/restart is **entangled with
 > 1b**. `isHistoryPickerContinuable` (`panel-data.ts:857`) runs through
