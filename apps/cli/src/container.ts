@@ -74,6 +74,7 @@ import {
 import { ResultEnrichmentService } from "./services/catalog/ResultEnrichmentService";
 import { TimelineService } from "./services/catalog/TimelineService";
 import { ContinuationProjectionService } from "./services/continuation/ContinuationProjectionService";
+import { ContinueWatchingService } from "./services/continuation/ContinueWatchingService";
 import { createCorrelationId } from "./services/diagnostics/correlation";
 import {
   buildDebugSessionInstructions,
@@ -207,6 +208,7 @@ export interface Container {
   readonly syncTokenStore: SyncTokenStore;
   readonly syncService: SyncService;
   readonly continuationProjectionService: ContinuationProjectionService;
+  readonly continueWatchingService: ContinueWatchingService;
   readonly attentionRefreshWorker: AttentionRefreshWorker;
   readonly backgroundWorkScheduler: BackgroundWorkScheduler;
 
@@ -473,6 +475,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     startupAt,
   );
   const continuationProjectionService = new ContinuationProjectionService();
+  const continueWatchingService = new ContinueWatchingService(historyRepository);
   const attentionRefreshWorker = new AttentionRefreshWorker({
     flags: featureFlags,
     diagnostics: diagnosticsService,
@@ -581,6 +584,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     syncTokenStore,
     syncService,
     continuationProjectionService,
+    continueWatchingService,
     attentionRefreshWorker,
     backgroundWorkScheduler,
     shellChrome,
