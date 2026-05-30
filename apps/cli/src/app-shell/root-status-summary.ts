@@ -5,6 +5,7 @@ import {
 } from "@/app/subtitle-status";
 import type { SessionState } from "@/domain/session/SessionState";
 
+import { resolveContentKind, showsEpisodeLabel } from "./content-kind";
 import type { ShellStatusTone } from "./types";
 
 export type RootStatusAlert = {
@@ -130,10 +131,10 @@ export function buildRootStatusSummary({
 
   // Crumb: always mode · provider; add title + episode during playback,
   // or streak + sync health when idle
-  const crumbParts: string[] = [state.mode, providerCrumb];
+  const crumbParts: string[] = [resolveContentKind(state.currentTitle, state.mode), providerCrumb];
   if (isActivePlayback && title) {
     crumbParts.push(title);
-    if (episode) crumbParts.push(episode);
+    if (episode && showsEpisodeLabel(state.currentTitle)) crumbParts.push(episode);
     if (subtitleCompact) crumbParts.push(subtitleCompact);
   } else {
     if (streak !== undefined && streak >= 2) {
