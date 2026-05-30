@@ -59,7 +59,8 @@ export async function loadCalendarResults(
       if (existing && existing.latestAiredEpisode && existing.latestAiredEpisode >= item.episode) {
         continue;
       }
-      const now = new Date().toISOString();
+      const nowMs = Date.now();
+      const now = new Date(nowMs).toISOString();
       const projection: ReleaseProgressProjection = {
         titleId: match.titleId,
         mediaKind: entry.mediaKind ?? (item.type === "anime" ? "anime" : "series"),
@@ -72,8 +73,12 @@ export async function loadCalendarResults(
         newEpisodeCount: Math.max(0, item.episode - entry.episode),
         status: "new-episodes",
         checkedAt: now,
-        nextCheckAt: now,
-        staleAfterAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        // The calendar provides a fast optimistic "+N new" badge, but must NOT force
+        // immediate re-reconciliation (nextCheckAt=now defeats the planner's not-due
+        // skip and re-fetches this title every cycle — the calendar/reconciliation
+        // writer race). Schedule the next check on a normal cadence instead.
+        nextCheckAt: new Date(nowMs + 2 * 60 * 60 * 1000).toISOString(),
+        staleAfterAt: new Date(nowMs + 24 * 60 * 60 * 1000).toISOString(),
         latestKnownReleaseAt: item.releaseAt ?? undefined,
         sourceFingerprint: `calendar:${item.source}:${item.titleId}:${item.episode}:${item.releaseAt ?? "-"}`,
         errorCount: 0,
