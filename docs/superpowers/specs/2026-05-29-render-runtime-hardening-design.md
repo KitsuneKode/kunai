@@ -1,8 +1,19 @@
 # Design — Render Runtime Hardening (Plan R)
 
 Date: 2026-05-29
-Status: approved (brainstorm), pending implementation plan
+Status: **NEEDS RESCOPE — original premise corrected (2026-05-29).**
 Roadmap: `docs/superpowers/plans/2026-05-29-premium-experience-roadmap.md`
+
+> **CORRECTION:** The "no alternate-screen buffer" premise below is **wrong**.
+> The project runs **Ink 7.0.x**, and the shell already passes `alternateScreen: true`
+> to `render()` (`ink-shell.tsx:270,1166`) — Ink 7 owns the alt buffer and does
+> incremental rendering natively (`clearShellScreen` only cleans Kitty images, by
+> design, `ink-shell.tsx:146`). So **Phase R1 (manual alt-screen) is unnecessary and
+> was reverted.** Plan R must be rescoped to the _actual_ gaps: crash/signal restore
+> robustness (verify Ink 7's teardown on `uncaughtException`/SIGKILL), the triage
+> items A6 (ghost images on surface change/resize), A7 (loader desync), B8 (dancing
+> lists), and resize repaint correctness. Sections below are retained for history
+> only and are superseded pending that rescope.
 
 Plan R of the premium-experience roadmap. Goal: a **flicker-free, resize-proof,
 scrollback-clean** render runtime that every surface (Plan S) can safely sit on.

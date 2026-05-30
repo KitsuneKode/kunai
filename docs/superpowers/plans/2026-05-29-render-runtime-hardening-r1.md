@@ -1,5 +1,12 @@
 # Render Runtime Hardening — Phase R1 (Alt-screen lifecycle) Implementation Plan
 
+> **⛔ SUPERSEDED / DO NOT EXECUTE (2026-05-29).** Premise was wrong: the project
+> runs **Ink 7.0.x** with `alternateScreen: true` already set at the `render()` call
+> sites (`ink-shell.tsx:270,1166`) — alt-screen + incremental render are handled by
+> Ink natively. Manually entering `\x1b[?1049h` here would double-enter the alt
+> buffer. This plan's code was written then reverted. Plan R will be rescoped to the
+> real gaps (crash/signal restore, A6/A7/B8, resize). Kept for history only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Take the rich shell into the alternate screen buffer and guarantee the terminal is restored (alt buffer left, cursor shown, images cleared) on EVERY teardown path — normal quit, Ctrl-C, SIGTERM/HUP, uncaught error — so quitting never pollutes scrollback or leaves a corrupted terminal.
