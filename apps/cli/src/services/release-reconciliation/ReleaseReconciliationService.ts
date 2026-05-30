@@ -152,20 +152,39 @@ export class ReleaseReconciliationService {
   }
 }
 
-function buildProjection(result: CatalogProgressResult, now: string): ReleaseProgressProjection {
-  const latestAiredEpisode = result.latestAiredEpisode;
-  const newEpisodeCount =
-    typeof latestAiredEpisode === "number"
-      ? Math.max(0, latestAiredEpisode - result.candidate.anchorEpisode)
-      : 0;
+/**
+ * Pure new-episode delta + status. Guards the absolute-vs-cour numbering mismatch:
+ * when the reported latest-aired episode is BELOW the watched anchor (e.g. history
+ * stored absolute ep 64 but AniList reports cour-relative ep 5), the delta is not
+ * trustworthy — emit "unknown" rather than a false "caught-up" that would hide a
+ * new cour forever.
+ */
+export function computeReleaseProgress(input: {
+  readonly latestAiredEpisode: number | undefined;
+  readonly anchorEpisode: number;
+  readonly hasUpcoming: boolean;
+}): { readonly newEpisodeCount: number; readonly status: ReleaseProgressProjection["status"] } {
+  const { latestAiredEpisode, anchorEpisode, hasUpcoming } = input;
+  const hasReliableDelta =
+    typeof latestAiredEpisode === "number" && latestAiredEpisode >= anchorEpisode;
+  const newEpisodeCount = hasReliableDelta ? latestAiredEpisode - anchorEpisode : 0;
   const status: ReleaseProgressProjection["status"] =
     newEpisodeCount > 0
       ? "new-episodes"
-      : result.nextAiringAt
+      : hasUpcoming
         ? "upcoming"
-        : typeof latestAiredEpisode === "number"
+        : hasReliableDelta
           ? "caught-up"
           : "unknown";
+  return { newEpisodeCount, status };
+}
+
+function buildProjection(result: CatalogProgressResult, now: string): ReleaseProgressProjection {
+  const { newEpisodeCount, status } = computeReleaseProgress({
+    latestAiredEpisode: result.latestAiredEpisode,
+    anchorEpisode: result.candidate.anchorEpisode,
+    hasUpcoming: Boolean(result.nextAiringAt),
+  });
 
   return {
     titleId: result.candidate.titleId,
