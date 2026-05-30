@@ -12,7 +12,9 @@ const NOW = Date.parse("2026-05-08T12:00:00.000Z");
 
 describe("CatalogScheduleService", () => {
   test("normalizes date and timestamp release status deterministically", () => {
-    expect(classifyReleaseStatus("2026-05-08", "date", NOW)).toBe("released");
+    expect(classifyReleaseStatus("2026-05-07", "date", NOW)).toBe("released"); // strictly past
+    // date-only precision: an episode dated *today* stays upcoming until the day ends
+    expect(classifyReleaseStatus("2026-05-08", "date", NOW)).toBe("upcoming");
     expect(classifyReleaseStatus("2026-05-09", "date", NOW)).toBe("upcoming");
     expect(classifyReleaseStatus("2026-05-08T12:00:00.000Z", "timestamp", NOW)).toBe("released");
     expect(classifyReleaseStatus("2026-05-08T13:00:00.000Z", "timestamp", NOW)).toBe("upcoming");
