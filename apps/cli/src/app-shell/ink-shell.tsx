@@ -23,7 +23,7 @@ import { Box, Text, render, useInput, useStdout } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
-import { showsEpisodeLabel } from "./content-kind";
+import { mediaLanguageProfileFor, showsEpisodeLabel } from "./content-kind";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
@@ -637,9 +637,7 @@ function AppRoot({ container }: { container: Container }) {
       : undefined;
   const playbackSubtitleStatus = describePlaybackSubtitleStatus(
     state.stream,
-    state.mode === "anime"
-      ? state.animeLanguageProfile.subtitle
-      : state.seriesLanguageProfile.subtitle,
+    mediaLanguageProfileFor(state).subtitle,
   );
   const shellWidth = stdout.columns ?? 80;
   const shellHeight = stdout.rows ?? 24;

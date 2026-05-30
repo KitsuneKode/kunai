@@ -8,6 +8,7 @@
 // =============================================================================
 
 import type { ShellMode, TitleInfo } from "@/domain/types";
+import type { MediaLanguageProfile } from "@/services/persistence/ConfigService";
 
 export type ContentKind = "movie" | "series" | "anime";
 
@@ -23,4 +24,18 @@ export function resolveContentKind(
 /** Movies have no season/episode — never render an S·E label for them. */
 export function showsEpisodeLabel(title: Pick<TitleInfo, "type"> | null | undefined): boolean {
   return title?.type !== "movie";
+}
+
+/** Pick the language profile (audio/subtitle/quality) matching the content kind. */
+export function mediaLanguageProfileFor(input: {
+  readonly mode: ShellMode;
+  readonly currentTitle: Pick<TitleInfo, "type"> | null;
+  readonly animeLanguageProfile: MediaLanguageProfile;
+  readonly seriesLanguageProfile: MediaLanguageProfile;
+  readonly movieLanguageProfile: MediaLanguageProfile;
+}): MediaLanguageProfile {
+  const kind = resolveContentKind(input.currentTitle, input.mode);
+  if (kind === "anime") return input.animeLanguageProfile;
+  if (kind === "movie") return input.movieLanguageProfile;
+  return input.seriesLanguageProfile;
 }

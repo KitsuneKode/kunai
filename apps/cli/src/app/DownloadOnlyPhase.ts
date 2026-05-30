@@ -255,7 +255,11 @@ function buildDownloadConfirmationProfile(
 ): DownloadConfirmationProfile {
   const state = context.container.stateManager.getState();
   const language =
-    state.mode === "anime" ? state.animeLanguageProfile : state.seriesLanguageProfile;
+    state.currentTitle?.type === "movie"
+      ? state.movieLanguageProfile
+      : state.mode === "anime"
+        ? state.animeLanguageProfile
+        : state.seriesLanguageProfile;
   return {
     audioPreference: language.audio,
     subtitlePreference: language.subtitle,

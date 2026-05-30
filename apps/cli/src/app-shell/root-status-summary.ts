@@ -5,7 +5,7 @@ import {
 } from "@/app/subtitle-status";
 import type { SessionState } from "@/domain/session/SessionState";
 
-import { resolveContentKind, showsEpisodeLabel } from "./content-kind";
+import { mediaLanguageProfileFor, resolveContentKind, showsEpisodeLabel } from "./content-kind";
 import type { ShellStatusTone } from "./types";
 
 export type RootStatusAlert = {
@@ -106,12 +106,7 @@ export function buildRootStatusSummary({
 
   const subtitleStatus =
     state.stream || isActivePlayback
-      ? describePlaybackSubtitleStatus(
-          state.stream,
-          state.mode === "anime"
-            ? state.animeLanguageProfile.subtitle
-            : state.seriesLanguageProfile.subtitle,
-        )
+      ? describePlaybackSubtitleStatus(state.stream, mediaLanguageProfileFor(state).subtitle)
       : null;
   const subtitleTone = subtitleStatus ? playbackSubtitleStatusTone(subtitleStatus) : null;
   const subtitleCompact = subtitleStatus ? compactPlaybackSubtitleStatus(subtitleStatus) : null;
