@@ -144,6 +144,20 @@ deprecated Sakura color-token aliases (migrate call sites + delete aliases, per
 it cleans up after the structural plans rather than fighting them. Run with
 `/code-review` + `/simplify` on each touched area; behavior-preserving, test-guarded.
 
+## Implemented so far (2026-05-29 session, all committed + green: 1333 tests)
+
+**Landed & verified (static + review subagent):**
+
+- **Plan 1a** — continuation core: `isFinished` authority, `projectContinuation` (Netflix anchor), `ContinueWatchingService` (dormant until 1b wires consumers).
+- **Plan C1/C2** — `PlayableRef`+`buildPlayIntent`; movie display fix (content kind from `title.type`, no `S01E01`, `movieLanguageProfile`, continue/restart). Deep-intake `play(ref)` + resume/restart-choice for movies = pending (flow/live).
+- **Plan 2 — backend correctness COMPLETE & reviewed:** numbering-axis guard, date-only "today"⇒upcoming (calendar + TMDB summary), **AniList SEQUEL cross-cour** + **TMDB later-season** ⇒ `newSeason`, persisted through projection→`release_progress_cache` (migration 009), calendar/reconciliation writer-race fixed. Remaining Plan 2: consumer/UI surfacing of `newSeason` (1b/S), filler classification, wire-or-remove `new-playable-episode`.
+- **Plan 3** — `resolveUpNext` (pure unifier; dormant until wired).
+- **Architecture/cleanup** — content-kind → `domain/media` (deduped); dead `summarizeJson`/`UpNextSource` removed.
+
+**Deferred (logged):** `NewSeasonSignal`/`ReleaseNewSeason` → `@kunai/types` dedup (Plan D); movie resume/restart one-shot path (flow/live).
+
+**Gated on a dedicated focused pass (per architecture discussion):** **1b** (consumer migration to the new decision vocabulary — no lossy bridge; needs live verify of history/calendar/discover surfaces). Then Plan S (surfaces, live), Plan F (features, live), Plan Z (live), Plan 4 (PlaybackPhase decomposition, large), Plan R (render rescope, live).
+
 ## Related
 
 - Memory: [[project_backend_hardening_roadmap]] (backend plans 1-5), [[project_html_mockups]] (prototypes are the visual target), [[project_sakura_canonical]] (design authority), [[project_cli_redesign]] (warm/hearth direction), [[feedback_question_recommendations]].
