@@ -720,12 +720,6 @@ function formatProviderAttemptTimeline(value: unknown): string | null {
   return parts.join(" -> ");
 }
 
-function summarizeJson(value: unknown): string {
-  return JSON.stringify(value, (_key, nested) =>
-    typeof nested === "string" && /^https?:\/\//i.test(nested) ? "[redacted-url]" : nested,
-  );
-}
-
 export function renderHistoryProgressBar(percentage: number): string {
   const totalBlocks = 10;
   const filledBlocks = Math.max(

@@ -12,8 +12,6 @@
 
 import type { PlayableRef } from "./playable-ref";
 
-export type UpNextSource = "episode-chain" | "queue" | "none";
-
 export type UpNext =
   | { readonly kind: "episode-chain"; readonly ref: PlayableRef }
   | { readonly kind: "queue"; readonly ref: PlayableRef }
