@@ -433,7 +433,10 @@ export function classifyReleaseStatus(
   if (!releaseAt || precision === "unknown") return "unknown";
 
   if (precision === "date") {
-    return releaseAt <= formatDateKey(new Date(nowMs)) ? "released" : "upcoming";
+    // Date-only precision: we don't know the intraday air time, so an episode
+    // dated *today* stays "upcoming" until the day ends (avoids a premature
+    // "new episode" before it has actually aired). Only strictly-past dates are released.
+    return releaseAt < formatDateKey(new Date(nowMs)) ? "released" : "upcoming";
   }
 
   const releaseMs = Date.parse(releaseAt);
