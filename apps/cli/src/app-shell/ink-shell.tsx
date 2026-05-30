@@ -10,6 +10,7 @@ import {
 } from "@/app/source-quality";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import type { Container } from "@/container";
+import { mediaLanguageProfileFor, showsEpisodeLabel } from "@/domain/media/content-kind";
 import { toErrorScenario } from "@/domain/playback/playback-problem";
 import {
   describePlaybackTelemetrySnapshot,
@@ -23,7 +24,6 @@ import { Box, Text, render, useInput, useStdout } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
-import { mediaLanguageProfileFor, showsEpisodeLabel } from "./content-kind";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";

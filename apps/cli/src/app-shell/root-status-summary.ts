@@ -3,9 +3,13 @@ import {
   describePlaybackSubtitleStatus,
   playbackSubtitleStatusTone,
 } from "@/app/subtitle-status";
+import {
+  mediaLanguageProfileFor,
+  resolveContentKind,
+  showsEpisodeLabel,
+} from "@/domain/media/content-kind";
 import type { SessionState } from "@/domain/session/SessionState";
 
-import { mediaLanguageProfileFor, resolveContentKind, showsEpisodeLabel } from "./content-kind";
 import type { ShellStatusTone } from "./types";
 
 export type RootStatusAlert = {

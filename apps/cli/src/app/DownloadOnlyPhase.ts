@@ -2,6 +2,7 @@ import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell"
 import { buildPickerActionContext } from "@/app-shell/workflows";
 import { pickEpisodesToDownload } from "@/app/download-episode-checklist";
 import type { Phase, PhaseContext, PhaseResult } from "@/app/Phase";
+import { mediaLanguageProfileFor } from "@/domain/media/content-kind";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
 import { chooseStartingEpisode } from "@/session-flow";
@@ -254,12 +255,7 @@ function buildDownloadConfirmationProfile(
   context: PhaseContext,
 ): DownloadConfirmationProfile {
   const state = context.container.stateManager.getState();
-  const language =
-    state.currentTitle?.type === "movie"
-      ? state.movieLanguageProfile
-      : state.mode === "anime"
-        ? state.animeLanguageProfile
-        : state.seriesLanguageProfile;
+  const language = mediaLanguageProfileFor(state);
   return {
     audioPreference: language.audio,
     subtitlePreference: language.subtitle,

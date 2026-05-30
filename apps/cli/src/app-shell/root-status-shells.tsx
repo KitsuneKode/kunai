@@ -1,9 +1,9 @@
+import { resolveContentKind, showsEpisodeLabel } from "@/domain/media/content-kind";
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
-import { resolveContentKind, showsEpisodeLabel } from "./content-kind";
 import { palette } from "./shell-theme";
 
 export type { ErrorScenario } from "@/domain/playback/playback-problem";

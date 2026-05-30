@@ -4,7 +4,7 @@ import {
   mediaLanguageProfileFor,
   resolveContentKind,
   showsEpisodeLabel,
-} from "@/app-shell/content-kind";
+} from "@/domain/media/content-kind";
 
 test("movie content type wins over mode (never renders as series)", () => {
   expect(resolveContentKind({ type: "movie" }, "series")).toBe("movie");

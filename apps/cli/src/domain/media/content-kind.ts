@@ -1,10 +1,11 @@
 // =============================================================================
-// content-kind.ts — derive display content kind from content truth, not mode
+// content-kind.ts — derive content kind (and the matching language profile) from
+// content truth, not ShellMode.
 //
 // ShellMode ("series" | "anime") is provider routing only and must never decide
 // content labels. Content kind is the title's ContentType ("movie" | "series"),
-// with "anime" distinguished by mode. This is the display half of the Plan C
-// mediaKind decouple — a movie never renders as "series" or shows an S·E label.
+// with "anime" distinguished by mode. Lives in domain/ alongside playable-ref so
+// both the shell (app-shell/) and phases (app/) reuse one source of truth.
 // =============================================================================
 
 import type { ShellMode, TitleInfo } from "@/domain/types";
