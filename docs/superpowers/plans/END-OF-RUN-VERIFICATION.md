@@ -26,6 +26,15 @@ chunk; these are the things that need a human watching the live TUI.
 - [ ] **Deep intake / play(PlayableRef):** route surfaces through one `play(ref)`;
       confirm a movie's `currentTitle.type` is `"movie"` from every entrypoint.
 
+> **Sequencing note (found 2026-05-29):** movie continue/restart is **entangled with
+> 1b**. `isHistoryPickerContinuable` (`panel-data.ts:857`) runs through
+> `reconcileContinueHistory` (deleted by 1b) and a **completed movie returns
+> not-continuable with no replay path**. The fix is NOT a band-aid here — do **1b
+> first** (swap to `projectContinuation`/`ContinueWatchingService`, which handles a
+> movie as a single-row anchor: resume if unfinished, else offer **restart**), then the
+> movie restart affordance + the `did-not-start`-style post-play movie branch fall out
+> cleanly. Done done done: completed-movie ⇒ "Restart"; in-progress movie ⇒ "Resume".
+
 ### Live checks
 
 - [ ] Play a **movie** (e.g. "Transformers"): header shows `movie` (not `series`),
