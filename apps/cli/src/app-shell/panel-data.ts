@@ -859,6 +859,8 @@ export function isHistoryPickerContinuable(
   entry: HistoryEntry,
   context: HistoryPickerOptionsContext = {},
 ): boolean {
+  // Movies are always actionable: resume if in progress, restart if completed.
+  if (entry.type === "movie") return true;
   const projection = context.projections?.get(titleId);
   if (
     projection?.kind === "resume-unfinished" ||

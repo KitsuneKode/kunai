@@ -181,6 +181,9 @@ function deriveResumeAction(
   entry: HistoryEntry,
   context: HistoryPickerOptionsContext,
 ): string {
+  if (entry.type === "movie") {
+    return isHistoryCompleted(entry) ? "Restart" : "Resume";
+  }
   const projection = context.projections?.get(titleId);
   if (projection?.kind === "offline-ready") return "Play local";
   const decision = reconcileContinueHistory({
