@@ -42,6 +42,7 @@ Backend (data correctness) and Experience (the feel) tracks run partly in parall
 | **S** | Surface parity to `.prototypes/` HTML                         | R            | pending                               |
 | **F** | Feature catalog (Netflix/CR/YT)                               | 3, S         | pending                               |
 | **Z** | Zen mode                                                      | S            | pending                               |
+| **D** | Codebase cleanup & dedup sweep                                | 1,3,4,C      | pending                               |
 
 **Recommended order:** R (foundation) + Plan 2 (pure backend, parallel) →
 C (fixes live correctness, unblocks correct play entry) → 3 → S → F → Z. Plans 1b
@@ -122,6 +123,26 @@ reads from this registry so hints can never drift from real bindings.
 
 Live toggle (hotkey) + config default. Single column, no rail/chrome, minimal hints,
 all features still key-reachable. ani-cli's bare speed without forking the codebase.
+
+## Plan D — Codebase cleanup & dedup sweep
+
+Make the implementation cleaner overall. **Much of the redundancy is already targeted
+by the foundational plans** — don't duplicate it here:
+
+- two history layers + two reconciliation engines → **Plan 1**
+- duplicate projection writers (calendar vs reconciliation) → **Plan 2**
+- three "next"/playable models (queue / playlist / episode-chain) → **Plan 3**
+- god-file `PlaybackPhase.ts` (3965 lines) → **Plan 4**
+- scattered pickers (subtitle/quality/provider) → **Plan C** pillar 5
+- raw escape writes / render control → **Plan R**
+
+Plan D owns the **remaining** cross-cutting cleanup once those land: the god-file
+`app-shell/workflows.ts`, dead code (e.g. unwired JSON `HistoryStoreImpl`), the
+deprecated Sakura color-token aliases (migrate call sites + delete aliases, per
+`.plans/sakura-rollout.md`), duplicated helper logic, and a pass to enforce the
+`feedback_code_principles` (DRY, SoC, single source of truth). Sequenced **last** so
+it cleans up after the structural plans rather than fighting them. Run with
+`/code-review` + `/simplify` on each touched area; behavior-preserving, test-guarded.
 
 ## Related
 

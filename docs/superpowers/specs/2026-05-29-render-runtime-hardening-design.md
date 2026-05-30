@@ -97,7 +97,3 @@ thrown error each leave the terminal clean with prior scrollback intact.
 
 - Surface redesign / parity → **Plan S**. Zen mode itself → **Plan Z** (R only
   exposes the opt-out flag). OpenTUI migration → not now (roadmap decision).
-
-```
-
-```
