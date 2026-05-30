@@ -54,6 +54,18 @@ chunk; these are the things that need a human watching the live TUI.
 - [ ] `/calendar`, `/discover`, search badges still show correct history-derived state.
 - [ ] Episode picker shows accurate per-episode progress dots.
 
+## Plan 2 / Plan 3 foundations (committed, unit-tested — mostly dormant until wired)
+
+- `computeReleaseProgress` numbering-axis guard: cross-cour / absolute-vs-cour mismatch
+  now yields `unknown`, not a false `caught-up`. Wired into `buildProjection`.
+- `classifyReleaseStatus`: TMDB date-only episodes dated **today** stay `upcoming`
+  (not prematurely `released`). Wired (used by the schedule classification).
+- `resolveUpNext` (Plan 3/F): pure unifier of episode-chain vs cross-title queue.
+  **Not yet wired** into the shell — verify when the Up Next surface is built.
+- `ContinueWatchingService` / `projectContinuation` / `PlayableRef` / `buildPlayIntent`:
+  **registered but dormant** (no surface consumes them yet) — they go live in 1b / the
+  deep-intake wiring; verify then.
+
 ## Plan R (rescope) — render robustness
 
 - [ ] Resize the terminal during the shell + during playback bootstrap: no flicker,
