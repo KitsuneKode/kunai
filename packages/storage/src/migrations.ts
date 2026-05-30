@@ -570,6 +570,13 @@ export const cacheMigrations: readonly Migration[] = [
         ON title_provider_health(expires_at ASC);
     `,
   },
+  {
+    id: "009_cache_release_progress_new_season",
+    database: "cache",
+    sql: `
+      ALTER TABLE release_progress_cache ADD COLUMN new_season_json TEXT;
+    `,
+  },
 ];
 
 export function runMigrations(

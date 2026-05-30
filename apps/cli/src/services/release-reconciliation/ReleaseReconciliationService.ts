@@ -1,4 +1,4 @@
-import type { ReleaseProgressProjection } from "@kunai/storage";
+import type { ReleaseNewSeason, ReleaseProgressProjection } from "@kunai/storage";
 
 import {
   planReleaseReconciliationCandidates,
@@ -25,6 +25,7 @@ export type CatalogProgressResult = {
   readonly nextAiringEpisode?: number;
   readonly nextAiringAt?: string;
   readonly latestKnownReleaseAt?: string;
+  readonly newSeason?: ReleaseNewSeason;
   readonly sourceFingerprint: string;
 };
 
@@ -200,6 +201,7 @@ function buildProjection(result: CatalogProgressResult, now: string): ReleasePro
     nextAiringEpisode: result.nextAiringEpisode,
     nextAiringAt: result.nextAiringAt,
     latestKnownReleaseAt: result.latestKnownReleaseAt,
+    newSeason: result.newSeason,
     status,
     checkedAt: now,
     nextCheckAt: nextCheckAt(result, now),

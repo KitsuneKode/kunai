@@ -51,6 +51,7 @@ export { ResolveTraceRepository } from "./repositories/resolve-trace";
 export { RecommendationCacheRepository } from "./repositories/recommendation-cache";
 export { ReleaseProgressCacheRepository } from "./repositories/release-progress-cache";
 export type {
+  ReleaseNewSeason,
   ReleaseProgressProjection,
   ReleaseProgressSource,
   ReleaseProgressStatus,

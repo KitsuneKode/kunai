@@ -5,6 +5,18 @@ import type { KunaiDatabase } from "../sqlite";
 export type ReleaseProgressSource = "anilist" | "tmdb";
 export type ReleaseProgressStatus = "new-episodes" | "caught-up" | "upcoming" | "unknown";
 
+/**
+ * A newer cour/season for a title — AniList SEQUEL (separate `mediaId`) or a later
+ * TMDB `season`. Distinct from the within-cour episode delta (`newEpisodeCount`).
+ */
+export interface ReleaseNewSeason {
+  readonly mediaId?: number;
+  readonly season?: number;
+  readonly latestAiredEpisode?: number;
+  readonly nextAiringEpisode?: number;
+  readonly nextAiringAt?: string;
+}
+
 export interface ReleaseProgressProjection {
   readonly titleId: string;
   readonly mediaKind: MediaKind;
@@ -19,6 +31,7 @@ export interface ReleaseProgressProjection {
   readonly nextAiringEpisode?: number;
   readonly nextAiringAt?: string;
   readonly latestKnownReleaseAt?: string;
+  readonly newSeason?: ReleaseNewSeason;
   readonly status: ReleaseProgressStatus;
   readonly checkedAt: string;
   readonly nextCheckAt: string;
@@ -47,6 +60,7 @@ interface ReleaseProgressRow {
   readonly next_airing_episode: number | null;
   readonly next_airing_at: string | null;
   readonly latest_known_release_at: string | null;
+  readonly new_season_json: string | null;
   readonly status: ReleaseProgressStatus;
   readonly checked_at: string;
   readonly next_check_at: string;
@@ -82,6 +96,7 @@ export class ReleaseProgressCacheRepository {
             next_airing_episode,
             next_airing_at,
             latest_known_release_at,
+            new_season_json,
             status,
             checked_at,
             next_check_at,
@@ -90,7 +105,7 @@ export class ReleaseProgressCacheRepository {
             error_count,
             last_error
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(title_id) DO UPDATE SET
             media_kind = excluded.media_kind,
             source = excluded.source,
@@ -104,6 +119,7 @@ export class ReleaseProgressCacheRepository {
             next_airing_episode = excluded.next_airing_episode,
             next_airing_at = excluded.next_airing_at,
             latest_known_release_at = excluded.latest_known_release_at,
+            new_season_json = excluded.new_season_json,
             status = excluded.status,
             checked_at = excluded.checked_at,
             next_check_at = excluded.next_check_at,
@@ -127,6 +143,7 @@ export class ReleaseProgressCacheRepository {
         input.nextAiringEpisode ?? null,
         input.nextAiringAt ?? null,
         input.latestKnownReleaseAt ?? null,
+        input.newSeason ? JSON.stringify(input.newSeason) : null,
         input.status,
         input.checkedAt,
         input.nextCheckAt,
@@ -209,6 +226,7 @@ function mapReleaseProgressRow(row: ReleaseProgressRow): ReleaseProgressProjecti
     nextAiringEpisode: row.next_airing_episode ?? undefined,
     nextAiringAt: row.next_airing_at ?? undefined,
     latestKnownReleaseAt: row.latest_known_release_at ?? undefined,
+    newSeason: parseNewSeason(row.new_season_json),
     status: row.status,
     checkedAt: row.checked_at,
     nextCheckAt: row.next_check_at,
@@ -217,4 +235,25 @@ function mapReleaseProgressRow(row: ReleaseProgressRow): ReleaseProgressProjecti
     errorCount: row.error_count,
     lastError: row.last_error ?? undefined,
   };
+}
+
+function parseNewSeason(value: string | null): ReleaseNewSeason | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as Partial<ReleaseNewSeason>;
+    const out: ReleaseNewSeason = {
+      ...(typeof parsed.mediaId === "number" ? { mediaId: parsed.mediaId } : {}),
+      ...(typeof parsed.season === "number" ? { season: parsed.season } : {}),
+      ...(typeof parsed.latestAiredEpisode === "number"
+        ? { latestAiredEpisode: parsed.latestAiredEpisode }
+        : {}),
+      ...(typeof parsed.nextAiringEpisode === "number"
+        ? { nextAiringEpisode: parsed.nextAiringEpisode }
+        : {}),
+      ...(typeof parsed.nextAiringAt === "string" ? { nextAiringAt: parsed.nextAiringAt } : {}),
+    };
+    return Object.keys(out).length > 0 ? out : undefined;
+  } catch {
+    return undefined;
+  }
 }
