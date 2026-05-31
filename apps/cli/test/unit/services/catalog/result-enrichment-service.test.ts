@@ -38,7 +38,7 @@ function history(patch: Partial<HistoryProgress> = {}): HistoryProgress {
 }
 
 describe("ResultEnrichmentService", () => {
-  test("builds watched and downloaded badges from local state", async () => {
+  test("builds next-episode and downloaded badges from local state", async () => {
     const service = new ResultEnrichmentService({
       historyStore: { getAll: async () => ({ "title-1": history() }) },
       offlineLibraryService: {
@@ -55,8 +55,10 @@ describe("ResultEnrichmentService", () => {
 
     const enrichments = await service.enrichResults([result()]);
 
+    // A finished series episode with no schedule data optimistically offers the next
+    // episode (Netflix model) rather than declaring the title "watched".
     expect(enrichments.get("series:title-1")?.badges).toEqual([
-      { label: "watched", tone: "success" },
+      { label: "new S01E02", tone: "info" },
       { label: "downloaded", tone: "success" },
     ]);
   });

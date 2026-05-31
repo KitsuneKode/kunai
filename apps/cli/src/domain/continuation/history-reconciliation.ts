@@ -67,6 +67,27 @@ export function reconcileContinueHistory(input: {
     };
   }
 
+  // Netflix/Crunchyroll optimistic continuation: a finished SERIES episode with no
+  // authoritative schedule signal (no release data, or a non-committal "unknown"
+  // status) is assumed to have a next episode — keep offering "play next" instead of
+  // declaring the whole series complete after a single finished episode. A positive
+  // "upcoming" (next airs later) or "released" (already caught up) signal is trusted
+  // and falls through to up-to-date. If the optimistic next episode does not actually
+  // exist, the downstream episode resolution degrades to a manual pick.
+  const hasAuthoritativeRelease =
+    input.nextRelease?.status === "upcoming" || input.nextRelease?.status === "released";
+  if (historyContentType(latest) === "series" && !hasAuthoritativeRelease) {
+    return {
+      kind: "new-episode",
+      titleId: input.titleId,
+      titleName: latest.title,
+      season: latest.season ?? 1,
+      episode: (latest.episode ?? latest.absoluteEpisode ?? 1) + 1,
+      previousCompleted: latest,
+      releaseAt: null,
+    };
+  }
+
   return {
     kind: "up-to-date",
     titleId: input.titleId,

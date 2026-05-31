@@ -77,3 +77,41 @@ test("history view keeps flatRows order identical to the displayed item order", 
   expect(rowItems.map((item) => item.flatIndex)).toEqual([...rowItems.keys()]);
   expect(view.flatRows.map((row) => row.titleId)).toEqual(rowItems.map((item) => item.row.titleId));
 });
+
+// A finished episode of an ongoing series (no schedule data) should keep offering the
+// next episode and NOT be presented as a completed series.
+test("history view offers the next episode for a finished series instead of marking it complete", () => {
+  const finishedSeries = progress({
+    titleId: "tmdb:1",
+    season: 2,
+    episode: 3,
+    positionSeconds: 1200,
+    durationSeconds: 1200,
+    completed: true,
+  });
+
+  const completedView = buildHistoryView({
+    entries: [["tmdb:1", finishedSeries]],
+    tab: "completed",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: {},
+  });
+  // Not in the Completed tab — it has a next episode to watch.
+  expect(completedView.state).toBe("empty");
+
+  const allView = buildHistoryView({
+    entries: [["tmdb:1", finishedSeries]],
+    tab: "all",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: {},
+  });
+  const row = allView.flatRows[0];
+  expect(row?.resumeAction).toBe("Play next");
+  expect(row?.episodeCode).toContain("S02E04");
+});

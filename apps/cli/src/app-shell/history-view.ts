@@ -119,7 +119,10 @@ function matchesHistoryTab(
     case "continue":
       return continuable && !newEpisode;
     case "completed":
-      return completed;
+      // A series with a next episode to play is not "complete" — it belongs in the
+      // new-episodes / continue surfaces, not the Completed tab (finished movies and
+      // genuinely caught-up titles stay here).
+      return completed && !newEpisode;
     case "new-episodes":
       return newEpisode;
     case "all":
