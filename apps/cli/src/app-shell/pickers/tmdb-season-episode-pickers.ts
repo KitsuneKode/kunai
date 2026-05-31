@@ -5,7 +5,7 @@ import { dedupeEpisodeLabel } from "@/app-shell/shell-text";
 import { describeEpisodeWatchPresentation } from "@/app/playback-episode-picker";
 import type { Container } from "@/container";
 import type { OverlayPickerOption } from "@/domain/session/SessionState";
-import { isFinished } from "@/services/persistence/HistoryStore";
+import { isFinished } from "@/services/continuation/history-progress";
 import type { EpisodeInfo, SeasonSummary } from "@/tmdb";
 
 type EpisodeStatusEntry = { readonly tone: "success" | "warning"; readonly badge: string };
@@ -20,18 +20,20 @@ async function buildEpisodeStatusMap(
   const map = new Map<number, EpisodeStatusEntry>();
   if (!container || !titleId) return map;
 
-  const allEntries = await container.historyStore.listByTitle(titleId);
-  const seasonEntries = allEntries.filter((e) => e.season === season);
+  const allEntries = container.historyRepository.listByTitle(titleId);
+  const seasonEntries = allEntries.filter((e) => (e.season ?? 1) === season);
   if (seasonEntries.length === 0) return map;
 
   for (const entry of seasonEntries) {
-    if (!map.has(entry.episode)) {
+    const episodeNumber = entry.episode ?? entry.absoluteEpisode;
+    if (episodeNumber === undefined) continue;
+    if (!map.has(episodeNumber)) {
       if (isFinished(entry)) {
         const presentation = describeEpisodeWatchPresentation(entry);
-        map.set(entry.episode, { tone: "success", badge: presentation.badge ?? "watched" });
-      } else if (entry.timestamp > 0) {
+        map.set(episodeNumber, { tone: "success", badge: presentation.badge ?? "watched" });
+      } else if (entry.positionSeconds > 0) {
         const presentation = describeEpisodeWatchPresentation(entry);
-        map.set(entry.episode, {
+        map.set(episodeNumber, {
           tone: "warning",
           badge: presentation.badge ?? "resume",
         });
@@ -39,7 +41,7 @@ async function buildEpisodeStatusMap(
     }
   }
 
-  const maxWatched = Math.max(...seasonEntries.map((e) => e.episode));
+  const maxWatched = Math.max(...seasonEntries.map((e) => e.episode ?? e.absoluteEpisode ?? 0));
   for (const ep of episodes) {
     if (ep.number < maxWatched && !map.has(ep.number)) {
       map.set(ep.number, { tone: "success", badge: "✓" });

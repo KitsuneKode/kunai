@@ -217,7 +217,7 @@ async function openActivePlaybackEpisodePicker(
   const currentEpisode = state.currentEpisode;
   if (!title || title.type !== "series" || !currentEpisode) return;
 
-  const watchedEntries = await container.historyStore.listByTitle(title.id);
+  const watchedEntries = container.historyRepository.listByTitle(title.id);
   const picker = await buildPlaybackEpisodePickerOptions({
     title,
     currentEpisode,

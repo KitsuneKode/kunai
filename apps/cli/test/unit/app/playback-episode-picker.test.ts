@@ -7,7 +7,7 @@ import {
   renderEpisodeWatchProgressBar,
 } from "@/app/playback-episode-picker";
 import type { EpisodePickerOption, TitleInfo } from "@/domain/types";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
 const seriesTitle: TitleInfo = {
   id: "series-1",
@@ -15,29 +15,33 @@ const seriesTitle: TitleInfo = {
   type: "series",
 };
 
-const WATCHED_ENTRIES: HistoryEntry[] = [
-  {
+function progress(overrides: Partial<HistoryProgress>): HistoryProgress {
+  return {
+    key: "k",
+    titleId: "series-1",
+    mediaKind: "series",
     title: "Example Series",
-    type: "series",
     season: 2,
     episode: 5,
-    timestamp: 3600,
-    duration: 3600,
-    completed: true,
-    provider: "vidking",
-    watchedAt: "2026-04-29T00:00:00.000Z",
-  },
-  {
-    title: "Example Series",
-    type: "series",
+    positionSeconds: 0,
+    durationSeconds: 3600,
+    completed: false,
+    providerId: "vidking",
+    updatedAt: "2026-04-29T00:00:00.000Z",
+    createdAt: "2026-04-29T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+const WATCHED_ENTRIES: HistoryProgress[] = [
+  progress({ season: 2, episode: 5, positionSeconds: 3600, completed: true }),
+  progress({
     season: 2,
     episode: 6,
-    timestamp: 600,
-    duration: 3600,
+    positionSeconds: 600,
     completed: false,
-    provider: "vidking",
-    watchedAt: "2026-04-29T01:00:00.000Z",
-  },
+    updatedAt: "2026-04-29T01:00:00.000Z",
+  }),
 ];
 
 describe("formatEpisodePickerSubtitle", () => {

@@ -1007,7 +1007,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             currentProvider?.metadata.id,
           );
 
-          const watchedEntries = await historyStore.listByTitle(title.id);
+          const watchedEntries = historyRepository.listByTitle(title.id);
           const currentAnimeEpisodes = await this.getAnimeEpisodeOptions({
             title,
             mode: stateManager.getState().mode,

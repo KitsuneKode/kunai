@@ -3,12 +3,9 @@ import type { ShellPickerOption } from "@/app-shell/types";
 import type { ShellStatusTone } from "@/app-shell/types";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
-import {
-  formatTimestamp,
-  isFinished,
-  type HistoryEntry,
-} from "@/services/persistence/HistoryStore";
+import { formatTimestamp, isFinished } from "@/services/continuation/history-progress";
 import { fetchEpisodes } from "@/tmdb";
+import type { HistoryProgress } from "@kunai/storage";
 
 export type PlaybackEpisodePickerInput = {
   title: TitleInfo;
@@ -16,7 +13,7 @@ export type PlaybackEpisodePickerInput = {
   isAnime: boolean;
   animeEpisodeCount?: number;
   animeEpisodes?: readonly EpisodePickerOption[];
-  watchedEntries?: readonly HistoryEntry[];
+  watchedEntries?: readonly HistoryProgress[];
   releaseBadges?: ReadonlyMap<string, string>;
   loadEpisodes?: typeof fetchEpisodes;
 };
@@ -38,7 +35,10 @@ export async function buildPlaybackEpisodePickerOptions({
   loadEpisodes = fetchEpisodes,
 }: PlaybackEpisodePickerInput): Promise<PlaybackEpisodePickerOptions> {
   const watchedByEpisode = new Map(
-    watchedEntries.map((entry) => [`${entry.season}:${entry.episode}`, entry] as const),
+    watchedEntries.map(
+      (entry) =>
+        [`${entry.season ?? 1}:${entry.episode ?? entry.absoluteEpisode ?? 1}`, entry] as const,
+    ),
   );
 
   if (title.type !== "series") {
@@ -157,11 +157,11 @@ export function formatEpisodePickerSubtitle({
 }
 
 export function describeEpisodeWatchPresentation(
-  entry: HistoryEntry | undefined,
+  entry: HistoryProgress | undefined,
 ): EpisodeWatchPresentation {
   if (!entry) return { watched: false, inProgress: false };
   if (isFinished(entry)) {
-    const dateLabel = relativeDate(entry.watchedAt);
+    const dateLabel = relativeDate(entry.updatedAt);
     return {
       detail: dateLabel ? `watched  ·  ${dateLabel}` : "watched",
       tone: "success",
@@ -171,13 +171,17 @@ export function describeEpisodeWatchPresentation(
     };
   }
 
-  const progress = projectWatchProgress(entry);
+  const progress = projectWatchProgress({
+    timestamp: entry.positionSeconds,
+    duration: entry.durationSeconds,
+    completed: entry.completed,
+  });
   const percent = progress.percentage;
   return {
     detail:
       percent === null
-        ? `resume ${formatTimestamp(entry.timestamp)}`
-        : `resume ${formatTimestamp(entry.timestamp)}  ·  ${percent}% watched`,
+        ? `resume ${formatTimestamp(entry.positionSeconds)}`
+        : `resume ${formatTimestamp(entry.positionSeconds)}  ·  ${percent}% watched`,
     tone: "warning",
     badge: percent === null ? "resume" : `${percent}%`,
     watched: false,
@@ -214,7 +218,7 @@ export function buildEpisodePickerOption({
   baseDetail?: string;
   releaseBadge?: string;
   current: boolean;
-  history?: HistoryEntry;
+  history?: HistoryProgress;
 }): ShellPickerOption<string> {
   const watch = describeEpisodeWatchPresentation(history);
   // Consistent status grammar — the label stays neutral; a single trailing glyph
@@ -243,14 +247,18 @@ export function buildEpisodePickerOption({
 }
 
 function mergeEpisodeDetail(
-  history: HistoryEntry | undefined,
+  history: HistoryProgress | undefined,
   watchedDetail?: string,
   releaseBadge?: string,
   baseDetail?: string,
 ): string | undefined {
   const parts: string[] = [];
   if (history && !isFinished(history)) {
-    const progress = projectWatchProgress(history);
+    const progress = projectWatchProgress({
+      timestamp: history.positionSeconds,
+      duration: history.durationSeconds,
+      completed: history.completed,
+    });
     if (progress.percentage !== null && !progress.completed) {
       parts.push(renderEpisodeWatchProgressBar(progress.percentage));
     }
