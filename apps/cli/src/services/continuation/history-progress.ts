@@ -5,9 +5,23 @@
 // HistoryProgress row. Replaces the lossy facade-era isFinished.
 // =============================================================================
 
+import type { ContentType } from "@/domain/types";
 import type { HistoryProgress } from "@kunai/storage";
 
 const FINISHED_RATIO = 0.95;
+
+/**
+ * The movie|series content type for a history row, collapsing anime → "series".
+ *
+ * The retired `HistoryStore` facade flattened `mediaKind` this way in
+ * `HistoryEntry.type`, and several consumers branch on it (offline cleanup,
+ * badges, episode labels). This is the single authority for that flatten so
+ * callers migrating off `HistoryEntry.type` preserve the exact prior behavior —
+ * a naïve `mediaKind` substitution would wrongly treat anime as a third kind.
+ */
+export function historyContentType(progress: HistoryProgress): ContentType {
+  return progress.mediaKind === "movie" ? "movie" : "series";
+}
 
 /**
  * Single authority for "is this episode finished".
