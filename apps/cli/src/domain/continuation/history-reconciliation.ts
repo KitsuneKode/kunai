@@ -41,13 +41,15 @@ export function reconcileContinueHistory(input: {
     .filter(([titleId]) => titleId === input.titleId)
     .map(([, entry]) => entry)
     .sort(compareNewestFirst);
-  const unfinished = entries.find((entry) => !isFinished(entry));
-  if (unfinished) {
-    return { kind: "resume", titleId: input.titleId, entry: unfinished };
-  }
 
+  // Netflix/Crunchyroll anchor rule: decide off the MOST-RECENT episode, never
+  // scan back to an older abandoned one. Resume it if unfinished, else advance.
   const latest = entries[0];
   if (!latest) return { kind: "empty" };
+
+  if (!isFinished(latest)) {
+    return { kind: "resume", titleId: input.titleId, entry: latest };
+  }
 
   if (
     latest.type === "series" &&

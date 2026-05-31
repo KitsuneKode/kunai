@@ -91,24 +91,26 @@ export function projectContinuationState(input: {
     .filter(([titleId]) => titleId === input.titleId)
     .map(([, entry]) => entry)
     .sort(compareHistoryEntryRecency);
-  const unfinished = entries.find((entry) => !isFinished(entry));
-  if (unfinished) {
+
+  // Netflix/Crunchyroll anchor rule: decide off the MOST-RECENT episode, never
+  // scan back to an older abandoned one. Resume it if unfinished, else advance.
+  const latest = entries[0];
+  if (!latest) return { kind: "empty", titleId: input.titleId };
+
+  if (!isFinished(latest)) {
     return enrichProjection(
       {
         kind: "resume-unfinished",
         titleId: input.titleId,
-        title: unfinished.title,
-        season: unfinished.season,
-        episode: unfinished.episode,
-        sourceEntry: unfinished,
+        title: latest.title,
+        season: latest.season,
+        episode: latest.episode,
+        sourceEntry: latest,
       },
       input,
-      { kind: "resume", season: unfinished.season, episode: unfinished.episode },
+      { kind: "resume", season: latest.season, episode: latest.episode },
     );
   }
-
-  const latest = entries[0];
-  if (!latest) return { kind: "empty", titleId: input.titleId };
 
   const localNext = input.offline?.readyNextEpisodes
     .filter((episode) => isEpisodeAfter(episode, latest))

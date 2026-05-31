@@ -11,12 +11,30 @@ const baseEntry = {
   watchedAt: "2026-05-10T00:00:00.000Z",
 };
 
-test("continuation policy prefers newest unfinished episode over completed newer history noise", () => {
+test("continuation policy resumes the most-recent episode when it is unfinished", () => {
   const projection = projectContinuationState({
     titleId: "tmdb:1",
     entries: [
-      ["tmdb:1", { ...baseEntry, episode: 6, timestamp: 120, completed: false }],
-      ["tmdb:1", { ...baseEntry, episode: 5, timestamp: 1200, completed: true }],
+      [
+        "tmdb:1",
+        {
+          ...baseEntry,
+          episode: 6,
+          timestamp: 120,
+          completed: false,
+          watchedAt: "2026-05-12T00:00:00.000Z",
+        },
+      ],
+      [
+        "tmdb:1",
+        {
+          ...baseEntry,
+          episode: 5,
+          timestamp: 1200,
+          completed: true,
+          watchedAt: "2026-05-11T00:00:00.000Z",
+        },
+      ],
     ],
   });
 
@@ -24,6 +42,40 @@ test("continuation policy prefers newest unfinished episode over completed newer
     kind: "resume-unfinished",
     season: 1,
     episode: 6,
+  });
+});
+
+test("continuation policy does NOT resume an older abandoned episode when the most-recent is finished", () => {
+  // Anchor rule regression guard: most-recent finished -> advance, never scan back.
+  const projection = projectContinuationState({
+    titleId: "tmdb:1",
+    entries: [
+      [
+        "tmdb:1",
+        {
+          ...baseEntry,
+          episode: 6,
+          timestamp: 1200,
+          completed: true,
+          watchedAt: "2026-05-12T00:00:00.000Z",
+        },
+      ],
+      [
+        "tmdb:1",
+        {
+          ...baseEntry,
+          episode: 5,
+          timestamp: 120,
+          completed: false,
+          watchedAt: "2026-05-11T00:00:00.000Z",
+        },
+      ],
+    ],
+  });
+
+  expect(projection).toMatchObject({
+    kind: "up-to-date",
+    title: "Weekly Show",
   });
 });
 

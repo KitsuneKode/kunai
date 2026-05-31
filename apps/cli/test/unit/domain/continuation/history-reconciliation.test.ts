@@ -19,11 +19,37 @@ function history(patch: Partial<HistoryEntry> = {}): HistoryEntry {
 }
 
 describe("history reconciliation", () => {
-  test("prefers unfinished progress over a newer completed episode", () => {
+  test("resumes the most-recent episode when it is unfinished", () => {
     const decision = reconcileContinueHistory({
       titleId: "tmdb:1",
       entries: [
-        ["tmdb:1", history({ episode: 6, watchedAt: "2026-05-12T00:00:00.000Z" })],
+        [
+          "tmdb:1",
+          history({
+            episode: 6,
+            completed: false,
+            timestamp: 600,
+            watchedAt: "2026-05-12T00:00:00.000Z",
+          }),
+        ],
+        ["tmdb:1", history({ episode: 5, watchedAt: "2026-05-11T00:00:00.000Z" })],
+      ],
+    });
+
+    expect(decision).toMatchObject({
+      kind: "resume",
+      titleId: "tmdb:1",
+      entry: expect.objectContaining({ episode: 6, completed: false }),
+    });
+  });
+
+  test("does NOT resume an older abandoned episode when the most-recent is finished", () => {
+    // Netflix/Crunchyroll anchor rule: decide off the most-recent episode, never
+    // scan back to an older unfinished one. Regression guard for the rejected behavior.
+    const decision = reconcileContinueHistory({
+      titleId: "tmdb:1",
+      entries: [
+        ["tmdb:1", history({ episode: 6, completed: true, watchedAt: "2026-05-12T00:00:00.000Z" })],
         [
           "tmdb:1",
           history({
@@ -37,9 +63,9 @@ describe("history reconciliation", () => {
     });
 
     expect(decision).toMatchObject({
-      kind: "resume",
+      kind: "up-to-date",
       titleId: "tmdb:1",
-      entry: expect.objectContaining({ episode: 5, completed: false }),
+      entry: expect.objectContaining({ episode: 6, completed: true }),
     });
   });
 
