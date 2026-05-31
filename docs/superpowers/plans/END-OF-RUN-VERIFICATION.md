@@ -97,6 +97,19 @@ the full facade/`HistoryEntry` retirement is now a behavior-preserving mechanica
         persists across reopen (the new upsertProgress write path).
   - [ ] Post-playback: a completed episode writes history and the row reflects it.
 
+### /history continue behavior — fixed 2026-06-01 (live confirm)
+
+- [ ] Selection no longer "juggles": in the All / Completed tabs, press ↑/↓ and the
+      highlight moves one contiguous row at a time (display order == nav order).
+- [ ] Finish an episode of an ongoing series (e.g. S2E3) with no schedule data: it
+      shows in the Continue tab AND the Continue Watching section as "Play next S2E4",
+      not "complete", and is absent from the Completed tab.
+- [ ] A finished movie shows in Completed (Restart), NOT in Continue.
+- [ ] "Mark as watched" on an item with unknown duration reads as complete (Restart),
+      not in-progress.
+- [ ] A series the cache reports as caught-up (next only upcoming) stays calm (not
+      a fabricated "play next").
+
 ## Plan 2 / Plan 3 foundations (committed, unit-tested — mostly dormant until wired)
 
 - `computeReleaseProgress` numbering-axis guard: cross-cour / absolute-vs-cour mismatch
