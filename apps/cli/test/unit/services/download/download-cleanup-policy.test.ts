@@ -4,8 +4,7 @@ import {
   parseOfflineTitleCleanupPreference,
   selectDownloadCleanupCandidates,
 } from "@/services/download/download-cleanup-policy";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import type { DownloadJobRecord } from "@kunai/storage";
+import type { DownloadJobRecord, HistoryProgress } from "@kunai/storage";
 
 function job(patch: Partial<DownloadJobRecord> = {}): DownloadJobRecord {
   return {
@@ -32,17 +31,20 @@ function job(patch: Partial<DownloadJobRecord> = {}): DownloadJobRecord {
   };
 }
 
-function watched(patch: Partial<HistoryEntry> = {}): HistoryEntry {
+function watched(patch: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
+    key: "k",
+    titleId: "title-1",
+    mediaKind: "series",
     title: "Demo",
-    type: "series",
     season: 1,
     episode: 2,
-    timestamp: 1_200,
-    duration: 1_200,
+    positionSeconds: 1_200,
+    durationSeconds: 1_200,
     completed: true,
-    provider: "local:vidking",
-    watchedAt: "2026-05-10T00:00:00.000Z",
+    providerId: "local:vidking",
+    updatedAt: "2026-05-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z",
     ...patch,
   };
 }
@@ -96,7 +98,7 @@ describe("download cleanup policy", () => {
     const candidates = selectDownloadCleanupCandidates({
       jobs: [record],
       historyByTitle: new Map([
-        [record.titleId, [watched({ watchedAt: "2026-05-13T00:00:00.000Z" })]],
+        [record.titleId, [watched({ updatedAt: "2026-05-13T00:00:00.000Z" })]],
       ]),
       nowMs: Date.parse("2026-05-14T00:00:00.000Z"),
       graceDays: 2,
@@ -114,8 +116,8 @@ describe("download cleanup policy", () => {
         [
           "title-1",
           [
-            watched({ episode: 2, watchedAt: "2026-05-08T00:00:00.000Z" }),
-            watched({ episode: 3, watchedAt: "2026-05-10T00:00:00.000Z" }),
+            watched({ episode: 2, updatedAt: "2026-05-08T00:00:00.000Z" }),
+            watched({ episode: 3, updatedAt: "2026-05-10T00:00:00.000Z" }),
           ],
         ],
       ]),

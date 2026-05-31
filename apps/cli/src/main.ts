@@ -412,23 +412,26 @@ function searchResultFromTitle(title: TitleInfo): SearchResult {
 async function maybeRunAutoCleanupDownloads(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<void> {
-  const { config, downloadService, diagnosticsService, historyStore, logger } = container;
+  const { config, downloadService, diagnosticsService, historyRepository, logger } = container;
   if (!config.autoCleanupWatched) return;
 
   const graceDays = Math.max(0, config.autoCleanupGraceDays);
   const nowMs = Date.now();
   const jobs = downloadService.listCompleted(500);
   const titleIds = new Set(jobs.map((job) => job.titleId));
-  const historyByTitle = new Map<
-    string,
-    import("@/services/persistence/HistoryStore").HistoryEntry[]
-  >();
-  const recentHistory = await historyStore.listRecent(1_000).catch(() => []);
-  for (const [titleId, entry] of recentHistory) {
-    if (!titleIds.has(titleId)) continue;
-    const entries = historyByTitle.get(titleId) ?? [];
+  const historyByTitle = new Map<string, import("@kunai/storage").HistoryProgress[]>();
+  const recentHistory = (() => {
+    try {
+      return historyRepository.listRecent(1_000);
+    } catch {
+      return [];
+    }
+  })();
+  for (const entry of recentHistory) {
+    if (!titleIds.has(entry.titleId)) continue;
+    const entries = historyByTitle.get(entry.titleId) ?? [];
     entries.push(entry);
-    historyByTitle.set(titleId, entries);
+    historyByTitle.set(entry.titleId, entries);
   }
   const titlePolicies = new Map(
     container.offlineTitlePolicies

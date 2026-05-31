@@ -1,6 +1,5 @@
 import { shouldAutoCleanupOfflineJob } from "@/services/offline/offline-sync-policy";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import type { DownloadJobRecord } from "@kunai/storage";
+import type { DownloadJobRecord, HistoryProgress } from "@kunai/storage";
 
 export type ProtectedDownloadEpisode = {
   readonly titleId: string;
@@ -48,7 +47,7 @@ export function parseOfflineTitleCleanupPreference(
 
 export function selectDownloadCleanupCandidates(input: {
   readonly jobs: readonly DownloadJobRecord[];
-  readonly historyByTitle: ReadonlyMap<string, readonly HistoryEntry[]>;
+  readonly historyByTitle: ReadonlyMap<string, readonly HistoryProgress[]>;
   readonly nowMs: number;
   readonly graceDays: number;
   readonly pinnedJobIds?: ReadonlySet<string>;
@@ -82,7 +81,7 @@ export function selectDownloadCleanupCandidates(input: {
 
 function selectRetainedWatchedJobs(input: {
   readonly jobs: readonly DownloadJobRecord[];
-  readonly historyByTitle: ReadonlyMap<string, readonly HistoryEntry[]>;
+  readonly historyByTitle: ReadonlyMap<string, readonly HistoryProgress[]>;
   readonly titlePolicies?: ReadonlyMap<string, OfflineTitleCleanupPreference>;
 }): ReadonlySet<string> {
   const retained = new Set<string>();
@@ -96,16 +95,18 @@ function selectRetainedWatchedJobs(input: {
         history: historyEntries
           .filter(
             (entry) =>
-              entry.completed && entry.season === job.season && entry.episode === job.episode,
+              entry.completed &&
+              (entry.season ?? 1) === job.season &&
+              (entry.episode ?? entry.absoluteEpisode) === job.episode,
           )
-          .sort((left, right) => Date.parse(right.watchedAt) - Date.parse(left.watchedAt))[0],
+          .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0],
       }))
-      .filter((item): item is { job: DownloadJobRecord; history: HistoryEntry } =>
+      .filter((item): item is { job: DownloadJobRecord; history: HistoryProgress } =>
         Boolean(item.history),
       )
       .sort(
         (left, right) =>
-          Date.parse(right.history.watchedAt) - Date.parse(left.history.watchedAt) ||
+          Date.parse(right.history.updatedAt) - Date.parse(left.history.updatedAt) ||
           (right.job.season ?? 0) - (left.job.season ?? 0) ||
           (right.job.episode ?? 0) - (left.job.episode ?? 0),
       )
