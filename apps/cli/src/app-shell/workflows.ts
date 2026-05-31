@@ -11,6 +11,7 @@ import {
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/handoff-url";
+import { markEntryWatched } from "@/app/history-actions";
 import { buildStreamInventoryView } from "@/app/source-quality";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
@@ -411,7 +412,7 @@ async function openHistoryShell(
     }
 
     // Title selected — show action sub-menu
-    type EntryAction = "search" | "episodes" | "queue" | "remove" | "back";
+    type EntryAction = "search" | "episodes" | "queue" | "mark-watched" | "remove" | "back";
     const isSeries = picked.entryType === "series";
     const subOptions: ShellOption<EntryAction>[] = [
       {
@@ -437,6 +438,11 @@ async function openHistoryShell(
             },
           ]
         : []),
+      {
+        value: "mark-watched" as EntryAction,
+        label: "Mark as watched",
+        detail: "Flag the current episode finished without playing it",
+      },
       {
         value: "remove" as EntryAction,
         label: "Remove from history",
@@ -491,6 +497,18 @@ async function openHistoryShell(
         },
         { placement: "end", source: "history" },
       );
+      continue;
+    }
+
+    if (action === "mark-watched") {
+      const latest = await historyStore.get(picked.id);
+      if (latest) {
+        await historyStore.save(picked.id, markEntryWatched(latest));
+        stateManager?.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: `Marked ${picked.title} as watched.`,
+        });
+      }
       continue;
     }
 
