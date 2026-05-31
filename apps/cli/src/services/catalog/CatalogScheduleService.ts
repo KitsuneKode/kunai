@@ -1,3 +1,5 @@
+import type { ReleaseNewSeason } from "@kunai/types";
+
 const VIDEASY_TMDB_URL = "https://db.videasy.net/3";
 const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const NEXT_RELEASE_TTL_MS = 2 * 60 * 60 * 1000;
@@ -80,16 +82,6 @@ export type CatalogScheduleLoaders = {
  * next cour by episode delta alone — this is surfaced as a DISTINCT signal (never
  * folded into a +N episode count, which would corrupt the cross-media numbering).
  */
-export type NewSeasonSignal = {
-  /** AniList sequel media id, when the newer cour is a separate media (AniList). */
-  readonly mediaId?: number;
-  /** TMDB season number, when the newer season is on the same series (TMDB). */
-  readonly season?: number;
-  readonly latestAiredEpisode?: number;
-  readonly nextAiringEpisode?: number;
-  readonly nextAiringAt?: string;
-};
-
 export type CatalogSeriesReleaseProgress = {
   readonly latestAiredSeason?: number;
   readonly latestAiredEpisode?: number;
@@ -98,7 +90,7 @@ export type CatalogSeriesReleaseProgress = {
   readonly nextAiringAt?: string;
   readonly latestKnownReleaseAt?: string;
   /** A newer cour/season exists (AniList SEQUEL or TMDB later season). Distinct from the episode delta. */
-  readonly newSeason?: NewSeasonSignal;
+  readonly newSeason?: ReleaseNewSeason;
   readonly sourceFingerprint: string;
 };
 
@@ -593,7 +585,7 @@ type AniListRelationEdge = {
  */
 export function extractAniListSequelSignal(
   edges: readonly AniListRelationEdge[] | null | undefined,
-): NewSeasonSignal | undefined {
+): ReleaseNewSeason | undefined {
   for (const edge of edges ?? []) {
     if (edge?.relationType !== "SEQUEL") continue;
     const node = edge.node;
@@ -847,14 +839,14 @@ async function loadTmdbSeriesReleaseProgress(
 
 /**
  * Probe a later TMDB season for any aired/upcoming episodes. Returns a season-based
- * NewSeasonSignal, or undefined when the season doesn't exist (404) or has nothing.
+ * ReleaseNewSeason, or undefined when the season doesn't exist (404) or has nothing.
  */
 async function probeTmdbNextSeason(
   titleId: string,
   season: number,
   today: string,
   signal?: AbortSignal,
-): Promise<NewSeasonSignal | undefined> {
+): Promise<ReleaseNewSeason | undefined> {
   try {
     const data = await fetchJson(`${VIDEASY_TMDB_URL}/tv/${titleId}/season/${season}`, signal);
     const episodePayload = readRecord(data).episodes;

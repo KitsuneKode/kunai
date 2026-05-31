@@ -6,6 +6,23 @@ export type ProviderId = string & { readonly __brand?: "ProviderId" };
 
 export type ProviderRuntime = "browser-safe-fetch" | "direct-http" | "debrid";
 
+/**
+ * A newer cour/season exists for a title (AniList SEQUEL media or a TMDB later
+ * season), distinct from the in-season episode delta. Single source of truth for
+ * the producer signal (`CatalogScheduleService`) and its persisted form
+ * (`@kunai/storage` `ReleaseNewSeason`); the continuation engine keeps its own
+ * minimal consumer view.
+ */
+export interface ReleaseNewSeason {
+  /** AniList sequel media id, when the newer cour is a separate media (AniList). */
+  readonly mediaId?: number;
+  /** TMDB season number, when the newer season is on the same series (TMDB). */
+  readonly season?: number;
+  readonly latestAiredEpisode?: number;
+  readonly nextAiringEpisode?: number;
+  readonly nextAiringAt?: string;
+}
+
 export type ProviderCapability =
   | "search"
   | "episode-list"

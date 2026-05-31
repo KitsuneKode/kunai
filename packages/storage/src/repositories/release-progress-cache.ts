@@ -1,21 +1,13 @@
-import type { MediaKind } from "@kunai/types";
+import type { MediaKind, ReleaseNewSeason } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
 
+// Canonical `ReleaseNewSeason` lives in `@kunai/types` (shared by the catalog
+// producer and this persisted form). Re-export keeps the storage public surface.
+export type { ReleaseNewSeason };
+
 export type ReleaseProgressSource = "anilist" | "tmdb";
 export type ReleaseProgressStatus = "new-episodes" | "caught-up" | "upcoming" | "unknown";
-
-/**
- * A newer cour/season for a title — AniList SEQUEL (separate `mediaId`) or a later
- * TMDB `season`. Distinct from the within-cour episode delta (`newEpisodeCount`).
- */
-export interface ReleaseNewSeason {
-  readonly mediaId?: number;
-  readonly season?: number;
-  readonly latestAiredEpisode?: number;
-  readonly nextAiringEpisode?: number;
-  readonly nextAiringAt?: string;
-}
 
 export interface ReleaseProgressProjection {
   readonly titleId: string;
