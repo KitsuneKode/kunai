@@ -498,7 +498,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const offlineRunwayService = new OfflineRunwayService({
     policies: offlineTitlePolicies,
     assets: offlineAssetService,
-    historyStore,
+    historyRepository,
     releaseProgressCache,
     downloadService,
     scheduler: backgroundWorkScheduler,

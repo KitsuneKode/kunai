@@ -35,8 +35,8 @@ function createService(overrides: Record<string, unknown> = {}) {
         },
       ],
     },
-    historyStore: {
-      listByTitle: async () => [{ season: 1, episode: 4 }],
+    historyRepository: {
+      listByTitle: () => [{ season: 1, episode: 4 }],
     },
     releaseProgressCache: {
       getByTitleIds: () =>

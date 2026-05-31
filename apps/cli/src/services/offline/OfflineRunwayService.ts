@@ -3,8 +3,8 @@ import {
   DownloadEnqueueRejectedError,
   type DownloadService,
 } from "@/services/download/DownloadService";
-import type { HistoryStore } from "@/services/persistence/HistoryStore";
 import type {
+  HistoryRepository,
   OfflineTitlePoliciesRepository,
   ReleaseProgressCacheRepository,
 } from "@kunai/storage";
@@ -38,7 +38,7 @@ export class OfflineRunwayService {
     private readonly deps: {
       readonly policies: Pick<OfflineTitlePoliciesRepository, "get" | "upsert">;
       readonly assets: Pick<OfflineAssetService, "listTitleAssets">;
-      readonly historyStore: Pick<HistoryStore, "listByTitle">;
+      readonly historyRepository: Pick<HistoryRepository, "listByTitle">;
       readonly releaseProgressCache: Pick<ReleaseProgressCacheRepository, "getByTitleIds">;
       readonly downloadService: Pick<
         DownloadService,
@@ -73,7 +73,7 @@ export class OfflineRunwayService {
   ): Promise<OfflineRunwayResult> {
     const policy = this.deps.policies.get(titleId);
     if (!policy?.enrolled) return { titleId, enqueued: 0, target: 0, skipReason: "not-enrolled" };
-    const entries = await this.deps.historyStore.listByTitle(titleId);
+    const entries = this.deps.historyRepository.listByTitle(titleId);
     const cursor = highestEpisode(entries);
     if (!cursor) {
       return {
@@ -192,11 +192,19 @@ export class OfflineRunwayService {
 }
 
 function highestEpisode(
-  entries: readonly { readonly season: number; readonly episode: number }[],
+  entries: readonly {
+    readonly season?: number;
+    readonly episode?: number;
+    readonly absoluteEpisode?: number;
+  }[],
 ): OfflineEpisodeRef | undefined {
-  return [...entries].sort(
-    (left, right) => right.season - left.season || right.episode - left.episode,
+  const top = [...entries].sort(
+    (left, right) =>
+      (right.season ?? 1) - (left.season ?? 1) ||
+      (right.episode ?? right.absoluteEpisode ?? 0) - (left.episode ?? left.absoluteEpisode ?? 0),
   )[0];
+  if (!top) return undefined;
+  return { season: top.season ?? 1, episode: top.episode ?? top.absoluteEpisode ?? 0 };
 }
 
 function releasedEpisodesAfterCursor(
