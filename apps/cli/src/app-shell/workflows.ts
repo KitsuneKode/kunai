@@ -29,6 +29,7 @@ import {
 import type { EpisodePickerOption, StreamInfo, TitleInfo } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
+import { isFinished as isProgressFinished } from "@/services/continuation/history-progress";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
 import {
@@ -619,7 +620,7 @@ export async function openOfflineLibraryGroupPicker(
   while (true) {
     const first = entries[0]?.job;
     if (!first) return;
-    const historyEntries = await container.historyStore.listByTitle(first.titleId);
+    const historyEntries = container.historyRepository.listByTitle(first.titleId);
     const offlinePolicy = container.offlineTitlePolicies.get(first.titleId);
     const continuation = createContinuationEngine().decide({
       titleName: first.titleName,
@@ -632,9 +633,9 @@ export async function openOfflineLibraryGroupPicker(
           playable: entry.status === "ready",
           completed: historyEntries.some(
             (history) =>
-              history.season === entry.job.season &&
-              history.episode === entry.job.episode &&
-              isFinished(history),
+              (history.season ?? 1) === entry.job.season &&
+              (history.episode ?? history.absoluteEpisode) === entry.job.episode &&
+              isProgressFinished(history),
           ),
         })),
     });

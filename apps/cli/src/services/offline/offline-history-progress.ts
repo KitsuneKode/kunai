@@ -1,22 +1,21 @@
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import { formatTimestamp, isFinished } from "@/services/persistence/HistoryStore";
-import type { DownloadJobRecord } from "@kunai/storage";
+import { formatTimestamp, isFinished } from "@/services/continuation/history-progress";
+import type { DownloadJobRecord, HistoryProgress } from "@kunai/storage";
 
 export function formatOfflineHistoryProgress(
   job: DownloadJobRecord,
-  historyEntries: readonly HistoryEntry[],
+  historyEntries: readonly HistoryProgress[],
 ): string | null {
   const match = findMatchingHistory(job, historyEntries);
   if (!match) return null;
   if (isFinished(match)) return "watched";
 
-  const timestampSeconds = Math.max(0, match.timestamp ?? 0);
+  const timestampSeconds = Math.max(0, match.positionSeconds ?? 0);
   if (timestampSeconds <= 0) return null;
 
   const durationSeconds =
-    typeof match.duration === "number" && match.duration > 0
-      ? match.duration
+    typeof match.durationSeconds === "number" && match.durationSeconds > 0
+      ? match.durationSeconds
       : typeof job.durationMs === "number" && job.durationMs > 0
         ? job.durationMs / 1_000
         : null;
@@ -32,12 +31,12 @@ export function formatOfflineHistoryProgress(
 
 function findMatchingHistory(
   job: DownloadJobRecord,
-  historyEntries: readonly HistoryEntry[],
-): HistoryEntry | null {
+  historyEntries: readonly HistoryProgress[],
+): HistoryProgress | null {
   const matches = historyEntries.filter((entry) => {
-    if (entry.season !== job.season) return false;
-    if (entry.episode !== job.episode) return false;
+    if ((entry.season ?? 1) !== job.season) return false;
+    if ((entry.episode ?? entry.absoluteEpisode) !== job.episode) return false;
     return true;
   });
-  return matches.sort((a, b) => Date.parse(b.watchedAt) - Date.parse(a.watchedAt))[0] ?? null;
+  return matches.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0] ?? null;
 }
