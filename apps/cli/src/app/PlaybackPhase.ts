@@ -699,6 +699,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stateManager,
       logger,
       historyStore,
+      historyRepository,
       config,
       cacheStore,
       diagnosticsService,
@@ -726,8 +727,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       let pendingStart = startFromBeginning();
       const startNavigationToEpisode = async (target: EpisodeInfo) =>
         startEpisodeNavigation({
-          targetResumeSeconds: await resumeSecondsFromHistoryForEpisode(
-            historyStore,
+          targetResumeSeconds: resumeSecondsFromHistoryForEpisode(
+            historyRepository,
             title.id,
             target,
             config.quitNearEndThresholdMode,

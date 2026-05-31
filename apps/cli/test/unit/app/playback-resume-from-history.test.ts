@@ -2,55 +2,42 @@ import { expect, test } from "bun:test";
 
 import { resumeSecondsFromHistoryForEpisode } from "@/app/playback-resume-from-history";
 import type { EpisodeInfo } from "@/domain/types";
-import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
+import { HistoryRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
 const ep: EpisodeInfo = { season: 1, episode: 3 };
 
-function makeStore(entries: readonly HistoryEntry[]): HistoryStore {
-  return {
-    get: async () => null,
-    getAll: async () => ({}),
-    listRecent: async () => [],
-    listByTitle: async () => entries,
-    save: async () => {},
-    delete: async () => {},
-    clear: async () => {},
-  };
+function makeRepo(): HistoryRepository {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  return new HistoryRepository(db);
 }
 
-test("resumeSecondsFromHistoryForEpisode returns 0 when no row", async () => {
-  const s = makeStore([]);
-  expect(await resumeSecondsFromHistoryForEpisode(s, "t:1", ep, "credits-or-90-percent")).toBe(0);
+test("resumeSecondsFromHistoryForEpisode returns 0 when no row", () => {
+  expect(resumeSecondsFromHistoryForEpisode(makeRepo(), "t:1", ep, "credits-or-90-percent")).toBe(
+    0,
+  );
 });
 
-test("resumeSecondsFromHistoryForEpisode returns timestamp when partial", async () => {
-  const entry: HistoryEntry = {
-    title: "X",
-    type: "series",
-    season: 1,
-    episode: 3,
-    timestamp: 222,
-    duration: 800,
+test("resumeSecondsFromHistoryForEpisode returns position when partial", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "t:1", kind: "series", title: "X" },
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 222,
+    durationSeconds: 800,
     completed: false,
-    provider: "p",
-    watchedAt: new Date().toISOString(),
-  };
-  const s = makeStore([entry]);
-  expect(await resumeSecondsFromHistoryForEpisode(s, "t:1", ep, "credits-or-90-percent")).toBe(222);
+  });
+  expect(resumeSecondsFromHistoryForEpisode(repo, "t:1", ep, "credits-or-90-percent")).toBe(222);
 });
 
-test("resumeSecondsFromHistoryForEpisode returns 0 when completed", async () => {
-  const entry: HistoryEntry = {
-    title: "X",
-    type: "series",
-    season: 1,
-    episode: 3,
-    timestamp: 790,
-    duration: 800,
+test("resumeSecondsFromHistoryForEpisode returns 0 when completed", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "t:1", kind: "series", title: "X" },
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 790,
+    durationSeconds: 800,
     completed: true,
-    provider: "p",
-    watchedAt: new Date().toISOString(),
-  };
-  const s = makeStore([entry]);
-  expect(await resumeSecondsFromHistoryForEpisode(s, "t:1", ep, "credits-or-90-percent")).toBe(0);
+  });
+  expect(resumeSecondsFromHistoryForEpisode(repo, "t:1", ep, "credits-or-90-percent")).toBe(0);
 });
