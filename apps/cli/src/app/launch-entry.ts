@@ -2,13 +2,13 @@ import { applyTitleProviderPreferenceToSession } from "@/app/playback-provider-s
 import type { Container } from "@/container";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import { historyContentType, isFinished } from "@/services/continuation/history-progress";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import { isFinished } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
 export type HistoryLaunchSelection = {
   readonly titleId: string;
-  readonly entry: HistoryEntry;
+  readonly entry: HistoryProgress;
   readonly targetEpisode?: {
     readonly season: number;
     readonly episode: number;
@@ -17,26 +17,26 @@ export type HistoryLaunchSelection = {
 };
 
 export function selectContinueHistoryEntry(
-  entries: Record<string, HistoryEntry>,
+  entries: Record<string, HistoryProgress>,
 ): HistoryLaunchSelection | null {
   const unfinished = Object.entries(entries)
     .filter(([, entry]) => !isFinished(entry))
     .sort(
       (a, b) =>
-        (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
+        (new Date(b[1].updatedAt).getTime() || 0) - (new Date(a[1].updatedAt).getTime() || 0),
     );
   const selected = unfinished[0];
   return selected ? { titleId: selected[0], entry: selected[1] } : null;
 }
 
 export function selectContinueHistoryEntryFromRecent(
-  entries: readonly [string, HistoryEntry][],
+  entries: readonly [string, HistoryProgress][],
 ): HistoryLaunchSelection | null {
   const unfinished = entries
     .filter(([, entry]) => !isFinished(entry))
     .sort(
       (a, b) =>
-        (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
+        (new Date(b[1].updatedAt).getTime() || 0) - (new Date(a[1].updatedAt).getTime() || 0),
     );
   const selected = unfinished[0];
   return selected ? { titleId: selected[0], entry: selected[1] } : null;
@@ -45,7 +45,7 @@ export function selectContinueHistoryEntryFromRecent(
 export function titleFromHistorySelection(selection: HistoryLaunchSelection): TitleInfo {
   return {
     id: selection.titleId,
-    type: selection.entry.type,
+    type: historyContentType(selection.entry),
     name: selection.entry.title,
   };
 }
@@ -53,10 +53,10 @@ export function titleFromHistorySelection(selection: HistoryLaunchSelection): Ti
 export function episodeFromHistorySelection(
   selection: HistoryLaunchSelection,
 ): EpisodeInfo | undefined {
-  if (selection.entry.type !== "series") return undefined;
+  if (historyContentType(selection.entry) !== "series") return undefined;
   const target = selection.targetEpisode ?? {
-    season: selection.entry.season,
-    episode: selection.entry.episode,
+    season: selection.entry.season ?? 1,
+    episode: selection.entry.episode ?? selection.entry.absoluteEpisode ?? 1,
   };
   return { season: target.season, episode: target.episode };
 }
@@ -69,8 +69,11 @@ export function selectLocalContinueCandidate(
     entries.find((entry) => {
       if (entry.status !== "ready") return false;
       if (entry.job.titleId !== selection.titleId) return false;
-      if (selection.entry.type === "movie") return entry.job.mediaKind === "movie";
-      const target = selection.targetEpisode ?? selection.entry;
+      if (historyContentType(selection.entry) === "movie") return entry.job.mediaKind === "movie";
+      const target = selection.targetEpisode ?? {
+        season: selection.entry.season ?? 1,
+        episode: selection.entry.episode ?? selection.entry.absoluteEpisode ?? 1,
+      };
       return (
         entry.job.mediaKind !== "movie" &&
         entry.job.season === target.season &&
@@ -104,8 +107,8 @@ export async function recordLocalHistorySourceDecision(
       reason,
       titleId: selection.titleId,
       titleName: selection.entry.title,
-      season: selection.entry.season,
-      episode: selection.entry.episode,
+      season: selection.entry.season ?? 1,
+      episode: selection.entry.episode ?? selection.entry.absoluteEpisode ?? 1,
       jobId: localCandidate.job.id,
       outputPath: localCandidate.job.outputPath,
       sourceDecision: decision.reason,
@@ -131,7 +134,7 @@ export function applyHistorySelectionProvider(
     const state = container.stateManager.getState();
     const keepSessionProvider = state.providerSwitchSeq > 0;
     if (!keepSessionProvider) {
-      const provider = container.providerRegistry.get(selection.entry.provider);
+      const provider = container.providerRegistry.get(selection.entry.providerId ?? "unknown");
       if (provider) {
         container.stateManager.dispatch({
           type: "SET_MODE",
@@ -141,12 +144,12 @@ export function applyHistorySelectionProvider(
       } else {
         container.stateManager.dispatch({
           type: "SET_PROVIDER",
-          provider: selection.entry.provider,
+          provider: selection.entry.providerId ?? "unknown",
         });
       }
     }
   }
-  if (selection.entry.type !== "series") return;
+  if (historyContentType(selection.entry) !== "series") return;
   const episode = episodeFromHistorySelection(selection);
   if (!episode) return;
   container.stateManager.dispatch({

@@ -6,6 +6,7 @@
 // =============================================================================
 
 import type { Container } from "@/container";
+import { historyContentType } from "@/services/continuation/history-progress";
 import type { RecommendationSection } from "@/services/recommendations/RecommendationService";
 
 /**
@@ -29,7 +30,7 @@ export async function buildDiscoverSections(
 
   const mostRecentCompleted = Object.entries(history)
     .filter(([, entry]) => entry.completed)
-    .sort((a, b) => new Date(b[1].watchedAt).getTime() - new Date(a[1].watchedAt).getTime())[0];
+    .sort((a, b) => new Date(b[1].updatedAt).getTime() - new Date(a[1].updatedAt).getTime())[0];
 
   // SearchResult does not currently carry genreIds; genre affinity is skipped
   // until the field is added to the domain type.
@@ -39,18 +40,20 @@ export async function buildDiscoverSections(
   const completedHistorySeeds = Object.values(history)
     .filter((entry) => entry.completed)
     .filter((entry) =>
-      mode === "anime" ? animeProviders.has(entry.provider) : !animeProviders.has(entry.provider),
+      mode === "anime"
+        ? animeProviders.has(entry.providerId ?? "unknown")
+        : !animeProviders.has(entry.providerId ?? "unknown"),
     )
     .map((entry) => ({
       title: entry.title,
-      type: entry.type,
-      watchedAt: entry.watchedAt,
+      type: historyContentType(entry),
+      watchedAt: entry.updatedAt,
     }));
 
   const results = await Promise.all([
     mostRecentCompleted && hasTmdbLikeRecentId
       ? container.recommendationService
-          .getForTitle(recentHistoryId, mostRecentCompleted[1].type)
+          .getForTitle(recentHistoryId, historyContentType(mostRecentCompleted[1]))
           .then((s) => ({ ...s, label: `Because you watched ${mostRecentCompleted[1].title}` }))
       : null,
     mode === "anime"

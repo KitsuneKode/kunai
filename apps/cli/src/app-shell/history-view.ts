@@ -7,7 +7,8 @@
 import { reconcileContinueHistory } from "@/domain/continuation/history-reconciliation";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import { historyContentType } from "@/services/continuation/history-progress";
+import type { HistoryProgress } from "@kunai/storage";
 
 import {
   buildHistoryPickerOptions,
@@ -87,13 +88,14 @@ export function cycleHistoryTab(tab: HistoryTab): HistoryTab {
   return HISTORY_TABS[(index + 1) % HISTORY_TABS.length] ?? "continue";
 }
 
-function isHistoryCompleted(entry: HistoryEntry): boolean {
-  return entry.duration > 0 && entry.timestamp / entry.duration >= 0.95;
+function isHistoryCompleted(entry: HistoryProgress): boolean {
+  const duration = entry.durationSeconds ?? 0;
+  return duration > 0 && entry.positionSeconds / duration >= 0.95;
 }
 
 function isHistoryNewEpisode(
   titleId: string,
-  entry: HistoryEntry,
+  entry: HistoryProgress,
   context: HistoryPickerOptionsContext,
 ): boolean {
   const decision = reconcileContinueHistory({
@@ -106,7 +108,7 @@ function isHistoryNewEpisode(
 
 function matchesHistoryTab(
   titleId: string,
-  entry: HistoryEntry,
+  entry: HistoryProgress,
   tab: HistoryTab,
   context: HistoryPickerOptionsContext,
 ): boolean {
@@ -128,11 +130,11 @@ function matchesHistoryTab(
 }
 
 function filterHistoryEntries(
-  historyEntries: ReadonlyArray<[string, HistoryEntry]>,
+  historyEntries: ReadonlyArray<[string, HistoryProgress]>,
   filterQuery: string,
   tab: HistoryTab,
   context: HistoryPickerOptionsContext,
-): readonly [string, HistoryEntry][] {
+): readonly [string, HistoryProgress][] {
   const filter = filterQuery.trim().toLowerCase();
   const base = historyEntries.filter(([titleId, entry]) => {
     const completed = isHistoryCompleted(entry);
@@ -144,7 +146,10 @@ function filterHistoryEntries(
       if ((filter === "watching" || filter === "continue") && continuable) return true;
       if ((filter === "new" || filter === "new-episodes") && newEpisode) return true;
       if (
-        !fuzzyMatch(filter, `${entry.title} ${entry.provider} s${entry.season}e${entry.episode}`)
+        !fuzzyMatch(
+          filter,
+          `${entry.title} ${entry.providerId ?? "unknown"} s${entry.season ?? 1}e${entry.episode ?? entry.absoluteEpisode ?? 1}`,
+        )
       ) {
         return false;
       }
@@ -162,8 +167,8 @@ function filterHistoryEntries(
     filter === "new" || filter === "new-episodes" ? "" : filterQuery,
     ([, entry]) => [
       { value: entry.title, weight: 0 },
-      { value: entry.provider, weight: 8 },
-      { value: `s${entry.season}e${entry.episode}`, weight: 4 },
+      { value: entry.providerId ?? "unknown", weight: 8 },
+      { value: `s${entry.season ?? 1}e${entry.episode ?? entry.absoluteEpisode ?? 1}`, weight: 4 },
     ],
   );
 }
@@ -178,10 +183,10 @@ function toneColor(tone: ShellStatusTone | undefined): string {
 
 function deriveResumeAction(
   titleId: string,
-  entry: HistoryEntry,
+  entry: HistoryProgress,
   context: HistoryPickerOptionsContext,
 ): string {
-  if (entry.type === "movie") {
+  if (historyContentType(entry) === "movie") {
     return isHistoryCompleted(entry) ? "Restart" : "Resume";
   }
   const projection = context.projections?.get(titleId);
@@ -198,13 +203,14 @@ function deriveResumeAction(
 
 function shellOptionToHistoryRow(
   titleId: string,
-  entry: HistoryEntry,
+  entry: HistoryProgress,
   option: ShellPickerOption<string>,
   context: HistoryPickerOptionsContext,
 ): HistoryViewRow {
   const labelParts = option.label.split("·").map((part) => part.trim());
   const title = labelParts[0] ?? option.label;
-  const episodeCode = labelParts[1] ?? (entry.type === "series" ? "series" : "movie");
+  const episodeCode =
+    labelParts[1] ?? (historyContentType(entry) === "series" ? "series" : "movie");
   const detailParts = (option.detail ?? "").split("·").map((part) => part.trim());
   const recencyLabel = detailParts[detailParts.length - 1] ?? "";
   const progress = option.historyProgress ?? null;
@@ -238,7 +244,7 @@ function shellOptionToHistoryRow(
 
 function optionsToFlatRows(
   options: readonly ShellPickerOption<string>[],
-  entryById: ReadonlyMap<string, HistoryEntry>,
+  entryById: ReadonlyMap<string, HistoryProgress>,
   context: HistoryPickerOptionsContext,
 ): HistoryViewRow[] {
   const rows: HistoryViewRow[] = [];
@@ -253,7 +259,7 @@ function optionsToFlatRows(
 
 function buildHistorySections(
   flatRows: readonly HistoryViewRow[],
-  filteredEntries: ReadonlyArray<[string, HistoryEntry]>,
+  filteredEntries: ReadonlyArray<[string, HistoryProgress]>,
   tab: HistoryTab,
 ): { label: string; rows: HistoryViewRow[] }[] {
   if (tab === "continue" && flatRows.length > 0) {
@@ -281,7 +287,7 @@ function buildHistorySections(
 
 function buildHistoryPreviewRailModel(
   row: HistoryViewRow,
-  entry: HistoryEntry,
+  entry: HistoryProgress,
   titleId: string,
   context: HistoryPickerOptionsContext,
   posterState: PreviewPosterState = "none",
@@ -295,13 +301,17 @@ function buildHistoryPreviewRailModel(
     entry,
     nextRelease: context.nextReleases?.get(titleId) ?? null,
   });
-  const progress = projectWatchProgress(entry);
-  const watchedAt = new Date(entry.watchedAt).toLocaleDateString();
+  const progress = projectWatchProgress({
+    timestamp: entry.positionSeconds,
+    duration: entry.durationSeconds,
+    completed: entry.completed,
+  });
+  const watchedAt = new Date(entry.updatedAt).toLocaleDateString();
   const newSince =
     decision.kind === "new-episode" &&
-    entry.type === "series" &&
+    historyContentType(entry) === "series" &&
     typeof decision.episode === "number"
-      ? formatNewSinceEpisodeLabel(entry.episode, decision.episode)
+      ? formatNewSinceEpisodeLabel(entry.episode ?? entry.absoluteEpisode ?? 1, decision.episode)
       : null;
 
   const facts: PreviewRailModel["facts"][number][] = [
@@ -315,7 +325,7 @@ function buildHistoryPreviewRailModel(
       tone: row.progress?.completed || progress.completed ? "success" : "warning",
     },
     { label: "Last watched", value: watchedAt },
-    { label: "Provider", value: entry.provider, tone: "muted" },
+    { label: "Provider", value: entry.providerId ?? "unknown", tone: "muted" },
   ];
   if (returnLoopDetail) {
     facts.push({ label: "Next", value: returnLoopDetail, tone: "success" });
@@ -361,7 +371,7 @@ function buildVisibleItems(
 }
 
 export function buildHistoryView(input: {
-  readonly entries: ReadonlyArray<[string, HistoryEntry]>;
+  readonly entries: ReadonlyArray<[string, HistoryProgress]>;
   readonly tab: HistoryTab;
   readonly filterQuery: string;
   readonly selectedIndex: number;

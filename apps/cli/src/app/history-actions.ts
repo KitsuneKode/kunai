@@ -1,4 +1,4 @@
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
 /**
  * Mark a history entry as fully watched without playing it (Netflix/Crunchyroll
@@ -7,13 +7,14 @@ import type { HistoryEntry } from "@/services/persistence/HistoryStore";
  * unknown the saved position is preserved (the completed flag still wins).
  */
 export function markEntryWatched(
-  entry: HistoryEntry,
+  entry: HistoryProgress,
   now: () => string = () => new Date().toISOString(),
-): HistoryEntry {
+): HistoryProgress {
+  const duration = entry.durationSeconds ?? 0;
   return {
     ...entry,
     completed: true,
-    timestamp: entry.duration > 0 ? entry.duration : entry.timestamp,
-    watchedAt: now(),
+    positionSeconds: duration > 0 ? duration : entry.positionSeconds,
+    updatedAt: now(),
   };
 }

@@ -1,19 +1,22 @@
 import { describe, expect, test } from "bun:test";
 
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import { resolveMovieStartingChoice, resolveStartingEpisodeChoice } from "@/session-flow";
+import type { HistoryProgress } from "@kunai/storage";
 
-function movieHistory(patch: Partial<HistoryEntry> = {}): HistoryEntry {
+function movieHistory(patch: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
+    key: "k",
+    titleId: "x",
     title: "Dune",
-    type: "movie",
+    mediaKind: "movie",
     season: 1,
     episode: 1,
-    timestamp: 2400,
-    duration: 9000,
+    positionSeconds: 2400,
+    durationSeconds: 9000,
     completed: false,
-    provider: "vidking",
-    watchedAt: "2026-05-06T05:00:00.000Z",
+    providerId: "vidking",
+    updatedAt: "2026-05-06T05:00:00.000Z",
+    createdAt: "2026-05-06T05:00:00.000Z",
     ...patch,
   };
 }
@@ -24,15 +27,18 @@ describe("starting episode selection", () => {
       choice: "resume",
       isAnime: false,
       history: {
+        key: "k",
+        titleId: "x",
         title: "Breaking Bad",
-        type: "series",
+        mediaKind: "series",
         season: 4,
         episode: 2,
-        timestamp: 1334,
-        duration: 2860,
+        positionSeconds: 1334,
+        durationSeconds: 2860,
         completed: false,
-        provider: "vidking",
-        watchedAt: "2026-05-06T05:00:00.000Z",
+        providerId: "vidking",
+        updatedAt: "2026-05-06T05:00:00.000Z",
+        createdAt: "2026-05-06T05:00:00.000Z",
       },
       nextEpisode: { season: 4, episode: 3 },
     });
@@ -50,15 +56,18 @@ describe("starting episode selection", () => {
       choice: "restart",
       isAnime: false,
       history: {
+        key: "k",
+        titleId: "x",
         title: "Breaking Bad",
-        type: "series",
+        mediaKind: "series",
         season: 4,
         episode: 2,
-        timestamp: 1334,
-        duration: 2860,
+        positionSeconds: 1334,
+        durationSeconds: 2860,
         completed: false,
-        provider: "vidking",
-        watchedAt: "2026-05-06T05:00:00.000Z",
+        providerId: "vidking",
+        updatedAt: "2026-05-06T05:00:00.000Z",
+        createdAt: "2026-05-06T05:00:00.000Z",
       },
       nextEpisode: { season: 4, episode: 3 },
     });
@@ -73,7 +82,7 @@ describe("starting episode selection", () => {
 
 describe("movie starting point", () => {
   test("resume seeks directly to the saved position without re-prompting", () => {
-    expect(resolveMovieStartingChoice("resume", movieHistory({ timestamp: 2400 }))).toEqual({
+    expect(resolveMovieStartingChoice("resume", movieHistory({ positionSeconds: 2400 }))).toEqual({
       season: 1,
       episode: 1,
       startAt: 2400,
@@ -82,7 +91,7 @@ describe("movie starting point", () => {
   });
 
   test("restart plays the movie from the beginning with no resume offer", () => {
-    expect(resolveMovieStartingChoice("restart", movieHistory({ timestamp: 2400 }))).toEqual({
+    expect(resolveMovieStartingChoice("restart", movieHistory({ positionSeconds: 2400 }))).toEqual({
       season: 1,
       episode: 1,
       startAt: 0,

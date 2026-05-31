@@ -1,6 +1,24 @@
 import { expect, test } from "bun:test";
 
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import type { HistoryProgress } from "@kunai/storage";
+
+function row(over: Partial<HistoryProgress> & { titleId: string }): HistoryProgress {
+  return {
+    key: "k",
+    title: "Anime",
+    mediaKind: "anime",
+    season: 1,
+    episode: 1,
+    positionSeconds: 100,
+    durationSeconds: 1200,
+    completed: true,
+    providerId: "allmanga",
+    updatedAt: "2026-05-23T12:00:00.000Z",
+    createdAt: "2026-05-23T12:00:00.000Z",
+    ...over,
+  };
+}
 
 test("release reconciliation triggers share one coalescing scheduler identity", () => {
   const ids: string[] = [];
@@ -21,23 +39,7 @@ test("release reconciliation triggers share one coalescing scheduler identity", 
     releaseReconciliationService: { reconcile: async () => ({ skipped: [] }) },
     diagnosticsService: { record: () => {} },
   };
-  const entries = [
-    [
-      "anilist:1",
-      {
-        title: "Anime",
-        type: "series",
-        mediaKind: "anime",
-        season: 1,
-        episode: 1,
-        timestamp: 100,
-        duration: 1200,
-        completed: true,
-        provider: "allmanga",
-        watchedAt: "2026-05-23T12:00:00.000Z",
-      },
-    ],
-  ] as const;
+  const entries = [row({ titleId: "anilist:1" })];
 
   enqueueReleaseReconciliation(container as never, entries, "startup");
   enqueueReleaseReconciliation(container as never, entries, "history");
@@ -58,23 +60,7 @@ test("power saver suppresses passive release reconciliation from browse and hist
     releaseReconciliationService: { reconcile: async () => ({ skipped: [] }) },
     diagnosticsService: { record: () => {} },
   };
-  const entries = [
-    [
-      "anilist:1",
-      {
-        title: "Anime",
-        type: "series",
-        mediaKind: "anime",
-        season: 1,
-        episode: 1,
-        timestamp: 100,
-        duration: 1200,
-        completed: true,
-        provider: "allmanga",
-        watchedAt: "2026-05-23T12:00:00.000Z",
-      },
-    ],
-  ] as const;
+  const entries = [row({ titleId: "anilist:1" })];
 
   enqueueReleaseReconciliation(container as never, entries, "browse-idle");
   enqueueReleaseReconciliation(container as never, entries, "history");
@@ -110,37 +96,9 @@ test("release reconciliation batches offline policy attention lookup once per tr
     diagnosticsService: { record: () => {} },
   };
   const entries = [
-    [
-      "anilist:1",
-      {
-        title: "Anime 1",
-        type: "series",
-        mediaKind: "anime",
-        season: 1,
-        episode: 1,
-        timestamp: 100,
-        duration: 1200,
-        completed: true,
-        provider: "allmanga",
-        watchedAt: "2026-05-23T12:00:00.000Z",
-      },
-    ],
-    [
-      "anilist:2",
-      {
-        title: "Anime 2",
-        type: "series",
-        mediaKind: "anime",
-        season: 1,
-        episode: 2,
-        timestamp: 100,
-        duration: 1200,
-        completed: true,
-        provider: "allmanga",
-        watchedAt: "2026-05-23T12:00:00.000Z",
-      },
-    ],
-  ] as const;
+    row({ titleId: "anilist:1", title: "Anime 1", episode: 1 }),
+    row({ titleId: "anilist:2", title: "Anime 2", episode: 2 }),
+  ];
 
   enqueueReleaseReconciliation(container as never, entries, "history");
   await Promise.all(runs);

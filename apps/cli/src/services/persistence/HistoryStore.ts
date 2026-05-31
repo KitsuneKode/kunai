@@ -1,49 +1,21 @@
 // =============================================================================
 // History Store
 //
-// Manages watch history and playback positions.
+// Thin facade over HistoryRepository. Every method returns the canonical
+// HistoryProgress row; the lossy HistoryEntry projection is retired.
+// `isFinished`/`formatTimestamp` are re-exported from the history-progress
+// authority so existing import sites keep resolving.
 // =============================================================================
 
-import type { MediaKind, ProviderExternalIds } from "@kunai/types";
+import type { HistoryProgress } from "@kunai/storage";
 
-import type { ContentType } from "../../domain/types";
-
-export interface HistoryEntry {
-  title: string;
-  type: ContentType;
-  mediaKind?: MediaKind;
-  externalIds?: ProviderExternalIds;
-  season: number;
-  episode: number;
-  timestamp: number; // seconds
-  duration: number;
-  completed: boolean;
-  provider: string;
-  watchedAt: string;
-}
+export { isFinished, formatTimestamp } from "../continuation/history-progress";
 
 export interface HistoryStore {
-  get(id: string): Promise<HistoryEntry | null>;
-  getAll(): Promise<Record<string, HistoryEntry>>;
-  listRecent(limit?: number): Promise<readonly [string, HistoryEntry][]>;
-  listByTitle(id: string): Promise<readonly HistoryEntry[]>;
-  save(id: string, entry: HistoryEntry): Promise<void>;
+  get(id: string): Promise<HistoryProgress | null>;
+  getAll(): Promise<Record<string, HistoryProgress>>;
+  listRecent(limit?: number): Promise<readonly [string, HistoryProgress][]>;
+  listByTitle(id: string): Promise<readonly HistoryProgress[]>;
   delete(id: string): Promise<void>;
   clear(): Promise<void>;
-}
-
-// Utility functions
-export function isFinished(entry: HistoryEntry, threshold = 0.95): boolean {
-  return entry.completed || (entry.duration > 0 && entry.timestamp / entry.duration >= threshold);
-}
-
-export function formatTimestamp(seconds: number): string {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hrs > 0) {
-    return `${hrs}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-  }
-  return `${mins}:${String(secs).padStart(2, "0")}`;
 }

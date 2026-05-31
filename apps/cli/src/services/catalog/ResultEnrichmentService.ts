@@ -5,9 +5,11 @@ import {
 } from "@/domain/continuation/history-reconciliation";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { SearchResult } from "@/domain/types";
+import { historyContentType } from "@/services/continuation/history-progress";
 import type { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
-import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
+import type { HistoryStore } from "@/services/persistence/HistoryStore";
 import { formatTimestamp, isFinished } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 import type { ProviderReleaseInfo } from "@kunai/types";
 
 export type ResultEnrichmentBadgeTone = "success" | "info" | "warning" | "neutral";
@@ -139,7 +141,7 @@ function badgeForProviderRelease(
 
 function resolveHistoryDecision(input: {
   readonly result: SearchResult;
-  readonly historyEntry: HistoryEntry;
+  readonly historyEntry: HistoryProgress;
   readonly nextRelease?: ContinueHistoryRelease | null;
 }): ContinueHistoryReconciliationDecision {
   return reconcileContinueHistory({
@@ -184,13 +186,18 @@ function formatEpisodeBadge(prefix: string, season?: number, episode?: number): 
   return `${prefix} ${seasonLabel}E${String(episode).padStart(2, "0")}`;
 }
 
-function formatContinueBadge(entry: HistoryEntry): string {
-  const percentage = projectWatchProgress(entry).percentage;
+function formatContinueBadge(entry: HistoryProgress): string {
+  const percentage = projectWatchProgress({
+    timestamp: entry.positionSeconds,
+    duration: entry.durationSeconds,
+    completed: entry.completed,
+  }).percentage;
   const progress = percentage !== null && percentage < 100 ? ` (${percentage}%)` : "";
-  const timestamp = entry.timestamp > 10 ? ` · ${formatTimestamp(entry.timestamp)}` : "";
+  const timestamp =
+    entry.positionSeconds > 10 ? ` · ${formatTimestamp(entry.positionSeconds)}` : "";
   const episode =
-    entry.type === "series"
-      ? ` S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
+    historyContentType(entry) === "series"
+      ? ` S${String(entry.season ?? 1).padStart(2, "0")}E${String(entry.episode ?? entry.absoluteEpisode ?? 1).padStart(2, "0")}`
       : "";
   return `continue${episode}${timestamp}${progress}`;
 }

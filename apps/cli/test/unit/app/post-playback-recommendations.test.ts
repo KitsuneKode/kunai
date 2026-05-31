@@ -111,15 +111,18 @@ test("post-playback recommendations avoid provider-native anime ids and use disc
       historyStore: {
         getAll: async () => ({
           "allanime:ramparts": {
+            key: "k",
+            titleId: "allanime:ramparts",
             title: "The Ramparts of Ice",
-            type: "series",
+            mediaKind: "anime",
             season: 1,
             episode: 7,
-            timestamp: 1200,
-            duration: 1200,
+            positionSeconds: 1200,
+            durationSeconds: 1200,
             completed: true,
-            provider: "allanime",
-            watchedAt: "2026-05-15T10:00:00.000Z",
+            providerId: "allanime",
+            updatedAt: "2026-05-15T10:00:00.000Z",
+            createdAt: "2026-05-15T10:00:00.000Z",
           },
         }),
       },

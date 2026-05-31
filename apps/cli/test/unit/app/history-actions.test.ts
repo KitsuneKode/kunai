@@ -1,34 +1,40 @@
 import { expect, test } from "bun:test";
 
 import { markEntryWatched } from "@/app/history-actions";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
-function entry(patch: Partial<HistoryEntry> = {}): HistoryEntry {
+function entry(patch: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
+    key: "k",
+    titleId: "demo",
     title: "Demo",
-    type: "series",
+    mediaKind: "series",
     season: 1,
     episode: 4,
-    timestamp: 320,
-    duration: 1400,
+    positionSeconds: 320,
+    durationSeconds: 1400,
     completed: false,
-    provider: "vidking",
-    watchedAt: "2026-05-10T00:00:00.000Z",
+    providerId: "vidking",
+    updatedAt: "2026-05-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z",
     ...patch,
   };
 }
 
 test("markEntryWatched flags completed and snaps position to the end", () => {
-  const marked = markEntryWatched(entry({ timestamp: 320, duration: 1400 }), () => "NOW");
+  const marked = markEntryWatched(
+    entry({ positionSeconds: 320, durationSeconds: 1400 }),
+    () => "NOW",
+  );
   expect(marked.completed).toBe(true);
-  expect(marked.timestamp).toBe(1400);
-  expect(marked.watchedAt).toBe("NOW");
+  expect(marked.positionSeconds).toBe(1400);
+  expect(marked.updatedAt).toBe("NOW");
   // preserves identity fields
-  expect(marked).toMatchObject({ title: "Demo", season: 1, episode: 4, provider: "vidking" });
+  expect(marked).toMatchObject({ title: "Demo", season: 1, episode: 4, providerId: "vidking" });
 });
 
 test("markEntryWatched keeps the saved position when duration is unknown", () => {
-  const marked = markEntryWatched(entry({ timestamp: 320, duration: 0 }), () => "NOW");
+  const marked = markEntryWatched(entry({ positionSeconds: 320, durationSeconds: 0 }), () => "NOW");
   expect(marked.completed).toBe(true);
-  expect(marked.timestamp).toBe(320);
+  expect(marked.positionSeconds).toBe(320);
 });

@@ -20,8 +20,8 @@ import { buildPickerActionContext } from "@/app-shell/workflows";
 import type { Container } from "@/container";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import { isFinished } from "@/services/persistence/HistoryStore";
+import { historyContentType, isFinished } from "@/services/continuation/history-progress";
+import type { HistoryProgress } from "@kunai/storage";
 import type { ListItem } from "@kunai/storage";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
@@ -140,7 +140,7 @@ function LibraryTab({ container }: { container: Container }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
-  const [historyMap, setHistoryMap] = useState<Record<string, HistoryEntry>>({});
+  const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const viewport = useDebouncedViewportPolicy("picker");
 
   useEffect(() => {
@@ -423,7 +423,7 @@ function libraryRowKey(row: LibraryShelfRow): string {
 function buildLibraryFlatRows(
   groups: readonly OfflineLibraryShelfGroup[],
   watchlist: readonly ListItem[],
-  historyMap: Record<string, HistoryEntry>,
+  historyMap: Record<string, HistoryProgress>,
 ): LibraryShelfRow[] {
   const sections = buildLibraryShelfSections(groups, watchlist, historyMap);
   return sections.flatMap((section) => section.rows);
@@ -432,7 +432,7 @@ function buildLibraryFlatRows(
 function buildLibraryShelfSections(
   groups: readonly OfflineLibraryShelfGroup[],
   watchlist: readonly ListItem[],
-  historyMap: Record<string, HistoryEntry>,
+  historyMap: Record<string, HistoryProgress>,
 ): { label: string; rows: LibraryShelfRow[] }[] {
   const offlineTitleIds = new Set(groups.map((group) => group.titleId));
   const savedOnly: LibraryShelfRow[] = watchlist
@@ -487,11 +487,12 @@ function buildVisibleLibraryItems(
 
 function classifyLibrarySection(
   group: OfflineLibraryShelfGroup,
-  historyMap: Record<string, HistoryEntry>,
+  historyMap: Record<string, HistoryProgress>,
 ): LibraryShelfSection {
   const hist = historyMap[group.titleId];
-  if (hist && !isFinished(hist) && hist.timestamp > 30) {
-    const pct = hist.duration > 0 ? (hist.timestamp / hist.duration) * 100 : 0;
+  if (hist && !isFinished(hist) && hist.positionSeconds > 30) {
+    const duration = hist.durationSeconds ?? 0;
+    const pct = duration > 0 ? (hist.positionSeconds / duration) * 100 : 0;
     if (pct > 0 && pct < 95) return "in-progress";
   }
   if (group.readyCount > 0) return "downloaded";
@@ -534,15 +535,15 @@ function formatSavedSeasonCode(item: ListItem): string {
 
 function formatLibraryStatus(
   row: LibraryShelfRow,
-  historyMap: Record<string, HistoryEntry>,
+  historyMap: Record<string, HistoryProgress>,
 ): { label: string; color: string; dim: boolean } {
   if (row.kind === "saved") {
     return { label: "◆ saved", color: palette.dim, dim: true };
   }
   const { group } = row;
   const hist = historyMap[group.titleId];
-  if (hist && !isFinished(hist) && hist.duration > 0) {
-    const pct = Math.round((hist.timestamp / hist.duration) * 100);
+  if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {
+    const pct = Math.round((hist.positionSeconds / (hist.durationSeconds ?? 0)) * 100);
     if (pct > 0 && pct < 95) {
       return { label: `▸ ${pct}%`, color: palette.accent, dim: false };
     }
@@ -562,7 +563,7 @@ function formatLibraryStatus(
 
 function buildLibraryPreviewRailModel(
   group: OfflineLibraryShelfGroup,
-  historyMap: Record<string, HistoryEntry>,
+  historyMap: Record<string, HistoryProgress>,
   entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
   protectedIds: ReadonlySet<string>,
 ): PreviewRailModel {
@@ -591,14 +592,12 @@ function buildLibraryPreviewRailModel(
     },
   ];
 
-  if (hist && !isFinished(hist) && hist.duration > 0) {
-    const pct = Math.round((hist.timestamp / hist.duration) * 100);
+  if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {
+    const pct = Math.round((hist.positionSeconds / (hist.durationSeconds ?? 0)) * 100);
     const ep =
-      hist.type === "series"
-        ? `E${String(hist.episode).padStart(2, "0")}`
-        : hist.type === "movie"
-          ? "movie"
-          : "";
+      historyContentType(hist) === "series"
+        ? `E${String(hist.episode ?? hist.absoluteEpisode ?? 1).padStart(2, "0")}`
+        : "movie";
     facts.push({
       label: "progress",
       value: `${ep} · ${pct}%`.trim(),

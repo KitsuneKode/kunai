@@ -1,54 +1,33 @@
 import { HistoryRepository } from "@kunai/storage";
 import type { HistoryProgress } from "@kunai/storage";
 
-import type { HistoryEntry, HistoryStore } from "./HistoryStore";
+import type { HistoryStore } from "./HistoryStore";
 
 export class SqliteHistoryStoreImpl implements HistoryStore {
   constructor(private readonly repository: HistoryRepository) {}
 
-  async get(id: string): Promise<HistoryEntry | null> {
-    const progress = this.repository.getLatestForTitle(id);
-    return progress === undefined ? null : toHistoryEntry(progress);
+  async get(id: string): Promise<HistoryProgress | null> {
+    return this.repository.getLatestForTitle(id) ?? null;
   }
 
-  async getAll(): Promise<Record<string, HistoryEntry>> {
-    const entries: Record<string, HistoryEntry> = {};
+  async getAll(): Promise<Record<string, HistoryProgress>> {
+    const entries: Record<string, HistoryProgress> = {};
 
     for (const progress of this.repository.listRecent(500)) {
-      entries[progress.titleId] ??= toHistoryEntry(progress);
+      entries[progress.titleId] ??= progress;
     }
 
     return entries;
   }
 
-  async listRecent(limit = 500): Promise<readonly [string, HistoryEntry][]> {
+  async listRecent(limit = 500): Promise<readonly [string, HistoryProgress][]> {
     return this.repository
       .listRecent(limit)
-      .map((progress) => [progress.titleId, toHistoryEntry(progress)] as const);
+      .map((progress) => [progress.titleId, progress] as const);
   }
 
-  async listByTitle(id: string): Promise<readonly HistoryEntry[]> {
-    return this.repository.listByTitle(id, 500).map(toHistoryEntry);
-  }
-
-  async save(id: string, entry: HistoryEntry): Promise<void> {
-    this.repository.upsertProgress({
-      title: {
-        id,
-        kind: entry.mediaKind ?? entry.type,
-        title: entry.title,
-        externalIds: entry.externalIds,
-      },
-      episode: {
-        season: entry.season,
-        episode: entry.episode,
-      },
-      positionSeconds: entry.timestamp,
-      durationSeconds: entry.duration,
-      completed: entry.completed,
-      providerId: entry.provider,
-      updatedAt: entry.watchedAt,
-    });
+  async listByTitle(id: string): Promise<readonly HistoryProgress[]> {
+    return this.repository.listByTitle(id, 500);
   }
 
   async delete(id: string): Promise<void> {
@@ -58,20 +37,4 @@ export class SqliteHistoryStoreImpl implements HistoryStore {
   async clear(): Promise<void> {
     this.repository.clear();
   }
-}
-
-function toHistoryEntry(progress: HistoryProgress): HistoryEntry {
-  return {
-    title: progress.title,
-    type: progress.mediaKind === "movie" ? "movie" : "series",
-    mediaKind: progress.mediaKind,
-    season: progress.season ?? 1,
-    episode: progress.episode ?? progress.absoluteEpisode ?? 1,
-    timestamp: progress.positionSeconds,
-    duration: progress.durationSeconds ?? 0,
-    completed: progress.completed,
-    provider: progress.providerId ?? "unknown",
-    externalIds: progress.externalIds,
-    watchedAt: progress.updatedAt,
-  };
 }

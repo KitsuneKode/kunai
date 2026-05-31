@@ -1,6 +1,6 @@
 import type { CatalogReleaseStatus } from "@/services/catalog/CatalogScheduleService";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import { isFinished } from "@/services/persistence/HistoryStore";
+import { historyContentType, isFinished } from "@/services/continuation/history-progress";
+import type { HistoryProgress } from "@kunai/storage";
 
 export type ContinueHistoryRelease = {
   readonly season?: number;
@@ -13,7 +13,7 @@ export type ContinueHistoryReconciliationDecision =
   | {
       readonly kind: "resume";
       readonly titleId: string;
-      readonly entry: HistoryEntry;
+      readonly entry: HistoryProgress;
     }
   | {
       readonly kind: "new-episode";
@@ -21,20 +21,20 @@ export type ContinueHistoryReconciliationDecision =
       readonly titleName: string;
       readonly season?: number;
       readonly episode?: number;
-      readonly previousCompleted: HistoryEntry;
+      readonly previousCompleted: HistoryProgress;
       readonly releaseAt: string | null;
     }
   | {
       readonly kind: "up-to-date";
       readonly titleId: string;
-      readonly entry: HistoryEntry;
+      readonly entry: HistoryProgress;
       readonly nextRelease?: ContinueHistoryRelease;
     }
   | { readonly kind: "empty" };
 
 export function reconcileContinueHistory(input: {
   readonly titleId: string;
-  readonly entries: readonly [string, HistoryEntry][];
+  readonly entries: readonly [string, HistoryProgress][];
   readonly nextRelease?: ContinueHistoryRelease | null;
 }): ContinueHistoryReconciliationDecision {
   const entries = input.entries
@@ -52,7 +52,7 @@ export function reconcileContinueHistory(input: {
   }
 
   if (
-    latest.type === "series" &&
+    historyContentType(latest) === "series" &&
     input.nextRelease?.status === "released" &&
     isAfterHistoryEpisode(input.nextRelease, latest)
   ) {
@@ -75,14 +75,16 @@ export function reconcileContinueHistory(input: {
   };
 }
 
-function compareNewestFirst(left: HistoryEntry, right: HistoryEntry): number {
-  return (Date.parse(right.watchedAt) || 0) - (Date.parse(left.watchedAt) || 0);
+function compareNewestFirst(left: HistoryProgress, right: HistoryProgress): number {
+  return (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0);
 }
 
-function isAfterHistoryEpisode(release: ContinueHistoryRelease, entry: HistoryEntry): boolean {
+function isAfterHistoryEpisode(release: ContinueHistoryRelease, entry: HistoryProgress): boolean {
   if (typeof release.episode !== "number") return false;
-  const releaseSeason = release.season ?? entry.season;
-  if (releaseSeason > entry.season) return true;
-  if (releaseSeason < entry.season) return false;
-  return release.episode > entry.episode;
+  const entrySeason = entry.season ?? 1;
+  const entryEpisode = entry.episode ?? entry.absoluteEpisode ?? 1;
+  const releaseSeason = release.season ?? entrySeason;
+  if (releaseSeason > entrySeason) return true;
+  if (releaseSeason < entrySeason) return false;
+  return release.episode > entryEpisode;
 }

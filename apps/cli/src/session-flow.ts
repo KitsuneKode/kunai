@@ -13,12 +13,10 @@ import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { EpisodePickerOption } from "@/domain/types";
 import { cyan, dim, yellow } from "@/menu";
-import {
-  type HistoryEntry,
-  formatTimestamp,
-  isFinished,
-} from "@/services/persistence/HistoryStore";
+import { isFinished } from "@/services/continuation/history-progress";
+import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { fetchEpisodes, fetchSeriesData, type EpisodeInfo as TmdbEpisodeInfo } from "@/tmdb";
+import type { HistoryProgress } from "@kunai/storage";
 
 export type EpisodeSelection = {
   season: number;
@@ -35,14 +33,14 @@ type SelectionOpts = {
   animeEpisodeCount?: number;
   animeEpisodes?: readonly EpisodePickerOption[];
   flags: { season?: string; episode?: string };
-  getHistoryEntry: () => Promise<HistoryEntry | null>;
+  getHistoryEntry: () => Promise<HistoryProgress | null>;
   container?: Container;
 };
 
 type NextHistoryEpisodeArgs = {
   currentId: string;
   isAnime: boolean;
-  history: HistoryEntry;
+  history: HistoryProgress;
   animeEpisodeCount?: number;
   animeEpisodes?: readonly EpisodePickerOption[];
   loaders?: {
@@ -57,25 +55,25 @@ export type StartingEpisodePickerChoice = StartingEpisodeChoice | "switch-provid
 export function resolveStartingEpisodeChoice(args: {
   choice: StartingEpisodeChoice;
   isAnime: boolean;
-  history: HistoryEntry;
+  history: HistoryProgress;
   nextEpisode: EpisodeSelection | null;
 }): EpisodeSelection | null {
   const historyEpisode = {
-    season: args.isAnime ? 1 : args.history.season,
-    episode: args.history.episode,
+    season: args.isAnime ? 1 : (args.history.season ?? 1),
+    episode: args.history.episode ?? args.history.absoluteEpisode ?? 1,
   };
 
   if (args.choice === "resume") {
     return {
       ...historyEpisode,
-      startAt: args.history.timestamp,
+      startAt: args.history.positionSeconds,
       suppressResumePrompt: true,
     };
   }
   if (args.choice === "restart") {
     return {
       ...historyEpisode,
-      startAt: args.history.timestamp,
+      startAt: args.history.positionSeconds,
     };
   }
   if (args.choice === "next") {
@@ -95,10 +93,10 @@ export type MovieStartingChoice = "resume" | "restart";
  */
 export function resolveMovieStartingChoice(
   choice: MovieStartingChoice,
-  history: HistoryEntry,
+  history: HistoryProgress,
 ): EpisodeSelection {
   if (choice === "resume") {
-    return { season: 1, episode: 1, startAt: history.timestamp, suppressResumePrompt: true };
+    return { season: 1, episode: 1, startAt: history.positionSeconds, suppressResumePrompt: true };
   }
   return { season: 1, episode: 1, startAt: 0 };
 }
@@ -110,16 +108,16 @@ export function resolveMovieStartingChoice(
  * progress, offer Resume/Restart; otherwise play from the beginning with no menu.
  */
 export async function chooseMovieStartingPoint(opts: {
-  history: HistoryEntry | null;
+  history: HistoryProgress | null;
   container?: Container;
 }): Promise<EpisodeSelectionResult> {
   const fromStart: EpisodeSelection = { season: 1, episode: 1, startAt: 0 };
   const history = opts.history;
-  if (!history || isFinished(history) || history.timestamp <= 0) {
+  if (!history || isFinished(history) || history.positionSeconds <= 0) {
     return fromStart;
   }
 
-  const resumeAt = formatTimestamp(history.timestamp);
+  const resumeAt = formatTimestamp(history.positionSeconds);
   const picked = await openListShell<MovieStartingChoice>({
     title: "Resume or restart?",
     subtitle: `${history.title} · you stopped at ${resumeAt}`,
@@ -318,7 +316,9 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
   }
 
   const finished = isFinished(history);
-  const resumeAt = formatTimestamp(history.timestamp);
+  const resumeAt = formatTimestamp(history.positionSeconds);
+  const historySeason = history.season ?? 1;
+  const historyEpisode = history.episode ?? history.absoluteEpisode ?? 1;
 
   const nextEpisode = await resolveNextHistoryEpisode({
     currentId: opts.currentId,
@@ -352,7 +352,7 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
 
   const currentName = finished
     ? undefined
-    : await resolveEpisodeName(history.season, history.episode);
+    : await resolveEpisodeName(historySeason, historyEpisode);
   const nextName = nextEpisode
     ? await resolveEpisodeName(nextEpisode.season, nextEpisode.episode)
     : undefined;
@@ -367,8 +367,8 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
     ...(opts.animeEpisodeCount !== undefined ? { episodeCount: opts.animeEpisodeCount } : {}),
   };
   const episodeForProviderSwitch: EpisodeInfo = {
-    season: opts.isAnime ? 1 : history.season,
-    episode: history.episode,
+    season: opts.isAnime ? 1 : historySeason,
+    episode: historyEpisode,
   };
   let choice: StartingEpisodePickerChoice | null = null;
 
@@ -389,12 +389,12 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
           ? [
               {
                 value: "resume" as const,
-                label: `▶ Resume S${history.season}E${history.episode}`,
+                label: `▶ Resume S${historySeason}E${historyEpisode}`,
                 detail: withName(`Continue from ${resumeAt}`, currentName),
               },
               {
                 value: "restart" as const,
-                label: `↻ Restart S${history.season}E${history.episode}`,
+                label: `↻ Restart S${historySeason}E${historyEpisode}`,
                 detail: withName("Start the current episode from the beginning", currentName),
               },
             ]
@@ -450,7 +450,7 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
   });
   if (resolvedChoice) return resolvedChoice;
 
-  return pickEpisodeSelection(history.season, history.episode, opts);
+  return pickEpisodeSelection(historySeason, historyEpisode, opts);
 }
 
 export async function resolveNextHistoryEpisode(
@@ -466,15 +466,15 @@ export async function resolveNextHistoryEpisode(
       episodeCount: args.animeEpisodeCount,
     },
     currentEpisode: {
-      season: args.isAnime ? 1 : args.history.season,
-      episode: args.history.episode,
+      season: args.isAnime ? 1 : (args.history.season ?? 1),
+      episode: args.history.episode ?? args.history.absoluteEpisode ?? 1,
     },
     isAnime: args.isAnime,
     animeEpisodeCount: args.animeEpisodeCount,
     animeEpisodes: args.animeEpisodes,
     loaders: {
       loadSeasons: async (titleId) => {
-        const { seasons } = await loadSeriesData(titleId, args.history.season);
+        const { seasons } = await loadSeriesData(titleId, args.history.season ?? 1);
         return seasons;
       },
       loadEpisodes,
@@ -489,10 +489,17 @@ export async function resolveNextHistoryEpisode(
     : null;
 }
 
-export function describeHistoryEntry(entry: HistoryEntry): string {
-  const percent = projectWatchProgress(entry).percentage ?? 0;
-  const resumeAt = formatTimestamp(entry.timestamp);
+export function describeHistoryEntry(entry: HistoryProgress): string {
+  const percent =
+    projectWatchProgress({
+      timestamp: entry.positionSeconds,
+      duration: entry.durationSeconds,
+      completed: entry.completed,
+    }).percentage ?? 0;
+  const resumeAt = formatTimestamp(entry.positionSeconds);
+  const season = entry.season ?? 1;
+  const episode = entry.episode ?? entry.absoluteEpisode ?? 1;
   return isFinished(entry)
-    ? `Last finished: ${cyan(`S${entry.season}E${entry.episode}`)}`
-    : `Last watched: ${cyan(`S${entry.season}E${entry.episode}`)}  stopped at ${yellow(resumeAt)}  ${dim(`(${percent}%)`)}`;
+    ? `Last finished: ${cyan(`S${season}E${episode}`)}`
+    : `Last watched: ${cyan(`S${season}E${episode}`)}  stopped at ${yellow(resumeAt)}  ${dim(`(${percent}%)`)}`;
 }

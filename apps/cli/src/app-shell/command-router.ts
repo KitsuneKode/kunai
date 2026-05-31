@@ -4,6 +4,7 @@ import { switchSessionMode } from "@/app/mode-switch";
 import type { Container } from "@/container";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import { historyContentType } from "@/services/continuation/history-progress";
 
 import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { waitForRootHistorySelection } from "./root-history-bridge";
@@ -102,7 +103,7 @@ async function openRootHistorySelection(
     await playCompletedDownload(container, selection.localJobId);
     return "handled";
   }
-  const providerMetadata = container.providerRegistry.get(selection.entry.provider);
+  const providerMetadata = container.providerRegistry.get(selection.entry.providerId ?? "unknown");
   if (providerMetadata) {
     stateManager.dispatch({
       type: "SET_MODE",
@@ -110,14 +111,17 @@ async function openRootHistorySelection(
       provider: providerMetadata.metadata.id,
     });
   } else {
-    stateManager.dispatch({ type: "SET_PROVIDER", provider: selection.entry.provider });
+    stateManager.dispatch({
+      type: "SET_PROVIDER",
+      provider: selection.entry.providerId ?? "unknown",
+    });
   }
   await recordLocalHistorySourceDecision(container, selection, reason);
   return {
     type: "history-entry",
     title: {
       id: selection.titleId,
-      type: selection.entry.type,
+      type: historyContentType(selection.entry),
       name: selection.entry.title,
     },
     episode: episodeFromHistorySelection(selection),

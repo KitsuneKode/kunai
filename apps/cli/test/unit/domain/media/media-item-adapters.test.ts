@@ -7,15 +7,18 @@ import {
 
 test("history entries convert to media identity without provider URLs", () => {
   const item = mediaItemFromHistoryEntry("tmdb:1", {
+    key: "k",
+    titleId: "x",
     title: "Example",
-    type: "series",
+    mediaKind: "series",
     season: 1,
     episode: 2,
-    timestamp: 60,
-    duration: 1200,
+    positionSeconds: 60,
+    durationSeconds: 1200,
     completed: false,
-    provider: "vidking",
-    watchedAt: "2026-05-17T00:00:00.000Z",
+    providerId: "vidking",
+    updatedAt: "2026-05-17T00:00:00.000Z",
+    createdAt: "2026-05-17T00:00:00.000Z",
   });
 
   expect(item).toMatchObject({

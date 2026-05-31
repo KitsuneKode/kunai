@@ -3,12 +3,12 @@ import {
   type ContinueHistoryRelease,
 } from "@/domain/continuation/history-reconciliation";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import type { ReleaseProgressProjection } from "@kunai/storage";
+import { historyContentType } from "@/services/continuation/history-progress";
+import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
 
 export type RootHistorySelection = {
   titleId: string;
-  entry: HistoryEntry;
+  entry: HistoryProgress;
   localJobId?: string;
   targetEpisode?: {
     season: number;
@@ -49,7 +49,7 @@ export function formatNewSinceEpisodeLabel(
 }
 
 export function describeHistoryReturnLoopDetail(input: {
-  readonly entry: HistoryEntry;
+  readonly entry: HistoryProgress;
   readonly nextRelease?: ContinueHistoryRelease | null;
 }): string {
   const decision = reconcileContinueHistory({
@@ -59,9 +59,12 @@ export function describeHistoryReturnLoopDetail(input: {
   });
 
   if (decision.kind === "new-episode" && typeof decision.episode === "number") {
-    const previousEpisode = input.entry.type === "series" ? input.entry.episode : 0;
+    const previousEpisode =
+      historyContentType(input.entry) === "series"
+        ? (input.entry.episode ?? input.entry.absoluteEpisode ?? 1)
+        : 0;
     const newSince =
-      input.entry.type === "series"
+      historyContentType(input.entry) === "series"
         ? formatNewSinceEpisodeLabel(previousEpisode, decision.episode)
         : null;
     return newSince ? `${newSince} · ready when a source resolves` : "new episode ready";
@@ -86,7 +89,7 @@ export function buildRootHistorySelection(
   nextReleases: ReadonlyMap<string, ContinueHistoryRelease> | undefined,
   projections?: ReadonlyMap<string, ContinuationProjection>,
 ): RootHistorySelection {
-  if (selection.entry.type !== "series") return selection;
+  if (historyContentType(selection.entry) !== "series") return selection;
   const action = projections?.get(selection.titleId)?.primaryAction;
   if (action?.kind === "play-local") {
     return {
@@ -108,7 +111,7 @@ export function buildRootHistorySelection(
     return {
       ...selection,
       targetEpisode: {
-        season: decision.season ?? selection.entry.season,
+        season: decision.season ?? selection.entry.season ?? 1,
         episode: decision.episode,
         reason: "new-episode",
       },
@@ -117,8 +120,8 @@ export function buildRootHistorySelection(
   return {
     ...selection,
     targetEpisode: {
-      season: selection.entry.season,
-      episode: selection.entry.episode,
+      season: selection.entry.season ?? 1,
+      episode: selection.entry.episode ?? selection.entry.absoluteEpisode ?? 1,
       reason: "resume",
     },
   };

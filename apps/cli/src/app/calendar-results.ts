@@ -4,8 +4,13 @@ import type {
   CatalogScheduleItem,
   CatalogScheduleMode,
 } from "@/services/catalog/CatalogScheduleService";
-import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
-import type { ReleaseProgressCacheRepository, ReleaseProgressProjection } from "@kunai/storage";
+import { historyContentType } from "@/services/continuation/history-progress";
+import type { HistoryStore } from "@/services/persistence/HistoryStore";
+import type {
+  HistoryProgress,
+  ReleaseProgressCacheRepository,
+  ReleaseProgressProjection,
+} from "@kunai/storage";
 
 export type CalendarResultBundle = {
   readonly results: readonly SearchResult[];
@@ -29,7 +34,7 @@ export async function loadCalendarResults(
   const isInWatchlist = (titleId: string) => container.listService.isInWatchlist(titleId);
   let historyMatches = new Map<
     string,
-    { readonly titleId: string; readonly entry: HistoryEntry }
+    { readonly titleId: string; readonly entry: HistoryProgress }
   >();
   if (container.historyStore) {
     historyMatches = matchCalendarHistory(sorted, await container.historyStore.getAll());
@@ -47,11 +52,13 @@ export async function loadCalendarResults(
       const match = historyMatches.get(item.titleId);
       const entry = match?.entry;
       if (!entry || item.status !== "released" || typeof item.episode !== "number") continue;
-      if (entry.type !== "series" || item.episode <= entry.episode) continue;
+      const entrySeason = entry.season ?? 1;
+      const entryEpisode = entry.episode ?? entry.absoluteEpisode ?? 1;
+      if (historyContentType(entry) !== "series" || item.episode <= entryEpisode) continue;
       if (
         item.source === "tmdb" &&
         typeof item.season === "number" &&
-        item.season !== entry.season
+        item.season !== entrySeason
       ) {
         continue;
       }
@@ -66,11 +73,11 @@ export async function loadCalendarResults(
         mediaKind: entry.mediaKind ?? (item.type === "anime" ? "anime" : "series"),
         source: item.source,
         title: entry.title,
-        anchorSeason: entry.season,
-        anchorEpisode: entry.episode,
-        latestAiredSeason: item.season ?? entry.season,
+        anchorSeason: entrySeason,
+        anchorEpisode: entryEpisode,
+        latestAiredSeason: item.season ?? entrySeason,
         latestAiredEpisode: item.episode,
-        newEpisodeCount: Math.max(0, item.episode - entry.episode),
+        newEpisodeCount: Math.max(0, item.episode - entryEpisode),
         status: "new-episodes",
         checkedAt: now,
         // The calendar provides a fast optimistic "+N new" badge, but must NOT force
@@ -112,9 +119,9 @@ export async function loadCalendarResults(
 
 function matchCalendarHistory(
   items: readonly CatalogScheduleItem[],
-  entries: Record<string, HistoryEntry>,
-): Map<string, { readonly titleId: string; readonly entry: HistoryEntry }> {
-  const matches = new Map<string, { readonly titleId: string; readonly entry: HistoryEntry }>();
+  entries: Record<string, HistoryProgress>,
+): Map<string, { readonly titleId: string; readonly entry: HistoryProgress }> {
+  const matches = new Map<string, { readonly titleId: string; readonly entry: HistoryProgress }>();
   const indexedEntries = Object.entries(entries);
   for (const item of items) {
     const direct = entries[item.titleId];

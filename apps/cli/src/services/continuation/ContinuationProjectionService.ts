@@ -1,4 +1,4 @@
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
 import {
   projectContinuationState,
@@ -9,7 +9,7 @@ import {
 export class ContinuationProjectionService {
   project(input: {
     readonly titleId: string;
-    readonly entries: readonly [string, HistoryEntry][];
+    readonly entries: readonly [string, HistoryProgress][];
     readonly nextRelease?: ContinuationNextRelease | null;
     readonly releaseProgress?: {
       readonly newEpisodeCount: number;

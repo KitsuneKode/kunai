@@ -1,6 +1,7 @@
 import type { Container } from "@/container";
 import { toEpisodeCursor } from "@/domain/media/episode-cursor";
-import { isFinished, type HistoryEntry } from "@/services/persistence/HistoryStore";
+import { isFinished } from "@/services/continuation/history-progress";
+import type { HistoryProgress } from "@kunai/storage";
 
 import type {
   ReleaseReconciliationAttention,
@@ -27,14 +28,14 @@ const POWER_SAVER_PASSIVE_TRIGGERS: ReadonlySet<ReleaseReconciliationTrigger> = 
 
 export function enqueueReleaseReconciliation(
   container: ReleaseReconciliationContainer,
-  entries: readonly (readonly [string, HistoryEntry])[],
+  rows: readonly HistoryProgress[],
   trigger: ReleaseReconciliationTrigger,
   signal?: AbortSignal,
 ): void {
   if (container.config.powerSaverMode && POWER_SAVER_PASSIVE_TRIGGERS.has(trigger)) {
     return;
   }
-  const historyRows = toReleaseReconciliationHistoryRows(entries);
+  const historyRows = toReleaseReconciliationHistoryRows(rows);
   if (historyRows.length === 0 || signal?.aborted) return;
   const enrolledTitleIds = new Set(
     container.offlineTitlePolicies
@@ -84,20 +85,22 @@ export function enqueueReleaseReconciliation(
 }
 
 export function toReleaseReconciliationHistoryRows(
-  entries: readonly (readonly [string, HistoryEntry])[],
+  rows: readonly HistoryProgress[],
 ): readonly ReleaseReconciliationHistoryRow[] {
-  return entries.flatMap(([titleId, entry]) => {
-    const cursor = toEpisodeCursor({ season: entry.season, episode: entry.episode });
+  return rows.flatMap((row) => {
+    const cursor = toEpisodeCursor({
+      season: row.season ?? 1,
+      episode: row.episode ?? row.absoluteEpisode ?? 1,
+    });
     if (!cursor) return [];
-    const mediaKind = entry.mediaKind ?? (entry.type === "movie" ? "movie" : "series");
     return [
       {
-        titleId,
-        mediaKind,
-        title: entry.title,
-        completed: isFinished(entry),
-        externalIds: entry.externalIds,
-        updatedAt: entry.watchedAt,
+        titleId: row.titleId,
+        mediaKind: row.mediaKind,
+        title: row.title,
+        completed: isFinished(row),
+        externalIds: row.externalIds,
+        updatedAt: row.updatedAt,
         ...cursor,
       },
     ];

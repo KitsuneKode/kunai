@@ -10,6 +10,7 @@ import {
 } from "@/domain/playback/track-capabilities";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
+import { historyContentType } from "@/services/continuation/history-progress";
 import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
 import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
 import {
@@ -256,11 +257,11 @@ function readCachedHistoryProjections(
   );
   const nextReadyAssets = container.offlineAssetService.listNextReadyByTitleCursors(
     entries
-      .filter(([, entry]) => entry.type === "series")
+      .filter(([, entry]) => historyContentType(entry) === "series")
       .map(([titleId, entry]) => ({
         titleId,
-        season: entry.season,
-        episode: entry.episode,
+        season: entry.season ?? 1,
+        episode: entry.episode ?? entry.absoluteEpisode ?? 1,
       })),
   );
   const nextReadyByTitle = new Map<string, { season: number; episode: number; jobId?: string }>();
@@ -286,7 +287,7 @@ function readCachedHistoryProjections(
           nextRelease &&
           nextRelease.season !== undefined &&
           nextRelease.episode !== undefined &&
-          entry.type === "series"
+          historyContentType(entry) === "series"
             ? {
                 season: nextRelease.season,
                 episode: nextRelease.episode,
@@ -709,7 +710,11 @@ export function RootOverlayShell({
         setAsyncLines(buildHistoryPanelLines(historyEntries));
         setHistoryNextReleases(nextReleases);
         setHistoryProjections(projections);
-        enqueueReleaseReconciliation(container, historyEntries, "history");
+        enqueueReleaseReconciliation(
+          container,
+          historyEntries.map(([, entry]) => entry),
+          "history",
+        );
         return undefined;
       })
       .finally(() => {
@@ -860,9 +865,9 @@ export function RootOverlayShell({
               ...historySelection.entry,
               season: historySelection.targetEpisode.season,
               episode: historySelection.targetEpisode.episode,
-              timestamp:
+              positionSeconds:
                 historySelection.targetEpisode.reason === "resume"
-                  ? historySelection.entry.timestamp
+                  ? historySelection.entry.positionSeconds
                   : 0,
               completed:
                 historySelection.targetEpisode.reason === "resume"

@@ -160,6 +160,33 @@ export class HistoryRepository {
   }
 }
 
+/**
+ * Project a fully-materialized {@link HistoryProgress} row back into the
+ * {@link HistoryProgressInput} shape accepted by {@link HistoryRepository.upsertProgress}.
+ * Use when a caller holds a canonical row (e.g. just edited one in memory) and
+ * needs to persist it without re-deriving each field by hand.
+ */
+export function historyProgressToInput(progress: HistoryProgress): HistoryProgressInput {
+  return {
+    title: {
+      id: progress.titleId,
+      kind: progress.mediaKind,
+      title: progress.title,
+      externalIds: progress.externalIds,
+    },
+    episode: {
+      season: progress.season,
+      episode: progress.episode,
+      absoluteEpisode: progress.absoluteEpisode,
+    },
+    positionSeconds: progress.positionSeconds,
+    durationSeconds: progress.durationSeconds,
+    completed: progress.completed,
+    providerId: progress.providerId,
+    updatedAt: progress.updatedAt,
+  };
+}
+
 export function createHistoryKey(
   title: Pick<TitleIdentity, "id" | "kind">,
   episode?: EpisodeIdentity,

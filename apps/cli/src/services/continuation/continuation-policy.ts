@@ -1,5 +1,5 @@
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
-import { isFinished } from "@/services/persistence/HistoryStore";
+import { isFinished } from "@/services/continuation/history-progress";
+import type { HistoryProgress } from "@kunai/storage";
 
 export type ContinuationNextRelease = {
   readonly season: number;
@@ -33,7 +33,7 @@ export type ContinuationProjection = (
       readonly title: string;
       readonly season: number;
       readonly episode: number;
-      readonly sourceEntry: HistoryEntry;
+      readonly sourceEntry: HistoryProgress;
     }
   | {
       readonly kind: "offline-ready";
@@ -41,7 +41,7 @@ export type ContinuationProjection = (
       readonly title: string;
       readonly season: number;
       readonly episode: number;
-      readonly sourceEntry: HistoryEntry;
+      readonly sourceEntry: HistoryProgress;
     }
   | {
       readonly kind: "next-released";
@@ -49,7 +49,7 @@ export type ContinuationProjection = (
       readonly title: string;
       readonly season: number;
       readonly episode: number;
-      readonly sourceEntry: HistoryEntry;
+      readonly sourceEntry: HistoryProgress;
     }
   | {
       readonly kind: "upcoming";
@@ -58,13 +58,13 @@ export type ContinuationProjection = (
       readonly season: number;
       readonly episode: number;
       readonly availableAt?: string;
-      readonly sourceEntry: HistoryEntry;
+      readonly sourceEntry: HistoryProgress;
     }
   | {
       readonly kind: "up-to-date";
       readonly titleId: string;
       readonly title: string;
-      readonly sourceEntry: HistoryEntry;
+      readonly sourceEntry: HistoryProgress;
     }
   | {
       readonly kind: "empty";
@@ -75,7 +75,7 @@ export type ContinuationProjection = (
 
 export function projectContinuationState(input: {
   readonly titleId: string;
-  readonly entries: readonly [string, HistoryEntry][];
+  readonly entries: readonly [string, HistoryProgress][];
   readonly nextRelease?: ContinuationNextRelease | null;
   readonly releaseProgress?: { readonly newEpisodeCount: number; readonly stale?: boolean } | null;
   readonly offline?: {
@@ -97,18 +97,21 @@ export function projectContinuationState(input: {
   const latest = entries[0];
   if (!latest) return { kind: "empty", titleId: input.titleId };
 
+  const latestSeason = latest.season ?? 1;
+  const latestEpisode = latest.episode ?? latest.absoluteEpisode ?? 1;
+
   if (!isFinished(latest)) {
     return enrichProjection(
       {
         kind: "resume-unfinished",
         titleId: input.titleId,
         title: latest.title,
-        season: latest.season,
-        episode: latest.episode,
+        season: latestSeason,
+        episode: latestEpisode,
         sourceEntry: latest,
       },
       input,
-      { kind: "resume", season: latest.season, episode: latest.episode },
+      { kind: "resume", season: latestSeason, episode: latestEpisode },
     );
   }
 
@@ -201,14 +204,16 @@ function enrichProjection<T extends ContinuationProjection>(
 
 function isEpisodeAfter(
   episode: { readonly season: number; readonly episode: number },
-  history: HistoryEntry,
+  history: HistoryProgress,
 ): boolean {
+  const historySeason = history.season ?? 1;
+  const historyEpisode = history.episode ?? history.absoluteEpisode ?? 1;
   return (
-    episode.season > history.season ||
-    (episode.season === history.season && episode.episode > history.episode)
+    episode.season > historySeason ||
+    (episode.season === historySeason && episode.episode > historyEpisode)
   );
 }
 
-function compareHistoryEntryRecency(left: HistoryEntry, right: HistoryEntry): number {
-  return (Date.parse(right.watchedAt) || 0) - (Date.parse(left.watchedAt) || 0);
+function compareHistoryEntryRecency(left: HistoryProgress, right: HistoryProgress): number {
+  return (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0);
 }

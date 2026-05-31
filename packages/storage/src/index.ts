@@ -14,7 +14,11 @@ export type { KunaiPathOptions, KunaiPaths, StoragePlatform } from "./paths";
 export { openKunaiDatabase } from "./sqlite";
 export type { KunaiDatabase, OpenDatabaseOptions } from "./sqlite";
 export { defaultTtlMsByClass, getDefaultTtlMs, getExpiresAt, isExpired } from "./ttl";
-export { createHistoryKey, HistoryRepository } from "./repositories/history";
+export {
+  createHistoryKey,
+  historyProgressToInput,
+  HistoryRepository,
+} from "./repositories/history";
 export type { HistoryProgress, HistoryProgressInput } from "./repositories/history";
 export { DownloadJobsRepository } from "./repositories/download-jobs";
 export type {

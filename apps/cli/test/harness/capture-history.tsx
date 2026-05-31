@@ -1,35 +1,38 @@
 import { HistoryShell } from "@/app-shell/history-shell";
 import { buildHistoryView } from "@/app-shell/history-view";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 import React from "react";
 
 import { captureSurface } from "./render-capture";
 
-function entry(patch: Partial<HistoryEntry> = {}): HistoryEntry {
+function entry(patch: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
+    key: "k",
+    titleId: "x",
     title: "Frieren: Beyond Journey's End",
-    type: "series",
+    mediaKind: "series",
     season: 1,
     episode: 28,
-    timestamp: 720,
-    duration: 1440,
+    positionSeconds: 720,
+    durationSeconds: 1440,
     completed: false,
-    provider: "allanime",
-    watchedAt: "2026-05-27T10:00:00.000Z",
+    providerId: "allanime",
+    updatedAt: "2026-05-27T10:00:00.000Z",
+    createdAt: "2026-05-27T10:00:00.000Z",
     ...patch,
   };
 }
 
-const entries: [string, HistoryEntry][] = [
+const entries: [string, HistoryProgress][] = [
   ["tmdb:1", entry()],
   [
     "tmdb:2",
     entry({
       title: "Blue Lock",
       episode: 14,
-      timestamp: 0,
-      duration: 1440,
-      watchedAt: "2026-05-20T10:00:00.000Z",
+      positionSeconds: 0,
+      durationSeconds: 1440,
+      updatedAt: "2026-05-20T10:00:00.000Z",
     }),
   ],
 ];

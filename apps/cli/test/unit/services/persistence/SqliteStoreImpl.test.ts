@@ -27,27 +27,30 @@ describe("SqliteHistoryStoreImpl", () => {
   test("persists and returns latest title progress", async () => {
     const db = openTempDb("history.sqlite");
     runMigrations(db, "data");
-    const store = new SqliteHistoryStoreImpl(new HistoryRepository(db));
+    const repository = new HistoryRepository(db);
+    const store = new SqliteHistoryStoreImpl(repository);
 
-    await store.save("tmdb:1", {
-      title: "Example",
-      type: "series",
-      externalIds: { tmdbId: "1", imdbId: "tt123" },
-      season: 1,
-      episode: 2,
-      timestamp: 120,
-      duration: 1200,
+    repository.upsertProgress({
+      title: {
+        id: "tmdb:1",
+        kind: "series",
+        title: "Example",
+        externalIds: { tmdbId: "1", imdbId: "tt123" },
+      },
+      episode: { season: 1, episode: 2 },
+      positionSeconds: 120,
+      durationSeconds: 1200,
       completed: false,
-      provider: "vidking",
-      watchedAt: "2026-04-29T00:00:00.000Z",
+      providerId: "vidking",
+      updatedAt: "2026-04-29T00:00:00.000Z",
     });
 
     await expect(store.get("tmdb:1")).resolves.toMatchObject({
       title: "Example",
       season: 1,
       episode: 2,
-      timestamp: 120,
-      provider: "vidking",
+      positionSeconds: 120,
+      providerId: "vidking",
       externalIds: { tmdbId: "1", imdbId: "tt123" },
     });
 
@@ -55,16 +58,14 @@ describe("SqliteHistoryStoreImpl", () => {
     expect(all["tmdb:1"]?.episode).toBe(2);
     expect(all["tmdb:1"]?.completed).toBe(false);
 
-    await store.save("tmdb:1", {
-      title: "Example",
-      type: "series",
-      season: 1,
-      episode: 3,
-      timestamp: 1200,
-      duration: 1200,
+    repository.upsertProgress({
+      title: { id: "tmdb:1", kind: "series", title: "Example" },
+      episode: { season: 1, episode: 3 },
+      positionSeconds: 1200,
+      durationSeconds: 1200,
       completed: true,
-      provider: "vidking",
-      watchedAt: "2026-04-30T00:00:00.000Z",
+      providerId: "vidking",
+      updatedAt: "2026-04-30T00:00:00.000Z",
     });
 
     await expect(store.listByTitle("tmdb:1")).resolves.toMatchObject([
@@ -78,30 +79,27 @@ describe("SqliteHistoryStoreImpl", () => {
   test("keeps per-episode progress while getAll reflects the latest touched episode", async () => {
     const db = openTempDb("history.sqlite");
     runMigrations(db, "data");
-    const store = new SqliteHistoryStoreImpl(new HistoryRepository(db));
+    const repository = new HistoryRepository(db);
+    const store = new SqliteHistoryStoreImpl(repository);
 
-    await store.save("tmdb:1", {
-      title: "Example",
-      type: "series",
-      season: 1,
-      episode: 7,
-      timestamp: 600,
-      duration: 1200,
+    repository.upsertProgress({
+      title: { id: "tmdb:1", kind: "series", title: "Example" },
+      episode: { season: 1, episode: 7 },
+      positionSeconds: 600,
+      durationSeconds: 1200,
       completed: false,
-      provider: "vidking",
-      watchedAt: "2026-04-29T00:00:00.000Z",
+      providerId: "vidking",
+      updatedAt: "2026-04-29T00:00:00.000Z",
     });
 
-    await store.save("tmdb:1", {
-      title: "Example",
-      type: "series",
-      season: 1,
-      episode: 6,
-      timestamp: 1200,
-      duration: 1200,
+    repository.upsertProgress({
+      title: { id: "tmdb:1", kind: "series", title: "Example" },
+      episode: { season: 1, episode: 6 },
+      positionSeconds: 1200,
+      durationSeconds: 1200,
       completed: true,
-      provider: "vidking",
-      watchedAt: "2026-04-30T00:00:00.000Z",
+      providerId: "vidking",
+      updatedAt: "2026-04-30T00:00:00.000Z",
     });
 
     const all = await store.getAll();

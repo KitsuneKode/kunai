@@ -3,12 +3,17 @@ import { expect, test } from "bun:test";
 import { projectContinuationState } from "@/services/continuation/continuation-policy";
 
 const baseEntry = {
+  key: "k",
+  titleId: "tmdb:1",
   title: "Weekly Show",
-  type: "series" as const,
+  mediaKind: "series" as const,
   season: 1,
-  provider: "vidking",
-  duration: 1200,
-  watchedAt: "2026-05-10T00:00:00.000Z",
+  positionSeconds: 0,
+  durationSeconds: 1200,
+  completed: false,
+  providerId: "vidking",
+  updatedAt: "2026-05-10T00:00:00.000Z",
+  createdAt: "2026-05-10T00:00:00.000Z",
 };
 
 test("continuation policy resumes the most-recent episode when it is unfinished", () => {
@@ -20,9 +25,9 @@ test("continuation policy resumes the most-recent episode when it is unfinished"
         {
           ...baseEntry,
           episode: 6,
-          timestamp: 120,
+          positionSeconds: 120,
           completed: false,
-          watchedAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z",
         },
       ],
       [
@@ -30,9 +35,9 @@ test("continuation policy resumes the most-recent episode when it is unfinished"
         {
           ...baseEntry,
           episode: 5,
-          timestamp: 1200,
+          positionSeconds: 1200,
           completed: true,
-          watchedAt: "2026-05-11T00:00:00.000Z",
+          updatedAt: "2026-05-11T00:00:00.000Z",
         },
       ],
     ],
@@ -55,9 +60,9 @@ test("continuation policy does NOT resume an older abandoned episode when the mo
         {
           ...baseEntry,
           episode: 6,
-          timestamp: 1200,
+          positionSeconds: 1200,
           completed: true,
-          watchedAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z",
         },
       ],
       [
@@ -65,9 +70,9 @@ test("continuation policy does NOT resume an older abandoned episode when the mo
         {
           ...baseEntry,
           episode: 5,
-          timestamp: 120,
+          positionSeconds: 120,
           completed: false,
-          watchedAt: "2026-05-11T00:00:00.000Z",
+          updatedAt: "2026-05-11T00:00:00.000Z",
         },
       ],
     ],
@@ -80,7 +85,7 @@ test("continuation policy does NOT resume an older abandoned episode when the mo
 });
 
 test("continuation policy offers the newly released next episode without mutating watched history", () => {
-  const completedEpisodeFive = { ...baseEntry, episode: 5, timestamp: 1200, completed: true };
+  const completedEpisodeFive = { ...baseEntry, episode: 5, positionSeconds: 1200, completed: true };
   const projection = projectContinuationState({
     titleId: "tmdb:1",
     entries: [["tmdb:1", completedEpisodeFive]],
@@ -104,7 +109,7 @@ test("continuation policy offers the newly released next episode without mutatin
 test("continuation policy reports upcoming next episode without autoplaying it", () => {
   const projection = projectContinuationState({
     titleId: "tmdb:1",
-    entries: [["tmdb:1", { ...baseEntry, episode: 5, timestamp: 1200, completed: true }]],
+    entries: [["tmdb:1", { ...baseEntry, episode: 5, positionSeconds: 1200, completed: true }]],
     nextRelease: {
       season: 1,
       episode: 6,
@@ -124,7 +129,7 @@ test("continuation policy reports upcoming next episode without autoplaying it",
 test("continuation policy prefers ready offline continuation while retaining catalog new count", () => {
   const projection = projectContinuationState({
     titleId: "tmdb:1",
-    entries: [["tmdb:1", { ...baseEntry, episode: 5, timestamp: 1200, completed: true }]],
+    entries: [["tmdb:1", { ...baseEntry, episode: 5, positionSeconds: 1200, completed: true }]],
     releaseProgress: { newEpisodeCount: 3 },
     offline: { enrolled: true, readyNextEpisodes: [{ season: 1, episode: 6, jobId: "job-6" }] },
   });

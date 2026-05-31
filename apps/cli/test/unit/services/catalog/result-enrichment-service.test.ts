@@ -5,7 +5,7 @@ import {
   ResultEnrichmentService,
   buildResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
 function result(patch: Partial<SearchResult> = {}): SearchResult {
   return {
@@ -19,17 +19,20 @@ function result(patch: Partial<SearchResult> = {}): SearchResult {
   };
 }
 
-function history(patch: Partial<HistoryEntry> = {}): HistoryEntry {
+function history(patch: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
+    key: "k",
+    titleId: "x",
     title: "Demo",
-    type: "series",
+    mediaKind: "series",
     season: 1,
     episode: 1,
-    timestamp: 1_200,
-    duration: 1_200,
+    positionSeconds: 1_200,
+    durationSeconds: 1_200,
     completed: true,
-    provider: "vidking",
-    watchedAt: "2026-05-14T00:00:00.000Z",
+    providerId: "vidking",
+    updatedAt: "2026-05-14T00:00:00.000Z",
+    createdAt: "2026-05-14T00:00:00.000Z",
     ...patch,
   };
 }
@@ -61,7 +64,7 @@ describe("ResultEnrichmentService", () => {
   test("keeps enrichment non-blocking when one source fails", async () => {
     const service = new ResultEnrichmentService({
       historyStore: {
-        getAll: async () => ({ "title-1": history({ completed: false, timestamp: 300 }) }),
+        getAll: async () => ({ "title-1": history({ completed: false, positionSeconds: 300 }) }),
       },
       offlineLibraryService: {
         peekRecordedArtifactStatuses: async () => {
@@ -87,8 +90,8 @@ describe("ResultEnrichmentService", () => {
           completed: false,
           season: 2,
           episode: 7,
-          timestamp: 1_800,
-          duration: 3_600,
+          positionSeconds: 1_800,
+          durationSeconds: 3_600,
         }),
       }).badges,
     ).toEqual([{ label: "continue S02E07 · 30:00 (50%)", tone: "warning" }]);

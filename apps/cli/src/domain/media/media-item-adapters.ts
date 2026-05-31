@@ -1,16 +1,20 @@
 import type { SearchResult } from "@/domain/types";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import { historyContentType } from "@/services/continuation/history-progress";
+import type { HistoryProgress } from "@kunai/storage";
 
 import type { MediaItemIdentity } from "./media-item-identity";
 
-export function mediaItemFromHistoryEntry(titleId: string, entry: HistoryEntry): MediaItemIdentity {
+export function mediaItemFromHistoryEntry(
+  titleId: string,
+  entry: HistoryProgress,
+): MediaItemIdentity {
   return {
-    mediaKind: entry.type,
+    mediaKind: historyContentType(entry),
     titleId,
     title: entry.title,
-    season: entry.season,
-    episode: entry.episode,
-    providerHints: [{ providerId: entry.provider }],
+    season: entry.season ?? 1,
+    episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+    providerHints: [{ providerId: entry.providerId ?? "unknown" }],
   };
 }
 

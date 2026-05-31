@@ -3,11 +3,9 @@ import { isCalendarSearchResult } from "@/app/calendar-results";
 import type { ListService } from "@/domain/lists/ListService";
 import type { SearchResult, TitleAliasKind } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
-import {
-  formatTimestamp,
-  isFinished,
-  type HistoryEntry,
-} from "@/services/persistence/HistoryStore";
+import { historyContentType, isFinished } from "@/services/continuation/history-progress";
+import { formatTimestamp } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
 
@@ -62,16 +60,16 @@ function toCalendarBrowseOption(
   };
 }
 
-function buildHistoryBadge(entry: HistoryEntry | null | undefined): string | undefined {
+function buildHistoryBadge(entry: HistoryProgress | null | undefined): string | undefined {
   if (!entry) return undefined;
   const ep =
-    entry.type === "series"
-      ? `S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
+    historyContentType(entry) === "series"
+      ? `S${String(entry.season ?? 1).padStart(2, "0")}E${String(entry.episode ?? entry.absoluteEpisode ?? 1).padStart(2, "0")}`
       : null;
   if (isFinished(entry)) {
     return ep ? `Watched · ${ep}` : "Watched";
   }
-  const ts = entry.timestamp > 10 ? formatTimestamp(entry.timestamp) : null;
+  const ts = entry.positionSeconds > 10 ? formatTimestamp(entry.positionSeconds) : null;
   if (ep && ts) return `Resume · ${ep} · ${ts}`;
   if (ep) return `Started · ${ep}`;
   return "In progress";
@@ -79,7 +77,7 @@ function buildHistoryBadge(entry: HistoryEntry | null | undefined): string | und
 
 export function toBrowseResultOption(
   result: SearchResult,
-  historyEntry?: HistoryEntry | null,
+  historyEntry?: HistoryProgress | null,
   titlePreference: TitleAliasKind | "provider" = "provider",
   enrichment?: ResultEnrichment | null,
   listService?: ListService,

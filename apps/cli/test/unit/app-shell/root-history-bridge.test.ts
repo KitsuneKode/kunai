@@ -7,19 +7,22 @@ import {
   releaseProgressToContinueHistoryRelease,
 } from "@/app-shell/root-history-bridge";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
-function seriesEntry(partial: Partial<HistoryEntry> = {}): HistoryEntry {
+function seriesEntry(partial: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
+    key: "k",
+    titleId: "x",
     title: "Test Anime",
-    type: "series",
+    mediaKind: "series",
     season: 1,
     episode: 5,
-    timestamp: 1200,
-    duration: 1400,
-    watchedAt: new Date().toISOString(),
+    positionSeconds: 1200,
+    durationSeconds: 1400,
+    updatedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     completed: true,
-    provider: "allanime",
+    providerId: "allanime",
     ...partial,
   };
 }

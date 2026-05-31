@@ -1,19 +1,22 @@
 import { describe, expect, test } from "bun:test";
 
 import { reconcileContinueHistory } from "@/domain/continuation/history-reconciliation";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
-function history(patch: Partial<HistoryEntry> = {}): HistoryEntry {
+function history(patch: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
+    key: "k",
+    titleId: "tmdb:1",
     title: "Demo",
-    type: "series",
+    mediaKind: "series",
     season: 1,
     episode: 5,
-    timestamp: 1_800,
-    duration: 1_800,
+    positionSeconds: 1_800,
+    durationSeconds: 1_800,
     completed: true,
-    provider: "vidking",
-    watchedAt: "2026-05-10T00:00:00.000Z",
+    providerId: "vidking",
+    updatedAt: "2026-05-10T00:00:00.000Z",
+    createdAt: "2026-05-10T00:00:00.000Z",
     ...patch,
   };
 }
@@ -28,11 +31,11 @@ describe("history reconciliation", () => {
           history({
             episode: 6,
             completed: false,
-            timestamp: 600,
-            watchedAt: "2026-05-12T00:00:00.000Z",
+            positionSeconds: 600,
+            updatedAt: "2026-05-12T00:00:00.000Z",
           }),
         ],
-        ["tmdb:1", history({ episode: 5, watchedAt: "2026-05-11T00:00:00.000Z" })],
+        ["tmdb:1", history({ episode: 5, updatedAt: "2026-05-11T00:00:00.000Z" })],
       ],
     });
 
@@ -49,14 +52,14 @@ describe("history reconciliation", () => {
     const decision = reconcileContinueHistory({
       titleId: "tmdb:1",
       entries: [
-        ["tmdb:1", history({ episode: 6, completed: true, watchedAt: "2026-05-12T00:00:00.000Z" })],
+        ["tmdb:1", history({ episode: 6, completed: true, updatedAt: "2026-05-12T00:00:00.000Z" })],
         [
           "tmdb:1",
           history({
             episode: 5,
             completed: false,
-            timestamp: 600,
-            watchedAt: "2026-05-11T00:00:00.000Z",
+            positionSeconds: 600,
+            updatedAt: "2026-05-11T00:00:00.000Z",
           }),
         ],
       ],

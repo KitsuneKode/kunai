@@ -30,7 +30,10 @@ import {
 import type { EpisodePickerOption, StreamInfo, TitleInfo } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
-import { isFinished as isProgressFinished } from "@/services/continuation/history-progress";
+import {
+  historyContentType,
+  isFinished as isProgressFinished,
+} from "@/services/continuation/history-progress";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
 import {
@@ -57,7 +60,6 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   formatTimestamp,
   isFinished,
-  type HistoryEntry,
   type HistoryStore,
 } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
@@ -66,7 +68,10 @@ import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
 import {
   getKunaiPaths,
+  historyProgressToInput,
   type DownloadJobRecord,
+  type HistoryProgress,
+  type HistoryRepository,
   type ReleaseProgressCacheRepository,
 } from "@kunai/storage";
 
@@ -305,12 +310,18 @@ export async function runSetupWizard({
   return outcome === "completed" ? "completed" : "skipped";
 }
 
-function formatHistoryLabel(entry: HistoryEntry, newEpisodeCount = 0): string {
-  const projected = projectWatchProgress(entry);
+function formatHistoryLabel(entry: HistoryProgress, newEpisodeCount = 0): string {
+  const projected = projectWatchProgress({
+    timestamp: entry.positionSeconds,
+    duration: entry.durationSeconds,
+    completed: entry.completed,
+  });
   const progress =
-    projected.percentage !== null ? `${projected.percentage}%` : formatTimestamp(entry.timestamp);
-  if (entry.type === "series") {
-    const epLabel = `S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`;
+    projected.percentage !== null
+      ? `${projected.percentage}%`
+      : formatTimestamp(entry.positionSeconds);
+  if (historyContentType(entry) === "series") {
+    const epLabel = `S${String(entry.season ?? 1).padStart(2, "0")}E${String(entry.episode ?? entry.absoluteEpisode ?? 1).padStart(2, "0")}`;
     const newLabel = newEpisodeCount > 0 ? `  ·  +${newEpisodeCount} new` : "";
     return `${entry.title}  ·  ${epLabel}  ·  ${progress}${newLabel}`;
   }
@@ -329,10 +340,10 @@ function relativeHistoryDate(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString(undefined, { year: "numeric", month: "short" });
 }
 
-function formatHistoryDetail(entry: HistoryEntry, newEpisodeCount = 0): string {
-  const watched = relativeHistoryDate(entry.watchedAt);
+function formatHistoryDetail(entry: HistoryProgress, newEpisodeCount = 0): string {
+  const watched = relativeHistoryDate(entry.updatedAt);
   const finishedLabel = isFinished(entry) && newEpisodeCount === 0 ? "  ·  up to date" : "";
-  return `${watched}${finishedLabel}  ·  provider ${entry.provider}`;
+  return `${watched}${finishedLabel}  ·  provider ${entry.providerId ?? "unknown"}`;
 }
 
 function describeDownloadJob(job: DownloadJobRecord): string {
@@ -341,6 +352,7 @@ function describeDownloadJob(job: DownloadJobRecord): string {
 
 async function openHistoryShell(
   historyStore: HistoryStore,
+  historyRepository: HistoryRepository | undefined,
   actionContext?: ListShellActionContext,
   releaseProgressCache?: ReleaseProgressCacheReader,
   stateManager?: import("@/domain/session/SessionStateManager").SessionStateManager,
@@ -349,7 +361,7 @@ async function openHistoryShell(
   while (true) {
     const entries = Object.entries(await historyStore.getAll()).sort(
       (a, b) =>
-        (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
+        (new Date(b[1].updatedAt).getTime() || 0) - (new Date(a[1].updatedAt).getTime() || 0),
     );
 
     // Build new-episode counts from the local reconciliation cache only.
@@ -357,7 +369,7 @@ async function openHistoryShell(
     const releaseProgress = releaseProgressCache?.getByTitleIds(entries.map(([id]) => id));
     if (releaseProgress) {
       for (const [id, entry] of entries) {
-        if (entry.type !== "series") continue;
+        if (historyContentType(entry) !== "series") continue;
         const projection = releaseProgress.get(id);
         if (!projection || projection.status !== "new-episodes") continue;
         if (projection.newEpisodeCount > 0) newEpisodeCounts.set(id, projection.newEpisodeCount);
@@ -368,7 +380,12 @@ async function openHistoryShell(
       ...entries.map(([id, entry]) => {
         const newCount = newEpisodeCounts.get(id) ?? 0;
         return {
-          value: { type: "entry" as const, id, title: entry.title, entryType: entry.type },
+          value: {
+            type: "entry" as const,
+            id,
+            title: entry.title,
+            entryType: historyContentType(entry),
+          },
           label: formatHistoryLabel(entry, newCount),
           detail: formatHistoryDetail(entry, newCount),
         };
@@ -456,15 +473,18 @@ async function openHistoryShell(
       subtitle: formatHistoryDetail(
         // Re-fetch latest entry for the subtitle
         (await historyStore.get(picked.id)) ?? {
+          key: "",
+          titleId: picked.id,
+          mediaKind: picked.entryType,
           title: picked.title,
-          type: picked.entryType,
           season: 1,
           episode: 1,
-          timestamp: 0,
-          duration: 0,
+          positionSeconds: 0,
+          durationSeconds: 0,
           completed: false,
-          provider: "",
-          watchedAt: new Date(0).toISOString(),
+          providerId: "",
+          updatedAt: new Date(0).toISOString(),
+          createdAt: new Date(0).toISOString(),
         },
         newEpisodeCounts.get(picked.id) ?? 0,
       ),
@@ -491,9 +511,11 @@ async function openHistoryShell(
           titleId: picked.id,
           title: picked.title,
           mediaKind: picked.entryType,
-          season: entry?.season,
+          season: entry ? (entry.season ?? 1) : undefined,
           episode:
-            entry?.episode !== undefined && entry.type === "series" ? entry.episode + 1 : undefined,
+            entry?.episode !== undefined && historyContentType(entry) === "series"
+              ? entry.episode + 1
+              : undefined,
         },
         { placement: "end", source: "history" },
       );
@@ -502,8 +524,8 @@ async function openHistoryShell(
 
     if (action === "mark-watched") {
       const latest = await historyStore.get(picked.id);
-      if (latest) {
-        await historyStore.save(picked.id, markEntryWatched(latest));
+      if (latest && historyRepository) {
+        historyRepository.upsertProgress(historyProgressToInput(markEntryWatched(latest)));
         stateManager?.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
           note: `Marked ${picked.title} as watched.`,
@@ -537,7 +559,7 @@ async function openEpisodeHistoryShell(
   if (allEpisodes.length === 0) return;
 
   // Sort newest first
-  const sorted = [...allEpisodes].sort((a, b) => Date.parse(b.watchedAt) - Date.parse(a.watchedAt));
+  const sorted = [...allEpisodes].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 
   const options: ShellOption<number>[] = sorted.map((ep, i) => {
     const epCode =
@@ -546,15 +568,21 @@ async function openEpisodeHistoryShell(
         : typeof ep.episode === "number"
           ? `Episode ${ep.episode}`
           : "Unknown episode";
-    const projected = projectWatchProgress(ep);
+    const projected = projectWatchProgress({
+      timestamp: ep.positionSeconds,
+      duration: ep.durationSeconds,
+      completed: ep.completed,
+    });
     const pct =
-      projected.percentage !== null ? `${projected.percentage}%` : formatTimestamp(ep.timestamp);
+      projected.percentage !== null
+        ? `${projected.percentage}%`
+        : formatTimestamp(ep.positionSeconds);
     const statusLabel = isFinished(ep) ? "✓ watched" : pct;
-    const dateLabel = relativeHistoryDate(ep.watchedAt);
+    const dateLabel = relativeHistoryDate(ep.updatedAt);
     return {
       value: i,
       label: epCode,
-      detail: `${statusLabel} · ${dateLabel} · via ${ep.provider}`,
+      detail: `${statusLabel} · ${dateLabel} · via ${ep.providerId ?? "unknown"}`,
     };
   });
 
@@ -1322,14 +1350,16 @@ const withOverlay = async <T>(
 };
 
 async function handleHistory(container: Container): Promise<"handled"> {
-  const { stateManager, historyStore, releaseProgressCache, queueService } = container;
+  const { stateManager, historyStore, historyRepository, releaseProgressCache, queueService } =
+    container;
   void historyStore.getAll().then((history) => {
-    enqueueReleaseReconciliation(container, Object.entries(history), "history");
+    enqueueReleaseReconciliation(container, Object.values(history), "history");
     return undefined;
   });
   await withOverlay(stateManager, { type: "history" }, () =>
     openHistoryShell(
       historyStore,
+      historyRepository,
       buildPickerActionContext({ container, taskLabel: "Watch history" }),
       releaseProgressCache,
       stateManager,
@@ -2317,6 +2347,7 @@ export async function openSettingsShell({
       if (historyStore)
         await openHistoryShell(
           historyStore,
+          container?.historyRepository,
           actionContext,
           container?.releaseProgressCache,
           container?.stateManager,
@@ -2762,20 +2793,24 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
       const latest = history[item.titleId];
       if (!latest) continue;
       const epCode =
-        latest.type === "series" && latest.season && latest.episode
+        historyContentType(latest) === "series" && latest.season && latest.episode
           ? `S${String(latest.season).padStart(2, "0")}E${String(latest.episode).padStart(2, "0")}`
           : null;
-      const progress = projectWatchProgress(latest);
+      const progress = projectWatchProgress({
+        timestamp: latest.positionSeconds,
+        duration: latest.durationSeconds,
+        completed: latest.completed,
+      });
       const statusLabel = isFinished(latest)
         ? "watched"
         : progress.percentage !== null
           ? `${progress.percentage}%`
           : "in progress";
-      const dateLabel = relativeHistoryDate(latest.watchedAt);
+      const dateLabel = relativeHistoryDate(latest.updatedAt);
       progressMap.set(item.titleId, [epCode, statusLabel, dateLabel].filter(Boolean).join(" · "));
 
       // Compute next episode to watch (last watched + 1 for series)
-      if (latest.type === "series" && latest.season && latest.episode) {
+      if (historyContentType(latest) === "series" && latest.season && latest.episode) {
         const nextEp = isFinished(latest)
           ? `S${String(latest.season).padStart(2, "0")}E${String(latest.episode + 1).padStart(2, "0")}`
           : epCode;

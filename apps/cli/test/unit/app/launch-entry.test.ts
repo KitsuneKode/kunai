@@ -8,19 +8,22 @@ import {
   selectLocalContinueCandidate,
   titleFromHistorySelection,
 } from "@/app/launch-entry";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
+import type { HistoryProgress } from "@kunai/storage";
 
-function history(patch: Partial<HistoryEntry> = {}): HistoryEntry {
+function history(patch: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
+    key: "k",
+    titleId: "demo",
     title: "Demo Show",
-    type: "series",
+    mediaKind: "series",
     season: 1,
     episode: 2,
-    timestamp: 600,
-    duration: 1800,
+    positionSeconds: 600,
+    durationSeconds: 1800,
     completed: false,
-    provider: "vidsrc",
-    watchedAt: "2026-05-14T08:00:00.000Z",
+    providerId: "vidsrc",
+    updatedAt: "2026-05-14T08:00:00.000Z",
+    createdAt: "2026-05-14T08:00:00.000Z",
     ...patch,
   };
 }
@@ -31,15 +34,15 @@ describe("launch entry helpers", () => {
       "finished-newer": history({
         title: "Finished",
         completed: true,
-        watchedAt: "2026-05-14T10:00:00.000Z",
+        updatedAt: "2026-05-14T10:00:00.000Z",
       }),
       "unfinished-older": history({
         title: "Older",
-        watchedAt: "2026-05-14T07:00:00.000Z",
+        updatedAt: "2026-05-14T07:00:00.000Z",
       }),
       "unfinished-newer": history({
         title: "Newer",
-        watchedAt: "2026-05-14T09:00:00.000Z",
+        updatedAt: "2026-05-14T09:00:00.000Z",
       }),
     });
 
@@ -57,10 +60,10 @@ describe("launch entry helpers", () => {
           title: "Demo Show",
           season: 1,
           episode: 6,
-          timestamp: 1800,
-          duration: 1800,
+          positionSeconds: 1800,
+          durationSeconds: 1800,
           completed: true,
-          watchedAt: "2026-05-14T10:00:00.000Z",
+          updatedAt: "2026-05-14T10:00:00.000Z",
         }),
       ],
       [
@@ -69,10 +72,10 @@ describe("launch entry helpers", () => {
           title: "Demo Show",
           season: 1,
           episode: 7,
-          timestamp: 600,
-          duration: 1800,
+          positionSeconds: 600,
+          durationSeconds: 1800,
           completed: false,
-          watchedAt: "2026-05-14T09:00:00.000Z",
+          updatedAt: "2026-05-14T09:00:00.000Z",
         }),
       ],
     ]);
@@ -87,7 +90,7 @@ describe("launch entry helpers", () => {
     expect(
       titleFromHistorySelection({
         titleId: "tmdb:1399",
-        entry: history({ title: "Game of Thrones", type: "series" }),
+        entry: history({ title: "Game of Thrones", mediaKind: "series" }),
       }),
     ).toEqual({
       id: "tmdb:1399",
@@ -140,7 +143,7 @@ describe("launch entry helpers", () => {
       {
         titleId: "tmdb:123",
         entry: history({
-          provider: "rivestream",
+          providerId: "rivestream",
           season: 1,
           episode: 5,
         }),
@@ -191,7 +194,7 @@ describe("launch entry helpers", () => {
       {
         titleId: "anilist:123",
         entry: history({
-          provider: "allanime",
+          providerId: "allanime",
           season: 1,
           episode: 6,
           completed: true,

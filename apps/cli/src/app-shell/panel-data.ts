@@ -7,16 +7,18 @@ import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
+import { historyContentType } from "@/services/continuation/history-progress";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory";
 import { resolveDownloadFeatureState } from "@/services/download/DownloadFeature";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { formatTimestamp, type HistoryEntry } from "@/services/persistence/HistoryStore";
+import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { describePresenceConfiguration } from "@/services/presence/PresenceServiceImpl";
 import type { CapabilitySnapshot } from "@/ui";
+import type { HistoryProgress } from "@kunai/storage";
 import type { NotificationRecord } from "@kunai/storage";
 
 import { describeHistoryReturnLoopDetail } from "./root-history-bridge";
@@ -730,12 +732,16 @@ export function renderHistoryProgressBar(percentage: number): string {
   return `[${"█".repeat(filledBlocks)}${"░".repeat(emptyBlocks)}]`;
 }
 
-function historyProgressDetails(entry: HistoryEntry): {
+function historyProgressDetails(entry: HistoryProgress): {
   percentage: number | null;
   text: string;
   bar: string | null;
 } {
-  const progress = projectWatchProgress(entry);
+  const progress = projectWatchProgress({
+    timestamp: entry.positionSeconds,
+    duration: entry.durationSeconds,
+    completed: entry.completed,
+  });
   if (progress.completed) {
     return {
       percentage: 100,
@@ -755,11 +761,11 @@ function historyProgressDetails(entry: HistoryEntry): {
 }
 
 function sortHistoryEntries(
-  historyEntries: ReadonlyArray<[string, HistoryEntry]>,
-): readonly [string, HistoryEntry][] {
+  historyEntries: ReadonlyArray<[string, HistoryProgress]>,
+): readonly [string, HistoryProgress][] {
   return [...historyEntries].sort(
-    (a: [string, HistoryEntry], b: [string, HistoryEntry]) =>
-      (new Date(b[1].watchedAt).getTime() || 0) - (new Date(a[1].watchedAt).getTime() || 0),
+    (a: [string, HistoryProgress], b: [string, HistoryProgress]) =>
+      (new Date(b[1].updatedAt).getTime() || 0) - (new Date(a[1].updatedAt).getTime() || 0),
   );
 }
 
@@ -767,15 +773,15 @@ const DAY_MS = 86_400_000;
 
 /** Groups sorted history entries into recency buckets (Today / This Week / Earlier). */
 export function groupHistoryByRecency(
-  entries: ReadonlyArray<[string, HistoryEntry]>,
-): { label: string; items: ReadonlyArray<[string, HistoryEntry]> }[] {
+  entries: ReadonlyArray<[string, HistoryProgress]>,
+): { label: string; items: ReadonlyArray<[string, HistoryProgress]> }[] {
   const now = Date.now();
-  const today: [string, HistoryEntry][] = [];
-  const week: [string, HistoryEntry][] = [];
-  const earlier: [string, HistoryEntry][] = [];
+  const today: [string, HistoryProgress][] = [];
+  const week: [string, HistoryProgress][] = [];
+  const earlier: [string, HistoryProgress][] = [];
 
   for (const pair of entries) {
-    const age = now - (new Date(pair[1].watchedAt).getTime() || 0);
+    const age = now - (new Date(pair[1].updatedAt).getTime() || 0);
     if (age < DAY_MS) today.push(pair);
     else if (age < DAY_MS * 7) week.push(pair);
     else earlier.push(pair);
@@ -789,7 +795,7 @@ export function groupHistoryByRecency(
 }
 
 export function buildHistoryPanelLines(
-  historyEntries: ReadonlyArray<[string, HistoryEntry]>,
+  historyEntries: ReadonlyArray<[string, HistoryProgress]>,
 ): readonly ShellPanelLine[] {
   if (historyEntries.length === 0) {
     return [
@@ -812,10 +818,10 @@ export function buildHistoryPanelLines(
       const initial = entry.title.trim().charAt(0).toUpperCase() || "?";
       lines.push({
         label:
-          entry.type === "series"
-            ? `${initial}  ${entry.title}  ·  S${String(entry.season).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`
+          historyContentType(entry) === "series"
+            ? `${initial}  ${entry.title}  ·  S${String(entry.season ?? 1).padStart(2, "0")}E${String(entry.episode ?? entry.absoluteEpisode ?? 1).padStart(2, "0")}`
             : `${initial}  ${entry.title}  ·  movie`,
-        detail: `${details.bar ? `${details.bar} ` : ""}${details.text}  ·  provider ${entry.provider}  ·  id ${titleId}  ·  ${new Date(entry.watchedAt).toLocaleDateString()}`,
+        detail: `${details.bar ? `${details.bar} ` : ""}${details.text}  ·  provider ${entry.providerId ?? "unknown"}  ·  id ${titleId}  ·  ${new Date(entry.updatedAt).toLocaleDateString()}`,
       });
     }
   }
@@ -850,11 +856,11 @@ function formatSeriesEpisode(season: number, episode: number): string {
 
 export function isHistoryPickerContinuable(
   titleId: string,
-  entry: HistoryEntry,
+  entry: HistoryProgress,
   context: HistoryPickerOptionsContext = {},
 ): boolean {
   // Movies are always actionable: resume if in progress, restart if completed.
-  if (entry.type === "movie") return true;
+  if (historyContentType(entry) === "movie") return true;
   const projection = context.projections?.get(titleId);
   if (
     projection?.kind === "resume-unfinished" ||
@@ -863,7 +869,11 @@ export function isHistoryPickerContinuable(
   ) {
     return true;
   }
-  const isCompleted = projectWatchProgress(entry).completed;
+  const isCompleted = projectWatchProgress({
+    timestamp: entry.positionSeconds,
+    duration: entry.durationSeconds,
+    completed: entry.completed,
+  }).completed;
   if (!isCompleted) return true;
   return (
     reconcileContinueHistory({
@@ -876,21 +886,29 @@ export function isHistoryPickerContinuable(
 
 function buildHistoryOptionRow(
   id: string,
-  entry: HistoryEntry,
+  entry: HistoryProgress,
   context: HistoryPickerOptionsContext,
 ): ShellPickerOption<string> {
   const details = historyProgressDetails(entry);
-  const isCompleted = projectWatchProgress(entry).completed;
+  const isCompleted = projectWatchProgress({
+    timestamp: entry.positionSeconds,
+    duration: entry.durationSeconds,
+    completed: entry.completed,
+  }).completed;
   const projection = context.projections?.get(id);
+  const entrySeason = entry.season ?? 1;
+  const entryEpisode = entry.episode ?? entry.absoluteEpisode ?? 1;
   const episode =
-    entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
+    historyContentType(entry) === "series"
+      ? formatSeriesEpisode(entrySeason, entryEpisode)
+      : "movie";
   if (projection?.kind === "offline-ready") {
     const directLocalPlay =
       projection.primaryAction?.kind === "play-local" && Boolean(projection.primaryAction.jobId);
     return {
       value: id,
       label: `${entry.title}  ·  ${formatSeriesEpisode(projection.season, projection.episode)}`,
-      detail: `${directLocalPlay ? "enter plays downloaded episode" : "download ready in /library"}  ·  ${projection.badge ?? "next episode ready"}  ·  completed ${episode}  ·  ${relativeTime(new Date(entry.watchedAt))}`,
+      detail: `${directLocalPlay ? "enter plays downloaded episode" : "download ready in /library"}  ·  ${projection.badge ?? "next episode ready"}  ·  completed ${episode}  ·  ${relativeTime(new Date(entry.updatedAt))}`,
       badge: projection.badge ?? "offline",
       tone: "success",
       posterTitle: entry.title,
@@ -904,11 +922,13 @@ function buildHistoryOptionRow(
   if (decision.kind === "new-episode") {
     const nextEpisode =
       typeof decision.episode === "number"
-        ? formatSeriesEpisode(decision.season ?? entry.season, decision.episode)
+        ? formatSeriesEpisode(decision.season ?? entrySeason, decision.episode)
         : episode;
     const completedEpisode =
-      entry.type === "series" ? formatSeriesEpisode(entry.season, entry.episode) : "movie";
-    const timeAgo = relativeTime(new Date(entry.watchedAt));
+      historyContentType(entry) === "series"
+        ? formatSeriesEpisode(entrySeason, entryEpisode)
+        : "movie";
+    const timeAgo = relativeTime(new Date(entry.updatedAt));
     const returnLoopDetail = describeHistoryReturnLoopDetail({
       entry,
       nextRelease: context.nextReleases?.get(id) ?? null,
@@ -916,7 +936,7 @@ function buildHistoryOptionRow(
     return {
       value: id,
       label: `${entry.title}  ·  ${nextEpisode}`,
-      detail: `${returnLoopDetail}  ·  completed ${completedEpisode}  ·  ${entry.provider}  ·  ${timeAgo}`,
+      detail: `${returnLoopDetail}  ·  completed ${completedEpisode}  ·  ${entry.providerId ?? "unknown"}  ·  ${timeAgo}`,
       badge: projection?.badge ?? "new",
       tone: "success",
       posterTitle: entry.title,
@@ -924,15 +944,18 @@ function buildHistoryOptionRow(
   }
   const statusGlyph = isCompleted
     ? "✓ complete"
-    : entry.timestamp > 10
-      ? `⏸ ${formatTimestamp(entry.timestamp)}`
+    : entry.positionSeconds > 10
+      ? `⏸ ${formatTimestamp(entry.positionSeconds)}`
       : "▶ start";
-  const timeAgo = relativeTime(new Date(entry.watchedAt));
+  const timeAgo = relativeTime(new Date(entry.updatedAt));
 
   return {
     value: id,
-    label: entry.type === "series" ? `${entry.title}  ·  ${episode}` : `${entry.title}  ·  movie`,
-    detail: `${statusGlyph}  ·  ${entry.provider}  ·  ${timeAgo}`,
+    label:
+      historyContentType(entry) === "series"
+        ? `${entry.title}  ·  ${episode}`
+        : `${entry.title}  ·  movie`,
+    detail: `${statusGlyph}  ·  ${entry.providerId ?? "unknown"}  ·  ${timeAgo}`,
     posterTitle: entry.title,
     historyProgress:
       details.percentage !== null
@@ -948,7 +971,7 @@ function buildHistoryOptionRow(
 
 function isContinueWatchingEntry(
   id: string,
-  entry: HistoryEntry,
+  entry: HistoryProgress,
   context: HistoryPickerOptionsContext,
 ): boolean {
   const projection = context.projections?.get(id);
@@ -959,7 +982,7 @@ function isContinueWatchingEntry(
 }
 
 export function buildHistoryPickerOptions(
-  historyEntries: ReadonlyArray<[string, HistoryEntry]>,
+  historyEntries: ReadonlyArray<[string, HistoryProgress]>,
   context: HistoryPickerOptionsContext = {},
 ): readonly ShellPickerOption<string>[] {
   const sorted = sortHistoryEntries(historyEntries);

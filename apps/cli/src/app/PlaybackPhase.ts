@@ -134,7 +134,6 @@ import {
   createCorrelationId,
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import {
   createPlaybackStartupTimeline,
@@ -769,7 +768,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           logger.info("History found", {
             season: history.season,
             episode: history.episode,
-            timestamp: history.timestamp,
+            timestamp: history.positionSeconds,
           });
         }
 
@@ -1853,23 +1852,27 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               effectiveTiming.current,
               quitThresholdMode,
             );
-            const savedHistoryEntry: HistoryEntry = {
-              title: title.name,
-              type: title.type,
-              mediaKind: stateManager.getState().mode === "anime" ? "anime" : title.type,
-              externalIds: title.externalIds,
-              season: currentEpisode.season,
-              episode: currentEpisode.episode,
-              timestamp: historyTimestamp,
-              duration: result.duration,
+            container.historyRepository.upsertProgress({
+              title: {
+                id: title.id,
+                kind: stateManager.getState().mode === "anime" ? "anime" : title.type,
+                title: title.name,
+                externalIds: title.externalIds,
+              },
+              episode: {
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+              },
+              positionSeconds: historyTimestamp,
+              durationSeconds: result.duration,
               completed: didComplete,
-              provider: resolvedProviderId,
-              watchedAt: new Date().toISOString(),
-            };
-            await historyStore.save(title.id, savedHistoryEntry);
+              providerId: resolvedProviderId,
+              updatedAt: new Date().toISOString(),
+            });
+            const savedHistoryRow = container.historyRepository.getLatestForTitle(title.id);
             enqueueReleaseReconciliation(
               container,
-              [[title.id, savedHistoryEntry]],
+              savedHistoryRow ? [savedHistoryRow] : [],
               "post-playback",
               context.signal,
             );

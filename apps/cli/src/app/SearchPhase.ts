@@ -33,9 +33,10 @@ import {
   resultEnrichmentKey,
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
+import { historyContentType } from "@/services/continuation/history-progress";
 import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
-import type { HistoryEntry } from "@/services/persistence/HistoryStore";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import type { HistoryProgress } from "@kunai/storage";
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -188,27 +189,28 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           const allHistory = await container.historyStore.getAll();
           enqueueReleaseReconciliation(
             container,
-            Object.entries(allHistory),
+            Object.values(allHistory),
             this.hasQueuedStartupReleaseReconciliation ? "browse-idle" : "startup",
             context.signal,
           );
           this.hasQueuedStartupReleaseReconciliation = true;
           const inProgress = Object.entries(allHistory)
-            .filter(([, e]) => !e.completed && e.timestamp > 30)
+            .filter(([, e]) => !e.completed && e.positionSeconds > 30)
             .sort(
-              ([, a], [, b]) => new Date(b.watchedAt).getTime() - new Date(a.watchedAt).getTime(),
+              ([, a], [, b]) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
             );
           const topEntry = inProgress[0];
           if (topEntry) {
             const [titleId, top] = topEntry;
             continueWatchingSelection = { titleId, entry: top };
             const ep =
-              top.type === "series" &&
+              historyContentType(top) === "series" &&
               typeof top.season === "number" &&
               typeof top.episode === "number"
                 ? `S${String(top.season).padStart(2, "0")}E${String(top.episode).padStart(2, "0")}`
                 : undefined;
-            const remainingSecs = top.duration > 0 ? top.duration - top.timestamp : 0;
+            const topDuration = top.durationSeconds ?? 0;
+            const remainingSecs = topDuration > 0 ? topDuration - top.positionSeconds : 0;
             const remainingLabel =
               remainingSecs > 60 ? `${Math.ceil(remainingSecs / 60)}m left` : undefined;
             continueWatching = {
@@ -216,7 +218,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               ep,
               remainingLabel,
               titleId,
-              mediaKind: top.type === "movie" ? "movie" : "series",
+              mediaKind: historyContentType(top) === "movie" ? "movie" : "series",
             };
           }
         } catch {
@@ -738,7 +740,7 @@ function appendSearchFilterChip(query: string, chip: string): string {
 }
 
 type BrowseDisplayContext = {
-  readonly historyMap: Record<string, HistoryEntry>;
+  readonly historyMap: Record<string, HistoryProgress>;
   readonly enrichments: ReadonlyMap<string, ResultEnrichment>;
 };
 
