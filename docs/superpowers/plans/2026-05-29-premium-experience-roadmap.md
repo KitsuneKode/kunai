@@ -168,6 +168,26 @@ Two **user-reported behavior bugs** fixed at the source, TDD, unit-netted (live 
 
 Remaining mechanical 1b (de-risked): retire `HistoryStore`/`SqliteHistoryStoreImpl` facade + `HistoryEntry` type → `ContinueWatchingService` + `HistoryProgress`. No behavior delta now; typecheck + tests are the net; live verify is confirmation only.
 
+### 1b retirement — in-progress (2026-05-31) + turnkey continuation
+
+**Landed (green):** leaf pattern proven on `playback-resume-from-history.ts` (now reads `HistoryRepository` sync, `HistoryProgress` fields, `isFinished` from `continuation/history-progress`; test ported to in-memory repo). Added **`historyContentType(progress)`** in `continuation/history-progress.ts` — the single authority for the facade's anime→"series" flatten.
+
+**⚠️ Key gotcha (typecheck will NOT catch):** the facade's `toHistoryEntry` flattened `mediaKind` anime→`"series"` in `HistoryEntry.type`. Consumers branch on `.type` (e.g. `offline-sync-policy.ts:28` `entry.type !== historyKind`; badges; episode labels). A naïve `.type`→`.mediaKind` swap makes anime rows stop matching `"series"` → silent anime breakage. **Every `.type` read must become `historyContentType(row)`**, not `row.mediaKind`.
+
+**Field map (HistoryEntry → HistoryProgress):** `timestamp`→`positionSeconds`, `duration`(0-default)→`durationSeconds`(`?? 0`), `provider`("unknown"-default)→`providerId`(`?? "unknown"` where a string is required), `watchedAt`→`updatedAt`, `type`→`historyContentType(row)`, `season`/`episode` become optional (`?? 1` / `?? absoluteEpisode ?? 1`). `mediaKind`/`externalIds`/`title` unchanged. The repo is **sync** (facade was async) — drop `await` or keep it (await on a non-Promise is harmless) to minimize caller churn.
+
+**Facade method → repo:** `get(id)`→`getLatestForTitle(id)` (undefined not null); `getAll()`→`groupLatestByTitle(listRecent(500))` keyed by `titleId`; `listRecent(n)`→`listRecent(n)` (returns rows, map to `[titleId,row]` where tuples are expected); `listByTitle(id)`→`listByTitle(id)`; `save(id,e)`→`upsertProgress({title:{id,kind,title,externalIds}, episode:{season,episode,absoluteEpisode}, positionSeconds, durationSeconds, completed, providerId, updatedAt})`; `delete`→`deleteTitle`; `clear`→`clear`.
+
+**Connected components to migrate (each = one green commit; facade stays until last):**
+
+1. **Offline/download** (separable): `offline-history-progress.ts`, `offline-sync-policy.ts` (uses `historyContentType`), `download-cleanup-policy.ts`, `OfflineRunwayService.ts` + `OfflineLibraryService.ts` (deps `historyStore`→`historyRepository`; `.save`→`upsertProgress`), `enqueue-release-reconciliation.ts`. Update container wiring + these services' fake-dep tests.
+2. **Continuation engines + projection consumers**: merge `reconcileContinueHistory` + `projectContinuationState` into `projectContinuation`/`ContinueWatchingService` (behavior already identical post anchor-fix); migrate `history-view.ts`(×4), `panel-data.ts`(×2), `root-history-bridge.ts`(×2), `ResultEnrichmentService.ts`, `main.ts:299`, `root-overlay-shell.tsx:282`; add a `badgesFor(decision)` adapter; delete `ContinuationProjectionService`. **Re-bless** `test/__captures__/history-continue.*` intentionally.
+3. **Raw-row readers**: `runtime-bindings.ts`, `workflows.ts` (history mgmt UI — getAll/get/save/delete/clear/listByTitle), `calendar-results.ts`, `discover-sections.ts`, `SearchPhase.ts`, `main.ts` (continue selection via `launch-entry.ts selectContinueHistoryEntry*`), `browse-option-mappers.ts`, `media-item-adapters.ts`.
+4. **Episode picker**: `playback-episode-picker.ts`, `tmdb-season-episode-pickers.ts`, `ink-shell.tsx:220`.
+5. **Write path + delete facade**: `PlaybackPhase.ts:1868` (save→upsertProgress), then delete `HistoryStore.ts`, `SqliteHistoryStoreImpl.ts`, `history-reconciliation.ts`, `continuation-policy.ts`, `ContinuationProjectionService.ts`, `container.historyStore`. Final: typecheck + test + build + capture review.
+
+Then the dormant `newSeason`/`PlayableRef`/`resolveUpNext` foundations have live consumers and the END-OF-RUN live checks apply.
+
 ## Plan 4 — PlaybackPhase decomposition: established pattern (continue mechanically)
 
 `apps/cli/src/app/PlaybackPhase.ts` (~3900 lines). **Safe extraction pattern (proven, 1334 tests green):** move cohesive **module-level** helper clusters (NOT closures inside `execute()`) into focused `playback-*.ts` siblings; if a test imports a moved symbol from `PlaybackPhase`, re-export it (`export { x }`). Verify with `bun run typecheck` + full `bun run test` after each move (complete net for these moves).
