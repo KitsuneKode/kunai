@@ -85,6 +85,67 @@ export function resolveStartingEpisodeChoice(args: {
   return null;
 }
 
+export type MovieStartingChoice = "resume" | "restart";
+
+/**
+ * Pure resolution of a movie starting-point choice into a playback selection.
+ * Movies have no season/episode axis, so the internal episode is always {1,1}.
+ * `resume` seeks directly to the saved position (no re-prompt); `restart` plays
+ * from the beginning with no resume offer.
+ */
+export function resolveMovieStartingChoice(
+  choice: MovieStartingChoice,
+  history: HistoryEntry,
+): EpisodeSelection {
+  if (choice === "resume") {
+    return { season: 1, episode: 1, startAt: history.timestamp, suppressResumePrompt: true };
+  }
+  return { season: 1, episode: 1, startAt: 0 };
+}
+
+/**
+ * Movie equivalent of {@link chooseStartingEpisode}. Movies never reached a
+ * resume/restart decision (PlaybackPhase started them at 0 unconditionally), so a
+ * partially-watched movie silently lost its position. When there is resumable
+ * progress, offer Resume/Restart; otherwise play from the beginning with no menu.
+ */
+export async function chooseMovieStartingPoint(opts: {
+  history: HistoryEntry | null;
+  container?: Container;
+}): Promise<EpisodeSelectionResult> {
+  const fromStart: EpisodeSelection = { season: 1, episode: 1, startAt: 0 };
+  const history = opts.history;
+  if (!history || isFinished(history) || history.timestamp <= 0) {
+    return fromStart;
+  }
+
+  const resumeAt = formatTimestamp(history.timestamp);
+  const picked = await openListShell<MovieStartingChoice>({
+    title: "Resume or restart?",
+    subtitle: `${history.title} · you stopped at ${resumeAt}`,
+    actionContext: createPickerActionContext(
+      opts.container,
+      "Choose movie starting point",
+      opts.container ? [...STARTING_POINT_PICKER_COMMANDS] : undefined,
+    ),
+    options: [
+      {
+        value: "resume" as const,
+        label: "▶ Resume",
+        detail: `Continue from ${resumeAt}`,
+      },
+      {
+        value: "restart" as const,
+        label: "↻ Restart",
+        detail: "Play from the beginning",
+      },
+    ],
+  });
+
+  if (!picked) return null;
+  return resolveMovieStartingChoice(picked, history);
+}
+
 const STARTING_POINT_PICKER_COMMANDS = [
   "settings",
   "history",

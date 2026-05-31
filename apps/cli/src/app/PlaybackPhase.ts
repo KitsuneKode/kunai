@@ -810,7 +810,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             ? startFromEpisodeSelection(selection)
             : await startNavigationToEpisode(episode);
       } else {
+        // Movies have no season/episode axis but still carry saved progress.
+        // Offer Resume/Restart when there is a resumable position; otherwise play
+        // from the beginning (no menu). Previously movies started at 0 always.
+        const movieHistory = await historyStore.get(title.id);
+        const { chooseMovieStartingPoint } = await import("@/session-flow");
+        const selection = await chooseMovieStartingPoint({ history: movieHistory, container });
+        if (!selection) {
+          logger.info("Movie starting point cancelled before playback", { titleId: title.id });
+          return { status: "success", value: "back_to_results" };
+        }
         episode = { season: 1, episode: 1 };
+        pendingStart = startFromEpisodeSelection(selection);
       }
 
       stateManager.dispatch({ type: "SELECT_EPISODE", episode });
