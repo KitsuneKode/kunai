@@ -969,15 +969,36 @@ function buildHistoryOptionRow(
   };
 }
 
-function isContinueWatchingEntry(
+/**
+ * Single authority for "this title is something to keep watching" — the predicate
+ * behind both the hoisted "Continue Watching" section and the /history Continue tab,
+ * so the two surfaces can never disagree.
+ *
+ * Keep-watching = an in-progress title (resume) OR a finished SERIES episode that has
+ * a next episode to play (Netflix-style advance). Finished movies and caught-up series
+ * are done — they belong in Completed, not here.
+ */
+export function isHistoryKeepWatching(
   id: string,
   entry: HistoryProgress,
-  context: HistoryPickerOptionsContext,
+  context: HistoryPickerOptionsContext = {},
 ): boolean {
   const projection = context.projections?.get(id);
   if (projection?.kind === "offline-ready" || projection?.kind === "next-released") return true;
-  const details = historyProgressDetails(entry);
-  if (details.percentage === null || details.percentage >= 90) return false;
+  const isCompleted = projectWatchProgress({
+    timestamp: entry.positionSeconds,
+    duration: entry.durationSeconds,
+    completed: entry.completed,
+  }).completed;
+  if (isCompleted) {
+    return (
+      reconcileContinueHistory({
+        titleId: id,
+        entries: [[id, entry]],
+        nextRelease: context.nextReleases?.get(id) ?? null,
+      }).kind === "new-episode"
+    );
+  }
   return isHistoryPickerContinuable(id, entry, context);
 }
 
@@ -987,7 +1008,7 @@ export function buildHistoryPickerOptions(
 ): readonly ShellPickerOption<string>[] {
   const sorted = sortHistoryEntries(historyEntries);
   const continueWatching = sorted
-    .filter(([id, entry]) => isContinueWatchingEntry(id, entry, context))
+    .filter(([id, entry]) => isHistoryKeepWatching(id, entry, context))
     .sort(([leftId], [rightId]) => {
       const rank = (id: string) => {
         const kind = context.projections?.get(id)?.kind;

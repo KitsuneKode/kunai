@@ -114,4 +114,52 @@ test("history view offers the next episode for a finished series instead of mark
   const row = allView.flatRows[0];
   expect(row?.resumeAction).toBe("Play next");
   expect(row?.episodeCode).toContain("S02E04");
+
+  // It also belongs in the Continue tab — finishing one episode keeps you watching.
+  const continueView = buildHistoryView({
+    entries: [["tmdb:1", finishedSeries]],
+    tab: "continue",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: {},
+  });
+  expect(continueView.state).toBe("success");
+  expect(continueView.flatRows.map((r) => r.titleId)).toContain("tmdb:1");
+  expect(continueView.flatRows[0]?.resumeAction).toBe("Play next");
+});
+
+// A finished movie is genuinely done — it stays out of Continue (Restart lives in Completed).
+test("history view keeps a finished movie out of the Continue tab", () => {
+  const finishedMovie = progress({
+    titleId: "tmdb:movie",
+    mediaKind: "movie",
+    season: 1,
+    episode: 1,
+    positionSeconds: 6000,
+    durationSeconds: 6000,
+    completed: true,
+  });
+  const continueView = buildHistoryView({
+    entries: [["tmdb:movie", finishedMovie]],
+    tab: "continue",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: {},
+  });
+  expect(continueView.state).toBe("empty");
+
+  const completedView = buildHistoryView({
+    entries: [["tmdb:movie", finishedMovie]],
+    tab: "completed",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: {},
+  });
+  expect(completedView.flatRows.map((r) => r.titleId)).toContain("tmdb:movie");
 });

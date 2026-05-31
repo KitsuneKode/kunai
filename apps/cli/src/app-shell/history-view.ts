@@ -13,7 +13,7 @@ import type { HistoryProgress } from "@kunai/storage";
 import {
   buildHistoryPickerOptions,
   groupHistoryByRecency,
-  isHistoryPickerContinuable,
+  isHistoryKeepWatching,
   type HistoryPickerOptionsContext,
 } from "./panel-data";
 import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail";
@@ -89,6 +89,9 @@ export function cycleHistoryTab(tab: HistoryTab): HistoryTab {
 }
 
 function isHistoryCompleted(entry: HistoryProgress): boolean {
+  // The persisted completed flag (e.g. "mark as watched", or credits/EOF) is the
+  // authority; the 95% ratio is only a fallback when a positive duration is known.
+  if (entry.completed) return true;
   const duration = entry.durationSeconds ?? 0;
   return duration > 0 && entry.positionSeconds / duration >= 0.95;
 }
@@ -113,11 +116,12 @@ function matchesHistoryTab(
   context: HistoryPickerOptionsContext,
 ): boolean {
   const completed = isHistoryCompleted(entry);
-  const continuable = isHistoryPickerContinuable(titleId, entry, context);
   const newEpisode = isHistoryNewEpisode(titleId, entry, context);
   switch (tab) {
     case "continue":
-      return continuable && !newEpisode;
+      // Same authority as the hoisted "Continue Watching" section: in-progress titles
+      // plus finished series with a next episode to play.
+      return isHistoryKeepWatching(titleId, entry, context);
     case "completed":
       // A series with a next episode to play is not "complete" — it belongs in the
       // new-episodes / continue surfaces, not the Completed tab (finished movies and
@@ -141,12 +145,12 @@ function filterHistoryEntries(
   const filter = filterQuery.trim().toLowerCase();
   const base = historyEntries.filter(([titleId, entry]) => {
     const completed = isHistoryCompleted(entry);
-    const continuable = isHistoryPickerContinuable(titleId, entry, context);
+    const keepWatching = isHistoryKeepWatching(titleId, entry, context);
     const newEpisode = isHistoryNewEpisode(titleId, entry, context);
 
     if (filter.length > 0) {
       if (filter === "completed" && completed) return true;
-      if ((filter === "watching" || filter === "continue") && continuable) return true;
+      if ((filter === "watching" || filter === "continue") && keepWatching) return true;
       if ((filter === "new" || filter === "new-episodes") && newEpisode) return true;
       if (
         !fuzzyMatch(

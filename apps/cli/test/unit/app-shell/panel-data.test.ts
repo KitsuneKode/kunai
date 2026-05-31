@@ -642,7 +642,7 @@ describe("panel-data", () => {
           key: "k",
           titleId: "x",
           title: "Older Show",
-          mediaKind: "series",
+          mediaKind: "movie",
           season: 1,
           episode: 2,
           positionSeconds: 300,
@@ -659,7 +659,7 @@ describe("panel-data", () => {
           key: "k",
           titleId: "x",
           title: "Newer Show",
-          mediaKind: "series",
+          mediaKind: "movie",
           season: 2,
           episode: 4,
           positionSeconds: 300,
@@ -713,11 +713,15 @@ describe("panel-data", () => {
       },
     );
 
-    expect(options[0]?.label).toContain("S01E07");
-    expect(options[0]?.detail).toContain("new since E6");
-    expect(options[0]?.detail).toContain("ready when a source resolves");
-    expect(options[0]?.badge).toBe("new");
-    expect(options[0]?.tone).toBe("success");
+    // The released next episode is keep-watching, so it sits under the hoisted
+    // "Continue Watching" section header rather than at index 0.
+    expect(options[0]?.value).toBe("section:history-continue-watching");
+    const row = options.find((option) => option.value === "anilist:123");
+    expect(row?.label).toContain("S01E07");
+    expect(row?.detail).toContain("new since E6");
+    expect(row?.detail).toContain("ready when a source resolves");
+    expect(row?.badge).toBe("new");
+    expect(row?.tone).toBe("success");
   });
 
   test("buildHistoryPickerOptions presents cached offline-ready projections with the full new count", () => {
@@ -875,7 +879,7 @@ describe("panel-data", () => {
           key: "k",
           titleId: "x",
           title: "Today Show",
-          mediaKind: "series",
+          mediaKind: "movie",
           season: 1,
           episode: 1,
           positionSeconds: 300,
@@ -892,7 +896,7 @@ describe("panel-data", () => {
           key: "k",
           titleId: "x",
           title: "Earlier Show",
-          mediaKind: "series",
+          mediaKind: "movie",
           season: 1,
           episode: 1,
           positionSeconds: 300,
@@ -971,7 +975,7 @@ describe("panel-data", () => {
           key: "k",
           titleId: "x",
           title: "Older Show",
-          mediaKind: "series",
+          mediaKind: "movie",
           season: 1,
           episode: 2,
           positionSeconds: 300,
@@ -988,7 +992,7 @@ describe("panel-data", () => {
           key: "k",
           titleId: "x",
           title: "Newer Show",
-          mediaKind: "series",
+          mediaKind: "movie",
           season: 2,
           episode: 4,
           positionSeconds: 300,
