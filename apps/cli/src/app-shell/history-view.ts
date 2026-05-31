@@ -398,15 +398,15 @@ export function buildHistoryView(input: {
   const filtered = filterHistoryEntries(input.entries, input.filterQuery, input.tab, input.context);
   const options = buildHistoryPickerOptions(filtered, input.context);
   const entryById = new Map(filtered);
-  const flatRows = optionsToFlatRows(options, entryById, input.context);
+  const builtRows = optionsToFlatRows(options, entryById, input.context);
 
-  if (flatRows.length === 0) {
+  if (builtRows.length === 0) {
     return {
       state: "empty",
       tab: input.tab,
       tabLabels: historyTabLabels(),
       tabIndex: historyTabIndex(input.tab),
-      flatRows,
+      flatRows: [],
       items: [],
       rail: null,
       filterQuery: input.filterQuery,
@@ -415,13 +415,20 @@ export function buildHistoryView(input: {
     };
   }
 
+  // The section layout (recency groups, hoisted "Continue watching") is the single
+  // source of truth for row order. `flatRows` — the basis for arrow-key navigation,
+  // the `selected` highlight, the scroll window, and Enter selection — is flattened
+  // from those same sections so the displayed order and the navigated order can never
+  // disagree (otherwise the highlight juggles across rows as you move up/down).
+  const sections = buildHistorySections(builtRows, filtered, input.tab);
+  const flatRows = sections.flatMap((section) => section.rows);
+
   const safeSelectedIndex = Math.min(
     Math.max(input.selectedIndex, 0),
     Math.max(flatRows.length - 1, 0),
   );
   const windowStart = getWindowStart(safeSelectedIndex, flatRows.length, input.maxVisible);
   const windowEnd = Math.min(windowStart + input.maxVisible, flatRows.length);
-  const sections = buildHistorySections(flatRows, filtered, input.tab);
   const selectedRow = flatRows[safeSelectedIndex];
   const selectedEntry = selectedRow ? entryById.get(selectedRow.titleId) : undefined;
   const rail =
