@@ -154,9 +154,19 @@ it cleans up after the structural plans rather than fighting them. Run with
 - **Plan 3** — `resolveUpNext` (pure unifier; dormant until wired).
 - **Architecture/cleanup** — content-kind → `domain/media` (deduped); dead `summarizeJson`/`UpNextSource` removed.
 
-**Deferred (logged):** `NewSeasonSignal`/`ReleaseNewSeason` → `@kunai/types` dedup (Plan D); movie resume/restart one-shot path (flow/live).
+**Deferred (logged):** `NewSeasonSignal`/`ReleaseNewSeason` → `@kunai/types` dedup (Plan D).
 
 **Gated on a dedicated focused pass (per architecture discussion):** **1b** (consumer migration to the new decision vocabulary — no lossy bridge; needs live verify of history/calendar/discover surfaces). Then Plan S (surfaces, live), Plan F (features, live), Plan Z (live), Plan 4 (PlaybackPhase decomposition, large), Plan R (render rescope, live).
+
+## Update (2026-05-31 session — 3 commits, all green: 1338 tests)
+
+Two **user-reported behavior bugs** fixed at the source, TDD, unit-netted (live verify deferred to END-OF-RUN-VERIFICATION.md):
+
+- **Anchor-rule fix (1b behavior keystone):** both live engines (`reconcileContinueHistory`, `projectContinuationState`) did `.find(unfinished)` over recency-sorted rows → resumed an OLDER abandoned episode when the most-recent was finished (opposite of Netflix). Both now anchor on the most-recent row. Regression guards added in both suites. **Key consequence:** the legacy engines now behave **identically** to the already-tested `projectContinuation`, so the remaining 1b retirement (facade + `HistoryEntry`, 27 files) is downgraded from a behavior change to a **pure behavior-preserving mechanical swap**.
+- **Movie Resume/Restart fix (the thrice-reported bug):** real root cause was upstream of the earlier hypothesis — `PlaybackPhase.execute` gated the whole starting-point decision behind `title.type === "series"`; movies fell through to `episode {1,1}` + `startFromBeginning()` (always 0, no menu). Added `chooseMovieStartingPoint` mirroring the series flow via the same `openListShell` primitive; pure `resolveMovieStartingChoice` unit-tested.
+- **Cleanup:** removed dead JSON `HistoryStoreImpl` (zero refs).
+
+Remaining mechanical 1b (de-risked): retire `HistoryStore`/`SqliteHistoryStoreImpl` facade + `HistoryEntry` type → `ContinueWatchingService` + `HistoryProgress`. No behavior delta now; typecheck + tests are the net; live verify is confirmation only.
 
 ## Plan 4 — PlaybackPhase decomposition: established pattern (continue mechanically)
 

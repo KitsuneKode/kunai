@@ -25,13 +25,17 @@ chunk; these are the things that need a human watching the live TUI.
       the ternary call sites (scattered mode-based logic).
 - [ ] **Deep intake / play(PlayableRef):** route surfaces through one `play(ref)`;
       confirm a movie's `currentTitle.type` is `"movie"` from every entrypoint.
-- [ ] **Movie from history shows no resume/restart CHOICE (found live 2026-05-29).**
-      Root cause: the resume-vs-restart prompt (`offerResumeStartChoice` /
-      `resumeStartChoicePrompt`) lives only in the persistent/autoplay-chain path
-      (`PlayerServiceImpl.playAutoplayChainStream`). Movies use `playOneShotStream`,
-      which applies `startAt` directly with no choice. Fix: give the one-shot path a
-      resume/restart choice when a saved position exists (or route movies through a
-      shared resume-choice step). Flow+UI → verify live.
+- [x] **Movie resume/restart CHOICE — IMPLEMENTED 2026-05-31 (verify live).**
+      Real root cause was more upstream than first hypothesized: `PlaybackPhase.execute`
+      gated the entire starting-point decision behind `if (title.type === "series")`;
+      the movie `else`-branch set episode `{1,1}` and left `pendingStart` at
+      `startFromBeginning()`, so a movie alway started at 0 with no menu. Fix:
+      `chooseMovieStartingPoint` (`session-flow.ts`) mirrors the series flow using the
+      same `openListShell` primitive — when a movie has resumable progress it offers
+      **Resume** (seek directly) / **Restart** (from 0); finished/no-progress plays from
+      the start with no menu. Pure decision `resolveMovieStartingChoice` is unit-tested.
+      **Live check:** play a partially-watched movie from history → menu appears, Resume
+      seeks to saved position, Restart starts at 0; a fresh movie plays with no menu.
 
 > **Sequencing note (found 2026-05-29):** movie continue/restart is **entangled with
 > 1b**. `isHistoryPickerContinuable` (`panel-data.ts:857`) runs through
@@ -56,10 +60,28 @@ chunk; these are the things that need a human watching the live TUI.
 
 ## 1b — history facade retirement
 
+**Anchor-rule behavior fix landed 2026-05-31 (verify live).** Both live engines
+(`reconcileContinueHistory`, `projectContinuationState`) did `.find(unfinished)` over
+recency-sorted rows — resuming an OLDER abandoned episode when the most-recent was
+finished. Both now anchor on the most-recent row (resume if unfinished, else advance),
+matching the already-tested `projectContinuation`. This is the user-visible behavior;
+the full facade/`HistoryEntry` retirement is now a behavior-preserving mechanical swap.
+
+- [ ] Title whose most-recent episode is **finished** but has an older unfinished
+      episode: Continue shows **advance/up-to-date**, NOT resume-the-old-one.
+- [ ] Title whose most-recent episode is **unfinished**: resumes that episode.
 - [ ] `/history` lists correctly (continue/completed/new-episodes/all tabs).
 - [ ] Continue Watching row shows correct anchor per title, recency-ordered.
 - [ ] `/calendar`, `/discover`, search badges still show correct history-derived state.
 - [ ] Episode picker shows accurate per-episode progress dots.
+
+### Remaining mechanical retirement (de-risked, do when wiring deep-intake)
+
+- Dead JSON `HistoryStoreImpl` removed 2026-05-31.
+- Still present: `HistoryStore`/`SqliteHistoryStoreImpl` facade, `HistoryEntry` (143
+  uses / 27 files), the two near-duplicate engines. Because the engines now behave
+  identically to `projectContinuation`, swapping callers to
+  `ContinueWatchingService` + `HistoryProgress` is a pure refactor (no behavior delta).
 
 ## Plan 2 / Plan 3 foundations (committed, unit-tested — mostly dormant until wired)
 
