@@ -170,7 +170,22 @@ Remaining mechanical 1b (de-risked): retire `HistoryStore`/`SqliteHistoryStoreIm
 
 ### 1b retirement — in-progress (2026-05-31) + turnkey continuation
 
-**Landed (green):** leaf pattern proven on `playback-resume-from-history.ts` (now reads `HistoryRepository` sync, `HistoryProgress` fields, `isFinished` from `continuation/history-progress`; test ported to in-memory repo). Added **`historyContentType(progress)`** in `continuation/history-progress.ts` — the single authority for the facade's anime→"series" flatten.
+**Landed (green, 2026-05-31 — every independently-shippable component peeled off):**
+
+- `playback-resume-from-history.ts` → `HistoryRepository` (sync, leaf pattern proven).
+- **`historyContentType(progress)`** added in `continuation/history-progress.ts` — single authority for the anime→"series" flatten.
+- **`OfflineRunwayService`** + `highestEpisode` → `historyRepository` (deps + container + test).
+- **`OfflineLibraryService`** write path → `historyRepository.upsertProgress` (deps + container + test).
+- **Episode picker component** (`playback-episode-picker` + feeders `tmdb-season-episode-pickers`, `ink-shell` active picker, `PlaybackPhase` watchedEntries) → `HistoryProgress` per-episode dots (test fixtures ported).
+
+**Remaining = the irreducibly-coupled core (do as ONE coordinated cluster — `HistoryEntry` threads through the big files' boundaries, so leaves can't be peeled further):**
+
+- **`enqueueReleaseReconciliation` hub + its 5 callers** (`PlaybackPhase` save path, `SearchPhase`, `root-overlay-shell`, `workflows`) — migrate together to `HistoryProgress[]` (drop the `[id,entry]` tuple; `titleId` is on the row).
+- **Two engines + projection consumers**: merge `reconcileContinueHistory`+`projectContinuationState`→`projectContinuation`/`ContinueWatchingService`; migrate `history-view`(×4), `panel-data`(×2), `root-history-bridge`(×2), `ResultEnrichmentService`, `main:299`, `root-overlay-shell:282`; `badgesFor(decision)` adapter; delete `ContinuationProjectionService`; **re-bless `__captures__/history-continue.*`**.
+- **Raw-row readers**: `runtime-bindings`, `workflows` (history-mgmt UI), `calendar-results`, `discover-sections`, `SearchPhase`, `main` (continue selection via `launch-entry`), `browse-option-mappers`, `media-item-adapters`, `DownloadOnlyPhase`, `session-flow`.
+- **Offline policy leaves** (fed by raw readers): `offline-history-progress`, `offline-sync-policy` (use `historyContentType`), `download-cleanup-policy`.
+- **PlaybackPhase get×2** (`getLatestForTitle`, feeds session-flow's HistoryEntry funcs — migrate with session-flow).
+- **Delete facade**: `HistoryStore.ts`, `SqliteHistoryStoreImpl.ts`, `history-reconciliation.ts`, `continuation-policy.ts`, `ContinuationProjectionService.ts`, `container.historyStore`, the `HistoryEntry` type. Final typecheck+test+build+capture review.
 
 **⚠️ Key gotcha (typecheck will NOT catch):** the facade's `toHistoryEntry` flattened `mediaKind` anime→`"series"` in `HistoryEntry.type`. Consumers branch on `.type` (e.g. `offline-sync-policy.ts:28` `entry.type !== historyKind`; badges; episode labels). A naïve `.type`→`.mediaKind` swap makes anime rows stop matching `"series"` → silent anime breakage. **Every `.type` read must become `historyContentType(row)`**, not `row.mediaKind`.
 
