@@ -4,8 +4,7 @@ import type { PlaybackResult } from "@/domain/types";
 import type { DownloadService } from "@/services/download/DownloadService";
 import { shouldAutoCleanupOfflineJob } from "@/services/offline/offline-sync-policy";
 import { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
-import type { HistoryEntry, HistoryStore } from "@/services/persistence/HistoryStore";
-import type { DownloadJobRecord } from "@kunai/storage";
+import type { DownloadJobRecord, HistoryProgressInput, HistoryRepository } from "@kunai/storage";
 
 function job(patch: Partial<DownloadJobRecord> = {}): DownloadJobRecord {
   return {
@@ -51,7 +50,7 @@ describe("OfflineLibraryService", () => {
         listCompleted: () => [older, newer],
         markArtifactValidated: () => {},
       } as unknown as DownloadService,
-      historyStore: {} as HistoryStore,
+      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
     });
 
     const entries = await service.listCompletedEntries();
@@ -73,7 +72,7 @@ describe("OfflineLibraryService", () => {
           throw new Error("validation must not delete records");
         },
       } as unknown as DownloadService,
-      historyStore: {} as HistoryStore,
+      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
     });
 
     const entries = await service.validateCompletedArtifacts();
@@ -92,7 +91,7 @@ describe("OfflineLibraryService", () => {
           validations += 1;
         },
       } as unknown as DownloadService,
-      historyStore: {} as HistoryStore,
+      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
     });
 
     const entries = await service.peekRecordedArtifactStatuses(["title-1", "title-2"]);
@@ -119,7 +118,7 @@ describe("OfflineLibraryService", () => {
         getJob: () => record,
         listCompleted: () => [record],
       } as unknown as DownloadService,
-      historyStore: {} as HistoryStore,
+      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
     });
 
     const playable = await service.getPlayableSource(record.id);
@@ -149,7 +148,7 @@ describe("OfflineLibraryService", () => {
       downloadService: {
         getJob: () => record,
       } as unknown as DownloadService,
-      historyStore: {} as HistoryStore,
+      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
     });
 
     const playable = await service.getPlayableSource(record.id);
@@ -158,12 +157,12 @@ describe("OfflineLibraryService", () => {
   });
 
   test("persists offline playback progress to history", async () => {
-    const saves: { id: string; entry: HistoryEntry }[] = [];
+    const saves: HistoryProgressInput[] = [];
     const service = new OfflineLibraryService({
       downloadService: {} as DownloadService,
-      historyStore: {
-        save: async (id: string, entry: HistoryEntry) => saves.push({ id, entry }),
-      } as unknown as HistoryStore,
+      historyRepository: {
+        upsertProgress: (input: HistoryProgressInput) => saves.push(input),
+      },
     });
     const source = {
       kind: "local" as const,
@@ -181,14 +180,10 @@ describe("OfflineLibraryService", () => {
 
     expect(saves).toHaveLength(1);
     expect(saves[0]).toMatchObject({
-      id: "title-1",
-      entry: {
-        title: "Demo",
-        season: 1,
-        episode: 2,
-        timestamp: 600,
-        provider: "local:vidking",
-      },
+      title: { id: "title-1", title: "Demo", kind: "series" },
+      episode: { season: 1, episode: 2 },
+      positionSeconds: 600,
+      providerId: "local:vidking",
     });
   });
 });

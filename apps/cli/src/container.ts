@@ -444,7 +444,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   });
   const offlineLibraryService = new OfflineLibraryService({
     downloadService,
-    historyStore,
+    historyRepository,
     offlineAssetService,
   });
   const offlineMaintenanceService = new OfflineMaintenanceService({

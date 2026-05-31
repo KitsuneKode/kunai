@@ -2,8 +2,7 @@ import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history
 import { didPlaybackReachCompletionThreshold } from "@/app/playback-policy";
 import type { PlaybackResult } from "@/domain/types";
 import type { DownloadService } from "@/services/download/DownloadService";
-import type { HistoryStore } from "@/services/persistence/HistoryStore";
-import type { DownloadJobRecord } from "@kunai/storage";
+import type { DownloadJobRecord, HistoryRepository } from "@kunai/storage";
 
 import { buildLocalPlaybackSource, type LocalPlaybackSource } from "./local-playback-source";
 import {
@@ -23,7 +22,7 @@ function isArtifactCacheFresh(job: DownloadJobRecord): boolean {
 
 export type OfflineLibraryServiceDeps = {
   readonly downloadService: DownloadService;
-  readonly historyStore: HistoryStore;
+  readonly historyRepository: Pick<HistoryRepository, "upsertProgress">;
   readonly offlineAssetService?: OfflineAssetService;
 };
 
@@ -103,16 +102,14 @@ export class OfflineLibraryService {
     const timing = source.timing ?? null;
     if (!shouldPersistHistory(result, timing)) return false;
 
-    await this.deps.historyStore.save(source.titleId, {
-      title: source.titleName,
-      type: source.mediaKind,
-      season: source.season ?? 1,
-      episode: source.episode ?? 1,
-      timestamp: toHistoryTimestamp(result, timing),
-      duration: result.duration,
+    this.deps.historyRepository.upsertProgress({
+      title: { id: source.titleId, kind: source.mediaKind, title: source.titleName },
+      episode: { season: source.season ?? 1, episode: source.episode ?? 1 },
+      positionSeconds: toHistoryTimestamp(result, timing),
+      durationSeconds: result.duration,
       completed: didPlaybackReachCompletionThreshold(result, timing),
-      provider: `local:${source.providerId}`,
-      watchedAt: new Date().toISOString(),
+      providerId: `local:${source.providerId}`,
+      updatedAt: new Date().toISOString(),
     });
     return true;
   }
