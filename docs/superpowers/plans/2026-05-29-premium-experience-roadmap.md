@@ -244,6 +244,47 @@ Then the dormant `newSeason`/`PlayableRef`/`resolveUpNext` foundations have live
   2. **Post-play surface helpers** — `applyMpvEpisodeLoadingOverlay`, `preparePostPlaybackSurface`, `teardownPlaybackForPostPlayExit`, `describeSubtitleStatus`.
 - **Do NOT** decompose `execute()` itself (the ~2500-line method) by mechanical move — its inner logic closes over locals; that requires real seam design + **live playback verification** and is its own focused effort.
 
+## Update (2026-06-01 — code-vs-plan reconciliation before S/F/Z/R pass)
+
+Grounded the experience plans against the **current** code (1b landed; HEAD
+`cb61c883`, tree green, 1341 tests). Three plan premises are **stale — code moved
+past them**, which retargets the remaining work:
+
+- **Plan R alt-screen item is largely DONE, not pending.** `ink-shell.tsx:271` and
+  `:1166` already mount with `alternateScreen: true`; the "no `\x1b[?1049h/l`, quit
+  pollutes scrollback" premise (plan line ~52) is obsolete. Remaining Plan R is the
+  narrower live set (A6 ghost poster / A7 loader desync / B8 dancing lists +
+  crash-restore teardown), all **live-gated** — not a renderer rebuild.
+- **esc-to-back stack already exists.** `state.activeModals` is a stack;
+  `getTopOverlay` reads `.at(-1)`; `resolveEscTransition` (`root-shell-state.ts:105`)
+  already closes command bar → else pops `CLOSE_TOP_OVERLAY`. The "web-routing back"
+  spine is present at the overlay layer. The real gap is **surfaces that bypass the
+  stack** (mounted `openListShell` screens with their own esc) + consistency, NOT a
+  missing navigation model. Audit which surfaces don't route esc through
+  `resolveEscTransition` and fold them in — do not build a parallel router.
+- **Real Plan S foundation gap: no keybinding registry exists.** Keys, footer hints,
+  and `?` help are scattered; `commands.ts` `SHELL_COMMAND_DEFINITIONS` is only the
+  command-palette source. This is the single-source-of-truth to build first.
+
+**De-risked next slices (each one green commit; unit tests are the net, live is
+confirmation, deferred to END-OF-RUN-VERIFICATION.md per user):**
+
+1. **Keybinding registry** (`app-shell/keybindings.ts`, new, pure + TDD): declarative
+   bindings (chord + intent label + scope + footer priority), matcher compatible with
+   `LineEditorKey`, derivations `footerHints(scope)` + `helpSections()`. Then wire the
+   footer-hint row + `?` help overlay to read from it (live-confirm at end). Subsumes
+   scattered definitions — replace, don't parallel.
+2. **Plan 4 safe cuts** (behavior-preserving; typecheck+test net): extract
+   module-level clusters from `PlaybackPhase.ts` per the proven pattern — post-play
+   recommendation cluster + post-play surface helpers. **NOT** `execute()` internals
+   (closes over locals; needs real seam design + live playback verify).
+3. **Zen mode core** (Plan Z): config field + pure `layout-policy` single-column
+   branch; live toggle wiring + verify deferred to end.
+
+User directive for this pass: defer ALL UI live validation to the end (user drives
+esc-routing / state-spill / premium-feel review); use `/frontend-design` +
+`/emil-design-eng` + `/make-interfaces-feel-better` for the feel work.
+
 ## Related
 
 - Memory: [[project_backend_hardening_roadmap]] (backend plans 1-5), [[project_html_mockups]] (prototypes are the visual target), [[project_sakura_canonical]] (design authority), [[project_cli_redesign]] (warm/hearth direction), [[feedback_question_recommendations]].
