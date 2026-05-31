@@ -31,7 +31,12 @@ export function getPreviewPosterLabel(
 }
 
 export function visiblePreviewFacts(facts: readonly PreviewFact[]): readonly PreviewFact[] {
-  return facts.filter((fact) => fact.label.trim().length > 0 && fact.value.trim().length > 0);
+  // Defensive: a fact value can be undefined if a caller builds it from a missing
+  // field (e.g. a history row without a provider). Treat blank/missing as hidden
+  // rather than crashing the whole rail.
+  return facts.filter(
+    (fact) => (fact.label ?? "").trim().length > 0 && (fact.value ?? "").trim().length > 0,
+  );
 }
 
 export function shouldRenderPreviewRail(input: {
