@@ -168,7 +168,32 @@ Two **user-reported behavior bugs** fixed at the source, TDD, unit-netted (live 
 
 Remaining mechanical 1b (de-risked): retire `HistoryStore`/`SqliteHistoryStoreImpl` facade + `HistoryEntry` type → `ContinueWatchingService` + `HistoryProgress`. No behavior delta now; typecheck + tests are the net; live verify is confirmation only.
 
-### 1b retirement — in-progress (2026-05-31) + turnkey continuation
+### 1b retirement — ✅ DONE (2026-06-01)
+
+The `HistoryEntry` facade type is retired. `HistoryStore`/`SqliteHistoryStoreImpl`
+return canonical `HistoryProgress` rows directly (thin read-only passthrough:
+get/getAll/listRecent/listByTitle/delete/clear; `isFinished`/`formatTimestamp`
+re-export from the `history-progress` authority). `save()` is gone from the facade
+— both writers (`PlaybackPhase` post-playback, `workflows` "mark as watched") go
+through `historyRepository.upsertProgress`, with a new `historyProgressToInput()`
+helper in `@kunai/storage` for round-tripping a held row.
+`enqueueReleaseReconciliation` now takes `HistoryProgress[]` (titleId on the row);
+its callers pass repo rows. Both engines kept their tuple input + decision shapes
+(retyped + field-fixed only). Every consumer migrated **by hand** (no bulk sed
+across mixed files), preserving the `historyContentType` anime→"series" flatten
+and the optional season/episode defaults. Behavior-preserving: **typecheck 8/8,
+1341 tests pass with zero capture diffs, build clean** (commit on
+`design/sakura-canonical`). One stale `as never` test mock (post-playback
+recommendations) that still used facade field names — invisible to typecheck —
+was caught by the test run and ported.
+
+**Live verification still outstanding** (see END-OF-RUN-VERIFICATION.md): exercise
+the history / calendar / discover surfaces against a real DB to confirm the
+field-map migration reads correctly end to end — continue-watching rows, "N new"
+badges, recency grouping, discover "Because you watched", and the mark-as-watched
+write path.
+
+### 1b retirement — historical notes (in-progress through 2026-05-31)
 
 **Landed (green, 2026-05-31 — every independently-shippable component peeled off):**
 

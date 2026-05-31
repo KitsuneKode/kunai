@@ -75,13 +75,27 @@ the full facade/`HistoryEntry` retirement is now a behavior-preserving mechanica
 - [ ] `/calendar`, `/discover`, search badges still show correct history-derived state.
 - [ ] Episode picker shows accurate per-episode progress dots.
 
-### Remaining mechanical retirement (de-risked, do when wiring deep-intake)
+### Mechanical retirement — ✅ DONE (2026-06-01)
 
 - Dead JSON `HistoryStoreImpl` removed 2026-05-31.
-- Still present: `HistoryStore`/`SqliteHistoryStoreImpl` facade, `HistoryEntry` (143
-  uses / 27 files), the two near-duplicate engines. Because the engines now behave
-  identically to `projectContinuation`, swapping callers to
-  `ContinueWatchingService` + `HistoryProgress` is a pure refactor (no behavior delta).
+- `HistoryEntry` facade type **retired** (2026-06-01): `HistoryStore`/
+  `SqliteHistoryStoreImpl` now return `HistoryProgress` rows directly; `save()` moved
+  to `historyRepository.upsertProgress` (PlaybackPhase + workflows mark-as-watched);
+  `enqueueReleaseReconciliation` takes `HistoryProgress[]`. Both engines retyped in
+  place. Green: typecheck 8/8, 1341 tests, 0 capture diffs, build clean.
+- **Live verify still owed** for the field-map swap (positionSeconds/durationSeconds/
+  updatedAt/providerId + `historyContentType` anime flatten + optional season/episode
+  defaults). The unit/capture net is green, but exercise against a real DB:
+  - [ ] `/history` continue/completed/new-episodes/all tabs render with correct
+        episode codes, % progress, provider, and recency ("today/this week/earlier").
+  - [ ] Continue Watching anchor + "N new" badge per title (reconciliation cache).
+  - [ ] `/calendar` released/airing-today + history-derived "+N new for you".
+  - [ ] `/discover` "Because you watched <title>" seeds from the most-recent completed
+        anime/series row (anime-mode provider filter), not dropped.
+  - [ ] Browse result history badges (Resume/Started/Watched · SxxExx · timestamp).
+  - [ ] `/history` → "Mark as watched": flags the anchor completed without playing,
+        persists across reopen (the new upsertProgress write path).
+  - [ ] Post-playback: a completed episode writes history and the row reflects it.
 
 ## Plan 2 / Plan 3 foundations (committed, unit-tested — mostly dormant until wired)
 
