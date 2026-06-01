@@ -161,6 +161,7 @@ export function BrowseShell<T>({
 }) {
   const viewport = useDebouncedViewportPolicy("browse", {
     forceCompact: _settings?.minimalMode,
+    zen: _settings?.zenMode,
   });
   const [query, setQuery] = useState(initialQuery ?? "");
   const [commandMode, setCommandMode] = useState(false);

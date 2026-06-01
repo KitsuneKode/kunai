@@ -530,6 +530,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   });
   globalContainer = container;
   const { logger, config, stateManager } = container;
+  // `--zen` is a transient session override: flip the in-memory config so the
+  // single-column layout renders, without persisting to the user's config file
+  // (update() mutates memory only; save() is separate and never called here).
+  if (args.zen && !config.zenMode) {
+    await config.update({ zenMode: true });
+  }
   await maybeRunAutoCleanupDownloads(container);
 
   // Initialize session state with CLI overrides
