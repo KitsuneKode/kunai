@@ -110,6 +110,8 @@ export type PlaybackShellState = {
   readonly postPlayState?: PostPlayState;
   readonly episodeLabel?: string;
   readonly nextEpisodeLabel?: string;
+  /** Cross-title queue head label, shown as Up Next when no episode chain remains. */
+  readonly queueNextLabel?: string;
   readonly totalEpisodes?: number;
   readonly watchedEpisodes?: number;
   readonly currentSeason?: number;

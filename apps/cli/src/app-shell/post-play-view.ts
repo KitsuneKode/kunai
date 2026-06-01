@@ -103,6 +103,12 @@ export type BuildPostPlayViewProps = {
   readonly title: string;
   readonly episodeLabel: string;
   readonly nextEpisodeLabel?: string;
+  /**
+   * Head of the cross-title queue, if any. Surfaced as Up Next only when there is
+   * no episode-chain next (series finished / movie), mirroring resolveUpNext's
+   * Netflix-like policy: binge the current series first, else play the queue.
+   */
+  readonly queueNextLabel?: string;
   readonly resumeLabel?: string;
   readonly postPlayState: PostPlayState;
   readonly recommendations?: readonly PlaybackRecommendationRailItem[];
@@ -141,9 +147,17 @@ function buildUpNextMeta(titleDetail: TitleDetail | undefined): string {
 function buildUpNextCard(
   nextEpisodeLabel: string | undefined,
   titleDetail: TitleDetail | undefined,
+  queueNextLabel?: string,
 ): PostPlayUpNextCard | undefined {
-  if (!nextEpisodeLabel) return undefined;
-  return { label: formatUpNextLabel(nextEpisodeLabel), meta: buildUpNextMeta(titleDetail) };
+  // Episode-chain next wins (binge the current series); otherwise fall back to the
+  // cross-title queue head. Mirrors resolveUpNext's policy at the view layer.
+  if (nextEpisodeLabel) {
+    return { label: formatUpNextLabel(nextEpisodeLabel), meta: buildUpNextMeta(titleDetail) };
+  }
+  if (queueNextLabel) {
+    return { label: queueNextLabel, meta: "From your queue · autoplay on" };
+  }
+  return undefined;
 }
 
 function buildDiscovery(
@@ -165,6 +179,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     title,
     episodeLabel,
     nextEpisodeLabel,
+    queueNextLabel,
     resumeLabel,
     postPlayState,
     recommendations = [],
@@ -248,7 +263,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       ],
       discoveryHeading: "you might also like",
       discovery,
-      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail),
+      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail, queueNextLabel),
       railFacts: buildSeriesRailFacts(props, progressBar),
       episodeMeta,
     };
@@ -280,6 +295,8 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       ],
       discoveryHeading: "because you watched this",
       discovery,
+      // Movies have no episode chain, but a queued title can still be Up Next.
+      upNext: buildUpNextCard(undefined, titleDetail, queueNextLabel),
       railFacts: buildMovieRailFacts(titleDetail),
       episodeMeta,
     };
@@ -318,7 +335,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       ],
       discoveryHeading: "because you watched this",
       discovery,
-      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail),
+      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail, queueNextLabel),
       railFacts: buildSeriesRailFacts(props, progressBar),
       episodeMeta,
     };
@@ -359,6 +376,8 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       ],
       discoveryHeading: "you might also like",
       discovery,
+      // Caught up on this series, but a queued title can still be Up Next now.
+      upNext: buildUpNextCard(undefined, titleDetail, queueNextLabel),
       railFacts: buildSeriesRailFacts(props, progressBar),
       episodeMeta,
     };
@@ -455,6 +474,8 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     ],
     discoveryHeading: "because you finished this",
     discovery,
+    // No episode chain remains, but a queued title can still be Up Next.
+    upNext: buildUpNextCard(undefined, titleDetail, queueNextLabel),
     railFacts: buildSeriesCompleteRailFacts(title, titleDetail, currentSeason, totalEpisodes),
     episodeMeta,
   };

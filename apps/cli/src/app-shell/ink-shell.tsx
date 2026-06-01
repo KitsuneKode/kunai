@@ -1356,6 +1356,7 @@ function PlaybackShell({
           title={state.title}
           episodeLabel={state.episodeLabel ?? ""}
           nextEpisodeLabel={state.nextEpisodeLabel}
+          queueNextLabel={state.queueNextLabel}
           resumeLabel={state.resumeLabel}
           postPlayState={postPlayState}
           recommendations={recommendations}

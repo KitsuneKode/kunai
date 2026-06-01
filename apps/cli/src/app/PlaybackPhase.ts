@@ -75,6 +75,7 @@ import {
   buildPostPlayEpisodeLabel,
   buildPostPlayInputFromPlaybackContext,
   buildPostPlayNextEpisodeLabel,
+  buildPostPlayQueueNextLabel,
 } from "@/app/post-play-input";
 import {
   loadPostPlaybackRecommendationItems,
@@ -2631,6 +2632,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   upcomingEpisode,
                   nextEpisodePickerOption?.label,
                 ),
+                queueNextLabel: buildPostPlayQueueNextLabel(container.queueService.peekNext()),
                 nextEpisodeThumbUrl,
                 totalEpisodes: title.episodeCount ?? shellEpisodePicker.options.length,
                 watchedEpisodes,

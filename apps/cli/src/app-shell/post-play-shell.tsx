@@ -36,6 +36,7 @@ export type PostPlayShellProps = {
   title: string;
   episodeLabel: string;
   nextEpisodeLabel?: string;
+  queueNextLabel?: string;
   resumeLabel?: string;
   postPlayState: PostPlayState;
   recommendations?: readonly PlaybackRecommendationRailItem[];
@@ -367,6 +368,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   title,
   episodeLabel,
   nextEpisodeLabel,
+  queueNextLabel,
   resumeLabel,
   postPlayState,
   recommendations = [],
@@ -394,6 +396,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     title,
     episodeLabel,
     nextEpisodeLabel,
+    queueNextLabel,
     resumeLabel,
     postPlayState,
     recommendations,
