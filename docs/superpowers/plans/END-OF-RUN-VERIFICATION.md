@@ -122,6 +122,34 @@ the full facade/`HistoryEntry` retirement is now a behavior-preserving mechanica
   **registered but dormant** (no surface consumes them yet) — they go live in 1b / the
   deep-intake wiring; verify then.
 
+## mpv loading-overlay delay on next / auto-next — fixed 2026-06-01 (live confirm)
+
+User-reported: a slight delay before the "Loading episode…" pane appears in mpv
+after `n` (next) or auto-next. Two causes found and fixed:
+
+1. **VO teardown blanks the overlay.** `mp.commandv("stop")` reconfigures the video
+   output, dropping every OSD overlay for the frames until the next file establishes
+   a window — so the loading pane flashed to black even though the loading text was
+   still set. Fix: a Lua `idle-active` observer (`kunai-bridge.lua`, mirrors the
+   existing `osd-dimensions` re-draw) re-asserts the pane across the stop → idle →
+   loadfile gap. Helps both manual `n` and auto-next.
+2. **Auto-next had no up-front paint.** Manual `n` paints the pane locally in Lua
+   before signalling (`start_episode_transition`), but auto-next waited for the
+   post-countdown app→mpv `set_property` round-trip, so mpv sat on a black idle frame
+   through the 3s countdown (the previous `file-loaded` had cleared `kunai-loading`).
+   Fix: `runAutoNextCountdown` now paints the loading overlay before the countdown and
+   clears it if the user cancels (`PlaybackPhase.ts`).
+
+Static net green (typecheck 8/8, 1356 tests, lint clean). Live confirm:
+
+- [ ] Press `n` mid-episode: loading pane appears **immediately**, no black flash,
+      stays up until the next file loads.
+- [ ] Let an episode end → auto-next: the loading pane is visible **through the whole
+      3s countdown** (no black idle frame), then the next episode loads under it.
+- [ ] Cancel the auto-next countdown (`a` / pause): the loading pane clears, the
+      paused window is not frozen on "Loading…".
+- [ ] `previous` and `ctrl+r` (refresh) still paint the pane without a flash.
+
 ## Plan R (rescope) — render robustness
 
 - [ ] Resize the terminal during the shell + during playback bootstrap: no flicker,

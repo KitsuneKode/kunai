@@ -275,6 +275,19 @@ mp.observe_property("osd-dimensions", "native", function()
 	end
 end)
 
+-- Re-assert the loading pane across the stop → idle → loadfile gap. mpv tears the
+-- video output down on `stop`, which can drop every OSD overlay for the frames
+-- until the next file establishes a window. Without this, the loading pane blanks
+-- to black between episodes (manual `n` and auto-next alike) even though the
+-- loading text is still set — the cause of the "delay before the loading screen"
+-- on next/auto-next. Mirrors the osd-dimensions re-draw above.
+mp.observe_property("idle-active", "bool", function(_, active)
+	if active and kunai_loading_text ~= "" then
+		draw_kunai_loading_overlay()
+		ensure_loading_animation()
+	end
+end)
+
 pcall(function()
 	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
 	draw_kunai_loading_overlay()

@@ -316,7 +316,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     ).padStart(2, "0")}`;
     let cancelledByAction = false;
 
-    return await runAutoplayAdvanceCountdown({
+    // Paint the loading pane up front so mpv does not sit on a black idle frame
+    // during the countdown (on natural EOF the previous file-loaded already cleared
+    // kunai-loading, and the commit-time overlay is 3s away). This is the auto-next
+    // analogue of the manual `n` path, which paints locally in the Lua bridge before
+    // signalling. Cleared below if the user cancels so a paused-idle window does not
+    // keep showing "loading".
+    await applyMpvEpisodeLoadingOverlay(playerControl.getActive(), episode);
+
+    const outcome = await runAutoplayAdvanceCountdown({
       seconds: 3,
       signal: context.signal,
       sleep: (ms) => Bun.sleep(ms),
@@ -340,6 +348,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         return false;
       },
     });
+
+    if (outcome === "cancelled") {
+      // No advance is coming; drop the pre-painted loading pane so the paused idle
+      // window is clean instead of frozen on "Loading…".
+      await playerControl.getActive()?.setEpisodeTransitionLoading?.(null);
+    }
+
+    return outcome;
   }
 
   private updatePresenceInBackground(
