@@ -150,6 +150,24 @@ Static net green (typecheck 8/8, 1356 tests, lint clean). Live confirm:
       paused window is not frozen on "Loading…".
 - [ ] `previous` and `ctrl+r` (refresh) still paint the pane without a flash.
 
+## Plan Z — zen mode (core landed 2026-06-01; live wiring owed)
+
+Pure core landed: `getShellViewportPolicy(..., { zen })` collapses to single-column
+at any width (no companion / preview rail), never overriding `blocked`; hooks accept
+a `zen` flag; persisted `zenMode` config field (default false). Unit-tested.
+
+**Live wiring still owed (the live-gated half):**
+
+- [ ] Read `config.zenMode` (and/or the `--zen` launch arg, currently aliased to
+      `minimal` chrome) and pass `zen` into the `useViewportPolicy` /
+      `useDebouncedViewportPolicy` call sites so the single-column layout actually
+      renders.
+- [ ] A hotkey toggles zen live (registry id reserved in `keybindings.ts`), persists
+      to config, and re-lays-out without restart.
+- [ ] In zen: single column, minimal footer/header chrome, **every feature still
+      key-reachable** (search, history, discover, pickers, playback controls).
+- [ ] Leaving zen restores the companion/preview-rail layout at wide widths.
+
 ## Plan R (rescope) — render robustness
 
 - [ ] Resize the terminal during the shell + during playback bootstrap: no flicker,
