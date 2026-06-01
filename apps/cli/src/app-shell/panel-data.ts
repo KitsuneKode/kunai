@@ -21,6 +21,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import type { HistoryProgress } from "@kunai/storage";
 import type { NotificationRecord } from "@kunai/storage";
 
+import { helpSections } from "./keybindings";
 import { describeHistoryReturnLoopDetail } from "./root-history-bridge";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 
@@ -146,44 +147,24 @@ function formatMs(ms: number): string {
 }
 
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
-  return [
-    // ── Global (always available) ──
-    { label: "─── Always available", detail: "", tone: "info" },
-    { label: "/", detail: "Open command palette — search all commands" },
-    { label: "?", detail: "Open help" },
-    { label: "Esc", detail: "Close panel · clear filter · go back" },
-    { label: "Ctrl+A / E", detail: "Jump to start / end of input" },
-    { label: "Ctrl+W", detail: "Delete word backward" },
-    { label: "Ctrl+← →", detail: "Move cursor by word" },
+  // Key chords are derived from the keybinding registry (single source of truth)
+  // so the help overlay can never drift from the keys that are actually bound.
+  // The slash-command list is curated here because those live in the command
+  // registry, not the chord registry.
+  const keyLines: ShellPanelLine[] = helpSections().flatMap((section) => [
+    { label: `─── ${section.group}`, detail: "", tone: "info" as const },
+    ...section.items.map((item) => ({ label: item.keys, detail: item.label })),
+  ]);
 
-    // ── While browsing ──
-    { label: "─── While browsing", detail: "", tone: "info" },
-    { label: "↑↓ / Enter", detail: "Navigate results · open selected title" },
-    { label: "Tab", detail: "Switch between series and anime mode" },
-    { label: "Ctrl+T", detail: "Reload trending results" },
-    { label: "Ctrl+D", detail: "Download highlighted title" },
-    { label: "g", detail: "Open recommendations panel" },
+  return [
+    ...keyLines,
+
+    // ── Panels & Commands (slash commands — see the command registry) ──
+    { label: "─── Panels & commands", detail: "", tone: "info" },
     { label: "/history", detail: "Resume from recent progress" },
     { label: "/wl", detail: "View and manage your watchlist" },
     { label: "/playlist", detail: "View and manage your playback queue" },
     { label: "/stats", detail: "Watch statistics and streak" },
-
-    // ── During / after playback ──
-    { label: "─── During and after playback", detail: "", tone: "info" },
-    { label: "n / p", detail: "Next / previous episode" },
-    { label: "r", detail: "Replay current episode" },
-    { label: "a", detail: "Toggle autoplay on / off" },
-    { label: "u", detail: "Toggle intro auto-skip" },
-    { label: "f", detail: "Try fallback provider" },
-    { label: "e", detail: "Open episode picker" },
-    { label: "o", detail: "Switch stream source" },
-    { label: "v", detail: "Change quality" },
-    { label: "k", detail: "View available streams" },
-    { label: "d", detail: "Download current episode" },
-    { label: "i", detail: "Recommendation actions for post-playback picks" },
-
-    // ── Panels & Commands ──
-    { label: "─── Panels & Commands", detail: "", tone: "info" },
     { label: "/notifications", detail: "App notices · new episodes · queue recovery" },
     { label: "/diagnostics", detail: "Session health, provider, and network status" },
     { label: "/downloads", detail: "Manage queued, running, and failed download jobs" },

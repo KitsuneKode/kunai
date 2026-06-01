@@ -18,8 +18,16 @@ describe("panel-data", () => {
   test("buildHelpPanelLines returns stable guidance", () => {
     const lines = buildHelpPanelLines();
     expect(lines.length).toBeGreaterThan(4);
-    expect(lines.some((line) => line.label === "─── Panels & Commands")).toBe(true);
+    expect(lines.some((line) => line.label === "─── Panels & commands")).toBe(true);
     expect(lines.some((line) => line.label === "Ctrl+W")).toBe(true);
+  });
+
+  test("buildHelpPanelLines documents the real mpv quality key (k), not an invented v", () => {
+    const lines = buildHelpPanelLines();
+    const quality = lines.find((line) => line.detail?.toLowerCase().includes("quality"));
+    expect(quality?.label).toBe("k / K");
+    // the old panel claimed a bare "v" for quality — it was never bound.
+    expect(lines.some((line) => line.label === "v")).toBe(false);
   });
 
   test("buildAboutPanelLines includes default mode summary", () => {
