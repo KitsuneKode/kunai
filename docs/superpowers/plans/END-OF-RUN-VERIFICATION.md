@@ -181,6 +181,21 @@ Browse now renders single-column under zen (`zen: settings.zenMode` →
 without restart); zen-aware minimal footer/header chrome; confirming **every feature
 stays key-reachable** in zen (search, history, discover, pickers, playback controls).
 
+## Plan F — Up Next surfaces the cross-title queue (landed 2026-06-01; live confirm)
+
+`resolveUpNext` existed but was dormant — the post-play Up Next card only showed
+the episode-chain next, so finishing a series/movie hid a queued title. Now the
+post-play view falls back to the queue head when no episode chain remains
+(series-complete / movie-complete / caught-up), via `buildPostPlayQueueNextLabel`
+fed from `queueService.peekNext()`. Episode-chain still wins when present.
+
+- [ ] Queue a different title (`q` on a browse row), then finish the current
+      series (or watch a movie to the end): the post-play **Up Next** card shows the
+      queued title (with `· SxxExx` if it's a series episode), meta "From your queue".
+- [ ] Mid-series with a real next episode still shows the **episode** as Up Next
+      (queue does not preempt the binge).
+- [ ] Empty queue + finished series → no Up Next card (no phantom).
+
 ## Plan R (rescope) — render robustness
 
 - [ ] Resize the terminal during the shell + during playback bootstrap: no flicker,
