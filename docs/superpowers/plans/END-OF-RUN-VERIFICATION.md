@@ -150,23 +150,36 @@ Static net green (typecheck 8/8, 1356 tests, lint clean). Live confirm:
       paused window is not frozen on "Loading…".
 - [ ] `previous` and `ctrl+r` (refresh) still paint the pane without a flash.
 
-## Plan Z — zen mode (core landed 2026-06-01; live wiring owed)
+## Plan S — help overlay drift fixed 2026-06-01 (live confirm)
 
-Pure core landed: `getShellViewportPolicy(..., { zen })` collapses to single-column
-at any width (no companion / preview rail), never overriding `blocked`; hooks accept
-a `zen` flag; persisted `zenMode` config field (default false). Unit-tested.
+The `?` help overlay was a hand-maintained list that had drifted from the real
+bindings. It is now **derived from the keybinding registry** (`keybindings.ts`)
+via `helpSections()`, so documented keys mirror bound keys. Corrected real errors:
+the old panel claimed `k` = "view streams" and `v` = "change quality", but the mpv
+bridge binds `k` → quality and never binds `v`; `g` (recommendations) was dead;
+`a/u/f/e/o/i` were listed as in-player keys but are slash-commands / footer actions.
 
-**Live wiring still owed (the live-gated half):**
+- [ ] Open `?` (help): the **In the player** section shows `n/N`, `p/P`, `b`,
+      `k/K` (quality), `Ctrl+R` (refresh), `Alt+R` (resume) — and these match what
+      the mpv window actually does. No `v`, no `g`, no phantom player keys.
+- [ ] Footer hints (where shown) read from the same registry — no stale keys.
 
-- [ ] Read `config.zenMode` (and/or the `--zen` launch arg, currently aliased to
-      `minimal` chrome) and pass `zen` into the `useViewportPolicy` /
-      `useDebouncedViewportPolicy` call sites so the single-column layout actually
-      renders.
-- [ ] A hotkey toggles zen live (registry id reserved in `keybindings.ts`), persists
-      to config, and re-lays-out without restart.
-- [ ] In zen: single column, minimal footer/header chrome, **every feature still
-      key-reachable** (search, history, discover, pickers, playback controls).
-- [ ] Leaving zen restores the companion/preview-rail layout at wide widths.
+## Plan Z — zen mode (core + browse wiring landed 2026-06-01; more surfaces owed)
+
+Browse now renders single-column under zen (`zen: settings.zenMode` →
+`useDebouncedViewportPolicy("browse")`), and `--zen` applies a transient in-memory
+`config.update({ zenMode: true })` (not persisted). Remaining:
+
+- [ ] `--zen` launch: browse list is single column, no companion / preview rail, at
+      any width; quitting and relaunching **without** `--zen` restores the wide layout
+      (confirms the override did not persist to the config file).
+- [ ] Thread `zen` into the remaining surfaces (discover, library/pickers,
+      post-play) — they don't take `settings` yet, so zen currently only reshapes
+      browse. A live in-shell toggle (hotkey) is still owed.
+
+**Zen — still owed beyond browse:** a hotkey that toggles zen live (re-lays-out
+without restart); zen-aware minimal footer/header chrome; confirming **every feature
+stays key-reachable** in zen (search, history, discover, pickers, playback controls).
 
 ## Plan R (rescope) — render robustness
 
