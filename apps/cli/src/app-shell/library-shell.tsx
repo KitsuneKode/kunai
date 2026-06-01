@@ -63,7 +63,7 @@ export function LibraryShell({
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadsEnabled, setDownloadsEnabled] = useState(container.config.downloadsEnabled);
-  const viewport = useDebouncedViewportPolicy("picker");
+  const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
 
   useInput((input, key) => {
     if (key.escape) {
@@ -145,7 +145,7 @@ function LibraryTab({ container }: { container: Container }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
-  const viewport = useDebouncedViewportPolicy("picker");
+  const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
 
   useEffect(() => {
     let cancelled = false;

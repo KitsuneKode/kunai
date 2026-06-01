@@ -144,7 +144,7 @@ export function DownloadManagerContent({
   onClose: () => void;
   onNavigateToLibrary?: () => void;
 }) {
-  const viewport = useDebouncedViewportPolicy("picker");
+  const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const [activeJobs, setActiveJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [queuedJobs, setQueuedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [completedJobs, setCompletedJobs] = useState<readonly DownloadJobRecord[]>([]);
