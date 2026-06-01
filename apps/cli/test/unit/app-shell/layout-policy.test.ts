@@ -146,4 +146,27 @@ describe("getShellViewportPolicy", () => {
     expect(p.breakpoint).toBe("blocked");
     expect(p.tooSmall).toBe(true);
   });
+
+  test("zen collapses to a single column at any width (no companion, no rail)", () => {
+    const wide = getShellViewportPolicy("browse", 160, 40, { zen: true });
+    expect(wide.zen).toBe(true);
+    expect(wide.wideBrowse).toBe(false);
+    expect(wide.mediumBrowse).toBe(false);
+    expect(wide.previewRail).toBe(false);
+    expect(wide.breakpoint).toBe("narrow");
+    // Still usable: not flagged too-small purely because of zen.
+    expect(wide.tooSmall).toBe(false);
+  });
+
+  test("zen defaults to off and does not change normal wide layout", () => {
+    const normal = getShellViewportPolicy("browse", 160, 40);
+    expect(normal.zen).toBe(false);
+    expect(normal.wideBrowse).toBe(true);
+  });
+
+  test("zen never overrides the blocked breakpoint on a too-small terminal", () => {
+    const blocked = getShellViewportPolicy("browse", 59, 19, { zen: true });
+    expect(blocked.breakpoint).toBe("blocked");
+    expect(blocked.tooSmall).toBe(true);
+  });
 });

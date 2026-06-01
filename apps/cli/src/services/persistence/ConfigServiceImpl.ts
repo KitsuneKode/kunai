@@ -336,6 +336,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.minimalMode;
   }
 
+  get zenMode(): boolean {
+    return this.config.zenMode;
+  }
+
   get powerSaverMode(): boolean {
     return this.config.powerSaverMode;
   }

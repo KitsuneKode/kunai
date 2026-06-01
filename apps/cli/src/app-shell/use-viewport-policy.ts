@@ -23,7 +23,7 @@ export function getShellTerminalProfile(env: ShellEnv = process.env): ShellTermi
  */
 export function useViewportPolicy(
   kind: ShellViewportKind,
-  options: { forceCompact?: boolean } = {},
+  options: { forceCompact?: boolean; zen?: boolean } = {},
 ): ShellViewportPolicy {
   const { stdout } = useStdout();
   return getShellViewportPolicy(kind, stdout.columns ?? 80, stdout.rows ?? 24, {
@@ -42,7 +42,7 @@ export function useViewportPolicy(
  */
 export function useDebouncedViewportPolicy(
   kind: ShellViewportKind,
-  options: { forceCompact?: boolean } = {},
+  options: { forceCompact?: boolean; zen?: boolean } = {},
 ): ShellViewportPolicy {
   const { stdout } = useStdout();
   const cols = stdout.columns ?? 80;

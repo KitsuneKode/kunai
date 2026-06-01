@@ -49,6 +49,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   discoverItemLimit: 24,
   recommendationRailEnabled: true,
   minimalMode: false,
+  zenMode: false,
   powerSaverMode: false,
   powerSaverAllowManualArtwork: true,
   presenceProvider: "off",

@@ -55,6 +55,8 @@ export interface KitsuneConfig {
   recommendationRailEnabled: boolean;
   /** Collapse companion pane, minimal footer, and dim header status regardless of terminal size. Default false. */
   minimalMode: boolean;
+  /** Zen mode: single-column, no companion/preview rail, minimal chrome — ani-cli-style bare layout at any width, every feature still key-reachable. Default false. */
+  zenMode: boolean;
   /** Suppress optional background network and speculative work while preserving manual actions. */
   powerSaverMode: boolean;
   /** Permit explicitly requested artwork work while Power Saver is enabled. */

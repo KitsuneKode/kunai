@@ -14,6 +14,7 @@ export type ShellViewportPolicy = {
   wideBrowse: boolean;
   mediumBrowse: boolean;
   previewRail: boolean;
+  zen: boolean;
   minColumns: number;
   minRows: number;
   maxVisibleRows: number;
@@ -42,14 +43,27 @@ export function getShellViewportPolicy(
   kind: ShellViewportKind,
   columns: number,
   rows: number,
-  options: { forceCompact?: boolean; terminalProfile?: ShellTerminalProfile } = {},
+  options: {
+    forceCompact?: boolean;
+    terminalProfile?: ShellTerminalProfile;
+    /**
+     * Zen mode: collapse to a single column (no companion / preview rail) at any
+     * width for ani-cli-style minimal chrome, without forking the layout math.
+     * Never overrides the blocked breakpoint — a too-small terminal is still
+     * too-small. Treated as "narrow" so every single-column caller path applies.
+     */
+    zen?: boolean;
+  } = {},
 ): ShellViewportPolicy {
   const forceCompact = options.forceCompact ?? false;
   const terminalProfile = options.terminalProfile ?? "local";
+  const zen = options.zen ?? false;
 
   const blocked =
     forceCompact || columns < GLOBAL_BLOCKED_MIN_COLS || rows < GLOBAL_BLOCKED_MIN_ROWS;
-  const narrow = !blocked && columns < 80;
+  // Zen forces the single-column ("narrow") track for any unblocked terminal, so
+  // medium/wide companions and the preview rail never appear regardless of width.
+  const narrow = !blocked && (zen || columns < 80);
   const medium = !blocked && !narrow && columns < 120;
   const wide = !blocked && !narrow && !medium;
 
@@ -89,6 +103,7 @@ export function getShellViewportPolicy(
     wideBrowse,
     mediumBrowse,
     previewRail,
+    zen,
     minColumns,
     minRows,
     maxVisibleRows: Math.max(5, rows - maxVisibleRowsBase),
