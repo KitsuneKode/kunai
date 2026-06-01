@@ -841,6 +841,12 @@ export function RootOverlayShell({
         container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         return;
       }
+      // Library / Downloads are self-contained shells that own Esc themselves
+      // (clear an armed delete-confirm or switch sub-state first, then close via
+      // their onClose). Let their own useInput handle it instead of closing here.
+      if (overlay.type === "library" || overlay.type === "downloads") {
+        return;
+      }
       if (overlay.type === "history" && hasPendingRootHistorySelection()) {
         resolveRootHistorySelection(null);
       }

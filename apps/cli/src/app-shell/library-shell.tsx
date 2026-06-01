@@ -66,6 +66,10 @@ export function LibraryShell({
   const viewport = useDebouncedViewportPolicy("picker");
 
   useInput((input, key) => {
+    if (key.escape) {
+      onClose();
+      return;
+    }
     if (key.tab) {
       setTab((prev) => (prev === "library" ? "queue" : "library"));
       return;
@@ -198,6 +202,13 @@ function LibraryTab({ container }: { container: Container }) {
 
   useInput((input, key) => {
     if (loading || !entries || totalRows === 0) return;
+    // Esc cancels an armed delete-confirm first (web-routing back: undo the
+    // pending state before leaving the surface). Only when nothing is armed does
+    // esc fall through to the root overlay, which closes the Library.
+    if (key.escape && confirmDeleteKey) {
+      setConfirmDeleteKey(null);
+      return;
+    }
     if (key.upArrow) {
       setConfirmDeleteKey(null);
       setSelectedIndex((prev) => Math.max(0, prev - 1));
