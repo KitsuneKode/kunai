@@ -70,6 +70,7 @@ import { getNextStreakMilestone } from "./streak-milestone";
 import {
   toShellAction,
   type FooterAction,
+  type ShellFooterMode,
   type PlaybackShellState,
   type LoadingShellState,
   type PlaybackShellResult,
@@ -1596,21 +1597,13 @@ function ListShell<T>({
     normalizedFilter.length > 0
       ? "Refine the filter or confirm the highlighted match"
       : (actionContext?.taskLabel ?? "Filter this list and confirm a selection");
-  const effectiveFooterMode = "minimal";
-  const footerActions: readonly FooterAction[] =
-    effectiveFooterMode === "minimal"
-      ? [
-          { key: "/", label: "commands", action: "command-mode" },
-          { key: "esc", label: "back", action: "quit" },
-        ]
-      : [
-          { key: "type", label: "filter", action: "search" },
-          { key: "enter", label: "select", action: "search" },
-          { key: "esc", label: "back", action: "quit" },
-          ...(actionContext
-            ? [{ key: "/", label: "commands", action: "command-mode" as const }]
-            : []),
-        ];
+  // List/picker shells use the minimal footer: the surface is a focused filter +
+  // select, and the command palette ("/") plus Esc-back are the only chrome.
+  const effectiveFooterMode: ShellFooterMode = "minimal";
+  const footerActions: readonly FooterAction[] = [
+    { key: "/", label: "commands", action: "command-mode" },
+    { key: "esc", label: "back", action: "quit" },
+  ];
 
   const updateFilterQuery = (nextValue: string) => {
     const normalized = normalizeReservedCommandInput(nextValue);
