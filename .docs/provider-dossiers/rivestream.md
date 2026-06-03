@@ -14,16 +14,16 @@
 
 ## User-Facing Capabilities
 
-| Capability            | Supported | Evidence                | Notes                                            |
-| --------------------- | --------: | ----------------------- | ------------------------------------------------ |
-| Search                |       yes | API                     | Stable. User-visible.                            |
-| Episode list          |       yes | API                     | Stable. Cache identity.                          |
-| Server switch         |       yes | Multiple upstream nodes | "FlowCast", etc. User-visible.                   |
-| Quality switch        |       yes | String merged in source | `FlowCast (1080)`. Engine must regex/split this. |
-| Audio language switch |       yes | HLS manifest            | MPV relies on standard HLS `#EXT-X-MEDIA` tags.  |
-| Soft subtitles        |       yes | Sidecar or HLS          | Reliable.                                        |
-| Hardsubs              |     maybe | Upstream dependent      | Varies wildly.                                   |
-| Downloads             |       yes | `ffmpeg`                | Standard processing.                             |
+| Capability            | Supported | Evidence                                    | Notes                                                     |
+| --------------------- | --------: | ------------------------------------------- | --------------------------------------------------------- |
+| Search                |       yes | API                                         | Stable. User-visible.                                     |
+| Episode list          |       yes | API                                         | Stable. Cache identity.                                   |
+| Server switch         |       yes | Multiple upstream nodes                     | "FlowCast", etc. User-visible.                            |
+| Quality switch        |       yes | String merged in source                     | `FlowCast (1080)`. Engine must regex/split this.          |
+| Audio language switch |       yes | HLS manifest                                | MPV relies on standard HLS `#EXT-X-MEDIA` tags.           |
+| Soft subtitles        |       yes | Sidecar or HLS                              | Reliable.                                                 |
+| Hardsubs              |     maybe | Upstream dependent                          | Varies wildly.                                            |
+| Downloads             |       yes | `yt-dlp` with optional `ffprobe` validation | Standard processing when a direct media URL is available. |
 
 ## Provider Data Shapes
 

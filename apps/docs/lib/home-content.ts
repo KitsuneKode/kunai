@@ -11,40 +11,105 @@ export type HomeSection = {
   readonly items: readonly HomeLink[];
 };
 
+export type HomeFlowStep = {
+  readonly title: string;
+  readonly description: string;
+  readonly state: "focus" | "ready" | "warn" | "danger" | "quiet";
+};
+
+export type HomeProof = {
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+};
+
 export const homeHero = {
-  eyebrow: "Kunai Docs",
-  title: "Terminal streaming that stays explainable.",
+  eyebrow: "Kunai CLI",
+  title: "A calm command shell for playable streams.",
   description:
-    "Install Kunai, understand the playback feedback loop, and debug provider, mpv, memory, Discord, download, and history behavior without guessing.",
+    "Find a title, resolve a direct provider stream, hand it to mpv, and recover from provider churn without losing your place.",
   installCommands: ["bun install -g @kitsunekode/kunai", "kunai --setup"],
   primaryCta: {
-    label: "Start with the guide",
+    label: "Read the guide",
     href: "/docs/users/getting-started",
   },
   secondaryCta: {
-    label: "Debug a session",
-    href: "/docs/users/diagnostics-and-reporting",
+    label: "See recovery",
+    href: "/docs/users/playback-and-recovery",
   },
 } as const;
 
 export const homeHighlights = [
   {
-    label: "Playback",
-    detail: "mpv handoff, recovery, replay, fallback, stream selection",
+    label: "Provider truth",
+    detail: "Aired, available, cached, and offline states stay separate.",
   },
   {
-    label: "Feedback",
-    detail: "runtime health, memory, network, diagnostics, support bundles",
+    label: "Fast return loop",
+    detail:
+      "Continue watching, calendar, history, and post-playback point back to the next safe action.",
   },
   {
-    label: "Library",
-    detail: "continue watching, new episodes, downloads, queues, offline",
+    label: "Recoverable playback",
+    detail: "Recover, replay, refresh source, and fallback mean different things.",
+  },
+] as const;
+
+export const homeFlow: readonly HomeFlowStep[] = [
+  {
+    title: "Search or continue",
+    description:
+      "Start from a query, a remembered title, a calendar release, or an offline-ready file.",
+    state: "focus",
+  },
+  {
+    title: "Resolve with evidence",
+    description:
+      "Kunai checks provider reality before promising playback, then keeps source and subtitle state visible.",
+    state: "warn",
+  },
+  {
+    title: "Hand off to mpv",
+    description:
+      "The shell supervises launch, position, autoskip, autoplay, and recovery while mpv does the playing.",
+    state: "ready",
+  },
+  {
+    title: "Recover without guessing",
+    description:
+      "When streams stall or providers drift, Kunai explains the failure and offers the next repair path.",
+    state: "danger",
+  },
+  {
+    title: "Return to the next beat",
+    description:
+      "Post-playback, history, and calendar keep one primary action in front of the user.",
+    state: "quiet",
+  },
+] as const;
+
+export const homeProof: readonly HomeProof[] = [
+  {
+    label: "Playback contract",
+    value: "mpv first",
+    detail: "Kunai resolves streams and supervises state; mpv remains the playback engine.",
+  },
+  {
+    label: "Diagnostics posture",
+    value: "redacted",
+    detail: "Support bundles exclude stream URLs, subtitle URLs, headers, tokens, and local paths.",
+  },
+  {
+    label: "Runtime model",
+    value: "Bun CLI",
+    detail:
+      "The shipped experience is terminal-first, predictable, and designed for repeat daily use.",
   },
 ] as const;
 
 export const homeSections: readonly HomeSection[] = [
   {
-    title: "Start",
+    title: "Set up",
     eyebrow: "First run",
     description: "Install once, check runtime dependencies, then launch playback with guardrails.",
     items: [
@@ -99,7 +164,7 @@ export const homeSections: readonly HomeSection[] = [
     ],
   },
   {
-    title: "Feedback",
+    title: "Understand",
     eyebrow: "Know what is happening",
     description:
       "Read the shell signals that explain slow providers, buffering, Discord presence, and memory.",
@@ -123,7 +188,7 @@ export const homeSections: readonly HomeSection[] = [
     ],
   },
   {
-    title: "Maintain",
+    title: "Build",
     eyebrow: "For contributors",
     description: "Keep features documented, tested, and easy for future agents to extend.",
     items: [

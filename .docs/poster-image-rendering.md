@@ -49,8 +49,8 @@ In Ink, browse and playback companion panes both render `placeholder` for **`kit
 ## Offline thumbnails
 
 Downloads persist the title poster URL and cached IntroDB/AniSkip timing in `download_jobs`.
-When `ffmpeg` is available, the download service also creates a local sidecar thumbnail
-next to the completed video using the pattern:
+When offline artwork caching is enabled and a poster URL exists, the download service caches
+the poster as a local sidecar preview next to the completed video using the pattern:
 
 ```text
 Title - S01E01.mp4
@@ -59,14 +59,15 @@ Title - S01E01.thumbnail.jpg
 
 The offline library chooses previews in this order:
 
-1. Generated local thumbnail path.
+1. Cached local poster artwork path.
 2. Persisted poster URL.
 3. Text-only shelf details.
 
-Thumbnail generation is post-completion and atomic: `ffmpeg` writes to a temporary sidecar,
-Kunai verifies the file is non-empty, then renames it into place and records `thumbnail_path`.
-Missing `ffmpeg`, missing terminal graphics support, failed thumbnail decode, a partial thumbnail,
-or a tiny terminal must degrade to text without blocking playback or marking the download failed.
+Artwork caching is post-completion and best effort: Kunai fetches the persisted poster URL,
+writes the sidecar atomically, then records `thumbnail_path`. Missing poster metadata, disabled
+offline artwork caching, failed artwork fetch/decode, missing terminal graphics support, or a tiny
+terminal must degrade to text without blocking playback or marking the download failed. Kunai does
+not require or spawn `ffmpeg` for normal playback or offline artwork.
 
 ## Debugging
 

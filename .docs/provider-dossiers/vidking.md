@@ -25,16 +25,16 @@
 
 ## User-Facing Capabilities
 
-| Capability            | Supported | Evidence                                  | Notes                                                                         |
-| --------------------- | --------: | ----------------------------------------- | ----------------------------------------------------------------------------- |
-| Search                |       yes | `search/multi` TMDB proxy endpoint        | Data originates from TMDB proxy. High stability. User-visible.                |
-| Episode list          |       yes | `/tv/{id}/season/{s}` TMDB proxy          | High stability. Affects cache identity (season-level).                        |
-| Server switch         |       yes | Returns multiple provider nodes           | Nodes often correlate to audio language. User-visible in player settings.     |
-| Quality switch        |       yes | Manifest parsing (`EXT-X-STREAM-INF`)     | Resolution parsed from HLS. Stable. Used for playback/downloads.              |
-| Audio language switch |       yes | `?language=` endpoint or `quality` string | Varies by sub-architecture (Meine vs HDMovie). Affects stream cache identity. |
-| Soft subtitles        |       yes | Native HLS `EXT-X-MEDIA:TYPE=SUBTITLES`   | Stable. Affects user-visible caption menus.                                   |
-| Hardsubs              |     maybe | Embedded in video stream                  | Usually defaults to soft-subs, but specific older sources may bake them in.   |
-| Downloads             |       yes | `ffmpeg` / `yt-dlp` parsing of `.m3u8`    | Reliable. Requires downloading HLS chunks and sidecar VTTs separately.        |
+| Capability            | Supported | Evidence                                    | Notes                                                                         |
+| --------------------- | --------: | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| Search                |       yes | `search/multi` TMDB proxy endpoint          | Data originates from TMDB proxy. High stability. User-visible.                |
+| Episode list          |       yes | `/tv/{id}/season/{s}` TMDB proxy            | High stability. Affects cache identity (season-level).                        |
+| Server switch         |       yes | Returns multiple provider nodes             | Nodes often correlate to audio language. User-visible in player settings.     |
+| Quality switch        |       yes | Manifest parsing (`EXT-X-STREAM-INF`)       | Resolution parsed from HLS. Stable. Used for playback/downloads.              |
+| Audio language switch |       yes | `?language=` endpoint or `quality` string   | Varies by sub-architecture (Meine vs HDMovie). Affects stream cache identity. |
+| Soft subtitles        |       yes | Native HLS `EXT-X-MEDIA:TYPE=SUBTITLES`     | Stable. Affects user-visible caption menus.                                   |
+| Hardsubs              |     maybe | Embedded in video stream                    | Usually defaults to soft-subs, but specific older sources may bake them in.   |
+| Downloads             |       yes | `yt-dlp` with optional `ffprobe` validation | Reliable. Requires downloading HLS chunks and sidecar VTTs separately.        |
 
 ## Provider Data Shapes
 

@@ -604,7 +604,7 @@ Broken artifact: red `✕` + `file missing` dim + amber `↩ re-download` action
 #### All deps found (fast path)
 
 ```
-  ✓ mpv found  ·  ✓ ffmpeg found
+  ✓ mpv found  ·  ✓ yt-dlp found  ·  ffprobe optional
 
   ┄ for best experience, use fullscreen  (recommended for 80+ col layout)
 

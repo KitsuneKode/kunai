@@ -4,7 +4,7 @@ This is the canonical design reference for future download/offline/onboarding wo
 
 Status: in progress (`--download`, `/download`, `/downloads`, `/library`, validated
 `--offline`, local poster/timing/duration metadata, local resume progress, repairable sidecar states,
-best-effort video thumbnails, editable confirmation-gated manual profiles, title-scoped offline
+best-effort cached poster artwork, editable confirmation-gated manual profiles, title-scoped offline
 runway decisions, cleanup preferences, and explicit History local handoff are implemented; daemon
 extraction is still pending).
 
@@ -21,15 +21,15 @@ The feature must not make startup slower or more fragile.
 
 ## Proposed Layers
 
-| Layer             | Responsibility                                                                                          |
-| ----------------- | ------------------------------------------------------------------------------------------------------- |
-| Onboarding wizard | First-run dependency checks, opt-in features, setup rerun                                               |
-| Feature gate      | Pure capability checks such as downloads enabled and `yt-dlp` available                                 |
-| Download service  | Queue, yt-dlp process lifecycle, progress, retries, SQLite state                                        |
-| Media artifacts   | Persist poster URL, cached IntroDB/AniSkip timing, duration, subtitles, and optional thumbnail sidecars |
-| Offline library   | Browse and play completed local files from stored download metadata                                     |
-| Source policy     | Decide local-vs-online actions from cached local state without provider work                            |
-| Notification rail | Small queued status messages for downloads, updates, and offline prompts                                |
+| Layer             | Responsibility                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| Onboarding wizard | First-run dependency checks, opt-in features, setup rerun                                                    |
+| Feature gate      | Pure capability checks such as downloads enabled and `yt-dlp` available                                      |
+| Download service  | Queue, yt-dlp process lifecycle, progress, retries, SQLite state                                             |
+| Media artifacts   | Persist poster URL, cached IntroDB/AniSkip timing, duration, subtitles, and optional poster-artwork sidecars |
+| Offline library   | Browse and play completed local files from stored download metadata                                          |
+| Source policy     | Decide local-vs-online actions from cached local state without provider work                                 |
+| Notification rail | Small queued status messages for downloads, updates, and offline prompts                                     |
 
 Layering rule: UI asks services for capability/state; services do not render UI.
 
@@ -89,15 +89,15 @@ Layering rule: UI asks services for capability/state; services do not render UI.
   recap, preview, and credits behavior does not unexpectedly change between streamed and
   downloaded files.
 - Offline shelf rows are grouped by title and may render the best local preview image:
-  generated thumbnail first, then persisted poster URL, then text-only fallback.
+  cached poster artwork first, then persisted poster URL, then text-only fallback.
 - Offline title rows should surface local facts that are already in SQLite or on disk:
-  playable count, repair count, cached subtitles, timing metadata, artwork/thumbnail
+  playable count, repair count, cached subtitles, timing metadata, artwork
   availability, duration, size, watch progress, and the first few local episode rows. Opening the library must
   not call providers.
 - Opening `/offline` must not fetch remote metadata. Stored poster URLs are only fetched by the
   terminal image renderer when the selected row needs a preview.
-- Deleting a downloaded artifact removes the media file, subtitle sidecar, recorded thumbnail,
-  and deterministic derived thumbnail path to avoid orphaned local preview files.
+- Deleting a downloaded artifact removes the media file, subtitle sidecar, recorded artwork sidecar,
+  and deterministic derived artwork path to avoid orphaned local preview files.
 
 ## Config Fields (current + planned)
 

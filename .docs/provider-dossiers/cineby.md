@@ -21,16 +21,16 @@
 
 ## User-Facing Capabilities
 
-| Capability            | Supported | Evidence                            | Notes                                                       |
-| --------------------- | --------: | ----------------------------------- | ----------------------------------------------------------- |
-| Search                |       yes | TMDB passthrough                    | Highly stable, user-visible.                                |
-| Episode list          |       yes | TMDB passthrough                    | Highly stable.                                              |
-| Server switch         |       yes | Exposed as different stream options | User-visible, but usually obfuscated behind "Auto" quality. |
-| Quality switch        |       yes | HLS parsing                         | Affects downloads and playback.                             |
-| Audio language switch |       yes | Agent alias mapping                 | _Crucial._ `killjoy` = de. Affects Cache identity heavily.  |
-| Soft subtitles        |       yes | Returned in standard payload        | User-visible.                                               |
-| Hardsubs              |     maybe | Varies by source                    | Not reliably detectable until playback.                     |
-| Downloads             |       yes | `ffmpeg` / `yt-dlp`                 | Stable via `.m3u8` chunk harvesting.                        |
+| Capability            | Supported | Evidence                                    | Notes                                                       |
+| --------------------- | --------: | ------------------------------------------- | ----------------------------------------------------------- |
+| Search                |       yes | TMDB passthrough                            | Highly stable, user-visible.                                |
+| Episode list          |       yes | TMDB passthrough                            | Highly stable.                                              |
+| Server switch         |       yes | Exposed as different stream options         | User-visible, but usually obfuscated behind "Auto" quality. |
+| Quality switch        |       yes | HLS parsing                                 | Affects downloads and playback.                             |
+| Audio language switch |       yes | Agent alias mapping                         | _Crucial._ `killjoy` = de. Affects Cache identity heavily.  |
+| Soft subtitles        |       yes | Returned in standard payload                | User-visible.                                               |
+| Hardsubs              |     maybe | Varies by source                            | Not reliably detectable until playback.                     |
+| Downloads             |       yes | `yt-dlp` with optional `ffprobe` validation | Stable via `.m3u8` chunk harvesting.                        |
 
 ## Provider Data Shapes
 

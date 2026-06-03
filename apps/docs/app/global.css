@@ -9,9 +9,26 @@
 @source "../../../node_modules/fumadocs-ui/dist/**/*.js";
 
 :root {
-  --kunai-accent: #5ed0b6;
+  --kunai-bg: #151017;
+  --kunai-surface: #241b26;
+  --kunai-surface-strong: #302333;
+  --kunai-line: color-mix(in oklab, #f4d8e4 14%, transparent);
+  --kunai-accent: #e68aa6;
+  --kunai-accent-deep: #b95f7b;
+  --kunai-ok: #8dd8bd;
+  --kunai-warning: #d7b26b;
+  --kunai-danger: #ff6f73;
   --kunai-warm: #f4b860;
-  --kunai-card-shadow: 0 12px 32px color-mix(in oklab, black 10%, transparent);
+  --kunai-card-shadow:
+    0 1px 0 color-mix(in oklab, white 8%, transparent) inset,
+    0 24px 54px color-mix(in oklab, black 18%, transparent);
+  --kunai-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --kunai-ease-soft: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
@@ -20,9 +37,12 @@ body {
 
 .kunai-button {
   display: inline-flex;
+  position: relative;
   min-height: 2.75rem;
   align-items: center;
+  justify-content: center;
   border: 1px solid var(--color-fd-border);
+  border-radius: 0.5rem;
   background: var(--color-fd-card);
   padding: 0.72rem 1rem;
   color: var(--color-fd-foreground);
@@ -30,9 +50,10 @@ body {
   font-weight: 800;
   text-decoration: none;
   transition:
-    border-color 140ms ease,
-    background 140ms ease,
-    transform 140ms ease;
+    border-color 160ms var(--kunai-ease-out),
+    background 160ms var(--kunai-ease-out),
+    box-shadow 160ms var(--kunai-ease-out),
+    transform 160ms var(--kunai-ease-out);
 }
 
 .kunai-button:hover {
@@ -40,15 +61,415 @@ body {
   transform: translateY(-1px);
 }
 
+.kunai-button:active {
+  transform: scale(0.96);
+}
+
 .kunai-button-primary {
   border-color: color-mix(in oklab, var(--kunai-accent) 70%, var(--color-fd-border));
   background: color-mix(in oklab, var(--kunai-accent) 18%, var(--color-fd-card));
+  color: color-mix(in oklab, var(--color-fd-foreground) 92%, var(--kunai-accent-deep));
+  box-shadow: 0 10px 26px color-mix(in oklab, var(--kunai-accent) 18%, transparent);
 }
 
-.kunai-doc-card {
+.kunai-home {
+  isolation: isolate;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--kunai-line) 42%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--kunai-line) 34%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 5.5rem 5.5rem;
+  background-position: center top;
+}
+
+.kunai-eyebrow {
+  margin: 0;
+  color: var(--kunai-accent);
+  font-size: 0.73rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.kunai-reveal {
+  animation: kunai-rise 520ms var(--kunai-ease-soft) both;
+}
+
+.kunai-reveal-late {
+  animation-delay: 110ms;
+}
+
+@keyframes kunai-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kunai-terminal-stage {
+  border: 1px solid var(--kunai-line);
+  border-radius: 0.5rem;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in oklab, var(--kunai-surface) 88%, transparent),
+      color-mix(in oklab, var(--kunai-surface-strong) 72%, transparent)
+    ),
+    var(--color-fd-card);
+  padding: 0.75rem;
   box-shadow: var(--kunai-card-shadow);
 }
 
+.kunai-terminal-top,
+.kunai-terminal-body,
+.kunai-install {
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-bg) 88%, transparent);
+}
+
+.kunai-terminal-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+  border-radius: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  color: var(--color-fd-muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.kunai-terminal-body {
+  margin-top: 0.6rem;
+  border-radius: 0.5rem;
+  padding: clamp(1rem, 3vw, 1.55rem);
+  font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.75;
+}
+
+.kunai-terminal-body p {
+  margin: 0;
+}
+
+.kunai-gap {
+  padding-top: 0.9rem;
+}
+
+.kunai-accent {
+  color: var(--kunai-accent);
+}
+
+.kunai-ok {
+  color: var(--kunai-ok);
+}
+
+.kunai-muted {
+  color: var(--color-fd-muted-foreground);
+}
+
+.kunai-install {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.6rem;
+  border-radius: 0.5rem;
+  padding: 0.9rem;
+}
+
+.kunai-install span {
+  color: var(--color-fd-muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.kunai-install code {
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, white 7%, transparent);
+  padding: 0.66rem 0.75rem;
+  color: var(--color-fd-foreground);
+  font-size: 0.83rem;
+}
+
+.kunai-band,
+.kunai-flow-section,
+.kunai-docs-section,
+.kunai-proof-section,
+.kunai-final {
+  border-top: 1px solid var(--kunai-line);
+  padding-block: clamp(4rem, 9vw, 8rem);
+}
+
+.kunai-band {
+  display: grid;
+  grid-template-columns: minmax(0, 0.65fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+  align-items: start;
+}
+
+.kunai-band h2,
+.kunai-section-head h2,
+.kunai-final h2 {
+  margin: 0.6rem 0 0;
+  max-width: 12ch;
+  font-size: 4.6rem;
+  line-height: 0.96;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.kunai-section-head {
+  margin-bottom: clamp(1.5rem, 4vw, 3rem);
+}
+
+.kunai-section-head h2 {
+  max-width: 15ch;
+}
+
+.kunai-highlight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.kunai-highlight,
+.kunai-flow-card,
+.kunai-doc-row,
+.kunai-proof,
+.kunai-final {
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--color-fd-card) 86%, transparent);
+  box-shadow: var(--kunai-card-shadow);
+}
+
+.kunai-highlight {
+  min-height: 12rem;
+  border-radius: 0.5rem;
+  padding: 1.1rem;
+}
+
+.kunai-highlight span,
+.kunai-proof span {
+  color: var(--kunai-accent);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.kunai-highlight p,
+.kunai-flow-card p,
+.kunai-doc-row p,
+.kunai-doc-card small,
+.kunai-proof p {
+  color: var(--color-fd-muted-foreground);
+  text-wrap: pretty;
+}
+
+.kunai-highlight p {
+  margin: 1.8rem 0 0;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.kunai-flow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(13rem, 1fr));
+  gap: 0.85rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+}
+
+.kunai-flow-card {
+  min-height: 18rem;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  transition:
+    border-color 180ms var(--kunai-ease-out),
+    transform 180ms var(--kunai-ease-out);
+}
+
+.kunai-flow-card:hover {
+  transform: translateY(-2px);
+}
+
+.kunai-flow-card span {
+  font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fd-muted-foreground);
+}
+
+.kunai-flow-card h3,
+.kunai-doc-row h3 {
+  margin: 2rem 0 0.7rem;
+  font-size: 1.38rem;
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+.kunai-state-focus {
+  border-color: color-mix(in oklab, var(--kunai-accent) 42%, var(--kunai-line));
+}
+.kunai-state-ready {
+  border-color: color-mix(in oklab, var(--kunai-ok) 48%, var(--kunai-line));
+}
+.kunai-state-warn {
+  border-color: color-mix(in oklab, var(--kunai-warning) 44%, var(--kunai-line));
+}
+.kunai-state-danger {
+  border-color: color-mix(in oklab, var(--kunai-danger) 44%, var(--kunai-line));
+}
+
+.kunai-doc-row {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.42fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  border-radius: 0.5rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.kunai-doc-row h3 {
+  margin-top: 0.8rem;
+}
+
+.kunai-doc-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.7rem;
+}
+
+.kunai-doc-card {
+  display: grid;
+  min-height: 9.25rem;
+  gap: 0.8rem;
+  align-content: start;
+  border: 1px solid var(--kunai-line);
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--color-fd-card) 72%, transparent);
+  padding: 1rem;
+  box-shadow: var(--kunai-card-shadow);
+  text-decoration: none;
+  transition:
+    border-color 160ms var(--kunai-ease-out),
+    background 160ms var(--kunai-ease-out),
+    transform 160ms var(--kunai-ease-out);
+}
+
 .kunai-doc-card:hover {
-  background: color-mix(in oklab, var(--kunai-accent) 8%, var(--color-fd-card));
+  border-color: color-mix(in oklab, var(--kunai-accent) 52%, var(--kunai-line));
+  background: color-mix(in oklab, var(--kunai-accent) 9%, var(--color-fd-card));
+  transform: translateY(-1px);
+}
+
+.kunai-doc-card:active {
+  transform: scale(0.96);
+}
+
+.kunai-doc-card span {
+  color: var(--color-fd-foreground);
+  font-weight: 900;
+}
+
+.kunai-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.kunai-proof {
+  min-height: 13rem;
+  border-radius: 0.5rem;
+  padding: 1.15rem;
+}
+
+.kunai-proof strong {
+  display: block;
+  margin-top: 1.8rem;
+  font-size: 2.4rem;
+  line-height: 1;
+}
+
+.kunai-final {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1.5rem;
+  align-items: end;
+  border-radius: 0.5rem;
+  padding-inline: clamp(1.2rem, 4vw, 3rem);
+  margin-bottom: 2rem;
+}
+
+.kunai-final h2 {
+  max-width: 14ch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kunai-reveal {
+    animation: none;
+  }
+
+  .kunai-button,
+  .kunai-doc-card,
+  .kunai-flow-card {
+    transition: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .kunai-band,
+  .kunai-doc-row,
+  .kunai-final {
+    grid-template-columns: 1fr;
+  }
+
+  .kunai-highlight-grid,
+  .kunai-proof-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kunai-band h2,
+  .kunai-section-head h2,
+  .kunai-final h2 {
+    font-size: 3.2rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .kunai-terminal-stage {
+    border-radius: 0.5rem;
+  }
+
+  .kunai-terminal-top {
+    justify-content: start;
+  }
+
+  .kunai-flow {
+    grid-template-columns: 1fr;
+    overflow-x: visible;
+  }
+
+  .kunai-band h2,
+  .kunai-section-head h2,
+  .kunai-final h2 {
+    font-size: 2.45rem;
+  }
+
+  .kunai-terminal-body {
+    font-size: 0.82rem;
+  }
 }
