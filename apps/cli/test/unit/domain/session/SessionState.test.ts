@@ -79,40 +79,40 @@ describe("SessionState overlays", () => {
     state = reduceState(state, {
       type: "OPEN_PICKER",
       picker: {
-        id: "source:1",
-        type: "source_picker",
+        id: "subtitle:1",
+        type: "subtitle_picker",
         options: [
-          { value: "a", label: "Source A" },
-          { value: "b", label: "Source B" },
+          { value: "a", label: "Subtitle A" },
+          { value: "b", label: "Subtitle B" },
         ],
       },
     });
     state = reduceState(state, {
       type: "UPDATE_PICKER_FILTER",
-      id: "source:1",
+      id: "subtitle:1",
       filterQuery: "b",
     });
     state = reduceState(state, {
       type: "MOVE_PICKER_SELECTION",
-      id: "source:1",
+      id: "subtitle:1",
       delta: 1,
     });
 
     const picker = state.activeModals.at(-1);
-    expect(picker?.type).toBe("source_picker");
-    if (picker?.type === "source_picker") {
+    expect(picker?.type).toBe("subtitle_picker");
+    if (picker?.type === "subtitle_picker") {
       expect(picker.filterQuery).toBe("b");
-      expect(picker.selectedIndex).toBe(0);
+      expect(picker.selectedIndex).toBe(1);
     }
 
     state = reduceState(state, {
       type: "RESOLVE_PICKER",
-      id: "source:1",
+      id: "subtitle:1",
       value: "b",
     });
 
     expect(state.activeModals).toHaveLength(0);
-    expect(state.pickerResult).toEqual({ type: "selected", id: "source:1", value: "b" });
+    expect(state.pickerResult).toEqual({ type: "selected", id: "subtitle:1", value: "b" });
   });
 
   test("cancels picker into an inspectable result", () => {
@@ -124,15 +124,16 @@ describe("SessionState overlays", () => {
     state = reduceState(state, {
       type: "OPEN_PICKER",
       picker: {
-        id: "quality:1",
-        type: "quality_picker",
-        options: [{ value: "1080", label: "1080p" }],
+        id: "season:1",
+        type: "season_picker",
+        currentSeason: 1,
+        options: [{ value: "1", label: "Season 1" }],
       },
     });
-    state = reduceState(state, { type: "CANCEL_PICKER", id: "quality:1" });
+    state = reduceState(state, { type: "CANCEL_PICKER", id: "season:1" });
 
     expect(state.activeModals).toHaveLength(0);
-    expect(state.pickerResult).toEqual({ type: "cancelled", id: "quality:1" });
+    expect(state.pickerResult).toEqual({ type: "cancelled", id: "season:1" });
   });
 
   test("cancelling an episode picker opened from history returns to history", () => {
@@ -656,7 +657,7 @@ describe("root shell surface selection", () => {
     );
   });
 
-  test("prefers a picker overlay over playback while mpv keeps running", () => {
+  test("prefers tracks panel overlay over playback while mpv keeps running", () => {
     let state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
@@ -664,11 +665,11 @@ describe("root shell surface selection", () => {
     });
     state = reduceState(state, { type: "SET_PLAYBACK_STATUS", status: "playing" });
     state = reduceState(state, {
-      type: "OPEN_PICKER",
-      picker: {
-        id: "quality:1",
-        type: "quality_picker",
-        options: [{ value: "stream-720", label: "720p" }],
+      type: "OPEN_OVERLAY",
+      overlay: {
+        id: "tracks:1",
+        type: "tracks_panel",
+        groups: [],
       },
     });
 

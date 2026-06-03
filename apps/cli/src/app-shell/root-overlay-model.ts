@@ -16,8 +16,6 @@ export function isRootChoiceOverlay(
   | { type: "season_picker" }
   | { type: "episode_picker" }
   | { type: "subtitle_picker" }
-  | { type: "source_picker" }
-  | { type: "quality_picker" }
   | { type: "recommendation_picker" }
 > {
   return (
@@ -36,16 +34,12 @@ export function isRootMediaPickerOverlay(
   | { type: "season_picker" }
   | { type: "episode_picker" }
   | { type: "subtitle_picker" }
-  | { type: "source_picker" }
-  | { type: "quality_picker" }
   | { type: "recommendation_picker" }
 > {
   return (
     overlay.type === "season_picker" ||
     overlay.type === "episode_picker" ||
     overlay.type === "subtitle_picker" ||
-    overlay.type === "source_picker" ||
-    overlay.type === "quality_picker" ||
     overlay.type === "recommendation_picker"
   );
 }
@@ -66,8 +60,6 @@ export function buildRootGenericPickerOptions(
     | { type: "season_picker" }
     | { type: "episode_picker" }
     | { type: "subtitle_picker" }
-    | { type: "source_picker" }
-    | { type: "quality_picker" }
     | { type: "recommendation_picker" }
   >,
 ): readonly ShellPickerOption<string>[] {
@@ -93,8 +85,6 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay, _state: SessionSt
   if (overlay.type === "season_picker") return "Choose season";
   if (overlay.type === "episode_picker") return "Choose episode";
   if (overlay.type === "subtitle_picker") return "Choose subtitles";
-  if (overlay.type === "source_picker") return "Choose source";
-  if (overlay.type === "quality_picker") return "Choose quality";
   if (overlay.type === "recommendation_picker") return "Recommendations";
   if (overlay.type === "tracks_panel") return "Tracks";
   return "Provider";
@@ -137,9 +127,6 @@ export function getRootOverlaySubtitle({
     return parts.join("  ·  ");
   }
   if (overlay.type === "subtitle_picker") return `${overlay.options.length} tracks available`;
-  if (overlay.type === "source_picker") return `${overlay.options.length} sources available`;
-  if (overlay.type === "quality_picker")
-    return `${overlay.options.length} quality options available`;
   if (overlay.type === "recommendation_picker")
     return `${overlay.options.length} picks based on your watch history`;
   if (overlay.type === "tracks_panel") {

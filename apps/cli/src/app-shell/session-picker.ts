@@ -10,8 +10,6 @@ type PickerOverlayInputBase = {
 
 type PickerOverlayInput =
   | ({ readonly type: "subtitle_picker" } & PickerOverlayInputBase)
-  | ({ readonly type: "source_picker" } & PickerOverlayInputBase)
-  | ({ readonly type: "quality_picker" } & PickerOverlayInputBase)
   | ({ readonly type: "season_picker"; readonly currentSeason: number } & PickerOverlayInputBase)
   | ({
       readonly type: "episode_picker";

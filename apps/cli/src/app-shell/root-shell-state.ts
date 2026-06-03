@@ -16,8 +16,6 @@ export type RootOwnedOverlay = Extract<
       | "season_picker"
       | "episode_picker"
       | "subtitle_picker"
-      | "source_picker"
-      | "quality_picker"
       | "recommendation_picker"
       | "tracks_panel";
   }
@@ -47,8 +45,6 @@ export function isRootOwnedOverlay(
     overlay?.type === "season_picker" ||
     overlay?.type === "episode_picker" ||
     overlay?.type === "subtitle_picker" ||
-    overlay?.type === "source_picker" ||
-    overlay?.type === "quality_picker" ||
     overlay?.type === "recommendation_picker" ||
     overlay?.type === "tracks_panel"
   );

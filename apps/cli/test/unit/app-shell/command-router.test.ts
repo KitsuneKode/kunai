@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import { routePlaybackShellAction, routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommandContext } from "@/app-shell/commands";
-import { createInitialState, type SessionState } from "@/domain/session/SessionState";
+import {
+  createInitialState,
+  type OverlayState,
+  type SessionState,
+} from "@/domain/session/SessionState";
 
 describe("routePlaybackShellAction", () => {
   test("returns post-playback episode picker intent without opening a local picker", async () => {
@@ -72,19 +76,31 @@ describe("resolveCommandContext scoped surfaces", () => {
   });
 
   test("media picker overlays keep command palette local and non-destructive", () => {
-    const pickerTypes = ["subtitle_picker", "source_picker", "quality_picker"] as const;
+    const pickers: readonly OverlayState[] = [
+      {
+        type: "subtitle_picker",
+        id: "subtitle_picker:1",
+        options: [{ value: "en", label: "English" }],
+      },
+      {
+        type: "season_picker",
+        id: "season_picker:1",
+        currentSeason: 1,
+        options: [{ value: "1", label: "Season 1" }],
+      },
+      {
+        type: "episode_picker",
+        id: "episode_picker:1",
+        season: 1,
+        options: [{ value: "1", label: "Episode 1" }],
+      },
+    ];
 
-    for (const type of pickerTypes) {
+    for (const picker of pickers) {
       const commands = resolveCommandContext(
         {
           ...baseState(),
-          activeModals: [
-            {
-              type,
-              id: `${type}:1`,
-              options: [{ value: "1080p", label: "1080p" }],
-            },
-          ],
+          activeModals: [picker],
         },
         "rootOverlay",
       ).map((command) => command.id);

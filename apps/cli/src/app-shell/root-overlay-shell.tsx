@@ -455,8 +455,6 @@ export function RootOverlayShell({
     overlay.type === "season_picker" ||
     overlay.type === "episode_picker" ||
     overlay.type === "subtitle_picker" ||
-    overlay.type === "source_picker" ||
-    overlay.type === "quality_picker" ||
     overlay.type === "recommendation_picker"
       ? buildRootGenericPickerOptions(overlay)
       : [];
@@ -1259,8 +1257,6 @@ export function RootOverlayShell({
         overlay.type === "season_picker" ||
         overlay.type === "episode_picker" ||
         overlay.type === "subtitle_picker" ||
-        overlay.type === "source_picker" ||
-        overlay.type === "quality_picker" ||
         overlay.type === "recommendation_picker"
       ) {
         const picked = filteredGenericPickerOptions[pickerSelectedIndex]?.value ?? null;
@@ -1414,8 +1410,6 @@ export function RootOverlayShell({
             : overlay.type === "season_picker" ||
                 overlay.type === "episode_picker" ||
                 overlay.type === "subtitle_picker" ||
-                overlay.type === "source_picker" ||
-                overlay.type === "quality_picker" ||
                 overlay.type === "recommendation_picker"
               ? {
                   type: "episode-picker",

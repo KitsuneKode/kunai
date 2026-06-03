@@ -84,8 +84,6 @@ export type OverlayState =
   | { type: "settings" }
   | { type: "provider_picker"; currentProvider: string; isAnime: boolean }
   | ({ type: "subtitle_picker" } & PickerOverlayState)
-  | ({ type: "source_picker" } & PickerOverlayState)
-  | ({ type: "quality_picker" } & PickerOverlayState)
   | ({ type: "season_picker"; currentSeason: number } & PickerOverlayState)
   | ({ type: "episode_picker"; season: number; initialIndex?: number } & PickerOverlayState)
   | ({ type: "recommendation_picker" } & PickerOverlayState)
@@ -110,8 +108,6 @@ export type ModalState = OverlayState;
 export type PickerModalOverlayState = Extract<
   OverlayState,
   | { type: "subtitle_picker" }
-  | { type: "source_picker" }
-  | { type: "quality_picker" }
   | { type: "season_picker" }
   | { type: "episode_picker" }
   | { type: "recommendation_picker" }
@@ -712,8 +708,6 @@ function isPickerOverlay(
     overlay.type === "season_picker" ||
     overlay.type === "episode_picker" ||
     overlay.type === "subtitle_picker" ||
-    overlay.type === "source_picker" ||
-    overlay.type === "quality_picker" ||
     overlay.type === "recommendation_picker";
   return picker && (id === undefined || overlay.id === id);
 }
