@@ -476,11 +476,20 @@ export function TitleDetailSheetUI({
       {/* ---- Synopsis ---- */}
       <Box marginTop={1} flexDirection="column">
         {synopsisLines.length > 0 ? (
-          synopsisLines.map((line, i) => (
-            <Text key={`synopsis:${i}`} color={palette.dim}>
-              {line}
-            </Text>
-          ))
+          synopsisLines.map(
+            (() => {
+              const seen = new Map<string, number>();
+              return (line) => {
+                const count = seen.get(line) ?? 0;
+                seen.set(line, count + 1);
+                return (
+                  <Text key={`synopsis:${line}:${count}`} color={palette.dim}>
+                    {line}
+                  </Text>
+                );
+              };
+            })(),
+          )
         ) : (
           <Text color={palette.dim} dimColor>
             {"No synopsis available"}

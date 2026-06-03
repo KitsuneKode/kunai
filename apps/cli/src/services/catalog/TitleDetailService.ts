@@ -304,13 +304,13 @@ async function fetchTmdbDetail(
       );
       const seasonResults = await Promise.allSettled(seasonFetches);
 
-      episodeThumbnails = {};
-      seasonPosters = {};
+      const episodeThumbnailMap: Record<string, string> = {};
+      const seasonPosterMap: Record<number, string> = {};
 
       nonSpecials.forEach((s) => {
         const posterPath = readString(s.poster_path);
         if (posterPath) {
-          seasonPosters![Number(s.season_number)] = tmdbImage(posterPath, "w342");
+          seasonPosterMap[Number(s.season_number)] = tmdbImage(posterPath, "w342");
         }
       });
 
@@ -324,13 +324,14 @@ async function fetchTmdbDetail(
           const stillPath = readString(ep.still_path);
           const epNum = Number(ep.episode_number);
           if (stillPath && epNum > 0) {
-            episodeThumbnails![episodeThumbKey(seasonNum, epNum)] = tmdbImage(stillPath, "w300");
+            episodeThumbnailMap[episodeThumbKey(seasonNum, epNum)] = tmdbImage(stillPath, "w300");
           }
         }
       });
 
-      if (!Object.keys(episodeThumbnails).length) episodeThumbnails = undefined;
-      if (!Object.keys(seasonPosters).length) seasonPosters = undefined;
+      episodeThumbnails =
+        Object.keys(episodeThumbnailMap).length > 0 ? episodeThumbnailMap : undefined;
+      seasonPosters = Object.keys(seasonPosterMap).length > 0 ? seasonPosterMap : undefined;
 
       seasons = nonSpecials
         .map((s): SeasonSummary => {

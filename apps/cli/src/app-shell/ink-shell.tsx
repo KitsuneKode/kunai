@@ -2037,48 +2037,57 @@ function StatsShell({
 
           {view.tab === "overview" ? (
             <>
-              {view.heatmap ? (
-                <Box marginTop={1} flexDirection="column">
-                  <Box>
-                    <Text color={palette.dim}>{"    "}</Text>
-                    {view.heatmap.grid.map((week) => {
-                      const monthEntry = view.heatmap!.monthLabels.find(
-                        (m) => m.weekStartDate === week.weekStartDate,
-                      );
-                      return (
-                        <Text key={`month-${week.weekStartDate}`} color={palette.dim}>
-                          {(monthEntry?.label ?? " ") + " "}
-                        </Text>
-                      );
-                    })}
-                  </Box>
-                  {view.heatmap.dayLabels.map((dayLabel, dayIdx) => (
-                    <Box key={`dow-${dayIdx}`}>
-                      <Text color={palette.dim}>{(dayLabel || "  ").padEnd(4)}</Text>
-                      {view.heatmap!.grid.map((week) => {
-                        const cell = week.cells[dayIdx];
+              {(() => {
+                const heatmap = view.heatmap;
+                if (!heatmap) return null;
+                return (
+                  <Box marginTop={1} flexDirection="column">
+                    <Box>
+                      <Text color={palette.dim}>{"    "}</Text>
+                      {heatmap.grid.map((week) => {
+                        const monthEntry = heatmap.monthLabels.find(
+                          (m) => m.weekStartDate === week.weekStartDate,
+                        );
                         return (
-                          <Text
-                            key={cell?.date ?? `${dayIdx}-${week.weekStartDate}`}
-                            color={cell?.color ?? palette.dim}
-                          >
-                            {(cell?.char ?? " ") + " "}
+                          <Text key={`month-${week.weekStartDate}`} color={palette.dim}>
+                            {(monthEntry?.label ?? " ") + " "}
                           </Text>
                         );
                       })}
                     </Box>
-                  ))}
-                  <Box marginTop={1}>
-                    <Text color={palette.muted}>Less </Text>
-                    {view.heatmap.legend.slice(1).map((entry, index) => (
-                      <Text key={`legend-${index}`} color={entry.color}>
-                        {entry.char}
-                      </Text>
-                    ))}
-                    <Text color={palette.muted}> More · hue = what you watched</Text>
+                    {heatmap.dayLabels.map((dayLabel, dayIdx) => {
+                      const firstCellDate = heatmap.grid.find((week) => week.cells[dayIdx])?.cells[
+                        dayIdx
+                      ]?.date;
+                      return (
+                        <Box key={`dow-${dayLabel || firstCellDate || "blank"}`}>
+                          <Text color={palette.dim}>{(dayLabel || "  ").padEnd(4)}</Text>
+                          {heatmap.grid.map((week) => {
+                            const cell = week.cells[dayIdx];
+                            return (
+                              <Text
+                                key={cell?.date ?? `${week.weekStartDate}:empty`}
+                                color={cell?.color ?? palette.dim}
+                              >
+                                {(cell?.char ?? " ") + " "}
+                              </Text>
+                            );
+                          })}
+                        </Box>
+                      );
+                    })}
+                    <Box marginTop={1}>
+                      <Text color={palette.muted}>Less </Text>
+                      {heatmap.legend.slice(1).map((entry) => (
+                        <Text key={`legend-${entry.color}:${entry.char}`} color={entry.color}>
+                          {entry.char}
+                        </Text>
+                      ))}
+                      <Text color={palette.muted}> More · hue = what you watched</Text>
+                    </Box>
                   </Box>
-                </Box>
-              ) : null}
+                );
+              })()}
 
               {view.typeBreakdownBar.length > 0 ? (
                 <Box marginTop={1} flexDirection="column">

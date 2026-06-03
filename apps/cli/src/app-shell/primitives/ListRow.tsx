@@ -44,7 +44,7 @@ export const ListRow = React.memo(function ListRow({
         const padded =
           col.align === "right" ? padColumnsEnd(text, width) : truncateLine(text, width);
         return (
-          <Box key={`${col.text}-${index}`} width={width + 1}>
+          <Box key={`${col.align ?? "left"}:${col.width}:${col.text}`} width={width + 1}>
             <Text
               color={col.color ?? (selected ? palette.text : palette.textDim)}
               bold={selected && index === 0}
