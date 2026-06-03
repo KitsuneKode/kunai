@@ -42,9 +42,10 @@ Flavor **IDs** stay stable (`videasy-primary`, `miruro-kiwi-sub`, …). **Labels
 | Flavor ID             | UI name (One Piece) | Subtitle              | Endpoint            | Why this character                       |
 | --------------------- | ------------------- | --------------------- | ------------------- | ---------------------------------------- |
 | `videasy-primary`     | **Luffy**           | English · primary     | `mb-flix`           | Default captain / first pick             |
-| `videasy-mirror-a`    | **Zoro**            | English · mirror      | `cdn`               | Reliable #2, alternate path              |
+| `videasy-mirror-a`    | **Zoro**            | English · may have 4K | `cdn`               | Reliable #2, alternate path              |
 | `videasy-mirror-b`    | **Nami**            | English · mirror      | `downloader2`       | “Navigator” — finds another route        |
 | `videasy-mirror-c`    | **Sanji**           | English · mirror      | `1movies`           | Alternate kitchen / backup               |
+| `videasy-breach`      | **Blackbeard**      | English · mirror      | `m4uhd`             | BitCine Breach bundle mapping            |
 | `videasy-english-alt` | **Robin**           | English · alt track   | `hdmovie` + English | Scholar / alternate English stream       |
 | `videasy-german`      | **Brook**           | German · dub          | `meine` + german    | Skeleton musician; German joke fit       |
 | `videasy-italian`     | **Shanks**          | Italian · dub         | `meine` + italian   | Major character; EU / worldwide dub slot |
@@ -52,9 +53,8 @@ Flavor **IDs** stay stable (`videasy-primary`, `miruro-kiwi-sub`, …). **Labels
 | `videasy-hindi`       | **Chopper**         | Hindi · dub           | `hdmovie` + Hindi   | Doctor / regional care metaphor          |
 | `videasy-spanish`     | **Ace**             | Spanish · dub         | `lamovie`           | Fire — Latin heat stretch                |
 | `videasy-portuguese`  | **Sabo**            | Portuguese · dub      | `superflix`         | Brotherhood / BR community nod           |
-| `videasy-breach`      | **Blackbeard**      | English · TBD         | _harvest_           | Unknown endpoint until mapped            |
 
-**Order in UI:** Luffy first, then Zoro → Sanji (mirrors), then language row grouped by language name.
+**Order in UI:** Luffy first, then Zoro → Nami → Sanji → Blackbeard (English mirrors), then language row grouped by language name.
 
 **Cineby alias (diagnostics only):** `Also: Neon` on Luffy, etc.
 
