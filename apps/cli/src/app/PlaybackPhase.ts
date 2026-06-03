@@ -44,6 +44,7 @@ import {
 import {
   enqueuePostPlaybackRecommendation,
   openPostPlaybackRecommendationActionPanel,
+  recommendationRailItemToSearchResult,
 } from "@/app/playback-recommendation-actions";
 import { resumeSecondsFromHistoryForEpisode } from "@/app/playback-resume-from-history";
 import {
@@ -91,6 +92,7 @@ import {
   applyPreferredStreamSelection,
   emptyStreamSelectionIntent,
   streamSelectionFromTrackPick,
+  type StreamSelectionIntent,
 } from "@/app/source-quality";
 import {
   createSourceRefreshCooldownState,
@@ -99,6 +101,7 @@ import {
 } from "@/app/source-refresh-policy";
 import { choosePlaybackSubtitle, shouldAttemptLateSubtitleLookup } from "@/app/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
+import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
 import { episodeThumbKey } from "@/domain/catalog/title-detail";
 import {
@@ -175,6 +178,7 @@ export type PlaybackOutcome =
   | "back_to_results"
   | "mode_switch"
   | "quit"
+  | { type: "browse_route"; route: "calendar" | "random" }
   | { type: "history_entry"; title: TitleInfo; episode?: EpisodeInfo }
   | {
       type: "playlist-advance";
@@ -555,7 +559,35 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     let playbackSession: PlaybackSessionState = createPlaybackSessionState({
       autoNextEnabled: config.autoNext,
     });
-    let preferredStreamSelection = emptyStreamSelectionIntent();
+    const preferredStreamSelectionByEpisode = new Map<string, StreamSelectionIntent>();
+    const preferredStreamSelectionKey = (providerId: string, target: EpisodeInfo): string =>
+      `${providerId}:${title.id}:${target.season}:${target.episode}`;
+    const getPreferredStreamSelection = (
+      providerId: string,
+      target: EpisodeInfo,
+    ): StreamSelectionIntent =>
+      preferredStreamSelectionByEpisode.get(preferredStreamSelectionKey(providerId, target)) ??
+      emptyStreamSelectionIntent();
+    const setPreferredStreamSelection = async (
+      providerId: string,
+      target: EpisodeInfo,
+      selection: StreamSelectionIntent,
+    ): Promise<void> => {
+      preferredStreamSelectionByEpisode.set(
+        preferredStreamSelectionKey(providerId, target),
+        selection,
+      );
+      await container.episodePlaybackSelection
+        .set({
+          providerId,
+          titleId: title.id,
+          season: target.season,
+          episode: target.episode,
+          sourceId: selection.sourceId,
+          streamId: selection.streamId,
+        })
+        .catch(() => undefined);
+    };
     let sessionSoftProviderId: string | null = null;
     const sourceRefreshCooldown = createSourceRefreshCooldownState();
     let pendingSourceRefreshAction: SourceRefreshAction | null = null;
@@ -912,6 +944,32 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           pendingSourceRefreshAction = null;
           const recomputeSources = pendingRecomputeSources;
           pendingRecomputeSources = false;
+          const persistedStreamSelection = await container.episodePlaybackSelection
+            .get({
+              providerId: currentProvider.metadata.id,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+            })
+            .catch(() => null);
+          if (
+            persistedStreamSelection &&
+            !preferredStreamSelectionByEpisode.has(
+              preferredStreamSelectionKey(currentProvider.metadata.id, currentEpisode),
+            )
+          ) {
+            preferredStreamSelectionByEpisode.set(
+              preferredStreamSelectionKey(currentProvider.metadata.id, currentEpisode),
+              {
+                sourceId: persistedStreamSelection.sourceId ?? null,
+                streamId: persistedStreamSelection.streamId ?? null,
+              },
+            );
+          }
+          const currentPreferredStreamSelection = getPreferredStreamSelection(
+            currentProvider.metadata.id,
+            currentEpisode,
+          );
           const sourceRefreshDecision = sourceRefreshAction
             ? resolveSourceRefreshDecision(sourceRefreshCooldown, {
                 action: sourceRefreshAction,
@@ -920,8 +978,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
                   providerId: currentProvider.metadata.id,
-                  sourceId: preferredStreamSelection.sourceId,
-                  streamId: preferredStreamSelection.streamId,
+                  sourceId: currentPreferredStreamSelection.sourceId,
+                  streamId: currentPreferredStreamSelection.streamId,
                 },
                 now: new Date(),
                 cooldownMs: 30_000,
@@ -969,26 +1027,29 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const buildPrefetchTarget = (
             nextEpisodeIntent: EpisodeInfo,
             providerId: string,
-          ): EpisodePrefetchTarget => ({
-            titleId: title.id,
-            episode: nextEpisodeIntent,
-            providerId,
-            sourceId: preferredStreamSelection.sourceId ?? undefined,
-            streamId: preferredStreamSelection.streamId ?? undefined,
-            audioPreference:
-              stateManager.getState().mode === "anime"
-                ? config.animeLanguageProfile.audio
-                : config.seriesLanguageProfile.audio,
-            qualityPreference:
-              stateManager.getState().mode === "anime"
-                ? config.animeLanguageProfile.quality
-                : config.seriesLanguageProfile.quality,
-            startupPriority: config.startupPriority,
-            subtitlePreference:
-              stateManager.getState().mode === "anime"
-                ? config.animeLanguageProfile.subtitle
-                : config.seriesLanguageProfile.subtitle,
-          });
+          ): EpisodePrefetchTarget => {
+            const targetSelection = getPreferredStreamSelection(providerId, nextEpisodeIntent);
+            return {
+              titleId: title.id,
+              episode: nextEpisodeIntent,
+              providerId,
+              sourceId: targetSelection.sourceId ?? undefined,
+              streamId: targetSelection.streamId ?? undefined,
+              audioPreference:
+                stateManager.getState().mode === "anime"
+                  ? config.animeLanguageProfile.audio
+                  : config.seriesLanguageProfile.audio,
+              qualityPreference:
+                stateManager.getState().mode === "anime"
+                  ? config.animeLanguageProfile.quality
+                  : config.seriesLanguageProfile.quality,
+              startupPriority: config.startupPriority,
+              subtitlePreference:
+                stateManager.getState().mode === "anime"
+                  ? config.animeLanguageProfile.subtitle
+                  : config.seriesLanguageProfile.subtitle,
+            };
+          };
           const consumedBundle = sourceRefreshDecision
             ? null
             : episodePrefetch.takeReadyFor(
@@ -1422,7 +1483,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             return { status: "success", value: "back_to_results" };
           }
 
-          stream = applyPreferredStreamSelection(stream, preferredStreamSelection);
+          stream = applyPreferredStreamSelection(
+            stream,
+            getPreferredStreamSelection(currentProvider.metadata.id, currentEpisode),
+          );
 
           // Await timing — stream resolve takes much longer so this is nearly free.
           // If IntroDB timed out and returned null, schedule a background retry that
@@ -1881,7 +1945,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               this.updatePlaybackFeedback(context, {
                 detail: "Could not start playback",
-                note: "Press r to try again or switch provider with /provider",
+                note: "Press o for sources, f for fallback, r to retry, or /diagnostics for details",
               });
             } else {
               pendingRecomputeSources = playbackControlAction === "recompute";
@@ -2073,7 +2137,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "pick-source") {
             if (confirmedStreamSelection) {
-              preferredStreamSelection = confirmedStreamSelection;
+              await setPreferredStreamSelection(
+                resolvedProviderId,
+                currentEpisode,
+                confirmedStreamSelection,
+              );
               pendingStart = startEpisodeNavigation({
                 targetResumeSeconds: toHistoryTimestamp(
                   result,
@@ -2101,7 +2169,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             );
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
             if (picked && selection) {
-              preferredStreamSelection = selection;
+              await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -2129,7 +2197,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "pick-stream") {
             if (confirmedStreamSelection) {
-              preferredStreamSelection = confirmedStreamSelection;
+              await setPreferredStreamSelection(
+                resolvedProviderId,
+                currentEpisode,
+                confirmedStreamSelection,
+              );
               pendingStart = startEpisodeNavigation({
                 targetResumeSeconds: toHistoryTimestamp(
                   result,
@@ -2153,7 +2225,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const picked = await openTracksPanel(preparedStream, {}, container);
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
             if (picked && selection) {
-              preferredStreamSelection = selection;
+              await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -2181,7 +2253,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "pick-quality") {
             if (confirmedStreamSelection) {
-              preferredStreamSelection = confirmedStreamSelection;
+              await setPreferredStreamSelection(
+                resolvedProviderId,
+                currentEpisode,
+                confirmedStreamSelection,
+              );
               pendingStart = startAtResumePoint(
                 toHistoryTimestamp(
                   result,
@@ -2210,7 +2286,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             );
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
             if (picked && selection) {
-              preferredStreamSelection = selection;
+              await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -2487,6 +2563,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // null = not yet attempted; [] = attempted (within budget) but empty.
           let postPlaybackLoadedRecommendations: readonly PostPlaybackRecommendationItem[] | null =
             null;
+          let openRecoverySourcePanelOnPostPlay =
+            (result.suspectedDeadStream === true || didPlaybackFailToStart(result)) &&
+            Boolean(preparedStream.providerResolveResult?.streams.length);
           // Bound how long the post-play surface waits for a live recommendation
           // load before painting without it (the seed handles the fast path).
           const POST_PLAYBACK_RECOMMENDATION_BUDGET_MS = 1200;
@@ -2502,6 +2581,35 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               result.endReason !== "eof" &&
               resumeSeconds > 10 &&
               (result.duration <= 0 || resumeSeconds < Math.max(0, result.duration - 5));
+            if (openRecoverySourcePanelOnPostPlay) {
+              openRecoverySourcePanelOnPostPlay = false;
+              const picked = await openTracksPanel(
+                preparedStream,
+                { initialSection: "source" },
+                container,
+              );
+              const selection = picked ? streamSelectionFromTrackPick(picked) : null;
+              if (picked && selection) {
+                await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
+                pendingStart =
+                  picked.section === "source"
+                    ? startEpisodeNavigation({ targetResumeSeconds: resumeSeconds })
+                    : startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
+                playbackSession = this.transitionPlaybackSession(
+                  context,
+                  playbackSession,
+                  "recovery-started",
+                  {
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                    provider: resolvedProviderId,
+                    action: "recover",
+                  },
+                );
+                break postPlayback;
+              }
+            }
             const mode = stateManager.getState().mode;
             const recommendationRailStartedAtMs = Date.now();
             let recommendationRailItems = seedPostPlaybackRecommendationItems({
@@ -2666,6 +2774,22 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
 
             if (typeof postAction === "object") {
+              if (postAction.type === "play-recommendation") {
+                await teardownPlaybackForPostPlayExit(
+                  container,
+                  episodePrefetch,
+                  playbackIterationAbort,
+                );
+                return {
+                  status: "success",
+                  value: {
+                    type: "history_entry",
+                    title: titleInfoFromSearchResult(
+                      recommendationRailItemToSearchResult(postAction.item),
+                    ),
+                  },
+                };
+              }
               if (postAction.type === "queue-recommendation") {
                 enqueuePostPlaybackRecommendation(container, postAction.item);
               } else if (postAction.type === "open-recommendation-actions") {
@@ -2711,6 +2835,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 playbackIterationAbort,
               );
               return { status: "success", value: "back_to_search" };
+            } else if (routedAction === "calendar" || routedAction === "random") {
+              await teardownPlaybackForPostPlayExit(
+                container,
+                episodePrefetch,
+                playbackIterationAbort,
+              );
+              return { status: "success", value: { type: "browse_route", route: routedAction } };
             } else if (routedAction === "toggle-autoplay") {
               const playbackAction = resolvePostPlaybackSessionAction(
                 "toggle-autoplay",
@@ -2853,7 +2984,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (!picked || !selection) {
                 continue postPlayback;
               }
-              preferredStreamSelection = selection;
+              await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
               pendingStart =
                 picked.section === "source"
                   ? startEpisodeNavigation({ targetResumeSeconds: resumeSeconds })

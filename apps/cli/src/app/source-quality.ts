@@ -1,5 +1,8 @@
 import { formatLanguageBadge, formatSourceEvidence } from "@/app/track-format";
-import { describeStreamCandidateMediaDetail } from "@/domain/media/media-track-model";
+import {
+  describeStreamCandidateMediaDetail,
+  subtitlesForStreamCandidate,
+} from "@/domain/media/media-track-model";
 import type { TrackCapabilitySection } from "@/domain/playback/track-capabilities";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { buildPlaybackSourceInventoryView } from "@/services/playback/PlaybackSourceInventoryProjection";
@@ -420,12 +423,23 @@ export function applyPreferredStreamSelection(
   if (!selected?.url) return stream;
   if (selected.id === result.selectedStreamId && selected.url === stream.url) return stream;
 
+  const selectedSubtitleUrls = new Set(
+    subtitlesForStreamCandidate(selected, result.subtitles).map((subtitle) => subtitle.url),
+  );
+  const currentProviderSubtitle = stream.subtitle
+    ? result.subtitles.find((subtitle) => subtitle.url === stream.subtitle)
+    : undefined;
+  const keepCurrentSubtitle =
+    !stream.subtitle || !currentProviderSubtitle || selectedSubtitleUrls.has(stream.subtitle);
+
   return {
     ...stream,
     url: selected.url,
     headers: selected.headers ?? {},
     audioLanguages: selected.audioLanguages ? [...selected.audioLanguages] : undefined,
     hardSubLanguage: selected.hardSubLanguage,
+    subtitle: keepCurrentSubtitle ? stream.subtitle : undefined,
+    subtitleSource: keepCurrentSubtitle ? stream.subtitleSource : "none",
     providerResolveResult: {
       ...result,
       selectedStreamId: selected.id,

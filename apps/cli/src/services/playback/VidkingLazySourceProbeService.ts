@@ -49,7 +49,11 @@ export class VidkingLazySourceProbeService {
     readonly preferredAudioLanguage?: string;
     readonly onInventoryUpdated?: (result: ProviderResolveResult) => void;
   }): Promise<void> {
-    const flavorIds = listPhaseBLazyProbeFlavorIds(input.preferredAudioLanguage);
+    const flavorIds = listPhaseBLazyProbeFlavorIds(
+      input.resolveInput.mediaKind === "movie" || input.resolveInput.mediaKind === "series"
+        ? input.resolveInput.mediaKind
+        : undefined,
+    );
     if (flavorIds.length === 0) return;
 
     let merged = await this.loadCachedInventory(input.inventoryKey, input.baseResult);

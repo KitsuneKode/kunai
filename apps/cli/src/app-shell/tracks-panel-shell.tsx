@@ -7,7 +7,7 @@ import {
 import { Box, Text } from "ink";
 import React from "react";
 
-import { truncateLine } from "./shell-text";
+import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
 export type TracksPanelShellProps = {
@@ -15,6 +15,7 @@ export type TracksPanelShellProps = {
   /** Index over switchable rows only; -1 (or out of range) when nothing is selectable. */
   selectedIndex: number;
   width: number;
+  height?: number;
 };
 
 function riskColor(risk: TrackCapabilityRisk): string {
@@ -52,9 +53,23 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
   groups,
   selectedIndex,
   width,
+  height,
 }: TracksPanelShellProps) {
   const rows = buildTrackPanelRows(groups);
   const labelWidth = Math.min(28, Math.max(14, Math.floor(width * 0.4)));
+  const sourceCount = groups.find((group) => group.section === "source")?.rows.length ?? 0;
+  const qualityCount = groups.find((group) => group.section === "quality")?.rows.length ?? 0;
+  const audioCount = groups.find((group) => group.section === "audio")?.rows.length ?? 0;
+  const subtitleCount = groups.find((group) => group.section === "subtitle")?.rows.length ?? 0;
+  const maxVisibleRows = Math.max(6, Math.min(rows.length, (height ?? 22) - 2));
+  const highlightedRowIndex = Math.max(
+    0,
+    rows.findIndex((row) => row.kind === "row" && row.selectableIndex === selectedIndex),
+  );
+  const windowStart = getWindowStart(highlightedRowIndex, rows.length, maxVisibleRows);
+  const visibleRows = rows.slice(windowStart, windowStart + maxVisibleRows);
+  const hiddenAbove = windowStart;
+  const hiddenBelow = Math.max(0, rows.length - windowStart - visibleRows.length);
 
   if (rows.length === 0) {
     return (
@@ -66,7 +81,24 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {rows.map((row, index) => {
+      <Box marginBottom={1}>
+        <Text color={palette.dim}>
+          {truncateLine(
+            [
+              sourceCount ? `${sourceCount} sources` : null,
+              qualityCount ? `${qualityCount} qualities` : null,
+              audioCount ? `${audioCount} audio` : null,
+              subtitleCount ? `${subtitleCount} subtitles` : null,
+            ]
+              .filter((part): part is string => Boolean(part))
+              .join("  ·  "),
+            width - 2,
+          )}
+        </Text>
+      </Box>
+      {hiddenAbove > 0 ? <Text color={palette.dim}>{`↑ ${hiddenAbove} more`}</Text> : null}
+      {visibleRows.map((row, offset) => {
+        const index = windowStart + offset;
         if (row.kind === "header") {
           return (
             <Box key={`h-${row.group.section}`} marginTop={index === 0 ? 0 : 1}>
@@ -111,6 +143,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
           </Box>
         );
       })}
+      {hiddenBelow > 0 ? <Text color={palette.dim}>{`↓ ${hiddenBelow} more`}</Text> : null}
     </Box>
   );
 });

@@ -40,25 +40,35 @@ describe("routePlaybackShellAction", () => {
 });
 
 describe("resolveCommandContext scoped surfaces", () => {
-  test("post-playback exposes PPS actions without global navigation or destructive commands", () => {
+  test("post-playback exposes recovery and control actions without destructive commands", () => {
     const commands = resolveCommandContext(baseState(), "postPlayback").map(
       (command) => command.id,
     );
 
     expect(commands).toEqual([
       "next",
+      "previous",
       "replay",
+      "recover",
+      "recompute",
+      "fallback",
       "pick-episode",
       "streams",
       "source",
       "quality",
+      "provider",
+      "playlist",
       "search",
       "recommendation",
+      "calendar",
+      "downloads",
+      "library",
+      "history",
+      "diagnostics",
     ]);
     expect(commands).not.toContain("quit");
     expect(commands).not.toContain("settings");
     expect(commands).not.toContain("clear-history");
-    expect(commands).not.toContain("downloads");
   });
 
   test("media picker overlays keep command palette local and non-destructive", () => {

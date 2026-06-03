@@ -47,36 +47,35 @@ export async function openPostPlaybackRecommendationActionPanel({
   readonly mode: "series" | "anime";
 }): Promise<void> {
   if (items.length === 0) return;
+  const [item] = items;
+  if (!item) return;
   const { openListShell } = await import("../app-shell/ink-shell");
   const actionContext = buildPickerActionContext({
     container,
-    taskLabel: "Recommendation actions",
+    taskLabel: `Recommendation: ${item.title}`,
   });
+  const titleLabel = `${item.title}${item.year ? ` (${item.year})` : ""}${item.type ? `  ·  ${item.type}` : ""}`;
   const action = await openListShell<RecommendationRailPanelAction>({
-    title: "Recommendations",
-    subtitle: `${items.length} pick${items.length === 1 ? "" : "s"}  ·  queue is local-only  ·  download confirms before resolving`,
+    title: item.title,
+    subtitle:
+      "Recommendation actions  ·  queue is local-only  ·  download confirms before resolving",
     actionContext,
     options: [
-      ...items.flatMap((item) => {
-        const titleLabel = `${item.title}${item.year ? ` (${item.year})` : ""}${item.type ? `  ·  ${item.type}` : ""}`;
-        return [
-          {
-            value: { type: "queue" as const, item },
-            label: `Queue  ·  ${titleLabel}`,
-            detail: "Add to playlist queue without resolving a stream",
-          },
-          {
-            value: { type: "download" as const, item },
-            label: `Download  ·  ${titleLabel}`,
-            detail: "Confirm before provider resolution  ·  will not autoplay",
-          },
-          {
-            value: { type: "details" as const, item },
-            label: `Details  ·  ${titleLabel}`,
-            detail: "Show cached metadata  ·  no provider calls",
-          },
-        ];
-      }),
+      {
+        value: { type: "queue" as const, item },
+        label: `Queue  ·  ${titleLabel}`,
+        detail: "Add to playlist queue without resolving a stream",
+      },
+      {
+        value: { type: "download" as const, item },
+        label: `Download  ·  ${titleLabel}`,
+        detail: "Confirm before provider resolution  ·  will not autoplay",
+      },
+      {
+        value: { type: "details" as const, item },
+        label: `Details  ·  ${titleLabel}`,
+        detail: "Show cached metadata  ·  no provider calls",
+      },
       { value: { type: "back" as const }, label: "Back" },
     ],
   });

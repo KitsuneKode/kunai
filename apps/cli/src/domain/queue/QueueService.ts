@@ -87,6 +87,10 @@ export class QueueService {
     this.repo.clearPlayed(this.sessionId);
   }
 
+  remove(id: string): void {
+    this.repo.remove(id);
+  }
+
   getAll(): QueueEntry[] {
     return this.repo.getAll(this.sessionId);
   }

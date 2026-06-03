@@ -434,6 +434,36 @@ test("applyPreferredStreamSelection falls back to best quality in preferred sour
   expect(next.providerResolveResult?.selectedStreamId).toBe("stream-480-source-b");
 });
 
+test("applyPreferredStreamSelection clears provider subtitle from a different source", () => {
+  const next = applyPreferredStreamSelection(
+    {
+      ...streamWithSubtitles,
+      subtitle: "https://subs.example/fr.vtt",
+      subtitleSource: "provider",
+    },
+    streamSelectionFromSource("source-b"),
+  );
+
+  expect(next.providerResolveResult?.selectedStreamId).toBe("stream-480-source-b");
+  expect(next.subtitle).toBeUndefined();
+  expect(next.subtitleSource).toBe("none");
+});
+
+test("applyPreferredStreamSelection keeps non-provider subtitle on stream switch", () => {
+  const next = applyPreferredStreamSelection(
+    {
+      ...streamWithSubtitles,
+      subtitle: "https://wyzie.example/en.vtt",
+      subtitleSource: "wyzie",
+    },
+    streamSelectionFromSource("source-b"),
+  );
+
+  expect(next.providerResolveResult?.selectedStreamId).toBe("stream-480-source-b");
+  expect(next.subtitle).toBe("https://wyzie.example/en.vtt");
+  expect(next.subtitleSource).toBe("wyzie");
+});
+
 test("streamSelectionFromTrackPick maps each panel section to a restart intent", () => {
   expect(streamSelectionFromTrackPick({ section: "source", value: "source-b" })).toEqual({
     sourceId: "source-b",

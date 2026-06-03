@@ -259,6 +259,10 @@ export type BrowseShellResult<T> =
 export type PlaybackShellResult =
   | ShellAction
   | {
+      readonly type: "play-recommendation";
+      readonly item: PlaybackRecommendationRailItem;
+    }
+  | {
       readonly type: "queue-recommendation";
       readonly item: PlaybackRecommendationRailItem;
     }

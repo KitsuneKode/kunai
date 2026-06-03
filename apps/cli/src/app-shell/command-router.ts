@@ -53,6 +53,8 @@ type RoutedActionResult =
   | "memory"
   | "download"
   | "pick-episode"
+  | "calendar"
+  | "random"
   | { type: "history-entry"; title: TitleInfo; episode?: EpisodeInfo }
   | "unhandled";
 
@@ -215,6 +217,8 @@ export async function routePlaybackShellAction({
   if (action === "memory") return "memory";
   if (action === "download") return "download";
   if (action === "pick-episode") return "pick-episode";
+  if (action === "calendar") return "calendar";
+  if (action === "random") return "random";
   if (action === "help") {
     await openRootOwnedOverlay(container, { type: "help" });
     return "handled";

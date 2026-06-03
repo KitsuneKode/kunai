@@ -193,6 +193,51 @@ test("projects series provider servers as source evidence and normalized audio s
   expect(view.qualityOptions.map((option) => option.label)).toEqual(["1080p", "720p"]);
 });
 
+test("keeps provider-failed source selectable when playable streams exist", () => {
+  const view = projectPlaybackSourceInventory({
+    status: "resolved",
+    providerId: "vidking",
+    selectedStreamId: "sanji-1080",
+    streams: [
+      stream({
+        id: "sanji-1080",
+        providerId: "vidking",
+        sourceId: "sanji",
+        qualityLabel: "1080p",
+      }),
+      stream({
+        id: "robin-720",
+        providerId: "vidking",
+        sourceId: "robin",
+        qualityLabel: "720p",
+      }),
+    ],
+    sources: [
+      source({
+        id: "sanji",
+        providerId: "vidking",
+        label: "Sanji",
+        status: "failed",
+      }),
+      source({
+        id: "robin",
+        providerId: "vidking",
+        label: "Robin",
+        status: "failed",
+      }),
+    ],
+    subtitles: [],
+    trace: trace({ title: { id: "demo", kind: "series", title: "Demo" } }),
+    failures: [],
+  });
+
+  expect(view.sourceGroups.map((group) => [group.id, group.state])).toEqual([
+    ["sanji", "selected"],
+    ["robin", "available"],
+  ]);
+  expect(view.sourceGroups.find((group) => group.id === "robin")?.disabledReason).toBeUndefined();
+});
+
 test("falls back to stream source ids when provider source inventory is missing", () => {
   const view = projectPlaybackSourceInventory({
     status: "resolved",

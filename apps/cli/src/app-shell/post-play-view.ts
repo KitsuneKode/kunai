@@ -213,8 +213,22 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           id: "try-again",
           label: "Try again",
           detail: "retry the same episode",
-          shortcut: "↵",
+          shortcut: "r",
           primary: true,
+        },
+        {
+          id: "fallback",
+          label: "Fallback",
+          detail: "try another provider",
+          shortcut: "f",
+          primary: false,
+        },
+        {
+          id: "source",
+          label: "Sources",
+          detail: "choose another stream",
+          shortcut: "o",
+          primary: false,
         },
         {
           id: "search",

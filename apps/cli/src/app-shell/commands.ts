@@ -28,13 +28,24 @@ export type CommandContextId = RegisteredCommandContextId;
 
 const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "next",
+  "previous",
   "replay",
+  "recover",
+  "recompute",
+  "fallback",
   "pick-episode",
   "streams",
   "source",
   "quality",
+  "provider",
+  "playlist",
   "search",
   "recommendation",
+  "calendar",
+  "downloads",
+  "library",
+  "history",
+  "diagnostics",
 ];
 
 const MEDIA_PICKER_SURFACE_COMMANDS: readonly AppCommandId[] = ["diagnostics", "help"];

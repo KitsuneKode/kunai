@@ -1204,6 +1204,9 @@ function buildPostPlayFooterActions(
       // Nothing played — retry the same episode (provider recover refetch), never advance.
       return [
         { key: "r", label: "try again", action: "replay", primary: true },
+        { key: "f", label: "fallback", action: "fallback" },
+        { key: "o", label: "source", action: "source" },
+        { key: "d", label: "diagnostics", action: "diagnostics" },
         { key: "s", label: "search", action: "search" },
         quitAction,
         commandAction,
@@ -1322,7 +1325,7 @@ function PlaybackShell({
           if (postPlayState.kind === "series-complete") {
             const item = recommendations[0];
             if (item) {
-              onResolve({ type: "open-recommendation-actions", items: recommendations });
+              onResolve({ type: "play-recommendation", item });
             }
             return;
           }
@@ -1331,13 +1334,39 @@ function PlaybackShell({
           onResolve("watchlist");
           return;
         }
+        if (postPlayState.kind === "did-not-start") {
+          if (input === "r") {
+            onResolve("replay");
+            return;
+          }
+          if (input === "f") {
+            onResolve("fallback");
+            return;
+          }
+          if (input === "o") {
+            onResolve("source");
+            return;
+          }
+          if (input === "d") {
+            onResolve("diagnostics");
+            return;
+          }
+          if (input === "s") {
+            onResolve("search");
+            return;
+          }
+        }
         if (input === "1" || input === "2" || input === "3") {
           const item = recommendations[Number(input) - 1];
           if (item) {
-            onResolve({
-              type: "open-recommendation-actions",
-              items: [item, ...recommendations.filter((candidate) => candidate.id !== item.id)],
-            });
+            onResolve({ type: "play-recommendation", item });
+          }
+        }
+        const actionIndex = input === "!" ? 0 : input === "@" ? 1 : input === "#" ? 2 : -1;
+        if (actionIndex >= 0) {
+          const item = recommendations[actionIndex];
+          if (item) {
+            onResolve({ type: "open-recommendation-actions", items: [item] });
           }
         }
       }}

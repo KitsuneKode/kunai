@@ -1594,6 +1594,7 @@ export function RootOverlayShell({
             groups={overlay.groups}
             selectedIndex={Math.min(selectedIndex, Math.max(switchableCount - 1, 0))}
             width={Math.max(24, (stdout.columns ?? 80) - 8)}
+            height={Math.max(8, (stdout.rows ?? 32) - 9)}
           />
         </Box>
 

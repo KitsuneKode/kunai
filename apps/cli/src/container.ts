@@ -102,6 +102,7 @@ import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImp
 import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
 import { StorageMaintenanceService } from "./services/persistence/StorageMaintenanceService";
 import { SyncTokenStore } from "./services/persistence/SyncTokenStore";
+import { EpisodePlaybackSelectionService } from "./services/playback/EpisodePlaybackSelectionService";
 import { MediaTrackService } from "./services/playback/MediaTrackService";
 import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "./services/playback/PlaybackResolveWorkService";
@@ -164,6 +165,7 @@ export interface Container {
   readonly diagnosticsService: DiagnosticsService;
   readonly storageMaintenance: StorageMaintenanceService;
   readonly sourceInventory: SourceInventoryService;
+  readonly episodePlaybackSelection: EpisodePlaybackSelectionService;
   readonly vidkingLazySourceProbe: VidkingLazySourceProbeService;
   readonly playbackResolveWork: PlaybackResolveWorkService;
   readonly mediaTrackService: MediaTrackService;
@@ -327,6 +329,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
     diagnostics: diagnosticsService,
   });
+  const episodePlaybackSelection = new EpisodePlaybackSelectionService(
+    join(paths.configDir, "episode-playback-selections.json"),
+  );
   const vidkingLazySourceProbe = new VidkingLazySourceProbeService({ sourceInventory });
   const storageMaintenance = new StorageMaintenanceService({
     dataDb,
@@ -548,6 +553,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     diagnosticsService,
     storageMaintenance,
     sourceInventory,
+    episodePlaybackSelection,
     vidkingLazySourceProbe,
     playbackResolveWork,
     mediaTrackService,

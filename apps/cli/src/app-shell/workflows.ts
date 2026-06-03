@@ -27,7 +27,12 @@ import {
   type DecodedTrackSelection,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
-import type { EpisodePickerOption, StreamInfo, TitleInfo } from "@/domain/types";
+import type {
+  EpisodeInfo as PlaybackEpisodeInfo,
+  EpisodePickerOption,
+  StreamInfo,
+  TitleInfo,
+} from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import {
@@ -1210,7 +1215,10 @@ export function buildPickerActionContext({
     taskLabel,
     footerMode,
     commands: resolveCommands(container.stateManager.getState(), allowed),
-    onAction: (action) => handleShellAction({ action, container }),
+    onAction: async (action) => {
+      const result = await handleShellAction({ action, container });
+      return typeof result === "string" ? result : "handled";
+    },
   };
 }
 
@@ -1283,7 +1291,13 @@ export async function applySettingsToRuntime({
   }
 }
 
-type ActionHandler = (container: Container) => Promise<"handled" | "quit" | "unhandled">;
+export type ShellWorkflowResult =
+  | "handled"
+  | "quit"
+  | "unhandled"
+  | { type: "history-entry"; title: TitleInfo; episode?: PlaybackEpisodeInfo };
+
+type ActionHandler = (container: Container) => Promise<ShellWorkflowResult>;
 
 const actionHandlers: Record<string, ActionHandler | undefined> = {
   quit: (c) => resolveQuitWithDownloadQueue(c),
@@ -1330,7 +1344,7 @@ export async function handleShellAction({
 }: {
   action: ShellAction;
   container: Container;
-}): Promise<"handled" | "quit" | "unhandled"> {
+}): Promise<ShellWorkflowResult> {
   const handler = actionHandlers[action];
   if (handler) return handler(container);
   return "unhandled";
@@ -2937,7 +2951,7 @@ async function handleFavorites(container: Container): Promise<"handled"> {
 
 // ─── Playlist ──────────────────────────────────────────────────────────────────
 
-async function handlePlaylist(container: Container): Promise<"handled"> {
+async function handlePlaylist(container: Container): Promise<ShellWorkflowResult> {
   const { queueService, listService } = container;
   const actionContext = buildPickerActionContext({ container, taskLabel: "Playlist" });
 
@@ -2946,7 +2960,16 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
     const all = queueService.getAll();
 
     type PlAction =
-      | { type: "remove"; id: string; title: string }
+      | {
+          type: "item";
+          id: string;
+          title: string;
+          mediaKind: string;
+          titleId: string;
+          season?: number;
+          episode?: number;
+          played: boolean;
+        }
       | { type: "clear-played" }
       | { type: "clear-all" }
       | { type: "refill" }
@@ -2987,7 +3010,16 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
             ? `next up  ·  ${item.mediaKind}  ·  added ${addedLabel}`
             : `queued  ·  ${item.mediaKind}  ·  added ${addedLabel}`;
         return {
-          value: { type: "remove" as const, id: item.id, title: item.title },
+          value: {
+            type: "item" as const,
+            id: item.id,
+            title: item.title,
+            mediaKind: item.mediaKind,
+            titleId: item.titleId,
+            season: item.season,
+            episode: item.episode,
+            played,
+          },
           label,
           detail,
         };
@@ -3090,8 +3122,51 @@ async function handlePlaylist(container: Container): Promise<"handled"> {
       continue;
     }
 
-    if (picked.type === "remove") {
-      container.queueRepository.remove(picked.id);
+    if (picked.type === "item") {
+      const itemAction = await chooseFromListShell({
+        title: picked.title,
+        subtitle: picked.played
+          ? "Played queue item"
+          : "Queued item  ·  play now or manage this entry",
+        actionContext,
+        options: [
+          ...(picked.played
+            ? []
+            : [
+                {
+                  value: "play" as const,
+                  label: "Play now",
+                  detail: "Start this queue item immediately",
+                },
+              ]),
+          {
+            value: "back" as const,
+            label: "Back",
+            detail: "Keep this item in the queue",
+          },
+          {
+            value: "remove" as const,
+            label: "Remove from queue",
+            detail: "Delete only this queue item",
+          },
+        ],
+      });
+      if (itemAction === "remove") {
+        queueService.remove(picked.id);
+      } else if (itemAction === "play") {
+        return {
+          type: "history-entry",
+          title: {
+            id: picked.titleId,
+            type: picked.mediaKind === "movie" ? "movie" : "series",
+            name: picked.title,
+          },
+          episode:
+            picked.season !== undefined && picked.episode !== undefined
+              ? { season: picked.season, episode: picked.episode }
+              : undefined,
+        };
+      }
       continue;
     }
   }

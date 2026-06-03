@@ -183,7 +183,7 @@ describe("track panel rows + navigation", () => {
       ],
       qualityOptions: [
         quality({ id: "q1080", state: "selected" }),
-        quality({ id: "q720", label: "720p", state: "available" }),
+        quality({ id: "q720", label: "720p", state: "available", streamIds: ["stream-720"] }),
       ],
     }),
   );
@@ -210,8 +210,31 @@ describe("track panel rows + navigation", () => {
 
   test("resolves the capability at a selectable index", () => {
     expect(selectableCapabilityAt(groups, 0)?.value).toBe("b");
-    expect(selectableCapabilityAt(groups, 1)?.value).toBe("q720");
+    expect(selectableCapabilityAt(groups, 1)?.value).toBe("stream-720");
     expect(selectableCapabilityAt(groups, 2)).toBeNull();
+  });
+
+  test("quality choices without concrete streams render as facts", () => {
+    const [qualityGroup] = buildTrackCapabilities(
+      view({
+        qualityOptions: [
+          quality({
+            id: "quality:720p",
+            label: "720p",
+            state: "available",
+            streamIds: [],
+            disabledReason: "No playable stream for this quality",
+          }),
+        ],
+      }),
+    );
+
+    expect(qualityGroup?.selectable).toBe(false);
+    expect(qualityGroup?.rows[0]).toMatchObject({
+      enabled: false,
+      reason: "No playable stream for this quality",
+      value: "quality:720p",
+    });
   });
 
   test("a fact-only inventory has no selectable rows", () => {

@@ -155,6 +155,12 @@ export class SessionController {
             stateManager.dispatch({ type: "RESET_CONTENT" });
             continue;
           }
+          if (typeof outcome === "object" && outcome.type === "browse_route") {
+            pendingInitialRoute = outcome.route;
+            preserveExistingSearch = false;
+            stateManager.dispatch({ type: "RESET_CONTENT" });
+            continue;
+          }
           if (typeof outcome === "object" && outcome.type === "playlist-advance") {
             pendingInitialTitle = outcome.titleInfo;
             const targetMode = outcome.mode;

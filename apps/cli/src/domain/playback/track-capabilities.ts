@@ -112,10 +112,11 @@ export function buildTrackCapabilities(
     push({
       section: "quality",
       label: option.label,
-      value: option.id,
+      value: option.streamIds[0] ?? option.id,
       selected: option.state === "selected",
-      enabled: option.state === "available",
+      enabled: option.state === "available" && option.streamIds.length > 0,
       reason: option.disabledReason,
+      detail: option.hints.join(" · ") || undefined,
       risk: riskFromState(option.state),
     });
   }

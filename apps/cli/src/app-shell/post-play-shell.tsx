@@ -364,6 +364,8 @@ function PostPlayRail({
 
 // ── Shell ──────────────────────────────────────────────────────────────────────
 
+const EMPTY_RECOMMENDATIONS: readonly PlaybackRecommendationRailItem[] = [];
+
 export const PostPlayShell = React.memo(function PostPlayShell({
   title,
   episodeLabel,
@@ -371,7 +373,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   queueNextLabel,
   resumeLabel,
   postPlayState,
-  recommendations = [],
+  recommendations = EMPTY_RECOMMENDATIONS,
   totalEpisodes,
   watchedEpisodes,
   currentSeason,
@@ -472,8 +474,8 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         ) : null}
       </Box>
 
-      {/* ── Right rail (wide only; not on did-not-start — that state stays calm) ── */}
-      {showRail && view.heroKind !== "did-not-start" ? (
+      {/* ── Right rail (wide only) ─────────────────────────────────────── */}
+      {showRail ? (
         <PostPlayRail
           view={view}
           title={title}

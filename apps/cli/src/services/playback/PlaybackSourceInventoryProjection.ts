@@ -249,7 +249,10 @@ function projectSourceGroups(
       source.artwork,
       result.artwork,
     );
-    const state = source.id === selectedSourceId ? "selected" : mapSourceState(source.status);
+    const state =
+      source.id === selectedSourceId
+        ? "selected"
+        : mapSourceStateForStreams(source.status, streams);
     return {
       id: source.id,
       label: source.label ?? source.host ?? nativeLabels[0] ?? source.id,
@@ -323,6 +326,16 @@ function buildSourceCandidates(result: ProviderResolveResult): readonly Provider
         : { flavorLabel: displayLabel },
     };
   });
+}
+
+function mapSourceStateForStreams(
+  status: ProviderSourceCandidate["status"],
+  streams: readonly StreamCandidate[],
+): PlaybackInventoryOptionState {
+  if (streams.some((stream) => typeof stream.url === "string" && stream.url.length > 0)) {
+    return "available";
+  }
+  return mapSourceState(status);
 }
 
 function projectLanguageOptions(
