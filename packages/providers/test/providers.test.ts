@@ -314,10 +314,12 @@ test("vidking refresh intent cycles the wider flavor source set", async () => {
   );
 
   expect(result?.status).toBe("exhausted");
+  expect(requestedUrls.some((url) => url.includes("/m4uhd/sources-with-title?"))).toBe(true);
   expect(requestedUrls.some((url) => url.includes("/hdmovie/sources-with-title?"))).toBe(true);
   expect(requestedUrls.some((url) => url.includes("/superflix/sources-with-title?"))).toBe(true);
   const sourceIds = result?.sources?.map((source) => source.id) ?? [];
   expect(sourceIds).toContain("source:vidking:videasy:mb-flix");
+  expect(sourceIds).toContain("source:vidking:videasy:m4uhd");
   expect(sourceIds).toContain("source:vidking:videasy:videasy-english-alt");
   expect(sourceIds).toContain("source:vidking:videasy:superflix");
 });
@@ -444,7 +446,7 @@ test("vidking fixture fast startup keeps the first ready stream", async () => {
 });
 
 test("rivestream falls back to static provider services when service discovery is unavailable", async () => {
-  const source = await readFixture<unknown>("rivestream/source-response.json");
+  const sourceFixture = await readFixture<unknown>("rivestream/source-response.json");
   const requests: string[] = [];
   const result = await rivestreamProviderModule.resolve(
     {
@@ -467,7 +469,7 @@ test("rivestream falls back to static provider services when service discovery i
           const url = String(input);
           requests.push(url);
           if (url.includes("VideoProviderServices")) return new Response("", { status: 503 });
-          return jsonResponse(source);
+          return jsonResponse(sourceFixture);
         },
       },
     },
@@ -480,7 +482,7 @@ test("rivestream falls back to static provider services when service discovery i
 
 test("rivestream evidence fixture preserves provider server label and normalized language", async () => {
   const services = await readFixture<unknown>("rivestream/services-response.json");
-  const source = await readFixture<unknown>("rivestream/source-response.json");
+  const sourceFixture = await readFixture<unknown>("rivestream/source-response.json");
   const expected = await readFixture<{
     readonly serverLabel: string;
     readonly nativeLanguageLabel: string;
@@ -510,7 +512,7 @@ test("rivestream evidence fixture preserves provider server label and normalized
         fetch: async (input) => {
           const url = String(input);
           requests.push(url);
-          return jsonResponse(url.includes("VideoProviderServices") ? services : source);
+          return jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture);
         },
       },
     },
@@ -530,6 +532,11 @@ test("rivestream evidence fixture preserves provider server label and normalized
       }),
     ],
   });
+  expect(result.sources?.map((candidate) => candidate.id)).toEqual([
+    "source:rivestream:hindicast",
+    "source:rivestream:flowcast",
+  ]);
+  expect(result.sources?.map((candidate) => candidate.status)).toEqual(["selected", "skipped"]);
   expect(result.streams[0]).toMatchObject({
     qualityLabel: normalizeQualityLabel(expected.quality),
     audioLanguages: [expected.normalizedLanguage],

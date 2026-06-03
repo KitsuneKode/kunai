@@ -13,6 +13,7 @@ export type VidkingFlavorId =
   | "videasy-mirror-a"
   | "videasy-mirror-b"
   | "videasy-mirror-c"
+  | "videasy-breach"
   | "videasy-english-alt"
   | "videasy-german"
   | "videasy-italian"
@@ -47,7 +48,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
   {
     id: "videasy-mirror-a",
     themeLabel: "Zoro",
-    subtitle: "English · mirror",
+    subtitle: "English · may have 4K",
     cinebyAlias: "Yoru",
     endpoint: "cdn",
     audioLanguage: "en",
@@ -71,6 +72,14 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     audioLanguage: "en",
   },
   {
+    id: "videasy-breach",
+    themeLabel: "Blackbeard",
+    subtitle: "English · mirror",
+    cinebyAlias: "Breach",
+    endpoint: "m4uhd",
+    audioLanguage: "en",
+  },
+  {
     id: "videasy-english-alt",
     themeLabel: "Robin",
     subtitle: "English · alt track",
@@ -87,25 +96,6 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     endpoint: "meine",
     languageQuery: "german",
     audioLanguage: "de",
-  },
-  {
-    id: "videasy-italian",
-    themeLabel: "Shanks",
-    subtitle: "Italian · dub",
-    cinebyAlias: "Harbor",
-    endpoint: "meine",
-    languageQuery: "italian",
-    audioLanguage: "it",
-  },
-  {
-    id: "videasy-french",
-    themeLabel: "Law",
-    subtitle: "French · dub · movies",
-    cinebyAlias: "Chamber",
-    endpoint: "meine",
-    languageQuery: "french",
-    audioLanguage: "fr",
-    moviesOnly: true,
   },
   {
     id: "videasy-hindi",
@@ -131,6 +121,25 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     cinebyAlias: "Raze",
     endpoint: "superflix",
     audioLanguage: "pt",
+  },
+  {
+    id: "videasy-italian",
+    themeLabel: "Shanks",
+    subtitle: "Italian · dub",
+    cinebyAlias: "Harbor",
+    endpoint: "meine",
+    languageQuery: "italian",
+    audioLanguage: "it",
+  },
+  {
+    id: "videasy-french",
+    themeLabel: "Law",
+    subtitle: "French · dub · movies",
+    cinebyAlias: "Chamber",
+    endpoint: "meine",
+    languageQuery: "french",
+    audioLanguage: "fr",
+    moviesOnly: true,
   },
 ] as const;
 
@@ -278,20 +287,12 @@ export function resolveFlavorEngineOptions(flavorId: string): VidKingEngineOptio
   };
 }
 
-export function listPhaseBLazyProbeFlavorIds(preferredAudioLanguage?: string): VidkingFlavorId[] {
-  const normalized = preferredAudioLanguage?.trim().toLowerCase();
-  const ids = new Set<VidkingFlavorId>();
-  for (const flavor of FLAVORS) {
-    if (flavor.phaseAOrder !== undefined) continue;
-    if (flavor.audioLanguage === "en") {
-      ids.add(flavor.id);
-      continue;
-    }
-    if (normalized && flavor.audioLanguage === normalized) {
-      ids.add(flavor.id);
-    }
-  }
-  return [...ids];
+export function listPhaseBLazyProbeFlavorIds(mediaKind?: "movie" | "series"): VidkingFlavorId[] {
+  return FLAVORS.filter((flavor) => {
+    if (flavor.phaseAOrder !== undefined) return false;
+    if (mediaKind === "series" && flavor.moviesOnly) return false;
+    return true;
+  }).map((flavor) => flavor.id);
 }
 
 export function flavorSourceId(flavorId: string): string {

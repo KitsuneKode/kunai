@@ -10,6 +10,7 @@ import type {
   CachePolicy,
   EpisodeIdentity,
   ProviderCycleCandidate,
+  ProviderCycleAttempt,
   ProviderFailure,
   ProviderFetchPort,
   ProviderResolveInput,
@@ -36,6 +37,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createVariantId,
+  finalizeCycleSourceInventory,
   qualityRankFromLabel,
   normalizeQualityLabel,
 } from "../shared/source-inventory";
@@ -251,6 +253,7 @@ export async function resolveVidkingDirect(
         server,
         flavorId: presentation.flavorId,
         flavorArchetype: presentation.subtitle,
+        flavorLabel: presentation.themeLabel,
       },
     });
   }
@@ -336,14 +339,20 @@ export async function resolveVidkingDirect(
         cachePolicy,
         events,
         failures,
-        sources,
+        sources: finalizeVidkingSourceInventory({
+          sources,
+          attempts: cycleResult.attempts,
+        }),
         startedAt,
       },
     );
   }
 
   if (cycleResult.selected) {
-    return appendCycleEventsToResult(cycleResult.selected, cycleResult.events);
+    return appendCycleEventsToResult(
+      withVidkingSourceInventory(cycleResult.selected, sources, cycleResult.attempts),
+      cycleResult.events,
+    );
   }
 
   events.push(...cycleResult.events);
@@ -364,8 +373,50 @@ export async function resolveVidkingDirect(
     cachePolicy,
     events,
     failures,
-    sources,
+    sources: finalizeVidkingSourceInventory({
+      sources,
+      attempts: cycleResult.attempts,
+    }),
     startedAt,
+  });
+}
+
+function withVidkingSourceInventory(
+  result: ProviderResolveResult,
+  sources: readonly ProviderSourceCandidate[],
+  attempts: readonly ProviderCycleAttempt[],
+): ProviderResolveResult {
+  return {
+    ...result,
+    sources: finalizeVidkingSourceInventory({
+      sources,
+      attempts,
+      selectedSources: result.sources,
+      streams: result.streams,
+      selectedStreamId: result.selectedStreamId,
+    }),
+  };
+}
+
+export function finalizeVidkingSourceInventory({
+  sources,
+  attempts,
+  selectedSources = [],
+  streams = [],
+  selectedStreamId,
+}: {
+  readonly sources: readonly ProviderSourceCandidate[];
+  readonly attempts: readonly ProviderCycleAttempt[];
+  readonly selectedSources?: readonly ProviderSourceCandidate[];
+  readonly streams?: readonly StreamCandidate[];
+  readonly selectedStreamId?: string;
+}): ProviderSourceCandidate[] {
+  return finalizeCycleSourceInventory({
+    sources,
+    attempts,
+    selectedSources,
+    streams,
+    selectedStreamId,
   });
 }
 
@@ -668,6 +719,7 @@ export function createVidkingResultFromPayload({
           server: resolvedServer,
           flavorId: presentation.flavorId,
           flavorArchetype: themedSubtitle,
+          flavorLabel: themedLabel,
         },
       },
     ],

@@ -15,6 +15,7 @@ import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
+  ProviderSourceCandidate,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
@@ -28,6 +29,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
@@ -477,6 +479,70 @@ export function buildMiruroCycleCandidates({
   return candidates;
 }
 
+function buildMiruroSourceInventoryCandidates(
+  candidates: readonly ProviderCycleCandidate[],
+  cachePolicy: CachePolicy,
+): readonly ProviderSourceCandidate[] {
+  const seen = new Set<string>();
+  return candidates.flatMap((candidate) => {
+    const sourceId = candidate.sourceId;
+    if (!sourceId || seen.has(sourceId)) return [];
+    seen.add(sourceId);
+
+    const metadata = candidate.metadata ?? {};
+    const audioCategory = metadata.audioCategory === "dub" ? "dub" : "sub";
+    const serverId = String(candidate.serverId ?? metadata.serverId ?? "");
+    const subtitleDelivery =
+      metadata.subtitleDelivery === "embedded" || metadata.subtitleDelivery === "hardcoded"
+        ? metadata.subtitleDelivery
+        : "unknown";
+    const label = candidate.label ?? candidate.nativeLabel ?? sourceId;
+
+    return [
+      {
+        id: sourceId,
+        providerId: MIRURO_PROVIDER_ID,
+        kind: "provider-api",
+        label,
+        host: "www.miruro.tv",
+        status: "probing",
+        confidence: 0.75,
+        requiresRuntime: "direct-http",
+        cachePolicy,
+        languageEvidence: [
+          {
+            role: "audio",
+            normalizedLanguage: audioCategory === "dub" ? "en" : "ja",
+            nativeLabel: audioCategory,
+            sourceId,
+            confidence: 0.75,
+            metadata: { server: serverId },
+          },
+        ],
+        sourceEvidence: [
+          {
+            sourceId,
+            serverId,
+            nativeLabel: candidate.nativeLabel ?? serverId,
+            host: "www.miruro.tv",
+            confidence: 0.75,
+            metadata: { audioCategory, subtitleDelivery },
+          },
+        ],
+        metadata: {
+          audioCategory,
+          episodeId: metadata.episodeId,
+          subtitleDelivery,
+          server: serverId,
+          nativeLabel: candidate.nativeLabel,
+          flavorLabel: label,
+          flavorArchetype: `${candidate.nativeLabel ?? serverId} · Miruro`,
+        },
+      },
+    ];
+  });
+}
+
 function findMiruroEpisodeEntry(
   episodeList: readonly MiruroEpisodeEntry[] | undefined,
   episodeNum: number,
@@ -775,6 +841,10 @@ export const miruroProviderModule: CoreProviderModule = {
         fallbackAudio,
         preferredSourceId: input.preferredSourceId,
       });
+      const sourceInventorySeeds = buildMiruroSourceInventoryCandidates(
+        cycleCandidates,
+        cachePolicy,
+      );
       if (cycleCandidates.length === 0) {
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
           code: "not-found",
@@ -862,6 +932,10 @@ export const miruroProviderModule: CoreProviderModule = {
             cachePolicy,
             events,
             failures,
+            sources: finalizeCycleSourceInventory({
+              sources: sourceInventorySeeds,
+              attempts: cycleResult.attempts,
+            }),
             startedAt,
           },
         );
@@ -885,6 +959,10 @@ export const miruroProviderModule: CoreProviderModule = {
           cachePolicy,
           events,
           failures,
+          sources: finalizeCycleSourceInventory({
+            sources: sourceInventorySeeds,
+            attempts: cycleResult.attempts,
+          }),
           startedAt,
         });
       }
@@ -895,7 +973,19 @@ export const miruroProviderModule: CoreProviderModule = {
         message: `Resolved Miruro stream for AniList ID ${anilistId}`,
       });
 
-      return appendCycleEventsToResult(cycleResult.selected, cycleResult.events);
+      return appendCycleEventsToResult(
+        {
+          ...cycleResult.selected,
+          sources: finalizeCycleSourceInventory({
+            sources: sourceInventorySeeds,
+            attempts: cycleResult.attempts,
+            selectedSources: cycleResult.selected.sources ?? [],
+            streams: cycleResult.selected.streams,
+            selectedStreamId: cycleResult.selected.selectedStreamId,
+          }),
+        },
+        cycleResult.events,
+      );
     } catch (error) {
       if (context.signal?.aborted) {
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {

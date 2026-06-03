@@ -1,6 +1,7 @@
 import type {
   CachePolicy,
   ProviderId,
+  ProviderCycleAttempt,
   ProviderLanguageEvidence,
   ProviderSourceCandidate,
   ProviderSourceEvidence,
@@ -257,6 +258,75 @@ export function createSourceCandidateFromStream(input: {
       ...(input.stream.flavorLabel ? { flavorLabel: input.stream.flavorLabel } : {}),
       ...(displayLabel && !input.stream.flavorLabel ? { flavorLabel: displayLabel } : {}),
     }),
+  });
+}
+
+export function finalizeCycleSourceInventory({
+  sources,
+  attempts,
+  selectedSources = [],
+  streams = [],
+  selectedStreamId,
+}: {
+  readonly sources: readonly ProviderSourceCandidate[];
+  readonly attempts: readonly ProviderCycleAttempt[];
+  readonly selectedSources?: readonly ProviderSourceCandidate[];
+  readonly streams?: readonly StreamCandidate[];
+  readonly selectedStreamId?: string;
+}): ProviderSourceCandidate[] {
+  const selectedById = new Map(selectedSources.map((source) => [source.id, source]));
+  const failedBySourceId = new Map<string, ProviderCycleAttempt>();
+  const attemptedSourceIds = new Set<string>();
+  for (const attempt of attempts) {
+    const sourceId = attempt.candidate.sourceId;
+    if (!sourceId) continue;
+    attemptedSourceIds.add(sourceId);
+    if (attempt.failure) failedBySourceId.set(sourceId, attempt);
+  }
+
+  const selectedStream = selectedStreamId
+    ? streams.find((stream) => stream.id === selectedStreamId)
+    : undefined;
+  const selectedSourceId =
+    selectedStream?.sourceId ?? selectedSources.find((source) => source.status === "selected")?.id;
+  const streamSourceIds = new Set(streams.map((stream) => stream.sourceId).filter(Boolean));
+
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  for (const source of selectedSources) {
+    if (!byId.has(source.id)) byId.set(source.id, source);
+  }
+
+  return [...byId.values()].map((source) => {
+    const selectedSource = selectedById.get(source.id);
+    const hasStreams = streamSourceIds.has(source.id);
+    const failedAttempt = failedBySourceId.get(source.id);
+    const status: ProviderSourceCandidate["status"] =
+      source.id === selectedSourceId
+        ? "selected"
+        : hasStreams
+          ? "available"
+          : failedAttempt
+            ? "failed"
+            : attemptedSourceIds.has(source.id)
+              ? "exhausted"
+              : "skipped";
+
+    return {
+      ...source,
+      ...selectedSource,
+      status,
+      confidence: selectedSource?.confidence ?? (status === "failed" ? 0 : source.confidence),
+      metadata: {
+        ...source.metadata,
+        ...selectedSource?.metadata,
+        ...(failedAttempt?.failure
+          ? {
+              failureClass: failedAttempt.failure.failureClass,
+              failureReason: failedAttempt.failure.message,
+            }
+          : {}),
+      },
+    };
   });
 }
 

@@ -14,6 +14,7 @@ import type {
   ProviderFailure,
   ProviderResolveInput,
   ProviderRuntimeContext,
+  ProviderSourceCandidate,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
@@ -33,6 +34,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createVariantId,
+  finalizeCycleSourceInventory,
   normalizeProviderDisplayLabel,
   normalizeQualityLabel,
   providerInventorySourceId,
@@ -316,9 +318,15 @@ export const rivestreamProviderModule: CoreProviderModule = {
 
       const providers = await getRivestreamProviderServices(context);
 
+      const cycleCandidates = buildRivestreamCycleCandidates(providers, input.preferredSourceId);
+      const sourceInventorySeeds = buildRivestreamSourceInventoryCandidates(
+        cycleCandidates,
+        cachePolicy,
+      );
+
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
-        candidates: buildRivestreamCycleCandidates(providers, input.preferredSourceId),
+        candidates: cycleCandidates,
         signal: context.signal,
         now: context.now,
         maxAttemptsPerCandidate: 1,
@@ -392,6 +400,10 @@ export const rivestreamProviderModule: CoreProviderModule = {
             cachePolicy,
             events,
             failures,
+            sources: finalizeCycleSourceInventory({
+              sources: sourceInventorySeeds,
+              attempts: cycleResult.attempts,
+            }),
             startedAt,
           },
         );
@@ -414,6 +426,10 @@ export const rivestreamProviderModule: CoreProviderModule = {
           cachePolicy,
           events,
           failures,
+          sources: finalizeCycleSourceInventory({
+            sources: sourceInventorySeeds,
+            attempts: cycleResult.attempts,
+          }),
           startedAt,
         });
       }
@@ -438,6 +454,18 @@ export const rivestreamProviderModule: CoreProviderModule = {
         preferredSourceId: input.preferredSourceId,
       });
       const selectedStream = selection.selected;
+      const selectedSource = {
+        ...createSourceCandidateFromStream({
+          providerId: RIVESTREAM_PROVIDER_ID,
+          stream: selectedStream,
+          kind: "provider-api",
+          selected: true,
+          cachePolicy,
+          label: displayRivestreamProviderLabel(serverUsed),
+          confidence: 0.95,
+        }),
+        requiresRuntime: "direct-http" as const,
+      };
 
       emitTraceEvent(events, context, {
         type: "provider:success",
@@ -452,20 +480,13 @@ export const rivestreamProviderModule: CoreProviderModule = {
         providerId: RIVESTREAM_PROVIDER_ID,
         selectedStreamId: selectedStream.id,
         selectionDecision: selection.decision,
-        sources: [
-          {
-            ...createSourceCandidateFromStream({
-              providerId: RIVESTREAM_PROVIDER_ID,
-              stream: selectedStream,
-              kind: "provider-api",
-              selected: true,
-              cachePolicy,
-              label: displayRivestreamProviderLabel(serverUsed),
-              confidence: 0.95,
-            }),
-            requiresRuntime: "direct-http",
-          },
-        ],
+        sources: finalizeCycleSourceInventory({
+          sources: sourceInventorySeeds,
+          attempts: cycleResult.attempts,
+          selectedSources: [selectedSource],
+          streams,
+          selectedStreamId: selectedStream.id,
+        }),
         streams,
         variants,
         subtitles,
@@ -546,6 +567,59 @@ function buildRivestreamCycleCandidates(
         flavorArchetype: audioSubtitle,
       },
     };
+  });
+}
+
+function buildRivestreamSourceInventoryCandidates(
+  candidates: readonly ProviderCycleCandidate[],
+  cachePolicy: CachePolicy,
+): readonly ProviderSourceCandidate[] {
+  return candidates.flatMap((candidate) => {
+    const sourceId = candidate.sourceId;
+    const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
+    if (!sourceId || !provider) return [];
+    const displayLabel = displayRivestreamProviderLabel(provider);
+    const audioSubtitle = inferRivestreamAudioSubtitle(provider);
+    return [
+      {
+        id: sourceId,
+        providerId: RIVESTREAM_PROVIDER_ID,
+        kind: "provider-api",
+        label: displayLabel,
+        host: "rivestream.app",
+        status: "probing",
+        confidence: 0.75,
+        requiresRuntime: "direct-http",
+        cachePolicy,
+        languageEvidence: candidate.normalizedAudioLanguage
+          ? [
+              createProviderLanguageEvidence({
+                role: "audio",
+                value: candidate.normalizedAudioLanguage,
+                nativeLabel: provider,
+                sourceId,
+                confidence: 0.65,
+              }),
+            ]
+          : undefined,
+        sourceEvidence: [
+          createProviderSourceEvidence({
+            sourceId,
+            serverId: provider,
+            nativeLabel: provider,
+            host: "rivestream.app",
+            confidence: 0.75,
+            metadata: { displayLabel },
+          }),
+        ],
+        metadata: {
+          provider,
+          sourceHost: "rivestream.app",
+          flavorLabel: displayLabel,
+          flavorArchetype: audioSubtitle,
+        },
+      },
+    ];
   });
 }
 

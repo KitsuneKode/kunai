@@ -14,6 +14,7 @@ import { flavorSourceId, listVidkingFlavors, vidkingSourceIdForEndpoint } from "
 export const CINEBY_PROVIDER_ID = "cineby" as const;
 
 export interface CinebyFlavor {
+  readonly flavorId?: string;
   readonly label: string;
   readonly server: NonNullable<VidKingEngineOptions["serverEndpoint"]>;
   readonly languageQuery?: string;
@@ -23,12 +24,14 @@ export interface CinebyFlavor {
 }
 
 const DEFAULT_CINEBY_FLAVOR: CinebyFlavor = {
+  flavorId: "videasy-primary",
   label: "Neon",
   server: "mb-flix",
   audioLanguage: "en",
 };
 
 const CINEBY_FLAVORS: readonly CinebyFlavor[] = listVidkingFlavors().map((flavor) => ({
+  flavorId: flavor.id,
   label: flavor.cinebyAlias ?? flavor.themeLabel,
   server: flavor.endpoint as CinebyFlavor["server"],
   languageQuery: flavor.languageQuery,
@@ -128,18 +131,21 @@ function remapVidkingResult(
   result: ProviderResolveResult,
   flavor: CinebyFlavor,
 ): ProviderResolveResult {
-  const registryFlavor =
-    listVidkingFlavors().find(
-      (entry) =>
-        entry.endpoint === flavor.server &&
-        entry.languageQuery === flavor.languageQuery &&
-        entry.filterQuality === flavor.qualityFilter,
-    ) ?? listVidkingFlavors().find((entry) => entry.endpoint === flavor.server);
-  const displayLabel = registryFlavor?.themeLabel ?? flavor.label;
-  const subtitle = registryFlavor?.subtitle ?? "Cineby flavors";
-  const stableSourceId = registryFlavor
-    ? flavorSourceId(registryFlavor.id)
-    : vidkingSourceIdForEndpoint(flavor.server);
+  const fallbackIdentity = resolveCinebySourceIdentity({
+    flavorId: flavor.flavorId,
+    server: flavor.server,
+  });
+  const sourceIdentities = new Map<string, CinebySourceIdentity>();
+  for (const source of result.sources ?? []) {
+    const identity = resolveCinebySourceIdentity({
+      flavorId: stringMetadata(source.metadata?.flavorId),
+      server: stringMetadata(source.metadata?.server),
+      fallback: fallbackIdentity,
+    });
+    sourceIdentities.set(source.id, identity);
+  }
+  const identityForSourceId = (sourceId: string | undefined): CinebySourceIdentity =>
+    (sourceId ? sourceIdentities.get(sourceId) : undefined) ?? fallbackIdentity;
 
   const remapEvent = (event: ProviderTraceEvent): ProviderTraceEvent => ({
     ...event,
@@ -160,45 +166,54 @@ function remapVidkingResult(
     ...result,
     status: result.status,
     providerId: CINEBY_PROVIDER_ID,
-    sources: result.sources?.map((source) => ({
-      ...source,
-      id: stableSourceId,
-      providerId: CINEBY_PROVIDER_ID,
-      label: displayLabel,
-      metadata: {
-        ...source.metadata,
-        upstreamProvider: result.providerId,
-        flavorId: registryFlavor?.id,
-        flavorArchetype: subtitle,
-        flavorLabel: displayLabel,
-        server: flavor.server,
-      },
-    })),
-    streams: result.streams.map((stream) => ({
-      ...stream,
-      providerId: CINEBY_PROVIDER_ID,
-      sourceId: stableSourceId,
-      audioLanguages: [flavor.audioLanguage],
-      presentation: "raw",
-      subtitleDelivery: "external",
-      flavorArchetype: subtitle,
-      flavorLabel: displayLabel,
-      serverName: displayLabel,
-      metadata: {
-        ...stream.metadata,
-        upstreamProvider: result.providerId,
-      },
-    })),
-    variants: result.variants?.map((variant) => ({
-      ...variant,
-      providerId: CINEBY_PROVIDER_ID,
-      sourceId: stableSourceId,
-      presentation: "raw",
-      subtitleDelivery: "external",
-      audioLanguages: [flavor.audioLanguage],
-      flavorArchetype: subtitle,
-      flavorLabel: displayLabel,
-    })),
+    sources: result.sources?.map((source) => {
+      const identity = identityForSourceId(source.id);
+      return {
+        ...source,
+        id: identity.sourceId,
+        providerId: CINEBY_PROVIDER_ID,
+        label: identity.label,
+        metadata: {
+          ...source.metadata,
+          upstreamProvider: result.providerId,
+          flavorId: identity.flavorId,
+          flavorArchetype: identity.subtitle,
+          flavorLabel: identity.label,
+          server: identity.server,
+        },
+      };
+    }),
+    streams: result.streams.map((stream) => {
+      const identity = identityForSourceId(stream.sourceId);
+      return {
+        ...stream,
+        providerId: CINEBY_PROVIDER_ID,
+        sourceId: identity.sourceId,
+        audioLanguages: [identity.audioLanguage],
+        presentation: "raw",
+        subtitleDelivery: "external",
+        flavorArchetype: identity.subtitle,
+        flavorLabel: identity.label,
+        serverName: identity.label,
+        metadata: {
+          ...stream.metadata,
+          upstreamProvider: result.providerId,
+        },
+      };
+    }),
+    variants: result.variants?.map((variant) => {
+      const identity = identityForSourceId(variant.sourceId);
+      return {
+        ...variant,
+        providerId: CINEBY_PROVIDER_ID,
+        sourceId: identity.sourceId,
+        presentation: "raw",
+        subtitleDelivery: "external",
+        audioLanguages: [identity.audioLanguage],
+        flavorArchetype: identity.subtitle,
+        flavorLabel: identity.label,
+      };
+    }),
     trace: {
       ...result.trace,
       selectedProviderId: CINEBY_PROVIDER_ID,
@@ -210,4 +225,54 @@ function remapVidkingResult(
       ? { ...result.healthDelta, providerId: CINEBY_PROVIDER_ID }
       : undefined,
   };
+}
+
+interface CinebySourceIdentity {
+  readonly sourceId: string;
+  readonly label: string;
+  readonly subtitle: string;
+  readonly server: string;
+  readonly flavorId?: string;
+  readonly audioLanguage: string;
+}
+
+function resolveCinebySourceIdentity({
+  flavorId,
+  server,
+  fallback,
+}: {
+  readonly flavorId?: string;
+  readonly server?: string;
+  readonly fallback?: CinebySourceIdentity;
+}): CinebySourceIdentity {
+  const registryFlavor =
+    (flavorId ? listVidkingFlavors().find((entry) => entry.id === flavorId) : undefined) ??
+    (server ? listVidkingFlavors().find((entry) => entry.endpoint === server) : undefined);
+  const cinebyFlavor =
+    (registryFlavor
+      ? CINEBY_FLAVORS.find((entry) => entry.flavorId === registryFlavor.id)
+      : undefined) ??
+    (server ? CINEBY_FLAVORS.find((entry) => entry.server === server) : undefined);
+
+  if (!registryFlavor && !cinebyFlavor && fallback) return fallback;
+
+  const resolvedServer = registryFlavor?.endpoint ?? cinebyFlavor?.server ?? server ?? "mb-flix";
+  return {
+    sourceId: registryFlavor
+      ? flavorSourceId(registryFlavor.id)
+      : vidkingSourceIdForEndpoint(resolvedServer),
+    label:
+      cinebyFlavor?.label ??
+      registryFlavor?.cinebyAlias ??
+      registryFlavor?.themeLabel ??
+      resolvedServer,
+    subtitle: registryFlavor?.subtitle ?? "Cineby flavors",
+    server: resolvedServer,
+    flavorId: registryFlavor?.id,
+    audioLanguage: registryFlavor?.audioLanguage ?? cinebyFlavor?.audioLanguage ?? "en",
+  };
+}
+
+function stringMetadata(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }

@@ -687,23 +687,35 @@ export function buildAllmangaSourceCandidates(
     streamsBySource.set(stream.sourceId, [...(streamsBySource.get(stream.sourceId) ?? []), stream]);
   }
 
-  return [...streamsBySource.entries()].map(([sourceId, sourceStreams]) => ({
-    id: sourceId,
-    providerId: ALLANIME_PROVIDER_ID,
-    kind: "provider-api",
-    label: formatAllmangaSourceLabel(sourceId),
-    host: "api.allanime.day",
-    status: sourceId === selectedSourceId ? "selected" : "available",
-    confidence: Math.max(...sourceStreams.map((stream) => stream.confidence)),
-    requiresRuntime: "direct-http",
-    cachePolicy,
-    metadata: {
-      sourceFamily: sourceId.split(":").at(-1) ?? sourceId,
-      streamIds: sourceStreams.map((stream) => stream.id).join(","),
-      flavorLabel: formatAllmangaSourceLabel(sourceId),
-      flavorArchetype: firstDefined(sourceStreams.map((stream) => stream.flavorArchetype)),
-    },
-  }));
+  return [...streamsBySource.entries()].map(([sourceId, sourceStreams]) => {
+    const representative = sourceStreams[0];
+    const label =
+      representative?.sourceEvidence?.[0]?.nativeLabel ?? formatAllmangaSourceLabel(sourceId);
+    return {
+      id: sourceId,
+      providerId: ALLANIME_PROVIDER_ID,
+      kind: "provider-api",
+      label,
+      host: representative?.sourceEvidence?.[0]?.host ?? "api.allanime.day",
+      status: sourceId === selectedSourceId ? "selected" : "available",
+      confidence: Math.max(...sourceStreams.map((stream) => stream.confidence)),
+      requiresRuntime: "direct-http",
+      cachePolicy,
+      languageEvidence: representative?.languageEvidence,
+      sourceEvidence: representative?.sourceEvidence,
+      artwork: representative?.artwork,
+      metadata: {
+        sourceFamily: sourceId.split(":").at(-1) ?? sourceId,
+        streamIds: sourceStreams.map((stream) => stream.id).join(","),
+        qualityLabels: sourceStreams
+          .map((stream) => stream.qualityLabel)
+          .filter((quality): quality is string => Boolean(quality))
+          .join(","),
+        flavorLabel: label,
+        flavorArchetype: firstDefined(sourceStreams.map((stream) => stream.flavorArchetype)),
+      },
+    };
+  });
 }
 
 function formatAllmangaSourceLabel(sourceId: string): string {

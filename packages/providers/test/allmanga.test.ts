@@ -243,6 +243,19 @@ describe("AllManga provider evidence fixtures", () => {
       normalizedLanguage: expected.dubResolve.audioLanguage,
     });
     expect(sub.sources?.[0]?.metadata?.sourceFamily).toBe("fm-hls");
+    expect(sub.sources?.[0]).toMatchObject({
+      label: "FM HLS",
+      host: expect.any(String),
+      metadata: expect.objectContaining({
+        qualityLabels: expect.any(String),
+      }),
+    });
+    expect(sub.sources?.[0]?.languageEvidence?.[0]).toMatchObject({
+      normalizedLanguage: expected.subResolve.audioLanguage,
+    });
+    expect(sub.sources?.[0]?.sourceEvidence?.[0]).toMatchObject({
+      nativeLabel: "FM HLS",
+    });
     expect(dub.streams[0]?.url).toContain("/dub/");
     expect(sub.externalIds).toEqual(expected.search.externalIds);
     expect(dub.externalIds).toEqual(expected.search.externalIds);
