@@ -716,6 +716,10 @@ async function mockAllMangaFetch(
     const url = String(input);
     calls.push(url);
     if (url.includes("/ak-source")) {
+      if (init?.signal?.aborted) {
+        abortedAkRequests += 1;
+        throw init.signal.reason ?? new DOMException("Aborted", "AbortError");
+      }
       init?.signal?.addEventListener(
         "abort",
         () => {
@@ -723,7 +727,12 @@ async function mockAllMangaFetch(
         },
         { once: true },
       );
-      if (options.akDelayMs) await Bun.sleep(options.akDelayMs);
+      if (options.akDelayMs) {
+        await Bun.sleep(options.akDelayMs);
+        if (init?.signal?.aborted) {
+          throw init.signal.reason ?? new DOMException("Aborted", "AbortError");
+        }
+      }
       return jsonResponse(fixtures.ak);
     }
     if (url.includes("/broken-source")) {

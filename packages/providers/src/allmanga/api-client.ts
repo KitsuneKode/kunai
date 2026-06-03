@@ -265,6 +265,7 @@ const sourceCache = new TTLCache<string, StreamLink[]>(300_000);
 export function clearAllMangaProviderCachesForTest(): void {
   showCatalogCache.clear();
   sourceCache.clear();
+  akDeferredRegistry.clear();
 }
 
 type AbortSignalConstructorWithAny = typeof AbortSignal & {
