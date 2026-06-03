@@ -1,5 +1,11 @@
 # @kitsunekode/kunai
 
+## 0.2.1
+
+### Patch Changes
+
+- [`f4a19bd`](https://github.com/KitsuneKode/kunai/commit/f4a19bd52f7ca655fe320204d1c988ca1ad7a213) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Polish post-playback action rows so shortcut hints render as stable bracketed key labels instead of loose trailing letters, and make the stopped-early replay action match the actual available control.
+
 ## 0.2.0
 
 ### Minor Changes
