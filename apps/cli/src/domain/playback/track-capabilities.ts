@@ -249,6 +249,25 @@ export function selectableTrackCount(groups: readonly TrackCapabilityGroup[]): n
   return count;
 }
 
+export function filterTrackCapabilityGroups(
+  groups: readonly TrackCapabilityGroup[],
+  query: string,
+): readonly TrackCapabilityGroup[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return groups;
+
+  return groups.flatMap((group) => {
+    const rows = group.rows.filter((row) =>
+      [group.title, row.label, row.detail, row.reason, row.risk, row.value]
+        .filter((part): part is string => Boolean(part))
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized),
+    );
+    return rows.length > 0 ? [{ ...group, rows, selectable: rows.some((row) => row.enabled) }] : [];
+  });
+}
+
 export function anyTrackSelectable(groups: readonly TrackCapabilityGroup[]): boolean {
   return selectableTrackCount(groups) > 0;
 }
@@ -288,4 +307,36 @@ export function selectableCapabilityAt(
     }
   }
   return null;
+}
+
+export function sectionForSelectableIndex(
+  groups: readonly TrackCapabilityGroup[],
+  index: number,
+): TrackCapabilitySection | undefined {
+  let selectableIndex = 0;
+  for (const group of groups) {
+    for (const row of group.rows) {
+      if (!row.enabled) continue;
+      if (selectableIndex === index) return group.section;
+      selectableIndex += 1;
+    }
+  }
+  return undefined;
+}
+
+export function adjacentSectionSelectableIndex(
+  groups: readonly TrackCapabilityGroup[],
+  index: number,
+  direction: 1 | -1,
+): number {
+  const sections = groups.filter((group) => group.rows.some((row) => row.enabled));
+  if (sections.length === 0) return 0;
+  const currentSection = sectionForSelectableIndex(groups, index) ?? sections[0]?.section;
+  const currentSectionIndex = Math.max(
+    0,
+    sections.findIndex((group) => group.section === currentSection),
+  );
+  const nextSection =
+    sections[(currentSectionIndex + direction + sections.length) % sections.length]?.section;
+  return initialSelectableIndexForSection(groups, nextSection);
 }

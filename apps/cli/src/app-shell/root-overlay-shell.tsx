@@ -3,9 +3,12 @@ import type { Container } from "@/container";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
 import {
+  adjacentSectionSelectableIndex,
   encodeTrackSelection,
+  filterTrackCapabilityGroups,
   initialSelectableIndexForSection,
   selectableCapabilityAt,
+  sectionForSelectableIndex,
   selectableTrackCount,
 } from "@/domain/playback/track-capabilities";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
@@ -391,6 +394,14 @@ export function RootOverlayShell({
     overlay.type === "tracks_panel"
       ? initialSelectableIndexForSection(overlay.groups, overlay.initialSection)
       : 0;
+  const trackGroups =
+    overlay.type === "tracks_panel" ? filterTrackCapabilityGroups(overlay.groups, filterQuery) : [];
+  const trackSwitchableCount =
+    overlay.type === "tracks_panel" ? selectableTrackCount(trackGroups) : 0;
+  const activeTrackSection =
+    overlay.type === "tracks_panel"
+      ? (sectionForSelectableIndex(trackGroups, selectedIndex) ?? overlay.initialSection)
+      : undefined;
   const commands = resolveCommandContext(state, "rootOverlay");
   const historyPickerContext: HistoryPickerOptionsContext = {
     nextReleases: historyNextReleases,
@@ -788,15 +799,20 @@ export function RootOverlayShell({
     if (overlay.type === "tracks_panel") {
       // Self-contained: navigation runs over switchable rows only and the
       // selection resolves through the picker bridge (RESOLVE/CANCEL_PICKER).
-      const count = selectableTrackCount(overlay.groups);
+      const count = trackSwitchableCount;
       if (key.escape) {
+        if (filterQuery) {
+          setFilterQuery("");
+          setSelectedIndex(tracksInitialIndex);
+          return;
+        }
         container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
         container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         return;
       }
       if (key.return) {
         if (count === 0) return; // facts only — never resolve a dead picker
-        const capability = selectableCapabilityAt(overlay.groups, selectedIndex);
+        const capability = selectableCapabilityAt(trackGroups, selectedIndex);
         if (!capability) return;
         container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
         container.stateManager.dispatch({
@@ -806,10 +822,19 @@ export function RootOverlayShell({
         });
         return;
       }
+      if ((key.leftArrow || key.rightArrow || key.tab) && count > 0) {
+        setSelectedIndex((current) =>
+          adjacentSectionSelectableIndex(trackGroups, current, key.leftArrow ? -1 : 1),
+        );
+        return;
+      }
       if ((key.upArrow || key.downArrow) && count > 0) {
         setSelectedIndex((current) =>
           key.upArrow ? (current - 1 + count) % count : (current + 1) % count,
         );
+        return;
+      }
+      if (filterEditor.handleInput(input, key)) {
         return;
       }
       return;
@@ -1574,7 +1599,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "tracks_panel") {
-    const switchableCount = selectableTrackCount(overlay.groups);
+    const switchableCount = trackSwitchableCount;
     return (
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
@@ -1585,10 +1610,12 @@ export function RootOverlayShell({
             ]}
           />
           <TracksPanelShell
-            groups={overlay.groups}
+            groups={trackGroups}
             selectedIndex={Math.min(selectedIndex, Math.max(switchableCount - 1, 0))}
             width={Math.max(24, (stdout.columns ?? 80) - 8)}
             height={Math.max(8, (stdout.rows ?? 32) - 9)}
+            activeSection={activeTrackSection}
+            filterQuery={filterQuery}
           />
         </Box>
 
@@ -1604,13 +1631,16 @@ export function RootOverlayShell({
           <ShellFooter
             taskLabel={
               switchableCount > 0
-                ? "Tracks  ·  ↑↓ select, Enter changes, Esc closes"
-                : "Tracks  ·  facts only, Esc closes"
+                ? "Tracks  ·  ↑↓ select, ←→ section, type filters"
+                : filterQuery
+                  ? "Tracks  ·  no filtered matches, Esc clears"
+                  : "Tracks  ·  facts only, Esc closes"
             }
             actions={
               switchableCount > 0
                 ? [
                     { key: "↑↓", label: "select", action: "details" as const },
+                    { key: "←→", label: "section", action: "details" as const },
                     { key: "enter", label: "change", action: "details" as const, primary: true },
                     { key: "/", label: "commands", action: "command-mode" as const },
                     { key: "esc", label: "close", action: "quit" as const },

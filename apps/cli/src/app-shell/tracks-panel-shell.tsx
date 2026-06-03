@@ -3,6 +3,7 @@ import {
   type TrackCapability,
   type TrackCapabilityGroup,
   type TrackCapabilityRisk,
+  type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
 import { Box, Text } from "ink";
 import React from "react";
@@ -16,6 +17,8 @@ export type TracksPanelShellProps = {
   selectedIndex: number;
   width: number;
   height?: number;
+  activeSection?: TrackCapabilitySection;
+  filterQuery?: string;
 };
 
 function riskColor(risk: TrackCapabilityRisk): string {
@@ -54,6 +57,8 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
   selectedIndex,
   width,
   height,
+  activeSection,
+  filterQuery = "",
 }: TracksPanelShellProps) {
   const rows = buildTrackPanelRows(groups);
   const labelWidth = Math.min(28, Math.max(14, Math.floor(width * 0.4)));
@@ -82,6 +87,21 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
   return (
     <Box flexDirection="column" paddingX={1}>
       <Box marginBottom={1}>
+        {groups.map((group) => {
+          const active = group.section === activeSection;
+          const switchable = group.rows.some((row) => row.enabled);
+          return (
+            <Text
+              key={`tab-${group.section}`}
+              color={active ? palette.accent : switchable ? palette.textDim : palette.dim}
+              bold={active}
+            >
+              {`${active ? "▸ " : "  "}${group.title}${switchable ? "" : " · facts"}  `}
+            </Text>
+          );
+        })}
+      </Box>
+      <Box marginBottom={1}>
         <Text color={palette.dim}>
           {truncateLine(
             [
@@ -96,6 +116,9 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
           )}
         </Text>
       </Box>
+      {filterQuery.trim() ? (
+        <Text color={palette.accentSoft}>{truncateLine(`filter: ${filterQuery}`, width - 2)}</Text>
+      ) : null}
       {hiddenAbove > 0 ? <Text color={palette.dim}>{`↑ ${hiddenAbove} more`}</Text> : null}
       {visibleRows.map((row, offset) => {
         const index = windowStart + offset;

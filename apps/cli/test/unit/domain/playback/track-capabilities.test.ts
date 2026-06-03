@@ -1,14 +1,17 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  adjacentSectionSelectableIndex,
   anyTrackSelectable,
   buildTrackCapabilities,
   buildTrackPanelRows,
   decodeTrackSelection,
   encodeTrackSelection,
+  filterTrackCapabilityGroups,
   initialSelectableIndexForSection,
   selectableCapabilityAt,
   selectableTrackCount,
+  sectionForSelectableIndex,
 } from "@/domain/playback/track-capabilities";
 import type {
   PlaybackQualityOptionView,
@@ -212,6 +215,27 @@ describe("track panel rows + navigation", () => {
     expect(selectableCapabilityAt(groups, 0)?.value).toBe("b");
     expect(selectableCapabilityAt(groups, 1)?.value).toBe("stream-720");
     expect(selectableCapabilityAt(groups, 2)).toBeNull();
+  });
+
+  test("filters rows without making facts selectable", () => {
+    const filtered = filterTrackCapabilityGroups(groups, "720");
+    expect(filtered.map((group) => group.section)).toEqual(["quality"]);
+    expect(selectableTrackCount(filtered)).toBe(1);
+    expect(selectableCapabilityAt(filtered, 0)?.value).toBe("stream-720");
+
+    const failedOnly = filterTrackCapabilityGroups(groups, "failed");
+    expect(failedOnly.map((group) => group.section)).toEqual(["source"]);
+    expect(selectableTrackCount(failedOnly)).toBe(0);
+    expect(failedOnly[0]?.rows[0]).toMatchObject({ value: "c", enabled: false });
+  });
+
+  test("reports and jumps between selectable sections", () => {
+    expect(sectionForSelectableIndex(groups, 0)).toBe("source");
+    expect(sectionForSelectableIndex(groups, 1)).toBe("quality");
+    expect(sectionForSelectableIndex(groups, 2)).toBeUndefined();
+    expect(adjacentSectionSelectableIndex(groups, 0, 1)).toBe(1);
+    expect(adjacentSectionSelectableIndex(groups, 1, -1)).toBe(0);
+    expect(adjacentSectionSelectableIndex(groups, 1, 1)).toBe(0);
   });
 
   test("quality choices without concrete streams render as facts", () => {
