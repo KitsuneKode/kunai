@@ -3,9 +3,9 @@
 
  ✓ episode complete
 
- ▌ Next episode      E32 · Challengers of Science · autoplay on ↵ n
-   Episodes          open season list, current stays marked e
-   Replay / Tracks   rewatch, or change source · quality · audio r · t
+ ▌ Next episode      E32 · Challengers of Science · autoplay…   [↵ n]
+   Episodes          open season list, current stays marked     [e]
+   Replay / Tracks   rewatch, or change source · quality · a… [r · t]
 
  ───────────────────────── because you watched this ─────────────────────────
 

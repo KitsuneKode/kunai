@@ -1,14 +1,18 @@
 # post-play.did-not-start · wide (140×45)
- DR. STONE
-
- ▢ playback didn't start
- nothing was recorded for this title
-
- ▌ Try again         retry the same episode ↵
-   Search            find another title s
-
- ────────────────────────────────────── you might also like ───────────────────────────────────────
-
- 1 Frieren · Slow-burn fantasy
- 2 Vinland Saga · 2019
- 3 Heavenly Delusion · 2023
+ DR. STONE                                                                                         │
+                                                                                                   │
+ ▢ playback didn't start                                                                           │
+ nothing was recorded for this title                                                               │                 DS
+                                                                                                   │
+ ▌ Try again         retry the same episode  [r]                                                   │
+   Fallback          try another provider  [f]                                                     │
+   Sources           choose another stream  [o]                                                    │
+   Search            find another title  [s]                                                       │  DETAILS
+                                                                                                   │
+ ────────────────────────────────────── you might also like ───────────────────────────────────────│  season     4
+                                                                                                   │
+ ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ │ 1                           │  │ 2                           │  │ 3                           │ │
+ │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
+ │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
+ └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │

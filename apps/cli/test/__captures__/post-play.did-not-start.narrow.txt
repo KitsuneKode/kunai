@@ -4,7 +4,9 @@
  ▢ playback didn't start
  nothing was recorded for this title
 
- ▌ Try again         retry the same episode ↵
-   Search            find another title s
+ ▌ Try again         retry the same episode  [r]
+   Fallback          try another provider  [f]
+   Sources           choose another stream  [o]
+   Search            find another title  [s]
 
  +3 picks · Frieren · Vinland Saga

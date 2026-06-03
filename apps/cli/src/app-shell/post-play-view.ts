@@ -269,8 +269,8 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
         },
         {
           id: "replay",
-          label: "Replay / Tracks",
-          detail: "rewatch or change source · audio",
+          label: "Replay",
+          detail: "rewatch from the start",
           shortcut: "r",
           primary: false,
         },

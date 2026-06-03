@@ -5,8 +5,8 @@
 
  ████████████████████░░░░░░░░░░░░░░░░ 7 / 12 this season · 58%
 
- ▌ ↵ Continue        continue to next season ↵
-   Episodes          review this season e
+ ▌ ↵ Continue        continue to next season  [↵]
+   Episodes          review this season  [e]
 
  ─────────────────────────── you might also like ────────────────────────────
 

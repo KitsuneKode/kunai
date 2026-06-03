@@ -91,11 +91,13 @@ function ActionRows({
   readonly actions: readonly PostPlayActionRow[];
   readonly width: number;
 }) {
-  const detailWidth = Math.max(10, width - 28);
+  const shortcutWidth = Math.max(5, ...actions.map((action) => action.shortcut.length + 3));
+  const detailWidth = Math.max(8, width - 28 - shortcutWidth);
   return (
     <Box flexDirection="column" marginTop={1}>
       {actions.map((action, idx) => {
         const isPrimary = idx === 0;
+        const shortcut = ` [${action.shortcut}]`.padStart(shortcutWidth);
         return (
           <Box key={action.id} flexDirection="row" flexWrap="nowrap">
             <Text color={isPrimary ? palette.accent : palette.dim}>{isPrimary ? "▌ " : "  "}</Text>
@@ -103,7 +105,7 @@ function ActionRows({
               {action.label.padEnd(18).slice(0, 18)}
             </Text>
             <Text color={palette.muted}>{truncateLine(action.detail, detailWidth)}</Text>
-            <Text color={isPrimary ? palette.accent : palette.dim}> {action.shortcut}</Text>
+            <Text color={isPrimary ? palette.accent : palette.dim}>{shortcut}</Text>
           </Box>
         );
       })}

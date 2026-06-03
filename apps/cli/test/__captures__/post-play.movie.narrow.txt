@@ -3,7 +3,7 @@
 
  ✓ movie complete
 
- ▌ Replay            rewatch from the start r
-   Search            find another title /
+ ▌ Replay            rewatch from the start  [r]
+   Search            find another title  [/]
 
  +3 picks · Frieren · Vinland Saga

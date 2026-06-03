@@ -5,9 +5,9 @@
 
  ████████████████████░░░░░░░░░░░░░░░░ 7 / 12 · 58%
 
- ▌ ↵ Resume          same stream · same position ↵
-   Episodes          open season list e
-   Replay / Tracks   rewatch or change source · audio r
+ ▌ ↵ Resume          same stream · same position  [↵]
+   Episodes          open season list  [e]
+   Replay            rewatch from the start  [r]
 
  ─────────────────────────── you might also like ────────────────────────────
 

@@ -1,15 +1,17 @@
 # post-play.season-finale · wide (140×45)
- DR. STONE                                                                                         │  ┌───────────────────────────────┐
-                                                                                                   │  │                               │
- ✦ Season 4 complete                                                                               │  │                               │
-                                                                                                   │  │              DS               │
- ████████████████████░░░░░░░░░░░░░░░░ 7 / 12 this season · 58%                                     │  │                               │
-                                                                                                   │  │                               │
- ▌ ↵ Continue        continue to next season ↵                                                     │  └───────────────────────────────┘
-   Episodes          review this season e                                                          │
+ DR. STONE                                                                                         │
+                                                                                                   │
+ ✦ Season 4 complete                                                                               │
+                                                                                                   │                 DS
+ ████████████████████░░░░░░░░░░░░░░░░ 7 / 12 this season · 58%                                     │
+                                                                                                   │
+ ▌ ↵ Continue        continue to next season  [↵]                                                  │
+   Episodes          review this season  [e]                                                       │
                                                                                                    │  DETAILS
  ────────────────────────────────────── you might also like ───────────────────────────────────────│
                                                                                                    │  progress   7 / 12 · 58%
- 1 Frieren · Slow-burn fantasy                                                                     │
- 2 Vinland Saga · 2019                                                                             │
- 3 Heavenly Delusion · 2023                                                                        │
+ ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ │ 1                           │  │ 2                           │  │ 3                           │ │
+ │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
+ │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
+ └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │

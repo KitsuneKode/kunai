@@ -40,7 +40,8 @@ export class ShellServiceImpl implements ShellService {
   }
 
   setSearchState(_state: "idle" | "loading" | "ready" | "error", _error?: string): void {
-    // Stub
+    // The mounted Ink shell owns visible loading/error state; this compatibility seam
+    // only preserves imperative state updates for older service callers.
   }
 
   pushModal(modal: ModalType): void {
@@ -56,7 +57,7 @@ export class ShellServiceImpl implements ShellService {
   }
 
   async waitForSelection<T>(): Promise<T | null> {
-    // TODO: Implement with Ink
+    this.deps.logger.warn("ShellService.waitForSelection called without a mounted picker");
     return null;
   }
 
