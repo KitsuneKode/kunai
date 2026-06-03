@@ -294,6 +294,7 @@ export function BrowseShell<T>({
     setEmptyMessage("Searching…");
     setSelectedDetail("Finding titles and available matches…");
     setCalendarDayFilter(null);
+    setCalendarTypeTab("All");
 
     try {
       const response = await onSearch(rawQuery);
@@ -360,6 +361,7 @@ export function BrowseShell<T>({
     setEmptyMessage("Loading trending…");
     setSelectedDetail("Loading cached trending titles…");
     setCalendarDayFilter(null);
+    setCalendarTypeTab("All");
 
     try {
       const response = await onLoadDiscovery();
@@ -396,6 +398,7 @@ export function BrowseShell<T>({
     setEmptyMessage("Loading recommendations…");
     setSelectedDetail("Building personalized recommendations from history and TMDB…");
     setCalendarDayFilter(null);
+    setCalendarTypeTab("All");
 
     try {
       const response = await onLoadRecommendations();
@@ -495,7 +498,7 @@ export function BrowseShell<T>({
   }, [displayOptions.length]);
 
   useEffect(() => {
-    const option = displayOptions[selectedIndex];
+    const option = displayOptions[Math.min(selectedIndex, Math.max(0, displayOptions.length - 1))];
     if (!option) {
       return;
     }
@@ -515,7 +518,9 @@ export function BrowseShell<T>({
     });
   }, [commandInput, commandMode, commands]);
 
-  const selectedOption = displayOptions[selectedIndex];
+  const boundedSelectedIndex =
+    displayOptions.length === 0 ? 0 : Math.min(selectedIndex, displayOptions.length - 1);
+  const selectedOption = displayOptions[boundedSelectedIndex];
   const listFocused = isBrowseListFocused(focusZone);
   const resultFilterFocused = isBrowseFilterFocused(focusZone);
   const idleFocused = isBrowseIdleFocused(focusZone);
@@ -525,7 +530,7 @@ export function BrowseShell<T>({
     submittedQuery: lastSearchedQuery,
     resultFilter,
     focusedRegion: resultFilterFocused ? "result-filter" : "query",
-    selectedIndex,
+    selectedIndex: boundedSelectedIndex,
     detailsOpen: activeOverlay?.type === "details",
     detailsScroll:
       activeOverlay && "scrollIndex" in activeOverlay ? (activeOverlay.scrollIndex ?? 0) : 0,
@@ -546,7 +551,7 @@ export function BrowseShell<T>({
     hasFilterBar:
       searchState === "ready" && options.length > 0 && !isCalendarView && !viewport.ultraCompact,
     canFocusIdle: canFocusContinue,
-    selectedIndex,
+    selectedIndex: boundedSelectedIndex,
   };
 
   // Never strand focus on a list that has emptied — hand focus back to query.
@@ -595,7 +600,7 @@ export function BrowseShell<T>({
         : innerWidth;
   const listWidth = showCompanionLayout ? Math.max(48, innerWidth - previewWidth - 4) : innerWidth;
   const rowWidth = Math.max(20, listWidth - 4);
-  const windowStart = getWindowStart(selectedIndex, displayOptions.length, maxVisible);
+  const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
   // The "Series"/"Movie" type is a quiet column only when the result set is
@@ -855,18 +860,17 @@ export function BrowseShell<T>({
     if (key.escape) {
       // Layered step-back: results focus → query focus → clear results → clear
       // query → cancel. Esc first hands the list's focus back to the search box.
+      if (isCalendarView && calendarDayFilter !== null) {
+        setCalendarDayFilter(null);
+        setSelectedIndex(0);
+        return;
+      }
       if (listFocused) {
         dispatchFocusZone({ type: "escape" });
         return;
       }
       if (idleFocused) {
         dispatchFocusZone({ type: "escape" });
-        return;
-      }
-      // In calendar view: escape clears day filter before clearing all results
-      if (isCalendarView && calendarDayFilter !== null) {
-        setCalendarDayFilter(null);
-        setSelectedIndex(0);
         return;
       }
       if (options.length > 0 || searchState === "error" || searchState === "loading") {
@@ -906,7 +910,7 @@ export function BrowseShell<T>({
         setSelectedIndex(displayOptions.length - 1);
         return;
       }
-      if (selectedIndex === 0) {
+      if (boundedSelectedIndex === 0) {
         dispatchFocusZone({ type: "arrow-up" });
         return;
       }
@@ -1110,7 +1114,7 @@ export function BrowseShell<T>({
                     <CalendarScheduleRow
                       key={`${row.option.label}-${row.optionIndex}-${row.timeLabel}`}
                       option={row.option}
-                      selected={row.optionIndex === selectedIndex}
+                      selected={row.optionIndex === boundedSelectedIndex}
                       rowWidth={rowWidth}
                       timeLabel={row.timeLabel}
                       episodeCode={row.episodeCode}
@@ -1126,7 +1130,7 @@ export function BrowseShell<T>({
                   ))
                 : visibleOptions.map((option, index) => {
                     const optionIndex = windowStart + index;
-                    const selected = optionIndex === selectedIndex;
+                    const selected = optionIndex === boundedSelectedIndex;
                     const metaText =
                       option.previewBadge ??
                       (resultsAreMixed ? option.previewMeta?.[0] : undefined);
@@ -1184,7 +1188,7 @@ export function BrowseShell<T>({
             {/* Companion pane */}
             {showCompanion ? (
               <Box
-                key={`browse-companion-${selectedIndex}-${selectedOption?.label ?? "none"}`}
+                key={`browse-companion-${boundedSelectedIndex}-${selectedOption?.label ?? "none"}`}
                 marginLeft={2}
                 flexDirection="column"
                 width={previewWidth}

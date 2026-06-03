@@ -63,7 +63,7 @@ function CalendarList({ width }: { width: number }) {
     <Box flexDirection="column" width={width}>
       {rows.map((o, i) => (
         <CalendarScheduleRow
-          key={i}
+          key={`${o.label}:${o.previewGroup ?? "day"}:${o.releaseStatus ?? "unknown"}`}
           option={o}
           selected={i === 0}
           rowWidth={width}
