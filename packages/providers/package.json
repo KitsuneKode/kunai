@@ -12,7 +12,7 @@
     "lint": "oxlint .",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "test": "bun test test"
+    "test": "bun test --max-concurrency 1 test"
   },
   "dependencies": {
     "@assemblyscript/loader": "^0.28.17",
