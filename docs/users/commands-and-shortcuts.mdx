@@ -29,10 +29,14 @@ available without losing the playing context.
 ## Playback Commands
 
 - `/recover` refreshes the active stream from the current provider and resumes.
+- `/recompute` bypasses stream cache and provider health memory for the current
+  episode when source inventory looks stale.
 - `/fallback` tries the next compatible provider when the active provider fails.
 - `/replay` starts the current episode again from the beginning.
-- `/streams`, `/source`, and `/quality` open media selection without stopping
-  playback until the user confirms a new stream.
+- `/tracks` or `/streams` opens the grouped media panel for source, quality,
+  audio, hardsub, and subtitle facts.
+- `/source` and `/quality` jump straight to those picker sections when they have
+  switchable alternatives.
 - `m` reveals the temporary memory strip during playback. It is hidden by
   default to keep normal watching uncluttered.
 - `/pick-episode`, `/next`, `/previous`, and `/next-season` navigate episodes
@@ -47,6 +51,24 @@ available without losing the playing context.
 Help, diagnostics, settings, notifications, history, downloads, and provider
 pickers are overlays. They should not destroy the underlying playback or browse
 context. Close the overlay to return where you were.
+
+## Stable Hotkeys
+
+| Context | Keys | Action |
+| --- | --- | --- |
+| Anywhere in shell | `/` | Open context-aware command palette |
+| Browse results | `Enter` | Open or play selected result |
+| Browse results | `Shift+Enter` or `i` | Open title details |
+| Browse results | `Ctrl+F` | Focus filters |
+| Browse results | `Ctrl+T` | Refresh trending |
+| Browse results | `Ctrl+D` | Queue selected result for download |
+| Browse / pickers | `Esc` | Clear, close, or go back |
+| Playback | `r` | Recover current stream |
+| Playback | `f` | Try next compatible provider |
+| Playback | `d` | Queue current item for download |
+| Playback | `k` | Open tracks/source/quality selection |
+| Playback | `n` / `p` | Next / previous episode when available |
+| Playback | `a` / `u` | Toggle autoplay / autoskip for this session |
 
 ## Reporting Problems
 

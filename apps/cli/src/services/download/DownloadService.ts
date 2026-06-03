@@ -45,7 +45,6 @@ const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
-const THUMBNAIL_TIMEOUT_MS = 12_000;
 
 export type DownloadEnqueueEligibility =
   | { readonly allowed: true }
@@ -184,7 +183,6 @@ export class DownloadService {
         intent: DownloadResolveIntent,
       ) => Promise<DownloadResolveResult | null>;
       readonly ffprobeAvailable?: boolean;
-      readonly ffmpegAvailable?: boolean;
       readonly abortGraceMs?: number;
       readonly diagnostics?: Pick<DiagnosticsService, "record">;
       readonly onCompletedArtifact?: (job: DownloadJobRecord) => Promise<void> | void;
@@ -1050,107 +1048,15 @@ export class DownloadService {
     );
   }
 
-  private async generateThumbnailIfAvailable(
-    job: DownloadJobRecord,
-  ): Promise<DownloadSidecarResult> {
-    if (!this.deps.ffmpegAvailable) {
-      return {
-        artifact: "artwork",
-        status: "not-applicable",
-      };
-    }
-    const targetPath = resolveThumbnailArtifactPath(job.outputPath);
-    const tempPath = `${targetPath}.tmp.${job.id}`;
-    try {
-      const existing = await stat(targetPath).catch(() => null);
-      if (existing?.isFile() && existing.size > 0) {
-        this.deps.repo.updateOfflineMetadata(
-          job.id,
-          { thumbnailPath: targetPath },
-          new Date().toISOString(),
-        );
-        return { artifact: "artwork", status: "ready" };
-      }
-      await rm(tempPath, { force: true }).catch(() => {});
-
-      const proc = Bun.spawn(
-        [
-          "ffmpeg",
-          "-y",
-          "-hide_banner",
-          "-loglevel",
-          "error",
-          "-ss",
-          "00:00:12",
-          "-i",
-          job.outputPath,
-          "-frames:v",
-          "1",
-          "-vf",
-          "scale=640:-1",
-          tempPath,
-        ],
-        { stdin: "ignore", stdout: "ignore", stderr: "ignore" },
-      );
-      const exited = await waitForExit(proc.exited, THUMBNAIL_TIMEOUT_MS);
-      if (!exited) {
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          // best-effort thumbnail generation must never poison the download.
-        }
-        await waitForExit(proc.exited, 1_000).catch(() => false);
-        await rm(tempPath, { force: true }).catch(() => {});
-        return { artifact: "artwork", status: "optional-missing", message: "thumbnail timed out" };
-      }
-      const exitCode = await proc.exited.catch(() => 1);
-      if (exitCode !== 0) {
-        await rm(tempPath, { force: true }).catch(() => {});
-        return {
-          artifact: "artwork",
-          status: "optional-missing",
-          message: "thumbnail generation failed",
-        };
-      }
-      const thumbnailStat = await stat(tempPath).catch(() => null);
-      if (!thumbnailStat?.isFile() || thumbnailStat.size <= 0) {
-        await rm(tempPath, { force: true }).catch(() => {});
-        return {
-          artifact: "artwork",
-          status: "optional-missing",
-          message: "thumbnail output was empty",
-        };
-      }
-      await rename(tempPath, targetPath);
-      this.deps.repo.updateOfflineMetadata(
-        job.id,
-        { thumbnailPath: targetPath },
-        new Date().toISOString(),
-      );
-      return { artifact: "artwork", status: "ready" };
-    } catch {
-      this.deps.logger.debug("Offline thumbnail generation skipped", {
-        jobId: job.id,
-      });
-      await rm(tempPath, { force: true }).catch(() => {});
-      return {
-        artifact: "artwork",
-        status: "optional-missing",
-        message: "thumbnail generation failed",
-      };
-    }
-  }
-
   private async prepareOfflineArtwork(job: DownloadJobRecord): Promise<void> {
-    const thumbnail = await this.generateThumbnailIfAvailable(job);
-    if (thumbnail.status === "optional-missing") {
-      this.maybeMarkOptionalArtworkMissing(
-        job,
-        thumbnail.message ?? "Artwork could not be generated",
-      );
-    }
     const refreshed = this.deps.repo.get(job.id) ?? job;
-    if (refreshed.thumbnailPath || !this.deps.config.offlineArtworkCacheEnabled) return;
+    if (
+      refreshed.thumbnailPath ||
+      !refreshed.posterUrl ||
+      !this.deps.config.offlineArtworkCacheEnabled
+    ) {
+      return;
+    }
     try {
       const posterPath = await cacheOfflinePosterArtwork({ job: refreshed });
       if (!posterPath) {

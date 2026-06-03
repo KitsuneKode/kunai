@@ -69,14 +69,22 @@ Recommendation shortcuts:
 
 ```bash
 # inside Kunai command palette
-/ recommendation
-/ downloads
+/recommendation
+/downloads
 ```
 
 Download workflow shortcuts:
 
+- From browse results, use `Ctrl+D` / `/download` to queue the selected result.
 - During playback or post-playback, use `d` / `/download` to queue the current stream.
 - Use `/downloads` to inspect active/failed/completed jobs and retry or cancel entries.
+
+Playback recovery shortcuts:
+
+- Use `r` / `/recover` to refresh the current stream and resume.
+- Use `/recompute` when provider/source inventory looks stale and cached provider memory should be bypassed.
+- Use `f` / `/fallback` to try the next compatible provider.
+- Use `k` / `/tracks` to review source, quality, audio, hardsub, and subtitle options.
 
 ## Diagnostics
 

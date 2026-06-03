@@ -50,10 +50,9 @@ Once inside the shell, `/` opens the command palette from anywhere.
 | --------------- | --------- | ------------------------------------------------------------------ |
 | **mpv**         | Required  | Plays everything. `sudo pacman -S mpv` / `brew install mpv`        |
 | **yt-dlp**      | Optional  | Offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp` |
+| **ffprobe**     | Optional  | Post-download integrity checks, if your platform provides it       |
 | **chafa**       | Optional  | Poster previews in non-Kitty terminals. `sudo pacman -S chafa`     |
 | **ImageMagick** | Optional  | Broader poster format support. `sudo pacman -S imagemagick`        |
-| **ffprobe**     | Optional  | Post-download integrity checks. Ships with `ffmpeg`                |
-| **ffmpeg**      | Optional  | Local thumbnail generation for downloads                           |
 | **Discord**     | Optional  | Rich Presence (watching status on profile)                         |
 
 If mpv is missing, Kunai won't start playback. Everything else is optional and
@@ -64,13 +63,13 @@ through each capability and what it enables.
 
 ```bash
 # Arch Linux
-sudo pacman -S mpv yt-dlp chafa imagemagick ffmpeg
+sudo pacman -S mpv yt-dlp chafa imagemagick
 
 # Debian/Ubuntu
-sudo apt install mpv yt-dlp chafa imagemagick ffmpeg
+sudo apt install mpv yt-dlp chafa imagemagick
 
 # macOS (Homebrew)
-brew install mpv yt-dlp chafa imagemagick ffmpeg
+brew install mpv yt-dlp chafa imagemagick
 
 # Windows (winget)
 winget install mpv yt-dlp hpjansson.Chafa ImageMagick.ImageMagick
@@ -144,7 +143,6 @@ Ctrl+D            Download selected result (from browse)
 | `Tab`         | Toggle anime/series mode                                         |
 | `Ctrl+T`      | Reload trending                                                  |
 | `Ctrl+D`      | Download selected result                                         |
-| `^D`          | Download selected result                                         |
 | Type a filter | Narrow provider, season, subtitle, history, and settings pickers |
 
 ### During playback
@@ -154,7 +152,7 @@ Ctrl+D            Download selected result (from browse)
 | `q`      | Stop playback, return to controls          |
 | `n`      | Next episode                               |
 | `p`      | Previous episode                           |
-| `r`      | Recover current stream / replay            |
+| `r`      | Recover current stream                     |
 | `f`      | Try next compatible provider               |
 | `d`      | Queue download of current episode          |
 | `k`      | Source / quality picker                    |
@@ -200,6 +198,7 @@ Ctrl+D            Download selected result (from browse)
 
 - Streams are resolved from direct-provider sources and handed to `mpv`.
 - **Recover** (`r`) refreshes the current stream and resumes from last position.
+- **Recompute sources** (`/recompute`) bypasses cached provider memory when provider state looks stale.
 - **Fallback** (`f`) tries the next compatible provider when the current one fails.
 - **Source / quality picker** switches among already-resolved stream options.
 - **Autoplay** automatically advances to the next episode in a series chain.
@@ -210,11 +209,11 @@ Ctrl+D            Download selected result (from browse)
 
 ### Offline downloads
 
-- Queue downloads from any search result (`^D`) or during playback (`d`).
+- Queue downloads from any search result (`Ctrl+D`) or during playback (`d`).
 - Movies skip the episode picker — one key queues the download.
 - Download queue persists across sessions (backed by SQLite).
 - On restart, interrupted downloads are automatically resumed or retried.
-- Optional post-download integrity checks (`ffprobe`) and thumbnail generation (`ffmpeg`).
+- Optional post-download integrity checks (`ffprobe`). Offline artwork uses cached poster assets when available.
 - Repairable sidecars: if the video is valid but subtitles/artwork need attention, retry repairs the sidecar without redownloading the whole video.
 - Default download paths:
   - Linux: `~/.local/share/kunai/downloads`
@@ -270,9 +269,8 @@ Enable via `/presence` or `/settings`. Shows what you're watching on your Discor
 
 | Tool                | What it gives you                                                                                | Without it                                           |
 | ------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| **yt-dlp**          | Download queue. Required for `/download`, `/library`, `^D`.                                      | Download features are hidden. Everything else works. |
+| **yt-dlp**          | Download queue. Required for `/download`, `/library`, `Ctrl+D`.                                  | Download features are hidden. Everything else works. |
 | **ffprobe**         | Post-download integrity check. Verifies the file is playable.                                    | Downloads still work; integrity check is skipped.    |
-| **ffmpeg**          | Local thumbnail sidecar for downloaded videos. Shows artwork in offline library.                 | Offline library still works; no thumbnail previews.  |
 | **chafa**           | Poster previews in terminals that don't support Kitty protocol (Sixel/WezTerm/Windows Terminal). | No poster previews in those terminals.               |
 | **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                   | Posters work but may fail on unusual formats.        |
 | **Discord desktop** | Rich Presence — shows "Watching Kunai" on your Discord profile.                                  | No Discord integration.                              |

@@ -408,7 +408,6 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     logger,
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
     ffprobeAvailable: Boolean(Bun.which("ffprobe")),
-    ffmpegAvailable: Boolean(Bun.which("ffmpeg")),
     diagnostics: diagnosticsService,
     onCompletedArtifact: (job) => {
       offlineAssetService.adoptCompletedJob(job);

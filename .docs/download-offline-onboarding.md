@@ -36,7 +36,7 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 ## Desired Download Behavior
 
 - Downloads use **`yt-dlp`**; **`ffprobe`** on `PATH` is optional for validating completed artifacts.
-- **`ffmpeg`** on `PATH` is optional for generating local `*.thumbnail.jpg` sidecars after a successful download.
+- Offline artwork uses cached poster assets when available; local video thumbnail generation is not part of the release path.
 - Downloads are opt-in and blocked at enqueue time when feature gates are not usable.
 - Manual download-only actions show the effective audio/subtitle/quality/artwork/location profile
   before enqueue. The confirmation can cycle subtitle/quality, toggle artwork, choose the configured
@@ -58,7 +58,7 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - Download-only mode resolves a playable stream without launching mpv.
 - Selected poster URL and IntroDB/AniSkip timing are persisted at enqueue time when available.
 - Completed downloads persist local file size and, when `ffprobe` is available, playable duration after artifact validation.
-- Thumbnail generation is best-effort and post-completion: failure or missing `ffmpeg` must never fail or delay a completed download.
+- Offline artwork caching is best-effort and post-completion; artwork failure must never fail or delay a completed download.
 - Thumbnail sidecars are written through a temporary file and renamed only after a non-empty image exists.
 - External subtitle/artwork sidecars are repairable metadata, not proof the video failed. If the video artifact validates but an expected sidecar is missing, the job becomes `repairable` and `/downloads` can retry just the sidecar path without re-running `yt-dlp`.
 - If the stream is hard-subbed or no external subtitle URL exists, subtitle sidecar work is marked not-applicable/expected-missing as appropriate; it should not be reported as a full download failure.

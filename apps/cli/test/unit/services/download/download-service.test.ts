@@ -223,24 +223,14 @@ describe("DownloadService", () => {
     );
   });
 
-  test("carries poster metadata and generates a thumbnail when ffmpeg is available", async () => {
+  test("carries poster metadata and caches poster artwork without ffmpeg", async () => {
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
-      ffmpegAvailable: true,
     });
     spawnSpy.mockImplementation((command: string[]) => {
-      if (command[0] === "ffmpeg") {
-        const outputPath = command.at(-1);
-        if (typeof outputPath === "string") writeFileSync(outputPath, "jpeg-bytes");
-        return {
-          stdout: streamOf(""),
-          stderr: streamOf(""),
-          exited: Promise.resolve(0),
-        } as never;
-      }
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
       if (typeof outputPath === "string") {
@@ -252,6 +242,12 @@ describe("DownloadService", () => {
         exited: Promise.resolve(0),
       } as never;
     });
+    globalThis.fetch = mock(
+      async () =>
+        new Response("poster-bytes", {
+          headers: { "content-type": "image/jpeg" },
+        }),
+    ) as unknown as typeof fetch;
 
     const job = await service.enqueue({
       title: {
@@ -271,6 +267,12 @@ describe("DownloadService", () => {
     expect(completed?.posterUrl).toBe("https://img.example/poster.jpg");
     expect(completed?.thumbnailPath).toBeDefined();
     expect(existsSync(completed?.thumbnailPath ?? "")).toBe(true);
+    expect(
+      spawnSpy.mock.calls.some(
+        (call: readonly unknown[]) =>
+          Array.isArray(call[0]) && (call[0] as readonly string[])[0] === "ffmpeg",
+      ),
+    ).toBe(false);
   });
 
   test("stores durable intent and resolves a fresh stream before processing", async () => {
@@ -666,7 +668,6 @@ describe("DownloadService", () => {
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
-      ffmpegAvailable: false,
       downloadPath: tempDir,
       resolveDownloadStream: async () => ({
         stream: {
@@ -735,17 +736,9 @@ describe("DownloadService", () => {
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
-      ffmpegAvailable: true,
       downloadPath: tempDir,
     });
     spawnSpy.mockImplementation((command: string[]) => {
-      if (command[0] === "ffmpeg") {
-        return {
-          stdout: streamOf(""),
-          stderr: streamOf("thumbnail failed"),
-          exited: Promise.resolve(1),
-        } as never;
-      }
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
       if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
@@ -755,9 +748,17 @@ describe("DownloadService", () => {
         exited: Promise.resolve(0),
       } as never;
     });
+    globalThis.fetch = mock(
+      async () => new Response("not an image", { headers: { "content-type": "text/plain" } }),
+    ) as unknown as typeof fetch;
 
     const job = await service.enqueue({
-      title: { id: "tmdb:1", type: "series", name: "Example" },
+      title: {
+        id: "tmdb:1",
+        type: "series",
+        name: "Example",
+        posterUrl: "https://img.example/poster.jpg",
+      },
       episode: { season: 1, episode: 7, name: "Episode 7" },
       stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
       providerId: "vidking",
@@ -1004,7 +1005,6 @@ function buildService({
   downloadPath,
   resolveDownloadStream,
   abortGraceMs,
-  ffmpegAvailable = false,
   ffprobeAvailable = false,
   diagnostics,
   configService,
@@ -1015,7 +1015,6 @@ function buildService({
   downloadPath: string;
   resolveDownloadStream?: ConstructorParameters<typeof DownloadService>[0]["resolveDownloadStream"];
   abortGraceMs?: number;
-  ffmpegAvailable?: boolean;
   ffprobeAvailable?: boolean;
   diagnostics?: ConstructorParameters<typeof DownloadService>[0]["diagnostics"];
   configService?: ConfigService;
@@ -1023,13 +1022,13 @@ function buildService({
   const defaultConfig = {
     downloadsEnabled,
     downloadPath,
+    offlineArtworkCacheEnabled: true,
   } as ConfigService;
   return new DownloadService({
     repo,
     config: configService ?? defaultConfig,
     ytDlpAvailable,
     ffprobeAvailable,
-    ffmpegAvailable,
     diagnostics,
     logger: {
       debug() {},
@@ -1061,4 +1060,5 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 250): Promise<voi
     if (predicate()) return;
     await Bun.sleep(5);
   }
+  throw new Error("waitUntil timed out");
 }

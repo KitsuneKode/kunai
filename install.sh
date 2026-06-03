@@ -164,7 +164,6 @@ install_optional_deps() {
   prompt_yes_no "Install mpv (required for playback)?" y && packages+=(mpv)
   prompt_yes_no "Install yt-dlp (offline downloads)?" n && packages+=(yt-dlp)
   prompt_yes_no "Install chafa (terminal poster previews)?" n && packages+=(chafa)
-  prompt_yes_no "Install ffmpeg (download integrity / thumbnails)?" n && packages+=(ffmpeg)
 
   if ((${#packages[@]} == 0)); then
     return

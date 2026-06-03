@@ -222,7 +222,7 @@ function SystemSlide({
       detail: snapshot.ffprobe
         ? "Download validation ready"
         : "Optional — validates downloaded files",
-      install: "Ships with ffmpeg: brew install ffmpeg  ·  apt install ffmpeg",
+      install: "Install ffprobe from your platform media-tools package when needed",
     },
     {
       name: snapshot.image.renderer !== "none" ? "posters" : "posters (chafa/kitty)",

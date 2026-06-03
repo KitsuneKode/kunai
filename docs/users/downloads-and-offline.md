@@ -24,7 +24,7 @@ Run:
 kunai --setup
 ```
 
-The setup flow checks optional tools and lets you enable downloads. `yt-dlp` is required for download processing. `ffprobe` is optional and helps validate completed artifacts.
+The setup flow checks optional tools and lets you enable downloads. `yt-dlp` is required for download processing. `ffprobe` is optional and helps validate completed artifacts. Local artwork sidecars are best-effort and never decide whether a completed video is playable.
 
 ## Playing Offline
 
