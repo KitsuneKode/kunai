@@ -11,6 +11,9 @@ bun run test:live:vidking 1 2
 bun run test:live:rivestream
 bun run test:live:allanime "Kimetsu no Yaiba" SJms742bSTrcyJZay
 bun run test:live:miruro 1159 21 "One Piece"
+bun run test:live:matrix
+bun run test:live:matrix anime
+bun run test:live:matrix vidking
 KUNAI_LIVE_DISCORD_PRESENCE=1 bun run test:live:discord
 ```
 
@@ -28,6 +31,10 @@ For each run, the JSON payload should include:
 - stream candidate count and selected protocol
 - subtitle candidate count and selected source
 - redacted diagnostics export path when a failure needs reporting
+
+`bun run test:live:matrix` runs the focused provider smokes as one serial pass and emits a single
+JSON report. Pass a provider id (`vidking`, `rivestream`, `allanime`, `miruro`) or media bucket
+(`series`, `anime`) to narrow the matrix while debugging.
 
 Do not mark a provider down from a local offline/DNS failure. Confirm general connectivity first, then compare the smoke output with `/diagnostics` and the provider attempt timeline before changing provider code.
 
