@@ -268,6 +268,25 @@ export function filterTrackCapabilityGroups(
   });
 }
 
+export function annotateCurrentTrackFailure(
+  groups: readonly TrackCapabilityGroup[],
+  reason: string,
+): readonly TrackCapabilityGroup[] {
+  return groups.map((group) => ({
+    ...group,
+    rows: group.rows.map((row) =>
+      row.selected
+        ? {
+            ...row,
+            risk: "failed",
+            reason,
+            enabled: false,
+          }
+        : row,
+    ),
+  }));
+}
+
 export function anyTrackSelectable(groups: readonly TrackCapabilityGroup[]): boolean {
   return selectableTrackCount(groups) > 0;
 }

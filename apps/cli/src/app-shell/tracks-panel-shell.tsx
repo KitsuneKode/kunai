@@ -38,12 +38,14 @@ function riskColor(risk: TrackCapabilityRisk): string {
 // information). The current selection reads as "ok" so the eye lands on it.
 function rowColor(capability: TrackCapability, highlighted: boolean): string {
   if (highlighted) return palette.accent;
+  if (capability.selected && capability.risk === "failed") return palette.danger;
   if (capability.selected) return palette.ok;
   if (!capability.enabled) return palette.muted;
   return riskColor(capability.risk);
 }
 
 function rowTag(capability: TrackCapability): string | null {
+  if (capability.selected && capability.risk === "failed") return "current · failed";
   if (capability.selected) return "current";
   if (capability.risk === "failed") return "failed";
   if (capability.risk === "fallback") return "fallback";

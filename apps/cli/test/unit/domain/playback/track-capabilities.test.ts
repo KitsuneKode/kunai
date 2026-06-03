@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   adjacentSectionSelectableIndex,
+  annotateCurrentTrackFailure,
   anyTrackSelectable,
   buildTrackCapabilities,
   buildTrackPanelRows,
@@ -236,6 +237,22 @@ describe("track panel rows + navigation", () => {
     expect(adjacentSectionSelectableIndex(groups, 0, 1)).toBe(1);
     expect(adjacentSectionSelectableIndex(groups, 1, -1)).toBe(0);
     expect(adjacentSectionSelectableIndex(groups, 1, 1)).toBe(0);
+  });
+
+  test("annotates current failed playback evidence without enabling dead rows", () => {
+    const annotated = annotateCurrentTrackFailure(groups, "Playback did not start on this stream.");
+    const source = annotated.find((group) => group.section === "source");
+    const qualityGroup = annotated.find((group) => group.section === "quality");
+
+    expect(source?.rows.find((row) => row.value === "a")).toMatchObject({
+      selected: true,
+      enabled: false,
+      risk: "failed",
+      reason: "Playback did not start on this stream.",
+    });
+    expect(qualityGroup?.rows.find((row) => row.value === "stream-720")?.risk).toBe("normal");
+    expect(selectableTrackCount(annotated)).toBe(2);
+    expect(filterTrackCapabilityGroups(annotated, "did not start")[0]?.section).toBe("source");
   });
 
   test("quality choices without concrete streams render as facts", () => {

@@ -2585,7 +2585,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               openRecoverySourcePanelOnPostPlay = false;
               const picked = await openTracksPanel(
                 preparedStream,
-                { initialSection: "source" },
+                {
+                  initialSection: "source",
+                  failedCurrentReason: result.suspectedDeadStream
+                    ? "Playback failed on this stream."
+                    : "Playback did not start on this stream.",
+                },
                 container,
               );
               const selection = picked ? streamSelectionFromTrackPick(picked) : null;

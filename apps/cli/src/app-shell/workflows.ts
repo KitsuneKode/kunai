@@ -22,6 +22,7 @@ import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngin
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelectionEngine";
 import {
+  annotateCurrentTrackFailure,
   buildTrackCapabilities,
   decodeTrackSelection,
   type DecodedTrackSelection,
@@ -2055,10 +2056,15 @@ export async function openSubtitlePicker(
  */
 export async function openTracksPanel(
   stream: StreamInfo | null,
-  options: { initialSection?: TrackCapabilitySection },
+  options: { initialSection?: TrackCapabilitySection; failedCurrentReason?: string },
   container: Container,
 ): Promise<DecodedTrackSelection | null> {
-  const groups = buildTrackCapabilities(buildStreamInventoryView(stream));
+  const groups = options.failedCurrentReason
+    ? annotateCurrentTrackFailure(
+        buildTrackCapabilities(buildStreamInventoryView(stream)),
+        options.failedCurrentReason,
+      )
+    : buildTrackCapabilities(buildStreamInventoryView(stream));
   const id = createSessionPickerId("tracks_panel");
   container.stateManager.dispatch({
     type: "OPEN_OVERLAY",
