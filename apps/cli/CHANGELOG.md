@@ -1,5 +1,11 @@
 # @kitsunekode/kunai
 
+## 0.2.2
+
+### Patch Changes
+
+- Harden direct-provider playback by restoring Miruro in the active anime route, improving VidKing/Videasy session handling, and making loading/post-play controls expose autoplay, autoskip, and source controls consistently.
+
 ## 0.2.1
 
 ### Patch Changes
