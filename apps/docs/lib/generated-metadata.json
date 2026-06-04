@@ -1,0 +1,544 @@
+{
+  "syncedAt": "2026-06-04T21:44:34.671Z",
+  "providers": [
+    {
+      "id": "allanime",
+      "displayName": "AllManga",
+      "description": "AllManga-compatible anime API client (sub & dub, no browser needed)",
+      "domain": "allmanga.to",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
+      "status": "active",
+      "notes": [
+        "AllManga-compatible client uses local fetch/decode logic for search",
+        "catalog",
+        "and source resolution.",
+        "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure."
+      ]
+    },
+    {
+      "id": "cineby",
+      "displayName": "Cineby",
+      "description": "Cineby flavor wrapper over Videasy-compatible endpoints",
+      "domain": "cineby.sc",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
+      "status": "research",
+      "notes": [
+        "Research wrapper only; production fallback order still prefers the proven vidking module.",
+        "Keeps flavor labels and audio-language hints while reusing the VidKing direct engine."
+      ]
+    },
+    {
+      "id": "miruro",
+      "displayName": "Miruro",
+      "description": "Miruro anime direct resolver (pipe API + XOR decrypt)",
+      "domain": "miruro.tv",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": ["episode-list", "source-resolve", "multi-source", "quality-ranked"],
+      "status": "candidate",
+      "notes": [
+        "Uses miruro.tv pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
+        "Sources from vault-10.uwucdn.top CDN with referer from stream payload.",
+        "May hit Cloudflare rate limits if called too frequently."
+      ]
+    },
+    {
+      "id": "rivestream",
+      "displayName": "Rivestream",
+      "description": "Rivestream direct resolver candidate (MurmurHash)",
+      "domain": "rivestream.app",
+      "recommended": true,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
+      "status": "candidate",
+      "notes": ["Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js."]
+    },
+    {
+      "id": "vidking",
+      "displayName": "VidKing",
+      "description": "VidKing direct resolver for Cineby/HDToday-compatible Videasy streams",
+      "domain": "videasy.net",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
+      "status": "active",
+      "notes": [
+        "Current CLI implementation uses the direct api.videasy.net payload/decryption path only.",
+        "If the direct payload is unavailable",
+        "the CLI fails fast instead of leasing a browser.",
+        "Do not mark browser-safe because the implementation depends on local WASM assets and Node runtime behavior."
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "id": "setup",
+      "label": "Setup Wizard",
+      "aliases": ["setup", "onboarding", "wizard"],
+      "description": "Configure downloads and offline defaults"
+    },
+    {
+      "id": "download",
+      "label": "Download",
+      "aliases": ["download", "save"],
+      "description": "Queue the selected title for offline download"
+    },
+    {
+      "id": "downloads",
+      "label": "Download Queue",
+      "aliases": ["downloads", "download-jobs", "queue", "jobs"],
+      "description": "Inspect active, queued, and failed download jobs"
+    },
+    {
+      "id": "library",
+      "label": "Library",
+      "aliases": ["library", "offline", "offline-library", "my-downloads", "downloads"],
+      "description": "Browse offline library and manage downloads"
+    },
+    {
+      "id": "search",
+      "label": "Search",
+      "aliases": ["search", "find"],
+      "description": "Start a new search"
+    },
+    {
+      "id": "filters",
+      "label": "Filters",
+      "aliases": ["filters", "advanced-search", "filter"],
+      "description": "Show supported search filter syntax"
+    },
+    {
+      "id": "trending",
+      "label": "Trending",
+      "aliases": ["trending", "popular"],
+      "description": "Load the cached trending discovery list"
+    },
+    {
+      "id": "recommendation",
+      "label": "Recommendations",
+      "aliases": ["recommendation", "recommendations", "recs", "suggest", "discover"],
+      "description": "Personalized recommendations and discovery"
+    },
+    {
+      "id": "calendar",
+      "label": "Release Calendar",
+      "aliases": ["calendar", "schedule", "airing", "today", "releases"],
+      "description": "Anime and series release schedule"
+    },
+    {
+      "id": "random",
+      "label": "Random Picks",
+      "aliases": ["random", "roulette", "spin", "pick-for-me"],
+      "description": "Random recommendation tray without autoplay"
+    },
+    {
+      "id": "surprise",
+      "label": "Surprise Me",
+      "aliases": ["surprise", "surprise-me", "recommend-me"],
+      "description": "Surprise pick without autoplay"
+    },
+    {
+      "id": "settings",
+      "label": "Settings",
+      "aliases": ["settings", "config", "prefs"],
+      "description": "Open settings"
+    },
+    {
+      "id": "presence",
+      "label": "Discord Presence",
+      "aliases": ["presence", "discord", "rpc", "rich-presence"],
+      "description": "Open settings for Discord Rich Presence setup and status"
+    },
+    {
+      "id": "notifications",
+      "label": "Notifications",
+      "aliases": ["notifications", "inbox", "alerts"],
+      "description": "Review new episodes, queue recovery, downloads, and app notices"
+    },
+    {
+      "id": "toggle-mode",
+      "label": "Toggle Mode",
+      "aliases": ["mode", "toggle-mode", "anime"],
+      "description": "Switch between anime and series mode"
+    },
+    {
+      "id": "quit",
+      "label": "Quit",
+      "aliases": ["quit", "exit", "q"],
+      "description": "Exit Kunai"
+    },
+    {
+      "id": "provider",
+      "label": "Provider Picker",
+      "aliases": ["provider", "switch-provider"],
+      "description": "Open the provider picker"
+    },
+    {
+      "id": "continue",
+      "label": "Continue Watching",
+      "aliases": ["continue", "c"],
+      "description": "Open unfinished and recent watch progress"
+    },
+    {
+      "id": "history",
+      "label": "History",
+      "aliases": ["history", "resume", "recent"],
+      "description": "Open watch history"
+    },
+    {
+      "id": "details",
+      "label": "Details",
+      "aliases": ["details", "detail", "overview", "info"],
+      "description": "Open the expanded title overview"
+    },
+    {
+      "id": "diagnostics",
+      "label": "Diagnostics",
+      "aliases": ["diagnostics", "logs", "debug"],
+      "description": "Open diagnostics"
+    },
+    {
+      "id": "docs",
+      "label": "Docs",
+      "aliases": ["docs", "documentation", "guide", "manual"],
+      "description": "Open Kunai documentation"
+    },
+    {
+      "id": "help",
+      "label": "Help",
+      "aliases": ["help", "shortcuts", "?"],
+      "description": "Show shortcuts and command help"
+    },
+    {
+      "id": "about",
+      "label": "About",
+      "aliases": ["about", "version"],
+      "description": "Show version and capability information"
+    },
+    {
+      "id": "update",
+      "label": "Update",
+      "aliases": ["update", "upgrade", "check-update", "version-check"],
+      "description": "Check for a new Kunai version and show safe update guidance"
+    },
+    {
+      "id": "image-pane",
+      "label": "Image Pane",
+      "aliases": ["image", "preview", "poster"],
+      "description": "Toggle the image and details companion pane"
+    },
+    {
+      "id": "toggle-autoplay",
+      "label": "Pause Autoplay",
+      "aliases": ["autoplay", "pause-autoplay", "resume-autoplay"],
+      "description": "Temporarily pause or resume autoplay for this playback chain"
+    },
+    {
+      "id": "toggle-autoskip",
+      "label": "Pause Autoskip",
+      "aliases": ["autoskip", "skip", "pause-autoskip", "resume-autoskip"],
+      "description": "Temporarily pause or resume auto-skip for this session"
+    },
+    {
+      "id": "stop-after-current",
+      "label": "Stop After Current",
+      "aliases": ["stop-after", "stop-after-current", "one-more", "finish-episode"],
+      "description": "Stop after current episode instead of continuing"
+    },
+    {
+      "id": "replay",
+      "label": "Replay",
+      "aliases": ["replay", "restart"],
+      "description": "Restart the current item from the beginning without refreshing the source"
+    },
+    {
+      "id": "recover",
+      "label": "Recover Playback",
+      "aliases": ["recover", "fix", "repair", "retry-playback"],
+      "description": "Refresh the current stream and resume this episode after a playback issue"
+    },
+    {
+      "id": "recompute",
+      "label": "Recompute Sources",
+      "aliases": [
+        "recompute",
+        "refresh-sources",
+        "force-refresh",
+        "bypass-cache",
+        "ignore-cache",
+        "all-sources",
+        "all-servers",
+        "probe-sources"
+      ],
+      "description": "Re-resolve on the current provider only: bypass stream cache and provider memory, then probe all VidKing sources"
+    },
+    {
+      "id": "fallback",
+      "label": "Fallback Provider",
+      "aliases": ["fallback", "try-next-provider", "next-provider", "f"],
+      "description": "Stop waiting on the current provider and try the next compatible provider"
+    },
+    {
+      "id": "streams",
+      "label": "Tracks",
+      "aliases": ["tracks", "track", "streams", "stream", "variants", "audio", "subs", "subtitles"],
+      "description": "Choose source, quality, audio, hardsub, or subtitle details"
+    },
+    {
+      "id": "source",
+      "label": "Source Picker",
+      "aliases": ["source", "sources", "mirror"],
+      "description": "Open available stream sources"
+    },
+    {
+      "id": "quality",
+      "label": "Quality Picker",
+      "aliases": ["quality", "qualities", "variant"],
+      "description": "Open available quality variants"
+    },
+    {
+      "id": "memory",
+      "label": "Memory",
+      "aliases": ["memory", "mem"],
+      "description": "Temporarily show runtime memory usage"
+    },
+    {
+      "id": "pick-episode",
+      "label": "Pick Episode",
+      "aliases": ["episode", "pick-episode", "episodes"],
+      "description": "Open the episode picker"
+    },
+    {
+      "id": "next",
+      "label": "Next Episode",
+      "aliases": ["next", "n"],
+      "description": "Advance to the next episode"
+    },
+    {
+      "id": "previous",
+      "label": "Previous Episode",
+      "aliases": ["previous", "prev", "p"],
+      "description": "Go to the previous episode"
+    },
+    {
+      "id": "next-season",
+      "label": "Next Season",
+      "aliases": ["season", "next-season"],
+      "description": "Jump to the next season"
+    },
+    {
+      "id": "clear-cache",
+      "label": "Clear Cache",
+      "aliases": ["clear-cache", "purge-cache", "flush-cache"],
+      "description": "Remove all cached stream URLs"
+    },
+    {
+      "id": "clear-history",
+      "label": "Clear History",
+      "aliases": ["clear-history", "reset-history", "wipe-history"],
+      "description": "Remove all watch history and progress"
+    },
+    {
+      "id": "export-diagnostics",
+      "label": "Export Diagnostics",
+      "aliases": ["export-diagnostics", "export-logs", "diag-export"],
+      "description": "Export recent diagnostics to a redacted JSON file"
+    },
+    {
+      "id": "report-issue",
+      "label": "Report Issue",
+      "aliases": ["report-issue", "issue", "bug-report"],
+      "description": "Open the GitHub issue page with diagnostics guidance"
+    },
+    {
+      "id": "watchlist",
+      "label": "Watchlist",
+      "aliases": ["wl", "watchlist", "watch-list"],
+      "description": "View and manage your watchlist"
+    },
+    {
+      "id": "favorites",
+      "label": "Favorites",
+      "aliases": ["fav", "favs", "favorites"],
+      "description": "View your favorite titles"
+    },
+    {
+      "id": "playlist",
+      "label": "Playlist",
+      "aliases": ["playlist", "pl", "queue-playlist"],
+      "description": "Manage your playback playlist queue"
+    },
+    {
+      "id": "playlist-add",
+      "label": "Add to Playlist",
+      "aliases": ["playlist-add", "pl-add", "add-to-playlist"],
+      "description": "Queue the current title for sequential playback"
+    },
+    {
+      "id": "stats",
+      "label": "Stats",
+      "aliases": ["stats", "statistics", "watch-stats"],
+      "description": "Watch stats, streak, and top shows"
+    },
+    {
+      "id": "sync",
+      "label": "Sync",
+      "aliases": ["sync", "sync-settings", "integrations"],
+      "description": "Sync watch progress with AniList or TMDB"
+    },
+    {
+      "id": "sync-connect-anilist",
+      "label": "Connect AniList",
+      "aliases": ["connect-anilist", "anilist-connect", "anilist"],
+      "description": "Link your AniList account to sync watch progress"
+    },
+    {
+      "id": "sync-connect-tmdb",
+      "label": "Connect TMDB",
+      "aliases": ["connect-tmdb", "tmdb-connect", "tmdb"],
+      "description": "Link your TMDB account to sync watch progress"
+    },
+    {
+      "id": "sync-disconnect",
+      "label": "Disconnect Sync",
+      "aliases": ["sync-disconnect", "disconnect-sync", "unlink-sync"],
+      "description": "Remove linked sync accounts"
+    }
+  ],
+  "cliOptions": [
+    {
+      "short": "-i",
+      "long": "--id",
+      "description": "Specify a title ID directly"
+    },
+    {
+      "short": "-t",
+      "long": "--type",
+      "description": "Specify media type (movie or tv)"
+    },
+    {
+      "short": "-a",
+      "long": "--anime",
+      "description": "Anime mode"
+    },
+    {
+      "short": "-m",
+      "long": "--minimal",
+      "description": "Minimal footer for this session"
+    },
+    {
+      "short": "-z",
+      "long": "--zen",
+      "description": "Enable zen mode (minimalist UI, quick play)"
+    },
+    {
+      "short": "-q",
+      "long": "--quick",
+      "description": "Jump to playback immediately"
+    },
+    {
+      "short": "",
+      "long": "--jump",
+      "description": "Directly pick index result"
+    },
+    {
+      "short": "",
+      "long": "--debug",
+      "description": "Enable debug log output"
+    },
+    {
+      "short": "",
+      "long": "--debug-json",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--debug-session",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--setup",
+      "description": "Run Setup Wizard"
+    },
+    {
+      "short": "",
+      "long": "--offline",
+      "description": "Open completed offline library first"
+    },
+    {
+      "short": "",
+      "long": "--discover",
+      "description": "Open recommendations first"
+    },
+    {
+      "short": "",
+      "long": "--calendar",
+      "description": "Open releases airing today first"
+    },
+    {
+      "short": "",
+      "long": "--random",
+      "description": "Open a rerollable random recommendation tray first"
+    },
+    {
+      "short": "",
+      "long": "--history",
+      "description": "Open watch history first"
+    },
+    {
+      "short": "--continue",
+      "long": "--resume",
+      "description": "Continue newest unfinished local history entry"
+    },
+    {
+      "short": "",
+      "long": "--download",
+      "description": "Queue selected item for download"
+    },
+    {
+      "short": "",
+      "long": "--download-path",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--handoff-url",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--install-protocol-handler",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--dry-run",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--mpv-debug",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--mpv-clean",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--no-user-mpv-config",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--mpv-log-file",
+      "description": ""
+    }
+  ]
+}
