@@ -42,6 +42,8 @@ type RoutedActionResult =
   | "back-to-search"
   | "back-to-results"
   | "toggle-autoplay"
+  | "toggle-autoskip"
+  | "stop-after-current"
   | "resume"
   | "replay"
   | "recover"
@@ -125,6 +127,7 @@ async function openRootHistorySelection(
       id: selection.titleId,
       type: historyContentType(selection.entry),
       name: selection.entry.title,
+      launchSource: reason === "history" ? "history" : "continue",
     },
     episode: episodeFromHistorySelection(selection),
   };
@@ -206,6 +209,8 @@ export async function routePlaybackShellAction({
   if (action === "search") return "back-to-search";
   if (action === "back-to-results") return "back-to-results";
   if (action === "toggle-autoplay") return "toggle-autoplay";
+  if (action === "toggle-autoskip") return "toggle-autoskip";
+  if (action === "stop-after-current") return "stop-after-current";
   if (action === "resume") return "resume";
   if (action === "replay") return "replay";
   if (action === "recover") return "recover";

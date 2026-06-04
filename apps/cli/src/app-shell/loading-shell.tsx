@@ -29,6 +29,63 @@ import { useViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
 
+export function buildLoadingFooterActions(state: LoadingShellState): readonly FooterAction[] {
+  const fallbackLabel = state.fallbackProviderName
+    ? `fallback ${state.fallbackProviderName}`
+    : "fallback";
+  const isSeriesPlayback = Boolean(
+    state.isSeriesPlayback || state.hasNextEpisode || state.hasPreviousEpisode,
+  );
+  if (state.operation === "playing") {
+    const playingFooterActions: readonly FooterAction[] = [
+      { key: "space", label: "pause", action: "command-mode", primary: true },
+      { key: "q", label: "stop", action: "quit" },
+      ...(isSeriesPlayback
+        ? [{ key: "e", label: "episodes", action: "pick-episode" as const }]
+        : []),
+      { key: "t", label: "tracks", action: "streams" },
+      { key: "/", label: "commands", action: "command-mode" },
+    ];
+    return selectFooterActions(playingFooterActions, "minimal");
+  }
+
+  return [
+    { key: "/", label: "commands", action: "command-mode" },
+    ...(state.fallbackAvailable
+      ? [
+          {
+            key: "f",
+            label: fallbackLabel,
+            action: "fallback" as const,
+          },
+        ]
+      : []),
+    ...(isSeriesPlayback
+      ? [
+          {
+            key: "a",
+            label: state.autoplayPaused ? "resume autoplay" : "pause autoplay",
+            action: "toggle-autoplay" as const,
+          },
+          {
+            key: "u",
+            label: state.autoskipPaused ? "resume autoskip" : "pause autoskip",
+            action: "toggle-autoskip" as const,
+          },
+          {
+            key: "x",
+            label: "stop after current",
+            action: "stop-after-current" as const,
+          },
+        ]
+      : []),
+    { key: "g", label: "settings", action: "settings" },
+    { key: "h", label: "history", action: "history" },
+    { key: "d", label: "diagnostics", action: "diagnostics" },
+    { key: "?", label: "help", action: "help" },
+  ];
+}
+
 /** Legacy Braille spinner for surfaces that need a string. */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 export function useSpinner(active = true) {
@@ -581,36 +638,7 @@ export const LoadingShell = React.memo(function LoadingShell({
     state.progress !== undefined,
   );
 
-  const fallbackLabel = state.fallbackProviderName
-    ? `fallback ${state.fallbackProviderName}`
-    : "fallback";
-  const isSeriesPlayback = Boolean(state.hasNextEpisode || state.hasPreviousEpisode);
-  const playingFooterActions: readonly FooterAction[] = [
-    { key: "space", label: "pause", action: "command-mode", primary: true },
-    { key: "q", label: "stop", action: "quit" },
-    ...(isSeriesPlayback ? [{ key: "e", label: "episodes", action: "pick-episode" as const }] : []),
-    { key: "t", label: "tracks", action: "streams" },
-    { key: "/", label: "commands", action: "command-mode" },
-  ];
-  const footerActions: readonly FooterAction[] =
-    state.operation === "playing"
-      ? selectFooterActions(playingFooterActions, "minimal")
-      : [
-          { key: "/", label: "commands", action: "command-mode" },
-          ...(state.fallbackAvailable
-            ? [
-                {
-                  key: "f",
-                  label: fallbackLabel,
-                  action: "fallback" as const,
-                },
-              ]
-            : []),
-          { key: "g", label: "settings", action: "settings" },
-          { key: "h", label: "history", action: "history" },
-          { key: "d", label: "diagnostics", action: "diagnostics" },
-          { key: "?", label: "help", action: "help" },
-        ];
+  const footerActions = buildLoadingFooterActions(state);
 
   return (
     <ShellFrame

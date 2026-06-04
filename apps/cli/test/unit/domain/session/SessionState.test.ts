@@ -504,6 +504,27 @@ describe("command availability", () => {
     const pausedById = new Map(pausedCommands.map((command) => [command.id, command]));
     expect(pausedById.get("toggle-autoplay")?.label).toBe("Resume Autoplay");
   });
+
+  test("allows autoplay toggle while playback is resolving", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    state = reduceState(state, {
+      type: "SELECT_TITLE",
+      title: { id: "1396", type: "series", name: "Breaking Bad" },
+    });
+    state = reduceState(state, {
+      type: "SELECT_EPISODE",
+      episode: { season: 1, episode: 2 },
+    });
+    state = reduceState(state, { type: "SET_PLAYBACK_STATUS", status: "loading" });
+
+    const command = resolveCommands(state, ["toggle-autoplay"])[0];
+
+    expect(command?.enabled).toBe(true);
+  });
 });
 
 describe("root shell surface selection", () => {

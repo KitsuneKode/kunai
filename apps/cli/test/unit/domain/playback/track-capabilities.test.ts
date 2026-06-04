@@ -122,6 +122,27 @@ describe("buildTrackCapabilities", () => {
     expect(source?.selectable).toBe(true);
   });
 
+  test("keeps source hints visible in unified track rows", () => {
+    const [source] = buildTrackCapabilities(
+      view({
+        sourceGroups: [
+          sourceGroup({
+            id: "chopper",
+            label: "Chopper",
+            state: "available",
+            hints: ["Hindi · dub", "Fresh resolve required"],
+            nativeLabels: ["HindiCast"],
+          }),
+        ],
+      }),
+    );
+
+    expect(source?.rows[0]).toMatchObject({
+      label: "Chopper",
+      detail: "Hindi · dub · Fresh resolve required · HindiCast",
+    });
+  });
+
   test("a single-option section is not selectable (renders as facts)", () => {
     const [source] = buildTrackCapabilities(
       view({ sourceGroups: [sourceGroup({ state: "selected" })] }),

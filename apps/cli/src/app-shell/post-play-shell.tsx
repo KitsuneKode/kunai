@@ -49,6 +49,9 @@ export type PostPlayShellProps = {
   nextEpisodeThumbUrl?: string;
   /** Optional rich catalog metadata; surfaces what is present, never hangs on absent fields. */
   titleDetail?: TitleDetail;
+  autoplayPaused?: boolean;
+  autoskipPaused?: boolean;
+  stopAfterCurrent?: boolean;
 };
 
 // ── Color mapping ─────────────────────────────────────────────────────────────
@@ -382,6 +385,9 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   posterUrl,
   nextEpisodeThumbUrl,
   titleDetail,
+  autoplayPaused,
+  autoskipPaused,
+  stopAfterCurrent,
 }: PostPlayShellProps) {
   const viewport = useViewportPolicy("playback");
   const isWide = viewport.breakpoint === "wide";
@@ -408,6 +414,9 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     watchedEpisodes,
     currentSeason,
     titleDetail,
+    autoplayPaused,
+    autoskipPaused,
+    stopAfterCurrent,
   });
 
   const hColor = heroColor(view.heroColor);

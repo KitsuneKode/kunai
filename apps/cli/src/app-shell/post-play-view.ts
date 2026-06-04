@@ -116,6 +116,9 @@ export type BuildPostPlayViewProps = {
   readonly watchedEpisodes?: number;
   readonly currentSeason?: number;
   readonly titleDetail?: TitleDetail;
+  readonly autoplayPaused?: boolean;
+  readonly autoskipPaused?: boolean;
+  readonly stopAfterCurrent?: boolean;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -138,8 +141,8 @@ function formatUpNextLabel(nextEpisodeLabel: string): string {
 }
 
 // Up-next meta: "Status available · autoplay on · 24m" — runtime only when known.
-function buildUpNextMeta(titleDetail: TitleDetail | undefined): string {
-  const parts = ["Status available", "autoplay on"];
+function buildUpNextMeta(titleDetail: TitleDetail | undefined, autoplayPaused = false): string {
+  const parts = ["Status available", autoplayPaused ? "autoplay paused" : "autoplay on"];
   if (titleDetail?.runtimeMinutes) parts.push(`${titleDetail.runtimeMinutes}m`);
   return parts.join(" · ");
 }
@@ -147,15 +150,22 @@ function buildUpNextMeta(titleDetail: TitleDetail | undefined): string {
 function buildUpNextCard(
   nextEpisodeLabel: string | undefined,
   titleDetail: TitleDetail | undefined,
+  autoplayPaused: boolean | undefined,
   queueNextLabel?: string,
 ): PostPlayUpNextCard | undefined {
   // Episode-chain next wins (binge the current series); otherwise fall back to the
   // cross-title queue head. Mirrors resolveUpNext's policy at the view layer.
   if (nextEpisodeLabel) {
-    return { label: formatUpNextLabel(nextEpisodeLabel), meta: buildUpNextMeta(titleDetail) };
+    return {
+      label: formatUpNextLabel(nextEpisodeLabel),
+      meta: buildUpNextMeta(titleDetail, autoplayPaused),
+    };
   }
   if (queueNextLabel) {
-    return { label: queueNextLabel, meta: "From your queue · autoplay on" };
+    return {
+      label: queueNextLabel,
+      meta: `From your queue · ${autoplayPaused ? "autoplay paused" : "autoplay on"}`,
+    };
   }
   return undefined;
 }
@@ -187,6 +197,9 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     watchedEpisodes,
     currentSeason,
     titleDetail,
+    autoplayPaused,
+    autoskipPaused,
+    stopAfterCurrent,
   } = props;
 
   const isMovie = episodeLabel === "Movie";
@@ -277,7 +290,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       ],
       discoveryHeading: "you might also like",
       discovery,
-      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail, queueNextLabel),
+      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail, autoplayPaused, queueNextLabel),
       railFacts: buildSeriesRailFacts(props, progressBar),
       episodeMeta,
     };
@@ -310,7 +323,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       discoveryHeading: "because you watched this",
       discovery,
       // Movies have no episode chain, but a queued title can still be Up Next.
-      upNext: buildUpNextCard(undefined, titleDetail, queueNextLabel),
+      upNext: buildUpNextCard(undefined, titleDetail, autoplayPaused, queueNextLabel),
       railFacts: buildMovieRailFacts(titleDetail),
       episodeMeta,
     };
@@ -319,6 +332,9 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
   // ── mid-series ───────────────────────────────────────────────────────────
   if (postPlayState.kind === "mid-series") {
     const nextLabel = nextEpisodeLabel ? formatUpNextLabel(nextEpisodeLabel) : "Next episode";
+    const autoplayDetail = autoplayPaused ? "autoplay paused" : "autoplay on";
+    const autoskipDetail = autoskipPaused ? "autoskip paused" : "autoskip on";
+    const chainDetail = stopAfterCurrent ? "chain stops after next play" : "chain continues";
     return {
       heroKind: "mid-series",
       heroLabel: "✓ episode complete",
@@ -328,7 +344,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
         {
           id: "next",
           label: "Next episode",
-          detail: `${nextLabel} · autoplay on`,
+          detail: `${nextLabel} · ${autoplayDetail}`,
           shortcut: "↵ n",
           primary: true,
         },
@@ -337,6 +353,13 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           label: "Episodes",
           detail: "open season list, current stays marked",
           shortcut: "e",
+          primary: false,
+        },
+        {
+          id: "session-controls",
+          label: "Session",
+          detail: `${autoskipDetail} · ${chainDetail}`,
+          shortcut: "a · u · x",
           primary: false,
         },
         {
@@ -349,7 +372,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       ],
       discoveryHeading: "because you watched this",
       discovery,
-      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail, queueNextLabel),
+      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail, autoplayPaused, queueNextLabel),
       railFacts: buildSeriesRailFacts(props, progressBar),
       episodeMeta,
     };
@@ -391,7 +414,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       discoveryHeading: "you might also like",
       discovery,
       // Caught up on this series, but a queued title can still be Up Next now.
-      upNext: buildUpNextCard(undefined, titleDetail, queueNextLabel),
+      upNext: buildUpNextCard(undefined, titleDetail, autoplayPaused, queueNextLabel),
       railFacts: buildSeriesRailFacts(props, progressBar),
       episodeMeta,
     };
@@ -489,7 +512,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     discoveryHeading: "because you finished this",
     discovery,
     // No episode chain remains, but a queued title can still be Up Next.
-    upNext: buildUpNextCard(undefined, titleDetail, queueNextLabel),
+    upNext: buildUpNextCard(undefined, titleDetail, autoplayPaused, queueNextLabel),
     railFacts: buildSeriesCompleteRailFacts(title, titleDetail, currentSeason, totalEpisodes),
     episodeMeta,
   };

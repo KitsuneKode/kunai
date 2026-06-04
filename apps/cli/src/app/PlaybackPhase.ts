@@ -176,6 +176,7 @@ async function applyMpvEpisodeLoadingOverlay(
 export type PlaybackOutcome =
   | "back_to_search"
   | "back_to_results"
+  | "back_to_history"
   | "mode_switch"
   | "quit"
   | { type: "browse_route"; route: "calendar" | "random" }
@@ -668,7 +669,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             titleId: title.id,
             mode: stateManager.getState().mode,
           });
-          return { status: "success", value: "back_to_results" };
+          return {
+            status: "success",
+            value: title.launchSource === "history" ? "back_to_history" : "back_to_results",
+          };
         }
 
         episode = episodeInfoFromSelection({
@@ -691,7 +695,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const selection = await chooseMovieStartingPoint({ history: movieHistory, container });
         if (!selection) {
           logger.info("Movie starting point cancelled before playback", { titleId: title.id });
-          return { status: "success", value: "back_to_results" };
+          return {
+            status: "success",
+            value: title.launchSource === "history" ? "back_to_history" : "back_to_results",
+          };
         }
         episode = { season: 1, episode: 1 };
         pendingStart = startFromEpisodeSelection(selection);
@@ -2724,6 +2731,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     : stateManager.getState().seriesLanguageProfile.subtitle,
                 ),
                 autoplayPaused: autoplaySessionPaused,
+                autoskipPaused: stateManager.getState().autoskipSessionPaused,
+                stopAfterCurrent: playbackSession.stopAfterCurrent,
                 showMemory: false,
                 mode,
                 resumeLabel: canResumePlayback
@@ -2857,6 +2866,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 type: "SET_SESSION_AUTOPLAY_PAUSED",
                 paused: playbackAction.session.autoplayPaused,
               });
+              continue postPlayback;
+            } else if (routedAction === "toggle-autoskip") {
+              stateManager.dispatch({
+                type: "SET_SESSION_AUTOSKIP_PAUSED",
+                paused: !stateManager.getState().autoskipSessionPaused,
+              });
+              continue postPlayback;
+            } else if (routedAction === "stop-after-current") {
+              const enabled = !playbackSession.stopAfterCurrent;
+              stateManager.dispatch({
+                type: "SET_SESSION_STOP_AFTER_CURRENT",
+                enabled,
+              });
+              playbackSession = {
+                ...playbackSession,
+                stopAfterCurrent: enabled,
+              };
               continue postPlayback;
             } else if (routedAction === "resume") {
               pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });

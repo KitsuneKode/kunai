@@ -297,7 +297,8 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
   const softSubtitleLanguages = uniqueStrings(
     collectSubtitleTracks(stream).map((subtitle) => subtitle.language),
   );
-  const sourceCount = projection.sourceGroups.length;
+  const sourceCount = projection.sourceGroups.filter((group) => group.candidateCount > 0).length;
+  const sourceChoiceCount = projection.sourceGroups.length;
   const languageChoiceCount =
     audioLanguages.length + hardSubLanguages.length + softSubtitleLanguages.length;
 
@@ -319,7 +320,7 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
     audioLanguages,
     hardSubLanguages,
     softSubtitleLanguages,
-    showSourceControl: sourceCount > 1,
+    showSourceControl: sourceChoiceCount > 1,
     showQualityControl: qualityLabels.length > 1 || playableStreams.length > 1,
     showMediaTrackControl:
       languageChoiceCount > 1 || softSubtitleLanguages.length > 0 || Boolean(stream.subtitle),
@@ -614,7 +615,7 @@ function describeProjectedSourceDetail(
   result: NonNullable<StreamInfo["providerResolveResult"]>,
 ): string {
   return describeSourceDetail(
-    [...group.hints, group.nativeLabels.join("/")],
+    [...group.hints, group.disabledReason, group.nativeLabels.join("/")],
     result.streams.filter((candidate) =>
       candidate.sourceId ? group.sourceIds.includes(candidate.sourceId) : false,
     ),

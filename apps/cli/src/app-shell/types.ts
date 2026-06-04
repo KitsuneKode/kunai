@@ -95,6 +95,8 @@ export type PlaybackShellState = {
   posterUrl?: string;
   subtitleStatus?: string;
   autoplayPaused?: boolean;
+  autoskipPaused?: boolean;
+  stopAfterCurrent?: boolean;
   resumeLabel?: string;
   showMemory: boolean;
   memoryUsage?: string;
@@ -165,6 +167,7 @@ export type LoadingShellState = {
   fallbackAvailable?: boolean;
   autoskipPaused?: boolean;
   autoplayPaused?: boolean;
+  isSeriesPlayback?: boolean;
   fallbackProviderName?: string;
   /** Playback supervision telemetry (populated when operation === "playing"). */
   currentPosition?: number;

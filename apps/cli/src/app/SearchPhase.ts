@@ -40,7 +40,7 @@ import type { HistoryProgress } from "@kunai/storage";
 
 export type SearchPhaseInput = {
   initialQuery?: string;
-  initialRoute?: "trending" | "recommendation" | "calendar" | "random" | "surprise";
+  initialRoute?: "trending" | "recommendation" | "calendar" | "random" | "surprise" | "history";
   preserveExistingSearch?: boolean;
   /** 1-based index into search results; skips the browse shell when in range (use with bootstrap search). */
   autoPickSearchResultIndex?: number;
@@ -87,6 +87,24 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           currentState.searchQuery.trim().length === 0 &&
           currentState.searchResults.length === 0
         ) {
+          if (pendingInitialRoute === "history") {
+            const routedAction = await routeSearchShellAction({
+              action: "history",
+              container,
+            });
+            pendingInitialRoute = undefined;
+            if (routedAction === "quit") {
+              return { status: "quit" };
+            }
+            if (typeof routedAction === "object" && routedAction.type === "history-entry") {
+              stateManager.dispatch({ type: "SELECT_TITLE", title: routedAction.title });
+              if (routedAction.episode) {
+                stateManager.dispatch({ type: "SELECT_EPISODE", episode: routedAction.episode });
+              }
+              return { status: "success", value: routedAction.title };
+            }
+            continue;
+          }
           await loadSearchRoute(pendingInitialRoute, context);
           pendingInitialRoute = undefined;
           continue;
@@ -575,7 +593,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 }
 
 async function loadSearchRoute(
-  route: NonNullable<SearchPhaseInput["initialRoute"]>,
+  route: Exclude<NonNullable<SearchPhaseInput["initialRoute"]>, "history">,
   context: PhaseContext,
 ): Promise<void> {
   const { container } = context;

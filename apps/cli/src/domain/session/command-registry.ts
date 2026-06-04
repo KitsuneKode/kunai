@@ -722,12 +722,6 @@ function resolveCommandState(
           reason: "Autoplay controls are only available for episodic playback.",
         };
       }
-      if (resolving) {
-        return {
-          enabled: false,
-          reason: "Wait for stream resolution to finish first.",
-        };
-      }
       return { enabled: true };
 
     case "toggle-autoskip":

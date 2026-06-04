@@ -185,6 +185,11 @@ export class SessionController {
             stateManager.dispatch({ type: "RESET_CONTENT" });
             preserveExistingSearch = true;
           }
+          if (outcome === "back_to_history") {
+            pendingInitialRoute = "history";
+            stateManager.dispatch({ type: "RESET_CONTENT" });
+            preserveExistingSearch = false;
+          }
           if (outcome === "back_to_search") {
             // Returning to a fresh search must drop the finished session's
             // context: clear currentTitle (so the /download context command is

@@ -252,42 +252,43 @@ async function pickEpisodeSelection(
     "currentId" | "isAnime" | "animeEpisodeCount" | "animeEpisodes" | "container"
   >,
 ): Promise<EpisodeSelectionResult> {
-  if (!opts.isAnime) {
-    const { seasons, episodes: initialEpisodes } = await fetchSeriesData(
-      opts.currentId,
-      initSeason,
+  if (opts.isAnime) {
+    const episode = await pickAnimeEpisode(
+      initEpisode,
+      opts.animeEpisodes,
+      opts.animeEpisodeCount,
+      opts.container,
     );
-    if (!seasons) return null;
+    if (!episode) return null;
+    return { season: 1, episode };
+  }
+
+  const { seasons, episodes: initialEpisodes } = await fetchSeriesData(opts.currentId, initSeason);
+  if (!seasons) return null;
+  let selectedSeason = initSeason;
+  while (true) {
     const season = await chooseSeasonFromOptions(
       seasons,
-      initSeason,
+      selectedSeason,
       createPickerActionContext(opts.container, "Choose season"),
       opts.container,
     );
     if (!season) return null;
+    selectedSeason = season;
     const fetchedEpisodes =
       season === initSeason ? initialEpisodes : await fetchEpisodes(opts.currentId, season);
     const episodes = fetchedEpisodes ?? [];
     const episode = await chooseEpisodeFromOptions(
       episodes,
       season,
-      initEpisode,
+      season === initSeason ? initEpisode : 1,
       createPickerActionContext(opts.container, "Choose episode"),
       opts.container,
       opts.currentId,
     );
-    if (!episode) return null;
+    if (!episode) continue;
     return { season, episode: episode.number };
   }
-
-  const episode = await pickAnimeEpisode(
-    initEpisode,
-    opts.animeEpisodes,
-    opts.animeEpisodeCount,
-    opts.container,
-  );
-  if (!episode) return null;
-  return { season: 1, episode };
 }
 
 export async function chooseEpisodeFromMetadata(opts: {

@@ -73,6 +73,17 @@ function detailFromNativeLabels(
   return extras.length > 0 ? extras.join(" · ") : undefined;
 }
 
+function detailFromHintsAndNativeLabels(
+  hints: readonly string[],
+  nativeLabels: readonly string[],
+  label: string,
+): string | undefined {
+  const parts = [...hints, detailFromNativeLabels(nativeLabels, label)].filter(
+    (part): part is string => Boolean(part),
+  );
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
 /**
  * Build the normalized, sectioned track capability model from the inventory view.
  *
@@ -103,7 +114,7 @@ export function buildTrackCapabilities(
       selected: group.state === "selected",
       enabled: group.state === "available",
       reason: group.disabledReason,
-      detail: detailFromNativeLabels(group.nativeLabels, group.label),
+      detail: detailFromHintsAndNativeLabels(group.hints, group.nativeLabels, group.label),
       risk: riskFromState(group.state),
     });
   }

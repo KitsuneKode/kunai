@@ -1040,6 +1040,7 @@ function AppRoot({ container }: { container: Container }) {
                   fallbackProvider?.metadata.name ?? fallbackProvider?.metadata.id,
                 autoskipPaused: state.autoskipSessionPaused,
                 autoplayPaused: state.autoplaySessionPaused,
+                isSeriesPlayback,
                 latestIssue: state.playbackNote,
                 currentPosition: playbackTelemetrySnapshot?.positionSeconds,
                 duration: playbackTelemetrySnapshot?.durationSeconds,
@@ -1195,9 +1196,28 @@ export async function shutdownSessionApp(): Promise<void> {
 function buildPostPlayFooterActions(
   postPlayState: NonNullable<PlaybackShellState["postPlayState"]>,
   canResume: boolean,
+  autoplayPaused = false,
+  autoskipPaused = false,
+  stopAfterCurrent = false,
 ): readonly FooterAction[] {
   const commandAction: FooterAction = { key: "/", label: "commands", action: "command-mode" };
   const quitAction: FooterAction = { key: "q", label: "quit", action: "quit" };
+  const autoplayAction: FooterAction = {
+    key: "a",
+    label: autoplayPaused ? "autoplay on" : "autoplay off",
+    action: "toggle-autoplay",
+  };
+  const autoskipAction: FooterAction = {
+    key: "u",
+    label: autoskipPaused ? "autoskip on" : "autoskip off",
+    action: "toggle-autoskip",
+  };
+  const stopAfterCurrentAction: FooterAction = {
+    key: "x",
+    label: stopAfterCurrent ? "resume chain" : "stop after",
+    action: "stop-after-current",
+  };
+  const tracksAction: FooterAction = { key: "t", label: "tracks", action: "streams" };
 
   switch (postPlayState.kind) {
     case "did-not-start":
@@ -1240,8 +1260,11 @@ function buildPostPlayFooterActions(
           action: canResume ? "resume" : "next",
           primary: true,
         },
+        autoplayAction,
+        autoskipAction,
+        stopAfterCurrentAction,
+        tracksAction,
         { key: "r", label: "replay", action: "replay" },
-        quitAction,
         commandAction,
       ];
   }
@@ -1285,7 +1308,13 @@ function PlaybackShell({
   const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
   const postPlayState = state.postPlayState ?? { kind: "mid-series" as const };
   const canResume = Boolean(state.resumeLabel);
-  const footerActions = buildPostPlayFooterActions(postPlayState, canResume);
+  const footerActions = buildPostPlayFooterActions(
+    postPlayState,
+    canResume,
+    state.autoplayPaused,
+    state.autoskipPaused,
+    state.stopAfterCurrent,
+  );
   const contextStrip = [
     "post-play",
     state.provider,
@@ -1395,6 +1424,9 @@ function PlaybackShell({
           posterUrl={state.posterUrl}
           nextEpisodeThumbUrl={state.nextEpisodeThumbUrl}
           titleDetail={state.titleDetail}
+          autoplayPaused={state.autoplayPaused}
+          autoskipPaused={state.autoskipPaused}
+          stopAfterCurrent={state.stopAfterCurrent}
         />
       )}
     </ShellFrame>
