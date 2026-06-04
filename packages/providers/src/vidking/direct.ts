@@ -45,6 +45,7 @@ import { selectReadyStream } from "../shared/startup-selection";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import {
   getPhaseAVidkingServers,
+  flavorSourceId,
   listVidkingFlavors,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
@@ -61,6 +62,7 @@ export const VIDKING_API_BASE = "https://api.videasy.net";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const VIDEASY_APP_ID = "vidking";
 
 const VIDKING_SERVERS = ["mb-flix", "cdn", "downloader2", "1movies"] as const;
 
@@ -99,6 +101,8 @@ export interface VidKingEngineOptions {
   readonly flavorLabel?: string;
   readonly flavorArchetype?: string;
   readonly customReferer?: string;
+  readonly sessionToken?: string;
+  readonly appId?: string;
 }
 
 export interface VidkingSourcePayload {
@@ -123,6 +127,11 @@ export interface VidkingPayload {
   readonly sources?: readonly VidkingSourcePayload[];
   readonly subtitles?: readonly VidkingSubtitlePayload[];
 }
+
+type VideasyErrorPayload = {
+  readonly error?: string;
+  readonly codes?: readonly string[];
+};
 
 type WasmExports = {
   __newString(value: string): number;
@@ -201,8 +210,22 @@ export async function resolveVidkingDirect(
   });
 
   const exhaustiveRefresh = input.intent === "refresh";
+  const preferredFlavorIds =
+    !exhaustiveRefresh && !resolvedOptions?.serverEndpoint && input.preferredSourceId
+      ? listVidkingFlavors()
+          .filter(
+            (flavor) =>
+              flavorSourceId(flavor.id) === input.preferredSourceId ||
+              vidkingSourceIdForEndpoint(flavor.endpoint) === input.preferredSourceId,
+          )
+          .filter((flavor) => input.mediaKind !== "series" || flavor.moviesOnly !== true)
+          .map((flavor) => flavor.id)
+      : [];
   const phaseAOnly =
-    !exhaustiveRefresh && !resolvedOptions?.serverEndpoint && !resolvedOptions?.customReferer;
+    !exhaustiveRefresh &&
+    preferredFlavorIds.length === 0 &&
+    !resolvedOptions?.serverEndpoint &&
+    !resolvedOptions?.customReferer;
   let activeServers: VidkingServerEndpoint[] = (
     phaseAOnly ? [...VIDKING_PHASE_A_SERVERS] : [...VIDKING_SERVERS]
   ).filter((s) => vidkingHealth.shouldTry(s));
@@ -234,7 +257,13 @@ export async function resolveVidkingDirect(
           .filter((options): options is VidKingEngineOptions & { serverEndpoint: string } =>
             Boolean(options?.serverEndpoint),
           )
-      : activeServers.map((server) => vidkingEngineOptionsForEndpoint(server, resolvedOptions));
+      : preferredFlavorIds.length > 0
+        ? preferredFlavorIds
+            .map((flavorId) => resolveFlavorEngineOptions(flavorId))
+            .filter((options): options is VidKingEngineOptions & { serverEndpoint: string } =>
+              Boolean(options?.serverEndpoint),
+            )
+        : activeServers.map((server) => vidkingEngineOptionsForEndpoint(server, resolvedOptions));
 
   for (const sourceOptions of probingSourceOptions) {
     const server = sourceOptions.serverEndpoint ?? "mb-flix";
@@ -266,9 +295,10 @@ export async function resolveVidkingDirect(
   });
 
   const cycleCandidates = buildVidkingCycleCandidates({
-    directServers: exhaustiveFlavorIds.length > 0 ? [] : activeServers,
+    directServers:
+      exhaustiveFlavorIds.length > 0 || preferredFlavorIds.length > 0 ? [] : activeServers,
     embedServers:
-      phaseAOnly && !resolvedOptions.customReferer
+      preferredFlavorIds.length > 0 || (phaseAOnly && !resolvedOptions.customReferer)
         ? []
         : embedReferer
           ? resolvedOptions.serverEndpoint
@@ -277,7 +307,7 @@ export async function resolveVidkingDirect(
               ? []
               : [...VIDKING_SERVERS]
           : [],
-    flavorIds: exhaustiveFlavorIds,
+    flavorIds: exhaustiveFlavorIds.length > 0 ? exhaustiveFlavorIds : preferredFlavorIds,
     embedReferer: resolvedOptions.customReferer ?? embedReferer ?? undefined,
     engineOptions: resolvedOptions,
     preferredSourceId: input.preferredSourceId,
@@ -290,6 +320,8 @@ export async function resolveVidkingDirect(
     now: context.now,
     maxAttemptsPerCandidate: 1,
     candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
+    shouldStopAfterFailure: (failure) =>
+      failure.failureClass === "candidate-blocked" && isVideasySessionGuardMessage(failure.message),
     resolveCandidate: async (candidate) => {
       const metadata = parseVidkingCycleCandidateMetadata(candidate);
       const flavorOptions = metadata.flavorId
@@ -301,6 +333,7 @@ export async function resolveVidkingDirect(
         flavorLabel: metadata.flavorLabel,
         flavorArchetype: metadata.flavorArchetype,
       });
+      const failureStartIndex = failures.length;
       const result = await tryVidkingServer({
         server: metadata.server,
         tmdbId,
@@ -314,6 +347,18 @@ export async function resolveVidkingDirect(
         engineOptions: candidateOptions,
       });
       if (!result) {
+        const candidateFailures = failures.slice(failureStartIndex);
+        const sessionGuardFailure = candidateFailures.find((failure) =>
+          isVideasySessionGuardMessage(failure.message),
+        );
+        if (sessionGuardFailure) {
+          throw createProviderCycleFailureError(candidate, {
+            failureClass: "candidate-blocked",
+            message: sessionGuardFailure.message,
+            retryable: false,
+            at: sessionGuardFailure.at,
+          });
+        }
         throw createProviderCycleFailureError(candidate, {
           failureClass: "candidate-empty",
           message: `Videasy ${metadata.server} did not produce a playable source`,
@@ -787,30 +832,45 @@ async function fetchVideasyPayload({
   fetchPort,
   signal,
   customReferer,
+  sessionToken,
+  appId,
 }: {
   readonly server: VidkingServerEndpoint;
   readonly query: URLSearchParams;
   readonly fetchPort?: ProviderFetchPort;
   readonly signal?: AbortSignal;
   readonly customReferer?: string;
+  readonly sessionToken?: string;
+  readonly appId?: string;
 }): Promise<Response> {
   const requester = fetchPort?.fetch.bind(fetchPort) ?? fetch;
+  const headers = new Headers({
+    accept: "*/*",
+    "accept-language": "en-US,en;q=0.9",
+    origin: VIDKING_ORIGIN,
+    referer: customReferer ?? VIDKING_REFERER,
+    "user-agent": USER_AGENT,
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+    "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+  });
+  if (sessionToken) {
+    headers.set("x-app-id", normalizeVideasyAppId(appId));
+    headers.set("x-session-token", sessionToken);
+  }
+
   return requester(`${VIDKING_API_BASE}/${server}/sources-with-title?${query.toString()}`, {
     signal: createVideasyFetchSignal(signal),
-    headers: {
-      accept: "*/*",
-      "accept-language": "en-US,en;q=0.9",
-      origin: VIDKING_ORIGIN,
-      referer: customReferer ?? VIDKING_REFERER,
-      "user-agent": USER_AGENT,
-      "sec-fetch-dest": "empty",
-      "sec-fetch-mode": "cors",
-      "sec-fetch-site": "same-site",
-      "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"Windows"',
-    },
+    headers,
   });
+}
+
+function normalizeVideasyAppId(value: string | undefined): string {
+  const appId = value?.trim();
+  return appId || VIDEASY_APP_ID;
 }
 
 /**
@@ -864,6 +924,8 @@ async function tryVidkingServer(opts: {
   const sourceId = customReferer
     ? `${vidkingSourceIdForPresentation(server, engineOptions)}:embed-ref`
     : vidkingSourceIdForPresentation(server, engineOptions);
+  const sessionToken = resolveVideasySessionToken(engineOptions, context);
+  const appId = resolveVideasyAppId(engineOptions, context);
 
   emitTraceEvent(events, context, {
     type: "source:start",
@@ -893,11 +955,21 @@ async function tryVidkingServer(opts: {
           fetchPort: context.fetch,
           signal: context.signal,
           customReferer,
+          sessionToken,
+          appId,
         });
 
         if (!response.ok) {
           vidkingHealth.recordFailure(server);
           const statusCode = response.status;
+          const body = await safeReadResponseText(response);
+          const providerError = parseVideasyErrorPayload(body);
+          const guardedFailure = createVideasyGuardFailure(providerError, context);
+          if (guardedFailure) {
+            failures.push(guardedFailure);
+            emitRetryIfNeeded(events, context, guardedFailure, sourceId, attempt, maxAttempts);
+            break;
+          }
           const nonRetryableStatus =
             statusCode === 401 ||
             statusCode === 403 ||
@@ -934,7 +1006,17 @@ async function tryVidkingServer(opts: {
           continue;
         }
 
-        const decoded = await decodeVidkingPayload(payload, tmdbId);
+        const providerError = parseVideasyErrorPayload(payload);
+        const guardedFailure = createVideasyGuardFailure(providerError, context);
+        if (guardedFailure) {
+          vidkingHealth.recordFailure(server);
+          failures.push(guardedFailure);
+          emitRetryIfNeeded(events, context, guardedFailure, sourceId, attempt, maxAttempts);
+          break;
+        }
+
+        const decodedPayload = await decodeVideasyGuardedPayload(payload, sessionToken);
+        const decoded = await decodeVidkingPayload(decodedPayload, tmdbId);
         const result = createVidkingResultFromPayload({
           input,
           cachePolicy,
@@ -987,6 +1069,95 @@ async function tryVidkingServer(opts: {
     message: `Server ${server} did not produce a playable source`,
   });
   return null;
+}
+
+function resolveVideasySessionToken(
+  engineOptions: VidKingEngineOptions,
+  context: ProviderRuntimeContext,
+): string | undefined {
+  return (
+    engineOptions.sessionToken?.trim() ||
+    context.auth?.getSecret(VIDKING_PROVIDER_ID, "videasySessionToken")?.trim() ||
+    process.env.KUNAI_VIDEASY_SESSION_TOKEN?.trim() ||
+    undefined
+  );
+}
+
+function resolveVideasyAppId(
+  engineOptions: VidKingEngineOptions,
+  context: ProviderRuntimeContext,
+): string {
+  return (
+    engineOptions.appId?.trim() ||
+    context.auth?.getSecret(VIDKING_PROVIDER_ID, "videasyAppId")?.trim() ||
+    VIDEASY_APP_ID
+  );
+}
+
+function isVideasySessionGuardMessage(message: string): boolean {
+  return /session_missing|session_invalid|session_expired|turnstile_failed|guarded_session_invalid|valid browser session/i.test(
+    message,
+  );
+}
+
+async function safeReadResponseText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return "";
+  }
+}
+
+function parseVideasyErrorPayload(payload: string): VideasyErrorPayload | null {
+  const trimmed = payload.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as VideasyErrorPayload;
+    return typeof parsed.error === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function createVideasyGuardFailure(
+  payload: VideasyErrorPayload | null,
+  context: ProviderRuntimeContext,
+): ProviderFailure | null {
+  if (!payload?.error) return null;
+  const error = payload.error;
+  const blockedErrors = new Set([
+    "session_missing",
+    "session_invalid",
+    "session_expired",
+    "turnstile_failed",
+    "guarded_session_invalid",
+  ]);
+  if (!blockedErrors.has(error)) return null;
+  const details = payload.codes?.length ? ` (${payload.codes.join(", ")})` : "";
+  return {
+    providerId: VIDKING_PROVIDER_ID,
+    code: error === "session_expired" ? "expired" : "blocked",
+    message: `Videasy requires a valid browser session: ${error}${details}. Set one in Kunai settings or KUNAI_VIDEASY_SESSION_TOKEN.`,
+    retryable: false,
+    at: context.now(),
+  };
+}
+
+export async function decodeVideasyGuardedPayload(
+  payload: string,
+  sessionToken: string | undefined,
+): Promise<string> {
+  if (!payload.startsWith("v2:")) return payload;
+  if (!sessionToken) {
+    throw new Error("Videasy guarded payload requires a session token");
+  }
+  const { default: CryptoJS } = await import("crypto-js");
+  const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();
+  const decrypted = CryptoJS.AES.decrypt(payload.slice(3), key).toString(CryptoJS.enc.Utf8);
+  if (!decrypted) {
+    throw new Error("Videasy guarded session payload could not be decrypted");
+  }
+  return decrypted;
 }
 
 async function loadWasmExports(): Promise<WasmExports> {

@@ -54,6 +54,26 @@ describe("diagnostics redaction", () => {
     });
   });
 
+  test("redacts Videasy session token fields and headers", () => {
+    const redacted = redactDiagnosticValue({
+      videasySessionToken: "session-secret",
+      sessionToken: "session-secret",
+      headers: {
+        "x-session-token": "session-secret",
+        "x-app-id": "bc-frontend",
+      },
+    });
+
+    expect(redacted).toEqual({
+      videasySessionToken: "[redacted]",
+      sessionToken: "[redacted]",
+      headers: {
+        "x-session-token": "[redacted]",
+        "x-app-id": "bc-frontend",
+      },
+    });
+  });
+
   test("redacts the home directory when it is embedded in an error sentence", () => {
     const redacted = redactDiagnosticValue(
       {

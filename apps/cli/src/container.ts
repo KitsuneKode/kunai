@@ -15,6 +15,7 @@ import {
   miruroProviderModule,
   rivestreamProviderModule,
   vidkingProviderModule,
+  vidlinkProviderModule,
 } from "@kunai/providers";
 import {
   DownloadJobsRepository,
@@ -376,12 +377,29 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   // Engine: single source of truth for provider resolution
   const engine = createProviderEngine({
     modules: [
-      miruroProviderModule,
+      vidlinkProviderModule,
       rivestreamProviderModule,
       vidkingProviderModule,
       allmangaProviderModule,
+      miruroProviderModule,
     ],
     attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
+    auth: {
+      getSecret(providerId, key) {
+        if (providerId !== "vidking") return undefined;
+        if (key === "videasySessionToken") {
+          return (
+            process.env.KUNAI_VIDEASY_SESSION_TOKEN?.trim() ||
+            config.videasySessionToken.trim() ||
+            undefined
+          );
+        }
+        if (key === "videasyAppId") {
+          return config.videasyAppId;
+        }
+        return undefined;
+      },
+    },
   });
 
   const providerRegistry = createProviderRegistry(engine);

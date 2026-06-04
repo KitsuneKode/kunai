@@ -24,7 +24,7 @@ apps/cli shell
 
 - `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
 - `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
-- `@kunai/providers` — 4 provider modules (`allmanga`, `miruro`, `rivestream`, `vidking`) each implementing `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`) + manifests co-located with modules
+- `@kunai/providers` — supported direct-provider modules (`vidlink`, `rivestream`, `vidking`, `allmanga`, `miruro`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
 - `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
 - `@kunai/schemas` — Zod validation schemas for all shared types
 - `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
@@ -177,6 +177,16 @@ Keep Playwright when the real stream only appears after runtime JS, player boot 
 
 Providers must not import Playwright directly once runtime ports land. They should request a browser lease from the injected runtime port. The CLI or future daemon decides whether that runtime is available.
 
+Provider-specific secret material belongs behind runtime ports, not in
+`ProviderResolveInput`. For example, VidKing reads an optional
+`videasySessionToken` and paired `videasyAppId` from the runtime auth port so
+the CLI can use a user-provided Videasy browser session from `/settings` or
+`KUNAI_VIDEASY_SESSION_TOKEN` without threading the token through cache keys,
+mpv, support bundles, or generic provider request state. `videasyAppId` defaults
+to `vidking`; use `bc-frontend` only for Bitcine-minted sessions. This is an
+attended session handoff only; do not add code that bypasses Turnstile or
+silently harvests browser tokens.
+
 ## Registration
 
 - Implement provider module in `packages/providers/src/<provider>/direct.ts` implementing `CoreProviderModule`
@@ -208,11 +218,20 @@ Use `apps/experiments/scratchpads/provider-*` as the research lab. The reports a
 
 The current Provider SDK migration follows the updated dossiers, not the older legacy provider classes:
 
-1. `vidking` first: production direct Videasy payload/decryption path in the active beta runtime.
-2. `allanime` / AllManga-compatible client second: production GraphQL/AES client with ani-cli parity discipline.
-3. `rivestream` and `miruro` next: candidate 0-RAM providers proven in scratchpads, pending fixtures.
-4. `anikai` after the runtime-browser package: it needs harvest-and-fetch/JIT Playwright boundaries.
-5. `braflix`, `cineby`, `bitcine`, and `cineby-anime` remain fallback/reference paths unless new research proves they are better than the direct routes.
+1. `vidlink` and `rivestream`: primary low-friction movie/series lane for fast CLI startup, broad catalog coverage, and subtitle-rich playback.
+2. `vidking`: high-value Videasy source lane; first-class when a valid attended Videasy session exists, but never a cold-start blocker.
+3. `allanime` / AllManga-compatible client and `miruro`: active anime lane. Keep AllManga aligned with ani-cli parity and harden Miruro through the provider matrix because it exposes useful anime-native source variants, subtitles, seek thumbnails, and intro/outro facts over direct HTTP.
+4. `vidrock`, `rgshows`, `vidapi`, `anikai`, `braflix`, `cineby`, `bitcine`, and `cineby-anime` remain research/candidate paths unless matrix evidence proves they are better than the supported routes.
+
+Quality gate for promotion into the production resolver:
+
+- resolves representative movie/series/anime samples in the provider matrix without browser automation
+- median resolve is fast enough for foreground playback, with bounded timeout behavior
+- broad catalog hit rate on current samples; misses fail with structured evidence
+- usable subtitles or a reliable subtitle fallback plan
+- source/quality inventory maps cleanly to Kunai's picker model
+- no mandatory per-episode challenge, hidden headless loop, captcha solver, or hostile user setup
+- docs and regression samples identify likely drift points
 
 ## Design Guidance
 
@@ -328,12 +347,13 @@ Active providers are registered in `apps/cli/src/container.ts` via `createProvid
 
 | ID           | Content Types | Runtime     | Module Location                               |
 | ------------ | ------------- | ----------- | --------------------------------------------- |
+| `vidlink`    | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`    |
 | `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
 | `vidking`    | movie, series | direct-http | `packages/providers/src/vidking/direct.ts`    |
 | `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
 | `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
 
-All 4 providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback.
+All active providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback. Candidate providers can live in `packages/providers` or `apps/experiments`, but they are not registered in `apps/cli/src/container.ts` until they pass the quality gate.
 
 Legacy Playwright providers live under `archive/legacy/apps/cli/src/providers/` as reference-only code.
 For current beta publish scope, Playwright is not a required runtime dependency.

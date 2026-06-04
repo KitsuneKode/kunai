@@ -68,6 +68,24 @@ describe("playback problem model", () => {
       ),
     ).toEqual({ kind: "title-unavailable", title: "This title" });
 
+    expect(
+      toErrorScenario(
+        buildProviderResolveProblem({
+          attempts: [
+            {
+              failure: {
+                message: "Videasy requires a valid browser session: session_missing",
+              },
+            },
+          ],
+        }),
+        { providerName: "VidKing" },
+      ),
+    ).toEqual({
+      kind: "provider-session",
+      providerName: "VidKing",
+    });
+
     expect(toErrorScenario(buildPlayerFailureProblem("expired-stream"))).toEqual({
       kind: "stream-broken",
       attempt: 1,

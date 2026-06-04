@@ -91,6 +91,18 @@ function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
           <Text color={palette.accent}>/library for downloaded titles</Text>
         </Box>
       );
+    case "provider-session":
+      return (
+        <Box flexDirection="column">
+          <Text color={palette.danger}>{`●  ${scenario.providerName} session required`}</Text>
+          <Text color={palette.dim} dimColor>
+            /settings · add Videasy session token
+          </Text>
+          <Text color={palette.dim} dimColor>
+            /fallback for another provider
+          </Text>
+        </Box>
+      );
     case "title-unavailable":
       return (
         <Box flexDirection="column">

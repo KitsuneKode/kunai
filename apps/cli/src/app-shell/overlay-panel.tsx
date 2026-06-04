@@ -126,6 +126,8 @@ type SettingsAction =
   | "presenceStatus"
   | "presenceDiscordClientId"
   | "presenceDiscordOpenUrl"
+  | "videasySessionToken"
+  | "videasyAppId"
   | "presenceConnection"
   | "downloadsEnabled"
   | "powerSaverMode"
@@ -352,6 +354,11 @@ function describeDiscordOpenUrl(config: KitsuneConfig): string {
   return config.presenceDiscordOpenUrl.trim() ? "configured" : "off";
 }
 
+function describeVideasySessionToken(config: KitsuneConfig): string {
+  if (process.env.KUNAI_VIDEASY_SESSION_TOKEN?.trim()) return "env";
+  return config.videasySessionToken.trim() ? "configured" : "missing";
+}
+
 export function buildSettingsOptions(
   config: KitsuneConfig,
   presenceSnapshot?: PresenceSnapshot | null,
@@ -438,6 +445,17 @@ export function buildSettingsOptions(
       value: "animeProvider",
       label: `▸ Anime provider  ·  ${config.animeProvider}`,
       detail: "Anime mode default: used on new anime searches until changed in-session",
+    },
+    {
+      value: "videasySessionToken",
+      label: `▸ ${configLabel("videasySessionToken")}  ·  ${describeVideasySessionToken(config)}`,
+      detail:
+        "Optional user-provided browser session for guarded VidKing/Bitcine Videasy API calls",
+    },
+    {
+      value: "videasyAppId",
+      label: `▸ ${configLabel("videasyAppId")}  ·  ${config.videasyAppId}`,
+      detail: "Use vidking for Vidking embeds or bc-frontend for Bitcine sessions",
     },
     {
       value: "section:language",
@@ -895,6 +913,48 @@ export function buildSettingsChoiceOverlay({
         value: "__clear__",
         label: "Clear open button",
         detail: "Remove the optional Open in Kunai Discord activity button",
+      },
+    ];
+  } else if (setting === "videasySessionToken") {
+    title = "Videasy session token";
+    subtitle =
+      describeVideasySessionToken(config) === "env"
+        ? "Using KUNAI_VIDEASY_SESSION_TOKEN unless a config value is typed here"
+        : `Current ${describeVideasySessionToken(config)}`;
+    options = [
+      {
+        value: "__keep__",
+        label: "Keep current value",
+        detail: "Type a Videasy session token to filter, then press Enter to draft it",
+      },
+      {
+        value: "__clear__",
+        label: "Clear configured token",
+        detail: "Fall back to KUNAI_VIDEASY_SESSION_TOKEN, or show missing if the env var is unset",
+      },
+      ...(process.env.KUNAI_VIDEASY_SESSION_TOKEN?.trim()
+        ? [
+            {
+              value: "__env__",
+              label: "Use environment token",
+              detail: "Keep config empty and read KUNAI_VIDEASY_SESSION_TOKEN at resolve time",
+            },
+          ]
+        : []),
+    ];
+  } else if (setting === "videasyAppId") {
+    title = "Videasy app id";
+    subtitle = `Current ${config.videasyAppId}`;
+    options = [
+      {
+        value: "vidking",
+        label: "Vidking",
+        detail: "Use sessions minted by the public vidking.net embed player",
+      },
+      {
+        value: "bc-frontend",
+        label: "Bitcine",
+        detail: "Use sessions minted by bitcine.tv playback pages",
       },
     ];
   } else if (setting === "quitNearEndBehavior") {

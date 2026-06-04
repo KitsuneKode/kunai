@@ -1,3 +1,9 @@
+import {
+  flavorSourceId,
+  listVidkingFlavors,
+  resolveFlavorEngineOptions,
+  VIDKING_PROVIDER_ID,
+} from "@kunai/providers";
 import type {
   ProviderFailure,
   ProviderArtworkInfo,
@@ -297,15 +303,35 @@ function projectSourceGroups(
           artwork: sourceArtwork,
         }),
       ]),
-      disabledReason:
-        streams.length === 0 ? "No playable stream was exposed for this source." : undefined,
+      disabledReason: describeSourceSelectionReason(source, streams),
     };
   });
 }
 
-function buildSourceCandidates(result: ProviderResolveResult): readonly ProviderSourceCandidate[] {
-  if (result.sources && result.sources.length > 0) return result.sources;
+function describeSourceSelectionReason(
+  source: ProviderSourceCandidate,
+  streams: readonly StreamCandidate[],
+): string | undefined {
+  if (streams.length > 0) return undefined;
+  if (typeof source.metadata?.pickerHint === "string") {
+    return "Fresh resolve required to try this source.";
+  }
+  return "No playable stream was exposed for this source.";
+}
 
+function buildSourceCandidates(result: ProviderResolveResult): readonly ProviderSourceCandidate[] {
+  const sourceCandidates =
+    result.sources && result.sources.length > 0
+      ? result.sources
+      : buildFallbackSourceCandidatesFromStreams(result);
+
+  if (result.providerId !== VIDKING_PROVIDER_ID) return sourceCandidates;
+  return mergeKnownVidkingFlavorSources(result, sourceCandidates);
+}
+
+function buildFallbackSourceCandidatesFromStreams(
+  result: ProviderResolveResult,
+): readonly ProviderSourceCandidate[] {
   const sourceIds = uniqueStrings(result.streams.map((stream) => stream.sourceId));
   return sourceIds.map((sourceId) => {
     const streams = result.streams.filter((stream) => stream.sourceId === sourceId);
@@ -326,6 +352,52 @@ function buildSourceCandidates(result: ProviderResolveResult): readonly Provider
         : { flavorLabel: displayLabel },
     };
   });
+}
+
+function mergeKnownVidkingFlavorSources(
+  result: ProviderResolveResult,
+  sources: readonly ProviderSourceCandidate[],
+): readonly ProviderSourceCandidate[] {
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const mediaKind = result.trace.title.kind;
+
+  for (const flavor of listVidkingFlavors()) {
+    if (mediaKind === "series" && flavor.moviesOnly) continue;
+    const engineOptions = resolveFlavorEngineOptions(flavor.id);
+    const sourceId = flavorSourceId(flavor.id);
+    if (byId.has(sourceId)) continue;
+    byId.set(sourceId, {
+      id: sourceId,
+      providerId: VIDKING_PROVIDER_ID,
+      kind: "provider-api",
+      label: flavor.themeLabel,
+      host: "api.videasy.net",
+      status: "available",
+      confidence: 0.4,
+      cachePolicy: result.cachePolicy,
+      languageEvidence: [
+        {
+          role: "audio",
+          normalizedLanguage: flavor.audioLanguage,
+          nativeLabel: flavor.subtitle,
+          sourceId,
+          confidence: 0.55,
+        },
+      ],
+      metadata: {
+        server: flavor.endpoint,
+        flavorId: flavor.id,
+        flavorLabel: flavor.themeLabel,
+        flavorArchetype: flavor.subtitle,
+        language: engineOptions?.language,
+        filterQuality: engineOptions?.filterQuality,
+        phase: "known",
+        pickerHint: "fresh resolve required",
+      },
+    });
+  }
+
+  return [...byId.values()];
 }
 
 function mapSourceStateForStreams(

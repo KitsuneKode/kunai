@@ -4,8 +4,8 @@ import { resolveProviderAttemptTimeoutMs } from "@/services/playback/provider-re
 
 describe("provider resolve budget policy", () => {
   test("maps startup priority to explicit provider attempt timeouts", () => {
-    expect(resolveProviderAttemptTimeoutMs("fast")).toBe(90_000);
-    expect(resolveProviderAttemptTimeoutMs("balanced")).toBe(300_000);
-    expect(resolveProviderAttemptTimeoutMs("quality-first")).toBe(300_000);
+    expect(resolveProviderAttemptTimeoutMs("fast")).toBe(6_000);
+    expect(resolveProviderAttemptTimeoutMs("balanced")).toBe(12_000);
+    expect(resolveProviderAttemptTimeoutMs("quality-first")).toBe(30_000);
   });
 });

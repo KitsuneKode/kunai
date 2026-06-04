@@ -25,6 +25,15 @@ import { DEFAULT_CONFIG } from "./ConfigStore";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
+function normalizeSeriesProvider(value: string | undefined): string {
+  const normalized = value?.trim();
+  // Migrate the legacy default off the now Turnstile-gated videasy/vidking
+  // backend so existing configs land on the browserless vidlink resolver.
+  // A deliberate non-vidking choice is preserved as-is.
+  if (!normalized || normalized === "vidking") return DEFAULT_CONFIG.provider;
+  return normalized;
+}
+
 function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
   if (!subLang || subLang === "none" || subLang === "fzf" || subLang === "interactive") {
     return DEFAULT_CONFIG.subLang;
@@ -85,6 +94,7 @@ export class ConfigServiceImpl implements ConfigService {
     service.config = {
       ...DEFAULT_CONFIG,
       ...loaded,
+      provider: normalizeSeriesProvider(loaded.provider),
       subLang: normalizeDefaultSubtitleLanguage(loaded.subLang),
       animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
@@ -106,6 +116,12 @@ export class ConfigServiceImpl implements ConfigService {
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
       ),
+      videasySessionToken: normalizeOptionalSecret(loaded.videasySessionToken),
+      videasySessionExpiresAt: normalizeVideasySessionExpiresAt(
+        loaded.videasySessionExpiresAt,
+        loaded.videasySessionToken,
+      ),
+      videasyAppId: normalizeVideasyAppId(loaded.videasyAppId),
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
     };
     return service;
@@ -222,6 +238,19 @@ export class ConfigServiceImpl implements ConfigService {
 
   get presenceDiscordOpenUrl(): string {
     return this.config.presenceDiscordOpenUrl;
+  }
+
+  get videasySessionToken(): string {
+    if (isExpiredVideasySession(this.config.videasySessionExpiresAt)) return "";
+    return this.config.videasySessionToken;
+  }
+
+  get videasySessionExpiresAt(): number {
+    return this.config.videasySessionExpiresAt;
+  }
+
+  get videasyAppId(): KitsuneConfig["videasyAppId"] {
+    return this.config.videasyAppId;
   }
 
   get downloadsEnabled(): boolean {
@@ -423,6 +452,19 @@ export class ConfigServiceImpl implements ConfigService {
             ),
           }
         : null),
+      ...(partial.videasySessionToken !== undefined
+        ? { videasySessionToken: normalizeOptionalSecret(partial.videasySessionToken) }
+        : null),
+      ...(partial.videasySessionExpiresAt !== undefined
+        ? {
+            videasySessionExpiresAt: normalizeVideasySessionExpiresAt(
+              partial.videasySessionExpiresAt,
+            ),
+          }
+        : null),
+      ...(partial.videasyAppId !== undefined
+        ? { videasyAppId: normalizeVideasyAppId(partial.videasyAppId) }
+        : null),
       ...(partial.titleProviderPreferences !== undefined
         ? {
             titleProviderPreferences: normalizeTitleProviderPreferences(
@@ -473,6 +515,24 @@ export class ConfigServiceImpl implements ConfigService {
 function normalizeStringList(values: readonly string[] | undefined): readonly string[] {
   if (!Array.isArray(values)) return [];
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function normalizeOptionalSecret(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeVideasySessionExpiresAt(value: unknown, token?: unknown): number {
+  const expiresAt = typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+  if (!normalizeOptionalSecret(token)) return 0;
+  return isExpiredVideasySession(expiresAt) ? 0 : expiresAt;
+}
+
+function isExpiredVideasySession(expiresAt: number): boolean {
+  return expiresAt > 0 && expiresAt <= Date.now();
+}
+
+function normalizeVideasyAppId(value: unknown): KitsuneConfig["videasyAppId"] {
+  return value === "bc-frontend" ? "bc-frontend" : "vidking";
 }
 
 function normalizeRecoveryMode(value: unknown): RecoveryMode {

@@ -95,6 +95,12 @@ export interface KitsuneConfig {
   presenceDiscordClientId: string;
   /** Reserved safe HTTPS or kunai:// handoff URL for future Discord buttons. */
   presenceDiscordOpenUrl: string;
+  /** Optional Videasy browser session token. Empty string = read KUNAI_VIDEASY_SESSION_TOKEN. */
+  videasySessionToken: string;
+  /** Epoch ms when the cached Videasy browser session expires. 0 = unknown/manual. */
+  videasySessionExpiresAt: number;
+  /** Videasy frontend app id paired with the session token. */
+  videasyAppId: "vidking" | "bc-frontend";
   /** Optional offline download feature gate. Default off until the user opts in. */
   downloadsEnabled: boolean;
   /**

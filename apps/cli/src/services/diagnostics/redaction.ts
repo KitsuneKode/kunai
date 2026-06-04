@@ -14,8 +14,12 @@ const SENSITIVE_KEYS = new Set([
   "token",
   "access-token",
   "refresh-token",
+  "session-token",
+  "sessiontoken",
   "signature",
   "sig",
+  "videasysessiontoken",
+  "x-session-token",
 ]);
 
 const SENSITIVE_QUERY_KEYS = new Set([

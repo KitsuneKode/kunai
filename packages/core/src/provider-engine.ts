@@ -1,6 +1,7 @@
 import type {
   ProviderFailure,
   ProviderId,
+  ProviderAuthPort,
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
@@ -20,6 +21,7 @@ export interface ProviderEngineOptions {
   readonly attemptTimeoutMs?: number;
   readonly retryDelayMs?: number;
   readonly now?: () => string;
+  readonly auth?: ProviderAuthPort;
 }
 
 export interface ProviderEngineResolveAttempt {
@@ -84,6 +86,7 @@ export class ProviderEngine {
   private readonly attemptTimeoutMs: number;
   private readonly retryDelayMs: number;
   private readonly now: () => string;
+  private readonly auth?: ProviderAuthPort;
 
   constructor(opts: ProviderEngineOptions) {
     this.modules = opts.modules;
@@ -91,6 +94,7 @@ export class ProviderEngine {
     this.attemptTimeoutMs = opts.attemptTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retryDelayMs = opts.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.now = opts.now ?? (() => new Date().toISOString());
+    this.auth = opts.auth;
 
     for (const module of opts.modules) {
       if (this.modulesById.has(module.providerId)) {
@@ -290,6 +294,7 @@ export class ProviderEngine {
         backoff: "none",
         delayMs: this.retryDelayMs,
       },
+      auth: this.auth,
     };
 
     const operation = module.resolve(input, context);

@@ -31,6 +31,10 @@ export interface RunProviderCycleInput<TResolved> extends ProviderCycleEngineOpt
     candidate: ProviderCycleCandidate,
     context: ProviderCycleCandidateContext,
   ) => Promise<TResolved>;
+  readonly shouldStopAfterFailure?: (
+    failure: ProviderCycleFailure,
+    candidate: ProviderCycleCandidate,
+  ) => boolean;
 }
 
 const DEFAULT_MAX_ATTEMPTS_PER_CANDIDATE = 2;
@@ -166,6 +170,16 @@ export async function runProviderCycle<TResolved>(
             attempts,
             events,
             stopReason: "network-offline",
+            fallbackRequested: false,
+            cancelled: false,
+          };
+        }
+
+        if (input.shouldStopAfterFailure?.(failure, candidate)) {
+          return {
+            attempts,
+            events,
+            stopReason: "exhausted",
             fallbackRequested: false,
             cancelled: false,
           };

@@ -226,6 +226,10 @@ function isSafeDiscordOpenUrl(value: string): boolean {
   }
 }
 
+function isLikelyVideasySessionToken(value: string): boolean {
+  return value.length >= 16 && !/\s/.test(value);
+}
+
 function getLatestPresenceErrorDetail(container: Container): string | null {
   const event = container.diagnosticsStore
     .getRecent(20)
@@ -967,6 +971,18 @@ export function RootOverlayShell({
             }
             setSettingsError("Type a safe https:// or kunai:// URL, or Esc to cancel.");
           }
+          if (settingsChoice === "videasySessionToken" && settingsDraft) {
+            const typedToken = filterQuery.trim();
+            if (isLikelyVideasySessionToken(typedToken)) {
+              setSettingsDraft({ ...settingsDraft, videasySessionToken: typedToken });
+              setSettingsChoice(null);
+              setFilterQuery("");
+              setSelectedIndex(settingsParentIndex);
+              setSettingsError("Videasy session token saved in draft. Press S to save settings.");
+              return;
+            }
+            setSettingsError("Type a Videasy session token, or Esc to cancel.");
+          }
           return;
         }
         if (picked.value.startsWith("section:")) {
@@ -1068,6 +1084,20 @@ export function RootOverlayShell({
               setSettingsError("Type a safe https:// or kunai:// URL, or Esc to cancel.");
               return;
             }
+          } else if (settingsChoice === "videasySessionToken") {
+            const typedToken = filterQuery.trim();
+            if (isLikelyVideasySessionToken(typedToken)) {
+              next.videasySessionToken = typedToken;
+            } else if (picked.value === "__clear__" || picked.value === "__env__") {
+              next.videasySessionToken = "";
+            } else if (picked.value === "__keep__") {
+              // Keep the existing draft value.
+            } else {
+              setSettingsError("Type a Videasy session token, or Esc to cancel.");
+              return;
+            }
+          } else if (settingsChoice === "videasyAppId") {
+            next.videasyAppId = picked.value === "bc-frontend" ? "bc-frontend" : "vidking";
           } else if (settingsChoice === "quitNearEndBehavior") {
             next.quitNearEndBehavior = picked.value as QuitNearEndBehavior;
           } else if (settingsChoice === "quitNearEndThresholdMode") {

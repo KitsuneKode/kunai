@@ -108,10 +108,38 @@ Filters stack in one structured state. Unsupported filters are reported as local
 
 ## Environment
 
-| Var                       | Effect                                                            |
-| ------------------------- | ----------------------------------------------------------------- |
-| `KITSUNE_DEBUG=1`         | Enable debug JSON logs to stderr                                  |
-| `KUNAI_DISCORD_CLIENT_ID` | Discord application id for optional `presenceProvider: "discord"` |
+| Var                           | Effect                                                            |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `KITSUNE_DEBUG=1`             | Enable debug JSON logs to stderr                                  |
+| `KUNAI_DISCORD_CLIENT_ID`     | Discord application id for optional `presenceProvider: "discord"` |
+| `KUNAI_VIDEASY_SESSION_TOKEN` | Optional user-provided Videasy browser session token for VidKing  |
+
+VidKing may report `Videasy requires a valid browser session` when Videasy's
+guarded API requires a session created by the website. Kunai can use a token you
+explicitly provide through `/settings` or `KUNAI_VIDEASY_SESSION_TOKEN`; it does
+not try to bypass browser challenges or solve Turnstile automatically. Set
+`Videasy app id` to `vidking` for vidking.net sessions or `bc-frontend` for
+Bitcine sessions.
+
+**Mint a session (one-time, then reuse across episodes)**
+
+```sh
+cd apps/experiments
+bun run videasy:mint tv 61700 1 3   # opens bitcine.tv; complete Turnstile if prompted
+```
+
+Or from DevTools while [bitcine.tv](https://www.bitcine.tv) playback works:
+
+1. Network → filter `auth/session` or `sources-with-title`
+2. Copy `token` from the **200** `POST https://api.videasy.net/auth/session` JSON body, **or** the `x-session-token` request header on `sources-with-title`
+3. `/settings` → **Videasy session token** → paste; **Videasy app id** → `bc-frontend` for Bitcine (or `vidking` for vidking.net)
+
+Verify the API gate (no token → blocked):
+
+```sh
+curl -sS "https://api.videasy.net/mb-flix/sources-with-title?tmdbId=61700&mediaType=tv&seasonId=1&episodeId=3&title=test"
+# {"error":"session_missing"}
+```
 
 ## Common Issues
 

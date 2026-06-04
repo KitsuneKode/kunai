@@ -4,6 +4,7 @@ import {
   buildPlaybackSourceInventoryDiagnosticsSummary,
   projectPlaybackSourceInventory,
 } from "@/services/playback/PlaybackSourceInventoryProjection";
+import { flavorSourceId, listVidkingFlavors } from "@kunai/providers";
 import type { ProviderResolveResult, ProviderSourceCandidate, StreamCandidate } from "@kunai/types";
 
 const cachePolicy = {
@@ -193,6 +194,50 @@ test("projects series provider servers as source evidence and normalized audio s
   expect(view.qualityOptions.map((option) => option.label)).toEqual(["1080p", "720p"]);
 });
 
+test("adds known VidKing flavor sources to the source picker model", () => {
+  const view = projectPlaybackSourceInventory({
+    status: "resolved",
+    providerId: "vidking",
+    selectedStreamId: "luffy-1080",
+    streams: [
+      stream({
+        id: "luffy-1080",
+        providerId: "vidking",
+        sourceId: flavorSourceId("videasy-primary"),
+        qualityLabel: "1080p",
+      }),
+    ],
+    sources: [
+      source({
+        id: flavorSourceId("videasy-primary"),
+        providerId: "vidking",
+        label: "Luffy",
+        status: "selected",
+      }),
+    ],
+    subtitles: [],
+    trace: trace({ title: { id: "61700", kind: "series", title: "The Last of Us" } }),
+    failures: [],
+  });
+
+  const sourceIds = view.sourceGroups.map((group) => group.id);
+  const expectedSeriesFlavorIds = listVidkingFlavors()
+    .filter((flavor) => !flavor.moviesOnly)
+    .map((flavor) => flavorSourceId(flavor.id));
+
+  expect(sourceIds).toEqual(expect.arrayContaining(expectedSeriesFlavorIds));
+  expect(sourceIds).not.toContain(flavorSourceId("videasy-french"));
+  expect(
+    view.sourceGroups.find((group) => group.id === flavorSourceId("videasy-hindi")),
+  ).toMatchObject({
+    label: "Chopper",
+    state: "available",
+    audioLanguages: ["hi"],
+    disabledReason: "Fresh resolve required to try this source.",
+    hints: expect.arrayContaining(["Hindi · dub"]),
+  });
+});
+
 test("keeps provider-failed source selectable when playable streams exist", () => {
   const view = projectPlaybackSourceInventory({
     status: "resolved",
@@ -231,10 +276,12 @@ test("keeps provider-failed source selectable when playable streams exist", () =
     failures: [],
   });
 
-  expect(view.sourceGroups.map((group) => [group.id, group.state])).toEqual([
-    ["sanji", "selected"],
-    ["robin", "available"],
-  ]);
+  expect(view.sourceGroups.map((group) => [group.id, group.state])).toEqual(
+    expect.arrayContaining([
+      ["sanji", "selected"],
+      ["robin", "available"],
+    ]),
+  );
   expect(view.sourceGroups.find((group) => group.id === "robin")?.disabledReason).toBeUndefined();
 });
 

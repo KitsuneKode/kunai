@@ -5,6 +5,7 @@ export type ErrorScenario =
   | { kind: "provider-timeout"; providerName: string; elapsedSec: number }
   | { kind: "stream-broken"; attempt: number; maxAttempts: number }
   | { kind: "network-offline" }
+  | { kind: "provider-session"; providerName: string }
   | { kind: "title-unavailable"; title: string };
 
 export type PlaybackProblemStage =
@@ -22,6 +23,7 @@ export type PlaybackProblemAction =
   | "pick-stream"
   | "relaunch"
   | "try-next-provider"
+  | "settings"
   | "diagnostics";
 
 export interface PlaybackProblem {
@@ -87,6 +89,22 @@ export function buildProviderResolveProblem({
       cause: "provider-timeout",
       userMessage: "The provider timed out while resolving the stream.",
       recommendedAction: "refresh",
+      secondaryActions: ["try-next-provider", "diagnostics"],
+    };
+  }
+
+  if (
+    /session_missing|session_invalid|session_expired|turnstile_failed|guarded_session_invalid|valid browser session|x-session-token|videasy session/i.test(
+      failureMessages,
+    )
+  ) {
+    return {
+      stage: "provider-resolve",
+      severity: "blocking",
+      cause: "provider-session",
+      userMessage:
+        "VidKing needs your attended Bitcine/Videasy browser session before this source can resolve.",
+      recommendedAction: "settings",
       secondaryActions: ["try-next-provider", "diagnostics"],
     };
   }
@@ -222,6 +240,11 @@ export function toErrorScenario(
     case "network":
     case "network-offline":
       return { kind: "network-offline" };
+    case "provider-session":
+      return {
+        kind: "provider-session",
+        providerName: context.providerName ?? "provider",
+      };
     case "no-stream":
     case "provider-access":
       return {

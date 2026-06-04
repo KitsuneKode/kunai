@@ -8,7 +8,7 @@ export const vidkingManifest = defineProviderManifest({
   aliases: ["Cineby", "HDToday", "Videasy"],
   description: "VidKing direct resolver for Cineby/HDToday-compatible Videasy streams",
   domain: "videasy.net",
-  recommended: true,
+  recommended: false,
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
   runtimePorts: [

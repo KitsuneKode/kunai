@@ -101,6 +101,30 @@ test("runProviderCycle moves past non-retryable parse failures", async () => {
   expect(result.events.map((event) => event.type)).toContain("source:failed");
 });
 
+test("runProviderCycle supports provider-local terminal failure policies", async () => {
+  const attempted: string[] = [];
+  const result = await runProviderCycle({
+    providerId: "allanime",
+    candidates,
+    maxAttemptsPerCandidate: 1,
+    now: fixedClock(),
+    shouldStopAfterFailure: (failure) => failure.failureClass === "candidate-blocked",
+    resolveCandidate: async (selected) => {
+      attempted.push(selected.id);
+      throw createProviderCycleFailureError(selected, {
+        failureClass: "candidate-blocked",
+        message: "provider-wide session missing",
+        retryable: false,
+        at: "2026-05-19T00:00:00.000Z",
+      });
+    },
+  });
+
+  expect(result.stopReason).toBe("exhausted");
+  expect(attempted).toEqual(["source:kiwi"]);
+  expect(result.attempts).toHaveLength(1);
+});
+
 test("runProviderCycle treats user cancellation as a cancelled cycle without fallback", async () => {
   const controller = new AbortController();
 

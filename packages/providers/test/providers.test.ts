@@ -13,23 +13,27 @@ import {
   createVariantCandidateFromStream,
   createMiruroResultFromPayload,
   createMiruroPipeRequestUrls,
+  decodeVideasyGuardedPayload,
   getMiruroEpisodesResponse,
+  miruroProviderModule,
   createVidkingResultFromPayload,
   extractQualitiesFromMaster,
   getProviderMigrationQueue,
   getProviderResearchProfile,
-  miruroProviderModule,
+  listVidkingFlavors,
   normalizeIsoLanguageCode,
   normalizeProviderDisplayLabel,
   normalizeQualityLabel,
   parseSourceHost,
   providerResearchProfiles,
   qualityRankFromLabel,
+  resolveFlavorEngineOptions,
   resolveVidkingDirect,
   rivestreamProviderModule,
   stableProviderInventoryId,
   VariantTreeBuilder,
   vidkingProviderModule,
+  vidlinkProviderModule,
 } from "../src/index";
 
 const FIXTURE_BASE = new URL("./fixtures/", import.meta.url);
@@ -37,18 +41,26 @@ const FIXTURE_BASE = new URL("./fixtures/", import.meta.url);
 test("provider engine exposes registered modules", () => {
   const engine = createProviderEngine({
     modules: [
+      vidlinkProviderModule,
       rivestreamProviderModule,
       vidkingProviderModule,
-      miruroProviderModule,
       allmangaProviderModule,
+      miruroProviderModule,
     ],
   });
 
-  expect(engine.getProviderIds()).toEqual(["rivestream", "vidking", "miruro", "allanime"]);
+  expect(engine.getProviderIds()).toEqual([
+    "vidlink",
+    "rivestream",
+    "vidking",
+    "allanime",
+    "miruro",
+  ]);
+  expect(engine.get("vidlink")).toBe(vidlinkProviderModule);
   expect(engine.get("rivestream")).toBe(rivestreamProviderModule);
   expect(engine.get("vidking")).toBe(vidkingProviderModule);
-  expect(engine.get("miruro")).toBe(miruroProviderModule);
   expect(engine.get("allanime")).toBe(allmangaProviderModule);
+  expect(engine.get("miruro")).toBe(miruroProviderModule);
 });
 
 test("direct provider success paths report health deltas", async () => {
@@ -233,6 +245,322 @@ test("vidking direct resolver does not retry definitive 404 responses or duplica
   expect(result?.trace.events?.map((event) => event.type)).not.toContain("retry:scheduled");
   expect(result?.failures.every((failure) => failure.retryable === false)).toBe(true);
   expect(result?.failures.every((failure) => failure.code === "not-found")).toBe(true);
+});
+
+test("vidking direct resolver sends Videasy session headers when provided", async () => {
+  const seenHeaders: Headers[] = [];
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "61700",
+        tmdbId: "61700",
+        kind: "series",
+        title: "The Last of Us",
+        year: 2023,
+      },
+      episode: { season: 1, episode: 2 },
+      mediaKind: "series",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-06-04T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (_input, init) => {
+          seenHeaders.push(new Headers(init?.headers));
+          return jsonResponse({ error: "session_missing" });
+        },
+      },
+    },
+    { serverEndpoint: "mb-flix", sessionToken: "session-123" },
+  );
+
+  expect(result?.status).toBe("exhausted");
+  expect(seenHeaders[0]?.get("x-app-id")).toBe("vidking");
+  expect(seenHeaders[0]?.get("x-session-token")).toBe("session-123");
+});
+
+test("vidking direct resolver reads Videasy session token from runtime auth", async () => {
+  const seenHeaders: Headers[] = [];
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "61700",
+        tmdbId: "61700",
+        kind: "series",
+        title: "The Last of Us",
+        year: 2023,
+      },
+      episode: { season: 1, episode: 2 },
+      mediaKind: "series",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-06-04T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      auth: {
+        getSecret: (providerId, key) =>
+          providerId === "vidking" && key === "videasySessionToken"
+            ? "runtime-session-123"
+            : undefined,
+      },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (_input, init) => {
+          seenHeaders.push(new Headers(init?.headers));
+          return jsonResponse({ error: "session_missing" });
+        },
+      },
+    },
+    { serverEndpoint: "mb-flix" },
+  );
+
+  expect(result?.status).toBe("exhausted");
+  expect(seenHeaders[0]?.get("x-app-id")).toBe("vidking");
+  expect(seenHeaders[0]?.get("x-session-token")).toBe("runtime-session-123");
+});
+
+test("vidking direct resolver can pair a session with a Bitcine app id", async () => {
+  const seenHeaders: Headers[] = [];
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "61700",
+        tmdbId: "61700",
+        kind: "series",
+        title: "The Last of Us",
+        year: 2023,
+      },
+      episode: { season: 1, episode: 2 },
+      mediaKind: "series",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-06-04T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      auth: {
+        getSecret: (providerId, key) => {
+          if (providerId !== "vidking") return undefined;
+          if (key === "videasySessionToken") return "bitcine-session-123";
+          if (key === "videasyAppId") return "bc-frontend";
+          return undefined;
+        },
+      },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (_input, init) => {
+          seenHeaders.push(new Headers(init?.headers));
+          return jsonResponse({ error: "session_missing" });
+        },
+      },
+    },
+    { serverEndpoint: "mb-flix" },
+  );
+
+  expect(result?.status).toBe("exhausted");
+  expect(seenHeaders[0]?.get("x-app-id")).toBe("bc-frontend");
+  expect(seenHeaders[0]?.get("x-session-token")).toBe("bitcine-session-123");
+});
+
+test("vidking session transport covers every registered Videasy flavor", async () => {
+  const flavors = listVidkingFlavors();
+  const requested = new Map<string, { url: string; headers: Headers }>();
+
+  for (const flavor of flavors) {
+    const engineOptions = resolveFlavorEngineOptions(flavor.id);
+    expect(engineOptions).not.toBeNull();
+
+    const result = await resolveVidkingDirect(
+      {
+        title: {
+          id: "61700",
+          tmdbId: "61700",
+          kind: flavor.moviesOnly ? "movie" : "series",
+          title: flavor.moviesOnly ? "Dune" : "The Last of Us",
+          year: flavor.moviesOnly ? 2021 : 2023,
+        },
+        episode: flavor.moviesOnly ? undefined : { season: 1, episode: 2 },
+        mediaKind: flavor.moviesOnly ? "movie" : "series",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      {
+        now: () => "2026-06-04T00:00:00.000Z",
+        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        fetch: {
+          runtime: "direct-http",
+          fetch: async (input, init) => {
+            requested.set(flavor.id, {
+              url: String(input),
+              headers: new Headers(init?.headers),
+            });
+            return jsonResponse({ error: "session_missing" });
+          },
+        },
+      },
+      { ...engineOptions, sessionToken: `token-${flavor.id}` },
+    );
+
+    expect(result?.status).toBe("exhausted");
+    expect(result?.failures[0]).toMatchObject({ code: "blocked", retryable: false });
+  }
+
+  expect(requested.size).toBe(flavors.length);
+  for (const flavor of flavors) {
+    const request = requested.get(flavor.id);
+    expect(request?.url).toContain(`/${flavor.endpoint}/sources-with-title?`);
+    expect(request?.headers.get("x-app-id")).toBe("vidking");
+    expect(request?.headers.get("x-session-token")).toBe(`token-${flavor.id}`);
+    if (flavor.languageQuery) {
+      expect(request?.url).toContain(`language=${flavor.languageQuery}`);
+    }
+    if (flavor.moviesOnly) {
+      expect(request?.url).toContain("mediaType=movie");
+      expect(request?.url).not.toContain("episodeId=");
+    } else {
+      expect(request?.url).toContain("mediaType=tv");
+      expect(request?.url).toContain("seasonId=1");
+      expect(request?.url).toContain("episodeId=2");
+    }
+  }
+});
+
+test("vidking preferred source targets that flavor without broad server probing", async () => {
+  const requestedUrls: string[] = [];
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "61700",
+        tmdbId: "61700",
+        kind: "series",
+        title: "The Last of Us",
+        year: 2023,
+      },
+      episode: { season: 1, episode: 2 },
+      mediaKind: "series",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+      preferredSourceId: "source:vidking:videasy:videasy-hindi",
+    },
+    {
+      now: () => "2026-06-04T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input) => {
+          requestedUrls.push(String(input));
+          return jsonResponse({ error: "session_missing" });
+        },
+      },
+    },
+  );
+
+  expect(result?.status).toBe("exhausted");
+  expect(requestedUrls).toHaveLength(1);
+  expect(requestedUrls[0]).toContain("/hdmovie/sources-with-title?");
+  expect(requestedUrls[0]).not.toContain("/mb-flix/");
+  expect(requestedUrls[0]).not.toContain("/cdn/");
+});
+
+test("vidking stops source fanout after a provider-wide session guard failure", async () => {
+  const requestedUrls: string[] = [];
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "61700",
+        tmdbId: "61700",
+        kind: "series",
+        title: "Bad Guys",
+        year: 2014,
+      },
+      episode: { season: 1, episode: 3 },
+      mediaKind: "series",
+      intent: "refresh",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-06-04T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input) => {
+          requestedUrls.push(String(input));
+          return jsonResponse({ error: "session_missing" });
+        },
+      },
+    },
+  );
+
+  expect(result?.status).toBe("exhausted");
+  expect(result?.failures).toHaveLength(1);
+  expect(result?.failures[0]).toMatchObject({ code: "blocked", retryable: false });
+  expect(requestedUrls).toHaveLength(1);
+  expect(requestedUrls[0]).toContain("/mb-flix/sources-with-title?");
+});
+
+test("vidking direct resolver classifies Videasy session guard responses as blocked", async () => {
+  const result = await resolveVidkingDirect(
+    {
+      title: {
+        id: "61700",
+        tmdbId: "61700",
+        kind: "series",
+        title: "The Last of Us",
+        year: 2023,
+      },
+      episode: { season: 1, episode: 2 },
+      mediaKind: "series",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      now: () => "2026-06-04T00:00:00.000Z",
+      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      fetch: {
+        runtime: "direct-http",
+        fetch: async () => jsonResponse({ error: "session_missing" }),
+      },
+    },
+    { serverEndpoint: "mb-flix" },
+  );
+
+  expect(result?.status).toBe("exhausted");
+  expect(result?.failures[0]).toMatchObject({
+    providerId: "vidking",
+    code: "blocked",
+    retryable: false,
+  });
+  expect(result?.failures[0]?.message).toContain("valid browser session");
+  expect(result?.trace.events?.map((event) => event.type)).not.toContain("retry:scheduled");
+});
+
+test("vidking guarded v2 payload unwraps with Videasy session key", async () => {
+  const { default: CryptoJS } = await import("crypto-js");
+  const sessionToken = "session-123";
+  const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();
+  const guarded = `v2:${CryptoJS.AES.encrypt("inner-payload", key).toString()}`;
+
+  await expect(decodeVideasyGuardedPayload(guarded, sessionToken)).resolves.toBe("inner-payload");
+  await expect(decodeVideasyGuardedPayload(guarded, undefined)).rejects.toThrow(
+    "requires a session token",
+  );
+});
+
+test("vidking guarded v2 unwrap is path agnostic for every Videasy flavor", async () => {
+  const { default: CryptoJS } = await import("crypto-js");
+
+  for (const flavor of listVidkingFlavors()) {
+    const sessionToken = `session-${flavor.id}`;
+    const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();
+    const innerPayload = `payload-for-${flavor.endpoint}-${flavor.id}`;
+    const guarded = `v2:${CryptoJS.AES.encrypt(innerPayload, key).toString()}`;
+
+    await expect(decodeVideasyGuardedPayload(guarded, sessionToken)).resolves.toBe(innerPayload);
+  }
 });
 
 test("vidking direct resolver can target a flavored endpoint without broad server probing", async () => {

@@ -406,10 +406,15 @@ export interface ProviderFetchPort {
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 }
 
+export interface ProviderAuthPort {
+  getSecret(providerId: ProviderId, key: string): string | undefined;
+}
+
 export interface ProviderRuntimeContext {
   readonly signal?: AbortSignal;
   readonly retryPolicy?: ProviderRetryPolicy;
   readonly fetch?: ProviderFetchPort;
+  readonly auth?: ProviderAuthPort;
   now(): string;
   emit?(event: ProviderTraceEvent): void;
 }

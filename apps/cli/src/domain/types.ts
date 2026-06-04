@@ -43,6 +43,7 @@ export interface TitleInfo {
   readonly languageEvidence?: readonly ProviderLanguageEvidence[];
   readonly genreIds?: number[];
   readonly episodeCount?: number;
+  readonly launchSource?: "search" | "history" | "continue";
 }
 
 export interface EpisodeInfo {
