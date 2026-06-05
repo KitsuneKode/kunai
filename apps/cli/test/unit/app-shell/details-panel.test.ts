@@ -24,10 +24,15 @@ describe("buildBrowseDetailsPanel", () => {
     expect(panel.title).toBe("Title overview");
     expect(panel.subtitle).toBe("Demon Slayer");
     expect(panel.imageUrl).toBe("https://image.tmdb.org/t/p/w342/demo.jpg");
-    expect(panel.lines[0]).toEqual({ label: "─── Selection", detail: "", tone: "info" });
-    expect(panel.lines.find((line) => line.label === "Artwork")?.tone).toBe("success");
-    expect(panel.lines.find((line) => line.label === "Trailer")).toBeUndefined();
-    expect(panel.lines.find((line) => line.label === "Rating")?.detail).toBe("8.5/10 TMDB");
+    // Compact model: first line is the title; type/year/rating fold into one
+    // "At a glance" line rather than separate duplicated facts.
+    expect(panel.lines[0]).toEqual({ label: "Title", detail: "Demon Slayer", tone: "success" });
+    expect(panel.lines.find((line) => line.label === "At a glance")?.detail).toContain(
+      "8.5/10 TMDB",
+    );
+    expect(panel.lines.find((line) => line.label === "Type")).toBeUndefined();
+    expect(panel.lines.find((line) => line.label === "Artwork")).toBeUndefined();
+    expect(panel.lines.find((line) => line.label === "Open")).toBeUndefined();
   });
 
   test("uses explicit placeholders when providers omit details", () => {
@@ -39,9 +44,11 @@ describe("buildBrowseDetailsPanel", () => {
     const panel = buildBrowseDetailsPanel(option);
 
     expect(panel.imageUrl).toBeUndefined();
-    expect(panel.lines.find((line) => line.label === "Artwork")?.tone).toBe("warning");
-    expect(panel.lines.find((line) => line.label === "Rating")?.detail).toBe(
-      "Not supplied by this provider response",
+    // No fabricated Artwork/Rating placeholder rows in the compact model.
+    expect(panel.lines.find((line) => line.label === "Artwork")).toBeUndefined();
+    expect(panel.lines.find((line) => line.label === "Rating")).toBeUndefined();
+    expect(panel.lines.find((line) => line.label === "Overview")?.detail).toBe(
+      "No overview available yet.",
     );
   });
 

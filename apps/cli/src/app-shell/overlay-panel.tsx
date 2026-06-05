@@ -1304,24 +1304,45 @@ export function OverlayPanel({
         <Box marginTop={1} flexDirection="column">
           {overlay.lines
             .slice(overlay.scrollIndex ?? 0, (overlay.scrollIndex ?? 0) + maxLines)
-            .map((line: ShellPanelLine) => (
-              <Box
-                key={`${line.label}-${line.detail ?? ""}`}
-                flexDirection="column"
-                marginBottom={1}
-              >
-                <Text color={resolvePanelTone(line.tone)}>
-                  {truncateLine(line.label, contentWidth)}
-                </Text>
-                {line.detail
-                  ? wrapText(line.detail, contentWidth, 2).map((detailLine) => (
-                      <Text key={`${line.label}-${detailLine}`} color={palette.dim}>
-                        {detailLine}
-                      </Text>
-                    ))
-                  : null}
-              </Box>
-            ))}
+            .map((line: ShellPanelLine) => {
+              const isHeader = !line.detail && line.label.startsWith("───");
+              if (isHeader) {
+                // Section rule — small top gap for grouping, no per-line blank lines.
+                return (
+                  <Box key={`${line.label}-h`} marginTop={1}>
+                    <Text color={palette.muted}>{truncateLine(line.label, contentWidth)}</Text>
+                  </Box>
+                );
+              }
+              const labelWidth = Math.min(16, Math.max(8, Math.floor(contentWidth * 0.26)));
+              const detailLines = line.detail
+                ? wrapText(line.detail, contentWidth - labelWidth - 1, 6)
+                : [];
+              // Short fact → inline "label  value"; long detail (synopsis) → label
+              // then wrapped body. Either way: no blank line between facts.
+              if (detailLines.length <= 1) {
+                return (
+                  <Box key={`${line.label}-${line.detail ?? ""}`}>
+                    <Text color={resolvePanelTone(line.tone)}>
+                      {truncateLine(line.label, labelWidth).padEnd(labelWidth)}
+                    </Text>
+                    <Text color={palette.dim}>{detailLines[0] ?? ""}</Text>
+                  </Box>
+                );
+              }
+              return (
+                <Box key={`${line.label}-multi`} flexDirection="column">
+                  <Text color={resolvePanelTone(line.tone)}>
+                    {truncateLine(line.label, contentWidth)}
+                  </Text>
+                  {detailLines.map((detailLine) => (
+                    <Text key={`${line.label}-${detailLine}`} color={palette.dim}>
+                      {detailLine}
+                    </Text>
+                  ))}
+                </Box>
+              );
+            })}
           <Text color={palette.dim}>
             {overlay.lines.length > maxLines
               ? `Showing ${(overlay.scrollIndex ?? 0) + 1}-${Math.min(
