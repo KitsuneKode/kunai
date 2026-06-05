@@ -120,8 +120,30 @@ const animatedSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} $
 </svg>
 `;
 
+// ---- README hero banner (mascot + wordmark + tagline; static, GitHub-safe) ----
+const HERO_W = 900;
+const HERO_H = 230;
+const mascotScale = 1.15;
+const mascotY = Math.round((HERO_H - H * mascotScale) / 2);
+const textX = 40 + W * mascotScale + 36;
+const heroSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${HERO_W} ${HERO_H}" width="${HERO_W}" height="${HERO_H}" role="img" aria-label="Kunai — terminal-native media shell">
+  <rect x="0" y="0" width="${HERO_W}" height="${HERO_H}" fill="#100b0f"/>
+  <g transform="translate(40 ${mascotY}) scale(${mascotScale})" shape-rendering="crispEdges">
+    ${body}
+  </g>
+  <text x="${textX}" y="96" font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace" font-size="62" font-weight="800" letter-spacing="6" fill="#ff8fb0">KUNAI</text>
+  <text x="${textX + 2}" y="134" font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace" font-size="18" fill="#cabfca">Terminal-native media shell · finds the playable stream</text>
+  <g font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace" font-size="14">
+    <circle cx="${textX + 6}" cy="168" r="5" fill="#c98bff"/><text x="${textX + 18}" y="173" fill="#968a98">anime</text>
+    <circle cx="${textX + 92}" cy="168" r="5" fill="#4fd1c5"/><text x="${textX + 104}" y="173" fill="#968a98">series</text>
+    <circle cx="${textX + 180}" cy="168" r="5" fill="#f4c45c"/><text x="${textX + 192}" y="173" fill="#968a98">movies</text>
+  </g>
+</svg>
+`;
+
 writeFileSync(join(HERE, "kunai-mascot.svg"), staticSvg);
 writeFileSync(join(HERE, "kunai-mascot-animated.svg"), animatedSvg);
+writeFileSync(join(HERE, "kunai-readme-hero.svg"), heroSvg);
 
 // Echo the grid as a quick text preview so a human can sanity-check the shape.
 console.log("Kunai mascot — text preview:\n");

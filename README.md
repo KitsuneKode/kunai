@@ -1,12 +1,22 @@
-# Kunai
+<div align="center">
 
-**Terminal-native media shell.** Search any title, pick your source, watch in `mpv`,
-download for offline. All from one fullscreen keyboard-driven terminal session.
+<img src=".design/brand/kunai-readme-hero.svg" alt="Kunai — terminal-native media shell" width="680" />
+
+**Search any title · pick your source · watch in `mpv` · download for offline.**
+One fullscreen, keyboard-driven terminal session.
+
+[![npm](https://img.shields.io/npm/v/@kitsunekode/kunai?color=ff8fb0&label=kunai&logo=npm)](https://www.npmjs.com/package/@kitsunekode/kunai)
+&nbsp;![runtime](https://img.shields.io/badge/runtime-Bun%20%E2%89%A51.3.9-ff8fb0)
+&nbsp;![player](https://img.shields.io/badge/player-mpv-4fd1c5)
+&nbsp;![kinds](https://img.shields.io/badge/anime%20%C2%B7%20series%20%C2%B7%20movies-c98bff)
+&nbsp;![license](https://img.shields.io/badge/license-see%20repo-968a98)
 
 ```bash
 npm install -g @kitsunekode/kunai
 kunai -S "Dune"
 ```
+
+</div>
 
 ---
 
@@ -174,7 +184,7 @@ Ctrl+D            Download selected result (from browse)
 | `/download`    | Queue the current episode for download               |
 | `/queue`       | View active, queued, failed downloads                |
 | `/discover`    | Personalized recommendations + trending              |
-| `/calendar`    | Releases airing today                                |
+| `/calendar`    | Unified release calendar — anime · series · movies   |
 | `/random`      | Surprise pick without autoplay                       |
 | `/setup`       | Run the setup wizard                                 |
 | `/settings`    | Configure provider, language, downloads, Discord     |
@@ -191,7 +201,7 @@ Ctrl+D            Download selected result (from browse)
 - **Search** any title by name. Anime and series modes use different provider sets.
 - **Stack filters** in one query: `type:anime year:2026 rating:7 genre:isekai audio:ja subtitles:en`.
 - **Discover** personalized recommendations and trending titles.
-- **Release calendar** shows what's airing today (provider resolution happens after selection).
+- **Release calendar** is one content-kind–aware window across anime, series, and movies — filter by type (Tab) or day (←/→), with honest "airs today / releases / available" status. Provider resolution happens only after you open a row.
 - **Random / Surprise** spins a non-autoplaying tray of cached recommendations.
 
 ### Playback
