@@ -916,7 +916,10 @@ function AppRoot({ container }: { container: Container }) {
             : rootStatusSummary.header.label
         }
         statusColor={statusColor(rootStatusSummary.header.tone)}
-        size={`${shellWidth}×${shellHeight}`}
+        // Terminal size is noise at a comfortable size — only surface it when the
+        // terminal is cramped enough to actually affect the layout (then it reads
+        // as a useful "resize me" hint rather than permanent header clutter).
+        size={shellWidth < 100 || shellHeight < 30 ? `${shellWidth}×${shellHeight}` : undefined}
         width={Math.max(0, shellWidth - 2)}
       />
       {/* Single transient alert — highest priority wins, null when idle */}
