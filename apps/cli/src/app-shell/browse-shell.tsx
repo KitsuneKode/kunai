@@ -996,7 +996,7 @@ export function BrowseShell<T>({
               dispatchFocusZone({ type: "focus-filter" });
             }}
             onSubmit={() => dispatchFocusZone({ type: "focus-query" })}
-            placeholder="narrows current results only"
+            placeholder="filter these results — or /filters for category chips"
             focus={resultFilterFocused && !commandMode}
             maxWidth={innerWidth}
             onRedraw={clearShellScreen}
@@ -1047,7 +1047,7 @@ export function BrowseShell<T>({
             hint={
               commandMode
                 ? undefined
-                : "Tokens: type:series year:2008 rating:8 · /filters for guided chips"
+                : "/filters for category chips (type · genre · year · rating) · or type tokens like year:2008"
             }
             maxWidth={innerWidth}
             onRedraw={clearShellScreen}
