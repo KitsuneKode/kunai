@@ -269,12 +269,12 @@ export function CommandPalette({
         Tab autocomplete · ↑↓ choose · Enter run
         {matches.length > visibleMatches.length ? ` · ${matches.length} commands` : ""}
       </Text>
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column">
         {matches.length > 0 ? (
           <>
-            {/* Reserve the scroll-affordance line so paging never shifts the whole
-                list vertically (the palette renders on every surface). */}
-            <Text color={palette.dim}>{windowStart > 0 ? " ▲ more" : " "}</Text>
+            {/* Scroll affordance only when there is actually more above — no empty
+                placeholder line, so the palette stays tight. */}
+            {windowStart > 0 ? <Text color={palette.dim}> ▲ more</Text> : null}
             {showGrouped ? (
               <>
                 {(() => {
@@ -306,7 +306,7 @@ export function CommandPalette({
                 return renderCommand(command, absoluteIndex);
               })
             )}
-            <Text color={palette.dim}>{windowEnd < matches.length ? " ▼ more" : " "}</Text>
+            {windowEnd < matches.length ? <Text color={palette.dim}> ▼ more</Text> : null}
           </>
         ) : (
           <Text color={palette.dim}>No matching commands</Text>
