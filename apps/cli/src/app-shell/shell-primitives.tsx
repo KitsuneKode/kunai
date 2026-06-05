@@ -85,6 +85,18 @@ export const InlineBadge = React.memo(function InlineBadge({
   );
 });
 
+type FooterActionRole = "primary" | "destructive" | "meta" | "normal";
+
+const DESTRUCTIVE_FOOTER = /\b(stop|quit|delete|remove|cancel|clear|discard)\b/i;
+const META_FOOTER = /\b(commands?|help|menu)\b/i;
+
+function footerActionRole(action: FooterAction): FooterActionRole {
+  if (action.primary) return "primary";
+  if (DESTRUCTIVE_FOOTER.test(action.label)) return "destructive";
+  if (META_FOOTER.test(action.label)) return "meta";
+  return "normal";
+}
+
 export function Footer({
   taskLabel,
   actions,
@@ -141,16 +153,32 @@ export function Footer({
           {visibleActions.map((action, index) => {
             const glyph = FOOTER_GLYPHS[action.key] ?? "";
             const keyDisplay = glyph ? `${glyph}§${action.key}` : action.key;
+            // Tasteful 3-role hierarchy instead of one rose key + a wall of grey:
+            //  • primary  → warm accent key + bright bold label
+            //  • destructive (stop/quit/delete…) → danger key (reads as "careful")
+            //  • meta (commands/help) → quiet muted
+            //  • everything else → cool `info` counterweight key + dimmed label
+            const role = footerActionRole(action);
+            const keyColor =
+              role === "primary"
+                ? palette.accent
+                : role === "destructive"
+                  ? palette.danger
+                  : role === "meta"
+                    ? palette.muted
+                    : palette.info;
+            const labelColor =
+              role === "primary" ? palette.text : role === "meta" ? palette.muted : palette.textDim;
             return (
               <Box
                 key={`${action.key}-${action.label}`}
                 marginRight={index === visibleActions.length - 1 ? 0 : 2}
                 marginBottom={1}
               >
-                <Text color={action.primary ? palette.accent : palette.dim}>
+                <Text bold={role === "primary"} color={keyColor}>
                   {hotkeyLabel(keyDisplay)}
                 </Text>
-                <Text color={palette.text}> {truncateLine(action.label, 18)}</Text>
+                <Text color={labelColor}> {truncateLine(action.label, 18)}</Text>
               </Box>
             );
           })}
