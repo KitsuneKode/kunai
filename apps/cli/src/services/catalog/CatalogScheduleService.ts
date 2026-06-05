@@ -66,6 +66,10 @@ export type CatalogScheduleLoaders = {
     window: CatalogScheduleWindow,
     signal?: AbortSignal,
   ) => Promise<readonly CatalogScheduleItem[]>;
+  readonly movieWindow?: (
+    window: CatalogScheduleWindow,
+    signal?: AbortSignal,
+  ) => Promise<readonly CatalogScheduleItem[]>;
   readonly seriesProgress?: (
     input: CatalogScheduleInput,
     signal?: AbortSignal,
@@ -357,6 +361,19 @@ export class CatalogScheduleService {
     });
   }
 
+  async loadMovieReleaseWindow(
+    days: number,
+    signal?: AbortSignal,
+  ): Promise<readonly CatalogScheduleItem[]> {
+    const window = buildLocalWindow(this.now(), days);
+    const key = `movie-window:${window.dateKey}:${Math.max(1, Math.trunc(days))}`;
+    return this.loadCached(key, RELEASING_TODAY_TTL_MS, signal, { source: "tmdb" }, async () => {
+      const load = this.loaders.movieWindow ?? loadTmdbMovieUpcoming;
+      const items = await load(window, signal);
+      return items.map((item) => normalizeScheduleItem(item, this.now()));
+    });
+  }
+
   private async loadCached<T>(
     key: string,
     ttlMs: number,
@@ -505,6 +522,7 @@ const defaultCatalogScheduleLoaders: CatalogScheduleLoaders = {
     mode === "anime"
       ? loadAniListReleasingToday(window, signal)
       : loadTmdbAiringToday(window, signal),
+  movieWindow: loadTmdbMovieUpcoming,
   seriesProgress: loadTmdbSeriesReleaseProgress,
   animeProgress: loadAniListReleaseProgressBatch,
 };
@@ -888,6 +906,45 @@ async function loadTmdbAiringToday(
       } satisfies CatalogScheduleItem,
     ];
   });
+}
+
+async function loadTmdbMovieUpcoming(
+  window: CatalogScheduleWindow,
+  signal?: AbortSignal,
+): Promise<readonly CatalogScheduleItem[]> {
+  const data = await fetchJson(`${VIDEASY_TMDB_URL}/movie/upcoming?language=en-US&page=1`, signal);
+  const resultPayload = readRecord(data).results;
+  const results = Array.isArray(resultPayload) ? resultPayload.map(readRecord) : [];
+  const startKey = formatWindowDateKey(window.start);
+  const endKey = formatWindowDateKey(window.end);
+  return results.flatMap((item) => {
+    const id = item.id;
+    if (id === null || id === undefined) return [];
+    const releaseAt = readString(item.release_date) || null;
+    // Keep only releases that fall inside the requested window (date-key compare).
+    if (releaseAt && (releaseAt < startKey || releaseAt >= endKey)) return [];
+    const titleName = readString(item.title) || readString(item.original_title) || "Unknown";
+    return [
+      {
+        source: "tmdb",
+        titleId: String(id),
+        titleName,
+        type: "movie",
+        posterPath: readString(item.poster_path) || readString(item.backdrop_path) || null,
+        popularity: typeof item.popularity === "number" ? item.popularity : undefined,
+        releaseAt,
+        releasePrecision: releaseAt ? "date" : "unknown",
+        status: "unknown",
+      } satisfies CatalogScheduleItem,
+    ];
+  });
+}
+
+function formatWindowDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 async function postAniListGraphql<T>(

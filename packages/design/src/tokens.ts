@@ -1,71 +1,82 @@
-// Kunai design tokens — "Sakura" theme.
+// Kunai design tokens — "Ember Dusk" theme.
 //
-// Dusk-plum surface, a two-step rose accent, and a mint success color that is
-// rose's complement. The whole system is a two-note chord: rose for everything
-// you act on, mint for everything that is ready or done. Crimson is held back
-// for real, actionable errors.
+// A near-neutral warm-ink surface ramp (so accents are the only color and
+// elevation reads), a rose accent reserved for brand/focus/selection, and a
+// spread of distinct semantic + content hues. Nine hues sit roughly evenly
+// around the wheel — rose, red, orange, gold, green, teal, blue, indigo,
+// orchid — so every signal is its own color. The cool info-blue is the
+// deliberate temperature counterweight to the warm dusk.
 //
-// THE ONE RULE: color encodes state or focus, never identity. Titles win by
-// weight, not hue. Provider, audio language, and episode codes are muted text.
-// The single exception is media-type hue (anime/series/movie), allowed ONLY on
-// the Stats surface, where "type" is literally the data being charted.
+// THE ONE RULE: color encodes state, focus, or content-kind — never identity
+// for its own sake. Titles win by weight, not hue. Provider, audio language,
+// and episode codes stay muted text. Media-type hue (anime/series/movie) is
+// allowed where type is the data: the Stats surface and the Calendar surface.
 //
-// Values are tuned from an oklch design source (see .docs/design-system.md and
-// .design/cli/kunai-sakura*.html) and rounded to sRGB hex for the terminal.
+// Brand authority: .design/brand/kunai-brand-system.md (Ember Dusk token table).
 
 // ---- raw palette (these semantic consts are the source of truth) ----
 
-// Surface scale — dusk plum, faintly rose-tinted, never pure neutral.
-const scrim = "#0c0709";
-const bg = "#140d11";
-const surface = "#1d141a";
-const surfaceElevated = "#271b23";
-const surfaceActive = "#34232e"; // selected band, rose-tinted
-const raised = "#3e2c38";
-const line = "#43303a";
-const lineSoft = "#251a20";
-const lineStrong = "#5c4351";
+// Surface scale — warm ink, near-neutral, clear elevation steps.
+const scrim = "#080509";
+const bg = "#100b0f";
+const surface = "#1c1620";
+const surfaceElevated = "#2a2030";
+const surfaceActive = "#3a2b40"; // selected band
+const raised = "#44354d";
+const line = "#473b51";
+const lineSoft = "#281f2e";
+const lineStrong = "#62526c";
 
 // Brand / focus / selection / in-progress — rose, two-step for depth.
-const accent = "#f28ea0";
-const accentSoft = "#f6c4cd"; // hairline / whisper
-const accentDeep = "#cb6178"; // progress fill, gives bars body
-const accentDim = "#7c3044";
-const accentGlow = "rgba(242,142,160,0.10)";
-const accentFill = "#2d161e"; // pre-blended onto bg for selection/badge depth
+const accent = "#ff8fb0";
+const accentSoft = "#ffc6d8"; // hairline / whisper
+const accentDeep = "#d85f86"; // progress fill, gives bars body
+const accentDim = "#7e3350";
+const accentGlow = "rgba(255,143,176,0.10)";
+const accentFill = "#2c1622"; // pre-blended onto bg for selection/badge depth
 
-// Ready / complete / available — mint-jade, rose's complement.
-const ok = "#84dcc2";
-const okDim = "#4f9d8b";
-const okFill = "#14241f";
+// Ready / complete / available — mint-jade.
+const ok = "#54d6a0";
+const okDim = "#3a9a78";
+const okFill = "#122a22";
 
-// Real, actionable error — a vivid alarm red. Deliberately brighter and more
-// saturated than the soft rose accent so an error never reads as "just theme".
-const danger = "#ff5454";
-const dangerDim = "#9a2222";
-const dangerFill = "#371414";
+// Caution / in-flight / aired-not-yet-confirmed — a true amber (its own hue,
+// no longer borrowed from the rose accent).
+const warn = "#f59a3c";
+const warnDim = "#b06f28";
+const warnFill = "#2e2012";
 
-// Series-complete milestone — a single deliberate plum. Never reuse elsewhere.
-const milestone = "#b884d6";
-const milestoneDim = "#4a2c5c";
-const milestoneFill = "#241430";
+// Real, actionable error — a vivid alarm red.
+const danger = "#ff5d5d";
+const dangerDim = "#a02b2b";
+const dangerFill = "#341515";
 
-// Text ramp — warm rose-white → faint. Carries ~80% of hierarchy.
-const text = "#f3eaef";
-const textDim = "#cebcc5";
-const muted = "#9a8a93";
-const dim = "#6c5e66";
-const faint = "#463b42";
+// Information / neutral-positive signal — the cool counterweight blue.
+const info = "#5fb6ff";
+const infoDim = "#3c7fbf";
+const infoFill = "#112230";
 
-// Media-type hues — STATS SURFACE ONLY (see THE ONE RULE above).
-const typeAnime = "#ef7d9b"; // rose
-const typeSeries = "#6cc6bf"; // teal
-const typeMovie = "#e7c163"; // gold
-const typeMixed = "#b58ad0"; // plum — the optical blend, for mixed days
+// Series-complete milestone — a single deliberate indigo. Never reuse elsewhere.
+const milestone = "#8b7bf0";
+const milestoneDim = "#4a417c";
+const milestoneFill = "#1c1830";
+
+// Text ramp — warm white → faint. Carries ~80% of hierarchy.
+const text = "#f6eff4";
+const textDim = "#cabfca";
+const muted = "#968a98";
+const dim = "#665b69";
+const faint = "#3a3340";
+
+// Media-type hues — Stats + Calendar surfaces (see THE ONE RULE above).
+const typeAnime = "#c98bff"; // orchid
+const typeSeries = "#4fd1c5"; // teal
+const typeMovie = "#f4c45c"; // gold
+const typeMixed = "#a48fb8"; // soft plum — the optical blend, for mixed days
 
 // Watch-activity heat ramp — rose, 5-step (brand-aligned; mint stays reserved
 // for success). Stats may overlay type hue per the paint-mix model in the spec.
-const heatRamp = ["#251a20", "#5c2f3f", "#8d4057", "#bf5b74", "#f28ea0"] as const;
+const heatRamp = ["#281f2e", "#5e2f44", "#9a4060", "#d85f86", "#ff8fb0"] as const;
 
 export const tokens = {
   // ---- surfaces ----
@@ -89,9 +100,15 @@ export const tokens = {
   ok,
   okDim,
   okFill,
+  warn,
+  warnDim,
+  warnFill,
   danger,
   dangerDim,
   dangerFill,
+  info,
+  infoDim,
+  infoFill,
   milestone,
   milestoneDim,
   milestoneFill,

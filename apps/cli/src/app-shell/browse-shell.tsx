@@ -1025,7 +1025,7 @@ export function BrowseShell<T>({
             <Text color={palette.accent}>◈ </Text>
             <Text color={palette.text}>schedule</Text>
             <Text color={palette.dim} dimColor>
-              {"  ·  ← → browse days  ·  ⇥ Tab filter type  ·  / commands"}
+              {"  ·  ← → day  ·  ⇥ type  ·  ↵ open  ·  / commands"}
             </Text>
           </Box>
         ) : (

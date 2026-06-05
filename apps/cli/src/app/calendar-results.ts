@@ -1,4 +1,5 @@
 import type { Container } from "@/container";
+import { buildCalendarItem, type CalendarItem } from "@/domain/calendar/calendar-item";
 import type { SearchResult } from "@/domain/types";
 import type {
   CatalogScheduleItem,
@@ -27,9 +28,8 @@ export async function loadCalendarResults(
   container: CalendarContainer,
   signal?: AbortSignal,
 ): Promise<CalendarResultBundle> {
-  const mode = container.stateManager.getState().mode;
   const days = 7;
-  const items = await loadCalendarWindow(container.timelineService, mode, days, signal);
+  const items = await loadUnifiedCalendarWindow(container.timelineService, days, signal);
   const sorted = [...items].sort(compareCalendarItems);
   const isInWatchlist = (titleId: string) => container.listService.isInWatchlist(titleId);
   let historyMatches = new Map<
@@ -94,9 +94,16 @@ export async function loadCalendarResults(
       releaseProgress = new Map(releaseProgress).set(item.titleId, projection);
     }
   }
-  const results = sorted.map((item) =>
-    toCalendarSearchResult(item, isInWatchlist, releaseProgress.get(item.titleId)),
-  );
+  const results = sorted.map((item) => {
+    const progress = releaseProgress.get(item.titleId);
+    const calendar = buildCalendarItem(item, {
+      nowMs: Date.now(),
+      inWatchlist: isInWatchlist(item.titleId),
+      newEpisodeCount: activeNewEpisodeCount(progress),
+      providerConfirmed: false,
+    });
+    return toCalendarSearchResult(item, calendar);
+  });
   const releasedCount = sorted.filter((item) => item.status === "released").length;
   const airingTodayCount = sorted.filter(
     (item) => item.status !== "released" && isSameLocalDay(item.releaseAt, Date.now()),
@@ -111,9 +118,10 @@ export async function loadCalendarResults(
     results,
     subtitle:
       results.length > 0
-        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released · ${mode} schedule${newEpisodeSuffix}`
-        : `No ${mode} releases found for the next week`,
-    emptyMessage: `No ${mode} releases found for the next week. Search and recommendations still work normally.`,
+        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released${newEpisodeSuffix}`
+        : "No releases found for the next week",
+    emptyMessage:
+      "No releases found for the next week. Search and recommendations still work normally.",
   };
 }
 
@@ -155,47 +163,21 @@ function projectProgressForCalendarItems(
   return projected;
 }
 
-function toCalendarSearchResult(
-  item: CatalogScheduleItem,
-  isInWatchlist?: (titleId: string) => boolean,
-  releaseProgress?: ReleaseProgressProjection,
-): SearchResult {
-  const releaseLabel = describeCalendarRelease(item);
-  const source = item.source === "anilist" ? "AniList" : "TMDB";
+function toCalendarSearchResult(item: CatalogScheduleItem, calendar: CalendarItem): SearchResult {
   const year = item.releaseAt ? String(new Date(item.releaseAt).getFullYear()) : "";
-  const dayLabel = describeCalendarDay(item.releaseAt);
-  const groupLabel = describeCalendarGroup(item.releaseAt);
-  const timeLabel = describeCalendarTime(item);
-  const badgeLabel = describeCalendarBadge(item, dayLabel);
-  const episodeLine = formatCalendarEpisodeLine(item);
-
   return {
     id: item.titleId,
     type: item.type === "movie" ? "movie" : "series",
     title: item.titleName,
     year,
-    overview: episodeLine ? `${episodeLine} · ${releaseLabel}` : `${releaseLabel}`,
+    overview: calendar.display.episodeCode
+      ? `${calendar.display.episodeCode} · ${calendar.display.statusLabel}`
+      : calendar.display.statusLabel,
     posterPath: item.posterPath ?? null,
-    metadataSource: `${source} calendar · ${dayLabel} · ${badgeLabel} · ${item.releasePrecision}`,
+    metadataSource: `${item.source === "anilist" ? "AniList" : "TMDB"} calendar`,
     rating: typeof item.averageScore === "number" ? item.averageScore / 10 : undefined,
     popularity: item.popularity,
-    displayGroup: groupLabel,
-    displayDayKey: describeCalendarDayKey(item.releaseAt),
-    displayTime: timeLabel,
-    displayBadge:
-      activeNewEpisodeCount(releaseProgress) > 0
-        ? `${activeNewEpisodeCount(releaseProgress)} new`
-        : isInWatchlist?.(item.titleId)
-          ? "wl"
-          : typeof item.episode === "number"
-            ? `E${item.episode}`
-            : undefined,
-    displayReleaseStatus:
-      item.status === "released"
-        ? "released"
-        : isSameLocalDay(item.releaseAt, Date.now())
-          ? "airing-today"
-          : "upcoming",
+    calendar,
     episodeCount: item.episode,
   };
 }
@@ -207,8 +189,27 @@ function activeNewEpisodeCount(projection: ReleaseProgressProjection | undefined
   return Math.max(0, Math.trunc(projection.newEpisodeCount));
 }
 
-async function loadCalendarWindow(
-  timelineService: Pick<Container, "timelineService">["timelineService"],
+async function loadUnifiedCalendarWindow(
+  timelineService: CalendarContainer["timelineService"],
+  days: number,
+  signal?: AbortSignal,
+): Promise<readonly CatalogScheduleItem[]> {
+  // Content-kind aware: load anime + series + movie windows concurrently and merge.
+  // allSettled keeps the calendar rendering even if one source fails.
+  const tasks: Promise<readonly CatalogScheduleItem[]>[] = [
+    loadWindowForMode(timelineService, "anime", days, signal),
+    loadWindowForMode(timelineService, "series", days, signal),
+    "loadMovieReleaseWindow" in timelineService &&
+    typeof timelineService.loadMovieReleaseWindow === "function"
+      ? timelineService.loadMovieReleaseWindow(days, signal)
+      : Promise.resolve<readonly CatalogScheduleItem[]>([]),
+  ];
+  const settled = await Promise.allSettled(tasks);
+  return settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+}
+
+async function loadWindowForMode(
+  timelineService: CalendarContainer["timelineService"],
   mode: CatalogScheduleMode,
   days: number,
   signal?: AbortSignal,
@@ -220,106 +221,6 @@ async function loadCalendarWindow(
     return timelineService.loadReleaseWindow(mode, days, signal);
   }
   return timelineService.loadReleasingToday(mode, signal);
-}
-
-function describeCalendarRelease(item: CatalogScheduleItem): string {
-  const dayLabel = describeCalendarDay(item.releaseAt);
-  if (!item.releaseAt || item.releasePrecision === "unknown") {
-    return item.status === "released"
-      ? `available ${formatReleaseDayPhrase(dayLabel)}`
-      : `scheduled ${formatReleaseDayPhrase(dayLabel)}`;
-  }
-
-  if (item.releasePrecision === "timestamp") {
-    const release = new Date(item.releaseAt);
-    const time = new Intl.DateTimeFormat(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(release);
-    const dayPhrase = formatReleaseDayPhrase(dayLabel);
-    return item.status === "released"
-      ? `released ${dayPhrase} at ${time}`
-      : `airs ${dayPhrase} at ${time}`;
-  }
-
-  const dayPhrase = formatReleaseDayPhrase(dayLabel);
-  return item.status === "released" ? `available ${dayPhrase}` : `scheduled for ${dayPhrase}`;
-}
-
-function describeCalendarBadge(item: CatalogScheduleItem, dayLabel: string): string {
-  const dayPhrase = formatReleaseDayPhrase(dayLabel);
-  if (item.status === "released")
-    return dayPhrase === "today" ? "new today" : `released ${dayPhrase}`;
-  return dayPhrase === "today" ? "airs today" : `airs ${dayPhrase}`;
-}
-
-function describeCalendarDay(releaseAt: string | null): string {
-  if (!releaseAt) return "Date unknown";
-  const release = new Date(releaseAt);
-  const now = new Date();
-  if (isSameLocalDay(releaseAt, now.getTime())) return "Today";
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  if (isSameLocalDay(releaseAt, tomorrow.getTime())) return "Tomorrow";
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(release);
-}
-
-function describeCalendarGroup(releaseAt: string | null): string {
-  if (!releaseAt) return "DATE TBA";
-  const release = new Date(releaseAt);
-  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" })
-    .format(release)
-    .toUpperCase();
-  const day = new Intl.DateTimeFormat(undefined, { day: "numeric" }).format(release);
-  const relative = describeCalendarDay(releaseAt);
-  const base = `${weekday} ${day}`;
-  return relative === "Today" || relative === "Tomorrow" ? `${base} · ${relative}` : base;
-}
-
-function describeCalendarDayKey(releaseAt: string | null): string | undefined {
-  if (!releaseAt) return undefined;
-  const release = new Date(releaseAt);
-  if (Number.isNaN(release.getTime())) return undefined;
-  const y = release.getFullYear();
-  const m = String(release.getMonth() + 1).padStart(2, "0");
-  const d = String(release.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function describeCalendarTime(item: CatalogScheduleItem): string | undefined {
-  if (!item.releaseAt || item.releasePrecision !== "timestamp") return undefined;
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(item.releaseAt));
-}
-
-function formatReleaseDayPhrase(dayLabel: string): string {
-  if (dayLabel === "Date unknown") return "when the date is known";
-  if (dayLabel === "Today") return "today";
-  if (dayLabel === "Tomorrow") return "tomorrow";
-  return dayLabel;
-}
-
-function formatCalendarEpisodeCode(item: CatalogScheduleItem): string {
-  if (typeof item.season === "number" && typeof item.episode === "number") {
-    return `S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`;
-  }
-  if (typeof item.episode === "number") return `E${String(item.episode).padStart(2, "0")}`;
-  return "";
-}
-
-function formatCalendarEpisodeLine(item: CatalogScheduleItem): string {
-  const code = formatCalendarEpisodeCode(item);
-  if (!code && !item.episodeTitle) return "";
-  if (item.episodeTitle?.trim()) {
-    return code ? `${code} · ${item.episodeTitle.trim()}` : item.episodeTitle.trim();
-  }
-  return code;
 }
 
 function compareCalendarItems(left: CatalogScheduleItem, right: CatalogScheduleItem): number {
@@ -343,5 +244,5 @@ function isSameLocalDay(releaseAt: string | null, nowMs: number): boolean {
 }
 
 export function isCalendarSearchResult(result: SearchResult): boolean {
-  return result.metadataSource?.includes(" calendar · ") ?? false;
+  return result.calendar !== undefined;
 }

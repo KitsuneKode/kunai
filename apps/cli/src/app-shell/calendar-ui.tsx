@@ -45,11 +45,11 @@ export type CalendarReleaseState =
 export type CalendarPriorityBand = "for-you" | "also-today" | "later";
 
 export function isCalendarBrowseOption<T>(option: BrowseShellOption<T> | undefined): boolean {
-  return Boolean(option?.previewGroup);
+  return Boolean(option?.calendar);
 }
 
 export function isCalendarTrackedOption<T>(option: BrowseShellOption<T>): boolean {
-  return option.previewBadge === "wl";
+  return option.calendar?.inWatchlist === true || option.previewBadge === "wl";
 }
 
 export function calendarPriorityBand<T>(option: BrowseShellOption<T>): CalendarPriorityBand {
@@ -72,10 +72,12 @@ export function buildCalendarDaysFromOptions<T>(
   const seen = new Set<string>();
   const days: CalendarDay[] = [];
   for (const option of options) {
-    const group = option.previewGroup;
-    if (!group) continue;
-    const key = option.previewDayKey ?? calendarDayKeyFromGroup(group);
-    if (!key || seen.has(key)) continue;
+    const group = option.calendar?.display.groupLabel ?? option.previewGroup;
+    const key =
+      option.calendar?.dayKey ??
+      option.previewDayKey ??
+      (group ? calendarDayKeyFromGroup(group) : null);
+    if (!group || !key || seen.has(key)) continue;
     seen.add(key);
     const isToday = group.includes("Today");
     const label = calendarDayKeyFromGroup(group);
@@ -120,8 +122,7 @@ export function filterCalendarOptionsByDay<T>(
 ): readonly BrowseShellOption<T>[] {
   if (dayKey === null) return options;
   return options.filter((option) => {
-    if (!option.previewGroup && !option.previewDayKey) return false;
-    const key = option.previewDayKey ?? calendarDayKeyFromGroup(option.previewGroup ?? "");
+    const key = option.calendar?.dayKey ?? option.previewDayKey ?? null;
     return key === dayKey;
   });
 }
@@ -136,10 +137,10 @@ export function filterCalendarOptionsByType(
 }
 
 function matchesCalendarType(result: SearchResult, tab: CalendarTypeTab): boolean {
-  const source = result.metadataSource?.toLowerCase() ?? "";
-  if (tab === "Movies") return result.type === "movie";
-  if (tab === "Anime") return source.includes("anilist");
-  if (tab === "TV") return result.type === "series" && source.includes("tmdb");
+  const kind = result.calendar?.contentKind;
+  if (tab === "Movies") return kind === "movie";
+  if (tab === "Anime") return kind === "anime";
+  if (tab === "TV") return kind === "series";
   return true;
 }
 
@@ -175,60 +176,40 @@ export function deriveCalendarReleaseState<T>(
   option: BrowseShellOption<T>,
   nowMs: number = Date.now(),
 ): CalendarReleaseState {
-  if (hasProviderConfirmedAvailability(option)) return "available";
+  const item = option.calendar;
+  if (!item) return "upcoming";
+  if (item.providerConfirmed) return "available";
+  if (item.releaseStatus === "unknown") return "upcoming";
 
-  const metadata = option.value && typeof option.value === "object" ? option.value : null;
-  const metadataSource =
-    metadata && "metadataSource" in metadata && typeof metadata.metadataSource === "string"
-      ? metadata.metadataSource.toLowerCase()
-      : "";
-  if (metadataSource.includes("failed") || metadataSource.includes("error")) {
-    return "failed";
+  const aired = item.releaseAt ? Date.parse(item.releaseAt) <= nowMs : false;
+  if (item.reason === "movie-release" || item.reason === "upcoming-episode") {
+    if (item.releasePrecision === "timestamp" && item.releaseAt) {
+      return Date.parse(item.releaseAt) > nowMs ? "countdown" : "resolving";
+    }
+    return "upcoming";
   }
-
-  const releaseStatus = option.releaseStatus;
-  if (releaseStatus === "upcoming") return "upcoming";
-  if (releaseStatus === "airing-today") {
-    const targetMs = parsePreviewTimeTodayMs(option.previewTime ?? "", nowMs);
-    if (targetMs !== null && targetMs > nowMs) return "countdown";
+  if (item.reason === "airing-today") {
+    if (item.releasePrecision === "timestamp" && item.releaseAt) {
+      return Date.parse(item.releaseAt) > nowMs ? "countdown" : "resolving";
+    }
     return "resolving";
   }
-  if (releaseStatus === "released") {
-    // Catalog "released" means the air date passed, not provider-confirmed playable.
-    return isCalendarGroupToday(option.previewGroup) ? "resolving" : "missed";
-  }
-  return "upcoming";
+  // catalog-only with a known release: aired today → resolving, else missed.
+  return item.dayKey && isSameDayKey(item.dayKey, nowMs)
+    ? "resolving"
+    : aired
+      ? "missed"
+      : "upcoming";
 }
 
 export function hasProviderConfirmedAvailability<T>(option: BrowseShellOption<T>): boolean {
-  const metadata = option.value && typeof option.value === "object" ? option.value : null;
-  const release =
-    metadata && "release" in metadata && typeof metadata.release === "object"
-      ? metadata.release
-      : null;
-  if (
-    release &&
-    "status" in release &&
-    release.status === "released" &&
-    "providerConfirmed" in release &&
-    release.providerConfirmed === true
-  ) {
-    return true;
-  }
-
-  const text = [
-    ...(option.previewMeta ?? []),
-    option.previewBadge,
-    ...(option.previewFacts ?? []).flatMap((fact) => [fact.label, fact.detail]),
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join(" ")
-    .toLowerCase();
-  return text.includes("provider confirmed") || text.includes("provider-confirmed");
+  return option.calendar?.providerConfirmed === true;
 }
 
-function isCalendarGroupToday(group: string | undefined): boolean {
-  return group?.toLowerCase().includes("today") ?? false;
+function isSameDayKey(dayKey: string, nowMs: number): boolean {
+  const now = new Date(nowMs);
+  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return dayKey === key;
 }
 
 export function formatCalendarReleaseStateLabel<T>(
@@ -236,17 +217,14 @@ export function formatCalendarReleaseStateLabel<T>(
   option: BrowseShellOption<T>,
   nowMs: number = Date.now(),
 ): string {
-  if (state === "available") return "available now";
-  if (state === "countdown") {
-    const targetMs = parsePreviewTimeTodayMs(option.previewTime ?? "", nowMs);
-    if (targetMs === null) return "airs today";
-    return formatReleaseCountdown(targetMs - nowMs);
+  const item = option.calendar;
+  if (state === "countdown" && item?.releaseAt) {
+    return formatReleaseCountdown(Date.parse(item.releaseAt) - nowMs);
   }
   if (state === "resolving") return "aired · resolving";
   if (state === "missed") return "aired · not available";
   if (state === "failed") return "schedule unavailable";
-  const dayKey = option.previewGroup ? calendarDayKeyFromGroup(option.previewGroup) : "";
-  if (dayKey.length > 0) return dayKey;
+  if (item) return item.display.statusLabel;
   return "upcoming";
 }
 
@@ -467,18 +445,16 @@ export function buildCalendarRenderRows<T>(
     const timeLabel =
       releaseState === "countdown"
         ? formatCalendarReleaseStateLabel(releaseState, option, nowMs)
-        : option.previewTime?.trim() || "TBD";
+        : (option.calendar?.display.time ?? option.previewTime?.trim() ?? "") || "TBD";
+    const groupLabel = option.calendar?.display.groupLabel ?? option.previewGroup;
     const dayHeaderLabel =
-      selectedDayKey === null && option.previewGroup
-        ? calendarDayKeyFromGroup(option.previewGroup)
-        : null;
+      selectedDayKey === null && groupLabel ? calendarDayKeyFromGroup(groupLabel) : null;
     const showDayHeader = dayHeaderLabel !== null && dayHeaderLabel !== lastDayHeader;
     if (showDayHeader) lastDayHeader = dayHeaderLabel;
 
     const badge = option.previewBadge;
-    const body = option.previewBody ?? option.detail ?? "";
-    const epMatch = body.match(/(?:S\d+E\d+|E\d+)/i);
-    const episodeCode = badge && badge !== "wl" ? badge : (epMatch?.[0]?.toUpperCase() ?? "");
+    const episodeCode =
+      option.calendar?.display.episodeCode || (badge && badge !== "wl" ? badge : "");
 
     const showForYouHeaderOnce = showForYouHeader && !forYouHeaderShown;
     if (showForYouHeaderOnce) forYouHeaderShown = true;
@@ -540,6 +516,15 @@ export function CalendarScheduleRow<T>({
   const color = statusColor ?? presentation.color;
   const dim = statusDim ?? presentation.dim;
   const glyph = statusGlyph ?? presentation.glyph.trim();
+  const kind = option.calendar?.contentKind;
+  const epColor =
+    kind === "anime"
+      ? palette.typeAnime
+      : kind === "movie"
+        ? palette.typeMovie
+        : kind === "series"
+          ? palette.typeSeries
+          : palette.muted;
 
   const timeWidth = 7;
   const epWidth = 8;
@@ -560,7 +545,7 @@ export function CalendarScheduleRow<T>({
         columns={[
           listRowTimeColumn(timeLabel, timeWidth),
           listRowTitleColumn(option.label, titleWidth),
-          listRowEpColumn(ep, epWidth),
+          listRowEpColumn(ep, epWidth, epColor),
           listRowStatusColumn(`${glyph} ${status}`, statusWidth, color, dim),
         ]}
       />

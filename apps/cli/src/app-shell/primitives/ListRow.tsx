@@ -67,8 +67,14 @@ export function listRowTitleColumn(title: string, width: number): ListRowColumn 
   return { text: title, width, color: palette.text };
 }
 
-export function listRowEpColumn(ep: string, width = 8): ListRowColumn {
-  return { text: ep, width, color: palette.muted, dim: true };
+export function listRowEpColumn(
+  ep: string,
+  width = 8,
+  color: string = palette.muted,
+): ListRowColumn {
+  // A per-kind tint (anime/series/movie) reads as a vivid tag; the default muted
+  // ep code stays dim.
+  return { text: ep, width, color, dim: color === palette.muted };
 }
 
 export function listRowStatusColumn(

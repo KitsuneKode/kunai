@@ -1,5 +1,6 @@
 import type { BrowseShellOption } from "@/app-shell/types";
 import { isCalendarSearchResult } from "@/app/calendar-results";
+import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { ListService } from "@/domain/lists/ListService";
 import type { SearchResult, TitleAliasKind } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
@@ -20,36 +21,36 @@ function formatRating(rating: number | null | undefined): string | undefined {
   return `${rating.toFixed(1)}/10 TMDB`;
 }
 
+function kindLabel(kind: CalendarItem["contentKind"]): string {
+  return kind === "anime" ? "Anime" : kind === "movie" ? "Movie" : "Series";
+}
+
 function toCalendarBrowseOption(
   result: SearchResult,
   listService?: ListService,
 ): BrowseShellOption<SearchResult> {
-  const inWatchlist = listService?.isInWatchlist(result.id) ?? false;
+  const calendar = result.calendar;
+  const inWatchlist = calendar?.inWatchlist ?? listService?.isInWatchlist(result.id) ?? false;
   const posterUrl = toPosterUrl(result.posterPath);
-  const episodeDetail =
-    result.overview?.trim() ||
-    (result.year ? `${result.type === "series" ? "Series" : "Movie"} · ${result.year}` : "");
-
   return {
     value: result,
     label: result.title,
-    detail: episodeDetail,
+    detail: result.overview?.trim() ?? "",
+    calendar,
     previewTitle: result.title,
     previewMeta: [
-      result.type === "series" ? "Series" : "Movie",
+      calendar ? kindLabel(calendar.contentKind) : result.type === "series" ? "Series" : "Movie",
       result.year || undefined,
-      result.displayTime,
+      calendar?.display.time ?? undefined,
       formatRating(result.rating),
     ].filter((value): value is string => Boolean(value)),
-    previewGroup: result.displayGroup,
-    previewDayKey: result.displayDayKey,
-    previewTime: result.displayTime,
-    previewBadge: inWatchlist ? "wl" : result.displayBadge,
-    releaseStatus: result.displayReleaseStatus,
+    previewDayKey: calendar?.dayKey ?? undefined,
+    previewTime: calendar?.display.time ?? undefined,
+    previewBadge: inWatchlist ? "wl" : calendar?.display.badge,
     previewFacts: [
       {
         label: "Release",
-        detail: result.overview || "Schedule details unavailable",
+        detail: calendar?.display.statusLabel || result.overview || "Schedule details unavailable",
         tone: "info" as const,
       },
     ],
