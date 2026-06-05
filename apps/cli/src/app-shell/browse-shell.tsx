@@ -82,7 +82,7 @@ import {
   padColumnsStart,
   truncateLine,
 } from "./shell-text";
-import { palette } from "./shell-theme";
+import { contentTintColor, palette } from "./shell-theme";
 import {
   toShellAction,
   type FooterAction,
@@ -1139,21 +1139,39 @@ export function BrowseShell<T>({
                 : visibleOptions.map((option, index) => {
                     const optionIndex = windowStart + index;
                     const selected = optionIndex === boundedSelectedIndex;
-                    const metaText =
-                      option.previewBadge ??
-                      (resultsAreMixed ? option.previewMeta?.[0] : undefined);
+                    // The type column (Series/Movie/Anime) gets its palette tint so a
+                    // mixed result set reads by kind at a glance; a previewBadge
+                    // (new / wl / …) keeps the neutral row color.
+                    const badge = option.previewBadge;
+                    const typeMeta =
+                      !badge && resultsAreMixed ? option.previewMeta?.[0] : undefined;
+                    const metaText = badge ?? typeMeta;
                     const metaWidth = metaText
                       ? Math.min(12, Math.max(6, measureColumns(metaText)))
                       : 0;
                     const titleBudget = Math.max(12, rowWidth - metaWidth - 6);
-                    const titleText = truncateLine(option.label, titleBudget);
-                    const metaSegment = metaText ? truncateLine(metaText, metaWidth) : "";
-                    const rowText = metaText
-                      ? `${padColumnsEnd(titleText, titleBudget)} ${padColumnsStart(
-                          metaSegment,
-                          metaWidth,
-                        )}`
-                      : titleText;
+                    const titleText = padColumnsEnd(
+                      truncateLine(option.label, titleBudget),
+                      titleBudget,
+                    );
+                    const metaSegment = metaText
+                      ? padColumnsStart(truncateLine(metaText, metaWidth), metaWidth)
+                      : "";
+                    const titleColor = selected
+                      ? listFocused
+                        ? palette.text
+                        : palette.muted
+                      : palette.textDim;
+                    const typeKind = typeMeta?.toLowerCase();
+                    const metaColor = typeMeta
+                      ? contentTintColor(
+                          typeKind === "movie"
+                            ? "movie"
+                            : typeKind === "anime"
+                              ? "anime"
+                              : "series",
+                        )
+                      : titleColor;
 
                     return (
                       <Box
@@ -1162,8 +1180,9 @@ export function BrowseShell<T>({
                         width={rowWidth}
                       >
                         <Box width={rowWidth}>
-                          <Text bold={selected && listFocused} dimColor={!selected} wrap="truncate">
+                          <Text wrap="truncate">
                             <Text
+                              bold={selected && listFocused}
                               color={
                                 selected
                                   ? listFocused
@@ -1175,16 +1194,17 @@ export function BrowseShell<T>({
                               {selected ? "▌ " : "  "}
                             </Text>
                             <Text
-                              color={
-                                selected
-                                  ? listFocused
-                                    ? palette.text
-                                    : palette.muted
-                                  : palette.textDim
-                              }
+                              bold={selected && listFocused}
+                              dimColor={!selected}
+                              color={titleColor}
                             >
-                              {padColumnsEnd(truncateLine(rowText, rowWidth - 2), rowWidth - 2)}
+                              {titleText}
                             </Text>
+                            {metaText ? (
+                              <Text dimColor={!selected} color={metaColor}>
+                                {` ${metaSegment}`}
+                              </Text>
+                            ) : null}
                           </Text>
                         </Box>
                       </Box>
