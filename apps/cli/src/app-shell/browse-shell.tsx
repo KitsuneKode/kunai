@@ -768,8 +768,14 @@ export function BrowseShell<T>({
       return;
     }
 
-    // Details: Shift+Enter works in both zones where the terminal reports it;
-    // bare `i` is the reliable trigger once the list owns focus.
+    // Details: Ctrl+O is the terminal-portable trigger that works in BOTH the
+    // query and results zones. Shift+Enter is unreliable (most terminals never
+    // deliver it), and bare `i` would type into the query box — so `i` only fires
+    // once the results list owns focus. All three open the same overlay.
+    if ((input === "o" && key.ctrl) || input === "\x0f") {
+      if (selectedOption && searchState === "ready") openDetailsOverlay();
+      return;
+    }
     if (key.return && key.shift && selectedOption && searchState === "ready") {
       openDetailsOverlay();
       return;
@@ -1299,7 +1305,7 @@ export function BrowseShell<T>({
             ? [{ key: "i", label: "details", action: "details" as const }]
             : options.length > 0 && !queryDirty && searchState === "ready"
               ? [
-                  { key: "shift+↵", label: "details", action: "details" as const },
+                  { key: "^O", label: "details", action: "details" as const },
                   { key: "ctrl+f", label: "filter", action: "filters" as const },
                 ]
               : []),
