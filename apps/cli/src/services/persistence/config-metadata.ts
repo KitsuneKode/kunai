@@ -151,6 +151,22 @@ export const CONFIG_METADATA = [
     editable: true,
   },
   {
+    key: "providerPriority",
+    label: "Series provider priority",
+    section: "providers",
+    effect: "after-save",
+    privacy: "local",
+    editable: true,
+  },
+  {
+    key: "animeProviderPriority",
+    label: "Anime provider priority",
+    section: "providers",
+    effect: "after-save",
+    privacy: "local",
+    editable: true,
+  },
+  {
     key: "videasySessionToken",
     label: "Videasy session token",
     section: "providers",

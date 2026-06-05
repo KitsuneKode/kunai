@@ -16,6 +16,12 @@ describe("config metadata", () => {
       effect: "next-resolve",
       options: ["balanced", "fast", "quality-first"],
     });
+    expect(getConfigMetadata("providerPriority")).toMatchObject({
+      section: "providers",
+      effect: "after-save",
+      privacy: "local",
+      editable: true,
+    });
     expect(getConfigMetadata("presenceDiscordClientId")).toMatchObject({
       section: "presence",
       effect: "after-save",

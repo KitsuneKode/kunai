@@ -58,6 +58,26 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).startupPriority).toBe("fast");
   });
 
+  test("normalizes provider priority lists on load and update", async () => {
+    const store = new MemoryConfigStore({
+      providerPriority: [" vidking ", "rivestream", "vidking", ""],
+      animeProviderPriority: [" miruro ", "allanime", "miruro"],
+    });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.providerPriority).toEqual(["vidking", "rivestream"]);
+    expect(service.animeProviderPriority).toEqual(["miruro", "allanime"]);
+
+    await service.update({
+      providerPriority: ["vidlink", " vidking ", "vidlink"],
+      animeProviderPriority: ["allanime", " miruro "],
+    });
+    await service.save();
+
+    expect((await store.load()).providerPriority).toEqual(["vidlink", "vidking"]);
+    expect((await store.load()).animeProviderPriority).toEqual(["allanime", "miruro"]);
+  });
+
   test("normalizes invalid stored startup priority to balanced", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({

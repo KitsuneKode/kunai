@@ -13,10 +13,18 @@ export interface ProviderRegistry {
   getMetadata(id: string): ProviderMetadata | undefined;
 }
 
+export interface ProviderRegistryOptions {
+  readonly providerPriority?: readonly string[];
+  readonly animeProviderPriority?: readonly string[];
+}
+
 export class ProviderRegistryImpl implements ProviderRegistry {
   private readonly providersById = new Map<string, Provider>();
 
-  constructor(private readonly engine: ProviderEngine) {
+  constructor(
+    private readonly engine: ProviderEngine,
+    private readonly options: ProviderRegistryOptions = {},
+  ) {
     for (const module of engine.modules) {
       const provider = createProviderFromModule(module, {
         mode: module.manifest.mediaKinds.includes("anime") ? "anime" : "series",
@@ -90,7 +98,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   getAll(): Provider[] {
-    return [...this.providersById.values()];
+    return this.sortByPriority([...this.providersById.values()]);
   }
 
   getAllIds(): string[] {
@@ -107,9 +115,9 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   getDefault(isAnime: boolean): Provider {
-    const preferred = isAnime
-      ? this.providersById.get("allanime")
-      : this.providersById.get("vidking");
+    const preferred = this.getPriority(isAnime)
+      .map((providerId) => this.providersById.get(providerId))
+      .find((provider) => provider && provider.metadata.isAnimeProvider === isAnime);
 
     if (preferred) return preferred;
 
@@ -127,8 +135,39 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   getMetadata(id: string): ProviderMetadata | undefined {
     return this.providersById.get(id)?.metadata;
   }
+
+  private sortByPriority(providers: readonly Provider[]): Provider[] {
+    const seriesRank = this.buildRank(this.options.providerPriority);
+    const animeRank = this.buildRank(this.options.animeProviderPriority);
+    return [...providers].sort((a, b) => {
+      const aRank = a.metadata.isAnimeProvider
+        ? animeRank.get(a.metadata.id)
+        : seriesRank.get(a.metadata.id);
+      const bRank = b.metadata.isAnimeProvider
+        ? animeRank.get(b.metadata.id)
+        : seriesRank.get(b.metadata.id);
+      return (aRank ?? Number.MAX_SAFE_INTEGER) - (bRank ?? Number.MAX_SAFE_INTEGER);
+    });
+  }
+
+  private getPriority(isAnime: boolean): readonly string[] {
+    return isAnime
+      ? (this.options.animeProviderPriority ?? [])
+      : (this.options.providerPriority ?? []);
+  }
+
+  private buildRank(providerIds: readonly string[] | undefined): Map<string, number> {
+    const rank = new Map<string, number>();
+    (providerIds ?? []).forEach((providerId, index) => {
+      if (!rank.has(providerId)) rank.set(providerId, index);
+    });
+    return rank;
+  }
 }
 
-export function createProviderRegistry(engine: ProviderEngine): ProviderRegistry {
-  return new ProviderRegistryImpl(engine);
+export function createProviderRegistry(
+  engine: ProviderEngine,
+  options?: ProviderRegistryOptions,
+): ProviderRegistry {
+  return new ProviderRegistryImpl(engine, options);
 }

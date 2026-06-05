@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { initLogger } from "@/logger";
-import { createProviderEngine, type ProviderEngine } from "@kunai/core";
+import { createProviderEngine, type CoreProviderModule, type ProviderEngine } from "@kunai/core";
 import {
   allmangaProviderModule,
   miruroProviderModule,
@@ -375,14 +375,21 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
   // Engine: single source of truth for provider resolution
-  const engine = createProviderEngine({
-    modules: [
+  const providerModules = orderProviderModules(
+    [
       vidlinkProviderModule,
       rivestreamProviderModule,
       vidkingProviderModule,
       allmangaProviderModule,
       miruroProviderModule,
     ],
+    {
+      providerPriority: [config.provider, ...config.providerPriority],
+      animeProviderPriority: [config.animeProvider, ...config.animeProviderPriority],
+    },
+  );
+  const engine = createProviderEngine({
+    modules: providerModules,
     attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
     auth: {
       getSecret(providerId, key) {
@@ -402,7 +409,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     },
   });
 
-  const providerRegistry = createProviderRegistry(engine);
+  const providerRegistry = createProviderRegistry(engine, {
+    providerPriority: [config.provider, ...config.providerPriority],
+    animeProviderPriority: [config.animeProvider, ...config.animeProviderPriority],
+  });
   const streamHealthService = new StreamHealthService();
   const offlineAssetService = new OfflineAssetService(offlineAssets);
   const playbackResolveWork = new PlaybackResolveWorkService(
@@ -623,4 +633,32 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   });
 
   return container;
+}
+
+function orderProviderModules(
+  modules: readonly CoreProviderModule[],
+  options: {
+    readonly providerPriority: readonly string[];
+    readonly animeProviderPriority: readonly string[];
+  },
+): CoreProviderModule[] {
+  const seriesRank = buildFirstSeenRank(options.providerPriority);
+  const animeRank = buildFirstSeenRank(options.animeProviderPriority);
+  return [...modules].sort((a, b) => {
+    const aRank = a.manifest.mediaKinds.includes("anime")
+      ? animeRank.get(a.providerId)
+      : seriesRank.get(a.providerId);
+    const bRank = b.manifest.mediaKinds.includes("anime")
+      ? animeRank.get(b.providerId)
+      : seriesRank.get(b.providerId);
+    return (aRank ?? Number.MAX_SAFE_INTEGER) - (bRank ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+
+function buildFirstSeenRank(providerIds: readonly string[]): Map<string, number> {
+  const rank = new Map<string, number>();
+  providerIds.forEach((providerId, index) => {
+    if (!rank.has(providerId)) rank.set(providerId, index);
+  });
+  return rank;
 }

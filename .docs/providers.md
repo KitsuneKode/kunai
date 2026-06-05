@@ -65,6 +65,14 @@ User-control semantics:
 - fallback provider: stop the active provider and let global fallback choose the next compatible provider
 - cancel: abort resolution without marking the provider unhealthy
 
+Provider priority is user-configurable:
+
+- `provider` / `animeProvider` remain the default provider for a new session mode.
+- `providerPriority` controls movie/series fallback and picker order.
+- `animeProviderPriority` controls anime fallback and picker order.
+- Priority lists are applied when the provider engine is built at startup.
+- Unknown provider ids in priority arrays are ignored at runtime; known providers not listed stay available after configured entries.
+
 ## Source Model
 
 Use this conceptual hierarchy:

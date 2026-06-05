@@ -118,17 +118,11 @@ export async function resolveProviderSmokeStream({
 }: {
   readonly container: {
     readonly engine: {
-      get(providerId: string):
-        | {
-            resolve(
-              input: ReturnType<typeof streamRequestToResolveInput>,
-              context: {
-                now: () => string;
-                signal?: AbortSignal;
-              },
-            ): Promise<ProviderResolveResult>;
-          }
-        | undefined;
+      get(providerId: string): unknown;
+      resolve(
+        input: ReturnType<typeof streamRequestToResolveInput>,
+        providerId: string,
+      ): Promise<ProviderResolveResult>;
     };
   };
   readonly providerId: string;
@@ -139,15 +133,15 @@ export async function resolveProviderSmokeStream({
   readonly result: ProviderResolveResult;
   readonly resolveDurationMs: number;
 }> {
-  const module = container.engine.get(providerId);
-  if (!module) {
+  if (!container.engine.get(providerId)) {
     throw new Error(`Missing provider module: ${providerId}`);
   }
 
   const startedAt = Date.now();
-  const result = await module.resolve(streamRequestToResolveInput(request, mode), {
-    now: () => new Date().toISOString(),
-  });
+  const result = await container.engine.resolve(
+    streamRequestToResolveInput(request, mode),
+    providerId,
+  );
   return {
     result,
     resolveDurationMs: Date.now() - startedAt,

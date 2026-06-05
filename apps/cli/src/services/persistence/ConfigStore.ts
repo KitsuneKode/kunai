@@ -23,6 +23,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",
   provider: "vidlink",
   animeProvider: "allanime",
+  providerPriority: ["vidlink", "rivestream", "vidking"],
+  animeProviderPriority: ["allanime", "miruro"],
   subLang: "en",
   animeLang: "sub",
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },

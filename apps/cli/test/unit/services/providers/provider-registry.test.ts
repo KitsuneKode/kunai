@@ -19,6 +19,34 @@ const manifest = defineProviderManifest({
   status: "candidate",
 });
 
+function createManifestFor(id: string, mediaKinds: readonly ("anime" | "movie" | "series")[]) {
+  return defineProviderManifest({
+    id,
+    displayName: id,
+    description: id,
+    domain: `${id}.example`,
+    recommended: true,
+    mediaKinds,
+    capabilities: ["source-resolve"],
+    runtimePorts: [],
+    cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: ["provider"] },
+    browserSafe: true,
+    relaySafe: true,
+    status: "candidate",
+  });
+}
+
+function createModule(id: string, mediaKinds: readonly ("anime" | "movie" | "series")[]) {
+  const providerManifest = createManifestFor(id, mediaKinds);
+  return {
+    providerId: id,
+    manifest: providerManifest,
+    async resolve() {
+      throw new Error("resolve should not be called");
+    },
+  } satisfies CoreProviderModule;
+}
+
 test("ProviderRegistry wires provider-owned search and episode hooks without provider id checks", async () => {
   const searchSignals: AbortSignal[] = [];
   const listSignals: AbortSignal[] = [];
@@ -93,4 +121,43 @@ test("ProviderRegistry wires provider-owned search and episode hooks without pro
   expect(episodes?.[0]?.label).toBe("Episode 1");
   expect(searchSignals).toEqual([controller.signal]);
   expect(listSignals).toEqual([controller.signal]);
+});
+
+test("ProviderRegistry sorts compatible providers by configured priority", () => {
+  const modules = [
+    createModule("vidlink", ["movie", "series"]),
+    createModule("rivestream", ["movie", "series"]),
+    createModule("vidking", ["movie", "series"]),
+    createModule("allanime", ["anime"]),
+    createModule("miruro", ["anime"]),
+  ];
+  const registry = new ProviderRegistryImpl(
+    {
+      modules,
+      getProviderIds: () => modules.map((module) => module.providerId),
+      getManifest: (id: string) => modules.find((module) => module.providerId === id)?.manifest,
+    } as unknown as ProviderEngine,
+    {
+      providerPriority: ["vidking", "vidlink"],
+      animeProviderPriority: ["miruro", "allanime"],
+    },
+  );
+
+  const seriesProviders = registry.getCompatible(
+    { id: "movie:1", type: "movie", name: "Movie" },
+    "series",
+  );
+  const animeProviders = registry.getCompatible(
+    { id: "anime:1", type: "series", name: "Anime" },
+    "anime",
+  );
+
+  expect(seriesProviders.map((provider) => provider.metadata.id)).toEqual([
+    "vidking",
+    "vidlink",
+    "rivestream",
+  ]);
+  expect(animeProviders.map((provider) => provider.metadata.id)).toEqual(["miruro", "allanime"]);
+  expect(registry.getDefault(false).metadata.id).toBe("vidking");
+  expect(registry.getDefault(true).metadata.id).toBe("miruro");
 });

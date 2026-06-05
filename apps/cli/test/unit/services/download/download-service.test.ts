@@ -1023,6 +1023,8 @@ function buildService({
     downloadsEnabled,
     downloadPath,
     offlineArtworkCacheEnabled: true,
+    offlineFreeSpaceReserveBytes: 0,
+    offlineUnknownEpisodeEstimateBytes: 1,
   } as ConfigService;
   return new DownloadService({
     repo,

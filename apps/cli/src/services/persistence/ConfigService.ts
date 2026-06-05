@@ -29,6 +29,16 @@ export interface KitsuneConfig {
   defaultMode: "series" | "anime";
   provider: string;
   animeProvider: string;
+  /**
+   * Preferred fallback order for movie/series providers. Empty = registry default order,
+   * with `provider` still used as the session default.
+   */
+  providerPriority: readonly string[];
+  /**
+   * Preferred fallback order for anime providers. Empty = registry default order,
+   * with `animeProvider` still used as the session default.
+   */
+  animeProviderPriority: readonly string[];
   /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */
   subLang: string;
   /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */

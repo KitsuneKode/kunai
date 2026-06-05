@@ -34,6 +34,14 @@ function normalizeSeriesProvider(value: string | undefined): string {
   return normalized;
 }
 
+function normalizeProviderIdList(
+  values: readonly string[] | undefined,
+  fallback: readonly string[] = [],
+): readonly string[] {
+  if (!Array.isArray(values)) return [...fallback];
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
 function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
   if (!subLang || subLang === "none" || subLang === "fzf" || subLang === "interactive") {
     return DEFAULT_CONFIG.subLang;
@@ -95,6 +103,14 @@ export class ConfigServiceImpl implements ConfigService {
       ...DEFAULT_CONFIG,
       ...loaded,
       provider: normalizeSeriesProvider(loaded.provider),
+      providerPriority: normalizeProviderIdList(
+        loaded.providerPriority,
+        DEFAULT_CONFIG.providerPriority,
+      ),
+      animeProviderPriority: normalizeProviderIdList(
+        loaded.animeProviderPriority,
+        DEFAULT_CONFIG.animeProviderPriority,
+      ),
       subLang: normalizeDefaultSubtitleLanguage(loaded.subLang),
       animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
@@ -138,6 +154,14 @@ export class ConfigServiceImpl implements ConfigService {
 
   get animeProvider(): string {
     return this.config.animeProvider;
+  }
+
+  get providerPriority(): readonly string[] {
+    return [...this.config.providerPriority];
+  }
+
+  get animeProviderPriority(): readonly string[] {
+    return [...this.config.animeProviderPriority];
   }
 
   get subLang(): string {
@@ -403,6 +427,12 @@ export class ConfigServiceImpl implements ConfigService {
       ...partial,
       ...(partial.subLang !== undefined
         ? { subLang: normalizeDefaultSubtitleLanguage(partial.subLang) }
+        : null),
+      ...(partial.providerPriority !== undefined
+        ? { providerPriority: normalizeProviderIdList(partial.providerPriority) }
+        : null),
+      ...(partial.animeProviderPriority !== undefined
+        ? { animeProviderPriority: normalizeProviderIdList(partial.animeProviderPriority) }
         : null),
       ...(partial.animeLanguageProfile
         ? { animeLanguageProfile: normalizeLanguageProfile(partial.animeLanguageProfile) }
