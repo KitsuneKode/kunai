@@ -223,10 +223,12 @@ export function BrowseShell<T>({
   );
 
   // Calendar view detection and day-strip derived state.
-  // displayGroup is only set by calendar-results.ts, so any option with previewGroup
-  // indicates calendar mode. Fall back to subtitle check for edge cases.
+  // A structured `calendar` item is only attached by the calendar surface, so it is
+  // the authoritative signal. previewGroup/subtitle remain as legacy fallbacks.
   const isCalendarView =
-    options.some((opt) => opt.previewGroup !== undefined) || resultSubtitle.includes("schedule");
+    options.some((opt) => opt.calendar !== undefined || opt.previewGroup !== undefined) ||
+    resultSubtitle.includes("schedule") ||
+    resultSubtitle.includes("airing today");
 
   const calendarDays = useMemo(() => {
     if (!isCalendarView) return [];
