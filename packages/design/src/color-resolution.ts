@@ -34,17 +34,25 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   accentGlow: { ansi256: "#262626", ansi16: "black" },
   accentFill: { ansi256: "#3a2a32", ansi16: "black" },
 
-  ok: { ansi256: "#87d7af", ansi16: "green" },
+  ok: { ansi256: "#5fd7af", ansi16: "green" },
   okDim: { ansi256: "#5faf87", ansi16: "green" },
   okFill: { ansi256: "#1c2621", ansi16: "black" },
+
+  warn: { ansi256: "#ffaf5f", ansi16: "yellow" },
+  warnDim: { ansi256: "#d78700", ansi16: "yellow" },
+  warnFill: { ansi256: "#3a2a1c", ansi16: "black" },
 
   danger: { ansi256: "#ff5f5f", ansi16: "red" },
   dangerDim: { ansi256: "#af0000", ansi16: "red" },
   dangerFill: { ansi256: "#3a1c1c", ansi16: "black" },
 
-  milestone: { ansi256: "#af87d7", ansi16: "magenta" },
-  milestoneDim: { ansi256: "#5f5f87", ansi16: "magenta" },
-  milestoneFill: { ansi256: "#26213a", ansi16: "black" },
+  info: { ansi256: "#5fafff", ansi16: "blue" },
+  infoDim: { ansi256: "#5f87d7", ansi16: "blue" },
+  infoFill: { ansi256: "#1c2633", ansi16: "black" },
+
+  milestone: { ansi256: "#875fff", ansi16: "magenta" },
+  milestoneDim: { ansi256: "#5f5fd7", ansi16: "magenta" },
+  milestoneFill: { ansi256: "#1c1a30", ansi16: "black" },
 
   text: { ansi256: "#eeeeee", ansi16: "white" },
   textDim: { ansi256: "#c6c6c6", ansi16: "white" },
@@ -52,9 +60,9 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   dim: { ansi256: "#808080", ansi16: "gray" },
   faint: { ansi256: "#5f5f5f", ansi16: "gray" },
 
-  typeAnime: { ansi256: "#ff87af", ansi16: "magenta" },
+  typeAnime: { ansi256: "#af87ff", ansi16: "magenta" },
   typeSeries: { ansi256: "#5fd7d7", ansi16: "cyan" },
-  typeMovie: { ansi256: "#d7af5f", ansi16: "yellow" },
+  typeMovie: { ansi256: "#ffd75f", ansi16: "yellow" },
   typeMixed: { ansi256: "#af87d7", ansi16: "magenta" },
 };
 

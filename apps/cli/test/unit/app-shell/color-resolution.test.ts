@@ -8,7 +8,7 @@ import {
 
 describe("design color resolution", () => {
   test.each([
-    ["truecolor", "#f28ea0"],
+    ["truecolor", "#ff8fb0"],
     ["256", "#ff87af"],
     ["16", "magenta"],
   ] satisfies readonly [TerminalColorLevel, string][])(

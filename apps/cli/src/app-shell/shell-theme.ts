@@ -26,9 +26,15 @@ export const palette = {
   ok: tokens.ok, // ready · complete · available
   okDim: tokens.okDim,
   okFill: tokens.okFill,
+  warn: tokens.warn, // caution · in-flight · aired-not-confirmed
+  warnDim: tokens.warnDim,
+  warnFill: tokens.warnFill,
   danger: tokens.danger, // real, actionable error
   dangerDim: tokens.dangerDim,
   dangerFill: tokens.dangerFill,
+  info: tokens.info, // neutral-positive signal · cool counterweight
+  infoDim: tokens.infoDim,
+  infoFill: tokens.infoFill,
   milestone: tokens.milestone, // series-complete only
   milestoneDim: tokens.milestoneDim,
 
@@ -52,11 +58,11 @@ export function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
     case "success":
       return palette.ok;
     case "warning":
-      return palette.accentDeep;
+      return palette.warn;
     case "error":
       return palette.danger;
     case "info":
-      return palette.muted;
+      return palette.info;
     default:
       return palette.muted;
   }
