@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Kunai mark">
+  <title>Kunai — kitsune blade mark</title>
+  <!-- Fox-face / kunai-blade fusion: two ears = blade shoulders, point = blade tip. -->
+  <path d="M32 59 L50 31 L45.5 13 L37 29 L32 33 L27 29 L18.5 13 L14 31 Z"
+        fill="#f28ea0" stroke="#cb6178" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- forged-edge facet down the blade -->
+  <path d="M32 33 L32 59" stroke="#cb6178" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/>
+  <!-- kitsune eyes -->
+  <rect x="24" y="35" width="4" height="4" rx="0.6" fill="#140d11"/>
+  <rect x="36" y="35" width="4" height="4" rx="0.6" fill="#140d11"/>
+  <!-- inner-ear sparks -->
+  <path d="M22 22 l3 4" stroke="#f6c4cd" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M42 22 l-3 4" stroke="#f6c4cd" stroke-width="1.6" stroke-linecap="round"/>
+</svg>
