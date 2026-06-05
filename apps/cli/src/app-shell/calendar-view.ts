@@ -20,7 +20,6 @@ import {
   filterCalendarOptionsByType,
   formatCalendarReleaseStateLabel,
   isCalendarTrackedOption,
-  parsePreviewTimeTodayMs,
   windowCalendarDayStrip,
 } from "./calendar-ui";
 import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail";
@@ -66,21 +65,17 @@ export function calendarTypeTabLabels(): readonly string[] {
 }
 
 function mediaTypeSortRank(option: BrowseShellOption<SearchResult>): number {
-  const source = option.value.metadataSource?.toLowerCase() ?? "";
-  if (source.includes("anilist")) return 0;
-  if (option.value.type === "movie") return 2;
+  const kind = option.value.calendar?.contentKind;
+  if (kind === "anime") return 0;
+  if (kind === "movie") return 2;
   return 1;
 }
 
-function sortTimestampMs(option: BrowseShellOption<SearchResult>, nowMs: number): number {
-  const time = option.previewTime?.trim() ?? "";
-  if (time.length > 0) {
-    const parsed = parsePreviewTimeTodayMs(time, nowMs);
-    if (parsed !== null) return parsed;
-  }
-  if (option.previewDayKey) {
-    const base = Date.parse(`${option.previewDayKey}T12:00:00`);
-    if (Number.isFinite(base)) return base;
+function sortTimestampMs(option: BrowseShellOption<SearchResult>, _nowMs: number): number {
+  const releaseAt = option.value.calendar?.releaseAt;
+  if (releaseAt) {
+    const ms = Date.parse(releaseAt);
+    if (Number.isFinite(ms)) return ms;
   }
   return Number.MAX_SAFE_INTEGER;
 }
@@ -106,11 +101,10 @@ export function buildCalendarDaysFromOptionsView<T>(
 }
 
 function episodeCode(option: BrowseShellOption<SearchResult>): string {
+  const code = option.value.calendar?.display.episodeCode;
+  if (code) return code;
   const badge = option.previewBadge;
-  if (badge && badge !== "wl") return badge.startsWith("E") ? badge : badge;
-  const body = option.previewBody ?? option.detail ?? "";
-  const match = body.match(/(?:S\d+E\d+|E\d+)/i);
-  return match?.[0]?.toUpperCase() ?? "";
+  return badge && badge !== "wl" ? badge : "";
 }
 
 export function buildCalendarView(input: {
@@ -163,11 +157,10 @@ export function buildCalendarView(input: {
     const timeLabel =
       state === "countdown"
         ? formatCalendarReleaseStateLabel(state, option, nowMs)
-        : (option.previewTime?.trim() ?? "TBD");
+        : (option.calendar?.display.time ?? option.previewTime?.trim() ?? "TBD");
+    const groupLabel = option.calendar?.display.groupLabel ?? option.previewGroup;
     const dayHeaderLabel =
-      input.selectedDayKey === null && option.previewGroup
-        ? calendarDayKeyFromGroup(option.previewGroup)
-        : null;
+      input.selectedDayKey === null && groupLabel ? calendarDayKeyFromGroup(groupLabel) : null;
     const showDayHeader = dayHeaderLabel !== null && dayHeaderLabel !== lastDayHeader;
     if (showDayHeader) lastDayHeader = dayHeaderLabel;
 
