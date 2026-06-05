@@ -147,6 +147,17 @@ already used for TMDB), map `release_date` → `releasePrecision: "date"`,
 (or a `kinds` argument) drives the three concurrent reads through the existing
 cache/in-flight machinery.
 
+**Movie UX decision (locked):** movie rows are _informational_ release-date
+signals (`reason: "movie-release"`, copy `releases <date>`), never auto-marked
+`provider-confirmed`/playable unless a real source resolves on open — identical to
+how the calendar already treats an upcoming anime episode. This keeps the honest
+separation of _schedule state_ from _playability_ and fills the Movies tab without
+implying a stream exists. Theatrical date is acknowledged as the window source; a
+streaming-availability source can refine this later without changing the model.
+
+**Decision (locked):** the calendar path's `display*` string fields are deleted, not
+kept for back-compat — the structured `CalendarItem` is the single source of truth.
+
 ## Visual & interaction language (Netflix-level clarity)
 
 Grounded in the existing design authority — `.design/cli/kunai-sakura-canonical.html`,
