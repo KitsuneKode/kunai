@@ -106,6 +106,31 @@ the resolve coordinator — design before building; do NOT change provider scrap
 
 ---
 
+## 7. Rich source/server picker (feature)
+
+**Want:** a `/source` picker like the web "Servers" tab — each row a named server with
+an audio-language flag/label and a quality hint ("Original audio", "may have 4K"),
+selectable, with favorite/pin.
+
+**Already present:** `serverName` + `audioLanguages` on the stream model
+(`packages/types`), a `track-capabilities` "source" section, the `/source`/`o`
+picker, and `PlaybackSourceInventory*`. **Work:** enrich the source-section view
+model to surface server name + language label (flag emoji from language code) +
+quality hint, render them as a rich list, and add favorite/pin (persisted in config).
+Do NOT change provider scraping — only surface what resolve already returns.
+
+## 8. Rich detail overlay + trailer (feature)
+
+Poster + structured colored sections + cast/availability, and **trailer** via TMDB
+`/{type}/{id}/videos` → YouTube key → open in browser/mpv (how vidking/cineby show
+trailers). The detail overlay currently uses the generic line renderer with no poster.
+
+## Calendar visual polish (rendering-loop items)
+
+Tab-label truncation (Ink background-color bleed on the active pill), kitty/chafa
+poster artifacts bleeding into rows, theme tweaks. Need a screenshot loop — not
+test-reproducible.
+
 ## Slice order (each user-verified)
 
 1. Detail overlay compaction + poster (#1) — clearest, self-contained.
