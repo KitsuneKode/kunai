@@ -18,7 +18,6 @@ import {
   deriveCalendarReleaseState,
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
-  formatCalendarReleaseStateLabel,
   isCalendarTrackedOption,
   windowCalendarDayStrip,
 } from "./calendar-ui";
@@ -153,11 +152,8 @@ export function buildCalendarView(input: {
     const option = filtered[index];
     if (!option) continue;
     const presentation = calendarReleaseRowPresentation(option, nowMs);
-    const state = deriveCalendarReleaseState(option, nowMs);
-    const timeLabel =
-      state === "countdown"
-        ? formatCalendarReleaseStateLabel(state, option, nowMs)
-        : (option.calendar?.display.time ?? option.previewTime?.trim() ?? "TBD");
+    // Left column is the real clock time; the countdown is shown in the status column.
+    const timeLabel = option.calendar?.display.time ?? option.previewTime?.trim() ?? "TBD";
     const groupLabel = option.calendar?.display.groupLabel ?? option.previewGroup;
     const dayHeaderLabel =
       input.selectedDayKey === null && groupLabel ? calendarDayKeyFromGroup(groupLabel) : null;
