@@ -217,6 +217,15 @@ captures (`test/__captures__/calendar-*.txt`) are regenerated.
 
 ## Follow-on deliverables (separate spec/plan each)
 
+- **History / continue-watching UI + posters** — the continue surface is the only
+  list that never wires posters (`buildHistoryPreviewRailModel` is called with
+  `posterState: "none"`, no `posterUrl`), and `shellOptionToHistoryRow` re-derives
+  title/episode/recency by splitting `option.label` on `·` (same lossy round-trip).
+  Plan: persist `posterUrl` on history entries when known (search/playback capture,
+  via a storage migration) with an on-demand fallback resolving by `externalIds`
+  (tmdbId / anilistId) through the existing poster cache; replace the string-split
+  row builder with a structured row model; apply the same design-system language
+  (per-kind color, prominent resume action, consistent tabs + dim footer).
 - **Shell-wide UX/UI + shortcut audit** — prioritized findings doc covering Tab
   semantics across surfaces, bare-letter vs ctrl shortcuts, details discoverability
   (`i` / `Shift+Enter`), empty/error-state consistency, and accent discipline.
