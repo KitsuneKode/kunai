@@ -1,5 +1,10 @@
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import {
+  classifyHistoryBucket,
+  type HistoryBucket,
+  type HistoryReleaseSignal,
+} from "@/domain/continuation/history-bucket";
+import {
   reconcileContinueHistory,
   type ContinueHistoryRelease,
 } from "@/domain/continuation/history-reconciliation";
@@ -829,7 +834,32 @@ function relativeTime(date: Date): string {
 export type HistoryPickerOptionsContext = {
   readonly nextReleases?: ReadonlyMap<string, ContinueHistoryRelease>;
   readonly projections?: ReadonlyMap<string, ContinuationProjection>;
+  // Authoritative release status per title (status + newEpisodeCount + releaseAt),
+  // sourced directly from the ReleaseProgressProjection cache — NOT the lossy
+  // ContinueHistoryRelease — so the `caught-up` signal survives for bucketing.
+  readonly releaseSignals?: ReadonlyMap<string, HistoryReleaseSignal>;
 };
+
+/**
+ * Single authority for which /history tab a title belongs in. Decides off the
+ * honest release status via {@link classifyHistoryBucket}, never the optimistic
+ * reconcile fallback. Used by both the Continue/Completed/New tabs and the hoisted
+ * "Continue Watching" section so they can never disagree.
+ */
+export function historyBucketFor(
+  id: string,
+  entry: HistoryProgress,
+  context: HistoryPickerOptionsContext = {},
+): HistoryBucket {
+  const projection = context.projections?.get(id);
+  const hasKnownNextToPlay =
+    projection?.kind === "offline-ready" || projection?.kind === "next-released";
+  return classifyHistoryBucket({
+    entry,
+    release: context.releaseSignals?.get(id) ?? null,
+    hasKnownNextToPlay,
+  });
+}
 
 function formatSeriesEpisode(season: number, episode: number): string {
   return `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
@@ -964,23 +994,12 @@ export function isHistoryKeepWatching(
   entry: HistoryProgress,
   context: HistoryPickerOptionsContext = {},
 ): boolean {
-  const projection = context.projections?.get(id);
-  if (projection?.kind === "offline-ready" || projection?.kind === "next-released") return true;
-  const isCompleted = projectWatchProgress({
-    timestamp: entry.positionSeconds,
-    duration: entry.durationSeconds,
-    completed: entry.completed,
-  }).completed;
-  if (isCompleted) {
-    return (
-      reconcileContinueHistory({
-        titleId: id,
-        entries: [[id, entry]],
-        nextRelease: context.nextReleases?.get(id) ?? null,
-      }).kind === "new-episode"
-    );
-  }
-  return isHistoryPickerContinuable(id, entry, context);
+  // The hoisted "Continue Watching" section is everything ACTIONABLE right now —
+  // an in-progress resume (continue) OR a freshly-aired next episode (new-episodes).
+  // This is broader than the /history Continue *tab* (which is strictly the
+  // `continue` bucket, since New episodes has its own tab).
+  const bucket = historyBucketFor(id, entry, context);
+  return bucket === "continue" || bucket === "new-episodes";
 }
 
 export function buildHistoryPickerOptions(

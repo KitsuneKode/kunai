@@ -1,5 +1,6 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { Container } from "@/container";
+import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
 import {
@@ -251,6 +252,23 @@ function readCachedHistoryNextReleases(
   return releases;
 }
 
+function readCachedHistoryReleaseSignals(
+  entries: ReadonlyArray<[string, RootHistorySelection["entry"]]>,
+  cachedProgress: ReadonlyMap<string, import("@kunai/storage").ReleaseProgressProjection>,
+): NonNullable<HistoryPickerOptionsContext["releaseSignals"]> {
+  const signals = new Map<string, HistoryReleaseSignal>();
+  for (const [titleId] of entries) {
+    const projection = cachedProgress.get(titleId);
+    if (!projection) continue;
+    signals.set(titleId, {
+      status: projection.status,
+      newEpisodeCount: projection.newEpisodeCount,
+      latestKnownReleaseAt: projection.latestKnownReleaseAt ?? null,
+    });
+  }
+  return signals;
+}
+
 function readCachedHistoryProjections(
   entries: ReadonlyArray<[string, RootHistorySelection["entry"]]>,
   container: Container,
@@ -387,6 +405,9 @@ export function RootOverlayShell({
   const [historyProjections, setHistoryProjections] = useState<
     NonNullable<HistoryPickerOptionsContext["projections"]>
   >(new Map());
+  const [historyReleaseSignals, setHistoryReleaseSignals] = useState<
+    NonNullable<HistoryPickerOptionsContext["releaseSignals"]>
+  >(new Map());
   const initialHistoryTab =
     overlay.type === "history"
       ? historyTabFromLegacy(overlay.initialFilterMode ?? "all")
@@ -410,6 +431,7 @@ export function RootOverlayShell({
   const historyPickerContext: HistoryPickerOptionsContext = {
     nextReleases: historyNextReleases,
     projections: historyProjections,
+    releaseSignals: historyReleaseSignals,
   };
   const settingsSeriesProviderOptions = buildSettingsProviderOptions({
     providers: container.providerRegistry
@@ -498,6 +520,7 @@ export function RootOverlayShell({
         context: {
           nextReleases: historyNextReleases,
           projections: historyProjections,
+          releaseSignals: historyReleaseSignals,
         },
         loading: overlay.type === "history" ? loadingAsyncLines : false,
       }),
@@ -505,6 +528,7 @@ export function RootOverlayShell({
       filterQuery,
       historyNextReleases,
       historyProjections,
+      historyReleaseSignals,
       historySelections,
       historyTab,
       loadingAsyncLines,
@@ -679,6 +703,7 @@ export function RootOverlayShell({
     setHistorySelections([]);
     setHistoryNextReleases(new Map());
     setHistoryProjections(new Map());
+    setHistoryReleaseSignals(new Map());
     setHistoryTab(initialHistoryTab);
   }, [
     container.config,
@@ -720,9 +745,11 @@ export function RootOverlayShell({
         );
         const nextReleases = readCachedHistoryNextReleases(historyEntries, cachedProgress);
         const projections = readCachedHistoryProjections(historyEntries, container, cachedProgress);
+        const releaseSignals = readCachedHistoryReleaseSignals(historyEntries, cachedProgress);
         setAsyncLines(buildHistoryPanelLines(historyEntries));
         setHistoryNextReleases(nextReleases);
         setHistoryProjections(projections);
+        setHistoryReleaseSignals(releaseSignals);
         enqueueReleaseReconciliation(
           container,
           historyEntries.map(([, entry]) => entry),

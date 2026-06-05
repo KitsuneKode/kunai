@@ -718,6 +718,18 @@ describe("panel-data", () => {
             },
           ],
         ]),
+        // Authoritative signal the classifier buckets off: a freshly-aired episode
+        // (released after the 2026-05-10 watch) → new-episodes → keep-watching.
+        releaseSignals: new Map([
+          [
+            "anilist:123",
+            {
+              status: "new-episodes",
+              newEpisodeCount: 1,
+              latestKnownReleaseAt: "2026-05-17T10:00:00.000Z",
+            },
+          ],
+        ]),
       },
     );
 
