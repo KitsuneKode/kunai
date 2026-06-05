@@ -244,5 +244,5 @@ function isSameLocalDay(releaseAt: string | null, nowMs: number): boolean {
 }
 
 export function isCalendarSearchResult(result: SearchResult): boolean {
-  return result.calendar != null;
+  return result.calendar !== undefined;
 }
