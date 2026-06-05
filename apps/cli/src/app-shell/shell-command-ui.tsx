@@ -3,7 +3,7 @@ import { buildPickerModel, movePickerModelSelection } from "@/domain/session/pic
 import { Box, Text, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 
-import { COMMANDS, parseCommand, type AppCommandId, type ResolvedAppCommand } from "./commands";
+import { COMMANDS, type AppCommandId, type ResolvedAppCommand } from "./commands";
 import { routeShellInput } from "./input-router";
 import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
 import { getWindowStart, truncateLine } from "./shell-text";
@@ -24,16 +24,12 @@ export function getHighlightedCommand(
   commands: readonly ResolvedAppCommand[],
   highlightedIndex: number,
 ): ResolvedAppCommand | null {
-  const exact = parseCommand(input);
-  if (exact) {
-    return commands.find((candidate) => candidate.id === exact.id) ?? null;
-  }
-
-  const matches = getCommandMatches(input, commands);
+  // INVARIANT: Enter runs exactly the row the palette highlights. Resolve from the
+  // SAME picker model the palette renders — never via a separate exact-parse
+  // shortcut, which can diverge from the visible highlight (e.g. an exact alias
+  // like "c" overriding a row you navigated to).
   const model = buildCommandPickerModel(input, commands, highlightedIndex);
-  return (
-    commands.find((command) => command.id === model.selectedOption?.value) ?? matches[0] ?? null
-  );
+  return commands.find((command) => command.id === model.selectedOption?.value) ?? null;
 }
 
 export function getCommandAutocompleteTarget(
