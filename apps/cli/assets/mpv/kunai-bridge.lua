@@ -412,8 +412,8 @@ local function draw_resume_prompt(at_sec)
 	local h = dim.h or 720
 	local cx = math.floor(w / 2)
 	local cy = math.floor(h / 2)
-	local card_w = clamp(math.floor(w * 0.62), 560, 980)
-	local card_h = clamp(math.floor(h * 0.28), 190, 310)
+	local card_w = clamp(math.floor(w * 0.46), 380, 660)
+	local card_h = clamp(math.floor(h * 0.2), 132, 210)
 	local card_x = math.floor(cx - card_w / 2)
 	local card_y = math.floor(cy - card_h / 2)
 	local title_fs = clamp(math.floor(h * 0.022), 18, 28)
@@ -428,15 +428,19 @@ local function draw_resume_prompt(at_sec)
 	local title = mp.get_property("user-data/kunai-resume-title", "Kunai")
 
 	local line1 = esc_ass(title)
-	local line2 = esc_ass("Continue from last history point")
-	local line3 = esc_ass("Resume at " .. label)
-	local line4 = esc_ass("[Alt+R] resume   [Enter] resume   [O] start over")
+	local line2 = esc_ass("Resume at " .. label)
+	local line3 = esc_ass("from where you left off")
+	local line4 = esc_ass("[Alt+R] / [Enter] resume      [O] start over")
 
-	local ass_nl = "\\N"
+	-- Join with a real newline so each block is a SEPARATE ASS event with its own
+	-- \pos/\an. Using "\\N" (an in-event line break) collapses everything into one
+	-- event where only the first \pos/\an wins — which jams the text to the card's
+	-- top-left corner and overflows it.
+	local ass_nl = "\n"
 	resume_overlay.res_x = w
 	resume_overlay.res_y = h
 	resume_overlay.data = string.format(
-		"{\\an7\\pos(%d,%d)\\bord4\\blur1\\1c&H101010&\\3c&H3BC8FF&\\alpha&H50&\\p1}%s{\\p0}",
+		"{\\an7\\pos(%d,%d)\\bord2\\blur0\\1c&H1C141C&\\3c&HB08FFF&\\alpha&H28&\\p1}%s{\\p0}",
 		card_x,
 		card_y,
 		resume_card_path(card_w, card_h, clamp(math.floor(card_h * 0.13), 18, 34))
@@ -451,7 +455,7 @@ local function draw_resume_prompt(at_sec)
 		)
 		.. ass_nl
 		.. string.format(
-			"{\\an5\\bord2\\blur1\\fnSans\\b1\\fs%d\\pos(%d,%d)\\c&H3BC8FF&}%s",
+			"{\\an5\\bord2\\blur1\\fnSans\\b1\\fs%d\\pos(%d,%d)\\c&HB08FFF&}%s",
 			action_fs,
 			cx,
 			card_y + math.floor(card_h * 0.46),
