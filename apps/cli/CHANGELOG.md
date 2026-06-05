@@ -1,5 +1,14 @@
 # @kitsunekode/kunai
 
+## 0.2.3
+
+### Patch Changes
+
+- Unify the release calendar across content kinds and refresh the design tokens.
+  - `/calendar` now loads anime, series, and movies into one content-kind–aware window instead of only the active mode, with a new TMDB movie-release source. Rows carry a single structured `CalendarItem` (content kind, release precision, release status, provider-confirmed, and an explicit reason a row is shown), so the renderer no longer reconstructs meaning by parsing display strings. Honest release semantics are preserved: a date-only release dated today stays upcoming until the day is strictly past, and an unknown date never renders as confirmed. Anime, series, and movie rows now read at a glance via per-kind color.
+  - Redesigned the CLI color tokens ("Ember Dusk"): a near-neutral warm-ink surface ramp with visible elevation, rose reserved for brand/focus/selection, dedicated amber `warn` and cool `info` tokens, and a distinct content triad (anime orchid, series teal, movie gold) so every signal is its own hue.
+  - Fixed a command-palette correctness bug: pressing Enter now always runs the highlighted row instead of an exact-alias shortcut that could diverge from the visible selection.
+
 ## 0.2.2
 
 ### Patch Changes
