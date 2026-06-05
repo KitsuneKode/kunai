@@ -73,7 +73,10 @@ export function buildCalendarDaysFromOptions<T>(
   const days: CalendarDay[] = [];
   for (const option of options) {
     const group = option.calendar?.display.groupLabel ?? option.previewGroup;
-    const key = option.calendar?.dayKey ?? option.previewDayKey ?? null;
+    const key =
+      option.calendar?.dayKey ??
+      option.previewDayKey ??
+      (group ? calendarDayKeyFromGroup(group) : null);
     if (!group || !key || seen.has(key)) continue;
     seen.add(key);
     const isToday = group.includes("Today");

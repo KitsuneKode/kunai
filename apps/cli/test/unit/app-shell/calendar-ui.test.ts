@@ -15,49 +15,110 @@ import {
   windowCalendarDayStrip,
 } from "@/app-shell/calendar-ui";
 import type { BrowseShellOption } from "@/app-shell/types";
+import {
+  buildCalendarItem,
+  type CalendarContentKind,
+  type CalendarReleasePrecision,
+  type CalendarReleaseStatus,
+} from "@/domain/calendar/calendar-item";
 import type { SearchResult } from "@/domain/types";
 
-function calendarOption(
-  partial: Partial<SearchResult> & {
-    label: string;
-    previewGroup: string;
-    releaseStatus?: "released" | "airing-today" | "upcoming";
-    displayTime?: string;
-    previewBadge?: string;
-  },
-): BrowseShellOption<SearchResult> {
+/** Lightweight option for the day-strip/render-row tests (no structured item needed). */
+function dayStripOption(partial: {
+  label: string;
+  previewGroup?: string;
+  previewTime?: string;
+  previewBadge?: string;
+}): BrowseShellOption<SearchResult> {
   return {
     value: {
-      id: partial.id ?? "1",
-      type: partial.type ?? "series",
+      id: partial.label,
+      type: "series",
       title: partial.label,
-      year: partial.year ?? "2026",
-      overview: partial.overview ?? "",
+      year: "2026",
+      overview: "",
       posterPath: null,
-      metadataSource: partial.metadataSource ?? "AniList calendar · Today · airs today · timestamp",
-      displayGroup: partial.previewGroup,
-      displayTime: partial.displayTime,
-      displayReleaseStatus: partial.releaseStatus,
     },
     label: partial.label,
     previewGroup: partial.previewGroup,
-    previewTime: partial.displayTime,
+    previewTime: partial.previewTime,
     previewBadge: partial.previewBadge,
-    releaseStatus: partial.releaseStatus,
-    previewBody: partial.overview,
   };
+}
+
+/** Builds a real structured calendar option via the production builder. */
+function calOption(partial: {
+  label: string;
+  kind?: CalendarContentKind;
+  releaseAt?: string | null;
+  precision?: CalendarReleasePrecision;
+  status?: CalendarReleaseStatus;
+  inWatchlist?: boolean;
+  providerConfirmed?: boolean;
+  episode?: number;
+  season?: number;
+  overview?: string;
+  nowMs?: number;
+}): BrowseShellOption<SearchResult> {
+  const kind = partial.kind ?? "anime";
+  const item = buildCalendarItem(
+    {
+      source: kind === "anime" ? "anilist" : "tmdb",
+      titleId: partial.label,
+      titleName: partial.label,
+      type: kind,
+      season: partial.season,
+      episode: partial.episode,
+      releaseAt: partial.releaseAt ?? null,
+      releasePrecision: partial.precision ?? "timestamp",
+      status: partial.status ?? "upcoming",
+    },
+    {
+      nowMs: partial.nowMs ?? Date.now(),
+      inWatchlist: partial.inWatchlist,
+      providerConfirmed: partial.providerConfirmed,
+    },
+  );
+  return {
+    value: {
+      id: partial.label,
+      type: kind === "movie" ? "movie" : "series",
+      title: partial.label,
+      year: "2026",
+      overview: partial.overview ?? "",
+      posterPath: null,
+      calendar: item,
+    },
+    label: partial.label,
+    calendar: item,
+    previewBody: partial.overview,
+    previewBadge: item.display.badge,
+  };
+}
+
+function todayAt(hour: number): string {
+  const d = new Date();
+  d.setHours(hour, 0, 0, 0);
+  return d.toISOString();
+}
+
+function daysAgoAt(days: number, hour: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  d.setHours(hour, 0, 0, 0);
+  return d.toISOString();
 }
 
 test("calendarDayKeyFromGroup strips relative suffix", () => {
   expect(calendarDayKeyFromGroup("MON 19 · Today")).toBe("MON 19");
 });
 
-test("buildCalendarDaysFromOptions dedupes days by previewDayKey", () => {
+test("buildCalendarDaysFromOptions dedupes days by group label", () => {
   const options = [
-    calendarOption({ label: "A", previewGroup: "MON 1" }),
-    calendarOption({ label: "B", previewGroup: "TUE 2 · Today" }),
-    calendarOption({ label: "C", previewGroup: "WED 3" }),
-    calendarOption({ label: "D", previewGroup: "THU 4" }),
+    dayStripOption({ label: "A", previewGroup: "MON 1" }),
+    dayStripOption({ label: "B", previewGroup: "TUE 2 · Today" }),
+    dayStripOption({ label: "C", previewGroup: "WED 3" }),
+    dayStripOption({ label: "D", previewGroup: "THU 4" }),
   ];
   const days = buildCalendarDaysFromOptions(options, true);
   expect(days.map((day) => day.label)).toEqual(["MON 1", "TUE 2", "WED 3", "THU 4"]);
@@ -65,10 +126,10 @@ test("buildCalendarDaysFromOptions dedupes days by previewDayKey", () => {
 
 test("windowCalendarDayStrip narrows to three days around today", () => {
   const options = [
-    calendarOption({ label: "A", previewGroup: "MON 1" }),
-    calendarOption({ label: "B", previewGroup: "TUE 2 · Today" }),
-    calendarOption({ label: "C", previewGroup: "WED 3" }),
-    calendarOption({ label: "D", previewGroup: "THU 4" }),
+    dayStripOption({ label: "A", previewGroup: "MON 1" }),
+    dayStripOption({ label: "B", previewGroup: "TUE 2 · Today" }),
+    dayStripOption({ label: "C", previewGroup: "WED 3" }),
+    dayStripOption({ label: "D", previewGroup: "THU 4" }),
   ];
   const days = buildCalendarDaysFromOptions(options);
   const windowed = windowCalendarDayStrip(days, null, true);
@@ -77,17 +138,8 @@ test("windowCalendarDayStrip narrows to three days around today", () => {
 
 test("filterCalendarOptionsByType keeps anime rows on Anime tab", () => {
   const options = [
-    calendarOption({
-      label: "Anime",
-      previewGroup: "MON 1",
-      metadataSource: "AniList calendar · Today · airs today · timestamp",
-    }),
-    calendarOption({
-      label: "TV",
-      previewGroup: "MON 1",
-      metadataSource: "TMDB calendar · Today · airs today · timestamp",
-      type: "series",
-    }),
+    calOption({ label: "Anime", kind: "anime", releaseAt: todayAt(20) }),
+    calOption({ label: "TV", kind: "series", releaseAt: todayAt(20), precision: "date" }),
   ];
   const filtered = filterCalendarOptionsByType(options, "Anime");
   expect(filtered.map((row) => row.label)).toEqual(["Anime"]);
@@ -95,54 +147,58 @@ test("filterCalendarOptionsByType keeps anime rows on Anime tab", () => {
 
 test("filterCalendarOptionsByType keeps watchlist rows on Tracked tab", () => {
   const options = [
-    calendarOption({ label: "Tracked", previewGroup: "MON 1", previewBadge: "wl" }),
-    calendarOption({ label: "Other", previewGroup: "MON 1" }),
+    calOption({ label: "Tracked", releaseAt: todayAt(20), inWatchlist: true }),
+    calOption({ label: "Other", releaseAt: todayAt(20) }),
   ];
   const filtered = filterCalendarOptionsByType(options, "Tracked");
   expect(filtered.map((row) => row.label)).toEqual(["Tracked"]);
 });
 
 test("deriveCalendarReleaseState treats today's catalog released as resolving", () => {
-  const option = calendarOption({
+  const option = calOption({
     label: "Show",
-    previewGroup: "MON 1 · Today",
-    releaseStatus: "released",
+    kind: "series",
+    releaseAt: todayAt(9),
+    precision: "date",
+    status: "released",
   });
   expect(deriveCalendarReleaseState(option)).toBe("resolving");
 });
 
 test("deriveCalendarReleaseState treats past released rows as missed until provider confirms", () => {
-  const option = calendarOption({
+  const option = calOption({
     label: "Show",
-    previewGroup: "MON 1",
-    releaseStatus: "released",
+    kind: "series",
+    releaseAt: daysAgoAt(3, 9),
+    precision: "date",
+    status: "released",
   });
   expect(deriveCalendarReleaseState(option)).toBe("missed");
 });
 
 test("deriveCalendarReleaseState reserves available for provider-confirmed rows", () => {
-  const option = calendarOption({
+  const option = calOption({
     label: "Show",
-    previewGroup: "MON 1",
-    releaseStatus: "released",
+    kind: "series",
+    releaseAt: daysAgoAt(1, 9),
+    precision: "date",
+    status: "released",
+    providerConfirmed: true,
   });
-  const confirmed = {
-    ...option,
-    previewFacts: [
-      { label: "Availability", detail: "provider confirmed", tone: "success" as const },
-    ],
-  };
-  expect(hasProviderConfirmedAvailability(confirmed)).toBe(true);
-  expect(deriveCalendarReleaseState(confirmed)).toBe("available");
+  expect(hasProviderConfirmedAvailability(option)).toBe(true);
+  expect(deriveCalendarReleaseState(option)).toBe("available");
 });
 
 test("deriveCalendarReleaseState uses countdown for future airing-today timestamps", () => {
-  const now = Date.parse("2026-05-23T10:00:00");
-  const option = calendarOption({
+  const d = new Date();
+  d.setHours(8, 0, 0, 0);
+  const now = d.getTime();
+  const option = calOption({
     label: "Show",
-    previewGroup: "MON 1 · Today",
-    releaseStatus: "airing-today",
-    displayTime: "9:00 PM",
+    releaseAt: todayAt(21),
+    precision: "timestamp",
+    status: "upcoming",
+    nowMs: now,
   });
   expect(deriveCalendarReleaseState(option, now)).toBe("countdown");
 });
@@ -163,9 +219,9 @@ test("parsePreviewTimeTodayMs rejects invalid clock labels", () => {
 
 test("buildCalendarRenderRows emits unified timestamp rows without band headers", () => {
   const options = [
-    calendarOption({ label: "Late", previewGroup: "MON 1", displayTime: "9:00 PM" }),
-    calendarOption({ label: "Also Late", previewGroup: "MON 1", displayTime: "9:00 PM" }),
-    calendarOption({ label: "Unknown", previewGroup: "MON 1" }),
+    dayStripOption({ label: "Late", previewGroup: "MON 1", previewTime: "9:00 PM" }),
+    dayStripOption({ label: "Also Late", previewGroup: "MON 1", previewTime: "9:00 PM" }),
+    dayStripOption({ label: "Unknown", previewGroup: "MON 1" }),
   ];
   const rows = buildCalendarRenderRows(options, 0, options.length);
   expect(rows[0]?.timeLabel).toBe("9:00 PM");
@@ -174,21 +230,24 @@ test("buildCalendarRenderRows emits unified timestamp rows without band headers"
 });
 
 test("calendarPriorityBand prefers tracked titles in for-you", () => {
-  const tracked = calendarOption({ label: "Tracked", previewGroup: "MON 1", previewBadge: "wl" });
-  const other = calendarOption({
+  const tracked = calOption({ label: "Tracked", releaseAt: todayAt(20), inWatchlist: true });
+  const other = calOption({
     label: "Other",
-    previewGroup: "MON 1",
-    releaseStatus: "airing-today",
+    releaseAt: todayAt(20),
+    precision: "date",
+    status: "upcoming",
   });
   expect(calendarPriorityBand(tracked)).toBe("for-you");
   expect(calendarPriorityBand(other)).toBe("also-today");
 });
 
 test("buildCalendarPreviewRailModel avoids watch-now copy for resolving rows", () => {
-  const option = calendarOption({
+  const option = calOption({
     label: "Show",
-    previewGroup: "MON 1 · Today",
-    releaseStatus: "released",
+    kind: "series",
+    releaseAt: todayAt(9),
+    precision: "date",
+    status: "released",
     overview: "S01E02",
   });
   const model = buildCalendarPreviewRailModel(option, "none");
