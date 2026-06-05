@@ -114,9 +114,7 @@ export function toBrowseResultOption(
     }${historyBadge ? ` · ${historyBadge}` : ""}${overview ? ` · ${overview}` : ""}`,
     previewTitle: displayTitle,
     previewMeta: meta,
-    previewGroup: result.displayGroup,
-    previewTime: result.displayTime,
-    previewBadge: inWatchlist ? "wl" : result.displayBadge,
+    previewBadge: inWatchlist ? "wl" : undefined,
     previewFacts: [
       ...buildLocalEnrichmentFacts(enrichment),
       ...(historyEntry

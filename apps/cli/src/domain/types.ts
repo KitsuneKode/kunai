@@ -130,16 +130,6 @@ export interface SearchResult {
   readonly popularity?: number | null;
   /** Structured calendar item — the single source of truth for calendar rows. */
   readonly calendar?: CalendarItem;
-  /** Optional browse-list grouping label, used by schedule-style result sets. */
-  readonly displayGroup?: string;
-  /** ISO date key for calendar day strip dedup (YYYY-MM-DD). */
-  readonly displayDayKey?: string;
-  /** Optional leading browse-list column, such as a release time. */
-  readonly displayTime?: string;
-  /** Optional trailing browse-list badge, such as an episode number. */
-  readonly displayBadge?: string;
-  /** Optional release-status for schedule-style result sets (calendar). */
-  readonly displayReleaseStatus?: "released" | "airing-today" | "upcoming";
   readonly episodeCount?: number;
   readonly availableAudioModes?: readonly ("sub" | "dub")[];
   readonly subtitleAvailability?: "hardsub" | "softsub" | "unknown";
