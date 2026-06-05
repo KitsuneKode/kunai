@@ -14,7 +14,10 @@ import type {
   ResolveTrace as SharedResolveTrace,
 } from "@kunai/types";
 
+import type { CalendarItem } from "./calendar/calendar-item";
+
 export type { SharedResolveTrace };
+export type { CalendarItem };
 export type { MediaPreference, MediaPreferenceKind } from "./media/media-preferences";
 export type {
   ActiveMediaTrackState,
@@ -125,6 +128,8 @@ export interface SearchResult {
   readonly metadataSource?: string;
   readonly rating?: number | null;
   readonly popularity?: number | null;
+  /** Structured calendar item — the single source of truth for calendar rows. */
+  readonly calendar?: CalendarItem;
   /** Optional browse-list grouping label, used by schedule-style result sets. */
   readonly displayGroup?: string;
   /** ISO date key for calendar day strip dedup (YYYY-MM-DD). */

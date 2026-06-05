@@ -1,8 +1,25 @@
-import type { CatalogScheduleItem } from "@/services/catalog/CatalogScheduleService";
-
 export type CalendarContentKind = "anime" | "series" | "movie";
 export type CalendarReleasePrecision = "timestamp" | "date" | "unknown";
 export type CalendarReleaseStatus = "released" | "upcoming" | "unknown";
+
+// Domain-facing input contract for the builder. `CatalogScheduleItem` (a service
+// type) is a structural superset, so callers pass it directly — this keeps the
+// domain layer free of any service/infra import.
+export type CalendarScheduleInput = {
+  readonly source: "anilist" | "tmdb";
+  readonly titleId: string;
+  readonly titleName: string;
+  readonly type: CalendarContentKind;
+  readonly season?: number;
+  readonly episode?: number;
+  readonly episodeTitle?: string;
+  readonly releaseAt: string | null;
+  readonly releasePrecision: CalendarReleasePrecision;
+  readonly status: CalendarReleaseStatus;
+  readonly posterPath?: string | null;
+  readonly popularity?: number;
+  readonly averageScore?: number;
+};
 export type CalendarReleaseReason =
   | "airing-today"
   | "upcoming-episode"
@@ -46,7 +63,7 @@ export type CalendarItemContext = {
 };
 
 export function buildCalendarItem(
-  item: CatalogScheduleItem,
+  item: CalendarScheduleInput,
   ctx: CalendarItemContext,
 ): CalendarItem {
   const contentKind: CalendarContentKind =
@@ -104,7 +121,7 @@ function classifyReason(input: {
   return "catalog-only";
 }
 
-function formatEpisodeCode(item: CatalogScheduleItem): string {
+function formatEpisodeCode(item: CalendarScheduleInput): string {
   if (item.type === "movie") return "";
   if (typeof item.season === "number" && typeof item.episode === "number") {
     return `S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`;
@@ -113,7 +130,7 @@ function formatEpisodeCode(item: CatalogScheduleItem): string {
   return "";
 }
 
-function formatTime(item: CatalogScheduleItem): string | null {
+function formatTime(item: CalendarScheduleInput): string | null {
   if (!item.releaseAt || item.releasePrecision !== "timestamp") return null;
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(
     new Date(item.releaseAt),
@@ -121,7 +138,7 @@ function formatTime(item: CatalogScheduleItem): string | null {
 }
 
 function formatStatusLabel(input: {
-  readonly item: CatalogScheduleItem;
+  readonly item: CalendarScheduleInput;
   readonly reason: CalendarReleaseReason;
   readonly releaseStatus: CalendarReleaseStatus;
   readonly releasedToday: boolean;
@@ -147,7 +164,7 @@ function formatStatusLabel(input: {
 }
 
 function formatBadge(input: {
-  readonly item: CatalogScheduleItem;
+  readonly item: CalendarScheduleInput;
   readonly ctx: CalendarItemContext;
   readonly episodeCode: string;
 }): string | undefined {

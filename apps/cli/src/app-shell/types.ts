@@ -1,3 +1,4 @@
+import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
@@ -211,6 +212,8 @@ export type BrowseShellOption<T> = {
   detail?: string;
   previewTitle?: string;
   previewMeta?: readonly string[];
+  /** Structured calendar item — calendar renderer reads this instead of strings. */
+  calendar?: CalendarItem;
   previewGroup?: string;
   /** ISO date (YYYY-MM-DD) for schedule day dedup and strip labels. */
   previewDayKey?: string;
