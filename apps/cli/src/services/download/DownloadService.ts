@@ -643,7 +643,29 @@ export class DownloadService {
       lastResolvedProviderId: resolved.providerId as never,
     };
 
-    const args = ["--concurrent-fragments", "16", "--newline", "--continue"];
+    const args = [
+      "--concurrent-fragments",
+      "16",
+      "--newline",
+      "--continue",
+      // Reliability: provider HLS (vidlink/stormvv/…) ships flaky fragments. Without
+      // retries a single transient 403/timeout aborts the whole download (leaving
+      // orphan .part fragments). Retry the request and each fragment before failing.
+      "--retries",
+      "10",
+      "--fragment-retries",
+      "10",
+      "--retry-sleep",
+      "2",
+    ];
+
+    // Quality: yt-dlp's default already takes the highest video+audio, so we only
+    // constrain when the user picked/configured a specific ceiling (e.g. 720p to
+    // save disk). Unset → undefined → keep the default (highest available).
+    const formatSelector = ytDlpFormatSelectorForQuality(job.selectedQualityLabel);
+    if (formatSelector) {
+      args.push("-f", formatSelector);
+    }
 
     // Add headers
     for (const [key, value] of Object.entries(job.headers)) {
@@ -1356,6 +1378,19 @@ function resolveThumbnailArtifactPath(outputPath: string): string {
   const extension = extname(outputPath);
   if (!extension) return `${outputPath}.thumbnail.jpg`;
   return `${outputPath.slice(0, -extension.length)}.thumbnail.jpg`;
+}
+
+/**
+ * yt-dlp `-f` selector honoring a configured/selected quality CEILING. Returns
+ * undefined when no specific quality is set ("best"/"auto"/unlabelled) so yt-dlp's
+ * default (highest video+audio) is kept — "highest when not mentioned, honor the
+ * configured quality when it is". The `/best` tail guarantees a fallback when a
+ * single-rendition or progressive URL has no separate height-tagged formats.
+ */
+export function ytDlpFormatSelectorForQuality(qualityLabel?: string): string | undefined {
+  const height = Number(qualityLabel?.match(/(\d{3,4})\s*p/i)?.[1] ?? "");
+  if (!Number.isFinite(height) || height <= 0) return undefined;
+  return `best[height<=${height}]/bestvideo[height<=${height}]+bestaudio/best`;
 }
 
 function resolveSubtitleLanguage(stream: StreamInfo): string | null {
