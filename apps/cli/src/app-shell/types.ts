@@ -181,6 +181,8 @@ export type LoadingShellState = {
   previousEpisodeLabel?: string;
   hasNextEpisode?: boolean;
   hasPreviousEpisode?: boolean;
+  /** What plays after this — the next episode, else the Up Next queue head. */
+  upNextLabel?: string;
   latestIssue?: string | null;
   stopHint?: string;
   controlHint?: string;

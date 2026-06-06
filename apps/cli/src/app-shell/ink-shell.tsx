@@ -1103,6 +1103,19 @@ function AppRoot({ container }: { container: Container }) {
                 previousEpisodeLabel: state.episodeNavigation.previousLabel,
                 hasNextEpisode: state.episodeNavigation.hasNext,
                 hasPreviousEpisode: state.episodeNavigation.hasPrevious,
+                // Up next = the next episode, else the Up Next queue head (a queued
+                // title that will auto-play when this one finishes).
+                upNextLabel: state.episodeNavigation.hasNext
+                  ? state.episodeNavigation.nextLabel
+                  : (() => {
+                      const queued = container.queueService.peekNext();
+                      if (!queued) return undefined;
+                      const code =
+                        queued.season && queued.episode
+                          ? ` · S${String(queued.season).padStart(2, "0")}E${String(queued.episode).padStart(2, "0")}`
+                          : "";
+                      return `${queued.title}${code}`;
+                    })(),
                 onCommandAction: onCommandAction,
               }}
               onCancel={onCancel}

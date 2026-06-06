@@ -894,15 +894,15 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
 
-                {/* Up next */}
-                {state.hasNextEpisode && state.nextEpisodeLabel?.trim() ? (
+                {/* Up next — the next episode, else a queued title (auto-plays after this). */}
+                {state.upNextLabel?.trim() ? (
                   <Box marginTop={1}>
                     <Text color={palette.accent}>{"▶ "}</Text>
                     <Text color={palette.dim} dimColor>
                       {"up next  "}
                     </Text>
                     <Text color={palette.text}>
-                      {truncateLine(state.nextEpisodeLabel, infoWidth - 10)}
+                      {truncateLine(state.upNextLabel, infoWidth - 10)}
                     </Text>
                   </Box>
                 ) : null}
