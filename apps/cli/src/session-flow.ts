@@ -286,7 +286,13 @@ async function pickEpisodeSelection(
       opts.container,
       opts.currentId,
     );
-    if (!episode) continue;
+    if (!episode) {
+      // A single-season series has no season picker to fall back to: looping
+      // would re-auto-select the lone season and re-open this picker forever.
+      // Escaping the episode list must exit instead of getting stuck.
+      if (seasons.length <= 1) return null;
+      continue;
+    }
     return { season, episode: episode.number };
   }
 }
