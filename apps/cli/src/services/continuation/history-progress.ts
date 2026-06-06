@@ -7,8 +7,26 @@
 
 import type { ContentType } from "@/domain/types";
 import type { HistoryProgress } from "@kunai/storage";
+import type { MediaKind } from "@kunai/types";
 
 const FINISHED_RATIO = 0.95;
+
+/**
+ * Corrected anime/series/movie kind for a (possibly legacy) history row.
+ *
+ * `mediaKind` was historically mode-derived, so dramas watched in anime mode were
+ * stamped "anime". History stores `externalIds`, so we can re-derive: a stored
+ * "anime" row is only really anime when it carries an AniList/MAL id (those DBs
+ * only catalog anime). Non-destructive — used by stats + the history type filter
+ * so the display is honest without mutating storage. Re-watching re-stamps the
+ * row correctly via the write path (resolveContentKind).
+ */
+export function correctedHistoryMediaKind(
+  progress: Pick<HistoryProgress, "mediaKind" | "externalIds">,
+): MediaKind {
+  if (progress.mediaKind !== "anime") return progress.mediaKind;
+  return progress.externalIds?.anilistId || progress.externalIds?.malId ? "anime" : "series";
+}
 
 /**
  * The movie|series content type for a history row, collapsing anime → "series".

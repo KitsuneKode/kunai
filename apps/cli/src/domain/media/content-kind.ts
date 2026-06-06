@@ -13,13 +13,52 @@ import type { MediaLanguageProfile } from "@/services/persistence/ConfigService"
 
 export type ContentKind = "movie" | "series" | "anime";
 
-/** Content kind for display: movie wins by content type; anime by mode; else series. */
+/** TMDB genre id for "Animation". */
+const TMDB_ANIMATION_GENRE_ID = 16;
+
+/**
+ * Whether a title's *content* is genuinely anime — independent of ShellMode.
+ * AniList/MAL only catalog anime, so an id from either is authoritative; TMDB's
+ * Animation genre is a secondary signal. A live-action C/K-drama hosted on an
+ * anime provider (AllAnime serves these) carries none of these → not anime.
+ */
+export function isAnimeContent(
+  title: Pick<TitleInfo, "externalIds" | "genreIds"> | null | undefined,
+): boolean {
+  if (!title) return false;
+  return Boolean(
+    title.externalIds?.anilistId ||
+    title.externalIds?.malId ||
+    title.genreIds?.includes(TMDB_ANIMATION_GENRE_ID),
+  );
+}
+
+/**
+ * Content kind for the CURRENT SESSION (header crumb, language profile). ShellMode
+ * is the right signal here — it reflects the routing/profile in use right now, not
+ * a permanent label. Use classifyPersistedKind for anything stored in history.
+ */
 export function resolveContentKind(
   title: Pick<TitleInfo, "type"> | null | undefined,
   mode: ShellMode,
 ): ContentKind {
   if (title?.type === "movie") return "movie";
   return mode === "anime" ? "anime" : "series";
+}
+
+/**
+ * Content kind to PERSIST (watch history). Unlike resolveContentKind, "anime" is
+ * only stamped when the ShellMode is anime AND the content corroborates it (an
+ * AniList/MAL id or TMDB Animation genre) — so a live-action drama watched in
+ * anime mode (AllAnime hosts these) is not labeled anime forever. See #1.
+ */
+export function classifyPersistedKind(
+  title: Pick<TitleInfo, "type" | "externalIds" | "genreIds"> | null | undefined,
+  mode: ShellMode,
+): ContentKind {
+  if (title?.type === "movie") return "movie";
+  if (mode === "anime" && isAnimeContent(title)) return "anime";
+  return "series";
 }
 
 /** Movies have no season/episode — never render an S·E label for them. */
