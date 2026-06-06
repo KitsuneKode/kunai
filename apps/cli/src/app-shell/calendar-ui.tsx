@@ -83,6 +83,11 @@ export function buildCalendarDaysFromOptions<T>(
     const label = calendarDayKeyFromGroup(group);
     days.push({ key, label, isToday });
   }
+  // The strip was built in option order, so days landed out of sequence
+  // ("SAT 6 · MON 8 · SAT 5"). dayKey is ISO (YYYY-MM-DD) → sort chronologically;
+  // non-date keys (TBD / label-only) sort to the end so they never jumble real days.
+  const isoKey = (key: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(key) ? key : "9999-99-99");
+  days.sort((a, b) => isoKey(a.key).localeCompare(isoKey(b.key)));
   return days;
 }
 
