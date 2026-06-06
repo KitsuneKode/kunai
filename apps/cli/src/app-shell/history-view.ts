@@ -160,9 +160,9 @@ function filterHistoryEntries(
 
 function toneColor(tone: ShellStatusTone | undefined): string {
   if (tone === "success") return palette.ok;
-  if (tone === "warning") return palette.accentDeep;
+  if (tone === "warning") return palette.warn;
   if (tone === "error") return palette.danger;
-  if (tone === "info") return palette.muted;
+  if (tone === "info") return palette.info;
   return palette.textDim;
 }
 

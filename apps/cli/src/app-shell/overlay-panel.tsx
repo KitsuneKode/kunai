@@ -18,7 +18,7 @@ import { PosterInitialBlock } from "./poster-initial-block";
 import type { PosterResult, PosterState } from "./poster-types";
 import { BooleanSwitch } from "./primitives/Switch";
 import { getWindowStart, truncateAtWord, truncateLine, wrapText } from "./shell-text";
-import { palette, statusColor } from "./shell-theme";
+import { palette, semanticToneColor, statusColor } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
@@ -1021,14 +1021,7 @@ const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
   option: ShellPickerOption<string> | undefined;
   width: number;
 }) {
-  const badgeColor =
-    option?.tone === "success"
-      ? palette.ok
-      : option?.tone === "warning"
-        ? palette.accentDeep
-        : option?.tone === "error"
-          ? palette.danger
-          : palette.muted;
+  const badgeColor = semanticToneColor(option?.tone);
   return (
     <Box flexDirection="column" width={width} marginLeft={2} flexShrink={0}>
       <Box height={6} width={width}>
@@ -1183,9 +1176,9 @@ export function OverlayPanel({
                   option.tone === "success"
                     ? palette.ok
                     : option.tone === "warning"
-                      ? palette.accentDeep
+                      ? palette.warn
                       : option.tone === "info"
-                        ? palette.muted
+                        ? palette.info
                         : option.tone === "error"
                           ? palette.danger
                           : null;

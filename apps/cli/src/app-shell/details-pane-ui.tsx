@@ -56,9 +56,9 @@ function FactRow({ label, value, width }: { label: string; value: string; width:
 
 function sheetLineColor(tone: ShellPanelLine["tone"]): string {
   if (tone === "success") return palette.ok;
-  if (tone === "warning") return palette.accentDeep;
+  if (tone === "warning") return palette.warn;
   if (tone === "error") return palette.danger;
-  if (tone === "info") return palette.muted;
+  if (tone === "info") return palette.info;
   return palette.text;
 }
 
@@ -267,7 +267,7 @@ function DetailFact({
   readonly tone?: "success" | "warning" | "muted";
 }) {
   const valueColor =
-    tone === "success" ? palette.ok : tone === "warning" ? palette.accentDeep : palette.text;
+    tone === "success" ? palette.ok : tone === "warning" ? palette.warn : palette.text;
   const displayValue = value === "—" ? value : truncateLine(value, valueWidth);
   return (
     <Box>
