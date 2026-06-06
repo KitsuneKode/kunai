@@ -429,7 +429,7 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
               },
             ]
           : []),
-      ],
+      ].map((option) => ({ ...option, previewImageUrl: history.posterUrl })),
     });
 
     if (!picked) {
