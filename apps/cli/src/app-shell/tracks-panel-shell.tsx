@@ -1,3 +1,4 @@
+import { isFavoriteSource, sortByFavorites } from "@/domain/playback/source-name";
 import {
   buildTrackPanelRows,
   type TrackCapability,
@@ -10,15 +11,26 @@ import React from "react";
 
 import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import { chunkSubtitleGrid, tracksCountsHeader } from "./tracks-panel-layout";
+import { createInitialTracksNav, type TracksNavState } from "./tracks-panel-nav";
+
+/** Width below which the two-pane layout collapses to the stacked single column. */
+const TWO_PANE_MIN_WIDTH = 56;
+const SECTION_COL_WIDTH = 22;
 
 export type TracksPanelShellProps = {
   groups: readonly TrackCapabilityGroup[];
-  /** Index over switchable rows only; -1 (or out of range) when nothing is selectable. */
-  selectedIndex: number;
   width: number;
   height?: number;
-  activeSection?: TrackCapabilitySection;
+  nav?: TracksNavState;
+  favorites?: readonly string[];
+  /** Counts-header tail (provider/host label). */
+  providerLabel?: string;
   filterQuery?: string;
+  /** @deprecated legacy flat-nav props, ignored by the two-pane render (removed when the input handler is rewritten). */
+  selectedIndex?: number;
+  /** @deprecated see selectedIndex. */
+  activeSection?: TrackCapabilitySection;
 };
 
 function riskColor(risk: TrackCapabilityRisk): string {
@@ -54,31 +66,42 @@ function rowTag(capability: TrackCapability): string | null {
   return null;
 }
 
+function currentValue(group: TrackCapabilityGroup): string {
+  return group.rows.find((row) => row.selected)?.label ?? group.rows[0]?.label ?? "—";
+}
+
+function sectionCounts(groups: readonly TrackCapabilityGroup[]) {
+  const count = (section: TrackCapabilitySection): number =>
+    groups.find((group) => group.section === section)?.rows.length ?? 0;
+  return {
+    source: count("source"),
+    quality: count("quality"),
+    audio: count("audio"),
+    subtitle: count("subtitle"),
+  };
+}
+
+/** Order a section's rows for display — sources are favorites-first, others keep provider order. */
+function displayRows(
+  group: TrackCapabilityGroup,
+  favorites: readonly string[],
+): readonly TrackCapability[] {
+  if (group.section === "source") {
+    return sortByFavorites(group.rows, favorites, (row) => row.label);
+  }
+  return group.rows;
+}
+
 export const TracksPanelShell = React.memo(function TracksPanelShell({
   groups,
-  selectedIndex,
   width,
   height,
-  activeSection,
+  nav,
+  favorites = [],
+  providerLabel,
   filterQuery = "",
 }: TracksPanelShellProps) {
-  const rows = buildTrackPanelRows(groups);
-  const labelWidth = Math.min(28, Math.max(14, Math.floor(width * 0.4)));
-  const sourceCount = groups.find((group) => group.section === "source")?.rows.length ?? 0;
-  const qualityCount = groups.find((group) => group.section === "quality")?.rows.length ?? 0;
-  const audioCount = groups.find((group) => group.section === "audio")?.rows.length ?? 0;
-  const subtitleCount = groups.find((group) => group.section === "subtitle")?.rows.length ?? 0;
-  const maxVisibleRows = Math.max(6, Math.min(rows.length, (height ?? 22) - 2));
-  const highlightedRowIndex = Math.max(
-    0,
-    rows.findIndex((row) => row.kind === "row" && row.selectableIndex === selectedIndex),
-  );
-  const windowStart = getWindowStart(highlightedRowIndex, rows.length, maxVisibleRows);
-  const visibleRows = rows.slice(windowStart, windowStart + maxVisibleRows);
-  const hiddenAbove = windowStart;
-  const hiddenBelow = Math.max(0, rows.length - windowStart - visibleRows.length);
-
-  if (rows.length === 0) {
+  if (groups.length === 0) {
     return (
       <Box paddingX={1}>
         <Text color={palette.muted}>No stream details available for this title yet.</Text>
@@ -86,83 +109,195 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     );
   }
 
-  return (
-    <Box flexDirection="column" paddingX={1}>
-      <Box marginBottom={1}>
-        {groups.map((group) => {
-          const active = group.section === activeSection;
-          const switchable = group.rows.some((row) => row.enabled);
-          return (
-            <Text
-              key={`tab-${group.section}`}
-              color={active ? palette.accent : switchable ? palette.textDim : palette.dim}
-              bold={active}
-            >
-              {`${active ? "▸ " : "  "}${group.title}${switchable ? "" : " · facts"}  `}
-            </Text>
-          );
-        })}
-      </Box>
-      <Box marginBottom={1}>
-        <Text color={palette.dim}>
-          {truncateLine(
-            [
-              sourceCount ? `${sourceCount} sources` : null,
-              qualityCount ? `${qualityCount} qualities` : null,
-              audioCount ? `${audioCount} audio` : null,
-              subtitleCount ? `${subtitleCount} subtitles` : null,
-            ]
-              .filter((part): part is string => Boolean(part))
-              .join("  ·  "),
-            width - 2,
-          )}
+  const state = nav ?? createInitialTracksNav({});
+  const counts = sectionCounts(groups);
+  const headerLine = tracksCountsHeader(counts, providerLabel);
+  const focusedGroup = groups[Math.min(state.sectionIndex, groups.length - 1)];
+  const showFavoriteHint = focusedGroup?.section === "source";
+
+  const header = (
+    <Box flexDirection="column" marginBottom={1}>
+      <Box>
+        <Text color={palette.accent} bold>
+          🦊 Kunai{"  "}
+        </Text>
+        <Text color={palette.textDim} bold>
+          Tracks
         </Text>
       </Box>
+      {headerLine ? <Text color={palette.dim}>{truncateLine(headerLine, width - 2)}</Text> : null}
       {filterQuery.trim() ? (
         <Text color={palette.accentSoft}>{truncateLine(`filter: ${filterQuery}`, width - 2)}</Text>
       ) : null}
-      {hiddenAbove > 0 ? <Text color={palette.dim}>{`↑ ${hiddenAbove} more`}</Text> : null}
-      {visibleRows.map((row, offset) => {
+    </Box>
+  );
+
+  const footer = (
+    <Box marginTop={1}>
+      <Text color={palette.dim}>
+        ↑↓ choose · → enter · ⏎ switch ·{showFavoriteHint ? " f favorite ·" : ""} esc back
+      </Text>
+    </Box>
+  );
+
+  if (width < TWO_PANE_MIN_WIDTH) {
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        {header}
+        <StackedView groups={groups} state={state} favorites={favorites} width={width} />
+        {footer}
+      </Box>
+    );
+  }
+
+  const rightWidth = width - SECTION_COL_WIDTH - 3;
+
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      {header}
+      <Box flexDirection="row">
+        <Box flexDirection="column" width={SECTION_COL_WIDTH} marginRight={2}>
+          {groups.map((group, index) => {
+            const focused = state.focusedPane === "sections" && index === state.sectionIndex;
+            const active = index === state.sectionIndex;
+            return (
+              <Box key={`sec-${group.section}`}>
+                <Text color={focused ? palette.accent : palette.dim}>{focused ? "▸ " : "  "}</Text>
+                <Box width={9}>
+                  <Text color={active ? palette.text : palette.muted} bold={active} wrap="truncate">
+                    {group.title}
+                  </Text>
+                </Box>
+                <Text color={palette.dim} wrap="truncate">
+                  {truncateLine(currentValue(group), SECTION_COL_WIDTH - 12)}
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+        <Box flexDirection="column" flexGrow={1}>
+          {focusedGroup ? (
+            <OptionsPane
+              group={focusedGroup}
+              state={state}
+              favorites={favorites}
+              width={Math.max(12, rightWidth)}
+              height={height}
+            />
+          ) : null}
+        </Box>
+      </Box>
+      {footer}
+    </Box>
+  );
+});
+
+function OptionsPane({
+  group,
+  state,
+  favorites,
+  width,
+  height,
+}: {
+  group: TrackCapabilityGroup;
+  state: TracksNavState;
+  favorites: readonly string[];
+  width: number;
+  height?: number;
+}) {
+  const optionsFocused = state.focusedPane === "options";
+  const rows = displayRows(group, favorites);
+
+  if (rows.length === 0) {
+    return (
+      <Text color={palette.dim}>
+        {truncateLine(group.emptyReason ?? "Nothing to switch.", width)}
+      </Text>
+    );
+  }
+
+  const headerLabel = `${group.title.toUpperCase()} · ${rows.length}`;
+
+  if (group.section === "subtitle") {
+    const columns = Math.max(1, Math.floor(width / 16));
+    const grid = chunkSubtitleGrid(rows, columns);
+    return (
+      <Box flexDirection="column">
+        <Text color={palette.muted} bold>
+          {headerLabel}
+        </Text>
+        {grid.map((line, rowIndex) => (
+          <Box key={`subrow-${rowIndex}`}>
+            {line.map((capability) => {
+              const flatIndex =
+                grid.slice(0, rowIndex).reduce((sum, r) => sum + r.length, 0) +
+                line.indexOf(capability);
+              const highlighted = optionsFocused && flatIndex === state.optionIndex;
+              return (
+                <Box key={`sub-${capability.value}`} width={16}>
+                  <Text
+                    color={
+                      highlighted
+                        ? palette.accent
+                        : capability.selected
+                          ? palette.ok
+                          : palette.textDim
+                    }
+                    bold={highlighted || capability.selected}
+                    wrap="truncate"
+                  >
+                    {capability.selected ? "✓ " : "  "}
+                    {capability.label}
+                  </Text>
+                </Box>
+              );
+            })}
+          </Box>
+        ))}
+        <Text color={palette.dim}>
+          ↳ subtitles attach live in mpv — switch instantly in the player
+        </Text>
+      </Box>
+    );
+  }
+
+  const maxVisible = Math.max(4, Math.min(rows.length, (height ?? 18) - 4));
+  const highlightIndex = optionsFocused ? Math.min(state.optionIndex, rows.length - 1) : 0;
+  const windowStart = getWindowStart(highlightIndex, rows.length, maxVisible);
+  const visible = rows.slice(windowStart, windowStart + maxVisible);
+  const hiddenBelow = Math.max(0, rows.length - windowStart - visible.length);
+
+  return (
+    <Box flexDirection="column">
+      <Text color={palette.muted} bold>
+        {headerLabel}
+      </Text>
+      {windowStart > 0 ? <Text color={palette.dim}>{`↑ ${windowStart} more`}</Text> : null}
+      {visible.map((capability, offset) => {
         const index = windowStart + offset;
-        if (row.kind === "header") {
-          return (
-            <Box key={`h-${row.group.section}`} marginTop={index === 0 ? 0 : 1}>
-              <Text color={palette.textDim} bold>
-                {row.group.title}
-              </Text>
-              {!row.group.selectable ? <Text color={palette.dim}>{"  ·  facts"}</Text> : null}
-            </Box>
-          );
-        }
-
-        if (row.kind === "empty") {
-          return (
-            <Box key={`e-${row.group.section}`} paddingLeft={2}>
-              <Text color={palette.dim}>{truncateLine(row.reason, width - 4)}</Text>
-            </Box>
-          );
-        }
-
-        const { capability } = row;
-        const highlighted = row.selectableIndex === selectedIndex;
-        const color = rowColor(capability, highlighted);
+        const highlighted = optionsFocused && index === state.optionIndex;
+        const fav = group.section === "source" && isFavoriteSource(favorites, capability.label);
         const tag = rowTag(capability);
-        const marker = highlighted ? "▌ " : capability.selected ? "› " : "  ";
-        const detailParts = [tag, capability.detail, capability.reason].filter(
-          (part): part is string => Boolean(part),
-        );
-
         return (
-          <Box key={`r-${row.group.section}-${capability.value}`} flexDirection="row">
-            <Text color={highlighted ? palette.accent : palette.dim}>{marker}</Text>
-            <Box width={labelWidth}>
-              <Text color={color} bold={highlighted || capability.selected} wrap="truncate">
-                {capability.label}
-              </Text>
-            </Box>
-            {detailParts.length > 0 ? (
+          <Box key={`opt-${capability.value}`} flexDirection="row">
+            <Text color={highlighted ? palette.accent : palette.dim}>
+              {highlighted ? "▌ " : capability.selected ? "› " : "  "}
+            </Text>
+            {fav ? <Text color={palette.accent}>♥ </Text> : null}
+            <Text
+              color={rowColor(capability, highlighted)}
+              bold={highlighted || capability.selected}
+              wrap="truncate"
+            >
+              {capability.label}
+            </Text>
+            {capability.detail || tag ? (
               <Text color={highlighted ? palette.accentSoft : palette.dim}>
-                {truncateLine(detailParts.join("  ·  "), Math.max(8, width - labelWidth - 6))}
+                {"  "}
+                {truncateLine(
+                  [tag, capability.detail].filter(Boolean).join(" · "),
+                  Math.max(8, width - capability.label.length - (fav ? 6 : 4)),
+                )}
               </Text>
             ) : null}
           </Box>
@@ -171,4 +306,53 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
       {hiddenBelow > 0 ? <Text color={palette.dim}>{`↓ ${hiddenBelow} more`}</Text> : null}
     </Box>
   );
-});
+}
+
+/** Narrow fallback: sections stacked with their rows, honoring the focused option. */
+function StackedView({
+  groups,
+  state,
+  favorites,
+  width,
+}: {
+  groups: readonly TrackCapabilityGroup[];
+  state: TracksNavState;
+  favorites: readonly string[];
+  width: number;
+}) {
+  const rows = buildTrackPanelRows(groups);
+  return (
+    <Box flexDirection="column">
+      {rows.map((row) => {
+        if (row.kind === "header") {
+          return (
+            <Box key={`h-${row.group.section}`} marginTop={1}>
+              <Text color={palette.textDim} bold>
+                {row.group.title}
+              </Text>
+            </Box>
+          );
+        }
+        if (row.kind === "empty") {
+          return (
+            <Box key={`e-${row.group.section}`} paddingLeft={2}>
+              <Text color={palette.dim}>{truncateLine(row.reason, width - 4)}</Text>
+            </Box>
+          );
+        }
+        const { capability } = row;
+        const fav =
+          capability.section === "source" && isFavoriteSource(favorites, capability.label);
+        return (
+          <Box key={`r-${row.group.section}-${capability.value}`} flexDirection="row">
+            <Text color={palette.dim}>{capability.selected ? "› " : "  "}</Text>
+            {fav ? <Text color={palette.accent}>♥ </Text> : null}
+            <Text color={rowColor(capability, false)} bold={capability.selected} wrap="truncate">
+              {truncateLine(capability.label, width - 6)}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
