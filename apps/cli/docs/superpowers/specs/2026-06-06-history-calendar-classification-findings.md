@@ -22,13 +22,25 @@ the work survives across sessions. Each has a confirmed root cause + a fix desig
 - **Tracks footer** — no longer says misleading "facts only, Esc closes" when the panel is still
   navigable; shows nav hints regardless of switchability.
 
-## STILL OPEN (larger / data-dependent / need live verify)
+## SHIPPED — session 3 (the #1–#4 batch, all gates green)
 
-- **History broken lines (Image #8)** — likely kitty poster-ghost class (not the list-row spill).
-  Needs the user's terminal; same family as A6 ghost poster.
-- **#1 classification, #2 calendar dates, #4 type filter, #5 series-%, #6 history posters,
-  #7 picker context** — see below.
-- **Post-play polish** — recommendations only sometimes appear (warm-race), want small poster
+- **#1 classification** — `classifyPersistedKind` (content-derived: AniList/MAL id or TMDB Animation
+  genre) at the history write path; `correctedHistoryMediaKind` for legacy read-time correction;
+  idempotent backfill migration `018_data_history_reclassify_anime`. `resolveContentKind` kept
+  mode-based for the header crumb + language profile (those want the live session signal).
+- **#2 calendar dates** — `buildCalendarDaysFromOptions` now sorts the day strip chronologically by
+  ISO dayKey (TBD/non-date keys last). Was unsorted ("SAT 6 · MON 8 · SAT 5").
+- **#4 history type filter** — second tab axis (All/Anime/Series/Movies) in the history overlay,
+  Shift+Tab cycles it, filters via the corrected classification. `history-view.ts` +
+  `history-shell.tsx` + `root-overlay-shell.tsx`.
+
+## STILL OPEN (need live TTY / data / design)
+
+- **History broken lines (Image #8)** — kitty poster-ghost class (not the list-row spill). Needs TTY.
+- **#5 series-%** — needs catalog episode-count wiring into the history row.
+- **#6 history posters** — needs a poster column on the history table + render + backfill.
+- **#7 picker context** — add a poster/synopsis rail to the "Where to start?" picker.
+- **Post-play design/polish** — recommendations only sometimes appear (warm-race), want small poster
   thumbnails on rec cards, general visual cleanup. Poster rendering is the ghost-risk area.
 
 ---
