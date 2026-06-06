@@ -47,7 +47,13 @@ Run `bun run dev` (wide terminal for posters). Tick each. ✅ = automated-test-c
 - [ ] 👁 During playback, the **"up next"** line shows the **queued title** when there's no next episode.
 - [ ] 👁 **`/queue`** opens the Up Next panel — see the queue (▶ next-up, ✓ played), **Play now** a queued item, clear, **save queue as playlist**, import/export, refill from watchlist.
 - [ ] 👁 **AllManga**: a hung Ak endpoint now fails fast (~4s) to the next provider instead of stalling ~12s.
-- [ ] ⏳ Remaining (lower value / harder): small posters on rec cards (ghost-risk) · `/audio` `/subtitles` deep-links + drop `/streams` (Task 10) · episode titles/thumbnails in the picker (source-blob) · `#5` series-% · download-all-in-queue.
+- [ ] 👁 **`/audio`** / **`/subtitles`** open the tracks panel **at that section**; `/streams` is gone; `/source` also answers to `/tracks` `/servers`; the in-player `t` + post-play tracks footer still open the panel (at source).
+
+## Genuinely remaining (deferred — risky/ambiguous to do blind)
+- **Small rec-card posters** — 3 Kitty images per post-play is the same multi-image path as the **#8/#13 ghosts you reported**; doing it blind risks worsening that bug. Pair it with the ghost fix, on your TTY.
+- **Episode titles/thumbnails in the picker** — data lives in the per-episode *source-resolve* blob, not the catalog; it's a resolve→picker pipeline change.
+- **#5 series-%** — a true series % needs a reliable total-episode count (genuinely ambiguous across seasons/anime); current % is per-episode. Left as-is rather than show a wrong denominator.
+- **Download-all-in-queue** — needs per-item resolve + `DownloadService` job orchestration (a real feature, not a quick add).
 
 ## Installer / README
 
