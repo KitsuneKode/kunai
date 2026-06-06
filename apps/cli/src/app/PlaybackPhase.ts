@@ -1783,6 +1783,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               durationSeconds: result.duration,
               completed: didComplete,
               providerId: resolvedProviderId,
+              // Persist the poster so resume/continue rebuilds the title WITH art
+              // (no poster on resumed playback was just a missing URL) + history rail.
+              posterUrl: title.posterUrl,
               updatedAt: new Date().toISOString(),
             });
             const savedHistoryRow = container.historyRepository.getLatestForTitle(title.id);

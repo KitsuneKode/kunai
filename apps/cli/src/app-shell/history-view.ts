@@ -366,6 +366,7 @@ function buildHistoryPreviewRailModel(
     title: row.title,
     subtitle: row.episodeCode,
     overview: row.detail,
+    posterUrl: entry.posterUrl,
     posterState,
     facts,
   };

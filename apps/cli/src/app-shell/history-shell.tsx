@@ -16,6 +16,7 @@ import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import { RETURN_LOOP_HISTORY_NEW_EMPTY, RETURN_LOOP_HISTORY_SUBTITLE } from "./return-loop-copy";
 import { palette } from "./shell-theme";
+import { usePosterPreview } from "./use-poster-preview";
 
 export function HistoryShell({
   view,
@@ -32,6 +33,14 @@ export function HistoryShell({
   const statusWidth = Math.min(16, Math.max(10, Math.floor(rowWidth * 0.18)));
   const recencyWidth = 8;
   const titleWidth = Math.max(12, rowWidth - epWidth - statusWidth - recencyWidth - 4);
+  // Resolve the selected row's stored poster for the preview rail (same mechanism
+  // as browse). Wide-only; the URL now comes from history (persisted on watch).
+  const railPosterUrl = view.rail?.posterUrl;
+  const { poster: railPoster } = usePosterPreview(railPosterUrl, {
+    rows: 12,
+    cols: 26,
+    enabled: Boolean(railPosterUrl) && columns >= 124,
+  });
   const selectedItem = view.items.find(
     (item): item is Extract<HistoryView["items"][number], { kind: "row" }> =>
       item.kind === "row" && item.selected,
@@ -147,6 +156,7 @@ export function HistoryShell({
         list={list}
         railModel={view.rail}
         railWidth={32}
+        poster={railPoster}
       />
     </Box>
   );
