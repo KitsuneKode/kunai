@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { measureColumns, padColumnsEnd, truncateLine } from "../shell-text";
+import { padColumnsEnd, truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 
 export type ListRowColumn = {
@@ -83,9 +83,12 @@ export function listRowStatusColumn(
   color: string,
   dim = false,
 ): ListRowColumn {
+  // Cap at the budgeted width — expanding to the status's own measured width
+  // overflowed the row and wrapped a long status ("aired · not available") into
+  // the next row (the calendar/history "spill"). ListRow truncates to fit.
   return {
     text: status,
-    width: Math.max(measureColumns(status), width),
+    width,
     color,
     dim,
     align: "right",
