@@ -45,6 +45,11 @@ const DEFAULT_UA =
 const ALLANIME_API_URL = "https://api.allanime.day/api";
 const ALLANIME_REFERER = "https://youtu-chan.com";
 export const ALLMANGA_QUALITY_FIRST_WAIT_BUDGET_MS = 4_000;
+// The Ak endpoint (separate CDN, slowest single step) normally answers in
+// 40–680ms. Cap the ak-only FALLBACK lane so a genuinely hung Ak can't stall the
+// resolve — on timeout we return empty and the provider cycle fails fast to the
+// next provider instead of hanging ~12s. Only bites on truly bad Ak responses.
+export const ALLMANGA_AK_FALLBACK_TIMEOUT_MS = 4_000;
 
 export async function collectAllMangaLinksForStartup(
   input: ProviderResolveInput,
@@ -62,10 +67,21 @@ export async function collectAllMangaLinksForStartup(
   if ((input.startupPriority ?? "balanced") !== "quality-first") {
     const baseline = await baselinePromise;
     if (baseline.length > 0) return { links: baseline, requiredAkFallback: false };
-    return {
-      links: await resolveEpisodeSources({ ...request, sourceLane: "ak-only" }),
-      requiredAkFallback: true,
-    };
+    // Baseline empty → ak-only is the only lane; cap it so a hung Ak can't stall.
+    const akController = new AbortController();
+    const abortAk = () => akController.abort(request.signal?.reason);
+    request.signal?.addEventListener("abort", abortAk, { once: true });
+    const capped = await Promise.race([
+      resolveEpisodeSources({
+        ...request,
+        sourceLane: "ak-only",
+        signal: akController.signal,
+      }).catch(() => [] as StreamLink[]),
+      Bun.sleep(ALLMANGA_AK_FALLBACK_TIMEOUT_MS).then(() => null),
+    ]);
+    request.signal?.removeEventListener("abort", abortAk);
+    if (capped === null) akController.abort("ak-only fallback timeout");
+    return { links: capped ?? [], requiredAkFallback: true };
   }
 
   const optionalAkController = new AbortController();
@@ -79,11 +95,14 @@ export async function collectAllMangaLinksForStartup(
 
   const baseline = await baselinePromise;
   if (baseline.length === 0) {
-    try {
-      return { links: await akPromise, requiredAkFallback: true };
-    } finally {
-      request.signal?.removeEventListener("abort", abortOptionalAk);
-    }
+    // Baseline empty → wait on ak, but cap it so a hung Ak fails fast.
+    const capped = await Promise.race([
+      akPromise,
+      Bun.sleep(ALLMANGA_AK_FALLBACK_TIMEOUT_MS).then(() => null),
+    ]);
+    request.signal?.removeEventListener("abort", abortOptionalAk);
+    if (capped === null) optionalAkController.abort("ak-only fallback timeout");
+    return { links: capped ?? [], requiredAkFallback: true };
   }
 
   const waitMs = options.qualityFirstWaitMs ?? ALLMANGA_QUALITY_FIRST_WAIT_BUDGET_MS;
