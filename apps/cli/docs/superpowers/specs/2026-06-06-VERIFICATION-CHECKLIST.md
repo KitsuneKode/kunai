@@ -38,10 +38,13 @@ Run `bun run dev` (wide terminal for posters). Tick each. ✅ = automated-test-c
 - [ ] 👁 AllManga **older-show posters** now load (was 404 — wrong CDN host; now `wp.youtube-anime.com/aln.youtube-anime.com`).
 - [ ] 👁 Quick check: time `~/Projects/osc/ani-cli` vs Kunai on one anime title — if ani-cli is also slow, remaining slowness is **upstream AllAnime**, not us.
 
-## Up Next — Continuous Play (Spec 1, foundations only)
+## Up Next — Continuous Play (LOOP SHIPPED)
 
-- [ ] ✅ `autoplayRecommendations` setting defaults on; `resolveNextUp()` pure decision (episode→queue→rec) unit-tested.
-- [ ] ⏳ Tasks 3–8 (rec auto-continue, post-play `1/2/3`, `/queue` panel, hint, recs reliability + small posters) **not yet built** — best done with you watching the autoplay countdown live.
+- [ ] ✅ `autoplayRecommendations` defaults on; `resolveNextUp()` pure decision unit-tested.
+- [ ] 👁 Finish a series with nothing queued → **"Up next: <rec> in 5s · a to pause"** → plays the recommendation; `a` cancels, stays in post-play. (YouTube-style auto-continue.)
+- [ ] 👁 Post-play `1`/`2`/`3` plays that rec **now**; `!`/`@`/`#` opens its action panel (add-to-queue / details / download).
+- [ ] 👁 Browse/search `q` on a row → "Queued <title>" → it **auto-plays after the current finishes** (cross-title advance).
+- [ ] ⏳ Remaining polish (own surfaces, not blocking the loop): visible `/queue` view panel · always-on "Up next" hint · small posters on rec cards.
 
 ## Installer / README
 
