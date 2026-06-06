@@ -2068,7 +2068,13 @@ export async function openTracksPanel(
   const id = createSessionPickerId("tracks_panel");
   container.stateManager.dispatch({
     type: "OPEN_OVERLAY",
-    overlay: { type: "tracks_panel", id, groups, initialSection: options.initialSection },
+    overlay: {
+      type: "tracks_panel",
+      id,
+      groups,
+      initialSection: options.initialSection,
+      favorites: container.config.favoriteSources,
+    },
   });
   const resolved = await waitForSessionPicker(container.stateManager, id);
   return resolved ? decodeTrackSelection(resolved) : null;
