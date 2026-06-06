@@ -185,7 +185,7 @@ export const COMMANDS: readonly AppCommand[] = [
   {
     id: "downloads",
     label: "Download Queue",
-    aliases: ["downloads", "download-jobs", "queue", "jobs"],
+    aliases: ["downloads", "download-jobs", "jobs"],
     description: "Inspect active, queued, and failed download jobs",
   },
   {
@@ -464,9 +464,9 @@ export const COMMANDS: readonly AppCommand[] = [
   },
   {
     id: "playlist",
-    label: "Playlist",
-    aliases: ["playlist", "pl", "queue-playlist"],
-    description: "Manage your playback playlist queue",
+    label: "Up Next / Playlist",
+    aliases: ["playlist", "pl", "queue-playlist", "queue", "up-next", "upnext"],
+    description: "View and manage the Up Next queue — play, clear, save as playlist, import/export",
   },
   {
     id: "playlist-add",
