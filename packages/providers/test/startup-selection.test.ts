@@ -54,6 +54,37 @@ describe("selectReadyStream", () => {
   });
 });
 
+describe("selectReadyStream — favorites", () => {
+  const streams = [
+    streamCandidate({ id: "a", serverName: "Neon", qualityRank: 1080 }),
+    streamCandidate({ id: "b", serverName: "Fade", qualityRank: 1080 }),
+    streamCandidate({ id: "c", serverName: "Fade", qualityRank: 720 }),
+  ] as const satisfies readonly StreamCandidate[];
+
+  test("prefers highest-quality favorite when no explicit selection", () => {
+    const result = selectReadyStream(streams, { favoriteSourceNames: ["fade"] });
+    expect(result.selected.id).toBe("b");
+    expect(result.decision.reason).toBe("favorite-source");
+  });
+
+  test("explicit selection still wins over favorite", () => {
+    expect(
+      selectReadyStream(streams, { favoriteSourceNames: ["fade"], preferredStreamId: "a" }).selected
+        .id,
+    ).toBe("a");
+  });
+
+  test("empty favorites = unchanged default (highest quality, original tie order)", () => {
+    expect(selectReadyStream(streams, { favoriteSourceNames: [] }).selected.id).toBe("a");
+  });
+
+  test("favorite absent from streams falls back to default", () => {
+    const result = selectReadyStream(streams, { favoriteSourceNames: ["killjoy"] });
+    expect(result.selected.id).toBe("a");
+    expect(result.decision.reason).not.toBe("favorite-source");
+  });
+});
+
 function streamCandidate(
   overrides: Pick<StreamCandidate, "id"> & Partial<StreamCandidate>,
 ): StreamCandidate {

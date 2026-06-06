@@ -65,6 +65,7 @@ export type ProviderSelectionReason =
   | "balanced-budget-expired"
   | "quality-first"
   | "explicit-source"
+  | "favorite-source"
   | "ak-required"
   | "provider-fallback";
 
