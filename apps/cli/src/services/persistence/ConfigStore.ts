@@ -34,6 +34,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   headless: true,
   showMemory: false,
   autoNext: true,
+  favoriteSources: [],
   resumeStartChoicePrompt: true,
   skipRecap: false,
   skipIntro: true,

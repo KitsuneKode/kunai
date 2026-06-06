@@ -6,3 +6,13 @@
 export function normalizeSourceName(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
+
+/** Toggle a source name in the favorites list by normalized identity. Returns a new array. */
+export function toggleFavoriteSource(
+  favorites: readonly string[],
+  label: string,
+): readonly string[] {
+  const key = normalizeSourceName(label);
+  if (!key) return favorites;
+  return favorites.includes(key) ? favorites.filter((name) => name !== key) : [...favorites, key];
+}
