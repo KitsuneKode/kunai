@@ -635,10 +635,13 @@ export async function searchAllManga(
     const epCount =
       typeof epRaw === "number" ? epRaw : edge.episodeCount ? Number(edge.episodeCount) : undefined;
 
-    // Fix relative thumbnail URLs (prepend allanime.day)
+    // Relative thumbnails (older shows, e.g. "mcovers/...") are served from the
+    // youtube-anime CDN, NOT allanime.day — which 404s. Verified host (302→301→200,
+    // real WebP): wp.youtube-anime.com/aln.youtube-anime.com. Image fetch needs
+    // Referer https://allmanga.to/. Newer shows already use absolute anilist.co URLs.
     let posterUrl = edge.thumbnail ?? undefined;
     if (posterUrl && !posterUrl.startsWith("http")) {
-      posterUrl = `https://allanime.day/${posterUrl.replace(/^\//, "")}`;
+      posterUrl = `https://wp.youtube-anime.com/aln.youtube-anime.com/${posterUrl.replace(/^\//, "")}`;
     }
 
     const availableAudioModes = (["sub", "dub"] as const).filter((mode) => {
