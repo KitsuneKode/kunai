@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Kunai — Tracks / Servers redesign (TUI-native)</title>
+<style>
+  :root{
+    --bg:#100b0f; --surface:#1c1620; --elev:#2a2030; --active:#3a2b40; --line:#473b51;
+    --text:#f6eff4; --textDim:#cabfca; --muted:#968a98; --dim:#665b69;
+    --accent:#ff8fb0; --accentDeep:#d85f86; --accentFill:#2c1622;
+    --ok:#54d6a0; --warn:#f59a3c; --info:#5fb6ff; --gold:#f4c45c; --teal:#4fd1c5; --orchid:#c98bff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0a0709;color:var(--text);
+    font:15px/1.55 ui-monospace,"JetBrains Mono","SF Mono",Menlo,monospace;
+    padding:28px;display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+  .screen{background:var(--bg);border:1px solid var(--line);border-radius:10px;
+    width:620px;padding:18px 20px;box-shadow:0 18px 60px rgba(0,0,0,.55)}
+  .cap{color:var(--muted);font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin:0 0 14px}
+  .top{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+  .brand{color:var(--accent);font-weight:800}
+  .pill{background:var(--text);color:#000;border-radius:5px;padding:1px 8px;font-weight:700}
+  .crumb{color:var(--muted)}
+  .tabs{display:flex;gap:18px;margin:14px 0 2px}
+  .tab{color:var(--muted)} .tab.on{color:var(--text);font-weight:700;background:var(--accentFill);
+    border:1px solid var(--accent);border-radius:5px;padding:0 8px}
+  .sub{color:var(--dim);margin:4px 0 16px}
+  .sec{color:var(--muted);font-weight:700;letter-spacing:.04em;margin:16px 0 6px}
+  .row{display:flex;align-items:center;gap:12px;padding:3px 8px;border-radius:5px}
+  .row.on{background:var(--active)}
+  .bar{color:var(--accent);width:8px}
+  .name{flex:0 0 150px;color:var(--text)} .name.cur{color:var(--accent);font-weight:700}
+  .meta{flex:1;color:var(--muted)} .flag{margin-right:4px}
+  .chip{color:var(--gold)} .lang{color:var(--textDim)}
+  .state{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .ok{color:var(--ok)} .acc{color:var(--accent)} .dimx{color:var(--dim)} .heart{color:var(--accent)}
+  .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px 18px;margin-top:4px}
+  .g{color:var(--textDim);padding:2px 6px;border-radius:4px}
+  .g.cur{color:var(--accent);font-weight:700;background:var(--active)}
+  .g.off{color:var(--dim)}
+  .note{color:var(--dim);margin-top:8px;font-size:13px}
+  .foot{color:var(--dim);border-top:1px solid var(--line);margin-top:16px;padding-top:10px;font-size:13px}
+  .k{color:var(--accent);font-weight:700}
+  h2{font:13px/1 ui-monospace,monospace;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;margin:0 0 12px;font-weight:700}
+</style>
+</head>
+<body>
+
+<div>
+<h2>① Servers — the /source picker (web alternative, TUI-native)</h2>
+<div class="screen">
+  <div class="top"><span class="brand">🦊 Kunai</span><span class="pill">Servers</span>
+    <span class="crumb">Teach You a Lesson · S01E03</span></div>
+  <div class="sub">pick a source — ⏎ switch · <span class="k">f</span> favorite</div>
+
+  <div class="row on"><span class="bar">▌</span><span class="name cur">Neon</span>
+    <span class="meta"><span class="flag">🇺🇸</span><span class="lang">English</span> · <span class="chip">1080p</span></span>
+    <span class="state"><span class="acc">✓ playing</span></span></div>
+
+  <div class="row"><span class="bar"> </span><span class="name">Cypher</span>
+    <span class="meta"><span class="flag">🇺🇸</span><span class="lang">English</span> · <span class="chip">1080p</span></span>
+    <span class="state"></span></div>
+
+  <div class="row"><span class="bar"> </span><span class="name">Fade</span>
+    <span class="meta"><span class="flag">🇮🇳</span><span class="lang">Hindi</span> · <span class="chip">1080p</span></span>
+    <span class="state"><span class="heart">♥</span></span></div>
+
+  <div class="row"><span class="bar"> </span><span class="name">Killjoy</span>
+    <span class="meta"><span class="flag">🇩🇪</span><span class="lang">German</span> · <span class="chip">720p</span></span>
+    <span class="state"></span></div>
+
+  <div class="row"><span class="bar"> </span><span class="name">Yoru</span>
+    <span class="meta"><span class="flag">🇺🇸</span><span class="lang">English</span> · <span class="chip">~4K</span> <span class="dimx">· movies only</span></span>
+    <span class="state"><span class="dimx">untested</span></span></div>
+
+  <div class="foot"><span class="k">↑↓</span> choose &nbsp; <span class="k">⏎</span> switch &nbsp; <span class="k">f</span> favorite &nbsp; <span class="k">esc</span> back</div>
+</div>
+</div>
+
+<div>
+<h2>② Full Tracks panel — one place, no per-row spam</h2>
+<div class="screen">
+  <div class="top"><span class="brand">🦊 Kunai</span><span class="pill">Tracks</span>
+    <span class="crumb">vidlink · S01E03</span></div>
+  <div class="tabs"><span class="tab on">Source</span><span class="tab">Quality</span><span class="tab">Audio</span><span class="tab">Subtitles</span></div>
+  <div class="sub">1 source · 3 qualities · 10 subtitles &nbsp;·&nbsp; <span class="dimx">host vidlink.pro</span></div>
+
+  <div class="sec">Source</div>
+  <div class="row on"><span class="bar">▌</span><span class="name cur">VidLink</span>
+    <span class="meta"><span class="flag">🇺🇸</span><span class="lang">English</span> · iframe</span>
+    <span class="state"><span class="acc">✓ current</span></span></div>
+
+  <div class="sec">Quality</div>
+  <div class="row"><span class="bar"> </span><span class="name cur">1080p</span><span class="meta"></span>
+    <span class="state"><span class="acc">✓ current</span></span></div>
+  <div class="row"><span class="bar"> </span><span class="name">480p</span><span class="meta"></span>
+    <span class="state"><span class="ok">● switch</span></span></div>
+  <div class="row"><span class="bar"> </span><span class="name">360p</span><span class="meta"></span>
+    <span class="state"><span class="ok">● switch</span></span></div>
+
+  <div class="sec">Subtitles <span class="dimx" style="font-weight:400">· 10</span></div>
+  <div class="grid">
+    <span class="g cur">English ✓</span><span class="g">Español</span><span class="g">Français</span>
+    <span class="g">Filipino</span><span class="g">Indonesian</span><span class="g">Malay</span>
+    <span class="g">Português</span><span class="g">Русский</span><span class="g">العربية</span>
+    <span class="g off">Subtitles off</span>
+  </div>
+  <div class="note">↳ subtitles attach live in mpv — switch instantly in the player</div>
+
+  <div class="foot"><span class="k">↑↓</span> select &nbsp; <span class="k">←→</span> section &nbsp; <span class="k">⏎</span> change &nbsp; <span class="k">esc</span> close</div>
+</div>
+</div>
+
+</body>
+</html>
