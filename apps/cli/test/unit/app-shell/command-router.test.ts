@@ -57,7 +57,6 @@ describe("resolveCommandContext scoped surfaces", () => {
       "recompute",
       "fallback",
       "pick-episode",
-      "streams",
       "source",
       "quality",
       "provider",

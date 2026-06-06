@@ -34,7 +34,6 @@ const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "recompute",
   "fallback",
   "pick-episode",
-  "streams",
   "source",
   "quality",
   "provider",

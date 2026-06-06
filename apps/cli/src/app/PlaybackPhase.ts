@@ -3049,18 +3049,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             } else if (
               routedAction === "source" ||
               routedAction === "quality" ||
-              routedAction === "streams"
+              routedAction === "audio" ||
+              routedAction === "subtitle"
             ) {
-              // Unified Tracks panel: /source and /quality deep-link a section,
-              // /streams opens the whole surface. The user may switch any
-              // section from the same panel, so restart semantics follow the
-              // picked section, not the command that opened it.
+              // Unified Tracks panel: each command deep-links its section. The
+              // user may switch any section from the same panel, so restart
+              // semantics follow the picked section, not the opening command.
               const initialSection =
                 routedAction === "source"
                   ? "source"
                   : routedAction === "quality"
                     ? "quality"
-                    : undefined;
+                    : routedAction === "audio"
+                      ? "audio"
+                      : "subtitle";
               const picked = await openTracksPanel(preparedStream, { initialSection }, container);
               const selection = picked ? streamSelectionFromTrackPick(picked) : null;
               if (!picked || !selection) {

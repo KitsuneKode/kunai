@@ -185,16 +185,22 @@ function RootShellHost() {
 
 async function openPlaybackStreamSelectionPicker(
   container: Container,
-  action: "streams" | "source" | "quality",
+  action: "source" | "quality" | "audio" | "subtitle",
   reason: string,
 ): Promise<void> {
   const stream = container.stateManager.getState().stream;
   if (!stream) return;
 
-  // One unified Tracks panel for all three commands; /source and /quality
-  // deep-link a section, /streams opens the whole surface.
+  // One unified Tracks panel; each command deep-links its section. From any
+  // section the left pane reaches the others (no separate umbrella command).
   const initialSection =
-    action === "source" ? "source" : action === "quality" ? "quality" : undefined;
+    action === "source"
+      ? "source"
+      : action === "quality"
+        ? "quality"
+        : action === "audio"
+          ? "audio"
+          : "subtitle";
   const { openTracksPanel } = await import("./workflows");
   const picked = await openTracksPanel(stream, { initialSection }, container);
   const selection = picked ? streamSelectionFromTrackPick(picked) : null;
@@ -515,7 +521,7 @@ function AppRoot({ container }: { container: Container }) {
     () =>
       container.playerControl.subscribePickerRequest((action) => {
         const shellAction =
-          action === "pick-source" ? "source" : action === "pick-quality" ? "quality" : "streams";
+          action === "pick-source" ? "source" : action === "pick-quality" ? "quality" : "source";
         void openPlaybackStreamSelectionPicker(container, shellAction, "mpv-picker-request");
       }),
     [container],
@@ -755,11 +761,19 @@ function AppRoot({ container }: { container: Container }) {
         }
         return;
       }
-      if (action === "streams") {
+      if (action === "audio") {
         void openPlaybackStreamSelectionPicker(
           container,
-          "streams",
-          "playback-loading-command-streams",
+          "audio",
+          "playback-loading-command-audio",
+        );
+        return;
+      }
+      if (action === "subtitle") {
+        void openPlaybackStreamSelectionPicker(
+          container,
+          "subtitle",
+          "playback-loading-command-subtitle",
         );
         return;
       }
@@ -843,7 +857,7 @@ function AppRoot({ container }: { container: Container }) {
   }, [container]);
 
   const onPickStreams = useCallback(() => {
-    void openPlaybackStreamSelectionPicker(container, "streams", "playback-shell-k");
+    void openPlaybackStreamSelectionPicker(container, "source", "playback-shell-k");
   }, [container]);
 
   const onPickEpisode = useCallback(() => {
@@ -1233,7 +1247,7 @@ function buildPostPlayFooterActions(
     label: stopAfterCurrent ? "resume chain" : "stop after",
     action: "stop-after-current",
   };
-  const tracksAction: FooterAction = { key: "t", label: "tracks", action: "streams" };
+  const tracksAction: FooterAction = { key: "t", label: "tracks", action: "source" };
 
   switch (postPlayState.kind) {
     case "did-not-start":

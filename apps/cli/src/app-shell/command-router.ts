@@ -49,9 +49,10 @@ type RoutedActionResult =
   | "recover"
   | "recompute"
   | "fallback"
-  | "streams"
   | "source"
   | "quality"
+  | "audio"
+  | "subtitle"
   | "memory"
   | "download"
   | "pick-episode"
@@ -216,9 +217,10 @@ export async function routePlaybackShellAction({
   if (action === "recover") return "recover";
   if (action === "recompute") return "recompute";
   if (action === "fallback") return "fallback";
-  if (action === "streams") return "streams";
   if (action === "source") return "source";
   if (action === "quality") return "quality";
+  if (action === "audio") return "audio";
+  if (action === "subtitle") return "subtitle";
   if (action === "memory") return "memory";
   if (action === "download") return "download";
   if (action === "pick-episode") return "pick-episode";

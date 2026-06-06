@@ -37,9 +37,10 @@ export type ShellAction =
   | "recover"
   | "recompute"
   | "fallback"
-  | "streams"
   | "source"
   | "quality"
+  | "audio"
+  | "subtitle"
   | "memory"
   | "download"
   | "downloads"
@@ -308,9 +309,10 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "recover":
     case "recompute":
     case "fallback":
-    case "streams":
     case "source":
     case "quality":
+    case "audio":
+    case "subtitle":
     case "memory":
     case "pick-episode":
     case "next":

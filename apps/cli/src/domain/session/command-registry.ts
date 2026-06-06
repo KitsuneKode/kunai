@@ -31,9 +31,10 @@ export type AppCommandId =
   | "recover"
   | "recompute"
   | "fallback"
-  | "streams"
   | "source"
   | "quality"
+  | "audio"
+  | "subtitle"
   | "memory"
   | "pick-episode"
   | "next"
@@ -96,9 +97,10 @@ export const COMMAND_CONTEXTS = {
     "recover",
     "recompute",
     "fallback",
-    "streams",
     "source",
     "quality",
+    "audio",
+    "subtitle",
     "memory",
     "pick-episode",
     "download",
@@ -143,9 +145,10 @@ export const COMMAND_CONTEXTS = {
     "recover",
     "recompute",
     "fallback",
-    "streams",
     "source",
     "quality",
+    "audio",
+    "subtitle",
     "toggle-autoplay",
     "toggle-autoskip",
     "stop-after-current",
@@ -379,22 +382,28 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Stop waiting on the current provider and try the next compatible provider",
   },
   {
-    id: "streams",
-    label: "Tracks",
-    aliases: ["tracks", "track", "streams", "stream", "variants", "audio", "subs", "subtitles"],
-    description: "Choose source, quality, audio, hardsub, or subtitle details",
-  },
-  {
     id: "source",
-    label: "Source Picker",
-    aliases: ["source", "sources", "mirror"],
-    description: "Open available stream sources",
+    label: "Source / Servers",
+    aliases: ["source", "sources", "mirror", "server", "servers", "tracks"],
+    description: "Open the tracks panel at the source / servers section",
   },
   {
     id: "quality",
-    label: "Quality Picker",
+    label: "Quality",
     aliases: ["quality", "qualities", "variant"],
-    description: "Open available quality variants",
+    description: "Open the tracks panel at the quality section",
+  },
+  {
+    id: "audio",
+    label: "Audio",
+    aliases: ["audio", "dub", "language"],
+    description: "Open the tracks panel at the audio section",
+  },
+  {
+    id: "subtitle",
+    label: "Subtitles",
+    aliases: ["subtitle", "subtitles", "subs", "captions", "cc"],
+    description: "Open the tracks panel at the subtitles section",
   },
   {
     id: "memory",
@@ -784,11 +793,12 @@ function resolveCommandState(
       }
       return { enabled: true };
 
-    case "streams":
+    case "audio":
+    case "subtitle":
       if (!hasEpisode) {
         return {
           enabled: false,
-          reason: "Start playback before stream selection is available.",
+          reason: "Start playback before track selection is available.",
         };
       }
       return hasMediaTrackChoices

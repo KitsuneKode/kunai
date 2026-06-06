@@ -43,7 +43,7 @@ describe("selectFooterActions", () => {
       { key: "a", label: "autoplay", action: "toggle-autoplay" },
       { key: "u", label: "autoskip", action: "toggle-autoskip" },
       { key: "e", label: "episodes", action: "pick-episode" },
-      { key: "k", label: "streams", action: "streams" },
+      { key: "k", label: "audio", action: "audio" },
       { key: "o", label: "source", action: "source" },
       { key: "v", label: "quality", action: "quality" },
       { key: "r", label: "recover", action: "recover" },
@@ -75,7 +75,7 @@ describe("selectFooterActions", () => {
     const actions: readonly FooterAction[] = [
       { key: "r", label: "recover", action: "recover", primary: true },
       { key: "f", label: "fallback", action: "fallback" },
-      { key: "s", label: "sources", action: "streams" },
+      { key: "s", label: "sources", action: "source" },
       { key: "d", label: "diagnostics", action: "diagnostics" },
       { key: "/", label: "commands", action: "command-mode" },
     ];

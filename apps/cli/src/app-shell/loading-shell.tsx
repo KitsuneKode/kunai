@@ -43,7 +43,7 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
       ...(isSeriesPlayback
         ? [{ key: "e", label: "episodes", action: "pick-episode" as const }]
         : []),
-      { key: "t", label: "tracks", action: "streams" },
+      { key: "t", label: "tracks", action: "source" },
       { key: "/", label: "commands", action: "command-mode" },
     ];
     return selectFooterActions(playingFooterActions, "minimal");

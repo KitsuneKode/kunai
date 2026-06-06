@@ -355,7 +355,7 @@ describe("command availability", () => {
     expect(parseCommand("/fix")?.id).toBe("recover");
     expect(parseCommand("/recompute")?.id).toBe("recompute");
     expect(parseCommand("/bypass-cache")?.id).toBe("recompute");
-    expect(parseCommand("/streams")?.id).toBe("streams");
+    expect(parseCommand("/audio")?.id).toBe("audio");
     expect(parseCommand("/fallback")?.id).toBe("fallback");
     expect(parseCommand("/f")?.id).toBe("fallback");
     expect(parseCommand("/provider")?.id).toBe("provider");
@@ -380,7 +380,7 @@ describe("command availability", () => {
       episode: { season: 1, episode: 2 },
     });
 
-    const emptyCommands = resolveCommands(state, ["streams"]);
+    const emptyCommands = resolveCommands(state, ["audio"]);
     expect(emptyCommands[0]?.enabled).toBe(false);
     expect(emptyCommands[0]?.reason).toContain("No stream choices");
 
@@ -397,7 +397,7 @@ describe("command availability", () => {
       } as never,
     });
 
-    const streamCommands = resolveCommands(state, ["streams"]);
+    const streamCommands = resolveCommands(state, ["audio"]);
     expect(streamCommands[0]?.enabled).toBe(true);
   });
 
