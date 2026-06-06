@@ -429,6 +429,15 @@ export const dataMigrations: readonly Migration[] = [
           );
     `,
   },
+  {
+    id: "019_data_history_poster_url",
+    database: "data",
+    // History never stored a poster, so resume/continue rebuilt the title without
+    // one → no poster during resumed playback, and an empty history preview rail.
+    sql: `
+      ALTER TABLE history_progress ADD COLUMN poster_url TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

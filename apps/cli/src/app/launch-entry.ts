@@ -47,6 +47,10 @@ export function titleFromHistorySelection(selection: HistoryLaunchSelection): Ti
     id: selection.titleId,
     type: historyContentType(selection.entry),
     name: selection.entry.title,
+    // Restore the stored poster so resumed playback renders art (it was simply
+    // absent because history never persisted a poster URL).
+    posterUrl: selection.entry.posterUrl,
+    externalIds: selection.entry.externalIds,
   };
 }
 

@@ -15,6 +15,7 @@ export interface HistoryProgressInput {
   readonly durationSeconds?: number;
   readonly completed?: boolean;
   readonly providerId?: ProviderId;
+  readonly posterUrl?: string;
   readonly updatedAt?: string;
 }
 
@@ -31,6 +32,7 @@ export interface HistoryProgress {
   readonly completed: boolean;
   readonly providerId?: ProviderId;
   readonly externalIds?: ProviderExternalIds;
+  readonly posterUrl?: string;
   readonly updatedAt: string;
   readonly createdAt: string;
 }
@@ -48,6 +50,7 @@ interface HistoryProgressRow {
   readonly completed: number;
   readonly provider_id: string | null;
   readonly external_ids_json: string | null;
+  readonly poster_url: string | null;
   readonly updated_at: string;
   readonly created_at: string;
 }
@@ -75,10 +78,11 @@ export class HistoryRepository {
             completed,
             provider_id,
             external_ids_json,
+            poster_url,
             updated_at,
             created_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(key) DO UPDATE SET
             title = excluded.title,
             position_seconds = excluded.position_seconds,
@@ -86,6 +90,8 @@ export class HistoryRepository {
             completed = excluded.completed,
             provider_id = excluded.provider_id,
             external_ids_json = excluded.external_ids_json,
+            -- keep an existing poster when a later write lacks one
+            poster_url = COALESCE(excluded.poster_url, history_progress.poster_url),
             updated_at = excluded.updated_at
         `,
       )
@@ -102,6 +108,7 @@ export class HistoryRepository {
         input.completed === true ? 1 : 0,
         input.providerId ?? null,
         serializeExternalIds(input.title.externalIds),
+        input.posterUrl ?? null,
         now,
         now,
       );
@@ -183,6 +190,7 @@ export function historyProgressToInput(progress: HistoryProgress): HistoryProgre
     durationSeconds: progress.durationSeconds,
     completed: progress.completed,
     providerId: progress.providerId,
+    posterUrl: progress.posterUrl,
     updatedAt: progress.updatedAt,
   };
 }
@@ -214,6 +222,7 @@ function mapHistoryRow(row: HistoryProgressRow): HistoryProgress {
     completed: row.completed === 1,
     providerId: row.provider_id === null ? undefined : (row.provider_id as ProviderId),
     externalIds: parseExternalIds(row.external_ids_json),
+    posterUrl: row.poster_url ?? undefined,
     updatedAt: row.updated_at,
     createdAt: row.created_at,
   };
