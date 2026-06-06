@@ -2683,6 +2683,50 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 recommendationRailItems = postPlaybackLoadedRecommendations;
               }
             }
+            // YouTube-style continuous play: a natural finish with no next episode and
+            // an empty queue auto-continues into the top recommendation — same cancelable
+            // countdown as the episode/queue advance, gated by autoplayRecommendations.
+            // See resolveNextUp + the Up Next spec. (Episode + queue advance are handled
+            // earlier; this is the rec tail of the same spine.)
+            const topRec = recommendationRailItems[0];
+            if (
+              !nextEpisode &&
+              result.endReason === "eof" &&
+              !playbackSession.autoplayPaused &&
+              !stateManager.getState().autoplaySessionPaused &&
+              !context.signal.aborted &&
+              !container.queueService.peekNext() &&
+              container.config.autoplayRecommendations &&
+              topRec
+            ) {
+              const recCountdown = await runAutoplayAdvanceCountdown({
+                seconds: 5,
+                signal: context.signal,
+                sleep: (ms) => Bun.sleep(ms),
+                onTick: (remaining) =>
+                  this.updatePlaybackFeedback(context, {
+                    detail: "Up next ready",
+                    note: `Up next: ${topRec.title} in ${remaining}s  ·  a to pause`,
+                  }),
+                isCancelled: () => stateManager.getState().autoplaySessionPaused,
+              });
+              if (recCountdown !== "cancelled") {
+                return {
+                  status: "success",
+                  value: {
+                    type: "playlist-advance",
+                    titleInfo: {
+                      id: topRec.id,
+                      name: topRec.title,
+                      type: topRec.type,
+                      posterUrl: topRec.posterPath ?? undefined,
+                    },
+                    mode,
+                  },
+                };
+              }
+              this.updatePlaybackFeedback(context, { detail: null, note: null });
+            }
             // Playback "started" means mpv reached real content. Exit on load or a
             // quit within the first seconds (no eof, no resumable position, almost
             // nothing watched) is NOT a completion — never claim finished/watched.

@@ -50,6 +50,8 @@ export interface KitsuneConfig {
   headless: boolean;
   showMemory: boolean;
   autoNext: boolean;
+  /** YouTube-style: when caught up, auto-continue into the top recommendation (with a cancelable countdown). Default true. */
+  autoplayRecommendations: boolean;
   /** Source/server names the user favorited (normalized via normalizeSourceName). Pinned to top + preferred on auto-select. Default []. */
   favoriteSources: readonly string[];
   /**
