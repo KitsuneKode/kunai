@@ -691,6 +691,7 @@ describe("root shell surface selection", () => {
         id: "tracks:1",
         type: "tracks_panel",
         groups: [],
+        favorites: [],
       },
     });
 

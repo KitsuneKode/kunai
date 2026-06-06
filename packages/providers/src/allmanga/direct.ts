@@ -546,6 +546,7 @@ export const allmangaProviderModule: CoreProviderModule = {
         qualityPreference: input.qualityPreference,
         preferredSourceId: input.preferredSourceId,
         preferredStreamId: input.preferredStreamId,
+        favoriteSourceNames: input.favoriteSourceNames,
         requiredFallback: requiredAkFallback,
       });
       const sourceCandidates = buildAllmangaSourceCandidates(

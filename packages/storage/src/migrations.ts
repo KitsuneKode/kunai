@@ -408,6 +408,27 @@ export const dataMigrations: readonly Migration[] = [
         ON offline_maintenance_jobs(status, created_at ASC);
     `,
   },
+  {
+    id: "018_data_history_reclassify_anime",
+    database: "data",
+    // mediaKind was historically mode-derived, so dramas watched in anime mode
+    // (AllAnime hosts live-action C/K-dramas) were stamped "anime". Re-derive from
+    // the stored external ids: a row is only really anime if it carries an
+    // AniList/MAL id (those DBs only catalog anime). Idempotent; future writes use
+    // resolveContentKind. See domain/media/content-kind.ts.
+    sql: `
+      UPDATE history_progress
+        SET media_kind = 'series'
+        WHERE media_kind = 'anime'
+          AND (
+            external_ids_json IS NULL
+            OR (
+              external_ids_json NOT LIKE '%"anilistId"%'
+              AND external_ids_json NOT LIKE '%"malId"%'
+            )
+          );
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

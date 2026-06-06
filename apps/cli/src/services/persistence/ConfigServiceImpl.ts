@@ -200,6 +200,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.autoNext;
   }
 
+  get favoriteSources(): readonly string[] {
+    return this.config.favoriteSources;
+  }
+
   get resumeStartChoicePrompt(): boolean {
     return this.config.resumeStartChoicePrompt;
   }

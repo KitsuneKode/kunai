@@ -65,6 +65,7 @@ export type ProviderSelectionReason =
   | "balanced-budget-expired"
   | "quality-first"
   | "explicit-source"
+  | "favorite-source"
   | "ak-required"
   | "provider-fallback";
 
@@ -376,6 +377,8 @@ export interface ProviderResolveInput {
   readonly mediaKind: MediaKind;
   readonly preferredSourceId?: string;
   readonly preferredStreamId?: string;
+  /** Normalized favorite source names (user favorites). Preferred during auto-select when present. */
+  readonly favoriteSourceNames?: readonly string[];
   readonly preferredAudioLanguage?: string;
   readonly preferredSubtitleLanguage?: string;
   readonly preferredPresentation?: StreamPresentation;

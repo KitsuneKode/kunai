@@ -92,6 +92,8 @@ export type OverlayState =
       id: string;
       groups: readonly TrackCapabilityGroup[];
       initialSection?: TrackCapabilitySection;
+      /** Normalized favorite source names, for ♥ + favorites-first ordering in the panel. */
+      favorites: readonly string[];
     }
   | { type: "history"; initialFilterMode?: "all" | "watching" | "completed" }
   | { type: "notifications" }

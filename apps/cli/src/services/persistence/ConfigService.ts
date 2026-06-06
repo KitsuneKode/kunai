@@ -50,6 +50,8 @@ export interface KitsuneConfig {
   headless: boolean;
   showMemory: boolean;
   autoNext: boolean;
+  /** Source/server names the user favorited (normalized via normalizeSourceName). Pinned to top + preferred on auto-select. Default []. */
+  favoriteSources: readonly string[];
   /**
    * When true (default), persistent autoplay with a positive resume offset shows an mpv overlay
    * to choose resume vs start over before seeking.

@@ -97,6 +97,9 @@ import {
 import { usePosterPreview } from "./use-poster-preview";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
+/** Minimum loaded results before the local "Filter results" narrow box is worth its space. */
+const MIN_RESULTS_FOR_LOCAL_FILTER = 12;
+
 function clearShellScreen() {
   if (process.stdout.isTTY) {
     deleteAllKittyImages();
@@ -548,10 +551,18 @@ export function BrowseShell<T>({
     searchState === "idle" &&
     Boolean(idleReturnLoopModel?.hasSelectableContinue);
 
+  // The local "Filter results" narrow only earns its two lines on a long list;
+  // for a handful of search results it duplicates the title search box. Gate it
+  // on a meaningful result count (single source of truth for render + focus zone).
+  const showResultFilterBar =
+    searchState === "ready" &&
+    options.length >= MIN_RESULTS_FOR_LOCAL_FILTER &&
+    !isCalendarView &&
+    !viewport.ultraCompact;
+
   focusZoneContextRef.current = {
     hasResults: displayOptions.length > 0,
-    hasFilterBar:
-      searchState === "ready" && options.length > 0 && !isCalendarView && !viewport.ultraCompact,
+    hasFilterBar: showResultFilterBar,
     canFocusIdle: canFocusContinue,
     selectedIndex: boundedSelectedIndex,
   };
@@ -986,7 +997,7 @@ export function BrowseShell<T>({
             ) : null}
           </Box>
         ) : null}
-        {searchState === "ready" && options.length > 0 && !isCalendarView && !ultraCompact ? (
+        {showResultFilterBar ? (
           <InputField
             label="Filter results"
             value={resultFilter}

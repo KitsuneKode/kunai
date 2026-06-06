@@ -100,8 +100,8 @@ choose_install_method() {
     return
   fi
   bold "How should Kunai be installed?" >&2
-  echo "  1) npm global (recommended when Node is available)" >&2
-  echo "  2) bun global (fast when Bun is available)" >&2
+  echo "  1) npm global (install via npm; runs on the Bun runtime)" >&2
+  echo "  2) bun global (install via Bun)" >&2
   echo "  3) source checkout (developer / latest main)" >&2
   local choice="1"
   read -r -p "Choice [1]: " choice || true
@@ -111,6 +111,35 @@ choose_install_method() {
     3) echo source ;;
     *) echo npm-global ;;
   esac
+}
+
+ensure_bun() {
+  # Kunai's binary is `#!/usr/bin/env bun` — Bun is the runtime for EVERY install
+  # method (npm-global included), so it must be present before we install.
+  if have bun; then
+    info "bun found: $(command -v bun)"
+    return 0
+  fi
+  if [[ "$KUNAI_DRY_RUN" == "1" ]]; then
+    info "[dry-run] bun missing; would install via: curl -fsSL https://bun.sh/install | bash"
+    return 0
+  fi
+  warn "Bun is required to run kunai (the CLI runs on the Bun runtime)."
+  if prompt_yes_no "Install Bun now from https://bun.sh?" y; then
+    info "Installing Bun..."
+    curl -fsSL https://bun.sh/install | bash
+    # Make bun usable for the rest of this script run.
+    export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+    export PATH="$BUN_INSTALL/bin:$PATH"
+    have bun || {
+      err "Bun installed but not on PATH. Open a new shell (or add $BUN_INSTALL/bin to PATH) and re-run."
+      exit 1
+    }
+    info "bun ready: $(command -v bun)"
+  else
+    err "Bun is required. Install it with: curl -fsSL https://bun.sh/install | bash"
+    exit 1
+  fi
 }
 
 install_kunai_package() {
@@ -255,6 +284,7 @@ main() {
 
   local method
   method="$(choose_install_method)"
+  ensure_bun
   install_kunai_package "$method"
 
   local pm

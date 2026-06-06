@@ -454,6 +454,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
           startupPriority: config.startupPriority,
           selectedSourceId: intent.selectedSourceId,
           selectedStreamId: intent.selectedStreamId,
+          favoriteSourceNames: config.favoriteSources,
           recoveryMode: config.recoveryMode,
           signal: controller.signal,
         },

@@ -3,15 +3,8 @@ import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
-import {
-  adjacentSectionSelectableIndex,
-  encodeTrackSelection,
-  filterTrackCapabilityGroups,
-  initialSelectableIndexForSection,
-  selectableCapabilityAt,
-  sectionForSelectableIndex,
-  selectableTrackCount,
-} from "@/domain/playback/track-capabilities";
+import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
+import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import { historyContentType } from "@/services/continuation/history-progress";
@@ -40,8 +33,10 @@ import { HistoryShell } from "./history-shell";
 import {
   buildHistoryView,
   cycleHistoryTab,
+  cycleHistoryTypeFilter,
   historyTabFromLegacy,
   type HistoryTab,
+  type HistoryTypeFilter,
 } from "./history-view";
 import { LibraryShell } from "./library-shell";
 import {
@@ -88,8 +83,16 @@ import { type RootOwnedOverlay } from "./root-shell-state";
 import { CommandPalette, useShellInput } from "./shell-command-ui";
 import { ContextStrip, ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
+import {
+  createInitialTracksNav,
+  tracksPanelNavReducer,
+  type TracksNavState,
+} from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
 import type { FooterAction, ShellPanelLine } from "./types";
+
+/** Stable empty favorites reference for non-tracks overlays (keeps effect deps referentially stable). */
+const EMPTY_TRACKS_FAVORITES: readonly string[] = [];
 
 const HELP_TABS = ["Navigation", "Playback", "Commands", "About"] as const;
 type HelpTab = (typeof HELP_TABS)[number];
@@ -358,6 +361,10 @@ export function RootOverlayShell({
   const [scrollIndex, setScrollIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [tracksNav, setTracksNav] = useState<TracksNavState>(() => createInitialTracksNav({}));
+  const [tracksFavorites, setTracksFavorites] = useState<readonly string[]>(
+    overlay.type === "tracks_panel" ? overlay.favorites : EMPTY_TRACKS_FAVORITES,
+  );
   const pickerFilterQuery = isRootMediaPickerOverlay(overlay)
     ? (overlay.filterQuery ?? "")
     : filterQuery;
@@ -413,20 +420,19 @@ export function RootOverlayShell({
       ? historyTabFromLegacy(overlay.initialFilterMode ?? "all")
       : ("all" satisfies HistoryTab);
   const [historyTab, setHistoryTab] = useState<HistoryTab>(initialHistoryTab);
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<HistoryTypeFilter>("all");
   const overlayResetKey = getRootOverlayResetKey(overlay);
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
-  const tracksInitialIndex =
+  const trackGroups = overlay.type === "tracks_panel" ? overlay.groups : [];
+  const tracksFavoritesSnapshot =
+    overlay.type === "tracks_panel" ? overlay.favorites : EMPTY_TRACKS_FAVORITES;
+  const tracksInitialSectionIndex =
     overlay.type === "tracks_panel"
-      ? initialSelectableIndexForSection(overlay.groups, overlay.initialSection)
+      ? Math.max(
+          0,
+          overlay.groups.findIndex((group) => group.section === overlay.initialSection),
+        )
       : 0;
-  const trackGroups =
-    overlay.type === "tracks_panel" ? filterTrackCapabilityGroups(overlay.groups, filterQuery) : [];
-  const trackSwitchableCount =
-    overlay.type === "tracks_panel" ? selectableTrackCount(trackGroups) : 0;
-  const activeTrackSection =
-    overlay.type === "tracks_panel"
-      ? (sectionForSelectableIndex(trackGroups, selectedIndex) ?? overlay.initialSection)
-      : undefined;
   const commands = resolveCommandContext(state, "rootOverlay");
   const historyPickerContext: HistoryPickerOptionsContext = {
     nextReleases: historyNextReleases,
@@ -513,6 +519,7 @@ export function RootOverlayShell({
       buildHistoryView({
         entries: historySelections.map(({ titleId, entry }) => [titleId, entry] as const),
         tab: historyTab,
+        typeFilter: historyTypeFilter,
         filterQuery,
         selectedIndex,
         maxVisible: maxLines,
@@ -531,6 +538,7 @@ export function RootOverlayShell({
       historyReleaseSignals,
       historySelections,
       historyTab,
+      historyTypeFilter,
       loadingAsyncLines,
       maxLines,
       overlay.type,
@@ -687,10 +695,10 @@ export function RootOverlayShell({
               -1,
               1,
             )
-          : overlay.type === "tracks_panel"
-            ? tracksInitialIndex
-            : overlayInitialIndex,
+          : overlayInitialIndex,
     );
+    setTracksNav(createInitialTracksNav({ initialSectionIndex: tracksInitialSectionIndex }));
+    setTracksFavorites(tracksFavoritesSnapshot);
     setAsyncLines(null);
     setLoadingAsyncLines(false);
     setSettingsDraft(overlay.type === "settings" ? container.config.getRaw() : null);
@@ -705,13 +713,15 @@ export function RootOverlayShell({
     setHistoryProjections(new Map());
     setHistoryReleaseSignals(new Map());
     setHistoryTab(initialHistoryTab);
+    setHistoryTypeFilter("all");
   }, [
     container.config,
     container.presence,
     overlay.type,
     overlayResetKey,
     overlayInitialIndex,
-    tracksInitialIndex,
+    tracksInitialSectionIndex,
+    tracksFavoritesSnapshot,
     initialHistoryTab,
     providerInitialIndex,
   ]);
@@ -828,44 +838,64 @@ export function RootOverlayShell({
       return;
     }
     if (overlay.type === "tracks_panel") {
-      // Self-contained: navigation runs over switchable rows only and the
-      // selection resolves through the picker bridge (RESOLVE/CANCEL_PICKER).
-      const count = trackSwitchableCount;
+      // Nested two-pane: sections (left) ⇄ options (right). Selection resolves
+      // through the picker bridge (RESOLVE/CANCEL_PICKER). See tracks-panel-nav.ts.
+      const navCtx = {
+        sectionCount: trackGroups.length,
+        optionCount: trackGroups[tracksNav.sectionIndex]?.rows.length ?? 0,
+      };
+      const focusedGroup = trackGroups[tracksNav.sectionIndex];
+
       if (key.escape) {
-        if (filterQuery) {
-          setFilterQuery("");
-          setSelectedIndex(tracksInitialIndex);
+        if (tracksNav.focusedPane === "options") {
+          setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "exit-section" }, navCtx));
           return;
         }
         container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
         container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         return;
       }
+      if (key.leftArrow && tracksNav.focusedPane === "options") {
+        setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "exit-section" }, navCtx));
+        return;
+      }
+      if (key.rightArrow && tracksNav.focusedPane === "sections") {
+        setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "enter-section" }, navCtx));
+        return;
+      }
+      if (key.upArrow || key.downArrow) {
+        setTracksNav((nav) =>
+          tracksPanelNavReducer(nav, { type: key.upArrow ? "up" : "down" }, navCtx),
+        );
+        return;
+      }
+      if (input === "f" && focusedGroup?.section === "source") {
+        const sorted = sortByFavorites(focusedGroup.rows, tracksFavorites, (r) => r.label);
+        const row = sorted[tracksNav.optionIndex];
+        if (row) {
+          const next = toggleFavoriteSource(tracksFavorites, row.label);
+          setTracksFavorites(next);
+          void container.config.update({ favoriteSources: next });
+        }
+        return;
+      }
       if (key.return) {
-        if (count === 0) return; // facts only — never resolve a dead picker
-        const capability = selectableCapabilityAt(trackGroups, selectedIndex);
-        if (!capability) return;
+        if (tracksNav.focusedPane === "sections") {
+          setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "enter-section" }, navCtx));
+          return;
+        }
+        const sorted =
+          focusedGroup?.section === "source"
+            ? sortByFavorites(focusedGroup.rows, tracksFavorites, (r) => r.label)
+            : (focusedGroup?.rows ?? []);
+        const row = sorted[tracksNav.optionIndex];
+        if (!focusedGroup || !row || !row.enabled) return; // facts never resolve
         container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
         container.stateManager.dispatch({
           type: "RESOLVE_PICKER",
           id: overlay.id,
-          value: encodeTrackSelection(capability.section, capability.value),
+          value: encodeTrackSelection(row.section, row.value),
         });
-        return;
-      }
-      if ((key.leftArrow || key.rightArrow || key.tab) && count > 0) {
-        setSelectedIndex((current) =>
-          adjacentSectionSelectableIndex(trackGroups, current, key.leftArrow ? -1 : 1),
-        );
-        return;
-      }
-      if ((key.upArrow || key.downArrow) && count > 0) {
-        setSelectedIndex((current) =>
-          key.upArrow ? (current - 1 + count) % count : (current + 1) % count,
-        );
-        return;
-      }
-      if (filterEditor.handleInput(input, key)) {
         return;
       }
       return;
@@ -905,6 +935,13 @@ export function RootOverlayShell({
         resolveRootHistorySelection(null);
       }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      return;
+    }
+    if (overlay.type === "history" && key.tab && key.shift) {
+      // Shift+Tab cycles the content-type axis (All/Anime/Series/Movies); plain
+      // Tab cycles the bucket (Continue/Completed/New/All).
+      setHistoryTypeFilter((prev) => cycleHistoryTypeFilter(prev));
+      setSelectedIndex(0);
       return;
     }
     if (overlay.type === "history" && key.tab) {
@@ -1656,7 +1693,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "tracks_panel") {
-    const switchableCount = trackSwitchableCount;
+    const tracksHasSwitchable = trackGroups.some((group) => group.rows.some((row) => row.enabled));
     return (
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
@@ -1668,11 +1705,10 @@ export function RootOverlayShell({
           />
           <TracksPanelShell
             groups={trackGroups}
-            selectedIndex={Math.min(selectedIndex, Math.max(switchableCount - 1, 0))}
+            nav={tracksNav}
+            favorites={tracksFavorites}
             width={Math.max(24, (stdout.columns ?? 80) - 8)}
             height={Math.max(8, (stdout.rows ?? 32) - 9)}
-            activeSection={activeTrackSection}
-            filterQuery={filterQuery}
           />
         </Box>
 
@@ -1687,26 +1723,19 @@ export function RootOverlayShell({
           ) : null}
           <ShellFooter
             taskLabel={
-              switchableCount > 0
-                ? "Tracks  ·  ↑↓ select, ←→ section, type filters"
-                : filterQuery
-                  ? "Tracks  ·  no filtered matches, Esc clears"
-                  : "Tracks  ·  facts only, Esc closes"
+              tracksHasSwitchable
+                ? "Tracks  ·  ↑↓ choose, → enter, ⏎ switch, f favorite"
+                : "Tracks  ·  ↑↓ choose, → enter to view, f favorite"
             }
-            actions={
-              switchableCount > 0
-                ? [
-                    { key: "↑↓", label: "select", action: "details" as const },
-                    { key: "←→", label: "section", action: "details" as const },
-                    { key: "enter", label: "change", action: "details" as const, primary: true },
-                    { key: "/", label: "commands", action: "command-mode" as const },
-                    { key: "esc", label: "close", action: "quit" as const },
-                  ]
-                : [
-                    { key: "/", label: "commands", action: "command-mode" as const },
-                    { key: "esc", label: "close", action: "quit" as const },
-                  ]
-            }
+            actions={[
+              { key: "↑↓", label: "choose", action: "details" as const },
+              { key: "→", label: "enter", action: "details" as const },
+              ...(tracksHasSwitchable
+                ? [{ key: "enter", label: "switch", action: "details" as const, primary: true }]
+                : []),
+              { key: "f", label: "favorite", action: "details" as const },
+              { key: "esc", label: "close", action: "quit" as const },
+            ]}
             mode="detailed"
             commandMode={commandMode}
           />

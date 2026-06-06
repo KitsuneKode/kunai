@@ -104,6 +104,7 @@ import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
 import { episodeThumbKey } from "@/domain/catalog/title-detail";
+import { classifyPersistedKind } from "@/domain/media/content-kind";
 import {
   buildProviderResolveProblem,
   type PlaybackProblem,
@@ -1194,6 +1195,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                       ? config.movieLanguageProfile.quality
                       : config.seriesLanguageProfile.quality,
                 startupPriority: config.startupPriority,
+                favoriteSourceNames: config.favoriteSources,
                 recoveryMode: honorExplicitProviderOnly ? "manual" : config.recoveryMode,
                 preferFreshStream:
                   honorExplicitProviderOnly || sourceRefreshIsRefresh || sourceRefreshIsRecover,
@@ -1767,7 +1769,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             container.historyRepository.upsertProgress({
               title: {
                 id: title.id,
-                kind: stateManager.getState().mode === "anime" ? "anime" : title.type,
+                // Content-derived persisted kind: a drama watched in anime mode
+                // (AllAnime hosts live-action) must not be stamped "anime". See #1.
+                kind: classifyPersistedKind(title, stateManager.getState().mode),
                 title: title.name,
                 externalIds: title.externalIds,
               },
