@@ -51,27 +51,33 @@ function resolveNextUp(input: {
 - On post-play, when `resolveNextUp` returns `{ kind: "recommendation" }`, run the **existing** `runAutoplayAdvanceCountdown` (5s, `Up next: <title> in 5s · a to pause`). Complete → play it; cancel → stay in post-play. This extends the same countdown the episode + queue paths already use; it does **not** add a new countdown mechanism.
 - Honors `autoplayPaused` / `stopAfterCurrent` exactly like the existing advance (a failed-start no longer pauses autoplay — already fixed).
 
-## 3. Play-from-recommendation keys (post-play)
+## 3. Keybindings — coherence first (no collisions with the registry)
 
-On the post-play recommendation cards (1·2·3), wired in `post-play-input.ts` (no number handling today):
+`apps/cli/src/app-shell/keybindings.ts` is the single source of truth (footer + `?` help read it). **Every key below is the existing binding or a free key; nothing is repurposed.** The guiding rule: **`n` always means "next"** — the spine just makes it smarter.
 
-- **`1`/`2`/`3`** → play that recommendation **now** (jump to it).
-- **`+`** → `enqueueMediaItem(rec, { placement: "end" })` — add to the end of Up Next.
-- **`n`** → `enqueueMediaItem(rec, { placement: "next" })` — play next (insert at front).
+Preserved exactly as today: `n` next · `p` previous · `s` search · `r` replay · `e` episode picker · `q` add-to-queue (browse) · `k` quality (no tracks key).
 
-Footer hints updated accordingly.
+New for this spec (all free keys, all registered in `keybindings.ts`):
+
+- **`n` (player + post-play)** keeps its meaning but now plays **whatever `resolveNextUp` returns** — next episode → queue head → recommendation. Same key, continuous behavior. _No new key; no collision._
+- **`1`/`2`/`3` (post-play)** → play that recommendation **now** (number keys are unbound today).
+- **Enqueue a recommendation** → the existing recommendation **action panel** (`enqueuePostPlaybackRecommendation`, already has "add to queue") — reached without stealing a top-level key.
+- **`h` (post-play)** → open History / Continue (`h` is free).
+- **`/queue` panel** (panel-local, no global clash): `Enter` play now · `x`/`Del` remove · `c` clear.
+
+`post-play-input.ts` gains the `1`/`2`/`3` and `h` handlers; the registry gains their entries so the footer/help stay truthful.
 
 ## 4. Always-visible "Up next" + `/queue` panel
 
 - **Always-visible hint:** a one-line `Up next: <title>` on the active-playback status and post-play surfaces, derived from `resolveNextUp` so it reflects what _will_ actually play (episode/queue/rec). Lightweight — no new chrome.
-- **`/queue` panel:** a two-pane surface (reuse `MediaListShell` + poster rail) listing `queueService.getUnplayed()`. Keys: `⏎` play now · `x`/`del` remove (`queueService.remove`) · `c` clear · `n` play-next / `+` end. (Reorder/collapse → Spec 2.)
+- **`/queue` panel:** a two-pane surface (reuse `MediaListShell` + poster rail) listing `queueService.getUnplayed()`. Panel-local keys: `⏎` play now · `x`/`Del` remove (`queueService.remove`) · `c` clear. (Reorder/collapse → Spec 2.)
 - **Remap `/queue`:** today `/queue` aliases the downloads panel. Point `/queue` at the Up Next panel; downloads keep `/downloads` and `/jobs`. (Command-registry change — coordinate with the deferred `/streams` cleanup, Task 10.)
 
 ## 5. Enqueue entry points (episode- or title-level)
 
-- **Post-play rec** — §3.
-- **Search/browse row** — a key (e.g. `q`) enqueues the highlighted title (end). From the episode picker, enqueue **a specific episode**.
-- **`/discover`** — add-to-queue from the recommendations surface.
+- **Post-play rec** — §3 (number to play now; action panel to enqueue).
+- **Search/browse row** — the **existing `q` binding** (`browse-queue` in the registry) enqueues the highlighted title (end); wire it to `queueService.enqueueMediaItem(..., { placement: "end" })`. From the episode picker, enqueue **a specific episode** (the entry carries `season`/`episode`).
+- **`/discover`** — add-to-queue from the recommendations surface (reuse the same `q`).
 - Playlists (`play playlist` → loads Up Next) → **Spec 3**.
 
 ## 6. Existing-logic fixes folded in (make it "much better")
