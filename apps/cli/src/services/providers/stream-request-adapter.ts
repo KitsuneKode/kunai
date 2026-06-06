@@ -15,6 +15,7 @@ export interface StreamRequestLike {
   readonly startupPriority?: StartupPriority;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
+  readonly favoriteSourceNames?: readonly string[];
 }
 
 export function streamRequestToResolveInput(
@@ -28,6 +29,10 @@ export function streamRequestToResolveInput(
     mediaKind: mode === "anime" ? "anime" : request.title.type,
     preferredSourceId: normalizeOptionalId(request.selectedSourceId),
     preferredStreamId: normalizeOptionalId(request.selectedStreamId),
+    favoriteSourceNames:
+      request.favoriteSourceNames && request.favoriteSourceNames.length > 0
+        ? request.favoriteSourceNames
+        : undefined,
     preferredAudioLanguage: mode === "anime" ? request.audioPreference : undefined,
     preferredSubtitleLanguage: request.subtitlePreference,
     preferredPresentation:

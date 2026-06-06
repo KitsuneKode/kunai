@@ -1194,6 +1194,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                       ? config.movieLanguageProfile.quality
                       : config.seriesLanguageProfile.quality,
                 startupPriority: config.startupPriority,
+                favoriteSourceNames: config.favoriteSources,
                 recoveryMode: honorExplicitProviderOnly ? "manual" : config.recoveryMode,
                 preferFreshStream:
                   honorExplicitProviderOnly || sourceRefreshIsRefresh || sourceRefreshIsRecover,

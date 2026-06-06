@@ -689,6 +689,7 @@ export function createVidkingResultFromPayload({
     qualityPreference: input.qualityPreference,
     preferredStreamId: input.preferredStreamId,
     preferredSourceId: input.preferredSourceId,
+    favoriteSourceNames: input.favoriteSourceNames,
   });
   const selectedStream = selection.selected;
   const orderedSubtitles = orderSubtitleCandidates(

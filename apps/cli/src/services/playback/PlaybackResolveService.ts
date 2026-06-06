@@ -142,6 +142,7 @@ export type PlaybackResolveInput = {
   readonly startupPriority?: StartupPriority;
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
+  readonly favoriteSourceNames?: readonly string[];
   readonly signal: AbortSignal;
   readonly prefetchedStream?: StreamInfo | null;
   readonly forceHealthCheck?: boolean;
@@ -274,6 +275,7 @@ export class PlaybackResolveService {
         startupPriority: input.startupPriority,
         selectedSourceId: input.selectedSourceId,
         selectedStreamId: input.selectedStreamId,
+        favoriteSourceNames: input.favoriteSourceNames,
       },
       input.mode,
       input.resolveIntent ?? "play",
