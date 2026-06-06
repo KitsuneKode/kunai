@@ -17,6 +17,8 @@ import { createInitialTracksNav, type TracksNavState } from "./tracks-panel-nav"
 /** Width below which the two-pane layout collapses to the stacked single column. */
 const TWO_PANE_MIN_WIDTH = 56;
 const SECTION_COL_WIDTH = 22;
+/** Stable empty default so the favorites prop keeps referential equality across renders. */
+const EMPTY_FAVORITES: readonly string[] = [];
 
 export type TracksPanelShellProps = {
   groups: readonly TrackCapabilityGroup[];
@@ -27,10 +29,6 @@ export type TracksPanelShellProps = {
   /** Counts-header tail (provider/host label). */
   providerLabel?: string;
   filterQuery?: string;
-  /** @deprecated legacy flat-nav props, ignored by the two-pane render (removed when the input handler is rewritten). */
-  selectedIndex?: number;
-  /** @deprecated see selectedIndex. */
-  activeSection?: TrackCapabilitySection;
 };
 
 function riskColor(risk: TrackCapabilityRisk): string {
@@ -97,7 +95,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
   width,
   height,
   nav,
-  favorites = [],
+  favorites = EMPTY_FAVORITES,
   providerLabel,
   filterQuery = "",
 }: TracksPanelShellProps) {
@@ -144,7 +142,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     return (
       <Box flexDirection="column" paddingX={1}>
         {header}
-        <StackedView groups={groups} state={state} favorites={favorites} width={width} />
+        <StackedView groups={groups} favorites={favorites} width={width} />
         {footer}
       </Box>
     );
@@ -227,11 +225,9 @@ function OptionsPane({
           {headerLabel}
         </Text>
         {grid.map((line, rowIndex) => (
-          <Box key={`subrow-${rowIndex}`}>
-            {line.map((capability) => {
-              const flatIndex =
-                grid.slice(0, rowIndex).reduce((sum, r) => sum + r.length, 0) +
-                line.indexOf(capability);
+          <Box key={`subrow-${line[0]?.value ?? rowIndex}`}>
+            {line.map((capability, cellIndex) => {
+              const flatIndex = rowIndex * columns + cellIndex;
               const highlighted = optionsFocused && flatIndex === state.optionIndex;
               return (
                 <Box key={`sub-${capability.value}`} width={16}>
@@ -311,12 +307,10 @@ function OptionsPane({
 /** Narrow fallback: sections stacked with their rows, honoring the focused option. */
 function StackedView({
   groups,
-  state,
   favorites,
   width,
 }: {
   groups: readonly TrackCapabilityGroup[];
-  state: TracksNavState;
   favorites: readonly string[];
   width: number;
 }) {
