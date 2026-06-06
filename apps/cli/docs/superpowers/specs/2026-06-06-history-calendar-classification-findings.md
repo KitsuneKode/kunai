@@ -4,8 +4,32 @@ Date: 2026-06-06
 Status: Investigated (root causes confirmed in code); fixes scoped, not yet implemented (except #3).
 Source: live-terminal review by the user (stats, calendar, search, history, picker screenshots).
 
-This captures eight reported issues across stats, calendar, search, and history so the work
-survives across sessions. Each has a confirmed root cause + a fix design + effort. **#3 is shipped.**
+This captures the reported issues across stats, calendar, search, history, playback, and pickers so
+the work survives across sessions. Each has a confirmed root cause + a fix design + effort.
+
+## SHIPPED (correctness fixes, all gates green)
+
+- **#3 filter-box redundancy** — local "Filter results" hidden under 12 results.
+- **Autoplay** — a failed-to-start stream no longer pauses autoplay (load failure ≠ user
+  interruption); `playback-session-controller.ts` `interruptedStop` now excludes
+  `didPlaybackFailToStart`. No auto-skip happens without a completion.
+- **Episode-picker escape-stuck (single-season)** — `session-flow.ts` `pickEpisodeSelection` looped
+  forever (single season auto-re-selected → re-opened episode picker). Escape now exits when
+  `seasons.length <= 1`.
+- **List-row spill/overlap (calendar + history)** — `ListRow.tsx` `listRowStatusColumn` expanded the
+  column to the status's own width (`Math.max(measureColumns(status), width)`), overflowing the row
+  and wrapping a long status ("aired · not available") into the next row. Now capped at the budget.
+- **Tracks footer** — no longer says misleading "facts only, Esc closes" when the panel is still
+  navigable; shows nav hints regardless of switchability.
+
+## STILL OPEN (larger / data-dependent / need live verify)
+
+- **History broken lines (Image #8)** — likely kitty poster-ghost class (not the list-row spill).
+  Needs the user's terminal; same family as A6 ghost poster.
+- **#1 classification, #2 calendar dates, #4 type filter, #5 series-%, #6 history posters,
+  #7 picker context** — see below.
+- **Post-play polish** — recommendations only sometimes appear (warm-race), want small poster
+  thumbnails on rec cards, general visual cleanup. Poster rendering is the ghost-risk area.
 
 ---
 
