@@ -12,6 +12,9 @@ One fullscreen, keyboard-driven terminal session.
 &nbsp;![license](https://img.shields.io/badge/license-see%20repo-968a98)
 
 ```bash
+# Bun is the runtime — install it first if you don't have it
+curl -fsSL https://bun.sh/install | bash
+
 npm install -g @kitsunekode/kunai
 kunai -S "Dune"
 ```
@@ -24,14 +27,20 @@ kunai -S "Dune"
 
 ### Install
 
+> **Prerequisite — Bun `>=1.3.9`.** Kunai runs on the Bun runtime (the `kunai`
+> binary is `#!/usr/bin/env bun`), so Bun is required for **every** install method,
+> including `npm install -g`. Install it with `curl -fsSL https://bun.sh/install | bash`.
+> The interactive installer below checks for Bun and offers to install it for you.
+
 ```bash
-# Interactive installer (detects OS, optional deps, install method)
+# Interactive installer (detects OS, ensures Bun, optional deps, install method)
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
 
 # Inspect installer actions first
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
 
-# npm (recommended)
+# Manual: install Bun (runtime), then the package
+curl -fsSL https://bun.sh/install | bash
 npm install -g @kitsunekode/kunai
 
 # Or from source
@@ -56,14 +65,15 @@ Once inside the shell, `/` opens the command palette from anywhere.
 
 ### What you need up front
 
-| Tool            | Required? | Why                                                                |
-| --------------- | --------- | ------------------------------------------------------------------ |
-| **mpv**         | Required  | Plays everything. `sudo pacman -S mpv` / `brew install mpv`        |
-| **yt-dlp**      | Optional  | Offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp` |
-| **ffprobe**     | Optional  | Post-download integrity checks, if your platform provides it       |
-| **chafa**       | Optional  | Poster previews in non-Kitty terminals. `sudo pacman -S chafa`     |
-| **ImageMagick** | Optional  | Broader poster format support. `sudo pacman -S imagemagick`        |
-| **Discord**     | Optional  | Rich Presence (watching status on profile)                         |
+| Tool            | Required? | Why                                                                      |
+| --------------- | --------- | ------------------------------------------------------------------------ |
+| **Bun** ≥1.3.9  | Required  | Runtime — Kunai runs on Bun. `curl -fsSL https://bun.sh/install \| bash` |
+| **mpv**         | Required  | Plays everything. `sudo pacman -S mpv` / `brew install mpv`              |
+| **yt-dlp**      | Optional  | Offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp`       |
+| **ffprobe**     | Optional  | Post-download integrity checks, if your platform provides it             |
+| **chafa**       | Optional  | Poster previews in non-Kitty terminals. `sudo pacman -S chafa`           |
+| **ImageMagick** | Optional  | Broader poster format support. `sudo pacman -S imagemagick`              |
+| **Discord**     | Optional  | Rich Presence (watching status on profile)                               |
 
 If mpv is missing, Kunai won't start playback. Everything else is optional and
 detected automatically — the setup wizard (`/setup` or `kunai --setup`) walks
