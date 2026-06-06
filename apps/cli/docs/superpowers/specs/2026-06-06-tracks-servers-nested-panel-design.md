@@ -1,8 +1,25 @@
 # Tracks / Servers Nested Panel — Design
 
 Date: 2026-06-06
-Status: Approved (brainstorming) — pending implementation plan
-Sub-project: **A** of the post-0.2.4 UX wave (siblings: B Now Playing bugs, C+D Continuity). See memory `project_ux_v2_decomposition`.
+Status: Partially implemented (2026-06-06) — nested panel + manual favorites SHIPPED; auto-select wiring + command-surface cleanup DEFERRED (see Implementation Status below)
+
+## Implementation Status (2026-06-06)
+
+**Shipped on `feat/tracks-servers-panel` (Tasks 1–9 of the plan, all gates green):**
+
+- `normalizeSourceName`, `toggleFavoriteSource`, `sortByFavorites`, `isFavoriteSource` (`apps/cli/src/domain/playback/source-name.ts`).
+- Persisted `KitsuneConfig.favoriteSources` (+ ConfigServiceImpl accessor).
+- `selectReadyStream` favorite-preference **capability** (tested) — but NOT yet wired to call sites.
+- `tracksPanelNavReducer` nested-nav; `tracks-panel-layout` counts-header + subtitle-grid helpers.
+- Two-pane `TracksPanelShell` (sections ⇄ options, ♥, grid subtitles, narrow fallback).
+- `favorites` on the `tracks_panel` overlay; reducer-driven input in `root-overlay-shell.tsx`; `f` toggles ♥ live + persists.
+
+**Deferred (well-defined follow-ups):**
+
+1. **Auto-select wiring** — thread `favoriteSourceNames` from config → `ProviderResolveInput` → the 4 provider `selectReadyStream` call sites. Cross-provider; needs live-stream verification. Capability already built/tested in `startup-selection.ts`.
+2. **Command-surface cleanup** — drop the redundant `/streams` (label "Tracks") umbrella command, add `/audio` + `/subtitles` deep-links, bind playback `s` → Source. Cascades through the command-id union, two availability lists, `commands.ts`, and the ink-shell handler. (Today `/tracks` `/streams` `/source` `/quality` all still open the new nested panel, so nothing is broken — this is polish.)
+3. **Live-terminal verification** — drive the real Ink shell + mpv (needs the user's TTY).
+   Sub-project: **A** of the post-0.2.4 UX wave (siblings: B Now Playing bugs, C+D Continuity). See memory `project_ux_v2_decomposition`.
 
 Visual target: `.design/cli/tracks-panel-redesign.html`.
 Current build: `apps/cli/src/app-shell/tracks-panel-shell.tsx` (flat stacked sections) +
