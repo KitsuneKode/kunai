@@ -221,8 +221,14 @@ export function resolvePlaybackResultDecision({
     controlAction === "pick-quality" ||
     controlAction === "reload-subtitles" ||
     controlAction === "select-subtitle";
+  // A stream that never started playing is a load FAILURE, not a user interruption —
+  // it lands on the post-play retry screen (Try again / Fallback) without completing,
+  // so autoplay must stay ON (no auto-skip happens without a completion). Only a real
+  // user stop/quit of an episode that actually started should pause autoplay.
   const interruptedStop =
-    !keepsWatchingIntent && (result.endReason === "quit" || controlAction === "stop");
+    !keepsWatchingIntent &&
+    !didPlaybackFailToStart(result) &&
+    (result.endReason === "quit" || controlAction === "stop");
   const shouldTreatAsInterrupted = interruptedStop && !nearNaturalEnd;
   const nextPauseReason =
     shouldTreatAsInterrupted && session.autoplayPauseReason !== "user"
