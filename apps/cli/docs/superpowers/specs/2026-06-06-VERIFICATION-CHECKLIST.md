@@ -44,7 +44,10 @@ Run `bun run dev` (wide terminal for posters). Tick each. ✅ = automated-test-c
 - [ ] 👁 Finish a series with nothing queued → **"Up next: <rec> in 5s · a to pause"** → plays the recommendation; `a` cancels, stays in post-play. (YouTube-style auto-continue.)
 - [ ] 👁 Post-play `1`/`2`/`3` plays that rec **now**; `!`/`@`/`#` opens its action panel (add-to-queue / details / download).
 - [ ] 👁 Browse/search `q` on a row → "Queued <title>" → it **auto-plays after the current finishes** (cross-title advance).
-- [ ] ⏳ Remaining polish (own surfaces, not blocking the loop): visible `/queue` view panel · always-on "Up next" hint · small posters on rec cards.
+- [ ] 👁 During playback, the **"up next"** line shows the **queued title** when there's no next episode.
+- [ ] 👁 **`/queue`** opens the Up Next panel — see the queue (▶ next-up, ✓ played), **Play now** a queued item, clear, **save queue as playlist**, import/export, refill from watchlist.
+- [ ] 👁 **AllManga**: a hung Ak endpoint now fails fast (~4s) to the next provider instead of stalling ~12s.
+- [ ] ⏳ Remaining (lower value / harder): small posters on rec cards (ghost-risk) · `/audio` `/subtitles` deep-links + drop `/streams` (Task 10) · episode titles/thumbnails in the picker (source-blob) · `#5` series-% · download-all-in-queue.
 
 ## Installer / README
 
