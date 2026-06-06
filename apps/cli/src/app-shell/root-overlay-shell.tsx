@@ -1712,22 +1712,17 @@ export function RootOverlayShell({
             taskLabel={
               tracksHasSwitchable
                 ? "Tracks  ·  ↑↓ choose, → enter, ⏎ switch, f favorite"
-                : "Tracks  ·  facts only, Esc closes"
+                : "Tracks  ·  ↑↓ choose, → enter to view, f favorite"
             }
-            actions={
-              tracksHasSwitchable
-                ? [
-                    { key: "↑↓", label: "choose", action: "details" as const },
-                    { key: "→", label: "enter", action: "details" as const },
-                    { key: "enter", label: "switch", action: "details" as const, primary: true },
-                    { key: "f", label: "favorite", action: "details" as const },
-                    { key: "esc", label: "close", action: "quit" as const },
-                  ]
-                : [
-                    { key: "/", label: "commands", action: "command-mode" as const },
-                    { key: "esc", label: "close", action: "quit" as const },
-                  ]
-            }
+            actions={[
+              { key: "↑↓", label: "choose", action: "details" as const },
+              { key: "→", label: "enter", action: "details" as const },
+              ...(tracksHasSwitchable
+                ? [{ key: "enter", label: "switch", action: "details" as const, primary: true }]
+                : []),
+              { key: "f", label: "favorite", action: "details" as const },
+              { key: "esc", label: "close", action: "quit" as const },
+            ]}
             mode="detailed"
             commandMode={commandMode}
           />
