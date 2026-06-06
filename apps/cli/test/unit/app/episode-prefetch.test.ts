@@ -146,6 +146,18 @@ describe("EpisodePrefetchHandle", () => {
     ).toBe(false);
   });
 
+  test("startupPriority undefined matches the defaulted 'balanced' (no spurious prefetch miss)", () => {
+    // target.startupPriority is "balanced". A request that omits it (undefined →
+    // effective "balanced") must still adopt the prefetch — otherwise every advance
+    // silently re-resolves and the next episode pauses.
+    expect(matchesEpisodePrefetchTarget(target, { ...target, startupPriority: undefined })).toBe(
+      true,
+    );
+    expect(matchesEpisodePrefetchTarget({ ...target, startupPriority: undefined }, target)).toBe(
+      true,
+    );
+  });
+
   test("soft subtitle changes reuse video but mark subtitle preparation stale", async () => {
     const handle = new EpisodePrefetchHandle();
     const bundle = { target, stream: mockStream("https://example.com/sub.m3u8"), prepared: true };

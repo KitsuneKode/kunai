@@ -61,7 +61,10 @@ export function matchesEpisodePrefetchTarget(
     target.streamId === requested.streamId &&
     target.audioPreference === requested.audioPreference &&
     target.qualityPreference === requested.qualityPreference &&
-    target.startupPriority === requested.startupPriority
+    // Normalize: an omitted priority is the effective default. Comparing raw
+    // (undefined vs "balanced") voided every prefetch → cold re-resolve → the
+    // next-episode pause. Genuinely different priorities still differ after this.
+    (target.startupPriority ?? "balanced") === (requested.startupPriority ?? "balanced")
   );
 }
 
