@@ -1,5 +1,20 @@
 # @kitsunekode/kunai
 
+## 0.2.4
+
+### Patch Changes
+
+- Shell UX overhaul: honest history buckets, smarter downloads, faceted filters, and a disciplined semantic color pass across every surface.
+  - History now classifies every title through a single source of truth into honest **Continue / Completed / New** buckets, so a half-watched show no longer hides under "new" and a finished one no longer nags you to continue.
+  - Downloads gained a quality ceiling so you can cap resolution, HLS retries are more resilient to flaky segment fetches, and the download sheet reads more clearly about what is being fetched and why.
+  - `/filters` now uses website-style faceted category chips, making it obvious which facets are active and how to clear them.
+  - The source/server picker labels each server row with the audio language behind a flag, matching the web-style Servers tab so dub/sub choices read at a glance.
+  - Applied a consistent semantic tone pass: shared 3-role footer color hierarchy, de-noised headers, browse rows tinted by content kind (anime / series / movie), split info vs. warning tones on the loading/dependency screen, and unified tone colors across overlays, history, and details.
+  - Rebuilt the details overlay around a compact model with an inline renderer, replacing the previous sparse, spam-prone layout, and added a terminal-portable `Ctrl+O` details shortcut while dropping the advertised-but-broken `Shift+Enter`.
+  - Fixed autoplay correctness: switching provider, source, or quality — and recovery — no longer pauses an autoplay chain.
+  - Polished mpv resume OSD (real newline events instead of overflow, a smaller card, rose brand accent) and tightened the palette by dropping empty scroll-placeholder lines and dead top margin.
+  - Fixed the calendar: the left column shows real clock time while the countdown stays in the status column, and structured-item view detection restores the day strip, type tabs, and per-kind colors.
+
 ## 0.2.3
 
 ### Patch Changes
