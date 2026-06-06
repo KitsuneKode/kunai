@@ -167,6 +167,38 @@ describe("resolvePlaybackResultDecision", () => {
     });
   });
 
+  test("re-resolve actions keep autoplay across a mid-episode quit (provider/source/quality/recover)", () => {
+    const session = createPlaybackSessionState({ autoNextEnabled: true });
+    const reResolveActions = [
+      "pick-source",
+      "pick-quality",
+      "pick-stream",
+      "recover",
+      "recompute",
+      "fallback",
+      "refresh",
+      "reload-subtitles",
+      "select-subtitle",
+    ] as const;
+    for (const controlAction of reResolveActions) {
+      const decision = resolvePlaybackResultDecision({
+        result: { ...baseResult, endReason: "quit" },
+        controlAction,
+        session,
+      });
+      expect(decision.session.autoplayPauseReason).toBeNull();
+      expect(decision.shouldTreatAsInterrupted).toBe(false);
+    }
+    // A genuine user stop still pauses autoplay as interrupted.
+    expect(
+      resolvePlaybackResultDecision({
+        result: { ...baseResult, endReason: "quit" },
+        controlAction: "stop",
+        session,
+      }).session.autoplayPauseReason,
+    ).toBe("interrupted");
+  });
+
   test("refreshes source after suspected dead stream eof", () => {
     const decision = resolvePlaybackResultDecision({
       result: {

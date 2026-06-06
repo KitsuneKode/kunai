@@ -82,7 +82,7 @@ import {
   padColumnsStart,
   truncateLine,
 } from "./shell-text";
-import { palette } from "./shell-theme";
+import { contentTintColor, palette } from "./shell-theme";
 import {
   toShellAction,
   type FooterAction,
@@ -223,10 +223,12 @@ export function BrowseShell<T>({
   );
 
   // Calendar view detection and day-strip derived state.
-  // displayGroup is only set by calendar-results.ts, so any option with previewGroup
-  // indicates calendar mode. Fall back to subtitle check for edge cases.
+  // A structured `calendar` item is only attached by the calendar surface, so it is
+  // the authoritative signal. previewGroup/subtitle remain as legacy fallbacks.
   const isCalendarView =
-    options.some((opt) => opt.previewGroup !== undefined) || resultSubtitle.includes("schedule");
+    options.some((opt) => opt.calendar !== undefined || opt.previewGroup !== undefined) ||
+    resultSubtitle.includes("schedule") ||
+    resultSubtitle.includes("airing today");
 
   const calendarDays = useMemo(() => {
     if (!isCalendarView) return [];
@@ -768,8 +770,14 @@ export function BrowseShell<T>({
       return;
     }
 
-    // Details: Shift+Enter works in both zones where the terminal reports it;
-    // bare `i` is the reliable trigger once the list owns focus.
+    // Details: Ctrl+O is the terminal-portable trigger that works in BOTH the
+    // query and results zones. Shift+Enter is unreliable (most terminals never
+    // deliver it), and bare `i` would type into the query box — so `i` only fires
+    // once the results list owns focus. All three open the same overlay.
+    if ((input === "o" && key.ctrl) || input === "\x0f") {
+      if (selectedOption && searchState === "ready") openDetailsOverlay();
+      return;
+    }
     if (key.return && key.shift && selectedOption && searchState === "ready") {
       openDetailsOverlay();
       return;
@@ -988,7 +996,7 @@ export function BrowseShell<T>({
               dispatchFocusZone({ type: "focus-filter" });
             }}
             onSubmit={() => dispatchFocusZone({ type: "focus-query" })}
-            placeholder="narrows current results only"
+            placeholder="filter these results — or /filters for category chips"
             focus={resultFilterFocused && !commandMode}
             maxWidth={innerWidth}
             onRedraw={clearShellScreen}
@@ -1039,7 +1047,7 @@ export function BrowseShell<T>({
             hint={
               commandMode
                 ? undefined
-                : "Tokens: type:series year:2008 rating:8 · /filters for guided chips"
+                : "/filters for category chips (type · genre · year · rating) · or type tokens like year:2008"
             }
             maxWidth={innerWidth}
             onRedraw={clearShellScreen}
@@ -1131,21 +1139,39 @@ export function BrowseShell<T>({
                 : visibleOptions.map((option, index) => {
                     const optionIndex = windowStart + index;
                     const selected = optionIndex === boundedSelectedIndex;
-                    const metaText =
-                      option.previewBadge ??
-                      (resultsAreMixed ? option.previewMeta?.[0] : undefined);
+                    // The type column (Series/Movie/Anime) gets its palette tint so a
+                    // mixed result set reads by kind at a glance; a previewBadge
+                    // (new / wl / …) keeps the neutral row color.
+                    const badge = option.previewBadge;
+                    const typeMeta =
+                      !badge && resultsAreMixed ? option.previewMeta?.[0] : undefined;
+                    const metaText = badge ?? typeMeta;
                     const metaWidth = metaText
                       ? Math.min(12, Math.max(6, measureColumns(metaText)))
                       : 0;
                     const titleBudget = Math.max(12, rowWidth - metaWidth - 6);
-                    const titleText = truncateLine(option.label, titleBudget);
-                    const metaSegment = metaText ? truncateLine(metaText, metaWidth) : "";
-                    const rowText = metaText
-                      ? `${padColumnsEnd(titleText, titleBudget)} ${padColumnsStart(
-                          metaSegment,
-                          metaWidth,
-                        )}`
-                      : titleText;
+                    const titleText = padColumnsEnd(
+                      truncateLine(option.label, titleBudget),
+                      titleBudget,
+                    );
+                    const metaSegment = metaText
+                      ? padColumnsStart(truncateLine(metaText, metaWidth), metaWidth)
+                      : "";
+                    const titleColor = selected
+                      ? listFocused
+                        ? palette.text
+                        : palette.muted
+                      : palette.textDim;
+                    const typeKind = typeMeta?.toLowerCase();
+                    const metaColor = typeMeta
+                      ? contentTintColor(
+                          typeKind === "movie"
+                            ? "movie"
+                            : typeKind === "anime"
+                              ? "anime"
+                              : "series",
+                        )
+                      : titleColor;
 
                     return (
                       <Box
@@ -1154,8 +1180,9 @@ export function BrowseShell<T>({
                         width={rowWidth}
                       >
                         <Box width={rowWidth}>
-                          <Text bold={selected && listFocused} dimColor={!selected} wrap="truncate">
+                          <Text wrap="truncate">
                             <Text
+                              bold={selected && listFocused}
                               color={
                                 selected
                                   ? listFocused
@@ -1167,16 +1194,17 @@ export function BrowseShell<T>({
                               {selected ? "▌ " : "  "}
                             </Text>
                             <Text
-                              color={
-                                selected
-                                  ? listFocused
-                                    ? palette.text
-                                    : palette.muted
-                                  : palette.textDim
-                              }
+                              bold={selected && listFocused}
+                              dimColor={!selected}
+                              color={titleColor}
                             >
-                              {padColumnsEnd(truncateLine(rowText, rowWidth - 2), rowWidth - 2)}
+                              {titleText}
                             </Text>
+                            {metaText ? (
+                              <Text dimColor={!selected} color={metaColor}>
+                                {` ${metaSegment}`}
+                              </Text>
+                            ) : null}
                           </Text>
                         </Box>
                       </Box>
@@ -1299,7 +1327,7 @@ export function BrowseShell<T>({
             ? [{ key: "i", label: "details", action: "details" as const }]
             : options.length > 0 && !queryDirty && searchState === "ready"
               ? [
-                  { key: "shift+↵", label: "details", action: "details" as const },
+                  { key: "^O", label: "details", action: "details" as const },
                   { key: "ctrl+f", label: "filter", action: "filters" as const },
                 ]
               : []),

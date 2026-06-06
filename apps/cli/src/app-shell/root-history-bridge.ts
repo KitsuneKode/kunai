@@ -140,7 +140,12 @@ export function releaseProgressToContinueHistoryRelease(
     };
   }
   return {
-    status: projection.status === "upcoming" ? "upcoming" : "unknown",
+    status:
+      projection.status === "upcoming"
+        ? "upcoming"
+        : projection.status === "caught-up"
+          ? "caught-up"
+          : "unknown",
     releaseAt: projection.nextAiringAt ?? null,
     season: projection.nextAiringSeason,
     episode: projection.nextAiringEpisode,

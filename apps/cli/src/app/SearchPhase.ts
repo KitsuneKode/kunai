@@ -639,110 +639,58 @@ async function loadSearchRoute(
 
 async function chooseSearchFilterChip(currentQuery: string): Promise<string | null> {
   const picked = await chooseFromListShell<string | null>({
-    title: "Search filters",
+    title: "Filter by category",
     subtitle: currentQuery.trim()
-      ? `Current query: ${currentQuery}`
-      : "Pick a chip, then edit it in the search box if needed.",
+      ? `Adds to "${currentQuery.trim()}"  ·  type to narrow chips`
+      : "Pick a category — type to narrow (e.g. 'genre', 'year', 'rating').",
     options: [
-      {
-        value: "mode:anime",
-        label: "Anime mode",
-        detail: "Search anime catalogs/providers",
-      },
-      {
-        value: "mode:series",
-        label: "Series mode",
-        detail: "Search TV catalogs/providers",
-      },
-      {
-        value: "type:series",
-        label: "Series",
-        detail: "Limit catalog results to TV/series",
-      },
-      {
-        value: "type:movie",
-        label: "Movies",
-        detail: "Limit catalog results to movies",
-      },
-      {
-        value: "genre:action",
-        label: "Genre",
-        detail: "Edit genre after insertion",
-      },
-      {
-        value: "audio:ja",
-        label: "Audio language",
-        detail: "Prefer a normalized audio language such as ja, en, hi, or de",
-      },
-      {
-        value: "subtitles:en",
-        label: "Subtitle language",
-        detail: "Prefer subtitle or hard-sub language, using ISO codes where available",
-      },
-      {
-        value: "rating:8",
-        label: "High rating",
-        detail: "Minimum rating out of 10",
-      },
-      {
-        value: "downloaded:true",
-        label: "Downloaded",
-        detail: "Prefer local/downloaded facts when results are loaded",
-      },
-      {
-        value: "downloaded:false",
-        label: "Not downloaded",
-        detail: "Hide results with local/downloaded facts when loaded",
-      },
-      {
-        value: "watched:watching",
-        label: "Continue watching",
-        detail: "Show intent for in-progress titles",
-      },
-      {
-        value: "watched:completed",
-        label: "Completed",
-        detail: "Use local history facts when results are loaded",
-      },
-      {
-        value: "watched:unwatched",
-        label: "Unwatched",
-        detail: "Prefer results without local watch progress",
-      },
-      {
-        value: "release:today",
-        label: "Released today",
-        detail: "Use cached release facts where available",
-      },
-      {
-        value: "release:upcoming",
-        label: "Upcoming",
-        detail: "Use cached schedule facts where available",
-      },
+      // ── Type ──
+      { value: "type:movie", label: "Type · Movies", detail: "Only movies" },
+      { value: "type:series", label: "Type · Series", detail: "Only TV / series" },
+      { value: "mode:anime", label: "Type · Anime", detail: "Search anime catalogs" },
+      // ── Genre (anime catalogs honor these directly) ──
+      { value: "genre:action", label: "Genre · Action", detail: "" },
+      { value: "genre:adventure", label: "Genre · Adventure", detail: "" },
+      { value: "genre:comedy", label: "Genre · Comedy", detail: "" },
+      { value: "genre:drama", label: "Genre · Drama", detail: "" },
+      { value: "genre:fantasy", label: "Genre · Fantasy", detail: "" },
+      { value: "genre:horror", label: "Genre · Horror", detail: "" },
+      { value: "genre:mystery", label: "Genre · Mystery", detail: "" },
+      { value: "genre:romance", label: "Genre · Romance", detail: "" },
+      { value: "genre:supernatural", label: "Genre · Supernatural", detail: "" },
+      { value: "genre:thriller", label: "Genre · Thriller", detail: "" },
+      { value: "genre:sports", label: "Genre · Sports", detail: "" },
+      { value: "genre:mecha", label: "Genre · Mecha", detail: "" },
+      // ── Year ──
+      { value: "year:2025", label: "Year · 2025", detail: "" },
+      { value: "year:2024", label: "Year · 2024", detail: "" },
+      { value: "year:2023", label: "Year · 2023", detail: "" },
+      { value: "year:2022", label: "Year · 2022", detail: "" },
+      { value: "year:2020", label: "Year · 2020", detail: "" },
+      // ── Release status ──
+      { value: "release:today", label: "Release · Today", detail: "Releasing today" },
+      { value: "release:this-week", label: "Release · This week", detail: "Airing this week" },
+      { value: "release:upcoming", label: "Release · Upcoming", detail: "Not yet aired" },
+      // ── Rating ──
+      { value: "rating:9", label: "Rating · 9+", detail: "Top rated" },
+      { value: "rating:8", label: "Rating · 8+", detail: "Highly rated" },
+      { value: "rating:7", label: "Rating · 7+", detail: "Well rated" },
+      // ── Your library ──
+      { value: "watched:watching", label: "Library · Continue watching", detail: "In-progress" },
+      { value: "watched:completed", label: "Library · Completed", detail: "Finished" },
+      { value: "watched:unwatched", label: "Library · Unwatched", detail: "Not started" },
+      { value: "downloaded:true", label: "Library · Downloaded", detail: "Available offline" },
+      // ── Sort ──
+      { value: "sort:popular", label: "Sort · Popular", detail: "" },
+      { value: "sort:rating", label: "Sort · Top rated", detail: "" },
+      { value: "sort:recent", label: "Sort · Recent", detail: "" },
+      // ── Advanced (edit the code after inserting) ──
+      { value: "audio:ja", label: "Audio · Japanese", detail: "Edit code: ja/en/hi/de…" },
+      { value: "subtitles:en", label: "Subtitles · English", detail: "Edit code: en/es/ja…" },
       {
         value: "provider:allanime",
-        label: "Provider",
-        detail: "Edit provider id after insertion",
-      },
-      {
-        value: "year:2021",
-        label: "Year",
-        detail: "Edit the year after insertion",
-      },
-      {
-        value: "sort:popular",
-        label: "Sort popular",
-        detail: "Use backend popularity ranking where available",
-      },
-      {
-        value: "sort:rating",
-        label: "Sort rating",
-        detail: "Use backend rating ranking where available",
-      },
-      {
-        value: "sort:recent",
-        label: "Sort recent",
-        detail: "Prefer recent/local activity ordering where supported",
+        label: "Provider · …",
+        detail: "Edit provider id after insert",
       },
       { value: null, label: "Cancel" },
     ],

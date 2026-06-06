@@ -78,9 +78,25 @@ test("history view keeps flatRows order identical to the displayed item order", 
   expect(view.flatRows.map((row) => row.titleId)).toEqual(rowItems.map((item) => item.row.titleId));
 });
 
-// A finished episode of an ongoing series (no schedule data) should keep offering the
-// next episode and NOT be presented as a completed series.
-test("history view offers the next episode for a finished series instead of marking it complete", () => {
+const viewFor = (
+  entry: HistoryProgress,
+  tab: "continue" | "completed" | "new-episodes",
+  context: Parameters<typeof buildHistoryView>[0]["context"] = {},
+) =>
+  buildHistoryView({
+    entries: [[entry.titleId, entry]],
+    tab,
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context,
+  });
+
+// Honest model: a finished episode with NO authoritative schedule signal is treated
+// as caught-up → Completed. We do NOT fabricate a phantom next episode (the old bug
+// that flooded "New episodes" and emptied "Completed").
+test("history view marks a finished series with no schedule data as completed, not new", () => {
   const finishedSeries = progress({
     titleId: "tmdb:1",
     season: 2,
@@ -90,44 +106,67 @@ test("history view offers the next episode for a finished series instead of mark
     completed: true,
   });
 
-  const completedView = buildHistoryView({
-    entries: [["tmdb:1", finishedSeries]],
-    tab: "completed",
-    filterQuery: "",
-    selectedIndex: 0,
-    maxVisible: 50,
-    narrow: true,
-    context: {},
-  });
-  // Not in the Completed tab — it has a next episode to watch.
-  expect(completedView.state).toBe("empty");
+  expect(viewFor(finishedSeries, "completed").flatRows.map((r) => r.titleId)).toContain("tmdb:1");
+  expect(viewFor(finishedSeries, "new-episodes").state).toBe("empty");
+  expect(viewFor(finishedSeries, "continue").state).toBe("empty");
+});
 
-  const allView = buildHistoryView({
-    entries: [["tmdb:1", finishedSeries]],
-    tab: "all",
-    filterQuery: "",
-    selectedIndex: 0,
-    maxVisible: 50,
-    narrow: true,
-    context: {},
+// A genuinely freshly-aired episode (released AFTER last watch) lands in New episodes.
+test("history view puts a freshly-aired episode in New episodes, not Completed", () => {
+  const watched = progress({
+    titleId: "tmdb:2",
+    season: 1,
+    episode: 8,
+    positionSeconds: 1200,
+    durationSeconds: 1200,
+    completed: true,
+    updatedAt: "2026-05-01T00:00:00.000Z",
   });
-  const row = allView.flatRows[0];
-  expect(row?.resumeAction).toBe("Play next");
-  expect(row?.episodeCode).toContain("S02E04");
+  const fresh = {
+    releaseSignals: new Map([
+      [
+        "tmdb:2",
+        {
+          status: "new-episodes" as const,
+          newEpisodeCount: 1,
+          latestKnownReleaseAt: "2026-05-08T00:00:00.000Z",
+        },
+      ],
+    ]),
+  };
 
-  // It also belongs in the Continue tab — finishing one episode keeps you watching.
-  const continueView = buildHistoryView({
-    entries: [["tmdb:1", finishedSeries]],
-    tab: "continue",
-    filterQuery: "",
-    selectedIndex: 0,
-    maxVisible: 50,
-    narrow: true,
-    context: {},
+  expect(viewFor(watched, "new-episodes", fresh).flatRows.map((r) => r.titleId)).toContain(
+    "tmdb:2",
+  );
+  expect(viewFor(watched, "completed", fresh).state).toBe("empty");
+});
+
+// A backlog you fell behind on (aired BEFORE you last watched) is Continue, not New.
+test("history view puts an aired backlog in Continue, not New", () => {
+  const watched = progress({
+    titleId: "tmdb:3",
+    season: 1,
+    episode: 10,
+    positionSeconds: 1200,
+    durationSeconds: 1200,
+    completed: true,
+    updatedAt: "2026-05-20T00:00:00.000Z",
   });
-  expect(continueView.state).toBe("success");
-  expect(continueView.flatRows.map((r) => r.titleId)).toContain("tmdb:1");
-  expect(continueView.flatRows[0]?.resumeAction).toBe("Play next");
+  const backlog = {
+    releaseSignals: new Map([
+      [
+        "tmdb:3",
+        {
+          status: "new-episodes" as const,
+          newEpisodeCount: 14,
+          latestKnownReleaseAt: "2026-04-01T00:00:00.000Z",
+        },
+      ],
+    ]),
+  };
+
+  expect(viewFor(watched, "continue", backlog).flatRows.map((r) => r.titleId)).toContain("tmdb:3");
+  expect(viewFor(watched, "new-episodes", backlog).state).toBe("empty");
 });
 
 // A finished movie is genuinely done — it stays out of Continue (Restart lives in Completed).

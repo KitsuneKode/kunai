@@ -2,7 +2,7 @@ import { Box, Text, useStdout } from "ink";
 import React from "react";
 
 import { truncateLine } from "./shell-text";
-import { APP_LABEL, hotkeyLabel, palette } from "./shell-theme";
+import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
 
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
@@ -67,23 +67,24 @@ export const InlineBadge = React.memo(function InlineBadge({
   label: string;
   tone?: InlineBadgeTone;
 }) {
-  const color =
-    tone === "info"
-      ? palette.muted
-      : tone === "success"
-        ? palette.ok
-        : tone === "warning"
-          ? palette.accentDeep
-          : tone === "error"
-            ? palette.danger
-            : palette.muted;
-
   return (
     <Box marginRight={1}>
-      <Text color={color}>{truncateLine(label, 28)}</Text>
+      <Text color={semanticToneColor(tone)}>{truncateLine(label, 28)}</Text>
     </Box>
   );
 });
+
+type FooterActionRole = "primary" | "destructive" | "meta" | "normal";
+
+const DESTRUCTIVE_FOOTER = /\b(stop|quit|delete|remove|cancel|clear|discard)\b/i;
+const META_FOOTER = /\b(commands?|help|menu)\b/i;
+
+function footerActionRole(action: FooterAction): FooterActionRole {
+  if (action.primary) return "primary";
+  if (DESTRUCTIVE_FOOTER.test(action.label)) return "destructive";
+  if (META_FOOTER.test(action.label)) return "meta";
+  return "normal";
+}
 
 export function Footer({
   taskLabel,
@@ -141,16 +142,32 @@ export function Footer({
           {visibleActions.map((action, index) => {
             const glyph = FOOTER_GLYPHS[action.key] ?? "";
             const keyDisplay = glyph ? `${glyph}§${action.key}` : action.key;
+            // Tasteful 3-role hierarchy instead of one rose key + a wall of grey:
+            //  • primary  → warm accent key + bright bold label
+            //  • destructive (stop/quit/delete…) → danger key (reads as "careful")
+            //  • meta (commands/help) → quiet muted
+            //  • everything else → cool `info` counterweight key + dimmed label
+            const role = footerActionRole(action);
+            const keyColor =
+              role === "primary"
+                ? palette.accent
+                : role === "destructive"
+                  ? palette.danger
+                  : role === "meta"
+                    ? palette.muted
+                    : palette.info;
+            const labelColor =
+              role === "primary" ? palette.text : role === "meta" ? palette.muted : palette.textDim;
             return (
               <Box
                 key={`${action.key}-${action.label}`}
                 marginRight={index === visibleActions.length - 1 ? 0 : 2}
                 marginBottom={1}
               >
-                <Text color={action.primary ? palette.accent : palette.dim}>
+                <Text bold={role === "primary"} color={keyColor}>
                   {hotkeyLabel(keyDisplay)}
                 </Text>
-                <Text color={palette.text}> {truncateLine(action.label, 18)}</Text>
+                <Text color={labelColor}> {truncateLine(action.label, 18)}</Text>
               </Box>
             );
           })}
@@ -229,21 +246,7 @@ export const LocalSection = React.memo(function LocalSection({
 }) {
   return (
     <Box marginTop={marginTop} flexDirection="column">
-      <Text
-        color={
-          tone === "info"
-            ? palette.muted
-            : tone === "success"
-              ? palette.ok
-              : tone === "warning"
-                ? palette.accentDeep
-                : tone === "error"
-                  ? palette.danger
-                  : palette.muted
-        }
-      >
-        {title}
-      </Text>
+      <Text color={semanticToneColor(tone)}>{title}</Text>
       <Box marginTop={1} flexDirection="column">
         {children}
       </Box>
@@ -388,25 +391,12 @@ export const ContextStrip = React.memo(function ContextStrip({
 
   return (
     <Box flexWrap="wrap">
-      {visibleItems.map((item, index) => {
-        const color =
-          item.tone === "info"
-            ? palette.muted
-            : item.tone === "success"
-              ? palette.ok
-              : item.tone === "warning"
-                ? palette.accentDeep
-                : item.tone === "error"
-                  ? palette.danger
-                  : palette.muted;
-
-        return (
-          <React.Fragment key={item.label}>
-            {index > 0 ? <Text color={palette.dim}> · </Text> : null}
-            <Text color={color}>{truncateLine(item.label, 34)}</Text>
-          </React.Fragment>
-        );
-      })}
+      {visibleItems.map((item, index) => (
+        <React.Fragment key={item.label}>
+          {index > 0 ? <Text color={palette.dim}> · </Text> : null}
+          <Text color={semanticToneColor(item.tone)}>{truncateLine(item.label, 34)}</Text>
+        </React.Fragment>
+      ))}
     </Box>
   );
 });
@@ -421,17 +411,7 @@ export const DetailLine = React.memo(function DetailLine({
   tone?: BadgeTone;
 }) {
   const valueColor =
-    tone === "success"
-      ? palette.ok
-      : tone === "info"
-        ? palette.muted
-        : tone === "accent"
-          ? palette.accentSoft
-          : tone === "error"
-            ? palette.danger
-            : tone === "warning"
-              ? palette.accentDeep
-              : "white";
+    tone === "accent" ? palette.accentSoft : tone === "neutral" ? "white" : semanticToneColor(tone);
 
   return (
     <Box>

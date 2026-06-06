@@ -202,15 +202,27 @@ export function resolvePlaybackResultDecision({
     timing,
     endPolicy.quitNearEndThresholdMode,
   );
-  // N/P navigation carries explicit user intent — don't treat the resulting
-  // "stop" end-reason as an interrupted session even if position was mid-episode.
-  const isNavigationAction =
+  // These actions carry explicit "keep watching this episode" intent, so the mpv
+  // "quit" they trigger (mpv is stopped to re-resolve/recover/navigate) must NOT be
+  // misread as a user interruption that pauses autoplay. Switching provider, source,
+  // or quality, or recovering a dead stream, all re-resolve the SAME episode — only
+  // a real `stop` (or an unattributed quit) should defensively pause autoplay.
+  const keepsWatchingIntent =
     controlAction === "next" ||
     controlAction === "previous" ||
     controlAction === "pick-episode" ||
-    controlAction === "back-to-search";
+    controlAction === "back-to-search" ||
+    controlAction === "refresh" ||
+    controlAction === "recover" ||
+    controlAction === "recompute" ||
+    controlAction === "fallback" ||
+    controlAction === "pick-stream" ||
+    controlAction === "pick-source" ||
+    controlAction === "pick-quality" ||
+    controlAction === "reload-subtitles" ||
+    controlAction === "select-subtitle";
   const interruptedStop =
-    !isNavigationAction && (result.endReason === "quit" || controlAction === "stop");
+    !keepsWatchingIntent && (result.endReason === "quit" || controlAction === "stop");
   const shouldTreatAsInterrupted = interruptedStop && !nearNaturalEnd;
   const nextPauseReason =
     shouldTreatAsInterrupted && session.autoplayPauseReason !== "user"

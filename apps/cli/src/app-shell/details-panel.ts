@@ -160,8 +160,6 @@ export function resolveBrowseDetailsSecondary<T>(
   };
 }
 
-const POSTER_AVAILABLE = "Poster available for companion preview";
-const POSTER_MISSING = "Poster unavailable from this provider";
 const LOCAL_FACT_LABELS = new Set(["Local progress", "Offline"]);
 
 export type BrowseDetailsPanel = {
@@ -189,56 +187,32 @@ export function buildBrowseDetailsPanel<T>(
   }
 
   const title = option.previewTitle ?? option.label;
-  const facts = getStructuredPreviewFacts(option);
   const previewFacts = option.previewFacts ?? [];
   const localFacts = previewFacts.filter((fact) => LOCAL_FACT_LABELS.has(fact.label));
   const nonLocalFacts = previewFacts.filter(
     (fact) =>
       !LOCAL_FACT_LABELS.has(fact.label) && fact.label !== "Poster" && fact.label !== "Rating",
   );
-  const quickFacts = facts.filter((fact) => fact.label !== "Poster" && fact.label !== "Rating");
+  // Compact model: one "At a glance" line carries type · year · rating · episodes,
+  // so the separate Type/Year/Rating facts and the "Open"/"Selection" scaffolding
+  // are dropped to avoid the sparse, duplicated overlay.
+  const glanceParts = [...(option.previewMeta ?? [])];
+  if (option.previewRating && !glanceParts.includes(option.previewRating)) {
+    glanceParts.push(option.previewRating);
+  }
   const lines: ShellPanelLine[] = [
-    { label: "─── Selection", detail: "", tone: "info" },
-    {
-      label: "Title",
-      detail: title,
-      tone: "success",
-    },
-    ...(option.previewMeta?.length
-      ? [
-          {
-            label: "At a glance",
-            detail: option.previewMeta.join("  ·  "),
-          },
-        ]
+    { label: "Title", detail: title, tone: "success" },
+    ...(glanceParts.length > 0
+      ? [{ label: "At a glance", detail: glanceParts.join("  ·  ") }]
       : []),
-    {
-      label: "Open",
-      detail: option.previewNote ?? "Press Enter to open this title.",
-      tone: "info",
-    },
     ...(localFacts.length > 0
       ? [{ label: "─── Local", detail: "", tone: "info" as const }, ...localFacts]
       : []),
-    { label: "─── Details", detail: "", tone: "info" },
-    ...quickFacts,
-    {
-      label: "Rating",
-      detail: option.previewRating ?? "Not supplied by this provider response",
-      tone: option.previewRating ? "success" : "neutral",
-    },
     { label: "─── Synopsis", detail: "", tone: "info" },
-    {
-      label: "Overview",
-      detail: option.previewBody || "No overview available yet.",
-    },
-    { label: "─── Availability", detail: "", tone: "info" },
-    {
-      label: "Artwork",
-      detail: option.previewImageUrl ? POSTER_AVAILABLE : POSTER_MISSING,
-      tone: option.previewImageUrl ? "success" : "warning",
-    },
-    ...nonLocalFacts,
+    { label: "Overview", detail: option.previewBody || "No overview available yet." },
+    ...(nonLocalFacts.length > 0
+      ? [{ label: "─── Details", detail: "", tone: "info" as const }, ...nonLocalFacts]
+      : []),
   ];
 
   return {
@@ -257,47 +231,6 @@ export function buildPreviewMetaLine<T>(option: BrowseShellOption<T>): string {
   const rating = option.previewRating ?? meta.find((value) => /(?:★|\d(?:\.\d)?\/10)/.test(value));
   const parts = uniqueStrings([year, type, episodes, rating]);
   return parts.length > 0 ? parts.join("  ·  ") : "Provider result";
-}
-
-function getStructuredPreviewFacts<T>(option: BrowseShellOption<T>): ShellPanelLine[] {
-  const meta = option.previewMeta ?? [];
-  const type = meta.find((value) => value === "Series" || value === "Movie");
-  const year = meta.find((value) => /^\d{4}$/.test(value));
-  const episodes = meta.find((value) => value.endsWith(" episodes"));
-
-  return [
-    {
-      label: "Type",
-      detail: type ?? "Unknown",
-      tone: type ? "neutral" : "warning",
-    },
-    ...(year
-      ? [
-          {
-            label: "Year",
-            detail: year,
-          },
-        ]
-      : []),
-    ...(episodes
-      ? [
-          {
-            label: "Episodes",
-            detail: episodes.replace(" episodes", ""),
-          },
-        ]
-      : []),
-    {
-      label: "Rating",
-      detail: option.previewRating ?? "Rating unavailable from this provider response",
-      tone: option.previewRating ? "success" : "neutral",
-    },
-    {
-      label: "Poster",
-      detail: option.previewImageUrl ? "Available" : "Unavailable",
-      tone: option.previewImageUrl ? "success" : "warning",
-    },
-  ];
 }
 
 export function buildDetailsSheetLines<T>(

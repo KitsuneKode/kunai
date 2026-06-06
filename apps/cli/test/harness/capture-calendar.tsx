@@ -1,5 +1,6 @@
 import { CalendarDayStrip, CalendarScheduleRow } from "@/app-shell/calendar-ui";
 import type { BrowseShellOption } from "@/app-shell/types";
+import { buildCalendarItem } from "@/domain/calendar/calendar-item";
 import { Box } from "ink";
 import React from "react";
 
@@ -34,28 +35,47 @@ const dayStripDays = dayLabels.map((label, i) => ({
 
 const now = Date.parse("2026-05-27T12:00:00.000Z");
 
-function opt(over: Partial<BrowseShellOption<{ metadataSource?: string }>>): BrowseShellOption<{
-  metadataSource?: string;
-}> {
+function calOpt(input: {
+  label: string;
+  kind?: "anime" | "series" | "movie";
+  releaseAt: string | null;
+  status: "released" | "upcoming" | "unknown";
+  episode?: number;
+  inWatchlist?: boolean;
+}): BrowseShellOption<{ metadataSource?: string }> {
+  const item = buildCalendarItem(
+    {
+      source: input.kind === "anime" ? "anilist" : "tmdb",
+      titleId: input.label,
+      titleName: input.label,
+      type: input.kind ?? "series",
+      episode: input.episode,
+      releaseAt: input.releaseAt,
+      releasePrecision: input.releaseAt ? "date" : "unknown",
+      status: input.status,
+    },
+    { nowMs: now, inWatchlist: input.inWatchlist },
+  );
   return {
     value: { metadataSource: "TMDB calendar" },
-    label: "Coronation Street",
-    detail: "S01E5 · available Fri, Dec 9",
-    previewGroup: "Also today",
-    previewTime: "",
-    releaseStatus: "released",
-    ...over,
+    label: input.label,
+    detail: "",
+    calendar: item,
+    previewBadge: item.display.badge,
   } as BrowseShellOption<{ metadataSource?: string }>;
 }
 
 const rows = [
-  opt({ label: "Coronation Street", releaseStatus: "released", previewGroup: "Earlier" }),
-  opt({
+  calOpt({ label: "Coronation Street", releaseAt: "2026-05-25", status: "released" }),
+  calOpt({
     label: "Frieren: Beyond Journey's End",
-    releaseStatus: "airing-today",
-    previewBadge: "wl",
+    kind: "anime",
+    releaseAt: "2026-05-27T18:00:00.000Z",
+    status: "upcoming",
+    episode: 29,
+    inWatchlist: true,
   }),
-  opt({ label: "One Piece", releaseStatus: "upcoming" }),
+  calOpt({ label: "One Piece", kind: "anime", releaseAt: "2026-05-29", status: "upcoming" }),
 ];
 
 function CalendarList({ width }: { width: number }) {
@@ -63,7 +83,7 @@ function CalendarList({ width }: { width: number }) {
     <Box flexDirection="column" width={width}>
       {rows.map((o, i) => (
         <CalendarScheduleRow
-          key={`${o.label}:${o.previewGroup ?? "day"}:${o.releaseStatus ?? "unknown"}`}
+          key={`${o.label}:${o.calendar?.reason ?? "unknown"}`}
           option={o}
           selected={i === 0}
           rowWidth={width}

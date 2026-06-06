@@ -219,8 +219,6 @@ export type BrowseShellOption<T> = {
   previewDayKey?: string;
   previewTime?: string;
   previewBadge?: string;
-  /** Release-status for calendar/schedule rows: released · airing-today · upcoming. */
-  releaseStatus?: "released" | "airing-today" | "upcoming";
   previewFacts?: readonly ShellPanelLine[];
   previewImageUrl?: string;
   previewRating?: string;

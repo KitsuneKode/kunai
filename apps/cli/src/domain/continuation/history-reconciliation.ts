@@ -5,7 +5,10 @@ import type { HistoryProgress } from "@kunai/storage";
 export type ContinueHistoryRelease = {
   readonly season?: number;
   readonly episode?: number;
-  readonly status: CatalogReleaseStatus;
+  // "caught-up" is an authoritative "you've seen the latest aired episode, nothing
+  // new" signal — distinct from "unknown" (no data). Collapsing it to "unknown"
+  // used to trip the optimistic fallback below and fabricate a phantom new episode.
+  readonly status: CatalogReleaseStatus | "caught-up";
   readonly releaseAt: string | null;
 };
 
@@ -75,7 +78,9 @@ export function reconcileContinueHistory(input: {
   // and falls through to up-to-date. If the optimistic next episode does not actually
   // exist, the downstream episode resolution degrades to a manual pick.
   const hasAuthoritativeRelease =
-    input.nextRelease?.status === "upcoming" || input.nextRelease?.status === "released";
+    input.nextRelease?.status === "upcoming" ||
+    input.nextRelease?.status === "released" ||
+    input.nextRelease?.status === "caught-up";
   if (historyContentType(latest) === "series" && !hasAuthoritativeRelease) {
     return {
       kind: "new-episode",

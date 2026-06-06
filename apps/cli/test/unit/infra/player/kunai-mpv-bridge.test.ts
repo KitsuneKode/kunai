@@ -10,7 +10,8 @@ describe("kunai mpv bridge resume prompt", () => {
 
     expect(source).toContain("[Alt+R]");
     expect(source).toContain('mp.add_forced_key_binding("Alt+r", "kunai-resume-alt-r"');
-    expect(source).toContain("Continue from last history point");
+    expect(source).toContain("Resume at ");
+    expect(source).toContain("from where you left off");
   });
 });
 

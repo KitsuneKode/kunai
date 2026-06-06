@@ -441,11 +441,9 @@ export function buildCalendarRenderRows<T>(
     const option = options[index];
     if (!option) continue;
     const presentation = calendarReleaseRowPresentation(option, nowMs);
-    const releaseState = deriveCalendarReleaseState(option, nowMs);
-    const timeLabel =
-      releaseState === "countdown"
-        ? formatCalendarReleaseStateLabel(releaseState, option, nowMs)
-        : (option.calendar?.display.time ?? option.previewTime?.trim() ?? "") || "TBD";
+    // Left column is ALWAYS the real clock time; the countdown ("in 7h 7m") lives
+    // only in the status column (presentation.label), so the two never duplicate.
+    const timeLabel = (option.calendar?.display.time ?? option.previewTime?.trim() ?? "") || "TBD";
     const groupLabel = option.calendar?.display.groupLabel ?? option.previewGroup;
     const dayHeaderLabel =
       selectedDayKey === null && groupLabel ? calendarDayKeyFromGroup(groupLabel) : null;

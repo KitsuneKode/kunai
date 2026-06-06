@@ -13,7 +13,7 @@ import type { HistoryProgress } from "@kunai/storage";
 import {
   buildHistoryPickerOptions,
   groupHistoryByRecency,
-  isHistoryKeepWatching,
+  historyBucketFor,
   type HistoryPickerOptionsContext,
 } from "./panel-data";
 import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail";
@@ -96,44 +96,24 @@ function isHistoryCompleted(entry: HistoryProgress): boolean {
   return duration > 0 && entry.positionSeconds / duration >= 0.95;
 }
 
-function isHistoryNewEpisode(
-  titleId: string,
-  entry: HistoryProgress,
-  context: HistoryPickerOptionsContext,
-): boolean {
-  const decision = reconcileContinueHistory({
-    titleId,
-    entries: [[titleId, entry]],
-    nextRelease: context.nextReleases?.get(titleId) ?? null,
-  });
-  return decision.kind === "new-episode";
-}
-
 function matchesHistoryTab(
   titleId: string,
   entry: HistoryProgress,
   tab: HistoryTab,
   context: HistoryPickerOptionsContext,
 ): boolean {
-  const completed = isHistoryCompleted(entry);
-  const newEpisode = isHistoryNewEpisode(titleId, entry, context);
-  switch (tab) {
-    case "continue":
-      // Same authority as the hoisted "Continue Watching" section: in-progress titles
-      // plus finished series with a next episode to play.
-      return isHistoryKeepWatching(titleId, entry, context);
-    case "completed":
-      // A series with a next episode to play is not "complete" — it belongs in the
-      // new-episodes / continue surfaces, not the Completed tab (finished movies and
-      // genuinely caught-up titles stay here).
-      return completed && !newEpisode;
-    case "new-episodes":
-      return newEpisode;
-    case "all":
-      return true;
-    default:
-      return true;
-  }
+  if (tab === "all") return true;
+  // Single honest authority (classifyHistoryBucket): in-progress → continue, a
+  // freshly-aired episode → new-episodes, finished/caught-up → completed. No tab
+  // overlaps and nothing leaks (the old reconcile fallback fabricated "new-episode"
+  // for every finished title without release data, flooding New and emptying
+  // Completed).
+  const bucket = historyBucketFor(titleId, entry, context);
+  return (
+    (tab === "continue" && bucket === "continue") ||
+    (tab === "completed" && bucket === "completed") ||
+    (tab === "new-episodes" && bucket === "new-episodes")
+  );
 }
 
 function filterHistoryEntries(
@@ -144,14 +124,12 @@ function filterHistoryEntries(
 ): readonly [string, HistoryProgress][] {
   const filter = filterQuery.trim().toLowerCase();
   const base = historyEntries.filter(([titleId, entry]) => {
-    const completed = isHistoryCompleted(entry);
-    const keepWatching = isHistoryKeepWatching(titleId, entry, context);
-    const newEpisode = isHistoryNewEpisode(titleId, entry, context);
+    const bucket = historyBucketFor(titleId, entry, context);
 
     if (filter.length > 0) {
-      if (filter === "completed" && completed) return true;
-      if ((filter === "watching" || filter === "continue") && keepWatching) return true;
-      if ((filter === "new" || filter === "new-episodes") && newEpisode) return true;
+      if (filter === "completed" && bucket === "completed") return true;
+      if ((filter === "watching" || filter === "continue") && bucket === "continue") return true;
+      if ((filter === "new" || filter === "new-episodes") && bucket === "new-episodes") return true;
       if (
         !fuzzyMatch(
           filter,
@@ -182,9 +160,9 @@ function filterHistoryEntries(
 
 function toneColor(tone: ShellStatusTone | undefined): string {
   if (tone === "success") return palette.ok;
-  if (tone === "warning") return palette.accentDeep;
+  if (tone === "warning") return palette.warn;
   if (tone === "error") return palette.danger;
-  if (tone === "info") return palette.muted;
+  if (tone === "info") return palette.info;
   return palette.textDim;
 }
 

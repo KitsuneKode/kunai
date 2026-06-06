@@ -327,11 +327,11 @@ async function confirmDownloadProfile({
     const profileDetail = [
       `${draft.audioPreference} audio`,
       `${draft.subtitlePreference} subtitles`,
-      draft.qualityPreference ? `${draft.qualityPreference} quality` : null,
-      draft.cacheArtwork ? "artwork cached" : "no artwork cache",
+      draft.qualityPreference ? `${draft.qualityPreference}` : "highest quality",
+      draft.cacheArtwork ? "artwork saved" : "no artwork",
       target,
       cleanup,
-      "space checked before queue and start",
+      "disk space checked first",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -342,39 +342,38 @@ async function confirmDownloadProfile({
       subtitle: `${episodes.length} ${episodes.length === 1 ? "item" : "items"} selected · profile edits are local until you queue`,
       actionContext: buildPickerActionContext({ container, taskLabel: `Download: ${title.name}` }),
       options: [
-        { value: "back", label: "Back", detail: "No download queued and no provider stream work" },
-        { value: "queue", label: "Queue download", detail: profileDetail },
+        // Primary action leads. Settings sit below; Cancel is last (Esc also backs out).
+        { value: "queue", label: "Download", detail: profileDetail },
         ...(title.type !== "movie"
           ? [
               {
                 value: "runway" as const,
-                label: "Queue and keep watching offline",
-                detail: `${profileDetail} · keep up to ${draft.runwayTarget ?? 1} released episodes ready`,
+                label: "Download + auto-keep next episodes ready",
+                detail: `${profileDetail} · keeps up to ${draft.runwayTarget ?? 1} released episodes ready offline`,
               },
             ]
           : []),
         {
-          value: "cycle-subtitle",
-          label: `Subtitles: ${draft.subtitlePreference}`,
-          detail: "Cycle downloaded subtitle preference",
+          value: "cycle-quality",
+          label: `Quality: ${draft.qualityPreference ?? "highest"}`,
+          detail: "Cycle download quality — highest available unless you cap it",
         },
         {
-          value: "cycle-quality",
-          label: `Quality: ${draft.qualityPreference ?? "best"}`,
-          detail: "Cycle stored download quality preference",
+          value: "cycle-subtitle",
+          label: `Subtitles: ${draft.subtitlePreference}`,
+          detail: "Cycle the subtitle language saved with downloads",
         },
         {
           value: "toggle-artwork",
-          label: `Artwork cache: ${draft.cacheArtwork ? "on" : "off"}`,
-          detail: "Include title artwork in offline assets",
+          label: `Artwork: ${draft.cacheArtwork ? "saved" : "off"}`,
+          detail: "Save the title poster alongside the video for the offline library",
         },
         ...(container.config.downloadPath.trim()
           ? [
               {
                 value: "toggle-destination" as const,
-                label: `Destination: ${target}`,
-                detail:
-                  "Switch between configured folder and default library; set new paths in Settings",
+                label: `Save to: ${target}`,
+                detail: "Switch between your configured folder and the default library",
               },
             ]
           : []),
@@ -382,21 +381,22 @@ async function confirmDownloadProfile({
           ? [
               {
                 value: "increase-runway" as const,
-                label: `Offline runway: ${draft.runwayTarget ?? 1} episode(s)`,
-                detail: "Increase bounded target; disk checks can pause new downloads",
+                label: `Keep ready ahead: ${draft.runwayTarget ?? 1} episode(s)`,
+                detail: "Pre-download upcoming episodes so they are ready offline",
               },
               {
                 value: "decrease-runway" as const,
-                label: "Reduce offline runway",
-                detail: "Reduce the ready-ahead target by one episode",
+                label: "Keep fewer ready ahead",
+                detail: "Lower how many episodes are pre-downloaded",
               },
               {
                 value: "toggle-cleanup" as const,
                 label: `After watching: ${cleanup}`,
-                detail: "Controls explicit cleanup suggestions; files are not deleted here",
+                detail: "Whether watched episodes are suggested for cleanup (never auto-deleted)",
               },
             ]
           : []),
+        { value: "back", label: "Cancel", detail: "Close without downloading (or press Esc)" },
       ],
     });
     if (!selection || selection === "back") return null;

@@ -84,6 +84,46 @@ function detailFromHintsAndNativeLabels(
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
+// Flag per audio language so the source/server picker reads like the web Servers
+// tab. Languages aren't countries, so this is a pragmatic best-effort mapping.
+const LANGUAGE_FLAG: Readonly<Record<string, string>> = {
+  en: "🇺🇸",
+  de: "🇩🇪",
+  hi: "🇮🇳",
+  ta: "🇮🇳",
+  te: "🇮🇳",
+  es: "🇪🇸",
+  pt: "🇧🇷",
+  ja: "🇯🇵",
+  fr: "🇫🇷",
+  it: "🇮🇹",
+  ko: "🇰🇷",
+  zh: "🇨🇳",
+  ru: "🇷🇺",
+  ar: "🇸🇦",
+  id: "🇮🇩",
+  th: "🇹🇭",
+  tr: "🇹🇷",
+  vi: "🇻🇳",
+};
+
+/** "en" → "🇺🇸 English audio". Returns undefined when no language is known. */
+export function serverAudioBadge(
+  audioLanguages: readonly string[] | undefined,
+): string | undefined {
+  const code = audioLanguages?.[0];
+  if (!code) return undefined;
+  const base = code.toLowerCase().split("-")[0] ?? code.toLowerCase();
+  const flag = LANGUAGE_FLAG[base] ?? "🌐";
+  let name: string;
+  try {
+    name = new Intl.DisplayNames(["en"], { type: "language" }).of(base) ?? base.toUpperCase();
+  } catch {
+    name = base.toUpperCase();
+  }
+  return `${flag} ${name} audio`;
+}
+
 /**
  * Build the normalized, sectioned track capability model from the inventory view.
  *
@@ -107,6 +147,10 @@ export function buildTrackCapabilities(
   };
 
   for (const group of view.sourceGroups) {
+    // Web-style server row: lead the detail with a flag-labelled audio language
+    // (e.g. "🇺🇸 English audio") so each server reads like the site's Servers tab.
+    const audioBadge = serverAudioBadge(group.audioLanguages);
+    const baseDetail = detailFromHintsAndNativeLabels(group.hints, group.nativeLabels, group.label);
     push({
       section: "source",
       label: group.label,
@@ -114,7 +158,7 @@ export function buildTrackCapabilities(
       selected: group.state === "selected",
       enabled: group.state === "available",
       reason: group.disabledReason,
-      detail: detailFromHintsAndNativeLabels(group.hints, group.nativeLabels, group.label),
+      detail: [audioBadge, baseDetail].filter(Boolean).join("  ·  ") || undefined,
       risk: riskFromState(group.state),
     });
   }

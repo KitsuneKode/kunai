@@ -145,6 +145,29 @@ export function heatColor(rampIndex: number): string {
   return ramp[clamped] ?? ramp[0];
 }
 
+export type SemanticTone = "neutral" | "info" | "success" | "warning" | "error";
+
+/**
+ * Single authority for tone → color across inline UI (badges, context strips,
+ * section headers, detail lines). Restores the full semantic palette instead of
+ * the old per-component maps that collapsed `info` to grey and mis-mapped
+ * `warning` to rose. `info` is the cool counterweight; `warning` is amber.
+ */
+export function semanticToneColor(tone: SemanticTone | undefined): string {
+  switch (tone) {
+    case "info":
+      return palette.info;
+    case "success":
+      return palette.ok;
+    case "warning":
+      return palette.warn;
+    case "error":
+      return palette.danger;
+    default:
+      return palette.muted;
+  }
+}
+
 export function hotkeyLabel(key: string): string {
   // "glyph§letter" sentinel: show only the glyph, no brackets or letter
   const sentinelIdx = key.indexOf("§");
