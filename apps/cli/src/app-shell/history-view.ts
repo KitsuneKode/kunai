@@ -7,7 +7,10 @@
 import { reconcileContinueHistory } from "@/domain/continuation/history-reconciliation";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
-import { historyContentType } from "@/services/continuation/history-progress";
+import {
+  correctedHistoryMediaKind,
+  historyContentType,
+} from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@kunai/storage";
 
 import {
@@ -25,6 +28,29 @@ import type { ShellPickerOption, ShellStatusTone } from "./types";
 
 export const HISTORY_TABS = ["continue", "completed", "new-episodes", "all"] as const;
 export type HistoryTab = (typeof HISTORY_TABS)[number];
+
+// Second filter axis: content type. Uses correctedHistoryMediaKind so a drama
+// watched in anime mode (legacy mislabel) filters as Series, not Anime (#1/#4).
+export const HISTORY_TYPE_FILTERS = ["all", "anime", "series", "movie"] as const;
+export type HistoryTypeFilter = (typeof HISTORY_TYPE_FILTERS)[number];
+
+export function historyTypeFilterLabels(): readonly string[] {
+  return ["All", "Anime", "Series", "Movies"];
+}
+
+export function historyTypeFilterIndex(filter: HistoryTypeFilter): number {
+  return Math.max(0, HISTORY_TYPE_FILTERS.indexOf(filter));
+}
+
+export function cycleHistoryTypeFilter(filter: HistoryTypeFilter): HistoryTypeFilter {
+  return HISTORY_TYPE_FILTERS[
+    (historyTypeFilterIndex(filter) + 1) % HISTORY_TYPE_FILTERS.length
+  ] as HistoryTypeFilter;
+}
+
+function matchesHistoryTypeFilter(entry: HistoryProgress, filter: HistoryTypeFilter): boolean {
+  return filter === "all" || correctedHistoryMediaKind(entry) === filter;
+}
 
 export type HistoryViewState = "loading" | "empty" | "success";
 
@@ -57,6 +83,9 @@ export type HistoryView = {
   readonly tab: HistoryTab;
   readonly tabLabels: readonly string[];
   readonly tabIndex: number;
+  readonly typeFilter: HistoryTypeFilter;
+  readonly typeFilterLabels: readonly string[];
+  readonly typeFilterIndex: number;
   readonly flatRows: readonly HistoryViewRow[];
   readonly items: readonly HistoryRenderItem[];
   readonly rail: PreviewRailModel | null;
@@ -64,6 +93,19 @@ export type HistoryView = {
   readonly showScrollUp: boolean;
   readonly showScrollDown: boolean;
 };
+
+/** Common type-filter fields for every HistoryView return path. */
+function historyTypeFilterView(typeFilter: HistoryTypeFilter): {
+  readonly typeFilter: HistoryTypeFilter;
+  readonly typeFilterLabels: readonly string[];
+  readonly typeFilterIndex: number;
+} {
+  return {
+    typeFilter,
+    typeFilterLabels: historyTypeFilterLabels(),
+    typeFilterIndex: historyTypeFilterIndex(typeFilter),
+  };
+}
 
 export function historyTabLabels(): readonly string[] {
   return ["Continue", "Completed", "New episodes", "All"];
@@ -121,9 +163,11 @@ function filterHistoryEntries(
   filterQuery: string,
   tab: HistoryTab,
   context: HistoryPickerOptionsContext,
+  typeFilter: HistoryTypeFilter = "all",
 ): readonly [string, HistoryProgress][] {
   const filter = filterQuery.trim().toLowerCase();
   const base = historyEntries.filter(([titleId, entry]) => {
+    if (!matchesHistoryTypeFilter(entry, typeFilter)) return false;
     const bucket = historyBucketFor(titleId, entry, context);
 
     if (filter.length > 0) {
@@ -358,6 +402,7 @@ function buildVisibleItems(
 export function buildHistoryView(input: {
   readonly entries: ReadonlyArray<[string, HistoryProgress]>;
   readonly tab: HistoryTab;
+  readonly typeFilter?: HistoryTypeFilter;
   readonly filterQuery: string;
   readonly selectedIndex: number;
   readonly maxVisible: number;
@@ -365,12 +410,15 @@ export function buildHistoryView(input: {
   readonly context: HistoryPickerOptionsContext;
   readonly loading?: boolean;
 }): HistoryView {
+  const typeFilter = input.typeFilter ?? "all";
+  const typeFilterView = historyTypeFilterView(typeFilter);
   if (input.loading) {
     return {
       state: "loading",
       tab: input.tab,
       tabLabels: historyTabLabels(),
       tabIndex: historyTabIndex(input.tab),
+      ...typeFilterView,
       flatRows: [],
       items: [],
       rail: null,
@@ -380,7 +428,13 @@ export function buildHistoryView(input: {
     };
   }
 
-  const filtered = filterHistoryEntries(input.entries, input.filterQuery, input.tab, input.context);
+  const filtered = filterHistoryEntries(
+    input.entries,
+    input.filterQuery,
+    input.tab,
+    input.context,
+    typeFilter,
+  );
   const options = buildHistoryPickerOptions(filtered, input.context);
   const entryById = new Map(filtered);
   const builtRows = optionsToFlatRows(options, entryById, input.context);
@@ -391,6 +445,7 @@ export function buildHistoryView(input: {
       tab: input.tab,
       tabLabels: historyTabLabels(),
       tabIndex: historyTabIndex(input.tab),
+      ...typeFilterView,
       flatRows: [],
       items: [],
       rail: null,
@@ -426,6 +481,7 @@ export function buildHistoryView(input: {
     tab: input.tab,
     tabLabels: historyTabLabels(),
     tabIndex: historyTabIndex(input.tab),
+    ...typeFilterView,
     flatRows,
     items: buildVisibleItems(sections, flatRows, safeSelectedIndex, windowStart, windowEnd),
     rail,

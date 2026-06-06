@@ -49,11 +49,18 @@ export function HistoryShell({
           </Text>
         </Box>
       ) : (
-        <ClaudeTabRow
-          labels={view.tabLabels}
-          activeIndex={view.tabIndex}
-          hint="⇥ Tab cycles filter"
-        />
+        <>
+          <ClaudeTabRow
+            labels={view.tabLabels}
+            activeIndex={view.tabIndex}
+            hint="⇥ Tab cycles filter"
+          />
+          <ClaudeTabRow
+            labels={view.typeFilterLabels}
+            activeIndex={view.typeFilterIndex}
+            hint="⇧⇥ type"
+          />
+        </>
       )}
 
       {view.state === "loading" ? (

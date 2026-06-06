@@ -33,8 +33,10 @@ import { HistoryShell } from "./history-shell";
 import {
   buildHistoryView,
   cycleHistoryTab,
+  cycleHistoryTypeFilter,
   historyTabFromLegacy,
   type HistoryTab,
+  type HistoryTypeFilter,
 } from "./history-view";
 import { LibraryShell } from "./library-shell";
 import {
@@ -418,6 +420,7 @@ export function RootOverlayShell({
       ? historyTabFromLegacy(overlay.initialFilterMode ?? "all")
       : ("all" satisfies HistoryTab);
   const [historyTab, setHistoryTab] = useState<HistoryTab>(initialHistoryTab);
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<HistoryTypeFilter>("all");
   const overlayResetKey = getRootOverlayResetKey(overlay);
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const trackGroups = overlay.type === "tracks_panel" ? overlay.groups : [];
@@ -516,6 +519,7 @@ export function RootOverlayShell({
       buildHistoryView({
         entries: historySelections.map(({ titleId, entry }) => [titleId, entry] as const),
         tab: historyTab,
+        typeFilter: historyTypeFilter,
         filterQuery,
         selectedIndex,
         maxVisible: maxLines,
@@ -534,6 +538,7 @@ export function RootOverlayShell({
       historyReleaseSignals,
       historySelections,
       historyTab,
+      historyTypeFilter,
       loadingAsyncLines,
       maxLines,
       overlay.type,
@@ -708,6 +713,7 @@ export function RootOverlayShell({
     setHistoryProjections(new Map());
     setHistoryReleaseSignals(new Map());
     setHistoryTab(initialHistoryTab);
+    setHistoryTypeFilter("all");
   }, [
     container.config,
     container.presence,
@@ -929,6 +935,13 @@ export function RootOverlayShell({
         resolveRootHistorySelection(null);
       }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      return;
+    }
+    if (overlay.type === "history" && key.tab && key.shift) {
+      // Shift+Tab cycles the content-type axis (All/Anime/Series/Movies); plain
+      // Tab cycles the bucket (Continue/Completed/New/All).
+      setHistoryTypeFilter((prev) => cycleHistoryTypeFilter(prev));
+      setSelectedIndex(0);
       return;
     }
     if (overlay.type === "history" && key.tab) {
