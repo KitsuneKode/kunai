@@ -16,3 +16,19 @@ export function toggleFavoriteSource(
   if (!key) return favorites;
   return favorites.includes(key) ? favorites.filter((name) => name !== key) : [...favorites, key];
 }
+
+/** True when a label's normalized identity is in the favorites list. */
+export function isFavoriteSource(favorites: readonly string[], label: string): boolean {
+  return favorites.includes(normalizeSourceName(label));
+}
+
+/** Stable sort: favorited rows (by normalized name) first, original order preserved within each group. */
+export function sortByFavorites<T>(
+  rows: readonly T[],
+  favorites: readonly string[],
+  labelOf: (row: T) => string,
+): readonly T[] {
+  const favSet = new Set(favorites);
+  const isFav = (row: T): boolean => favSet.has(normalizeSourceName(labelOf(row)));
+  return [...rows.filter(isFav), ...rows.filter((row) => !isFav(row))];
+}
