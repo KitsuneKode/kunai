@@ -1,7 +1,7 @@
 # Up Next — Continuous Play (Spec 1 of 3)
 
 Date: 2026-06-06
-Status: Approved (brainstorming) — pending implementation plan
+Status: **Loop SHIPPED** — continuous play works end-to-end. Built: config `autoplayRecommendations` + pure `resolveNextUp` (Tasks 1–2); **rec auto-continue** when caught up (Task 3); `1/2/3` play-rec + registry (Task 4). Already wired in the codebase before this spec: browse `q` enqueue (`SearchPhase.ts:289`), post-play `!/@/#` rec action panel (enqueue), cross-title queue auto-advance (`PlaybackPhase.ts:2517`). **Remaining polish:** a visible `/queue` view panel + always-on "Up next" hint + small rec-card posters (need their own surface/data wiring — verify the loop live first).
 Approach: **A** — a pure `resolveNextUp()` decision seam + the existing `QueueService` owning all queue management. (Considered B, a unified `UpNextService`; rejected to avoid refactoring the working episode-autoplay path.)
 
 This is **Spec 1** of a 3-spec decomposition (see "Roadmap & cross-references" at the end):
