@@ -200,6 +200,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.autoNext;
   }
 
+  get autoplayRecommendations(): boolean {
+    return this.config.autoplayRecommendations;
+  }
+
   get favoriteSources(): readonly string[] {
     return this.config.favoriteSources;
   }
