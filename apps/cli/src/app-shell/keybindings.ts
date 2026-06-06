@@ -277,6 +277,15 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "postPlayback",
     group: "After playback",
   },
+  {
+    id: "post-play-recommendation",
+    chord: { input: "1" },
+    display: "1·2·3",
+    label: "Play a recommended title now",
+    scope: "postPlayback",
+    group: "After playback",
+    helpOnly: true,
+  },
 ];
 
 /** Human-readable chord, e.g. "Esc", "↑", "/", "Ctrl+C". */
