@@ -19,7 +19,7 @@ import {
   historyBucketFor,
   type HistoryPickerOptionsContext,
 } from "./panel-data";
-import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail";
+import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail.model";
 import { RETURN_LOOP_HISTORY_NEW_SECTION } from "./return-loop-copy";
 import { describeHistoryReturnLoopDetail, formatNewSinceEpisodeLabel } from "./root-history-bridge";
 import { getWindowStart } from "./shell-text";

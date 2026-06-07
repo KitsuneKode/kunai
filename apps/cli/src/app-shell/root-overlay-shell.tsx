@@ -62,7 +62,7 @@ import {
   buildProviderPickerOptions,
   type HistoryPickerOptionsContext,
 } from "./panel-data";
-import { shouldRenderPreviewRail } from "./primitives/PreviewRail";
+import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import {
   buildRootHistorySelection,
   hasPendingRootHistorySelection,
@@ -79,7 +79,8 @@ import {
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
 import { type RootOwnedOverlay } from "./root-shell-state";
-import { CommandPalette, useShellInput } from "./shell-command-ui";
+import { useShellInput } from "./shell-command-input";
+import { CommandPalette } from "./shell-command-ui";
 import { ContextStrip, ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import {

@@ -3,12 +3,12 @@ import React from "react";
 
 import type { HistoryView } from "./history-view";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
+import { ListRow } from "./primitives/ListRow";
 import {
-  ListRow,
   listRowEpColumn,
   listRowStatusColumn,
   listRowTitleColumn,
-} from "./primitives/ListRow";
+} from "./primitives/ListRow.model";
 import { MediaListShell } from "./primitives/MediaListShell";
 import { ProgressBar } from "./primitives/ProgressBar";
 import { ResumeCard } from "./primitives/ResumeCard";

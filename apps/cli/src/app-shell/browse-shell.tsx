@@ -34,21 +34,23 @@ import {
   resolveDetailsOverlaySubmitValue,
 } from "./browse-search-state";
 import {
+  CalendarDayStrip,
+  CalendarScheduleRow,
+  CalendarScheduleStatus,
+  CalendarTypeTabs,
+} from "./calendar-ui";
+import {
   buildCalendarDaysFromOptions,
   buildCalendarEmptyState,
   buildCalendarErrorState,
   buildCalendarLoadingState,
   buildCalendarPreviewRailModel,
   buildCalendarRenderRows,
-  CalendarDayStrip,
-  CalendarScheduleRow,
-  CalendarScheduleStatus,
-  CalendarTypeTabs,
   CALENDAR_TYPE_TABS,
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
   type CalendarTypeTab,
-} from "./calendar-ui";
+} from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
 import type { ResolvedAppCommand } from "./commands";
 import { DetailsSheetUI } from "./details-pane-ui";
@@ -65,14 +67,15 @@ import { deleteAllKittyImages } from "./image-pane";
 import { getBrowseCommandPaletteMaxVisible } from "./layout-policy";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
-import { PreviewRail, shouldRenderPreviewRail } from "./primitives/PreviewRail";
+import { PreviewRail } from "./primitives/PreviewRail";
+import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { mountRootContent } from "./root-content-state";
 import {
-  CommandPalette,
   getCommandAutocompleteTarget,
   getCommandMatches,
   getHighlightedCommand,
-} from "./shell-command-ui";
+} from "./shell-command-model";
+import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
 import {

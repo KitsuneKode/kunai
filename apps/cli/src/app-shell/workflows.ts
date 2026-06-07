@@ -133,7 +133,10 @@ export async function playCompletedDownload(container: Container, jobId: string)
           )
         : 0;
       const episodeSuffix =
-        playable.source.season != null && playable.source.episode != null
+        playable.source.season !== null &&
+        playable.source.season !== undefined &&
+        playable.source.episode !== null &&
+        playable.source.episode !== undefined
           ? ` · S${String(playable.source.season).padStart(2, "0")}E${String(playable.source.episode).padStart(2, "0")}`
           : "";
       const offlineDisplayTitle = `${playable.source.titleName}${episodeSuffix}`;
@@ -2893,10 +2896,7 @@ export async function openSettingsShell({
 // ─── Watchlist ─────────────────────────────────────────────────────────────────
 
 /** Manual reclassification override — fix a wrongly-detected anime/series label on the current title. */
-async function handleMarkKind(
-  container: Container,
-  kind: "anime" | "series",
-): Promise<"handled"> {
+async function handleMarkKind(container: Container, kind: "anime" | "series"): Promise<"handled"> {
   const title = container.stateManager.getState().currentTitle;
   if (!title) {
     container.stateManager.dispatch({

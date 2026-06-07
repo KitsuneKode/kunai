@@ -1,14 +1,17 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
+import { ListRow } from "@/app-shell/primitives/ListRow";
 import {
-  ListRow,
   listRowEpColumn,
   listRowStatusColumn,
   listRowTitleColumn,
-} from "@/app-shell/primitives/ListRow";
+} from "@/app-shell/primitives/ListRow.model";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
-import type { PreviewFact, PreviewRailModel } from "@/app-shell/primitives/PreviewRail";
-import { shouldRenderPreviewRail } from "@/app-shell/primitives/PreviewRail";
+import {
+  shouldRenderPreviewRail,
+  type PreviewFact,
+  type PreviewRailModel,
+} from "@/app-shell/primitives/PreviewRail.model";
 import { ResumeCard } from "@/app-shell/primitives/ResumeCard";
 import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";

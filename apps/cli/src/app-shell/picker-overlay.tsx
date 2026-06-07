@@ -3,7 +3,8 @@ import React from "react";
 
 import { getShellViewportPolicy } from "./layout-policy";
 import { getFilteredPickerOptions, type PickerState } from "./picker-controller";
-import { StateBlock, type StateBlockModel } from "./primitives/StateBlock";
+import { StateBlock } from "./primitives/StateBlock";
+import type { StateBlockModel } from "./primitives/StateBlock.model";
 import { InputField } from "./shell-frame";
 import { ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { getWindowStart, truncateLine } from "./shell-text";

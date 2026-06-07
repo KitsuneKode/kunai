@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { formatPickerOptionRow } from "@/app-shell/overlay-picker-row";
+import { formatPickerOptionRow } from "@/app-shell/overlay-picker-row.model";
 
 describe("formatPickerOptionRow", () => {
   test("concatenates label and detail for string output", () => {

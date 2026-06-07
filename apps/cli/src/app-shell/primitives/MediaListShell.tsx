@@ -2,7 +2,8 @@ import { Box } from "ink";
 import React from "react";
 
 import type { PosterResult } from "../poster-types";
-import { PreviewRail, type PreviewRailModel, shouldRenderPreviewRail } from "./PreviewRail";
+import { PreviewRail } from "./PreviewRail";
+import { shouldRenderPreviewRail, type PreviewRailModel } from "./PreviewRail.model";
 
 /** Two-pane list + optional preview rail — shared by browse, calendar, history, library. */
 export const MediaListShell = React.memo(function MediaListShell({

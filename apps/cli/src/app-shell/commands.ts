@@ -3,10 +3,8 @@ import type { SessionState } from "@/domain/session/SessionState";
 import {
   COMMANDS,
   COMMAND_CONTEXTS,
-  parseCommand,
   resolveCommandContext as resolveRegisteredCommandContext,
   resolveCommands,
-  suggestCommands,
   type AppCommand,
   type AppCommandId,
   type CommandContextId as RegisteredCommandContextId,
@@ -16,9 +14,7 @@ import {
 export {
   COMMANDS,
   COMMAND_CONTEXTS,
-  parseCommand,
   resolveCommands,
-  suggestCommands,
   type AppCommand,
   type AppCommandId,
   type ResolvedAppCommand,

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { buildLoadingFooterActions } from "@/app-shell/loading-shell";
+import { buildLoadingFooterActions } from "@/app-shell/loading-shell-model";
 
 test("loading footer exposes autoplay controls for series playback even at episode boundaries", () => {
   const actions = buildLoadingFooterActions({

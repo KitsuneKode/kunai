@@ -3,25 +3,11 @@ import React from "react";
 
 import { truncateLine } from "../shell-text";
 import { hotkeyLabel, palette } from "../shell-theme";
-
-export type ActionRowTone = "normal" | "success" | "warning" | "danger" | "muted";
-
-export type ActionRowModel = {
-  readonly id: string;
-  readonly label: string;
-  readonly detail?: string;
-  readonly shortcut?: string;
-  readonly tone?: ActionRowTone;
-  readonly disabledReason?: string;
-};
-
-export function normalizeActionShortcut(shortcut: string): string {
-  return shortcut.replace(/^\[/u, "").replace(/\]$/u, "");
-}
-
-export function getEnabledActionRows(rows: readonly ActionRowModel[]): readonly ActionRowModel[] {
-  return rows.filter((row) => !row.disabledReason);
-}
+import {
+  normalizeActionShortcut,
+  type ActionRowModel,
+  type ActionRowTone,
+} from "./ActionList.model";
 
 function toneColor(tone: ActionRowTone | undefined): string {
   if (tone === "success") return palette.ok;
@@ -31,7 +17,7 @@ function toneColor(tone: ActionRowTone | undefined): string {
   return palette.text;
 }
 
-export function ActionRow({
+function ActionRow({
   row,
   selected = false,
   width = 72,
@@ -78,5 +64,3 @@ export function ActionList({
     </Box>
   );
 }
-
-export default ActionList;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { formatLoadingProviderLine } from "@/app-shell/loading-shell";
+import { formatLoadingProviderLine } from "@/app-shell/loading-shell-model";
 
 describe("formatLoadingProviderLine", () => {
   test("formats name and id together when both present and different", () => {

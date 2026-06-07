@@ -1,4 +1,7 @@
-import type { PreviewPosterState, PreviewRailModel } from "@/app-shell/primitives/PreviewRail";
+import type {
+  PreviewPosterState,
+  PreviewRailModel,
+} from "@/app-shell/primitives/PreviewRail.model";
 
 import { buildPreviewMetaLine } from "./details-panel";
 import type { PosterResult, PosterState } from "./poster-types";

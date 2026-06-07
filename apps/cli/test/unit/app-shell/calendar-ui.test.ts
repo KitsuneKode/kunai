@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 
 import {
   buildCalendarDaysFromOptions,
-  buildCalendarRenderRows,
-  buildCalendarPreviewRailModel,
   buildCalendarErrorState,
+  buildCalendarPreviewRailModel,
+  buildCalendarRenderRows,
   calendarDayKeyFromGroup,
   calendarPriorityBand,
   deriveCalendarReleaseState,
@@ -13,7 +13,7 @@ import {
   hasProviderConfirmedAvailability,
   parsePreviewTimeTodayMs,
   windowCalendarDayStrip,
-} from "@/app-shell/calendar-ui";
+} from "@/app-shell/calendar-ui.model";
 import type { BrowseShellOption } from "@/app-shell/types";
 import {
   buildCalendarItem,

@@ -43,10 +43,7 @@ export function parseBrowseFilterQuery(query: string): ParsedBrowseFilterQuery {
   };
 }
 
-export function browseFiltersFromState(
-  state: FilterState,
-  ignoredFilterCount = 0,
-): BrowseResultFilters {
+function browseFiltersFromState(state: FilterState, ignoredFilterCount = 0): BrowseResultFilters {
   const type = state.type ?? "all";
   let year: string | undefined;
   if (typeof state.year === "number") {

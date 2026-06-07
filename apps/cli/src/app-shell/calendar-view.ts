@@ -9,19 +9,19 @@ import type { SearchResult } from "@/domain/types";
 
 import {
   CALENDAR_TYPE_TABS,
-  type CalendarDay,
-  type CalendarTypeTab,
-  buildCalendarPreviewRailModel,
   buildCalendarDaysFromOptions,
+  buildCalendarPreviewRailModel,
   calendarDayKeyFromGroup,
   calendarReleaseRowPresentation,
   deriveCalendarReleaseState,
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
   isCalendarTrackedOption,
+  type CalendarDay,
+  type CalendarTypeTab,
   windowCalendarDayStrip,
-} from "./calendar-ui";
-import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail";
+} from "./calendar-ui.model";
+import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail.model";
 
 export type CalendarViewState = "loading" | "empty" | "success" | "error";
 

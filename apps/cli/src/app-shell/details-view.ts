@@ -7,7 +7,7 @@
 
 import type { TitleDetail, TitleStatus } from "@/domain/catalog/title-detail";
 
-import { truncateAtWord, truncateLine, wrapText } from "./shell-text";
+import { wrapText } from "./shell-text";
 
 // ---------------------------------------------------------------------------
 // Fact rows
@@ -21,7 +21,7 @@ export type DetailFactRow = {
 };
 
 /** Status badge — dim placeholder when unknown. */
-export function formatStatus(status: TitleStatus | undefined): {
+function formatStatus(status: TitleStatus | undefined): {
   text: string;
   tone: DetailFactRow["tone"];
 } {
@@ -31,7 +31,7 @@ export function formatStatus(status: TitleStatus | undefined): {
   return { text: "✦ ended", tone: "muted" };
 }
 
-export function formatRuntime(minutes: number | undefined): string {
+function formatRuntime(minutes: number | undefined): string {
   if (!minutes) return "—";
   if (minutes < 60) return `${minutes}m`;
   const h = Math.floor(minutes / 60);
@@ -40,19 +40,19 @@ export function formatRuntime(minutes: number | undefined): string {
 }
 
 /** Up to 3 genres joined; dim placeholder if none. */
-export function formatGenres(genres: readonly string[] | undefined): string {
+function formatGenres(genres: readonly string[] | undefined): string {
   if (!genres || genres.length === 0) return "—";
   return genres.slice(0, 3).join(" · ");
 }
 
 /** Up to 2 studios. */
-export function formatStudios(studios: readonly string[] | undefined): string {
+function formatStudios(studios: readonly string[] | undefined): string {
   if (!studios || studios.length === 0) return "—";
   return studios.slice(0, 2).join(" · ");
 }
 
 /** Season/episode count summary. */
-export function formatSeasonsSummary(detail: TitleDetail): string {
+function formatSeasonsSummary(detail: TitleDetail): string {
   const parts: string[] = [];
   if (detail.seasonCount !== undefined) {
     parts.push(`${detail.seasonCount} season${detail.seasonCount !== 1 ? "s" : ""}`);
@@ -159,14 +159,3 @@ export function buildDetailSubtitle(detail: TitleDetail): string {
   const parts = [typeLabel, detail.year, detail.contentRating].filter(Boolean);
   return parts.join(" · ");
 }
-
-// ---------------------------------------------------------------------------
-// Truncation helpers for bounded widths
-// ---------------------------------------------------------------------------
-
-/** Truncate a fact value to fit a given column budget. */
-export function truncateFactValue(value: string, budget: number): string {
-  return truncateLine(value, Math.max(1, budget));
-}
-
-export { truncateAtWord, truncateLine };

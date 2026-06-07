@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { getStateBlockGlyph, getStateBlockTone } from "@/app-shell/primitives/StateBlock";
+import { getStateBlockGlyph, getStateBlockTone } from "@/app-shell/primitives/StateBlock.model";
 
 describe("StateBlock helpers", () => {
   test("maps state kind to glyphs", () => {
