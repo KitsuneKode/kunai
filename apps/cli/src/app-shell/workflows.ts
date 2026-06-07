@@ -29,16 +29,16 @@ import {
   type DecodedTrackSelection,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
+import { decodeShareCode, encodeShareCode } from "@/domain/share/share-code";
 import type {
   EpisodeInfo as PlaybackEpisodeInfo,
   EpisodePickerOption,
   StreamInfo,
   TitleInfo,
 } from "@/domain/types";
-import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { copyToClipboard, readClipboard } from "@/infra/clipboard";
+import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
-import { decodeShareCode, encodeShareCode } from "@/domain/share/share-code";
 import {
   historyContentType,
   isFinished as isProgressFinished,

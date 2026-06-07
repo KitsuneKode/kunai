@@ -58,11 +58,7 @@ export function CalendarDayStrip({
         // Boxed chips with a clear hierarchy: the SELECTED day is the rose accent
         // pill (matches the type tabs); TODAY is a distinct amber pill so it always
         // stands apart; other days are readable text chips (not near-background).
-        const background = isSelected
-          ? palette.accentFill
-          : isToday
-            ? palette.warnFill
-            : undefined;
+        const background = isSelected ? palette.accentFill : isToday ? palette.warnFill : undefined;
         const foreground = isSelected || isToday ? palette.text : palette.textDim;
         return (
           <Box key={day.key} marginRight={1}>

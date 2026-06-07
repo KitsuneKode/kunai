@@ -19,9 +19,7 @@ describe("isAnimeLikely", () => {
   });
 
   test("Tier 2: JP origin + Animation genre when language missing", () => {
-    expect(
-      isAnimeLikely({ origin_country: ["JP"], genre_ids: [16, 10759] }).isAnime,
-    ).toBe(true);
+    expect(isAnimeLikely({ origin_country: ["JP"], genre_ids: [16, 10759] }).isAnime).toBe(true);
     expect(
       isAnimeLikely({ production_countries: [{ iso_3166_1: "JP" }], genre_ids: [16] }).isAnime,
     ).toBe(true);

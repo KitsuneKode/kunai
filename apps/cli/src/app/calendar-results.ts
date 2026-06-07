@@ -233,12 +233,10 @@ function mergeArchivedPastWindow(
     ),
   );
 
-  const pastItems = archive
-    .listInWindow(windowStartIso, nowIso)
-    .flatMap((payload) => {
-      const parsed = parseArchivedCalendarItem(payload);
-      return parsed ? [parsed] : [];
-    });
+  const pastItems = archive.listInWindow(windowStartIso, nowIso).flatMap((payload) => {
+    const parsed = parseArchivedCalendarItem(payload);
+    return parsed ? [parsed] : [];
+  });
 
   // Incidental cleanup — drop anything older than the retention window.
   archive.pruneBefore(windowStartIso);

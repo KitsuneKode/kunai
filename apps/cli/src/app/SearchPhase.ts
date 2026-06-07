@@ -5,6 +5,7 @@
 // Returns the selected title or cancellation/quit signals.
 // =============================================================================
 
+import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
@@ -13,7 +14,6 @@ import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
 import { loadCalendarResults } from "@/app/calendar-results";
-import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { loadDiscoverResults } from "@/app/discover-results";
 import { loadDiscoveryList } from "@/app/discovery-lists";
 import {
@@ -528,10 +528,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
           // Anime/series calendars load the same schedule route, but seed the next
           // BrowseShell open with the matching type tab so it opens pre-filtered.
-          if (
-            outcome.action === "anime-calendar" ||
-            outcome.action === "series-calendar"
-          ) {
+          if (outcome.action === "anime-calendar" || outcome.action === "series-calendar") {
             pendingCalendarType = outcome.action === "anime-calendar" ? "Anime" : "TV";
             await loadSearchRoute("calendar", context);
             continue;

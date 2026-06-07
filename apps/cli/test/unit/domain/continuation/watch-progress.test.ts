@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  projectSeriesProgress,
-  projectWatchProgress,
-} from "@/domain/continuation/watch-progress";
+import { projectSeriesProgress, projectWatchProgress } from "@/domain/continuation/watch-progress";
 
 describe("watch progress projection", () => {
   test("clamps in-progress percentages to user-facing resume range", () => {

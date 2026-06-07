@@ -8,10 +8,9 @@
 // a caller seed an initial tab so commands like /anime-calendar open pre-filtered.
 // =============================================================================
 
-import { useCallback, useMemo, useState } from "react";
-
 import type { BrowseShellOption } from "@/app-shell/types";
 import type { SearchResult } from "@/domain/types";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   CALENDAR_TYPE_TABS,

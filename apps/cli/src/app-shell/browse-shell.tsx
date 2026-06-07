@@ -50,7 +50,6 @@ import {
   type CalendarTypeTab,
 } from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
-import { useCalendarState } from "./hooks/use-calendar-state";
 import type { ResolvedAppCommand } from "./commands";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
@@ -62,6 +61,7 @@ import {
 } from "./details-panel";
 import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
+import { useCalendarState } from "./hooks/use-calendar-state";
 import { deleteAllKittyImages } from "./image-pane";
 import { getBrowseCommandPaletteMaxVisible } from "./layout-policy";
 import type { BrowseOverlay } from "./overlay-panel";

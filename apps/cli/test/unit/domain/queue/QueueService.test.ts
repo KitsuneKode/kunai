@@ -52,7 +52,13 @@ test("moveUp / moveDown reorder unplayed queue items and clamp at the ends", () 
     updatedAt: "2026-05-17T00:00:00.000Z",
   });
   const enqueue = (titleId: string) =>
-    repo.enqueue({ title: titleId, mediaKind: "series", titleId, source: "manual", sessionId: "s" });
+    repo.enqueue({
+      title: titleId,
+      mediaKind: "series",
+      titleId,
+      source: "manual",
+      sessionId: "s",
+    });
   const a = enqueue("a");
   enqueue("b");
   const c = enqueue("c");

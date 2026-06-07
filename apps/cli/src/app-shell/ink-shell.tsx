@@ -18,12 +18,12 @@ import {
 } from "@/domain/playback/playback-telemetry-snapshot";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
+import { copyToClipboard } from "@/infra/clipboard";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { copyToClipboard } from "@/infra/clipboard";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { ExitShell } from "./exit-shell";
