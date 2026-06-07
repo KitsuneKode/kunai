@@ -235,8 +235,16 @@ export function BrowseShell<T>({
 
   const calendarDays = useMemo(() => {
     if (!isCalendarView) return [];
-    return buildCalendarDaysFromOptions(options);
-  }, [isCalendarView, options]);
+    // Build the day strip from the TYPE-filtered options (Anime/Series/…), not all
+    // of them — otherwise the strip lists days that only have other-type releases,
+    // and selecting one shows "Nothing on the schedule". The strip must match the
+    // tab so every chip has content.
+    const typed = filterCalendarOptionsByType(
+      options as readonly BrowseShellOption<import("@/domain/types").SearchResult>[],
+      calendarTypeTab,
+    );
+    return buildCalendarDaysFromOptions(typed);
+  }, [isCalendarView, options, calendarTypeTab]);
 
   const displayOptions = useMemo(() => {
     const narrowed = filterBrowseOptionsByResultFilter(options, resultFilter);
@@ -847,6 +855,9 @@ export function BrowseShell<T>({
         const next = (idx + dir + CALENDAR_TYPE_TABS.length) % CALENDAR_TYPE_TABS.length;
         return CALENDAR_TYPE_TABS[next] ?? "All";
       });
+      // Reset the day filter — the new tab has a different day strip, so a day
+      // selected under the old tab may not exist (or be empty) under the new one.
+      setCalendarDayFilter(null);
       setSelectedIndex(0);
       return;
     }
@@ -872,6 +883,19 @@ export function BrowseShell<T>({
         const idx = calendarDays.findIndex((d) => d.key === current);
         return idx < calendarDays.length - 1 ? (calendarDays[idx + 1]?.key ?? current) : current;
       });
+      setSelectedIndex(0);
+      return;
+    }
+    // `a` toggles all-days ⇄ day-by-day view. Guarded to a focused list with a
+    // clean query so it never eats a filter keystroke.
+    if (
+      isCalendarView &&
+      calendarDays.length > 0 &&
+      listFocused &&
+      !queryDirty &&
+      input.toLowerCase() === "a"
+    ) {
+      setCalendarDayFilter((current) => (current === null ? (calendarDays[0]?.key ?? null) : null));
       setSelectedIndex(0);
       return;
     }
