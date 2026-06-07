@@ -119,8 +119,17 @@ export function buildResultEnrichment(input: {
       ),
     );
   }
-  if (input.offlineStatuses?.includes("ready")) {
-    badges.push({ label: "downloaded", tone: "success" });
+  const readyCount = input.offlineStatuses?.filter((status) => status === "ready").length ?? 0;
+  if (readyCount > 0) {
+    // Show how much is local so "3 downloaded, rest stream" is visible at a glance.
+    const total = input.result.episodeCount;
+    const label =
+      input.result.type === "movie" || readyCount === 1
+        ? "downloaded"
+        : total && total > readyCount
+          ? `↓ ${readyCount}/${total}`
+          : `↓ ${readyCount}`;
+    badges.push({ label, tone: "success" });
   } else if (
     input.offlineStatuses?.some(
       (status) => status === "missing" || status === "invalid-file" || status === "repairable",
