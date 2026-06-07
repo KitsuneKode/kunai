@@ -399,6 +399,14 @@ export function RootOverlayShell({
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
   const [loadingAsyncLines, setLoadingAsyncLines] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<KitsuneConfig | null>(null);
+  // Persist settings the moment they change — no separate save step. config.update
+  // is debounced internally; we skip no-op writes (e.g. the initial load) so this
+  // only fires on a real edit.
+  useEffect(() => {
+    if (!settingsDraft) return;
+    if (settingsEqual(settingsDraft, container.config.getRaw())) return;
+    void container.config.update(settingsDraft);
+  }, [settingsDraft, container.config]);
   const [settingsChoice, setSettingsChoice] = useState<SettingsChoiceValue | null>(null);
   const [settingsParentIndex, setSettingsParentIndex] = useState(0);
   const [settingsBusy, setSettingsBusy] = useState(false);
@@ -1796,7 +1804,7 @@ export function RootOverlayShell({
                 : overlay.type === "settings"
                   ? settingsChoice
                     ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
-                    : "Settings  ·  Type to filter, Enter to edit, ^S saves, Esc closes"
+                    : "Settings  ·  Type to filter, Enter to edit, saved automatically, Esc closes"
                   : isRootMediaPickerOverlay(overlay)
                     ? title
                     : `${title}  ·  Esc closes and returns to the previous shell state`

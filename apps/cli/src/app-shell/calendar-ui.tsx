@@ -77,18 +77,30 @@ export function buildCalendarDaysFromOptions<T>(
       option.calendar?.dayKey ??
       option.previewDayKey ??
       (group ? calendarDayKeyFromGroup(group) : null);
-    if (!group || !key || seen.has(key)) continue;
+    // Only real ISO-dated days (YYYY-MM-DD) become chips. Undated items (no
+    // releaseAt) used to fall back to a label-only key — they jumbled the strip
+    // out of order AND showed "Nothing on the schedule" when picked, because they
+    // can't be day-filtered. Drop them from the day strip; they still surface in
+    // the All view.
+    if (!key || !/^\d{4}-\d{2}-\d{2}$/.test(key) || seen.has(key)) continue;
     seen.add(key);
-    const isToday = group.includes("Today");
-    const label = calendarDayKeyFromGroup(group);
-    days.push({ key, label, isToday });
+    const isToday = group?.includes("Today") ?? false;
+    // Derive the label from the ISO key so weekday + day always match the date
+    // (the group label could disagree). e.g. "2026-09-07" → "SUN 7".
+    days.push({ key, label: calendarDayLabelFromIsoKey(key), isToday });
   }
-  // The strip was built in option order, so days landed out of sequence
-  // ("SAT 6 · MON 8 · SAT 5"). dayKey is ISO (YYYY-MM-DD) → sort chronologically;
-  // non-date keys (TBD / label-only) sort to the end so they never jumble real days.
-  const isoKey = (key: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(key) ? key : "9999-99-99");
-  days.sort((a, b) => isoKey(a.key).localeCompare(isoKey(b.key)));
+  days.sort((a, b) => a.key.localeCompare(b.key));
   return days;
+}
+
+/** "2026-09-07" → "SUN 7" (weekday + day-of-month, from the ISO key, local tz). */
+export function calendarDayLabelFromIsoKey(isoKey: string): string {
+  const date = new Date(`${isoKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return isoKey;
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" })
+    .format(date)
+    .toUpperCase();
+  return `${weekday} ${date.getDate()}`;
 }
 
 export function windowCalendarDayStrip(

@@ -1237,6 +1237,7 @@ export function OverlayPanel({
                           selected={selected}
                           accentColor={rowAccentColor}
                           pickerAccent={pickerAccent}
+                          labelColor={option.tone === "error" ? palette.danger : undefined}
                         />
                       </Text>
                       {isHistoryPicker && option.historyProgress ? (
