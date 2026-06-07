@@ -218,4 +218,31 @@ describe("ResultEnrichmentService", () => {
       }).badges,
     ).toEqual([{ label: "offline issue", tone: "warning" }]);
   });
+
+  test("shows downloaded count out of total for a partly-downloaded series", () => {
+    expect(
+      buildResultEnrichment({
+        result: result({ type: "series", episodeCount: 13 }),
+        offlineStatuses: ["ready", "ready", "ready"],
+      }).badges,
+    ).toContainEqual({ label: "↓ 3/13", tone: "success" });
+  });
+
+  test("shows bare downloaded count when total is unknown", () => {
+    expect(
+      buildResultEnrichment({
+        result: result({ type: "series" }),
+        offlineStatuses: ["ready", "ready"],
+      }).badges,
+    ).toContainEqual({ label: "↓ 2", tone: "success" });
+  });
+
+  test("keeps a plain 'downloaded' badge for a single episode or movie", () => {
+    expect(
+      buildResultEnrichment({
+        result: result({ type: "movie" }),
+        offlineStatuses: ["ready"],
+      }).badges,
+    ).toContainEqual({ label: "downloaded", tone: "success" });
+  });
 });
