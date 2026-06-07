@@ -154,7 +154,7 @@ function syncCommands() {
   const block = content.slice(startIndex);
   const items: CommandMetadata[] = [];
   const itemRegex =
-    /\{\s*id:\s*["']([^"']+)["'],\s*label:\s*["']([^"']+)["'],\s*aliases:\s*\[([^\]]*)\](?:,\s*description:\s*["']([^"']+)["'])?[^}]*\}/g;
+    /\{\s*id:\s*["']([^"']+)["'],\s*label:\s*["']([^"']+)["'],\s*aliases:\s*\[([^\]]*)\](?:,\s*description:\s*"([^"]*)")?[^}]*\}/g;
 
   let match;
   while ((match = itemRegex.exec(block)) !== null) {
@@ -269,6 +269,7 @@ function main() {
   const outputPath = path.join(DOCS_LIB_DIR, "generated-metadata.json");
   const existing = readExistingMetadata(outputPath);
   if (existing && metadataPayload(existing) === metadataPayload(metadata)) {
+    formatGeneratedFile(outputPath);
     console.log(`Metadata already up to date at: ${outputPath}`);
     return;
   }

@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-06-07T19:17:13.077Z",
+  "syncedAt": "2026-06-07T22:58:00.942Z",
   "providers": [
     {
       "id": "allanime",
@@ -128,6 +128,18 @@
       "label": "Release Calendar",
       "aliases": ["calendar", "schedule", "airing", "today", "releases"],
       "description": "Anime and series release schedule"
+    },
+    {
+      "id": "anime-calendar",
+      "label": "Anime Calendar",
+      "aliases": ["anime-calendar", "anime-schedule", "anime-airing"],
+      "description": "Release schedule filtered to anime"
+    },
+    {
+      "id": "series-calendar",
+      "label": "Series Calendar",
+      "aliases": ["series-calendar", "tv-calendar", "series-schedule"],
+      "description": "Release schedule filtered to series"
     },
     {
       "id": "random",
@@ -323,6 +335,18 @@
       "label": "Mark as Series",
       "aliases": ["mark-series", "set-series", "not-anime"],
       "description": "Reclassify the current title as series in your history (fixes a wrong label)"
+    },
+    {
+      "id": "share",
+      "label": "Share This",
+      "aliases": ["share", "share-link", "share-code"],
+      "description": "Copy a 'watch this' code for the current title to your clipboard"
+    },
+    {
+      "id": "watch",
+      "label": "Watch a Shared Code",
+      "aliases": ["watch", "open-share", "watch-code"],
+      "description": "Play a title from a Kunai share code on your clipboard"
     },
     {
       "id": "pick-episode",
