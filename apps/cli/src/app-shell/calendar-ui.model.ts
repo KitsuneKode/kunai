@@ -50,10 +50,6 @@ export type CalendarRenderRow<T> = {
   readonly showForYouHeaderOnce: boolean;
 };
 
-export function isCalendarBrowseOption<T>(option: BrowseShellOption<T> | undefined): boolean {
-  return Boolean(option?.calendar);
-}
-
 export function isCalendarTrackedOption<T>(option: BrowseShellOption<T>): boolean {
   return option.calendar?.inWatchlist === true || option.previewBadge === "wl";
 }
@@ -63,12 +59,6 @@ export function calendarPriorityBand<T>(option: BrowseShellOption<T>): CalendarP
   const state = deriveCalendarReleaseState(option);
   if (state === "upcoming") return "later";
   return "also-today";
-}
-
-export function calendarPriorityBandLabel(band: CalendarPriorityBand): string {
-  if (band === "for-you") return "For you";
-  if (band === "later") return "Later";
-  return "Also today";
 }
 
 export function buildCalendarDaysFromOptions<T>(
@@ -93,7 +83,7 @@ export function buildCalendarDaysFromOptions<T>(
 }
 
 /** "2026-09-07" -> "SUN 7" (weekday + day-of-month, from the ISO key, local tz). */
-export function calendarDayLabelFromIsoKey(isoKey: string): string {
+function calendarDayLabelFromIsoKey(isoKey: string): string {
   const date = new Date(`${isoKey}T00:00:00`);
   if (Number.isNaN(date.getTime())) return isoKey;
   const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" })
@@ -227,7 +217,7 @@ function isSameDayKey(dayKey: string, nowMs: number): boolean {
   return dayKey === key;
 }
 
-export function formatCalendarReleaseStateLabel<T>(
+function formatCalendarReleaseStateLabel<T>(
   state: CalendarReleaseState,
   option: BrowseShellOption<T>,
   nowMs: number = Date.now(),

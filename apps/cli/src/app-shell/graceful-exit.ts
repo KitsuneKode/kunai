@@ -12,7 +12,7 @@ export function registerExitHandler(handler: () => Promise<void>): () => void {
   };
 }
 
-export async function runExitHandlers(): Promise<void> {
+async function runExitHandlers(): Promise<void> {
   for (const handler of exitHandlers) {
     try {
       await Promise.race([
