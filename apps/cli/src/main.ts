@@ -42,7 +42,60 @@ import {
 } from "@/services/download/download-cleanup-policy";
 import { checkDeps } from "@/ui";
 
-const KUNAI_VERSION = "0.1.0";
+const KUNAI_VERSION = "0.2.4";
+
+/** `--help` output. Grouped by purpose; mirrors the flags parsed in parseArgs. */
+export function buildHelpText(): string {
+  return `Kunai ${KUNAI_VERSION} — terminal-first anime & series streaming.
+
+USAGE
+  kunai [options]            Launch the interactive shell
+  kunai -S "Dune"            Search straight away
+  kunai -i 438631 -t movie   Open a known TMDB id
+  kunai -a                   Start in anime mode
+
+LAUNCH
+  -S, --search <query>       Search for a title on launch
+  -i, --id <id>              Open a specific title id
+  -t, --type <movie|tv>      Content type for --id (tv = series)
+  -a, --anime                Anime mode (AllAnime providers)
+      --continue, --resume   Jump into Continue Watching
+      --history              Open watch history
+      --offline              Offline library only (no provider calls)
+      --discover             Open recommendations
+      --calendar             Open the release calendar
+      --random               Open the random picks tray
+      --download             Open the download queue
+      --setup                Run the setup wizard
+
+DISPLAY
+  -m, --minimal              Minimal chrome
+  -z, --zen                  Zen mode (bare, ani-cli-style)
+  -q, --quick                Quick layout
+      --jump <n>             Resume/seek to episode n
+
+mpv
+      --mpv-debug            Verbose mpv logging
+      --mpv-clean            Ignore your mpv config for this run
+      --no-user-mpv-config   Same, explicit
+      --mpv-log-file <path>  Write the mpv log to a file
+
+PATHS & INTEGRATION
+      --download-path <dir>  Override the download directory
+      --install-protocol-handler  Register the kunai:// URL handler
+      --handoff-url <url>    Internal: open a kunai:// deep link
+      --dry-run              Print what would happen, change nothing
+
+DIAGNOSTICS
+      --debug                Verbose logging to ./logs.txt
+      --debug-json           Debug + JSON event stream
+      --debug-session        Debug + full session trace
+  -h, --help                 Show this help
+  -v, --version              Print the version
+
+Inside the app, press / for the command palette and ? for keyboard help.
+`;
+}
 
 // Simple CLI arg parser
 export function parseArgs(argv: string[]): {
@@ -67,6 +120,8 @@ export function parseArgs(argv: string[]): {
   handoffUrl?: string;
   installProtocolHandler: boolean;
   dryRun: boolean;
+  help: boolean;
+  version: boolean;
   initialRoute?: "recommendation" | "calendar" | "random";
   shellChrome: ShellChrome;
 } {
@@ -92,6 +147,8 @@ export function parseArgs(argv: string[]): {
     handoffUrl?: string;
     installProtocolHandler: boolean;
     dryRun: boolean;
+    help: boolean;
+    version: boolean;
     initialRoute?: "recommendation" | "calendar" | "random";
   } = {
     anime: false,
@@ -109,6 +166,8 @@ export function parseArgs(argv: string[]): {
     download: false,
     installProtocolHandler: false,
     dryRun: false,
+    help: false,
+    version: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -177,6 +236,10 @@ export function parseArgs(argv: string[]): {
     } else if (arg === "--mpv-log-file") {
       const value = argv[++i];
       if (value) args.mpv = { ...args.mpv, logFile: value };
+    } else if (arg === "-h" || arg === "--help") {
+      args.help = true;
+    } else if (arg === "-v" || arg === "--version") {
+      args.version = true;
     }
   }
   const shellChrome: ShellChrome =
@@ -483,6 +546,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   // Parse CLI arguments
   const args = parseArgs(argv);
+  if (args.help) {
+    process.stdout.write(buildHelpText());
+    return;
+  }
+  if (args.version) {
+    process.stdout.write(`kunai ${KUNAI_VERSION}\n`);
+    return;
+  }
   if (args.installProtocolHandler) {
     const { buildProtocolHandlerInstallPlan, installKunaiProtocolHandler } =
       await import("./infra/os/protocol-handler");
