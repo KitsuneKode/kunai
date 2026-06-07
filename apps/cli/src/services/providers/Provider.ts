@@ -9,6 +9,9 @@ import type {
 import type { CoreProviderManifest, CoreProviderModule } from "@kunai/core";
 import type { StartupPriority } from "@kunai/types";
 
+import { providerResolveResultToStreamInfo } from "./provider-result-adapter";
+import { streamRequestToResolveInput } from "./stream-request-adapter";
+
 export interface StreamRequest {
   title: TitleInfo;
   episode?: EpisodeInfo;
@@ -93,9 +96,6 @@ function defaultResolveStream(
   mode: "series" | "anime",
 ): ProviderResolveFn {
   return async (request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> => {
-    const [{ streamRequestToResolveInput }, { providerResolveResultToStreamInfo }] =
-      await Promise.all([import("./stream-request-adapter"), import("./provider-result-adapter")]);
-
     const input = streamRequestToResolveInput(request, mode);
     const result = await module.resolve(input, {
       now: () => new Date().toISOString(),

@@ -184,14 +184,20 @@ export class RecommendationServiceImpl implements RecommendationService {
     const now = Date.now();
     const halfLifeMs = 30 * 24 * 60 * 60 * 1000;
 
-    for (const entry of recentUnique as readonly RecommendationHistorySeed[]) {
-      const resolved = await resolveTmdbTitle(entry).catch(() => null);
-      if (!resolved) continue;
-      const genres = await fetchTmdbGenres(resolved.id, resolved.mediaType).catch(() => []);
-      const watchedAtMs = Date.parse(entry.watchedAt);
+    const genreProfiles = await Promise.all(
+      (recentUnique as readonly RecommendationHistorySeed[]).map(async (entry) => {
+        const resolved = await resolveTmdbTitle(entry).catch(() => null);
+        if (!resolved) return null;
+        const genres = await fetchTmdbGenres(resolved.id, resolved.mediaType).catch(() => []);
+        return { entry, genres };
+      }),
+    );
+    for (const profile of genreProfiles) {
+      if (!profile) continue;
+      const watchedAtMs = Date.parse(profile.entry.watchedAt);
       const ageMs = Number.isNaN(watchedAtMs) ? 0 : Math.max(0, now - watchedAtMs);
       const weight = 2 ** -(ageMs / halfLifeMs);
-      for (const genreId of genres) {
+      for (const genreId of profile.genres) {
         genreWeights.set(genreId, (genreWeights.get(genreId) ?? 0) + weight);
       }
     }
