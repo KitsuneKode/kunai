@@ -750,6 +750,17 @@ function setupSignalHandlers(): void {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGHUP", () => shutdown("SIGHUP"));
 
+  // Hard backstop: the async shutdown can lose its race with the 4s force-exit,
+  // orphaning yt-dlp/ffmpeg children that then keep buffering GBs of RAM after
+  // Kunai is gone. `exit` is synchronous and always runs — SIGKILL them here.
+  process.on("exit", () => {
+    try {
+      globalContainer?.downloadService.killActiveProcessesSync();
+    } catch {
+      // best effort during teardown
+    }
+  });
+
   process.on("uncaughtException", (e) => {
     console.error("Uncaught exception:", e);
     void (async () => {
