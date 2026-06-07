@@ -135,5 +135,18 @@ function dedupeCompletedJobs(jobs: readonly DownloadJobRecord[]): readonly Downl
     seen.add(key);
     deduped.push(job);
   }
-  return deduped;
+  // Dedup keeps the newest copy of each episode (time sort above), but the
+  // library should READ in natural season → episode order, not download order.
+  return deduped.sort(compareBySeasonEpisode);
+}
+
+/** Season asc, then episode asc; movies (no season/episode) sink to the end by title. */
+function compareBySeasonEpisode(a: DownloadJobRecord, b: DownloadJobRecord): number {
+  const seasonA = a.season ?? Number.MAX_SAFE_INTEGER;
+  const seasonB = b.season ?? Number.MAX_SAFE_INTEGER;
+  if (seasonA !== seasonB) return seasonA - seasonB;
+  const episodeA = a.episode ?? Number.MAX_SAFE_INTEGER;
+  const episodeB = b.episode ?? Number.MAX_SAFE_INTEGER;
+  if (episodeA !== episodeB) return episodeA - episodeB;
+  return a.titleId.localeCompare(b.titleId);
 }

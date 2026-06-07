@@ -579,6 +579,23 @@ export class DownloadService {
     this.deps.repo.abort(jobId, new Date().toISOString());
   }
 
+  /**
+   * Synchronously SIGKILL every in-flight download child. Meant for a
+   * `process.on("exit")` handler — the last hook guaranteed to run before the
+   * runtime tears down. The async `pauseActiveJobsForShutdown` can lose a race
+   * with the 4s force-exit timer, orphaning a yt-dlp that then keeps retrying +
+   * buffering GBs of RAM after Kunai is gone. This is the hard backstop.
+   */
+  killActiveProcessesSync(): void {
+    for (const active of this.activeProcesses.values()) {
+      try {
+        active.process.kill("SIGKILL");
+      } catch {
+        // best effort — process may already be gone
+      }
+    }
+  }
+
   async pauseActiveJobsForShutdown(reason = "download paused by shutdown"): Promise<void> {
     const runningJobIds = this.deps.repo.listRunning(200).map((job) => job.id);
     for (const jobId of runningJobIds) {
@@ -656,9 +673,22 @@ export class DownloadService {
       lastResolvedProviderId: resolved.providerId as never,
     };
 
+    // Bound TOTAL in-flight HLS fragments across all parallel downloads. 16/job
+    // buffered ~GBs of fragments in RAM; ×N parallel workers blew memory to
+    // 10s of GB. Keep the aggregate near ~8 fragments by dividing the budget
+    // across the configured parallelism (and ffmpeg buffers add on top, so stay
+    // conservative). Single download → 8; 3 parallel → ~2-3 each.
+    const parallelDownloads = Math.max(
+      1,
+      Math.min(5, Math.trunc(this.deps.config.maxConcurrentDownloads) || 1),
+    );
+    const fragmentConcurrency = Math.max(2, Math.floor(8 / parallelDownloads));
     const args = [
       "--concurrent-fragments",
-      "16",
+      String(fragmentConcurrency),
+      // Cap HTTP read buffering so a stalled fragment can't balloon memory.
+      "--buffer-size",
+      "16K",
       "--newline",
       "--continue",
       // Reliability: provider HLS (vidlink/stormvv/…) ships flaky fragments. Without
@@ -670,6 +700,10 @@ export class DownloadService {
       "10",
       "--retry-sleep",
       "2",
+      // A hung socket on a flaky provider must fail (and retry) rather than keep
+      // the process — and its buffered fragments — alive forever.
+      "--socket-timeout",
+      "30",
     ];
 
     // Quality: yt-dlp's default already takes the highest video+audio, so we only
