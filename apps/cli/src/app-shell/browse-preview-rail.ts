@@ -37,12 +37,14 @@ function normalizeRailFactValue(sourceLabel: string, value: string): string | nu
 
   if (sourceLabel === "Title aliases") {
     if (/^no alternate title aliases/i.test(trimmed)) return null;
-    return trimmed
-      .split(/\s*·\s*/)
-      .map((part) => part.replace(/^(provider|english|native|romaji):\s*/i, "").trim())
-      .filter(Boolean)
-      .slice(0, 2)
-      .join(" · ");
+    const aliases: string[] = [];
+    for (const part of trimmed.split(/\s*·\s*/)) {
+      const alias = part.replace(/^(provider|english|native|romaji):\s*/i, "").trim();
+      if (!alias) continue;
+      aliases.push(alias);
+      if (aliases.length >= 2) break;
+    }
+    return aliases.join(" · ");
   }
 
   if (sourceLabel === "Audio and subtitles") {
@@ -176,9 +178,11 @@ export function buildPreviewRailModelFromBrowseOption<T>(
 ): PreviewRailModel | null {
   if (!option) return null;
 
-  const panelFacts = (option.previewFacts ?? [])
-    .map((fact) => railFactFromPanelLine(fact))
-    .filter((fact): fact is PreviewRailModel["facts"][number] => fact !== null);
+  const panelFacts: PreviewRailModel["facts"][number][] = [];
+  for (const fact of option.previewFacts ?? []) {
+    const railFact = railFactFromPanelLine(fact);
+    if (railFact) panelFacts.push(railFact);
+  }
 
   const badgeFact = option.previewBadge ? normalizePreviewBadge(option.previewBadge) : null;
   const noteFact = option.previewNote ? normalizePreviewNote(option.previewNote) : null;

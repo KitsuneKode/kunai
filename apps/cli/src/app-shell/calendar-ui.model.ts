@@ -50,6 +50,8 @@ export type CalendarRenderRow<T> = {
   readonly showForYouHeaderOnce: boolean;
 };
 
+const CALENDAR_WEEKDAY_FORMATTER = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+
 function isCalendarTrackedOption<T>(option: BrowseShellOption<T>): boolean {
   return option.calendar?.inWatchlist === true || option.previewBadge === "wl";
 }
@@ -86,9 +88,7 @@ export function buildCalendarDaysFromOptions<T>(
 function calendarDayLabelFromIsoKey(isoKey: string): string {
   const date = new Date(`${isoKey}T00:00:00`);
   if (Number.isNaN(date.getTime())) return isoKey;
-  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" })
-    .format(date)
-    .toUpperCase();
+  const weekday = CALENDAR_WEEKDAY_FORMATTER.format(date).toUpperCase();
   return `${weekday} ${date.getDate()}`;
 }
 
