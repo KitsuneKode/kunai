@@ -4,7 +4,7 @@ import {
   buildCommandPickerModel,
   getCommandAutocompleteTarget,
   getHighlightedCommand,
-} from "@/app-shell/shell-command-ui";
+} from "@/app-shell/shell-command-model";
 import type { ResolvedAppCommand } from "@/domain/session/command-registry";
 import {
   buildPickerModel,

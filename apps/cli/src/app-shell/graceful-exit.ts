@@ -12,19 +12,21 @@ export function registerExitHandler(handler: () => Promise<void>): () => void {
   };
 }
 
-export async function runExitHandlers(): Promise<void> {
-  for (const handler of exitHandlers) {
-    try {
-      await Promise.race([
-        handler(),
-        new Promise<void>((_, reject) =>
-          setTimeout(() => reject(new Error("Exit handler timed out")), HANDLER_TIMEOUT_MS),
-        ),
-      ]);
-    } catch (error) {
-      console.error("Exit handler failed:", error);
-    }
-  }
+async function runExitHandlers(): Promise<void> {
+  await Promise.all(
+    exitHandlers.map(async (handler) => {
+      try {
+        await Promise.race([
+          handler(),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error("Exit handler timed out")), HANDLER_TIMEOUT_MS),
+          ),
+        ]);
+      } catch (error) {
+        console.error("Exit handler failed:", error);
+      }
+    }),
+  );
 }
 
 export function requestHardExit(code = 0): void {

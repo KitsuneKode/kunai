@@ -181,6 +181,29 @@ describe("ResultEnrichmentService", () => {
     expect(enrichments.get("series:anilist:2")?.badges).toEqual([]);
   });
 
+  test("skips historyStore.getAll when preloaded history is supplied", async () => {
+    let historyCalls = 0;
+    const service = new ResultEnrichmentService({
+      historyStore: {
+        getAll: async () => {
+          historyCalls += 1;
+          return {};
+        },
+      },
+      offlineLibraryService: {
+        peekRecordedArtifactStatuses: async () => [],
+      },
+      now: () => 1,
+      ttlMs: 1_000,
+    });
+
+    await service.enrichResults([result()], {
+      preloadedHistory: { "title-1": history({ completed: false, positionSeconds: 300 }) },
+    });
+
+    expect(historyCalls).toBe(0);
+  });
+
   test("uses recorded artifact statuses once within the ttl without validating files", async () => {
     let offlineCalls = 0;
     const service = new ResultEnrichmentService({

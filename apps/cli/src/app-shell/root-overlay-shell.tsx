@@ -62,7 +62,7 @@ import {
   buildProviderPickerOptions,
   type HistoryPickerOptionsContext,
 } from "./panel-data";
-import { shouldRenderPreviewRail } from "./primitives/PreviewRail";
+import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import {
   buildRootHistorySelection,
   hasPendingRootHistorySelection,
@@ -79,7 +79,8 @@ import {
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
 import { type RootOwnedOverlay } from "./root-shell-state";
-import { CommandPalette, useShellInput } from "./shell-command-ui";
+import { useShellInput } from "./shell-command-input";
+import { CommandPalette } from "./shell-command-ui";
 import { ContextStrip, ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import {
@@ -282,15 +283,17 @@ function readCachedHistoryProjections(
       .listByTitleIds(titleIds)
       .map((policy) => [policy.titleId, policy]),
   );
-  const nextReadyAssets = container.offlineAssetService.listNextReadyByTitleCursors(
-    entries
-      .filter(([, entry]) => historyContentType(entry) === "series")
-      .map(([titleId, entry]) => ({
-        titleId,
-        season: entry.season ?? 1,
-        episode: entry.episode ?? entry.absoluteEpisode ?? 1,
-      })),
-  );
+  const nextReadyCursors: Array<{ titleId: string; season: number; episode: number }> = [];
+  for (const [titleId, entry] of entries) {
+    if (historyContentType(entry) !== "series") continue;
+    nextReadyCursors.push({
+      titleId,
+      season: entry.season ?? 1,
+      episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+    });
+  }
+  const nextReadyAssets =
+    container.offlineAssetService.listNextReadyByTitleCursors(nextReadyCursors);
   const nextReadyByTitle = new Map<string, { season: number; episode: number; jobId?: string }>();
   for (const asset of nextReadyAssets) {
     if (asset.season === undefined || asset.episode === undefined) continue;
@@ -474,18 +477,19 @@ export function RootOverlayShell({
     projections: historyProjections,
     releaseSignals: historyReleaseSignals,
   };
+  const seriesProviderMetadata = [];
+  const animeProviderMetadata = [];
+  for (const provider of container.providerRegistry.getAll()) {
+    const metadata = provider.metadata;
+    if (metadata.isAnimeProvider) animeProviderMetadata.push(metadata);
+    else seriesProviderMetadata.push(metadata);
+  }
   const settingsSeriesProviderOptions = buildSettingsProviderOptions({
-    providers: container.providerRegistry
-      .getAll()
-      .map((p) => p.metadata)
-      .filter((metadata) => !metadata.isAnimeProvider),
+    providers: seriesProviderMetadata,
     currentProvider: settingsDraft?.provider ?? container.config.provider,
   });
   const settingsAnimeProviderOptions = buildSettingsProviderOptions({
-    providers: container.providerRegistry
-      .getAll()
-      .map((p) => p.metadata)
-      .filter((metadata) => metadata.isAnimeProvider),
+    providers: animeProviderMetadata,
     currentProvider: settingsDraft?.animeProvider ?? container.config.animeProvider,
   });
   const staticLines =

@@ -414,8 +414,13 @@ local function draw_resume_prompt(at_sec)
 	local cy = math.floor(h / 2)
 	local card_w = clamp(math.floor(w * 0.46), 380, 660)
 	local card_h = clamp(math.floor(h * 0.2), 132, 210)
-	local card_x = math.floor(cx - card_w / 2)
-	local card_y = math.floor(cy - card_h / 2)
+	-- Anchored top-right so the resume prompt never sits over subtitles or the
+	-- central frame. Re-centering cx on the card makes every \pos text line below
+	-- (they all use cx) follow the card to its new corner automatically.
+	local margin_right = tonumber(o.margin_right) or 44
+	local card_x = math.floor(w - card_w - margin_right)
+	local card_y = 44
+	cx = card_x + math.floor(card_w / 2)
 	local title_fs = clamp(math.floor(h * 0.022), 18, 28)
 	local action_fs = clamp(math.floor(h * 0.044), 30, 54)
 	local sub_fs = clamp(math.floor(h * 0.023), 15, 22)

@@ -11,7 +11,7 @@ import {
 } from "./discover-reason";
 import { DotMatrixLoader, InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { MediaListShell } from "./primitives/MediaListShell";
-import { shouldRenderPreviewRail } from "./primitives/PreviewRail";
+import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";

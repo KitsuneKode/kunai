@@ -1,7 +1,7 @@
 import { classifyProviderResolveUserState } from "@/app/provider-resolve-user-state";
 
-import type { ActionRowModel } from "./primitives/ActionList";
-import type { StateBlockModel } from "./primitives/StateBlock";
+import type { ActionRowModel } from "./primitives/ActionList.model";
+import type { StateBlockModel } from "./primitives/StateBlock.model";
 import type { LoadingShellState } from "./types";
 
 export type PlaybackRecoveryViewModel = {

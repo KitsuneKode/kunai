@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { formatLoadingProviderLine } from "@/app-shell/loading-shell";
+import { formatLoadingProviderLine } from "@/app-shell/loading-shell-model";
 
 describe("loading shell layout", () => {
   test("formats active provider identity for playback supervision", () => {

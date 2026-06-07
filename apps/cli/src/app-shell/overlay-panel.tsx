@@ -23,7 +23,7 @@ import { palette, semanticToneColor, statusColor } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
-export { formatPickerDisplayRow, formatPickerOptionRow } from "./overlay-picker-row";
+export { formatPickerDisplayRow, formatPickerOptionRow } from "./overlay-picker-row.model";
 
 const BUSY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 

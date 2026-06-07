@@ -29,9 +29,7 @@ export type RootShellSurface =
   | "mounted-screen"
   | "idle";
 
-export function isRootOwnedOverlay(
-  overlay: OverlayState | null | undefined,
-): overlay is RootOwnedOverlay {
+function isRootOwnedOverlay(overlay: OverlayState | null | undefined): overlay is RootOwnedOverlay {
   return (
     overlay?.type === "help" ||
     overlay?.type === "about" ||
@@ -50,7 +48,7 @@ export function isRootOwnedOverlay(
   );
 }
 
-export function getTopOverlay(state: SessionState): OverlayState | null {
+function getTopOverlay(state: SessionState): OverlayState | null {
   return state.activeModals.at(-1) ?? null;
 }
 

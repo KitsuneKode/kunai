@@ -4,7 +4,7 @@ import {
   getPreviewPosterLabel,
   shouldRenderPreviewRail,
   visiblePreviewFacts,
-} from "@/app-shell/primitives/PreviewRail";
+} from "@/app-shell/primitives/PreviewRail.model";
 
 describe("PreviewRail helpers", () => {
   test("reserves poster label for loading and failed states", () => {

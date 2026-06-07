@@ -28,7 +28,7 @@ export function getRootContentSession(): RootContentSession | null {
   return rootContentSession;
 }
 
-export function setRootContentSession(session: RootContentSession | null): void {
+function setRootContentSession(session: RootContentSession | null): void {
   rootContentSession = session;
   notifyRootContentSubscribers();
 }

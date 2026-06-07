@@ -714,16 +714,10 @@ async function loadBrowseDisplayContext(
   container: PhaseContext["container"],
   results: readonly SearchResult[],
 ): Promise<BrowseDisplayContext> {
-  const [historyResult, enrichmentResult] = await Promise.allSettled([
-    container.historyStore.getAll(),
-    container.resultEnrichmentService.enrichResults(results),
-  ]);
+  const historyMap = await container.historyStore.getAll().catch(() => ({}));
+  const enrichments = await container.resultEnrichmentService
+    .enrichResults(results, { preloadedHistory: historyMap })
+    .catch(() => new Map<string, ResultEnrichment>());
 
-  return {
-    historyMap: historyResult.status === "fulfilled" ? historyResult.value : {},
-    enrichments:
-      enrichmentResult.status === "fulfilled"
-        ? enrichmentResult.value
-        : new Map<string, ResultEnrichment>(),
-  };
+  return { historyMap, enrichments };
 }

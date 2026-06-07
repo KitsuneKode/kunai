@@ -9,7 +9,7 @@ export type LoadingShellTimerPolicy = {
   readonly runtimeHealthRefreshMs: number | null;
 };
 
-export function isPlaybackSupervisionOperation(operation: LoadingShellState["operation"]): boolean {
+function isPlaybackSupervisionOperation(operation: LoadingShellState["operation"]): boolean {
   return operation === "playing";
 }
 

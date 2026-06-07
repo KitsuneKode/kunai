@@ -5,13 +5,12 @@ import React from "react";
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { requestHardExit } from "./graceful-exit";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
+import { useShellInput } from "./shell-command-input";
 import {
-  CommandPalette,
   getPlaybackCommandPaletteMaxVisible,
-  LineEditorText,
   resolveCommandPaletteWidth,
-  useShellInput,
-} from "./shell-command-ui";
+} from "./shell-command-model";
+import { CommandPalette, LineEditorText } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
 import { measureColumns, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
@@ -211,22 +210,6 @@ export function InputField({
       ) : null}
     </Box>
   );
-}
-
-export function footerActionFromCommand(
-  commands: readonly ResolvedAppCommand[],
-  id: AppCommandId,
-  presentation: { key: string; label: string },
-  toShellAction: (commandId: AppCommandId) => ShellAction,
-): FooterAction {
-  const command = commands.find((candidate) => candidate.id === id);
-  return {
-    key: presentation.key,
-    label: presentation.label,
-    action: toShellAction(id),
-    disabled: command ? !command.enabled : false,
-    reason: command?.reason,
-  };
 }
 
 export function getCommandLabel(

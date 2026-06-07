@@ -192,7 +192,7 @@ export function DotMatrixGrid({
 
 // ── Compact inline Braille renderer (4×4 dots in 2 chars) ─────────────────
 
-export function CompactDotMatrix({
+function CompactDotMatrix({
   frame,
   onColor = palette.accent,
 }: {

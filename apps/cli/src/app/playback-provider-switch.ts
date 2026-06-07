@@ -97,17 +97,19 @@ export async function applyUserProviderSwitch(input: {
     const providerIds = providerRegistry
       .getCompatible(title, mode)
       .map((provider) => provider.metadata.id);
-    for (const providerId of providerIds) {
-      await invalidateEpisodePlaybackCaches({
-        cacheStore,
-        sourceInventory,
-        providerId,
-        title,
-        episode,
-        mode,
-        config: configRaw,
-      });
-    }
+    await Promise.all(
+      providerIds.map((providerId) =>
+        invalidateEpisodePlaybackCaches({
+          cacheStore,
+          sourceInventory,
+          providerId,
+          title,
+          episode,
+          mode,
+          config: configRaw,
+        }),
+      ),
+    );
   }
 
   diagnosticsService.record({

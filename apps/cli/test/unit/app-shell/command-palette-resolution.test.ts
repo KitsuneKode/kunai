@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 import type { ResolvedAppCommand } from "@/app-shell/commands";
-import { buildCommandPickerModel, getHighlightedCommand } from "@/app-shell/shell-command-ui";
+import { buildCommandPickerModel, getHighlightedCommand } from "@/app-shell/shell-command-model";
 
 function cmd(id: string, aliases: readonly string[], description: string): ResolvedAppCommand {
   return { id, label: id, aliases, description, enabled: true } as unknown as ResolvedAppCommand;

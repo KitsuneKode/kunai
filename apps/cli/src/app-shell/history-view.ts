@@ -19,19 +19,19 @@ import {
   historyBucketFor,
   type HistoryPickerOptionsContext,
 } from "./panel-data";
-import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail";
+import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail.model";
 import { RETURN_LOOP_HISTORY_NEW_SECTION } from "./return-loop-copy";
 import { describeHistoryReturnLoopDetail, formatNewSinceEpisodeLabel } from "./root-history-bridge";
 import { getWindowStart } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { ShellPickerOption, ShellStatusTone } from "./types";
 
-export const HISTORY_TABS = ["continue", "completed", "new-episodes", "all"] as const;
+const HISTORY_TABS = ["continue", "completed", "new-episodes", "all"] as const;
 export type HistoryTab = (typeof HISTORY_TABS)[number];
 
 // Second filter axis: content type. Uses correctedHistoryMediaKind so a drama
 // watched in anime mode (legacy mislabel) filters as Series, not Anime (#1/#4).
-export const HISTORY_TYPE_FILTERS = ["all", "anime", "series", "movie"] as const;
+const HISTORY_TYPE_FILTERS = ["all", "anime", "series", "movie"] as const;
 export type HistoryTypeFilter = (typeof HISTORY_TYPE_FILTERS)[number];
 
 export function historyTypeFilterLabels(): readonly string[] {
@@ -107,16 +107,12 @@ function historyTypeFilterView(typeFilter: HistoryTypeFilter): {
   };
 }
 
-export function historyTabLabels(): readonly string[] {
+function historyTabLabels(): readonly string[] {
   return ["Continue", "Completed", "New episodes", "All"];
 }
 
-export function historyTabIndex(tab: HistoryTab): number {
+function historyTabIndex(tab: HistoryTab): number {
   return HISTORY_TABS.indexOf(tab);
-}
-
-export function historyTabFromIndex(index: number): HistoryTab {
-  return HISTORY_TABS[Math.max(0, Math.min(HISTORY_TABS.length - 1, index))] ?? "continue";
 }
 
 export function historyTabFromLegacy(mode: "all" | "watching" | "completed"): HistoryTab {
@@ -304,14 +300,16 @@ function buildHistorySections(
     return flatRows.length > 0 ? [{ label: "", rows: [...flatRows] }] : [];
   }
 
-  return groups
-    .map((group) => ({
-      label: group.label,
-      rows: group.items
-        .map(([titleId]) => rowById.get(titleId))
-        .filter((row): row is HistoryViewRow => row !== undefined),
-    }))
-    .filter((group) => group.rows.length > 0);
+  const sections: Array<{ label: string; rows: HistoryViewRow[] }> = [];
+  for (const group of groups) {
+    const rows: HistoryViewRow[] = [];
+    for (const [titleId] of group.items) {
+      const row = rowById.get(titleId);
+      if (row) rows.push(row);
+    }
+    if (rows.length > 0) sections.push({ label: group.label, rows });
+  }
+  return sections;
 }
 
 function buildHistoryPreviewRailModel(

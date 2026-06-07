@@ -4,7 +4,7 @@ import {
   type ActionRowModel,
   getEnabledActionRows,
   normalizeActionShortcut,
-} from "@/app-shell/primitives/ActionList";
+} from "@/app-shell/primitives/ActionList.model";
 
 describe("ActionList helpers", () => {
   const rows: readonly ActionRowModel[] = [

@@ -1,55 +1,18 @@
-import { getLineEditorViewport, splitCursor, useLineEditor } from "@/app-shell/line-editor";
-import { buildPickerModel, movePickerModelSelection } from "@/domain/session/picker-model";
-import { Box, Text, useInput, useStdout } from "ink";
-import React, { useState } from "react";
+import { getLineEditorViewport, splitCursor } from "@/app-shell/line-editor";
+import { Box, Text, useStdout } from "ink";
+import React from "react";
 
-import { COMMANDS, type AppCommandId, type ResolvedAppCommand } from "./commands";
-import { routeShellInput } from "./input-router";
+import type { ResolvedAppCommand } from "./commands";
 import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
+import {
+  COMMAND_GROUP_LABELS,
+  CONTEXT_COMMAND_IDS,
+  buildCommandPickerModel,
+  getPlaybackCommandPaletteMaxVisible,
+  resolveCommandPaletteWidth,
+} from "./shell-command-model";
 import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
-import { toShellAction, type FooterAction, type ShellAction } from "./types";
-
-export function getCommandMatches(
-  input: string,
-  commands: readonly ResolvedAppCommand[],
-): readonly ResolvedAppCommand[] {
-  return buildCommandPickerModel(input, commands, 0)
-    .options.map((option) => commands.find((command) => command.id === option.value))
-    .filter((command): command is ResolvedAppCommand => Boolean(command));
-}
-
-export function getHighlightedCommand(
-  input: string,
-  commands: readonly ResolvedAppCommand[],
-  highlightedIndex: number,
-): ResolvedAppCommand | null {
-  // INVARIANT: Enter runs exactly the row the palette highlights. Resolve from the
-  // SAME picker model the palette renders — never via a separate exact-parse
-  // shortcut, which can diverge from the visible highlight (e.g. an exact alias
-  // like "c" overriding a row you navigated to).
-  const model = buildCommandPickerModel(input, commands, highlightedIndex);
-  return commands.find((command) => command.id === model.selectedOption?.value) ?? null;
-}
-
-export function getCommandAutocompleteTarget(
-  input: string,
-  commands: readonly ResolvedAppCommand[],
-  highlightedIndex: number,
-): ResolvedAppCommand | null {
-  const model = buildCommandPickerModel(input, commands, highlightedIndex);
-  if (model.options.length === 0) return null;
-
-  const normalized = input.trim().replace(/^\//, "").toLowerCase();
-  const selected = commands.find((command) => command.id === model.selectedOption?.value) ?? null;
-  if (!normalized || !selected) return selected;
-
-  const selectedAlias = selected.aliases[0] ?? selected.id;
-  if (selectedAlias.toLowerCase() !== normalized) return selected;
-
-  const nextIndex = movePickerModelSelection(model, 1);
-  return commands.find((command) => command.id === model.options[nextIndex]?.value) ?? selected;
-}
 
 export function LineEditorText({
   value,
@@ -101,81 +64,6 @@ export function LineEditorText({
       <Text color={palette.text}>{after}</Text>
     </>
   );
-}
-
-/** Commands that appear under the "Context" group header in the palette. */
-const CONTEXT_COMMAND_IDS = new Set<AppCommandId>([
-  "toggle-autoplay",
-  "replay",
-  "recover",
-  "fallback",
-  "source",
-  "quality",
-  "audio",
-  "subtitle",
-  "memory",
-  "pick-episode",
-  "next",
-  "previous",
-  "next-season",
-  "download",
-]);
-
-const COMMAND_GROUP_LABELS = {
-  context: "Context",
-  global: "Global",
-} as const;
-
-export function shouldHideCompanionForCommandPalette(commandMode: boolean): boolean {
-  return commandMode;
-}
-
-export function getPlaybackCommandPaletteMaxVisible(rows: number): number {
-  const playbackChromeRows = 14;
-  const availableRows = rows - 4 - playbackChromeRows - 4 - 5 - 3;
-  return Math.max(1, Math.min(18, availableRows));
-}
-
-export function getListShellCommandPaletteMaxVisible(
-  rows: number,
-  subtitleLineCount: number,
-): number {
-  const subtitleRows = Math.min(subtitleLineCount, 6);
-  const listChromeRows = 1 + subtitleRows + 7 + 1 + 1 + 4;
-  const availableRows = rows - 4 - listChromeRows - 4 - 5 - 3;
-  return Math.max(1, Math.min(18, availableRows));
-}
-
-export function resolveCommandPaletteWidth(shellWidth: number): number {
-  const columns = Math.max(28, shellWidth);
-  return Math.max(28, Math.min(columns, columns - 4) - 4);
-}
-
-export function buildCommandPickerModel(
-  input: string,
-  commands: readonly ResolvedAppCommand[],
-  highlightedIndex: number,
-) {
-  const showGrouped = input.trim().length === 0;
-  return buildPickerModel<AppCommandId>({
-    query: input,
-    selectedIndex: highlightedIndex,
-    groupOrder: showGrouped ? ["context", "global"] : undefined,
-    groupLabels: COMMAND_GROUP_LABELS,
-    options: commands.map((command) => ({
-      id: command.id,
-      value: command.id,
-      label: command.label,
-      detail: command.description,
-      enabled: command.enabled,
-      disabledReason: command.reason,
-      group: showGrouped ? (CONTEXT_COMMAND_IDS.has(command.id) ? "context" : "global") : undefined,
-      keywords: command.aliases.map((alias, index) => ({
-        value: alias,
-        weight: index === 0 ? -8 : 6,
-      })),
-    })),
-  });
 }
 
 export function CommandPalette({
@@ -315,120 +203,4 @@ export function CommandPalette({
       </Box>
     </Box>
   );
-}
-
-export function useShellInput({
-  footerActions,
-  commands,
-  disabled = false,
-  escapeAction = "quit",
-  onResolve,
-}: {
-  footerActions: readonly FooterAction[];
-  commands: readonly ResolvedAppCommand[];
-  disabled?: boolean;
-  escapeAction?: ShellAction | null;
-  onResolve: (action: ShellAction) => void;
-}) {
-  const [commandMode, setCommandMode] = useState(false);
-  const [commandInput, setCommandInput] = useState("");
-  const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const commandEditor = useLineEditor({
-    value: commandInput,
-    onChange: (nextValue) => {
-      setCommandInput(nextValue);
-      setHighlightedIndex(0);
-    },
-  });
-
-  useInput((input, key) => {
-    if (disabled) {
-      return;
-    }
-
-    const route = routeShellInput(input, key, { commandPaletteOpen: commandMode });
-    if (route.owner === "hard-global") return;
-
-    if (key.escape) {
-      if (commandMode) {
-        setCommandMode(false);
-        setCommandInput("");
-        setHighlightedIndex(0);
-        return;
-      }
-      if (escapeAction) onResolve(escapeAction);
-      return;
-    }
-
-    if (commandMode) {
-      const model = buildCommandPickerModel(commandInput, commands, highlightedIndex);
-
-      if (key.return) {
-        const resolved = getHighlightedCommand(commandInput, commands, highlightedIndex);
-        if (resolved?.enabled) {
-          onResolve(toShellAction(resolved.id));
-          return;
-        }
-        return;
-      }
-      if (key.tab) {
-        const target = getCommandAutocompleteTarget(commandInput, commands, highlightedIndex);
-        if (target) {
-          commandEditor.setValue(target.aliases[0] ?? target.id);
-          const targetIndex = model.options.findIndex((option) => option.value === target.id);
-          setHighlightedIndex(Math.max(0, targetIndex));
-        }
-        return;
-      }
-      if (key.upArrow) {
-        if (model.options.length > 0) {
-          setHighlightedIndex(movePickerModelSelection(model, -1));
-        }
-        return;
-      }
-      if (key.downArrow) {
-        if (model.options.length > 0) {
-          setHighlightedIndex(movePickerModelSelection(model, 1));
-        }
-        return;
-      }
-      if (commandEditor.handleInput(input, key)) {
-        return;
-      }
-      return;
-    }
-
-    if (route.command === "open-command-palette" && commands.length > 0) {
-      setCommandMode(true);
-      setCommandInput("");
-      return;
-    }
-
-    const footerAction = footerActions.find(
-      (action) => action.key === input.toLowerCase() && !action.disabled,
-    );
-    if (footerAction) {
-      if (footerAction.action === "command-mode") {
-        setCommandMode(true);
-        setCommandInput("");
-        setHighlightedIndex(0);
-        return;
-      }
-      onResolve(footerAction.action);
-    }
-  });
-
-  return { commandMode, commandInput, commandCursor: commandEditor.cursor, highlightedIndex };
-}
-
-export function fallbackCommandState(
-  allowed: readonly AppCommandId[],
-): readonly ResolvedAppCommand[] {
-  return allowed
-    .map((id) => COMMANDS.find((command) => command.id === id))
-    .filter((command): command is ResolvedAppCommand => Boolean(command))
-    .map((command) => ({
-      ...command,
-      enabled: true,
-    }));
 }

@@ -24,7 +24,6 @@ import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { describePresenceConfiguration } from "@/services/presence/PresenceServiceImpl";
 import type { CapabilitySnapshot } from "@/ui";
 import type { HistoryProgress } from "@kunai/storage";
-import type { NotificationRecord } from "@kunai/storage";
 
 import { helpSections } from "./keybindings";
 import { describeHistoryReturnLoopDetail } from "./root-history-bridge";
@@ -181,32 +180,6 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
     { label: "/export-diagnostics", detail: "Write redacted support bundle" },
     { label: "/report-issue", detail: "Open GitHub issue reporting" },
   ];
-}
-
-export function buildNotificationPanelLines(
-  notifications: readonly NotificationRecord[],
-): readonly ShellPanelLine[] {
-  if (notifications.length === 0) {
-    return [
-      {
-        label: "No notifications",
-        detail:
-          "New episodes, recoverable queues, downloads, and app notices appear here. Enter to act on one, x to dismiss, a to see all actions.",
-        tone: "neutral",
-      },
-    ];
-  }
-
-  return notifications.map((notification) => ({
-    label: notification.title,
-    detail: notification.body,
-    tone:
-      notification.kind === "queue-recovery"
-        ? "warning"
-        : notification.kind === "new-episode"
-          ? "success"
-          : "info",
-  }));
 }
 
 export function buildAboutPanelLines({
@@ -865,36 +838,6 @@ function formatSeriesEpisode(season: number, episode: number): string {
   return `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
 }
 
-export function isHistoryPickerContinuable(
-  titleId: string,
-  entry: HistoryProgress,
-  context: HistoryPickerOptionsContext = {},
-): boolean {
-  // Movies are always actionable: resume if in progress, restart if completed.
-  if (historyContentType(entry) === "movie") return true;
-  const projection = context.projections?.get(titleId);
-  if (
-    projection?.kind === "resume-unfinished" ||
-    projection?.kind === "offline-ready" ||
-    projection?.kind === "next-released"
-  ) {
-    return true;
-  }
-  const isCompleted = projectWatchProgress({
-    timestamp: entry.positionSeconds,
-    duration: entry.durationSeconds,
-    completed: entry.completed,
-  }).completed;
-  if (!isCompleted) return true;
-  return (
-    reconcileContinueHistory({
-      titleId,
-      entries: [[titleId, entry]],
-      nextRelease: context.nextReleases?.get(titleId) ?? null,
-    }).kind === "new-episode"
-  );
-}
-
 function buildHistoryOptionRow(
   id: string,
   entry: HistoryProgress,
@@ -989,7 +932,7 @@ function buildHistoryOptionRow(
  * a next episode to play (Netflix-style advance). Finished movies and caught-up series
  * are done — they belong in Completed, not here.
  */
-export function isHistoryKeepWatching(
+function isHistoryKeepWatching(
   id: string,
   entry: HistoryProgress,
   context: HistoryPickerOptionsContext = {},

@@ -1,16 +1,8 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { heatBucket } from "../format/heatmap";
-import { heatColor, palette, statsHeatCellColor } from "../shell-theme";
-
-export type HeatRow = { readonly label: string; readonly values: readonly number[] };
-
-function cellColor(value: number, max: number, tintHex?: string): string {
-  const bucket = heatBucket(value, max);
-  if (tintHex) return statsHeatCellColor(bucket, tintHex);
-  return heatColor(bucket);
-}
+import { palette } from "../shell-theme";
+import { heatmapCellColor, type HeatRow } from "./Heatmap.model";
 
 /** Watch-activity heatmap; optional tintHex enables Stats paint-mix (type hue × intensity). */
 export const Heatmap = React.memo(function Heatmap({
@@ -37,7 +29,7 @@ export const Heatmap = React.memo(function Heatmap({
               return (
                 <Text
                   key={`${row.label}:${value}:${seenCount}`}
-                  color={cellColor(value, max, tintHex)}
+                  color={heatmapCellColor(value, max, tintHex)}
                 >
                   {` ${cell}`}
                 </Text>
@@ -49,5 +41,3 @@ export const Heatmap = React.memo(function Heatmap({
     </Box>
   );
 });
-
-export { cellColor as heatmapCellColor };

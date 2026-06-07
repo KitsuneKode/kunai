@@ -46,14 +46,14 @@ import { ErrorShell, RootIdleShell } from "./root-status-shells";
 import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
 import { openSessionPicker } from "./session-picker";
 import {
-  CommandPalette,
-  getListShellCommandPaletteMaxVisible,
-  shouldHideCompanionForCommandPalette,
   fallbackCommandState,
   getCommandAutocompleteTarget,
   getCommandMatches,
   getHighlightedCommand,
-} from "./shell-command-ui";
+  getListShellCommandPaletteMaxVisible,
+  shouldHideCompanionForCommandPalette,
+} from "./shell-command-model";
+import { CommandPalette } from "./shell-command-ui";
 import { InputField, ShellFrame } from "./shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";

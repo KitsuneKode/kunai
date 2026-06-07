@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildPlaybackSignalRail } from "@/app-shell/loading-shell";
+import { buildPlaybackSignalRail } from "@/app-shell/loading-shell-model";
 
 describe("buildPlaybackSignalRail", () => {
   test("formats resolution, speed, and subtitle track", () => {

@@ -5,7 +5,7 @@ import {
   buildPlaybackContextCards,
   clampContextCardText,
   contextCardGlyph,
-} from "@/app-shell/primitives/ContextCard";
+} from "@/app-shell/primitives/ContextCard.model";
 
 describe("ContextCard helpers", () => {
   test("builds stable initials, skipping connective stopwords", () => {

@@ -10,9 +10,6 @@ export function formatReadyForYouNowMeta(episodeCount: number, titleCount: numbe
   return `${episodes}${shows}`;
 }
 
-export const RETURN_LOOP_READY_DETAIL =
-  "Catalog schedule · aired today on tracked shows · sources checked on play";
-
 export const RETURN_LOOP_NAV_HINT = "/calendar for schedule · /history for shows";
 
 export const RETURN_LOOP_HISTORY_SUBTITLE = "Resume first, then picks ready for you now.";
