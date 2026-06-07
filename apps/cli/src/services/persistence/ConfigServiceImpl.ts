@@ -297,6 +297,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.autoDownloadNextCount;
   }
 
+  get maxConcurrentDownloads(): number {
+    return normalizeMaxConcurrentDownloads(this.config.maxConcurrentDownloads);
+  }
+
   get autoCleanupWatched(): boolean {
     return this.config.autoCleanupWatched;
   }
@@ -594,4 +598,9 @@ function normalizeRunwayTarget(value: unknown): number {
 function normalizeMpvReconnectAttempts(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 1;
   return Math.max(0, Math.min(1, Math.trunc(value)));
+}
+
+function normalizeMaxConcurrentDownloads(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 3;
+  return Math.max(1, Math.min(5, Math.trunc(value)));
 }

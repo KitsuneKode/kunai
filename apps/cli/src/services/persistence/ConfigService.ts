@@ -124,6 +124,8 @@ export interface KitsuneConfig {
   autoDownload: AutoDownloadMode;
   /** Legacy bounded batch preference retained for config compatibility only. */
   autoDownloadNextCount: number;
+  /** How many downloads run at once. Clamped 1–5; default 3. Keeps resource use bounded. */
+  maxConcurrentDownloads: number;
   /** Surface completed watched downloads as cleanup candidates after the grace period. Default false. */
   autoCleanupWatched: boolean;
   /** Playback/provider recovery behavior. Default guided. */

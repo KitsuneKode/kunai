@@ -154,6 +154,10 @@ export class DownloadService {
     { readonly mode: "abort" | "pause"; readonly reason: string }
   >();
   private readonly activeProcesses = new Map<string, ActiveDownloadProcess>();
+  // Jobs picked by a worker but not yet markRunning in the DB. Lets multiple
+  // concurrent workers run without two of them claiming the same queued job in
+  // the window between `selectEligibleQueuedJob` and `markRunning` (an await).
+  private readonly claimedJobIds = new Set<string>();
   private readonly eventListeners = new Set<DownloadEventListener>();
 
   onEvent(handler: DownloadEventListener): () => void {
@@ -431,8 +435,12 @@ export class DownloadService {
     if (!next) {
       return null;
     }
+    // Claim synchronously (no await before this) so a concurrent worker's
+    // selectEligibleQueuedJob skips this job until it is markRunning or released.
+    this.claimedJobIds.add(next.id);
     const storage = await this.evaluateStorageForPath(next.outputPath, next.id);
     if (!storage.allowed) {
+      this.claimedJobIds.delete(next.id);
       const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       this.deps.repo.pause(
         next.id,
@@ -510,6 +518,7 @@ export class DownloadService {
     } finally {
       this.activeProcesses.delete(next.id);
       this.cancellationRequests.delete(next.id);
+      this.claimedJobIds.delete(next.id);
     }
   }
 
@@ -524,12 +533,16 @@ export class DownloadService {
         this.reconciledStartupJobs = true;
       }
       this.reconcileStalledJobs();
-      while (true) {
-        const processed = await this.processNextQueued();
-        if (!processed) {
-          break;
+      // Run up to `maxConcurrentDownloads` workers in parallel; each drains the
+      // queue (claim → download) until no eligible job remains. The atomic claim
+      // in processNextQueued keeps two workers off the same job.
+      const limit = Math.max(1, Math.min(5, Math.trunc(this.deps.config.maxConcurrentDownloads) || 1));
+      const worker = async (): Promise<void> => {
+        while (await this.processNextQueued()) {
+          // keep pulling jobs
         }
-      }
+      };
+      await Promise.all(Array.from({ length: limit }, () => worker()));
     } finally {
       this.queueWorkerRunning = false;
     }
@@ -1103,6 +1116,7 @@ export class DownloadService {
     const now = Date.parse(nowIso);
     const queued = this.deps.repo.listQueued(50);
     for (const job of queued) {
+      if (this.claimedJobIds.has(job.id)) continue;
       if (!job.nextRetryAt) return job;
       const retryAt = Date.parse(job.nextRetryAt);
       if (Number.isFinite(retryAt) && retryAt <= now) return job;

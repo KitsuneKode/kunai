@@ -66,6 +66,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   downloadsEnabled: false,
   autoDownload: "off",
   autoDownloadNextCount: 1,
+  maxConcurrentDownloads: 3,
   autoCleanupWatched: false,
   recoveryMode: "guided",
   startupPriority: "balanced",
