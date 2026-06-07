@@ -42,7 +42,7 @@ import {
 } from "@/services/download/download-cleanup-policy";
 import { checkDeps } from "@/ui";
 
-const KUNAI_VERSION = "0.2.4";
+const KUNAI_VERSION = "0.2.5";
 
 /** `--help` output. Grouped by purpose; mirrors the flags parsed in parseArgs. */
 export function buildHelpText(): string {
