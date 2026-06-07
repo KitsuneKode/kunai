@@ -12,8 +12,9 @@ import type { StartupPriority } from "@kunai/types";
 import { Box, Text } from "ink";
 import React from "react";
 
+import { DetailsSheetUI } from "./details-pane-ui";
+import type { DetailsPanelData } from "./details-panel";
 import { PickerOptionRow } from "./overlay-picker-row";
-import { renderHistoryProgressBar } from "./panel-data";
 import { PosterInitialBlock } from "./poster-initial-block";
 import type { PosterResult, PosterState } from "./poster-types";
 import { BooleanSwitch } from "./primitives/Switch";
@@ -25,6 +26,22 @@ import { usePosterPreview } from "./use-poster-preview";
 export { formatPickerDisplayRow, formatPickerOptionRow } from "./overlay-picker-row";
 
 const BUSY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+const HistoryProgressBar = React.memo(function HistoryProgressBar({
+  percentage,
+}: {
+  readonly percentage: number;
+}) {
+  const totalBlocks = 10;
+  const filledBlocks = Math.max(
+    0,
+    Math.min(totalBlocks, Math.round((percentage / 100) * totalBlocks)),
+  );
+  const emptyBlocks = totalBlocks - filledBlocks;
+
+  return <>[{`${"█".repeat(filledBlocks)}${"░".repeat(emptyBlocks)}`}]</>;
+});
+
 function useBusySpinner(active: boolean): string {
   const [frame, setFrame] = React.useState(0);
   React.useEffect(() => {
@@ -41,6 +58,7 @@ export type BrowseOverlay =
       title: string;
       subtitle: string;
       lines: readonly ShellPanelLine[];
+      detailData?: DetailsPanelData;
       imageUrl?: string;
       loading?: boolean;
       scrollIndex?: number;
@@ -1244,7 +1262,7 @@ export function OverlayPanel({
                         <Text
                           color={option.historyProgress.completed ? palette.ok : palette.accent}
                         >
-                          {renderHistoryProgressBar(option.historyProgress.percentage)}
+                          <HistoryProgressBar percentage={option.historyProgress.percentage} />
                           {`  ${option.historyProgress.percentage}%`}
                         </Text>
                       ) : null}
@@ -1293,6 +1311,19 @@ export function OverlayPanel({
       ) : isLineOverlay && overlay.loading ? (
         <Box marginTop={1}>
           <Text color={palette.accent}>Loading panel…</Text>
+        </Box>
+      ) : overlay.type === "details" && overlay.detailData ? (
+        <Box marginTop={1} flexDirection="column">
+          <DetailsSheetUI
+            data={overlay.detailData}
+            lines={overlay.lines}
+            width={contentWidth}
+            scrollIndex={overlay.scrollIndex ?? 0}
+            maxVisibleLines={Math.max(10, maxLinesOverride ?? 18)}
+          />
+          <Box marginTop={1}>
+            <Text color={palette.dim}>↑↓ scroll · Enter play · / commands · Esc close</Text>
+          </Box>
         </Box>
       ) : isLineOverlay ? (
         <Box marginTop={1} flexDirection="column">

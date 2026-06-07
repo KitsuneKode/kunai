@@ -553,7 +553,7 @@ function SetupShell({
 
   function advance() {
     if (slideIdx < SLIDE_ORDER.length - 1) {
-      setSlideIdx(slideIdx + 1);
+      setSlideIdx((current) => current + 1);
     } else {
       finish("completed", buildPrefs());
     }

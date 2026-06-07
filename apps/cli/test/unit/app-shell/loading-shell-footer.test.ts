@@ -18,3 +18,22 @@ test("loading footer exposes autoplay controls for series playback even at episo
     "resume autoplay",
   );
 });
+
+test("playing footer advertises command mode instead of space pause", () => {
+  const actions = buildLoadingFooterActions({
+    title: "Bad Guys",
+    operation: "playing",
+    isSeriesPlayback: true,
+    autoplayPaused: false,
+    autoskipPaused: false,
+  });
+
+  expect(actions[0]).toMatchObject({
+    key: "/",
+    label: "commands",
+    action: "command-mode",
+    primary: true,
+  });
+  expect(actions.find((action) => action.key === "space")).toBeUndefined();
+  expect(actions.map((action) => action.action)).toContain("toggle-autoplay");
+});

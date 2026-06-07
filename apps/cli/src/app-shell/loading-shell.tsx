@@ -38,13 +38,19 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
   );
   if (state.operation === "playing") {
     const playingFooterActions: readonly FooterAction[] = [
-      { key: "space", label: "pause", action: "command-mode", primary: true },
-      { key: "q", label: "stop", action: "quit" },
+      { key: "/", label: "commands", action: "command-mode", primary: true },
       ...(isSeriesPlayback
-        ? [{ key: "e", label: "episodes", action: "pick-episode" as const }]
+        ? [
+            { key: "e", label: "episodes", action: "pick-episode" as const },
+            {
+              key: "a",
+              label: state.autoplayPaused ? "resume autoplay" : "pause autoplay",
+              action: "toggle-autoplay" as const,
+            },
+          ]
         : []),
       { key: "t", label: "tracks", action: "source" },
-      { key: "/", label: "commands", action: "command-mode" },
+      { key: "q", label: "stop", action: "quit" },
     ];
     return selectFooterActions(playingFooterActions, "minimal");
   }
@@ -235,18 +241,24 @@ export function buildPlaybackSignalRail(
   return lines;
 }
 
-function renderPlaybackProgressBar(
-  currentPosition: number,
-  duration: number,
-  width: number,
-): string {
+const PlaybackProgressBar = React.memo(function PlaybackProgressBar({
+  currentPosition,
+  duration,
+  width,
+}: {
+  readonly currentPosition: number;
+  readonly duration: number;
+  readonly width: number;
+}) {
   const safeDuration = duration > 0 ? duration : 1;
   const ratio = Math.min(1, Math.max(0, currentPosition / safeDuration));
   const filled = Math.floor(ratio * width);
   const markerIndex = Math.min(width - 1, filled);
-  const bar = "━".repeat(markerIndex) + "╸" + "━".repeat(Math.max(0, width - markerIndex - 1));
-  return bar.slice(0, width);
-}
+  const beforeMarker = "━".repeat(markerIndex);
+  const afterMarker = "━".repeat(Math.max(0, width - markerIndex - 1));
+
+  return <>{(beforeMarker + "╸" + afterMarker).slice(0, width)}</>;
+});
 
 // ── Recovery view (§6) ────────────────────────────────────────────────────
 // Renders the Failure & Recovery surface per the Sakura canonical spec:
@@ -817,11 +829,11 @@ export const LoadingShell = React.memo(function LoadingShell({
                       </Text>
                       <Text color={palette.accentDeep}>
                         {" "}
-                        {renderPlaybackProgressBar(
-                          state.currentPosition,
-                          state.duration,
-                          barWidth,
-                        )}{" "}
+                        <PlaybackProgressBar
+                          currentPosition={state.currentPosition}
+                          duration={state.duration}
+                          width={barWidth}
+                        />{" "}
                       </Text>
                       <Text color={palette.dim} dimColor>
                         {formatTimestamp(state.duration)}

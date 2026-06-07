@@ -50,8 +50,9 @@ Run `bun run dev` (wide terminal for posters). Tick each. ✅ = automated-test-c
 - [ ] 👁 **`/audio`** / **`/subtitles`** open the tracks panel **at that section**; `/streams` is gone; `/source` also answers to `/tracks` `/servers`; the in-player `t` + post-play tracks footer still open the panel (at source).
 
 ## Genuinely remaining (deferred — risky/ambiguous to do blind)
+
 - **Small rec-card posters** — 3 Kitty images per post-play is the same multi-image path as the **#8/#13 ghosts you reported**; doing it blind risks worsening that bug. Pair it with the ghost fix, on your TTY.
-- **Episode titles/thumbnails in the picker** — data lives in the per-episode *source-resolve* blob, not the catalog; it's a resolve→picker pipeline change.
+- **Episode titles/thumbnails in the picker** — data lives in the per-episode _source-resolve_ blob, not the catalog; it's a resolve→picker pipeline change.
 - **#5 series-%** — a true series % needs a reliable total-episode count (genuinely ambiguous across seasons/anime); current % is per-episode. Left as-is rather than show a wrong denominator.
 - **Download-all-in-queue** — needs per-item resolve + `DownloadService` job orchestration (a real feature, not a quick add).
 

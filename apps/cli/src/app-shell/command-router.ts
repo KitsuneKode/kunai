@@ -258,9 +258,10 @@ export async function routePlaybackShellAction({
     return "handled";
   }
   if (action === "recommendation") {
-    const { loadDiscoverResults } = await import("../app/discover-results");
-    const { createSessionPickerId, openSessionPicker, waitForSessionPicker } =
-      await import("./session-picker");
+    const [
+      { loadDiscoverResults },
+      { createSessionPickerId, openSessionPicker, waitForSessionPicker },
+    ] = await Promise.all([import("../app/discover-results"), import("./session-picker")]);
     const recommendation = await loadDiscoverResults(container);
     const id = createSessionPickerId("recommendation");
     const options = recommendation.results.map((r) => ({

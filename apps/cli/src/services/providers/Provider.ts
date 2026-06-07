@@ -93,8 +93,8 @@ function defaultResolveStream(
   mode: "series" | "anime",
 ): ProviderResolveFn {
   return async (request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> => {
-    const { streamRequestToResolveInput } = await import("./stream-request-adapter");
-    const { providerResolveResultToStreamInfo } = await import("./provider-result-adapter");
+    const [{ streamRequestToResolveInput }, { providerResolveResultToStreamInfo }] =
+      await Promise.all([import("./stream-request-adapter"), import("./provider-result-adapter")]);
 
     const input = streamRequestToResolveInput(request, mode);
     const result = await module.resolve(input, {

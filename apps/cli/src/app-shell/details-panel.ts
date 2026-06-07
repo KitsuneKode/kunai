@@ -174,7 +174,7 @@ export function buildBrowseDetailsPanel<T>(
 ): BrowseDetailsPanel {
   if (!option) {
     return {
-      title: "Title overview",
+      title: "Media dossier",
       subtitle: "No selected title yet",
       lines: [
         {
@@ -213,10 +213,15 @@ export function buildBrowseDetailsPanel<T>(
     ...(nonLocalFacts.length > 0
       ? [{ label: "─── Details", detail: "", tone: "info" as const }, ...nonLocalFacts]
       : []),
+    {
+      label: "Actions",
+      detail: "Enter play · /watchlist save · /download offline · /commands more",
+      tone: "info",
+    },
   ];
 
   return {
-    title: "Title overview",
+    title: "Media dossier",
     subtitle: title,
     lines,
     imageUrl: option.previewImageUrl,

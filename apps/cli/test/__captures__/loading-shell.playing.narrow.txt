@@ -18,4 +18,4 @@ commands
 
 Playback
 
-[q] stop  [e] episodes  [t] tracks  [space] pause
+[/] commands  [e] episodes  [a] pause autoplay  [t] tracks

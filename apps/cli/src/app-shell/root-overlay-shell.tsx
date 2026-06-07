@@ -73,7 +73,6 @@ import {
 import {
   buildRootGenericPickerOptions,
   getRootOverlayInitialIndex,
-  getRootOverlayResetKey,
   getRootOverlaySubtitle,
   getRootOverlayTitle,
   isRootChoiceOverlay,
@@ -358,10 +357,51 @@ export function RootOverlayShell({
 }) {
   const { stdout } = useStdout();
   const maxLines = Math.max(6, Math.min(12, (stdout.rows ?? 24) - 18));
+  const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
+  const providerOptions =
+    overlay.type === "provider_picker"
+      ? buildProviderPickerOptions({
+          providers: container.providerRegistry
+            .getAll()
+            .map((p) => p.metadata)
+            .filter((metadata) => metadata.isAnimeProvider === overlay.isAnime),
+          currentProvider: overlay.currentProvider,
+        })
+      : [];
+  const providerInitialIndex =
+    overlay.type === "provider_picker"
+      ? Math.max(
+          0,
+          providerOptions.findIndex((option) => option.value === overlay.currentProvider),
+        )
+      : 0;
+  const tracksInitialSectionIndex =
+    overlay.type === "tracks_panel"
+      ? Math.max(
+          0,
+          overlay.groups.findIndex((group) => group.section === overlay.initialSection),
+        )
+      : 0;
+  const initialHistoryTab =
+    overlay.type === "history"
+      ? historyTabFromLegacy(overlay.initialFilterMode ?? "all")
+      : ("all" satisfies HistoryTab);
   const [scrollIndex, setScrollIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [tracksNav, setTracksNav] = useState<TracksNavState>(() => createInitialTracksNav({}));
+  const [selectedIndex, setSelectedIndex] = useState(() =>
+    overlay.type === "provider_picker"
+      ? providerInitialIndex
+      : overlay.type === "settings"
+        ? nextSelectableIndex(
+            buildSettingsOptions(container.config.getRaw(), container.presence.getSnapshot()),
+            -1,
+            1,
+          )
+        : overlayInitialIndex,
+  );
+  const [tracksNav, setTracksNav] = useState<TracksNavState>(() =>
+    createInitialTracksNav({ initialSectionIndex: tracksInitialSectionIndex }),
+  );
   const [tracksFavorites, setTracksFavorites] = useState<readonly string[]>(
     overlay.type === "tracks_panel" ? overlay.favorites : EMPTY_TRACKS_FAVORITES,
   );
@@ -397,8 +437,10 @@ export function RootOverlayShell({
     onRedraw,
   });
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
-  const [loadingAsyncLines, setLoadingAsyncLines] = useState(false);
-  const [settingsDraft, setSettingsDraft] = useState<KitsuneConfig | null>(null);
+  const [loadingAsyncLines, setLoadingAsyncLines] = useState(overlay.type === "history");
+  const [settingsDraft, setSettingsDraft] = useState<KitsuneConfig | null>(() =>
+    overlay.type === "settings" ? container.config.getRaw() : null,
+  );
   // Persist settings the moment they change — no separate save step. config.update
   // is debounced internally; we skip no-op writes (e.g. the initial load) so this
   // only fires on a real edit.
@@ -423,24 +465,9 @@ export function RootOverlayShell({
   const [historyReleaseSignals, setHistoryReleaseSignals] = useState<
     NonNullable<HistoryPickerOptionsContext["releaseSignals"]>
   >(new Map());
-  const initialHistoryTab =
-    overlay.type === "history"
-      ? historyTabFromLegacy(overlay.initialFilterMode ?? "all")
-      : ("all" satisfies HistoryTab);
   const [historyTab, setHistoryTab] = useState<HistoryTab>(initialHistoryTab);
   const [historyTypeFilter, setHistoryTypeFilter] = useState<HistoryTypeFilter>("all");
-  const overlayResetKey = getRootOverlayResetKey(overlay);
-  const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const trackGroups = overlay.type === "tracks_panel" ? overlay.groups : [];
-  const tracksFavoritesSnapshot =
-    overlay.type === "tracks_panel" ? overlay.favorites : EMPTY_TRACKS_FAVORITES;
-  const tracksInitialSectionIndex =
-    overlay.type === "tracks_panel"
-      ? Math.max(
-          0,
-          overlay.groups.findIndex((group) => group.section === overlay.initialSection),
-        )
-      : 0;
   const commands = resolveCommandContext(state, "rootOverlay");
   const historyPickerContext: HistoryPickerOptionsContext = {
     nextReleases: historyNextReleases,
@@ -485,23 +512,6 @@ export function RootOverlayShell({
             })
           : [];
   const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;
-  const providerOptions =
-    overlay.type === "provider_picker"
-      ? buildProviderPickerOptions({
-          providers: container.providerRegistry
-            .getAll()
-            .map((p) => p.metadata)
-            .filter((metadata) => metadata.isAnimeProvider === overlay.isAnime),
-          currentProvider: overlay.currentProvider,
-        })
-      : [];
-  const providerInitialIndex =
-    overlay.type === "provider_picker"
-      ? Math.max(
-          0,
-          providerOptions.findIndex((option) => option.value === overlay.currentProvider),
-        )
-      : 0;
   const genericPickerOptions =
     overlay.type === "season_picker" ||
     overlay.type === "episode_picker" ||
@@ -692,49 +702,6 @@ export function RootOverlayShell({
   });
 
   useEffect(() => {
-    setScrollIndex(0);
-    setFilterQuery("");
-    setSelectedIndex(
-      overlay.type === "provider_picker"
-        ? providerInitialIndex
-        : overlay.type === "settings"
-          ? nextSelectableIndex(
-              buildSettingsOptions(container.config.getRaw(), container.presence.getSnapshot()),
-              -1,
-              1,
-            )
-          : overlayInitialIndex,
-    );
-    setTracksNav(createInitialTracksNav({ initialSectionIndex: tracksInitialSectionIndex }));
-    setTracksFavorites(tracksFavoritesSnapshot);
-    setAsyncLines(null);
-    setLoadingAsyncLines(false);
-    setSettingsDraft(overlay.type === "settings" ? container.config.getRaw() : null);
-    setSettingsChoice(null);
-    setSettingsParentIndex(0);
-    setSettingsBusy(false);
-    setSettingsError(null);
-    setOverlayStatus(null);
-    setNotificationActionDedupKey(null);
-    setHistorySelections([]);
-    setHistoryNextReleases(new Map());
-    setHistoryProjections(new Map());
-    setHistoryReleaseSignals(new Map());
-    setHistoryTab(initialHistoryTab);
-    setHistoryTypeFilter("all");
-  }, [
-    container.config,
-    container.presence,
-    overlay.type,
-    overlayResetKey,
-    overlayInitialIndex,
-    tracksInitialSectionIndex,
-    tracksFavoritesSnapshot,
-    initialHistoryTab,
-    providerInitialIndex,
-  ]);
-
-  useEffect(() => {
     if (overlay.type !== "history") return;
     setSelectedIndex(0);
   }, [historyTab, overlay.type]);
@@ -745,7 +712,6 @@ export function RootOverlayShell({
     }
 
     let cancelled = false;
-    setLoadingAsyncLines(true);
 
     void container.historyStore
       .getAll()
