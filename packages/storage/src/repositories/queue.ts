@@ -189,6 +189,12 @@ export class QueueRepository {
     this.db.query("DELETE FROM playlist_queue WHERE session_id = ?").run(sessionId);
   }
 
+  /** Persist an explicit ordering — assigns queue_position = index for each id in order. */
+  setQueuePositions(orderedIds: readonly string[]): void {
+    const stmt = this.db.query("UPDATE playlist_queue SET queue_position = ? WHERE id = ?");
+    orderedIds.forEach((id, index) => stmt.run(index, id));
+  }
+
   clearPlayed(sessionId: string): void {
     this.db
       .query("DELETE FROM playlist_queue WHERE session_id = ? AND played_at IS NOT NULL")

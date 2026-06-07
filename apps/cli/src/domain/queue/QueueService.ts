@@ -91,6 +91,35 @@ export class QueueService {
     this.repo.remove(id);
   }
 
+  /**
+   * Reorder an unplayed item one slot earlier (-1) or later (+1) in the Up Next
+   * queue. Played items keep their leading slots; only the unplayed tail is
+   * reordered. Returns true if the queue actually changed.
+   */
+  private moveUnplayed(id: string, direction: -1 | 1): boolean {
+    const all = this.repo.getAll(this.sessionId);
+    const played = all.filter((entry) => entry.playedAt !== undefined);
+    const unplayed = all.filter((entry) => entry.playedAt === undefined);
+    const index = unplayed.findIndex((entry) => entry.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= unplayed.length) return false;
+    const moved = unplayed[index];
+    const displaced = unplayed[target];
+    if (!moved || !displaced) return false;
+    unplayed[index] = displaced;
+    unplayed[target] = moved;
+    this.repo.setQueuePositions([...played, ...unplayed].map((entry) => entry.id));
+    return true;
+  }
+
+  moveUp(id: string): boolean {
+    return this.moveUnplayed(id, -1);
+  }
+
+  moveDown(id: string): boolean {
+    return this.moveUnplayed(id, 1);
+  }
+
   getAll(): QueueEntry[] {
     return this.repo.getAll(this.sessionId);
   }

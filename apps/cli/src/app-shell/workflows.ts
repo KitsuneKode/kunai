@@ -3248,6 +3248,11 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
     }
 
     if (picked.type === "item") {
+      const unplayedIds = all.filter((i) => !i.playedAt).map((i) => i.id);
+      const unplayedIndex = unplayedIds.indexOf(picked.id);
+      const canMoveUp = !picked.played && unplayedIndex > 0;
+      const canMoveDown =
+        !picked.played && unplayedIndex >= 0 && unplayedIndex < unplayedIds.length - 1;
       const itemAction = await chooseFromListShell({
         title: picked.title,
         subtitle: picked.played
@@ -3264,6 +3269,24 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
                   detail: "Start this queue item immediately",
                 },
               ]),
+          ...(canMoveUp
+            ? [
+                {
+                  value: "move-up" as const,
+                  label: "Move up",
+                  detail: "Play this earlier in the queue",
+                },
+              ]
+            : []),
+          ...(canMoveDown
+            ? [
+                {
+                  value: "move-down" as const,
+                  label: "Move down",
+                  detail: "Play this later in the queue",
+                },
+              ]
+            : []),
           {
             value: "back" as const,
             label: "Back",
@@ -3278,6 +3301,12 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
       });
       if (itemAction === "remove") {
         queueService.remove(picked.id);
+      } else if (itemAction === "move-up") {
+        queueService.moveUp(picked.id);
+        continue;
+      } else if (itemAction === "move-down") {
+        queueService.moveDown(picked.id);
+        continue;
       } else if (itemAction === "play") {
         return {
           type: "history-entry",
