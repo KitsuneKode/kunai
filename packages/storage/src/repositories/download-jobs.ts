@@ -520,6 +520,15 @@ export class DownloadJobsRepository {
       .map(mapRow);
   }
 
+  listPaused(limit = 200): readonly DownloadJobRecord[] {
+    return this.db
+      .query<DownloadJobRow, [number]>(
+        "SELECT * FROM download_jobs WHERE status = 'paused' ORDER BY created_at ASC LIMIT ?",
+      )
+      .all(limit)
+      .map(mapRow);
+  }
+
   listRunning(limit = 100): readonly DownloadJobRecord[] {
     return this.db
       .query<DownloadJobRow, [number]>(
