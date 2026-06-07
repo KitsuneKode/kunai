@@ -23,6 +23,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput, useStdout } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { copyToClipboard } from "@/infra/clipboard";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { ExitShell } from "./exit-shell";
@@ -1930,26 +1931,6 @@ function ListShell<T>({
 export { openBrowseShell } from "./browse-shell";
 
 // ─── StatsShell ─────────────────────────────────────────────────────────────
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    let cmd: string[];
-    if (process.platform === "darwin") {
-      cmd = ["pbcopy"];
-    } else if (process.env["WAYLAND_DISPLAY"]) {
-      cmd = ["wl-copy"];
-    } else {
-      cmd = ["xclip", "-selection", "clipboard"];
-    }
-    const proc = Bun.spawn(cmd, { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
-    proc.stdin.write(text);
-    proc.stdin.end();
-    await proc.exited;
-    return proc.exitCode === 0;
-  } catch {
-    return false;
-  }
-}
 
 function StatsShell({
   statsService,

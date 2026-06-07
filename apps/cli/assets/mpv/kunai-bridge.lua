@@ -332,6 +332,15 @@ local function clear_resume_prompt_bindings()
 	pcall(function()
 		mp.remove_key_binding("kunai-resume-enter")
 	end)
+	pcall(function()
+		mp.remove_key_binding("kunai-resume-esc")
+	end)
+	pcall(function()
+		mp.remove_key_binding("kunai-resume-mbtn-left")
+	end)
+	pcall(function()
+		mp.remove_key_binding("kunai-resume-mbtn-mid")
+	end)
 end
 
 local function hide_resume_prompt()
@@ -435,7 +444,7 @@ local function draw_resume_prompt(at_sec)
 	local line1 = esc_ass(title)
 	local line2 = esc_ass("Resume at " .. label)
 	local line3 = esc_ass("from where you left off")
-	local line4 = esc_ass("[Alt+R] / [Enter] resume      [O] start over")
+	local line4 = esc_ass("[Enter] / mid-click resume   ·   [Esc] / click dismiss")
 
 	-- Join with a real newline so each block is a SEPARATE ASS event with its own
 	-- \pos/\an. Using "\\N" (an in-event line break) collapses everything into one
@@ -511,6 +520,20 @@ local function show_resume_prompt(at_sec)
 		commit_resume_choice("start")
 	end)
 	mp.add_forced_key_binding("ENTER", "kunai-resume-enter", function()
+		commit_resume_choice("resume")
+	end)
+	-- The prompt is a passive corner offer; ESC or a left click just dismisses it
+	-- ("do nothing" = keep playing from where it loaded, same as the auto-timeout).
+	-- A middle click is the explicit "resume here" = seek to the saved position.
+	-- All three are scoped to while the prompt is shown (cleared on hide) so normal
+	-- mouse/keys behave everywhere else.
+	mp.add_forced_key_binding("ESC", "kunai-resume-esc", function()
+		commit_resume_choice("start")
+	end)
+	mp.add_forced_key_binding("MBTN_LEFT", "kunai-resume-mbtn-left", function()
+		commit_resume_choice("start")
+	end)
+	mp.add_forced_key_binding("MBTN_MID", "kunai-resume-mbtn-mid", function()
 		commit_resume_choice("resume")
 	end)
 

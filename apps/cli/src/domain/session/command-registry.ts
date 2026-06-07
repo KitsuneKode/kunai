@@ -38,6 +38,8 @@ export type AppCommandId =
   | "memory"
   | "mark-anime"
   | "mark-series"
+  | "share"
+  | "watch"
   | "pick-episode"
   | "next"
   | "previous"
@@ -75,6 +77,7 @@ export type ResolvedAppCommand = AppCommand & {
 export const COMMAND_CONTEXTS = {
   rootOverlay: [
     "continue",
+    "watch",
     "watchlist",
     "playlist",
     "stats",
@@ -106,6 +109,7 @@ export const COMMAND_CONTEXTS = {
     "memory",
     "mark-anime",
     "mark-series",
+    "share",
     "pick-episode",
     "download",
     "next",
@@ -134,6 +138,7 @@ export const COMMAND_CONTEXTS = {
     "replay",
     "mark-anime",
     "mark-series",
+    "share",
     "pick-episode",
     "download",
     "library",
@@ -428,6 +433,18 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Mark as Series",
     aliases: ["mark-series", "set-series", "not-anime"],
     description: "Reclassify the current title as series in your history (fixes a wrong label)",
+  },
+  {
+    id: "share",
+    label: "Share This",
+    aliases: ["share", "share-link", "share-code"],
+    description: "Copy a 'watch this' code for the current title to your clipboard",
+  },
+  {
+    id: "watch",
+    label: "Watch a Shared Code",
+    aliases: ["watch", "open-share", "watch-code"],
+    description: "Play a title from a Kunai share code on your clipboard",
   },
   {
     id: "pick-episode",
@@ -876,12 +893,19 @@ function resolveCommandState(
 
     case "mark-anime":
     case "mark-series":
+    case "share":
       return state.currentTitle
         ? { enabled: true }
         : {
             enabled: false,
-            reason: "Play or select a title before reclassifying it.",
+            reason:
+              id === "share"
+                ? "Play or select a title before sharing it."
+                : "Play or select a title before reclassifying it.",
           };
+
+    case "watch":
+      return { enabled: true };
 
     case "download":
       if (!hasEpisode && state.view !== "results") {

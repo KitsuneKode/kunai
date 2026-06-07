@@ -5,13 +5,21 @@ import { join } from "node:path";
 const BRIDGE_PATH = join(import.meta.dir, "../../../../assets/mpv/kunai-bridge.lua");
 
 describe("kunai mpv bridge resume prompt", () => {
-  test("keeps the visible resume prompt aligned with the Alt+R playback shortcut", () => {
+  test("resume prompt offers resume (Enter / middle-click) and dismiss (Esc / left-click)", () => {
     const source = readFileSync(BRIDGE_PATH, "utf8");
 
-    expect(source).toContain("[Alt+R]");
-    expect(source).toContain('mp.add_forced_key_binding("Alt+r", "kunai-resume-alt-r"');
+    // Visible hint advertises the resume + dismiss affordances.
+    expect(source).toContain("resume");
+    expect(source).toContain("dismiss");
     expect(source).toContain("Resume at ");
     expect(source).toContain("from where you left off");
+
+    // Alt+R still resumes (kept for parity with the in-app shortcut)…
+    expect(source).toContain('mp.add_forced_key_binding("Alt+r", "kunai-resume-alt-r"');
+    // …plus the mouse + Esc affordances, scoped to the prompt.
+    expect(source).toContain('mp.add_forced_key_binding("MBTN_MID", "kunai-resume-mbtn-mid"');
+    expect(source).toContain('mp.add_forced_key_binding("MBTN_LEFT", "kunai-resume-mbtn-left"');
+    expect(source).toContain('mp.add_forced_key_binding("ESC", "kunai-resume-esc"');
   });
 });
 

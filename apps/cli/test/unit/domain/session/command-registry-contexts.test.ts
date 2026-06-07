@@ -23,6 +23,7 @@ describe("command registry contexts", () => {
       "memory",
       "mark-anime",
       "mark-series",
+      "share",
       "pick-episode",
       "download",
       "next",
@@ -85,6 +86,7 @@ describe("command registry contexts", () => {
       "replay",
       "mark-anime",
       "mark-series",
+      "share",
       "pick-episode",
       "download",
       "library",
@@ -150,6 +152,7 @@ describe("command registry contexts", () => {
   test("keeps root overlay command order focused on first-run actions", () => {
     expect([...COMMAND_CONTEXTS.rootOverlay].slice(0, 10)).toEqual([
       "continue",
+      "watch",
       "watchlist",
       "playlist",
       "stats",
@@ -158,7 +161,6 @@ describe("command registry contexts", () => {
       "downloads",
       "notifications",
       "history",
-      "setup",
     ] satisfies readonly AppCommandId[]);
   });
 
