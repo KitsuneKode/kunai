@@ -63,6 +63,8 @@ export type {
 } from "./repositories/release-progress-cache";
 export { ScheduleCacheRepository } from "./repositories/schedule-cache";
 export type { ScheduleCacheEntry, ScheduleCacheSetOptions } from "./repositories/schedule-cache";
+export { CalendarArchiveRepository } from "./repositories/calendar-archive";
+export type { CalendarArchiveItemInput } from "./repositories/calendar-archive";
 export { SourceInventoryRepository } from "./repositories/source-inventory";
 export type { SourceInventoryEntry } from "./repositories/source-inventory";
 export { StreamCacheRepository } from "./repositories/stream-cache";

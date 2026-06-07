@@ -8,10 +8,14 @@ import type {
 import { historyContentType } from "@/services/continuation/history-progress";
 import type { HistoryStore } from "@/services/persistence/HistoryStore";
 import type {
+  CalendarArchiveRepository,
   HistoryProgress,
   ReleaseProgressCacheRepository,
   ReleaseProgressProjection,
 } from "@kunai/storage";
+
+/** How many days of past schedule to retain + surface alongside the upcoming window. */
+const CALENDAR_PAST_WINDOW_DAYS = 7;
 
 export type CalendarResultBundle = {
   readonly results: readonly SearchResult[];
@@ -22,6 +26,10 @@ export type CalendarResultBundle = {
 type CalendarContainer = Pick<Container, "stateManager" | "timelineService" | "listService"> & {
   readonly historyStore?: Pick<HistoryStore, "getAll">;
   readonly releaseProgressCache?: Pick<ReleaseProgressCacheRepository, "getByTitleIds" | "upsert">;
+  readonly calendarArchive?: Pick<
+    CalendarArchiveRepository,
+    "archive" | "listInWindow" | "pruneBefore"
+  >;
 };
 
 export async function loadCalendarResults(
@@ -29,7 +37,8 @@ export async function loadCalendarResults(
   signal?: AbortSignal,
 ): Promise<CalendarResultBundle> {
   const days = 7;
-  const items = await loadUnifiedCalendarWindow(container.timelineService, days, signal);
+  const forwardItems = await loadUnifiedCalendarWindow(container.timelineService, days, signal);
+  const items = mergeArchivedPastWindow(container, forwardItems);
   const sorted = [...items].sort(compareCalendarItems);
   const isInWatchlist = (titleId: string) => container.listService.isInWatchlist(titleId);
   let historyMatches = new Map<
@@ -187,6 +196,66 @@ function activeNewEpisodeCount(projection: ReleaseProgressProjection | undefined
   const staleAfterMs = Date.parse(projection.staleAfterAt);
   if (Number.isFinite(staleAfterMs) && staleAfterMs <= Date.now()) return 0;
   return Math.max(0, Math.trunc(projection.newEpisodeCount));
+}
+
+/**
+ * Combine the freshly-fetched upcoming window with a rolling archive of the past
+ * ~7 days. The release sources only return upcoming items, so we persist each
+ * forward item keyed by (titleId, releaseAt); once its date passes it reappears
+ * here as "past week" schedule. Pruned to the retention window on every load so
+ * the archive cannot grow unbounded. Falls back to forward-only if no archive.
+ */
+function mergeArchivedPastWindow(
+  container: CalendarContainer,
+  forwardItems: readonly CatalogScheduleItem[],
+  nowMs: number = Date.now(),
+): readonly CatalogScheduleItem[] {
+  const archive = container.calendarArchive;
+  if (!archive) return forwardItems;
+
+  const windowStartIso = new Date(
+    nowMs - CALENDAR_PAST_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const nowIso = new Date(nowMs).toISOString();
+
+  archive.archive(
+    forwardItems.flatMap((item) =>
+      item.releaseAt
+        ? [
+            {
+              titleId: item.titleId,
+              releaseAt: item.releaseAt,
+              mode: item.type,
+              payloadJson: JSON.stringify(item),
+            },
+          ]
+        : [],
+    ),
+  );
+
+  const pastItems = archive
+    .listInWindow(windowStartIso, nowIso)
+    .flatMap((payload) => {
+      const parsed = parseArchivedCalendarItem(payload);
+      return parsed ? [parsed] : [];
+    });
+
+  // Incidental cleanup — drop anything older than the retention window.
+  archive.pruneBefore(windowStartIso);
+
+  // Dedupe by title + release; the fresh forward copy wins over an archived one.
+  const merged = new Map<string, CatalogScheduleItem>();
+  for (const item of pastItems) merged.set(`${item.titleId}|${item.releaseAt ?? ""}`, item);
+  for (const item of forwardItems) merged.set(`${item.titleId}|${item.releaseAt ?? ""}`, item);
+  return [...merged.values()];
+}
+
+function parseArchivedCalendarItem(payloadJson: string): CatalogScheduleItem | null {
+  try {
+    return JSON.parse(payloadJson) as CatalogScheduleItem;
+  } catch {
+    return null;
+  }
 }
 
 async function loadUnifiedCalendarWindow(

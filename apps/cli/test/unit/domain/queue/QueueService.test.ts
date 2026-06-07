@@ -41,6 +41,36 @@ test("QueueService restores a recoverable queue into the current session explici
   db.close();
 });
 
+test("moveUp / moveDown reorder unplayed queue items and clamp at the ends", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "s",
+    status: "active",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:00:00.000Z",
+  });
+  const enqueue = (titleId: string) =>
+    repo.enqueue({ title: titleId, mediaKind: "series", titleId, source: "manual", sessionId: "s" });
+  const a = enqueue("a");
+  enqueue("b");
+  const c = enqueue("c");
+
+  const service = new QueueService(repo, "s");
+  expect(service.getUnplayed().map((i) => i.titleId)).toEqual(["a", "b", "c"]);
+
+  // Move c up one → a, c, b.
+  expect(service.moveDown(a.id)).toBe(true);
+  expect(service.getUnplayed().map((i) => i.titleId)).toEqual(["b", "a", "c"]);
+
+  // Clamp: first item can't move up, last can't move down.
+  expect(service.moveUp(service.getUnplayed()[0]!.id)).toBe(false);
+  expect(service.moveDown(c.id)).toBe(false);
+
+  db.close();
+});
+
 test("QueueService restore only moves pending items and never autoplays them", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");
