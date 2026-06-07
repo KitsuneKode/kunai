@@ -34,6 +34,7 @@ import {
   TitleProviderHealthRepository,
   RecommendationCacheRepository,
   ReleaseProgressCacheRepository,
+  CalendarArchiveRepository,
   runMigrations,
   ScheduleCacheRepository,
   SourceInventoryRepository,
@@ -192,6 +193,7 @@ export interface Container {
   // Schedule/release tracking
   readonly catalogScheduleService: CatalogScheduleService;
   readonly releaseProgressCache: ReleaseProgressCacheRepository;
+  readonly calendarArchive: CalendarArchiveRepository;
   readonly releaseReconciliationService: ReleaseReconciliationService;
   readonly timelineService: TimelineService;
   readonly resultEnrichmentService: ResultEnrichmentService;
@@ -288,6 +290,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   );
   const scheduleCache = new ScheduleCacheRepository(cacheDb);
   const releaseProgressCache = new ReleaseProgressCacheRepository(cacheDb);
+  const calendarArchive = new CalendarArchiveRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
   const offlineAssets = new OfflineAssetsRepository(dataDb);
   const offlineTitlePolicies = new OfflineTitlePoliciesRepository(dataDb);
@@ -601,6 +604,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     recommendationService,
     catalogScheduleService,
     releaseProgressCache,
+    calendarArchive,
     releaseReconciliationService,
     timelineService,
     resultEnrichmentService,

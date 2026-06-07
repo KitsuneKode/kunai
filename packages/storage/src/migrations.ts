@@ -607,6 +607,26 @@ export const cacheMigrations: readonly Migration[] = [
       ALTER TABLE release_progress_cache ADD COLUMN new_season_json TEXT;
     `,
   },
+  {
+    // Rolling calendar archive: each forward schedule item is persisted keyed by
+    // (title_id, release_at) so that once its release date passes it can be
+    // surfaced as "past week" schedule. Pruned to a bounded window on access.
+    id: "010_cache_calendar_archive",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS calendar_archive (
+        title_id TEXT NOT NULL,
+        release_at TEXT NOT NULL,
+        mode TEXT,
+        payload_json TEXT NOT NULL,
+        archived_at TEXT NOT NULL,
+        PRIMARY KEY (title_id, release_at)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_calendar_archive_release_at
+        ON calendar_archive(release_at);
+    `,
+  },
 ];
 
 export function runMigrations(
