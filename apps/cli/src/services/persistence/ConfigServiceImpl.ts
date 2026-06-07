@@ -27,10 +27,12 @@ import { resolveTuning } from "./tuning";
 
 function normalizeSeriesProvider(value: string | undefined): string {
   const normalized = value?.trim();
-  // Migrate the legacy default off the now Turnstile-gated videasy/vidking
-  // backend so existing configs land on the browserless vidlink resolver.
-  // A deliberate non-vidking choice is preserved as-is.
-  if (!normalized || normalized === "vidking") return DEFAULT_CONFIG.provider;
+  // Only fill an EMPTY provider with the default. We used to also force-migrate
+  // "vidking" → default every load (it's Turnstile-gated), but that silently
+  // stomped a user's explicit choice on every launch ("my setting won't persist").
+  // Respect the choice; if vidking can't resolve, provider fallback/recovery
+  // handles it at playback time.
+  if (!normalized) return DEFAULT_CONFIG.provider;
   return normalized;
 }
 

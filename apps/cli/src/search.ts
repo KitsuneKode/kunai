@@ -1,4 +1,5 @@
 // =============================================================================
+import { isAnimeLikely } from "@/services/anime-classifier";
 // Search service registry
 //
 // A SearchService wraps a search endpoint so the UI knows:
@@ -21,6 +22,8 @@ export type SearchResult = {
   posterPath: string | null;
   rating?: number | null;
   popularity?: number | null;
+  /** Deterministic anime detection (anime-classifier) for routing + badge. */
+  isAnime?: boolean;
 };
 
 export type SearchService = {
@@ -60,6 +63,7 @@ export async function searchVideasy(query: string, signal?: AbortSignal): Promis
       posterPath: readString(r.poster_path) || null,
       rating: typeof r.vote_average === "number" ? r.vote_average : null,
       popularity: typeof r.popularity === "number" ? r.popularity : null,
+      isAnime: classifyRecordAnime(r),
     }));
 
   cache.set(key, results);
@@ -104,6 +108,7 @@ export async function discoverVideasy(
             posterPath,
             rating: typeof record.vote_average === "number" ? record.vote_average : null,
             popularity: typeof record.popularity === "number" ? record.popularity : null,
+            isAnime: classifyRecordAnime(record),
           };
         });
     }),
@@ -302,6 +307,19 @@ function readSearchRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+/** Deterministic anime tag for a raw TMDB record (search has original_language + genre_ids). */
+function classifyRecordAnime(r: Record<string, unknown>): boolean {
+  return isAnimeLikely({
+    original_language: typeof r.original_language === "string" ? r.original_language : undefined,
+    genre_ids: Array.isArray(r.genre_ids)
+      ? r.genre_ids.filter((g): g is number => typeof g === "number")
+      : undefined,
+    origin_country: Array.isArray(r.origin_country)
+      ? r.origin_country.filter((c): c is string => typeof c === "string")
+      : undefined,
+  }).isAnime;
 }
 
 function readString(value: unknown): string {

@@ -128,6 +128,8 @@ export interface SearchResult {
   readonly metadataSource?: string;
   readonly rating?: number | null;
   readonly popularity?: number | null;
+  /** Deterministic anime detection for TMDB rows (anime-classifier). Lets a TMDB result route to anime providers + badge. */
+  readonly isAnime?: boolean;
   /** Structured calendar item — the single source of truth for calendar rows. */
   readonly calendar?: CalendarItem;
   readonly episodeCount?: number;

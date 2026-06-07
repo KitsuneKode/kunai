@@ -94,7 +94,7 @@ export function toBrowseResultOption(
   const alternateTitles = formatAlternateTitles(result, displayTitle);
   const overview = normalizeProviderText(result.overview);
   const meta = [
-    result.type === "series" ? "Series" : "Movie",
+    result.isAnime ? "Anime" : result.type === "series" ? "Series" : "Movie",
     result.year || undefined,
     result.episodeCount ? `${result.episodeCount} episodes` : undefined,
     formatAnimeAvailability(result),
