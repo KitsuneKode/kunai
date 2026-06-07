@@ -564,8 +564,14 @@ async function openEpisodeHistoryShell(
   const allEpisodes = await historyStore.listByTitle(titleId);
   if (allEpisodes.length === 0) return;
 
-  // Sort newest first
-  const sorted = [...allEpisodes].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  // Natural season → episode order (not download time) so the list reads like a
+  // season, top to bottom.
+  const sorted = [...allEpisodes].sort((a, b) => {
+    const seasonA = a.season ?? Number.MAX_SAFE_INTEGER;
+    const seasonB = b.season ?? Number.MAX_SAFE_INTEGER;
+    if (seasonA !== seasonB) return seasonA - seasonB;
+    return (a.episode ?? Number.MAX_SAFE_INTEGER) - (b.episode ?? Number.MAX_SAFE_INTEGER);
+  });
 
   const options: ShellOption<number>[] = sorted.map((ep, i) => {
     const epCode =
