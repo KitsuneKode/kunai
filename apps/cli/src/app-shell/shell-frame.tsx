@@ -212,22 +212,6 @@ export function InputField({
   );
 }
 
-export function footerActionFromCommand(
-  commands: readonly ResolvedAppCommand[],
-  id: AppCommandId,
-  presentation: { key: string; label: string },
-  toShellAction: (commandId: AppCommandId) => ShellAction,
-): FooterAction {
-  const command = commands.find((candidate) => candidate.id === id);
-  return {
-    key: presentation.key,
-    label: presentation.label,
-    action: toShellAction(id),
-    disabled: command ? !command.enabled : false,
-    reason: command?.reason,
-  };
-}
-
 export function getCommandLabel(
   commands: readonly ResolvedAppCommand[],
   id: AppCommandId,

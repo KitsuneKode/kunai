@@ -28,11 +28,3 @@ export const SectionGroup = React.memo(function SectionGroup({
     </Box>
   );
 });
-
-export const FieldLabel = React.memo(function FieldLabel({ label }: { readonly label: string }) {
-  return (
-    <Box marginTop={1} marginBottom={0}>
-      <Text color={palette.muted}>{label.toUpperCase()}</Text>
-    </Box>
-  );
-});

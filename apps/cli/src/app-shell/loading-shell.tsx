@@ -30,20 +30,6 @@ import { useViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
 
-/** Legacy Braille spinner for surfaces that need a string. */
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-export function useSpinner(active = true) {
-  const [frame, setFrame] = React.useState(0);
-  React.useEffect(() => {
-    if (!active) return undefined;
-    const timer = setInterval(() => {
-      setFrame((f) => (f + 1) % SPINNER_FRAMES.length);
-    }, 80);
-    return () => clearInterval(timer);
-  }, [active]);
-  return SPINNER_FRAMES[frame];
-}
-
 function useElapsed(active = true): number {
   const [elapsed, setElapsed] = React.useState(0);
   React.useEffect(() => {

@@ -50,7 +50,7 @@ export type CalendarRenderRow<T> = {
   readonly showForYouHeaderOnce: boolean;
 };
 
-export function isCalendarTrackedOption<T>(option: BrowseShellOption<T>): boolean {
+function isCalendarTrackedOption<T>(option: BrowseShellOption<T>): boolean {
   return option.calendar?.inWatchlist === true || option.previewBadge === "wl";
 }
 
