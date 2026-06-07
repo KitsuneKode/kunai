@@ -22,6 +22,7 @@
 //     (nothing new to watch right now)                     → completed
 // =============================================================================
 
+import { projectSeriesProgress } from "@/domain/continuation/watch-progress";
 import { historyContentType, isFinished } from "@/services/continuation/history-progress";
 import type { ReleaseProgressStatus } from "@kunai/storage";
 import type { HistoryProgress } from "@kunai/storage";
@@ -37,6 +38,8 @@ export type HistoryReleaseSignal = {
   readonly status: ReleaseProgressStatus;
   readonly newEpisodeCount: number;
   readonly latestKnownReleaseAt?: string | null;
+  /** Latest episode known to have aired — lets us tell "watched the finale" from "finished a mid-series episode". */
+  readonly latestAiredEpisode?: number | null;
 };
 
 /** A new episode is "fresh" when it aired AFTER the user last watched the title. */
@@ -76,8 +79,24 @@ export function classifyHistoryBucket(input: {
   // even when the release status itself is not "new-episodes".
   if (input.hasKnownNextToPlay) return "continue";
 
-  // caught-up / upcoming / unknown / no signal → nothing new to watch right now.
-  // We do NOT fabricate a next episode here (the old optimistic bug); the row may
-  // still offer a "play next anyway" action, but the bucket is honest.
-  return "completed";
+  // SERIES-level completion — distinct from finishing one episode. Only claim
+  // "completed" with positive evidence that the watched episode reaches the end of
+  // what exists. Finishing episode 8 of 24 is NOT finishing the series.
+  const series = projectSeriesProgress({
+    latestWatchedEpisode: entry.absoluteEpisode ?? entry.episode ?? null,
+    latestAiredEpisode: release?.latestAiredEpisode ?? null,
+    episodeFinished: true, // isFinished(entry) is already true at this point
+  });
+  if (series.seriesCompleted) return "completed";
+
+  // Reconciliation positively says you've seen everything aired (caught-up) or the
+  // next episode is merely scheduled (upcoming) → completed for now.
+  if (release && (release.status === "caught-up" || release.status === "upcoming")) {
+    return "completed";
+  }
+
+  // No completion evidence at all (unknown / missing release data, no aired total):
+  // a finished EPISODE must NOT masquerade as a finished SERIES. Keep it in continue
+  // rather than mislabeling a half-watched series "Completed" (the reported bug).
+  return "continue";
 }

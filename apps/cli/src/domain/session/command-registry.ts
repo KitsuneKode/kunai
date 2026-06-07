@@ -8,6 +8,8 @@ export type AppCommandId =
   | "trending"
   | "recommendation"
   | "calendar"
+  | "anime-calendar"
+  | "series-calendar"
   | "random"
   | "surprise"
   | "settings"
@@ -151,6 +153,8 @@ export const COMMAND_CONTEXTS = {
     "random",
     "surprise",
     "calendar",
+    "anime-calendar",
+    "series-calendar",
     "search",
     "history",
     "recover",
@@ -237,6 +241,18 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Release Calendar",
     aliases: ["calendar", "schedule", "airing", "today", "releases"],
     description: "Anime and series release schedule",
+  },
+  {
+    id: "anime-calendar",
+    label: "Anime Calendar",
+    aliases: ["anime-calendar", "anime-schedule", "anime-airing"],
+    description: "Release schedule filtered to anime",
+  },
+  {
+    id: "series-calendar",
+    label: "Series Calendar",
+    aliases: ["series-calendar", "tv-calendar", "series-schedule"],
+    description: "Release schedule filtered to series",
   },
   {
     id: "random",
@@ -700,6 +716,8 @@ function resolveCommandState(
     case "trending":
     case "recommendation":
     case "calendar":
+    case "anime-calendar":
+    case "series-calendar":
     case "random":
     case "surprise":
     case "settings":

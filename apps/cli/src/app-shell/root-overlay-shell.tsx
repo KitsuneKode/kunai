@@ -267,6 +267,7 @@ function readCachedHistoryReleaseSignals(
       status: projection.status,
       newEpisodeCount: projection.newEpisodeCount,
       latestKnownReleaseAt: projection.latestKnownReleaseAt ?? null,
+      latestAiredEpisode: projection.latestAiredEpisode ?? null,
     });
   }
   return signals;

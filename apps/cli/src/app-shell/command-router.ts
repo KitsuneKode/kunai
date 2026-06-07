@@ -57,6 +57,8 @@ type RoutedActionResult =
   | "download"
   | "pick-episode"
   | "calendar"
+  | "anime-calendar"
+  | "series-calendar"
   | "random"
   | { type: "history-entry"; title: TitleInfo; episode?: EpisodeInfo }
   | "unhandled";
@@ -148,6 +150,8 @@ export async function routeSearchShellAction({
   if (action === "trending") return "handled";
   if (action === "recommendation") return "handled";
   if (action === "calendar") return "handled";
+  if (action === "anime-calendar") return "handled";
+  if (action === "series-calendar") return "handled";
   if (action === "random") return "handled";
   if (action === "surprise") return "handled";
   if (action === "toggle-mode") {
@@ -225,6 +229,8 @@ export async function routePlaybackShellAction({
   if (action === "download") return "download";
   if (action === "pick-episode") return "pick-episode";
   if (action === "calendar") return "calendar";
+  if (action === "anime-calendar") return "anime-calendar";
+  if (action === "series-calendar") return "series-calendar";
   if (action === "random") return "random";
   if (action === "help") {
     await openRootOwnedOverlay(container, { type: "help" });
