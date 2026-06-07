@@ -8,18 +8,11 @@
 //      the current package version (not just an older highest entry).
 //   3. If apps/cli/package.json has been bumped, a `.changeset/*.md` must
 //      exist (or the change must already be reflected in apps/cli/CHANGELOG.md).
-//
-// Why it exists:
-//   The v0.2.5 release was hand-prepared: package.json was bumped to 0.2.5,
-//   the root CHANGELOG.md was hand-written, but apps/cli/CHANGELOG.md was
-//   never updated and no changeset was added. The release workflow still
-//   published the package because `changeset publish` only cares about the
-//   version in package.json — it does not validate the changelog. This guard
-//   closes that gap so a future hand-bump fails the release job instead of
-//   shipping a half-baked release.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+import { compareSemver, highestChangelogVersion } from "./release-changelog.ts";
 
 const REPO_ROOT = join(import.meta.dirname, "..");
 const CLI_PKG = join(REPO_ROOT, "apps/cli/package.json");
@@ -33,28 +26,6 @@ function readJson(path: string): unknown {
 
 function readText(path: string): string {
   return readFileSync(path, "utf8");
-}
-
-function highestChangelogVersion(content: string, prefix: "## " | "## v"): string | null {
-  const re = new RegExp(`^${prefix === "## v" ? "## v" : "## "}(\\d+\\.\\d+\\.\\d+)\\s*$`, "gm");
-  let highest: string | null = null;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
-    const v = m[1];
-    if (!v) continue;
-    if (highest === null || compareSemver(v, highest) > 0) {
-      highest = v;
-    }
-  }
-  return highest;
-}
-
-function compareSemver(a: string, b: string): number {
-  const [aMaj, aMin, aPat] = a.split(".").map((n) => Number.parseInt(n, 10));
-  const [bMaj, bMin, bPat] = b.split(".").map((n) => Number.parseInt(n, 10));
-  if (aMaj !== bMaj) return aMaj - bMaj;
-  if (aMin !== bMin) return aMin - bMin;
-  return aPat - bPat;
 }
 
 function listChangesetFiles(): string[] {
@@ -98,7 +69,6 @@ function main(): void {
     }
   }
 
-  // If the package was bumped past the changelog, a changeset must exist.
   if (cliChangelogTop && compareSemver(cliVersion, cliChangelogTop) > 0) {
     const changesets = listChangesetFiles();
     if (changesets.length === 0) {

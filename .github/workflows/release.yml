@@ -15,6 +15,7 @@ on:
       - "bun.lock"
       - "turbo.json"
       - ".github/workflows/release.yml"
+      - "scripts/release-changelog.ts"
       - "scripts/release-guard.ts"
       - "scripts/sync-root-changelog.ts"
       - "CHANGELOG.md"
