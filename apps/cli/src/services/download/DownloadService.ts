@@ -530,6 +530,7 @@ export class DownloadService {
     try {
       if (!this.reconciledStartupJobs) {
         this.reconcileInterruptedJobs();
+        this.resumeEligiblePausedJobs();
         this.reconciledStartupJobs = true;
       }
       this.reconcileStalledJobs();
@@ -1156,6 +1157,22 @@ export class DownloadService {
       if (Number.isFinite(retryAt) && retryAt <= now) return job;
     }
     return null;
+  }
+
+  /**
+   * Auto-resume on return: a previous quit pauses active jobs with
+   * `next_retry_at = now`, so on the next launch they are immediately eligible —
+   * re-queue them. Disk-space pauses carry a FUTURE retry time and stay paused
+   * until that elapses, so they are not prematurely resumed here.
+   */
+  private resumeEligiblePausedJobs(): void {
+    const now = Date.now();
+    for (const job of this.deps.repo.listPaused(200)) {
+      const retryAt = job.nextRetryAt ? Date.parse(job.nextRetryAt) : 0;
+      if (!Number.isFinite(retryAt) || retryAt <= now) {
+        this.deps.repo.requeue(job.id, new Date().toISOString());
+      }
+    }
   }
 
   private reconcileInterruptedJobs(): void {
