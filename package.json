@@ -32,8 +32,9 @@
     "pkg:check": "bun run --cwd apps/cli pkg:check",
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
     "changeset": "bunx changeset",
-    "version:packages": "bunx changeset version",
+    "version:packages": "bunx changeset version && bun run scripts/sync-root-changelog.ts",
     "release": "bunx changeset publish",
+    "guard": "bun run scripts/release-guard.ts",
     "link:global": "bun run --cwd apps/cli link:global",
     "unlink:global": "bun run --cwd apps/cli unlink:global",
     "relink:global": "bun run --cwd apps/cli relink:global",
@@ -60,6 +61,18 @@
     ],
     "**/*.{json,md}": [
       "oxfmt --write"
+    ],
+    "apps/cli/package.json": [
+      "bun run guard"
+    ],
+    "apps/cli/CHANGELOG.md": [
+      "bun run guard"
+    ],
+    "CHANGELOG.md": [
+      "bun run guard"
+    ],
+    ".changeset/*.md": [
+      "bun run guard"
     ]
   },
   "engines": {

@@ -1,8 +1,23 @@
 name: Release
 
+# Scoped to the published CLI and its release inputs.
+# Other workspace packages (@kunai/*) are internal-only and never get published,
+# so we deliberately do not run the version/publish pipeline on docs/formatting
+# or internal-package-only changes.
 on:
   push:
     branches: [main]
+    paths:
+      - "apps/cli/**"
+      - ".changeset/**"
+      - ".changeset/config.json"
+      - "package.json"
+      - "bun.lock"
+      - "turbo.json"
+      - ".github/workflows/release.yml"
+      - "scripts/release-guard.ts"
+      - "scripts/sync-root-changelog.ts"
+      - "CHANGELOG.md"
   workflow_dispatch:
 
 concurrency:
@@ -51,6 +66,9 @@ jobs:
 
       - name: Package check
         run: bun run pkg:check
+
+      - name: Release guard
+        run: bun run guard
 
       - name: Create release PR or publish
         uses: changesets/action@v1

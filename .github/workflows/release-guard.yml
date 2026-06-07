@@ -1,0 +1,52 @@
+name: Release Guard
+
+# Runs the same version ↔ changelog consistency check that release.yml runs,
+# but on every PR that touches apps/cli/**, .changeset/**, or the release
+# pipeline. Catches hand-bumps, missed changesets, and changelog drift
+# *before* merge so the release workflow can stay simple and trusted.
+
+on:
+  pull_request:
+    paths:
+      - "apps/cli/**"
+      - ".changeset/**"
+      - ".changeset/config.json"
+      - "package.json"
+      - "bun.lock"
+      - "turbo.json"
+      - "CHANGELOG.md"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/release-guard.yml"
+      - "scripts/release-guard.ts"
+      - "scripts/sync-root-changelog.ts"
+  push:
+    branches: [main]
+    paths:
+      - "apps/cli/**"
+      - ".changeset/**"
+      - "CHANGELOG.md"
+      - "scripts/release-guard.ts"
+      - "scripts/sync-root-changelog.ts"
+
+concurrency:
+  group: release-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Version ↔ changelog guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Run release guard
+        run: bun run guard

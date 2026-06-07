@@ -1,5 +1,27 @@
 # @kitsunekode/kunai
 
+## 0.2.5
+
+### Patch Changes
+
+- Continuous play (Up Next), offline parity, smarter anime classification, a rebuilt calendar, and a long tail of UX fixes.
+  - **Continuous play (Up Next).** Auto-continue into the next episode → your queue → a recommendation when caught up (cancelable countdown). `/queue` opens the Up Next panel; reorder queued items (move up/down); save the queue as a playlist; import/export.
+  - **Offline parity.** Downloaded episodes now play through the _same_ path as online — full resume **offer** (not a forced seek), auto-skip, OSD, track control, autoplay into the next downloaded episode, and history.
+  - **Smarter anime.** Deterministic TMDB anime classifier (research-validated) tags results as _Anime_; it is authoritative for the persisted content kind, so an anime watched via a series provider is still classified as anime. Fix a wrong label any time with `/mark-anime` · `/mark-series`.
+  - **Rebuilt calendar.** Rolling ±7-day schedule (past week + upcoming), type tabs (All/Anime/Series/Movies/Tracked), per-day navigation, `/anime-calendar` and `/series-calendar` shortcuts, boxed day chips with a distinct _today_ highlight, and aligned columns that no longer shift on long titles.
+  - **Share a watch.** `/share` copies a `kunai1:…` code for the current title; `/watch` plays a code from your clipboard.
+  - **CLI surface.** `--help` / `--version` are first-class; Up Next panel, two-pane tracks panel, and `/audio` + `/subtitles` deep-links; settings persist on change (no Ctrl+S); destructive rows are red.
+  - **Downloads.** Parallel N-worker pool (`maxConcurrentDownloads`, default 3, 1–5); runaway RAM and orphaned `yt-dlp` are fixed (bounded fragment buffering, SIGKILL children on exit, socket timeout); partial-download badges (`↓ n/total`); pause-on-quit + auto-resume on return.
+  - **Calendar polish.** Chronological day strip, no phantom "Nothing on schedule" days, enter-at-today navigation, no layout shift on long titles, ±7-day clamp.
+  - **Classification fix.** Content-derived kind on the write path (drama-on-anime-provider no longer labeled anime).
+  - **Progress fix.** Episode progress and series progress are now separate — finishing one episode no longer mislabels a whole series "Completed"; `unknown` release state → Continue, not falsely Completed.
+  - **Library fix.** Offline episodes ordered by season/episode, not download time.
+  - **Playback fix.** Failed-to-start stream no longer pauses autoplay; single-season episode-list escape no longer loops.
+  - **Presence fix.** Discord shows a real progress bar only when duration is known.
+  - **Config fix.** An explicit `vidking` provider choice now persists (was reverted every load).
+  - **AllManga fix.** Correct thumbnail CDN; ak-only fallback capped at 4s; next-episode prefetch no longer voided by a `startupPriority` mismatch.
+  - **Performance.** App-shell list passes combined; independent cleanup + recommendation profiling parallelized; duplicate history fetch removed; O(n) offline-status grouping; trimmed preview/calendar model work.
+
 ## 0.2.4
 
 ### Patch Changes

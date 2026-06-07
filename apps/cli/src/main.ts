@@ -42,7 +42,12 @@ import {
 } from "@/services/download/download-cleanup-policy";
 import { checkDeps } from "@/ui";
 
-const KUNAI_VERSION = "0.2.5";
+import packageJson from "../package.json" with { type: "json" };
+
+// Single source of truth for the runtime version. Derived from package.json so
+// the published CLI can never drift from `@kitsunekode/kunai`'s npm version.
+// Bun's bundler inlines the JSON at build time (see apps/cli/scripts/build.ts).
+const KUNAI_VERSION: string = packageJson.version;
 
 /** `--help` output. Grouped by purpose; mirrors the flags parsed in parseArgs. */
 export function buildHelpText(): string {

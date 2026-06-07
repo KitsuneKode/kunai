@@ -1,11 +1,37 @@
 # Changesets
 
-This directory stores release intents that drive version bumps, changelogs, and release PRs.
+We use [changesets](https://github.com/changesets/changesets) to manage releases for `@kitsunekode/kunai`.
 
-## Typical flow
+## Adding a changeset
 
-1. Make your code changes.
-2. Run `bun run changeset` and describe the user-facing impact.
-3. Commit the generated file in `.changeset/*.md`.
-4. On `main`, the release workflow opens/updates a "Version Packages" PR.
-5. Merging that PR updates versions/changelogs; the follow-up release run publishes and creates GitHub release notes.
+```sh
+bun run changeset
+```
+
+Select `@kitsunekode/kunai` and choose patch / minor / major.
+
+## Body format
+
+Write user-facing notes in the changeset body:
+
+```markdown
+One-line summary.
+
+### Highlights
+
+- ...
+
+### Features
+
+- ...
+
+### Fixes
+
+- ...
+
+### Performance
+
+- ...
+```
+
+See [RELEASING.md](../RELEASING.md) for the full release workflow.
