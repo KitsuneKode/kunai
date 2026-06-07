@@ -13,6 +13,8 @@ export type ShellAction =
   | "trending"
   | "recommendation"
   | "calendar"
+  | "anime-calendar"
+  | "series-calendar"
   | "random"
   | "surprise"
   | "back-to-results"
@@ -290,6 +292,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "trending":
     case "recommendation":
     case "calendar":
+    case "anime-calendar":
+    case "series-calendar":
     case "random":
     case "surprise":
     case "settings":

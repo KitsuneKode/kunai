@@ -13,6 +13,7 @@ import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
 import { loadCalendarResults } from "@/app/calendar-results";
+import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { loadDiscoverResults } from "@/app/discover-results";
 import { loadDiscoveryList } from "@/app/discovery-lists";
 import {
@@ -79,6 +80,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       if (!preserveExistingSearch || stateManager.getState().searchResults.length === 0) {
         stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
       }
+
+      // Carries a one-shot calendar type tab from /anime-calendar · /series-calendar
+      // into the next BrowseShell open (which seeds the useCalendarState hook). Reset
+      // after each open so a plain /calendar afterwards is not stuck on a filter.
+      let pendingCalendarType: CalendarTypeTab | undefined;
 
       while (true) {
         const currentState = stateManager.getState();
@@ -261,10 +267,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               }
             : undefined;
 
+        const initialCalendarTypeTab = pendingCalendarType;
+        pendingCalendarType = undefined;
         const outcome = await openBrowseShell({
           mode: currentState.mode,
           provider: currentState.provider,
           ...shellRuntime,
+          initialCalendarTypeTab,
           initialQuery: currentState.searchQuery,
           initialResults: currentState.searchResults.map((r) =>
             toBrowseResultOption(
@@ -514,6 +523,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             outcome.action === "surprise"
           ) {
             await loadSearchRoute(outcome.action, context);
+            continue;
+          }
+
+          // Anime/series calendars load the same schedule route, but seed the next
+          // BrowseShell open with the matching type tab so it opens pre-filtered.
+          if (
+            outcome.action === "anime-calendar" ||
+            outcome.action === "series-calendar"
+          ) {
+            pendingCalendarType = outcome.action === "anime-calendar" ? "Anime" : "TV";
+            await loadSearchRoute("calendar", context);
             continue;
           }
 

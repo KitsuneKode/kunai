@@ -99,6 +99,8 @@ describe("command registry contexts", () => {
       "random",
       "surprise",
       "calendar",
+      "anime-calendar",
+      "series-calendar",
       "search",
       "history",
       "recover",
