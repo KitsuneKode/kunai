@@ -36,7 +36,9 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
+import { copyToClipboard, readClipboard } from "@/infra/clipboard";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
+import { decodeShareCode, encodeShareCode } from "@/domain/share/share-code";
 import {
   historyContentType,
   isFinished as isProgressFinished,
@@ -1423,6 +1425,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   update: (c) => handleUpdate(c),
   "mark-anime": (c) => handleMarkKind(c, "anime"),
   "mark-series": (c) => handleMarkKind(c, "series"),
+  share: (c) => handleShare(c),
+  watch: (c) => handleWatch(c),
   watchlist: (c) => handleWatchlist(c),
   favorites: (c) => handleFavorites(c),
   playlist: (c) => handlePlaylist(c),
@@ -2911,6 +2915,55 @@ async function handleMarkKind(container: Container, kind: "anime" | "series"): P
     note: `Marked "${title.name}" as ${kind} in your history.`,
   });
   return "handled";
+}
+
+/** Copy a "watch this" share code for the current title (+episode) to the clipboard. */
+async function handleShare(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  if (!title) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Play or select a title before sharing it.",
+    });
+    return "handled";
+  }
+  const episode = state.currentEpisode;
+  const code = encodeShareCode({
+    id: title.id,
+    type: title.type === "movie" ? "movie" : "series",
+    name: title.name,
+    ...(episode ? { season: episode.season, episode: episode.episode } : {}),
+  });
+  const copied = await copyToClipboard(code);
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: copied
+      ? `Share code for "${title.name}" copied — send it to a friend, they run /watch.`
+      : `Share code (copy manually): ${code}`,
+  });
+  return "handled";
+}
+
+/** Decode a Kunai share code from the clipboard and play that title. */
+async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
+  const clip = await readClipboard();
+  const payload = clip ? decodeShareCode(clip) : null;
+  if (!payload) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "No Kunai share code on the clipboard. Copy a code (kunai1:…) then run /watch.",
+    });
+    return "handled";
+  }
+  return {
+    type: "history-entry",
+    title: { id: payload.id, type: payload.type, name: payload.name },
+    episode:
+      payload.season !== undefined && payload.episode !== undefined
+        ? { season: payload.season, episode: payload.episode }
+        : undefined,
+  };
 }
 
 async function handleWatchlist(container: Container): Promise<"handled"> {

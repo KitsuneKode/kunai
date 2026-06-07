@@ -44,6 +44,8 @@ export type ShellAction =
   | "memory"
   | "mark-anime"
   | "mark-series"
+  | "share"
+  | "watch"
   | "download"
   | "downloads"
   | "library"
@@ -338,6 +340,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "sync-disconnect":
     case "mark-anime":
     case "mark-series":
+    case "share":
+    case "watch":
     case "continue":
       return commandId;
   }
