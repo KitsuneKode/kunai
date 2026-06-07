@@ -40,6 +40,7 @@ export function PickerOptionRow({
   selected,
   accentColor,
   pickerAccent,
+  labelColor,
 }: {
   readonly label: string;
   readonly detail?: string;
@@ -48,6 +49,8 @@ export function PickerOptionRow({
   readonly selected: boolean;
   readonly accentColor: string | null;
   readonly pickerAccent: string;
+  /** Force the label hue (destructive rows go red even unselected). Overrides the neutral default. */
+  readonly labelColor?: string;
 }) {
   // Treatment C: a single accent bar marks the selected row (paired with the
   // elevated row surface), instead of a chevron stacked under other markers.
@@ -66,7 +69,7 @@ export function PickerOptionRow({
       <Text color={selected ? pickerAccent : palette.dim}>{prefix}</Text>
       {/* Titles win by weight, never by hue (Sakura): the label stays neutral;
           only the trailing badge carries the state color (accentColor). */}
-      <Text color={selected ? pickerAccent : palette.text} wrap="truncate-end">
+      <Text color={labelColor ?? (selected ? pickerAccent : palette.text)} wrap="truncate-end">
         {truncatedLabel}
       </Text>
       {truncatedDetail ? (
