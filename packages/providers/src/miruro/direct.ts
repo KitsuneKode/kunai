@@ -107,6 +107,12 @@ const MIRURO_PROVIDER_LABELS: Record<string, string> = {
   ZORO: "Zoro",
   ally: "Ally",
   dune: "Dune",
+  // Servers observed live 2026-06-07 (see miruro research report) — without a
+  // label they render as the raw key. The candidate builder already iterates
+  // every server in the episodes `providers` map, so these just need names.
+  pewe: "Pewe",
+  moo: "Moo",
+  bonk: "Bonk",
 };
 
 export type MiruroResolvePayloadOptions = {
