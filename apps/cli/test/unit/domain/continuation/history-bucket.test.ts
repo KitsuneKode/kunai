@@ -79,11 +79,25 @@ test("finished series, upcoming → completed", () => {
   expect(classifyHistoryBucket({ entry: seriesEntry(), release })).toBe("completed");
 });
 
-test("finished series, unknown / no signal → completed (no fabrication)", () => {
+test("finished series, unknown / no signal → continue (don't mislabel half-watched as done)", () => {
+  // Finishing ONE episode with no aired-total/release evidence must not claim the
+  // whole series is completed — the reported bug. Keep it in continue.
   expect(
     classifyHistoryBucket({ entry: seriesEntry(), release: signal({ status: "unknown" }) }),
-  ).toBe("completed");
-  expect(classifyHistoryBucket({ entry: seriesEntry(), release: null })).toBe("completed");
+  ).toBe("continue");
+  expect(classifyHistoryBucket({ entry: seriesEntry(), release: null })).toBe("continue");
+});
+
+test("finished a mid-series episode (ep 8 of 24 aired) → continue, not completed", () => {
+  const entry = seriesEntry({ episode: 8, absoluteEpisode: 8 });
+  const release = signal({ status: "unknown", latestAiredEpisode: 24 });
+  expect(classifyHistoryBucket({ entry, release })).toBe("continue");
+});
+
+test("finished the latest aired episode (ep 24 of 24) → completed", () => {
+  const entry = seriesEntry({ episode: 24, absoluteEpisode: 24 });
+  const release = signal({ status: "unknown", latestAiredEpisode: 24 });
+  expect(classifyHistoryBucket({ entry, release })).toBe("completed");
 });
 
 test("finished series, caught-up but a downloaded next is ready → continue", () => {
