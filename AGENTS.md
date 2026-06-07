@@ -113,7 +113,7 @@ Unit tests live under `apps/cli/test/unit/`, integration tests under `apps/cli/t
 
 - `apps/cli/index.ts` is a temporary compatibility wrapper only; new runtime work belongs in `apps/cli/src/main.ts`
 - Episode numbers are 1-based in the UI; providers adapt internally
-- `apps/cli/src/services/providers/definitions/index.ts` is the single registry source of truth
+- `apps/cli/src/container.ts` (`providerModules` + `createProviderEngine`) is the single production registry source of truth; provider modules live in `packages/providers/src/*/direct.ts`
 - `isAnimeProvider: true` is what places a provider in anime mode
 - `packages/providers/src/allmanga/api-client.ts` contains ani-cli parity logic; check external parity before changing crypto or decoder constants
 - On this machine, the local canonical ani-cli checkout for AllAnime or AllManga parity checks is `~/Projects/osc/ani-cli`

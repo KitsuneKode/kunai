@@ -73,7 +73,7 @@ Use the following patterns so new providers stay compatible with timing and auto
 
 ### 1. Manifest and registry
 
-- Add the provider to `apps/cli/src/services/providers/definitions/*` and the registry in `apps/cli/src/services/providers/definitions/index.ts` (single source of truth per repo rules).
+- Implement the module in `packages/providers/src/<provider>/direct.ts`, define the manifest in `manifest.ts`, export from `packages/providers/src/index.ts`, and register it in `apps/cli/src/container.ts` inside `providerModules` (single source of truth per repo rules).
 - Note the **string id** you use in `defineProviderManifest({ id: "…" })` — that is `providerId` at runtime.
 
 ### 2. What `TitleInfo.id` means for your provider

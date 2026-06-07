@@ -26,7 +26,7 @@ Kunai is a terminal CLI that:
 5. Returns to the same shell for post-playback actions, settings, and provider changes
 
 ```text
-user input -> Ink shell -> picker -> provider resolve -> Playwright/API stream capture -> mpv -> shell
+user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provider modules -> mpv -> shell
 ```
 
 ## Current vs Target
@@ -56,17 +56,18 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 
 ## Runtime Modules
 
-| Area                  | Files                                                                     | Responsibility                                                                         |
-| --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`, `apps/cli/index.ts` wrapper | Default runtime orchestration in `apps/cli/src/main.ts`; wrapper is compatibility only |
-| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                | Ink shell, commands, settings, history, and structured pickers                         |
-| Search                | `apps/cli/src/search.ts`, `apps/cli/src/tmdb.ts`, `apps/cli/src/ui.ts`    | Search backends, metadata fetches, and dependency checks                               |
-| Scraping              | `apps/cli/src/scraper.ts`                                                 | Browser automation and network interception                                            |
-| Playback              | `apps/cli/src/mpv.ts`                                                     | `mpv` launch and Lua-assisted progress tracking                                        |
-| Persistence           | `apps/cli/src/config.ts`, `apps/cli/src/history.ts`                       | Config, watch progress, stream cache                                                   |
-| Providers             | `apps/cli/src/services/providers/*`                                       | Stream-source-specific resolution logic                                                |
-| Terminal UI           | `apps/cli/src/design.ts`, `apps/cli/src/menu.ts`, `apps/cli/src/image.ts` | Shared styling tokens, ANSI helpers, posters                                           |
-| Observability         | `apps/cli/src/logger.ts`                                                  | Structured debug logs                                                                  |
+| Area                  | Files                                                                                            | Responsibility                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`, `apps/cli/index.ts` wrapper                        | Default runtime orchestration in `apps/cli/src/main.ts`; wrapper is compatibility only |
+| DI + provider engine  | `apps/cli/src/container.ts`                                                                      | Wires SQLite repos, `createProviderEngine`, resolve/download/presence services         |
+| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                                       | Ink shell, commands, settings, history, and structured pickers                         |
+| Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search-routing.ts` | Search backends, metadata fetches, and routing policy                                  |
+| Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                                        | TMDB/Videasy season data and title enrichment (migration target: catalog services)     |
+| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                             | `mpv` launch, IPC, and Lua-assisted progress tracking                                  |
+| Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                                        | Config JSON, SQLite history/cache, tuning                                              |
+| Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`                | Direct HTTP provider modules + CLI registry adapter                                    |
+| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                                        | ANSI helpers, design tokens, posters                                                   |
+| Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                                  | Structured debug logs and diagnostics events                                           |
 
 If your change is broad enough to blur these module boundaries, stop and check whether the work belongs in the v2 migration path instead.
 
@@ -81,16 +82,9 @@ Diagnostics note:
 
 ## Provider Model
 
-There are two provider families:
+Active beta providers implement `CoreProviderModule` in `packages/providers/src/*/direct.ts` and are registered in `apps/cli/src/container.ts` via `createProviderEngine({ modules: [...] })`. The CLI `ProviderRegistry` is a compatibility wrapper over the engine.
 
-- `PlaywrightProvider`: constructs an embed URL and lets `scraper.ts` intercept the stream
-- `ApiProvider`: resolves metadata or stream URLs over HTTP/GraphQL and can delegate the final embed step through `embedScraper`
-
-`apps/cli/src/services/providers/definitions/index.ts` is the single registry source of truth:
-
-- `PROVIDERS`
-- `PLAYWRIGHT_PROVIDERS`
-- `ANIME_PROVIDERS`
+Legacy Playwright provider shapes remain under `archive/legacy/apps/cli/src/providers/` for reference only. They are not part of the active beta runtime.
 
 Use [.docs/providers.md](.docs/providers.md) for provider-specific details.
 

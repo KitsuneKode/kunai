@@ -256,7 +256,7 @@ Quality gate for promotion into the production resolver:
 1. Implement `PlaywrightProvider`
 2. Return a stable embed URL from `buildUrl()`
 3. Set `needsClick: true` only if playback requires user activation
-4. Register the provider in `apps/cli/src/services/providers/definitions/index.ts`
+4. Register the module in `apps/cli/src/container.ts` inside the `providerModules` array passed to `createProviderEngine`
 
 Minimal shape:
 

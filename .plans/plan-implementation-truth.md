@@ -1,6 +1,6 @@
 # Plan vs Implementation Truth Index
 
-**Last reconciled:** 2026-05-28
+**Last reconciled:** 2026-06-08
 
 Use this file when a `.plans/*` status disagrees with the codebase. **Code wins** unless this index explicitly says otherwise. Update this file in the same change set when you complete or retire plan work.
 
@@ -11,6 +11,13 @@ Use this file when a `.plans/*` status disagrees with the codebase. **Code wins*
 3. After landing behavior, update the relevant plan **and** a row here (or remove stale checklist items).
 
 Canonical product/UX behavior lives in `.docs/*` when it describes **current** user-facing rules. `.plans/*` is for sequencing and remaining work.
+
+---
+
+## Doc/code drift to fix when touching providers
+
+- Production provider registration is **`apps/cli/src/container.ts`** (`providerModules` + `createProviderEngine`), not `apps/cli/src/services/providers/definitions/index.ts` (removed).
+- Active providers are **`packages/providers/src/*/direct.ts`** modules; CLI `ProviderRegistry` is an engine compat wrapper.
 
 ---
 
