@@ -226,9 +226,10 @@ function LibraryTab({ container }: { container: Container }) {
       if (!selectedOfflineGroup) return;
       if (confirmDeleteKey === selectedOfflineGroup.key) {
         setConfirmDeleteKey(null);
-        const groupEntryIds = entries
-          .filter((e) => e.job.titleId === selectedOfflineGroup.titleId)
-          .map((e) => e.job.id);
+        const groupEntryIds: string[] = [];
+        for (const entry of entries) {
+          if (entry.job.titleId === selectedOfflineGroup.titleId) groupEntryIds.push(entry.job.id);
+        }
         for (const jobId of groupEntryIds) {
           container.downloadService.deleteJob(jobId, { deleteArtifact: true });
         }
@@ -242,9 +243,10 @@ function LibraryTab({ container }: { container: Container }) {
     }
     if (input === "p" || input === "P") {
       if (!selectedOfflineGroup) return;
-      const groupEntryIds = entries
-        .filter((e) => e.job.titleId === selectedOfflineGroup.titleId)
-        .map((e) => e.job.id);
+      const groupEntryIds: string[] = [];
+      for (const entry of entries) {
+        if (entry.job.titleId === selectedOfflineGroup.titleId) groupEntryIds.push(entry.job.id);
+      }
       const protectedSet = new Set(container.config.protectedDownloadJobIds);
       const allProtected = groupEntryIds.every((id) => protectedSet.has(id));
       void (async () => {
@@ -267,9 +269,12 @@ function LibraryTab({ container }: { container: Container }) {
     if (key.return) {
       if (!selectedOfflineGroup) return;
       const entryById = new Map(entries.map((e) => [e.job.id, e]));
-      const groupEntryIdsSet = new Set(
-        entries.filter((e) => e.job.titleId === selectedOfflineGroup.titleId).map((e) => e.job.id),
-      );
+      const groupEntryIdsSet = new Set<string>();
+      for (const entry of entries) {
+        if (entry.job.titleId === selectedOfflineGroup.titleId) {
+          groupEntryIdsSet.add(entry.job.id);
+        }
+      }
       const groupEntries = [...entryById.values()].filter((e) => groupEntryIdsSet.has(e.job.id));
       void (async () => {
         const { openOfflineLibraryGroupPicker } = await import("./workflows");
@@ -449,9 +454,12 @@ function buildLibraryShelfSections(
   historyMap: Record<string, HistoryProgress>,
 ): { label: string; rows: LibraryShelfRow[] }[] {
   const offlineTitleIds = new Set(groups.map((group) => group.titleId));
-  const savedOnly: LibraryShelfRow[] = watchlist
-    .filter((item) => !offlineTitleIds.has(item.titleId))
-    .map((item) => ({ kind: "saved" as const, item }));
+  const savedOnly: LibraryShelfRow[] = [];
+  for (const item of watchlist) {
+    if (!offlineTitleIds.has(item.titleId)) {
+      savedOnly.push({ kind: "saved", item });
+    }
+  }
 
   const buckets: Record<LibraryShelfSection, LibraryShelfRow[]> = {
     "in-progress": [],

@@ -160,8 +160,11 @@ function matchesReleaseFilter<T>(option: BrowseShellOption<T>, release: ReleaseF
 }
 
 function getOptionSearchText<T>(option: BrowseShellOption<T>): string {
-  const facts =
-    option.previewFacts?.flatMap((fact) => [fact.label, fact.detail]).filter(Boolean) ?? [];
+  const facts: string[] = [];
+  for (const fact of option.previewFacts ?? []) {
+    if (fact.label) facts.push(fact.label);
+    if (fact.detail) facts.push(fact.detail);
+  }
   return [
     option.label,
     option.detail,

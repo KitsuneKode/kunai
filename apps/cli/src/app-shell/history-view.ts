@@ -300,14 +300,16 @@ function buildHistorySections(
     return flatRows.length > 0 ? [{ label: "", rows: [...flatRows] }] : [];
   }
 
-  return groups
-    .map((group) => ({
-      label: group.label,
-      rows: group.items
-        .map(([titleId]) => rowById.get(titleId))
-        .filter((row): row is HistoryViewRow => row !== undefined),
-    }))
-    .filter((group) => group.rows.length > 0);
+  const sections: Array<{ label: string; rows: HistoryViewRow[] }> = [];
+  for (const group of groups) {
+    const rows: HistoryViewRow[] = [];
+    for (const [titleId] of group.items) {
+      const row = rowById.get(titleId);
+      if (row) rows.push(row);
+    }
+    if (rows.length > 0) sections.push({ label: group.label, rows });
+  }
+  return sections;
 }
 
 function buildHistoryPreviewRailModel(
