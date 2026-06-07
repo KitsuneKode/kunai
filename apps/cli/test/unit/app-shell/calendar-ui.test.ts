@@ -27,6 +27,7 @@ import type { SearchResult } from "@/domain/types";
 function dayStripOption(partial: {
   label: string;
   previewGroup?: string;
+  previewDayKey?: string;
   previewTime?: string;
   previewBadge?: string;
 }): BrowseShellOption<SearchResult> {
@@ -41,6 +42,7 @@ function dayStripOption(partial: {
     },
     label: partial.label,
     previewGroup: partial.previewGroup,
+    previewDayKey: partial.previewDayKey,
     previewTime: partial.previewTime,
     previewBadge: partial.previewBadge,
   };
@@ -113,27 +115,33 @@ test("calendarDayKeyFromGroup strips relative suffix", () => {
   expect(calendarDayKeyFromGroup("MON 19 · Today")).toBe("MON 19");
 });
 
-test("buildCalendarDaysFromOptions dedupes days by group label", () => {
+test("buildCalendarDaysFromOptions keeps ISO-dated days, deduped + chronological", () => {
   const options = [
-    dayStripOption({ label: "A", previewGroup: "MON 1" }),
-    dayStripOption({ label: "B", previewGroup: "TUE 2 · Today" }),
-    dayStripOption({ label: "C", previewGroup: "WED 3" }),
-    dayStripOption({ label: "D", previewGroup: "THU 4" }),
+    // Out of order on purpose + an undated (label-only) item that must be dropped.
+    dayStripOption({ label: "C", previewGroup: "WED 3", previewDayKey: "2026-06-03" }),
+    dayStripOption({ label: "A", previewGroup: "MON 1", previewDayKey: "2026-06-01" }),
+    dayStripOption({ label: "A2", previewGroup: "MON 1", previewDayKey: "2026-06-01" }),
+    dayStripOption({ label: "undated", previewGroup: "TBD" }),
+    dayStripOption({ label: "B", previewGroup: "TUE 2 · Today", previewDayKey: "2026-06-02" }),
   ];
   const days = buildCalendarDaysFromOptions(options, true);
-  expect(days.map((day) => day.label)).toEqual(["MON 1", "TUE 2", "WED 3", "THU 4"]);
+  expect(days.map((day) => day.key)).toEqual(["2026-06-01", "2026-06-02", "2026-06-03"]);
 });
 
 test("windowCalendarDayStrip narrows to three days around today", () => {
   const options = [
-    dayStripOption({ label: "A", previewGroup: "MON 1" }),
-    dayStripOption({ label: "B", previewGroup: "TUE 2 · Today" }),
-    dayStripOption({ label: "C", previewGroup: "WED 3" }),
-    dayStripOption({ label: "D", previewGroup: "THU 4" }),
+    dayStripOption({ label: "A", previewGroup: "MON 1", previewDayKey: "2026-06-01" }),
+    dayStripOption({ label: "B", previewGroup: "TUE 2 · Today", previewDayKey: "2026-06-02" }),
+    dayStripOption({ label: "C", previewGroup: "WED 3", previewDayKey: "2026-06-03" }),
+    dayStripOption({ label: "D", previewGroup: "THU 4", previewDayKey: "2026-06-04" }),
   ];
   const days = buildCalendarDaysFromOptions(options);
   const windowed = windowCalendarDayStrip(days, null, true);
-  expect(windowed.windowDays.map((day) => day.label)).toEqual(["MON 1", "TUE 2", "WED 3"]);
+  expect(windowed.windowDays.map((day) => day.key)).toEqual([
+    "2026-06-01",
+    "2026-06-02",
+    "2026-06-03",
+  ]);
 });
 
 test("filterCalendarOptionsByType keeps anime rows on Anime tab", () => {
