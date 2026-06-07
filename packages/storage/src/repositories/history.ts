@@ -132,6 +132,13 @@ export class HistoryRepository {
     return row === null ? undefined : mapHistoryRow(row);
   }
 
+  /** Manual reclassification override — fix a wrongly-classified title across all its history rows. */
+  setMediaKind(titleId: string, mediaKind: MediaKind): void {
+    this.db
+      .query("UPDATE history_progress SET media_kind = ? WHERE title_id = ?")
+      .run(mediaKind, titleId);
+  }
+
   listRecent(limit = 20): readonly HistoryProgress[] {
     return this.db
       .query<HistoryProgressRow, [number]>(
