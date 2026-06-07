@@ -36,6 +36,8 @@ export type AppCommandId =
   | "audio"
   | "subtitle"
   | "memory"
+  | "mark-anime"
+  | "mark-series"
   | "pick-episode"
   | "next"
   | "previous"
@@ -102,6 +104,8 @@ export const COMMAND_CONTEXTS = {
     "audio",
     "subtitle",
     "memory",
+    "mark-anime",
+    "mark-series",
     "pick-episode",
     "download",
     "next",
@@ -128,6 +132,8 @@ export const COMMAND_CONTEXTS = {
   postPlayback: [
     "next",
     "replay",
+    "mark-anime",
+    "mark-series",
     "pick-episode",
     "download",
     "library",
@@ -410,6 +416,18 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Memory",
     aliases: ["memory", "mem"],
     description: "Temporarily show runtime memory usage",
+  },
+  {
+    id: "mark-anime",
+    label: "Mark as Anime",
+    aliases: ["mark-anime", "set-anime", "is-anime"],
+    description: "Reclassify the current title as anime in your history (fixes a wrong label)",
+  },
+  {
+    id: "mark-series",
+    label: "Mark as Series",
+    aliases: ["mark-series", "set-series", "not-anime"],
+    description: "Reclassify the current title as series in your history (fixes a wrong label)",
   },
   {
     id: "pick-episode",
@@ -854,6 +872,15 @@ function resolveCommandState(
         : {
             enabled: false,
             reason: "Memory overlay is available during active playback.",
+          };
+
+    case "mark-anime":
+    case "mark-series":
+      return state.currentTitle
+        ? { enabled: true }
+        : {
+            enabled: false,
+            reason: "Play or select a title before reclassifying it.",
           };
 
     case "download":

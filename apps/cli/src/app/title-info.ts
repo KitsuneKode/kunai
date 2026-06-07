@@ -17,5 +17,6 @@ export function titleInfoFromSearchResult(
     release: result.release,
     artwork: result.artwork,
     languageEvidence: result.languageEvidence,
+    isAnime: result.isAnime,
   };
 }

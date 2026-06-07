@@ -23,10 +23,11 @@ const TMDB_ANIMATION_GENRE_ID = 16;
  * anime provider (AllAnime serves these) carries none of these → not anime.
  */
 export function isAnimeContent(
-  title: Pick<TitleInfo, "externalIds" | "genreIds"> | null | undefined,
+  title: Pick<TitleInfo, "externalIds" | "genreIds" | "isAnime"> | null | undefined,
 ): boolean {
   if (!title) return false;
   return Boolean(
+    title.isAnime ||
     title.externalIds?.anilistId ||
     title.externalIds?.malId ||
     title.genreIds?.includes(TMDB_ANIMATION_GENRE_ID),
@@ -53,10 +54,16 @@ export function resolveContentKind(
  * anime mode (AllAnime hosts these) is not labeled anime forever. See #1.
  */
 export function classifyPersistedKind(
-  title: Pick<TitleInfo, "type" | "externalIds" | "genreIds"> | null | undefined,
+  title: Pick<TitleInfo, "type" | "externalIds" | "genreIds" | "isAnime"> | null | undefined,
   mode: ShellMode,
 ): ContentKind {
   if (title?.type === "movie") return "movie";
+  // The deterministic classifier tag (TMDB original_language=ja etc.) is
+  // authoritative regardless of ShellMode — so an anime watched via a series
+  // provider (e.g. vidking) is still labeled anime in history. Without that tag,
+  // fall back to the old rule: anime mode AND a content marker (so AllAnime's
+  // live-action dramas in anime mode aren't mislabeled).
+  if (title?.isAnime === true) return "anime";
   if (mode === "anime" && isAnimeContent(title)) return "anime";
   return "series";
 }

@@ -42,6 +42,8 @@ export type ShellAction =
   | "audio"
   | "subtitle"
   | "memory"
+  | "mark-anime"
+  | "mark-series"
   | "download"
   | "downloads"
   | "library"
@@ -334,6 +336,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "sync-connect-anilist":
     case "sync-connect-tmdb":
     case "sync-disconnect":
+    case "mark-anime":
+    case "mark-series":
     case "continue":
       return commandId;
   }

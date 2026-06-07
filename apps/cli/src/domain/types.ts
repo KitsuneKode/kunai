@@ -45,6 +45,8 @@ export interface TitleInfo {
   readonly artwork?: ProviderArtworkInfo;
   readonly languageEvidence?: readonly ProviderLanguageEvidence[];
   readonly genreIds?: number[];
+  /** Deterministic anime detection carried from the TMDB classifier — for the persisted content kind only (never routing). */
+  readonly isAnime?: boolean;
   readonly episodeCount?: number;
   readonly launchSource?: "search" | "history" | "continue";
 }
