@@ -1418,6 +1418,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   "export-diagnostics": (c) => handleExportDiagnostics(c),
   "report-issue": (c) => handleReportIssue(c),
   update: (c) => handleUpdate(c),
+  "mark-anime": (c) => handleMarkKind(c, "anime"),
+  "mark-series": (c) => handleMarkKind(c, "series"),
   watchlist: (c) => handleWatchlist(c),
   favorites: (c) => handleFavorites(c),
   playlist: (c) => handlePlaylist(c),
@@ -2889,6 +2891,27 @@ export async function openSettingsShell({
 }
 
 // ─── Watchlist ─────────────────────────────────────────────────────────────────
+
+/** Manual reclassification override — fix a wrongly-detected anime/series label on the current title. */
+async function handleMarkKind(
+  container: Container,
+  kind: "anime" | "series",
+): Promise<"handled"> {
+  const title = container.stateManager.getState().currentTitle;
+  if (!title) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Play or select a title before reclassifying it.",
+    });
+    return "handled";
+  }
+  container.historyRepository.setMediaKind(title.id, kind);
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Marked "${title.name}" as ${kind} in your history.`,
+  });
+  return "handled";
+}
 
 async function handleWatchlist(container: Container): Promise<"handled"> {
   const { listService, historyStore, releaseProgressCache } = container;

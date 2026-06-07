@@ -21,6 +21,8 @@ describe("command registry contexts", () => {
       "audio",
       "subtitle",
       "memory",
+      "mark-anime",
+      "mark-series",
       "pick-episode",
       "download",
       "next",
@@ -81,6 +83,8 @@ describe("command registry contexts", () => {
     expect([...COMMAND_CONTEXTS.postPlayback]).toEqual([
       "next",
       "replay",
+      "mark-anime",
+      "mark-series",
       "pick-episode",
       "download",
       "library",
