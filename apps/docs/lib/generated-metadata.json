@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-06-04T21:44:34.671Z",
+  "syncedAt": "2026-06-07T19:17:13.077Z",
   "providers": [
     {
       "id": "allanime",
@@ -90,7 +90,7 @@
     {
       "id": "downloads",
       "label": "Download Queue",
-      "aliases": ["downloads", "download-jobs", "queue", "jobs"],
+      "aliases": ["downloads", "download-jobs", "jobs"],
       "description": "Inspect active, queued, and failed download jobs"
     },
     {
@@ -283,28 +283,46 @@
       "description": "Stop waiting on the current provider and try the next compatible provider"
     },
     {
-      "id": "streams",
-      "label": "Tracks",
-      "aliases": ["tracks", "track", "streams", "stream", "variants", "audio", "subs", "subtitles"],
-      "description": "Choose source, quality, audio, hardsub, or subtitle details"
-    },
-    {
       "id": "source",
-      "label": "Source Picker",
-      "aliases": ["source", "sources", "mirror"],
-      "description": "Open available stream sources"
+      "label": "Source / Servers",
+      "aliases": ["source", "sources", "mirror", "server", "servers", "tracks"],
+      "description": "Open the tracks panel at the source / servers section"
     },
     {
       "id": "quality",
-      "label": "Quality Picker",
+      "label": "Quality",
       "aliases": ["quality", "qualities", "variant"],
-      "description": "Open available quality variants"
+      "description": "Open the tracks panel at the quality section"
+    },
+    {
+      "id": "audio",
+      "label": "Audio",
+      "aliases": ["audio", "dub", "language"],
+      "description": "Open the tracks panel at the audio section"
+    },
+    {
+      "id": "subtitle",
+      "label": "Subtitles",
+      "aliases": ["subtitle", "subtitles", "subs", "captions", "cc"],
+      "description": "Open the tracks panel at the subtitles section"
     },
     {
       "id": "memory",
       "label": "Memory",
       "aliases": ["memory", "mem"],
       "description": "Temporarily show runtime memory usage"
+    },
+    {
+      "id": "mark-anime",
+      "label": "Mark as Anime",
+      "aliases": ["mark-anime", "set-anime", "is-anime"],
+      "description": "Reclassify the current title as anime in your history (fixes a wrong label)"
+    },
+    {
+      "id": "mark-series",
+      "label": "Mark as Series",
+      "aliases": ["mark-series", "set-series", "not-anime"],
+      "description": "Reclassify the current title as series in your history (fixes a wrong label)"
     },
     {
       "id": "pick-episode",
@@ -368,9 +386,9 @@
     },
     {
       "id": "playlist",
-      "label": "Playlist",
-      "aliases": ["playlist", "pl", "queue-playlist"],
-      "description": "Manage your playback playlist queue"
+      "label": "Up Next / Playlist",
+      "aliases": ["playlist", "pl", "queue-playlist", "queue", "up-next", "upnext"],
+      "description": "View and manage the Up Next queue — play, clear, save as playlist, import/export"
     },
     {
       "id": "playlist-add",
@@ -538,6 +556,16 @@
     {
       "short": "",
       "long": "--mpv-log-file",
+      "description": ""
+    },
+    {
+      "short": "-h",
+      "long": "--help",
+      "description": ""
+    },
+    {
+      "short": "-v",
+      "long": "--version",
       "description": ""
     }
   ]
