@@ -55,13 +55,19 @@ export function CalendarDayStrip({
       {windowDays.map((day) => {
         const isSelected = selectedDayKey === day.key;
         const isToday = day.isToday;
+        // Boxed chips with a clear hierarchy: the SELECTED day is the rose accent
+        // pill (matches the type tabs); TODAY is a distinct amber pill so it always
+        // stands apart; other days are readable text chips (not near-background).
+        const background = isSelected
+          ? palette.accentFill
+          : isToday
+            ? palette.warnFill
+            : undefined;
+        const foreground = isSelected || isToday ? palette.text : palette.textDim;
         return (
-          <Box key={day.key} marginRight={2}>
-            <Text
-              color={isSelected || isToday ? palette.accent : palette.muted}
-              bold={isSelected || isToday}
-            >
-              {day.label}
+          <Box key={day.key} marginRight={1}>
+            <Text backgroundColor={background} color={foreground} bold={isSelected || isToday}>
+              {` ${day.label} `}
             </Text>
           </Box>
         );
@@ -143,7 +149,10 @@ export function CalendarScheduleRow<T>({
   const timeWidth = 7;
   const epWidth = 8;
   const statusWidth = Math.min(18, Math.max(12, Math.floor(rowWidth * 0.22)));
-  const titleWidth = Math.max(12, rowWidth - timeWidth - epWidth - statusWidth - 4);
+  // The title is the FLEX column (flexColumnIndex=1) — give it a small base; ListRow
+  // hands it the leftover row width. The time/ep/status columns keep fixed widths so
+  // they stay aligned across rows and a long title truncates instead of pushing them.
+  const titleWidth = 12;
 
   return (
     <Box flexDirection="column" width={rowWidth} marginBottom={0}>
@@ -156,6 +165,7 @@ export function CalendarScheduleRow<T>({
       <ListRow
         selected={selected}
         rowWidth={rowWidth}
+        flexColumnIndex={1}
         columns={[
           listRowTimeColumn(timeLabel, timeWidth),
           listRowTitleColumn(option.label, titleWidth),

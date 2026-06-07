@@ -22,7 +22,7 @@ export const ClaudeTabRow = React.memo(function ClaudeTabRow({
           {i > 0 ? <Text color={palette.dim}>{"  "}</Text> : null}
           <Text
             bold={seg.active}
-            color={seg.active ? palette.text : palette.muted}
+            color={seg.active ? palette.text : palette.textDim}
             backgroundColor={seg.active ? palette.accentFill : undefined}
           >
             {seg.text}
