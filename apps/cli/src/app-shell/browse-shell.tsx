@@ -40,18 +40,17 @@ import {
   CalendarTypeTabs,
 } from "./calendar-ui";
 import {
-  buildCalendarDaysFromOptions,
   buildCalendarEmptyState,
   buildCalendarErrorState,
   buildCalendarLoadingState,
   buildCalendarPreviewRailModel,
   buildCalendarRenderRows,
-  CALENDAR_TYPE_TABS,
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
+import { useCalendarState } from "./hooks/use-calendar-state";
 import type { ResolvedAppCommand } from "./commands";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
@@ -115,6 +114,7 @@ export function BrowseShell<T>({
   initialResults,
   initialResultSubtitle,
   initialSelectedIndex,
+  initialCalendarTypeTab,
   placeholder,
   commands,
   providerOptions: _providerOptions,
@@ -143,6 +143,7 @@ export function BrowseShell<T>({
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
   initialSelectedIndex?: number;
+  initialCalendarTypeTab?: CalendarTypeTab;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
   providerOptions?: readonly ShellPickerOption<string>[];
@@ -221,9 +222,6 @@ export function BrowseShell<T>({
     canFocusIdle: false,
     selectedIndex: 0,
   });
-  // Calendar filters — null day means "show all days"
-  const [calendarDayFilter, setCalendarDayFilter] = useState<string | null>(null);
-  const [calendarTypeTab, setCalendarTypeTab] = useState<CalendarTypeTab>("All");
   const requestIdRef = useRef(0);
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
@@ -237,18 +235,26 @@ export function BrowseShell<T>({
     resultSubtitle.includes("schedule") ||
     resultSubtitle.includes("airing today");
 
-  const calendarDays = useMemo(() => {
-    if (!isCalendarView) return [];
-    // Build the day strip from the TYPE-filtered options (Anime/Series/…), not all
-    // of them — otherwise the strip lists days that only have other-type releases,
-    // and selecting one shows "Nothing on the schedule". The strip must match the
-    // tab so every chip has content.
-    const typed = filterCalendarOptionsByType(
-      options as readonly BrowseShellOption<import("@/domain/types").SearchResult>[],
-      calendarTypeTab,
-    );
-    return buildCalendarDaysFromOptions(typed);
-  }, [isCalendarView, options, calendarTypeTab]);
+  // Calendar UI state (type tab + day filter + derived day strip) lives in one hook.
+  // Reads are aliased below so the rest of the component is unchanged; writes go
+  // through the hook's actions (calendar.reset / cycleType / stepDay / toggleAllDays).
+  const calendar = useCalendarState({
+    isCalendarView,
+    options: options as readonly BrowseShellOption<import("@/domain/types").SearchResult>[],
+    initialTypeTab: initialCalendarTypeTab,
+  });
+  const calendarTypeTab = calendar.typeTab;
+  const calendarDayFilter = calendar.dayFilter;
+  const calendarDays = calendar.days;
+  // Stable action refs (each is useCallback-memoized in the hook) so consuming
+  // callbacks/effects can depend on them without re-creating every render.
+  const {
+    reset: resetCalendar,
+    cycleType: cycleCalendarType,
+    stepDay: stepCalendarDay,
+    toggleAllDays: toggleCalendarAllDays,
+    setDayFilter: setCalendarDay,
+  } = calendar;
 
   const displayOptions = useMemo(() => {
     const narrowed = filterBrowseOptionsByResultFilter(options, resultFilter);
@@ -274,9 +280,8 @@ export function BrowseShell<T>({
     setResultFilter("");
     setFilterModeOpen(false);
     setFocusZone("query");
-    setCalendarDayFilter(null);
-    setCalendarTypeTab("All");
-  }, []);
+    resetCalendar();
+  }, [resetCalendar]);
 
   const updateQuery = useCallback(
     (nextValue: string) => {
@@ -311,8 +316,7 @@ export function BrowseShell<T>({
     setErrorMessage(null);
     setEmptyMessage("Searching…");
     setSelectedDetail("Finding titles and available matches…");
-    setCalendarDayFilter(null);
-    setCalendarTypeTab("All");
+    resetCalendar();
 
     try {
       const response = await onSearch(rawQuery);
@@ -357,7 +361,7 @@ export function BrowseShell<T>({
       setEmptyMessage("Search failed.");
       setSelectedDetail("The search failed. Press Enter to retry or Esc to clear.");
     }
-  }, [query, searchState, onSearch]);
+  }, [query, searchState, onSearch, resetCalendar]);
 
   const handleQuerySubmit = useCallback(() => {
     const isDirty = query.trim() !== lastSearchedQuery;
@@ -379,8 +383,7 @@ export function BrowseShell<T>({
     setErrorMessage(null);
     setEmptyMessage("Loading trending…");
     setSelectedDetail("Loading cached trending titles…");
-    setCalendarDayFilter(null);
-    setCalendarTypeTab("All");
+    resetCalendar();
 
     try {
       const response = await onLoadDiscovery();
@@ -416,8 +419,7 @@ export function BrowseShell<T>({
     setErrorMessage(null);
     setEmptyMessage("Loading recommendations…");
     setSelectedDetail("Building personalized recommendations from history and TMDB…");
-    setCalendarDayFilter(null);
-    setCalendarTypeTab("All");
+    resetCalendar();
 
     try {
       const response = await onLoadRecommendations();
@@ -854,15 +856,9 @@ export function BrowseShell<T>({
     // Calendar: Tab / Shift+Tab cycle the type tabs (All · Anime · TV · Movies ·
     // Tracked). Mode toggle is unavailable while browsing the schedule.
     if (isCalendarView && !commandMode && key.tab) {
-      const dir = key.shift ? -1 : 1;
-      setCalendarTypeTab((current) => {
-        const idx = CALENDAR_TYPE_TABS.indexOf(current);
-        const next = (idx + dir + CALENDAR_TYPE_TABS.length) % CALENDAR_TYPE_TABS.length;
-        return CALENDAR_TYPE_TABS[next] ?? "All";
-      });
-      // Reset the day filter — the new tab has a different day strip, so a day
-      // selected under the old tab may not exist (or be empty) under the new one.
-      setCalendarDayFilter(null);
+      // Cycle type tabs (All · Anime · TV · Movies · Tracked). The hook also clears
+      // the day filter, since the new tab has a different day strip.
+      cycleCalendarType(key.shift ? -1 : 1);
       setSelectedIndex(0);
       return;
     }
@@ -874,24 +870,14 @@ export function BrowseShell<T>({
 
     // Calendar day strip navigation. From "all days" both arrows enter at today
     // (or the first day) — never jump to the furthest-future day — then ←/→ step
-    // to the previous/next day, clamped at the ends.
-    const calendarEntryDayKey = (): string | null =>
-      calendarDays.find((d) => d.isToday)?.key ?? calendarDays[0]?.key ?? null;
+    // to the previous/next day, clamped at the ends (logic owned by the hook).
     if (isCalendarView && calendarDays.length > 0 && key.leftArrow) {
-      setCalendarDayFilter((current) => {
-        if (current === null) return calendarEntryDayKey();
-        const idx = calendarDays.findIndex((d) => d.key === current);
-        return idx > 0 ? (calendarDays[idx - 1]?.key ?? current) : current;
-      });
+      stepCalendarDay(-1);
       setSelectedIndex(0);
       return;
     }
     if (isCalendarView && calendarDays.length > 0 && key.rightArrow) {
-      setCalendarDayFilter((current) => {
-        if (current === null) return calendarEntryDayKey();
-        const idx = calendarDays.findIndex((d) => d.key === current);
-        return idx < calendarDays.length - 1 ? (calendarDays[idx + 1]?.key ?? current) : current;
-      });
+      stepCalendarDay(1);
       setSelectedIndex(0);
       return;
     }
@@ -904,7 +890,7 @@ export function BrowseShell<T>({
       !queryDirty &&
       input.toLowerCase() === "a"
     ) {
-      setCalendarDayFilter((current) => (current === null ? (calendarDays[0]?.key ?? null) : null));
+      toggleCalendarAllDays();
       setSelectedIndex(0);
       return;
     }
@@ -913,7 +899,7 @@ export function BrowseShell<T>({
       // Layered step-back: results focus → query focus → clear results → clear
       // query → cancel. Esc first hands the list's focus back to the search box.
       if (isCalendarView && calendarDayFilter !== null) {
-        setCalendarDayFilter(null);
+        setCalendarDay(null);
         setSelectedIndex(0);
         return;
       }
@@ -1436,6 +1422,7 @@ export function openBrowseShell<T>({
   initialResults,
   initialResultSubtitle,
   initialSelectedIndex,
+  initialCalendarTypeTab,
   placeholder,
   commands,
   providerOptions,
@@ -1461,6 +1448,7 @@ export function openBrowseShell<T>({
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
   initialSelectedIndex?: number;
+  initialCalendarTypeTab?: CalendarTypeTab;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
   providerOptions?: readonly ShellPickerOption<string>[];
@@ -1490,6 +1478,7 @@ export function openBrowseShell<T>({
         initialResults={initialResults}
         initialResultSubtitle={initialResultSubtitle}
         initialSelectedIndex={initialSelectedIndex}
+        initialCalendarTypeTab={initialCalendarTypeTab}
         placeholder={placeholder}
         commands={commands}
         providerOptions={providerOptions}
