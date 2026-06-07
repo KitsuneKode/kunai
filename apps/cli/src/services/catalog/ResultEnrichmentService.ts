@@ -52,6 +52,10 @@ export class ResultEnrichmentService {
 
   async enrichResults(
     results: readonly SearchResult[],
+    options?: {
+      /** Skip a redundant historyStore.getAll() when the caller already loaded history. */
+      readonly preloadedHistory?: Record<string, HistoryProgress>;
+    },
   ): Promise<ReadonlyMap<string, ResultEnrichment>> {
     const output = new Map<string, ResultEnrichment>();
     const missing = results.filter((result) => {
@@ -67,7 +71,9 @@ export class ResultEnrichmentService {
     if (missing.length === 0) return output;
 
     const [historyResult, offlineResult] = await Promise.allSettled([
-      this.deps.historyStore.getAll(),
+      options?.preloadedHistory !== undefined
+        ? Promise.resolve(options.preloadedHistory)
+        : this.deps.historyStore.getAll(),
       this.deps.offlineLibraryService.peekRecordedArtifactStatuses(
         missing.map((result) => result.id),
         300,
@@ -75,6 +81,7 @@ export class ResultEnrichmentService {
     ]);
     const history = historyResult.status === "fulfilled" ? historyResult.value : {};
     const offlineEntries = offlineResult.status === "fulfilled" ? offlineResult.value : [];
+    const offlineByTitleId = groupOfflineStatusesByTitleId(offlineEntries);
 
     for (const result of missing) {
       const historyEntry = history[result.id];
@@ -86,9 +93,7 @@ export class ResultEnrichmentService {
         result,
         historyEntry,
         nextRelease,
-        offlineStatuses: offlineEntries
-          .filter((entry) => entry.titleId === result.id)
-          .map((entry) => entry.status),
+        offlineStatuses: offlineByTitleId.get(result.id) ?? [],
       });
       const key = resultEnrichmentKey(result);
       this.cache.set(key, { expiresAt: this.now() + this.ttlMs, value: enrichment });
@@ -101,6 +106,21 @@ export class ResultEnrichmentService {
 
 export function resultEnrichmentKey(result: Pick<SearchResult, "type" | "id">): string {
   return `${result.type}:${result.id}`;
+}
+
+function groupOfflineStatusesByTitleId(
+  entries: ReadonlyArray<{ readonly titleId: string; readonly status: string }>,
+): ReadonlyMap<string, readonly string[]> {
+  const grouped = new Map<string, string[]>();
+  for (const entry of entries) {
+    const bucket = grouped.get(entry.titleId);
+    if (bucket) {
+      bucket.push(entry.status);
+    } else {
+      grouped.set(entry.titleId, [entry.status]);
+    }
+  }
+  return grouped;
 }
 
 export function buildResultEnrichment(input: {
