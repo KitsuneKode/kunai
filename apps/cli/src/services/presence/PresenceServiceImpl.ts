@@ -422,18 +422,23 @@ export const __testing = {
 
 function buildDiscordPlaybackTimeline(
   activity: Pick<PresencePlaybackActivity, "startedAtMs" | "positionSeconds" | "durationSeconds">,
-): { timestamps: { start: number; end?: number } } {
-  const nowMs = Date.now();
+): { timestamps?: { start: number; end: number } } {
   const positionSeconds = normalizePresenceSeconds(activity.positionSeconds);
   const durationSeconds = normalizePresenceSeconds(activity.durationSeconds);
-  const startedAtMs = positionSeconds > 0 ? nowMs - positionSeconds * 1_000 : activity.startedAtMs;
-  const timestamps: { start: number; end?: number } = {
-    start: Math.floor(startedAtMs / 1_000),
-  };
-  if (durationSeconds > positionSeconds) {
-    timestamps.end = Math.floor((startedAtMs + durationSeconds * 1_000) / 1_000);
+  // Only emit a timeline when we have a real end → Discord renders a progress
+  // BAR (Cider-style "00:31 ── 03:55"). Emitting only `start` (no duration yet)
+  // makes Discord show a growing "elapsed" counter that reads as idle time, so
+  // we omit the timeline entirely until a duration is known.
+  if (durationSeconds <= 0 || durationSeconds <= positionSeconds) {
+    return {};
   }
-  return { timestamps };
+  const startedAtMs = Date.now() - positionSeconds * 1_000;
+  return {
+    timestamps: {
+      start: Math.floor(startedAtMs / 1_000),
+      end: Math.floor((startedAtMs + durationSeconds * 1_000) / 1_000),
+    },
+  };
 }
 
 function formatPlaybackProgressLabel(
