@@ -867,10 +867,14 @@ export function BrowseShell<T>({
       return;
     }
 
-    // Calendar day strip navigation — left/right arrows when in calendar mode
+    // Calendar day strip navigation. From "all days" both arrows enter at today
+    // (or the first day) — never jump to the furthest-future day — then ←/→ step
+    // to the previous/next day, clamped at the ends.
+    const calendarEntryDayKey = (): string | null =>
+      calendarDays.find((d) => d.isToday)?.key ?? calendarDays[0]?.key ?? null;
     if (isCalendarView && calendarDays.length > 0 && key.leftArrow) {
       setCalendarDayFilter((current) => {
-        if (current === null) return calendarDays[calendarDays.length - 1]?.key ?? null;
+        if (current === null) return calendarEntryDayKey();
         const idx = calendarDays.findIndex((d) => d.key === current);
         return idx > 0 ? (calendarDays[idx - 1]?.key ?? current) : current;
       });
@@ -879,7 +883,7 @@ export function BrowseShell<T>({
     }
     if (isCalendarView && calendarDays.length > 0 && key.rightArrow) {
       setCalendarDayFilter((current) => {
-        if (current === null) return calendarDays[0]?.key ?? null;
+        if (current === null) return calendarEntryDayKey();
         const idx = calendarDays.findIndex((d) => d.key === current);
         return idx < calendarDays.length - 1 ? (calendarDays[idx + 1]?.key ?? current) : current;
       });
