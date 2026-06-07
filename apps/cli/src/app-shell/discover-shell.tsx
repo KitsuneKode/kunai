@@ -134,8 +134,10 @@ export function DiscoverShell({
   onRefreshSection?: (sectionIdx: number) => Promise<RecommendationSection | null>;
   onResult: (result: DiscoverShellResult) => void;
 }) {
-  const [visibleSections, setVisibleSections] =
-    useState<readonly RecommendationSection[]>(sections);
+  const [refreshedSections, setRefreshedSections] = useState<
+    readonly RecommendationSection[] | null
+  >(null);
+  const visibleSections = refreshedSections ?? sections;
   const [selectedGlobalIndex, setSelectedGlobalIndex] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshingSectionIdx, setRefreshingSectionIdx] = useState<number | null>(null);
@@ -199,7 +201,9 @@ export function DiscoverShell({
         void onRefreshSection(sectionIdx)
           .then((updated) => {
             if (updated !== null) {
-              setVisibleSections((prev) => prev.map((s, i) => (i === sectionIdx ? updated : s)));
+              setRefreshedSections((prev) =>
+                (prev ?? sections).map((s, i) => (i === sectionIdx ? updated : s)),
+              );
             }
             return undefined;
           })
@@ -217,7 +221,7 @@ export function DiscoverShell({
         setRefreshError(null);
         void onRefresh()
           .then((nextSections) => {
-            setVisibleSections(nextSections);
+            setRefreshedSections(nextSections);
             setSelectedGlobalIndex(0);
             return undefined;
           })

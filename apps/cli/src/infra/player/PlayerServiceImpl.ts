@@ -160,6 +160,7 @@ export class PlayerServiceImpl implements PlayerService {
   async playLocal(options: {
     source: LocalPlaybackSource;
     attach?: boolean;
+    startAt?: number;
     policy?: LocalPlaybackPolicyInput;
     onPlayerReady?: () => void;
     onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
@@ -192,6 +193,7 @@ export class PlayerServiceImpl implements PlayerService {
       subtitle: subtitlePath,
       displayTitle,
       attach: options.attach,
+      startAt: options.startAt,
       timing: options.source.timing,
       autoSkipEnabled: policy.autoSkipEnabled,
       skipRecap: policy.skipRecap,

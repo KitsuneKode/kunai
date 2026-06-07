@@ -26,18 +26,26 @@ export const Heatmap = React.memo(function Heatmap({
 }) {
   return (
     <Box flexDirection="column">
-      {rows.map((row) => (
-        <Box key={row.label}>
-          <Text color={palette.muted}>{row.label.padEnd(4)}</Text>
-          {row.values.map((value, i) => (
-            // Fixed-position grid cell: column index is its stable identity (cells never reorder).
-            // oxlint-disable-next-line react/no-array-index-key
-            <Text key={`${row.label}-${i}`} color={cellColor(value, max, tintHex)}>
-              {` ${cell}`}
-            </Text>
-          ))}
-        </Box>
-      ))}
+      {rows.map((row) => {
+        const seenValues = new Map<number, number>();
+        return (
+          <Box key={row.label}>
+            <Text color={palette.muted}>{row.label.padEnd(4)}</Text>
+            {row.values.map((value) => {
+              const seenCount = seenValues.get(value) ?? 0;
+              seenValues.set(value, seenCount + 1);
+              return (
+                <Text
+                  key={`${row.label}:${value}:${seenCount}`}
+                  color={cellColor(value, max, tintHex)}
+                >
+                  {` ${cell}`}
+                </Text>
+              );
+            })}
+          </Box>
+        );
+      })}
     </Box>
   );
 });

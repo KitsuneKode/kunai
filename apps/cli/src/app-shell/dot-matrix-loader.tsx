@@ -147,7 +147,6 @@ export function useDotMatrixAnimation(
   const [tick, setTick] = React.useState(0);
 
   React.useEffect(() => {
-    setTick(0);
     if (!active) return undefined;
     const timer = setInterval(() => {
       setTick((current) => current + 1);

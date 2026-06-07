@@ -32,6 +32,12 @@ export function selectFooterActions(
   if (mode === "minimal") {
     const limit = Math.min(MINIMAL_FOOTER_ACTION_LIMIT, hardLimit);
     const commandAction = enabledActions.find((action) => action.action === "command-mode");
+    if (commandAction?.primary) {
+      return [
+        commandAction,
+        ...enabledActions.filter((action) => action.action !== "command-mode"),
+      ].slice(0, limit);
+    }
     const primaryActions = enabledActions
       .filter((action) => action.action !== "command-mode")
       .slice(0, commandAction ? limit - 1 : limit);

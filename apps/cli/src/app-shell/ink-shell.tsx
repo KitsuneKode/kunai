@@ -39,6 +39,7 @@ import {
   mountRootContent,
   useRootContentSession,
 } from "./root-content-state";
+import { getRootOverlayResetKey } from "./root-overlay-model";
 import { RootOverlayShell } from "./root-overlay-shell";
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
@@ -82,6 +83,12 @@ import {
 import { usePosterPreview } from "./use-poster-preview";
 import { useSessionSelector } from "./use-session-selector";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
+
+const ACTIVE_PLAYBACK_STATUSES = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
+const LIST_SHELL_FOOTER_ACTIONS: readonly FooterAction[] = [
+  { key: "/", label: "commands", action: "command-mode" },
+  { key: "esc", label: "back", action: "quit" },
+];
 
 // =============================================================================
 // STDIN LIFECYCLE MANAGER
@@ -542,7 +549,6 @@ function AppRoot({ container }: { container: Container }) {
 
     clearPresenceBootTimer();
     if (presenceProvider !== "discord") {
-      setPresenceBootLine(null);
       return () => {
         clearPresenceBootTimer();
       };
@@ -610,11 +616,11 @@ function AppRoot({ container }: { container: Container }) {
     state.currentEpisode?.episode,
   ]);
 
-  const activePlaybackStatuses = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
-  const playbackIsActive = activePlaybackStatuses.some((status) => status === state.playbackStatus);
+  const playbackIsActive = ACTIVE_PLAYBACK_STATUSES.some(
+    (status) => status === state.playbackStatus,
+  );
   useEffect(() => {
     if (!playbackIsActive) {
-      setPlaybackTelemetrySnapshot(null);
       return;
     }
 
@@ -626,6 +632,7 @@ function AppRoot({ container }: { container: Container }) {
     const timer = setInterval(refreshSnapshot, 1_000);
     return () => clearInterval(timer);
   }, [container.playerControl, playbackIsActive]);
+  const activePlaybackTelemetrySnapshot = playbackIsActive ? playbackTelemetrySnapshot : null;
 
   const rootStatus = playbackIsActive
     ? state.playbackStatus
@@ -648,6 +655,7 @@ function AppRoot({ container }: { container: Container }) {
   );
   const shellWidth = stdout.columns ?? 80;
   const shellHeight = stdout.rows ?? 24;
+  const visiblePresenceBootLine = presenceProvider === "discord" ? presenceBootLine : null;
   const currentViewLabel =
     state.playbackStatus === "loading" || playbackIsActive
       ? "playback"
@@ -685,8 +693,8 @@ function AppRoot({ container }: { container: Container }) {
     state.currentEpisode !== null;
   const playbackTrace =
     state.playbackNote ??
-    (playbackTelemetrySnapshot
-      ? describePlaybackTelemetrySnapshot(playbackTelemetrySnapshot)
+    (activePlaybackTelemetrySnapshot
+      ? describePlaybackTelemetrySnapshot(activePlaybackTelemetrySnapshot)
       : undefined) ??
     (state.playbackStatus === "playing"
       ? "Auto-skip and live playback controls stay available while mpv is active"
@@ -945,16 +953,18 @@ function AppRoot({ container }: { container: Container }) {
       {/* Presence boot line renders as alert override when it fires.
           Error/warning tones stay at full intensity so they read as alarms;
           calm tones (connected/info) dim so they recede. */}
-      {presenceBootLine && !rootStatusSummary.alert ? (
+      {visiblePresenceBootLine && !rootStatusSummary.alert ? (
         <Text
-          dimColor={presenceBootLine.tone !== "error" && presenceBootLine.tone !== "warning"}
-          color={statusColor(presenceBootLine.tone)}
+          dimColor={
+            visiblePresenceBootLine.tone !== "error" && visiblePresenceBootLine.tone !== "warning"
+          }
+          color={statusColor(visiblePresenceBootLine.tone)}
         >
-          {truncateLine(presenceBootLine.text, Math.max(36, shellWidth - 8))}
+          {truncateLine(visiblePresenceBootLine.text, Math.max(36, shellWidth - 8))}
         </Text>
       ) : null}
       {/* Streak milestone celebration */}
-      {streakMilestoneAlert && !rootStatusSummary.alert && !presenceBootLine ? (
+      {streakMilestoneAlert && !rootStatusSummary.alert && !visiblePresenceBootLine ? (
         <Text dimColor color={statusColor("warning")}>
           {truncateLine(streakMilestoneAlert, Math.max(36, shellWidth - 8))}
         </Text>
@@ -962,7 +972,7 @@ function AppRoot({ container }: { container: Container }) {
       {/* Streak-at-risk: evening reminder when streak is active but nothing watched today */}
       {streakAtRiskAlert &&
       !rootStatusSummary.alert &&
-      !presenceBootLine &&
+      !visiblePresenceBootLine &&
       !streakMilestoneAlert ? (
         <Text dimColor color={statusColor("warning")}>
           {truncateLine(streakAtRiskAlert, Math.max(36, shellWidth - 8))}
@@ -971,7 +981,7 @@ function AppRoot({ container }: { container: Container }) {
       {/* Weekly digest shows once per week when not mid-playback */}
       {weeklyDigestLine &&
       !rootStatusSummary.alert &&
-      !presenceBootLine &&
+      !visiblePresenceBootLine &&
       !streakMilestoneAlert &&
       !streakAtRiskAlert ? (
         <Text dimColor color={statusColor("info")}>
@@ -1059,15 +1069,15 @@ function AppRoot({ container }: { container: Container }) {
                 autoplayPaused: state.autoplaySessionPaused,
                 isSeriesPlayback,
                 latestIssue: state.playbackNote,
-                currentPosition: playbackTelemetrySnapshot?.positionSeconds,
-                duration: playbackTelemetrySnapshot?.durationSeconds,
+                currentPosition: activePlaybackTelemetrySnapshot?.positionSeconds,
+                duration: activePlaybackTelemetrySnapshot?.durationSeconds,
                 bufferHealth:
                   state.playbackStatus === "stalled"
                     ? "stalled"
                     : state.playbackStatus === "buffering" ||
-                        playbackTelemetrySnapshot?.pausedForCache
+                        activePlaybackTelemetrySnapshot?.pausedForCache
                       ? "buffering"
-                      : playbackTelemetrySnapshot
+                      : activePlaybackTelemetrySnapshot
                         ? "healthy"
                         : undefined,
                 playbackFactsStrip:
@@ -1155,6 +1165,7 @@ function AppRoot({ container }: { container: Container }) {
             </Box>
           ) : rootSurface === "root-overlay" && rootOverlay ? (
             <RootOverlayShell
+              key={getRootOverlayResetKey(rootOverlay)}
               overlay={rootOverlay}
               state={state}
               container={container}
@@ -1170,6 +1181,7 @@ function AppRoot({ container }: { container: Container }) {
         {rootSurface === "root-content" && rootOverlay ? (
           <Box marginTop={1}>
             <RootOverlayShell
+              key={getRootOverlayResetKey(rootOverlay)}
               overlay={rootOverlay}
               state={state}
               container={container}
@@ -1642,19 +1654,6 @@ function ListShell<T>({
     setIndex((current) => Math.min(current, filteredOptions.length - 1));
   }, [filteredOptions.length]);
 
-  useEffect(() => {
-    if (!commandMode) {
-      setHighlightedCommandIndex(0);
-      return;
-    }
-
-    const matches = getCommandMatches(commandInput, actionContext?.commands ?? []);
-    setHighlightedCommandIndex((current) => {
-      if (matches.length === 0) return 0;
-      return Math.min(current, matches.length - 1);
-    });
-  }, [commandInput, commandMode, actionContext]);
-
   const selectedOption = filteredOptions[index];
 
   const { ultraCompact, tooSmall, minColumns, minRows, maxVisibleRows: maxVisible } = viewport;
@@ -1692,10 +1691,7 @@ function ListShell<T>({
   // List/picker shells use the minimal footer: the surface is a focused filter +
   // select, and the command palette ("/") plus Esc-back are the only chrome.
   const effectiveFooterMode: ShellFooterMode = "minimal";
-  const footerActions: readonly FooterAction[] = [
-    { key: "/", label: "commands", action: "command-mode" },
-    { key: "esc", label: "back", action: "quit" },
-  ];
+  const footerActions = LIST_SHELL_FOOTER_ACTIONS;
 
   const updateFilterQuery = (nextValue: string) => {
     const normalized = normalizeReservedCommandInput(nextValue);

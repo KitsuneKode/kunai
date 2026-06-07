@@ -273,8 +273,10 @@ export async function resolveEpisodeAvailability({
     };
   }
 
-  const rawEpisodes = await loaders.loadEpisodes(title.id, currentEpisode.season);
-  const rawSeasons = await loaders.loadSeasons(title.id);
+  const [rawEpisodes, rawSeasons] = await Promise.all([
+    loaders.loadEpisodes(title.id, currentEpisode.season),
+    loaders.loadSeasons(title.id),
+  ]);
   const tmdbUnavailable = rawEpisodes === null || rawSeasons === null;
 
   const currentSeasonEpisodes = [...(rawEpisodes ?? [])]

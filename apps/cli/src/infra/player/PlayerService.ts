@@ -114,6 +114,7 @@ export interface PlayerService {
   playLocal(options: {
     source: LocalPlaybackSource;
     attach?: boolean;
+    startAt?: number;
     policy?: LocalPlaybackPolicyInput;
     onPlayerReady?: () => void;
     onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;

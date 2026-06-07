@@ -1,7 +1,7 @@
 import { getLineEditorViewport, splitCursor, useLineEditor } from "@/app-shell/line-editor";
 import { buildPickerModel, movePickerModelSelection } from "@/domain/session/picker-model";
 import { Box, Text, useInput, useStdout } from "ink";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 
 import { COMMANDS, type AppCommandId, type ResolvedAppCommand } from "./commands";
 import { routeShellInput } from "./input-router";
@@ -340,25 +340,6 @@ export function useShellInput({
       setHighlightedIndex(0);
     },
   });
-
-  useEffect(() => {
-    if (disabled) {
-      setCommandMode(false);
-      setCommandInput("");
-      setHighlightedIndex(0);
-      return;
-    }
-    if (!commandMode) {
-      setHighlightedIndex(0);
-      return;
-    }
-
-    const matches = getCommandMatches(commandInput, commands);
-    setHighlightedIndex((current) => {
-      if (matches.length === 0) return 0;
-      return Math.min(current, matches.length - 1);
-    });
-  }, [commandInput, commandMode, commands, disabled]);
 
   useInput((input, key) => {
     if (disabled) {

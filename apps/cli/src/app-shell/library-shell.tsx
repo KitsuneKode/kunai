@@ -62,7 +62,8 @@ export function LibraryShell({
   initialView?: TabId;
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
-  const [downloadsEnabled, setDownloadsEnabled] = useState(container.config.downloadsEnabled);
+  const [downloadsEnabledOverride, setDownloadsEnabledOverride] = useState<boolean | null>(null);
+  const downloadsEnabled = downloadsEnabledOverride ?? container.config.downloadsEnabled;
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
 
   useInput((input, key) => {
@@ -84,7 +85,7 @@ export function LibraryShell({
     }
     if (input === "d" || input === "D") {
       const next = !downloadsEnabled;
-      setDownloadsEnabled(next);
+      setDownloadsEnabledOverride(next);
       void container.config.update({ downloadsEnabled: next });
       void container.config.save();
       return;
@@ -149,7 +150,6 @@ function LibraryTab({ container }: { container: Container }) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     Promise.all([
       container.offlineLibraryService.listCompletedEntries(200),
       container.historyStore.getAll(),

@@ -97,7 +97,7 @@ import {
 import { usePosterPreview } from "./use-poster-preview";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
-/** Minimum loaded results before the local "Filter results" narrow box is worth its space. */
+/** Minimum loaded results before local narrow mode is worth its space. */
 const MIN_RESULTS_FOR_LOCAL_FILTER = 12;
 
 function clearShellScreen() {
@@ -200,6 +200,7 @@ export function BrowseShell<T>({
   );
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const [resultFilter, setResultFilter] = useState("");
+  const [filterModeOpen, setFilterModeOpen] = useState(false);
   // Focus zones: query (text) → list (bare hotkeys) → filter (local narrow) → idle.
   // See browse-focus-zone.ts and .docs/ux-architecture.md.
   const [focusZone, setFocusZone] = useState<BrowseFocusZone>(() =>
@@ -268,6 +269,7 @@ export function BrowseShell<T>({
     setSelectedDetail("Search for a title — or try /trending to see what's popular");
     setActiveFilterBadges([]);
     setResultFilter("");
+    setFilterModeOpen(false);
     setFocusZone("query");
     setCalendarDayFilter(null);
     setCalendarTypeTab("All");
@@ -326,6 +328,7 @@ export function BrowseShell<T>({
 
       setLastSearchedQuery(rawQuery);
       setResultFilter("");
+      setFilterModeOpen(false);
       setFocusZone("query");
       addSearchQuery(rawQuery);
       setOptions(filteredOptions);
@@ -474,6 +477,7 @@ export function BrowseShell<T>({
       title: panel.title,
       subtitle: panel.subtitle,
       lines: sheetLines.length > 0 ? sheetLines : panel.lines,
+      detailData: companionDetails,
       imageUrl: panel.imageUrl,
       loading: false,
       scrollIndex: 0,
@@ -483,6 +487,16 @@ export function BrowseShell<T>({
   const handleLocalAction = (action: ShellAction): boolean => {
     if (action === "details") {
       openDetailsOverlay();
+      return true;
+    }
+    if (action === "filters") {
+      if (searchState === "ready" && options.length > 0 && !isCalendarView) {
+        setFilterModeOpen(true);
+        setCommandMode(false);
+        setCommandInput("");
+        setHighlightedCommandIndex(0);
+        setFocusZone("filter");
+      }
       return true;
     }
     if (action === "trending") {
@@ -518,19 +532,6 @@ export function BrowseShell<T>({
     setSelectedDetail(option.detail ?? "Press Enter to select this result.");
   }, [displayOptions, selectedIndex]);
 
-  useEffect(() => {
-    if (!commandMode) {
-      setHighlightedCommandIndex(0);
-      return;
-    }
-
-    const matches = getCommandMatches(commandInput, commands);
-    setHighlightedCommandIndex((current) => {
-      if (matches.length === 0) return 0;
-      return Math.min(current, matches.length - 1);
-    });
-  }, [commandInput, commandMode, commands]);
-
   const boundedSelectedIndex =
     displayOptions.length === 0 ? 0 : Math.min(selectedIndex, displayOptions.length - 1);
   const selectedOption = displayOptions[boundedSelectedIndex];
@@ -559,14 +560,14 @@ export function BrowseShell<T>({
     searchState === "idle" &&
     Boolean(idleReturnLoopModel?.hasSelectableContinue);
 
-  // The local "Filter results" narrow only earns its two lines on a long list;
-  // for a handful of search results it duplicates the title search box. Gate it
-  // on a meaningful result count (single source of truth for render + focus zone).
+  // Local narrow mode only earns space on long result sets. It is explicit
+  // (/filters or Ctrl+F) so normal title search stays calm and single-purpose.
   const showResultFilterBar =
     searchState === "ready" &&
     options.length >= MIN_RESULTS_FOR_LOCAL_FILTER &&
     !isCalendarView &&
-    !viewport.ultraCompact;
+    !viewport.ultraCompact &&
+    (filterModeOpen || resultFilter.length > 0);
 
   focusZoneContextRef.current = {
     hasResults: displayOptions.length > 0,
@@ -775,7 +776,8 @@ export function BrowseShell<T>({
 
     if ((input === "f" && key.ctrl) || input === "\x06") {
       if (searchState === "ready" && options.length > 0 && !isCalendarView) {
-        dispatchFocusZone({ type: "focus-filter-shortcut" });
+        setFilterModeOpen(true);
+        setFocusZone("filter");
         setCommandMode(false);
       }
       return;
@@ -912,6 +914,14 @@ export function BrowseShell<T>({
         setSelectedIndex(0);
         return;
       }
+      if (resultFilterFocused || filterModeOpen) {
+        if (resultFilter.length > 0) {
+          setResultFilter("");
+        }
+        setFilterModeOpen(false);
+        dispatchFocusZone({ type: "focus-query" });
+        return;
+      }
       if (listFocused) {
         dispatchFocusZone({ type: "escape" });
         return;
@@ -1026,20 +1036,27 @@ export function BrowseShell<T>({
           </Box>
         ) : null}
         {showResultFilterBar ? (
-          <InputField
-            label="Filter results"
-            value={resultFilter}
-            onChange={(next) => {
-              setResultFilter(next);
-              setSelectedIndex(0);
-              dispatchFocusZone({ type: "focus-filter" });
-            }}
-            onSubmit={() => dispatchFocusZone({ type: "focus-query" })}
-            placeholder="filter these results — or /filters for category chips"
-            focus={resultFilterFocused && !commandMode}
-            maxWidth={innerWidth}
-            onRedraw={clearShellScreen}
-          />
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={palette.accent}>›› filter mode on</Text>
+            <Text color={palette.dim} dimColor>
+              {"   narrows loaded results only · Esc closes · use main search for provider filters"}
+            </Text>
+            <InputField
+              label="Narrow results"
+              value={resultFilter}
+              onChange={(next) => {
+                setResultFilter(next);
+                setFilterModeOpen(true);
+                setSelectedIndex(0);
+                dispatchFocusZone({ type: "focus-filter" });
+              }}
+              onSubmit={() => dispatchFocusZone({ type: "focus-query" })}
+              placeholder="type title, year, movie, series, downloaded…"
+              focus={resultFilterFocused && !commandMode}
+              maxWidth={innerWidth}
+              onRedraw={clearShellScreen}
+            />
+          </Box>
         ) : null}
         {activeFilterBadges.length > 0 && !ultraCompact ? (
           <Box marginTop={1} flexWrap="wrap">
@@ -1086,7 +1103,9 @@ export function BrowseShell<T>({
             hint={
               commandMode
                 ? undefined
-                : "/filters for category chips (type · genre · year · rating) · or type tokens like year:2008"
+                : displayOptions.length === 0
+                  ? "/filters for guided chips · power tokens: type:series year:2022 rating:8"
+                  : undefined
             }
             maxWidth={innerWidth}
             onRedraw={clearShellScreen}

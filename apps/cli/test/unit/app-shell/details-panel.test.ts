@@ -21,7 +21,7 @@ describe("buildBrowseDetailsPanel", () => {
 
     const panel = buildBrowseDetailsPanel(option);
 
-    expect(panel.title).toBe("Title overview");
+    expect(panel.title).toBe("Media dossier");
     expect(panel.subtitle).toBe("Demon Slayer");
     expect(panel.imageUrl).toBe("https://image.tmdb.org/t/p/w342/demo.jpg");
     // Compact model: first line is the title; type/year/rating fold into one

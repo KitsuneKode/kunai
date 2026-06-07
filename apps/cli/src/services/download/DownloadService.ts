@@ -537,7 +537,10 @@ export class DownloadService {
       // Run up to `maxConcurrentDownloads` workers in parallel; each drains the
       // queue (claim → download) until no eligible job remains. The atomic claim
       // in processNextQueued keeps two workers off the same job.
-      const limit = Math.max(1, Math.min(5, Math.trunc(this.deps.config.maxConcurrentDownloads) || 1));
+      const limit = Math.max(
+        1,
+        Math.min(5, Math.trunc(this.deps.config.maxConcurrentDownloads) || 1),
+      );
       const worker = async (): Promise<void> => {
         while (await this.processNextQueued()) {
           // keep pulling jobs

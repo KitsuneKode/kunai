@@ -29,6 +29,16 @@ export function formatOfflineHistoryProgress(
     .join(" · ");
 }
 
+/** Saved resume position (seconds) for a downloaded episode, or 0 if finished/none. */
+export function offlineResumeSecondsForJob(
+  job: DownloadJobRecord,
+  historyEntries: readonly HistoryProgress[],
+): number {
+  const match = findMatchingHistory(job, historyEntries);
+  if (!match || isFinished(match)) return 0;
+  return Math.max(0, match.positionSeconds ?? 0);
+}
+
 function findMatchingHistory(
   job: DownloadJobRecord,
   historyEntries: readonly HistoryProgress[],
