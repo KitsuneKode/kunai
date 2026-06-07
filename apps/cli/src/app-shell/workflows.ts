@@ -9,6 +9,7 @@ import {
   type ShellOption,
 } from "@/app-shell/pickers";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
+import { runAutoplayAdvanceCountdown } from "@/app/autoplay-advance-countdown";
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import { markEntryWatched } from "@/app/history-actions";
@@ -52,7 +53,10 @@ import {
   type OfflineTitleCleanupPreference,
 } from "@/services/download/download-cleanup-policy";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
-import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
+import {
+  formatOfflineHistoryProgress,
+  offlineResumeSecondsForJob,
+} from "@/services/offline/offline-history-progress";
 import {
   formatOfflineJobListingTitle,
   formatOfflineShelfBadge,
@@ -70,7 +74,6 @@ import {
 } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
-import { runAutoplayAdvanceCountdown } from "@/app/autoplay-advance-countdown";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
 import {
@@ -97,82 +100,112 @@ export function localSourceStatusFromArtifactStatus(status: string): LocalSource
 
 export async function playCompletedDownload(container: Container, jobId: string): Promise<void> {
   let currentJobId: string | undefined = jobId;
-  while (currentJobId) {
-    const playable = await container.offlineLibraryService.getPlayableSource(currentJobId);
-    if (playable.status !== "ready") {
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: `Offline file unavailable: ${playable.status}. Check integrity first.`,
+  let isFirstEpisode = true;
+  try {
+    while (currentJobId) {
+      const playable = await container.offlineLibraryService.getPlayableSource(currentJobId);
+      if (playable.status !== "ready") {
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: `Offline file unavailable: ${playable.status}. Check integrity first.`,
+        });
+        return;
+      }
+      const decision = createSourceSelectionEngine().decide({
+        entrypoint: "offline-library",
+        local: { status: "ready", jobId: currentJobId },
+        networkAvailable: true,
+        preference: "prefer-local",
       });
-      return;
-    }
-    const decision = createSourceSelectionEngine().decide({
-      entrypoint: "offline-library",
-      local: { status: "ready", jobId: currentJobId },
-      networkAvailable: true,
-      preference: "prefer-local",
-    });
-    container.diagnosticsService.record({
-      category: "playback",
-      message: "Offline source selected (unified play)",
-      context: {
-        jobId: currentJobId,
-        sourceDecision: decision.reason,
-        shouldResolveOnline: decision.shouldResolveOnline,
-      },
-    });
-    const result = await container.player.playLocal({
-      source: playable.source,
-      attach: false,
-      policy: {
+      container.diagnosticsService.record({
+        category: "playback",
+        message: "Offline source selected (unified play)",
+        context: {
+          jobId: currentJobId,
+          sourceDecision: decision.reason,
+          shouldResolveOnline: decision.shouldResolveOnline,
+        },
+      });
+      const resumeSeconds = isFirstEpisode
+        ? offlineResumeSecondsForJob(
+            playable.job,
+            container.historyRepository.listByTitle(playable.source.titleId),
+          )
+        : 0;
+      const episodeSuffix =
+        playable.source.season != null && playable.source.episode != null
+          ? ` · S${String(playable.source.season).padStart(2, "0")}E${String(playable.source.episode).padStart(2, "0")}`
+          : "";
+      const offlineDisplayTitle = `${playable.source.titleName}${episodeSuffix}`;
+      const localStream: StreamInfo = {
+        url: playable.source.filePath,
+        headers: {},
+        subtitle: playable.source.subtitlePath ?? undefined,
+        title: offlineDisplayTitle,
+        timestamp: Date.now(),
+      };
+      // Route offline through the SAME persistent play() path online uses, so it
+      // inherits the resume OFFER (resumePromptAt + resumeStartChoicePrompt), the
+      // autoskip prompts, and track control — not a forced seek.
+      const result = await container.player.play(localStream, {
+        url: playable.source.filePath,
+        displayTitle: offlineDisplayTitle,
+        playbackMode: "autoplay-chain",
+        resumePromptAt: resumeSeconds,
+        resumeStartChoicePrompt: container.config.resumeStartChoicePrompt,
+        timing: playable.source.timing ?? null,
         autoSkipEnabled: !container.stateManager.getState().autoskipSessionPaused,
         skipRecap: container.config.skipRecap,
         skipIntro: container.config.skipIntro,
         skipPreview: container.config.skipPreview,
         skipCredits: container.config.skipCredits,
-      },
-    });
-    const persisted = await container.offlineLibraryService.savePlaybackHistory(
-      playable.source,
-      result,
-    );
-    if (persisted) {
-      container.offlineRunwayService.enqueueEvaluation(
-        playable.source.titleId,
-        "offline-playback-complete",
+      });
+      const persisted = await container.offlineLibraryService.savePlaybackHistory(
+        playable.source,
+        result,
       );
-    }
+      if (persisted) {
+        container.offlineRunwayService.enqueueEvaluation(
+          playable.source.titleId,
+          "offline-playback-complete",
+        );
+      }
 
-    // Offline autoplay: continue into the next downloaded episode, mirroring the
-    // online autoNext flow (same cancelable countdown). Honors a user pause and
-    // stop-after-current, and only on a natural end — so it feels like online.
-    currentJobId = undefined;
-    const state = container.stateManager.getState();
-    if (
-      result.endReason === "eof" &&
-      container.config.autoNext &&
-      !state.autoplaySessionPaused &&
-      !state.stopAfterCurrent
-    ) {
-      const nextJobId = findNextDownloadedJobId(container, playable.source);
-      if (nextJobId) {
-        const outcome = await runAutoplayAdvanceCountdown({
-          seconds: 5,
-          sleep: (ms) => Bun.sleep(ms),
-          onTick: (remaining) =>
-            container.stateManager.dispatch({
-              type: "SET_PLAYBACK_FEEDBACK",
-              note: `Up next (offline) in ${remaining}s · a to pause`,
-            }),
-          isCancelled: () => container.stateManager.getState().autoplaySessionPaused,
-        });
-        if (outcome === "cancelled") {
-          container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: null });
-        } else {
-          currentJobId = nextJobId;
+      // Offline autoplay: continue into the next downloaded episode, mirroring the
+      // online autoNext flow (same cancelable countdown). Honors a user pause and
+      // stop-after-current, and only on a natural end — so it feels like online.
+      isFirstEpisode = false;
+      currentJobId = undefined;
+      const state = container.stateManager.getState();
+      if (
+        result.endReason === "eof" &&
+        container.config.autoNext &&
+        !state.autoplaySessionPaused &&
+        !state.stopAfterCurrent
+      ) {
+        const nextJobId = findNextDownloadedJobId(container, playable.source);
+        if (nextJobId) {
+          const outcome = await runAutoplayAdvanceCountdown({
+            seconds: 5,
+            sleep: (ms) => Bun.sleep(ms),
+            onTick: (remaining) =>
+              container.stateManager.dispatch({
+                type: "SET_PLAYBACK_FEEDBACK",
+                note: `Up next (offline) in ${remaining}s · a to pause`,
+              }),
+            isCancelled: () => container.stateManager.getState().autoplaySessionPaused,
+          });
+          if (outcome === "cancelled") {
+            container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: null });
+          } else {
+            currentJobId = nextJobId;
+          }
         }
       }
     }
+  } finally {
+    // Release the persistent mpv session when the offline run ends (no-op if none).
+    await container.player.releasePersistentSession();
   }
 }
 
