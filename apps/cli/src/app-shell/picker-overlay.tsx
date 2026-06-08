@@ -1,11 +1,7 @@
-import { Box, Text, useStdout } from "ink";
+import { Box, Text } from "ink";
 import React from "react";
 
-import {
-  getPickerChromeRows,
-  getPickerListMaxVisible,
-  getShellViewportPolicy,
-} from "./layout-policy";
+import { getPickerChromeRows, getPickerListMaxVisible } from "./layout-policy";
 import { getFilteredPickerOptions, type PickerState } from "./picker-controller";
 import { StateBlock } from "./primitives/StateBlock";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
@@ -14,6 +10,7 @@ import { ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { getWindowStart, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { FooterAction } from "./types";
+import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 export type PickerInspectionMode =
   | { readonly kind: "fact"; readonly title: string; readonly detail?: string }
@@ -48,21 +45,21 @@ export function PickerOverlay({
   state: PickerState;
   footerActions?: readonly FooterAction[];
 }) {
-  const { stdout } = useStdout();
-  const columns = stdout.columns ?? 100;
-  const rows = stdout.rows ?? 30;
-  const policy = getShellViewportPolicy("picker", columns, rows);
+  const viewport = useDebouncedViewportPolicy("picker");
 
-  if (policy.tooSmall) {
+  if (viewport.tooSmall) {
     return (
       <ResizeBlocker
-        columns={columns}
-        rows={rows}
-        minColumns={policy.minColumns}
-        minRows={policy.minRows}
+        columns={viewport.columns}
+        rows={viewport.rows}
+        minColumns={viewport.minColumns}
+        minRows={viewport.minRows}
       />
     );
   }
+
+  const columns = viewport.columns;
+  const rows = viewport.rows;
 
   const filteredOptions = getFilteredPickerOptions(state);
   const inspectionMode = resolvePickerInspectionMode(state);
@@ -171,7 +168,12 @@ export function PickerOverlay({
         ) : null}
       </Box>
 
-      <ShellFooter taskLabel={state.title} actions={resolvedFooterActions} mode="minimal" />
+      <ShellFooter
+        taskLabel={state.title}
+        actions={resolvedFooterActions}
+        mode="minimal"
+        terminalWidth={columns}
+      />
     </Box>
   );
 }

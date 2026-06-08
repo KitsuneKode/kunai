@@ -24,7 +24,7 @@ import type {
 } from "@/services/persistence/ConfigService";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import type { StartupPriority } from "@kunai/types";
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
@@ -38,7 +38,7 @@ import {
   type HistoryTab,
   type HistoryTypeFilter,
 } from "./history-view";
-import { getPickerLayout } from "./layout-policy";
+import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import { LibraryShell } from "./library-shell";
 import {
   buildNotificationActionOptions,
@@ -96,6 +96,7 @@ import {
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
 import type { FooterAction, ShellPanelLine } from "./types";
+import { useShellDimensions } from "./use-viewport-policy";
 
 /** Stable empty favorites reference for non-tracks overlays (keeps effect deps referentially stable). */
 const EMPTY_TRACKS_FAVORITES: readonly string[] = [];
@@ -365,8 +366,11 @@ export function RootOverlayShell({
   container: Container;
   onRedraw: () => void;
 }) {
-  const { stdout } = useStdout();
-  const maxLines = Math.max(6, Math.min(12, (stdout.rows ?? 24) - 18));
+  const { cols, rows } = useShellDimensions();
+  const maxLines = getPickerListMaxVisible(
+    rows,
+    getPickerChromeRows({ hasSubtitle: false, commandMode: false, extraRows: 1 }),
+  );
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const rawConfig = container.config.getRaw();
   const providerOptions =
@@ -579,7 +583,7 @@ export function RootOverlayShell({
         filterQuery,
         selectedIndex,
         maxVisible: maxLines,
-        narrow: (stdout.columns ?? 80) < 124,
+        narrow: cols < 124,
         context: {
           nextReleases: historyNextReleases,
           projections: historyProjections,
@@ -599,7 +603,7 @@ export function RootOverlayShell({
       maxLines,
       overlay.type,
       selectedIndex,
-      stdout.columns,
+      cols,
     ],
   );
   const notificationRecords =
@@ -1678,9 +1682,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "history") {
-    const columns = stdout.columns ?? 80;
-    const rows = stdout.rows ?? 24;
-    const { innerWidth, listWidth: pickerListWidth, rowWidth } = getPickerLayout(columns, rows);
+    const { innerWidth, listWidth: pickerListWidth, rowWidth } = getPickerLayout(cols, rows);
     const listWidth = pickerListWidth ?? innerWidth;
 
     return (
@@ -1699,7 +1701,7 @@ export function RootOverlayShell({
           />
           <HistoryShell
             view={historyView}
-            columns={columns}
+            columns={cols}
             listWidth={listWidth}
             rowWidth={rowWidth}
           />
@@ -1719,6 +1721,7 @@ export function RootOverlayShell({
             actions={footerActions}
             mode="detailed"
             commandMode={commandMode}
+            terminalWidth={cols}
           />
         </Box>
       </Box>
@@ -1754,8 +1757,8 @@ export function RootOverlayShell({
             nav={tracksNav}
             favorites={tracksFavorites}
             providerLabel={overlay.type === "tracks_panel" ? overlay.providerLabel : undefined}
-            width={Math.max(24, (stdout.columns ?? 80) - 8)}
-            height={Math.max(8, (stdout.rows ?? 32) - 9)}
+            width={Math.max(24, cols - 8)}
+            height={Math.max(8, rows - 9)}
           />
         </Box>
 
@@ -1814,7 +1817,7 @@ export function RootOverlayShell({
         />
         <OverlayPanel
           overlay={overlayPanel}
-          width={Math.max(24, (stdout.columns ?? 80) - 8)}
+          width={Math.max(24, cols - 8)}
           maxLinesOverride={maxLines}
         />
       </Box>

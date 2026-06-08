@@ -1,11 +1,12 @@
 import { useDotMatrixAnimation, DotMatrixGrid } from "@/app-shell/dot-matrix-loader";
 import type { CapabilitySnapshot } from "@/ui";
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 
 import { StepIndicator } from "./primitives/StepIndicator";
 import { mountRootContent } from "./root-content-state";
 import { palette } from "./shell-theme";
+import { useShellDimensions } from "./use-viewport-policy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -530,9 +531,7 @@ function SetupShell({
   snapshot: CapabilitySnapshot;
   finish: (result: SetupFlowResult, prefs: SetupPrefs) => void;
 }) {
-  const { stdout } = useStdout();
-  const cols = stdout.columns ?? 80;
-  const rows = stdout.rows ?? 24;
+  const { cols, rows } = useShellDimensions();
 
   const [slideIdx, setSlideIdx] = useState(0);
   const [audioIdx, setAudioIdx] = useState(0);

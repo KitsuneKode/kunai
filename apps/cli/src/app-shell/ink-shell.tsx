@@ -22,7 +22,7 @@ import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { Box, Text, render, useInput, useStdout } from "ink";
+import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
@@ -2115,9 +2115,7 @@ function StatsShell({
   const [rangeIdx, setRangeIdx] = useState(0);
   const [kindIdx, setKindIdx] = useState(0);
   const [copiedFlash, setCopiedFlash] = useState<string | null>(null);
-  const { stdout } = useStdout();
-  const rows = stdout.rows ?? 24;
-  const cols = stdout.columns ?? 80;
+  const { cols, rows } = useShellDimensions();
   const innerWidth = Math.max(30, cols - 6);
   const available = rows - 4;
 
