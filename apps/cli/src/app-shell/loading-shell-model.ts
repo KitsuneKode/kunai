@@ -21,10 +21,10 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
             },
           ]
         : []),
-      { key: "t", label: "tracks", action: "source" },
+      { key: "o", label: "source", action: "source" },
       { key: "q", label: "stop", action: "quit" },
     ];
-    return selectFooterActions(playingFooterActions, "minimal");
+    return selectFooterActions(playingFooterActions, state.footerMode ?? "detailed");
   }
 
   return [

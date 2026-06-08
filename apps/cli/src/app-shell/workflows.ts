@@ -74,6 +74,7 @@ import {
   type HistoryStore,
 } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
+import { scheduleVideasyLazySourceProbesFromContainer } from "@/services/playback/schedule-videasy-lazy-probes";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
@@ -1673,15 +1674,52 @@ async function handleSettings(container: Container): Promise<"handled"> {
 }
 
 async function handleClearCache(container: Container): Promise<"handled"> {
-  const choice = await chooseFromListShell<"streams" | "all" | false>({
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  const episode = state.currentEpisode;
+  const episodeCode =
+    title && episode
+      ? `S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`
+      : null;
+
+  const choice = await chooseFromListShell<"episode" | "title" | "streams" | "all" | false>({
     title: "Clear cache?",
     subtitle: "Stream cache holds resolved URLs. Provider memory remembers per-title failures.",
     options: [
-      { value: "streams", label: "Clear stream cache only" },
+      ...(title && episode
+        ? [
+            {
+              value: "episode" as const,
+              label: `Purge episode cache${episodeCode ? `  ·  ${episodeCode}` : ""}`,
+              detail: `Drop cached resolve + source inventory for ${title.name}`,
+            },
+          ]
+        : []),
+      ...(title
+        ? [
+            {
+              value: "title" as const,
+              label: `Purge title cache  ·  ${title.name}`,
+              detail: "Drop cached resolves for every watched episode of this title",
+            },
+          ]
+        : []),
+      { value: "streams", label: "Clear entire stream cache" },
       { value: "all", label: "Clear stream cache and provider memory" },
       { value: false, label: "Cancel" },
     ],
   });
+
+  if (choice === "episode" && title && episode) {
+    const { purgeEpisodePlaybackCache } = await import("@/app/playback-cache-purge");
+    await purgeEpisodePlaybackCache(container, title, episode);
+    return "handled";
+  }
+  if (choice === "title" && title) {
+    const { purgeTitlePlaybackCaches } = await import("@/app/playback-cache-purge");
+    await purgeTitlePlaybackCaches(container, title, episode ? [episode] : undefined);
+    return "handled";
+  }
   if (choice === "streams" || choice === "all") {
     await container.cacheStore.clear();
     container.diagnosticsService.record({ category: "cache", message: "Stream cache cleared" });
@@ -2173,6 +2211,25 @@ export async function openTracksPanel(
       providerLabel: panelData.providerLabel,
     },
   });
+
+  if (stream) {
+    scheduleVideasyLazySourceProbesFromContainer(container, stream, {
+      onInventoryUpdated: async (nextStream) => {
+        container.stateManager.dispatch({ type: "SET_STREAM", stream: nextStream });
+        const refreshed = await buildTracksPanelData(nextStream, container);
+        const refreshedGroups = options.failedCurrentReason
+          ? annotateCurrentTrackFailure(refreshed.groups, options.failedCurrentReason)
+          : refreshed.groups;
+        container.stateManager.dispatch({
+          type: "UPDATE_TRACKS_PANEL_GROUPS",
+          id,
+          groups: refreshedGroups,
+          providerLabel: refreshed.providerLabel,
+        });
+      },
+    });
+  }
+
   const resolved = await waitForSessionPicker(container.stateManager, id);
   return resolved ? decodeTrackSelection(resolved) : null;
 }

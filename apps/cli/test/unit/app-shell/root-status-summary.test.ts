@@ -38,13 +38,9 @@ describe("buildRootStatusSummary", () => {
       rootStatus: "playing",
     });
 
-    expect(summary.header.label).toBe("Playing · subs selected");
+    expect(summary.header.label).toBe("Playing");
     expect(summary.header.tone).toBe("success");
-    // Crumb includes mode · provider · title · episode during active playback
-    expect(summary.crumb).toContain("anime");
-    expect(summary.crumb).toContain("hianime");
-    expect(summary.crumb).toContain("Frieren");
-    expect(summary.crumb).toContain("S02E04");
+    expect(summary.crumb).toBe("anime · hianime");
     // autoplaySessionPaused fires as the alert (playbackProblem is null)
     expect(summary.alert?.text).toBe("⚠ autoplay paused");
     expect(summary.alert?.tone).toBe("warning");
@@ -118,9 +114,9 @@ describe("buildRootStatusSummary", () => {
       rootStatus: "playing",
     });
 
-    expect(summary.header.label).toBe("Playing · hardsub en");
+    expect(summary.header.label).toBe("Playing");
     expect(summary.header.tone).toBe("success");
-    expect(summary.crumb).toContain("hardsub en");
+    expect(summary.crumb).toBe("anime · allanime");
   });
 
   test("keeps idle search state compact when no title is selected", () => {

@@ -8,8 +8,12 @@ import {
   isCurrentStreamSelection,
   streamSelectionFromTrackPick,
 } from "@/app/source-quality";
-import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
+import {
+  compactPlaybackSubtitleStatus,
+  describePlaybackSubtitleStatus,
+} from "@/app/subtitle-status";
 import type { Container } from "@/container";
+import { effectiveFooterHints } from "@/container";
 import { mediaLanguageProfileFor, showsEpisodeLabel } from "@/domain/media/content-kind";
 import { toErrorScenario } from "@/domain/playback/playback-problem";
 import {
@@ -784,7 +788,7 @@ function AppRoot({ container }: { container: Container }) {
           .find((candidate) => candidate.metadata.id !== state.provider)
       : undefined;
   const activeProvider = container.providerRegistry.get(state.provider);
-  const hasStreamCandidates = Boolean(state.stream?.providerResolveResult?.streams.length);
+  const hasStreamCandidates = Boolean(state.stream?.providerResolveResult);
 
   const onCommandAction = useCallback(
     (action: ShellAction) => {
@@ -1194,7 +1198,7 @@ function AppRoot({ container }: { container: Container }) {
                       })
                     : undefined,
                 commands: resolveCommandContext(state, "activePlayback"),
-                footerMode: "minimal",
+                footerMode: effectiveFooterHints(container),
                 qualityLabel: (() => {
                   const result = state.stream?.providerResolveResult;
                   const selected = result?.streams.find(
@@ -1205,7 +1209,7 @@ function AppRoot({ container }: { container: Container }) {
                 audioTrack: state.stream?.audioLanguages?.length
                   ? state.stream.audioLanguages.join(", ")
                   : undefined,
-                subtitleTrack: playbackSubtitleStatus,
+                subtitleTrack: compactPlaybackSubtitleStatus(playbackSubtitleStatus),
                 nextEpisodeLabel: state.episodeNavigation.nextLabel,
                 previousEpisodeLabel: state.episodeNavigation.previousLabel,
                 hasNextEpisode: state.episodeNavigation.hasNext,
@@ -1342,7 +1346,7 @@ function buildPostPlayFooterActions(
     label: stopAfterCurrent ? "resume chain" : "stop after",
     action: "stop-after-current",
   };
-  const tracksAction: FooterAction = { key: "t", label: "tracks", action: "source" };
+  const sourceAction: FooterAction = { key: "o", label: "source", action: "source" };
 
   switch (postPlayState.kind) {
     case "did-not-start":
@@ -1388,7 +1392,7 @@ function buildPostPlayFooterActions(
         autoplayAction,
         autoskipAction,
         stopAfterCurrentAction,
-        tracksAction,
+        sourceAction,
         { key: "r", label: "replay", action: "replay" },
         commandAction,
       ];

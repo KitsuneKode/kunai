@@ -1,13 +1,4 @@
-import {
-  compactPlaybackSubtitleStatus,
-  describePlaybackSubtitleStatus,
-  playbackSubtitleStatusTone,
-} from "@/app/subtitle-status";
-import {
-  mediaLanguageProfileFor,
-  resolveContentKind,
-  showsEpisodeLabel,
-} from "@/domain/media/content-kind";
+import { resolveContentKind } from "@/domain/media/content-kind";
 import type { SessionState } from "@/domain/session/SessionState";
 
 import type { ShellStatusTone } from "./types";
@@ -22,20 +13,13 @@ export type RootStatusSummary = {
     label: string;
     tone: ShellStatusTone;
   };
-  /** Compact context crumb: "series · vidking" or "series · vidking · Title · S01E04" */
+  /** Compact context crumb: "series · videasy" (playback keeps title/episode in the body) */
   crumb: string;
   /** Highest-priority transient alert, or null when idle */
   alert: RootStatusAlert | null;
 };
 
 export type SyncHealth = "ok" | "warn" | "error" | "disconnected";
-
-function formatEpisode(state: SessionState): string | null {
-  if (!state.currentEpisode) return null;
-  return `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
-    state.currentEpisode.episode,
-  ).padStart(2, "0")}`;
-}
 
 function humanReadableRootStatus(raw: string): string {
   switch (raw) {
@@ -62,9 +46,8 @@ function humanReadableRootStatus(raw: string): string {
   }
 }
 
-function headerTone(rootStatus: string, subtitleTone: ShellStatusTone | null): ShellStatusTone {
+function headerTone(rootStatus: string): ShellStatusTone {
   if (rootStatus === "error") return "error";
-  if (subtitleTone === "warning") return "warning";
   if (rootStatus === "playing" || rootStatus === "ready" || rootStatus === "idle") return "success";
   if (
     rootStatus === "searching" ||
@@ -99,8 +82,6 @@ export function buildRootStatusSummary({
   notificationCount?: number;
   newEpisodeNotificationCount?: number;
 }): RootStatusSummary {
-  const episode = formatEpisode(state);
-  const title = state.currentTitle?.name;
   const isActivePlayback =
     rootStatus === "playing" ||
     rootStatus === "buffering" ||
@@ -108,17 +89,7 @@ export function buildRootStatusSummary({
     rootStatus === "seeking" ||
     rootStatus === "paused";
 
-  const subtitleStatus =
-    state.stream || isActivePlayback
-      ? describePlaybackSubtitleStatus(state.stream, mediaLanguageProfileFor(state).subtitle)
-      : null;
-  const subtitleTone = subtitleStatus ? playbackSubtitleStatusTone(subtitleStatus) : null;
-  const subtitleCompact = subtitleStatus ? compactPlaybackSubtitleStatus(subtitleStatus) : null;
-
-  const headerLabel =
-    isActivePlayback && subtitleCompact
-      ? `${humanReadableRootStatus(rootStatus)} · ${subtitleCompact}`
-      : humanReadableRootStatus(rootStatus);
+  const headerLabel = humanReadableRootStatus(rootStatus);
 
   // Crumb: show the provider actually serving the active stream when it differs from the
   // session selection (for example after recovery fallback or stale shell state).
@@ -128,14 +99,10 @@ export function buildRootStatusSummary({
       ? `${state.provider}→${streamProviderId}`
       : state.provider;
 
-  // Crumb: always mode · provider; add title + episode during playback,
-  // or streak + sync health when idle
+  // Crumb: stable session context only. Title/episode live in the Now Playing body;
+  // subtitle state lives in the NOW row — avoid repeating facts in the header strip.
   const crumbParts: string[] = [resolveContentKind(state.currentTitle, state.mode), providerCrumb];
-  if (isActivePlayback && title) {
-    crumbParts.push(title);
-    if (episode && showsEpisodeLabel(state.currentTitle)) crumbParts.push(episode);
-    if (subtitleCompact) crumbParts.push(subtitleCompact);
-  } else {
+  if (!isActivePlayback) {
     if (streak !== undefined && streak >= 2) {
       crumbParts.push(`🔥 ${streak}d`);
     }
@@ -184,7 +151,7 @@ export function buildRootStatusSummary({
   return {
     header: {
       label: headerLabel,
-      tone: headerTone(rootStatus, subtitleTone),
+      tone: headerTone(rootStatus),
     },
     crumb,
     alert,
