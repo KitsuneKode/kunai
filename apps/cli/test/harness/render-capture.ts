@@ -22,7 +22,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { render as inkRender } from "ink";
-import type { ReactElement } from "react";
+import { act, type ReactElement } from "react";
 
 /** Canonical capture widths — narrow (rail collapses), medium, wide (two-pane). */
 export const CAPTURE_WIDTHS = { narrow: 72, medium: 100, wide: 140 } as const;
@@ -35,6 +35,7 @@ const DEFAULT_ROWS = 45; // ≥ blocked floor (20); tall enough for full surface
 class CaptureStdout extends EventEmitter {
   readonly frames: string[] = [];
   private last = "";
+  isTTY = true;
   constructor(
     public columns: number,
     public rows: number,
@@ -87,8 +88,57 @@ function mount(node: ReactElement, options: CaptureOptions = {}): ActiveCapture 
     debug: true, // synchronous whole-frame writes → lastFrame is the clean frame
     exitOnCtrlC: false,
     patchConsole: false,
+    interactive: true, // enable resize handling in CI/non-TTY harness runs
   });
   return { stdout, unmount: () => instance.unmount() };
+}
+
+export type CaptureResizeStep = CaptureOptions;
+
+/**
+ * Mount once, apply each resize step in order, and return the frame after every
+ * step. Emits Ink's stdout `resize` event when dimensions change.
+ */
+export function captureResizeSequence(
+  node: ReactElement,
+  steps: readonly CaptureResizeStep[],
+): string[] {
+  if (steps.length === 0) return [];
+
+  const first = steps[0];
+  if (!first) return [];
+  const stdout = new CaptureStdout(
+    first.columns ?? CAPTURE_WIDTHS.medium,
+    first.rows ?? DEFAULT_ROWS,
+  );
+  const stdin = new CaptureStdin();
+  const instance = inkRender(node, {
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    debug: true,
+    exitOnCtrlC: false,
+    patchConsole: false,
+    interactive: true,
+  });
+
+  const frames: string[] = [];
+  try {
+    for (const step of steps) {
+      const nextColumns = step.columns ?? stdout.columns;
+      const nextRows = step.rows ?? stdout.rows;
+      if (nextColumns !== stdout.columns || nextRows !== stdout.rows) {
+        stdout.columns = nextColumns;
+        stdout.rows = nextRows;
+        act(() => {
+          stdout.emit("resize");
+        });
+      }
+      frames.push(stdout.lastFrame().replace(/\s+$/, ""));
+    }
+    return frames;
+  } finally {
+    instance.unmount();
+  }
 }
 
 /** Render `node` at one width and return its final text frame (trailing blank lines trimmed). */
