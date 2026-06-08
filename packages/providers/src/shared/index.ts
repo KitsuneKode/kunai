@@ -5,6 +5,7 @@ export * from "./hls-manifest";
 export * from "./direct-stream-source";
 export * from "./provider-cycle";
 export * from "./resolve-helpers";
+export * from "./resolve-inventory-anomaly";
 export * from "./stream-reachability";
 export * from "./stream-health";
 export * from "./source-inventory";

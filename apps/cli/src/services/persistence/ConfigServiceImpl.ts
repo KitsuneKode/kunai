@@ -89,6 +89,8 @@ export class ConfigServiceImpl implements ConfigService {
   private config: KitsuneConfig;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimeoutMs = 300;
+  /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
+  videasyAppIdMigratedOnLoad = false;
 
   constructor(private store: ConfigStore) {
     this.config = { ...DEFAULT_CONFIG };
@@ -143,6 +145,7 @@ export class ConfigServiceImpl implements ConfigService {
     };
     if (shouldPersistVideasyAppIdMigration(loaded, service.config)) {
       await store.save(service.config);
+      service.videasyAppIdMigratedOnLoad = true;
     }
     return service;
   }

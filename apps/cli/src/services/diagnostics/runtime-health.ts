@@ -211,7 +211,18 @@ export function summarizeProviderHealth(
   recentEvents: readonly DiagnosticEvent[],
   currentProvider?: string | null,
 ): RuntimeHealthLine {
+  const startupPhaseEvent = [...recentEvents]
+    .reverse()
+    .find((event) => event.operation === "playback.startup.phases");
+  const startupPhaseBreakdown =
+    startupPhaseEvent?.context && typeof startupPhaseEvent.context.breakdown === "string"
+      ? startupPhaseEvent.context.breakdown
+      : null;
+
   const providerEvent = recentEvents.find((event) => {
+    if (event.category === "playback" && event.operation === "playback.startup.timeline") {
+      return true;
+    }
     if (event.category !== "provider" && event.category !== "cache") return false;
     return (
       event.message.includes("Provider resolve") ||
@@ -231,10 +242,32 @@ export function summarizeProviderHealth(
     "provider";
 
   if (!providerEvent) {
+    if (startupPhaseBreakdown) {
+      return {
+        label: "Provider",
+        detail: startupPhaseBreakdown,
+        tone: "success",
+      };
+    }
     return {
       label: "Provider",
       detail: `${provider} · no resolve telemetry yet`,
       tone: "neutral",
+    };
+  }
+
+  if (
+    providerEvent.category === "playback" &&
+    providerEvent.operation === "playback.startup.timeline"
+  ) {
+    const stage =
+      typeof providerEvent.context?.stage === "string" ? providerEvent.context.stage : "bootstrap";
+    const summary =
+      typeof providerEvent.context?.summary === "string" ? providerEvent.context.summary : null;
+    return {
+      label: "Provider",
+      detail: summary ?? `${provider} · ${stage}`,
+      tone: "info",
     };
   }
 

@@ -1,8 +1,8 @@
 # Kunai — Daily-Use UX, Discovery, And Runtime Hardening
 
-Status: implementation pass complete, pending manual smoke + plan/doc sync
+Status: implementation pass complete; M8 playback/bootstrap slices tracked in [cli-playback-ux-hardening.md](./cli-playback-ux-hardening.md)
 
-Last updated: 2026-05-16
+Last updated: 2026-06-08
 
 **Doc drift:** Milestones 2, 4, and parts of 3 are implemented in code; Milestone 1 (recommendation cache stale-on-error) may still be open — verify in `RecommendationServiceImpl` before closing. See [plan-implementation-truth.md](./plan-implementation-truth.md).
 
@@ -282,10 +282,10 @@ Progress (2026-06-09):
   deduped (title/episode/subtitle live in body, not header strip); `o` source shortcut aligned
   across footer/post-play/GO; episode/title cache purge; Videasy Luffy HLS materialization +
   segment probe (see [kunai-playback-reliability-implementation.md](./kunai-playback-reliability-implementation.md));
-  hotkey repair for `n`/`p`/`v`/`u`.
-- **Open:** unified playback input router (footer + loading-shell + mpv must not disagree);
-  terminal `r`/`f`/`d` during stall banner; defer materialized HLS cleanup to session release;
-  optional episode still/backdrop companion.
+  hotkey repair for `n`/`p`/`k`/`v`/`u`; unified `playback-shell-input` router;
+  terminal `r`/`f`/`d` during stall; deferred HLS temp cleanup on session release.
+- **Open:** P2 footer vs GO hint parity; optional episode still/backdrop companion; bootstrap
+  presenter / honest startup stages (later M8 slices).
 
 Tasks:
 

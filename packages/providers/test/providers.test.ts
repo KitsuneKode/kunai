@@ -38,6 +38,15 @@ import {
 
 const FIXTURE_BASE = new URL("./fixtures/", import.meta.url);
 
+/** db.videasy enrich fetch is separate from api.videasy resolve requests. */
+function videasyResolveUrls(urls: readonly string[]): string[] {
+  return urls.filter((url) => !url.includes("db.videasy.to"));
+}
+
+function videasyApiHeaders(seenHeaders: readonly Headers[]): Headers | undefined {
+  return seenHeaders.find((headers) => headers.get("x-app-id") != null);
+}
+
 function expectedVideasyRouteEndpoint(endpoint: string): string {
   return endpoint;
 }
@@ -244,8 +253,11 @@ test("vidking direct resolver does not retry definitive 404 responses or duplica
   );
 
   expect(result?.status).toBe("exhausted");
-  expect(requestedUrls).toHaveLength(2);
-  expect(requestedUrls.every((url) => !url.includes("year="))).toBe(true);
+  expect(videasyResolveUrls(requestedUrls)).toHaveLength(2);
+  const yearParams = new Set(
+    videasyResolveUrls(requestedUrls).map((url) => new URL(url).searchParams.get("year")),
+  );
+  expect(yearParams.size).toBeLessThanOrEqual(1);
   expect(result?.trace.events?.map((event) => event.type)).not.toContain("retry:scheduled");
   expect(result?.failures.every((failure) => failure.retryable === false)).toBe(true);
   expect(result?.failures.every((failure) => failure.code === "not-found")).toBe(true);
@@ -282,9 +294,10 @@ test("vidking direct resolver sends Videasy session headers when provided", asyn
   );
 
   expect(result?.status).toBe("exhausted");
-  expect(seenHeaders[0]?.get("x-app-id")).toBe("bc-frontend");
-  expect(seenHeaders[0]?.get("x-session-token")).toBe("session-123");
-  expect(seenHeaders[0]?.get("origin")).toBe("https://www.cineplay.to");
+  const apiHeaders = videasyApiHeaders(seenHeaders);
+  expect(apiHeaders?.get("x-app-id")).toBe("bc-frontend");
+  expect(apiHeaders?.get("x-session-token")).toBe("session-123");
+  expect(apiHeaders?.get("origin")).toBe("https://www.cineplay.to");
 });
 
 test("vidking direct resolver reads Videasy session token from runtime auth", async () => {
@@ -324,10 +337,11 @@ test("vidking direct resolver reads Videasy session token from runtime auth", as
   );
 
   expect(result?.status).toBe("exhausted");
-  expect(seenHeaders[0]?.get("x-app-id")).toBe("bc-frontend");
-  expect(seenHeaders[0]?.get("x-session-token")).toBe("runtime-session-123");
-  expect(seenHeaders[0]?.get("origin")).toBe("https://www.cineplay.to");
-  expect(seenHeaders[0]?.get("referer")).toBe("https://www.cineplay.to/tv/61700/1/2");
+  const apiHeaders = videasyApiHeaders(seenHeaders);
+  expect(apiHeaders?.get("x-app-id")).toBe("bc-frontend");
+  expect(apiHeaders?.get("x-session-token")).toBe("runtime-session-123");
+  expect(apiHeaders?.get("origin")).toBe("https://www.cineplay.to");
+  expect(apiHeaders?.get("referer")).toBe("https://www.cineplay.to/tv/61700/1/2");
 });
 
 test("vidking direct resolver can pair a session with a Bitcine app id", async () => {
@@ -369,10 +383,11 @@ test("vidking direct resolver can pair a session with a Bitcine app id", async (
   );
 
   expect(result?.status).toBe("exhausted");
-  expect(seenHeaders[0]?.get("x-app-id")).toBe("bc-frontend");
-  expect(seenHeaders[0]?.get("x-session-token")).toBe("bitcine-session-123");
-  expect(seenHeaders[0]?.get("origin")).toBe("https://www.cineplay.to");
-  expect(seenHeaders[0]?.get("referer")).toBe("https://www.cineplay.to/tv/61700/1/2");
+  const apiHeaders = videasyApiHeaders(seenHeaders);
+  expect(apiHeaders?.get("x-app-id")).toBe("bc-frontend");
+  expect(apiHeaders?.get("x-session-token")).toBe("bitcine-session-123");
+  expect(apiHeaders?.get("origin")).toBe("https://www.cineplay.to");
+  expect(apiHeaders?.get("referer")).toBe("https://www.cineplay.to/tv/61700/1/2");
 });
 
 test("vidking session transport covers every registered Videasy flavor", async () => {
@@ -471,10 +486,11 @@ test("vidking preferred source targets that flavor without broad server probing"
   );
 
   expect(result?.status).toBe("exhausted");
-  expect(requestedUrls).toHaveLength(1);
-  expect(requestedUrls[0]).toContain("/hdmovie/sources-with-title?");
-  expect(requestedUrls[0]).not.toContain("/mb-flix/");
-  expect(requestedUrls[0]).not.toContain("/cdn/");
+  const resolveUrls = videasyResolveUrls(requestedUrls);
+  expect(resolveUrls).toHaveLength(1);
+  expect(resolveUrls[0]).toContain("/hdmovie/sources-with-title?");
+  expect(resolveUrls[0]).not.toContain("/mb-flix/");
+  expect(resolveUrls[0]).not.toContain("/cdn/");
 });
 
 test("vidking stops source fanout after a provider-wide session guard failure", async () => {
@@ -509,8 +525,9 @@ test("vidking stops source fanout after a provider-wide session guard failure", 
   expect(result?.status).toBe("exhausted");
   expect(result?.failures).toHaveLength(1);
   expect(result?.failures[0]).toMatchObject({ code: "blocked", retryable: false });
-  expect(requestedUrls).toHaveLength(1);
-  expect(requestedUrls[0]).toContain("/mb-flix/sources-with-title?");
+  const resolveUrls = videasyResolveUrls(requestedUrls);
+  expect(resolveUrls).toHaveLength(1);
+  expect(resolveUrls[0]).toContain("/mb-flix/sources-with-title?");
 });
 
 test("vidking direct resolver classifies Videasy session guard responses as blocked", async () => {
@@ -610,8 +627,9 @@ test("vidking direct resolver can target a flavored endpoint without broad serve
     },
   );
 
-  expect(requestedUrls.every((url) => url.includes("/meine/sources-with-title?"))).toBe(true);
-  expect(requestedUrls[0]).toContain("language=german");
+  const resolveUrls = videasyResolveUrls(requestedUrls);
+  expect(resolveUrls.every((url) => url.includes("/meine/sources-with-title?"))).toBe(true);
+  expect(resolveUrls[0]).toContain("language=german");
   expect(result?.trace.events?.map((event) => event.type)).toEqual(
     expect.arrayContaining(["source:start", "source:failed", "provider:exhausted"]),
   );

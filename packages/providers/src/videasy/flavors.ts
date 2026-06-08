@@ -188,6 +188,18 @@ export function getVidkingFlavorForEndpoint(
 }
 
 /** Map endpoint (+ optional engine hints) to themed labels used in UI and inventory. */
+/** Public Cineby-facing label (Neon for bc-frontend + mb-flix primary). */
+export function publicVidkingSourceLabel(
+  presentation: VidkingFlavorPresentation,
+  videasyAppId?: string,
+): string {
+  if (videasyAppId === "bc-frontend" && presentation.endpoint === "mb-flix") {
+    const flavor = presentation.flavorId ? getVidkingFlavor(presentation.flavorId) : undefined;
+    if (flavor?.cinebyAlias) return flavor.cinebyAlias;
+  }
+  return presentation.themeLabel;
+}
+
 export function resolveVidkingPresentation(
   endpoint: string,
   engineOptions: Pick<

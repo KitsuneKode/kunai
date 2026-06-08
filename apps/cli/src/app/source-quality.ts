@@ -422,7 +422,7 @@ export function formatPlaybackSessionKeysHint(input: PlaybackSessionKeysInput): 
     parts.push("o source");
   }
   if (control.showQualityControl) {
-    parts.push("v quality");
+    parts.push("k quality");
   }
   if (input.isSeries) {
     parts.push("e episodes");

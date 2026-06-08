@@ -13,7 +13,7 @@ import {
 describe("loading shell 4-stage mapping", () => {
   test("maps coarse operations to high-level stages", () => {
     expect(resolveStageFromOperation("resolving")).toBe("finding-stream");
-    expect(resolveStageFromOperation("loading")).toBe("preparing-player");
+    expect(resolveStageFromOperation("loading")).toBe("preparing-provider");
     expect(resolveStageFromOperation("playing")).toBe("starting-playback");
   });
 

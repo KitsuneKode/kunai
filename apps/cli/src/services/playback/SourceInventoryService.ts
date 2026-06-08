@@ -104,6 +104,32 @@ export class SourceInventoryService {
     }
   }
 
+  async deleteByProvider(providerId: string): Promise<number> {
+    try {
+      const removed = this.repository.deleteByProvider(providerId);
+      this.options.diagnostics?.record({
+        level: "info",
+        category: "cache",
+        operation: "source-inventory.cache.invalidated",
+        message: "Source inventory rows purged by provider",
+        providerId,
+        context: { removed, reason: "provider-wide-delete" },
+      });
+      return removed;
+    } catch (error) {
+      this.recordCacheFailure(
+        "source-inventory.delete-by-provider",
+        {
+          providerId,
+          mediaKind: "series",
+          titleId: "*",
+        },
+        error,
+      );
+      return 0;
+    }
+  }
+
   private recordCacheFailure(
     operation: string,
     input: SourceInventoryCacheInput,

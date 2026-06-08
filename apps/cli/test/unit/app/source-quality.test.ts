@@ -313,7 +313,7 @@ test("formatPlaybackSessionKeysHint lists session state and only available nav k
   expect(hint).not.toContain("k tracks");
   expect(hint).not.toContain("t tracks");
   expect(hint).toContain("o source");
-  expect(hint).toContain("v quality");
+  expect(hint).toContain("k quality");
   expect(hint).toContain("/ commands");
 });
 

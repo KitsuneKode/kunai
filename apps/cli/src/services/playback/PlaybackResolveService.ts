@@ -27,6 +27,7 @@ import {
   type ProviderEngineResolveAttempt,
   type ResolveAttempt,
 } from "@kunai/core";
+import { isOrgOnlyProviderResolveResult } from "@kunai/providers";
 import type { StreamHealthPhase } from "@kunai/providers";
 import type { ProviderHealthRepository } from "@kunai/storage";
 import type {
@@ -303,7 +304,16 @@ export class PlaybackResolveService {
     };
     const inventoryResult = await this.deps.sourceInventory?.get(inventoryInput);
     if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
-      if (providerResultHasDeferredStream(inventoryResult)) {
+      if (
+        (input.providerId === "videasy" || input.providerId === "vidking") &&
+        isOrgOnlyProviderResolveResult(inventoryResult)
+      ) {
+        await this.deps.sourceInventory?.delete(inventoryInput);
+        input.onFeedback?.({
+          note: "Stale ORG-only cache cleared — try o source or purge episode cache",
+        });
+        input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
+      } else if (providerResultHasDeferredStream(inventoryResult)) {
         await this.deps.sourceInventory?.delete(inventoryInput);
       } else {
         const inventoryStream = providerResolveResultToStreamInfo({

@@ -1,6 +1,10 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
 import { switchSessionMode } from "@/app/mode-switch";
+import {
+  buildPlaybackBootstrapPresentation,
+  formatBootstrapInventorySummary,
+} from "@/app/playback-bootstrap-presenter";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import {
   formatPlaybackSessionFactsStrip,
@@ -789,6 +793,33 @@ function AppRoot({ container }: { container: Container }) {
       : undefined;
   const activeProvider = container.providerRegistry.get(state.provider);
   const hasStreamCandidates = Boolean(state.stream?.providerResolveResult);
+  const playbackBootstrapPresentation = useMemo(
+    () =>
+      buildPlaybackBootstrapPresentation({
+        playbackStatus: state.playbackStatus,
+        playbackDetail: state.playbackDetail,
+        recentEvents: container.diagnosticsStore.getRecent(40),
+      }),
+    [state.playbackStatus, state.playbackDetail, container.diagnosticsStore],
+  );
+  const playbackBootstrapStageDetail = useMemo(() => {
+    const base =
+      playbackBootstrapPresentation.stageDetail ?? state.playbackDetail?.trim() ?? undefined;
+    if (
+      !state.stream?.providerResolveResult ||
+      (state.playbackStatus !== "loading" && state.playbackStatus !== "ready")
+    ) {
+      return base;
+    }
+    const inventorySummary = formatBootstrapInventorySummary(state.stream);
+    if (!inventorySummary) return base;
+    return base ? `${base} · ${inventorySummary}` : inventorySummary;
+  }, [
+    playbackBootstrapPresentation.stageDetail,
+    state.playbackDetail,
+    state.playbackStatus,
+    state.stream,
+  ]);
 
   const onCommandAction = useCallback(
     (action: ShellAction) => {
@@ -1099,27 +1130,10 @@ function AppRoot({ container }: { container: Container }) {
               state={{
                 title: state.currentTitle?.name || "Resolving...",
                 subtitle: playbackSubtitle,
-                operation:
-                  state.playbackStatus === "playing" ||
-                  state.playbackStatus === "buffering" ||
-                  state.playbackStatus === "seeking" ||
-                  state.playbackStatus === "stalled"
-                    ? "playing"
-                    : state.playbackStatus === "loading"
-                      ? "loading"
-                      : "resolving",
-                stage:
-                  state.playbackStatus === "playing" ||
-                  state.playbackStatus === "buffering" ||
-                  state.playbackStatus === "seeking" ||
-                  state.playbackStatus === "stalled"
-                    ? "starting-playback"
-                    : state.playbackStatus === "ready"
-                      ? "preparing-player"
-                      : state.playbackStatus === "loading"
-                        ? "preparing-provider"
-                        : "finding-stream",
-                stageDetail: state.playbackDetail ?? undefined,
+                operation: playbackBootstrapPresentation.operation,
+                stage: playbackBootstrapPresentation.stage,
+                stageDetail: playbackBootstrapStageDetail,
+                dominantPhaseLabel: playbackBootstrapPresentation.dominantPhaseLabel,
                 details: state.playbackDetail ?? `Provider: ${state.provider}`,
                 providerName: activeProvider?.metadata.name ?? state.provider,
                 providerId: state.provider,

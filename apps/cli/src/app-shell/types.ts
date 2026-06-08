@@ -161,6 +161,8 @@ export type LoadingShellState = {
   stage?: LoadingShellStage;
   /** Human-readable sub-status within the current stage (e.g. "Resolving direct link…"). */
   stageDetail?: string;
+  /** Dominant slow startup phase from playback.startup.phases telemetry. */
+  dominantPhaseLabel?: string;
   progress?: number; // 0-100 or undefined for indeterminate
   details?: string;
   trace?: string;

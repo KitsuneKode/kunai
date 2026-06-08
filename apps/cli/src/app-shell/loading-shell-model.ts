@@ -11,6 +11,10 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
   if (state.operation === "playing") {
     const playingFooterActions: readonly FooterAction[] = [
       { key: "/", label: "commands", action: "command-mode", primary: true },
+      ...(state.hasNextEpisode ? [{ key: "n", label: "next", action: "next" as const }] : []),
+      ...(state.hasPreviousEpisode
+        ? [{ key: "p", label: "prev", action: "previous" as const }]
+        : []),
       ...(isSeriesPlayback
         ? [
             { key: "e", label: "episodes", action: "pick-episode" as const },

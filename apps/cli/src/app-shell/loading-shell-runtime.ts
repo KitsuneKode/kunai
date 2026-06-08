@@ -67,8 +67,8 @@ const STAGE_GLYPHS: Record<LoadingShellStage, string> = {
 const STAGE_LABELS: Record<LoadingShellStage, string> = {
   "finding-stream": "Resolving",
   "preparing-provider": "Providers",
-  "preparing-player": "Stream",
-  "starting-playback": "Player",
+  "preparing-player": "Player",
+  "starting-playback": "Buffering",
 };
 
 export type StageRailItem = {
@@ -86,7 +86,7 @@ export function resolveStageFromOperation(
     case "resolving":
       return "finding-stream";
     case "loading":
-      return "preparing-player";
+      return "preparing-provider";
     case "playing":
       return "starting-playback";
     default:
@@ -158,6 +158,7 @@ export function getProviderResolveWaitPresentation(input: {
   readonly fallbackAvailable?: boolean;
   readonly latestIssue?: string | null;
   readonly stageDetail?: string;
+  readonly dominantPhaseLabel?: string;
 }): ProviderResolveWaitPresentation {
   const fallbackHint = input.fallbackAvailable ? "f fallback · " : "";
   const issue = normalizeLoadingIssue(input.latestIssue);
@@ -193,8 +194,12 @@ export function getProviderResolveWaitPresentation(input: {
   }
 
   if (input.elapsedSeconds >= 10) {
+    const slowPhase = input.dominantPhaseLabel?.trim();
+    const slowMessage = slowPhase
+      ? slowPhase
+      : (input.stageDetail ?? "Taking longer than expected…");
     return {
-      message: input.stageDetail ?? "Taking longer than expected…",
+      message: slowMessage,
       tone: "info",
       footerTask: `Playback bootstrap  ·  ${fallbackHint}q / Esc cancel`,
     };

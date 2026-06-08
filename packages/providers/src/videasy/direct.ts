@@ -52,6 +52,7 @@ import {
   getPhaseAVidkingFlavorIds,
   listEligibleVidkingFlavorIds,
   listVidkingFlavors,
+  publicVidkingSourceLabel,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
   vidkingEngineOptionsForEndpoint,
@@ -216,6 +217,7 @@ export async function resolveVideasyDirect(
   const resolvedInput = await enrichVideasyResolveInput(input, tmdbId, context);
 
   const startedAt = context.now();
+  const videasyAppId = resolveVideasyAppId(resolvedOptions, context);
   const cachePolicy = createProviderCachePolicy({
     providerId: VIDEOSY_PROVIDER_ID,
     title: resolvedInput.title,
@@ -223,6 +225,7 @@ export async function resolveVideasyDirect(
     subtitleLanguage: input.preferredSubtitleLanguage,
     qualityPreference: input.qualityPreference,
     startupPriority: input.startupPriority,
+    videasyAppId,
   });
   const events: ProviderTraceEvent[] = [];
   const sources: ProviderSourceCandidate[] = [];
@@ -337,7 +340,6 @@ export async function resolveVideasyDirect(
     });
   }
 
-  const videasyAppId = resolveVideasyAppId(resolvedOptions, context);
   const clientProfile = resolveVideasyClientProfile(resolvedInput, context, resolvedOptions);
   const embedReferer = buildEmbedReferer(
     {
@@ -699,7 +701,7 @@ function parseVidkingCycleCandidateMetadata(
 
 export function createVidkingResultFromPayload({
   input,
-  cachePolicy,
+  cachePolicy: _cachePolicy,
   payload,
   sourceId,
   server,
@@ -732,17 +734,18 @@ export function createVidkingResultFromPayload({
   readonly engineOptions?: VidKingEngineOptions;
   readonly streamReachabilityVerified?: boolean;
 }): ProviderResolveResult | null {
-  const policy =
-    cachePolicy ??
-    createProviderCachePolicy({
-      providerId: VIDEOSY_PROVIDER_ID,
-      title: input.title,
-      episode: input.episode,
-      subtitleLanguage: input.preferredSubtitleLanguage,
-      qualityPreference: input.qualityPreference,
-      startupPriority: input.startupPriority,
-    });
   const resolvedServer = (server as VidkingServer | undefined) ?? "mb-flix";
+  const videasyAppId = context ? resolveVideasyAppId(engineOptions ?? {}, context) : undefined;
+  const policy = createProviderCachePolicy({
+    providerId: VIDEOSY_PROVIDER_ID,
+    title: input.title,
+    episode: input.episode,
+    subtitleLanguage: input.preferredSubtitleLanguage,
+    qualityPreference: input.qualityPreference,
+    startupPriority: input.startupPriority,
+    videasyAppId,
+    apiRoute: resolvedServer,
+  });
   const presentation = resolveVidkingPresentation(
     resolvedServer,
     engineOptions ?? {
@@ -761,7 +764,10 @@ export function createVidkingResultFromPayload({
         filterQuality: sourceQualityFilter,
       },
     );
-  const themedLabel = sourceDisplayLabel ?? presentation.themeLabel;
+  const themedLabel =
+    sourceDisplayLabel ??
+    publicVidkingSourceLabel(presentation, videasyAppId) ??
+    presentation.themeLabel;
   const themedSubtitle = flavorArchetype ?? presentation.subtitle;
   const flavorDef = presentation.flavorId ? getVidkingFlavor(presentation.flavorId) : undefined;
   const nativeServerLabel = flavorDef?.cinebyAlias ?? server ?? "Videasy";

@@ -1,6 +1,6 @@
 # Kunai Verification
 
-Last updated: 2026-05-02
+Last updated: 2026-06-08
 
 This is the single canonical verification checklist for Kunai.
 Add new runtime, UX, provider, and shell verification work here instead of creating per-area
@@ -77,6 +77,26 @@ It separates:
   - attaching subtitles
   - player active
 - skip actions now surface visible notes like `Intro skipped automatically`
+
+## Study Group S01E02 smoke (Cineplay / Videasy gate)
+
+Canonical title: **Study Group** `tmdb=233347`, season 1 episode 2. Run after cache or provider changes.
+
+| Step | Action                                                               | Expected                                                      |
+| ---- | -------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 1    | Purge episode cache (`/commands` → purge or delete inventory row)    | No stale ORG-only ladder                                      |
+| 2    | Play S01E02 with Videasy/VidKing default                             | `Playing` within ~30s; mpv shows video                        |
+| 3    | Press `o` during bootstrap or playback                               | Source picker shows **Neon** + 3 qualities (1080p/720p/ORG)   |
+| 4    | Stall bootstrap or network read; press `r` / `f` / `d` from terminal | Recover, fallback, or diagnostics without quitting            |
+| 5    | Let autoplay advance to S01E03 (if released)                         | Auto-next respects released-only prefetch                     |
+| 6    | Open diagnostics during/after resolve                                | Route/host visible; startup phase breakdown after first frame |
+
+**Last automated gate (2026-06-08):** unit + typecheck + lint pass; manual mpv smoke **pending** on this machine.
+
+```sh
+bun run dev -- -i 233347 -t series
+# navigate to S01E02, or use direct episode flags when available
+```
 
 ## Manual Verification To Run Soon
 

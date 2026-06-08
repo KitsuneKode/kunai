@@ -1385,6 +1385,16 @@ export async function applySettingsToRuntime({
   ) {
     await container.presence.disconnect("settings-changed");
   }
+
+  if (before.videasyAppId !== next.videasyAppId) {
+    const { invalidateVideasyProviderCaches } = await import("@/app/videasy-cache-invalidation");
+    await invalidateVideasyProviderCaches({
+      cacheStore: container.cacheStore,
+      sourceInventory: container.sourceInventory,
+      diagnostics: container.diagnosticsService,
+      reason: `videasyAppId changed ${before.videasyAppId} → ${next.videasyAppId}`,
+    });
+  }
 }
 
 export type ShellWorkflowResult =

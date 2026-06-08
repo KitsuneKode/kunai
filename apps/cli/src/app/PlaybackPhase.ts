@@ -3654,6 +3654,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         : stateManager.getState().seriesLanguageProfile.subtitle,
     );
 
+    let bootstrapStallTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearBootstrapStallTimer = () => {
+      if (bootstrapStallTimer !== null) {
+        clearTimeout(bootstrapStallTimer);
+        bootstrapStallTimer = null;
+      }
+    };
+
     try {
       this.updatePlaybackFeedback(context, {
         detail: "Launching player",
@@ -3728,6 +3736,30 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         onPlaybackEvent: (event) => {
           const startupStage = playbackStartupStageForPlayerEvent(event);
           if (startupStage) onStartupMark?.(startupStage);
+          if (startupStage === "subtitle-attached") {
+            clearBootstrapStallTimer();
+            bootstrapStallTimer = setTimeout(() => {
+              const status = stateManager.getState().playbackStatus;
+              if (status === "playing" || status === "buffering" || status === "seeking") {
+                return;
+              }
+              stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "stalled" });
+              const route = formatPlaybackStreamRoute(stream);
+              this.updatePlaybackFeedback(context, {
+                detail: "Bootstrap stalled",
+                note: [
+                  "bootstrap-stall: no playback progress within 45s after subtitles",
+                  route,
+                  "o source · f fallback · purge via /commands",
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              });
+            }, 45_000);
+          }
+          if (startupStage === "first-progress" || event.type === "playback-started") {
+            clearBootstrapStallTimer();
+          }
           if (event.type !== "network-sample") {
             const feedback = this.describePlayerEvent(event);
             this.updatePlaybackFeedback(
@@ -3865,6 +3897,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "finished" });
       return result;
     } finally {
+      clearBootstrapStallTimer();
       // Don't clear presence here — between autoplay-chain episodes we want
       // continuous "watching" presence like Netflix/Crunchyroll. The
       // updatePlayback at the start of the next episode will seamlessly

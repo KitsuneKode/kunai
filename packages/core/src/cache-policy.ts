@@ -13,6 +13,10 @@ export interface ProviderCacheKeyInput {
   readonly subtitleLanguage?: string;
   readonly qualityPreference?: string;
   readonly startupPriority?: StartupPriority;
+  /** Videasy client profile (`bc-frontend`, `vidking`, …) — included in key when set. */
+  readonly videasyAppId?: string;
+  /** Videasy API route used for resolve (`mb-flix`, `e3b0c442`, …) — included when set. */
+  readonly apiRoute?: string;
 }
 
 export function createProviderCachePolicy(
@@ -29,7 +33,7 @@ export function createProviderCachePolicy(
 }
 
 export function createProviderCacheKeyParts(input: ProviderCacheKeyInput): readonly string[] {
-  return [
+  const base: string[] = [
     "provider",
     normalizePart(input.providerId),
     normalizePart(input.title.kind),
@@ -41,6 +45,10 @@ export function createProviderCacheKeyParts(input: ProviderCacheKeyInput): reado
     normalizePart(input.qualityPreference),
     normalizePart(input.startupPriority ?? "balanced"),
   ];
+  if (input.videasyAppId !== undefined || input.apiRoute !== undefined) {
+    base.push(normalizePart(input.videasyAppId), normalizePart(input.apiRoute));
+  }
+  return base;
 }
 
 function normalizePart(value: string | number | undefined): string {

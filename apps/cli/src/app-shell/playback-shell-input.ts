@@ -117,7 +117,7 @@ function resolvePlayingKeys(
   if (key === "e" && handlers.onPickEpisode) return { kind: "pick-episode" };
   if (key === "o" && ctx.canOpenSourcePicker && handlers.onPickSource)
     return { kind: "pick-source" };
-  if (key === "v" && handlers.onPickQuality) return { kind: "pick-quality" };
+  if ((key === "k" || key === "v") && handlers.onPickQuality) return { kind: "pick-quality" };
   if (key === "a" && handlers.onToggleAutoplay) return { kind: "toggle-autoplay" };
   if (key === "u" && handlers.onToggleAutoskip) return { kind: "toggle-autoskip" };
   if (key === "x" && handlers.onStopAfterCurrent) return { kind: "stop-after-current" };

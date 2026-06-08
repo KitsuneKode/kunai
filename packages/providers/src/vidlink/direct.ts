@@ -53,6 +53,7 @@ export function resolveVidlinkDirect(
     label: "VidLink",
     input,
     context,
+    resolveGateProbe: true,
     fetchPayload: async ({ tmdbId, season, episode, input: resolveInput, context: ctx }) => {
       const encryptedId = await encryptTmdbId(tmdbId, ctx.signal);
       const path =

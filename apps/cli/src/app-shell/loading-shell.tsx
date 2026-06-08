@@ -287,7 +287,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   onNext,
   onPrevious,
   onSkipSegment,
-  onPickStreams,
+  onPickStreams: _onPickStreams,
   onPickEpisode,
   onPickSource,
   onPickQuality,
@@ -466,6 +466,7 @@ export const LoadingShell = React.memo(function LoadingShell({
     fallbackAvailable: state.fallbackAvailable,
     latestIssue: loadingIssue,
     stageDetail: state.stageDetail,
+    dominantPhaseLabel: state.dominantPhaseLabel,
   });
   const disclosure = getLoadingDisclosure(
     elapsed,
@@ -695,7 +696,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                           state.hasPreviousEpisode && onPrevious ? "p prev" : null,
                           onSkipSegment ? "b skip" : null,
                           canOpenSourcePicker ? "o source" : null,
-                          onPickQuality ? "v quality" : null,
+                          onPickQuality ? "k quality" : null,
                           onPickEpisode ? "e episodes" : null,
                           onToggleAutoplay ? "a autoplay" : null,
                           onToggleAutoskip ? "u autoskip" : null,

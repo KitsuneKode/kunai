@@ -1,5 +1,7 @@
 # Kunai Playback Reliability Implementation Plan
 
+**Cross-link:** Bootstrap shell UX, honest loading rail, cache key facets, and bootstrap-stall recovery live in [cli-playback-ux-hardening.md](./cli-playback-ux-hardening.md). This plan owns mpv lifecycle, HLS materialization, and terminal input routing.
+
 ## Summary
 
 Kunai should treat mpv as a managed child process by default. The CLI stays alive while mpv is alive, supervises the player through IPC, updates shell state from real playback signals, and shuts mpv down cleanly when Kunai exits.
@@ -154,23 +156,23 @@ Provider and mpv correctness for Cineplay/Luffy (`light.goldweather.net`) host-r
 
 Reference scratchpad: `apps/experiments/scratchpads/provider-videasy-player/VIDEASY_PLAYER_PARITY_REPORT.md`.
 
-### Playback input routing — remaining (P0/P1)
+### Playback input routing — landed (June 2026)
 
-The active-playback surface still splits shortcuts across **loading-shell `useInput`**, **footer `useShellInput`**, and **mpv `kunai-bridge.lua`**. Partial `!onCommandAction` guards caused dead keys; `n`/`p`/`v`/`u` are fixed, but the pattern remains fragile.
+Terminal shortcuts are centralized in `apps/cli/src/app-shell/playback-shell-input.ts`. `LoadingShell` dispatches through `resolvePlaybackShellInput`; footer letter keys are suppressed via `letterKeysHandledExternally` ( `/` still opens commands). mpv bridge remains the mpv-window owner for the same chords.
 
-| Priority | Item                                                    | Notes                                                                                                                                    |
-| -------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| P0       | Unblock `r`/`f`/`d` during `operation === "playing"`    | Stall banner advertises recover/fallback/diagnostics but terminal `r`/`f` still gated when footer active; mpv `Ctrl+R` works for refresh |
-| P1       | Defer HLS temp cleanup until persistent session release | `PlayerServiceImpl.play()` `finally` deletes materialized playlist when cycle ends; in-process reconnect reload can race deleted paths   |
-| P1       | Single playback key map                                 | One router owns terminal shortcuts; footer shows subset only; no duplicate guards                                                        |
-| P2       | Footer vs GO hint parity                                | Footer shows `e`/`a`/`o`/`q`/`/`; GO row lists `n`/`p`/`v`/`u`/`x` — align or document overflow behind `/`                               |
+| Priority | Item                                                    | Status                                                                        |
+| -------- | ------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| P0       | Unblock `r`/`f`/`d` during `operation === "playing"`    | **Done** — stall/trouble + healthy play paths                                 |
+| P1       | Defer HLS temp cleanup until persistent session release | **Done** — `PlayerServiceImpl` defers until `releasePersistentSession()`      |
+| P1       | Single playback key map                                 | **Done** — `playback-shell-input.ts`                                          |
+| P2       | Footer vs GO hint parity                                | **Open** — footer shows `e`/`a`/`o`/`q`/`/`; GO row lists `n`/`p`/`k`/`u`/`x` |
 
 ## Remaining Follow-Up
 
 - Add provider/source preference learning for subtitle quality and subtitle source success rate.
 - Benchmark HLS startup with the user config vs clean mpv config.
 - Promote the command queue into a fuller player actor if refresh/fallback/reload policies become more complex.
-- Complete playback input routing table above before the next shell polish pass.
+- P2 footer/GO parity or document overflow behind `/`.
 
 ## Manual Verification Checklist
 

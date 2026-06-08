@@ -364,6 +364,15 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   // Load config
   const config = await ConfigServiceImpl.load(configStore);
+  if (config.videasyAppIdMigratedOnLoad) {
+    const { invalidateVideasyProviderCaches } = await import("@/app/videasy-cache-invalidation");
+    await invalidateVideasyProviderCaches({
+      cacheStore,
+      sourceInventory,
+      diagnostics: diagnosticsService,
+      reason: "videasyAppId auto-migration",
+    });
+  }
 
   // Session state (pure, no external deps)
   const stateManager = new SessionStateManagerImpl({ logger });

@@ -20,6 +20,7 @@ import {
   normalizeQualityLabel,
   qualityRankFromLabel,
 } from "./source-inventory";
+import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "./stream-health";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
 
 /**
@@ -67,12 +68,15 @@ export interface DirectStreamSourceOptions {
   readonly input: ProviderResolveInput;
   readonly context: ProviderRuntimeContext;
   readonly fetchPayload: (params: DirectStreamFetchParams) => Promise<DirectStreamPayload | null>;
+  /** When true, probe the selected stream before returning (resolve-gate). */
+  readonly resolveGateProbe?: boolean;
+  readonly resolveGateTimeoutMs?: number;
 }
 
 export async function resolveDirectStreamSource(
   options: DirectStreamSourceOptions,
 ): Promise<ProviderResolveResult> {
-  const { providerId, host, label, input, context, fetchPayload } = options;
+  const { providerId, host, label, input, context, fetchPayload, resolveGateProbe } = options;
 
   if (input.mediaKind !== "movie" && input.mediaKind !== "series") {
     return createExhaustedResult(input, context, providerId, {
@@ -136,7 +140,7 @@ export async function resolveDirectStreamSource(
     const streams = payload
       ? normalizeStreams(payload, providerId, sourceId, label, cachePolicy)
       : [];
-    const selectedStream = streams[0];
+    let selectedStream = streams[0];
     if (!selectedStream) {
       const failure: ProviderFailure = {
         providerId,
@@ -152,6 +156,50 @@ export async function resolveDirectStreamSource(
         failures,
         startedAt,
       });
+    }
+
+    let streamReachabilityVerified: boolean | undefined;
+    if (resolveGateProbe && selectedStream.url) {
+      const health = await runStreamHealthCheck({
+        phase: "resolve-gate",
+        url: selectedStream.url,
+        headers: selectedStream.headers,
+        fetchImpl: context.fetch?.fetch.bind(context.fetch),
+        timeoutMs: options.resolveGateTimeoutMs ?? STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs,
+        signal: context.signal,
+      });
+      if (!health.healthy) {
+        const probe = health.probe;
+        const reason =
+          probe?.status === "timeout"
+            ? "stream probe timed out"
+            : probe?.status === "unreachable"
+              ? probe.reason
+              : "stream probe failed";
+        const failure: ProviderFailure = {
+          providerId,
+          code: probe?.status === "timeout" ? "timeout" : "not-found",
+          message: `${label} selected stream is unreachable (${reason})`,
+          retryable: true,
+          at: context.now(),
+        };
+        failures.push(failure);
+        emitTraceEvent(events, context, {
+          type: "source:failed",
+          providerId,
+          sourceId,
+          streamId: selectedStream.id,
+          message: `${label} resolve-gate probe failed`,
+          attributes: { reason, probe: probe?.status ?? "failed" },
+        });
+        return createExhaustedResult(input, context, providerId, failure, {
+          cachePolicy,
+          events,
+          failures,
+          startedAt,
+        });
+      }
+      streamReachabilityVerified = true;
     }
 
     const subtitles = normalizeSubtitles(
@@ -191,6 +239,7 @@ export async function resolveDirectStreamSource(
       status: "resolved",
       providerId,
       selectedStreamId: selectedStream.id,
+      streamReachabilityVerified,
       sources: [
         {
           id: sourceId,

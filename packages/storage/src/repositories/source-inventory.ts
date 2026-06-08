@@ -92,4 +92,11 @@ export class SourceInventoryRepository {
   delete(inventoryKey: string): void {
     this.db.query("DELETE FROM source_inventory WHERE inventory_key = ?").run(inventoryKey);
   }
+
+  deleteByProvider(providerId: string): number {
+    const result = this.db
+      .query("DELETE FROM source_inventory WHERE provider_id = ?")
+      .run(providerId);
+    return result.changes ?? 0;
+  }
 }

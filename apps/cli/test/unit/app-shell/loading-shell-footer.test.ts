@@ -41,10 +41,9 @@ test("playing footer advertises command mode instead of space pause", () => {
     autoskipPaused: false,
   });
 
-  expect(actions[0]).toMatchObject({
+  expect(actions.find((action) => action.action === "command-mode")).toMatchObject({
     key: "/",
     label: "commands",
-    action: "command-mode",
     primary: true,
   });
   expect(actions.find((action) => action.key === "space")).toBeUndefined();

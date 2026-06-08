@@ -22,7 +22,7 @@ function createPlaybackResult(): PlaybackResult {
 
 function createStream(overrides: Partial<StreamInfo> = {}): StreamInfo {
   return {
-    url: "https://cdn.example/show/episode.m3u8?X-Amz-Signature=secret",
+    url: "https://cdn.example/show/episode.mp4?X-Amz-Signature=secret",
     headers: { Referer: "https://player.example" },
     subtitle: "https://subs.example/en.vtt?token=subtitle-secret",
     timestamp: 1,
@@ -77,7 +77,7 @@ describe("PlayerServiceImpl diagnostics", () => {
 
     try {
       await service.play(createStream(), {
-        url: "https://cdn.example/show/episode.m3u8?X-Amz-Signature=secret",
+        url: "https://cdn.example/show/episode.mp4?X-Amz-Signature=secret",
         displayTitle: "Episode 1",
         correlation: { sessionId: "session-1", playbackCycleId: "playback-1" },
       });
