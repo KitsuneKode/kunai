@@ -113,7 +113,7 @@ import { SourceInventoryService } from "./services/playback/SourceInventoryServi
 import { StreamHealthService } from "./services/playback/StreamHealthService";
 import { TitlePlaybackSourceService } from "./services/playback/TitlePlaybackSourceService";
 import { TitleProviderHealthService } from "./services/playback/TitleProviderHealthService";
-import { VidkingLazySourceProbeService } from "./services/playback/VidkingLazySourceProbeService";
+import { VideasyLazySourceProbeService } from "./services/playback/VideasyLazySourceProbeService";
 import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
@@ -170,7 +170,7 @@ export interface Container {
   readonly sourceInventory: SourceInventoryService;
   readonly episodePlaybackSelection: EpisodePlaybackSelectionService;
   readonly titlePlaybackSource: TitlePlaybackSourceService;
-  readonly vidkingLazySourceProbe: VidkingLazySourceProbeService;
+  readonly videasyLazySourceProbe: VideasyLazySourceProbeService;
   readonly playbackResolveWork: PlaybackResolveWorkService;
   readonly mediaTrackService: MediaTrackService;
   readonly featureFlags: AttentionFeatureFlags;
@@ -341,7 +341,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const titlePlaybackSource = new TitlePlaybackSourceService(
     join(paths.configDir, "title-playback-sources.json"),
   );
-  const vidkingLazySourceProbe = new VidkingLazySourceProbeService({ sourceInventory });
+  const videasyLazySourceProbe = new VideasyLazySourceProbeService({ sourceInventory });
   const storageMaintenance = new StorageMaintenanceService({
     dataDb,
     cacheDb,
@@ -591,7 +591,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     sourceInventory,
     episodePlaybackSelection,
     titlePlaybackSource,
-    vidkingLazySourceProbe,
+    videasyLazySourceProbe,
     playbackResolveWork,
     mediaTrackService,
     featureFlags,

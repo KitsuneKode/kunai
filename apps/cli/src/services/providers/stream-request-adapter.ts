@@ -1,5 +1,5 @@
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
-import { resolveAnimeAudioIntent } from "@kunai/providers";
+import { normalizeLegacyVideasySourceId, resolveAnimeAudioIntent } from "@kunai/providers";
 import type {
   EpisodeIdentity,
   ProviderResolveInput,
@@ -49,7 +49,8 @@ export function streamRequestToResolveInput(
 
 function normalizeOptionalId(value: string | undefined): string | undefined {
   const normalized = value?.trim();
-  return normalized ? normalized : undefined;
+  if (!normalized) return undefined;
+  return normalizeLegacyVideasySourceId(normalized);
 }
 
 function normalizeQualityPreference(value: string | undefined): string | undefined {

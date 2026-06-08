@@ -8,6 +8,7 @@ import {
   DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
+import { migrateLegacyProviderId } from "@kunai/providers";
 import type { StartupPriority } from "@kunai/types";
 
 import type {
@@ -27,21 +28,16 @@ import { resolveTuning } from "./tuning";
 
 function normalizeSeriesProvider(value: string | undefined): string {
   const normalized = value?.trim();
-  // Only fill an EMPTY provider with the default. We used to also force-migrate
-  // "vidking" → default every load (it's Turnstile-gated), but that silently
-  // stomped a user's explicit choice on every launch ("my setting won't persist").
-  // Respect the choice; if vidking can't resolve, provider fallback/recovery
-  // handles it at playback time.
   if (!normalized) return DEFAULT_CONFIG.provider;
-  return normalized;
+  return migrateLegacyProviderId(normalized);
 }
 
 function normalizeProviderIdList(
   values: readonly string[] | undefined,
   fallback: readonly string[] = [],
 ): readonly string[] {
-  if (!Array.isArray(values)) return [...fallback];
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  if (!Array.isArray(values)) return fallback.map(migrateLegacyProviderId);
+  return [...new Set(values.map((value) => migrateLegacyProviderId(value.trim())).filter(Boolean))];
 }
 
 function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
@@ -576,7 +572,7 @@ function isExpiredVideasySession(expiresAt: number): boolean {
 }
 
 function normalizeVideasyAppId(value: unknown): KitsuneConfig["videasyAppId"] {
-  return value === "bc-frontend" ? "bc-frontend" : "vidking";
+  return value === "vidking" ? "vidking" : "bc-frontend";
 }
 
 function normalizeRecoveryMode(value: unknown): RecoveryMode {

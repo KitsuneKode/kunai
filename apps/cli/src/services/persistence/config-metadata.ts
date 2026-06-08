@@ -189,8 +189,8 @@ export const CONFIG_METADATA = [
     section: "providers",
     effect: "next-resolve",
     privacy: "local",
-    editable: true,
-    options: ["vidking", "bc-frontend"],
+    editable: false,
+    options: ["bc-frontend", "vidking"],
   },
   {
     key: "updateChecksEnabled",

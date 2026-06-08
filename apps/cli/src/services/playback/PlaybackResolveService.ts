@@ -207,7 +207,11 @@ export class PlaybackResolveService {
     }
 
     const cacheKey = this.buildCacheKey(input, input.providerId);
-    let cachedStream = await this.deps.cacheStore.get(cacheKey);
+    let cachedStream =
+      (await this.deps.cacheStore.get(cacheKey)) ??
+      (input.providerId === "videasy"
+        ? await this.deps.cacheStore.get(this.buildCacheKey(input, "vidking"))
+        : null);
     let cacheBecameStale = false;
     if (cachedStream?.deferredLocator) {
       await this.deps.cacheStore.delete(cacheKey);

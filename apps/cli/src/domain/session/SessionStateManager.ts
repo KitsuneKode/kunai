@@ -33,7 +33,7 @@ export interface SessionStateManagerDeps {
 }
 
 export class SessionStateManagerImpl implements SessionStateManager {
-  private state: SessionState = createInitialState("vidking", "allanime", {
+  private state: SessionState = createInitialState("videasy", "allanime", {
     anime: { audio: "original", subtitle: "en" },
     series: { audio: "original", subtitle: "none" },
     movie: { audio: "original", subtitle: "en" },

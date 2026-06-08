@@ -302,7 +302,12 @@ function asNumber(...values: unknown[]): number | undefined {
 
 function sourcePriority(entry: SubtitleEntry): number {
   const sourceName = entry.sourceName?.toLowerCase();
-  if (sourceName === "provider" || sourceName === "vidking" || sourceName === "allanime") {
+  if (
+    sourceName === "provider" ||
+    sourceName === "videasy" ||
+    sourceName === "vidking" ||
+    sourceName === "allanime"
+  ) {
     return 4;
   }
   switch (entry.sourceKind) {

@@ -16,7 +16,7 @@ export class TMDBSearchService implements SearchService {
     description: "TMDB proxy (db.videasy.net) - movies, series, no API key",
   };
 
-  readonly compatibleProviders = ["vidking"];
+  readonly compatibleProviders = ["videasy"];
 
   constructor(private deps: SearchDeps) {}
 

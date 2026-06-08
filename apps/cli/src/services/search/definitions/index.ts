@@ -26,7 +26,7 @@ export const SEARCH_SERVICE_DEFINITIONS: SearchServiceDefinition[] = [
       name: "TMDB / Videasy",
       description: "TMDB proxy (db.videasy.net) - movies, series, no API key",
     },
-    compatibleProviders: ["vidking"],
+    compatibleProviders: ["videasy"],
     factory: createTMDBSearchService,
   },
 ];

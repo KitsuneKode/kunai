@@ -10,7 +10,7 @@ import type {
   StartupPriority,
 } from "@kunai/types";
 
-export const SOURCE_INVENTORY_SCHEMA_VERSION = "v3";
+export const SOURCE_INVENTORY_SCHEMA_VERSION = "v4";
 
 export type SourceInventoryCacheInput = {
   readonly providerId: string;
@@ -38,7 +38,13 @@ export class SourceInventoryService {
   ): Promise<ProviderResolveResult | null> {
     const key = buildSourceInventoryCacheKey(input);
     try {
-      const hit = this.repository.get<ProviderResolveResult>(key, now);
+      let hit = this.repository.get<ProviderResolveResult>(key, now);
+      if (!hit && input.providerId === "videasy") {
+        hit = this.repository.get<ProviderResolveResult>(
+          buildSourceInventoryCacheKey({ ...input, providerId: "vidking" }),
+          now,
+        );
+      }
       this.recordCacheDecision(
         hit ? "source-inventory.cache.hit" : "source-inventory.cache.miss",
         input,

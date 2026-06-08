@@ -543,12 +543,7 @@ export function buildSettingsOptions(
       value: "videasySessionToken",
       label: `▸ ${configLabel("videasySessionToken")}  ·  ${describeVideasySessionToken(config)}`,
       detail:
-        "Optional user-provided browser session for guarded VidKing/Bitcine Videasy API calls",
-    },
-    {
-      value: "videasyAppId",
-      label: `▸ ${configLabel("videasyAppId")}  ·  ${config.videasyAppId}`,
-      detail: "Use vidking for Vidking embeds or bc-frontend for Bitcine sessions",
+        "Optional — only if Videasy blocks resolves. Mint once on cineplay.to; resolution stays direct HTTP (no browser at playback)",
     },
     {
       value: "section:language",
@@ -1070,8 +1065,8 @@ export function buildSettingsChoiceOverlay({
       },
       {
         value: "bc-frontend",
-        label: "Bitcine",
-        detail: "Use sessions minted by bitcine.tv playback pages",
+        label: "Cineplay / Bitcine",
+        detail: "Use sessions minted by cineplay.to (or legacy bitcine.tv) playback pages",
       },
     ];
   } else if (setting === "quitNearEndBehavior") {

@@ -97,7 +97,6 @@ import {
 import { createResolveTraceStub } from "@/app/resolve-trace";
 import {
   applyPreferredStreamSelection,
-  emptyStreamSelectionIntent,
   streamSelectionFromTrackPick,
   type StreamSelectionIntent,
 } from "@/app/source-quality";
@@ -234,7 +233,7 @@ async function teardownPlaybackForPostPlayExit(
   await container.player.releasePersistentSession();
 }
 
-function scheduleVidkingLazySourceProbes(input: {
+function scheduleVideasyLazySourceProbes(input: {
   readonly container: Container;
   readonly stream: StreamInfo;
   readonly title: TitleInfo;
@@ -280,7 +279,7 @@ function scheduleVidkingLazySourceProbes(input: {
     startupPriority: input.startupPriority as ProviderResolveInput["startupPriority"],
   };
 
-  input.container.vidkingLazySourceProbe.schedulePhaseB({
+  input.container.videasyLazySourceProbe.schedulePhaseB({
     resolveInput,
     context,
     baseResult: result,
@@ -757,17 +756,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       let autoSourceRecoverAttempts = 0;
       let autoRecoverEpisodeKey: string | null = null;
       let consumedProviderSwitchSeq = providerSwitchSeqBeforeEpisodePicker;
-      const recentEpisodeStreamKey = (episode: EpisodeInfo): string =>
-        `${title.id}:${episode.season}:${episode.episode}`;
-      const invalidateRecentEpisodeStream = (episode: EpisodeInfo): void => {
-        recentEpisodeStreams.delete(recentEpisodeStreamKey(episode));
+      const recentEpisodeStreamKey = (targetEpisode: EpisodeInfo): string =>
+        `${title.id}:${targetEpisode.season}:${targetEpisode.episode}`;
+      const invalidateRecentEpisodeStream = (targetEpisode: EpisodeInfo): void => {
+        recentEpisodeStreams.delete(recentEpisodeStreamKey(targetEpisode));
       };
       const recentStreamMatchesPreferred = (
         recent: { readonly stream: StreamInfo },
         providerId: string,
-        episode: EpisodeInfo,
+        targetEpisode: EpisodeInfo,
       ): boolean => {
-        const preferred = getPreferredStreamSelection(providerId, episode);
+        const preferred = getPreferredStreamSelection(providerId, targetEpisode);
         if (!preferred.sourceId && !preferred.streamId) return true;
         const result = recent.stream.providerResolveResult;
         if (!result) return false;
@@ -775,9 +774,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
         return selected?.sourceId === preferred.sourceId;
       };
-      const prepareStreamSwitchRestart = async (episode: EpisodeInfo): Promise<void> => {
+      const prepareStreamSwitchRestart = async (targetEpisode: EpisodeInfo): Promise<void> => {
         pendingSourceRefreshAction = "recover";
-        invalidateRecentEpisodeStream(episode);
+        invalidateRecentEpisodeStream(targetEpisode);
         this.updatePlaybackFeedback(context, {
           detail: "Switching stream…",
           note: "Re-resolving with your selection",
@@ -874,7 +873,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
           let resolvedProviderId = currentProvider.metadata.id;
           const completeSourceTrackPick = async (
-            episode: EpisodeInfo,
+            pickedEpisode: EpisodeInfo,
             picked: DecodedTrackSelection,
             selection: StreamSelectionIntent | null,
             resumeSeconds: number,
@@ -884,7 +883,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const resolved = await resolveTracksPanelPick(picked, selection, {
               container,
               title,
-              episode,
+              episode: pickedEpisode,
               currentProviderId: resolvedProviderId,
               resumeSeconds,
               reason,
@@ -895,29 +894,35 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
             if (resolved.kind === "provider-switch") {
               resolvedProviderId = resolved.providerId;
-              recentEpisodeStreams.delete(`${title.id}:${episode.season}:${episode.episode}`);
+              recentEpisodeStreams.delete(
+                `${title.id}:${pickedEpisode.season}:${pickedEpisode.episode}`,
+              );
               pendingSourceRefreshAction = "recover";
               pendingRecomputeSources = false;
               return startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
             }
             if (resolved.kind === "audio-mode-switch") {
-              recentEpisodeStreams.delete(`${title.id}:${episode.season}:${episode.episode}`);
+              recentEpisodeStreams.delete(
+                `${title.id}:${pickedEpisode.season}:${pickedEpisode.episode}`,
+              );
               pendingSourceRefreshAction = "recover";
               pendingRecomputeSources = false;
-              await prepareStreamSwitchRestart(episode);
+              await prepareStreamSwitchRestart(pickedEpisode);
               return startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
             }
             if (resolved.kind === "cross-provider-source") {
               resolvedProviderId = resolved.providerId;
               await selectionCoordinator.applyManualSourcePick(
                 resolved.providerId,
-                episode,
+                pickedEpisode,
                 resolved.sourceId,
               );
-              recentEpisodeStreams.delete(`${title.id}:${episode.season}:${episode.episode}`);
+              recentEpisodeStreams.delete(
+                `${title.id}:${pickedEpisode.season}:${pickedEpisode.episode}`,
+              );
               pendingSourceRefreshAction = "recover";
               pendingRecomputeSources = false;
-              await prepareStreamSwitchRestart(episode);
+              await prepareStreamSwitchRestart(pickedEpisode);
               return startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
             }
 
@@ -925,18 +930,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             if (section === "source" && streamSelection.sourceId) {
               await selectionCoordinator.applyManualSourcePick(
                 resolvedProviderId,
-                episode,
+                pickedEpisode,
                 streamSelection.sourceId,
               );
             } else {
               await selectionCoordinator.applyEpisodeSelection(
                 resolvedProviderId,
-                episode,
+                pickedEpisode,
                 streamSelection,
               );
             }
             if (section === "source") {
-              await prepareStreamSwitchRestart(episode);
+              await prepareStreamSwitchRestart(pickedEpisode);
             }
             return section === "source"
               ? startEpisodeNavigation({ targetResumeSeconds: resumeSeconds })
@@ -1490,7 +1495,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     : title.type === "movie"
                       ? config.movieLanguageProfile.audio
                       : config.seriesLanguageProfile.audio;
-                scheduleVidkingLazySourceProbes({
+                scheduleVideasyLazySourceProbes({
                   container,
                   stream,
                   title,

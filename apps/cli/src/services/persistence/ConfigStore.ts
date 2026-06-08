@@ -21,7 +21,7 @@ export interface ConfigStore {
 // Default configuration
 export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",
-  provider: "vidking",
+  provider: "videasy",
   animeProvider: "allanime",
   providerPriority: ["vidlink", "rivestream"],
   animeProviderPriority: ["allanime", "miruro"],
@@ -62,7 +62,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   presenceDiscordOpenUrl: "",
   videasySessionToken: "",
   videasySessionExpiresAt: 0,
-  videasyAppId: "vidking",
+  videasyAppId: "bc-frontend",
   downloadsEnabled: false,
   autoDownload: "off",
   autoDownloadNextCount: 1,

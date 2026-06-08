@@ -3,8 +3,8 @@ import {
   flavorSourceId,
   listPhaseBLazyProbeFlavorIds,
   resolveFlavorEngineOptions,
-  resolveVidkingDirect,
-  VIDKING_PROVIDER_ID,
+  resolveVideasyDirect,
+  VIDEOSY_PROVIDER_ID,
 } from "@kunai/providers";
 import type {
   ProviderResolveInput,
@@ -17,13 +17,13 @@ import type { SourceInventoryService } from "./SourceInventoryService";
 import type { SourceInventoryCacheInput } from "./SourceInventoryService";
 
 const PROBE_CONCURRENCY = 2;
-type VidkingDirectResolver = typeof resolveVidkingDirect;
+type VideasyDirectResolver = typeof resolveVideasyDirect;
 
-export class VidkingLazySourceProbeService {
+export class VideasyLazySourceProbeService {
   constructor(
     private readonly options: {
       readonly sourceInventory?: Pick<SourceInventoryService, "set" | "get">;
-      readonly resolveVidkingDirect?: VidkingDirectResolver;
+      readonly resolveVideasyDirect?: VideasyDirectResolver;
     } = {},
   ) {}
 
@@ -35,7 +35,7 @@ export class VidkingLazySourceProbeService {
     readonly preferredAudioLanguage?: string;
     readonly onInventoryUpdated?: (result: ProviderResolveResult) => void;
   }): Promise<void> {
-    if (input.baseResult.providerId !== VIDKING_PROVIDER_ID) return Promise.resolve();
+    if (input.baseResult.providerId !== VIDEOSY_PROVIDER_ID) return Promise.resolve();
     return this.runPhaseB(input).catch(() => {
       // Background probes are best-effort.
     });
@@ -63,7 +63,7 @@ export class VidkingLazySourceProbeService {
       const endpoint = flavor?.endpoint ?? options?.serverEndpoint ?? flavorId;
       const probingSource: ProviderSourceCandidate = {
         id: flavorSourceId(flavorId),
-        providerId: VIDKING_PROVIDER_ID,
+        providerId: VIDEOSY_PROVIDER_ID,
         kind: "provider-api",
         label: flavor?.themeLabel ?? options?.flavorLabel ?? endpoint,
         host: "api.videasy.to",
@@ -105,7 +105,7 @@ export class VidkingLazySourceProbeService {
         let probeSubtitles = merged.subtitles;
 
         try {
-          const probeResult = await (this.options.resolveVidkingDirect ?? resolveVidkingDirect)(
+          const probeResult = await (this.options.resolveVideasyDirect ?? resolveVideasyDirect)(
             input.resolveInput,
             input.context,
             engineOptions,
@@ -181,7 +181,7 @@ function failedSource(
 ): ProviderSourceCandidate {
   return {
     id: sourceId,
-    providerId: VIDKING_PROVIDER_ID,
+    providerId: VIDEOSY_PROVIDER_ID,
     kind: "provider-api",
     label,
     host: "api.videasy.to",
@@ -224,6 +224,9 @@ function mergeInventorySources(
     subtitles: dedupeById(subtitles),
   };
 }
+
+/** @deprecated Use VideasyLazySourceProbeService */
+export const VidkingLazySourceProbeService = VideasyLazySourceProbeService;
 
 function dedupeById<T extends { readonly id: string }>(items: readonly T[]): T[] {
   const byId = new Map<string, T>();
