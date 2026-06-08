@@ -4,7 +4,7 @@ import {
   buildApiStreamResolveCacheKey,
   buildEmbedStreamCacheKey,
 } from "@/services/cache/stream-resolve-cache";
-import { allanimeManifest, vidkingManifest } from "@kunai/providers";
+import { allanimeManifest, videasyManifest } from "@kunai/providers";
 
 test("buildApiStreamResolveCacheKey is stable and encodes prefs", () => {
   const title = { id: "abc", type: "series" as const, name: "X", year: "2020" };
@@ -44,8 +44,8 @@ test("buildApiStreamResolveCacheKey is stable and encodes prefs", () => {
 
 test("buildApiStreamResolveCacheKey separates source and stream selections", () => {
   const common = {
-    providerId: "vidking",
-    providerManifest: vidkingManifest,
+    providerId: "videasy",
+    providerManifest: videasyManifest,
     title: { id: "tmdb:1", type: "series" as const, name: "X" },
     episode: { season: 2, episode: 7 },
     mode: "series" as const,
@@ -68,8 +68,8 @@ test("buildApiStreamResolveCacheKey separates source and stream selections", () 
 
 test("buildApiStreamResolveCacheKey separates startup priority", () => {
   const input = {
-    providerId: "vidking",
-    providerManifest: vidkingManifest,
+    providerId: "videasy",
+    providerManifest: videasyManifest,
     title: { id: "tmdb:1", type: "series" as const, name: "X" },
     episode: { season: 2, episode: 7 },
     mode: "series" as const,
@@ -85,8 +85,8 @@ test("buildApiStreamResolveCacheKey separates startup priority", () => {
 
 test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => {
   const key = buildApiStreamResolveCacheKey({
-    providerId: "vidking",
-    providerManifest: vidkingManifest,
+    providerId: "videasy",
+    providerManifest: videasyManifest,
     title: { id: "tmdb:1", type: "series", name: "X" },
     episode: { season: 2, episode: 7 },
     mode: "series",
@@ -94,7 +94,7 @@ test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => 
     subtitlePreference: "en",
     qualityPreference: "720p",
   });
-  expect(key).toContain("provider:vidking:series:tmdb:1:2:7:en:720p:balanced:none:none");
+  expect(key).toContain("provider:videasy:series:tmdb:1:2:7:en:720p:balanced:none:none");
 });
 
 test("buildEmbedStreamCacheKey preserves embed URL", () => {

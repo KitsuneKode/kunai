@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { VidkingLazySourceProbeService } from "@/services/playback/VidkingLazySourceProbeService";
+import { VideasyLazySourceProbeService } from "@/services/playback/VideasyLazySourceProbeService";
 import { flavorSourceId, VIDKING_PROVIDER_ID } from "@kunai/providers";
 import type {
   ProviderResolveInput,
@@ -17,10 +17,10 @@ const inventoryKey = {
   subtitleLanguage: "en",
 };
 
-describe("VidkingLazySourceProbeService", () => {
+describe("VideasyLazySourceProbeService", () => {
   test("skips phase B flavors already resolved in cached inventory", async () => {
     const resolvedFlavorIds: string[] = [];
-    const service = new VidkingLazySourceProbeService({
+    const service = new VideasyLazySourceProbeService({
       sourceInventory: {
         get: async () => ({
           ...baseResult(),
@@ -28,7 +28,11 @@ describe("VidkingLazySourceProbeService", () => {
         }),
         set: async () => {},
       },
-      resolveVidkingDirect: async (_resolveInput, _context, engineOptions) => {
+      resolveVideasyDirect: async (
+        _resolveInput: ProviderResolveInput,
+        _context: ProviderRuntimeContext,
+        engineOptions?: { readonly flavorId?: string },
+      ) => {
         resolvedFlavorIds.push(String(engineOptions?.flavorId));
         return {
           ...baseResult(),
@@ -53,12 +57,12 @@ describe("VidkingLazySourceProbeService", () => {
     let calls = 0;
     const controller = new AbortController();
     controller.abort();
-    const service = new VidkingLazySourceProbeService({
+    const service = new VideasyLazySourceProbeService({
       sourceInventory: {
         get: async () => null,
         set: async () => {},
       },
-      resolveVidkingDirect: async () => {
+      resolveVideasyDirect: async () => {
         calls += 1;
         return baseResult();
       },
@@ -77,14 +81,14 @@ describe("VidkingLazySourceProbeService", () => {
 
   test("dedupes streams already present in cached inventory", async () => {
     const persisted: ProviderResolveResult[] = [];
-    const service = new VidkingLazySourceProbeService({
+    const service = new VideasyLazySourceProbeService({
       sourceInventory: {
         get: async () => baseResult(),
         set: async (_key, inventory) => {
           persisted.push(inventory);
         },
       },
-      resolveVidkingDirect: async () => baseResult(),
+      resolveVideasyDirect: async () => baseResult(),
     });
 
     await service.schedulePhaseB({
@@ -129,13 +133,13 @@ function baseResult(): ProviderResolveResult {
     status: "resolved",
     providerId: VIDKING_PROVIDER_ID,
     selectedStreamId: "stream:vidking:base",
-    sources: [availableSource("source:vidking:videasy:mb-flix", "Luffy")],
+    sources: [availableSource("source:videasy:mb-flix", "Luffy")],
     variants: [],
     streams: [
       {
         id: "stream:vidking:base",
         providerId: VIDKING_PROVIDER_ID,
-        sourceId: "source:vidking:videasy:mb-flix",
+        sourceId: "source:videasy:mb-flix",
         url: "https://cdn.example/base.m3u8",
         protocol: "hls",
         container: "m3u8",

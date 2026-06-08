@@ -23,14 +23,14 @@ afterEach(() => {
 });
 
 describe("SourceInventoryService", () => {
-  test("uses v3 schema keys for provider metadata inventory", () => {
-    expect(SOURCE_INVENTORY_SCHEMA_VERSION).toBe("v3");
+  test("uses v4 schema keys for provider metadata inventory", () => {
+    expect(SOURCE_INVENTORY_SCHEMA_VERSION).toBe("v4");
     expect(
       buildSourceInventoryCachePreimage({
         providerId: "allmanga",
         mediaKind: "anime",
         titleId: "provider-title",
-      }).startsWith("v3\0"),
+      }).startsWith("v4\0"),
     ).toBe(true);
   });
 

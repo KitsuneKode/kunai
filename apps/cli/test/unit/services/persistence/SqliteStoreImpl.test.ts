@@ -50,7 +50,7 @@ describe("SqliteHistoryStoreImpl", () => {
       season: 1,
       episode: 2,
       positionSeconds: 120,
-      providerId: "vidking",
+      providerId: "videasy",
       externalIds: { tmdbId: "1", imdbId: "tt123" },
     });
 

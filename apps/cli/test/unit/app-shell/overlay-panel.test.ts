@@ -300,7 +300,7 @@ test("provider order settings screen lists numbered providers", () => {
     config: DEFAULT_CONFIG,
     setting: "providerPriority",
     seriesProviderOptions: [
-      { value: "vidking", label: "VidKing" },
+      { value: "videasy", label: "Videasy" },
       { value: "vidlink", label: "VidLink" },
       { value: "rivestream", label: "Rivestream" },
     ],
@@ -309,7 +309,7 @@ test("provider order settings screen lists numbered providers", () => {
 
   expect(overlay.title).toBe("Series provider order");
   expect(overlay.options.map((option) => option.label)).toEqual([
-    "1. VidKing",
+    "1. Videasy",
     "2. VidLink",
     "3. Rivestream",
   ]);

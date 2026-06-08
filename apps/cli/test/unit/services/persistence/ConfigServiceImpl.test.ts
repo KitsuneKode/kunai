@@ -65,7 +65,7 @@ describe("ConfigServiceImpl", () => {
     });
     const service = await ConfigServiceImpl.load(store);
 
-    expect(service.providerPriority).toEqual(["vidking", "rivestream"]);
+    expect(service.providerPriority).toEqual(["videasy", "rivestream"]);
     expect(service.animeProviderPriority).toEqual(["miruro", "allanime"]);
 
     await service.update({
@@ -74,7 +74,7 @@ describe("ConfigServiceImpl", () => {
     });
     await service.save();
 
-    expect((await store.load()).providerPriority).toEqual(["vidlink", "vidking"]);
+    expect((await store.load()).providerPriority).toEqual(["vidlink", "videasy"]);
     expect((await store.load()).animeProviderPriority).toEqual(["allanime", "miruro"]);
   });
 
