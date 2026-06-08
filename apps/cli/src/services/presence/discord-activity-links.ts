@@ -1,4 +1,4 @@
-import type { ShellMode, TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 
 import type { PresencePlaybackActivity } from "./PresenceService";
 
@@ -80,10 +80,25 @@ export function buildDiscordPresenceButtons(
   return catalog ? [catalog] : [];
 }
 
+export function buildDiscordActivityUrlFields(
+  activity: PresencePlaybackActivity,
+): Record<string, string> {
+  const viewLink = buildCatalogViewLink({ mode: activity.mode, title: activity.title });
+  const episodeLink = buildCatalogEpisodeLink(activity);
+  const stateLink = episodeLink ?? viewLink;
+  const fields: Record<string, string> = {};
+  if (viewLink) fields.details_url = viewLink.url;
+  if (stateLink) fields.state_url = stateLink.url;
+  return fields;
+}
+
 export function buildDiscordPosterAsset(
   title: Pick<TitleInfo, "posterUrl" | "artwork" | "name" | "year">,
-): { readonly large_image: string; readonly large_text: string } {
-  const posterUrl = normalizeHttpsPosterUrl(title.posterUrl ?? title.artwork?.posterUrl);
+  episode?: Pick<EpisodeInfo, "artwork">,
+): { readonly large_image: string; readonly large_text: string; readonly large_url?: string } {
+  const posterUrl = normalizeHttpsPosterUrl(
+    title.posterUrl ?? title.artwork?.posterUrl ?? episode?.artwork?.posterUrl,
+  );
   const hover = compact([title.name, title.year]).join(" · ") || "Kunai";
   if (posterUrl) {
     return { large_image: posterUrl, large_text: hover };

@@ -4,6 +4,7 @@ import {
   buildBestCatalogLink,
   buildCatalogEpisodeLink,
   buildCatalogViewLink,
+  buildDiscordActivityUrlFields,
   buildDiscordPosterAsset,
   buildDiscordPresenceButtons,
 } from "@/services/presence/discord-activity-links";
@@ -71,6 +72,41 @@ test("buildDiscordPosterAsset falls back to the kunai asset key", () => {
   ).toEqual({
     large_image: "kunai",
     large_text: "Demo · 2024",
+  });
+});
+
+test("buildDiscordPosterAsset falls back to episode artwork", () => {
+  expect(
+    buildDiscordPosterAsset(
+      { name: "Demo" },
+      { artwork: { posterUrl: "https://image.example/episode.jpg" } },
+    ),
+  ).toEqual({
+    large_image: "https://image.example/episode.jpg",
+    large_text: "Demo",
+  });
+});
+
+test("buildDiscordActivityUrlFields exposes clickable catalog links", () => {
+  expect(buildDiscordActivityUrlFields(baseActivity)).toEqual({
+    details_url: "https://anilist.co/anime/21",
+    state_url: "https://anilist.co/anime/21",
+  });
+  expect(
+    buildDiscordActivityUrlFields({
+      ...baseActivity,
+      mode: "series",
+      title: {
+        id: "tmdb:1396",
+        type: "series",
+        name: "Breaking Bad",
+        externalIds: { tmdbId: "1396" },
+      },
+      episode: { season: 4, episode: 9 },
+    }),
+  ).toEqual({
+    details_url: "https://www.themoviedb.org/tv/1396",
+    state_url: "https://www.themoviedb.org/tv/1396/season/4/episode/9",
   });
 });
 

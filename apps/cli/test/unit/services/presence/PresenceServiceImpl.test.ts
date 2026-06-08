@@ -238,11 +238,14 @@ describe("PresenceServiceImpl", () => {
 
     expect(payload).toMatchObject({
       details: "Frieren: Beyond Journey's End",
-      state: "Smells Like Trouble",
+      state: "S1 E14 · Smells Like Trouble",
+      details_url: "https://anilist.co/anime/154587",
+      state_url: "https://anilist.co/anime/154587",
       buttons: [{ label: "View on AniList", url: "https://anilist.co/anime/154587" }],
       assets: {
         large_image: "https://image.example/frieren.jpg",
         large_text: "Frieren: Beyond Journey's End",
+        large_url: "https://anilist.co/anime/154587",
       },
     });
     expect(payload).not.toHaveProperty("largeImageKey");
@@ -287,9 +290,81 @@ describe("PresenceServiceImpl", () => {
     expect(buildDiscordActivity(activity, "full")).toMatchObject({
       details: "Breaking Bad",
       state: "S4 E9 · Paused at 12:14 / 24:00",
+      timestamps: null,
     });
     expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("small_image");
-    expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("timestamps");
+  });
+
+  test("includes episode numbers even when the episode has a title", () => {
+    const activity = {
+      mode: "series" as const,
+      title: { id: "1", type: "series" as const, name: "Love Your Enemy" },
+      episode: { season: 1, episode: 5, name: "Jiwon&Jiwon" },
+      providerId: "vidking",
+      startedAtMs: 1000,
+    };
+
+    expect(buildDiscordActivity(activity, "full").state).toBe("S1 E5 · Jiwon&Jiwon");
+  });
+
+  test("appends binge session suffix after the configured threshold", () => {
+    const activity = {
+      mode: "series" as const,
+      title: { id: "1", type: "series" as const, name: "Breaking Bad" },
+      episode: { season: 4, episode: 9, name: "Bug" },
+      providerId: "vidking",
+      startedAtMs: 1000,
+      positionSeconds: 120,
+      durationSeconds: 1500,
+    };
+
+    expect(
+      buildDiscordActivity(activity, "full", {
+        sessionElapsedMs: 14 * 60_000,
+        sessionShowAfterMs: 15 * 60_000,
+      }).state,
+    ).toBe("S4 E9 · Bug");
+
+    expect(
+      buildDiscordActivity(activity, "full", {
+        sessionElapsedMs: 46 * 60_000,
+        sessionShowAfterMs: 15 * 60_000,
+      }).state,
+    ).toBe("S4 E9 · Bug · 46m with Kunai");
+  });
+
+  test("clearPlayback resets dedupe hash and watch session state", async () => {
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnostics,
+    });
+    const calls: string[] = [];
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      discordClient: {
+        async login() {},
+        async setActivity() {},
+        async clearActivity() {
+          calls.push("clear");
+        },
+        async destroy() {},
+        on() {},
+      },
+      lastActivityHash: "stale-hash",
+      lastActivityPayload: { details: "Still visible" },
+      watchSessionStartedAtMs: Date.now(),
+      watchSessionPausedTotalMs: 12_000,
+      status: "ready",
+    });
+
+    await service.clearPlayback("test-clear");
+
+    expect(calls).toEqual(["clear"]);
+    expect((service as unknown as { lastActivityHash: string | null }).lastActivityHash).toBeNull();
+    expect(
+      (service as unknown as { watchSessionStartedAtMs: number | null }).watchSessionStartedAtMs,
+    ).toBeNull();
   });
 
   test("describes effective discord client id source", () => {

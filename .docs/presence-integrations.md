@@ -24,18 +24,45 @@ Discord presence is optional and local-only:
 2. User provides a Discord application client id through `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID`.
 3. Kunai connects through Discord's local IPC pipe/socket from Bun and sends `SET_ACTIVITY`
    frames directly.
-4. Playback progress updates provide Discord timestamps while playing. Full privacy also includes
-   an exact `position / duration` label in the activity text so the card is readable even when
-   Discord chooses to render the timestamp as time remaining. Paused playback uses static
-   "Paused at" text so Discord does not show an advancing timer.
-5. Full privacy adds provider-safe media facts when the stream inventory exposes them: quality,
-   sub/dub presentation, audio language, subtitle language, and subtitle-track count.
+4. While playing, playback progress uses Discord `timestamps.start` + `timestamps.end` for a
+   Cider-style progress bar once mpv reports a duration. Full privacy also includes an exact
+   `position / duration` label in `state` for clients that render time remaining differently.
+5. Paused playback sends `timestamps: null` with static `Paused at …` text so Discord does not
+   keep advancing the old timer. After three minutes paused (tunable), Kunai clears the activity.
+6. Full privacy adds safe poster artwork and catalog links when ids are known.
 
 If any requirement is missing, Kunai records a diagnostics event and disables automatic retry until
-the user reconnects from Settings or changes the presence configuration. This prevents every
-playback update from hammering Discord IPC when the desktop app or client id is unavailable.
-Elapsed retry windows are allowed to recover from browsing or heartbeat updates, and duplicate
-activity payloads are skipped to avoid unnecessary Discord IPC churn.
+the user reconnects from Settings or changes the presence configuration. Duplicate activity payloads
+are skipped to avoid unnecessary Discord IPC churn.
+
+## Lifecycle
+
+| Event                                        | Presence behavior                                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Playback starts                              | Show episode card; start internal binge session clock                                 |
+| Progress updates                             | Refresh timestamps/progress when duration is known                                    |
+| Pause                                        | Static paused card; schedule clear after `presencePausedClearDelayMs` (default 3 min) |
+| Resume                                       | Cancel pause clear timer; resume playing card                                         |
+| Autoplay next episode                        | Keep presence and binge session clock (no flash clear)                                |
+| Post-play idle (mpv closed, up-next overlay) | `clearPlayback("playback-idle")`                                                      |
+| Leave playback phase                         | `clearPlayback("playback-exited")`                                                    |
+| Quit / shutdown                              | `presence.shutdown()`                                                                 |
+
+Kunai no longer replaces finished playback with a generic "Browsing Kunai" activity.
+
+## Binge session indicator
+
+Discord exposes only one timestamp pair per activity, so episode progress and a separate session
+elapsed line cannot both use native Discord timers.
+
+Kunai tracks continuous watch time internally across autoplay episodes (pause time excluded). After
+`presenceSessionShowAfterMs` (default 15 minutes), full-privacy `state` gains a suffix such as
+`· 45m with Kunai`. The suffix is hidden while paused and resets when presence clears.
+
+Tuning env keys:
+
+- `KUNAI_TUNING_PRESENCE_PAUSED_CLEAR_DELAY_MS` (default `180000`)
+- `KUNAI_TUNING_PRESENCE_SESSION_SHOW_AFTER_MS` (default `900000`)
 
 ## Onboarding And Controls
 
@@ -65,7 +92,9 @@ Presence integrations must never receive:
 - diagnostics payloads
 - local file paths unless the user explicitly opts into that later
 
-`presencePrivacy: "private"` only reports generic Kunai playback and the bundled Kunai asset. `presencePrivacy: "full"` may include title, episode, catalog ids, playback timestamps, and safe poster artwork.
+`presencePrivacy: "private"` only reports generic Kunai playback and the bundled Kunai asset.
+`presencePrivacy: "full"` may include title, episode, catalog ids, playback timestamps, and safe
+poster artwork.
 
 Discord activity buttons are URL-only (max two). During full privacy playback Kunai adds a single
 catalog button when ids are known:
@@ -73,14 +102,21 @@ catalog button when ids are known:
 - **View episode on TMDB** for TV with a TMDB id
 - otherwise **View on AniList**, **View on IMDb**, or **View on TMDB** for the series/movie
 
+Recent Discord clients also support clickable text/image via `details_url`, `state_url`, and
+`assets.large_url` when catalog ids are known.
+
 Play-in-Kunai handoffs are intentionally deferred. `presenceDiscordOpenUrl` remains in settings
 for future use but is not wired into the default activity payload.
 
 Full privacy cards are laid out like music-player presence (Cider-style): show title on
-`details`, episode title (or `S# E#`) on `state`, playback progress via Discord timestamps, and
-the show poster as `assets.large_image` when `title.posterUrl` is a safe `https://` URL (fallback
-asset key `kunai`). Provider stream URLs, subtitle URLs, headers, local paths, and source-specific
-media facts stay out of Discord payloads.
+`details`, `S# E# · episode name` on `state`, playback progress via Discord timestamps, and the
+show poster as `assets.large_image` when a safe `https://` poster URL is available on the title,
+title artwork, or episode artwork (fallback asset key `kunai`). Provider stream URLs, subtitle URLs,
+headers, and local paths stay out of Discord payloads.
+
+Upload portal assets from `apps/cli/assets/discord/` with keys `kunai` and `subtitles` for the
+fallback artwork. Without portal upload, Discord shows a generic placeholder when no HTTPS poster
+URL is available.
 
 ## Authentication Model
 
@@ -97,17 +133,13 @@ Discord Rich Presence here is local IPC, not OAuth:
 2. Ensure a client id is available via `presenceDiscordClientId` or `KUNAI_DISCORD_CLIENT_ID`.
 3. Upload Discord Developer Portal assets with keys `kunai` and `subtitles` when testing artwork.
 4. Set `presenceProvider: "discord"` and preferred `presencePrivacy`.
-5. If checking the deferred handoff setting, configure `Discord open URL` in `/presence` and
-   inspect protocol registration first with `kunai --install-protocol-handler --dry-run`.
-6. Start playback in Kunai.
-7. Confirm Discord activity updates with Cider-style title/episode lines, a playback progress bar
-   from timestamps, safe poster artwork, and a catalog button when ids are known.
-8. If `presenceDiscordOpenUrl` is configured, confirm no activity button is emitted yet; the
-   setting is reserved for future local handoffs.
-9. For future `kunai://` handoffs, register the local handler with `kunai --install-protocol-handler`,
-   click the button, and confirm Kunai asks before opening playback or queueing a download.
+5. Start playback in Kunai.
+6. Confirm Discord activity shows poster (or uploaded `kunai` fallback), `S# E# · episode`,
+   progress bar after duration is known, clickable catalog URLs, and a catalog button when ids exist.
+7. Pause → static card, no advancing timer; after ~3 minutes → presence clears.
+8. Autoplay next episode → card updates without clearing binge session suffix (after 15+ minutes).
+9. Return to search / quit → presence clears.
 10. Check `/diagnostics` for presence events.
-11. Pause playback and confirm Discord shows a static paused position instead of a moving timer.
 
 ## Remaining Work
 
@@ -115,9 +147,7 @@ Discord Rich Presence here is local IPC, not OAuth:
 - Upload stable Discord application assets from `apps/cli/assets/discord/` with keys `kunai` and
   `subtitles` in the Discord Developer Portal before treating artwork as guaranteed.
 - Keep `presenceDiscordOpenUrl` opt-in until packaged installers can run protocol registration as
-  part of installation. Source and global installs can register manually with
-  `kunai --install-protocol-handler` on Linux, or inspect the write/command plan first with
-  `kunai --install-protocol-handler --dry-run`.
+  part of installation.
 
 ## Related Plan
 

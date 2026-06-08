@@ -110,28 +110,13 @@ export class SessionController {
             new (await import("./PlaybackPhase")).PlaybackPhase(),
           );
 
-          const lastView = stateManager.getState().view;
-          if (lastView === "results" || lastView === "search" || lastView === "details") {
-            runBackgroundTask({
-              task: "presence.updateBrowsingAfterPlayback",
-              category: "presence",
-              diagnostics: diagnosticsService,
-              context: { sessionId: this.container.sessionId, view: lastView },
-              run: () =>
-                this.container.presence.updateBrowsing({
-                  view: lastView === "details" ? "title details" : `${lastView} results`,
-                  detail: stateManager.getState().currentTitle?.name,
-                }),
-            });
-          } else {
-            runBackgroundTask({
-              task: "presence.clearAfterPlayback",
-              category: "presence",
-              diagnostics: diagnosticsService,
-              context: { sessionId: this.container.sessionId, reason: "playback-exited" },
-              run: () => this.container.presence.clearPlayback("playback-exited"),
-            });
-          }
+          runBackgroundTask({
+            task: "presence.clearAfterPlayback",
+            category: "presence",
+            diagnostics: diagnosticsService,
+            context: { sessionId: this.container.sessionId, reason: "playback-exited" },
+            run: () => this.container.presence.clearPlayback("playback-exited"),
+          });
 
           if (this.abortController.signal.aborted) break;
 

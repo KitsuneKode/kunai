@@ -2,7 +2,12 @@ import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 
-import { buildDiscordPosterAsset, buildDiscordPresenceButtons } from "./discord-activity-links";
+import {
+  buildDiscordActivityUrlFields,
+  buildDiscordPosterAsset,
+  buildDiscordPresenceButtons,
+  buildCatalogViewLink,
+} from "./discord-activity-links";
 import { createDiscordIpcClient, type DiscordPresenceClient } from "./discord-ipc-client";
 import type {
   PresenceBrowseActivity,
@@ -35,6 +40,10 @@ export class PresenceServiceImpl implements PresenceService {
   private lastActivityHash: string | null = null;
   private lastActivityPayload: Record<string, unknown> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private watchSessionStartedAtMs: number | null = null;
+  private watchSessionPausedTotalMs = 0;
+  private watchSessionPauseStartedAtMs: number | null = null;
+  private pausedClearTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly deps: {
@@ -115,7 +124,11 @@ export class PresenceServiceImpl implements PresenceService {
     if (!client) return;
 
     try {
-      const payload = buildDiscordActivity(activity, this.deps.config.presencePrivacy);
+      this.syncWatchSessionForPlayback(activity);
+      const payload = buildDiscordActivity(activity, this.deps.config.presencePrivacy, {
+        sessionElapsedMs: this.computeWatchSessionElapsedMs(activity.paused === true),
+        sessionShowAfterMs: this.deps.config.tuning.presenceSessionShowAfterMs,
+      });
       const activityHash = stableJsonHash(payload);
       if (activityHash === this.lastActivityHash) {
         this.status = "ready";
@@ -179,7 +192,9 @@ export class PresenceServiceImpl implements PresenceService {
 
   async clearPlayback(reason: string): Promise<void> {
     this.stopHeartbeat();
+    this.resetWatchSession();
     this.lastActivityPayload = null;
+    this.lastActivityHash = null;
     if (!this.discordClient) return;
     await this.clearDiscordActivity(this.discordClient, reason);
   }
@@ -329,6 +344,60 @@ export class PresenceServiceImpl implements PresenceService {
     }
   }
 
+  private syncWatchSessionForPlayback(activity: PresencePlaybackActivity): void {
+    if (!this.watchSessionStartedAtMs) {
+      this.watchSessionStartedAtMs = Date.now();
+    }
+
+    const isPaused = activity.paused === true;
+    if (isPaused && this.watchSessionPauseStartedAtMs === null) {
+      this.watchSessionPauseStartedAtMs = Date.now();
+      this.schedulePausedClear();
+      return;
+    }
+
+    if (!isPaused && this.watchSessionPauseStartedAtMs !== null) {
+      this.watchSessionPausedTotalMs += Date.now() - this.watchSessionPauseStartedAtMs;
+      this.watchSessionPauseStartedAtMs = null;
+      this.cancelPausedClear();
+    }
+  }
+
+  private computeWatchSessionElapsedMs(isPaused: boolean): number {
+    if (!this.watchSessionStartedAtMs) return 0;
+    const now = Date.now();
+    const activePauseMs =
+      isPaused && this.watchSessionPauseStartedAtMs !== null
+        ? now - this.watchSessionPauseStartedAtMs
+        : 0;
+    return Math.max(
+      0,
+      now - this.watchSessionStartedAtMs - this.watchSessionPausedTotalMs - activePauseMs,
+    );
+  }
+
+  private resetWatchSession(): void {
+    this.watchSessionStartedAtMs = null;
+    this.watchSessionPausedTotalMs = 0;
+    this.watchSessionPauseStartedAtMs = null;
+    this.cancelPausedClear();
+  }
+
+  private schedulePausedClear(): void {
+    this.cancelPausedClear();
+    const delayMs = this.deps.config.tuning.presencePausedClearDelayMs;
+    this.pausedClearTimer = setTimeout(() => {
+      this.pausedClearTimer = null;
+      void this.clearPlayback("paused-timeout");
+    }, delayMs);
+  }
+
+  private cancelPausedClear(): void {
+    if (!this.pausedClearTimer) return;
+    clearTimeout(this.pausedClearTimer);
+    this.pausedClearTimer = null;
+  }
+
   private async tryReconnect(): Promise<void> {
     this.stopHeartbeat();
     if (this.discordClient) {
@@ -362,10 +431,16 @@ function stableJsonHash(value: Record<string, unknown>): string {
   return JSON.stringify(value);
 }
 
+export type DiscordActivityBuildContext = {
+  readonly sessionElapsedMs?: number;
+  readonly sessionShowAfterMs?: number;
+};
+
 /** Builds a Discord local IPC activity object (snake_case timestamps/assets, not discord-rpc npm shape). */
 export function buildDiscordActivity(
   activity: PresencePlaybackActivity,
   privacy: "full" | "private",
+  context: DiscordActivityBuildContext = {},
 ): Record<string, unknown> {
   if (privacy === "private") {
     return {
@@ -373,6 +448,7 @@ export function buildDiscordActivity(
       details: "Watching with Kunai",
       state: activity.paused ? "Paused" : "Playing",
       assets: { large_image: "kunai", large_text: "Kunai" },
+      ...(activity.paused ? { timestamps: null } : {}),
     };
   }
 
@@ -381,14 +457,26 @@ export function buildDiscordActivity(
     activity.positionSeconds,
     activity.durationSeconds,
   );
-  const assets = buildDiscordPosterAsset(activity.title);
+  const posterAsset = buildDiscordPosterAsset(activity.title, activity.episode);
+  const viewLink = buildCatalogViewLink({ mode: activity.mode, title: activity.title });
+  const assets = {
+    ...posterAsset,
+    ...(viewLink ? { large_url: viewLink.url } : {}),
+  };
   const buttons = buildDiscordPresenceButtons(activity, privacy);
+  const urlFields = buildDiscordActivityUrlFields(activity);
+  const stateLine = appendWatchSessionSuffix(
+    buildDiscordPlaybackStateLine(activity, progressLabel),
+    activity.paused === true,
+    context,
+  );
 
   return {
     type: 3,
     details: limitDiscordText(activity.title.name),
-    state: limitDiscordText(buildDiscordPlaybackStateLine(activity, progressLabel)),
-    ...(activity.paused ? {} : timeline),
+    state: limitDiscordText(stateLine),
+    ...urlFields,
+    ...(activity.paused ? { timestamps: null } : timeline),
     assets,
     ...(buttons.length > 0 ? { buttons } : {}),
   };
@@ -406,7 +494,8 @@ function buildDiscordPlaybackStateLine(
   }
 
   const episodeName = activity.episode.name?.trim();
-  const episodeLabel = episodeName ?? `S${activity.episode.season} E${activity.episode.episode}`;
+  const numbered = `S${activity.episode.season} E${activity.episode.episode}`;
+  const episodeLabel = episodeName ? `${numbered} · ${episodeName}` : numbered;
   if (activity.paused) {
     return compact([episodeLabel, progressLabel ? `Paused at ${progressLabel}` : "Paused"]).join(
       " · ",
@@ -419,6 +508,26 @@ function buildDiscordPlaybackStateLine(
 export const __testing = {
   runtime: presenceRuntime,
 };
+
+function appendWatchSessionSuffix(
+  state: string,
+  paused: boolean,
+  context: DiscordActivityBuildContext,
+): string {
+  if (paused) return state;
+  const elapsedMs = context.sessionElapsedMs ?? 0;
+  const thresholdMs = context.sessionShowAfterMs ?? 900_000;
+  if (elapsedMs < thresholdMs) return state;
+  return `${state} · ${formatSessionDuration(elapsedMs)} with Kunai`;
+}
+
+function formatSessionDuration(elapsedMs: number): string {
+  const totalMinutes = Math.floor(elapsedMs / 60_000);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+}
 
 function buildDiscordPlaybackTimeline(
   activity: Pick<PresencePlaybackActivity, "startedAtMs" | "positionSeconds" | "durationSeconds">,

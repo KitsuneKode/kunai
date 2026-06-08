@@ -32,6 +32,9 @@ export interface TuningConfig {
   readonly downloadStalledHeartbeatMs: number;
   readonly downloadAbortGraceMs: number;
   readonly downloadInactiveWaitMs: number;
+  // presence
+  readonly presencePausedClearDelayMs: number;
+  readonly presenceSessionShowAfterMs: number;
 }
 
 interface TuningBound {
@@ -64,6 +67,8 @@ const TUNING_SPEC: Readonly<Record<keyof TuningConfig, TuningBound>> = {
   downloadStalledHeartbeatMs: { default: 90_000, min: 5_000, max: 600_000 },
   downloadAbortGraceMs: { default: 2_500, min: 250, max: 60_000 },
   downloadInactiveWaitMs: { default: 5_000, min: 250, max: 120_000 },
+  presencePausedClearDelayMs: { default: 180_000, min: 30_000, max: 600_000 },
+  presenceSessionShowAfterMs: { default: 900_000, min: 60_000, max: 4 * HOUR },
 };
 
 const TUNING_FIELDS = Object.keys(TUNING_SPEC) as (keyof TuningConfig)[];
