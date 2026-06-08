@@ -82,7 +82,7 @@ const payload = {
   failureCodes,
   failureMessages,
   streamCandidates,
-  selectedSourceId: stream?.providerResolveResult?.selectedSourceId ?? null,
+  selectedSourceId: stream?.providerResolveResult?.selectedStreamId ?? null,
   streamReachable: streamProbe ? isStreamReachableForResolve(streamProbe) : false,
   streamProbeStatus: streamProbe?.status ?? null,
   ...providerSmokeProfilePayload(profile),

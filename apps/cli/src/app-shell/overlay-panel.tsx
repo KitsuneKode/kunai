@@ -384,9 +384,9 @@ export function applySeriesProviderOrder(
   order: readonly string[],
 ): KitsuneConfig {
   const normalized = dedupeProviderOrder(order);
-  if (normalized.length === 0) return config;
-  const [first, ...rest] = normalized;
-  return { ...config, provider: first, providerPriority: rest };
+  const first = normalized[0];
+  if (!first) return config;
+  return { ...config, provider: first, providerPriority: normalized.slice(1) };
 }
 
 export function applyAnimeProviderOrder(
@@ -394,9 +394,9 @@ export function applyAnimeProviderOrder(
   order: readonly string[],
 ): KitsuneConfig {
   const normalized = dedupeProviderOrder(order);
-  if (normalized.length === 0) return config;
-  const [first, ...rest] = normalized;
-  return { ...config, animeProvider: first, animeProviderPriority: rest };
+  const first = normalized[0];
+  if (!first) return config;
+  return { ...config, animeProvider: first, animeProviderPriority: normalized.slice(1) };
 }
 
 export function moveProviderInOrder(

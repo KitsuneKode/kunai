@@ -141,7 +141,7 @@ function planResolveGateHealth(
   context: PlanContext,
 ): StreamHealthPlan {
   if (input.streamReachabilityVerified === true) {
-    return skipPlan(context, "provider-attested");
+    return skipPlan(context, "provider-attested", "provider-attested");
   }
   return probePlan(context, "forced");
 }
@@ -155,10 +155,10 @@ function planPlaybackPreflightHealth(
     typeof context.ageMs === "number" &&
     context.ageMs <= context.playbackTrustMs
   ) {
-    return skipPlan(context, "provider-attested");
+    return skipPlan(context, "provider-attested", "provider-attested");
   }
   if (typeof context.ageMs === "number" && context.ageMs <= context.playbackTrustMs) {
-    return skipPlan(context, "recent-resolve");
+    return skipPlan(context, "recent-resolve", "recent-resolve");
   }
   return probePlan(context, "forced");
 }
@@ -187,7 +187,7 @@ function planCacheRevalidateHealth(
 function skipPlan(
   context: PlanContext,
   skipReason: StreamHealthSkipReason,
-  policyReason: StreamHealthPolicyReason = skipReason,
+  policyReason: StreamHealthPolicyReason,
 ): StreamHealthPlan {
   return {
     shouldProbe: false,
