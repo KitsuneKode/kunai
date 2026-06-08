@@ -38,6 +38,7 @@ import {
   toEpisodeNavigationState,
 } from "@/app/playback-policy";
 import {
+  applyUserProviderSwitch,
   resolveStreamProviderId,
   resolveTitleProviderPreference,
 } from "@/app/playback-provider-switch";
@@ -383,6 +384,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         episode: activity.episode.episode,
       },
       run: () => context.container.presence.updatePlayback(activity),
+    });
+  }
+
+  private clearPresenceInBackground(
+    context: PhaseContext,
+    task: string,
+    reason: string,
+    correlation?: DiagnosticCorrelation,
+  ): void {
+    runBackgroundTask({
+      task,
+      category: "presence",
+      diagnostics: context.container.diagnosticsService,
+      context: { ...correlation, reason },
+      run: () => context.container.presence.clearPlayback(reason),
     });
   }
 
@@ -2026,12 +2042,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             if (fallback) {
               sessionSoftProviderId = null;
-              stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
+              const fromProviderId = resolvedProviderId;
+              await applyUserProviderSwitch({
+                container,
+                fromProviderId,
+                toProviderId: fallback.metadata.id,
+                title,
+                episode: currentEpisode,
+                mode: stateManager.getState().mode,
+              });
+              resolvedProviderId = fallback.metadata.id;
+              recentEpisodeStreams.delete(
+                `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
+              );
+              pendingSourceRefreshAction = "recover";
+              pendingRecomputeSources = false;
               diagnosticsService.record({
                 category: "playback",
                 message: "Switching to fallback provider after playback control request",
                 context: {
-                  from: resolvedProviderId,
+                  from: fromProviderId,
                   fallback: fallback.metadata.id,
                   titleId: title.id,
                   season: currentEpisode.season,
@@ -2500,6 +2530,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           await player.releasePersistentSession();
+          this.clearPresenceInBackground(context, "presence.clearPlaybackIdle", "playback-idle");
           preparePostPlaybackSurface(container, episodePrefetch, playbackIterationAbort);
           this.updatePlaybackFeedback(context, { detail: null, note: null });
           playbackSession = this.transitionPlaybackSession(
@@ -2577,6 +2608,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // null = not yet attempted; [] = attempted (within budget) but empty.
           let postPlaybackLoadedRecommendations: readonly PostPlaybackRecommendationItem[] | null =
             null;
+          let postPlayProviderId = stateManager.getState().provider;
           let openRecoverySourcePanelOnPostPlay =
             (result.suspectedDeadStream === true || didPlaybackFailToStart(result)) &&
             Boolean(preparedStream.providerResolveResult?.streams.length);
@@ -3019,7 +3051,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 continue postPlayback;
               }
               sessionSoftProviderId = null;
-              stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
+              await applyUserProviderSwitch({
+                container,
+                fromProviderId: resolvedProviderId,
+                toProviderId: fallback.metadata.id,
+                title,
+                episode: currentEpisode,
+                mode: stateManager.getState().mode,
+              });
+              resolvedProviderId = fallback.metadata.id;
+              postPlayProviderId = fallback.metadata.id;
+              recentEpisodeStreams.delete(
+                `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
+              );
+              pendingSourceRefreshAction = "recover";
+              pendingRecomputeSources = false;
               pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
               playbackSession = this.transitionPlaybackSession(
                 context,
@@ -3108,6 +3154,27 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               return { status: "success", value: "back_to_results" };
             } else if (routedAction === "handled") {
+              const nextProviderId = stateManager.getState().provider;
+              if (nextProviderId !== postPlayProviderId) {
+                postPlayProviderId = nextProviderId;
+                resolvedProviderId = nextProviderId;
+                sessionSoftProviderId = null;
+                recentEpisodeStreams.delete(
+                  `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
+                );
+                pendingSourceRefreshAction = "recover";
+                pendingRecomputeSources = false;
+                diagnosticsService.record({
+                  category: "playback",
+                  message: "Post-play provider switch staged for fresh resolve",
+                  context: {
+                    provider: nextProviderId,
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                  },
+                });
+              }
               continue postPlayback;
             } else if (postAction === "clear-cache" || postAction === "clear-history") {
               await handleShellAction({ action: postAction, container });
