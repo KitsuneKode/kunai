@@ -140,11 +140,37 @@ Add later debug flags:
 - Added playback failure classification and recovery guidance.
 - Added serialized playback control command execution.
 
+## June 2026 Pass: Videasy HLS + Playback Input (landed)
+
+Provider and mpv correctness for Cineplay/Luffy (`light.goldweather.net`) host-root VOD playlists:
+
+- **Resolve:** prefer Videasy `mb-flix` over Neon (`e3b0c442`); enrich `sources-with-title` from `db.videasy.to` (`imdbId`, `year`, title).
+- **Reachability:** HLS segment probe after manifest fetch (`packages/providers/src/shared/stream-reachability.ts` + `hls-manifest.ts`).
+- **Playback:** materialize host-root playlists locally when `shouldMaterializeHlsManifest()`; pass `protocol_whitelist=[file,tcp,tls,https,http,crypto,data]` for local `.m3u8` paths (`apps/cli/src/mpv.ts`).
+- **Startup timeline:** `media-materialized` event kind `hls-manifest` in diagnostics/bootstrap.
+- **Shell input:** restore `n`/`p`/`v`/`u` during active playback when command footer is active; forced mpv bridge binds for `n`/`p` and `v` quality alias.
+- **Cache UX:** episode/title-scoped playback cache purge (`apps/cli/src/app/playback-cache-purge.ts`).
+- **Source inventory:** stable known-catalog order; `o` source shortcut aligned across footer/post-play/GO hints.
+
+Reference scratchpad: `apps/experiments/scratchpads/provider-videasy-player/VIDEASY_PLAYER_PARITY_REPORT.md`.
+
+### Playback input routing — remaining (P0/P1)
+
+The active-playback surface still splits shortcuts across **loading-shell `useInput`**, **footer `useShellInput`**, and **mpv `kunai-bridge.lua`**. Partial `!onCommandAction` guards caused dead keys; `n`/`p`/`v`/`u` are fixed, but the pattern remains fragile.
+
+| Priority | Item                                                    | Notes                                                                                                                                    |
+| -------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | Unblock `r`/`f`/`d` during `operation === "playing"`    | Stall banner advertises recover/fallback/diagnostics but terminal `r`/`f` still gated when footer active; mpv `Ctrl+R` works for refresh |
+| P1       | Defer HLS temp cleanup until persistent session release | `PlayerServiceImpl.play()` `finally` deletes materialized playlist when cycle ends; in-process reconnect reload can race deleted paths   |
+| P1       | Single playback key map                                 | One router owns terminal shortcuts; footer shows subset only; no duplicate guards                                                        |
+| P2       | Footer vs GO hint parity                                | Footer shows `e`/`a`/`o`/`q`/`/`; GO row lists `n`/`p`/`v`/`u`/`x` — align or document overflow behind `/`                               |
+
 ## Remaining Follow-Up
 
 - Add provider/source preference learning for subtitle quality and subtitle source success rate.
 - Benchmark HLS startup with the user config vs clean mpv config.
 - Promote the command queue into a fuller player actor if refresh/fallback/reload policies become more complex.
+- Complete playback input routing table above before the next shell polish pass.
 
 ## Manual Verification Checklist
 
@@ -155,3 +181,7 @@ Add later debug flags:
 5. Verify autoplay uses one persistent mpv process and advances through `loadfile replace`.
 6. Verify `Ctrl+C`, `SIGTERM`, and terminal close stop mpv cleanly.
 7. Verify subtitles no longer delay stream launch when no subtitle was observed before `.m3u8`.
+8. Play Study Group S01E02 via Videasy (`bc-frontend`, Luffy): bootstrap shows `media-materialized`, mpv reaches `playback-started`, no segment 404 loop.
+9. From terminal focus during play: `n`/`p`/`v`/`u` work; from mpv focus: `n`/`p`/`v`/`k`/`Ctrl+R` work.
+10. Purge episode cache from settings, re-resolve, confirm fresh `mb-flix` ladder (360/720/1080).
+11. Vidlink/speedzy HLS: confirm materializer **does not** run (relative segment paths only).

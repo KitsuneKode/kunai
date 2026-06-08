@@ -276,6 +276,17 @@ Exit criteria:
 
 Goal: loading and active playback feel consistent, rich, and useful without becoming noisy.
 
+Progress (2026-06-09):
+
+- **Done:** compact NOW/GO rows on active playback; poster rail on wide terminals; header crumb
+  deduped (title/episode/subtitle live in body, not header strip); `o` source shortcut aligned
+  across footer/post-play/GO; episode/title cache purge; Videasy Luffy HLS materialization +
+  segment probe (see [kunai-playback-reliability-implementation.md](./kunai-playback-reliability-implementation.md));
+  hotkey repair for `n`/`p`/`v`/`u`.
+- **Open:** unified playback input router (footer + loading-shell + mpv must not disagree);
+  terminal `r`/`f`/`d` during stall banner; defer materialized HLS cleanup to session release;
+  optional episode still/backdrop companion.
+
 Tasks:
 
 - replace inconsistent stage chips with a compact signal rail
@@ -288,12 +299,15 @@ Tasks:
   - never block playback or input
 - make active playback show poster/still in an integrated companion, not an orphaned bottom-left image
 - keep diagnostics available but not centered in normal playback
+- **playback shortcuts contract:** one documented key map; advertised keys must work from terminal
+  **or** mpv with explicit focus hint; stall/recovery rows must wire the keys they display
 
 Exit criteria:
 
 - resolving, buffering, playing, and post-playback feel visually connected
 - loading screen has strong hierarchy and no duplicated “provider/status/issue” copy
 - playback looks alive even when mpv owns the video window
+- no “dead key” regressions when `onCommandAction` / command footer is active during play
 
 ## Milestone 9: Offline And Home Surface Visibility
 
@@ -363,11 +377,16 @@ Additional visual/runtime smoke:
 
 ```sh
 bun run dev -- -S "Attack on Titan" --debug
+bun run dev -- -i 233347 -t series  # Study Group — Videasy Luffy HLS materialization
 KUNAI_POSTER=0 bun run dev
 KUNAI_IMAGE_DEBUG=1 bun run dev -- -S "Dune"
 ```
 
 Check each at narrow, medium, and wide terminal sizes.
+
+Playback shortcut smoke (terminal focus, then mpv focus): `n` next · `p` prev · `v` quality · `u`
+autoskip · `o` source · `q` stop · `/` commands. During a forced stall, confirm `r` recover and
+`f` fallback from terminal (not only mpv `Ctrl+R`).
 
 ## Verification Strategy
 
