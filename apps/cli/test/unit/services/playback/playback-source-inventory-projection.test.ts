@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  availableAudioModesFromTrace,
   buildPlaybackSourceInventoryDiagnosticsSummary,
   projectPlaybackSourceInventory,
 } from "@/services/playback/PlaybackSourceInventoryProjection";
@@ -545,4 +546,38 @@ test("builds a diagnostics-safe source inventory summary without stream or subti
   });
   expect(JSON.stringify(summary)).not.toContain("private-stream");
   expect(JSON.stringify(summary)).not.toContain("private-en.vtt");
+});
+
+test("availableAudioModesFromTrace exposes dual sub/dub rows only when trace confirms both modes", () => {
+  const dual = availableAudioModesFromTrace({
+    status: "resolved",
+    providerId: "allanime",
+    selectedStreamId: "sub-1080",
+    streams: [],
+    failures: [],
+    subtitles: [],
+    trace: trace({
+      events: [
+        {
+          type: "inventory:audio-modes",
+          providerId: "allanime",
+          at: "2026-05-19T00:00:00.000Z",
+          message: "Dual audio catalog available",
+          attributes: { modes: "sub,dub" },
+        },
+      ],
+    }),
+  });
+  expect(dual).toEqual(["sub", "dub"]);
+
+  const single = availableAudioModesFromTrace({
+    status: "resolved",
+    providerId: "allanime",
+    selectedStreamId: "sub-1080",
+    streams: [],
+    failures: [],
+    subtitles: [],
+    trace: trace(),
+  });
+  expect(single).toEqual([]);
 });

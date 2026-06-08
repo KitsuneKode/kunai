@@ -992,3 +992,15 @@ function stateRank(state: PlaybackInventoryOptionState): number {
   if (state === "failed") return 3;
   return 4;
 }
+
+export function availableAudioModesFromTrace(
+  result: ProviderResolveResult,
+): readonly ("sub" | "dub")[] {
+  const event = result.trace.events?.find((entry) => entry.type === "inventory:audio-modes");
+  const raw = event?.attributes?.modes;
+  if (typeof raw !== "string" || raw.length === 0) return [];
+  return raw
+    .split(",")
+    .map((mode) => mode.trim())
+    .filter((mode): mode is "sub" | "dub" => mode === "sub" || mode === "dub");
+}

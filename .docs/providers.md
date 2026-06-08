@@ -120,6 +120,15 @@ Startup priority policy:
 - `quality-first` may spend a bounded foreground budget on richer candidates such as AllManga `Ak`, but required fallback work is not bounded away when baseline candidates are unusable.
 - Startup priority is part of stream-result cache, source-inventory, and resolve-work identity so `fast` and `quality-first` results do not masquerade as each other.
 
+Playback selection and language policy:
+
+- **Selection stack (highest wins):** per-episode override → title-level manual source default (`{ providerId, titleId } → sourceId`) → provider auto-select (including global `favoriteSourceNames`) → startup priority chain inside the provider.
+- **Cross-episode carry:** only `sourceId` persists across episodes; never carry `streamId` into autoplay or prefetch.
+- **Favorites vs title default:** favorites remain global config bias; a manual source pick on one title writes the title default and wins over favorites for that title until changed.
+- **Language seam:** `mediaLanguageProfileFor` (via `playback-profile-context`) supplies audio/subtitle/quality for resolve, prefetch, cache keys, and mpv handoff. Anime audio intent uses `resolveAnimeAudioIntent` (`original`/`ja` → sub catalog, `en`/`dub` → dub catalog).
+- **Prefetch/cache:** subtitle preference mismatch may soft-reuse prepared video; sub↔dub audio mode change is a hard miss and must re-resolve. Audio-mode switches invalidate episode caches but keep the title source default.
+- **Tracks sub/dub rows:** only when provider trace emits `inventory:audio-modes` with both modes confirmed (AllManga does this when the catalog exposes sub and dub episode lists).
+
 Source inventory and language normalization:
 
 - Use `packages/providers/src/shared/source-inventory.ts` for stable source,
