@@ -166,7 +166,7 @@ function availableSource(id: string, label: string): ProviderSourceCandidate {
     providerId: VIDKING_PROVIDER_ID,
     kind: "provider-api",
     label,
-    host: "api.videasy.net",
+    host: "api.videasy.to",
     status: "available",
     confidence: 0.9,
   };

@@ -371,7 +371,7 @@ function mergeKnownVidkingFlavorSources(
       providerId: VIDKING_PROVIDER_ID,
       kind: "provider-api",
       label: flavor.themeLabel,
-      host: "api.videasy.net",
+      host: "api.videasy.to",
       status: "available",
       confidence: 0.4,
       cachePolicy: result.cachePolicy,

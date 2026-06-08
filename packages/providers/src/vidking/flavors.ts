@@ -258,6 +258,14 @@ export function listVidkingFlavors(): readonly VidkingFlavorDefinition[] {
   return FLAVORS;
 }
 
+export function listEligibleVidkingFlavorIds(
+  mediaKind?: "movie" | "series",
+): readonly VidkingFlavorId[] {
+  return FLAVORS.filter((flavor) => mediaKind !== "series" || flavor.moviesOnly !== true).map(
+    (flavor) => flavor.id,
+  );
+}
+
 export function getVidkingFlavor(flavorId: string): VidkingFlavorDefinition | undefined {
   return FLAVOR_BY_ID.get(flavorId as VidkingFlavorId);
 }

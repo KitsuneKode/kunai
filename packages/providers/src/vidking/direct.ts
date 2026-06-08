@@ -42,10 +42,13 @@ import {
   normalizeQualityLabel,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
+import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "../shared/stream-health";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import {
   getPhaseAVidkingServers,
   flavorSourceId,
+  getPhaseAVidkingFlavorIds,
+  listEligibleVidkingFlavorIds,
   listVidkingFlavors,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
@@ -58,7 +61,8 @@ import { vidkingManifest, VIDKING_PROVIDER_ID } from "./manifest";
 export { VIDKING_PROVIDER_ID };
 export const VIDKING_REFERER = "https://www.vidking.net/";
 export const VIDKING_ORIGIN = "https://www.vidking.net";
-export const VIDKING_API_BASE = "https://api.videasy.net";
+/** Videasy moved the stream API from api.videasy.net (404) to api.videasy.to. */
+export const VIDKING_API_BASE = "https://api.videasy.to";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -71,7 +75,6 @@ export const VIDKING_PHASE_A_SERVERS = getPhaseAVidkingServers();
 
 export const VIDKING_VIDEASY_FETCH_TIMEOUT_MS = 90_000;
 const VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS = 95_000;
-
 /** Normalize audio language codes to ISO 639-1. Delegates to the shared language
  *  normalizer which handles both subtitle and audio language code formats. */
 function normalizeLanguageCode(value: string | undefined): string | undefined {
@@ -250,39 +253,61 @@ export async function resolveVidkingDirect(
     });
   }
 
-  const probingSourceOptions =
-    exhaustiveFlavorIds.length > 0
+  const mediaKind =
+    input.mediaKind === "movie" || input.mediaKind === "series" ? input.mediaKind : undefined;
+  const inventoryFlavorIds = resolvedOptions?.flavorId
+    ? [resolvedOptions.flavorId]
+    : exhaustiveFlavorIds.length > 0
       ? exhaustiveFlavorIds
-          .map((flavorId) => resolveFlavorEngineOptions(flavorId))
-          .filter((options): options is VidKingEngineOptions & { serverEndpoint: string } =>
-            Boolean(options?.serverEndpoint),
-          )
       : preferredFlavorIds.length > 0
         ? preferredFlavorIds
-            .map((flavorId) => resolveFlavorEngineOptions(flavorId))
-            .filter((options): options is VidKingEngineOptions & { serverEndpoint: string } =>
-              Boolean(options?.serverEndpoint),
-            )
-        : activeServers.map((server) => vidkingEngineOptionsForEndpoint(server, resolvedOptions));
+        : resolvedOptions?.serverEndpoint
+          ? listEligibleVidkingFlavorIds(mediaKind).filter((flavorId) => {
+              const options = resolveFlavorEngineOptions(flavorId);
+              if (!options || options.serverEndpoint !== resolvedOptions.serverEndpoint) {
+                return false;
+              }
+              if (
+                resolvedOptions.language &&
+                options.language &&
+                options.language !== resolvedOptions.language
+              ) {
+                return false;
+              }
+              if (
+                resolvedOptions.filterQuality &&
+                options.filterQuality &&
+                options.filterQuality !== resolvedOptions.filterQuality
+              ) {
+                return false;
+              }
+              return true;
+            })
+          : listEligibleVidkingFlavorIds(mediaKind);
 
-  for (const sourceOptions of probingSourceOptions) {
-    const server = sourceOptions.serverEndpoint ?? "mb-flix";
+  const phaseAFlavorIds = new Set<string>(getPhaseAVidkingFlavorIds());
+  for (const flavorId of inventoryFlavorIds) {
+    const sourceOptions = resolveFlavorEngineOptions(flavorId);
+    if (!sourceOptions?.serverEndpoint) continue;
+    const server = sourceOptions.serverEndpoint;
     const presentation = resolveVidkingPresentation(server, sourceOptions);
     const sid = vidkingSourceIdForPresentation(server, sourceOptions);
+    const phase = phaseAFlavorIds.has(flavorId) ? "A" : "B";
     sources.push({
       id: sid,
       providerId: VIDKING_PROVIDER_ID,
       kind: "provider-api",
       label: presentation.themeLabel,
-      host: "api.videasy.net",
-      status: "probing",
-      confidence: 0.8,
+      host: "api.videasy.to",
+      status: phase === "A" ? "probing" : "pending",
+      confidence: phase === "A" ? 0.8 : 0.5,
       cachePolicy,
       metadata: {
         server,
         flavorId: presentation.flavorId,
         flavorArchetype: presentation.subtitle,
         flavorLabel: presentation.themeLabel,
+        phase,
       },
     });
   }
@@ -313,7 +338,54 @@ export async function resolveVidkingDirect(
     preferredSourceId: input.preferredSourceId,
   });
 
-  const cycleResult = await runProviderCycle({
+  const resolveVidkingCycleCandidate = async (candidate: ProviderCycleCandidate) => {
+    const metadata = parseVidkingCycleCandidateMetadata(candidate);
+    const flavorOptions = metadata.flavorId
+      ? (resolveFlavorEngineOptions(metadata.flavorId) ?? {})
+      : {};
+    const candidateOptions = vidkingEngineOptionsForEndpoint(metadata.server, {
+      ...resolvedOptions,
+      ...flavorOptions,
+      flavorLabel: metadata.flavorLabel,
+      flavorArchetype: metadata.flavorArchetype,
+    });
+    const failureStartIndex = failures.length;
+    const result = await tryVidkingServer({
+      server: metadata.server,
+      tmdbId,
+      input,
+      cachePolicy,
+      events,
+      context,
+      failures,
+      startedAt,
+      customReferer: metadata.customReferer,
+      engineOptions: candidateOptions,
+    });
+    if (!result) {
+      const candidateFailures = failures.slice(failureStartIndex);
+      const sessionGuardFailure = candidateFailures.find((failure) =>
+        isVideasySessionGuardMessage(failure.message),
+      );
+      if (sessionGuardFailure) {
+        throw createProviderCycleFailureError(candidate, {
+          failureClass: "candidate-blocked",
+          message: sessionGuardFailure.message,
+          retryable: false,
+          at: sessionGuardFailure.at,
+        });
+      }
+      throw createProviderCycleFailureError(candidate, {
+        failureClass: "candidate-empty",
+        message: `Videasy ${metadata.server} did not produce a playable source`,
+        retryable: false,
+        at: context.now(),
+      });
+    }
+    return result;
+  };
+
+  let cycleResult = await runProviderCycle({
     providerId: VIDKING_PROVIDER_ID,
     candidates: cycleCandidates,
     signal: context.signal,
@@ -322,53 +394,52 @@ export async function resolveVidkingDirect(
     candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
     shouldStopAfterFailure: (failure) =>
       failure.failureClass === "candidate-blocked" && isVideasySessionGuardMessage(failure.message),
-    resolveCandidate: async (candidate) => {
-      const metadata = parseVidkingCycleCandidateMetadata(candidate);
-      const flavorOptions = metadata.flavorId
-        ? (resolveFlavorEngineOptions(metadata.flavorId) ?? {})
-        : {};
-      const candidateOptions = vidkingEngineOptionsForEndpoint(metadata.server, {
-        ...resolvedOptions,
-        ...flavorOptions,
-        flavorLabel: metadata.flavorLabel,
-        flavorArchetype: metadata.flavorArchetype,
-      });
-      const failureStartIndex = failures.length;
-      const result = await tryVidkingServer({
-        server: metadata.server,
-        tmdbId,
-        input,
-        cachePolicy,
-        events,
-        context,
-        failures,
-        startedAt,
-        customReferer: metadata.customReferer,
-        engineOptions: candidateOptions,
-      });
-      if (!result) {
-        const candidateFailures = failures.slice(failureStartIndex);
-        const sessionGuardFailure = candidateFailures.find((failure) =>
-          isVideasySessionGuardMessage(failure.message),
-        );
-        if (sessionGuardFailure) {
-          throw createProviderCycleFailureError(candidate, {
-            failureClass: "candidate-blocked",
-            message: sessionGuardFailure.message,
-            retryable: false,
-            at: sessionGuardFailure.at,
-          });
-        }
-        throw createProviderCycleFailureError(candidate, {
-          failureClass: "candidate-empty",
-          message: `Videasy ${metadata.server} did not produce a playable source`,
-          retryable: false,
-          at: context.now(),
-        });
-      }
-      return result;
-    },
+    resolveCandidate: resolveVidkingCycleCandidate,
   });
+
+  const shouldRetryWithEmbedReferer =
+    !cycleResult.selected &&
+    !cycleResult.cancelled &&
+    phaseAOnly &&
+    !resolvedOptions.customReferer &&
+    !resolvedOptions.serverEndpoint &&
+    preferredFlavorIds.length === 0 &&
+    exhaustiveFlavorIds.length === 0 &&
+    embedReferer;
+
+  if (shouldRetryWithEmbedReferer) {
+    const embedCandidates = buildVidkingCycleCandidates({
+      directServers: [],
+      embedServers: activeServers.length > 0 ? activeServers : [...VIDKING_SERVERS],
+      flavorIds: [],
+      embedReferer,
+      engineOptions: resolvedOptions,
+      preferredSourceId: input.preferredSourceId,
+    });
+    const embedCycleResult = await runProviderCycle({
+      providerId: VIDKING_PROVIDER_ID,
+      candidates: embedCandidates,
+      signal: context.signal,
+      now: context.now,
+      maxAttemptsPerCandidate: 1,
+      candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
+      shouldStopAfterFailure: (failure) =>
+        failure.failureClass === "candidate-blocked" &&
+        isVideasySessionGuardMessage(failure.message),
+      resolveCandidate: resolveVidkingCycleCandidate,
+    });
+    events.push(...embedCycleResult.events);
+    if (embedCycleResult.selected) {
+      cycleResult = embedCycleResult;
+    } else if (!embedCycleResult.cancelled) {
+      cycleResult = {
+        ...cycleResult,
+        attempts: [...cycleResult.attempts, ...embedCycleResult.attempts],
+        events: [...cycleResult.events, ...embedCycleResult.events],
+        stopReason: embedCycleResult.stopReason,
+      };
+    }
+  }
   if (cycleResult.cancelled) {
     events.push(...cycleResult.events);
     return createExhaustedResult(
@@ -394,10 +465,12 @@ export async function resolveVidkingDirect(
   }
 
   if (cycleResult.selected) {
-    return appendCycleEventsToResult(
-      withVidkingSourceInventory(cycleResult.selected, sources, cycleResult.attempts),
-      cycleResult.events,
+    const resolved = withVidkingSourceInventory(
+      { ...cycleResult.selected, failures: [] },
+      sources,
+      cycleResult.attempts,
     );
+    return appendCycleEventsToResult(resolved, cycleResult.events);
   }
 
   events.push(...cycleResult.events);
@@ -605,6 +678,7 @@ export function createVidkingResultFromPayload({
   sourceDisplayLabel,
   flavorArchetype,
   engineOptions,
+  streamReachabilityVerified,
 }: {
   readonly input: ProviderResolveInput;
   readonly cachePolicy?: CachePolicy;
@@ -620,6 +694,7 @@ export function createVidkingResultFromPayload({
   readonly sourceDisplayLabel?: string;
   readonly flavorArchetype?: string;
   readonly engineOptions?: VidKingEngineOptions;
+  readonly streamReachabilityVerified?: boolean;
 }): ProviderResolveResult | null {
   const policy =
     cachePolicy ??
@@ -657,7 +732,7 @@ export function createVidkingResultFromPayload({
       sourceId: resolvedSourceId,
       serverId: server,
       nativeLabel: server ?? "Videasy",
-      host: "api.videasy.net",
+      host: "api.videasy.to",
       confidence: 0.9,
       metadata: { flavorFilter: sourceQualityFilter },
     }),
@@ -749,13 +824,14 @@ export function createVidkingResultFromPayload({
     providerId: VIDKING_PROVIDER_ID,
     selectedStreamId: selectedStream.id,
     selectionDecision: selection.decision,
+    streamReachabilityVerified: streamReachabilityVerified === true ? true : undefined,
     sources: [
       {
         id: resolvedSourceId,
         providerId: VIDKING_PROVIDER_ID,
         kind: "provider-api",
         label: themedLabel,
-        host: "api.videasy.net",
+        host: "api.videasy.to",
         status: "selected",
         confidence: 0.9,
         requiresRuntime: "direct-http",
@@ -893,6 +969,98 @@ function buildEmbedReferer(options: {
     : `https://www.vidking.net/embed/movie/${tmdbId}?autoPlay=true`;
 }
 
+async function probeSelectedVidkingPayloadStream({
+  decoded,
+  input,
+  cachePolicy,
+  sourceId,
+  server,
+  streamReferer,
+  sourceQualityFilter,
+  engineOptions,
+  events,
+  context,
+}: {
+  readonly decoded: VidkingPayload;
+  readonly input: ProviderResolveInput;
+  readonly cachePolicy: CachePolicy;
+  readonly sourceId: string;
+  readonly server: VidkingServerEndpoint;
+  readonly streamReferer?: string;
+  readonly sourceQualityFilter?: string;
+  readonly engineOptions?: VidKingEngineOptions;
+  readonly events: ProviderTraceEvent[];
+  readonly context: ProviderRuntimeContext;
+}): Promise<boolean> {
+  const presentation = resolveVidkingPresentation(server, engineOptions ?? {});
+  const streams = normalizeStreamCandidates({
+    payload: decoded,
+    input,
+    cachePolicy,
+    sourceId,
+    server,
+    streamReferer,
+    sourceQualityFilter,
+    flavorLabel: presentation.themeLabel,
+    serverName: presentation.themeLabel,
+  });
+  if (streams.length === 0) {
+    return false;
+  }
+
+  const selection = selectReadyStream(streams, {
+    startupPriority: input.startupPriority,
+    qualityPreference: input.qualityPreference,
+    preferredStreamId: input.preferredStreamId,
+    preferredSourceId: input.preferredSourceId,
+    favoriteSourceNames: input.favoriteSourceNames,
+  });
+  const selected = selection.selected;
+  const streamUrl = selected.url?.trim();
+  if (!streamUrl) {
+    return false;
+  }
+
+  const probeStartedAt = Date.now();
+  const health = await runStreamHealthCheck({
+    phase: "resolve-gate",
+    url: streamUrl,
+    headers: selected.headers,
+    fetchImpl: context.fetch?.fetch.bind(context.fetch),
+    timeoutMs: STREAM_HEALTH_DEFAULTS.vidkingResolveGateTimeoutMs,
+    signal: context.signal,
+  });
+  const probeDurationMs = Date.now() - probeStartedAt;
+
+  if (health.healthy) {
+    return true;
+  }
+
+  const probe = health.probe;
+  const reason =
+    probe?.status === "timeout"
+      ? "stream probe timed out"
+      : probe?.status === "unreachable"
+        ? probe.reason
+        : "stream probe failed";
+
+  emitTraceEvent(events, context, {
+    type: "source:failed",
+    providerId: VIDKING_PROVIDER_ID,
+    sourceId,
+    streamId: selected.id,
+    message: `${presentation.themeLabel} decoded sources but selected stream is unreachable`,
+    durationMs: probeDurationMs,
+    attributes: {
+      server,
+      reason,
+      quality: selected.qualityLabel ?? null,
+      probe: probe?.status ?? "failed",
+    },
+  });
+  return false;
+}
+
 /**
  * Probe a single VidKing server with all query variants and retries.
  * Runs sequentially internally but multiple servers are fired in parallel.
@@ -1018,6 +1186,24 @@ async function tryVidkingServer(opts: {
 
         const decodedPayload = await decodeVideasyGuardedPayload(payload, sessionToken);
         const decoded = await decodeVidkingPayload(decodedPayload, tmdbId);
+        const streamReferer = customReferer ?? VIDKING_REFERER;
+        const streamVerified = await probeSelectedVidkingPayloadStream({
+          decoded,
+          input,
+          cachePolicy,
+          sourceId,
+          server,
+          streamReferer,
+          sourceQualityFilter: engineOptions.filterQuality,
+          engineOptions,
+          events,
+          context,
+        });
+        if (!streamVerified) {
+          vidkingHealth.recordFailure(server);
+          break;
+        }
+
         const result = createVidkingResultFromPayload({
           input,
           cachePolicy,
@@ -1028,9 +1214,10 @@ async function tryVidkingServer(opts: {
           context,
           startedAt,
           failures,
-          streamReferer: customReferer,
+          streamReferer,
           sourceQualityFilter: engineOptions.filterQuality,
           engineOptions,
+          streamReachabilityVerified: true,
         });
         if (result) {
           vidkingHealth.recordSuccess(server);
@@ -1285,7 +1472,7 @@ function normalizeStreamCandidates({
         sourceId,
         serverId: server,
         nativeLabel: server ?? "Videasy",
-        host: "api.videasy.net",
+        host: "api.videasy.to",
         confidence: 0.9,
         metadata: { quality: source.quality, flavorFilter: sourceQualityFilter },
       }),

@@ -66,7 +66,7 @@ export class VidkingLazySourceProbeService {
         providerId: VIDKING_PROVIDER_ID,
         kind: "provider-api",
         label: flavor?.themeLabel ?? options?.flavorLabel ?? endpoint,
-        host: "api.videasy.net",
+        host: "api.videasy.to",
         status: "probing",
         confidence: 0.5,
         cachePolicy: merged.cachePolicy,
@@ -184,7 +184,7 @@ function failedSource(
     providerId: VIDKING_PROVIDER_ID,
     kind: "provider-api",
     label,
-    host: "api.videasy.net",
+    host: "api.videasy.to",
     status: "failed",
     confidence: 0,
     cachePolicy: {

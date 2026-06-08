@@ -1,4 +1,5 @@
 import type { TitleInfo } from "@/domain/types";
+import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -9,7 +10,7 @@ import {
 } from "./provider-smoke";
 
 const profile = createProviderSmokeProfile("vidking");
-const args = process.argv.slice(1);
+const args = process.argv.slice(2);
 
 const season = Number(args[0] ?? "1");
 const episode = Number(args[1] ?? "2");
@@ -60,6 +61,14 @@ const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
     return { stream: null, resolveDurationMs: null };
   });
 
+const streamProbe = stream?.url
+  ? await probeStreamReachability({
+      url: stream.url,
+      headers: stream.headers,
+      timeoutMs: 5_000,
+    })
+  : null;
+
 const payload = {
   ...buildProviderSmokePayload({
     provider: "vidking",
@@ -73,6 +82,9 @@ const payload = {
   failureCodes,
   failureMessages,
   streamCandidates,
+  selectedSourceId: stream?.providerResolveResult?.selectedSourceId ?? null,
+  streamReachable: streamProbe ? isStreamReachableForResolve(streamProbe) : false,
+  streamProbeStatus: streamProbe?.status ?? null,
   ...providerSmokeProfilePayload(profile),
   provider: "vidking",
   subtitleUrl: stream?.subtitle ?? null,
@@ -83,6 +95,6 @@ const payload = {
 
 console.log(JSON.stringify(payload, null, 2));
 
-if (!stream?.url) {
+if (!stream?.url || !streamProbe || !isStreamReachableForResolve(streamProbe)) {
   process.exit(1);
 }

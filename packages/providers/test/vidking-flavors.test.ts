@@ -6,6 +6,7 @@ import {
   getPhaseAVidkingFlavorIds,
   getVidkingFlavor,
   getVidkingFlavorForEndpoint,
+  listEligibleVidkingFlavorIds,
   listPhaseBLazyProbeFlavorIds,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
@@ -14,6 +15,10 @@ import {
 } from "../src/vidking/flavors";
 
 describe("vidking flavors", () => {
+  test("eligible flavor inventory includes all twelve flavors for movies", () => {
+    expect(listEligibleVidkingFlavorIds("movie")).toHaveLength(12);
+  });
+
   test("phase A lists Luffy Zoro Nami in order", () => {
     expect(getPhaseAVidkingFlavorIds()).toEqual([
       "videasy-primary",
@@ -191,7 +196,7 @@ function sourceCandidate(id: string, label: string) {
     providerId: "vidking" as const,
     kind: "provider-api" as const,
     label,
-    host: "api.videasy.net",
+    host: "api.videasy.to",
     status: "probing" as const,
     confidence: 0.8,
   };

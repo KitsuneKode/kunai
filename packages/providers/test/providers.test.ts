@@ -805,7 +805,7 @@ test("rivestream falls back to static provider services when service discovery i
 
   expect(result.status).toBe("resolved");
   expect(requests.some((url) => url.includes("VideoProviderServices"))).toBe(true);
-  expect(requests.some((url) => url.includes("service=self"))).toBe(true);
+  expect(requests.some((url) => url.includes("service=flowcast"))).toBe(true);
 });
 
 test("rivestream evidence fixture preserves provider server label and normalized language", async () => {
@@ -1147,12 +1147,32 @@ test("miruro source cycling orders preferred subtitle delivery before fallback a
   expect(candidates.map((candidate) => candidate.label)).toEqual([
     "Dub · Kiwi · subtitles unknown",
     "Dub · Bee · subtitles unknown",
+    "Dub · Hop · subtitles unknown",
+    "Dub · Ally · subtitles unknown",
+    "Dub · Pewe · subtitles unknown",
+    "Dub · Moo · subtitles unknown",
+    "Dub · Bonk · subtitles unknown",
     "Sub · Kiwi · subtitles unknown",
     "Sub · Bee · subtitles unknown",
+    "Sub · Hop · subtitles unknown",
+    "Sub · Ally · subtitles unknown",
+    "Sub · Pewe · subtitles unknown",
+    "Sub · Moo · subtitles unknown",
+    "Sub · Bonk · subtitles unknown",
   ]);
   expect(candidates.map((candidate) => candidate.normalizedAudioLanguage)).toEqual([
     "en",
     "en",
+    "en",
+    "en",
+    "en",
+    "en",
+    "en",
+    "ja",
+    "ja",
+    "ja",
+    "ja",
+    "ja",
     "ja",
     "ja",
   ]);
