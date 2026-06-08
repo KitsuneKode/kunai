@@ -15,7 +15,6 @@ import type { LocalPlaybackSource } from "@/services/offline/local-playback-sour
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 
-import { materializeDeferredMediaForPlayback } from "./deferred-media-materializer";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { PersistentMpvSession } from "./PersistentMpvSession";
@@ -24,6 +23,7 @@ import {
   classifyPlaybackFailureFromResult,
   recoveryForPlaybackFailure,
 } from "./playback-failure-classifier";
+import { materializePlaybackMediaForPlayback } from "./playback-media-materializer";
 import type { PlayerControlService } from "./PlayerControlService";
 import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./PlayerService";
 
@@ -42,10 +42,12 @@ export class PlayerServiceImpl implements PlayerService {
   ) {}
 
   async play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
-    const materialized = await materializeDeferredMediaForPlayback(stream);
+    const materialized = await materializePlaybackMediaForPlayback(stream);
     const playbackStream = materialized.stream;
-    if (stream.deferredLocator) {
+    if (materialized.kind === "dash-mpd") {
       options.onPlaybackEvent?.({ type: "media-materialized", kind: "dash-mpd" });
+    } else if (materialized.kind === "hls-manifest") {
+      options.onPlaybackEvent?.({ type: "media-materialized", kind: "hls-manifest" });
     }
     options.onPlaybackEvent?.({ type: "launching-player" });
     process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
@@ -74,6 +76,7 @@ export class PlayerServiceImpl implements PlayerService {
         startAt: options.startAt ?? 0,
         resumePromptAt: options.resumePromptAt ?? 0,
         deferredMedia: Boolean(stream.deferredLocator),
+        materializedMedia: materialized.kind,
       },
     });
 

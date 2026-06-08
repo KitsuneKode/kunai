@@ -358,6 +358,13 @@ export function shouldAbortLaunchForDefinitivePreflight(
   return shouldAbortPlaybackForPreflight(result, ipcConnected);
 }
 
+/** Local `.m3u8` paths produced by the HLS manifest materializer (not remote URLs). */
+export function isLocalHlsManifestPlaybackUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed || /^https?:\/\//i.test(trimmed)) return false;
+  return /\.m3u8(?:[?#]|$)/i.test(trimmed);
+}
+
 /** True when we should seek / pass --start for a resume position (any positive second). */
 export function shouldApplyStartAtSeek(startAt: number | undefined): boolean {
   return typeof startAt === "number" && Number.isFinite(startAt) && startAt > 0;
@@ -385,6 +392,10 @@ export function buildMpvArgs(
   },
 ): string[] {
   const args: string[] = [opts.url];
+
+  if (opts.url.toLowerCase().includes(".m3u8")) {
+    args.push("--ytdl=no");
+  }
 
   const referer = opts.headers["referer"] ?? opts.headers["Referer"];
   const userAgent = opts.headers["user-agent"] ?? opts.headers["User-Agent"];
@@ -442,6 +453,11 @@ export function buildMpvArgs(
   args.push(
     "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8",
   );
+  // Materialized local HLS playlists reference remote HTTPS segments. libavformat defaults
+  // to file,crypto,data only for local manifests, which makes every segment fail instantly.
+  if (isLocalHlsManifestPlaybackUrl(opts.url)) {
+    args.push("--demuxer-lavf-o=protocol_whitelist=[file,tcp,tls,https,http,crypto,data]");
+  }
   if (config?.mpv?.clean || config?.mpv?.noUserConfig) {
     args.push("--no-config");
   }

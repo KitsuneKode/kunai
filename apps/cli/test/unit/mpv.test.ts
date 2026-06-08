@@ -5,9 +5,31 @@ import {
   collectAdditionalSubtitleTracks,
   collectLaunchSubtitleFiles,
   describeSubtitleTrackForMpv,
+  isLocalHlsManifestPlaybackUrl,
   shouldAbortLaunchForDefinitivePreflight,
   shouldApplyStartAtSeek,
 } from "@/mpv";
+
+test("isLocalHlsManifestPlaybackUrl detects materialized playlists", () => {
+  expect(isLocalHlsManifestPlaybackUrl("/tmp/kunai-hls/playlist.m3u8")).toBe(true);
+  expect(isLocalHlsManifestPlaybackUrl("https://cdn.example/master.m3u8")).toBe(false);
+});
+
+test("buildMpvArgs whitelists HTTPS for local materialized HLS playlists", () => {
+  const args = buildMpvArgs(
+    {
+      url: "/tmp/kunai-hls/playlist.m3u8",
+      headers: { referer: "https://www.cineplay.to/" },
+      subtitle: null,
+      displayTitle: "Study Group",
+    },
+    "/tmp/kunai-test.sock",
+  );
+
+  expect(args).toContain(
+    "--demuxer-lavf-o=protocol_whitelist=[file,tcp,tls,https,http,crypto,data]",
+  );
+});
 
 test("buildMpvArgs attaches only the preferred subtitle during initial launch", () => {
   const args = buildMpvArgs(
@@ -21,6 +43,7 @@ test("buildMpvArgs attaches only the preferred subtitle during initial launch", 
     "/tmp/kunai-test.sock",
   );
 
+  expect(args).toContain("--ytdl=no");
   expect(args).toContain("--keep-open=no");
   expect(args).toContain("--idle=no");
   expect(args).toContain("--force-window=immediate");
