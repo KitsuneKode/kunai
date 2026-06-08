@@ -59,7 +59,7 @@ describe("ProviderCandidatePlanner", () => {
     });
   });
 
-  test("keeps title health suggestions advisory and caps guided fallback to one", () => {
+  test("keeps title health suggestions advisory and walks full provider priority in guided mode", () => {
     expect(
       planProviderCandidates({
         primaryProviderId: "primary" as ProviderId,
@@ -76,9 +76,8 @@ describe("ProviderCandidatePlanner", () => {
         },
       }),
     ).toEqual({
-      candidateIds: ["primary", "fallback-a"],
+      candidateIds: ["primary", "fallback-a", "fallback-b"],
       hasCompatibleFallback: true,
-      cappedFallbackProviderId: "fallback-a",
     });
   });
 

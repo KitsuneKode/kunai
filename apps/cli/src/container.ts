@@ -380,9 +380,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   // Engine: single source of truth for provider resolution
   const providerModules = orderProviderModules(
     [
+      vidkingProviderModule,
       vidlinkProviderModule,
       rivestreamProviderModule,
-      vidkingProviderModule,
       allmangaProviderModule,
       miruroProviderModule,
     ],

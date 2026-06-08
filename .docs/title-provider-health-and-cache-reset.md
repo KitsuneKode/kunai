@@ -54,14 +54,14 @@ If VidKing is **`down`** globally:
 
 ## 3. Weird behaviors checklist
 
-| Symptom                                         | Likely cause                                                             |
-| ----------------------------------------------- | ------------------------------------------------------------------------ |
-| Note says try Rivestream but VidKing still runs | **C** is advisory only; check global **B** `down` or guided fallback cap |
-| Clear cache didn’t help                         | Only layer **A** cleared; **B/C** remain                                 |
-| VidKing never in fallback list                  | Global health **B** `status === "down"`                                  |
-| Same bad stream again                           | Stale **A** until dead-stream invalidation or `preferFreshStream`        |
-| “Struggled with this title” note every episode  | **C** still has `suggestedProviderId` until expiry or 2 clean successes  |
-| Parse failures stick a week                     | **C** `severeUntil` / 7d retention for `parse`                           |
+| Symptom                                         | Likely cause                                                                 |
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| Note says try Rivestream but VidKing still runs | **C** is advisory only; check global **B** `down` or provider priority order |
+| Clear cache didn’t help                         | Only layer **A** cleared; **B/C** remain                                     |
+| VidKing never in fallback list                  | Global health **B** `status === "down"`                                      |
+| Same bad stream again                           | Stale **A** until dead-stream invalidation or `preferFreshStream`            |
+| “Struggled with this title” note every episode  | **C** still has `suggestedProviderId` until expiry or 2 clean successes      |
+| Parse failures stick a week                     | **C** `severeUntil` / 7d retention for `parse`                               |
 
 ---
 

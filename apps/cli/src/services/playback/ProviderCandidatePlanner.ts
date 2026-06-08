@@ -26,7 +26,6 @@ export type ProviderCandidatePlannerInput = {
 export type ProviderCandidatePlan = {
   readonly candidateIds: readonly ProviderId[];
   readonly hasCompatibleFallback: boolean;
-  readonly cappedFallbackProviderId?: ProviderId;
 };
 
 export function planProviderCandidates(
@@ -54,17 +53,8 @@ export function planProviderCandidates(
   // stays deterministic until a provider is explicitly selected.
   void input.suggestion;
 
-  const candidateIds = [input.primaryProviderId, ...compatibleFallbackIds];
-  if (input.recoveryMode === "guided" && candidateIds.length > 2) {
-    return {
-      candidateIds: candidateIds.slice(0, 2),
-      hasCompatibleFallback,
-      cappedFallbackProviderId: candidateIds[1],
-    };
-  }
-
   return {
-    candidateIds,
+    candidateIds: [input.primaryProviderId, ...compatibleFallbackIds],
     hasCompatibleFallback,
   };
 }

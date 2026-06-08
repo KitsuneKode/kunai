@@ -21,9 +21,9 @@ export interface ConfigStore {
 // Default configuration
 export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",
-  provider: "vidlink",
+  provider: "vidking",
   animeProvider: "allanime",
-  providerPriority: ["vidlink", "rivestream", "vidking"],
+  providerPriority: ["vidlink", "rivestream"],
   animeProviderPriority: ["allanime", "miruro"],
   subLang: "en",
   animeLang: "sub",
