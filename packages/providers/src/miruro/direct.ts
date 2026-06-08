@@ -22,6 +22,12 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+import {
+  type AnimeEpisodeMetadata,
+  fetchAnimeEpisodeMetadataByNumber,
+  formatAnimeEpisodeLabel,
+  mergeMiruroPipeEpisodeMetadata,
+} from "../shared/anime-metadata";
 import { TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
@@ -131,6 +137,10 @@ type MiruroEpisodeEntry = {
   readonly id: string;
   readonly number: number;
   readonly title?: string;
+  readonly airDate?: string;
+  readonly description?: string;
+  readonly image?: string;
+  readonly filler?: boolean;
 };
 
 type MiruroProviderEpisodes = {
@@ -447,9 +457,10 @@ export function buildMiruroCycleCandidates({
   const audioOrder: readonly MiruroAudioCategory[] =
     targetAudio === fallbackAudio ? [targetAudio] : [targetAudio, fallbackAudio];
   let priority = 0;
+  const defaultServers = ["kiwi", "bee", "hop", "ally", "pewe", "moo", "bonk"] as const;
   const providerEntries = providers
     ? Object.entries(providers)
-    : [["kiwi", { episodes }] as const, ["bee", { episodes }] as const];
+    : defaultServers.map((server) => [server, { episodes }] as const);
 
   for (const audioCategory of audioOrder) {
     for (const [providerKey, providerEntry] of providerEntries) {
@@ -692,23 +703,80 @@ export async function getMiruroEpisodesResponse(
   return epData;
 }
 
+function selectMiruroEpisodeCatalogEntries(
+  epData: MiruroEpisodesResponse | null,
+): readonly MiruroEpisodeEntry[] {
+  const providers = epData?.providers;
+  if (!providers) return [];
+
+  let best: readonly MiruroEpisodeEntry[] = [];
+  for (const providerEntry of Object.values(providers)) {
+    for (const category of ["sub", "dub"] as const) {
+      const entries = providerEntry?.episodes?.[category] ?? [];
+      if (entries.length > best.length) best = entries;
+    }
+  }
+
+  if (best.length > 0) return best;
+  const kiwiSub = providers.kiwi?.episodes?.sub;
+  const kiwiDub = providers.kiwi?.episodes?.dub;
+  return (kiwiSub?.length ? kiwiSub : kiwiDub) ?? [];
+}
+
+function readMiruroMappingMalId(mappings: Record<string, unknown> | undefined): string | undefined {
+  const malId = mappings?.malId;
+  if (typeof malId === "number" && malId > 0) return String(malId);
+  if (typeof malId === "string" && malId.trim()) return malId.trim();
+  return undefined;
+}
+
 export async function fetchMiruroEpisodeCatalog(
   anilistId: string,
   signal?: AbortSignal,
 ): Promise<readonly ProviderEpisodeOption[] | null> {
   const epData = await getMiruroEpisodesResponse(anilistId, signal);
-  const sub = epData?.providers?.kiwi?.episodes?.sub;
-  const dub = epData?.providers?.kiwi?.episodes?.dub;
-  const entries = (sub?.length ? sub : dub) ?? [];
+  const entries = selectMiruroEpisodeCatalogEntries(epData);
   if (entries.length === 0) return null;
 
+  const metadata = new Map<number, AnimeEpisodeMetadata>();
+  mergeMiruroPipeEpisodeMetadata(metadata, entries);
+
+  const malId = readMiruroMappingMalId(epData?.mappings);
+  const sharedMetadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId, malId }, signal);
+  for (const [number, meta] of sharedMetadata) {
+    const existing = metadata.get(number);
+    if (!existing) {
+      metadata.set(number, meta);
+      continue;
+    }
+    metadata.set(number, {
+      ...existing,
+      title:
+        meta.title && (!existing.title || meta.title.length > existing.title.length)
+          ? meta.title
+          : existing.title,
+      synopsis: existing.synopsis ?? meta.synopsis,
+      airDate: existing.airDate ?? meta.airDate,
+      thumbnail: existing.thumbnail ?? meta.thumbnail,
+      isFiller: existing.isFiller ?? meta.isFiller,
+      isRecap: existing.isRecap ?? meta.isRecap,
+      source: "merged",
+    });
+  }
+
   return entries.map((entry) => {
-    const title = entry.title?.trim();
+    const meta = metadata.get(entry.number);
+    const title = meta?.title?.trim() || entry.title?.trim();
+    const synopsis = meta?.synopsis?.trim() || entry.description?.trim();
+    const thumbnail = meta?.thumbnail?.trim() || entry.image?.trim();
     return {
       index: entry.number,
-      label: title ? `Episode ${entry.number} · ${title}` : `Episode ${entry.number}`,
+      label: formatAnimeEpisodeLabel(entry.number, title, { filler: meta?.isFiller }),
       name: title || undefined,
-      detail: entry.id,
+      detail: synopsis || entry.id,
+      release:
+        entry.airDate || meta?.airDate ? { airDate: entry.airDate ?? meta?.airDate } : undefined,
+      artwork: thumbnail ? { thumbnailUrl: thumbnail } : undefined,
     };
   });
 }

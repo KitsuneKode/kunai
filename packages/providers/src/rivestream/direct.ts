@@ -55,7 +55,14 @@ const USER_AGENT =
 /** Memoize secretKey per tmdbId — deterministic, expensive to recompute. */
 const secretKeyCache = new Map<string, string>();
 const RIVESTREAM_PROVIDER_SERVICES_TTL_MS = 24 * 60 * 60 * 1000;
-const RIVESTREAM_STATIC_PROVIDER_SERVICES = ["self", "prime"] as const;
+const RIVESTREAM_STATIC_PROVIDER_SERVICES = [
+  "flowcast",
+  "asiacloud",
+  "primevids",
+  "hindicast",
+  "guru",
+  "ophim",
+] as const;
 let providerServicesCache:
   | {
       readonly providers: readonly string[];

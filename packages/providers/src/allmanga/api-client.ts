@@ -1,3 +1,8 @@
+import {
+  enrichEpisodeOptionsWithAnimeMetadata,
+  fetchAnimeEpisodeMetadataByNumber,
+  parseAllMangaEpisodeNumber,
+} from "../shared/anime-metadata";
 import { TTLCache } from "../shared/provider-cache";
 
 export type AllMangaSearchResult = {
@@ -541,19 +546,30 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
   const info = await loadShowCatalogInfo(apiUrl, referer, ua, showId, signal);
   const episodeStrings = (info.detail[mode] ?? []) as string[];
 
-  return [...episodeStrings].sort(compareEpisodeStrings).map((episodeString, index) => ({
-    index: index + 1,
-    label: `Episode ${episodeString}`,
-    detail: `Source episode ${episodeString}`,
-    totalEpisodeCount: info.episodeCount,
-    externalIds: {
-      anilistId: info.aniListId ? String(info.aniListId) : undefined,
-      malId: info.malId ? String(info.malId) : undefined,
-    },
-    artwork: {
-      thumbnailUrl: info.thumbnail,
-    },
-  }));
+  const baseEpisodes = [...episodeStrings]
+    .sort(compareEpisodeStrings)
+    .map((episodeString, index) => ({
+      index: index + 1,
+      label: `Episode ${episodeString}`,
+      detail: episodeString,
+      totalEpisodeCount: info.episodeCount,
+      externalIds: {
+        anilistId: info.aniListId ? String(info.aniListId) : undefined,
+        malId: info.malId ? String(info.malId) : undefined,
+      },
+      artwork: {
+        thumbnailUrl: info.thumbnail,
+      },
+    }));
+
+  const anilistId = info.aniListId ? String(info.aniListId) : undefined;
+  const malId = info.malId ? String(info.malId) : undefined;
+  if (!anilistId && !malId) return baseEpisodes;
+
+  const metadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId, malId }, signal);
+  if (metadata.size === 0) return baseEpisodes;
+
+  return enrichEpisodeOptionsWithAnimeMetadata(baseEpisodes, metadata, parseAllMangaEpisodeNumber);
 }
 
 export async function searchAllManga(
