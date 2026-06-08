@@ -1,3 +1,8 @@
+import {
+  playbackAudioPreference,
+  playbackQualityPreference,
+  playbackSubtitlePreference,
+} from "@/app/playback-profile-context";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import type { CacheStore } from "@/services/persistence/CacheStore";
@@ -14,23 +19,15 @@ export function buildSourceInventoryCacheInput(
   mode: ShellMode,
   config: KitsuneConfig,
 ): SourceInventoryCacheInput {
-  const isAnime = mode === "anime";
+  const profileContext = { mode, title, config };
   return {
     providerId,
-    mediaKind: isAnime ? "anime" : title.type,
+    mediaKind: mode === "anime" ? "anime" : title.type,
     titleId: title.id,
     season: episode.season,
     episode: episode.episode,
-    audioMode: isAnime
-      ? config.animeLanguageProfile.audio
-      : title.type === "movie"
-        ? config.movieLanguageProfile.audio
-        : config.seriesLanguageProfile.audio,
-    subtitleLanguage: isAnime
-      ? config.animeLanguageProfile.subtitle
-      : title.type === "movie"
-        ? config.movieLanguageProfile.subtitle
-        : config.seriesLanguageProfile.subtitle,
+    audioMode: playbackAudioPreference(profileContext),
+    subtitleLanguage: playbackSubtitlePreference(profileContext),
     startupPriority: config.startupPriority,
   };
 }
@@ -45,30 +42,19 @@ export async function invalidateEpisodePlaybackCaches(input: {
   readonly mode: ShellMode;
   readonly config: KitsuneConfig;
 }): Promise<void> {
-  const mode = input.mode;
+  const profileContext = {
+    mode: input.mode,
+    title: input.title,
+    config: input.config,
+  };
   const cacheKey = buildApiStreamResolveCacheKey({
     providerId: input.providerId,
     title: input.title,
     episode: input.episode,
-    mode,
-    audioPreference:
-      mode === "anime"
-        ? input.config.animeLanguageProfile.audio
-        : input.title.type === "movie"
-          ? input.config.movieLanguageProfile.audio
-          : input.config.seriesLanguageProfile.audio,
-    subtitlePreference:
-      mode === "anime"
-        ? input.config.animeLanguageProfile.subtitle
-        : input.title.type === "movie"
-          ? input.config.movieLanguageProfile.subtitle
-          : input.config.seriesLanguageProfile.subtitle,
-    qualityPreference:
-      mode === "anime"
-        ? input.config.animeLanguageProfile.quality
-        : input.title.type === "movie"
-          ? input.config.movieLanguageProfile.quality
-          : input.config.seriesLanguageProfile.quality,
+    mode: input.mode,
+    audioPreference: playbackAudioPreference(profileContext),
+    subtitlePreference: playbackSubtitlePreference(profileContext),
+    qualityPreference: playbackQualityPreference(profileContext),
     startupPriority: input.config.startupPriority,
   });
 
@@ -84,7 +70,7 @@ export async function invalidateEpisodePlaybackCaches(input: {
         input.providerId,
         input.title,
         input.episode,
-        mode,
+        input.mode,
         input.config,
       ),
     );

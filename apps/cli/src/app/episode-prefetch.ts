@@ -52,20 +52,28 @@ export function matchesEpisodePrefetchTarget(
   target: EpisodePrefetchTarget,
   requested: EpisodePrefetchTarget,
 ): boolean {
-  return (
-    target.titleId === requested.titleId &&
-    target.episode.season === requested.episode.season &&
-    target.episode.episode === requested.episode.episode &&
-    target.providerId === requested.providerId &&
-    target.sourceId === requested.sourceId &&
-    target.streamId === requested.streamId &&
-    target.audioPreference === requested.audioPreference &&
-    target.qualityPreference === requested.qualityPreference &&
-    // Normalize: an omitted priority is the effective default. Comparing raw
-    // (undefined vs "balanced") voided every prefetch → cold re-resolve → the
-    // next-episode pause. Genuinely different priorities still differ after this.
-    (target.startupPriority ?? "balanced") === (requested.startupPriority ?? "balanced")
-  );
+  if (
+    target.titleId !== requested.titleId ||
+    target.episode.season !== requested.episode.season ||
+    target.episode.episode !== requested.episode.episode ||
+    target.providerId !== requested.providerId ||
+    target.sourceId !== requested.sourceId ||
+    target.streamId !== requested.streamId ||
+    target.audioPreference !== requested.audioPreference ||
+    target.qualityPreference !== requested.qualityPreference ||
+    (target.startupPriority ?? "balanced") !== (requested.startupPriority ?? "balanced")
+  ) {
+    return false;
+  }
+  // Subtitle pref mismatch is handled softly in takeReadyFor (reuse video, re-prep subs).
+  return true;
+}
+
+export function prefetchTargetSubtitleMatches(
+  target: EpisodePrefetchTarget,
+  requested: EpisodePrefetchTarget,
+): boolean {
+  return (target.subtitlePreference ?? "none") === (requested.subtitlePreference ?? "none");
 }
 
 export function resolveEpisodePrefetchWaitBudget(progress?: EpisodePrefetchProgress): number {
@@ -124,10 +132,9 @@ export class EpisodePrefetchHandle {
     if (!matchesEpisodePrefetchTarget(this.ready.target, target)) {
       return null;
     }
-    const bundle =
-      this.ready.target.subtitlePreference !== target.subtitlePreference
-        ? { ...this.ready, target, prepared: false }
-        : this.ready;
+    const bundle = !prefetchTargetSubtitleMatches(this.ready.target, target)
+      ? { ...this.ready, target, prepared: false }
+      : this.ready;
     this.ready = null;
     this.activeTarget = null;
     return bundle;

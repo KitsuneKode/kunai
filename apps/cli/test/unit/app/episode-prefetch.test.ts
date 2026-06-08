@@ -158,7 +158,11 @@ describe("EpisodePrefetchHandle", () => {
     );
   });
 
-  test("soft subtitle changes reuse video but mark subtitle preparation stale", async () => {
+  test("audio preference mismatch is a hard prefetch miss", () => {
+    expect(matchesEpisodePrefetchTarget(target, { ...target, audioPreference: "dub" })).toBe(false);
+  });
+
+  test("subtitle mismatch reuses video but marks subtitle preparation stale", async () => {
     const handle = new EpisodePrefetchHandle();
     const bundle = { target, stream: mockStream("https://example.com/sub.m3u8"), prepared: true };
     handle.schedule(target, async () => bundle);
