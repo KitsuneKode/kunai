@@ -117,14 +117,19 @@ test("projects anime sub dub and hardsub evidence without merging native labels 
     subtitleLanguages: ["en"],
     subtitleDelivery: "hardcoded",
   });
-  expect(view.sourceGroups.slice(0, 2).map((group) => [group.label, group.state])).toEqual([
-    ["Sub server", "selected"],
-    ["Dub server", "available"],
-  ]);
+  expect(view.sourceGroups.find((group) => group.id === "source-sub")).toMatchObject({
+    label: "Sub server",
+    state: "selected",
+  });
+  expect(view.sourceGroups.find((group) => group.id === "source-dub")).toMatchObject({
+    label: "Dub server",
+    state: "available",
+  });
   expect(view.sourceGroups.length).toBeGreaterThan(2);
   expect(view.sourceGroups.some((group) => group.label === "Bocchi")).toBe(true);
-  expect(view.sourceGroups[0]?.nativeLabels).toContain("Sak");
-  expect(view.sourceGroups[0]?.artwork?.seekBarVttUrl).toContain("seek.vtt");
+  const subServer = view.sourceGroups.find((group) => group.id === "source-sub");
+  expect(subServer?.nativeLabels).toContain("Sak");
+  expect(subServer?.artwork?.seekBarVttUrl).toContain("seek.vtt");
   expect(view.languageOptions.find((option) => option.id === "audio:en")).toMatchObject({
     label: "Audio English",
     state: "available",
@@ -183,12 +188,13 @@ test("projects series provider servers as source evidence and normalized audio s
     failures: [],
   });
 
-  expect(view.sourceGroups[0]).toMatchObject({
+  const hindiCast = view.sourceGroups.find((group) => group.id === "hindicast");
+  expect(hindiCast).toMatchObject({
     id: "hindicast",
     label: "HindiCast",
     audioLanguages: ["hi"],
   });
-  expect(view.sourceGroups[0]?.nativeLabels).toContain("HindiCast (1080)");
+  expect(hindiCast?.nativeLabels).toContain("HindiCast (1080)");
   expect(view.languageOptions.find((option) => option.id === "audio:hi")).toMatchObject({
     label: "Audio Hindi",
     nativeLabels: ["HindiCast"],
@@ -474,7 +480,7 @@ test("surfaces exhausted provider failures as warnings and disabled retry contro
     disabled: true,
     preservesTimestamp: true,
   });
-  expect(view.sourceGroups[0]).toMatchObject({
+  expect(view.sourceGroups.find((group) => group.id === "blocked-source")).toMatchObject({
     state: "failed",
     disabledReason: "No playable stream was exposed for this source.",
   });

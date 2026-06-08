@@ -108,7 +108,6 @@ import {
 import { choosePlaybackSubtitle, shouldAttemptLateSubtitleLookup } from "@/app/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import { titleInfoFromSearchResult } from "@/app/title-info";
-import type { Container } from "@/container";
 import { episodeThumbKey } from "@/domain/catalog/title-detail";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import {
@@ -155,13 +154,10 @@ import {
   type PlaybackStartupStage,
   summarizeStartupPhases,
 } from "@/services/playback/playback-startup-timeline";
-import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
-import { VIDKING_PROVIDER_ID } from "@kunai/providers";
-import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 // Re-exported for tests that import it from this module's public surface.
 export { playbackStartupStageForPlayerEvent };
@@ -231,67 +227,6 @@ async function teardownPlaybackForPostPlayExit(
 ): Promise<void> {
   preparePostPlaybackSurface(container, episodePrefetch, playbackIterationAbort);
   await container.player.releasePersistentSession();
-}
-
-function scheduleVideasyLazySourceProbes(input: {
-  readonly container: Container;
-  readonly stream: StreamInfo;
-  readonly title: TitleInfo;
-  readonly episode: EpisodeInfo;
-  readonly mode: ShellMode;
-  readonly providerId: string;
-  readonly audioPreference: string;
-  readonly subtitlePreference: string;
-  readonly qualityPreference?: string;
-  readonly startupPriority?: string;
-  readonly signal?: AbortSignal;
-  readonly onStreamUpdated: (stream: StreamInfo) => void;
-}): void {
-  const result = input.stream.providerResolveResult;
-  if (!result || result.providerId !== VIDKING_PROVIDER_ID) return;
-
-  const resolveInput: ProviderResolveInput = streamRequestToResolveInput(
-    {
-      title: input.title,
-      episode: input.episode,
-      audioPreference: input.audioPreference,
-      subtitlePreference: input.subtitlePreference,
-      qualityPreference: input.qualityPreference,
-      startupPriority: input.startupPriority as ProviderResolveInput["startupPriority"],
-    },
-    input.mode,
-  );
-
-  const context: ProviderRuntimeContext = {
-    now: () => new Date().toISOString(),
-    signal: input.signal,
-    retryPolicy: { maxAttempts: 1, backoff: "none", delayMs: 0 },
-  };
-
-  const inventoryKey = {
-    providerId: input.providerId,
-    mediaKind: resolveInput.mediaKind,
-    titleId: input.title.id,
-    season: input.episode.season,
-    episode: input.episode.episode,
-    audioMode: input.audioPreference,
-    subtitleLanguage: input.subtitlePreference,
-    startupPriority: input.startupPriority as ProviderResolveInput["startupPriority"],
-  };
-
-  input.container.videasyLazySourceProbe.schedulePhaseB({
-    resolveInput,
-    context,
-    baseResult: result,
-    inventoryKey,
-    preferredAudioLanguage: input.audioPreference === "original" ? "en" : input.audioPreference,
-    onInventoryUpdated: (inventory) => {
-      input.onStreamUpdated({
-        ...input.stream,
-        providerResolveResult: inventory,
-      });
-    },
-  });
 }
 
 export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
@@ -402,7 +337,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         season: activity.episode.season,
         episode: activity.episode.episode,
       },
-      run: () => context.container.presence.updatePlayback(activity),
+      run: () => {
+        const shellTitle = context.container.stateManager.getState().currentTitle;
+        const enrichedTitle =
+          shellTitle && shellTitle.id === activity.title.id
+            ? {
+                ...activity.title,
+                posterUrl: activity.title.posterUrl ?? shellTitle.posterUrl,
+                artwork: activity.title.artwork ?? shellTitle.artwork,
+              }
+            : activity.title;
+        return context.container.presence.updatePlayback({
+          ...activity,
+          title: enrichedTitle,
+        });
+      },
     });
   }
 
@@ -465,7 +414,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   } {
     switch (event.type) {
       case "media-materialized":
-        return { detail: event.kind === "dash-mpd" ? "Preparing DASH media" : "Preparing media" };
+        return {
+          detail:
+            event.kind === "dash-mpd"
+              ? "Preparing DASH media"
+              : event.kind === "hls-manifest"
+                ? "Preparing HLS playlist for mpv"
+                : "Preparing media",
+        };
       case "launching-player":
         return { detail: "Launching player" };
       case "mpv-process-started":
@@ -1487,42 +1443,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   cachePolicy: stream.providerResolveResult.cachePolicy,
                 },
               });
-
-              if (stream) {
-                const probeAudioPreference =
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.audio
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.audio
-                      : config.seriesLanguageProfile.audio;
-                scheduleVideasyLazySourceProbes({
-                  container,
-                  stream,
-                  title,
-                  episode: currentEpisode,
-                  mode: stateManager.getState().mode,
-                  providerId: resolvedProviderId,
-                  audioPreference: probeAudioPreference,
-                  subtitlePreference:
-                    stateManager.getState().mode === "anime"
-                      ? config.animeLanguageProfile.subtitle
-                      : title.type === "movie"
-                        ? config.movieLanguageProfile.subtitle
-                        : config.seriesLanguageProfile.subtitle,
-                  qualityPreference:
-                    stateManager.getState().mode === "anime"
-                      ? config.animeLanguageProfile.quality
-                      : title.type === "movie"
-                        ? config.movieLanguageProfile.quality
-                        : config.seriesLanguageProfile.quality,
-                  startupPriority: config.startupPriority,
-                  signal: resolveController.signal,
-                  onStreamUpdated: (nextStream) => {
-                    stream = nextStream;
-                    stateManager.dispatch({ type: "SET_STREAM", stream: nextStream });
-                  },
-                });
-              }
             }
           }
 

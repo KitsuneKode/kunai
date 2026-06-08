@@ -6,6 +6,7 @@ import {
   openAnimeEpisodeListPicker,
   openProviderPicker,
 } from "@/app-shell/workflows";
+import { purgeEpisodePlaybackCache, purgeTitlePlaybackCaches } from "@/app/playback-cache-purge";
 import { resolveEpisodeAvailability } from "@/app/playback-policy";
 import { applyUserProviderSwitch } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
@@ -50,7 +51,11 @@ type NextHistoryEpisodeArgs = {
 };
 
 export type StartingEpisodeChoice = "resume" | "restart" | "next" | "pick";
-export type StartingEpisodePickerChoice = StartingEpisodeChoice | "switch-provider";
+export type StartingEpisodePickerChoice =
+  | StartingEpisodeChoice
+  | "switch-provider"
+  | "purge-episode-cache"
+  | "purge-title-cache";
 
 export function resolveStartingEpisodeChoice(args: {
   choice: StartingEpisodeChoice;
@@ -427,6 +432,16 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
                 label: `⇄ Switch provider  ·  ${providerName ?? opts.container.stateManager.getState().provider}`,
                 detail: "Saved for this title · overrides history provider on resume",
               },
+              {
+                value: "purge-episode-cache" as const,
+                label: `⌫ Purge episode cache  ·  S${historySeason}E${historyEpisode}`,
+                detail: "Drop resolved stream + source inventory for this episode only",
+              },
+              {
+                value: "purge-title-cache" as const,
+                label: "⌫ Purge title cache",
+                detail: "Drop cached resolves for every watched episode of this title",
+              },
             ]
           : []),
       ].map((option) => ({ ...option, previewImageUrl: history.posterUrl })),
@@ -446,7 +461,25 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
       continue;
     }
 
-    choice = picked;
+    if (picked === "purge-episode-cache" && opts.container) {
+      await purgeEpisodePlaybackCache(
+        opts.container,
+        titleForProviderSwitch,
+        episodeForProviderSwitch,
+      );
+      continue;
+    }
+
+    if (picked === "purge-title-cache" && opts.container) {
+      await purgeTitlePlaybackCaches(opts.container, titleForProviderSwitch, [
+        episodeForProviderSwitch,
+      ]);
+      continue;
+    }
+
+    if (picked === "resume" || picked === "restart" || picked === "next" || picked === "pick") {
+      choice = picked;
+    }
   }
 
   const resolvedChoice = resolveStartingEpisodeChoice({

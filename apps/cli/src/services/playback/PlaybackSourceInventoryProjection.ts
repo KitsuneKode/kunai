@@ -797,7 +797,7 @@ export function buildPlaybackInventoryEvidenceHints({
 }): readonly string[] {
   return uniqueStrings([
     stateHint(state, providerStatus),
-    host ? `host ${host}` : streamHostHint(streams),
+    host && !isGenericProviderApiHost(host) ? `host ${host}` : streamHostHint(streams),
     streams.some((stream) => hasProviderTimingHint(stream.metadata)) ? "has timing" : undefined,
     artwork?.seekBarVttUrl ? "seek thumbnails" : undefined,
     subtitles.length > 0
@@ -828,6 +828,10 @@ function stateHint(
   if (providerStatus === "skipped" || state === "skipped") return "not tried";
   if (state === "disabled") return "disabled";
   return undefined;
+}
+
+function isGenericProviderApiHost(host: string): boolean {
+  return host === "api.videasy.to" || host === "api.vidking.net";
 }
 
 function streamHostHint(streams: readonly StreamCandidate[]): string | undefined {

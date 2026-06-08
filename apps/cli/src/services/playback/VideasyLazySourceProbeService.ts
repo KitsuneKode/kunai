@@ -19,7 +19,22 @@ import type { SourceInventoryCacheInput } from "./SourceInventoryService";
 const PROBE_CONCURRENCY = 2;
 type VideasyDirectResolver = typeof resolveVideasyDirect;
 
+function phaseBSessionKey(key: SourceInventoryCacheInput): string {
+  return [
+    key.providerId,
+    key.mediaKind,
+    key.titleId,
+    key.season,
+    key.episode,
+    key.audioMode,
+    key.subtitleLanguage,
+    key.startupPriority,
+  ].join("\u001e");
+}
+
 export class VideasyLazySourceProbeService {
+  private readonly activePhaseBKeys = new Set<string>();
+
   constructor(
     private readonly options: {
       readonly sourceInventory?: Pick<SourceInventoryService, "set" | "get">;
@@ -36,9 +51,16 @@ export class VideasyLazySourceProbeService {
     readonly onInventoryUpdated?: (result: ProviderResolveResult) => void;
   }): Promise<void> {
     if (input.baseResult.providerId !== VIDEOSY_PROVIDER_ID) return Promise.resolve();
-    return this.runPhaseB(input).catch(() => {
-      // Background probes are best-effort.
-    });
+    const sessionKey = phaseBSessionKey(input.inventoryKey);
+    if (this.activePhaseBKeys.has(sessionKey)) return Promise.resolve();
+    this.activePhaseBKeys.add(sessionKey);
+    return this.runPhaseB(input)
+      .catch(() => {
+        // Background probes are best-effort.
+      })
+      .finally(() => {
+        this.activePhaseBKeys.delete(sessionKey);
+      });
   }
 
   private async runPhaseB(input: {

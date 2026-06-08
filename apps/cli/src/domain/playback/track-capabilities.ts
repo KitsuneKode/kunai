@@ -205,9 +205,11 @@ export function buildTrackCapabilities(
   };
 
   for (const group of view.sourceGroups) {
-    // Web-style server row: lead the detail with a flag-labelled audio language
-    // (e.g. "🇺🇸 English audio") so each server reads like the site's Servers tab.
-    const audioBadge = serverAudioBadge(group.audioLanguages);
+    // Dub lanes get a flag-labelled language; "en" on original-lane servers is
+    // catalog metadata, not proof of English dub — rely on flavor hints instead.
+    const primaryAudio = group.audioLanguages?.[0]?.toLowerCase().split("-")[0];
+    const audioBadge =
+      primaryAudio && primaryAudio !== "en" ? serverAudioBadge(group.audioLanguages) : undefined;
     const baseDetail = detailFromHintsAndNativeLabels(group.hints, group.nativeLabels, group.label);
     push({
       section: "source",

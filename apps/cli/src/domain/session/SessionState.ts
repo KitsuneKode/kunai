@@ -194,6 +194,12 @@ export type StateTransition =
   | { type: "CLEAR_PLAYBACK_PROBLEM" }
   | { type: "SET_RESOLVE_RETRY_COUNT"; count: number }
   | { type: "OPEN_OVERLAY"; overlay: OverlayState }
+  | {
+      type: "UPDATE_TRACKS_PANEL_GROUPS";
+      id: string;
+      groups: readonly TrackCapabilityGroup[];
+      providerLabel?: string;
+    }
   | { type: "CLOSE_TOP_OVERLAY" }
   | { type: "CLOSE_ALL_OVERLAYS" }
   | { type: "OPEN_PICKER"; picker: PickerModalOverlayState }
@@ -454,6 +460,20 @@ export function reduceState(state: SessionState, transition: StateTransition): S
       return {
         ...state,
         activeModals: [...state.activeModals, transition.overlay],
+      };
+
+    case "UPDATE_TRACKS_PANEL_GROUPS":
+      return {
+        ...state,
+        activeModals: state.activeModals.map((modal) =>
+          modal.type === "tracks_panel" && modal.id === transition.id
+            ? {
+                ...modal,
+                groups: transition.groups,
+                providerLabel: transition.providerLabel ?? modal.providerLabel,
+              }
+            : modal,
+        ),
       };
 
     case "CLOSE_TOP_OVERLAY":
