@@ -39,7 +39,7 @@ import {
 const FIXTURE_BASE = new URL("./fixtures/", import.meta.url);
 
 function expectedVideasyRouteEndpoint(endpoint: string): string {
-  return endpoint === "mb-flix" ? "e3b0c442" : endpoint;
+  return endpoint;
 }
 
 test("provider engine exposes registered modules", () => {
@@ -510,7 +510,7 @@ test("vidking stops source fanout after a provider-wide session guard failure", 
   expect(result?.failures).toHaveLength(1);
   expect(result?.failures[0]).toMatchObject({ code: "blocked", retryable: false });
   expect(requestedUrls).toHaveLength(1);
-  expect(requestedUrls[0]).toContain("/e3b0c442/sources-with-title?");
+  expect(requestedUrls[0]).toContain("/mb-flix/sources-with-title?");
 });
 
 test("vidking direct resolver classifies Videasy session guard responses as blocked", async () => {
@@ -700,6 +700,7 @@ test("vidking evidence fixture preserves native server labels beside ISO audio l
   >("videasy/source-payload.json");
   const expected = await readFixture<{
     readonly serverLabel: string;
+    readonly nativeServerLabel: string;
     readonly nativeLanguageLabel: string;
     readonly normalizedLanguage: string;
     readonly sourceHost: string;
@@ -731,7 +732,7 @@ test("vidking evidence fixture preserves native server labels beside ISO audio l
     metadata: { server: expected.serverLabel, flavorId: "videasy-hindi" },
     sourceEvidence: [
       expect.objectContaining({
-        nativeLabel: expected.serverLabel,
+        nativeLabel: expected.nativeServerLabel,
         host: expected.sourceHost,
       }),
     ],

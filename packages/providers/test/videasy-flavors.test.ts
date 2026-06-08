@@ -89,7 +89,7 @@ describe("vidking flavors", () => {
     expect(resolveVidkingPresentation("mb-flix")).toMatchObject({
       flavorId: "videasy-primary",
       themeLabel: "Luffy",
-      subtitle: "English · primary",
+      subtitle: "Original · primary",
     });
   });
 
@@ -97,7 +97,7 @@ describe("vidking flavors", () => {
     expect(resolveVidkingPresentation("cdn")).toMatchObject({
       flavorId: "videasy-mirror-a",
       themeLabel: "Zoro",
-      subtitle: "English · may have 4K",
+      subtitle: "Original · may have 4K",
     });
   });
 

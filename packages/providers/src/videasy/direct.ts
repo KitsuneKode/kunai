@@ -46,6 +46,7 @@ import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "../shared/stream-h
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import {
   getPhaseAVidkingServers,
+  getVidkingFlavor,
   flavorSourceId,
   normalizeLegacyVideasySourceId,
   getPhaseAVidkingFlavorIds,
@@ -69,6 +70,8 @@ export const CINEPLAY_ORIGIN = "https://www.cineplay.to";
 export const CINEPLAY_NEON_ENDPOINT = "e3b0c442";
 /** Videasy moved the stream API from api.videasy.net (404) to api.videasy.to. */
 export const VIDKING_API_BASE = "https://api.videasy.to";
+/** TMDB mirror used by player.videasy.to before sources-with-title. */
+export const VIDEASY_DB_BASE = "https://db.videasy.to/3";
 
 export type VideasyClientProfile = {
   readonly appId: string;
@@ -210,11 +213,13 @@ export async function resolveVideasyDirect(
     });
   }
 
+  const resolvedInput = await enrichVideasyResolveInput(input, tmdbId, context);
+
   const startedAt = context.now();
   const cachePolicy = createProviderCachePolicy({
     providerId: VIDEOSY_PROVIDER_ID,
-    title: input.title,
-    episode: input.episode,
+    title: resolvedInput.title,
+    episode: resolvedInput.episode,
     subtitleLanguage: input.preferredSubtitleLanguage,
     qualityPreference: input.qualityPreference,
     startupPriority: input.startupPriority,
@@ -333,13 +338,13 @@ export async function resolveVideasyDirect(
   }
 
   const videasyAppId = resolveVideasyAppId(resolvedOptions, context);
-  const clientProfile = resolveVideasyClientProfile(input, context, resolvedOptions);
+  const clientProfile = resolveVideasyClientProfile(resolvedInput, context, resolvedOptions);
   const embedReferer = buildEmbedReferer(
     {
       tmdbId,
-      mediaKind: input.mediaKind as "movie" | "series",
-      season: input.episode?.season,
-      episode: input.episode?.episode,
+      mediaKind: resolvedInput.mediaKind as "movie" | "series",
+      season: resolvedInput.episode?.season,
+      episode: resolvedInput.episode?.episode,
     },
     videasyAppId,
   );
@@ -378,7 +383,7 @@ export async function resolveVideasyDirect(
     const result = await tryVidkingServer({
       server: metadata.server,
       tmdbId,
-      input,
+      input: resolvedInput,
       cachePolicy,
       events,
       context,
@@ -758,14 +763,19 @@ export function createVidkingResultFromPayload({
     );
   const themedLabel = sourceDisplayLabel ?? presentation.themeLabel;
   const themedSubtitle = flavorArchetype ?? presentation.subtitle;
+  const flavorDef = presentation.flavorId ? getVidkingFlavor(presentation.flavorId) : undefined;
+  const nativeServerLabel = flavorDef?.cinebyAlias ?? server ?? "Videasy";
   const sourceEvidence = [
     createProviderSourceEvidence({
       sourceId: resolvedSourceId,
       serverId: server,
-      nativeLabel: server ?? "Videasy",
+      nativeLabel: nativeServerLabel,
       host: "api.videasy.to",
       confidence: 0.9,
-      metadata: { flavorFilter: sourceQualityFilter },
+      metadata: {
+        flavorFilter: sourceQualityFilter,
+        cinebyAlias: flavorDef?.cinebyAlias,
+      },
     }),
   ];
   const streams = normalizeStreamCandidates({
@@ -1143,7 +1153,7 @@ async function tryVidkingServer(opts: {
   const appId = clientProfile.appId;
   const requestReferer = customReferer ?? clientProfile.defaultReferer;
   const streamReferer = clientProfile.streamReferer;
-  const requestServer = resolveVideasyServerEndpoint(server, clientProfile);
+  const requestServers = resolveVideasyRequestServers(server, clientProfile);
 
   emitTraceEvent(events, context, {
     type: "source:start",
@@ -1164,138 +1174,140 @@ async function tryVidkingServer(opts: {
   });
   const maxAttempts = customReferer ? Math.max(1, context.retryPolicy?.maxAttempts ?? 2) : 1;
 
-  for (const query of queries) {
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const response = await fetchVideasyPayload({
-          server: requestServer,
-          query,
-          fetchPort: context.fetch,
-          signal: context.signal,
-          customReferer: requestReferer,
-          sessionToken,
-          appId,
-          origin: clientProfile.origin,
-        });
+  for (const requestServer of requestServers) {
+    for (const query of queries) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const response = await fetchVideasyPayload({
+            server: requestServer,
+            query,
+            fetchPort: context.fetch,
+            signal: context.signal,
+            customReferer: requestReferer,
+            sessionToken,
+            appId,
+            origin: clientProfile.origin,
+          });
 
-        if (!response.ok) {
-          vidkingHealth.recordFailure(server);
-          const statusCode = response.status;
-          const body = await safeReadResponseText(response);
-          const providerError = parseVideasyErrorPayload(body);
+          if (!response.ok) {
+            vidkingHealth.recordFailure(server);
+            const statusCode = response.status;
+            const body = await safeReadResponseText(response);
+            const providerError = parseVideasyErrorPayload(body);
+            const guardedFailure = createVideasyGuardFailure(providerError, context);
+            if (guardedFailure) {
+              failures.push(guardedFailure);
+              emitRetryIfNeeded(events, context, guardedFailure, sourceId, attempt, maxAttempts);
+              return null;
+            }
+            const nonRetryableStatus =
+              statusCode === 401 ||
+              statusCode === 403 ||
+              statusCode === 404 ||
+              statusCode === 500 ||
+              statusCode >= 502;
+            const f: ProviderFailure = {
+              providerId: VIDEOSY_PROVIDER_ID,
+              code: vidkingStatusToFailureCode(statusCode),
+              message: `Videasy ${server} returned HTTP ${statusCode}`,
+              retryable: !nonRetryableStatus,
+              at: context.now(),
+            };
+            failures.push(f);
+            emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
+            if (!isRetryableFailure(context, f)) {
+              break;
+            }
+            continue;
+          }
+
+          const payload = (await response.text()).trim();
+          if (!payload) {
+            vidkingHealth.recordFailure(server);
+            const f: ProviderFailure = {
+              providerId: VIDEOSY_PROVIDER_ID,
+              code: "not-found",
+              message: `Videasy ${server} empty payload`,
+              retryable: false,
+              at: context.now(),
+            };
+            failures.push(f);
+            emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
+            continue;
+          }
+
+          const providerError = parseVideasyErrorPayload(payload);
           const guardedFailure = createVideasyGuardFailure(providerError, context);
           if (guardedFailure) {
+            vidkingHealth.recordFailure(server);
             failures.push(guardedFailure);
             emitRetryIfNeeded(events, context, guardedFailure, sourceId, attempt, maxAttempts);
-            break;
+            return null;
           }
-          const nonRetryableStatus =
-            statusCode === 401 ||
-            statusCode === 403 ||
-            statusCode === 404 ||
-            statusCode === 500 ||
-            statusCode >= 502;
-          const f: ProviderFailure = {
-            providerId: VIDEOSY_PROVIDER_ID,
-            code: vidkingStatusToFailureCode(statusCode),
-            message: `Videasy ${server} returned HTTP ${statusCode}`,
-            retryable: !nonRetryableStatus,
-            at: context.now(),
-          };
-          failures.push(f);
-          emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
-          if (!isRetryableFailure(context, f)) {
-            break;
-          }
-          continue;
-        }
 
-        const payload = (await response.text()).trim();
-        if (!payload) {
-          vidkingHealth.recordFailure(server);
+          const decodedPayload = await decodeVideasyGuardedPayload(payload, sessionToken);
+          const decoded = await decodeVidkingPayload(decodedPayload, tmdbId);
+          const streamVerified = await probeSelectedVidkingPayloadStream({
+            decoded,
+            input,
+            cachePolicy,
+            sourceId,
+            server,
+            streamReferer,
+            sourceQualityFilter: engineOptions.filterQuality,
+            engineOptions,
+            events,
+            context,
+          });
+          if (!streamVerified) {
+            vidkingHealth.recordFailure(server);
+            break;
+          }
+
+          const result = createVidkingResultFromPayload({
+            input,
+            cachePolicy,
+            payload: decoded,
+            sourceId,
+            server,
+            events,
+            context,
+            startedAt,
+            failures,
+            streamReferer,
+            streamOrigin: clientProfile.origin,
+            sourceQualityFilter: engineOptions.filterQuality,
+            engineOptions,
+            streamReachabilityVerified: true,
+          });
+          if (result) {
+            vidkingHealth.recordSuccess(server);
+            return result;
+          }
+
           const f: ProviderFailure = {
             providerId: VIDEOSY_PROVIDER_ID,
             code: "not-found",
-            message: `Videasy ${server} empty payload`,
+            message: `Videasy ${server} no playable streams`,
             retryable: false,
             at: context.now(),
           };
           failures.push(f);
           emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
-          continue;
-        }
-
-        const providerError = parseVideasyErrorPayload(payload);
-        const guardedFailure = createVideasyGuardFailure(providerError, context);
-        if (guardedFailure) {
+        } catch (error) {
           vidkingHealth.recordFailure(server);
-          failures.push(guardedFailure);
-          emitRetryIfNeeded(events, context, guardedFailure, sourceId, attempt, maxAttempts);
-          break;
+          if (context.signal?.aborted) throw error;
+          const timedOut = isVideasyTimeoutError(error);
+          const f: ProviderFailure = {
+            providerId: VIDEOSY_PROVIDER_ID,
+            code: timedOut ? "timeout" : "parse-failed",
+            message: error instanceof Error ? error.message : "VidKing payload decode failed",
+            retryable: false,
+            at: context.now(),
+          };
+          failures.push(f);
+          emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
         }
-
-        const decodedPayload = await decodeVideasyGuardedPayload(payload, sessionToken);
-        const decoded = await decodeVidkingPayload(decodedPayload, tmdbId);
-        const streamVerified = await probeSelectedVidkingPayloadStream({
-          decoded,
-          input,
-          cachePolicy,
-          sourceId,
-          server,
-          streamReferer,
-          sourceQualityFilter: engineOptions.filterQuality,
-          engineOptions,
-          events,
-          context,
-        });
-        if (!streamVerified) {
-          vidkingHealth.recordFailure(server);
-          break;
-        }
-
-        const result = createVidkingResultFromPayload({
-          input,
-          cachePolicy,
-          payload: decoded,
-          sourceId,
-          server,
-          events,
-          context,
-          startedAt,
-          failures,
-          streamReferer,
-          streamOrigin: clientProfile.origin,
-          sourceQualityFilter: engineOptions.filterQuality,
-          engineOptions,
-          streamReachabilityVerified: true,
-        });
-        if (result) {
-          vidkingHealth.recordSuccess(server);
-          return result;
-        }
-
-        const f: ProviderFailure = {
-          providerId: VIDEOSY_PROVIDER_ID,
-          code: "not-found",
-          message: `Videasy ${server} no playable streams`,
-          retryable: false,
-          at: context.now(),
-        };
-        failures.push(f);
-        emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
-      } catch (error) {
-        vidkingHealth.recordFailure(server);
-        if (context.signal?.aborted) throw error;
-        const timedOut = isVideasyTimeoutError(error);
-        const f: ProviderFailure = {
-          providerId: VIDEOSY_PROVIDER_ID,
-          code: timedOut ? "timeout" : "parse-failed",
-          message: error instanceof Error ? error.message : "VidKing payload decode failed",
-          retryable: false,
-          at: context.now(),
-        };
-        failures.push(f);
-        emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
       }
     }
   }
@@ -1309,15 +1321,28 @@ async function tryVidkingServer(opts: {
   return null;
 }
 
-/** Cineplay labels Neon as e3b0c442; Kunai inventory still presents it as Luffy/mb-flix. */
+/**
+ * bc-frontend Neon (Luffy/mb-flix): prefer the legacy mb-flix route — it returns the
+ * quality ladder and subtitle tracks that match videasy.to/cineplay. The Cineplay bundle
+ * also references e3b0c442, but that route often yields a stripped ORG-only payload
+ * with no subtitles (see apps/experiments/scratchpads/provider-cineplay/CINEPLAY_RESEARCH_REPORT.md).
+ */
+export function resolveVideasyRequestServers(
+  server: VidkingServerEndpoint,
+  profile: VideasyClientProfile,
+): readonly VidkingServerEndpoint[] {
+  if (profile.appId === "bc-frontend" && server === "mb-flix") {
+    return ["mb-flix", CINEPLAY_NEON_ENDPOINT];
+  }
+  return [server];
+}
+
+/** First Videasy API route for a flavor endpoint (see resolveVideasyRequestServers). */
 export function resolveVideasyServerEndpoint(
   server: VidkingServerEndpoint,
   profile: VideasyClientProfile,
 ): VidkingServerEndpoint {
-  if (profile.appId === "bc-frontend" && server === "mb-flix") {
-    return CINEPLAY_NEON_ENDPOINT;
-  }
-  return server;
+  return resolveVideasyRequestServers(server, profile)[0] ?? server;
 }
 
 export function resolveVideasyClientProfile(
@@ -1725,6 +1750,88 @@ function orderSubtitleCandidates(
   });
 }
 
+type VideasyDbTitleMetadata = {
+  readonly title?: string;
+  readonly year?: number;
+  readonly imdbId?: string;
+};
+
+async function fetchVideasyDbTitleMetadata(
+  tmdbId: number,
+  mediaKind: "movie" | "series",
+  context: ProviderRuntimeContext,
+): Promise<VideasyDbTitleMetadata | null> {
+  const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
+  const path = mediaKind === "series" ? `tv/${tmdbId}` : `movie/${tmdbId}`;
+  const url = `${VIDEASY_DB_BASE}/${path}?append_to_response=external_ids&language=en`;
+
+  try {
+    const response = await requester(url, {
+      headers: {
+        accept: "application/json",
+        referer: "https://player.videasy.to/",
+        "user-agent": USER_AGENT,
+      },
+      signal: createVideasyFetchSignal(context.signal, 8_000),
+    });
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as {
+      readonly name?: string;
+      readonly title?: string;
+      readonly first_air_date?: string;
+      readonly release_date?: string;
+      readonly external_ids?: { readonly imdb_id?: string | null };
+    };
+
+    const releaseDate = data.first_air_date ?? data.release_date;
+    const year =
+      typeof releaseDate === "string" && releaseDate.length >= 4
+        ? Number.parseInt(releaseDate.slice(0, 4), 10)
+        : undefined;
+
+    return {
+      title: data.name ?? data.title,
+      year: Number.isFinite(year) ? year : undefined,
+      imdbId: data.external_ids?.imdb_id?.trim() || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function enrichVideasyResolveInput(
+  input: ProviderResolveInput,
+  tmdbId: number,
+  context: ProviderRuntimeContext,
+): Promise<ProviderResolveInput> {
+  if (input.mediaKind !== "movie" && input.mediaKind !== "series") {
+    return input;
+  }
+
+  const needsImdb = !input.title.imdbId?.trim();
+  const needsYear = input.title.year === undefined || input.title.year === null;
+  const needsTitle = !input.title.title?.trim();
+  if (!needsImdb && !needsYear && !needsTitle) {
+    return input;
+  }
+
+  const metadata = await fetchVideasyDbTitleMetadata(tmdbId, input.mediaKind, context);
+  if (!metadata) {
+    return input;
+  }
+
+  return {
+    ...input,
+    title: {
+      ...input.title,
+      title: needsTitle ? (metadata.title ?? input.title.title) : input.title.title,
+      year: needsYear ? (metadata.year ?? input.title.year) : input.title.year,
+      imdbId: needsImdb ? (metadata.imdbId ?? input.title.imdbId) : input.title.imdbId,
+    },
+  };
+}
+
 function buildQueryVariants(opts: {
   readonly title: TitleIdentity;
   readonly mediaKind: "movie" | "series";
@@ -1740,7 +1847,7 @@ function buildQueryVariants(opts: {
     _t: String(Date.now()),
   });
 
-  if (!opts.title.tmdbId && opts.title.year) {
+  if (opts.title.year) {
     base.set("year", String(opts.title.year));
   }
   if (opts.title.imdbId) {

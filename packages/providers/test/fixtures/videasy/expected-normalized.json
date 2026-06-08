@@ -1,5 +1,6 @@
 {
   "serverLabel": "hdmovie",
+  "nativeServerLabel": "Fade",
   "nativeLanguageLabel": "Hindi",
   "normalizedLanguage": "hi",
   "sourceHost": "api.videasy.to",

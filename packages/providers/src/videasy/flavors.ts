@@ -39,7 +39,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
   {
     id: "videasy-primary",
     themeLabel: "Luffy",
-    subtitle: "English · primary",
+    subtitle: "Original · primary",
     cinebyAlias: "Neon",
     endpoint: "mb-flix",
     audioLanguage: "en",
@@ -48,7 +48,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
   {
     id: "videasy-mirror-a",
     themeLabel: "Zoro",
-    subtitle: "English · may have 4K",
+    subtitle: "Original · may have 4K",
     cinebyAlias: "Yoru",
     endpoint: "cdn",
     audioLanguage: "en",
@@ -57,7 +57,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
   {
     id: "videasy-mirror-b",
     themeLabel: "Nami",
-    subtitle: "English · mirror",
+    subtitle: "Original · mirror",
     cinebyAlias: "Cypher",
     endpoint: "downloader2",
     audioLanguage: "en",
@@ -66,7 +66,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
   {
     id: "videasy-mirror-c",
     themeLabel: "Sanji",
-    subtitle: "English · mirror",
+    subtitle: "Original · mirror",
     cinebyAlias: "Sage",
     endpoint: "1movies",
     audioLanguage: "en",
@@ -74,7 +74,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
   {
     id: "videasy-breach",
     themeLabel: "Blackbeard",
-    subtitle: "English · mirror",
+    subtitle: "Original · mirror",
     cinebyAlias: "Breach",
     endpoint: "m4uhd",
     audioLanguage: "en",
@@ -82,7 +82,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
   {
     id: "videasy-english-alt",
     themeLabel: "Robin",
-    subtitle: "English · alt track",
+    subtitle: "Original · alt track",
     cinebyAlias: "Vyse",
     endpoint: "hdmovie",
     filterQuality: "English",

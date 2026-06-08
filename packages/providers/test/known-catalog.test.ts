@@ -55,4 +55,8 @@ test("mergeKnownCatalogSources preserves resolved sources and fills missing cata
     "Beta resolved",
   );
   expect(merged.some((source) => source.id === "source:videasy:flavor:alpha")).toBe(true);
+  expect(merged.map((source) => source.id)).toEqual([
+    "source:videasy:flavor:alpha",
+    "source:videasy:flavor:beta",
+  ]);
 });

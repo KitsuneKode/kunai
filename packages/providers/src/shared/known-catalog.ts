@@ -68,7 +68,24 @@ export function mergeKnownCatalogSources({
     });
   }
 
-  return [...byId.values()];
+  const ordered: ProviderSourceCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of catalog) {
+    if (mediaKind === "series" && entry.moviesOnly) continue;
+    const source = byId.get(entry.sourceId);
+    if (!source) continue;
+    ordered.push(source);
+    seen.add(entry.sourceId);
+  }
+
+  for (const source of byId.values()) {
+    if (!seen.has(source.id)) {
+      ordered.push(source);
+    }
+  }
+
+  return ordered;
 }
 
 export function mergeKnownCatalogForResult(
