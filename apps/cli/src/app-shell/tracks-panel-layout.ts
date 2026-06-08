@@ -4,6 +4,7 @@
 // =============================================================================
 
 export type TrackSectionCounts = {
+  readonly provider?: number;
   readonly source: number;
   readonly quality: number;
   readonly audio: number;
@@ -18,6 +19,7 @@ const plural = (n: number, one: string, many: string): string => `${n} ${n === 1
  */
 export function tracksCountsHeader(counts: TrackSectionCounts, provider?: string): string {
   return [
+    counts.provider ? plural(counts.provider, "provider", "providers") : null,
     counts.source ? plural(counts.source, "source", "sources") : null,
     counts.quality ? plural(counts.quality, "quality", "qualities") : null,
     counts.audio ? plural(counts.audio, "audio", "audio") : null,

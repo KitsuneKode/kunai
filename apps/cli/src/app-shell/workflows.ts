@@ -8,12 +8,12 @@ import {
   type ListShellActionContext,
   type ShellOption,
 } from "@/app-shell/pickers";
+import { buildTracksPanelData } from "@/app-shell/tracks-panel-data";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { runAutoplayAdvanceCountdown } from "@/app/autoplay-advance-countdown";
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import { markEntryWatched } from "@/app/history-actions";
-import { buildStreamInventoryView } from "@/app/source-quality";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
@@ -24,7 +24,6 @@ import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSele
 import type { LocalSourceStatus } from "@/domain/playback-source/SourceSelectionEngine";
 import {
   annotateCurrentTrackFailure,
-  buildTrackCapabilities,
   decodeTrackSelection,
   type DecodedTrackSelection,
   type TrackCapabilitySection,
@@ -2158,12 +2157,10 @@ export async function openTracksPanel(
   options: { initialSection?: TrackCapabilitySection; failedCurrentReason?: string },
   container: Container,
 ): Promise<DecodedTrackSelection | null> {
+  const panelData = await buildTracksPanelData(stream, container);
   const groups = options.failedCurrentReason
-    ? annotateCurrentTrackFailure(
-        buildTrackCapabilities(buildStreamInventoryView(stream)),
-        options.failedCurrentReason,
-      )
-    : buildTrackCapabilities(buildStreamInventoryView(stream));
+    ? annotateCurrentTrackFailure(panelData.groups, options.failedCurrentReason)
+    : panelData.groups;
   const id = createSessionPickerId("tracks_panel");
   container.stateManager.dispatch({
     type: "OPEN_OVERLAY",
@@ -2173,6 +2170,7 @@ export async function openTracksPanel(
       groups,
       initialSection: options.initialSection,
       favorites: container.config.favoriteSources,
+      providerLabel: panelData.providerLabel,
     },
   });
   const resolved = await waitForSessionPicker(container.stateManager, id);

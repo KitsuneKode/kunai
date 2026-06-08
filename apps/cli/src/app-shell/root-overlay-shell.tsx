@@ -1755,6 +1755,7 @@ export function RootOverlayShell({
             groups={trackGroups}
             nav={tracksNav}
             favorites={tracksFavorites}
+            providerLabel={overlay.type === "tracks_panel" ? overlay.providerLabel : undefined}
             width={Math.max(24, (stdout.columns ?? 80) - 8)}
             height={Math.max(8, (stdout.rows ?? 32) - 9)}
           />

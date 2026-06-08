@@ -49,6 +49,7 @@ type RoutedActionResult =
   | "recover"
   | "recompute"
   | "fallback"
+  | "provider"
   | "source"
   | "quality"
   | "audio"
@@ -176,15 +177,7 @@ export async function routeSearchShellAction({
     await openRootOwnedOverlay(container, { type: "notifications" });
     return "handled";
   }
-  if (action === "provider") {
-    const state = stateManager.getState();
-    await openRootOwnedOverlay(container, {
-      type: "provider_picker",
-      currentProvider: state.provider,
-      isAnime: state.mode === "anime",
-    });
-    return "handled";
-  }
+  if (action === "provider") return "provider";
   if (action === "continue") return openRootHistorySelection(container, "continue");
   if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {
@@ -248,15 +241,7 @@ export async function routePlaybackShellAction({
     await openRootOwnedOverlay(container, { type: "notifications" });
     return "handled";
   }
-  if (action === "provider") {
-    const state = stateManager.getState();
-    await openRootOwnedOverlay(container, {
-      type: "provider_picker",
-      currentProvider: state.provider,
-      isAnime: state.mode === "anime",
-    });
-    return "handled";
-  }
+  if (action === "provider") return "provider";
   if (action === "continue") return openRootHistorySelection(container, "continue");
   if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {

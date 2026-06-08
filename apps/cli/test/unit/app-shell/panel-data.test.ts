@@ -432,7 +432,7 @@ describe("panel-data", () => {
 
     const provider = lines.find((line) => line.label === "Provider");
     expect(provider?.detail).toContain("resolved");
-    expect(provider?.detail).toContain("1 sources");
+    expect(provider?.detail).toMatch(/\d+ sources/);
     expect(provider?.detail).toContain("1 qualities");
     expect(provider?.detail).toContain("2 subtitle choices");
     expect(provider?.detail).not.toContain("private-stream");

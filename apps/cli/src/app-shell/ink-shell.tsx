@@ -195,7 +195,7 @@ function RootShellHost() {
 
 async function openPlaybackStreamSelectionPicker(
   container: Container,
-  action: "source" | "quality" | "audio" | "subtitle",
+  action: "source" | "quality" | "audio" | "subtitle" | "provider",
   reason: string,
 ): Promise<void> {
   const stream = container.stateManager.getState().stream;
@@ -204,20 +204,67 @@ async function openPlaybackStreamSelectionPicker(
   // One unified Tracks panel; each command deep-links its section. From any
   // section the left pane reaches the others (no separate umbrella command).
   const initialSection =
-    action === "source"
-      ? "source"
-      : action === "quality"
-        ? "quality"
-        : action === "audio"
-          ? "audio"
-          : "subtitle";
+    action === "provider"
+      ? "provider"
+      : action === "source"
+        ? "source"
+        : action === "quality"
+          ? "quality"
+          : action === "audio"
+            ? "audio"
+            : "subtitle";
   const { openTracksPanel } = await import("./workflows");
   const picked = await openTracksPanel(stream, { initialSection }, container);
-  const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-  if (!picked || !selection) return;
-  if (isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {
+  if (!picked) return;
+  const selection = streamSelectionFromTrackPick(picked);
+  if (!selection && picked.section !== "subtitle") return;
+  if (selection && isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {
     return;
   }
+
+  const sessionState = container.stateManager.getState();
+  const title = sessionState.currentTitle;
+  const episode = sessionState.currentEpisode;
+  if (
+    title &&
+    episode &&
+    selection &&
+    (picked.section === "provider" ||
+      selection.audioMode ||
+      selection.crossProviderSource ||
+      selection.providerId)
+  ) {
+    const { resolveTracksPanelPick } = await import("@/app/tracks-panel-pick");
+    const resolved = await resolveTracksPanelPick(picked, selection, {
+      container,
+      title,
+      episode,
+      currentProviderId: sessionState.provider,
+      resumeSeconds: 0,
+      reason,
+    });
+    if (resolved.kind === "noop") return;
+    if (resolved.kind === "cross-provider-source") {
+      await container.episodePlaybackSelection
+        .set({
+          providerId: resolved.providerId,
+          titleId: title.id,
+          season: episode.season,
+          episode: episode.episode,
+          sourceId: resolved.sourceId,
+          streamId: null,
+        })
+        .catch(() => undefined);
+    }
+    if (container.playerControl.getActive()) {
+      void container.playerControl.recomputeCurrentPlayback(reason);
+      return;
+    }
+    container.workControl.cancelActive(`${reason}-abort-resolve`);
+    return;
+  }
+
+  if (!selection) return;
 
   // Source switches restart the episode; quality/audio/hardsub swap the active
   // stream in place. Subtitles attach in mpv, so they never resolve here.
@@ -814,6 +861,14 @@ function AppRoot({ container }: { container: Container }) {
       }
       if (action === "pick-episode") {
         void openActivePlaybackEpisodePicker(container, "playback-loading-command-episode");
+        return;
+      }
+      if (action === "provider") {
+        void openPlaybackStreamSelectionPicker(
+          container,
+          "provider",
+          "playback-loading-command-provider",
+        );
         return;
       }
       if (action === "source") {

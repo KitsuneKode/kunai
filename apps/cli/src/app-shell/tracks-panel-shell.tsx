@@ -90,6 +90,7 @@ function sectionCounts(groups: readonly TrackCapabilityGroup[]) {
   const count = (section: TrackCapabilitySection): number =>
     groups.find((group) => group.section === section)?.rows.length ?? 0;
   return {
+    provider: count("provider"),
     source: count("source"),
     quality: count("quality"),
     audio: count("audio"),

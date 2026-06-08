@@ -300,7 +300,7 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "provider",
     label: "Provider Picker",
     aliases: ["provider", "switch-provider"],
-    description: "Open the provider picker",
+    description: "Open the tracks panel at the provider section",
   },
   {
     id: "continue",
