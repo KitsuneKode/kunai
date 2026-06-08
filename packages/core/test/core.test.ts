@@ -106,6 +106,35 @@ const vidkingManifest = defineProviderManifest({
   relaySafe: false,
 });
 
+test("ProviderEngine aliases legacy vidking id to the videasy module", () => {
+  const videasyModule: CoreProviderModule = {
+    providerId: "videasy",
+    manifest: { ...vidkingManifest, id: "videasy", displayName: "Videasy" },
+    async resolve() {
+      return {
+        status: "exhausted",
+        providerId: "videasy",
+        sources: [],
+        variants: [],
+        streams: [],
+        subtitles: [],
+        trace: {
+          id: "trace-alias",
+          startedAt: "2026-06-08T00:00:00.000Z",
+          cacheHit: false,
+          title: { id: "1", kind: "movie", title: "Alias" },
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      };
+    },
+  };
+  const engine = createProviderEngine({ modules: [videasyModule] });
+  expect(engine.get("vidking")).toBe(videasyModule);
+  expect(engine.getManifest("vidking")?.id).toBe("videasy");
+});
+
 test("vidking manifest declares capability, cache, and runtime boundaries", () => {
   expect(vidkingManifest.id).toBe("vidking");
   expect(vidkingManifest.mediaKinds).toContain("movie");

@@ -15,6 +15,14 @@ import {
   ProviderResolveFailureError,
 } from "./resolver";
 
+const PROVIDER_ID_ALIASES: Readonly<Record<string, ProviderId>> = {
+  vidking: "videasy",
+};
+
+function resolveProviderId(providerId: ProviderId): ProviderId {
+  return PROVIDER_ID_ALIASES[providerId] ?? providerId;
+}
+
 export interface ProviderEngineOptions {
   readonly modules: readonly CoreProviderModule[];
   readonly maxAttempts?: number;
@@ -105,11 +113,11 @@ export class ProviderEngine {
   }
 
   get(providerId: ProviderId): CoreProviderModule | undefined {
-    return this.modulesById.get(providerId);
+    return this.modulesById.get(resolveProviderId(providerId));
   }
 
   getManifest(providerId: ProviderId) {
-    return this.modulesById.get(providerId)?.manifest;
+    return this.modulesById.get(resolveProviderId(providerId))?.manifest;
   }
 
   getProviderIds(): ProviderId[] {
@@ -122,7 +130,8 @@ export class ProviderEngine {
     signal?: AbortSignal,
     observer?: ProviderEngineObserver,
   ): Promise<ProviderResolveResult> {
-    const module = this.modulesById.get(providerId);
+    const resolvedProviderId = resolveProviderId(providerId);
+    const module = this.modulesById.get(resolvedProviderId);
     if (!module) {
       throw new Error(`Provider module not found: ${providerId}`);
     }
