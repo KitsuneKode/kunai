@@ -1,11 +1,15 @@
 import { expect, test } from "bun:test";
 
 import {
+  applySeriesProviderOrder,
   buildSettingsChoiceOverlay,
   buildSettingsOptions,
+  describeProviderOrder,
   formatPickerDisplayRow,
   formatPickerOptionRow,
   getOverlayPickerPreviewImageUrl,
+  moveProviderInOrder,
+  resolveSeriesProviderOrder,
 } from "@/app-shell/overlay-panel";
 import { getConfigMetadata } from "@/services/persistence/config-metadata";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
@@ -258,4 +262,55 @@ test("buildSettingsOptions includes section separators for general and providers
   expect(sectionValues.length).toBeGreaterThan(0);
   expect(sectionValues).toContain("section:general");
   expect(sectionValues).toContain("section:providers");
+});
+
+test("settings expose provider order editors", () => {
+  const options = buildSettingsOptions(DEFAULT_CONFIG);
+  expect(options.map((option) => option.value)).toContain("providerPriority");
+  expect(options.map((option) => option.value)).toContain("animeProviderPriority");
+});
+
+test("resolveSeriesProviderOrder dedupes default and priority", () => {
+  const order = resolveSeriesProviderOrder({
+    ...DEFAULT_CONFIG,
+    provider: "vidlink",
+    providerPriority: ["vidking", "vidlink", "rivestream"],
+  });
+  expect(order).toEqual(["vidlink", "vidking", "rivestream"]);
+});
+
+test("applySeriesProviderOrder writes default plus fallback chain", () => {
+  const next = applySeriesProviderOrder(DEFAULT_CONFIG, ["rivestream", "vidking", "vidlink"]);
+  expect(next.provider).toBe("rivestream");
+  expect(next.providerPriority).toEqual(["vidking", "vidlink"]);
+  expect(describeProviderOrder(resolveSeriesProviderOrder(next))).toBe(
+    "rivestream → vidking → vidlink",
+  );
+});
+
+test("moveProviderInOrder swaps neighbors and clamps at ends", () => {
+  const order = ["vidking", "vidlink", "rivestream"];
+  expect(moveProviderInOrder(order, "vidlink", "up")).toEqual(["vidlink", "vidking", "rivestream"]);
+  expect(moveProviderInOrder(order, "vidking", "up")).toEqual(order);
+  expect(moveProviderInOrder(order, "rivestream", "down")).toEqual(order);
+});
+
+test("provider order settings screen lists numbered providers", () => {
+  const overlay = buildSettingsChoiceOverlay({
+    config: DEFAULT_CONFIG,
+    setting: "providerPriority",
+    seriesProviderOptions: [
+      { value: "vidking", label: "VidKing" },
+      { value: "vidlink", label: "VidLink" },
+      { value: "rivestream", label: "Rivestream" },
+    ],
+    animeProviderOptions: [],
+  });
+
+  expect(overlay.title).toBe("Series provider order");
+  expect(overlay.options.map((option) => option.label)).toEqual([
+    "1. VidKing",
+    "2. VidLink",
+    "3. Rivestream",
+  ]);
 });

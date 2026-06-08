@@ -1002,6 +1002,24 @@ export function buildHistoryPickerOptions(
   return options;
 }
 
+export function sortProvidersByConfigPriority({
+  providers,
+  priority,
+}: {
+  providers: readonly ProviderMetadata[];
+  priority: readonly string[];
+}): ProviderMetadata[] {
+  const rank = new Map<string, number>();
+  priority.forEach((providerId, index) => {
+    if (!rank.has(providerId)) rank.set(providerId, index);
+  });
+  return [...providers].sort(
+    (left, right) =>
+      (rank.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+      (rank.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
 export function buildProviderPickerOptions({
   providers,
   currentProvider,

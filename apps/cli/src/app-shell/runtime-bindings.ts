@@ -4,6 +4,7 @@ import {
   buildHelpPanelLines,
   buildHistoryPanelLines,
   buildProviderPickerOptions,
+  sortProvidersByConfigPriority,
 } from "@/app-shell/panel-data";
 import { applySettingsToRuntime } from "@/app-shell/workflows";
 import type { Container } from "@/container";
@@ -26,22 +27,33 @@ export function buildShellRuntimeBindings(container: Container) {
   const state = stateManager.getState();
   const rawConfig = config.getRaw();
 
-  const providers = providerRegistry.getAll().map((p) => p.metadata);
+  const seriesProviders = sortProvidersByConfigPriority({
+    providers: providerRegistry
+      .getAll()
+      .map((provider) => provider.metadata)
+      .filter((metadata) => !metadata.isAnimeProvider),
+    priority: [rawConfig.provider, ...rawConfig.providerPriority],
+  });
+  const animeProviders = sortProvidersByConfigPriority({
+    providers: providerRegistry
+      .getAll()
+      .map((provider) => provider.metadata)
+      .filter((metadata) => metadata.isAnimeProvider),
+    priority: [rawConfig.animeProvider, ...rawConfig.animeProviderPriority],
+  });
 
   return {
     providerOptions: buildProviderPickerOptions({
-      providers: providers.filter(
-        (metadata) => metadata.isAnimeProvider === (state.mode === "anime"),
-      ),
+      providers: state.mode === "anime" ? animeProviders : seriesProviders,
       currentProvider: state.provider,
     }),
     settings: rawConfig,
     settingsSeriesProviderOptions: buildProviderPickerOptions({
-      providers: providers.filter((metadata) => !metadata.isAnimeProvider),
+      providers: seriesProviders,
       currentProvider: rawConfig.provider,
     }),
     settingsAnimeProviderOptions: buildProviderPickerOptions({
-      providers: providers.filter((metadata) => metadata.isAnimeProvider),
+      providers: animeProviders,
       currentProvider: rawConfig.animeProvider,
     }),
     onChangeProvider: async (providerId: string) => {

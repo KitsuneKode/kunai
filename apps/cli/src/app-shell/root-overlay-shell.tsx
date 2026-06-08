@@ -45,12 +45,17 @@ import {
   getNotificationPrimaryAction,
 } from "./notification-overlay-model";
 import {
+  applyAnimeProviderOrder,
+  applySeriesProviderOrder,
   buildSettingsChoiceOverlay,
   buildSettingsOptions,
   buildSettingsProviderOptions,
   buildSettingsSummary,
   type BrowseOverlay,
+  moveProviderInOrder,
   OverlayPanel,
+  resolveAnimeProviderOrder,
+  resolveSeriesProviderOrder,
   settingsEqual,
   type SettingsChoiceValue,
 } from "./overlay-panel";
@@ -61,6 +66,7 @@ import {
   buildHistoryPanelLines,
   buildProviderPickerOptions,
   type HistoryPickerOptionsContext,
+  sortProvidersByConfigPriority,
 } from "./panel-data";
 import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import {
@@ -362,13 +368,19 @@ export function RootOverlayShell({
   const { stdout } = useStdout();
   const maxLines = Math.max(6, Math.min(12, (stdout.rows ?? 24) - 18));
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
+  const rawConfig = container.config.getRaw();
   const providerOptions =
     overlay.type === "provider_picker"
       ? buildProviderPickerOptions({
-          providers: container.providerRegistry
-            .getAll()
-            .map((p) => p.metadata)
-            .filter((metadata) => metadata.isAnimeProvider === overlay.isAnime),
+          providers: sortProvidersByConfigPriority({
+            providers: container.providerRegistry
+              .getAll()
+              .map((p) => p.metadata)
+              .filter((metadata) => metadata.isAnimeProvider === overlay.isAnime),
+            priority: overlay.isAnime
+              ? [rawConfig.animeProvider, ...rawConfig.animeProviderPriority]
+              : [rawConfig.provider, ...rawConfig.providerPriority],
+          }),
           currentProvider: overlay.currentProvider,
         })
       : [];
@@ -445,14 +457,24 @@ export function RootOverlayShell({
   const [settingsDraft, setSettingsDraft] = useState<KitsuneConfig | null>(() =>
     overlay.type === "settings" ? container.config.getRaw() : null,
   );
-  // Persist settings the moment they change — no separate save step. config.update
-  // is debounced internally; we skip no-op writes (e.g. the initial load) so this
-  // only fires on a real edit.
+  // Persist settings the moment they change — no separate save step. Debounce so
+  // rapid toggles coalesce; applySettingsToRuntime writes disk + syncs session state.
   useEffect(() => {
     if (!settingsDraft) return;
     if (settingsEqual(settingsDraft, container.config.getRaw())) return;
-    void container.config.update(settingsDraft);
-  }, [settingsDraft, container.config]);
+
+    const next = settingsDraft;
+    const timer = setTimeout(() => {
+      void (async () => {
+        const previous = container.config.getRaw();
+        if (settingsEqual(next, previous)) return;
+        const { applySettingsToRuntime } = await import("./workflows");
+        await applySettingsToRuntime({ container, next, previous });
+      })();
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [settingsDraft, container]);
   const [settingsChoice, setSettingsChoice] = useState<SettingsChoiceValue | null>(null);
   const [settingsParentIndex, setSettingsParentIndex] = useState(0);
   const [settingsBusy, setSettingsBusy] = useState(false);
@@ -478,13 +500,20 @@ export function RootOverlayShell({
     projections: historyProjections,
     releaseSignals: historyReleaseSignals,
   };
-  const seriesProviderMetadata = [];
-  const animeProviderMetadata = [];
-  for (const provider of container.providerRegistry.getAll()) {
-    const metadata = provider.metadata;
-    if (metadata.isAnimeProvider) animeProviderMetadata.push(metadata);
-    else seriesProviderMetadata.push(metadata);
-  }
+  const seriesProviderMetadata = sortProvidersByConfigPriority({
+    providers: container.providerRegistry
+      .getAll()
+      .map((provider) => provider.metadata)
+      .filter((metadata) => !metadata.isAnimeProvider),
+    priority: [rawConfig.provider, ...rawConfig.providerPriority],
+  });
+  const animeProviderMetadata = sortProvidersByConfigPriority({
+    providers: container.providerRegistry
+      .getAll()
+      .map((provider) => provider.metadata)
+      .filter((metadata) => metadata.isAnimeProvider),
+    priority: [rawConfig.animeProvider, ...rawConfig.animeProviderPriority],
+  });
   const settingsSeriesProviderOptions = buildSettingsProviderOptions({
     providers: seriesProviderMetadata,
     currentProvider: settingsDraft?.provider ?? container.config.provider,
@@ -973,6 +1002,33 @@ export function RootOverlayShell({
         setSelectedIndex(0);
       }
       return;
+    }
+    if (
+      overlay.type === "settings" &&
+      settingsDraft &&
+      (settingsChoice === "providerPriority" || settingsChoice === "animeProviderPriority")
+    ) {
+      if (input === "[" || input === "]") {
+        const picked = filteredSettingsOptions[selectedIndex]?.value;
+        if (!picked) return;
+        const isAnime = settingsChoice === "animeProviderPriority";
+        const order = isAnime
+          ? resolveAnimeProviderOrder(settingsDraft)
+          : resolveSeriesProviderOrder(settingsDraft);
+        const moved = moveProviderInOrder(order, picked, input === "[" ? "up" : "down");
+        if (moved.join("|") !== order.join("|")) {
+          setSettingsDraft(
+            isAnime
+              ? applyAnimeProviderOrder(settingsDraft, moved)
+              : applySeriesProviderOrder(settingsDraft, moved),
+          );
+          setSettingsError(null);
+        }
+        return;
+      }
+      if (key.return) {
+        return;
+      }
     }
     if (key.return) {
       if (overlay.type === "settings") {
