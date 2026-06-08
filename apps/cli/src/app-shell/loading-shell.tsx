@@ -20,6 +20,7 @@ import {
 } from "./loading-shell-runtime";
 import type { StageRailItem } from "./loading-shell-runtime";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
+import { applyPlaybackShellInputEffect, resolvePlaybackShellInput } from "./playback-shell-input";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
 import { truncateLine } from "./shell-text";
@@ -347,106 +348,79 @@ export const LoadingShell = React.memo(function LoadingShell({
     return () => clearTimeout(timer);
   }, [memoryPanelPinned, memoryPanelVisible]);
 
+  const isPlaying = state.operation === "playing";
+  const canOpenSourcePicker = Boolean(state.hasStreamCandidates) && Boolean(onPickSource);
+  const loadingIssue = normalizeLoadingIssue(state.latestIssue);
+  const playbackTroubleActive =
+    isPlaying && (state.bufferHealth === "stalled" || Boolean(loadingIssue));
   // Recovery surface only applies before/around playback start, not while a
   // healthy stream is playing (that path has its own buffer badge + controls).
-  const recoveryView = state.operation !== "playing" ? buildPlaybackRecoveryViewModel(state) : null;
+  const recoveryView = !isPlaying ? buildPlaybackRecoveryViewModel(state) : null;
+
+  const playbackInputHandlers = React.useMemo(
+    () => ({
+      onCancel,
+      onStop,
+      onRecover,
+      onReloadSubtitles,
+      onNext,
+      onPrevious,
+      onSkipSegment,
+      onPickEpisode,
+      onPickSource,
+      onPickQuality,
+      onReturnToSearch,
+      onToggleAutoplay,
+      onToggleAutoskip,
+      onStopAfterCurrent,
+      onFallback,
+      onCommandAction: state.onCommandAction,
+    }),
+    [
+      onCancel,
+      onStop,
+      onRecover,
+      onReloadSubtitles,
+      onNext,
+      onPrevious,
+      onSkipSegment,
+      onPickEpisode,
+      onPickSource,
+      onPickQuality,
+      onReturnToSearch,
+      onToggleAutoplay,
+      onToggleAutoskip,
+      onStopAfterCurrent,
+      onFallback,
+      state.onCommandAction,
+    ],
+  );
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestHardExit(0);
+      return;
     }
     if (key.escape && state.cancellable && onCancel) {
       onCancel();
       return;
     }
-    // While a failure/recovery surface is shown, its action shortcuts take
-    // precedence so the rows it advertises actually work (footer input is
-    // locked when there is no command action).
-    if (recoveryView) {
-      const rk = input.toLowerCase();
-      if (rk === "r" && onRecover) {
-        onRecover();
-        return;
-      }
-      if (rk === "f" && onFallback) {
-        onFallback();
-        return;
-      }
-      if (rk === "o" && onPickSource) {
-        onPickSource();
-        return;
-      }
-      if (rk === "d") {
-        state.onCommandAction?.("diagnostics");
-        return;
-      }
-    }
-    if (input.toLowerCase() === "q") {
-      if (state.operation === "playing" && onStop && !state.onCommandAction) {
-        onStop();
-      } else if (state.cancellable && onCancel) {
-        onCancel();
-      }
-    }
-    if (
-      input.toLowerCase() === "r" &&
-      state.operation === "playing" &&
-      onRecover &&
-      !state.onCommandAction
-    ) {
-      onRecover();
-    }
-    if (input.toLowerCase() === "s" && state.operation === "playing" && onReloadSubtitles) {
-      onReloadSubtitles();
-    }
-    if (input === "S" && state.operation === "playing" && onReturnToSearch) {
-      onReturnToSearch();
-    }
-    if (input.toLowerCase() === "n" && state.operation === "playing" && onNext) {
-      onNext();
-    }
-    if (input.toLowerCase() === "p" && state.operation === "playing" && onPrevious) {
-      onPrevious();
-    }
-    if (input.toLowerCase() === "b" && state.operation === "playing" && onSkipSegment) {
-      onSkipSegment();
-    }
-    if (input.toLowerCase() === "m" && state.operation === "playing") {
-      setMemoryPanelVisible((visible) => !visible);
-    }
-    if (input.toLowerCase() === "e" && state.operation === "playing" && onPickEpisode) {
-      if (!state.onCommandAction) onPickEpisode();
-    }
-    if (input.toLowerCase() === "o" && canOpenSourcePicker && onPickSource) {
-      if (!state.onCommandAction) {
-        onPickSource();
-        return;
-      }
-    }
-    if (input.toLowerCase() === "v" && state.operation === "playing" && onPickQuality) {
-      onPickQuality();
-    }
-    if (input.toLowerCase() === "a" && state.operation === "playing" && onToggleAutoplay) {
-      if (!state.onCommandAction) onToggleAutoplay();
-    }
-    if (input.toLowerCase() === "u" && state.operation === "playing" && onToggleAutoskip) {
-      onToggleAutoskip();
-    }
-    if (input.toLowerCase() === "x" && state.operation === "playing" && onStopAfterCurrent) {
-      onStopAfterCurrent();
-    }
-    if (
-      input.toLowerCase() === "f" &&
-      state.fallbackAvailable &&
-      onFallback &&
-      !state.onCommandAction
-    ) {
-      onFallback();
-    }
-  });
 
-  const isPlaying = state.operation === "playing";
-  const canOpenSourcePicker = Boolean(state.hasStreamCandidates) && Boolean(onPickSource);
+    const effect = resolvePlaybackShellInput(input, {
+      operation: state.operation,
+      cancellable: Boolean(state.cancellable),
+      fallbackAvailable: Boolean(state.fallbackAvailable),
+      canOpenSourcePicker,
+      recoveryViewActive: Boolean(recoveryView),
+      playbackTroubleActive,
+      handlers: playbackInputHandlers,
+    });
+    if (!effect) return;
+
+    applyPlaybackShellInputEffect(effect, playbackInputHandlers, () => {
+      setMemoryPanelVisible((visible) => !visible);
+    });
+  });
   const infoWidth = Math.min(76, Math.max(40, terminalColumns - 12));
   // Poster rail on wide terminals — paints a real image where the prior surface's
   // stale Kitty placement would otherwise bleed through (A6 ghost).
@@ -461,7 +435,6 @@ export const LoadingShell = React.memo(function LoadingShell({
   });
 
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
-  const loadingIssue = normalizeLoadingIssue(state.latestIssue);
   const stageRailItems = renderStageRail(activeStage, loadingIssue);
   const providerDetail = normalizeProviderDetail(state.details);
   const subtitleReady = Boolean(
@@ -522,6 +495,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       footerMode={state.footerMode ?? "detailed"}
       commands={state.commands ?? []}
       inputLocked={!state.onCommandAction}
+      letterKeysHandledExternally
       escapeAction={null}
       onResolve={(action) => {
         if (action === "memory") {

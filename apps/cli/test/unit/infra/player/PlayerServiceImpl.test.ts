@@ -109,6 +109,22 @@ describe("PlayerServiceImpl diagnostics", () => {
     expect(JSON.stringify(loggerEntries[0]?.context)).not.toContain("X-Amz-Signature=secret");
   });
 
+  test("releasePersistentSession flushes deferred materialized cleanups", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    let cleaned = false;
+    (
+      service as unknown as {
+        deferMaterializedCleanup: (run: () => Promise<void>) => void;
+      }
+    ).deferMaterializedCleanup(async () => {
+      cleaned = true;
+    });
+
+    await service.releasePersistentSession();
+    expect(cleaned).toBe(true);
+  });
+
   test("runtime playback events keep diagnostic correlation", () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events);

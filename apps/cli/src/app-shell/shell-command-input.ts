@@ -16,12 +16,15 @@ export function useShellInput({
   footerActions,
   commands,
   disabled = false,
+  letterKeysHandledExternally = false,
   escapeAction = "quit",
   onResolve,
 }: {
   footerActions: readonly FooterAction[];
   commands: readonly ResolvedAppCommand[];
   disabled?: boolean;
+  /** When true, letter footer shortcuts are owned by the playback surface; `/` still opens commands. */
+  letterKeysHandledExternally?: boolean;
   escapeAction?: ShellAction | null;
   onResolve: (action: ShellAction) => void;
 }) {
@@ -107,6 +110,9 @@ export function useShellInput({
         setCommandMode(true);
         setCommandInput("");
         setHighlightedIndex(0);
+        return;
+      }
+      if (letterKeysHandledExternally) {
         return;
       }
       onResolve(footerAction.action);

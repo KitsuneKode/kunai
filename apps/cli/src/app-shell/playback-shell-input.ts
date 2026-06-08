@@ -1,0 +1,216 @@
+import type { ShellAction } from "./types";
+
+export type PlaybackShellInputHandlers = {
+  readonly onCancel?: () => void;
+  readonly onStop?: () => void;
+  readonly onRecover?: () => void;
+  readonly onReloadSubtitles?: () => void;
+  readonly onNext?: () => void;
+  readonly onPrevious?: () => void;
+  readonly onSkipSegment?: () => void;
+  readonly onPickEpisode?: () => void;
+  readonly onPickSource?: () => void;
+  readonly onPickQuality?: () => void;
+  readonly onReturnToSearch?: () => void;
+  readonly onToggleAutoplay?: () => void;
+  readonly onToggleAutoskip?: () => void;
+  readonly onStopAfterCurrent?: () => void;
+  readonly onFallback?: () => void;
+  readonly onCommandAction?: (action: ShellAction) => void;
+};
+
+export type PlaybackShellInputContext = {
+  readonly operation: "resolving" | "playing" | "loading";
+  readonly cancellable: boolean;
+  readonly fallbackAvailable: boolean;
+  readonly canOpenSourcePicker: boolean;
+  /** Pre-playback failure / stall recovery surface. */
+  readonly recoveryViewActive: boolean;
+  /** Active playback with stall or issue copy (r/f/o/d row). */
+  readonly playbackTroubleActive: boolean;
+  readonly handlers: PlaybackShellInputHandlers;
+};
+
+export type PlaybackShellInputEffect =
+  | { readonly kind: "cancel" }
+  | { readonly kind: "stop" }
+  | { readonly kind: "recover" }
+  | { readonly kind: "fallback" }
+  | { readonly kind: "pick-source" }
+  | { readonly kind: "pick-episode" }
+  | { readonly kind: "pick-quality" }
+  | { readonly kind: "next" }
+  | { readonly kind: "previous" }
+  | { readonly kind: "skip-segment" }
+  | { readonly kind: "reload-subtitles" }
+  | { readonly kind: "return-to-search" }
+  | { readonly kind: "toggle-autoplay" }
+  | { readonly kind: "toggle-autoskip" }
+  | { readonly kind: "stop-after-current" }
+  | { readonly kind: "toggle-memory-panel" }
+  | { readonly kind: "shell-action"; readonly action: ShellAction };
+
+function normalizedKey(input: string): string {
+  return input.toLowerCase();
+}
+
+function resolveRecoveryOrTroubleKeys(
+  key: string,
+  ctx: PlaybackShellInputContext,
+): PlaybackShellInputEffect | null {
+  const { handlers } = ctx;
+  if (key === "r" && handlers.onRecover) return { kind: "recover" };
+  if (key === "f" && ctx.fallbackAvailable && handlers.onFallback) return { kind: "fallback" };
+  if (key === "o" && ctx.canOpenSourcePicker && handlers.onPickSource)
+    return { kind: "pick-source" };
+  if (key === "d" && handlers.onCommandAction) {
+    return { kind: "shell-action", action: "diagnostics" };
+  }
+  return null;
+}
+
+function resolveBootstrapKeys(
+  input: string,
+  key: string,
+  ctx: PlaybackShellInputContext,
+): PlaybackShellInputEffect | null {
+  const { handlers } = ctx;
+  if (key === "o" && ctx.canOpenSourcePicker && handlers.onPickSource) {
+    return { kind: "pick-source" };
+  }
+  if (key === "f" && ctx.fallbackAvailable && handlers.onFallback) return { kind: "fallback" };
+  if (key === "a" && handlers.onToggleAutoplay) return { kind: "toggle-autoplay" };
+  if (key === "u" && handlers.onToggleAutoskip) return { kind: "toggle-autoskip" };
+  if (key === "x" && handlers.onStopAfterCurrent) return { kind: "stop-after-current" };
+  if (key === "g" && handlers.onCommandAction) {
+    return { kind: "shell-action", action: "settings" };
+  }
+  if (key === "h" && handlers.onCommandAction) {
+    return { kind: "shell-action", action: "history" };
+  }
+  if (key === "d" && handlers.onCommandAction) {
+    return { kind: "shell-action", action: "diagnostics" };
+  }
+  if (input === "?" && handlers.onCommandAction) {
+    return { kind: "shell-action", action: "help" };
+  }
+  return null;
+}
+
+function resolvePlayingKeys(
+  input: string,
+  key: string,
+  ctx: PlaybackShellInputContext,
+): PlaybackShellInputEffect | null {
+  const { handlers } = ctx;
+  if (key === "r" && handlers.onRecover) return { kind: "recover" };
+  if (key === "f" && ctx.fallbackAvailable && handlers.onFallback) return { kind: "fallback" };
+  if (key === "d" && handlers.onCommandAction) {
+    return { kind: "shell-action", action: "diagnostics" };
+  }
+  if (key === "s" && handlers.onReloadSubtitles) return { kind: "reload-subtitles" };
+  if (input === "S" && handlers.onReturnToSearch) return { kind: "return-to-search" };
+  if (key === "n" && handlers.onNext) return { kind: "next" };
+  if (key === "p" && handlers.onPrevious) return { kind: "previous" };
+  if (key === "b" && handlers.onSkipSegment) return { kind: "skip-segment" };
+  if (key === "m") return { kind: "toggle-memory-panel" };
+  if (key === "e" && handlers.onPickEpisode) return { kind: "pick-episode" };
+  if (key === "o" && ctx.canOpenSourcePicker && handlers.onPickSource)
+    return { kind: "pick-source" };
+  if (key === "v" && handlers.onPickQuality) return { kind: "pick-quality" };
+  if (key === "a" && handlers.onToggleAutoplay) return { kind: "toggle-autoplay" };
+  if (key === "u" && handlers.onToggleAutoskip) return { kind: "toggle-autoskip" };
+  if (key === "x" && handlers.onStopAfterCurrent) return { kind: "stop-after-current" };
+  if (input === "?" && handlers.onCommandAction) {
+    return { kind: "shell-action", action: "help" };
+  }
+  return null;
+}
+
+export function resolvePlaybackShellInput(
+  input: string,
+  ctx: PlaybackShellInputContext,
+): PlaybackShellInputEffect | null {
+  const key = normalizedKey(input);
+  const isPlaying = ctx.operation === "playing";
+
+  if (ctx.recoveryViewActive || ctx.playbackTroubleActive) {
+    const recoveryEffect = resolveRecoveryOrTroubleKeys(key, ctx);
+    if (recoveryEffect) return recoveryEffect;
+  }
+
+  if (key === "q") {
+    if (isPlaying && ctx.handlers.onStop) return { kind: "stop" };
+    if (ctx.cancellable && ctx.handlers.onCancel) return { kind: "cancel" };
+  }
+
+  if (!isPlaying) {
+    return resolveBootstrapKeys(input, key, ctx);
+  }
+
+  return resolvePlayingKeys(input, key, ctx);
+}
+
+export function applyPlaybackShellInputEffect(
+  effect: PlaybackShellInputEffect,
+  handlers: PlaybackShellInputHandlers,
+  onToggleMemoryPanel?: () => void,
+): void {
+  switch (effect.kind) {
+    case "cancel":
+      handlers.onCancel?.();
+      return;
+    case "stop":
+      handlers.onStop?.();
+      return;
+    case "recover":
+      handlers.onRecover?.();
+      return;
+    case "fallback":
+      handlers.onFallback?.();
+      return;
+    case "pick-source":
+      handlers.onPickSource?.();
+      return;
+    case "pick-episode":
+      handlers.onPickEpisode?.();
+      return;
+    case "pick-quality":
+      handlers.onPickQuality?.();
+      return;
+    case "next":
+      handlers.onNext?.();
+      return;
+    case "previous":
+      handlers.onPrevious?.();
+      return;
+    case "skip-segment":
+      handlers.onSkipSegment?.();
+      return;
+    case "reload-subtitles":
+      handlers.onReloadSubtitles?.();
+      return;
+    case "return-to-search":
+      handlers.onReturnToSearch?.();
+      return;
+    case "toggle-autoplay":
+      handlers.onToggleAutoplay?.();
+      return;
+    case "toggle-autoskip":
+      handlers.onToggleAutoskip?.();
+      return;
+    case "stop-after-current":
+      handlers.onStopAfterCurrent?.();
+      return;
+    case "toggle-memory-panel":
+      onToggleMemoryPanel?.();
+      return;
+    case "shell-action":
+      handlers.onCommandAction?.(effect.action);
+      return;
+    default: {
+      const _exhaustive: never = effect;
+      return _exhaustive;
+    }
+  }
+}

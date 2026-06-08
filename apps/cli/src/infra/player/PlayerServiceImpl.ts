@@ -29,6 +29,7 @@ import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./Player
 
 export class PlayerServiceImpl implements PlayerService {
   private persistentSession: PersistentMpvSession | null = null;
+  private deferredMaterializedCleanups: Array<() => Promise<void>> = [];
 
   constructor(
     private deps: {
@@ -145,15 +146,44 @@ export class PlayerServiceImpl implements PlayerService {
         lastNonZeroDurationSeconds: 0,
       };
     } finally {
-      await materialized.cleanup();
+      const shouldDeferCleanup =
+        options.playbackMode === "autoplay-chain" &&
+        (this.persistentSession?.isReusable() ?? false);
+      if (shouldDeferCleanup) {
+        this.deferMaterializedCleanup(materialized.cleanup);
+      } else {
+        await materialized.cleanup();
+      }
     }
   }
 
   async releasePersistentSession(): Promise<void> {
-    if (!this.persistentSession) return;
+    if (!this.persistentSession) {
+      await this.flushDeferredMaterializedCleanups();
+      return;
+    }
     await this.persistentSession.close();
     this.persistentSession = null;
     this.deps.playerControl.setActive(null);
+    await this.flushDeferredMaterializedCleanups();
+  }
+
+  private deferMaterializedCleanup(cleanup: () => Promise<void>): void {
+    this.deferredMaterializedCleanups.push(cleanup);
+  }
+
+  private async flushDeferredMaterializedCleanups(): Promise<void> {
+    const pending = this.deferredMaterializedCleanups;
+    this.deferredMaterializedCleanups = [];
+    await Promise.all(
+      pending.map(async (run) => {
+        try {
+          await run();
+        } catch {
+          // Best-effort temp cleanup; do not block session teardown.
+        }
+      }),
+    );
   }
 
   async isAvailable(): Promise<boolean> {

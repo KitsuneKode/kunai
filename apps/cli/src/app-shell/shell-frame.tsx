@@ -29,6 +29,7 @@ export function ShellFrame({
   footerMode,
   commands,
   inputLocked = false,
+  letterKeysHandledExternally = false,
   escapeAction,
   onUnhandledInput,
   onResolve,
@@ -45,6 +46,7 @@ export function ShellFrame({
   footerMode?: ShellFooterMode;
   commands: readonly ResolvedAppCommand[];
   inputLocked?: boolean;
+  letterKeysHandledExternally?: boolean;
   escapeAction?: ShellAction | null;
   onUnhandledInput?: (input: string, key: ShellFrameInputKey) => void;
   onResolve: (action: ShellAction) => void;
@@ -62,6 +64,7 @@ export function ShellFrame({
     footerActions,
     commands,
     disabled: inputLocked,
+    letterKeysHandledExternally,
     escapeAction,
     onResolve,
   });
