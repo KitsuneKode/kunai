@@ -287,12 +287,29 @@ describe("PresenceServiceImpl", () => {
       paused: true,
     };
 
+    const payload = buildDiscordActivity(activity, "full");
+    expect(payload.details).toBe("Breaking Bad");
+    expect(payload.state).toBe("S4 E9");
+    const timestamps = payload.timestamps as { start: number; end: number };
+    expect(timestamps.end - timestamps.start).toBe(1440);
+    expect(payload).not.toHaveProperty("small_image");
+  });
+
+  test("falls back to paused text when duration is unknown", () => {
+    const activity = {
+      mode: "series" as const,
+      title: { id: "1", type: "series" as const, name: "Breaking Bad" },
+      episode: { season: 4, episode: 9 },
+      providerId: "vidking",
+      startedAtMs: 1000,
+      positionSeconds: 120,
+      paused: true,
+    };
+
     expect(buildDiscordActivity(activity, "full")).toMatchObject({
-      details: "Breaking Bad",
-      state: "S4 E9 · Paused at 12:14 / 24:00",
+      state: "S4 E9 · Paused at 2:00",
       timestamps: null,
     });
-    expect(buildDiscordActivity(activity, "full")).not.toHaveProperty("small_image");
   });
 
   test("includes episode numbers even when the episode has a title", () => {

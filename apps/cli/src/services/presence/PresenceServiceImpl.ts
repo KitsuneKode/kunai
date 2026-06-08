@@ -39,6 +39,7 @@ export class PresenceServiceImpl implements PresenceService {
   private unavailableBackoffMs = 1_000;
   private lastActivityHash: string | null = null;
   private lastActivityPayload: Record<string, unknown> | null = null;
+  private lastPlaybackActivity: PresencePlaybackActivity | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private watchSessionStartedAtMs: number | null = null;
   private watchSessionPausedTotalMs = 0;
@@ -125,10 +126,8 @@ export class PresenceServiceImpl implements PresenceService {
 
     try {
       this.syncWatchSessionForPlayback(activity);
-      const payload = buildDiscordActivity(activity, this.deps.config.presencePrivacy, {
-        sessionElapsedMs: this.computeWatchSessionElapsedMs(activity.paused === true),
-        sessionShowAfterMs: this.deps.config.tuning.presenceSessionShowAfterMs,
-      });
+      this.lastPlaybackActivity = activity;
+      const payload = this.buildPlaybackPayload(activity);
       const activityHash = stableJsonHash(payload);
       if (activityHash === this.lastActivityHash) {
         this.status = "ready";
@@ -193,6 +192,7 @@ export class PresenceServiceImpl implements PresenceService {
   async clearPlayback(reason: string): Promise<void> {
     this.stopHeartbeat();
     this.resetWatchSession();
+    this.lastPlaybackActivity = null;
     this.lastActivityPayload = null;
     this.lastActivityHash = null;
     if (!this.discordClient) return;
@@ -336,12 +336,22 @@ export class PresenceServiceImpl implements PresenceService {
       }
       return;
     }
-    if (!this.lastActivityPayload) return;
+    if (!this.lastPlaybackActivity) return;
     try {
-      await this.discordClient.setActivity(this.lastActivityPayload);
+      const payload = this.buildPlaybackPayload(this.lastPlaybackActivity);
+      await this.discordClient.setActivity(payload);
+      this.lastActivityPayload = payload;
+      this.lastActivityHash = stableJsonHash(payload);
     } catch {
       this.markUnavailable("Discord connection lost", new Error("heartbeat failure"));
     }
+  }
+
+  private buildPlaybackPayload(activity: PresencePlaybackActivity): Record<string, unknown> {
+    return buildDiscordActivity(activity, this.deps.config.presencePrivacy, {
+      sessionElapsedMs: this.computeWatchSessionElapsedMs(activity.paused === true),
+      sessionShowAfterMs: this.deps.config.tuning.presenceSessionShowAfterMs,
+    });
   }
 
   private syncWatchSessionForPlayback(activity: PresencePlaybackActivity): void {
@@ -471,12 +481,14 @@ export function buildDiscordActivity(
     context,
   );
 
+  const hasPlaybackTimeline = "timestamps" in timeline;
+
   return {
     type: 3,
     details: limitDiscordText(activity.title.name),
     state: limitDiscordText(stateLine),
     ...urlFields,
-    ...(activity.paused ? { timestamps: null } : timeline),
+    ...(hasPlaybackTimeline ? timeline : activity.paused ? { timestamps: null } : timeline),
     assets,
     ...(buttons.length > 0 ? { buttons } : {}),
   };
@@ -497,12 +509,21 @@ function buildDiscordPlaybackStateLine(
   const numbered = `S${activity.episode.season} E${activity.episode.episode}`;
   const episodeLabel = episodeName ? `${numbered} · ${episodeName}` : numbered;
   if (activity.paused) {
+    if (hasDiscordPlaybackTimeline(activity)) return episodeLabel;
     return compact([episodeLabel, progressLabel ? `Paused at ${progressLabel}` : "Paused"]).join(
       " · ",
     );
   }
 
   return episodeLabel;
+}
+
+function hasDiscordPlaybackTimeline(
+  activity: Pick<PresencePlaybackActivity, "positionSeconds" | "durationSeconds">,
+): boolean {
+  const positionSeconds = normalizePresenceSeconds(activity.positionSeconds);
+  const durationSeconds = normalizePresenceSeconds(activity.durationSeconds);
+  return durationSeconds > 0 && durationSeconds > positionSeconds;
 }
 
 export const __testing = {

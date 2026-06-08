@@ -87,6 +87,18 @@ test("buildDiscordPosterAsset falls back to episode artwork", () => {
   });
 });
 
+test("buildDiscordPosterAsset accepts title thumbnail artwork", () => {
+  expect(
+    buildDiscordPosterAsset({
+      name: "Study Group",
+      artwork: { thumbnailUrl: "https://image.example/study-group.jpg" },
+    }),
+  ).toEqual({
+    large_image: "https://image.example/study-group.jpg",
+    large_text: "Study Group",
+  });
+});
+
 test("buildDiscordActivityUrlFields exposes clickable catalog links", () => {
   expect(buildDiscordActivityUrlFields(baseActivity)).toEqual({
     details_url: "https://anilist.co/anime/21",

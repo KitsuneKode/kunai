@@ -92,12 +92,26 @@ export function buildDiscordActivityUrlFields(
   return fields;
 }
 
+function resolveDiscordArtworkUrl(...candidates: readonly (string | undefined)[]): string | null {
+  for (const candidate of candidates) {
+    const normalized = normalizeHttpsPosterUrl(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 export function buildDiscordPosterAsset(
   title: Pick<TitleInfo, "posterUrl" | "artwork" | "name" | "year">,
   episode?: Pick<EpisodeInfo, "artwork">,
 ): { readonly large_image: string; readonly large_text: string; readonly large_url?: string } {
-  const posterUrl = normalizeHttpsPosterUrl(
-    title.posterUrl ?? title.artwork?.posterUrl ?? episode?.artwork?.posterUrl,
+  const posterUrl = resolveDiscordArtworkUrl(
+    title.posterUrl,
+    title.artwork?.posterUrl,
+    title.artwork?.thumbnailUrl,
+    title.artwork?.backdropUrl,
+    episode?.artwork?.posterUrl,
+    episode?.artwork?.thumbnailUrl,
+    episode?.artwork?.backdropUrl,
   );
   const hover = compact([title.name, title.year]).join(" · ") || "Kunai";
   if (posterUrl) {
