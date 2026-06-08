@@ -1,9 +1,4 @@
-import {
-  flavorSourceId,
-  listVidkingFlavors,
-  resolveFlavorEngineOptions,
-  VIDKING_PROVIDER_ID,
-} from "@kunai/providers";
+import { getKnownCatalogForProvider, mergeKnownCatalogForResult } from "@kunai/providers";
 import type {
   ProviderFailure,
   ProviderArtworkInfo,
@@ -323,13 +318,49 @@ function describeSourceSelectionReason(
 }
 
 function buildSourceCandidates(result: ProviderResolveResult): readonly ProviderSourceCandidate[] {
-  const sourceCandidates =
-    result.sources && result.sources.length > 0
+  const catalog = getKnownCatalogForProvider(result.providerId, {
+    mediaKind: result.trace.title.kind,
+    audioMode: resolveAudioModeFromResult(result),
+    rivestreamServices: rivestreamServicesFromResult(result),
+  });
+  if (catalog.length === 0) {
+    return result.sources && result.sources.length > 0
       ? result.sources
       : buildFallbackSourceCandidatesFromStreams(result);
+  }
+  return mergeKnownCatalogForResult(result, catalog);
+}
 
-  if (result.providerId !== VIDKING_PROVIDER_ID) return sourceCandidates;
-  return mergeKnownVidkingFlavorSources(result, sourceCandidates);
+function resolveAudioModeFromResult(result: ProviderResolveResult): "sub" | "dub" | undefined {
+  const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+  if (selected?.presentation === "dub") return "dub";
+  if (selected?.presentation === "sub") return "sub";
+  const modes = availableAudioModesFromTrace(result);
+  return modes.length === 1 ? modes[0] : undefined;
+}
+
+export function availableAudioModesFromTrace(
+  result: ProviderResolveResult,
+): readonly ("sub" | "dub")[] {
+  const event = result.trace.events?.find((entry) => entry.type === "inventory:audio-modes");
+  const raw = event?.attributes?.modes;
+  if (typeof raw !== "string" || raw.length === 0) return [];
+  return raw
+    .split(",")
+    .map((mode) => mode.trim())
+    .filter((mode): mode is "sub" | "dub" => mode === "sub" || mode === "dub");
+}
+
+function rivestreamServicesFromResult(result: ProviderResolveResult): readonly string[] {
+  const fromSources = (result.sources ?? [])
+    .map((source) => source.metadata?.provider)
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  if (fromSources.length > 0) return [...new Set(fromSources)];
+  const fromStreams = result.streams
+    .flatMap((stream) => stream.sourceEvidence ?? [])
+    .map((evidence) => evidence.serverId ?? evidence.nativeLabel)
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  return [...new Set(fromStreams)];
 }
 
 function buildFallbackSourceCandidatesFromStreams(
@@ -355,52 +386,6 @@ function buildFallbackSourceCandidatesFromStreams(
         : { flavorLabel: displayLabel },
     };
   });
-}
-
-function mergeKnownVidkingFlavorSources(
-  result: ProviderResolveResult,
-  sources: readonly ProviderSourceCandidate[],
-): readonly ProviderSourceCandidate[] {
-  const byId = new Map(sources.map((source) => [source.id, source]));
-  const mediaKind = result.trace.title.kind;
-
-  for (const flavor of listVidkingFlavors()) {
-    if (mediaKind === "series" && flavor.moviesOnly) continue;
-    const engineOptions = resolveFlavorEngineOptions(flavor.id);
-    const sourceId = flavorSourceId(flavor.id);
-    if (byId.has(sourceId)) continue;
-    byId.set(sourceId, {
-      id: sourceId,
-      providerId: VIDKING_PROVIDER_ID,
-      kind: "provider-api",
-      label: flavor.themeLabel,
-      host: "api.videasy.to",
-      status: "available",
-      confidence: 0.4,
-      cachePolicy: result.cachePolicy,
-      languageEvidence: [
-        {
-          role: "audio",
-          normalizedLanguage: flavor.audioLanguage,
-          nativeLabel: flavor.subtitle,
-          sourceId,
-          confidence: 0.55,
-        },
-      ],
-      metadata: {
-        server: flavor.endpoint,
-        flavorId: flavor.id,
-        flavorLabel: flavor.themeLabel,
-        flavorArchetype: flavor.subtitle,
-        language: engineOptions?.language,
-        filterQuality: engineOptions?.filterQuality,
-        phase: "known",
-        pickerHint: "fresh resolve required",
-      },
-    });
-  }
-
-  return [...byId.values()];
 }
 
 function mapSourceStateForStreams(
@@ -991,16 +976,4 @@ function stateRank(state: PlaybackInventoryOptionState): number {
   if (state === "skipped") return 2;
   if (state === "failed") return 3;
   return 4;
-}
-
-export function availableAudioModesFromTrace(
-  result: ProviderResolveResult,
-): readonly ("sub" | "dub")[] {
-  const event = result.trace.events?.find((entry) => entry.type === "inventory:audio-modes");
-  const raw = event?.attributes?.modes;
-  if (typeof raw !== "string" || raw.length === 0) return [];
-  return raw
-    .split(",")
-    .map((mode) => mode.trim())
-    .filter((mode): mode is "sub" | "dub" => mode === "sub" || mode === "dub");
 }

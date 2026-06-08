@@ -117,10 +117,12 @@ test("projects anime sub dub and hardsub evidence without merging native labels 
     subtitleLanguages: ["en"],
     subtitleDelivery: "hardcoded",
   });
-  expect(view.sourceGroups.map((group) => [group.label, group.state])).toEqual([
+  expect(view.sourceGroups.slice(0, 2).map((group) => [group.label, group.state])).toEqual([
     ["Sub server", "selected"],
     ["Dub server", "available"],
   ]);
+  expect(view.sourceGroups.length).toBeGreaterThan(2);
+  expect(view.sourceGroups.some((group) => group.label === "Bocchi")).toBe(true);
   expect(view.sourceGroups[0]?.nativeLabels).toContain("Sak");
   expect(view.sourceGroups[0]?.artwork?.seekBarVttUrl).toContain("seek.vtt");
   expect(view.languageOptions.find((option) => option.id === "audio:en")).toMatchObject({
@@ -322,10 +324,14 @@ test("falls back to stream source ids when provider source inventory is missing"
     failures: [],
   });
 
-  expect(view.sourceGroups.map((group) => [group.id, group.state])).toEqual([
+  const resolvedGroups = view.sourceGroups.filter((group) =>
+    ["source-a", "source-b"].includes(group.id),
+  );
+  expect(resolvedGroups.map((group) => [group.id, group.state])).toEqual([
     ["source-a", "available"],
     ["source-b", "selected"],
   ]);
+  expect(view.sourceGroups.length).toBeGreaterThan(2);
   expect(view.subtitleOptions.find((option) => option.id === "subtitle:sub-en")).toMatchObject({
     delivery: "external",
     sourceIds: ["source-b"],
@@ -519,19 +525,18 @@ test("builds a diagnostics-safe source inventory summary without stream or subti
     hasArtwork: true,
     hasSeekBarThumbnails: true,
   });
-  expect(summary.sourceGroups).toMatchObject([
-    {
-      id: "source-b",
-      label: "source-b",
-      state: "selected",
-      nativeLabelCount: 1,
-      hasArtwork: true,
-      hasSeekBarThumbnails: true,
-      audioLanguageCount: 1,
-      subtitleLanguageCount: 1,
-      candidateCount: 1,
-    },
-  ]);
+  expect(summary.sourceGroups.find((group) => group.id === "source-b")).toMatchObject({
+    id: "source-b",
+    label: "source-b",
+    state: "selected",
+    nativeLabelCount: 1,
+    hasArtwork: true,
+    hasSeekBarThumbnails: true,
+    audioLanguageCount: 1,
+    subtitleLanguageCount: 1,
+    candidateCount: 1,
+  });
+  expect(summary.sourceGroups.length).toBeGreaterThan(1);
   expect(summary.subtitleOptions.find((option) => option.id === "subtitle:sub-en")).toEqual({
     id: "subtitle:sub-en",
     label: "English",
