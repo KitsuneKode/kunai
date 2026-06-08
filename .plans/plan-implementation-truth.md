@@ -86,6 +86,23 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 
 ---
 
+## Tracks provider catalogs and anime sub/dub (implemented)
+
+| Slice                                                   | Status      | Notes                                                                                        |
+| ------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------- |
+| Provider section in Tracks (`/provider` deep-link)      | Implemented | `buildProviderTrackCapabilities` + `buildTracksPanelData`; playback `/provider` opens Tracks |
+| Shared `mergeKnownCatalogSources` in `@kunai/providers` | Implemented | `packages/providers/src/shared/known-catalog.ts` + `catalogs/*`                              |
+| Miruro `sourceId` includes `audioCategory`              | Implemented | `miruroInventorySourceId`; inventory schema bumped to `v4`                                   |
+| Anime audio-mode re-resolve (sub/dub)                   | Implemented | `audio-mode:` pick via `tracks-panel-pick.ts`; profile + cache invalidation                  |
+| AllManga known source families + dual audio rows        | Implemented | `getAllmangaKnownCatalog`; trace `inventory:audio-modes` in resolve events                   |
+| Rivestream known service catalog merge                  | Implemented | Naruto-themed labels via `getRivestreamKnownCatalog`                                         |
+| VidLink single-source inventory                         | Implemented | `getVidlinkKnownCatalog` single-row merge                                                    |
+| Cross-provider cached Source hints (optional)           | Implemented | Cached rows in `tracks-panel-data.ts`; two-step switch in `tracks-panel-pick.ts`             |
+
+Canonical UX: [`.docs/flavor-naming-and-source-inventory-ux.md`](../.docs/flavor-naming-and-source-inventory-ux.md), [`.docs/source-inventory-ui-handoff.md`](../.docs/source-inventory-ui-handoff.md).
+
+---
+
 ## Known gaps (called out in plans, still open in code)
 
 - **Discover empty states** — section-level `"Nothing here yet"` exists; dedicated copy for no-history / TMDB failure / no-similar-titles may still need product pass.
