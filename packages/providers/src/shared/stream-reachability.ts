@@ -1,3 +1,9 @@
+import {
+  isHlsPlaylistUrl,
+  parseFirstHlsMediaSegmentPath,
+  resolveHlsSegmentUrl,
+} from "./hls-manifest";
+
 export type StreamReachabilityFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 export type StreamReachabilityProbeResult =
@@ -25,7 +31,7 @@ export async function probeStreamReachability(
   const remaining = () => Math.max(100, deadline - Date.now());
   const headers = input.headers ?? {};
 
-  if (isHlsManifestUrl(input.url)) {
+  if (isHlsPlaylistUrl(input.url)) {
     return probeHlsManifest(fetchImpl, input.url, headers, remaining, input.signal);
   }
 
@@ -74,7 +80,7 @@ export function shouldAbortPlaybackForPreflight(
 }
 
 export function isHlsManifestUrl(url: string): boolean {
-  return /\.m3u8(?:[?#]|$)/i.test(url);
+  return isHlsPlaylistUrl(url);
 }
 
 async function probeHlsManifest(
@@ -84,14 +90,64 @@ async function probeHlsManifest(
   remaining: () => number,
   parentSignal?: AbortSignal,
 ): Promise<StreamReachabilityProbeResult> {
-  const result = await probeHttpStatus(fetchImpl, url, {
+  if (parentSignal?.aborted || remaining() <= 0) {
+    return { status: "timeout" };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), remaining());
+  const onParentAbort = () => controller.abort(parentSignal?.reason);
+  parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+
+  let manifestText = "";
+  try {
+    const response = await fetchImpl(url, {
+      method: "GET",
+      headers,
+      signal: controller.signal,
+    });
+    if (response.status < 200 || response.status >= 300) {
+      const definitive = response.status >= 400 && response.status < 500;
+      return { status: "unreachable", reason: `HTTP ${response.status}`, definitive };
+    }
+    manifestText = await response.text();
+  } catch (error) {
+    if (controller.signal.aborted) {
+      return { status: "timeout" };
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      status: "unreachable",
+      reason: message,
+      definitive: isDefinitiveNetworkError(message),
+    };
+  } finally {
+    clearTimeout(timeout);
+    parentSignal?.removeEventListener("abort", onParentAbort);
+  }
+
+  const segmentPath = parseFirstHlsMediaSegmentPath(manifestText);
+  if (!segmentPath) {
+    return { status: "reachable" };
+  }
+
+  const segmentUrl = resolveHlsSegmentUrl(url, segmentPath);
+  const segmentProbe = await probeHttpStatus(fetchImpl, segmentUrl, {
     method: "GET",
-    headers,
+    headers: { ...headers, Range: "bytes=0-8191" },
     remainingMs: remaining,
     parentSignal,
-    healthyStatus: (status) => status >= 200 && status < 300,
+    healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
   });
-  if (result.status !== "reachable") return result;
+
+  if (segmentProbe.status !== "reachable") {
+    return {
+      status: "unreachable",
+      reason: `HLS segment unreachable: ${segmentProbe.status === "timeout" ? "timeout" : segmentProbe.reason}`,
+      definitive: segmentProbe.status === "unreachable" ? segmentProbe.definitive : false,
+    };
+  }
+
   return { status: "reachable" };
 }
 

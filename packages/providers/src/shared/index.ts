@@ -1,6 +1,7 @@
 export * from "./anime-audio-intent";
 export * from "./anime-metadata";
 export * from "./known-catalog";
+export * from "./hls-manifest";
 export * from "./direct-stream-source";
 export * from "./provider-cycle";
 export * from "./resolve-helpers";
