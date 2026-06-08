@@ -10,10 +10,11 @@ import {
   discoverSectionReasonLine,
 } from "./discover-reason";
 import { DotMatrixLoader, InlineDotMatrixLoader } from "./dot-matrix-loader";
+import { getBrowseChromeRows, getBrowseListMaxVisible, getPickerLayout } from "./layout-policy";
 import { MediaListShell } from "./primitives/MediaListShell";
 import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { ResizeBlocker, ShellFooter } from "./shell-primitives";
-import { truncateLine } from "./shell-text";
+import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { BrowseShellOption } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
@@ -50,6 +51,11 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
   maxWidth,
   sectionOffset,
   globalSelectedIndex,
+  collapsed = false,
+  itemWindowStart = 0,
+  itemWindowEnd,
+  showMoreAbove = false,
+  showMoreBelow = false,
 }: {
   section: RecommendationSection;
   isFocused: boolean;
@@ -57,11 +63,33 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
   maxWidth: number;
   sectionOffset: number;
   globalSelectedIndex: number;
+  collapsed?: boolean;
+  itemWindowStart?: number;
+  itemWindowEnd?: number;
+  showMoreAbove?: boolean;
+  showMoreBelow?: boolean;
 }) {
   const titleBudget = Math.max(16, maxWidth - 18);
   const reasonLine = discoverSectionReasonLine(section);
   const reasonDetail = discoverSectionReasonDetail(section);
   const sectionTitle = discoverSectionHeaderTitle(section);
+  const visibleItems = section.items.slice(itemWindowStart, itemWindowEnd ?? section.items.length);
+
+  if (collapsed) {
+    return (
+      <Box flexDirection="column" marginBottom={compact ? 0 : 1}>
+        <Text color={isFocused ? palette.accent : palette.muted} bold={isFocused}>
+          {isFocused ? "▸ " : "  "}
+          {sectionTitle}
+          <Text color={palette.dim} dimColor>
+            {" "}
+            · {section.items.length}
+          </Text>
+        </Text>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column" marginBottom={compact ? 0 : 1}>
       <Text color={isFocused ? palette.accent : palette.muted} bold={isFocused}>
@@ -85,39 +113,53 @@ const DiscoverSectionView = React.memo(function DiscoverSectionView({
           {"    "}Nothing here yet
         </Text>
       ) : (
-        section.items.map((item, idx) => {
-          const globalIndex = sectionOffset + idx;
-          const isActive = globalSelectedIndex === globalIndex;
-          const rating =
-            item.rating !== null && item.rating !== undefined ? `★ ${item.rating.toFixed(1)}` : "";
-          return (
-            <Box
-              key={item.id}
-              width={maxWidth}
-              backgroundColor={isActive ? palette.surfaceActive : undefined}
-            >
-              <Box flexShrink={1} flexGrow={1}>
-                <Text bold={isActive} wrap="truncate">
-                  <Text color={isActive ? palette.accent : palette.dim}>
-                    {isActive ? "  ▌ " : "    "}
+        <>
+          {showMoreAbove ? (
+            <Text color={palette.dim} dimColor>
+              {"    "}more above
+            </Text>
+          ) : null}
+          {visibleItems.map((item, idx) => {
+            const globalIndex = sectionOffset + itemWindowStart + idx;
+            const isActive = globalSelectedIndex === globalIndex;
+            const rating =
+              item.rating !== null && item.rating !== undefined
+                ? `★ ${item.rating.toFixed(1)}`
+                : "";
+            return (
+              <Box
+                key={item.id}
+                width={maxWidth}
+                backgroundColor={isActive ? palette.surfaceActive : undefined}
+              >
+                <Box flexShrink={1} flexGrow={1}>
+                  <Text bold={isActive} wrap="truncate">
+                    <Text color={isActive ? palette.accent : palette.dim}>
+                      {isActive ? "  ▌ " : "    "}
+                    </Text>
+                    <Text color={palette.dim} dimColor>
+                      {`${itemWindowStart + idx + 1}`.padStart(2)}
+                      {"  "}
+                    </Text>
+                    <Text color={isActive ? palette.text : palette.textDim}>
+                      {truncateLine(item.title, titleBudget)}
+                    </Text>
                   </Text>
-                  <Text color={palette.dim} dimColor>
-                    {`${idx + 1}`.padStart(2)}
-                    {"  "}
+                </Box>
+                <Box flexShrink={0}>
+                  <Text color={palette.muted} dimColor={!isActive}>
+                    {` ${rating.padEnd(7)} ${item.year}`}
                   </Text>
-                  <Text color={isActive ? palette.text : palette.textDim}>
-                    {truncateLine(item.title, titleBudget)}
-                  </Text>
-                </Text>
+                </Box>
               </Box>
-              <Box flexShrink={0}>
-                <Text color={palette.muted} dimColor={!isActive}>
-                  {` ${rating.padEnd(7)} ${item.year}`}
-                </Text>
-              </Box>
-            </Box>
-          );
-        })
+            );
+          })}
+          {showMoreBelow ? (
+            <Text color={palette.dim} dimColor>
+              {"    "}more below
+            </Text>
+          ) : null}
+        </>
       )}
     </Box>
   );
@@ -179,15 +221,37 @@ export function DiscoverShell({
     selectedItem ? discoverItemToBrowseOption(selectedItem, activeSection) : undefined,
     "none",
   );
-  const innerWidth = Math.max(36, viewport.columns - 8);
-  const previewWidth = Math.max(28, Math.floor(innerWidth * 0.32));
-  const listWidth = shouldRenderPreviewRail({ columns: viewport.columns, hasModel: true })
-    ? Math.max(40, innerWidth - previewWidth - 4)
-    : innerWidth;
-  const showPreviewRail = shouldRenderPreviewRail({
-    columns: viewport.columns,
-    hasModel: previewRailModel !== null,
-  });
+  const layout = getPickerLayout(viewport.columns, viewport.rows);
+  const listWidth = layout.listWidth ?? layout.innerWidth;
+  const previewWidth = layout.companionWidth;
+  const showPreviewRail =
+    layout.showCompanion &&
+    shouldRenderPreviewRail({
+      columns: viewport.columns,
+      hasModel: previewRailModel !== null,
+    });
+  const discoverChromeRows =
+    getBrowseChromeRows({
+      hasResultSubtitle: false,
+      hasFilterBar: false,
+      hasFilterBadges: false,
+      hasCalendarChrome: false,
+      hasContextStrip: Boolean(refreshError),
+      hasQueryDirtyHint: false,
+      commandMode: false,
+    }) + 2;
+  const maxContentRows = getBrowseListMaxVisible(viewport.rows, discoverChromeRows);
+  const shouldCollapseSections = flatItems.length > maxContentRows;
+  const focusedItemCount = activeSection?.items.length ?? 0;
+  const maxFocusedItemRows = Math.max(4, maxContentRows - 6);
+  const { itemIdx: focusedItemIdx } = resolveSectionSelection(selectedGlobalIndex);
+  const shouldWindowFocusedItems = shouldCollapseSections || focusedItemCount > maxFocusedItemRows;
+  const focusedItemWindowStart = shouldWindowFocusedItems
+    ? getWindowStart(focusedItemIdx, focusedItemCount, maxFocusedItemRows)
+    : 0;
+  const focusedItemWindowEnd = shouldWindowFocusedItems
+    ? Math.min(focusedItemWindowStart + maxFocusedItemRows, focusedItemCount)
+    : focusedItemCount;
 
   useInput((input, key) => {
     if (key.escape) {
@@ -308,15 +372,21 @@ export function DiscoverShell({
             </Box>
           );
         }
+        const isFocused = idx === sectionIdx;
         return (
           <DiscoverSectionView
             key={section.reason + String(idx)}
             section={section}
-            isFocused={idx === sectionIdx}
+            isFocused={isFocused}
             compact={viewport.compact}
             maxWidth={listWidth}
             sectionOffset={sectionOffsets[idx] ?? 0}
             globalSelectedIndex={selectedGlobalIndex}
+            collapsed={shouldCollapseSections && !isFocused}
+            itemWindowStart={isFocused ? focusedItemWindowStart : 0}
+            itemWindowEnd={isFocused ? focusedItemWindowEnd : section.items.length}
+            showMoreAbove={isFocused && focusedItemWindowStart > 0}
+            showMoreBelow={isFocused && focusedItemWindowEnd < section.items.length}
           />
         );
       })
@@ -358,6 +428,7 @@ export function DiscoverShell({
       </Box>
       <ShellFooter
         taskLabel="Discover"
+        terminalWidth={viewport.columns}
         actions={[
           { key: "↵", label: "open", action: "search" },
           { key: "↑↓", label: "navigate", action: "search" },

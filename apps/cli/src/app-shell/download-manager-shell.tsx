@@ -1,7 +1,13 @@
+import {
+  getPickerChromeRows,
+  getPickerListMaxVisible,
+  ROOT_CHROME_ROWS,
+} from "@/app-shell/layout-policy";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
 import { ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
+import { getWindowStart } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
@@ -366,6 +372,22 @@ export function DownloadManagerContent({
     (job) => job.status === "failed" || job.status === "repairable",
   ).length;
 
+  const hasSummaryHeader =
+    activeJobs.length > 0 || queuedJobs.length > 0 || failedAttentionCount > 0;
+  const hintRows =
+    (confirmingDeleteIndex !== null ? 1 : 0) +
+    (repairSweepStatus ? 1 : 0) +
+    (allJobs.length > 0 ? 1 : 0);
+  const chromeRows = getPickerChromeRows({
+    hasSubtitle: false,
+    commandMode: false,
+    extraRows: (hasSummaryHeader ? 1 : 0) + hintRows,
+  });
+  const maxVisible = getPickerListMaxVisible(viewport.rows, chromeRows, ROOT_CHROME_ROWS + 1);
+  const windowStart = getWindowStart(selectedIndex, allJobs.length, maxVisible);
+  const windowEnd = Math.min(windowStart + maxVisible, allJobs.length);
+  const visibleJobs = allJobs.slice(windowStart, windowEnd);
+
   return (
     <Box flexDirection="column" flexGrow={1}>
       {allJobs.length === 0 ? (
@@ -384,7 +406,17 @@ export function DownloadManagerContent({
             queuedCount={queuedJobs.length}
             failedCount={failedAttentionCount}
           />
-          {allJobs.map((job, index) => renderJob(job, index))}
+          {windowStart > 0 ? (
+            <Text color={palette.dim} dimColor>
+              {"  "}more above
+            </Text>
+          ) : null}
+          {visibleJobs.map((job, index) => renderJob(job, windowStart + index))}
+          {windowEnd < allJobs.length ? (
+            <Text color={palette.dim} dimColor>
+              {"  "}more below
+            </Text>
+          ) : null}
         </Box>
       )}
       {confirmingDeleteIndex !== null ? (
