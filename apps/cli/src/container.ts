@@ -14,7 +14,7 @@ import {
   allmangaProviderModule,
   miruroProviderModule,
   rivestreamProviderModule,
-  vidkingProviderModule,
+  videasyProviderModule,
   vidlinkProviderModule,
 } from "@kunai/providers";
 import {
@@ -111,6 +111,7 @@ import { PlaybackResolveWorkService } from "./services/playback/PlaybackResolveW
 import { resolveProviderAttemptTimeoutMs } from "./services/playback/provider-resolve-budget-policy";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import { StreamHealthService } from "./services/playback/StreamHealthService";
+import { TitlePlaybackSourceService } from "./services/playback/TitlePlaybackSourceService";
 import { TitleProviderHealthService } from "./services/playback/TitleProviderHealthService";
 import { VidkingLazySourceProbeService } from "./services/playback/VidkingLazySourceProbeService";
 import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
@@ -168,6 +169,7 @@ export interface Container {
   readonly storageMaintenance: StorageMaintenanceService;
   readonly sourceInventory: SourceInventoryService;
   readonly episodePlaybackSelection: EpisodePlaybackSelectionService;
+  readonly titlePlaybackSource: TitlePlaybackSourceService;
   readonly vidkingLazySourceProbe: VidkingLazySourceProbeService;
   readonly playbackResolveWork: PlaybackResolveWorkService;
   readonly mediaTrackService: MediaTrackService;
@@ -336,6 +338,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const episodePlaybackSelection = new EpisodePlaybackSelectionService(
     join(paths.configDir, "episode-playback-selections.json"),
   );
+  const titlePlaybackSource = new TitlePlaybackSourceService(
+    join(paths.configDir, "title-playback-sources.json"),
+  );
   const vidkingLazySourceProbe = new VidkingLazySourceProbeService({ sourceInventory });
   const storageMaintenance = new StorageMaintenanceService({
     dataDb,
@@ -380,7 +385,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   // Engine: single source of truth for provider resolution
   const providerModules = orderProviderModules(
     [
-      vidkingProviderModule,
+      videasyProviderModule,
       vidlinkProviderModule,
       rivestreamProviderModule,
       allmangaProviderModule,
@@ -396,7 +401,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
     auth: {
       getSecret(providerId, key) {
-        if (providerId !== "vidking") return undefined;
+        if (providerId !== "videasy" && providerId !== "vidking") return undefined;
         if (key === "videasySessionToken") {
           return (
             process.env.KUNAI_VIDEASY_SESSION_TOKEN?.trim() ||
@@ -585,6 +590,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     storageMaintenance,
     sourceInventory,
     episodePlaybackSelection,
+    titlePlaybackSource,
     vidkingLazySourceProbe,
     playbackResolveWork,
     mediaTrackService,
