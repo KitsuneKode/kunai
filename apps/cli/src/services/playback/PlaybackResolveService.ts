@@ -27,6 +27,7 @@ import {
   type ProviderEngineResolveAttempt,
   type ResolveAttempt,
 } from "@kunai/core";
+import type { StreamHealthPhase } from "@kunai/providers";
 import type { ProviderHealthRepository } from "@kunai/storage";
 import type {
   ProviderFailure,
@@ -218,11 +219,11 @@ export class PlaybackResolveService {
       cacheBecameStale = true;
       input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
     } else if (cachedStream && input.preferFreshStream !== true) {
-      const health = await this.checkCachedStreamHealth(
-        cachedStream,
-        input.forceHealthCheck === true,
-        input.signal,
-      );
+      const health = await this.checkCachedStreamHealth(cachedStream, {
+        force: input.forceHealthCheck === true,
+        signal: input.signal,
+        phase: "cache-revalidate",
+      });
       if (health.checked) {
         input.onEvent?.({
           type: "cache-health-check",
@@ -306,7 +307,11 @@ export class PlaybackResolveService {
         });
         if (inventoryStream) {
           input.onEvent?.({ type: "source-inventory-hit", providerId: input.providerId });
-          const health = await this.checkCachedStreamHealth(inventoryStream, true, input.signal);
+          const health = await this.checkCachedStreamHealth(inventoryStream, {
+            force: true,
+            signal: input.signal,
+            phase: "cache-revalidate",
+          });
           if (health.checked) {
             input.onEvent?.({
               type: "cache-health-check",
@@ -389,13 +394,6 @@ export class PlaybackResolveService {
     }
 
     const compatibleIds = [...candidatePlan.candidateIds];
-    if (candidatePlan.cappedFallbackProviderId) {
-      const nextFallback = candidatePlan.cappedFallbackProviderId;
-      input.onFeedback?.({
-        detail: `Trying ${this.deps.engine.getManifest(nextFallback)?.displayName ?? nextFallback} after ${providerName}`,
-        note: "VidKing sources unavailable on this attempt",
-      });
-    }
 
     input.onFeedback?.({
       detail: `Resolving via ${providerName}`,
@@ -465,7 +463,11 @@ export class PlaybackResolveService {
         resolvedStream = candidateStream;
         break;
       }
-      const health = await this.checkCachedStreamHealth(candidateStream, true, input.signal);
+      const health = await this.checkCachedStreamHealth(candidateStream, {
+        force: true,
+        signal: input.signal,
+        phase: "resolve-gate",
+      });
       if (health.checked) {
         input.onEvent?.({
           type: "cache-health-check",
@@ -714,8 +716,11 @@ export class PlaybackResolveService {
 
   private async checkCachedStreamHealth(
     stream: StreamInfo,
-    force = false,
-    signal?: AbortSignal,
+    options: {
+      readonly force?: boolean;
+      readonly signal?: AbortSignal;
+      readonly phase?: StreamHealthPhase;
+    } = {},
   ): Promise<{
     readonly healthy: boolean;
     readonly checked: boolean;
@@ -723,16 +728,23 @@ export class PlaybackResolveService {
     readonly ageMs?: number;
   }> {
     const healthService = this.deps.streamHealthService ?? new StreamHealthService();
+    const checkOptions = {
+      force: options.force,
+      signal: options.signal,
+      phase: options.phase,
+    };
     if (this.deps.streamHealth) {
-      const policy = await healthService.check(stream, { force, signal });
+      const policy = await healthService.check(stream, checkOptions);
       if (!policy.checked) return policy;
-      if (signal?.aborted) return { healthy: false, checked: true, strategy: policy.strategy };
+      if (options.signal?.aborted) {
+        return { healthy: false, checked: true, strategy: policy.strategy };
+      }
       return {
         ...policy,
-        healthy: await this.deps.streamHealth(stream.url, stream.headers, signal),
+        healthy: await this.deps.streamHealth(stream.url, stream.headers, options.signal),
       };
     }
-    return healthService.check(stream, { force, signal });
+    return healthService.check(stream, checkOptions);
   }
 
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {

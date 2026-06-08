@@ -28,7 +28,10 @@ import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
 import { dbg } from "@/logger";
-import { checkStreamPreflight } from "@/services/playback/stream-health-check";
+import {
+  checkStreamPreflight,
+  shouldAbortPlaybackForPreflight,
+} from "@/services/playback/stream-health-check";
 import type { StreamPreflightResult } from "@/services/playback/stream-health-check";
 import { normalizeSubtitleUrl } from "@/subtitle";
 
@@ -352,7 +355,7 @@ export function shouldAbortLaunchForDefinitivePreflight(
   result: StreamPreflightResult,
   ipcConnected: boolean,
 ): result is Extract<StreamPreflightResult, { status: "unreachable" }> {
-  return result.status === "unreachable" && result.definitive && !ipcConnected;
+  return shouldAbortPlaybackForPreflight(result, ipcConnected);
 }
 
 /** True when we should seek / pass --start for a resume position (any positive second). */

@@ -7,11 +7,11 @@ function response(status: number): Response {
 }
 
 describe("checkStreamHealth", () => {
-  test("returns healthy when HEAD succeeds and preserves provider headers", async () => {
+  test("returns healthy when HLS manifest GET succeeds and preserves provider headers", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const fetchImpl: StreamHealthFetch = async (url, init) => {
       calls.push({ url, init });
-      return response(200);
+      return new Response("#EXTM3U\n", { status: 200 });
     };
 
     const healthy = await checkStreamHealth({
@@ -23,14 +23,14 @@ describe("checkStreamHealth", () => {
 
     expect(healthy).toBe(true);
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.init.method).toBe("HEAD");
+    expect(calls[0]?.init.method).toBe("GET");
     expect(calls[0]?.init.headers).toEqual({
       referer: "https://provider.example",
       origin: "https://provider.example",
     });
   });
 
-  test("falls back to ranged GET when HEAD fails", async () => {
+  test("falls back to ranged GET when HEAD fails for progressive URLs", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const fetchImpl: StreamHealthFetch = async (url, init) => {
       calls.push({ url, init });
@@ -39,7 +39,7 @@ describe("checkStreamHealth", () => {
     };
 
     const healthy = await checkStreamHealth({
-      url: "https://cdn.example/stream.m3u8",
+      url: "https://cdn.example/stream.mp4",
       headers: { referer: "https://provider.example" },
       fetchImpl,
       timeoutMs: 50,
@@ -53,11 +53,8 @@ describe("checkStreamHealth", () => {
     });
   });
 
-  test("returns unhealthy when HEAD and ranged GET both fail", async () => {
-    const fetchImpl: StreamHealthFetch = async (_url, init) => {
-      if (init.method === "HEAD") return response(405);
-      return response(404);
-    };
+  test("returns unhealthy when HLS manifest GET fails", async () => {
+    const fetchImpl: StreamHealthFetch = async () => response(404);
 
     const healthy = await checkStreamHealth({
       url: "https://cdn.example/dead.m3u8",

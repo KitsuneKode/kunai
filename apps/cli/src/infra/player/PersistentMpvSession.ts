@@ -363,12 +363,10 @@ export class PersistentMpvSession {
 
     this.loadStartAt = shouldApplyStartAtSeek(options.startAt) ? (options.startAt ?? 0) : 0;
 
-    const isFreshCached = (stream.timestamp ?? 0) > Date.now() - 5 * 60 * 1000;
-    const preflightPromise = isFreshCached
-      ? Promise.resolve<Awaited<ReturnType<typeof checkStreamPreflight>>>({
-          status: "reachable" as const,
-        })
-      : checkStreamPreflight(stream.url, stream.headers, 3_000);
+    const preflightPromise = checkStreamPreflight(stream.url, stream.headers, undefined, {
+      cachedAt: stream.timestamp,
+      streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
+    });
 
     const loadResult = await this.ipcSession?.send(
       buildPersistentLoadfileCommand(stream.url, options.startAt),

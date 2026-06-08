@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { PlaybackResolveService } from "@/services/playback/PlaybackResolveService";
+import { StreamHealthService } from "@/services/playback/StreamHealthService";
 import type { ProviderEngine, ProviderEngineResolveOutput } from "@kunai/core";
 import type {
   ProviderHealth,
@@ -1246,7 +1247,7 @@ test("PlaybackResolveService keeps primary first despite title health suggestion
   expect(observedCandidates).toEqual([["primary", "fallback"]]);
 });
 
-test("PlaybackResolveService guided mode caps provider fallbacks to one", async () => {
+test("PlaybackResolveService guided mode walks full configured provider priority", async () => {
   const cache = createMemoryCache(null);
   const observedCandidates: ProviderId[][] = [];
   const engine = createMockEngine(
@@ -1281,7 +1282,69 @@ test("PlaybackResolveService guided mode caps provider fallbacks to one", async 
     signal: new AbortController().signal,
   });
 
-  expect(observedCandidates).toEqual([["primary", "fallback-a"]]);
+  expect(observedCandidates).toEqual([["primary", "fallback-a", "fallback-b"]]);
+});
+
+test("PlaybackResolveService skips duplicate health check when provider attested reachability", async () => {
+  const cache = createMemoryCache(null);
+  let probeCalls = 0;
+  const verifiedUrl = "https://cdn.example/verified.m3u8";
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "vidking" as ProviderId,
+      selectedStreamId: "stream:vidking:1",
+      streamReachabilityVerified: true,
+      streams: [
+        {
+          id: "stream:vidking:1",
+          providerId: "vidking" as ProviderId,
+          url: verifiedUrl,
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:1",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "series", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "vidking" as ProviderId,
+    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+  });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    streamHealthService: new StreamHealthService({
+      fetchImpl: async () => {
+        probeCalls += 1;
+        return new Response("", { status: 404 });
+      },
+    }),
+  });
+
+  const events: string[] = [];
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    onEvent: (e) => events.push(e.type),
+  });
+
+  expect(result.stream?.url).toBe(verifiedUrl);
+  expect(probeCalls).toBe(0);
+  expect(events).not.toContain("cache-health-check");
 });
 
 test("PlaybackResolveService manual recovery mode does not auto-fallback", async () => {
