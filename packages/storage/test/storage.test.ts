@@ -267,7 +267,7 @@ test("history repository round trips latest progress", () => {
   );
 
   expect(progress?.positionSeconds).toBe(42);
-  expect(progress?.providerId).toBe("vidking");
+  expect(progress?.providerId).toBe("videasy");
   expect(progress?.externalIds).toEqual({
     tmdbId: "1",
     imdbId: "tt123",

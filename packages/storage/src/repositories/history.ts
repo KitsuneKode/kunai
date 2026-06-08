@@ -215,6 +215,10 @@ export function createHistoryKey(
   ].join(":");
 }
 
+function migrateLegacyProviderId(providerId: string): ProviderId {
+  return (providerId === "vidking" ? "videasy" : providerId) as ProviderId;
+}
+
 function mapHistoryRow(row: HistoryProgressRow): HistoryProgress {
   return {
     key: row.key,
@@ -227,7 +231,7 @@ function mapHistoryRow(row: HistoryProgressRow): HistoryProgress {
     positionSeconds: row.position_seconds,
     durationSeconds: row.duration_seconds ?? undefined,
     completed: row.completed === 1,
-    providerId: row.provider_id === null ? undefined : (row.provider_id as ProviderId),
+    providerId: row.provider_id === null ? undefined : migrateLegacyProviderId(row.provider_id),
     externalIds: parseExternalIds(row.external_ids_json),
     posterUrl: row.poster_url ?? undefined,
     updatedAt: row.updated_at,
