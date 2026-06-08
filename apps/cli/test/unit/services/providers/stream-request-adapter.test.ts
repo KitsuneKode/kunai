@@ -42,6 +42,25 @@ test("streamRequestToResolveInput preserves provider-native ids for anime resolv
   expect(input.preferredStreamId).toBe("stream-a-1080");
 });
 
+test("streamRequestToResolveInput maps en audio preference to dub presentation", () => {
+  const input = streamRequestToResolveInput(
+    {
+      title: {
+        id: "allanime-opaque-id",
+        type: "series",
+        name: "Provider Native Anime",
+      },
+      episode: { season: 1, episode: 1 },
+      audioPreference: "en",
+      subtitlePreference: "en",
+    },
+    "anime",
+  );
+
+  expect(input.preferredPresentation).toBe("dub");
+  expect(input.preferredAudioLanguage).toBe("en");
+});
+
 test("streamRequestToResolveInput maps startup priority", () => {
   const input = streamRequestToResolveInput(
     {

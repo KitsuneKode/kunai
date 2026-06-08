@@ -1,4 +1,5 @@
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
+import { resolveAnimeAudioIntent } from "@kunai/providers";
 import type {
   EpisodeIdentity,
   ProviderResolveInput,
@@ -23,6 +24,8 @@ export function streamRequestToResolveInput(
   mode: ShellMode,
   intent: ProviderResolveInput["intent"] = "play",
 ): ProviderResolveInput {
+  const animeAudioIntent =
+    mode === "anime" ? resolveAnimeAudioIntent(request.audioPreference) : null;
   return {
     title: titleToCoreIdentity(request.title, mode),
     episode: episodeToCoreIdentity(request.episode),
@@ -33,10 +36,9 @@ export function streamRequestToResolveInput(
       request.favoriteSourceNames && request.favoriteSourceNames.length > 0
         ? request.favoriteSourceNames
         : undefined,
-    preferredAudioLanguage: mode === "anime" ? request.audioPreference : undefined,
+    preferredAudioLanguage: animeAudioIntent?.preferredAudioLanguage,
     preferredSubtitleLanguage: request.subtitlePreference,
-    preferredPresentation:
-      mode === "anime" ? (request.audioPreference === "dub" ? "dub" : "sub") : "raw",
+    preferredPresentation: animeAudioIntent?.presentation ?? "raw",
     preferredSubtitleDelivery: mode === "anime" ? "hardcoded" : "external",
     qualityPreference: normalizeQualityPreference(request.qualityPreference),
     startupPriority: request.startupPriority ?? "balanced",

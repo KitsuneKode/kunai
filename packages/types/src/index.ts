@@ -314,7 +314,8 @@ export type ProviderTraceEventType =
   | "runtime:reused"
   | "runtime:released"
   | "retry:scheduled"
-  | "retry:aborted";
+  | "retry:aborted"
+  | "inventory:audio-modes";
 
 export interface ProviderTraceEvent {
   readonly type: ProviderTraceEventType;

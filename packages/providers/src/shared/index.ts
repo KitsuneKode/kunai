@@ -1,3 +1,4 @@
+export * from "./anime-audio-intent";
 export * from "./anime-metadata";
 export * from "./direct-stream-source";
 export * from "./provider-cycle";

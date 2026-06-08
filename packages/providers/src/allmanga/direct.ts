@@ -19,6 +19,7 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
@@ -116,10 +117,9 @@ export const allmangaProviderModule: CoreProviderModule = {
   providerId: ALLANIME_PROVIDER_ID,
   manifest: allanimeManifest,
   async search(input, context): Promise<readonly ProviderSearchResult[] | null> {
-    const animeLang =
-      input.preferredAudioLanguage === "dub" || input.preferredAudioLanguage === "en"
-        ? ("dub" as const)
-        : ("sub" as const);
+    const animeLang = resolveAnimeAudioIntent(
+      input.preferredAudioLanguage ?? "original",
+    ).catalogMode;
     const results = await searchAllManga(
       ALLANIME_API_URL,
       ALLANIME_REFERER,
@@ -184,10 +184,7 @@ export const allmangaProviderModule: CoreProviderModule = {
     }));
   },
   async listEpisodes(input, context): Promise<readonly ProviderEpisodeOption[] | null> {
-    const mode =
-      input.preferredAudioLanguage === "dub" || input.preferredAudioLanguage === "en"
-        ? ("dub" as const)
-        : ("sub" as const);
+    const mode = resolveAnimeAudioIntent(input.preferredAudioLanguage ?? "original").catalogMode;
     return fetchAllMangaEpisodeCatalog({
       apiUrl: ALLANIME_API_URL,
       referer: ALLANIME_REFERER,
@@ -244,10 +241,7 @@ export const allmangaProviderModule: CoreProviderModule = {
     });
 
     try {
-      const mode =
-        input.preferredAudioLanguage === "ja" || input.preferredAudioLanguage === "original"
-          ? "sub"
-          : "dub";
+      const mode = resolveAnimeAudioIntent(input.preferredAudioLanguage ?? "original").catalogMode;
       const episodeNum = input.episode?.absoluteEpisode ?? input.episode?.episode ?? 1;
 
       // Same GQL catalog as listEpisodes (showCatalogCache, 45s TTL in api-client).
@@ -258,6 +252,17 @@ export const allmangaProviderModule: CoreProviderModule = {
         showId,
         context.signal,
       );
+      const availableModes: ("sub" | "dub")[] = [];
+      if ((detail.sub ?? []).length > 0) availableModes.push("sub");
+      if ((detail.dub ?? []).length > 0) availableModes.push("dub");
+      if (availableModes.length > 0) {
+        emitTraceEvent(events, context, {
+          type: "inventory:audio-modes",
+          providerId: ALLANIME_PROVIDER_ID,
+          message: `Episode catalog exposes ${availableModes.join(" and ")} audio modes`,
+          attributes: { modes: availableModes.join(",") },
+        });
+      }
       const episodes = (detail[mode] ?? []) as string[];
 
       if (episodes.length === 0) {

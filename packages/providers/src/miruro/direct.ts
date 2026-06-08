@@ -22,6 +22,8 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+import { miruroInventorySourceId } from "../catalogs/miruro";
+import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
   type AnimeEpisodeMetadata,
   fetchAnimeEpisodeMetadataByNumber,
@@ -202,7 +204,7 @@ export function createMiruroResultFromPayload({
       qualityPreference: input.qualityPreference,
       startupPriority: input.startupPriority,
     });
-  const sourceId = `source:${MIRURO_PROVIDER_ID}:pipe:${serverProfile.id}`;
+  const sourceId = miruroInventorySourceId(serverProfile.id, audioCategory);
   const rawStreams = rankMiruroStreams(
     sourceData.streams?.filter((s) => s.type === "hls" && s.url) ?? [],
   );
@@ -470,7 +472,7 @@ export function buildMiruroCycleCandidates({
       );
       if (!episodeEntry?.id) continue;
       const serverProfile = createMiruroServerProfile(providerKey);
-      const sourceId = `source:${MIRURO_PROVIDER_ID}:pipe:${serverProfile.id}`;
+      const sourceId = miruroInventorySourceId(serverProfile.id, audioCategory);
       candidates.push({
         id: `candidate:${sourceId}:${audioCategory}:${episodeEntry.id}`,
         providerId: MIRURO_PROVIDER_ID,
@@ -904,10 +906,9 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
-      const targetAudio: MiruroAudioCategory =
-        input.preferredPresentation === "dub" || input.preferredAudioLanguage === "dub"
-          ? "dub"
-          : "sub";
+      const targetAudio: MiruroAudioCategory = resolveAnimeAudioIntent(
+        input.preferredAudioLanguage ?? input.preferredPresentation ?? "original",
+      ).catalogMode;
       const fallbackAudio = targetAudio === "dub" ? "sub" : "dub";
       const cycleCandidates = buildMiruroCycleCandidates({
         providers: epData.providers,

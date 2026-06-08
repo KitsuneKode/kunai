@@ -261,6 +261,10 @@ describe("AllManga provider evidence fixtures", () => {
     expect(dub.externalIds).toEqual(expected.search.externalIds);
     expect(sub.trace.events?.some((event) => event.type === "source:start")).toBe(true);
     expect(sub.trace.events?.some((event) => event.type === "variant:selected")).toBe(true);
+    const audioModesEvent = sub.trace.events?.find(
+      (event) => event.type === "inventory:audio-modes",
+    );
+    expect(audioModesEvent?.attributes?.modes).toBe("sub,dub");
   });
 
   test("normal playback does not request Ak when a baseline stream is playable", async () => {
