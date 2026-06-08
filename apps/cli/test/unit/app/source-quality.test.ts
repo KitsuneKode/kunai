@@ -165,10 +165,10 @@ test("buildSourcePickerOptions includes current source label", () => {
   const options = buildSourcePickerOptions(streamWithCandidates);
   expect(options[0]?.label).toContain("current");
   expect(options.map((option) => option.value)).toEqual(
-    expect.arrayContaining(["source-a", "source-b", "source:vidking:videasy:videasy-hindi"]),
+    expect.arrayContaining(["source-a", "source-b", "source:videasy:videasy-hindi"]),
   );
   expect(
-    options.find((option) => option.value === "source:vidking:videasy:videasy-hindi")?.detail,
+    options.find((option) => option.value === "source:videasy:videasy-hindi")?.detail,
   ).toContain("Fresh resolve required");
 });
 
@@ -485,6 +485,16 @@ test("streamSelectionFromTrackPick maps each panel section to a restart intent",
   expect(streamSelectionFromTrackPick({ section: "hardsub", value: "stream-en" })).toEqual({
     sourceId: null,
     streamId: "stream-en",
+  });
+  expect(streamSelectionFromTrackPick({ section: "provider", value: "miruro" })).toEqual({
+    sourceId: null,
+    streamId: null,
+    providerId: "miruro",
+  });
+  expect(streamSelectionFromTrackPick({ section: "audio", value: "audio-mode:dub" })).toEqual({
+    sourceId: null,
+    streamId: null,
+    audioMode: "dub",
   });
   // Subtitles attach in mpv — no pre-play restart path.
   expect(

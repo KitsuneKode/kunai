@@ -3,7 +3,11 @@ import {
   describeStreamCandidateMediaDetail,
   subtitlesForStreamCandidate,
 } from "@/domain/media/media-track-model";
-import type { TrackCapabilitySection } from "@/domain/playback/track-capabilities";
+import {
+  AUDIO_MODE_VALUE_PREFIX,
+  decodeCrossProviderSourceValue,
+  type TrackCapabilitySection,
+} from "@/domain/playback/track-capabilities";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { buildPlaybackSourceInventoryView } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type {
@@ -62,6 +66,12 @@ export type MediaTrackPickerSelection =
 export type StreamSelectionIntent = {
   readonly sourceId: string | null;
   readonly streamId: string | null;
+  readonly providerId?: string;
+  readonly audioMode?: "sub" | "dub";
+  readonly crossProviderSource?: {
+    readonly providerId: string;
+    readonly sourceId: string;
+  };
 };
 
 export function emptyStreamSelectionIntent(): StreamSelectionIntent {
@@ -88,11 +98,29 @@ export function streamSelectionFromTrackPick(picked: {
   readonly value: string;
 }): StreamSelectionIntent | null {
   switch (picked.section) {
-    case "source":
+    case "provider":
+      return { sourceId: null, streamId: null, providerId: picked.value };
+    case "source": {
+      const crossProvider = decodeCrossProviderSourceValue(picked.value);
+      if (crossProvider) {
+        return {
+          sourceId: null,
+          streamId: null,
+          crossProviderSource: crossProvider,
+        };
+      }
       return streamSelectionFromSource(picked.value);
+    }
     case "quality":
-    case "audio":
     case "hardsub":
+      return streamSelectionFromStream(picked.value);
+    case "audio":
+      if (picked.value.startsWith(AUDIO_MODE_VALUE_PREFIX)) {
+        const mode = picked.value.slice(AUDIO_MODE_VALUE_PREFIX.length);
+        if (mode === "sub" || mode === "dub") {
+          return { sourceId: null, streamId: null, audioMode: mode };
+        }
+      }
       return streamSelectionFromStream(picked.value);
     case "subtitle":
       return null;
@@ -108,6 +136,11 @@ export function isCurrentStreamSelection(
   const selectedStream = result.streams.find(
     (candidate) => candidate.id === result.selectedStreamId,
   );
+  if (selection.providerId) return selection.providerId === result.providerId;
+  if (selection.audioMode) {
+    return selection.audioMode === selectedStream?.presentation;
+  }
+  if (selection.crossProviderSource) return false;
   if (selection.streamId) return selection.streamId === result.selectedStreamId;
   if (selection.sourceId) return selection.sourceId === selectedStream?.sourceId;
   return false;

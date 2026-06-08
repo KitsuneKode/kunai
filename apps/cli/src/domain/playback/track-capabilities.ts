@@ -9,7 +9,13 @@ import type {
  * renders from — the UI must never reach into raw provider fragments, only this
  * normalized shape. See `.design/cli/surfaces/tracks-panel.md`.
  */
-export type TrackCapabilitySection = "source" | "quality" | "audio" | "subtitle" | "hardsub";
+export type TrackCapabilitySection =
+  | "provider"
+  | "source"
+  | "quality"
+  | "audio"
+  | "subtitle"
+  | "hardsub";
 
 export type TrackCapabilityRisk = "normal" | "fallback" | "failed" | "unavailable";
 
@@ -37,6 +43,7 @@ export type TrackCapabilityGroup = {
 };
 
 const SECTION_TITLES: Record<TrackCapabilitySection, string> = {
+  provider: "Provider",
   source: "Source",
   quality: "Quality",
   audio: "Audio",
@@ -44,13 +51,55 @@ const SECTION_TITLES: Record<TrackCapabilitySection, string> = {
   hardsub: "Hardsub",
 };
 
-const SECTION_ORDER: readonly TrackCapabilitySection[] = [
+const SECTION_ORDER_SERIES: readonly TrackCapabilitySection[] = [
+  "provider",
   "source",
   "quality",
   "audio",
   "subtitle",
   "hardsub",
 ];
+
+const SECTION_ORDER_ANIME: readonly TrackCapabilitySection[] = [
+  "provider",
+  "audio",
+  "source",
+  "quality",
+  "hardsub",
+  "subtitle",
+];
+
+export function trackSectionOrderForMediaKind(
+  mediaKind?: string,
+): readonly TrackCapabilitySection[] {
+  return mediaKind === "anime" ? SECTION_ORDER_ANIME : SECTION_ORDER_SERIES;
+}
+
+export const AUDIO_MODE_VALUE_PREFIX = "audio-mode:";
+export const CROSS_PROVIDER_SOURCE_VALUE_PREFIX = "cross-provider:";
+
+export function encodeCrossProviderSourceValue(providerId: string, sourceId: string): string {
+  return `${CROSS_PROVIDER_SOURCE_VALUE_PREFIX}${providerId}\u001e${sourceId}`;
+}
+
+export function decodeCrossProviderSourceValue(
+  value: string,
+): { readonly providerId: string; readonly sourceId: string } | null {
+  if (!value.startsWith(CROSS_PROVIDER_SOURCE_VALUE_PREFIX)) return null;
+  const rest = value.slice(CROSS_PROVIDER_SOURCE_VALUE_PREFIX.length);
+  const separator = rest.indexOf("\u001e");
+  if (separator <= 0 || separator === rest.length - 1) return null;
+  const providerId = rest.slice(0, separator);
+  const sourceId = rest.slice(separator + 1);
+  if (!providerId || !sourceId) return null;
+  return { providerId, sourceId };
+}
+
+export type BuildTrackCapabilitiesOptions = {
+  readonly mediaKind?: string;
+  readonly availableAudioModes?: readonly ("sub" | "dub")[];
+  readonly currentPresentation?: "sub" | "dub" | "raw";
+};
 
 function isSourceSwitchable(state: PlaybackInventoryOptionState): boolean {
   // Skipped/failed rows were auto-deprioritized during resolve; the user can still
@@ -143,9 +192,11 @@ export function serverAudioBadge(
  */
 export function buildTrackCapabilities(
   view: PlaybackSourceInventoryView | null | undefined,
+  options: BuildTrackCapabilitiesOptions = {},
 ): readonly TrackCapabilityGroup[] {
   if (!view) return [];
 
+  const mediaKind = options.mediaKind;
   const bySection = new Map<TrackCapabilitySection, TrackCapability[]>();
   const push = (capability: TrackCapability): void => {
     const rows = bySection.get(capability.section) ?? [];
@@ -183,8 +234,38 @@ export function buildTrackCapabilities(
     });
   }
 
+  const audioModeRows = new Map<string, TrackCapability>();
+  for (const mode of options.availableAudioModes ?? []) {
+    const selected =
+      options.currentPresentation === mode ||
+      (mode === "sub" &&
+        (options.currentPresentation === "raw" || options.currentPresentation === undefined) &&
+        view.selected?.presentation === "sub") ||
+      (mode === "dub" && view.selected?.presentation === "dub");
+    audioModeRows.set(mode, {
+      section: "audio",
+      label: mode === "dub" ? "Dub" : "Sub",
+      value: `${AUDIO_MODE_VALUE_PREFIX}${mode}`,
+      selected,
+      enabled: !selected,
+      detail: mode === "dub" ? "English audio" : "Japanese audio · hardsub when available",
+      risk: "normal",
+    });
+  }
+
   for (const option of view.languageOptions) {
     if (option.role !== "audio" && option.role !== "hardsub") continue;
+    if (option.role === "audio" && audioModeRows.size > 0) {
+      const mode =
+        option.presentation === "dub" ? "dub" : option.presentation === "sub" ? "sub" : null;
+      if (mode && audioModeRows.has(mode)) {
+        const row = audioModeRows.get(mode);
+        if (row && option.state === "selected") {
+          audioModeRows.set(mode, { ...row, selected: true, enabled: false });
+        }
+        continue;
+      }
+    }
     push({
       section: option.role,
       // Switching audio/hardsub means switching to the stream that carries it,
@@ -197,6 +278,10 @@ export function buildTrackCapabilities(
       detail: detailFromNativeLabels(option.nativeLabels, option.label),
       risk: riskFromState(option.state),
     });
+  }
+
+  for (const row of audioModeRows.values()) {
+    push(row);
   }
 
   for (const option of view.subtitleOptions) {
@@ -217,8 +302,31 @@ export function buildTrackCapabilities(
     });
   }
 
+  return orderTrackCapabilityGroups(bySection, trackSectionOrderForMediaKind(mediaKind));
+}
+
+export function composeTrackPanelGroups(
+  providerGroup: TrackCapabilityGroup | undefined,
+  inventoryGroups: readonly TrackCapabilityGroup[],
+  mediaKind?: string,
+): readonly TrackCapabilityGroup[] {
+  const bySection = new Map<TrackCapabilitySection, TrackCapability[]>();
+  if (providerGroup && providerGroup.rows.length > 0) {
+    bySection.set(providerGroup.section, [...providerGroup.rows]);
+  }
+  for (const group of inventoryGroups) {
+    const rows = bySection.get(group.section) ?? [];
+    bySection.set(group.section, [...rows, ...group.rows]);
+  }
+  return orderTrackCapabilityGroups(bySection, trackSectionOrderForMediaKind(mediaKind));
+}
+
+function orderTrackCapabilityGroups(
+  bySection: Map<TrackCapabilitySection, TrackCapability[]>,
+  sectionOrder: readonly TrackCapabilitySection[],
+): readonly TrackCapabilityGroup[] {
   const groups: TrackCapabilityGroup[] = [];
-  for (const section of SECTION_ORDER) {
+  for (const section of sectionOrder) {
     const rows = bySection.get(section);
     if (!rows || rows.length === 0) continue;
     groups.push({
@@ -253,7 +361,7 @@ export function decodeTrackSelection(encoded: string): DecodedTrackSelection | n
   const section = encoded.slice(0, at);
   const value = encoded.slice(at + 1);
   if (!value) return null;
-  if (!SECTION_ORDER.includes(section as TrackCapabilitySection)) return null;
+  if (!SECTION_TITLES[section as TrackCapabilitySection]) return null;
   return { section: section as TrackCapabilitySection, value };
 }
 

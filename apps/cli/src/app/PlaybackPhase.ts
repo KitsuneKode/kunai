@@ -38,6 +38,11 @@ import {
   toEpisodeNavigationState,
 } from "@/app/playback-policy";
 import {
+  playbackAudioPreference,
+  playbackQualityPreference,
+  playbackSubtitlePreference,
+} from "@/app/playback-profile-context";
+import {
   applyUserProviderSwitch,
   resolveStreamProviderId,
   resolveTitleProviderPreference,
@@ -48,6 +53,7 @@ import {
   recommendationRailItemToSearchResult,
 } from "@/app/playback-recommendation-actions";
 import { resumeSecondsFromHistoryForEpisode } from "@/app/playback-resume-from-history";
+import { PlaybackSelectionCoordinator } from "@/app/playback-selection-coordinator";
 import {
   createPlaybackSessionState,
   explainAutoplayBlockReason,
@@ -111,7 +117,7 @@ import {
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
 import { resolvePostPlayState } from "@/domain/playback/post-play-state";
-import type { TrackCapabilitySection } from "@/domain/playback/track-capabilities";
+import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -591,34 +597,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     let playbackSession: PlaybackSessionState = createPlaybackSessionState({
       autoNextEnabled: config.autoNext,
     });
-    const preferredStreamSelectionByEpisode = new Map<string, StreamSelectionIntent>();
-    const preferredStreamSelectionKey = (providerId: string, target: EpisodeInfo): string =>
-      `${providerId}:${title.id}:${target.season}:${target.episode}`;
+    const selectionCoordinator = new PlaybackSelectionCoordinator({
+      titleId: title.id,
+      episodePlaybackSelection: container.episodePlaybackSelection,
+      titlePlaybackSource: container.titlePlaybackSource,
+    });
     const getPreferredStreamSelection = (
       providerId: string,
       target: EpisodeInfo,
-    ): StreamSelectionIntent =>
-      preferredStreamSelectionByEpisode.get(preferredStreamSelectionKey(providerId, target)) ??
-      emptyStreamSelectionIntent();
+    ): StreamSelectionIntent => selectionCoordinator.getEffective(providerId, target);
     const setPreferredStreamSelection = async (
       providerId: string,
       target: EpisodeInfo,
       selection: StreamSelectionIntent,
     ): Promise<void> => {
-      preferredStreamSelectionByEpisode.set(
-        preferredStreamSelectionKey(providerId, target),
-        selection,
-      );
-      await container.episodePlaybackSelection
-        .set({
-          providerId,
-          titleId: title.id,
-          season: target.season,
-          episode: target.episode,
-          sourceId: selection.sourceId,
-          streamId: selection.streamId,
-        })
-        .catch(() => undefined);
+      await selectionCoordinator.applyEpisodeSelection(providerId, target, selection);
     };
     let sessionSoftProviderId: string | null = null;
     const sourceRefreshCooldown = createSourceRefreshCooldownState();
@@ -882,11 +875,66 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           let resolvedProviderId = currentProvider.metadata.id;
           const completeSourceTrackPick = async (
             episode: EpisodeInfo,
-            section: TrackCapabilitySection,
-            selection: StreamSelectionIntent,
+            picked: DecodedTrackSelection,
+            selection: StreamSelectionIntent | null,
             resumeSeconds: number,
+            reason: string,
           ): Promise<ReturnType<typeof startEpisodeNavigation>> => {
-            await setPreferredStreamSelection(resolvedProviderId, episode, selection);
+            const { resolveTracksPanelPick } = await import("@/app/tracks-panel-pick");
+            const resolved = await resolveTracksPanelPick(picked, selection, {
+              container,
+              title,
+              episode,
+              currentProviderId: resolvedProviderId,
+              resumeSeconds,
+              reason,
+            });
+
+            if (resolved.kind === "noop") {
+              return startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
+            }
+            if (resolved.kind === "provider-switch") {
+              resolvedProviderId = resolved.providerId;
+              recentEpisodeStreams.delete(`${title.id}:${episode.season}:${episode.episode}`);
+              pendingSourceRefreshAction = "recover";
+              pendingRecomputeSources = false;
+              return startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+            }
+            if (resolved.kind === "audio-mode-switch") {
+              recentEpisodeStreams.delete(`${title.id}:${episode.season}:${episode.episode}`);
+              pendingSourceRefreshAction = "recover";
+              pendingRecomputeSources = false;
+              await prepareStreamSwitchRestart(episode);
+              return startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+            }
+            if (resolved.kind === "cross-provider-source") {
+              resolvedProviderId = resolved.providerId;
+              await selectionCoordinator.applyManualSourcePick(
+                resolved.providerId,
+                episode,
+                resolved.sourceId,
+              );
+              recentEpisodeStreams.delete(`${title.id}:${episode.season}:${episode.episode}`);
+              pendingSourceRefreshAction = "recover";
+              pendingRecomputeSources = false;
+              await prepareStreamSwitchRestart(episode);
+              return startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+            }
+
+            const { section, selection: streamSelection } = resolved;
+            if (section === "source" && streamSelection.sourceId) {
+              await selectionCoordinator.applyManualSourcePick(
+                resolvedProviderId,
+                episode,
+                streamSelection.sourceId,
+              );
+            } else {
+              await selectionCoordinator.applyEpisodeSelection(
+                resolvedProviderId,
+                episode,
+                streamSelection,
+              );
+            }
             if (section === "source") {
               await prepareStreamSwitchRestart(episode);
             }
@@ -1023,28 +1071,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           pendingSourceRefreshAction = null;
           const recomputeSources = pendingRecomputeSources;
           pendingRecomputeSources = false;
-          const persistedStreamSelection = await container.episodePlaybackSelection
-            .get({
-              providerId: currentProvider.metadata.id,
-              titleId: title.id,
-              season: currentEpisode.season,
-              episode: currentEpisode.episode,
-            })
-            .catch(() => null);
-          if (
-            persistedStreamSelection &&
-            !preferredStreamSelectionByEpisode.has(
-              preferredStreamSelectionKey(currentProvider.metadata.id, currentEpisode),
-            )
-          ) {
-            preferredStreamSelectionByEpisode.set(
-              preferredStreamSelectionKey(currentProvider.metadata.id, currentEpisode),
-              {
-                sourceId: persistedStreamSelection.sourceId ?? null,
-                streamId: persistedStreamSelection.streamId ?? null,
-              },
-            );
-          }
+          await selectionCoordinator.hydrate(currentProvider.metadata.id, currentEpisode);
+          const profileContext = {
+            mode: stateManager.getState().mode,
+            title,
+            config,
+          };
           const currentPreferredStreamSelection = getPreferredStreamSelection(
             currentProvider.metadata.id,
             currentEpisode,
@@ -1114,19 +1146,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerId,
               sourceId: targetSelection.sourceId ?? undefined,
               streamId: targetSelection.streamId ?? undefined,
-              audioPreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.audio
-                  : config.seriesLanguageProfile.audio,
-              qualityPreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.quality
-                  : config.seriesLanguageProfile.quality,
+              audioPreference: playbackAudioPreference(profileContext),
+              qualityPreference: playbackQualityPreference(profileContext),
               startupPriority: config.startupPriority,
-              subtitlePreference:
-                stateManager.getState().mode === "anime"
-                  ? config.animeLanguageProfile.subtitle
-                  : config.seriesLanguageProfile.subtitle,
+              subtitlePreference: playbackSubtitlePreference(profileContext),
             };
           };
           const consumedBundle = sourceRefreshDecision
@@ -1251,24 +1274,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: currentEpisode,
                 mode: stateManager.getState().mode,
                 providerId: currentProvider.metadata.id,
-                audioPreference:
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.audio
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.audio
-                      : config.seriesLanguageProfile.audio,
-                subtitlePreference:
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.subtitle
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.subtitle
-                      : config.seriesLanguageProfile.subtitle,
-                qualityPreference:
-                  stateManager.getState().mode === "anime"
-                    ? config.animeLanguageProfile.quality
-                    : title.type === "movie"
-                      ? config.movieLanguageProfile.quality
-                      : config.seriesLanguageProfile.quality,
+                audioPreference: playbackAudioPreference(profileContext),
+                subtitlePreference: playbackSubtitlePreference(profileContext),
+                qualityPreference: playbackQualityPreference(profileContext),
                 startupPriority: config.startupPriority,
                 favoriteSourceNames: config.favoriteSources,
                 selectedSourceId: currentPreferredStreamSelection.sourceId ?? undefined,
@@ -1776,7 +1784,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 return null;
               });
           };
-          const maybePrefetchNext = () => {
+          const maybePrefetchNext = async () => {
             if (container.config.powerSaverMode) {
               return;
             }
@@ -1790,6 +1798,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               })
             ) {
               return;
+            }
+            const nextEp = episodeAvailability.nextEpisode;
+            const prefetchMetadata = providerRegistry.get(
+              sessionSoftProviderId ?? stateManager.getState().provider,
+            );
+            if (nextEp && prefetchMetadata) {
+              await selectionCoordinator.hydrate(prefetchMetadata.metadata.id, nextEp);
             }
             const target = buildNextPrefetchTarget();
             if (!target) return;
@@ -2312,9 +2327,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               pendingStart = await completeSourceTrackPick(
                 currentEpisode,
-                picked.section,
+                picked,
                 selection,
                 restartResume,
+                "playback-control-track-override",
               );
               diagnosticsService.record({
                 category: "playback",
@@ -2370,9 +2386,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               pendingStart = await completeSourceTrackPick(
                 currentEpisode,
-                picked.section,
+                picked,
                 selection,
                 restartResume,
+                "playback-control-track-override",
               );
               diagnosticsService.record({
                 category: "playback",
@@ -2432,9 +2449,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               pendingStart = await completeSourceTrackPick(
                 currentEpisode,
-                picked.section,
+                picked,
                 selection,
                 restartResume,
+                "playback-control-track-override",
               );
               diagnosticsService.record({
                 category: "playback",
@@ -2739,9 +2757,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (picked && selection) {
                 pendingStart = await completeSourceTrackPick(
                   currentEpisode,
-                  picked.section,
+                  picked,
                   selection,
                   resumeSeconds,
+                  "post-playback-tracks",
                 );
                 playbackSession = this.transitionPlaybackSession(
                   context,
@@ -2977,9 +2996,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 }
                 pendingStart = await completeSourceTrackPick(
                   currentEpisode,
-                  picked.section,
+                  picked,
                   selection,
                   resumeSeconds,
+                  "post-playback-tracks",
                 );
                 playbackSession = this.transitionPlaybackSession(
                   context,
@@ -3218,6 +3238,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               break postPlayback;
             } else if (
+              routedAction === "provider" ||
               routedAction === "source" ||
               routedAction === "quality" ||
               routedAction === "audio" ||
@@ -3227,23 +3248,29 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               // user may switch any section from the same panel, so restart
               // semantics follow the picked section, not the opening command.
               const initialSection =
-                routedAction === "source"
-                  ? "source"
-                  : routedAction === "quality"
-                    ? "quality"
-                    : routedAction === "audio"
-                      ? "audio"
-                      : "subtitle";
+                routedAction === "provider"
+                  ? "provider"
+                  : routedAction === "source"
+                    ? "source"
+                    : routedAction === "quality"
+                      ? "quality"
+                      : routedAction === "audio"
+                        ? "audio"
+                        : "subtitle";
               const picked = await openTracksPanel(preparedStream, { initialSection }, container);
-              const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-              if (!picked || !selection) {
+              if (!picked) {
+                continue postPlayback;
+              }
+              const selection = streamSelectionFromTrackPick(picked);
+              if (!selection && picked.section !== "subtitle") {
                 continue postPlayback;
               }
               pendingStart = await completeSourceTrackPick(
                 currentEpisode,
-                picked.section,
+                picked,
                 selection,
                 resumeSeconds,
+                "post-playback-tracks",
               );
               playbackSession = this.transitionPlaybackSession(
                 context,
@@ -3253,9 +3280,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  ...(selection.sourceId
-                    ? { sourceId: selection.sourceId }
-                    : { streamId: selection.streamId }),
+                  ...(selection?.crossProviderSource
+                    ? {
+                        fromProvider: resolvedProviderId,
+                        provider: selection.crossProviderSource.providerId,
+                        sourceId: selection.crossProviderSource.sourceId,
+                      }
+                    : selection?.providerId
+                      ? {
+                          fromProvider: resolvedProviderId,
+                          provider: selection.providerId,
+                        }
+                      : selection?.sourceId
+                        ? { sourceId: selection.sourceId }
+                        : selection?.streamId
+                          ? { streamId: selection.streamId }
+                          : selection?.audioMode
+                            ? { audioMode: selection.audioMode }
+                            : {}),
                 },
               );
               break postPlayback;
@@ -3535,10 +3577,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   ): Promise<EpisodePrefetchBundle | null> {
     const { config, stateManager, playbackResolveWork } = context.container;
     const mode = stateManager.getState().mode;
-    const subLang =
-      mode === "anime"
-        ? stateManager.getState().animeLanguageProfile.subtitle
-        : stateManager.getState().seriesLanguageProfile.subtitle;
+    const profileCtx = { mode, title: input.title, config: config.getRaw() };
+    const subLang = playbackSubtitlePreference(profileCtx);
     const isInteractiveSubtitle = subLang === "interactive" || subLang === "fzf";
 
     const stream = await playbackResolveWork.prefetch(
@@ -3547,17 +3587,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         episode: input.nextEpisode,
         mode,
         providerId: input.providerId,
-        audioPreference:
-          mode === "anime" ? config.animeLanguageProfile.audio : config.seriesLanguageProfile.audio,
-        subtitlePreference:
-          mode === "anime"
-            ? config.animeLanguageProfile.subtitle
-            : config.seriesLanguageProfile.subtitle,
-        qualityPreference:
-          mode === "anime"
-            ? config.animeLanguageProfile.quality
-            : config.seriesLanguageProfile.quality,
+        audioPreference: playbackAudioPreference(profileCtx),
+        subtitlePreference: playbackSubtitlePreference(profileCtx),
+        qualityPreference: playbackQualityPreference(profileCtx),
         startupPriority: config.startupPriority,
+        selectedSourceId: input.target?.sourceId,
+        selectedStreamId: input.target?.streamId,
         recoveryMode: config.recoveryMode,
         signal: input.signal,
         onEvent: (event) => {
@@ -3582,17 +3617,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       titleId: input.title.id,
       episode: input.nextEpisode,
       providerId: input.providerId,
-      audioPreference:
-        mode === "anime" ? config.animeLanguageProfile.audio : config.seriesLanguageProfile.audio,
-      qualityPreference:
-        mode === "anime"
-          ? config.animeLanguageProfile.quality
-          : config.seriesLanguageProfile.quality,
+      audioPreference: playbackAudioPreference(profileCtx),
+      qualityPreference: playbackQualityPreference(profileCtx),
       startupPriority: config.startupPriority,
-      subtitlePreference:
-        mode === "anime"
-          ? config.animeLanguageProfile.subtitle
-          : config.seriesLanguageProfile.subtitle,
+      subtitlePreference: playbackSubtitlePreference(profileCtx),
     };
 
     if (isInteractiveSubtitle) {
