@@ -16,14 +16,7 @@
 
   "sortImports": {
     "internalPattern": ["@/**", "@kunai/**"],
-    "groups": [
-      "builtin",
-      "external",
-      "internal",
-      ["parent", "sibling", "index"],
-      "style",
-      "unknown"
-    ],
+    "groups": ["builtin", "external", "internal", ["parent", "sibling", "index"], "style", "unknown"],
     "newlinesBetween": true,
     "sortSideEffects": false
   },
@@ -37,7 +30,8 @@
   },
 
   "ignorePatterns": [
-    "apps/experiments/**",
+    "apps/experiments/**/*.ts",
+    "apps/experiments/**/node_modules/**",
     "apps/cli/dist/**",
     "dist/**",
     "node_modules/**",
