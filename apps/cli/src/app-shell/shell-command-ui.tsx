@@ -1,5 +1,5 @@
 import { getLineEditorViewport, splitCursor } from "@/app-shell/line-editor";
-import { Box, Text, useStdout } from "ink";
+import { Box, Text } from "ink";
 import React from "react";
 
 import type { ResolvedAppCommand } from "./commands";
@@ -13,6 +13,7 @@ import {
 } from "./shell-command-model";
 import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import { useShellDimensions } from "./use-viewport-policy";
 
 export function LineEditorText({
   value,
@@ -81,9 +82,7 @@ export function CommandPalette({
   maxVisible?: number;
   width?: number;
 }) {
-  const { stdout } = useStdout();
-  const terminalRows = stdout.rows ?? 24;
-  const shellColumns = stdout.columns ?? 80;
+  const { cols: shellColumns, rows: terminalRows } = useShellDimensions();
   const shellWidth = Math.max(28, width ?? shellColumns);
   const maxVisible = maxVisibleProp ?? getPlaybackCommandPaletteMaxVisible(terminalRows);
   const model = buildCommandPickerModel(input, commands, highlightedIndex);

@@ -1,9 +1,10 @@
-import { Box, Text, useStdout } from "ink";
+import { Box, Text } from "ink";
 import React from "react";
 
 import { truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
+import { useShellDimensions } from "./use-viewport-policy";
 
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "error" | "accent";
@@ -107,8 +108,8 @@ export function Footer({
   maxVisible?: number;
   terminalWidth?: number;
 }) {
-  const { stdout } = useStdout();
-  const terminalWidth = terminalWidthProp ?? stdout.columns ?? 100;
+  const { cols } = useShellDimensions();
+  const terminalWidth = terminalWidthProp ?? cols;
   const taskWidth = Math.max(20, terminalWidth - 4);
   const visibleActions = React.useMemo(
     () =>

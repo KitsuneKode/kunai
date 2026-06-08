@@ -1,5 +1,5 @@
 import { useLineEditor } from "@/app-shell/line-editor";
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
@@ -15,6 +15,7 @@ import { ShellFooter } from "./shell-primitives";
 import { measureColumns, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { FooterAction, ShellAction, ShellFooterMode, ShellStatus } from "./types";
+import { useShellDimensions } from "./use-viewport-policy";
 
 type ShellFrameInputKey = Parameters<Parameters<typeof useInput>[0]>[1];
 
@@ -74,9 +75,9 @@ export function ShellFrame({
     onUnhandledInput?.(input, key);
   });
 
-  const { stdout } = useStdout();
-  const cols = terminalWidthProp ?? stdout.columns ?? 80;
-  const rows = terminalRowsProp ?? stdout.rows ?? 24;
+  const { cols: shellCols, rows: shellRows } = useShellDimensions();
+  const cols = terminalWidthProp ?? shellCols;
+  const rows = terminalRowsProp ?? shellRows;
   const commandWidth = resolveCommandPaletteWidth(cols);
   const statusLabel = status?.label;
   const statusWidth = statusLabel ? measureColumns(statusLabel) : 0;
@@ -150,8 +151,8 @@ export function InputField({
   onRedraw?: () => void;
   terminalWidth?: number;
 }) {
-  const { stdout } = useStdout();
-  const fieldWidth = Math.max(20, maxWidth ?? (terminalWidthProp ?? stdout.columns ?? 80) - 8);
+  const { cols } = useShellDimensions();
+  const fieldWidth = Math.max(20, maxWidth ?? (terminalWidthProp ?? cols) - 8);
   const textWidth = Math.max(4, fieldWidth - 8);
   const renderedHint = hint ? truncateLine(hint, Math.max(12, fieldWidth - 4)) : undefined;
   const editor = useLineEditor({
