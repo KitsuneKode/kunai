@@ -71,6 +71,8 @@ test("loadCalendarResults maps releasing-today items into structured calendar ca
   expect(results.results[0]).toMatchObject({
     id: "21",
     type: "series",
+    isAnime: true,
+    externalIds: { anilistId: "21" },
     title: "Frieren",
     year: todayYear,
     metadataSource: "AniList calendar",

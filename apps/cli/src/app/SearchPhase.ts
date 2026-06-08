@@ -25,6 +25,7 @@ import {
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { loadRandomResults } from "@/app/random-results";
 import { searchTitles } from "@/app/search-routing";
+import { applySearchSelectionSessionRouting } from "@/app/search-selection-routing";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import { effectiveFooterHints } from "@/container";
 import { mediaItemFromSearchResult } from "@/domain/media/media-item-adapters";
@@ -182,8 +183,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const selected = results[idx];
             if (selected) {
               stateManager.dispatch({ type: "SELECT_RESULT", index: idx });
+              const selectionMode = applySearchSelectionSessionRouting(container, selected);
               const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
-                mode: stateManager.getState().mode,
+                mode: selectionMode,
                 providerId: stateManager.getState().provider,
                 animeLanguageProfile: container.config.animeLanguageProfile,
                 providerRegistry,
@@ -560,10 +562,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         const originalSelected = outcome.value;
         const deferAnimeProviderMapping =
           !!input && "deferAnimeProviderMapping" in input && input.deferAnimeProviderMapping;
+        const selectionMode = applySearchSelectionSessionRouting(container, originalSelected);
         const selected = deferAnimeProviderMapping
           ? originalSelected
           : await mapAnimeDiscoveryResultToProviderNative(originalSelected, {
-              mode: stateManager.getState().mode,
+              mode: selectionMode,
               providerId: stateManager.getState().provider,
               animeLanguageProfile: container.config.animeLanguageProfile,
               providerRegistry,

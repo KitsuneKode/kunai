@@ -172,6 +172,15 @@ export function formatReleaseCountdown(remainingMs: number): string {
   if (remainingMs <= 0) return "soon";
   const totalMinutes = Math.ceil(remainingMs / 60_000);
   if (totalMinutes < 60) return `in ${totalMinutes}m`;
+
+  const minutesPerDay = 24 * 60;
+  if (totalMinutes >= minutesPerDay) {
+    const days = Math.floor(totalMinutes / minutesPerDay);
+    const hours = Math.floor((totalMinutes % minutesPerDay) / 60);
+    if (hours === 0) return `in ${days}d`;
+    return `in ${days}d ${hours}h`;
+  }
+
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   if (minutes === 0) return `in ${hours}h`;

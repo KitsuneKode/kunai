@@ -211,8 +211,14 @@ test("deriveCalendarReleaseState uses countdown for future airing-today timestam
   expect(deriveCalendarReleaseState(option, now)).toBe("countdown");
 });
 
-test("formatReleaseCountdown prefers hours and minutes", () => {
+test("formatReleaseCountdown prefers hours and minutes under one day", () => {
   expect(formatReleaseCountdown(3 * 60 * 60_000 + 20 * 60_000)).toBe("in 3h 20m");
+});
+
+test("formatReleaseCountdown uses days and hours at or above one day", () => {
+  expect(formatReleaseCountdown(32 * 60 * 60_000 + 16 * 60_000)).toBe("in 1d 8h");
+  expect(formatReleaseCountdown(49 * 60 * 60_000 + 40 * 60_000)).toBe("in 2d 1h");
+  expect(formatReleaseCountdown(48 * 60 * 60_000)).toBe("in 2d");
 });
 
 test("parsePreviewTimeTodayMs parses 12-hour clock labels", () => {

@@ -174,9 +174,19 @@ function projectProgressForCalendarItems(
 
 function toCalendarSearchResult(item: CatalogScheduleItem, calendar: CalendarItem): SearchResult {
   const year = item.releaseAt ? String(new Date(item.releaseAt).getFullYear()) : "";
+  const rawTitleId = item.titleId.startsWith(`${item.source}:`)
+    ? item.titleId.slice(item.source.length + 1)
+    : item.titleId;
   return {
     id: item.titleId,
     type: item.type === "movie" ? "movie" : "series",
+    ...(item.type === "anime" ? { isAnime: true } : {}),
+    externalIds:
+      item.source === "anilist"
+        ? { anilistId: rawTitleId }
+        : item.source === "tmdb"
+          ? { tmdbId: rawTitleId }
+          : undefined,
     title: item.titleName,
     year,
     overview: calendar.display.episodeCode
