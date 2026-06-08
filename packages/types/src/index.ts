@@ -475,6 +475,14 @@ export interface ProviderResolveResult extends ProviderSourceInventory {
   readonly trace: ResolveTrace;
   readonly failures: readonly ProviderFailure[];
   readonly healthDelta?: ProviderHealthDelta;
+  /** Set when the provider already probed the selected stream URL during resolve. */
+  readonly streamReachabilityVerified?: boolean;
+}
+
+export function isProviderStreamReachabilityVerified(
+  result: Pick<ProviderResolveResult, "streamReachabilityVerified"> | null | undefined,
+): boolean {
+  return result?.streamReachabilityVerified === true;
 }
 
 export function getProviderSourceInventory(result: ProviderResolveResult): ProviderSourceInventory {
