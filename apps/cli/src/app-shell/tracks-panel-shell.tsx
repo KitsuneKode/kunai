@@ -29,6 +29,8 @@ export type TracksPanelShellProps = {
   /** Counts-header tail (provider/host label). */
   providerLabel?: string;
   filterQuery?: string;
+  /** Inline nav hints — off when ShellFooter already owns the footer (root overlay). */
+  showNavHint?: boolean;
 };
 
 function riskColor(risk: TrackCapabilityRisk): string {
@@ -54,11 +56,27 @@ function rowColor(capability: TrackCapability, highlighted: boolean): string {
   return riskColor(capability.risk);
 }
 
+function rowStatusGlyph(
+  capability: TrackCapability,
+): { readonly glyph: string; readonly color: string } | null {
+  if (capability.risk === "failed") {
+    return { glyph: "✕ ", color: palette.danger };
+  }
+  if (capability.selected) {
+    return { glyph: "✓ ", color: palette.ok };
+  }
+  return null;
+}
+
 function rowTag(capability: TrackCapability): string | null {
-  if (capability.selected && capability.risk === "failed") return "current · failed";
+  if (capability.selected && capability.risk === "failed") {
+    return capability.reason ?? "failed on last try";
+  }
+  if (capability.risk === "failed") {
+    return capability.reason ?? "failed on last try";
+  }
   if (capability.selected) return "current";
-  if (capability.risk === "failed") return "failed";
-  if (capability.risk === "fallback") return "fallback";
+  if (capability.risk === "fallback") return "not tried";
   if (capability.risk === "unavailable") return "unavailable";
   if (capability.enabled) return "available";
   return null;
@@ -98,6 +116,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
   favorites = EMPTY_FAVORITES,
   providerLabel,
   filterQuery = "",
+  showNavHint = false,
 }: TracksPanelShellProps) {
   if (groups.length === 0) {
     return (
@@ -130,13 +149,13 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     </Box>
   );
 
-  const footer = (
+  const footer = showNavHint ? (
     <Box marginTop={1}>
       <Text color={palette.dim}>
         ↑↓ choose · → enter · ⏎ switch ·{showFavoriteHint ? " f favorite ·" : ""} esc back
       </Text>
     </Box>
-  );
+  ) : null;
 
   if (width < TWO_PANE_MIN_WIDTH) {
     return (
@@ -274,12 +293,18 @@ function OptionsPane({
         const highlighted = optionsFocused && index === state.optionIndex;
         const fav = group.section === "source" && isFavoriteSource(favorites, capability.label);
         const tag = rowTag(capability);
+        const statusGlyph = rowStatusGlyph(capability);
         return (
           <Box key={`opt-${capability.value}`} flexDirection="row">
             <Text color={highlighted ? palette.accent : palette.dim}>
               {highlighted ? "▌ " : capability.selected ? "› " : "  "}
             </Text>
             {fav ? <Text color={palette.accent}>♥ </Text> : null}
+            {statusGlyph ? (
+              <Text color={statusGlyph.color} bold={capability.risk === "failed"}>
+                {statusGlyph.glyph}
+              </Text>
+            ) : null}
             <Text
               color={rowColor(capability, highlighted)}
               bold={highlighted || capability.selected}
@@ -292,7 +317,10 @@ function OptionsPane({
                 {"  "}
                 {truncateLine(
                   [tag, capability.detail].filter(Boolean).join(" · "),
-                  Math.max(8, width - capability.label.length - (fav ? 6 : 4)),
+                  Math.max(
+                    8,
+                    width - capability.label.length - (fav ? 6 : 4) - (statusGlyph ? 2 : 0),
+                  ),
                 )}
               </Text>
             ) : null}
@@ -337,12 +365,18 @@ function StackedView({
         const { capability } = row;
         const fav =
           capability.section === "source" && isFavoriteSource(favorites, capability.label);
+        const statusGlyph = rowStatusGlyph(capability);
         return (
           <Box key={`r-${row.group.section}-${capability.value}`} flexDirection="row">
             <Text color={palette.dim}>{capability.selected ? "› " : "  "}</Text>
             {fav ? <Text color={palette.accent}>♥ </Text> : null}
+            {statusGlyph ? (
+              <Text color={statusGlyph.color} bold={capability.risk === "failed"}>
+                {statusGlyph.glyph}
+              </Text>
+            ) : null}
             <Text color={rowColor(capability, false)} bold={capability.selected} wrap="truncate">
-              {truncateLine(capability.label, width - 6)}
+              {truncateLine(capability.label, width - 6 - (statusGlyph ? 2 : 0))}
             </Text>
           </Box>
         );

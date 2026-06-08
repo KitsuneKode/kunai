@@ -173,6 +173,8 @@ export type LoadingShellState = {
   getRuntimeHealth?: () => ShellPanelLine | undefined;
   cancellable?: boolean;
   fallbackAvailable?: boolean;
+  /** Alternate provider streams exposed by the current resolve (enables source picker mid-bootstrap). */
+  hasStreamCandidates?: boolean;
   autoskipPaused?: boolean;
   autoplayPaused?: boolean;
   isSeriesPlayback?: boolean;
@@ -271,6 +273,10 @@ export type BrowseShellResult<T> =
 
 export type PlaybackShellResult =
   | ShellAction
+  | {
+      readonly type: "track-selection";
+      readonly pick: import("@/domain/playback/track-capabilities").DecodedTrackSelection;
+    }
   | {
       readonly type: "play-recommendation";
       readonly item: PlaybackRecommendationRailItem;

@@ -30,9 +30,10 @@ const clamp = (value: number, max: number): number => Math.max(0, Math.min(value
 
 export function createInitialTracksNav(input: {
   readonly initialSectionIndex?: number;
+  readonly focusedPane?: TracksNavPane;
 }): TracksNavState {
   return {
-    focusedPane: "sections",
+    focusedPane: input.focusedPane ?? "sections",
     sectionIndex: Math.max(0, input.initialSectionIndex ?? 0),
     optionIndex: 0,
   };

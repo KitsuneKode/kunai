@@ -111,6 +111,7 @@ import {
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
 import { resolvePostPlayState } from "@/domain/playback/post-play-state";
+import type { TrackCapabilitySection } from "@/domain/playback/track-capabilities";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -168,6 +169,19 @@ async function applyMpvEpisodeLoadingOverlay(
 ) {
   if (!control) return;
   const label = `Kunai · Loading S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}…`;
+  if (control.setEpisodeTransitionLoading) {
+    await control.setEpisodeTransitionLoading(label);
+  } else {
+    await control.showOsdMessage?.(label, 120_000);
+  }
+}
+
+async function applyMpvStreamSwitchOverlay(
+  control: ActivePlayerControl | null,
+  detail = "Switching source…",
+) {
+  if (!control) return;
+  const label = `Kunai · ${detail}`;
   if (control.setEpisodeTransitionLoading) {
     await control.setEpisodeTransitionLoading(label);
   } else {
@@ -750,6 +764,33 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       let autoSourceRecoverAttempts = 0;
       let autoRecoverEpisodeKey: string | null = null;
       let consumedProviderSwitchSeq = providerSwitchSeqBeforeEpisodePicker;
+      const recentEpisodeStreamKey = (episode: EpisodeInfo): string =>
+        `${title.id}:${episode.season}:${episode.episode}`;
+      const invalidateRecentEpisodeStream = (episode: EpisodeInfo): void => {
+        recentEpisodeStreams.delete(recentEpisodeStreamKey(episode));
+      };
+      const recentStreamMatchesPreferred = (
+        recent: { readonly stream: StreamInfo },
+        providerId: string,
+        episode: EpisodeInfo,
+      ): boolean => {
+        const preferred = getPreferredStreamSelection(providerId, episode);
+        if (!preferred.sourceId && !preferred.streamId) return true;
+        const result = recent.stream.providerResolveResult;
+        if (!result) return false;
+        if (preferred.streamId) return result.selectedStreamId === preferred.streamId;
+        const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+        return selected?.sourceId === preferred.sourceId;
+      };
+      const prepareStreamSwitchRestart = async (episode: EpisodeInfo): Promise<void> => {
+        pendingSourceRefreshAction = "recover";
+        invalidateRecentEpisodeStream(episode);
+        this.updatePlaybackFeedback(context, {
+          detail: "Switching stream…",
+          note: "Re-resolving with your selection",
+        });
+        await applyMpvStreamSwitchOverlay(playerControl.getActive());
+      };
 
       // Inner playback loop
       while (true) {
@@ -839,6 +880,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             source: { providerId: currentProvider.metadata.id },
           });
           let resolvedProviderId = currentProvider.metadata.id;
+          const completeSourceTrackPick = async (
+            episode: EpisodeInfo,
+            section: TrackCapabilitySection,
+            selection: StreamSelectionIntent,
+            resumeSeconds: number,
+          ): Promise<ReturnType<typeof startEpisodeNavigation>> => {
+            await setPreferredStreamSelection(resolvedProviderId, episode, selection);
+            if (section === "source") {
+              await prepareStreamSwitchRestart(episode);
+            }
+            return section === "source"
+              ? startEpisodeNavigation({ targetResumeSeconds: resumeSeconds })
+              : startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
+          };
           const recordStartupMark = (stage: PlaybackStartupStage, activeStream?: StreamInfo) => {
             if (!startupTimeline.mark(stage)) return;
             const snapshot = startupTimeline.snapshot();
@@ -1135,12 +1190,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // This lets P-navigation reuse the exact same StreamInfo without any
           // provider resolve, cache lookup, or health check.
           if (!stream && !sourceRefreshDecision) {
-            const recentKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
+            const recentKey = recentEpisodeStreamKey(currentEpisode);
             const recent = recentEpisodeStreams.get(recentKey);
             const recentMatchesProvider =
               recent?.selectedProviderId === configuredProviderId &&
               recent.resolvedProviderId === configuredProviderId;
-            if (recent && recentMatchesProvider) {
+            if (
+              recent &&
+              recentMatchesProvider &&
+              recentStreamMatchesPreferred(recent, currentProvider.metadata.id, currentEpisode)
+            ) {
               stream = recent.stream;
               resolvedProviderId = recent.resolvedProviderId;
               streamProvenance = recent.provenance;
@@ -1212,6 +1271,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                       : config.seriesLanguageProfile.quality,
                 startupPriority: config.startupPriority,
                 favoriteSourceNames: config.favoriteSources,
+                selectedSourceId: currentPreferredStreamSelection.sourceId ?? undefined,
+                selectedStreamId: currentPreferredStreamSelection.streamId ?? undefined,
                 recoveryMode: honorExplicitProviderOnly ? "manual" : config.recoveryMode,
                 preferFreshStream:
                   honorExplicitProviderOnly || sourceRefreshIsRefresh || sourceRefreshIsRecover,
@@ -1458,6 +1519,36 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (!stream) {
             workControl.setActive(null);
             if (resolveController.signal.aborted && !context.signal.aborted) {
+              const streamSwitchAction = playerControl.consumeLastAction();
+              const streamSwitchSelection =
+                streamSwitchAction === "pick-source" ||
+                streamSwitchAction === "pick-stream" ||
+                streamSwitchAction === "pick-quality"
+                  ? playerControl.consumePendingStreamSelection()
+                  : null;
+              if (streamSwitchSelection) {
+                await setPreferredStreamSelection(
+                  currentProvider.metadata.id,
+                  currentEpisode,
+                  streamSwitchSelection,
+                );
+                await prepareStreamSwitchRestart(currentEpisode);
+                diagnosticsService.record({
+                  ...playbackCorrelation,
+                  category: "playback",
+                  message: "Stream selection applied during bootstrap resolve",
+                  providerId: currentProvider.metadata.id,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  context: {
+                    action: streamSwitchAction,
+                    sourceId: streamSwitchSelection.sourceId,
+                    streamId: streamSwitchSelection.streamId,
+                  },
+                });
+                continue;
+              }
               if (resolveAbortIntent === "fallback") {
                 const fallback = providerRegistry
                   .getCompatible(title, stateManager.getState().mode)
@@ -2186,6 +2277,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 currentEpisode,
                 confirmedStreamSelection,
               );
+              await prepareStreamSwitchRestart(currentEpisode);
               pendingStart = startEpisodeNavigation({
                 targetResumeSeconds: toHistoryTimestamp(
                   result,
@@ -2213,16 +2305,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             );
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
             if (picked && selection) {
-              await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              pendingStart =
-                picked.section === "source"
-                  ? startEpisodeNavigation({ targetResumeSeconds: restartResume })
-                  : startAtResumePoint(restartResume, { suppressResumePrompt: true });
+              pendingStart = await completeSourceTrackPick(
+                currentEpisode,
+                picked.section,
+                selection,
+                restartResume,
+              );
               diagnosticsService.record({
                 category: "playback",
                 message: "Track override selected",
@@ -2246,6 +2339,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 currentEpisode,
                 confirmedStreamSelection,
               );
+              await prepareStreamSwitchRestart(currentEpisode);
               pendingStart = startEpisodeNavigation({
                 targetResumeSeconds: toHistoryTimestamp(
                   result,
@@ -2269,16 +2363,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const picked = await openTracksPanel(preparedStream, {}, container);
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
             if (picked && selection) {
-              await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              pendingStart =
-                picked.section === "source"
-                  ? startEpisodeNavigation({ targetResumeSeconds: restartResume })
-                  : startAtResumePoint(restartResume, { suppressResumePrompt: true });
+              pendingStart = await completeSourceTrackPick(
+                currentEpisode,
+                picked.section,
+                selection,
+                restartResume,
+              );
               diagnosticsService.record({
                 category: "playback",
                 message: "Track override selected",
@@ -2330,16 +2425,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             );
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
             if (picked && selection) {
-              await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              pendingStart =
-                picked.section === "source"
-                  ? startEpisodeNavigation({ targetResumeSeconds: restartResume })
-                  : startAtResumePoint(restartResume, { suppressResumePrompt: true });
+              pendingStart = await completeSourceTrackPick(
+                currentEpisode,
+                picked.section,
+                selection,
+                restartResume,
+              );
               diagnosticsService.record({
                 category: "playback",
                 message: "Track override selected",
@@ -2641,11 +2737,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               const selection = picked ? streamSelectionFromTrackPick(picked) : null;
               if (picked && selection) {
-                await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
-                pendingStart =
-                  picked.section === "source"
-                    ? startEpisodeNavigation({ targetResumeSeconds: resumeSeconds })
-                    : startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
+                pendingStart = await completeSourceTrackPick(
+                  currentEpisode,
+                  picked.section,
+                  selection,
+                  resumeSeconds,
+                );
                 playbackSession = this.transitionPlaybackSession(
                   context,
                   playbackSession,
@@ -2799,6 +2896,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   ]
                 : undefined;
             const postAction = await openPlaybackShell({
+              container,
               state: {
                 type: title.type,
                 title: title.name,
@@ -2871,6 +2969,33 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
 
             if (typeof postAction === "object") {
+              if (postAction.type === "track-selection") {
+                const picked = postAction.pick;
+                const selection = streamSelectionFromTrackPick(picked);
+                if (!selection) {
+                  continue postPlayback;
+                }
+                pendingStart = await completeSourceTrackPick(
+                  currentEpisode,
+                  picked.section,
+                  selection,
+                  resumeSeconds,
+                );
+                playbackSession = this.transitionPlaybackSession(
+                  context,
+                  playbackSession,
+                  "episode-navigation",
+                  {
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                    ...(selection.sourceId
+                      ? { sourceId: selection.sourceId }
+                      : { streamId: selection.streamId }),
+                  },
+                );
+                break postPlayback;
+              }
               if (postAction.type === "play-recommendation") {
                 await teardownPlaybackForPostPlayExit(
                   container,
@@ -3114,11 +3239,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (!picked || !selection) {
                 continue postPlayback;
               }
-              await setPreferredStreamSelection(resolvedProviderId, currentEpisode, selection);
-              pendingStart =
-                picked.section === "source"
-                  ? startEpisodeNavigation({ targetResumeSeconds: resumeSeconds })
-                  : startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
+              pendingStart = await completeSourceTrackPick(
+                currentEpisode,
+                picked.section,
+                selection,
+                resumeSeconds,
+              );
               playbackSession = this.transitionPlaybackSession(
                 context,
                 playbackSession,

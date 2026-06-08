@@ -2,6 +2,19 @@ import { expect, test } from "bun:test";
 
 import { buildLoadingFooterActions } from "@/app-shell/loading-shell-model";
 
+test("loading footer exposes source picker when stream candidates exist", () => {
+  const actions = buildLoadingFooterActions({
+    title: "Bad Guys",
+    operation: "loading",
+    hasStreamCandidates: true,
+    fallbackAvailable: true,
+    fallbackProviderName: "AllManga",
+  });
+
+  expect(actions.map((action) => action.action)).toContain("source");
+  expect(actions.find((action) => action.action === "source")?.key).toBe("o");
+});
+
 test("loading footer exposes autoplay controls for series playback even at episode boundaries", () => {
   const actions = buildLoadingFooterActions({
     title: "Bad Guys",

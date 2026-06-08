@@ -589,3 +589,37 @@ function buildSeriesCompleteRailFacts(
   if (detail?.genres?.[0]) facts.push({ label: "genre", value: detail.genres[0] });
   return facts;
 }
+
+/** Maps a highlighted post-play action row to the shell result PlaybackPhase expects. */
+export function resolvePostPlayMenuAction(
+  action: PostPlayActionRow,
+  input: { readonly canResume: boolean },
+): import("./types").PlaybackShellResult | null {
+  switch (action.id) {
+    case "try-again":
+    case "replay":
+      return "replay";
+    case "fallback":
+      return "fallback";
+    case "source":
+      return "source";
+    case "search":
+      return "search";
+    case "resume":
+      return "resume";
+    case "next":
+      return input.canResume ? "resume" : "next";
+    case "episodes":
+      return "pick-episode";
+    case "next-season":
+      return "next-season";
+    case "watchlist":
+      return "watchlist";
+    case "calendar":
+      return "calendar";
+    case "session-controls":
+      return null;
+    default:
+      return null;
+  }
+}

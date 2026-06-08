@@ -154,6 +154,15 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   ): Promise<boolean> {
     this.pendingStreamSelection = selection;
     this.lastAction = action;
+    const active = this.active;
+    if (!active) {
+      this.deps.diagnostics.record({
+        category: "playback",
+        message: "Queued stream selection before active player",
+        context: { action, reason, sourceId: selection.sourceId, streamId: selection.streamId },
+      });
+      return true;
+    }
     const stopped = await this.stopWithAction(action, reason, true);
     if (!stopped) {
       this.pendingStreamSelection = null;
@@ -459,7 +468,14 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     });
     if (stopCurrentFile && active.stopCurrentFile) {
       await this.runPriorityCommand(action, reason, async () => {
-        const label = episodeTransitionLoadingLabel(action);
+        const label =
+          this.pendingStreamSelection && action === "pick-source"
+            ? "Kunai · Switching source…"
+            : this.pendingStreamSelection && action === "pick-quality"
+              ? "Kunai · Switching quality…"
+              : this.pendingStreamSelection && action === "pick-stream"
+                ? "Kunai · Switching stream…"
+                : episodeTransitionLoadingLabel(action);
         if (label) {
           if (active.setEpisodeTransitionLoading) {
             await active.setEpisodeTransitionLoading(label);

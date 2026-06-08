@@ -398,7 +398,7 @@ test("projects deterministic source health hints from provider metadata", () => 
     "1 subtitle",
   ]);
   expect(summary.sourceGroups.find((group) => group.id === "source-b")?.hints).toEqual([
-    "✕ failed",
+    "failed",
     "host backup.example",
   ]);
   expect(summary.qualityOptions.find((option) => option.label === "1080p")?.hints).toEqual([

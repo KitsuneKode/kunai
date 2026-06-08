@@ -416,7 +416,11 @@ export function RootOverlayShell({
         : overlayInitialIndex,
   );
   const [tracksNav, setTracksNav] = useState<TracksNavState>(() =>
-    createInitialTracksNav({ initialSectionIndex: tracksInitialSectionIndex }),
+    createInitialTracksNav({
+      initialSectionIndex: tracksInitialSectionIndex,
+      focusedPane:
+        overlay.type === "tracks_panel" && overlay.initialSection ? "options" : "sections",
+    }),
   );
   const [tracksFavorites, setTracksFavorites] = useState<readonly string[]>(
     overlay.type === "tracks_panel" ? overlay.favorites : EMPTY_TRACKS_FAVORITES,
@@ -665,7 +669,10 @@ export function RootOverlayShell({
     settingsError,
   });
   const effectiveSubtitle =
-    (overlay.type === "notifications" || overlay.type === "history") && overlayStatus
+    (overlay.type === "notifications" ||
+      overlay.type === "history" ||
+      overlay.type === "tracks_panel") &&
+    overlayStatus
       ? overlayStatus
       : subtitle;
   const footerActions: readonly FooterAction[] = [
@@ -871,10 +878,9 @@ export function RootOverlayShell({
         setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "enter-section" }, navCtx));
         return;
       }
-      if (key.upArrow || key.downArrow) {
-        setTracksNav((nav) =>
-          tracksPanelNavReducer(nav, { type: key.upArrow ? "up" : "down" }, navCtx),
-        );
+      if (key.upArrow || key.downArrow || input === "j" || input === "k") {
+        const down = key.downArrow || input === "j";
+        setTracksNav((nav) => tracksPanelNavReducer(nav, { type: down ? "down" : "up" }, navCtx));
         return;
       }
       if (input === "f" && focusedGroup?.section === "source") {
@@ -897,7 +903,14 @@ export function RootOverlayShell({
             ? sortByFavorites(focusedGroup.rows, tracksFavorites, (r) => r.label)
             : (focusedGroup?.rows ?? []);
         const row = sorted[tracksNav.optionIndex];
-        if (!focusedGroup || !row || !row.enabled) return; // facts never resolve
+        if (!focusedGroup || !row) return;
+        if (!row.enabled) {
+          setOverlayStatus(
+            row.reason ??
+              (row.selected ? "Already on this stream" : "This option cannot be switched"),
+          );
+          return;
+        }
         container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
         container.stateManager.dispatch({
           type: "RESOLVE_PICKER",
@@ -1757,11 +1770,7 @@ export function RootOverlayShell({
             />
           ) : null}
           <ShellFooter
-            taskLabel={
-              tracksHasSwitchable
-                ? "Tracks  ·  ↑↓ choose, → enter, ⏎ switch, f favorite"
-                : "Tracks  ·  ↑↓ choose, → enter to view, f favorite"
-            }
+            taskLabel="Tracks"
             actions={[
               { key: "↑↓", label: "choose", action: "details" as const },
               { key: "→", label: "enter", action: "details" as const },

@@ -182,12 +182,13 @@ export function getProviderResolveWaitPresentation(input: {
 
   if (input.elapsedSeconds >= 20) {
     const slowSource = classifyProviderResolveUserState({ elapsedSeconds: input.elapsedSeconds });
+    const sourceHint = "o source · ";
     return {
       message: input.stageDetail
         ? `${input.stageDetail} · ${slowSource?.title ?? "Slow source"}`
-        : `${slowSource?.title ?? "Slow source"}. Try fallback or open diagnostics.`,
+        : `${slowSource?.title ?? "Slow source"}. Try another source, fallback, or diagnostics.`,
       tone: "warning",
-      footerTask: `Slow source  ·  ${fallbackHint}Esc cancel · d diagnostics`,
+      footerTask: `Slow source  ·  ${sourceHint}${fallbackHint}Esc cancel · d diagnostics`,
     };
   }
 

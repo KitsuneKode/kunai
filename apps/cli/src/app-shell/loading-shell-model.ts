@@ -29,6 +29,9 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
 
   return [
     { key: "/", label: "commands", action: "command-mode" },
+    ...(state.hasStreamCandidates
+      ? [{ key: "o", label: "source", action: "source" as const }]
+      : []),
     ...(state.fallbackAvailable
       ? [
           {

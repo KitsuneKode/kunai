@@ -218,6 +218,11 @@ export class PlaybackResolveService {
       cachedStream = null;
       cacheBecameStale = true;
       input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
+    } else if (cachedStream && !cachedStreamMatchesSelection(cachedStream, input)) {
+      await this.deps.cacheStore.delete(cacheKey);
+      cachedStream = null;
+      cacheBecameStale = true;
+      input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
     } else if (cachedStream && input.preferFreshStream !== true) {
       const health = await this.checkCachedStreamHealth(cachedStream, {
         force: input.forceHealthCheck === true,
@@ -780,6 +785,24 @@ function inventoryMatchesSelection(
     !inventory.streams.some((stream) => stream.sourceId === input.selectedSourceId)
   ) {
     return false;
+  }
+  return true;
+}
+
+function cachedStreamMatchesSelection(
+  stream: StreamInfo,
+  input: Pick<PlaybackResolveInput, "selectedSourceId" | "selectedStreamId">,
+): boolean {
+  const result = stream.providerResolveResult;
+  if (!result) return true;
+  if (input.selectedStreamId && result.selectedStreamId !== input.selectedStreamId) {
+    return false;
+  }
+  if (input.selectedSourceId) {
+    const selected = result.streams.find((candidate) => candidate.id === result.selectedStreamId);
+    if (selected?.sourceId !== input.selectedSourceId) {
+      return false;
+    }
   }
   return true;
 }

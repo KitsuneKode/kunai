@@ -868,7 +868,7 @@ function resolveCommandState(
           reason: "Start playback before source selection is available.",
         };
       }
-      if (resolving) {
+      if (resolving && !hasStreamCandidates) {
         return {
           enabled: false,
           reason: "Wait for stream resolution to finish first.",
@@ -888,7 +888,7 @@ function resolveCommandState(
           reason: "Start playback before quality selection is available.",
         };
       }
-      if (resolving) {
+      if (resolving && !hasStreamCandidates) {
         return {
           enabled: false,
           reason: "Wait for stream resolution to finish first.",

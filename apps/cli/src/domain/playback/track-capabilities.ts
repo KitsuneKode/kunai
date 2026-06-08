@@ -52,6 +52,12 @@ const SECTION_ORDER: readonly TrackCapabilitySection[] = [
   "hardsub",
 ];
 
+function isSourceSwitchable(state: PlaybackInventoryOptionState): boolean {
+  // Skipped/failed rows were auto-deprioritized during resolve; the user can still
+  // force a manual switch (re-resolve) from the Tracks panel.
+  return state === "available" || state === "skipped" || state === "failed";
+}
+
 function riskFromState(state: PlaybackInventoryOptionState): TrackCapabilityRisk {
   switch (state) {
     case "failed":
@@ -128,7 +134,8 @@ export function serverAudioBadge(
  * Build the normalized, sectioned track capability model from the inventory view.
  *
  * Row rules (from the spec):
- * - A row is selectable only when it is a real, switchable alternative (`available`).
+ * - A row is selectable when it is a real alternative the user can force (`available`,
+ *   or auto-skipped/failed sources the user may retry manually).
  * - The current row and informational rows render as facts (`enabled: false`).
  * - Subtitles are informational by default — Kunai attaches tracks to mpv — and
  *   are only selectable when the backend exposes a pre-play choice that changes
@@ -156,7 +163,7 @@ export function buildTrackCapabilities(
       label: group.label,
       value: group.id,
       selected: group.state === "selected",
-      enabled: group.state === "available",
+      enabled: isSourceSwitchable(group.state),
       reason: group.disabledReason,
       detail: [audioBadge, baseDetail].filter(Boolean).join("  ·  ") || undefined,
       risk: riskFromState(group.state),

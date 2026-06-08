@@ -168,6 +168,24 @@ describe("buildTrackCapabilities", () => {
     expect(disabled?.reason).toBe("geo-blocked");
   });
 
+  test("allows manual switch for auto-skipped and failed sources", () => {
+    const [source] = buildTrackCapabilities(
+      view({
+        sourceGroups: [
+          sourceGroup({ id: "current", state: "selected" }),
+          sourceGroup({ id: "skipped", label: "Zoro", state: "skipped" }),
+          sourceGroup({ id: "failed", label: "Nami", state: "failed" }),
+          sourceGroup({ id: "disabled", label: "Sanji", state: "disabled" }),
+        ],
+      }),
+    );
+    expect(source?.rows.find((r) => r.value === "current")?.enabled).toBe(false);
+    expect(source?.rows.find((r) => r.value === "skipped")?.enabled).toBe(true);
+    expect(source?.rows.find((r) => r.value === "failed")?.enabled).toBe(true);
+    expect(source?.rows.find((r) => r.value === "disabled")?.enabled).toBe(false);
+    expect(source?.selectable).toBe(true);
+  });
+
   test("subtitles are informational unless the backend exposes a pre-play choice", () => {
     const informational = buildTrackCapabilities(
       view({ subtitleOptions: [subtitle({ restartRequired: false })] }),
@@ -220,23 +238,24 @@ describe("track panel rows + navigation", () => {
       "quality",
     ]);
     const selectable = rows.filter((r) => r.kind === "row" && r.selectableIndex !== undefined);
-    // b (source) + q720 (quality) are the only switchable rows.
-    expect(selectable.map((r) => (r.kind === "row" ? r.selectableIndex : -1))).toEqual([0, 1]);
-    expect(selectableTrackCount(groups)).toBe(2);
+    // b (available) + c (failed retry) + q720 (quality) are switchable.
+    expect(selectable.map((r) => (r.kind === "row" ? r.selectableIndex : -1))).toEqual([0, 1, 2]);
+    expect(selectableTrackCount(groups)).toBe(3);
     expect(anyTrackSelectable(groups)).toBe(true);
   });
 
   test("deep-links to the first switchable row of a section", () => {
     expect(initialSelectableIndexForSection(groups, "source")).toBe(0);
-    expect(initialSelectableIndexForSection(groups, "quality")).toBe(1);
+    expect(initialSelectableIndexForSection(groups, "quality")).toBe(2);
     expect(initialSelectableIndexForSection(groups, "audio")).toBe(0);
     expect(initialSelectableIndexForSection(groups)).toBe(0);
   });
 
   test("resolves the capability at a selectable index", () => {
     expect(selectableCapabilityAt(groups, 0)?.value).toBe("b");
-    expect(selectableCapabilityAt(groups, 1)?.value).toBe("stream-720");
-    expect(selectableCapabilityAt(groups, 2)).toBeNull();
+    expect(selectableCapabilityAt(groups, 1)?.value).toBe("c");
+    expect(selectableCapabilityAt(groups, 2)?.value).toBe("stream-720");
+    expect(selectableCapabilityAt(groups, 3)).toBeNull();
   });
 
   test("filters rows without making facts selectable", () => {
@@ -247,17 +266,18 @@ describe("track panel rows + navigation", () => {
 
     const failedOnly = filterTrackCapabilityGroups(groups, "failed");
     expect(failedOnly.map((group) => group.section)).toEqual(["source"]);
-    expect(selectableTrackCount(failedOnly)).toBe(0);
-    expect(failedOnly[0]?.rows[0]).toMatchObject({ value: "c", enabled: false });
+    expect(selectableTrackCount(failedOnly)).toBe(1);
+    expect(failedOnly[0]?.rows[0]).toMatchObject({ value: "c", enabled: true });
   });
 
   test("reports and jumps between selectable sections", () => {
     expect(sectionForSelectableIndex(groups, 0)).toBe("source");
-    expect(sectionForSelectableIndex(groups, 1)).toBe("quality");
-    expect(sectionForSelectableIndex(groups, 2)).toBeUndefined();
-    expect(adjacentSectionSelectableIndex(groups, 0, 1)).toBe(1);
-    expect(adjacentSectionSelectableIndex(groups, 1, -1)).toBe(0);
-    expect(adjacentSectionSelectableIndex(groups, 1, 1)).toBe(0);
+    expect(sectionForSelectableIndex(groups, 1)).toBe("source");
+    expect(sectionForSelectableIndex(groups, 2)).toBe("quality");
+    expect(sectionForSelectableIndex(groups, 3)).toBeUndefined();
+    expect(adjacentSectionSelectableIndex(groups, 0, 1)).toBe(2);
+    expect(adjacentSectionSelectableIndex(groups, 2, -1)).toBe(0);
+    expect(adjacentSectionSelectableIndex(groups, 2, 1)).toBe(0);
   });
 
   test("annotates current failed playback evidence without enabling dead rows", () => {
@@ -272,7 +292,7 @@ describe("track panel rows + navigation", () => {
       reason: "Playback did not start on this stream.",
     });
     expect(qualityGroup?.rows.find((row) => row.value === "stream-720")?.risk).toBe("normal");
-    expect(selectableTrackCount(annotated)).toBe(2);
+    expect(selectableTrackCount(annotated)).toBe(3);
     expect(filterTrackCapabilityGroups(annotated, "did not start")[0]?.section).toBe("source");
   });
 

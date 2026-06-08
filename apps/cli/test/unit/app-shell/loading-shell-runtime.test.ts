@@ -99,9 +99,9 @@ describe("loading shell runtime policy", () => {
         fallbackAvailable: true,
       }),
     ).toEqual({
-      message: "Slow source. Try fallback or open diagnostics.",
+      message: "Slow source. Try another source, fallback, or diagnostics.",
       tone: "warning",
-      footerTask: "Slow source  ·  f fallback · Esc cancel · d diagnostics",
+      footerTask: "Slow source  ·  o source · f fallback · Esc cancel · d diagnostics",
     });
   });
 

@@ -313,6 +313,9 @@ function describeSourceSelectionReason(
   streams: readonly StreamCandidate[],
 ): string | undefined {
   if (streams.length > 0) return undefined;
+  if (typeof source.metadata?.failureReason === "string") {
+    return source.metadata.failureReason;
+  }
   if (typeof source.metadata?.pickerHint === "string") {
     return "Fresh resolve required to try this source.";
   }
@@ -835,9 +838,9 @@ function stateHint(
   providerStatus?: ProviderSourceCandidate["status"],
 ): string | undefined {
   if (state === "selected") return "selected";
-  if (providerStatus === "failed" || state === "failed") return "✕ failed";
-  if (providerStatus === "exhausted") return "provider exhausted";
-  if (providerStatus === "skipped" || state === "skipped") return "provider skipped";
+  if (providerStatus === "failed" || state === "failed") return "failed";
+  if (providerStatus === "exhausted") return "exhausted";
+  if (providerStatus === "skipped" || state === "skipped") return "not tried";
   if (state === "disabled") return "disabled";
   return undefined;
 }

@@ -130,13 +130,8 @@ export function getRootOverlaySubtitle({
   if (overlay.type === "recommendation_picker")
     return `${overlay.options.length} picks based on your watch history`;
   if (overlay.type === "tracks_panel") {
-    const switchable = overlay.groups.reduce(
-      (sum, group) => sum + group.rows.filter((row) => row.enabled).length,
-      0,
-    );
-    return switchable > 0
-      ? `${switchable} switchable ${switchable === 1 ? "option" : "options"} · source, quality, audio, subtitles`
-      : "source, quality, audio, subtitles · nothing to switch";
+    const provider = state.provider;
+    return provider ? `Provider ${provider}` : "Choose source, quality, or audio";
   }
   return `Current provider ${state.provider}`;
 }

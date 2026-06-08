@@ -84,6 +84,11 @@ export function resolveRootShellSurface(
     }
     return "playback";
   }
+  // Tracks replaces the whole terminal during post-play / browse pickers — stacking it
+  // under root-content duplicated footers and left post-play actions visible.
+  if (hasRootContent && rootOverlay?.type === "tracks_panel") {
+    return "root-overlay";
+  }
   if (hasRootContent) {
     return "root-content";
   }

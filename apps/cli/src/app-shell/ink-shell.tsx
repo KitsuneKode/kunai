@@ -16,6 +16,7 @@ import {
   describePlaybackTelemetrySnapshot,
   type PlaybackTelemetrySnapshot,
 } from "@/domain/playback/playback-telemetry-snapshot";
+import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
@@ -32,6 +33,7 @@ import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-p
 import { getPickerLayout } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
 import { PostPlayShell } from "./post-play-shell";
+import { buildPostPlayView, resolvePostPlayMenuAction } from "./post-play-view";
 import { AppHeader } from "./primitives/AppHeader";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { SegmentedControl } from "./primitives/SegmentedControl";
@@ -220,7 +222,30 @@ async function openPlaybackStreamSelectionPicker(
   // Source switches restart the episode; quality/audio/hardsub swap the active
   // stream in place. Subtitles attach in mpv, so they never resolve here.
   const controlAction = picked.section === "source" ? "pick-source" : "pick-quality";
-  await container.playerControl.selectCurrentPlaybackStream(controlAction, selection, reason);
+  const applySelection = async (): Promise<boolean> =>
+    container.playerControl.selectCurrentPlaybackStream(controlAction, selection, reason);
+
+  if (container.playerControl.getActive()) {
+    await applySelection();
+    return;
+  }
+
+  const playbackStatus = container.stateManager.getState().playbackStatus;
+  const isBootstrap = playbackStatus === "loading" || playbackStatus === "ready";
+  const queued = await applySelection();
+  if (!queued) return;
+
+  // During bootstrap there is no active player yet — abort the in-flight resolve so
+  // PlaybackPhase can re-run with the user's preferred source/stream.
+  if (isBootstrap) {
+    container.workControl.cancelActive(`${reason}-abort-resolve`);
+    return;
+  }
+
+  const active = await container.playerControl.waitForActivePlayer({ timeoutMs: 12_000 });
+  if (active) {
+    await applySelection();
+  }
 }
 
 async function openActivePlaybackEpisodePicker(
@@ -712,6 +737,7 @@ function AppRoot({ container }: { container: Container }) {
           .find((candidate) => candidate.metadata.id !== state.provider)
       : undefined;
   const activeProvider = container.providerRegistry.get(state.provider);
+  const hasStreamCandidates = Boolean(state.stream?.providerResolveResult?.streams.length);
 
   const onCommandAction = useCallback(
     (action: ShellAction) => {
@@ -1063,9 +1089,10 @@ function AppRoot({ container }: { container: Container }) {
                         recentEvents: container.diagnosticsStore.getRecent(25),
                         currentProvider: state.provider,
                       }).provider,
-                fallbackAvailable: state.resolveRetryCount > 0 && Boolean(fallbackProvider),
+                fallbackAvailable: Boolean(fallbackProvider),
                 fallbackProviderName:
                   fallbackProvider?.metadata.name ?? fallbackProvider?.metadata.id,
+                hasStreamCandidates,
                 autoskipPaused: state.autoskipSessionPaused,
                 autoplayPaused: state.autoplaySessionPaused,
                 isSeriesPlayback,
@@ -1314,6 +1341,7 @@ function buildPostPlayFooterActions(
 }
 
 function PlaybackShell({
+  container,
   state,
   episodePickerOptions: _episodePickerOptions,
   episodePickerSubtitle: _episodePickerSubtitle,
@@ -1330,6 +1358,7 @@ function PlaybackShell({
   onChangeProvider: _onChangeProvider,
   onResolve,
 }: {
+  container: Container;
   state: PlaybackShellState;
   providerOptions?: readonly ShellPickerOption<string>[];
   episodePickerOptions?: readonly ShellPickerOption<string>[];
@@ -1348,6 +1377,11 @@ function PlaybackShell({
 }) {
   usePosterSurfaceBoundaryCleanup(true);
   const playbackViewport = useDebouncedViewportPolicy("playback");
+  const overlayBlocksInput = useSessionSelector(
+    container.stateManager,
+    (session) => session.activeModals.length > 0,
+    (left, right) => left === right,
+  );
   const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
   const postPlayState = state.postPlayState ?? { kind: "mid-series" as const };
   const canResume = Boolean(state.resumeLabel);
@@ -1367,6 +1401,75 @@ function PlaybackShell({
     .filter((item): item is string => Boolean(item))
     .join("  ·  ");
   const recommendations = state.recommendationRailItems ?? [];
+  const postPlayView = buildPostPlayView({
+    title: state.title,
+    episodeLabel: state.episodeLabel ?? "",
+    nextEpisodeLabel: state.nextEpisodeLabel,
+    queueNextLabel: state.queueNextLabel,
+    resumeLabel: state.resumeLabel,
+    postPlayState,
+    recommendations,
+    totalEpisodes: state.totalEpisodes,
+    watchedEpisodes: state.watchedEpisodes,
+    currentSeason: state.currentSeason ?? state.season,
+    titleDetail: state.titleDetail,
+    autoplayPaused: state.autoplayPaused,
+    autoskipPaused: state.autoskipPaused,
+    stopAfterCurrent: state.stopAfterCurrent,
+  });
+  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
+  useEffect(() => {
+    setSelectedActionIndex(0);
+  }, [postPlayState.kind, state.episodeLabel, state.resumeLabel]);
+
+  const openInlineTracks = useCallback(
+    async (initialSection: DecodedTrackSelection["section"]) => {
+      const stream = container.stateManager.getState().stream;
+      if (!stream) {
+        onResolve("source");
+        return;
+      }
+      const { openTracksPanel } = await import("./workflows");
+      const picked = await openTracksPanel(stream, { initialSection }, container);
+      if (picked) {
+        onResolve({ type: "track-selection", pick: picked });
+      }
+    },
+    [container, onResolve],
+  );
+
+  const resolvePostPlayAction = useCallback(
+    (result: PlaybackShellResult) => {
+      if (
+        result === "source" ||
+        result === "quality" ||
+        result === "audio" ||
+        result === "subtitle"
+      ) {
+        void openInlineTracks(
+          result === "source"
+            ? "source"
+            : result === "quality"
+              ? "quality"
+              : result === "audio"
+                ? "audio"
+                : "subtitle",
+        );
+        return;
+      }
+      onResolve(result);
+    },
+    [onResolve, openInlineTracks],
+  );
+
+  const runSelectedPostPlayAction = useCallback(() => {
+    const action = postPlayView.actions[selectedActionIndex];
+    if (!action) return;
+    const resolved = resolvePostPlayMenuAction(action, { canResume });
+    if (resolved) {
+      resolvePostPlayAction(resolved);
+    }
+  }, [canResume, resolvePostPlayAction, postPlayView.actions, selectedActionIndex]);
 
   return (
     <ShellFrame
@@ -1378,29 +1481,30 @@ function PlaybackShell({
       footerActions={footerActions}
       footerMode="minimal"
       commands={commands}
-      inputLocked={false}
+      inputLocked={overlayBlocksInput}
       escapeAction="back-to-results"
       onUnhandledInput={(input, key) => {
+        if (overlayBlocksInput) return;
+        if (key.upArrow || input === "k") {
+          setSelectedActionIndex((index) => Math.max(0, index - 1));
+          return;
+        }
+        if (key.downArrow || input === "j") {
+          setSelectedActionIndex((index) =>
+            Math.min(Math.max(0, postPlayView.actions.length - 1), index + 1),
+          );
+          return;
+        }
         if (key.return || input === "c") {
-          if (postPlayState.kind === "did-not-start") {
-            onResolve("replay"); // try again — recover-refetch same episode, never advance
-            return;
-          }
-          if (postPlayState.kind === "mid-series") {
-            onResolve(canResume ? "resume" : "next");
-            return;
-          }
-          if (postPlayState.kind === "season-finale") {
-            onResolve("next-season");
-            return;
-          }
-          if (postPlayState.kind === "series-complete") {
+          if (postPlayState.kind === "series-complete" && postPlayView.actions.length === 0) {
             const item = recommendations[0];
             if (item) {
               onResolve({ type: "play-recommendation", item });
             }
             return;
           }
+          runSelectedPostPlayAction();
+          return;
         }
         if (input === "w" && postPlayState.kind === "caught-up") {
           onResolve("watchlist");
@@ -1416,7 +1520,7 @@ function PlaybackShell({
             return;
           }
           if (input === "o") {
-            onResolve("source");
+            void openInlineTracks("source");
             return;
           }
           if (input === "d") {
@@ -1442,7 +1546,7 @@ function PlaybackShell({
           }
         }
       }}
-      onResolve={onResolve}
+      onResolve={resolvePostPlayAction}
     >
       {playbackViewport.tooSmall ? (
         <ResizeBlocker
@@ -1470,6 +1574,7 @@ function PlaybackShell({
           autoplayPaused={state.autoplayPaused}
           autoskipPaused={state.autoskipPaused}
           stopAfterCurrent={state.stopAfterCurrent}
+          selectedActionIndex={selectedActionIndex}
         />
       )}
     </ShellFrame>
@@ -1478,6 +1583,7 @@ function PlaybackShell({
 
 export function openPlaybackShell({
   state,
+  container,
   providerOptions,
   episodePickerOptions,
   episodePickerSubtitle,
@@ -1493,6 +1599,7 @@ export function openPlaybackShell({
   onChangeProvider,
 }: {
   state: PlaybackShellState;
+  container: Container;
   providerOptions?: readonly ShellPickerOption<string>[];
   episodePickerOptions?: readonly ShellPickerOption<string>[];
   episodePickerSubtitle?: string;
@@ -1511,6 +1618,7 @@ export function openPlaybackShell({
     kind: "playback",
     renderContent: (finish) => (
       <PlaybackShell
+        container={container}
         state={state}
         providerOptions={providerOptions}
         episodePickerOptions={episodePickerOptions}

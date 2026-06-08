@@ -52,6 +52,8 @@ export type PostPlayShellProps = {
   autoplayPaused?: boolean;
   autoskipPaused?: boolean;
   stopAfterCurrent?: boolean;
+  /** Highlighted action row for keyboard navigation (↑/↓ or j/k). */
+  selectedActionIndex?: number;
 };
 
 // ── Color mapping ─────────────────────────────────────────────────────────────
@@ -90,25 +92,30 @@ function ProgressStrip({
 function ActionRows({
   actions,
   width,
+  selectedIndex = 0,
 }: {
   readonly actions: readonly PostPlayActionRow[];
   readonly width: number;
+  readonly selectedIndex?: number;
 }) {
   const shortcutWidth = Math.max(5, ...actions.map((action) => action.shortcut.length + 3));
   const detailWidth = Math.max(8, width - 28 - shortcutWidth);
+  const safeSelectedIndex = Math.min(Math.max(0, selectedIndex), Math.max(0, actions.length - 1));
   return (
     <Box flexDirection="column" marginTop={1}>
       {actions.map((action, idx) => {
-        const isPrimary = idx === 0;
+        const isSelected = idx === safeSelectedIndex;
         const shortcut = ` [${action.shortcut}]`.padStart(shortcutWidth);
         return (
           <Box key={action.id} flexDirection="row" flexWrap="nowrap">
-            <Text color={isPrimary ? palette.accent : palette.dim}>{isPrimary ? "▌ " : "  "}</Text>
-            <Text color={isPrimary ? palette.text : palette.textDim} bold={isPrimary}>
+            <Text color={isSelected ? palette.accent : palette.dim}>
+              {isSelected ? "▌ " : "  "}
+            </Text>
+            <Text color={isSelected ? palette.text : palette.textDim} bold={isSelected}>
               {action.label.padEnd(18).slice(0, 18)}
             </Text>
             <Text color={palette.muted}>{truncateLine(action.detail, detailWidth)}</Text>
-            <Text color={isPrimary ? palette.accent : palette.dim}>{shortcut}</Text>
+            <Text color={isSelected ? palette.accent : palette.dim}>{shortcut}</Text>
           </Box>
         );
       })}
@@ -388,6 +395,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   autoplayPaused,
   autoskipPaused,
   stopAfterCurrent,
+  selectedActionIndex = 0,
 }: PostPlayShellProps) {
   const viewport = useViewportPolicy("playback");
   const isWide = viewport.breakpoint === "wide";
@@ -454,7 +462,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         ) : null}
 
         {/* Action rows */}
-        <ActionRows actions={view.actions} width={bodyWidth} />
+        <ActionRows actions={view.actions} width={bodyWidth} selectedIndex={selectedActionIndex} />
 
         {/* Discovery picks */}
         {showDiscovery && view.discovery.length > 0 ? (

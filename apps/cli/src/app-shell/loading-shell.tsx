@@ -434,20 +434,15 @@ export const LoadingShell = React.memo(function LoadingShell({
     }
     if (
       (input.toLowerCase() === "t" || input.toLowerCase() === "k") &&
-      state.operation === "playing" &&
-      onPickStreams &&
-      !state.onCommandAction
+      canPickStreams &&
+      onPickStreams
     ) {
       onPickStreams();
       return;
     }
-    if (
-      input.toLowerCase() === "o" &&
-      state.operation === "playing" &&
-      onPickSource &&
-      !state.onCommandAction
-    ) {
+    if (input.toLowerCase() === "o" && canPickStreams && onPickSource) {
       onPickSource();
+      return;
     }
     if (
       input.toLowerCase() === "v" &&
@@ -487,6 +482,10 @@ export const LoadingShell = React.memo(function LoadingShell({
   });
 
   const isPlaying = state.operation === "playing";
+  const canPickStreams =
+    Boolean(state.hasStreamCandidates) &&
+    Boolean(onPickStreams || onPickSource) &&
+    !state.onCommandAction;
   const infoWidth = Math.min(76, Math.max(40, terminalColumns - 12));
   // Poster rail on wide terminals — paints a real image where the prior surface's
   // stale Kitty placement would otherwise bleed through (A6 ghost).
