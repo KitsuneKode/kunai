@@ -8,8 +8,8 @@ import type {
 } from "@kunai/types";
 
 import { createExhaustedResult } from "../shared/resolve-helpers";
-import { resolveVidkingDirect, type VidKingEngineOptions } from "../vidking/direct";
-import { flavorSourceId, listVidkingFlavors, vidkingSourceIdForEndpoint } from "../vidking/flavors";
+import { resolveVideasyDirect, type VidKingEngineOptions } from "../videasy/direct";
+import { flavorSourceId, listVidkingFlavors, vidkingSourceIdForEndpoint } from "../videasy/flavors";
 
 export const CINEBY_PROVIDER_ID = "cineby" as const;
 
@@ -93,7 +93,7 @@ export const cinebyProviderModule: CoreProviderModule = {
     const registryFlavor = listVidkingFlavors().find(
       (flavor) => flavor.endpoint === preferredFlavor.server,
     );
-    const result = await resolveVidkingDirect(input, context, {
+    const result = await resolveVideasyDirect(input, context, {
       flavorId: registryFlavor?.id,
       serverEndpoint: preferredFlavor.server,
       language: preferredFlavor.languageQuery,

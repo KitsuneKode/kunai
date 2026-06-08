@@ -1,13 +1,16 @@
 import { defineProviderManifest } from "@kunai/core";
 
-export const VIDKING_PROVIDER_ID = "vidking" as const;
+export const VIDEOSY_PROVIDER_ID = "videasy" as const;
 
-export const vidkingManifest = defineProviderManifest({
-  id: VIDKING_PROVIDER_ID,
-  displayName: "VidKing",
-  aliases: ["Cineby", "HDToday", "Videasy"],
-  description: "VidKing direct resolver for Cineby/HDToday-compatible Videasy streams",
-  domain: "videasy.net",
+/** @deprecated Use VIDEOSY_PROVIDER_ID — kept for config/cache migration. */
+export const VIDKING_PROVIDER_ID = VIDEOSY_PROVIDER_ID;
+
+export const videasyManifest = defineProviderManifest({
+  id: VIDEOSY_PROVIDER_ID,
+  displayName: "Videasy",
+  aliases: ["VidKing", "Cineplay", "Cineby", "HDToday", "Bitcine"],
+  description: "Direct Videasy API resolver for Cineplay, Cineby, and legacy embed frontends",
+  domain: "videasy.to",
   recommended: false,
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
@@ -25,7 +28,7 @@ export const vidkingManifest = defineProviderManifest({
     scope: "local",
     keyParts: [
       "provider",
-      VIDKING_PROVIDER_ID,
+      VIDEOSY_PROVIDER_ID,
       "media-kind",
       "title",
       "season",
@@ -42,7 +45,11 @@ export const vidkingManifest = defineProviderManifest({
   relaySafe: false,
   notes: [
     "Current CLI implementation uses the direct api.videasy.to payload/decryption path only.",
+    "Cineplay (bc-frontend) is the default Videasy client profile; vidking.net remains an override.",
     "If the direct payload is unavailable, the CLI fails fast instead of leasing a browser.",
     "Do not mark browser-safe because the implementation depends on local WASM assets and Node runtime behavior.",
   ],
 });
+
+/** @deprecated Use videasyManifest */
+export const vidkingManifest = videasyManifest;

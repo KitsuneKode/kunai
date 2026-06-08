@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { finalizeVidkingSourceInventory } from "../src/vidking/direct";
+import { finalizeVidkingSourceInventory } from "../src/videasy/direct";
 import {
   flavorSourceId,
   getPhaseAVidkingFlavorIds,
@@ -8,11 +8,12 @@ import {
   getVidkingFlavorForEndpoint,
   listEligibleVidkingFlavorIds,
   listPhaseBLazyProbeFlavorIds,
+  normalizeLegacyVideasySourceId,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
   vidkingSourceIdForFlavor,
   vidkingSourceIdForEndpoint,
-} from "../src/vidking/flavors";
+} from "../src/videasy/flavors";
 
 describe("vidking flavors", () => {
   test("eligible flavor inventory includes all twelve flavors for movies", () => {
@@ -69,8 +70,19 @@ describe("vidking flavors", () => {
   });
 
   test("vidkingSourceIdForEndpoint is stable across episodes", () => {
-    expect(vidkingSourceIdForEndpoint("mb-flix")).toBe("source:vidking:videasy:mb-flix");
+    expect(vidkingSourceIdForEndpoint("mb-flix")).toBe("source:videasy:mb-flix");
     expect(vidkingSourceIdForEndpoint("mb-flix")).toBe(vidkingSourceIdForEndpoint("mb-flix"));
+  });
+
+  test("normalizeLegacyVideasySourceId maps pre-rename inventory ids", () => {
+    expect(normalizeLegacyVideasySourceId("source:vidking:videasy:mb-flix")).toBe(
+      "source:videasy:mb-flix",
+    );
+    expect(normalizeLegacyVideasySourceId("source:vidking:mb-flix")).toBe("source:videasy:mb-flix");
+    expect(normalizeLegacyVideasySourceId("source:vidking:videasy-hindi")).toBe(
+      "source:videasy:videasy-hindi",
+    );
+    expect(normalizeLegacyVideasySourceId("source:videasy:mb-flix")).toBe("source:videasy:mb-flix");
   });
 
   test("resolveVidkingPresentation maps mb-flix to Luffy", () => {

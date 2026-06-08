@@ -1,5 +1,5 @@
 import type { VidKingEngineOptions } from "./direct";
-import { VIDKING_PROVIDER_ID } from "./manifest";
+import { VIDEOSY_PROVIDER_ID } from "./manifest";
 
 export type VidkingFlavorPresentation = {
   readonly flavorId?: VidkingFlavorId;
@@ -146,9 +146,12 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
 const FLAVOR_BY_ID = new Map(FLAVORS.map((flavor) => [flavor.id, flavor]));
 
 /** Stable inventory id for a Videasy endpoint — same on every episode. */
-export function vidkingSourceIdForEndpoint(endpoint: string): string {
-  return `source:${VIDKING_PROVIDER_ID}:videasy:${endpoint}`;
+export function videasySourceIdForEndpoint(endpoint: string): string {
+  return `source:${VIDEOSY_PROVIDER_ID}:${endpoint}`;
 }
+
+/** @deprecated Use videasySourceIdForEndpoint */
+export const vidkingSourceIdForEndpoint = videasySourceIdForEndpoint;
 
 function endpointHasMultipleFlavors(endpoint: string): boolean {
   return FLAVORS.filter((flavor) => flavor.endpoint === endpoint).length > 1;
@@ -157,10 +160,10 @@ function endpointHasMultipleFlavors(endpoint: string): boolean {
 /** Stable inventory id for a named flavor. Shared backends keep separate user-visible rows. */
 export function vidkingSourceIdForFlavor(flavorId: string): string {
   const flavor = getVidkingFlavor(flavorId);
-  if (!flavor) return `source:${VIDKING_PROVIDER_ID}:videasy:${flavorId}`;
+  if (!flavor) return `source:${VIDEOSY_PROVIDER_ID}:${flavorId}`;
   return endpointHasMultipleFlavors(flavor.endpoint)
-    ? `source:${VIDKING_PROVIDER_ID}:videasy:${flavor.id}`
-    : vidkingSourceIdForEndpoint(flavor.endpoint);
+    ? `source:${VIDEOSY_PROVIDER_ID}:${flavor.id}`
+    : videasySourceIdForEndpoint(flavor.endpoint);
 }
 
 export function getVidkingFlavorForEndpoint(
@@ -305,4 +308,23 @@ export function listPhaseBLazyProbeFlavorIds(mediaKind?: "movie" | "series"): Vi
 
 export function flavorSourceId(flavorId: string): string {
   return vidkingSourceIdForFlavor(flavorId);
+}
+
+function mapLegacyVideasySourceSuffix(suffix: string): string {
+  const flavor = getVidkingFlavor(suffix);
+  if (flavor && endpointHasMultipleFlavors(flavor.endpoint)) {
+    return `source:${VIDEOSY_PROVIDER_ID}:${flavor.id}`;
+  }
+  return `source:${VIDEOSY_PROVIDER_ID}:${suffix}`;
+}
+
+/** Map pre-rename inventory ids (`source:vidking:…`) to current Videasy ids. */
+export function normalizeLegacyVideasySourceId(sourceId: string): string {
+  if (sourceId.startsWith("source:vidking:videasy:")) {
+    return mapLegacyVideasySourceSuffix(sourceId.slice("source:vidking:videasy:".length));
+  }
+  if (sourceId.startsWith("source:vidking:")) {
+    return mapLegacyVideasySourceSuffix(sourceId.slice("source:vidking:".length));
+  }
+  return sourceId;
 }

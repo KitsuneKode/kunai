@@ -27,13 +27,13 @@ export interface ProviderResearchProfile {
 
 export const providerResearchProfiles = [
   {
-    providerId: "vidking",
+    providerId: "videasy",
     status: "production",
     migrationAction: "promote-direct-provider",
     migrationRank: 10,
-    dossierPath: ".docs/provider-dossiers/vidking.md",
+    dossierPath: ".docs/provider-dossiers/videasy.md",
     evidencePaths: [
-      "packages/providers/src/vidking/direct.ts",
+      "packages/providers/src/videasy/direct.ts",
       "apps/experiments/scratchpads/provider-vidking/HDTODAY_VIDKING_DECRYPT_REPORT.md",
       "apps/experiments/scratchpads/provider-vidking/VIDKING_NETWORK_ANALYSIS.md",
     ],

@@ -32,18 +32,22 @@ import {
   rivestreamProviderModule,
   stableProviderInventoryId,
   VariantTreeBuilder,
-  vidkingProviderModule,
+  videasyProviderModule,
   vidlinkProviderModule,
 } from "../src/index";
 
 const FIXTURE_BASE = new URL("./fixtures/", import.meta.url);
+
+function expectedVideasyRouteEndpoint(endpoint: string): string {
+  return endpoint === "mb-flix" ? "e3b0c442" : endpoint;
+}
 
 test("provider engine exposes registered modules", () => {
   const engine = createProviderEngine({
     modules: [
       vidlinkProviderModule,
       rivestreamProviderModule,
-      vidkingProviderModule,
+      videasyProviderModule,
       allmangaProviderModule,
       miruroProviderModule,
     ],
@@ -52,20 +56,20 @@ test("provider engine exposes registered modules", () => {
   expect(engine.getProviderIds()).toEqual([
     "vidlink",
     "rivestream",
-    "vidking",
+    "videasy",
     "allanime",
     "miruro",
   ]);
   expect(engine.get("vidlink")).toBe(vidlinkProviderModule);
   expect(engine.get("rivestream")).toBe(rivestreamProviderModule);
-  expect(engine.get("vidking")).toBe(vidkingProviderModule);
+  expect(engine.get("videasy")).toBe(videasyProviderModule);
   expect(engine.get("allanime")).toBe(allmangaProviderModule);
   expect(engine.get("miruro")).toBe(miruroProviderModule);
 });
 
 test("direct provider success paths report health deltas", async () => {
   const files = [
-    "src/vidking/direct.ts",
+    "src/videasy/direct.ts",
     "src/allmanga/direct.ts",
     "src/rivestream/direct.ts",
     "src/miruro/direct.ts",
@@ -78,14 +82,14 @@ test("direct provider success paths report health deltas", async () => {
 });
 
 test("Vidking direct resolver does not keep a write-only source cache", async () => {
-  const source = await Bun.file(new URL("../src/vidking/direct.ts", import.meta.url)).text();
+  const source = await Bun.file(new URL("../src/videasy/direct.ts", import.meta.url)).text();
   expect(source).not.toContain("sourceCache");
 });
 
 test("provider research profiles are dossier-backed and migration ordered", () => {
   const queue = getProviderMigrationQueue();
 
-  expect(queue[0]?.providerId).toBe("vidking");
+  expect(queue[0]?.providerId).toBe("videasy");
   expect(queue[1]?.providerId).toBe("allanime");
   expect(queue.every((profile) => profile.dossierPath.startsWith(".docs/provider-dossiers/"))).toBe(
     true,
@@ -94,7 +98,7 @@ test("provider research profiles are dossier-backed and migration ordered", () =
 });
 
 test("provider research profiles separate direct providers from legacy fallbacks", () => {
-  expect(getProviderResearchProfile("vidking")).toMatchObject({
+  expect(getProviderResearchProfile("videasy")).toMatchObject({
     status: "production",
     migrationAction: "promote-direct-provider",
     runtimeClass: "direct-http Videasy payload decode",
@@ -203,7 +207,7 @@ test("vidking direct resolver preserves nonretryable direct failure evidence", a
   expect(result?.trace.events?.map((event) => event.type)).toContain("source:failed");
   expect(result?.trace.events?.map((event) => event.type)).toContain("provider:exhausted");
   expect(result?.trace.failures[0]).toMatchObject({
-    providerId: "vidking",
+    providerId: "videasy",
     code: "timeout",
     retryable: false,
   });
@@ -278,8 +282,9 @@ test("vidking direct resolver sends Videasy session headers when provided", asyn
   );
 
   expect(result?.status).toBe("exhausted");
-  expect(seenHeaders[0]?.get("x-app-id")).toBe("vidking");
+  expect(seenHeaders[0]?.get("x-app-id")).toBe("bc-frontend");
   expect(seenHeaders[0]?.get("x-session-token")).toBe("session-123");
+  expect(seenHeaders[0]?.get("origin")).toBe("https://www.cineplay.to");
 });
 
 test("vidking direct resolver reads Videasy session token from runtime auth", async () => {
@@ -303,7 +308,7 @@ test("vidking direct resolver reads Videasy session token from runtime auth", as
       retryPolicy: { maxAttempts: 1, backoff: "none" },
       auth: {
         getSecret: (providerId, key) =>
-          providerId === "vidking" && key === "videasySessionToken"
+          (providerId === "videasy" || providerId === "vidking") && key === "videasySessionToken"
             ? "runtime-session-123"
             : undefined,
       },
@@ -319,8 +324,10 @@ test("vidking direct resolver reads Videasy session token from runtime auth", as
   );
 
   expect(result?.status).toBe("exhausted");
-  expect(seenHeaders[0]?.get("x-app-id")).toBe("vidking");
+  expect(seenHeaders[0]?.get("x-app-id")).toBe("bc-frontend");
   expect(seenHeaders[0]?.get("x-session-token")).toBe("runtime-session-123");
+  expect(seenHeaders[0]?.get("origin")).toBe("https://www.cineplay.to");
+  expect(seenHeaders[0]?.get("referer")).toBe("https://www.cineplay.to/tv/61700/1/2");
 });
 
 test("vidking direct resolver can pair a session with a Bitcine app id", async () => {
@@ -344,7 +351,7 @@ test("vidking direct resolver can pair a session with a Bitcine app id", async (
       retryPolicy: { maxAttempts: 1, backoff: "none" },
       auth: {
         getSecret: (providerId, key) => {
-          if (providerId !== "vidking") return undefined;
+          if (providerId !== "videasy" && providerId !== "vidking") return undefined;
           if (key === "videasySessionToken") return "bitcine-session-123";
           if (key === "videasyAppId") return "bc-frontend";
           return undefined;
@@ -364,6 +371,8 @@ test("vidking direct resolver can pair a session with a Bitcine app id", async (
   expect(result?.status).toBe("exhausted");
   expect(seenHeaders[0]?.get("x-app-id")).toBe("bc-frontend");
   expect(seenHeaders[0]?.get("x-session-token")).toBe("bitcine-session-123");
+  expect(seenHeaders[0]?.get("origin")).toBe("https://www.cineplay.to");
+  expect(seenHeaders[0]?.get("referer")).toBe("https://www.cineplay.to/tv/61700/1/2");
 });
 
 test("vidking session transport covers every registered Videasy flavor", async () => {
@@ -412,8 +421,10 @@ test("vidking session transport covers every registered Videasy flavor", async (
   expect(requested.size).toBe(flavors.length);
   for (const flavor of flavors) {
     const request = requested.get(flavor.id);
-    expect(request?.url).toContain(`/${flavor.endpoint}/sources-with-title?`);
-    expect(request?.headers.get("x-app-id")).toBe("vidking");
+    expect(request?.url).toContain(
+      `/${expectedVideasyRouteEndpoint(flavor.endpoint)}/sources-with-title?`,
+    );
+    expect(request?.headers.get("x-app-id")).toBe("bc-frontend");
     expect(request?.headers.get("x-session-token")).toBe(`token-${flavor.id}`);
     if (flavor.languageQuery) {
       expect(request?.url).toContain(`language=${flavor.languageQuery}`);
@@ -444,7 +455,7 @@ test("vidking preferred source targets that flavor without broad server probing"
       mediaKind: "series",
       intent: "play",
       allowedRuntimes: ["direct-http"],
-      preferredSourceId: "source:vidking:videasy:videasy-hindi",
+      preferredSourceId: "source:videasy:videasy-hindi",
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
@@ -499,7 +510,7 @@ test("vidking stops source fanout after a provider-wide session guard failure", 
   expect(result?.failures).toHaveLength(1);
   expect(result?.failures[0]).toMatchObject({ code: "blocked", retryable: false });
   expect(requestedUrls).toHaveLength(1);
-  expect(requestedUrls[0]).toContain("/mb-flix/sources-with-title?");
+  expect(requestedUrls[0]).toContain("/e3b0c442/sources-with-title?");
 });
 
 test("vidking direct resolver classifies Videasy session guard responses as blocked", async () => {
@@ -530,7 +541,7 @@ test("vidking direct resolver classifies Videasy session guard responses as bloc
 
   expect(result?.status).toBe("exhausted");
   expect(result?.failures[0]).toMatchObject({
-    providerId: "vidking",
+    providerId: "videasy",
     code: "blocked",
     retryable: false,
   });
@@ -605,7 +616,7 @@ test("vidking direct resolver can target a flavored endpoint without broad serve
     expect.arrayContaining(["source:start", "source:failed", "provider:exhausted"]),
   );
   expect(result?.sources?.[0]).toMatchObject({
-    id: "source:vidking:videasy:videasy-german",
+    id: "source:videasy:videasy-german",
     label: "Brook",
     metadata: { server: "meine", flavorId: "videasy-german", flavorArchetype: "German · dub" },
   });
@@ -646,10 +657,10 @@ test("vidking refresh intent cycles the wider flavor source set", async () => {
   expect(requestedUrls.some((url) => url.includes("/hdmovie/sources-with-title?"))).toBe(true);
   expect(requestedUrls.some((url) => url.includes("/superflix/sources-with-title?"))).toBe(true);
   const sourceIds = result?.sources?.map((source) => source.id) ?? [];
-  expect(sourceIds).toContain("source:vidking:videasy:mb-flix");
-  expect(sourceIds).toContain("source:vidking:videasy:m4uhd");
-  expect(sourceIds).toContain("source:vidking:videasy:videasy-english-alt");
-  expect(sourceIds).toContain("source:vidking:videasy:superflix");
+  expect(sourceIds).toContain("source:videasy:mb-flix");
+  expect(sourceIds).toContain("source:videasy:m4uhd");
+  expect(sourceIds).toContain("source:videasy:videasy-english-alt");
+  expect(sourceIds).toContain("source:videasy:superflix");
 });
 
 test("vidking payload filtering keeps localized flavored sources explicit", () => {
@@ -686,14 +697,14 @@ test("vidking payload filtering keeps localized flavored sources explicit", () =
 test("vidking evidence fixture preserves native server labels beside ISO audio language", async () => {
   const payload = await readFixture<
     Parameters<typeof createVidkingResultFromPayload>[0]["payload"]
-  >("vidking/source-payload.json");
+  >("videasy/source-payload.json");
   const expected = await readFixture<{
     readonly serverLabel: string;
     readonly nativeLanguageLabel: string;
     readonly normalizedLanguage: string;
     readonly sourceHost: string;
     readonly quality: string;
-  }>("vidking/expected-normalized.json");
+  }>("videasy/expected-normalized.json");
   const result = createVidkingResultFromPayload({
     input: {
       title: {
@@ -746,7 +757,7 @@ test("vidking evidence fixture preserves native server labels beside ISO audio l
 test("vidking fixture fast startup keeps the first ready stream", async () => {
   const payload = await readFixture<
     Parameters<typeof createVidkingResultFromPayload>[0]["payload"]
-  >("vidking/source-payload.json");
+  >("videasy/source-payload.json");
   const result = createVidkingResultFromPayload({
     input: {
       title: {
@@ -1375,7 +1386,7 @@ test("m3u8 quality extraction exposes sorted playable variants", async () => {
     },
     "https://cdn.example/master.m3u8",
     {
-      providerId: "vidking",
+      providerId: "videasy",
       protocol: "hls",
       container: "m3u8",
       confidence: 0.9,
@@ -1486,7 +1497,7 @@ test("strict language normalizer keeps provider aliases out of public language f
 test("source inventory helpers project streams into source and variant candidates", () => {
   const stream = {
     id: "stream:vidking:1080",
-    providerId: "vidking",
+    providerId: "videasy",
     sourceId: "source:vidking:kiwi",
     url: "https://kiwi.example/master.m3u8",
     protocol: "hls",
@@ -1519,12 +1530,12 @@ test("source inventory helpers project streams into source and variant candidate
   } as const;
 
   const source = createSourceCandidateFromStream({
-    providerId: "vidking",
+    providerId: "videasy",
     stream,
     selected: true,
   });
   const variant = createVariantCandidateFromStream({
-    providerId: "vidking",
+    providerId: "videasy",
     stream,
     selected: true,
   });
