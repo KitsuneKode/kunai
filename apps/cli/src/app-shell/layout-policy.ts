@@ -158,6 +158,68 @@ export function getBrowseCommandPaletteMaxVisible(
   return Math.max(1, Math.min(18, availableRows));
 }
 
+/** Rows consumed by AppRoot header, padding, and transient alert strip above shell content. */
+export const ROOT_CHROME_ROWS = 4;
+
+const BROWSE_BASE_CHROME_ROWS = 10;
+const BROWSE_FOOTER_ROWS = 5;
+const BROWSE_INK_BUFFER_ROWS = 3;
+
+export function getBrowseChromeRows(flags: {
+  readonly hasResultSubtitle: boolean;
+  readonly hasFilterBar: boolean;
+  readonly hasFilterBadges: boolean;
+  readonly hasCalendarChrome: boolean;
+  readonly hasContextStrip: boolean;
+  readonly hasQueryDirtyHint: boolean;
+  readonly commandMode: boolean;
+}): number {
+  let rows = BROWSE_BASE_CHROME_ROWS;
+  if (flags.hasResultSubtitle) rows += 1;
+  if (flags.hasFilterBar) rows += 3;
+  if (flags.hasFilterBadges) rows += 1;
+  if (flags.hasCalendarChrome) rows += 2;
+  if (flags.hasContextStrip) rows += 1;
+  if (flags.hasQueryDirtyHint) rows += 1;
+  if (flags.commandMode) rows += 4;
+  return rows;
+}
+
+export function getBrowseListMaxVisible(
+  rows: number,
+  chromeRows: number,
+  rootHeaderRows: number = ROOT_CHROME_ROWS,
+): number {
+  const available =
+    rows - rootHeaderRows - chromeRows - BROWSE_FOOTER_ROWS - BROWSE_INK_BUFFER_ROWS;
+  return Math.max(1, Math.min(18, available));
+}
+
+const PICKER_BASE_CHROME_ROWS = 8;
+const PICKER_FOOTER_ROWS = 5;
+const PICKER_INK_BUFFER_ROWS = 3;
+
+export function getPickerChromeRows(flags: {
+  readonly hasSubtitle: boolean;
+  readonly commandMode: boolean;
+  readonly extraRows?: number;
+}): number {
+  let rows = PICKER_BASE_CHROME_ROWS + (flags.extraRows ?? 0);
+  if (flags.hasSubtitle) rows += 1;
+  if (flags.commandMode) rows += 4;
+  return rows;
+}
+
+export function getPickerListMaxVisible(
+  rows: number,
+  chromeRows: number,
+  rootHeaderRows: number = ROOT_CHROME_ROWS,
+): number {
+  const available =
+    rows - rootHeaderRows - chromeRows - PICKER_FOOTER_ROWS - PICKER_INK_BUFFER_ROWS;
+  return Math.max(1, available);
+}
+
 export function getCommandPaletteVisibleCommandCount({
   maxRows,
   totalMatches,

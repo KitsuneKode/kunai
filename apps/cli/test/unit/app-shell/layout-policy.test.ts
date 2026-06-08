@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  getBrowseChromeRows,
+  getBrowseListMaxVisible,
   getBrowseCommandPaletteMaxVisible,
   getCommandPaletteVisibleCommandCount,
+  getPickerChromeRows,
+  getPickerListMaxVisible,
   getPickerLayout,
   getShellViewportPolicy,
 } from "@/app-shell/layout-policy";
@@ -168,5 +172,37 @@ describe("getShellViewportPolicy", () => {
     const blocked = getShellViewportPolicy("browse", 59, 19, { zen: true });
     expect(blocked.breakpoint).toBe("blocked");
     expect(blocked.tooSmall).toBe(true);
+  });
+
+  test("browse chrome row budget keeps list visible on short terminals", () => {
+    const chromeRows = getBrowseChromeRows({
+      hasResultSubtitle: true,
+      hasFilterBar: false,
+      hasFilterBadges: false,
+      hasCalendarChrome: false,
+      hasContextStrip: false,
+      hasQueryDirtyHint: false,
+      commandMode: false,
+    });
+    expect(getBrowseListMaxVisible(24, chromeRows)).toBeGreaterThanOrEqual(1);
+    expect(getBrowseListMaxVisible(24, chromeRows)).toBeLessThanOrEqual(8);
+  });
+
+  test("picker chrome row budget replaces ad-hoc maxVisibleRows subtraction", () => {
+    const chromeRows = getPickerChromeRows({ hasSubtitle: true, commandMode: false, extraRows: 4 });
+    expect(getPickerListMaxVisible(30, chromeRows)).toBeGreaterThanOrEqual(5);
+    expect(getPickerListMaxVisible(30, chromeRows)).toBeLessThan(
+      getPickerListMaxVisible(45, chromeRows),
+    );
+  });
+
+  test("forceCompact blocks large terminals (legacy minimalMode bug — browse no longer passes this)", () => {
+    const blocked = getShellViewportPolicy("browse", 120, 40, { forceCompact: true });
+    expect(blocked.breakpoint).toBe("blocked");
+    expect(blocked.tooSmall).toBe(true);
+
+    const normal = getShellViewportPolicy("browse", 120, 40);
+    expect(normal.breakpoint).toBe("wide");
+    expect(normal.tooSmall).toBe(false);
   });
 });
