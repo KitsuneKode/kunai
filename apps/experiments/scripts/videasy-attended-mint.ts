@@ -18,27 +18,31 @@ import { chromium } from "playwright";
 
 import { getKunaiPaths } from "../../../packages/storage/src/paths";
 
-type MintTarget = "bitcine" | "vidking";
+type MintTarget = "bitcine" | "cineplay" | "vidking";
 type KunaiConfigPatch = {
   readonly videasySessionToken?: string;
   readonly videasySessionExpiresAt?: number;
   readonly videasyAppId?: "vidking" | "bc-frontend";
 };
 
-const target = (process.argv[2] ?? "bitcine") as MintTarget;
+const target = (process.argv[2] ?? "cineplay") as MintTarget;
 const kind = process.argv[3] ?? "tv";
 const tmdbId = process.argv[4] ?? "61700";
 const season = process.argv[5] ?? "1";
 const episode = process.argv[6] ?? "3";
 const force = process.argv.includes("--force");
 
-const APP_ID = target === "bitcine" ? "bc-frontend" : "vidking";
+const APP_ID = target === "vidking" ? "vidking" : "bc-frontend";
 const URL =
   target === "bitcine"
     ? kind === "tv"
       ? `https://www.bitcine.tv/tv/${tmdbId}/${season}/${episode}?play=true`
       : `https://www.bitcine.tv/movie/${tmdbId}?play=true`
-    : kind === "tv"
+    : target === "cineplay"
+      ? kind === "tv"
+        ? `https://www.cineplay.to/tv/${tmdbId}/${season}/${episode}?play=true`
+        : `https://www.cineplay.to/movie/${tmdbId}?play=true`
+      : kind === "tv"
       ? `https://www.vidking.net/embed/tv/${tmdbId}/${season}/${episode}?autoPlay=true`
       : `https://www.vidking.net/embed/movie/${tmdbId}?autoPlay=true`;
 

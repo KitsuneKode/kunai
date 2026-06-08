@@ -86,7 +86,8 @@ function syncProviders() {
     { name: "cineby", path: "packages/providers/src/cineby/index.ts" },
     { name: "miruro", path: "packages/providers/src/miruro/manifest.ts" },
     { name: "rivestream", path: "packages/providers/src/rivestream/manifest.ts" },
-    { name: "vidking", path: "packages/providers/src/vidking/manifest.ts" },
+    { name: "videasy", path: "packages/providers/src/videasy/manifest.ts" },
+    { name: "vidking", path: "packages/providers/src/videasy/manifest.ts" },
   ];
 
   const providers: ProviderMetadata[] = [];

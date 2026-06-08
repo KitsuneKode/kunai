@@ -30,7 +30,8 @@
     "rebrowser-playwright-core": "^1.52.0"
   },
   "dependencies": {
-    "@assemblyscript/loader": "^0.28.17",
-    "crypto-js": "^4.2.0"
+    "@assemblyscript/loader": "^0.28.18",
+    "crypto-js": "^4.2.0",
+    "hashids": "^2.3.0"
   }
 }

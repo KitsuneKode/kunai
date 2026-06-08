@@ -52,9 +52,10 @@
     "test:live:discord": "bun -e \"await import('./test/live/discord-presence.smoke.ts')\"",
     "test:live:miruro": "bun -e \"await import('./test/live/miruro-demonslayer.smoke.ts')\"",
     "test:live:matrix": "bun -e \"await import('./test/live/provider-matrix.smoke.ts')\"",
-    "test:live:providers": "bun run test:live:vidking && bun run test:live:rivestream && bun run test:live:allanime && bun run test:live:miruro",
+    "test:live:providers": "bun run test:live:videasy && bun run test:live:rivestream && bun run test:live:allanime && bun run test:live:miruro",
     "test:live:rivestream": "bun -e \"await import('./test/live/rivestream-breakingbad.smoke.ts')\"",
-    "test:live:vidking": "bun -e \"await import('./test/live/vidking-bloodhounds.smoke.ts')\"",
+    "test:live:videasy": "bun -e \"await import('./test/live/videasy-bloodhounds.smoke.ts')\"",
+    "test:live:vidking": "bun run test:live:videasy",
     "test:vhs:browse": "vhs test/vhs/browse-shell.tape",
     "test:vhs:diagnostics": "vhs test/vhs/diagnostics-reporting.tape",
     "test:vhs:discover": "vhs test/vhs/discover-random-calendar.tape",
@@ -80,7 +81,7 @@
   },
   "dependencies": {
     "ink": "^7.0.5",
-    "react": "^19.2.6"
+    "react": "^19.2.7"
   },
   "devDependencies": {
     "@kunai/core": "workspace:*",
@@ -89,9 +90,9 @@
     "@kunai/storage": "workspace:*",
     "@kunai/types": "workspace:*",
     "@types/bun": "1.3.14",
-    "@types/react": "^19.2.15",
-    "oxfmt": "^0.52.0",
-    "oxlint": "^1.65.0"
+    "@types/react": "^19.2.17",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0"
   },
   "peerDependencies": {
     "typescript": "^6.0.3"

@@ -29,7 +29,7 @@ type Asset = {
 const assets: Asset[] = [
   {
     label: "VidKing WASM",
-    from: join(ROOT, "../../packages/providers/src/vidking/assets/module1_patched.wasm"),
+    from: join(ROOT, "../../packages/providers/src/videasy/assets/module1_patched.wasm"),
     to: join(DIST, "assets/module1_patched.wasm"),
     required: true,
   },

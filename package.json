@@ -21,7 +21,8 @@
     "test:live:matrix": "bun run --cwd apps/cli test:live:matrix",
     "test:live:providers": "bun run --cwd apps/cli test:live:providers",
     "test:live:rivestream": "bun run --cwd apps/cli test:live:rivestream",
-    "test:live:vidking": "bun run --cwd apps/cli test:live:vidking",
+    "test:live:videasy": "bun run --cwd apps/cli test:live:videasy",
+    "test:live:vidking": "bun run --cwd apps/cli test:live:videasy",
     "ci": "turbo run typecheck lint fmt:check test --summarize",
     "build": "turbo run build --filter=@kitsunekode/kunai",
     "build:all": "turbo run build",
@@ -50,8 +51,8 @@
     "husky": "^9.1.7",
     "ink-testing-library": "^4.0.0",
     "lint-staged": "^17.0.7",
-    "oxfmt": "^0.52.0",
-    "oxlint": "^1.67.0",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
     "turbo": "^2.9.16"
   },
   "lint-staged": {
