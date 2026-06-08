@@ -1060,17 +1060,19 @@ local function do_refresh()
 	mp.commandv("stop")
 end
 
-mp.add_key_binding("n", "kunai-next", do_next, { repeatable = false })
-mp.add_key_binding("N", "kunai-next-shift", do_next, { repeatable = false })
+mp.add_forced_key_binding("n", "kunai-next", do_next, { repeatable = false })
+mp.add_forced_key_binding("N", "kunai-next-shift", do_next, { repeatable = false })
 
-mp.add_key_binding("p", "kunai-prev", do_previous, { repeatable = false })
-mp.add_key_binding("P", "kunai-prev-shift", do_previous, { repeatable = false })
+mp.add_forced_key_binding("p", "kunai-prev", do_previous, { repeatable = false })
+mp.add_forced_key_binding("P", "kunai-prev-shift", do_previous, { repeatable = false })
 
 -- Skip intro / recap / credits.
 -- Safe: does nothing unless user-data/kunai-skip-to is active.
 mp.add_key_binding("b", "kunai-skip", do_skip, { repeatable = false })
-mp.add_key_binding("k", "kunai-quality", do_quality, { repeatable = false })
-mp.add_key_binding("K", "kunai-quality-shift", do_quality, { repeatable = false })
+mp.add_forced_key_binding("k", "kunai-quality", do_quality, { repeatable = false })
+mp.add_forced_key_binding("K", "kunai-quality-shift", do_quality, { repeatable = false })
+mp.add_forced_key_binding("v", "kunai-quality-alt", do_quality, { repeatable = false })
+mp.add_forced_key_binding("V", "kunai-quality-alt-shift", do_quality, { repeatable = false })
 
 -- Same episode: re-resolve the stream URL (cache bust) and resume from the saved position.
 mp.add_key_binding("ctrl+r", "kunai-refresh", do_refresh, { repeatable = false })

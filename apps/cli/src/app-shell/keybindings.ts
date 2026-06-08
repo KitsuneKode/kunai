@@ -224,8 +224,8 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   },
   {
     id: "player-quality",
-    chord: { input: "k" },
-    display: "k / K",
+    chord: { input: "v" },
+    display: "v / V / k / K",
     label: "Choose quality (in the terminal)",
     scope: "player",
     group: "In the player",

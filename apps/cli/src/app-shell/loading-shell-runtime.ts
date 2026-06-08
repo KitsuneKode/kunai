@@ -223,7 +223,10 @@ export function normalizeLoadingIssue(issue: string | null | undefined): string 
     normalized === "recoverable provider failures retry before fallback." ||
     normalized.includes("retry before fallback") ||
     normalized.includes("retrying before fallback") ||
-    (normalized.includes("trying ") && normalized.includes(" fallback"))
+    (normalized.includes("trying ") && normalized.includes(" fallback")) ||
+    /track switched in mpv/i.test(normalized) ||
+    /skipped automatically/i.test(normalized) ||
+    /^\d+s buffering$/i.test(normalized)
   ) {
     return null;
   }

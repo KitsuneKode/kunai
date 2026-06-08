@@ -353,7 +353,7 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
     audioLanguages,
     hardSubLanguages,
     softSubtitleLanguages,
-    showSourceControl: sourceChoiceCount > 1,
+    showSourceControl: sourceChoiceCount > 0,
     showQualityControl: qualityLabels.length > 1 || playableStreams.length > 1,
     showMediaTrackControl:
       languageChoiceCount > 1 || softSubtitleLanguages.length > 0 || Boolean(stream.subtitle),
@@ -418,9 +418,6 @@ export function formatPlaybackSessionKeysHint(input: PlaybackSessionKeysInput): 
   }
   parts.push("u autoskip");
 
-  if (control.showMediaTrackControl) {
-    parts.push("k tracks");
-  }
   if (control.showSourceControl) {
     parts.push("o source");
   }

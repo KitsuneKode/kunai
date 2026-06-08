@@ -372,8 +372,8 @@ export const LoadingShell = React.memo(function LoadingShell({
         onFallback();
         return;
       }
-      if (rk === "s" && onPickStreams) {
-        onPickStreams();
+      if (rk === "o" && onPickSource) {
+        onPickSource();
         return;
       }
       if (rk === "d") {
@@ -402,20 +402,10 @@ export const LoadingShell = React.memo(function LoadingShell({
     if (input === "S" && state.operation === "playing" && onReturnToSearch) {
       onReturnToSearch();
     }
-    if (
-      input.toLowerCase() === "n" &&
-      state.operation === "playing" &&
-      onNext &&
-      !state.onCommandAction
-    ) {
+    if (input.toLowerCase() === "n" && state.operation === "playing" && onNext) {
       onNext();
     }
-    if (
-      input.toLowerCase() === "p" &&
-      state.operation === "playing" &&
-      onPrevious &&
-      !state.onCommandAction
-    ) {
+    if (input.toLowerCase() === "p" && state.operation === "playing" && onPrevious) {
       onPrevious();
     }
     if (input.toLowerCase() === "b" && state.operation === "playing" && onSkipSegment) {
@@ -424,48 +414,22 @@ export const LoadingShell = React.memo(function LoadingShell({
     if (input.toLowerCase() === "m" && state.operation === "playing") {
       setMemoryPanelVisible((visible) => !visible);
     }
-    if (
-      input.toLowerCase() === "e" &&
-      state.operation === "playing" &&
-      onPickEpisode &&
-      !state.onCommandAction
-    ) {
-      onPickEpisode();
+    if (input.toLowerCase() === "e" && state.operation === "playing" && onPickEpisode) {
+      if (!state.onCommandAction) onPickEpisode();
     }
-    if (
-      (input.toLowerCase() === "t" || input.toLowerCase() === "k") &&
-      canPickStreams &&
-      onPickStreams
-    ) {
-      onPickStreams();
-      return;
+    if (input.toLowerCase() === "o" && canOpenSourcePicker && onPickSource) {
+      if (!state.onCommandAction) {
+        onPickSource();
+        return;
+      }
     }
-    if (input.toLowerCase() === "o" && canPickStreams && onPickSource) {
-      onPickSource();
-      return;
-    }
-    if (
-      input.toLowerCase() === "v" &&
-      state.operation === "playing" &&
-      onPickQuality &&
-      !state.onCommandAction
-    ) {
+    if (input.toLowerCase() === "v" && state.operation === "playing" && onPickQuality) {
       onPickQuality();
     }
-    if (
-      input.toLowerCase() === "a" &&
-      state.operation === "playing" &&
-      onToggleAutoplay &&
-      !state.onCommandAction
-    ) {
-      onToggleAutoplay();
+    if (input.toLowerCase() === "a" && state.operation === "playing" && onToggleAutoplay) {
+      if (!state.onCommandAction) onToggleAutoplay();
     }
-    if (
-      input.toLowerCase() === "u" &&
-      state.operation === "playing" &&
-      onToggleAutoskip &&
-      !state.onCommandAction
-    ) {
+    if (input.toLowerCase() === "u" && state.operation === "playing" && onToggleAutoskip) {
       onToggleAutoskip();
     }
     if (input.toLowerCase() === "x" && state.operation === "playing" && onStopAfterCurrent) {
@@ -482,10 +446,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   });
 
   const isPlaying = state.operation === "playing";
-  const canPickStreams =
-    Boolean(state.hasStreamCandidates) &&
-    Boolean(onPickStreams || onPickSource) &&
-    !state.onCommandAction;
+  const canOpenSourcePicker = Boolean(state.hasStreamCandidates) && Boolean(onPickSource);
   const infoWidth = Math.min(76, Math.max(40, terminalColumns - 12));
   // Poster rail on wide terminals — paints a real image where the prior surface's
   // stale Kitty placement would otherwise bleed through (A6 ghost).
@@ -515,7 +476,7 @@ export const LoadingShell = React.memo(function LoadingShell({
     ? [
         state.qualityLabel,
         state.audioTrack ? `audio ${state.audioTrack}` : undefined,
-        state.subtitleTrack ? `subs ${state.subtitleTrack}` : subtitleReady ? "subs on" : undefined,
+        state.subtitleTrack ?? (subtitleReady ? "subs on" : undefined),
       ]
         .filter((part): part is string => Boolean(part))
         .join("  ·  ")
@@ -558,7 +519,7 @@ export const LoadingShell = React.memo(function LoadingShell({
             : "Playback bootstrap"
       }
       footerActions={footerActions}
-      footerMode={isPlaying ? "minimal" : (state.footerMode ?? "detailed")}
+      footerMode={state.footerMode ?? "detailed"}
       commands={state.commands ?? []}
       inputLocked={!state.onCommandAction}
       escapeAction={null}
@@ -749,24 +710,35 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
 
-                {/* GO — live key hints; only list keys that are actually wired. */}
+                {/* GO — live key hints from session state or wired callbacks. */}
                 <Box>
                   <Text color={palette.dim}>{"GO   "}</Text>
                   <Text color={palette.textDim}>
                     {truncateLine(
-                      [
-                        state.hasNextEpisode && onNext ? "n next" : null,
-                        state.hasPreviousEpisode && onPrevious ? "p prev" : null,
-                        onSkipSegment ? "b skip" : null,
-                        onPickSource ? "o source" : null,
-                        onPickQuality ? "v quality" : null,
-                        onPickEpisode ? "e episodes" : null,
-                        onPickStreams ? "t tracks" : null,
-                      ]
-                        .filter((part): part is string => Boolean(part))
-                        .join("  ·  "),
+                      state.playbackKeysHint ??
+                        [
+                          state.hasNextEpisode && onNext ? "n next" : null,
+                          state.hasPreviousEpisode && onPrevious ? "p prev" : null,
+                          onSkipSegment ? "b skip" : null,
+                          canOpenSourcePicker ? "o source" : null,
+                          onPickQuality ? "v quality" : null,
+                          onPickEpisode ? "e episodes" : null,
+                          onToggleAutoplay ? "a autoplay" : null,
+                          onToggleAutoskip ? "u autoskip" : null,
+                          "q stop",
+                          "/ commands",
+                        ]
+                          .filter((part): part is string => Boolean(part))
+                          .join("  ·  "),
                       infoWidth - 5,
                     )}
+                  </Text>
+                </Box>
+
+                {/* mpv ownership hint — Kunai owns session, mpv owns the video. */}
+                <Box marginTop={1}>
+                  <Text color={palette.dim} dimColor>
+                    Terminal or mpv — n/p/e/o/v/u shortcuts stay live · / for full commands
                   </Text>
                 </Box>
 
@@ -777,7 +749,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                       {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
                     <Text color={palette.dim}>
-                      {"r recover  ·  f fallback  ·  t tracks  ·  d diagnostics"}
+                      {"r recover  ·  f fallback  ·  o source  ·  d diagnostics"}
                     </Text>
                   </Box>
                 ) : state.bufferHealth === "buffering" || state.bufferHealth === "stalled" ? (
@@ -785,13 +757,6 @@ export const LoadingShell = React.memo(function LoadingShell({
                     <BufferHealthBadge health={state.bufferHealth} />
                   </Box>
                 ) : null}
-
-                {/* mpv ownership hint — Kunai owns session, mpv owns the video. */}
-                <Box marginTop={1}>
-                  <Text color={palette.dim} dimColor>
-                    mpv focused — Kunai shortcuts stay live · / for full commands
-                  </Text>
-                </Box>
 
                 {/* Up next — the next episode, else a queued title (auto-plays after this). */}
                 {state.upNextLabel?.trim() ? (

@@ -105,6 +105,12 @@ describe("loading shell runtime policy", () => {
     });
   });
 
+  test("loading copy ignores informational mpv telemetry notes", () => {
+    expect(normalizeLoadingIssue("Audio track switched in mpv (id 1)")).toBeNull();
+    expect(normalizeLoadingIssue("Intro skipped automatically")).toBeNull();
+    expect(normalizeLoadingIssue("12s buffering")).toBeNull();
+  });
+
   test("loading copy does not promote subtitle-ready status into an issue", () => {
     expect(normalizeLoadingIssue("subtitle attached")).toBeNull();
     expect(normalizeLoadingIssue("25 subtitle tracks attached")).toBeNull();

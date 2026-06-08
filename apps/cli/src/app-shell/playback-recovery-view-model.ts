@@ -61,7 +61,7 @@ export function buildPlaybackRecoveryViewModel(
       id: "sources",
       label: "Sources",
       detail: "Choose a different source or stream variant",
-      shortcut: "s",
+      shortcut: "o",
     });
   }
   actions.push({

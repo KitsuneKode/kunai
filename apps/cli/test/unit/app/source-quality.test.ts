@@ -163,7 +163,7 @@ const streamWithSubtitles: StreamInfo = {
 
 test("buildSourcePickerOptions includes current source label", () => {
   const options = buildSourcePickerOptions(streamWithCandidates);
-  expect(options[0]?.label).toContain("current");
+  expect(options.find((option) => option.value === "source-a")?.label).toContain("current");
   expect(options.map((option) => option.value)).toEqual(
     expect.arrayContaining(["source-a", "source-b", "source:videasy:videasy-hindi"]),
   );
@@ -174,9 +174,10 @@ test("buildSourcePickerOptions includes current source label", () => {
 
 test("buildSourcePickerOptions summarizes quality and language inventory", () => {
   const options = buildSourcePickerOptions(streamWithCandidates);
-  expect(options[0]?.detail).toContain("quality 1080p/720p");
-  expect(options[0]?.detail).toContain("audio ja/en");
-  expect(options[0]?.detail).toContain("hardsub en");
+  const current = options.find((option) => option.value === "source-a");
+  expect(current?.detail).toContain("quality 1080p/720p");
+  expect(current?.detail).toContain("audio ja/en");
+  expect(current?.detail).toContain("hardsub en");
 });
 
 test("buildSourcePickerOptions includes provider health and host hints", () => {
@@ -217,8 +218,9 @@ test("buildSourcePickerOptions includes provider health and host hints", () => {
 
 test("buildSourcePickerOptions distinguishes soft subtitles from hardsub inventory", () => {
   const options = buildSourcePickerOptions(streamWithSubtitles);
-  expect(options[0]?.detail).toContain("hardsub en");
-  expect(options[0]?.detail).toContain("soft subs en/fr");
+  const current = options.find((option) => option.value === "source-a");
+  expect(current?.detail).toContain("hardsub en");
+  expect(current?.detail).toContain("soft subs en/fr");
 });
 
 test("buildQualityPickerOptions sorts by highest quality first", () => {
@@ -308,7 +310,8 @@ test("formatPlaybackSessionKeysHint lists session state and only available nav k
   expect(hint).toContain("n next");
   expect(hint).not.toContain("p prev");
   expect(hint).not.toContain("—");
-  expect(hint).toContain("k tracks");
+  expect(hint).not.toContain("k tracks");
+  expect(hint).not.toContain("t tracks");
   expect(hint).toContain("o source");
   expect(hint).toContain("v quality");
   expect(hint).toContain("/ commands");
