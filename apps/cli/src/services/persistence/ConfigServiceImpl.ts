@@ -135,9 +135,15 @@ export class ConfigServiceImpl implements ConfigService {
         loaded.videasySessionExpiresAt,
         loaded.videasySessionToken,
       ),
-      videasyAppId: normalizeVideasyAppId(loaded.videasyAppId),
+      videasyAppId: normalizeVideasyAppId(
+        loaded.videasyAppId,
+        normalizeOptionalSecret(loaded.videasySessionToken),
+      ),
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
     };
+    if (shouldPersistVideasyAppIdMigration(loaded, service.config)) {
+      await store.save(service.config);
+    }
     return service;
   }
 
@@ -503,7 +509,14 @@ export class ConfigServiceImpl implements ConfigService {
           }
         : null),
       ...(partial.videasyAppId !== undefined
-        ? { videasyAppId: normalizeVideasyAppId(partial.videasyAppId) }
+        ? {
+            videasyAppId: normalizeVideasyAppId(
+              partial.videasyAppId,
+              partial.videasySessionToken !== undefined
+                ? normalizeOptionalSecret(partial.videasySessionToken)
+                : this.config.videasySessionToken,
+            ),
+          }
         : null),
       ...(partial.titleProviderPreferences !== undefined
         ? {
@@ -571,8 +584,24 @@ function isExpiredVideasySession(expiresAt: number): boolean {
   return expiresAt > 0 && expiresAt <= Date.now();
 }
 
-function normalizeVideasyAppId(value: unknown): KitsuneConfig["videasyAppId"] {
-  return value === "vidking" ? "vidking" : "bc-frontend";
+function shouldPersistVideasyAppIdMigration(
+  loaded: Partial<KitsuneConfig>,
+  normalized: KitsuneConfig,
+): boolean {
+  return (
+    loaded.videasyAppId === "vidking" &&
+    !normalizeOptionalSecret(loaded.videasySessionToken) &&
+    normalized.videasyAppId === "bc-frontend"
+  );
+}
+
+function normalizeVideasyAppId(value: unknown, sessionToken = ""): KitsuneConfig["videasyAppId"] {
+  const appId = typeof value === "string" ? value.trim() : "";
+  if (appId === "bc-frontend") return "bc-frontend";
+  // Legacy persisted default before Cineplay became primary. Without a paired vidking.net
+  // session token, the vidking app id resolves embed-tier HLS that stalls in mpv.
+  if (appId === "vidking" && normalizeOptionalSecret(sessionToken)) return "vidking";
+  return "bc-frontend";
 }
 
 function normalizeRecoveryMode(value: unknown): RecoveryMode {

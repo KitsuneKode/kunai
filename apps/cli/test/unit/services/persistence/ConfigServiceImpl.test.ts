@@ -258,6 +258,29 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).movieLanguageProfile?.quality).toBe("720p");
   });
 
+  test("migrates legacy videasy app id to cineplay when no session token is paired", async () => {
+    const store = new MemoryConfigStore({
+      videasyAppId: "vidking",
+      videasySessionToken: "",
+    });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.videasyAppId).toBe("bc-frontend");
+    expect(service.getRaw().videasyAppId).toBe("bc-frontend");
+    expect((await store.load()).videasyAppId).toBe("bc-frontend");
+  });
+
+  test("keeps videasy app id vidking when a session token is paired", async () => {
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        videasyAppId: "vidking",
+        videasySessionToken: "paired-session",
+      }),
+    );
+
+    expect(service.videasyAppId).toBe("vidking");
+  });
+
   test("round-trips legacy profile subtitle preference as interactive on save", async () => {
     const store = new MemoryConfigStore({
       animeLanguageProfile: { audio: "original", subtitle: "fzf" },
