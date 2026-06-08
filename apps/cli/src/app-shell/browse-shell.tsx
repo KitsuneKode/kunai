@@ -63,7 +63,11 @@ import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { deleteAllKittyImages } from "./image-pane";
-import { getBrowseCommandPaletteMaxVisible } from "./layout-policy";
+import {
+  getBrowseChromeRows,
+  getBrowseCommandPaletteMaxVisible,
+  getBrowseListMaxVisible,
+} from "./layout-policy";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { PreviewRail } from "./primitives/PreviewRail";
@@ -167,7 +171,6 @@ export function BrowseShell<T>({
   idleContext?: import("./types").BrowseIdleContext;
 }) {
   const viewport = useDebouncedViewportPolicy("browse", {
-    forceCompact: _settings?.minimalMode,
     zen: _settings?.zenMode,
   });
   const [query, setQuery] = useState(initialQuery ?? "");
@@ -185,11 +188,8 @@ export function BrowseShell<T>({
   const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
-  const [_selectedDetail, setSelectedDetail] = useState(
-    initialResults?.[initialSelectedIndex ?? 0]?.detail ??
-      "Search for a title — or try /trending to see what's popular",
-  );
   const [resultSubtitle, setResultSubtitle] = useState(initialResultSubtitle ?? "");
+  const [calendarNow, setCalendarNow] = useState(() => Date.now());
   const [searchState, setSearchState] = useState<"idle" | "loading" | "ready" | "error">(
     initialResults && initialResults.length > 0 ? "ready" : "idle",
   );
@@ -223,6 +223,11 @@ export function BrowseShell<T>({
     selectedIndex: 0,
   });
   const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setCalendarNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
   );
@@ -275,7 +280,6 @@ export function BrowseShell<T>({
     setErrorMessage(null);
     setEmptyMessage("Search for a title — or try /trending to see what's popular");
     setResultSubtitle("");
-    setSelectedDetail("Search for a title — or try /trending to see what's popular");
     setActiveFilterBadges([]);
     setResultFilter("");
     setFilterModeOpen(false);
@@ -315,7 +319,6 @@ export function BrowseShell<T>({
     setFocusZone("query");
     setErrorMessage(null);
     setEmptyMessage("Searching…");
-    setSelectedDetail("Finding titles and available matches…");
     resetCalendar();
 
     try {
@@ -348,9 +351,6 @@ export function BrowseShell<T>({
       );
       setActiveFilterBadges(activeBadges);
       setSearchState("ready");
-      setSelectedDetail(
-        filteredOptions[0]?.detail ?? "Use ↑↓ to move through results, then press Enter.",
-      );
     } catch (error) {
       if (requestIdRef.current !== requestId) return;
 
@@ -359,7 +359,6 @@ export function BrowseShell<T>({
       setSelectedIndex(0);
       setErrorMessage(String(error));
       setEmptyMessage("Search failed.");
-      setSelectedDetail("The search failed. Press Enter to retry or Esc to clear.");
     }
   }, [query, searchState, onSearch, resetCalendar]);
 
@@ -382,7 +381,6 @@ export function BrowseShell<T>({
     setSearchState("loading");
     setErrorMessage(null);
     setEmptyMessage("Loading trending…");
-    setSelectedDetail("Loading cached trending titles…");
     resetCalendar();
 
     try {
@@ -396,7 +394,6 @@ export function BrowseShell<T>({
       setEmptyMessage(response.emptyMessage ?? "Trending is unavailable right now.");
       setActiveFilterBadges([]);
       setSearchState("ready");
-      setSelectedDetail(response.options[0]?.detail ?? "Use ↑↓ to move through trending titles.");
     } catch (error) {
       if (requestIdRef.current !== requestId) return;
 
@@ -405,7 +402,6 @@ export function BrowseShell<T>({
       setSelectedIndex(0);
       setErrorMessage(String(error));
       setEmptyMessage("Trending failed.");
-      setSelectedDetail("Trending failed. Use search or press Ctrl+T to retry.");
     }
   };
 
@@ -418,7 +414,6 @@ export function BrowseShell<T>({
     setSearchState("loading");
     setErrorMessage(null);
     setEmptyMessage("Loading recommendations…");
-    setSelectedDetail("Building personalized recommendations from history and TMDB…");
     resetCalendar();
 
     try {
@@ -432,9 +427,6 @@ export function BrowseShell<T>({
       setEmptyMessage(response.emptyMessage ?? "Recommendations are unavailable right now.");
       setActiveFilterBadges([]);
       setSearchState("ready");
-      setSelectedDetail(
-        response.options[0]?.detail ?? "Use ↑↓ to move through recommendation picks.",
-      );
 
       if (response.revalidate) {
         void response.revalidate
@@ -445,9 +437,6 @@ export function BrowseShell<T>({
             setResultSubtitle(nextResponse.subtitle);
             setEmptyMessage(
               nextResponse.emptyMessage ?? "Recommendations are unavailable right now.",
-            );
-            setSelectedDetail(
-              nextResponse.options[0]?.detail ?? "Use ↑↓ to move through recommendation picks.",
             );
             return undefined;
           })
@@ -464,7 +453,6 @@ export function BrowseShell<T>({
       setSelectedIndex(0);
       setErrorMessage(String(error));
       setEmptyMessage("Recommendations failed.");
-      setSelectedDetail("Recommendation loading failed. Try /recommendation again.");
     }
   };
 
@@ -528,14 +516,6 @@ export function BrowseShell<T>({
     }
     setSelectedIndex((current) => Math.min(current, displayOptions.length - 1));
   }, [displayOptions.length]);
-
-  useEffect(() => {
-    const option = displayOptions[Math.min(selectedIndex, Math.max(0, displayOptions.length - 1))];
-    if (!option) {
-      return;
-    }
-    setSelectedDetail(option.detail ?? "Press Enter to select this result.");
-  }, [displayOptions, selectedIndex]);
 
   const boundedSelectedIndex =
     displayOptions.length === 0 ? 0 : Math.min(selectedIndex, displayOptions.length - 1);
@@ -613,7 +593,7 @@ export function BrowseShell<T>({
     };
   }, [provider, selectedOption]);
 
-  const { compact, ultraCompact, minColumns, minRows, maxVisibleRows: maxVisible } = viewport;
+  const { compact, ultraCompact, minColumns, minRows } = viewport;
   const browseBreakpoint = viewport.breakpoint;
   const showCompanionLayout = browseBreakpoint === "wide" || browseBreakpoint === "medium";
   const effectiveFooterMode = "minimal";
@@ -627,9 +607,6 @@ export function BrowseShell<T>({
         : innerWidth;
   const listWidth = showCompanionLayout ? Math.max(48, innerWidth - previewWidth - 4) : innerWidth;
   const rowWidth = Math.max(20, listWidth - 4);
-  const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
-  const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
-  const visibleOptions = displayOptions.slice(windowStart, windowEnd);
   // The "Series"/"Movie" type is a quiet column only when the result set is
   // actually mixed; an all-series list never repeats "Series" on every row.
   const resultsAreMixed =
@@ -677,6 +654,20 @@ export function BrowseShell<T>({
     emptyMessage.toLowerCase().includes("schedule");
   const calendarEmptyModeLabel =
     calendarTypeTab === "All" ? "calendar" : calendarTypeTab.toLowerCase();
+  const browseChromeRows = getBrowseChromeRows({
+    hasResultSubtitle: !ultraCompact && Boolean(resultStatus.primary || resultStatus.secondary),
+    hasFilterBar: showResultFilterBar,
+    hasFilterBadges: activeFilterBadges.length > 0 && !ultraCompact,
+    hasCalendarChrome: isCalendarView && calendarDays.length > 0 && !ultraCompact,
+    hasContextStrip: Boolean(activeOverlay || (queryDirty && displayOptions.length > 0)),
+    hasQueryDirtyHint:
+      queryDirty && displayOptions.length > 0 && !ultraCompact && !commandMode && !isCalendarView,
+    commandMode,
+  });
+  const maxVisible = getBrowseListMaxVisible(viewport.rows, browseChromeRows);
+  const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
+  const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
+  const visibleOptions = displayOptions.slice(windowStart, windowEnd);
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -840,10 +831,7 @@ export function BrowseShell<T>({
         !queryDirty &&
         searchState === "ready"
       ) {
-        void Promise.resolve(onQueueSelected(selectedOption.value)).then(() => {
-          setSelectedDetail(`Queued ${selectedOption.label}`);
-          return undefined;
-        });
+        void Promise.resolve(onQueueSelected(selectedOption.value));
       }
       return;
     }
@@ -1162,7 +1150,7 @@ export function BrowseShell<T>({
                     >[],
                     windowStart,
                     windowEnd,
-                    Date.now(),
+                    calendarNow,
                     calendarDayFilter,
                     calendarDayFilter === null,
                   ).map((row) => (

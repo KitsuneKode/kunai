@@ -1,4 +1,8 @@
-import { getPickerLayout } from "@/app-shell/layout-policy";
+import {
+  getPickerChromeRows,
+  getPickerLayout,
+  getPickerListMaxVisible,
+} from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { mountRootContent } from "@/app-shell/root-content-state";
 import { LineEditorText } from "@/app-shell/shell-command-ui";
@@ -58,7 +62,11 @@ function ChecklistShell<T>({
 
   const selectedOption = filteredOptions[index];
 
-  const { tooSmall, minColumns, minRows, maxVisibleRows: maxVisible } = viewport;
+  const { tooSmall, minColumns, minRows } = viewport;
+  const maxVisible = getPickerListMaxVisible(
+    viewport.rows,
+    getPickerChromeRows({ hasSubtitle: false, commandMode: false }),
+  );
   const pickerLayout = getPickerLayout(viewport.columns, viewport.rows);
   const { listWidth, rowWidth, showCompanion: showSelectionCompanion } = pickerLayout;
 

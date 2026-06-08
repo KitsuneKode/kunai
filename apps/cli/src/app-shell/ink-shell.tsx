@@ -30,7 +30,7 @@ import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-pane";
-import { getPickerLayout } from "./layout-policy";
+import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
 import { PostPlayShell } from "./post-play-shell";
 import { buildPostPlayView, resolvePostPlayMenuAction } from "./post-play-view";
@@ -85,7 +85,8 @@ import {
 } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 import { useSessionSelector } from "./use-session-selector";
-import { useDebouncedViewportPolicy } from "./use-viewport-policy";
+import { useTerminalResizeCleanup } from "./use-terminal-resize-cleanup";
+import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 
 const ACTIVE_PLAYBACK_STATUSES = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
 const LIST_SHELL_FOOTER_ACTIONS: readonly FooterAction[] = [
@@ -448,7 +449,8 @@ function AppRoot({ container }: { container: Container }) {
   const state = useSessionState(stateManager);
   const screen = useRootShellScreen();
   const rootContent = useRootContentSession();
-  const { stdout } = useStdout();
+  const { cols: shellWidth, rows: shellHeight } = useShellDimensions();
+  useTerminalResizeCleanup();
   const [exiting, setExiting] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
   const [streak, setStreak] = useState<number | undefined>(undefined);
@@ -726,8 +728,6 @@ function AppRoot({ container }: { container: Container }) {
     state.stream,
     mediaLanguageProfileFor(state).subtitle,
   );
-  const shellWidth = stdout.columns ?? 80;
-  const shellHeight = stdout.rows ?? 24;
   const visiblePresenceBootLine = presenceProvider === "discord" ? presenceBootLine : null;
   const currentViewLabel =
     state.playbackStatus === "loading" || playbackIsActive
@@ -1820,7 +1820,14 @@ function ListShell<T>({
 
   const selectedOption = filteredOptions[index];
 
-  const { ultraCompact, tooSmall, minColumns, minRows, maxVisibleRows: maxVisible } = viewport;
+  const { ultraCompact, tooSmall, minColumns, minRows } = viewport;
+  const maxVisible = getPickerListMaxVisible(
+    viewport.rows,
+    getPickerChromeRows({
+      hasSubtitle: subtitle.length > 0,
+      commandMode,
+    }),
+  );
   const pickerLayout = getPickerLayout(viewport.columns, viewport.rows);
   const {
     innerWidth,
@@ -2122,8 +2129,7 @@ function StatsShell({
 
   const stats = useMemo(
     () => statsService.getStats(windowDays, mediaKindFilter),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rangeIdx, kindIdx],
+    [statsService, windowDays, mediaKindFilter],
   );
 
   const view = useMemo(

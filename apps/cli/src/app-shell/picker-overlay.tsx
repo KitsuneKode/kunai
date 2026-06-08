@@ -1,7 +1,11 @@
 import { Box, Text, useStdout } from "ink";
 import React from "react";
 
-import { getShellViewportPolicy } from "./layout-policy";
+import {
+  getPickerChromeRows,
+  getPickerListMaxVisible,
+  getShellViewportPolicy,
+} from "./layout-policy";
 import { getFilteredPickerOptions, type PickerState } from "./picker-controller";
 import { StateBlock } from "./primitives/StateBlock";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
@@ -63,7 +67,17 @@ export function PickerOverlay({
   const filteredOptions = getFilteredPickerOptions(state);
   const inspectionMode = resolvePickerInspectionMode(state);
   const resolvedFooterActions = footerActions ?? getDefaultPickerFooterActions(inspectionMode);
-  const visibleRows = Math.min(policy.maxVisibleRows, Math.max(5, filteredOptions.length));
+  const visibleRows = Math.min(
+    getPickerListMaxVisible(
+      rows,
+      getPickerChromeRows({
+        hasSubtitle: Boolean(state.subtitle),
+        commandMode: false,
+        extraRows: 2,
+      }),
+    ),
+    Math.max(5, filteredOptions.length),
+  );
   const windowStart = getWindowStart(state.selectedIndex, filteredOptions.length, visibleRows);
   const visibleOptions = filteredOptions.slice(windowStart, windowStart + visibleRows);
   const selected = filteredOptions[state.selectedIndex] ?? null;

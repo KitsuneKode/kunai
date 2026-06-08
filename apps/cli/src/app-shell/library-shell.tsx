@@ -1,4 +1,5 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
+import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
 import { ListRow } from "@/app-shell/primitives/ListRow";
 import {
@@ -194,7 +195,10 @@ function LibraryTab({ container }: { container: Container }) {
 
   const totalRows = flatRows.length;
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
-  const maxVisible = Math.max(8, viewport.maxVisibleRows - 8);
+  const maxVisible = getPickerListMaxVisible(
+    viewport.rows,
+    getPickerChromeRows({ hasSubtitle: false, commandMode: false, extraRows: 4 }),
+  );
   const windowStart = getWindowStart(safeIndex, totalRows, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, totalRows);
   const items = buildVisibleLibraryItems(sections, flatRows, safeIndex, windowStart, windowEnd);

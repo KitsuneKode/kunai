@@ -38,6 +38,7 @@ import {
   type HistoryTab,
   type HistoryTypeFilter,
 } from "./history-view";
+import { getPickerLayout } from "./layout-policy";
 import { LibraryShell } from "./library-shell";
 import {
   buildNotificationActionOptions,
@@ -68,7 +69,6 @@ import {
   type HistoryPickerOptionsContext,
   sortProvidersByConfigPriority,
 } from "./panel-data";
-import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import {
   buildRootHistorySelection,
   hasPendingRootHistorySelection,
@@ -1679,11 +1679,9 @@ export function RootOverlayShell({
 
   if (overlay.type === "history") {
     const columns = stdout.columns ?? 80;
-    const innerWidth = Math.max(24, columns - 8);
-    const previewWidth = 32;
-    const showRail = shouldRenderPreviewRail({ columns, hasModel: historyView.rail !== null });
-    const listWidth = showRail ? Math.max(48, innerWidth - previewWidth - 4) : innerWidth;
-    const rowWidth = Math.max(20, listWidth - 4);
+    const rows = stdout.rows ?? 24;
+    const { innerWidth, listWidth: pickerListWidth, rowWidth } = getPickerLayout(columns, rows);
+    const listWidth = pickerListWidth ?? innerWidth;
 
     return (
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
