@@ -93,6 +93,18 @@ describe("playback problem model", () => {
     });
   });
 
+  test("maps missing stream candidates to a blocking no-stream problem", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [{ failure: { message: "Direct provider returned no stream candidates" } }],
+    });
+
+    expect(problem).toMatchObject({
+      cause: "no-stream",
+      severity: "blocking",
+      userMessage: "No playable stream was found for this episode.",
+    });
+  });
+
   test("maps offline provider resolution to a blocking offline problem", () => {
     const problem = buildProviderResolveProblem({
       attempts: [{ failure: { message: "getaddrinfo ENOTFOUND api.example.test" } }],

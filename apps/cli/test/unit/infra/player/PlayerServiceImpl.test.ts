@@ -111,6 +111,22 @@ describe("PlayerServiceImpl diagnostics", () => {
     expect(JSON.stringify(loggerEntries[0]?.context)).not.toContain("X-Amz-Signature=secret");
   });
 
+  test("releasePersistentSession does not block later play calls", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    const result = createPlaybackResult();
+    (service as unknown as { playOneShotStream: () => Promise<PlaybackResult> }).playOneShotStream =
+      async () => result;
+
+    await service.releasePersistentSession();
+    await expect(
+      service.play(createStream(), {
+        url: "https://cdn.example/show/episode.mp4",
+        displayTitle: "Episode 2",
+      }),
+    ).resolves.toMatchObject({ endReason: "quit" });
+  });
+
   test("releasePersistentSession flushes deferred materialized cleanups", async () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events);

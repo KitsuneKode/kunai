@@ -176,7 +176,6 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   async releasePersistentSession(): Promise<void> {
-    this.shuttingDown = true;
     if (!this.persistentSession) {
       await this.flushDeferredMaterializedCleanups();
       return;

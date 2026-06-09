@@ -25,6 +25,12 @@ import {
   type EpisodePrefetchProgress,
   type EpisodePrefetchTarget,
 } from "@/app/episode-prefetch";
+import {
+  dismissMpvTransitionOverlay,
+  MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
+  releasePersistentMpvForTerminalFailure,
+  shouldReleasePersistentMpvBeforePostPlay,
+} from "@/app/mpv-session-lifecycle";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import {
   createDeadStreamUrlLedger,
@@ -112,6 +118,7 @@ import { titleInfoFromSearchResult } from "@/app/title-info";
 import { episodeThumbKey } from "@/domain/catalog/title-detail";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import {
+  buildPlayerFailureProblem,
   buildProviderResolveProblem,
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
@@ -131,6 +138,7 @@ import type {
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import {
   classifyPlaybackFailureFromEvent,
+  classifyPlaybackFailureFromResult,
   recoveryForPlaybackFailure,
 } from "@/infra/player/playback-failure-classifier";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
@@ -398,8 +406,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     });
   }
 
-  private showPlaybackProblem(context: PhaseContext, problem: PlaybackProblem): Promise<void> {
-    const { diagnosticsService, stateManager } = context.container;
+  private async showPlaybackProblem(
+    context: PhaseContext,
+    problem: PlaybackProblem,
+  ): Promise<void> {
+    const { diagnosticsService, stateManager, player, playerControl } = context.container;
     stateManager.dispatch({
       type: "SET_PLAYBACK_PROBLEM",
       problem,
@@ -415,7 +426,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         secondaryActions: problem.secondaryActions,
       },
     });
-    return this.showPlaybackError(context, problem.userMessage);
+    await releasePersistentMpvForTerminalFailure({
+      player,
+      playerControl,
+      userMessage: problem.userMessage,
+      reason: `provider-resolve:${problem.cause}`,
+      diagnostics: diagnosticsService,
+    });
+    await this.showPlaybackError(context, problem.userMessage);
   }
 
   private describePlayerEvent(event: PlayerPlaybackEvent): {
@@ -1526,6 +1544,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
               stateManager.dispatch({ type: "SET_STREAM", stream: null });
               this.updatePlaybackFeedback(context, { detail: null, note: null });
+              await dismissMpvTransitionOverlay(playerControl);
               return { status: "success", value: "back_to_results" };
             }
             const problem = buildProviderResolveProblem({
@@ -2027,7 +2046,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               !isExplicitSourceRefresh &&
               (result.suspectedDeadStream === true || didPlaybackFailToStart(result));
 
-            if (isAutoSourceRecover && autoSourceRecoverAttempts >= 1) {
+            if (
+              isAutoSourceRecover &&
+              autoSourceRecoverAttempts >= MAX_AUTO_SOURCE_RECOVER_ATTEMPTS
+            ) {
               diagnosticsService.record({
                 category: "playback",
                 level: "warn",
@@ -2042,6 +2064,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   watchedSeconds: result.watchedSeconds,
                 },
               });
+              if (shouldReleasePersistentMpvBeforePostPlay(result, true)) {
+                const failureClass = classifyPlaybackFailureFromResult(result);
+                const playerProblem = buildPlayerFailureProblem(failureClass);
+                await releasePersistentMpvForTerminalFailure({
+                  player,
+                  playerControl,
+                  userMessage: playerProblem.userMessage,
+                  reason: `playback-auto-recover-exhausted:${failureClass}`,
+                  diagnostics: diagnosticsService,
+                });
+              }
               this.updatePlaybackFeedback(context, {
                 detail: "Could not start playback",
                 note: "Press o for sources, f for fallback, r to retry, or /diagnostics for details",

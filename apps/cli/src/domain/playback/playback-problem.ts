@@ -120,9 +120,24 @@ export function buildProviderResolveProblem({
     };
   }
 
+  if (
+    /no stream|stream not found|no streams found|no playable stream|no stream candidates/i.test(
+      failureMessages,
+    )
+  ) {
+    return {
+      stage: "provider-resolve",
+      severity: "blocking",
+      cause: "no-stream",
+      userMessage: "No playable stream was found for this episode.",
+      recommendedAction: "pick-stream",
+      secondaryActions: ["try-next-provider", "diagnostics"],
+    };
+  }
+
   return {
     stage: "provider-resolve",
-    severity: "recoverable",
+    severity: "blocking",
     cause: "no-stream",
     userMessage: "No playable stream was found from the available provider attempts.",
     recommendedAction: "pick-stream",
