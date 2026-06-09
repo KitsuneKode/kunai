@@ -52,7 +52,6 @@ import {
   getPhaseAVidkingFlavorIds,
   listEligibleVidkingFlavorIds,
   listVidkingFlavors,
-  publicVidkingSourceLabel,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
   vidkingEngineOptionsForEndpoint,
@@ -764,10 +763,7 @@ export function createVidkingResultFromPayload({
         filterQuality: sourceQualityFilter,
       },
     );
-  const themedLabel =
-    sourceDisplayLabel ??
-    publicVidkingSourceLabel(presentation, videasyAppId) ??
-    presentation.themeLabel;
+  const themedLabel = sourceDisplayLabel ?? presentation.themeLabel;
   const themedSubtitle = flavorArchetype ?? presentation.subtitle;
   const flavorDef = presentation.flavorId ? getVidkingFlavor(presentation.flavorId) : undefined;
   const nativeServerLabel = flavorDef?.cinebyAlias ?? server ?? "Videasy";
