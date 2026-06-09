@@ -9,6 +9,8 @@ import type { ContentType, SearchResult } from "@/domain/types";
 export interface RecommendationHistorySeed {
   readonly title: string;
   readonly type: ContentType;
+  /** Catalog id from watch history (TMDB numeric id for series/movie paths). */
+  readonly titleId?: string;
   readonly watchedAt: string;
 }
 

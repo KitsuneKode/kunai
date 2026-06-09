@@ -2,6 +2,7 @@ import type { Container } from "@/container";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
 
 import { buildDiscoverSections } from "./discover-sections";
+import { loadDiscoveryList } from "./discovery-lists";
 
 export interface PostPlaybackRecommendationItem {
   readonly id: string;
@@ -62,7 +63,13 @@ export async function loadPostPlaybackRecommendationItems(
     if (direct.length > 0) return direct;
   }
 
-  return buildDiscoverSections(container)
+  if (mode === "anime") {
+    return loadDiscoveryList("anime")
+      .then((items) => dedupeRecommendationItems(items, title.name))
+      .catch(() => []);
+  }
+
+  return buildDiscoverSections(container, { light: true })
     .then((sections) =>
       dedupeRecommendationItems(
         sections.flatMap((section) => section.items),

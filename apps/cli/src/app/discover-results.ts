@@ -6,6 +6,7 @@ import {
 } from "@/services/catalog/ResultEnrichmentService";
 
 import { buildDiscoverSections } from "./discover-sections";
+import { clearDiscoveryListCache } from "./discovery-lists";
 
 export type DiscoverResultBundle = {
   readonly results: readonly SearchResult[];
@@ -23,12 +24,13 @@ export async function loadDiscoverResults(
     | "config"
     | "resultEnrichmentService"
   >,
-  options?: { refresh?: boolean },
+  options?: { refresh?: boolean; light?: boolean },
 ): Promise<DiscoverResultBundle> {
   if (options?.refresh) {
     await container.recommendationService.clearCache();
+    clearDiscoveryListCache();
   }
-  const sections = await buildDiscoverSections(container);
+  const sections = await buildDiscoverSections(container, { light: options?.light });
   const mode = container.stateManager.getState().mode;
   const discoverMode = container.config.discoverMode;
   const itemLimit = Math.max(6, Math.min(80, container.config.discoverItemLimit || 24));

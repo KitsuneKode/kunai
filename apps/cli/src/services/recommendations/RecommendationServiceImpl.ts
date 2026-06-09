@@ -6,6 +6,7 @@
 // =============================================================================
 
 import type { ContentType, SearchResult } from "@/domain/types";
+import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import { RecommendationCacheRepository } from "@kunai/storage";
 
 import type {
@@ -24,27 +25,15 @@ export function isCacheExpired(cachedAt: number, ttlMs: number): boolean {
   return Date.now() - cachedAt > ttlMs;
 }
 
-// ── TMDB constants ─────────────────────────────────────────────────────────────
-
-const PROXY = "https://db.videasy.net";
-const DIRECT = "https://api.themoviedb.org/3";
-const KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
 const TTL_SIMILAR = 24 * 60 * 60 * 1000;
 const TTL_TRENDING = 6 * 60 * 60 * 1000;
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
+const PERSONALIZED_HISTORY_LIMIT = 5;
+
 async function tmdbFetch(path: string): Promise<unknown> {
-  try {
-    const res = await fetch(`${PROXY}${path}`);
-    if (!res.ok) throw new Error(`proxy ${res.status}`);
-    return await res.json();
-  } catch {
-    const joiner = path.includes("?") ? "&" : "?";
-    const res = await fetch(`${DIRECT}${path}${joiner}api_key=${KEY}`);
-    if (!res.ok) throw new Error(`direct ${res.status}`);
-    return await res.json();
-  }
+  return fetchTmdbJsonCached(path);
 }
 
 // ── SQLite cache helpers ──────────────────────────────────────────────────────
@@ -84,6 +73,7 @@ export class RecommendationServiceImpl implements RecommendationService {
 
   async clearCache(): Promise<void> {
     this.cacheRepository.clear();
+    clearTmdbSessionCache();
   }
 
   private readCacheEntry(key: string, ttlMs: number): CacheValue | null {
@@ -158,18 +148,19 @@ export class RecommendationServiceImpl implements RecommendationService {
       return { label: "", reason: "genre-affinity", items: [] };
     }
 
-    const recentUnique = [...dedupeHistory(historyEntries)]
-      .sort(
-        (a: RecommendationHistorySeed, b: RecommendationHistorySeed) =>
-          Date.parse(b.watchedAt) - Date.parse(a.watchedAt),
-      )
-      .slice(0, 10);
+    const sorted = [...dedupeHistory(historyEntries)].sort(
+      (a: RecommendationHistorySeed, b: RecommendationHistorySeed) =>
+        Date.parse(b.watchedAt) - Date.parse(a.watchedAt),
+    );
+    const withTmdbIds = sorted.filter((entry) => hasResolvableTmdbId(entry));
+    const withoutTmdbIds = sorted.filter((entry) => !hasResolvableTmdbId(entry));
+    const recentUnique = [...withTmdbIds, ...withoutTmdbIds].slice(0, PERSONALIZED_HISTORY_LIMIT);
     if (recentUnique.length === 0) {
       return { label: "", reason: "genre-affinity", items: [] };
     }
 
     const profileKey = buildRecommendCacheKey(
-      recentUnique.map((entry) => `${entry.type}:${entry.title}`).join("|"),
+      recentUnique.map((entry) => `${entry.type}:${entry.titleId ?? entry.title}`).join("|"),
       "genre-affinity" as ContentType,
     );
     const cached = this.readCacheEntry(profileKey, TTL_SIMILAR);
@@ -184,10 +175,14 @@ export class RecommendationServiceImpl implements RecommendationService {
     const now = Date.now();
     const halfLifeMs = 30 * 24 * 60 * 60 * 1000;
 
+    const seenTitleIds = new Set<string>();
     const genreProfiles = await Promise.all(
       (recentUnique as readonly RecommendationHistorySeed[]).map(async (entry) => {
-        const resolved = await resolveTmdbTitle(entry).catch(() => null);
+        const resolved = await resolveHistoryTitle(entry).catch(() => null);
         if (!resolved) return null;
+        const dedupeKey = `${resolved.mediaType}:${resolved.id}`;
+        if (seenTitleIds.has(dedupeKey)) return null;
+        seenTitleIds.add(dedupeKey);
         const genres = await fetchTmdbGenres(resolved.id, resolved.mediaType).catch(() => []);
         return { entry, genres };
       }),
@@ -303,13 +298,33 @@ function normalizeTitle(title: string): string {
     .replace(/[^a-z0-9]+/g, " ");
 }
 
-async function resolveTmdbTitle(
+function hasResolvableTmdbId(entry: RecommendationHistorySeed): boolean {
+  const titleId = entry.titleId?.trim() ?? "";
+  return /^\d+$/.test(titleId) || /^tmdb:\d+$/.test(titleId);
+}
+
+async function resolveHistoryTitle(
   entry: RecommendationHistorySeed,
 ): Promise<{ id: string; mediaType: "movie" | "tv" } | null> {
   const mediaType = entry.type === "movie" ? "movie" : "tv";
-  if (entry.title.length === 0) return null;
+  const titleId = entry.titleId?.trim() ?? "";
+  if (/^\d+$/.test(titleId)) {
+    return { id: titleId, mediaType };
+  }
+  const tmdbPrefixed = /^tmdb:(\d+)$/.exec(titleId);
+  if (tmdbPrefixed?.[1]) {
+    return { id: tmdbPrefixed[1], mediaType };
+  }
+  return resolveTmdbTitleByName(entry.title, mediaType);
+}
+
+async function resolveTmdbTitleByName(
+  title: string,
+  mediaType: "movie" | "tv",
+): Promise<{ id: string; mediaType: "movie" | "tv" } | null> {
+  if (title.length === 0) return null;
   const search = (await tmdbFetch(
-    `/search/${mediaType}?query=${encodeURIComponent(entry.title)}&include_adult=false&page=1`,
+    `/search/${mediaType}?query=${encodeURIComponent(title)}&include_adult=false&page=1`,
   )) as { results?: Record<string, unknown>[] };
   const match = (search.results ?? []).find((item) => String(item["id"] ?? "") !== "");
   if (!match) return null;

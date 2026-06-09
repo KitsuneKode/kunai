@@ -82,6 +82,57 @@ describe("recommendation cache", () => {
     }
   });
 
+  test("getPersonalizedByHistory resolves numeric titleId without title search", async () => {
+    const originalFetch = globalThis.fetch;
+    const cache = createRecommendationCacheDouble();
+    let fetchCount = 0;
+    globalThis.fetch = createFetchDouble(async (input) => {
+      fetchCount += 1;
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/tv/1396")) {
+        return new Response(JSON.stringify({ genres: [{ id: 18 }, { id: 80 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.includes("/discover/")) {
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: 999,
+                name: "Better Call Saul",
+                first_air_date: "2015-02-08",
+                genre_ids: [18],
+                vote_average: 8.7,
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("{}", { status: 404 });
+    });
+
+    try {
+      const service = new RecommendationServiceImpl(cache as never);
+      const section = await service.getPersonalizedByHistory([
+        {
+          titleId: "1396",
+          title: "Breaking Bad",
+          type: "series",
+          watchedAt: new Date().toISOString(),
+        },
+      ]);
+
+      expect(section.items.length).toBeGreaterThan(0);
+      expect(fetchCount).toBeLessThanOrEqual(3);
+      expect(fetchCount).toBeGreaterThan(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("getForTitle returns stale cached recommendations when upstream refresh fails", async () => {
     const originalFetch = globalThis.fetch;
     const staleItem = {
