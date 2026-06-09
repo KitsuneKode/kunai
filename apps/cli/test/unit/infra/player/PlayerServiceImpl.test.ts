@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
+import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
+import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import type { PlayerPlaybackEvent, PlayerOptions } from "@/infra/player/PlayerService";
 import { PlayerServiceImpl } from "@/infra/player/PlayerServiceImpl";
 import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
@@ -153,5 +155,65 @@ describe("PlayerServiceImpl diagnostics", () => {
       message: "MPV runtime event",
       context: { event: "mpv-process-started" },
     });
+  });
+});
+
+describe("PlayerServiceImpl shutdown", () => {
+  test("play rejects when shutting down or aborted", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    service.beginShutdown();
+
+    await expect(
+      service.play(createStream(), {
+        url: "https://cdn.example/show/episode.mp4",
+        displayTitle: "Demo",
+      }),
+    ).rejects.toBeInstanceOf(PlaybackAbortedError);
+
+    const live = new PlayerServiceImpl({
+      logger: {
+        child: () => {
+          throw new Error("not used");
+        },
+        debug: () => {},
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        fatal: () => {},
+      },
+      tracer: {
+        span: async <T>(_name: string, fn: () => Promise<T>) => await fn(),
+        getCurrentTrace: () => null,
+        getCurrentSpan: () => null,
+      },
+      diagnostics: { record: () => {} },
+      playerControl: { setActive: () => {} },
+      config: { getRaw: () => ({}) },
+    } as never);
+    const abortController = new AbortController();
+    abortController.abort();
+
+    await expect(
+      live.play(createStream(), {
+        url: "https://cdn.example/show/episode.mp4",
+        displayTitle: "Demo",
+        abortSignal: abortController.signal,
+      }),
+    ).rejects.toBeInstanceOf(PlaybackAbortedError);
+  });
+
+  test("killActiveMpvProcessesSync SIGKILLs registered children", () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    let killedWith: NodeJS.Signals | undefined;
+    registerMpvProcess({
+      kill(signal?: NodeJS.Signals) {
+        killedWith = signal;
+      },
+    });
+
+    service.killActiveMpvProcessesSync();
+    expect(killedWith).toBe("SIGKILL");
   });
 });

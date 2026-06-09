@@ -116,6 +116,24 @@ describe("resolvePlaybackResultDecision", () => {
     ).toBe("user");
   });
 
+  test("does not auto-refresh on a clean voluntary quit", () => {
+    const session = createPlaybackSessionState({ autoNextEnabled: true });
+    expect(
+      resolvePlaybackResultDecision({
+        result: {
+          watchedSeconds: 0,
+          duration: 0,
+          endReason: "quit",
+          playerExitedCleanly: true,
+        },
+        controlAction: null,
+        session,
+      }),
+    ).toMatchObject({
+      shouldRefreshSource: false,
+    });
+  });
+
   test("keeps refresh recover and fallback decisions explicit without forcing interruption", () => {
     const session = createPlaybackSessionState({ autoNextEnabled: true });
     expect(

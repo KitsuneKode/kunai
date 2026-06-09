@@ -9,6 +9,7 @@ import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker
 import {
   formatPlaybackSessionFactsStrip,
   formatPlaybackSessionKeysHint,
+  formatPlaybackSourceLine,
   isCurrentStreamSelection,
   streamSelectionFromTrackPick,
 } from "@/app/source-quality";
@@ -1181,6 +1182,7 @@ function AppRoot({ container }: { container: Container }) {
                       : activePlaybackTelemetrySnapshot
                         ? "healthy"
                         : undefined,
+                playbackSourceLine: formatPlaybackSourceLine(state.stream) ?? undefined,
                 playbackFactsStrip:
                   state.playbackStatus === "playing" ||
                   state.playbackStatus === "buffering" ||
@@ -1328,6 +1330,9 @@ export async function shutdownSessionApp(): Promise<void> {
   if (!rootShellInk || !rootShellExitPromise) {
     return;
   }
+
+  const { forceSettleAllRootContent } = await import("./root-content-state");
+  forceSettleAllRootContent("session-shutdown");
 
   const exitPromise = rootShellExitPromise;
   const ink = rootShellInk;

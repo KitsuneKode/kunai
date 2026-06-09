@@ -30,6 +30,7 @@ const presenceRuntime = {
 };
 
 export class PresenceServiceImpl implements PresenceService {
+  private shuttingDown = false;
   private status: PresenceStatus = "idle";
   private discordClient: DiscordPresenceClient | null = null;
   private connectPromise: Promise<DiscordPresenceClient | null> | null = null;
@@ -45,6 +46,10 @@ export class PresenceServiceImpl implements PresenceService {
   private watchSessionPausedTotalMs = 0;
   private watchSessionPauseStartedAtMs: number | null = null;
   private pausedClearTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Serializes Discord IPC mutations so clears cannot race ahead of in-flight updates. */
+  private presenceOpChain: Promise<void> = Promise.resolve();
+  /** Bumped on every `clearPlayback`; stale queued updates are dropped. */
+  private playbackPresenceGeneration = 0;
 
   constructor(
     private readonly deps: {
@@ -111,43 +116,68 @@ export class PresenceServiceImpl implements PresenceService {
   }
 
   async updatePlayback(activity: PresencePlaybackActivity): Promise<void> {
-    if (this.deps.config.presenceProvider === "off") {
-      this.status = "disabled";
-      return;
-    }
-    if (this.deps.config.presenceProvider !== "discord") return;
-    if (this.unavailableUntilRestart) {
-      if (Date.now() < this.unavailableRetryAtMs) return;
-      this.unavailableUntilRestart = false;
-    }
-
-    const client = await this.ensureDiscordClient();
-    if (!client) return;
-
-    try {
-      this.syncWatchSessionForPlayback(activity);
-      this.lastPlaybackActivity = activity;
-      const payload = this.buildPlaybackPayload(activity);
-      const activityHash = stableJsonHash(payload);
-      if (activityHash === this.lastActivityHash) {
-        this.status = "ready";
+    const generation = this.playbackPresenceGeneration;
+    await this.enqueuePresenceOperation(async () => {
+      if (this.shuttingDown || generation !== this.playbackPresenceGeneration) return;
+      if (this.deps.config.presenceProvider === "off") {
+        this.status = "disabled";
         return;
       }
-      await client.setActivity(payload);
-      this.status = "ready";
-      this.lastActivityHash = activityHash;
-      this.lastActivityPayload = payload;
-      this.unavailableRetryAtMs = 0;
-      this.unavailableBackoffMs = 1_000;
-      this.startHeartbeat();
-    } catch (error) {
-      this.markUnavailable("Discord presence update failed", error, {
-        suspectedDuplicateDiscordConsumer: true,
-      });
-    }
+      if (this.deps.config.presenceProvider !== "discord") return;
+      if (this.unavailableUntilRestart) {
+        if (Date.now() < this.unavailableRetryAtMs) return;
+        this.unavailableUntilRestart = false;
+      }
+
+      const client = await this.ensureDiscordClient();
+      if (!client) return;
+
+      const coalesced = this.coalescePlaybackActivity(activity);
+      try {
+        this.syncWatchSessionForPlayback(coalesced);
+        this.lastPlaybackActivity = coalesced;
+        const payload = this.buildPlaybackPayload(coalesced);
+        if (this.deps.config.presencePrivacy === "full") {
+          const posterAsset = buildDiscordPosterAsset(coalesced.title, coalesced.episode);
+          if (posterAsset.fallbackReason) {
+            this.deps.diagnostics.record({
+              category: "presence",
+              operation: "presence.poster.fallback",
+              message: "Discord poster fell back to portal asset",
+              context: {
+                reason: posterAsset.fallbackReason,
+                titleId: coalesced.title.id,
+                candidates: [
+                  coalesced.title.posterUrl,
+                  coalesced.title.artwork?.posterUrl,
+                  coalesced.title.artwork?.thumbnailUrl,
+                ].filter((value): value is string => Boolean(value?.trim())),
+              },
+            });
+          }
+        }
+        const activityHash = stableJsonHash(payload);
+        if (activityHash === this.lastActivityHash) {
+          this.status = "ready";
+          return;
+        }
+        await client.setActivity(payload);
+        this.status = "ready";
+        this.lastActivityHash = activityHash;
+        this.lastActivityPayload = payload;
+        this.unavailableRetryAtMs = 0;
+        this.unavailableBackoffMs = 1_000;
+        this.startHeartbeat();
+      } catch (error) {
+        this.markUnavailable("Discord presence update failed", error, {
+          suspectedDuplicateDiscordConsumer: true,
+        });
+      }
+    });
   }
 
   async updateBrowsing(activity: PresenceBrowseActivity): Promise<void> {
+    if (this.shuttingDown) return;
     if (this.deps.config.presenceProvider === "off") {
       this.status = "disabled";
       return;
@@ -190,13 +220,16 @@ export class PresenceServiceImpl implements PresenceService {
   }
 
   async clearPlayback(reason: string): Promise<void> {
-    this.stopHeartbeat();
-    this.resetWatchSession();
-    this.lastPlaybackActivity = null;
-    this.lastActivityPayload = null;
-    this.lastActivityHash = null;
-    if (!this.discordClient) return;
-    await this.clearDiscordActivity(this.discordClient, reason);
+    this.playbackPresenceGeneration += 1;
+    await this.enqueuePresenceOperation(async () => {
+      this.stopHeartbeat();
+      this.resetWatchSession();
+      this.lastPlaybackActivity = null;
+      this.lastActivityPayload = null;
+      this.lastActivityHash = null;
+      if (!this.discordClient) return;
+      await this.clearDiscordActivity(this.discordClient, reason);
+    });
   }
 
   private async clearDiscordActivity(client: DiscordPresenceClient, reason: string): Promise<void> {
@@ -215,6 +248,7 @@ export class PresenceServiceImpl implements PresenceService {
   }
 
   async shutdown(): Promise<void> {
+    this.shuttingDown = true;
     const clearedClient = this.discordClient;
     if (clearedClient) {
       await this.clearPlayback("shutdown");
@@ -305,6 +339,7 @@ export class PresenceServiceImpl implements PresenceService {
   }
 
   private startHeartbeat(): void {
+    if (this.shuttingDown) return;
     if (this.heartbeatTimer) return;
     this.heartbeatTimer = setInterval(() => {
       runBackgroundTask({
@@ -324,27 +359,27 @@ export class PresenceServiceImpl implements PresenceService {
   }
 
   private async sendHeartbeat(): Promise<void> {
-    if (!this.discordClient) {
-      if (this.unavailableUntilRestart && Date.now() >= this.unavailableRetryAtMs) {
-        this.unavailableUntilRestart = false;
-        runBackgroundTask({
-          task: "presence.reconnectFromHeartbeat",
-          category: "presence",
-          diagnostics: this.deps.diagnostics,
-          run: () => this.tryReconnect(),
-        });
+    if (this.shuttingDown) return;
+    const generation = this.playbackPresenceGeneration;
+    await this.enqueuePresenceOperation(async () => {
+      if (this.shuttingDown || generation !== this.playbackPresenceGeneration) return;
+      if (!this.discordClient) {
+        if (this.unavailableUntilRestart && Date.now() >= this.unavailableRetryAtMs) {
+          this.unavailableUntilRestart = false;
+          await this.tryReconnect();
+        }
+        return;
       }
-      return;
-    }
-    if (!this.lastPlaybackActivity) return;
-    try {
-      const payload = this.buildPlaybackPayload(this.lastPlaybackActivity);
-      await this.discordClient.setActivity(payload);
-      this.lastActivityPayload = payload;
-      this.lastActivityHash = stableJsonHash(payload);
-    } catch {
-      this.markUnavailable("Discord connection lost", new Error("heartbeat failure"));
-    }
+      if (!this.lastPlaybackActivity) return;
+      try {
+        const payload = this.buildPlaybackPayload(this.lastPlaybackActivity);
+        await this.discordClient.setActivity(payload);
+        this.lastActivityPayload = payload;
+        this.lastActivityHash = stableJsonHash(payload);
+      } catch {
+        await this.trySoftReconnectAfterHeartbeatFailure();
+      }
+    });
   }
 
   private buildPlaybackPayload(activity: PresencePlaybackActivity): Record<string, unknown> {
@@ -408,7 +443,25 @@ export class PresenceServiceImpl implements PresenceService {
     this.pausedClearTimer = null;
   }
 
+  private async trySoftReconnectAfterHeartbeatFailure(): Promise<void> {
+    if (this.shuttingDown || !this.lastActivityPayload) {
+      this.markUnavailable("Discord connection lost", new Error("heartbeat failure"));
+      return;
+    }
+    if (this.discordClient) {
+      try {
+        await this.discordClient.setActivity(this.lastActivityPayload);
+        this.lastActivityHash = stableJsonHash(this.lastActivityPayload);
+        return;
+      } catch {
+        // fall through to hard reconnect
+      }
+    }
+    await this.tryReconnect();
+  }
+
   private async tryReconnect(): Promise<void> {
+    if (this.shuttingDown) return;
     this.stopHeartbeat();
     if (this.discordClient) {
       try {
@@ -428,6 +481,39 @@ export class PresenceServiceImpl implements PresenceService {
     } catch {
       this.markUnavailable("Discord reconnect failed", new Error("reconnect failure"));
     }
+  }
+
+  private enqueuePresenceOperation(run: () => Promise<void>): Promise<void> {
+    const next = this.presenceOpChain.then(run, run);
+    this.presenceOpChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private coalescePlaybackActivity(incoming: PresencePlaybackActivity): PresencePlaybackActivity {
+    const previous = this.lastPlaybackActivity;
+    if (!previous) return incoming;
+    if (
+      previous.title.id !== incoming.title.id ||
+      previous.episode.season !== incoming.episode.season ||
+      previous.episode.episode !== incoming.episode.episode
+    ) {
+      return incoming;
+    }
+
+    const previousDuration = normalizePresenceSeconds(previous.durationSeconds);
+    const incomingDuration = normalizePresenceSeconds(incoming.durationSeconds);
+    const previousPosition = normalizePresenceSeconds(previous.positionSeconds);
+    const incomingPosition = normalizePresenceSeconds(incoming.positionSeconds);
+
+    return {
+      ...incoming,
+      durationSeconds: Math.max(previousDuration, incomingDuration) || incoming.durationSeconds,
+      positionSeconds: Math.max(previousPosition, incomingPosition) || incoming.positionSeconds,
+      paused: incoming.paused ?? previous.paused,
+    };
   }
 }
 

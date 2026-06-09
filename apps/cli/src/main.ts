@@ -807,7 +807,6 @@ function setupSignalHandlers(): void {
     }, 4000);
     if (forceExit.unref) forceExit.unref();
     try {
-      await globalContainer?.presence.shutdown().catch(() => {});
       await globalContainer?.downloadService.pauseActiveJobsForShutdown(
         `download paused by ${signal}`,
       );
@@ -832,6 +831,7 @@ function setupSignalHandlers(): void {
   process.on("exit", () => {
     try {
       globalContainer?.downloadService.killActiveProcessesSync();
+      globalContainer?.player.killActiveMpvProcessesSync();
     } catch {
       // best effort during teardown
     }
@@ -840,7 +840,6 @@ function setupSignalHandlers(): void {
   process.on("uncaughtException", (e) => {
     console.error("Uncaught exception:", e);
     void (async () => {
-      await globalContainer?.presence.shutdown().catch(() => {});
       await globalContainer?.downloadService.pauseActiveJobsForShutdown("uncaught exception");
       await globalController?.shutdown().catch(() => {});
       await shutdownShell();
@@ -853,7 +852,6 @@ function setupSignalHandlers(): void {
   process.on("unhandledRejection", (e) => {
     console.error("Unhandled rejection:", e);
     void (async () => {
-      await globalContainer?.presence.shutdown().catch(() => {});
       await globalContainer?.downloadService.pauseActiveJobsForShutdown("unhandled rejection");
       await globalController?.shutdown().catch(() => {});
       await shutdownShell();

@@ -235,14 +235,17 @@ export function resolvePlaybackResultDecision({
       ? "interrupted"
       : session.autoplayPauseReason;
 
+  const heuristicRefresh = result.suspectedDeadStream === true || didPlaybackFailToStart(result);
+  const blockHeuristicRefreshOnCleanQuit =
+    result.endReason === "quit" && (result.playerExitedCleanly ?? false);
+
   return {
     session: withPauseReason(session, nextPauseReason),
     shouldRefreshSource:
-      result.suspectedDeadStream === true ||
-      didPlaybackFailToStart(result) ||
       controlAction === "refresh" ||
       controlAction === "recover" ||
-      controlAction === "recompute",
+      controlAction === "recompute" ||
+      (heuristicRefresh && !blockHeuristicRefreshOnCleanQuit),
     shouldFallbackProvider: controlAction === "fallback",
     shouldTreatAsInterrupted,
   };
@@ -302,9 +305,7 @@ export function explainAutoplayBlockReason(args: AutoAdvanceArgs): AutoAdvanceBl
   const thresholdMode = endPolicy.quitNearEndThresholdMode;
   if (result.suspectedDeadStream) return "not-near-end";
   const nearNaturalEnd = didPlaybackEndNearNaturalEnd(result, timing, thresholdMode);
-  const endAllowsAutoplayAdvance =
-    result.endReason === "eof" ||
-    (result.endReason === "quit" && endPolicy.quitNearEndBehavior === "continue" && nearNaturalEnd);
+  const endAllowsAutoplayAdvance = result.endReason === "eof";
 
   if (session.mode !== "autoplay-chain") return "manual-mode";
   if (session.autoplayPaused) return "autoplay-paused";

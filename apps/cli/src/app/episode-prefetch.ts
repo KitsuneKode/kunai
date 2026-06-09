@@ -123,6 +123,14 @@ export class EpisodePrefetchHandle {
     this.activeTarget = null;
   }
 
+  /**
+   * Stop scheduling new prefetch work without aborting in-flight resolve or
+   * discarding a completed `ready` bundle (used when opening post-play).
+   */
+  suspend(_reason: string): void {
+    this.activeTarget = null;
+  }
+
   hasReadyFor(target: EpisodePrefetchTarget): boolean {
     return this.ready !== null && matchesEpisodePrefetchTarget(this.ready.target, target);
   }

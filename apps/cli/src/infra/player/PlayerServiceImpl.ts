@@ -16,8 +16,10 @@ import type { ConfigService } from "@/services/persistence/ConfigService";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
+import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { PersistentMpvSession } from "./PersistentMpvSession";
+import { PlaybackAbortedError } from "./playback-aborted";
 import {
   classifyPlaybackFailureFromEvent,
   classifyPlaybackFailureFromResult,
@@ -30,6 +32,7 @@ import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./Player
 export class PlayerServiceImpl implements PlayerService {
   private persistentSession: PersistentMpvSession | null = null;
   private deferredMaterializedCleanups: Array<() => Promise<void>> = [];
+  private shuttingDown = false;
 
   constructor(
     private deps: {
@@ -42,7 +45,22 @@ export class PlayerServiceImpl implements PlayerService {
     },
   ) {}
 
+  beginShutdown(): void {
+    this.shuttingDown = true;
+  }
+
+  killActiveMpvProcessesSync(): void {
+    killRegisteredMpvProcesses();
+  }
+
   async play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
+    if (this.shuttingDown) {
+      throw new PlaybackAbortedError("player shutting down");
+    }
+    if (options.abortSignal?.aborted) {
+      throw new PlaybackAbortedError("playback aborted");
+    }
+
     const materialized = await materializePlaybackMediaForPlayback(stream);
     const playbackStream = materialized.stream;
     if (materialized.kind === "dash-mpd") {
@@ -158,6 +176,7 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   async releasePersistentSession(): Promise<void> {
+    this.shuttingDown = true;
     if (!this.persistentSession) {
       await this.flushDeferredMaterializedCleanups();
       return;

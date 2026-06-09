@@ -7,6 +7,7 @@ import type {
   StreamInfo,
   SubtitleTrack,
 } from "@/domain/types";
+import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import { dbg } from "@/logger";
 import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -136,6 +137,7 @@ export class PersistentMpvSession {
   private readonly ipcEndpoint = createMpvIpcEndpoint(this.id);
   private luaScriptPath: string | null = null;
   private mpv: MpvProcess | null = null;
+  private mpvUnregister: (() => void) | null = null;
   private ipcSession: MpvIpcSession | null = null;
   private activeCycle: PlayerCycleState | null = null;
   private readonly subtitleManager = new PersistentSubtitleManager();
@@ -553,6 +555,7 @@ export class PersistentMpvSession {
       env: process.env as Record<string, string>,
     });
     this.mpv = proc;
+    this.mpvUnregister = registerMpvProcess(proc);
     this.alive = true;
     this.initialOptions.onPlaybackEvent?.({ type: "mpv-process-started" });
     this.hasLoadedFile = true;
@@ -1192,6 +1195,8 @@ export class PersistentMpvSession {
       await this.cleanupSocket();
       await this.cleanupLuaScript();
 
+      this.mpvUnregister?.();
+      this.mpvUnregister = null;
       this.mpv = null;
       this.hasLoadedFile = false;
 

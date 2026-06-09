@@ -37,16 +37,16 @@ are skipped to avoid unnecessary Discord IPC churn.
 
 ## Lifecycle
 
-| Event                                        | Presence behavior                                                                     |
-| -------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Playback starts                              | Show episode card; start internal binge session clock                                 |
-| Progress updates                             | Refresh timestamps/progress when duration is known                                    |
-| Pause                                        | Static paused card; schedule clear after `presencePausedClearDelayMs` (default 3 min) |
-| Resume                                       | Cancel pause clear timer; resume playing card                                         |
-| Autoplay next episode                        | Keep presence and binge session clock (no flash clear)                                |
-| Post-play idle (mpv closed, up-next overlay) | `clearPlayback("playback-idle")`                                                      |
-| Leave playback phase                         | `clearPlayback("playback-exited")`                                                    |
-| Quit / shutdown                              | `presence.shutdown()`                                                                 |
+| Event                                        | Presence behavior                                                                                                                        |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Playback starts                              | Show episode card; start internal binge session clock                                                                                    |
+| Progress updates                             | Refresh timestamps/progress when duration is known                                                                                       |
+| Pause                                        | Static paused card; schedule clear after `presencePausedClearDelayMs` (default 3 min)                                                    |
+| Resume                                       | Cancel pause clear timer; resume playing card                                                                                            |
+| Autoplay next episode                        | Keep presence and binge session clock (no flash clear)                                                                                   |
+| Post-play idle (mpv closed, up-next overlay) | `clearPlayback("playback-idle")`                                                                                                         |
+| Leave playback phase                         | `clearPlayback("playback-exited")`                                                                                                       |
+| Quit / shutdown                              | `SessionController.shutdown()` owns a single awaited `presence.shutdown()`; updates/heartbeat/reconnect are ignored once shutdown begins |
 
 Kunai no longer replaces finished playback with a generic "Browsing Kunai" activity.
 
@@ -111,12 +111,16 @@ for future use but is not wired into the default activity payload.
 Full privacy cards are laid out like music-player presence (Cider-style): show title on
 `details`, `S# E# · episode name` on `state`, playback progress via Discord timestamps, and the
 show poster as `assets.large_image` when a safe `https://` poster URL is available on the title,
-title artwork, or episode artwork (fallback asset key `kunai`). Provider stream URLs, subtitle URLs,
-headers, and local paths stay out of Discord payloads.
+title artwork, or episode artwork (fallback asset key `kunai`). TMDB relative paths such as
+`/abc.jpg` must be expanded to `https://image.tmdb.org/t/p/w500/...` before sending to Discord;
+`resolve-catalog-poster-url.ts` is the shared resolver. Title-detail prefetch artwork is merged into
+presence when search/history rows only stored relative paths. When full privacy still falls back to
+`kunai`, diagnostics record `presence.poster.fallback` with the reason. Provider stream URLs,
+subtitle URLs, headers, and local paths stay out of Discord payloads.
 
-Upload portal assets from `apps/cli/assets/discord/` with keys `kunai` and `subtitles` for the
-fallback artwork. Without portal upload, Discord shows a generic placeholder when no HTTPS poster
-URL is available.
+Upload portal assets from `apps/cli/assets/discord/` with keys `kunai` and `subtitles` for
+**fallback** artwork only. External TMDB/AniList HTTPS URLs are the primary series-poster path and
+do not require Developer Portal uploads (Discord proxies public HTTPS images).
 
 ## Authentication Model
 

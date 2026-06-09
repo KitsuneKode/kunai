@@ -560,6 +560,41 @@ describe("PresenceServiceImpl", () => {
     expect(service.getStatus()).toBe("idle");
   });
 
+  test("ignores playback updates after shutdown begins", async () => {
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnostics: diagnostics,
+    });
+    const setActivityCalls: unknown[] = [];
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      discordClient: {
+        async login() {},
+        async setActivity(payload: unknown) {
+          setActivityCalls.push(payload);
+        },
+        async clearActivity() {},
+        async destroy() {},
+        on() {},
+      },
+      status: "ready",
+    });
+
+    await service.shutdown();
+    await service.updatePlayback({
+      mode: "series",
+      title: { id: "tmdb:1", type: "series", name: "Demo" },
+      episode: { season: 1, episode: 1 },
+      providerId: "videasy",
+      stream: { url: "https://cdn.example/stream.mp4", headers: {}, timestamp: 1 },
+      startedAtMs: Date.now(),
+      positionSeconds: 0,
+    });
+
+    expect(setActivityCalls).toEqual([]);
+  });
+
   test("shutdown clears a Discord client that finishes connecting during exit", async () => {
     const diagnostics = createDiagnostics();
     const service = new PresenceServiceImpl({

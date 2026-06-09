@@ -63,6 +63,18 @@ test("buildDiscordPosterAsset uses HTTPS poster URLs for Discord large_image", (
   });
 });
 
+test("buildDiscordPosterAsset expands TMDB relative poster paths", () => {
+  expect(
+    buildDiscordPosterAsset({
+      name: "Study Group",
+      posterUrl: "/w500abc123.jpg",
+    }),
+  ).toEqual({
+    large_image: "https://image.tmdb.org/t/p/w500/w500abc123.jpg",
+    large_text: "Study Group",
+  });
+});
+
 test("buildDiscordPosterAsset falls back to the kunai asset key", () => {
   expect(
     buildDiscordPosterAsset({
@@ -72,6 +84,7 @@ test("buildDiscordPosterAsset falls back to the kunai asset key", () => {
   ).toEqual({
     large_image: "kunai",
     large_text: "Demo · 2024",
+    fallbackReason: "missing-artwork",
   });
 });
 

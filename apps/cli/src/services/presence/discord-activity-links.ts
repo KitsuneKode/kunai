@@ -1,3 +1,4 @@
+import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 
 import type { PresencePlaybackActivity } from "./PresenceService";
@@ -94,17 +95,44 @@ export function buildDiscordActivityUrlFields(
 
 function resolveDiscordArtworkUrl(...candidates: readonly (string | undefined)[]): string | null {
   for (const candidate of candidates) {
-    const normalized = normalizeHttpsPosterUrl(candidate);
-    if (normalized) return normalized;
+    const resolved = resolveCatalogPosterUrl(candidate);
+    if (resolved) return resolved;
   }
   return null;
+}
+
+export type DiscordPosterFallbackReason =
+  | "missing-artwork"
+  | "relative-tmdb-path"
+  | "non-https"
+  | "unresolved";
+
+export function explainDiscordPosterFallbackReason(
+  ...candidates: readonly (string | undefined)[]
+): DiscordPosterFallbackReason {
+  const trimmedCandidates = candidates
+    .map((candidate) => candidate?.trim())
+    .filter((candidate): candidate is string => Boolean(candidate));
+  if (trimmedCandidates.length === 0) return "missing-artwork";
+  if (trimmedCandidates.some((candidate) => candidate.startsWith("/"))) {
+    return "relative-tmdb-path";
+  }
+  if (trimmedCandidates.some((candidate) => candidate.startsWith("http://"))) {
+    return "non-https";
+  }
+  return "unresolved";
 }
 
 export function buildDiscordPosterAsset(
   title: Pick<TitleInfo, "posterUrl" | "artwork" | "name" | "year">,
   episode?: Pick<EpisodeInfo, "artwork">,
-): { readonly large_image: string; readonly large_text: string; readonly large_url?: string } {
-  const posterUrl = resolveDiscordArtworkUrl(
+): {
+  readonly large_image: string;
+  readonly large_text: string;
+  readonly large_url?: string;
+  readonly fallbackReason?: DiscordPosterFallbackReason;
+} {
+  const candidates = [
     title.posterUrl,
     title.artwork?.posterUrl,
     title.artwork?.thumbnailUrl,
@@ -112,12 +140,17 @@ export function buildDiscordPosterAsset(
     episode?.artwork?.posterUrl,
     episode?.artwork?.thumbnailUrl,
     episode?.artwork?.backdropUrl,
-  );
+  ] as const;
+  const posterUrl = resolveDiscordArtworkUrl(...candidates);
   const hover = compact([title.name, title.year]).join(" · ") || "Kunai";
   if (posterUrl) {
     return { large_image: posterUrl, large_text: hover };
   }
-  return { large_image: "kunai", large_text: hover };
+  return {
+    large_image: "kunai",
+    large_text: hover,
+    fallbackReason: explainDiscordPosterFallbackReason(...candidates),
+  };
 }
 
 function resolveAnilistId(title: Pick<TitleInfo, "id" | "externalIds">): string | null {
@@ -132,18 +165,6 @@ function resolveTmdbId(title: Pick<TitleInfo, "id" | "externalIds">): string | n
   if (fromExternal) return fromExternal;
   const match = /^tmdb:(\d+)$/.exec(title.id.trim());
   return match?.[1] ?? null;
-}
-
-function normalizeHttpsPosterUrl(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol !== "https:") return null;
-    return trimmed;
-  } catch {
-    return null;
-  }
 }
 
 function compact(values: readonly (string | undefined | null | false)[]): string[] {

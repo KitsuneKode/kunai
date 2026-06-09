@@ -29,11 +29,12 @@ export class SessionController {
   constructor(private container: Container) {}
 
   public async shutdown(): Promise<void> {
+    this.container.player.beginShutdown();
+    this.container.workControl.cancelActive("shutdown");
     this.abortController.abort();
-    this.container.workControl.setActive(null);
     const cleanupResults = await Promise.allSettled([
-      this.container.presence.shutdown(),
       this.container.player.releasePersistentSession(),
+      this.container.presence.shutdown(),
     ]);
     for (const result of cleanupResults) {
       if (result.status === "fulfilled") continue;

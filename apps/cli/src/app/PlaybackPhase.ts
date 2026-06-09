@@ -33,6 +33,7 @@ import {
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
 import {
+  didPlaybackEndNearNaturalEnd,
   didPlaybackReachCompletionThreshold,
   resolveEpisodeAvailability,
   toEpisodeNavigationState,
@@ -127,6 +128,7 @@ import type {
   SubtitleTrack,
   SearchResult,
 } from "@/domain/types";
+import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import {
   classifyPlaybackFailureFromEvent,
   recoveryForPlaybackFailure,
@@ -213,7 +215,7 @@ function preparePostPlaybackSurface(
   playbackIterationAbort: AbortController,
 ): void {
   playbackIterationAbort.abort();
-  episodePrefetch.cancel("post-playback-menu");
+  episodePrefetch.suspend("post-playback-menu");
   container.playerControl.consumeLastAction();
   container.playerControl.consumePendingStreamSelection();
   container.playerControl.consumePendingEpisodeSelection();
@@ -339,14 +341,22 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       },
       run: () => {
         const shellTitle = context.container.stateManager.getState().currentTitle;
+        const detailPoster = peekTitleDetail(activity.title.id, activity.title.type)?.artwork
+          ?.poster;
         const enrichedTitle =
           shellTitle && shellTitle.id === activity.title.id
             ? {
                 ...activity.title,
-                posterUrl: activity.title.posterUrl ?? shellTitle.posterUrl,
+                posterUrl:
+                  activity.title.posterUrl ?? shellTitle.posterUrl ?? detailPoster ?? undefined,
                 artwork: activity.title.artwork ?? shellTitle.artwork,
               }
-            : activity.title;
+            : detailPoster
+              ? {
+                  ...activity.title,
+                  posterUrl: activity.title.posterUrl ?? detailPoster,
+                }
+              : activity.title;
         return context.container.presence.updatePlayback({
           ...activity,
           title: enrichedTitle,
@@ -742,6 +752,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       // Inner playback loop
       while (true) {
+        if (context.signal.aborted) {
+          stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+          await container.player.releasePersistentSession();
+          return { status: "cancelled" };
+        }
+
         const playbackIterationAbort = new AbortController();
         const currentEpisode = stateManager.getState().currentEpisode;
         if (!currentEpisode) break;
@@ -1770,21 +1786,43 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             },
           );
 
-          const result = await this.playStream(
-            preparedStream,
-            title,
-            currentEpisode,
-            context,
-            startIntent.startAt,
-            startIntent.resumePromptAt,
-            playbackSession.mode,
-            playbackTiming,
-            maybePrefetchNext,
-            startIntent.suppressResumePrompt,
-            playbackCorrelation,
-            (stage) => recordStartupMark(stage, preparedStream),
-            playbackIterationAbort.signal,
-          );
+          if (context.signal.aborted) {
+            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+            await container.player.releasePersistentSession();
+            return { status: "cancelled" };
+          }
+
+          let result: PlaybackResult;
+          try {
+            result = await this.playStream(
+              preparedStream,
+              title,
+              currentEpisode,
+              context,
+              startIntent.startAt,
+              startIntent.resumePromptAt,
+              playbackSession.mode,
+              playbackTiming,
+              maybePrefetchNext,
+              startIntent.suppressResumePrompt,
+              playbackCorrelation,
+              (stage) => recordStartupMark(stage, preparedStream),
+              playbackIterationAbort.signal,
+            );
+          } catch (error) {
+            if (error instanceof PlaybackAbortedError || context.signal.aborted) {
+              stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+              await container.player.releasePersistentSession();
+              return { status: "cancelled" };
+            }
+            throw error;
+          }
+
+          if (context.signal.aborted) {
+            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+            await container.player.releasePersistentSession();
+            return { status: "cancelled" };
+          }
           playbackSession = this.transitionPlaybackSession(
             context,
             playbackSession,
@@ -2661,6 +2699,56 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               effectiveTiming.current,
               config.quitNearEndThresholdMode,
             );
+            const nearEndVoluntaryQuit =
+              result.endReason === "quit" &&
+              config.quitNearEndBehavior === "continue" &&
+              playbackSession.mode === "autoplay-chain" &&
+              !playbackSession.autoplayPaused &&
+              !playbackSession.stopAfterCurrent &&
+              Boolean(episodeAvailability.nextEpisode) &&
+              didPlaybackEndNearNaturalEnd(
+                result,
+                effectiveTiming.current,
+                config.quitNearEndThresholdMode,
+              );
+            if (nearEndVoluntaryQuit && episodeAvailability.nextEpisode) {
+              const postPlayNextEpisode = episodeAvailability.nextEpisode;
+              const countdownResult = await this.runAutoNextCountdown(context, postPlayNextEpisode);
+              if (countdownResult !== "cancelled" && !context.signal.aborted) {
+                logger.info("Post-play auto-next advancing after near-end quit", {
+                  titleId: title.id,
+                  nextSeason: postPlayNextEpisode.season,
+                  nextEpisode: postPlayNextEpisode.episode,
+                });
+                stateManager.dispatch({
+                  type: "SELECT_EPISODE",
+                  episode: postPlayNextEpisode,
+                });
+                pendingStart = await startNavigationToEpisode(postPlayNextEpisode);
+                stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
+                playbackSession = {
+                  ...playbackSession,
+                  stopAfterCurrent: false,
+                };
+                const autoplayPrefetchTarget = buildPrefetchTarget(
+                  postPlayNextEpisode,
+                  resolvedProviderId,
+                );
+                await handoffNextEpisodePrefetch(
+                  autoplayPrefetchTarget,
+                  "post-playback.autonext.prefetch-wait",
+                );
+                break postPlayback;
+              }
+              if (countdownResult === "cancelled") {
+                stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
+                playbackSession = {
+                  ...playbackSession,
+                  autoplayPaused: true,
+                  autoplayPauseReason: "user",
+                };
+              }
+            }
             const autoplaySessionPaused = playbackSession.autoplayPaused;
             const canResumePlayback =
               result.endReason !== "eof" &&
@@ -3641,6 +3729,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   ): Promise<PlaybackResult> {
     const { player, stateManager, config } = context.container;
 
+    if (context.signal.aborted || playbackIterationSignal?.aborted) {
+      throw new PlaybackAbortedError("playback aborted before launch");
+    }
+
     const displayTitle =
       title.type === "movie"
         ? title.name
@@ -3702,6 +3794,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         subtitle: stream.subtitle,
         subtitleStatus,
         correlation,
+        abortSignal: context.signal,
         audioPreference:
           stateManager.getState().mode === "anime"
             ? stateManager.getState().animeLanguageProfile.audio

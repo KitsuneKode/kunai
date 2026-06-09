@@ -109,3 +109,10 @@ Recent player/runtime changes introduced reliability regressions in autoplay-cha
 2. Add diagnostics event fields for finalization path identity (close-event vs close-timeout vs bootstrap-fail).
 3. Consider optional auto-refresh strategy when watchdog emits prolonged cache starvation during autoplay.
 4. Capture operational counters for IPC unexpected-close frequency.
+
+## Playback abort hardening (completed)
+
+- `mpv-process-registry.ts` + `process.on("exit")` SIGKILL backstop alongside download children.
+- Cooperative abort in `PlaybackPhase` / `PlayerServiceImpl.beginShutdown()` / `SessionController.shutdown()` order.
+- `forceSettleAllRootContent` unblocks `openPlaybackShell` during Ink teardown.
+- Voluntary mpv quit routes through post-play; prefetch `suspend` retains in-flight resolve work.

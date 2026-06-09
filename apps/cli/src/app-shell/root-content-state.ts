@@ -18,6 +18,14 @@ const rootContentSubscribers = new Set<() => void>();
 let rootContentSession: RootContentSession | null = null;
 let rootContentNextId = 1;
 
+type PendingRootContentMount = {
+  readonly sessionId: number;
+  readonly settle: (value: unknown) => void;
+  readonly fallbackValue: unknown;
+};
+
+const pendingRootContentMounts = new Set<PendingRootContentMount>();
+
 function notifyRootContentSubscribers() {
   for (const subscriber of rootContentSubscribers) {
     subscriber();
@@ -51,10 +59,19 @@ export function clearRootContentSession(): void {
   setRootContentSession(null);
 }
 
+/** Resolve any blocked `mountRootContent` promises during Ink teardown. */
+export function forceSettleAllRootContent(_reason: string): void {
+  for (const mount of pendingRootContentMounts) {
+    mount.settle(mount.fallbackValue);
+  }
+  pendingRootContentMounts.clear();
+  setRootContentSession(null);
+}
+
 export function mountRootContent<TResult>({
   kind,
   renderContent,
-  fallbackValue: _fallbackValue,
+  fallbackValue,
 }: {
   kind: RootContentKind;
   renderContent: (finish: (value: TResult) => void) => ReactElement;
@@ -68,9 +85,17 @@ export function mountRootContent<TResult>({
     resolveResult = resolve;
   });
 
-  const settle = (value: TResult) => {
+  let settle!: (value: TResult) => void;
+  const pendingMount: PendingRootContentMount = {
+    sessionId,
+    settle: (value) => settle(value as TResult),
+    fallbackValue,
+  };
+
+  settle = (value: TResult) => {
     if (settled) return;
     settled = true;
+    pendingRootContentMounts.delete(pendingMount);
 
     if (rootContentSession?.id === sessionId) {
       setRootContentSession(null);
@@ -78,6 +103,8 @@ export function mountRootContent<TResult>({
 
     resolveResult(value);
   };
+
+  pendingRootContentMounts.add(pendingMount);
 
   setRootContentSession({
     id: sessionId,

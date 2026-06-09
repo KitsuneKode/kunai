@@ -64,6 +64,9 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   ) {}
 
   setActive(control: ActivePlayerControl | null): void {
+    if (!control) {
+      this.drainStaleMpvActions();
+    }
     this.active = control;
     if (control && this.episodeNavigationAvailability) {
       void this.applyEpisodeNavigationAvailability(control, this.episodeNavigationAvailability);
@@ -111,6 +114,11 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     const action = this.lastAction;
     this.lastAction = null;
     return action;
+  }
+
+  private drainStaleMpvActions(): void {
+    this.lastAction = null;
+    this.pendingStreamSelection = null;
   }
 
   signalPlaybackAction(action: PlaybackControlAction): void {

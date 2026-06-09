@@ -25,6 +25,10 @@ rsvg-convert -w 1024 -h 1024 apps/cli/assets/discord/kunai.svg -o apps/cli/asset
 Discord renders uploaded, portal-hosted assets by key. These files are not read at runtime; they
 keep the source-of-truth artwork in the repo so the presence payload can rely on stable names.
 
+Series posters in Rich Presence normally use external HTTPS URLs (TMDB `image.tmdb.org`, AniList
+CDN, etc.) in `assets.large_image`. Portal keys `kunai` / `subtitles` are **fallback only** when
+no safe catalog poster URL is available.
+
 Manual smoke checklist:
 
 - upload both assets to the Discord Developer Portal for the application id under test

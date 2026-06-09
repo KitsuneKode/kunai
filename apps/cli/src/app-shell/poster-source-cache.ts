@@ -7,7 +7,7 @@ const sourceCache = new Map<string, PosterSourceEntry>();
 const sourceInflight = new Map<string, Promise<PosterSourceEntry | null>>();
 const MAX_SOURCE_CACHE = 24;
 
-const TMDB_BASE = "https://image.tmdb.org/t/p";
+import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 
 function getTmdbSize(cols: number, variant: "preview" | "detail"): string {
   if (variant === "detail") return cols <= 28 ? "w500" : "w780";
@@ -21,8 +21,8 @@ export function resolvePosterUrl(
   { cols = 18, variant = "preview" }: { cols?: number; variant?: "preview" | "detail" } = {},
 ): string {
   if (isLocalImagePath(url)) return url.startsWith("file://") ? url.slice("file://".length) : url;
-  if (!url.startsWith("/")) return url;
-  return `${TMDB_BASE}/${getTmdbSize(cols, variant)}${url}`;
+  const resolved = resolveCatalogPosterUrl(url, { tmdbSize: getTmdbSize(cols, variant) });
+  return resolved ?? url;
 }
 
 export function clearPosterSourceCache(): void {

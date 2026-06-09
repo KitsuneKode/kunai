@@ -12,6 +12,7 @@ import {
   newMpvIpcSessionId,
   shouldUnlinkUnixSocket,
 } from "@/infra/player/mpv-ipc-endpoint";
+import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import {
   applyEndFileEvent,
@@ -85,7 +86,31 @@ export async function launchMpv(opts: {
     stderr: stdio,
     env: process.env as Record<string, string>,
   });
+  const unregisterMpv = registerMpvProcess(mpv);
+  try {
+    return await launchMpvInner(
+      mpv,
+      unregisterMpv,
+      opts,
+      sessionId,
+      ipcEndpoint,
+      telemetry,
+      emitPlaybackEvent,
+    );
+  } finally {
+    unregisterMpv();
+  }
+}
 
+async function launchMpvInner(
+  mpv: ReturnType<typeof Bun.spawn>,
+  _unregisterMpv: () => void,
+  opts: Parameters<typeof launchMpv>[0],
+  sessionId: string,
+  ipcEndpoint: ReturnType<typeof createMpvIpcEndpoint>,
+  telemetry: ReturnType<typeof createPlayerTelemetryState>,
+  emitPlaybackEvent: (event: PlayerPlaybackEvent) => void,
+): Promise<PlaybackResult> {
   let ipcSession: MpvIpcSession | null = null;
   let endFileResolve: ((reason: string | undefined) => void) | null = null;
   const endFileReceived = new Promise<string | undefined>((resolve) => {

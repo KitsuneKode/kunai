@@ -392,7 +392,7 @@ describe("getAutoAdvanceEpisode", () => {
     ).resolves.toBeNull();
   });
 
-  test("still auto-advances when playback exits near the natural end of the episode", async () => {
+  test("does not inline-advance on near-end voluntary quit (post-play handles continue)", async () => {
     await expect(
       getAutoAdvanceEpisode(
         { watchedSeconds: 1742, duration: 1745, endReason: "quit" },
@@ -408,10 +408,10 @@ describe("getAutoAdvanceEpisode", () => {
           tmdbUnavailable: false,
         },
       ),
-    ).resolves.toEqual({ season: 1, episode: 8 });
+    ).resolves.toBeNull();
   });
 
-  test("uses credits timing as the near-end threshold when available", async () => {
+  test("does not inline-advance on near-end quit even with credits timing", async () => {
     await expect(
       getAutoAdvanceEpisode(
         { watchedSeconds: 1201, duration: 1500, endReason: "quit" },
@@ -428,10 +428,10 @@ describe("getAutoAdvanceEpisode", () => {
         },
         CREDITS_TIMING,
       ),
-    ).resolves.toEqual({ season: 1, episode: 8 });
+    ).resolves.toBeNull();
   });
 
-  test("auto-advances across a season boundary when playback ends near eof", async () => {
+  test("does not inline-advance on near-end quit across season boundary", async () => {
     const availability = await resolveEpisodeAvailability({
       title: SERIES_TITLE,
       currentEpisode: CURRENT_EPISODE,
@@ -447,13 +447,7 @@ describe("getAutoAdvanceEpisode", () => {
         true,
         availability,
       ),
-    ).resolves.toEqual({
-      season: 2,
-      episode: 1,
-      name: "Season Two",
-      airDate: "2025",
-      overview: "Return",
-    });
+    ).resolves.toBeNull();
   });
 
   test("does not auto-advance when provider navigation points back to the current episode", async () => {

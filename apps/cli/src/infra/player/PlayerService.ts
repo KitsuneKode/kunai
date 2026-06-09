@@ -105,11 +105,17 @@ export interface PlayerOptions {
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
   /** Called once when playback enters the last ~30 s (autoplay-chain mode only). */
   onNearEof?: () => void;
+  /** When aborted, `play()` rejects before spawning mpv. */
+  abortSignal?: AbortSignal;
 }
 
 export interface PlayerService {
   play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult>;
   releasePersistentSession(): Promise<void>;
+  /** Synchronous SIGKILL backstop for `process.on("exit")`. */
+  killActiveMpvProcessesSync(): void;
+  /** Marks the player as shutting down; blocks new `play()` calls. */
+  beginShutdown(): void;
   isAvailable(): Promise<boolean>;
   playLocal(options: {
     source: LocalPlaybackSource;
