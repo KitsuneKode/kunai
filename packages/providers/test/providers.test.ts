@@ -44,7 +44,7 @@ function videasyResolveUrls(urls: readonly string[]): string[] {
 }
 
 function videasyApiHeaders(seenHeaders: readonly Headers[]): Headers | undefined {
-  return seenHeaders.find((headers) => headers.get("x-app-id") != null);
+  return seenHeaders.find((headers) => headers.get("x-app-id") !== null);
 }
 
 function expectedVideasyRouteEndpoint(endpoint: string): string {
