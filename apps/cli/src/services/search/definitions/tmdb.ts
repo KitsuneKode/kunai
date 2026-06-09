@@ -13,7 +13,7 @@ export class TMDBSearchService implements SearchService {
   readonly metadata: SearchMetadata = {
     id: "tmdb",
     name: "TMDB / Videasy",
-    description: "TMDB proxy (db.videasy.net) - movies, series, no API key",
+    description: "TMDB proxy (db.videasy.to) - movies, series, no API key",
   };
 
   readonly compatibleProviders = ["videasy"];

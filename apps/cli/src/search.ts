@@ -10,8 +10,11 @@ import { isAnimeLikely } from "@/services/anime-classifier";
 // appear here. This layer is for providers that delegate search to a shared
 // HTTP endpoint (TMDB proxy today; HiAnime as a future SearchService).
 // =============================================================================
-
-import { withTimeoutSignal } from "./infra/abort/timeout-signal";
+import {
+  fetchTmdbJsonCached,
+  formatTmdbSearchError,
+  TMDB_PROXY_BASE,
+} from "@/services/catalog/tmdb-proxy";
 
 export type SearchResult = {
   id: string;
@@ -34,21 +37,33 @@ export type SearchService = {
   search(query: string): Promise<SearchResult[]>;
 };
 
-// db.videasy.net is the same TMDB-format API that powers cineby + vidking.
+// db.videasy.to is the same TMDB-format API that powers Cineplay + Videasy.
 // No API key needed. Response is identical to TMDB /search/multi.
 
 const cache = new Map<string, SearchResult[]>();
+
+async function fetchTmdbSearchJson(path: string, signal?: AbortSignal): Promise<unknown> {
+  try {
+    return await fetchTmdbJsonCached(path, signal, 8000);
+  } catch (error) {
+    throw formatTmdbSearchError(error);
+  }
+}
 
 export async function searchVideasy(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const key = query.toLowerCase().trim();
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
 
-  const url = `https://db.videasy.net/3/search/multi?language=en&page=1&query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, { signal: withTimeoutSignal(signal, 8000) });
-  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-
-  const data = (await res.json()) as Record<string, unknown>;
+  let data: Record<string, unknown>;
+  try {
+    data = (await fetchTmdbSearchJson(
+      `/search/multi?language=en&page=1&query=${encodeURIComponent(query)}`,
+      signal,
+    )) as Record<string, unknown>;
+  } catch (error) {
+    throw formatTmdbSearchError(error);
+  }
   const rawResults = Array.isArray(data.results) ? data.results : [];
   const results: SearchResult[] = rawResults
     .map(readSearchRecord)
@@ -87,9 +102,8 @@ export async function discoverVideasy(
 
   const responses = await Promise.allSettled(
     urls.map(async ({ url, type }) => {
-      const res = await fetch(url, { signal: withTimeoutSignal(signal, 8000) });
-      if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-      const data = (await res.json()) as Record<string, unknown>;
+      const path = url.slice(TMDB_PROXY_BASE.length);
+      const data = (await fetchTmdbSearchJson(path, signal)) as Record<string, unknown>;
       const rawResults = Array.isArray(data.results) ? data.results : [];
       return rawResults
         .map(readSearchRecord)
@@ -124,9 +138,11 @@ export async function discoverVideasy(
   const firstFailure = responses.find(
     (response): response is PromiseRejectedResult => response.status === "rejected",
   );
-  throw firstFailure?.reason instanceof Error
-    ? firstFailure.reason
-    : new Error("Search failed: all TMDB discover endpoints failed");
+  throw formatTmdbSearchError(
+    firstFailure?.reason instanceof Error
+      ? firstFailure.reason
+      : new Error("Search failed: all TMDB discover endpoints failed"),
+  );
 }
 
 export function buildVideasyDiscoverUrls(
@@ -163,7 +179,7 @@ export function buildVideasyDiscoverPlan(
 
     return {
       type: mediaType === "tv" ? ("series" as const) : ("movie" as const),
-      url: `https://db.videasy.net/3/discover/${mediaType}?${params.toString()}`,
+      url: `${TMDB_PROXY_BASE}/discover/${mediaType}?${params.toString()}`,
     };
   });
 
@@ -335,7 +351,7 @@ function readString(value: unknown): string {
 export const TMDB_SERVICE: SearchService = {
   id: "tmdb",
   name: "TMDB / Videasy",
-  description: "TMDB proxy (db.videasy.net) — movies, series, no API key",
+  description: "TMDB proxy (db.videasy.to) — movies, series, no API key",
   compatibleProviders: ["videasy"],
   search: searchVideasy,
 };
