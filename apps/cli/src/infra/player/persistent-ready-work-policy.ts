@@ -4,7 +4,6 @@ import { shouldApplyStartAtSeek } from "@/mpv";
 export {
   buildPersistentLoadfileCommand,
   buildPersistentLoadfileOptions,
-  buildPersistentSessionHeadersKey,
   normalizeStreamHttpHeaders,
 } from "./mpv-stream-http-headers";
 export type {

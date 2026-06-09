@@ -1,4 +1,8 @@
+import { isLocalHlsManifestPlaybackUrl, isRemoteHlsManifestPlaybackUrl } from "./mpv-playback-url";
 import { shouldApplyStartAtSeek } from "./mpv-start-seek";
+
+export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
+  "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]";
 
 export type NormalizedStreamHttpHeaders = {
   readonly referer?: string;
@@ -22,38 +26,49 @@ export function normalizeStreamHttpHeaders(
   };
 }
 
-/**
- * Identity for persistent mpv session reuse. Per-episode referer drift (Videasy/Cineplay) is
- * applied via file-local loadfile options instead of respawning the player process.
- */
-export function buildPersistentSessionHeadersKey(
-  headers: Record<string, string> | undefined,
-): string {
-  const { userAgent, origin } = normalizeStreamHttpHeaders(headers);
-  return JSON.stringify({
-    origin: origin ?? "",
-    userAgent: userAgent ?? "",
-  });
-}
-
 export type PersistentLoadfileOptions = {
   readonly start: string;
   readonly referrer?: string;
   readonly "user-agent"?: string;
   readonly "http-header-fields"?: string;
+  readonly "http-header-fields-clr"?: string;
+  readonly ytdl?: string;
+  readonly "demuxer-lavf-o"?: string;
+  readonly "demuxer-lavf-o-clr"?: string;
 };
 
 export function buildPersistentLoadfileOptions(
+  url: string,
   startAt: number | undefined,
   headers: Record<string, string> | undefined,
 ): PersistentLoadfileOptions {
   const { referer, userAgent, origin } = normalizeStreamHttpHeaders(headers);
-  return {
+  const options: Record<string, string> = {
     start: shouldApplyStartAtSeek(startAt) ? String(startAt) : "0",
-    ...(referer ? { referrer: referer } : {}),
-    ...(userAgent ? { "user-agent": userAgent } : {}),
-    ...(origin ? { "http-header-fields": `Origin: ${origin}` } : {}),
   };
+
+  if (referer) {
+    options.referrer = referer;
+  }
+  if (userAgent) {
+    options["user-agent"] = userAgent;
+  }
+  if (origin) {
+    options["http-header-fields"] = `Origin: ${origin}`;
+  } else {
+    options["http-header-fields-clr"] = "";
+  }
+
+  if (isRemoteHlsManifestPlaybackUrl(url)) {
+    options.ytdl = "no";
+  }
+  if (isLocalHlsManifestPlaybackUrl(url)) {
+    options["demuxer-lavf-o"] = LOCAL_HLS_DEMUXER_LAVF_OPTIONS;
+  } else if (/^https?:\/\//i.test(url.trim())) {
+    options["demuxer-lavf-o-clr"] = "";
+  }
+
+  return options as PersistentLoadfileOptions;
 }
 
 export function buildPersistentLoadfileCommand(
@@ -61,5 +76,5 @@ export function buildPersistentLoadfileCommand(
   startAt?: number,
   headers?: Record<string, string>,
 ): ["loadfile", string, "replace", -1, PersistentLoadfileOptions] {
-  return ["loadfile", url, "replace", -1, buildPersistentLoadfileOptions(startAt, headers)];
+  return ["loadfile", url, "replace", -1, buildPersistentLoadfileOptions(url, startAt, headers)];
 }

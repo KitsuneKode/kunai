@@ -2750,10 +2750,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
             }
             const autoplaySessionPaused = playbackSession.autoplayPaused;
+            const nearNaturalEpisodeEnd = didPlaybackEndNearNaturalEnd(
+              result,
+              effectiveTiming.current,
+              config.quitNearEndThresholdMode,
+            );
             const canResumePlayback =
-              result.endReason !== "eof" &&
               resumeSeconds > 10 &&
-              (result.duration <= 0 || resumeSeconds < Math.max(0, result.duration - 5));
+              (result.duration <= 0 || resumeSeconds < Math.max(0, result.duration - 5)) &&
+              (result.endReason !== "eof" || !nearNaturalEpisodeEnd);
             if (openRecoverySourcePanelOnPostPlay) {
               openRecoverySourcePanelOnPostPlay = false;
               const picked = await openTracksPanel(

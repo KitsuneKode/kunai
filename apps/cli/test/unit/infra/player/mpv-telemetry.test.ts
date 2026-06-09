@@ -368,6 +368,61 @@ describe("mpv-telemetry", () => {
     expect(result.duration).toBe(2_820);
   });
 
+  test("demotes preview-cap eof at 24/30 minutes using percent-pos and trusted progress", () => {
+    const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
+    for (let pos = 0; pos <= 1_440; pos += 50) {
+      applyObservedPropertySample(telemetry, {
+        name: "playback-time",
+        value: pos,
+        observedAt: 1_000 + pos,
+      });
+    }
+    applyObservedPropertySample(telemetry, {
+      name: "duration",
+      value: 1_800,
+      observedAt: 2_000,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "percent-pos",
+      value: 80,
+      observedAt: 2_010,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "demuxer-via-network",
+      value: true,
+      observedAt: 2_020,
+    });
+    applyEndFileEvent(telemetry, "eof", 2_050);
+    recordPlayerExit(telemetry, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(telemetry, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("unknown");
+    expect(result.suspectedDeadStream).toBe(true);
+    expect(result.lastTrustedProgressSeconds).toBeGreaterThanOrEqual(1_400);
+    expect(result.duration).toBe(1_800);
+  });
+
+  test("maps mpv end-file file_error to error with suspected dead stream", () => {
+    const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
+    applyObservedPropertySample(telemetry, {
+      name: "playback-time",
+      value: 900,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(telemetry, {
+      name: "duration",
+      value: 1_800,
+      observedAt: 1_010,
+    });
+    applyEndFileEvent(telemetry, "eof", 1_100, { fileError: "failed to open stream" });
+    recordPlayerExit(telemetry, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(telemetry, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("error");
+    expect(result.suspectedDeadStream).toBe(true);
+    expect(result.watchedSeconds).toBe(900);
+  });
+
   test("trusts eof after pause when mpv explicitly reports eof-reached", () => {
     const telemetry = createPlayerTelemetryState("/tmp/mpv.sock");
     applyObservedPropertySample(telemetry, {

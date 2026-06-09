@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { StreamInfo } from "@/domain/types";
 import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc";
+import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
 
@@ -225,22 +226,130 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         referrer: nextHeaders.referer,
         "user-agent": nextHeaders["user-agent"],
         "http-header-fields": "Origin: https://www.cineplay.to",
+        ytdl: "no",
+        "demuxer-lavf-o-clr": "",
       },
     ]);
-    expect(
-      session.matchesSessionHeaders({
-        referer: "https://www.cineplay.to/tv/99/1/3",
-        origin: "https://www.cineplay.to",
-        "user-agent": "kunai-test",
+  });
+
+  test("swaps origin across provider profiles on autoplay-chain loadfile", async () => {
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream({
+        url: "https://video.example/episode-1.m3u8",
+        headers: {
+          referer: "https://www.cineplay.to/tv/99/1/1",
+          origin: "https://www.cineplay.to",
+          "user-agent": "kunai-test",
+        },
       }),
-    ).toBe(true);
-    expect(
-      session.matchesSessionHeaders({
-        referer: "https://www.cineplay.to/tv/99/1/3",
-        origin: "https://player.videasy.to",
-        "user-agent": "kunai-test",
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        mpvInProcessStreamReconnectMaxAttempts: 0,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    const firstPlayback = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+    await firstPlayback;
+
+    const providerHeaders = {
+      referer: "https://player.videasy.to/",
+      origin: "https://player.videasy.to",
+      "user-agent": "kunai-test",
+    };
+    const nextPlayback = session.play(
+      createStream({
+        url: "https://video.example/episode-2.m3u8",
+        headers: providerHeaders,
       }),
-    ).toBe(false);
+      { displayTitle: "Episode 2", primarySubtitle: null },
+    );
+    await waitFor(() =>
+      harness.commands.some(
+        (command) =>
+          command[0] === "loadfile" && command[1] === "https://video.example/episode-2.m3u8",
+      ),
+    );
+    harness.callbacks().onFileLoaded?.({ observedAt: 3 });
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 4 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 8, observedAt: 5 });
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 6 });
+    await nextPlayback;
+
+    expect(harness.commands).toContainEqual([
+      "loadfile",
+      "https://video.example/episode-2.m3u8",
+      "replace",
+      -1,
+      {
+        start: "0",
+        referrer: providerHeaders.referer,
+        "user-agent": providerHeaders["user-agent"],
+        "http-header-fields": "Origin: https://player.videasy.to",
+        ytdl: "no",
+        "demuxer-lavf-o-clr": "",
+      },
+    ]);
+    expect(session.isReusable()).toBe(true);
+  });
+
+  test("loads materialized local HLS after a remote manifest in the same session", async () => {
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream({ url: "https://video.example/episode-1.m3u8" }),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        mpvInProcessStreamReconnectMaxAttempts: 0,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    const firstPlayback = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+    await firstPlayback;
+
+    const localPlaylist = "/tmp/kunai-hls/episode-2/playlist.m3u8";
+    const nextPlayback = session.play(
+      createStream({
+        url: localPlaylist,
+        headers: {
+          referer: "https://cdn.example/page",
+          origin: "https://cdn.example",
+          "user-agent": "kunai-test",
+        },
+      }),
+      { displayTitle: "Episode 2", primarySubtitle: null },
+    );
+    await waitFor(() =>
+      harness.commands.some((command) => command[0] === "loadfile" && command[1] === localPlaylist),
+    );
+    harness.callbacks().onFileLoaded?.({ observedAt: 3 });
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 500, observedAt: 4 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 4, observedAt: 5 });
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 6 });
+    await nextPlayback;
+
+    expect(harness.commands).toContainEqual([
+      "loadfile",
+      localPlaylist,
+      "replace",
+      -1,
+      {
+        start: "0",
+        referrer: "https://cdn.example/page",
+        "user-agent": "kunai-test",
+        "http-header-fields": "Origin: https://cdn.example",
+        "demuxer-lavf-o": LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
+      },
+    ]);
   });
 
   test("does not classify subtitle command timeouts as player stalls", async () => {
@@ -432,7 +541,13 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
       "https://video.example/reconnect.m3u8",
       "replace",
       -1,
-      { start: "100", referrer: "https://video.example" },
+      {
+        start: "100",
+        referrer: "https://video.example",
+        "http-header-fields-clr": "",
+        ytdl: "no",
+        "demuxer-lavf-o-clr": "",
+      },
     ]);
     expect(harness.commands).toContainEqual([
       "sub-add",

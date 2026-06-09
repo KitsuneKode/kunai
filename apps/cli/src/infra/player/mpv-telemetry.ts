@@ -116,6 +116,10 @@ export function createPlayerTelemetryState(socketPath?: string): PlayerTelemetry
 const TRUSTED_FORWARD_JUMP_SEC = 55;
 const SUSPICIOUS_FIRST_SAMPLE_MIN_DURATION_SEC = 300;
 const SUSPICIOUS_FIRST_SAMPLE_END_FRACTION = 0.95;
+/** mpv end-file reason=eof can still mean an incomplete network/preview end (manual). */
+const EOF_TRUST_TAIL_FRACTION = 0.05;
+const EOF_TRUST_TAIL_MIN_SEC = 120;
+const EOF_TRUST_PERCENT_POS_MIN = 95;
 
 /** Called when the playback watchdog reports stream/ipc stall (correlate with spurious EOF). */
 export function noteStreamStall(state: PlayerTelemetryState, observedAtMs: number): void {
@@ -187,8 +191,13 @@ function parseDemuxerCacheDiagnostics(value: unknown): {
   return { underrun, rawInputRate };
 }
 
+function eofTrustTailSeconds(durationSeconds: number): number {
+  return Math.max(EOF_TRUST_TAIL_MIN_SEC, durationSeconds * EOF_TRUST_TAIL_FRACTION);
+}
+
 function shouldDemotePrematureEof(
   state: PlayerTelemetryState,
+  sample: PlayerTelemetrySample | null | undefined,
   durationSeconds: number,
   maxTrusted: number,
   observedAtMs: number,
@@ -196,8 +205,17 @@ function shouldDemotePrematureEof(
 ): boolean {
   if (durationSeconds <= 180) return false;
 
-  /** If trusted progress is within this window of the reported duration, trust EOF. */
-  const tail = Math.max(240, Math.min(1200, durationSeconds * 0.35));
+  const tail = eofTrustTailSeconds(durationSeconds);
+  const percentPos = sample?.percentPos;
+  if (typeof percentPos === "number" && Number.isFinite(percentPos)) {
+    if (percentPos >= EOF_TRUST_PERCENT_POS_MIN && maxTrusted >= durationSeconds - tail) {
+      return false;
+    }
+    if (percentPos < EOF_TRUST_PERCENT_POS_MIN && durationSeconds >= 300) {
+      return true;
+    }
+  }
+
   if (maxTrusted >= durationSeconds - tail) return false;
 
   const stallAt = state.lastStreamStallAtMs;
@@ -210,13 +228,12 @@ function shouldDemotePrematureEof(
     return true;
   }
 
-  // Network stream ended as "eof" but trusted playback never reached most of the
-  // reported duration — typical of a dropped socket / demuxer EOF on HLS/VOD.
+  // mpv: reason=eof includes incomplete files and broken network connections.
   if (
     demuxerViaNetwork === true &&
     durationSeconds >= 300 &&
     maxTrusted >= 60 &&
-    maxTrusted + Math.min(180, durationSeconds * 0.08) < durationSeconds * 0.72
+    maxTrusted < durationSeconds - tail
   ) {
     return true;
   }
@@ -403,11 +420,24 @@ function isPlaybackProgressProperty(name: string): boolean {
   }
 }
 
+export type EndFileEventContext = {
+  /** mpv end-file `file_error` when playback failed or ended incompletely. */
+  readonly fileError?: string | null;
+};
+
 export function applyEndFileEvent(
   state: PlayerTelemetryState,
   reason: string | null | undefined,
   observedAt = Date.now(),
+  context: EndFileEventContext = {},
 ) {
+  const fileError = context.fileError?.trim();
+  if (fileError) {
+    state.endReason = "error";
+    state.eofDemotedByPrematureGuard = true;
+    return;
+  }
+
   let mapped = mapMpvEndReason(reason);
   // With --keep-open=yes some mpv builds emit end-file without a clear eof reason.
   // Promote to "eof" when eof-reached was previously observed so autoplay isn't
@@ -426,6 +456,7 @@ export function applyEndFileEvent(
     if (
       shouldDemotePrematureEof(
         state,
+        base,
         durationForGuard,
         state.maxTrustedProgressSeconds,
         observedAt,

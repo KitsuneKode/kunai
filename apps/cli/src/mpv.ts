@@ -12,9 +12,15 @@ import {
   newMpvIpcSessionId,
   shouldUnlinkUnixSocket,
 } from "@/infra/player/mpv-ipc-endpoint";
+import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
+import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
+import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import { normalizeStreamHttpHeaders } from "@/infra/player/mpv-stream-http-headers";
+
+export { shouldApplyStartAtSeek };
+export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -279,8 +285,8 @@ async function launchMpvInner(
           trySkipSegment(true);
         }
       },
-      onEndFile: ({ reason, observedAt }) => {
-        applyEndFileEvent(telemetry, reason, observedAt);
+      onEndFile: ({ reason, fileError, observedAt }) => {
+        applyEndFileEvent(telemetry, reason, observedAt, { fileError });
         endFileResolve?.(reason);
       },
       onCommandResult: (result) => {
@@ -384,17 +390,6 @@ export function shouldAbortLaunchForDefinitivePreflight(
   return shouldAbortPlaybackForPreflight(result, ipcConnected);
 }
 
-/** Local `.m3u8` paths produced by the HLS manifest materializer (not remote URLs). */
-export function isLocalHlsManifestPlaybackUrl(url: string): boolean {
-  const trimmed = url.trim();
-  if (!trimmed || /^https?:\/\//i.test(trimmed)) return false;
-  return /\.m3u8(?:[?#]|$)/i.test(trimmed);
-}
-
-import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
-
-export { shouldApplyStartAtSeek };
-
 export function buildMpvArgs(
   opts: {
     url: string;
@@ -479,7 +474,7 @@ export function buildMpvArgs(
   // Materialized local HLS playlists reference remote HTTPS segments. libavformat defaults
   // to file,crypto,data only for local manifests, which makes every segment fail instantly.
   if (isLocalHlsManifestPlaybackUrl(opts.url)) {
-    args.push("--demuxer-lavf-o=protocol_whitelist=[file,tcp,tls,https,http,crypto,data]");
+    args.push(`--demuxer-lavf-o=${LOCAL_HLS_DEMUXER_LAVF_OPTIONS}`);
   }
   if (config?.mpv?.clean || config?.mpv?.noUserConfig) {
     args.push("--no-config");

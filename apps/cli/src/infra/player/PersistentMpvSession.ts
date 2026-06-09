@@ -32,10 +32,7 @@ import {
   shouldUnlinkUnixSocket,
 } from "./mpv-ipc-endpoint";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
-import {
-  buildPersistentLoadfileCommand,
-  buildPersistentSessionHeadersKey,
-} from "./mpv-stream-http-headers";
+import { buildPersistentLoadfileCommand } from "./mpv-stream-http-headers";
 import {
   applyEndFileEvent,
   createPlayerTelemetryState,
@@ -172,7 +169,6 @@ export class PersistentMpvSession {
     observeWatchdog: (sample) => this.watchdog?.observe(sample),
   });
   private alive = false;
-  private currentSessionHeadersKey = "";
   private currentControl: ActivePlayerControl;
   private hasLoadedFile = false;
   private currentPositionSeconds = 0;
@@ -231,7 +227,6 @@ export class PersistentMpvSession {
     private readonly runtime: PersistentMpvSessionRuntime,
   ) {
     this.playbackStream = initialStream;
-    this.currentSessionHeadersKey = buildPersistentSessionHeadersKey(initialStream.headers);
     this.currentOptions = initialOptions;
     this.currentControl = {
       id: this.id,
@@ -351,7 +346,6 @@ export class PersistentMpvSession {
     }
 
     this.playbackStream = stream;
-    this.currentSessionHeadersKey = buildPersistentSessionHeadersKey(stream.headers);
     const cycle = this.beginCycle(options, { acceptPlaybackProperties: false });
     this.resetCycleState();
     options.onPlaybackEvent?.({ type: "opening-stream" });
@@ -415,10 +409,6 @@ export class PersistentMpvSession {
     }
     this.armReadyWorkFallback(options, PersistentMpvSession.loadfileReadyWorkFallbackMs);
     return await cycle.promise;
-  }
-
-  matchesSessionHeaders(headers: Record<string, string> | undefined): boolean {
-    return this.currentSessionHeadersKey === buildPersistentSessionHeadersKey(headers);
   }
 
   isAlive(): boolean {
@@ -594,8 +584,8 @@ export class PersistentMpvSession {
           onPropertyUpdate: ({ name, value, observedAt }) => {
             this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
           },
-          onEndFile: ({ reason, observedAt }) => {
-            void this.handlePlaybackEnded(reason, observedAt);
+          onEndFile: ({ reason, fileError, observedAt }) => {
+            void this.handlePlaybackEnded(reason, observedAt, fileError);
           },
           onFileLoaded: () => {
             void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 300);
@@ -1235,6 +1225,7 @@ export class PersistentMpvSession {
   private async handlePlaybackEnded(
     reason: string | null | undefined,
     observedAt: number,
+    fileError?: string,
   ): Promise<void> {
     const active = this.activeCycle;
     if (!active) return;
@@ -1256,7 +1247,7 @@ export class PersistentMpvSession {
       this.currentCycleOptions().onNearEof?.();
     }
 
-    applyEndFileEvent(active.telemetry, reason, observedAt);
+    applyEndFileEvent(active.telemetry, reason, observedAt, { fileError });
     const result = finalizePlaybackResult(active.telemetry, {
       socketPathCleanedUp: false,
     });

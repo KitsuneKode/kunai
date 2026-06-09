@@ -414,18 +414,25 @@ export async function getAutoAdvanceEpisode(
   currentEpisode: EpisodeInfo,
   autoNextEnabled: boolean,
   availability: EpisodeAvailability,
-  _timing?: PlaybackTimingMetadata | null,
-  _endPolicy: PlaybackEndPolicy = DEFAULT_PLAYBACK_END_POLICY,
+  timing?: PlaybackTimingMetadata | null,
+  endPolicy: PlaybackEndPolicy = DEFAULT_PLAYBACK_END_POLICY,
 ): Promise<EpisodeInfo | null> {
   // Voluntary mpv quit always routes through post-play first; only natural EOF
-  // may inline-advance without the post-play menu.
+  // may inline-advance without the post-play menu. mpv reason=eof alone is not
+  // enough — preview caps and network drops can also surface as eof.
   const endAllowsAutoplayAdvance = result.endReason === "eof";
+  const nearNaturalEnd = didPlaybackEndNearNaturalEnd(
+    result,
+    timing,
+    endPolicy.quitNearEndThresholdMode,
+  );
 
   if (
     result.suspectedDeadStream ||
     !autoNextEnabled ||
     title.type !== "series" ||
-    !endAllowsAutoplayAdvance
+    !endAllowsAutoplayAdvance ||
+    !nearNaturalEnd
   ) {
     return null;
   }

@@ -316,6 +316,7 @@ export function explainAutoplayBlockReason(args: AutoAdvanceArgs): AutoAdvanceBl
     return "not-near-end";
   }
   if (!endAllowsAutoplayAdvance) return "not-near-end";
+  if (!nearNaturalEnd) return "not-near-end";
   if (!availability.nextEpisode) {
     if (availability.upcomingNext) return "next-episode-not-released-yet";
     if (availability.animeNextReleaseUnknown) return "anime-next-uncertain";

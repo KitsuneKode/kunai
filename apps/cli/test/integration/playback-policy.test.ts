@@ -450,6 +450,55 @@ describe("getAutoAdvanceEpisode", () => {
     ).resolves.toBeNull();
   });
 
+  test("does not auto-advance after premature eof from preview caps or dropped streams", async () => {
+    await expect(
+      getAutoAdvanceEpisode(
+        {
+          watchedSeconds: 1_440,
+          duration: 1_800,
+          endReason: "unknown",
+          suspectedDeadStream: true,
+          lastTrustedProgressSeconds: 1_440,
+        },
+        SERIES_TITLE,
+        CURRENT_EPISODE,
+        true,
+        {
+          previousEpisode: null,
+          nextEpisode: { season: 1, episode: 8 },
+          nextSeasonEpisode: null,
+          upcomingNext: null,
+          animeNextReleaseUnknown: false,
+          tmdbUnavailable: false,
+        },
+      ),
+    ).resolves.toBeNull();
+  });
+
+  test("does not auto-advance on eof that did not reach the completion threshold", async () => {
+    await expect(
+      getAutoAdvanceEpisode(
+        {
+          watchedSeconds: 1_440,
+          duration: 1_800,
+          endReason: "eof",
+          lastTrustedProgressSeconds: 1_440,
+        },
+        SERIES_TITLE,
+        CURRENT_EPISODE,
+        true,
+        {
+          previousEpisode: null,
+          nextEpisode: { season: 1, episode: 8 },
+          nextSeasonEpisode: null,
+          upcomingNext: null,
+          animeNextReleaseUnknown: false,
+          tmdbUnavailable: false,
+        },
+      ),
+    ).resolves.toBeNull();
+  });
+
   test("does not auto-advance when provider navigation points back to the current episode", async () => {
     await expect(
       getAutoAdvanceEpisode(EOF_RESULT, SERIES_TITLE, CURRENT_EPISODE, true, {

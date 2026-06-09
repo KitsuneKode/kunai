@@ -31,6 +31,8 @@ type MpvIpcMessage = {
   request_id?: number;
   error?: string;
   reason?: string;
+  /** mpv end-file: approximate failure reason when playback did not complete cleanly. */
+  file_error?: string;
 };
 
 type PropertyUpdateHandler = (message: {
@@ -39,7 +41,11 @@ type PropertyUpdateHandler = (message: {
   observedAt: number;
 }) => void;
 
-type EndFileHandler = (message: { reason?: string; observedAt: number }) => void;
+type EndFileHandler = (message: {
+  reason?: string;
+  fileError?: string;
+  observedAt: number;
+}) => void;
 type FileLoadedHandler = (message: { observedAt: number }) => void;
 
 export type MpvIpcSessionOptions = {
@@ -314,7 +320,11 @@ function dispatchMessage(
   }
 
   if (message.event === "end-file") {
-    onEndFile({ reason: message.reason, observedAt });
+    onEndFile({
+      reason: message.reason,
+      fileError: typeof message.file_error === "string" ? message.file_error : undefined,
+      observedAt,
+    });
     return;
   }
 
