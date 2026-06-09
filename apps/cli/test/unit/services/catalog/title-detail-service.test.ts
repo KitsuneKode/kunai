@@ -282,8 +282,8 @@ describe("TitleDetailService — TMDB series", () => {
 
     const detail = await fetchTitleDetail("tmdb:1396", "series");
 
-    expect(detail.seasonCount).toBe(5);
-    expect(detail.episodeCount).toBe(62);
+    expect(detail.seasonCount).toBe(2);
+    expect(detail.episodeCount).toBe(20);
     expect(detail.seasons).toBeDefined();
     expect(detail.seasons?.length).toBe(2);
     expect(detail.seasons?.[0]?.season).toBe(1);

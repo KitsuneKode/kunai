@@ -1,10 +1,34 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 
+import { clearDiscoveryListCache } from "@/app/discovery-lists";
 import {
   loadPostPlaybackRecommendationItems,
   loadPostPlaybackRecommendationNames,
   seedPostPlaybackRecommendationItems,
 } from "@/app/post-playback-recommendations";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  clearDiscoveryListCache();
+});
+
+function mockAniListDiscovery(media: readonly Record<string, unknown>[]): void {
+  globalThis.fetch = Object.assign(
+    async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("graphql.anilist.co")) {
+        return new Response(JSON.stringify({ data: { Page: { media } } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return originalFetch(input);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+}
 
 test("post-playback recommendations use direct TMDB title recommendations for series ids", async () => {
   let directCalls = 0;
@@ -61,7 +85,32 @@ test("post-playback recommendations use direct TMDB title recommendations for se
   expect(discoverCalls).toBe(0);
 });
 
-test("post-playback recommendations avoid provider-native anime ids and use discover sections", async () => {
+test("post-playback recommendations avoid provider-native anime ids and use anime discovery", async () => {
+  mockAniListDiscovery([
+    {
+      id: 22,
+      title: { english: "Reborn as a Cat" },
+      startDate: { year: 2026 },
+      coverImage: { extraLarge: null, large: null },
+      description: null,
+      episodes: 12,
+      averageScore: 75,
+      popularity: 100,
+      synonyms: [],
+    },
+    {
+      id: 23,
+      title: { english: "Chibi Godzilla Raids Again" },
+      startDate: { year: 2026 },
+      coverImage: { extraLarge: null, large: null },
+      description: null,
+      episodes: 12,
+      averageScore: 75,
+      popularity: 90,
+      synonyms: [],
+    },
+  ]);
+
   let directCalls = 0;
   const names = await loadPostPlaybackRecommendationNames(
     {
@@ -70,42 +119,8 @@ test("post-playback recommendations avoid provider-native anime ids and use disc
           directCalls += 1;
           return { label: "", reason: "similar", items: [] };
         },
-        getGenreAffinity: async () => ({
-          label: "",
-          reason: "genre-affinity",
-          items: [
-            {
-              id: "21",
-              type: "series",
-              title: "The Ramparts of Ice",
-              year: "2026",
-              overview: "",
-              posterPath: null,
-            },
-            {
-              id: "22",
-              type: "series",
-              title: "Reborn as a Cat",
-              year: "2026",
-              overview: "",
-              posterPath: null,
-            },
-          ],
-        }),
-        getPersonalizedByHistory: async () => ({
-          label: "",
-          reason: "genre-affinity",
-          items: [
-            {
-              id: "23",
-              type: "series",
-              title: "Chibi Godzilla Raids Again",
-              year: "2026",
-              overview: "",
-              posterPath: null,
-            },
-          ],
-        }),
+        getGenreAffinity: async () => ({ label: "", reason: "genre-affinity", items: [] }),
+        getPersonalizedByHistory: async () => ({ label: "", reason: "genre-affinity", items: [] }),
         getTrending: async () => ({ label: "", reason: "trending", items: [] }),
       },
       historyStore: {

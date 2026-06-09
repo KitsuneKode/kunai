@@ -211,14 +211,14 @@ describe("buildPlaybackEpisodePickerOptions", () => {
         {
           value: "2:5",
           label: "Episode 5  ·  The Current One",
-          detail: "2026-01-01",
+          detail: "Jan 1, 2026",
           tone: "success",
           badge: "✓",
         },
         {
           value: "2:6",
           label: "Episode 6  ·  The Next One",
-          detail: "unknown year",
+          detail: "unknown air date",
           tone: "warning",
           badge: "17%",
         },

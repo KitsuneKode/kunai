@@ -35,6 +35,12 @@ const baseResult: PlaybackResult = {
   endReason: "eof",
 };
 
+const midEpisodeQuit: PlaybackResult = {
+  watchedSeconds: 500,
+  duration: 1210,
+  endReason: "quit",
+};
+
 const creditsTiming: PlaybackTimingMetadata = {
   tmdbId: "1396",
   type: "series",
@@ -87,7 +93,7 @@ describe("resolvePlaybackResultDecision", () => {
     const session = createPlaybackSessionState({ autoNextEnabled: true });
     expect(
       resolvePlaybackResultDecision({
-        result: { ...baseResult, endReason: "quit" },
+        result: midEpisodeQuit,
         controlAction: "stop",
         session,
       }),
@@ -105,7 +111,7 @@ describe("resolvePlaybackResultDecision", () => {
 
     expect(
       resolvePlaybackResultDecision({
-        result: { ...baseResult, endReason: "quit" },
+        result: midEpisodeQuit,
         controlAction: "stop",
         session: {
           ...session,
@@ -210,7 +216,7 @@ describe("resolvePlaybackResultDecision", () => {
     // A genuine user stop still pauses autoplay as interrupted.
     expect(
       resolvePlaybackResultDecision({
-        result: { ...baseResult, endReason: "quit" },
+        result: midEpisodeQuit,
         controlAction: "stop",
         session,
       }).session.autoplayPauseReason,

@@ -7,8 +7,8 @@ describe("SessionController shutdown", () => {
     const calls: string[] = [];
     const controller = new SessionController({
       workControl: {
-        setActive(value: unknown) {
-          calls.push(`work:${String(value)}`);
+        cancelActive(reason: string) {
+          calls.push(`work:cancel:${reason}`);
         },
       },
       presence: {
@@ -18,8 +18,11 @@ describe("SessionController shutdown", () => {
         },
       },
       player: {
+        beginShutdown() {
+          calls.push("player:begin-shutdown");
+        },
         async releasePersistentSession() {
-          calls.push("player");
+          calls.push("player:release");
         },
       },
       diagnosticsService: {
@@ -31,9 +34,10 @@ describe("SessionController shutdown", () => {
 
     await controller.shutdown();
 
-    expect(calls).toContain("work:null");
+    expect(calls).toContain("work:cancel:shutdown");
     expect(calls).toContain("presence");
-    expect(calls).toContain("player");
+    expect(calls).toContain("player:begin-shutdown");
+    expect(calls).toContain("player:release");
     expect(calls).toContain("diagnostic:session:Session shutdown cleanup failed");
   });
 });

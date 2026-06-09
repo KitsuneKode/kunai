@@ -88,9 +88,10 @@ describe("advanced search builders", () => {
   test("returns partial TMDB discover results when one discover endpoint fails", async () => {
     const originalFetch = globalThis.fetch;
     let calls = 0;
-    globalThis.fetch = (async () => {
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/discover/movie")) throw new Error("movie endpoint down");
       calls += 1;
-      if (calls === 1) throw new Error("movie endpoint down");
       return new Response(
         JSON.stringify({
           results: [
