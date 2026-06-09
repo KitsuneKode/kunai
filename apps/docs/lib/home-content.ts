@@ -27,7 +27,7 @@ export const homeHero = {
   eyebrow: "Kunai CLI",
   title: "A calm command shell for playable streams.",
   description:
-    "Find a title, resolve a direct provider stream, hand it to mpv, and recover from provider churn without losing your place.",
+    "Search, resolve a direct provider stream, hand it to mpv, and recover from provider churn without losing your place. Five active providers, local decryption, no browser required.",
   installCommands: ["bun install -g @kitsunekode/kunai", "kunai --setup"],
   primaryCta: {
     label: "Read the guide",
@@ -42,16 +42,16 @@ export const homeHero = {
 export const homeHighlights = [
   {
     label: "Provider truth",
-    detail: "Aired, available, cached, and offline states stay separate.",
+    detail: "5 active provider modules resolved locally. No cloud proxies, no Playwright.",
   },
   {
     label: "Fast return loop",
     detail:
-      "Continue watching, calendar, history, and post-playback point back to the next safe action.",
+      "Continue Watching, history, calendar, and recommendations stay reachable after playback ends.",
   },
   {
     label: "Recoverable playback",
-    detail: "Recover, replay, refresh source, and fallback mean different things.",
+    detail: "Restart, recover, recompute, and fallback each handle a distinct failure mode.",
   },
 ] as const;
 
@@ -59,31 +59,31 @@ export const homeFlow: readonly HomeFlowStep[] = [
   {
     title: "Search or continue",
     description:
-      "Start from a query, a remembered title, a calendar release, or an offline-ready file.",
+      "Search by title, continue the newest unfinished history entry, or pick from calendar, recommendations, or offline library.",
     state: "focus",
   },
   {
     title: "Resolve with evidence",
     description:
-      "Kunai checks provider reality before promising playback, then keeps source and subtitle state visible.",
+      "Kunai checks provider health, resolves streams through direct HTTP (no browser), validates the manifest, and keeps source inventory in SQLite.",
     state: "warn",
   },
   {
     title: "Hand off to mpv",
     description:
-      "The shell supervises launch, position, autoskip, autoplay, and recovery while mpv does the playing.",
+      "The shell launches mpv, supervises position reporting, applies autoskip timing, and monitors for bootstrap stalls or playback death.",
     state: "ready",
   },
   {
     title: "Recover without guessing",
     description:
-      "When streams stall or providers drift, Kunai explains the failure and offers the next repair path.",
+      "When streams stall or providers drift: recover refreshes the current provider, recompute bypasses all caches, fallback tries the next provider in the priority chain.",
     state: "danger",
   },
   {
     title: "Return to the next beat",
     description:
-      "Post-playback, history, and calendar keep one primary action in front of the user.",
+      "Post-playback surfaces auto-advance, playlist queue, recommendations, and history — always one action from the next watch.",
     state: "quiet",
   },
 ] as const;
@@ -92,18 +92,20 @@ export const homeProof: readonly HomeProof[] = [
   {
     label: "Playback contract",
     value: "mpv first",
-    detail: "Kunai resolves streams and supervises state; mpv remains the playback engine.",
+    detail:
+      "Kunai resolves streams and supervises state; mpv remains the playback engine. No custom media pipeline.",
   },
   {
     label: "Diagnostics posture",
     value: "redacted",
-    detail: "Support bundles exclude stream URLs, subtitle URLs, headers, tokens, and local paths.",
+    detail:
+      "Support bundles exclude stream URLs, subtitle URLs, auth tokens, and home paths. Privacy-first by default.",
   },
   {
     label: "Runtime model",
     value: "Bun CLI",
     detail:
-      "The shipped experience is terminal-first, predictable, and designed for repeat daily use.",
+      "Terminal-first. 66 shell commands across 3 context groups. 5 provider modules. 1 SQLite history DB. Predictable daily use.",
   },
 ] as const;
 

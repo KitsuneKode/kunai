@@ -3,8 +3,6 @@ title: Install And Update
 description: Install Kunai across platforms and keep source, global, and packaged installs current.
 ---
 
-# Install And Update
-
 Kunai supports source installs, global package installs, and packaged binary-style installs.
 
 ## Install

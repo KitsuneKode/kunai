@@ -81,13 +81,14 @@ function extractArray(content: string, prop: string): string[] {
 
 // 1. Sync Providers
 function syncProviders() {
+  // Derived from apps/cli/src/container.ts providerModules registration
+  // NOT from packages/providers/src/index.ts barrel — only actively registered modules count.
   const providerDirs = [
     { name: "allmanga", path: "packages/providers/src/allmanga/manifest.ts" },
-    { name: "cineby", path: "packages/providers/src/cineby/index.ts" },
     { name: "miruro", path: "packages/providers/src/miruro/manifest.ts" },
     { name: "rivestream", path: "packages/providers/src/rivestream/manifest.ts" },
     { name: "videasy", path: "packages/providers/src/videasy/manifest.ts" },
-    { name: "vidking", path: "packages/providers/src/videasy/manifest.ts" },
+    { name: "vidlink", path: "packages/providers/src/vidlink/manifest.ts" },
   ];
 
   const providers: ProviderMetadata[] = [];
@@ -110,7 +111,8 @@ function syncProviders() {
     if (id === "CINEBY_PROVIDER_ID") id = "cineby";
     if (id === "MIRURO_PROVIDER_ID") id = "miruro";
     if (id === "RIVESTREAM_PROVIDER_ID") id = "rivestream";
-    if (id === "VIDKING_PROVIDER_ID") id = "vidking";
+    if (id === "VIDEOSY_PROVIDER_ID") id = "videasy";
+    if (id === "VIDLINK_PROVIDER_ID") id = "vidlink";
 
     const displayName = extractString(normalizedContent, "displayName") || entry.name;
     const description = extractString(normalizedContent, "description") || "";

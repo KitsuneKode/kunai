@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-06-08T18:06:56.773Z",
+  "syncedAt": "2026-06-09T16:48:18.092Z",
   "providers": [
     {
       "id": "allanime",
@@ -15,20 +15,6 @@
         "catalog",
         "and source resolution.",
         "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure."
-      ]
-    },
-    {
-      "id": "cineby",
-      "displayName": "Cineby",
-      "description": "Cineby flavor wrapper over Videasy-compatible endpoints",
-      "domain": "cineby.sc",
-      "recommended": false,
-      "mediaKinds": ["movie", "series"],
-      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
-      "status": "research",
-      "notes": [
-        "Research wrapper only; production fallback order still prefers the proven vidking module.",
-        "Keeps flavor labels and audio-language hints while reusing the VidKing direct engine."
       ]
     },
     {
@@ -58,7 +44,7 @@
       "notes": ["Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js."]
     },
     {
-      "id": "VIDEOSY_PROVIDER_ID",
+      "id": "videasy",
       "displayName": "Videasy",
       "description": "Direct Videasy API resolver for Cineplay, Cineby, and legacy embed frontends",
       "domain": "videasy.to",
@@ -75,20 +61,19 @@
       ]
     },
     {
-      "id": "VIDEOSY_PROVIDER_ID",
-      "displayName": "Videasy",
-      "description": "Direct Videasy API resolver for Cineplay, Cineby, and legacy embed frontends",
-      "domain": "videasy.to",
-      "recommended": false,
+      "id": "vidlink",
+      "displayName": "VidLink",
+      "description": "Browserless VidLink resolver for movies and series — direct HLS with multi-language subtitles, no captcha or session token",
+      "domain": "vidlink.pro",
+      "recommended": true,
       "mediaKinds": ["movie", "series"],
-      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked"],
       "status": "active",
       "notes": [
-        "Current CLI implementation uses the direct api.videasy.to payload/decryption path only.",
-        "Cineplay (bc-frontend) is the default Videasy client profile; vidking.net remains an override.",
-        "If the direct payload is unavailable",
-        "the CLI fails fast instead of leasing a browser.",
-        "Do not mark browser-safe because the implementation depends on local WASM assets and Node runtime behavior."
+        "Browserless: TMDB id is encrypted via enc-dec.app",
+        "then sources are fetched from vidlink.pro/api/b.",
+        "Returns a multi-quality HLS playlist (mpv selects the rendition) plus provider subtitles.",
+        "External dependency: relies on enc-dec.app for the id-encryption step; falls back to other providers if it is unavailable."
       ]
     }
   ],

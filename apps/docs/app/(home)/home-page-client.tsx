@@ -1,5 +1,18 @@
 "use client";
 
+import { motion, AnimatePresence } from "framer-motion";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
+import {
+  Terminal as TerminalIcon,
+  Cpu,
+  Check,
+  Copy,
+  ArrowRight,
+  Sparkles,
+  Sliders,
+  Star,
+} from "lucide-react";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -35,9 +48,6 @@ interface LogEntry {
   readonly text: string;
 }
 
-// =============================================================================
-// SUBCOMPONENT: TerminalSimulator (Memoized)
-// =============================================================================
 interface CommandMetadata {
   readonly id: string;
   readonly label: string;
@@ -45,6 +55,9 @@ interface CommandMetadata {
   readonly description: string;
 }
 
+// =============================================================================
+// SUBCOMPONENT: TerminalSimulator (Memoized with 3D Tilt and Glare)
+// =============================================================================
 interface TerminalSimulatorProps {
   readonly providers: readonly ProviderMetadata[];
   readonly commands: readonly CommandMetadata[];
@@ -63,8 +76,6 @@ const TerminalSimulator = memo(function TerminalSimulator({
   installCommands,
   primaryCtaHref,
   primaryCtaLabel,
-  secondaryCtaHref,
-  secondaryCtaLabel,
   copyToClipboard,
   copiedText,
 }: TerminalSimulatorProps) {
@@ -83,6 +94,17 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const terminalInputRef = useRef<HTMLInputElement>(null);
   const paletteInputRef = useRef<HTMLInputElement>(null);
   const terminalStageRef = useRef<HTMLDivElement>(null);
+
+  // 3D Card Hover States
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    setMousePos({ x, y });
+  };
 
   // Auto-scroll terminal
   useEffect(() => {
@@ -148,11 +170,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
       const parts = cmdText.split(" ");
       const query = parts.slice(1).join(" ") || "Dune";
 
-      addLog(`🔍 Querying metadata catalogs for "${query}"...`, accDelay);
+      addLog(`[QUERY] Querying metadata catalogs for "${query}"...`, accDelay);
       accDelay += 600;
-      addLog(`✨ Match found: "${query}" (Release verified, 2024)`, accDelay);
+      addLog(`[ OK ] Match found: "${query}" (Release verified, 2024)`, accDelay);
       accDelay += 400;
-      addLog("📡 Fetching active streams from verification cache...", accDelay);
+      addLog("[FETCH] Fetching active streams from verification cache...", accDelay);
       accDelay += 500;
 
       const isAnime = query.toLowerCase().match(/(naruto|piece|totoro|titan|frieren|re:zero|oshi)/);
@@ -166,31 +188,34 @@ const TerminalSimulator = memo(function TerminalSimulator({
 
       if (primaryProvider) {
         addLog(
-          `⚡ Selected provider: ${primaryProvider.displayName} (${primaryProvider.domain})`,
+          `[INFO] Selected provider: ${primaryProvider.displayName} (${primaryProvider.domain})`,
           accDelay,
         );
         accDelay += 500;
-        addLog(`🔄 Resolving stream parameters [status: ${primaryProvider.status}]...`, accDelay);
+        addLog(
+          `[INFO] Resolving stream parameters [status: ${primaryProvider.status}]...`,
+          accDelay,
+        );
         accDelay += 700;
         if (primaryProvider.capabilities.includes("quality-ranked")) {
-          addLog("🟢 Stream verified: 1080p selected (variants: 720p, 480p)", accDelay);
+          addLog("[ OK ] Stream verified: 1080p selected (variants: 720p, 480p)", accDelay);
         } else {
-          addLog("🟢 Stream verified: direct-http source resolved", accDelay);
+          addLog("[ OK ] Stream verified: direct-http source resolved", accDelay);
         }
         accDelay += 400;
       }
 
-      addLog("🎬 Launching mpv player window...", accDelay);
+      addLog("[PLAY] Launching mpv player window...", accDelay);
       accDelay += 600;
-      addLog(`[mpv] Playing "${query}" - superviser handoff established.`, accDelay);
+      addLog(`[mpv] Playing "${query}" - supervisor handoff established.`, accDelay);
       accDelay += 500;
       addLog("[mpv] Press 'r' to recover stream, 'f' to try fallback, 'Esc' to return.", accDelay);
     } else if (cmdText.startsWith("/discover") || cmdText === "discover") {
-      addLog("📡 Querying catalog recommendation engine...", accDelay);
+      addLog("[QUERY] Querying catalog recommendation engine...", accDelay);
       accDelay += 500;
-      addLog("📊 Reading local SQLite continuation weights...", accDelay);
+      addLog("[INFO] Reading local SQLite continuation weights...", accDelay);
       accDelay += 400;
-      addLog("\n🔥 Trending Today [Discover]:", accDelay);
+      addLog("\nTrending Today [Discover]:", accDelay);
       accDelay += 200;
       addLog("  1. Frieren: Beyond Journey's End (Series) [Anime]", accDelay);
       accDelay += 100;
@@ -198,21 +223,21 @@ const TerminalSimulator = memo(function TerminalSimulator({
       accDelay += 100;
       addLog("  3. Erased (Series) [Mystery]", accDelay);
       accDelay += 400;
-      addLog("\n💡 Pick a selection using arrow keys and press Enter to launch.", accDelay);
+      addLog("\nUse arrow keys and press Enter to launch.", accDelay);
     } else if (cmdText.startsWith("/calendar") || cmdText === "calendar") {
-      addLog("📅 Fetching release calendar schedule...", accDelay);
+      addLog("[FETCH] Fetching release calendar schedule...", accDelay);
       accDelay += 600;
       addLog("Releasing Today (Source Sync):", accDelay);
       accDelay += 200;
-      addLog("  🟢 [Airing Now] Oshi no Ko S3 Ep 02 - Direct HTTP resolved", accDelay);
+      addLog("  [AIRING] Oshi no Ko S3 Ep 02 - Direct HTTP resolved", accDelay);
       accDelay += 150;
-      addLog("  🟡 [Airing in 3h] Re:Zero S3 Ep 14 - MAL synced", accDelay);
+      addLog("  [AIRING] Re:Zero S3 Ep 14 - MAL synced (in 3h)", accDelay);
       accDelay += 150;
-      addLog("  ⚪ [Aired 12h ago] House of the Dragon S3 Ep 03", accDelay);
+      addLog("  [AIRING] House of the Dragon S3 Ep 03 (Aired 12h ago)", accDelay);
       accDelay += 300;
       addLog("\nReady. Check commands bar for offline sync schedules.", accDelay);
     } else if (cmdText.startsWith("/setup") || cmdText === "setup" || cmdText.includes("setup")) {
-      addLog("⚙️ Initializing Setup Wizard...", accDelay);
+      addLog("[SETUP] Initializing Setup Wizard...", accDelay);
       accDelay += 400;
       addLog("Checking dependencies...", accDelay);
       accDelay += 300;
@@ -221,26 +246,26 @@ const TerminalSimulator = memo(function TerminalSimulator({
       addLog("  sqlite3: OK", accDelay);
       accDelay += 400;
       addLog("Configure default media directories:", accDelay);
-      addLog("  📁 Download path: ~/Downloads/kunai", accDelay);
-      addLog("  💾 Cache DB limit: 512MB", accDelay);
+      addLog("  Download path: ~/Downloads/kunai", accDelay);
+      addLog("  Cache DB limit: 512MB", accDelay);
       accDelay += 300;
       addLog("Configuration atomic-written to ~/.config/kunai/config.json", accDelay);
     } else if (cmdText.startsWith("/recover") || cmdText === "recover") {
-      addLog("♻️ Recovery sequence initiated.", accDelay);
+      addLog("[RECOVERY] Recovery sequence initiated.", accDelay);
       accDelay += 300;
       addLog("Bypassing memory buffers...", accDelay);
       accDelay += 300;
       addLog("Resolving fresh payload keys from upstream manifest...", accDelay);
       accDelay += 500;
-      addLog("🟢 Resolved new stream segment (No playback drift). Resuming mpv...", accDelay);
+      addLog("[ OK ] Resolved new stream segment (No playback drift). Resuming mpv...", accDelay);
     } else if (cmdText.startsWith("/fallback") || cmdText === "fallback") {
-      addLog("⚠️ Fallback sequence requested.", accDelay);
+      addLog("[WARN] Fallback sequence requested.", accDelay);
       accDelay += 300;
       addLog("Switching stream source from current provider...", accDelay);
       accDelay += 450;
       addLog("Connecting to fallback provider: Miruro (domain: miruro.tv)...", accDelay);
       accDelay += 500;
-      addLog("🟢 Miruro stream resolved at 720p. Playback restored.", accDelay);
+      addLog("[ OK ] Miruro stream resolved at 720p. Playback restored.", accDelay);
     } else if (cmdText.startsWith("/help") || cmdText === "help") {
       addLog("Help Manual - Context Commands:", accDelay);
       accDelay += 150;
@@ -309,191 +334,283 @@ const TerminalSimulator = memo(function TerminalSimulator({
   };
 
   return (
-    <div className="grid min-h-[calc(100dvh-8rem)] grid-cols-[minmax(0,1.02fr)_minmax(360px,0.78fr)] items-center gap-12 pb-18 max-lg:min-h-0 max-lg:grid-cols-1 max-lg:pt-10">
-      <div className="kunai-reveal">
-        <p className="kunai-eyebrow">{homeHero.eyebrow}</p>
-        <h1 className="m-0 max-w-5xl bg-gradient-to-br from-white via-white to-pink-200 bg-clip-text text-6xl leading-[0.93] font-black tracking-tight text-balance text-transparent md:text-7xl xl:text-8xl">
+    <div className="grid min-h-[calc(100dvh-8rem)] grid-cols-[1.1fr_0.9fr] items-center gap-12 pb-18 max-lg:min-h-0 max-lg:grid-cols-1 max-lg:pt-10">
+      <div className="kunai-reveal flex flex-col justify-center">
+        <div className="mb-6 flex w-fit items-center gap-2 rounded-full border border-[#f4d8e4]/10 bg-[#130f17]/40 px-3 py-1 text-[11px] tracking-widest text-[#f09cb5]/80 uppercase shadow-sm backdrop-blur-md">
+          <Sparkles className="h-3.5 w-3.5 animate-pulse text-[#f09cb5]" />
+          <span>{homeHero.eyebrow}</span>
+        </div>
+
+        <h1 className="m-0 max-w-5xl bg-gradient-to-br from-white via-[#f4d8e4] to-[#f09cb5] bg-clip-text font-serif text-6xl leading-[0.98] font-light tracking-tight text-balance text-transparent md:text-7xl xl:text-8xl">
           {homeHero.title}
         </h1>
-        <p className="text-fd-muted-foreground mt-7 max-w-2xl text-lg leading-8 text-pretty">
+
+        <p className="mt-7 max-w-xl font-sans text-base leading-relaxed font-light text-pretty text-[#f4d8e4]/70 md:text-lg">
           {homeHero.description}
         </p>
-        <div className="mt-8 flex flex-wrap gap-4">
+
+        {/* Tactile Install Command in Hero */}
+        <div className="mt-6 flex w-full max-w-md flex-col gap-3">
+          <div className="hero-install-box flex items-center justify-between p-3 font-mono text-xs text-zinc-300">
+            <div className="flex items-center gap-2 select-all">
+              <span className="text-[#f09cb5]/70 select-none">$</span>
+              <span>bun install -g @kitsunekode/kunai</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => copyToClipboard("bun install -g @kitsunekode/kunai", "hero-install")}
+              className="copy-btn shrink-0 cursor-pointer rounded-lg border border-[#f4d8e4]/10 bg-[#1e1824] px-2.5 py-1 text-[10px] text-[#f09cb5] transition-colors hover:border-[#f09cb5] hover:text-white"
+            >
+              {copiedText === "hero-install" ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] text-[#f4d8e4]/40">
+            <span className="flex items-center gap-1">
+              <Check className="h-3.5 w-3.5 stroke-[3] text-[#8de4c2]" />
+              Bun first
+            </span>
+            <span className="h-1.5 w-1.5 rounded-full bg-[#f4d8e4]/10" />
+            <span className="flex items-center gap-1">
+              <Check className="h-3.5 w-3.5 stroke-[3] text-[#8de4c2]" />
+              Local decryption
+            </span>
+            <span className="h-1.5 w-1.5 rounded-full bg-[#f4d8e4]/10" />
+            <span className="flex items-center gap-1">
+              <Check className="h-3.5 w-3.5 stroke-[3] text-[#8de4c2]" />
+              No browser needed
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center gap-3">
           <Link className="kunai-button kunai-button-primary" href={primaryCtaHref}>
-            {primaryCtaLabel}
+            <span>{primaryCtaLabel}</span>
+            <ArrowRight className="ml-1.5 h-4 w-4 shrink-0" />
           </Link>
-          <Link className="kunai-button" href={secondaryCtaHref}>
-            {secondaryCtaLabel}
-          </Link>
+          <a className="kunai-button" href="#install">
+            <span>Quick Start</span>
+          </a>
           <button
             type="button"
-            className="kunai-button flex animate-pulse items-center gap-2 border-pink-500/20 text-pink-300"
+            className="kunai-button flex items-center gap-2 border-[#f09cb5]/20 text-[#f09cb5]/90 hover:text-white"
             onClick={() => onPresetClick("/help")}
           >
-            <span>🖥️ Run simulator</span>
+            <TerminalIcon className="h-4 w-4 shrink-0" />
+            <span>Interactive Simulator</span>
           </button>
         </div>
       </div>
 
-      <aside
-        ref={terminalStageRef}
-        className={`kunai-terminal-stage kunai-reveal kunai-reveal-late ${commandPaletteOpen ? "is-focused" : ""}`}
-        aria-label="Kunai terminal preview"
+      <div
+        className="relative flex w-full items-center justify-center"
+        style={{ perspective: 1200 }}
       >
-        <div className="kunai-terminal-top">
-          <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-pink-400/80"></span>
-            kunai shell
-          </span>
-          <span className="font-semibold text-pink-300/80">cli active</span>
-          <span className="kunai-muted">mpv verified</span>
-        </div>
+        {/* Glow behind terminal */}
+        <div className="absolute inset-0 -z-10 scale-75 rounded-full bg-gradient-to-tr from-[#f09cb5]/10 to-transparent blur-3xl" />
 
-        <div
-          ref={terminalBodyRef}
-          className="kunai-terminal-body scrollbar block w-full cursor-text text-left focus:outline-none"
+        <motion.aside
+          ref={terminalStageRef}
+          onMouseMove={handleMouseMove}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => {
+            setIsHovered(false);
+            setMousePos({ x: 0, y: 0 });
+          }}
+          animate={{
+            rotateY: mousePos.x * 12,
+            rotateX: -mousePos.y * 12,
+            z: isHovered ? 16 : 0,
+          }}
+          transition={{ type: "spring", stiffness: 350, damping: 28 }}
+          className={`kunai-terminal-stage group relative w-full overflow-hidden select-none ${
+            commandPaletteOpen ? "is-focused" : ""
+          }`}
+          style={{ transformStyle: "preserve-3d" }}
+          aria-label="Kunai terminal preview"
         >
-          {terminalLogs.map((line) => (
-            <span
-              key={line.id}
-              className={`block ${
-                line.text.startsWith("kunai >")
-                  ? "mt-2 font-bold text-pink-300"
-                  : line.text.startsWith("🟢") ||
-                      line.text.startsWith("✔") ||
-                      line.text.includes("OK")
-                    ? "text-emerald-300"
-                    : line.text.startsWith("⚠️") || line.text.startsWith("🟡")
-                      ? "text-amber-300"
-                      : line.text.startsWith("🎬") || line.text.includes("mpv")
-                        ? "text-sky-300"
-                        : line.text.startsWith("🔥") || line.text.startsWith("📅")
-                          ? "text-pink-300"
-                          : line.text.startsWith("▌")
-                            ? "font-bold text-pink-300"
-                            : "kunai-muted"
-              }`}
-            >
-              {line.text}
+          {/* Radial spotlight glare inside terminal */}
+          <div
+            className="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+            style={{
+              background: `radial-gradient(350px circle at ${((mousePos.x + 0.5) * 100).toFixed(
+                0,
+              )}% ${((mousePos.y + 0.5) * 100).toFixed(
+                0,
+              )}%, rgba(240, 156, 181, 0.08), transparent 80%)`,
+            }}
+          />
+
+          <div className="kunai-terminal-top border-b border-[#f4d8e4]/10 bg-[#0b070e]/80 backdrop-blur-md">
+            <span className="flex items-center gap-1.5 text-xs text-[#f4d8e4]/80">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-[#f09cb5]"></span>
+              kunai shell
             </span>
-          ))}
+            <span className="text-[10px] font-semibold text-[#f09cb5]">cli active</span>
+            <span className="text-[10px] text-[#f4d8e4]/40">mpv verified</span>
+          </div>
 
-          <span className="mt-3 flex items-center border-t border-pink-500/5 pt-2">
-            <span className="mr-2 font-bold text-pink-300">kunai &gt;</span>
-            <input
-              ref={terminalInputRef}
-              type="text"
-              className="w-full border-none bg-transparent font-mono text-sm text-white outline-none"
-              value={terminalInput}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Type '/' for commands..."
-              disabled={terminalState === "running"}
-              aria-label="Terminal command execution box"
-            />
-            <span className="kunai-cursor"></span>
-          </span>
+          <div
+            ref={terminalBodyRef}
+            className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full cursor-text bg-[#0b070e]/95 text-left backdrop-blur-sm focus:outline-none"
+            onClick={focusTerminalInput}
+            role="presentation"
+          >
+            {terminalLogs.map((line) => (
+              <span
+                key={line.id}
+                className={`block font-mono text-xs ${
+                  line.text.startsWith("kunai >")
+                    ? "mt-2 font-bold text-[#f09cb5]"
+                    : line.text.includes("[ OK ]") || line.text.includes("OK")
+                      ? "text-[#8de4c2]"
+                      : line.text.includes("[WARN]") || line.text.includes("[AIRING]")
+                        ? "text-[#e4c180]"
+                        : line.text.includes("[PLAY]") || line.text.includes("mpv")
+                          ? "text-sky-300"
+                          : line.text.includes("[QUERY]") ||
+                              line.text.includes("[FETCH]") ||
+                              line.text.includes("[SETUP]") ||
+                              line.text.includes("[RECOVERY]")
+                            ? "text-[#f09cb5]"
+                            : line.text.startsWith("▌")
+                              ? "font-bold text-[#f09cb5]"
+                              : "text-[#f4d8e4]/50"
+                }`}
+              >
+                {line.text}
+              </span>
+            ))}
 
-          {commandPaletteOpen && filteredCommands.length > 0 ? (
-            <span
-              className="kunai-command-palette block"
-              onClick={(e) => e.stopPropagation()}
-              role="presentation"
-            >
-              <span className="palette-search-wrapper flex">
-                <span className="mr-2 font-bold text-pink-300">/</span>
-                <input
-                  ref={paletteInputRef}
-                  type="text"
-                  className="palette-search-input"
-                  value={searchQuery.replace(/^\//, "")}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search commands..."
-                  aria-label="CLI commands query filter"
-                />
-              </span>
-              <span className="palette-list block">
-                {filteredCommands.map((cmd, index) => (
-                  <button
-                    type="button"
-                    key={cmd.id}
-                    className={`palette-item flex w-full items-center justify-between text-left ${index === selectedPaletteIndex ? "is-selected" : ""}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const runCmd = `/${cmd.id}`;
-                      setTerminalInput(runCmd);
-                      runSimulatedCommand(runCmd);
-                    }}
-                    onMouseEnter={() => setSelectedPaletteIndex(index)}
-                  >
-                    <span>
-                      <span className="font-semibold text-pink-100">/{cmd.id}</span>
-                      <span className="ml-2 text-pink-400/60">({cmd.label})</span>
-                      <span className="mt-0.5 block font-sans text-[11px] text-pink-100/40">
-                        {cmd.description}
-                      </span>
-                    </span>
-                    <span className="palette-shortcut">Enter</span>
-                  </button>
-                ))}
-              </span>
+            <span className="relative mt-3 flex items-center border-t border-[#f4d8e4]/5 pt-2">
+              <span className="mr-2 text-xs font-bold text-[#f09cb5]">kunai &gt;</span>
+              <input
+                ref={terminalInputRef}
+                type="text"
+                className="w-full border-none bg-transparent font-mono text-xs text-white outline-none"
+                value={terminalInput}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Type '/' for commands..."
+                disabled={terminalState === "running"}
+                aria-label="Terminal command execution box"
+              />
+              <span className="kunai-cursor shrink-0"></span>
             </span>
-          ) : null}
-        </div>
 
-        <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => onPresetClick("/search Dune")}
-            className="cursor-pointer rounded border border-pink-500/20 bg-pink-500/10 px-2.5 py-1 font-mono text-[11px] text-pink-300 transition-all hover:border-pink-300"
-          >
-            /search Dune
-          </button>
-          <button
-            type="button"
-            onClick={() => onPresetClick("/discover")}
-            className="cursor-pointer rounded border border-pink-500/20 bg-pink-500/10 px-2.5 py-1 font-mono text-[11px] text-pink-300 transition-all hover:border-pink-300"
-          >
-            /discover
-          </button>
-          <button
-            type="button"
-            onClick={() => onPresetClick("/calendar")}
-            className="cursor-pointer rounded border border-pink-500/20 bg-pink-500/10 px-2.5 py-1 font-mono text-[11px] text-pink-300 transition-all hover:border-pink-300"
-          >
-            /calendar
-          </button>
-          <button
-            type="button"
-            onClick={() => onPresetClick("/setup")}
-            className="cursor-pointer rounded border border-pink-500/20 bg-pink-500/10 px-2.5 py-1 font-mono text-[11px] text-pink-300 transition-all hover:border-pink-300"
-          >
-            /setup
-          </button>
-        </div>
+            <AnimatePresence>
+              {commandPaletteOpen && filteredCommands.length > 0 && (
+                <motion.span
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                  transition={{ type: "spring", duration: 0.3, bounce: 0.1 }}
+                  className="kunai-command-palette block rounded-xl border border-[#f09cb5] bg-[#1e1824] shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                  role="presentation"
+                >
+                  <span className="palette-search-wrapper flex items-center border-b border-[#f4d8e4]/10 bg-[#0b070e]/80 px-3 py-2">
+                    <span className="mr-2 font-bold text-[#f09cb5]">/</span>
+                    <input
+                      ref={paletteInputRef}
+                      type="text"
+                      className="palette-search-input w-full border-none bg-transparent text-xs text-white outline-none"
+                      value={searchQuery.replace(/^\//, "")}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search commands..."
+                      aria-label="CLI commands query filter"
+                    />
+                  </span>
+                  <span className="palette-list block max-h-[180px] space-y-0.5 overflow-y-auto p-1.5">
+                    {filteredCommands.map((cmd, index) => (
+                      <button
+                        type="button"
+                        key={cmd.id}
+                        className={`palette-item flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+                          index === selectedPaletteIndex
+                            ? "border-l-2 border-[#f09cb5] bg-[#281f30] text-white"
+                            : "text-zinc-300 hover:bg-[#1e1824]"
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const runCmd = `/${cmd.id}`;
+                          setTerminalInput(runCmd);
+                          runSimulatedCommand(runCmd);
+                        }}
+                        onMouseEnter={() => setSelectedPaletteIndex(index)}
+                      >
+                        <span>
+                          <span className="font-semibold text-white">/{cmd.id}</span>
+                          <span className="ml-1.5 text-[10px] text-[#f09cb5]/60">
+                            ({cmd.label})
+                          </span>
+                          <span className="mt-0.5 block font-sans text-[10px] text-[#f4d8e4]/40">
+                            {cmd.description}
+                          </span>
+                        </span>
+                        <span className="palette-shortcut rounded border border-[#f4d8e4]/10 px-1 py-0.5 text-[9px] text-[#f4d8e4]/40">
+                          Enter
+                        </span>
+                      </button>
+                    ))}
+                  </span>
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </div>
 
-        <div className="kunai-install">
-          <span>Install CLI package</span>
-          {installCommands.map((command) => (
-            <code key={command}>
-              <span>{command}</span>
+          <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+            {["/search Dune", "/discover", "/calendar", "/setup"].map((cmd) => (
               <button
                 type="button"
-                onClick={() => copyToClipboard(command, command)}
-                className="cursor-pointer rounded border border-pink-500/20 bg-pink-500/5 px-1.5 py-0.5 text-[10px] text-pink-300 hover:text-white"
+                key={cmd}
+                onClick={() => onPresetClick(cmd)}
+                className="cursor-pointer rounded-lg border border-[#f4d8e4]/10 bg-[#130f17] px-2.5 py-1 font-mono text-[10px] text-[#f4d8e4]/80 transition-all hover:border-[#f09cb5] hover:bg-[#1e1824] hover:text-white"
               >
-                {copiedText === command ? "Copied! ✓" : "Copy"}
+                {cmd}
               </button>
-            </code>
-          ))}
-        </div>
-      </aside>
+            ))}
+          </div>
+
+          <div className="kunai-install mt-4 rounded-xl border-t border-[#f4d8e4]/10 bg-[#0b070e]/80 p-3">
+            <span className="mb-2 block text-[10px] font-semibold tracking-wider text-[#f4d8e4]/40 uppercase">
+              Install CLI package
+            </span>
+            <div className="space-y-1.5">
+              {installCommands.map((command) => (
+                <code
+                  key={command}
+                  className="flex items-center justify-between rounded-lg border border-[#f4d8e4]/5 bg-[#130f17] px-3 py-1.5 font-mono text-[11px] text-zinc-300"
+                >
+                  <span>{command}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(command, command)}
+                    className="flex cursor-pointer items-center gap-1 rounded border border-[#f4d8e4]/10 bg-[#1e1824]/60 px-2 py-0.5 text-[10px] text-[#f09cb5] transition-colors hover:border-[#f09cb5] hover:text-white"
+                  >
+                    {copiedText === command ? (
+                      <>
+                        <Check className="h-3 w-3 text-[#8de4c2]" />
+                        <span className="text-[#8de4c2]">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </code>
+              ))}
+            </div>
+          </div>
+        </motion.aside>
+      </div>
     </div>
   );
 });
 
 // =============================================================================
-// SUBCOMPONENT: ProvidersCatalog (Memoized)
+// SUBCOMPONENT: ProvidersCatalog (Redesigned with Framer Motion LayoutId)
 // =============================================================================
 interface ProvidersCatalogProps {
   readonly providers: readonly ProviderMetadata[];
@@ -509,109 +626,144 @@ const ProvidersCatalog = memo(function ProvidersCatalog({
   const activeProvider = providers.find((p) => p.id === activeProviderId) || providers[0];
 
   return (
-    <div className="grid w-full gap-4">
-      <div className="flex flex-wrap gap-2 border-b border-pink-500/10 pb-4">
-        {providers.map((provider) => (
-          <button
-            type="button"
-            key={provider.id}
-            onClick={() => setActiveProviderId(provider.id)}
-            className={`provider-interactive-tab ${
-              activeProviderId === provider.id ? "is-active" : ""
-            }`}
-          >
-            {provider.displayName}
-            {provider.recommended ? <span className="ml-1 text-[9px] text-pink-200">★</span> : null}
-          </button>
-        ))}
+    <div className="grid w-full gap-5">
+      <div className="relative z-0 flex flex-wrap gap-2 border-b border-[#f4d8e4]/5 pb-4">
+        {providers.map((provider) => {
+          const isActive = activeProviderId === provider.id;
+          return (
+            <button
+              type="button"
+              key={provider.id}
+              onClick={() => setActiveProviderId(provider.id)}
+              className={`relative cursor-pointer rounded-lg px-4 py-2 text-xs font-bold transition-all duration-200 ${
+                isActive
+                  ? "text-white"
+                  : "border border-[#f4d8e4]/5 bg-[#130f17] text-[#f4d8e4]/50 hover:border-[#f4d8e4]/20 hover:text-white"
+              }`}
+            >
+              {provider.displayName}
+              {provider.recommended ? (
+                <Star className="ml-1 inline-block h-3 w-3 fill-current align-middle text-[#f09cb5]" />
+              ) : null}
+
+              {/* Smooth active background transition */}
+              {isActive && (
+                <motion.div
+                  layoutId="activeProviderBg"
+                  className="absolute inset-0 -z-10 rounded-lg border border-[#f09cb5]/30 bg-gradient-to-tr from-[#c86884] to-[#8c2a44] shadow-lg"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {activeProvider ? (
-        <div className="provider-details-card">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h3 className="m-0 flex items-center gap-2 text-xl font-bold text-white">
-                {activeProvider.displayName}
-                <span className="font-mono text-xs font-normal text-pink-400">
-                  ({activeProvider.domain})
+      <AnimatePresence mode="wait">
+        {activeProvider ? (
+          <motion.div
+            key={activeProvider.id}
+            initial={{ opacity: 0, y: 12, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, scale: 0.985 }}
+            transition={{ type: "spring", duration: 0.35, bounce: 0.08 }}
+            className="provider-details-card rounded-2xl border border-[#f4d8e4]/10 bg-[#130f17]/60 p-6 shadow-xl backdrop-blur-md"
+          >
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h3 className="m-0 flex items-center gap-2 font-serif text-2xl font-light text-white">
+                  <span>{activeProvider.displayName}</span>
+                  <span className="font-mono text-xs font-normal text-[#f4d8e4]/45">
+                    ({activeProvider.domain})
+                  </span>
+                </h3>
+                <p className="mt-1 font-mono text-[11px] text-[#f09cb5]">
+                  Provider ID: &quot;{activeProvider.id}&quot;
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <span
+                  className={`chip-tag rounded-lg border px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider ${
+                    activeProvider.status === "active"
+                      ? "border-[#8de4c2]/20 bg-[#8de4c2]/10 text-[#8de4c2]"
+                      : "border-[#e4c180]/20 bg-[#e4c180]/10 text-[#e4c180]"
+                  }`}
+                >
+                  status: {activeProvider.status}
                 </span>
-              </h3>
-              <p className="mt-1 font-mono text-sm text-pink-300/80">
-                Provider ID: "{activeProvider.id}"
-              </p>
-            </div>
 
-            <div className="flex gap-2">
-              <span
-                className={`chip-tag ${
-                  activeProvider.status === "active"
-                    ? "chip-tag-ok"
-                    : activeProvider.status === "candidate"
-                      ? "chip-tag-warning"
-                      : ""
-                }`}
-              >
-                status: {activeProvider.status}
-              </span>
-
-              {activeProvider.recommended ? (
-                <span className="chip-tag chip-tag-ok">Recommended</span>
-              ) : null}
-            </div>
-          </div>
-
-          <p className="mt-3 text-sm leading-6 text-pink-100/90">{activeProvider.description}</p>
-
-          <div className="mt-5 grid grid-cols-2 gap-4 border-t border-pink-500/10 pt-4 text-xs">
-            <div>
-              <strong className="mb-1 block text-pink-300">Supported Media Kinds</strong>
-              <div className="flex flex-wrap gap-1.5">
-                {activeProvider.mediaKinds.map((kind) => (
-                  <span
-                    key={kind}
-                    className="rounded border border-pink-500/20 bg-pink-500/10 px-2 py-0.5 text-[10px] tracking-wider text-pink-300 uppercase"
-                  >
-                    {kind}
+                {activeProvider.recommended ? (
+                  <span className="chip-tag rounded-lg border border-[#8de4c2]/20 bg-[#8de4c2]/15 px-2.5 py-1 text-[10px] font-bold text-[#8de4c2]">
+                    <Star className="mr-1 inline-block h-3.5 w-3.5 fill-current align-middle text-[#8de4c2]" />{" "}
+                    Recommended
                   </span>
-                ))}
+                ) : null}
               </div>
             </div>
 
-            <div>
-              <strong className="mb-1 block text-pink-300">Capabilities</strong>
-              <div className="flex flex-wrap gap-1">
-                {activeProvider.capabilities.map((cap) => (
-                  <span
-                    key={cap}
-                    className="rounded border border-pink-500/10 px-1.5 py-0.5 font-mono text-[10px] text-pink-100/70"
-                  >
-                    {cap}
-                  </span>
-                ))}
+            <p className="mt-3 font-sans text-sm leading-relaxed font-light text-zinc-300">
+              {activeProvider.description}
+            </p>
+
+            <div className="mt-6 grid grid-cols-2 gap-6 border-t border-[#f4d8e4]/5 pt-5 text-xs">
+              <div>
+                <strong className="mb-2 block text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
+                  Supported Media Kinds
+                </strong>
+                <div className="flex flex-wrap gap-1.5">
+                  {activeProvider.mediaKinds.map((kind) => (
+                    <span
+                      key={kind}
+                      className="rounded-lg border border-[#f09cb5]/20 bg-[#f09cb5]/5 px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider text-[#f09cb5] uppercase"
+                    >
+                      {kind}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <strong className="mb-2 block text-[10px] font-bold tracking-wider text-zinc-400 uppercase">
+                  Scraper Capabilities
+                </strong>
+                <div className="flex flex-wrap gap-1.5">
+                  {activeProvider.capabilities.map((cap) => (
+                    <span
+                      key={cap}
+                      className="rounded-lg border border-[#f4d8e4]/5 bg-[#1e1824]/50 px-2 py-0.5 font-mono text-[10px] text-zinc-300"
+                    >
+                      {cap}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
 
-          {activeProvider.notes && activeProvider.notes.length > 0 ? (
-            <div className="mt-5 rounded border border-pink-500/10 bg-pink-500/5 p-3 text-xs leading-5">
-              <strong className="mb-1.5 block text-pink-300">
-                Runtime & Verification notes (from source)
-              </strong>
-              <ul className="list-disc space-y-1.5 pl-4 text-pink-100/70">
-                {activeProvider.notes.map((note) => (
-                  <li key={note}>{note}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+            {activeProvider.notes && activeProvider.notes.length > 0 ? (
+              <div className="mt-6 rounded-xl border border-[#f4d8e4]/5 bg-[#130f17]/40 p-4 text-xs leading-relaxed">
+                <div className="mb-2 flex items-center gap-1.5 text-[#f09cb5]">
+                  <Cpu className="h-3.5 w-3.5" />
+                  <strong className="text-[11px] font-bold tracking-wider uppercase">
+                    Scraper & Verification Details
+                  </strong>
+                </div>
+                <ul className="list-disc space-y-1.5 pl-4 font-sans font-light text-[#f4d8e4]/70">
+                  {activeProvider.notes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 });
 
 // =============================================================================
-// SUBCOMPONENT: CliCommandBuilder (Memoized)
+// SUBCOMPONENT: CliCommandBuilder (Redesigned with Premium Dashboard feel)
 // =============================================================================
 interface CliCommandBuilderProps {
   readonly flags: readonly CliOption[];
@@ -637,7 +789,7 @@ const CliCommandBuilder = memo(function CliCommandBuilder({
   const showSearchParam = selectedFlags.includes("-S") || selectedFlags.includes("--search");
 
   return (
-    <div className="grid grid-cols-[1fr_0.8fr] gap-6 max-lg:grid-cols-1">
+    <div className="grid grid-cols-[1fr_0.9fr] gap-8 max-lg:grid-cols-1">
       <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
         {flags.slice(0, 12).map((flag) => {
           const isChecked = selectedFlags.includes(flag.long);
@@ -645,22 +797,26 @@ const CliCommandBuilder = memo(function CliCommandBuilder({
             <button
               type="button"
               key={flag.long}
-              className={`flag-checkbox-wrapper text-left ${isChecked ? "is-checked" : ""}`}
+              className={`flag-checkbox-wrapper flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-left transition-all duration-300 ${
+                isChecked
+                  ? "border-[#f09cb5] bg-[#f09cb5]/5"
+                  : "border-[#f4d8e4]/5 bg-[#130f17]/40 hover:border-[#f4d8e4]/15"
+              }`}
               onClick={() => toggleFlag(flag.long)}
             >
               <div
-                className={`flex h-4 w-4 items-center justify-center rounded border transition-all ${
-                  isChecked ? "border-pink-400 bg-pink-500" : "border-pink-500/30"
+                className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded border transition-all ${
+                  isChecked ? "border-[#f09cb5] bg-[#f09cb5] text-white" : "border-[#f4d8e4]/20"
                 }`}
               >
-                {isChecked ? <span className="text-[9px] text-white">✓</span> : null}
+                {isChecked ? <Check className="h-2.5 w-2.5 stroke-[4]" /> : null}
               </div>
-              <div>
-                <div className="font-mono text-xs font-semibold text-white">
-                  {flag.short ? <span className="mr-1 text-pink-300">{flag.short}</span> : null}
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-white">
+                  {flag.short ? <span className="text-[#f09cb5]">{flag.short}</span> : null}
                   <span>{flag.long}</span>
                 </div>
-                <div className="mt-0.5 line-clamp-1 font-sans text-[10px] text-pink-200/50">
+                <div className="mt-1 line-clamp-2 font-sans text-[10px] leading-normal font-light text-[#f4d8e4]/40">
                   {flag.description || "CLI parameter option"}
                 </div>
               </div>
@@ -669,21 +825,27 @@ const CliCommandBuilder = memo(function CliCommandBuilder({
         })}
       </div>
 
-      <div className="flag-builder-shell flex flex-col justify-between">
+      <div className="flag-builder-shell flex flex-col justify-between rounded-2xl border border-[#f4d8e4]/10 bg-[#130f17]/60 p-6 shadow-xl backdrop-blur-md">
         <div>
-          <h4 className="mb-2 text-xs font-bold tracking-wider text-pink-300 uppercase">
-            Command Output
-          </h4>
+          <div className="mb-4 flex items-center gap-2 border-b border-[#f4d8e4]/5 pb-3">
+            <Sliders className="h-4 w-4 text-[#f09cb5]" />
+            <h4 className="text-[11px] font-bold tracking-wider text-zinc-400 uppercase">
+              Command Compiler Output
+            </h4>
+          </div>
 
           {showSearchParam ? (
-            <div className="mb-4 rounded border border-pink-500/10 bg-pink-500/5 p-2.5">
-              <label htmlFor="search-query-field" className="mb-1 block text-[10px] text-pink-300">
-                Edit search query
+            <div className="mb-5 rounded-xl border border-[#f4d8e4]/10 bg-[#0b070e]/80 p-4">
+              <label
+                htmlFor="search-query-field"
+                className="mb-2 block text-[10px] font-bold tracking-wider text-[#f09cb5] uppercase"
+              >
+                Edit search query parameter
               </label>
               <input
                 id="search-query-field"
                 type="text"
-                className="w-full rounded border border-pink-500/30 bg-pink-500/10 px-2 py-1 font-mono text-xs text-white outline-none focus:border-pink-400"
+                className="w-full rounded-lg border border-[#f4d8e4]/10 bg-[#130f17] px-3 py-2 font-mono text-xs text-white transition-all outline-none focus:border-[#f09cb5]"
                 value={searchWord}
                 onChange={(e) => setSearchWord(e.target.value)}
                 aria-label="Edit command search query parameter value"
@@ -691,21 +853,34 @@ const CliCommandBuilder = memo(function CliCommandBuilder({
             </div>
           ) : null}
 
-          <p className="text-xs leading-5 text-pink-200/70">
-            Toggle options on the left. The CLI uses `bun` for script runtime execution, meaning
-            startup is sub-50ms.
+          <p className="font-sans text-xs leading-relaxed font-light text-[#f4d8e4]/60">
+            Select runtime configurations on the left to automatically construct a CLI call string.
+            The Kunai compiler loads config parameters synchronously and pipes results directly to
+            mpv.
           </p>
         </div>
 
-        <div className="mt-4">
-          <div className="flag-cmd-preview">
-            <span className="break-all select-all">{buildCommandLine()}</span>
+        <div className="mt-6">
+          <div className="flag-cmd-preview flex items-center justify-between rounded-xl border border-[#f09cb5]/30 bg-[#0b070e] p-4 shadow-inner">
+            <span className="font-mono text-xs font-semibold break-all text-white select-all">
+              {buildCommandLine()}
+            </span>
             <button
               type="button"
               onClick={() => copyToClipboard(buildCommandLine(), "cmd-line")}
-              className="ml-2 cursor-pointer rounded border border-pink-500/20 bg-pink-500/10 px-2 py-1 text-[11px] text-pink-300 hover:text-white"
+              className="ml-3 flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[#f4d8e4]/10 bg-[#130f17] px-3 py-1.5 text-xs text-[#f09cb5] transition-colors hover:border-[#f09cb5] hover:text-white"
             >
-              {copiedText === "cmd-line" ? "Copied! ✓" : "Copy"}
+              {copiedText === "cmd-line" ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-[#8de4c2]" />
+                  <span className="text-[#8de4c2]">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  <span>Copy</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -715,7 +890,7 @@ const CliCommandBuilder = memo(function CliCommandBuilder({
 });
 
 // =============================================================================
-// MAIN COMPONENT: HomePage
+// MAIN COMPONENT: HomePage Redesign
 // =============================================================================
 export default function HomePage() {
   const providers = (metadata.providers || []) as readonly ProviderMetadata[];
@@ -732,6 +907,49 @@ export default function HomePage() {
 
   // Copied state
   const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  // OS Selector state for installation section
+  const [activeOs, setActiveOs] = useState<"linux" | "macos" | "windows">("linux");
+
+  // Hydration guard
+  const [mounted, setMounted] = useState(false);
+  const headlineRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    if (typeof window !== "undefined") {
+      gsap.registerPlugin(ScrollTrigger);
+    }
+
+    // GSAP Word-by-word reveal for hero title
+    if (headlineRef.current) {
+      const text = headlineRef.current.innerText;
+      const words = text.split(" ");
+      headlineRef.current.innerHTML = words
+        .map(
+          (word) =>
+            `<span class="inline-block opacity-0 translate-y-6 transform transition-all duration-300 mr-2">${word}</span>`,
+        )
+        .join("");
+
+      gsap.to(headlineRef.current.querySelectorAll("span"), {
+        opacity: 1,
+        y: 0,
+        stagger: 0.05,
+        duration: 0.8,
+        ease: "power4.out",
+        delay: 0.1,
+      });
+    }
+
+    return () => {
+      ScrollTrigger.getAll().forEach((t) => t.kill());
+    };
+  }, [mounted]);
 
   const toggleFlag = useCallback((flagLong: string) => {
     setSelectedFlags((prev) =>
@@ -778,10 +996,30 @@ export default function HomePage() {
     return base;
   }, [flags, searchWord, selectedFlagSet]);
 
+  if (!mounted) {
+    // Fallback render to prevent hydration flicker
+    return (
+      <main className="kunai-home mx-auto w-[min(1400px,calc(100vw-32px))] py-8 opacity-0 max-md:w-[min(760px,calc(100vw-20px))]">
+        <div className="h-screen" />
+      </main>
+    );
+  }
+
   return (
     <main className="kunai-home mx-auto w-[min(1400px,calc(100vw-32px))] overflow-x-hidden py-8 max-md:w-[min(760px,calc(100vw-20px))]">
+      {/* Film Grain Texture for editorial atmosphere */}
+      <div className="grain-overlay" />
+
+      {/* Background drifting ambient mesh glows */}
+      <div className="pointer-events-none absolute top-10 left-1/4 -z-10 h-[350px] w-[500px] animate-[pulse-glow_12s_infinite] rounded-full bg-gradient-to-tr from-[#f09cb5]/5 to-purple-500/5 blur-[120px]" />
+      <div className="pointer-events-none absolute top-1/3 right-1/4 -z-10 h-[400px] w-[400px] animate-[pulse-glow_16s_infinite] rounded-full bg-gradient-to-tr from-[#8de4c2]/5 to-[#c86884]/5 blur-[140px]" />
+      <div className="ambient-glow-bottom" />
+
       {/* 1. Hero & Interactive Terminal Simulator */}
       <section className="kunai-hero pb-18">
+        <h1 ref={headlineRef} className="sr-only">
+          {homeHero.title}
+        </h1>
         <TerminalSimulator
           providers={providers}
           commands={commands}
@@ -795,19 +1033,213 @@ export default function HomePage() {
         />
       </section>
 
-      {/* 2. Real Active Providers Catalog */}
-      <section className="kunai-band">
-        <div>
-          <p className="kunai-eyebrow">Providers Catalog</p>
-          <h2 className="bg-gradient-to-br from-white to-pink-200 bg-clip-text text-transparent">
-            Active scraper modules linked in codebase.
+      {/* Prerequisites & Installation Section */}
+      <section id="install" className="kunai-flow-section">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="kunai-section-head"
+        >
+          <p className="kunai-eyebrow">Quick Setup</p>
+          <h2 className="bg-gradient-to-br from-white to-[#f4d8e4] bg-clip-text font-serif leading-[1.1] text-transparent">
+            Get started in 3 simple steps.
           </h2>
-          <p className="text-fd-muted-foreground mt-4 leading-7">
-            Kunai loads provider adapters directly from the{" "}
-            <code className="font-mono text-pink-300">packages/providers</code> package. No cloud
-            proxies or web scrapers needed; fully local decryption engines.
+          <p className="mt-4 max-w-3xl text-sm leading-relaxed font-light text-zinc-400 md:text-base">
+            Kunai runs on any machine with Bun and mpv. Select your operating system to see the
+            exact commands.
           </p>
+        </motion.div>
+
+        <div className="install-section">
+          {/* OS Selector Tabs */}
+          <div className="mb-8 flex gap-3 border-b border-[#f4d8e4]/5 pb-6">
+            {(["linux", "macos", "windows"] as const).map((os) => (
+              <button
+                type="button"
+                key={os}
+                onClick={() => setActiveOs(os)}
+                className={`os-tab-button text-[11px] tracking-wider uppercase ${
+                  activeOs === os ? "active" : ""
+                }`}
+              >
+                {os === "macos" ? "macOS" : os}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-6 max-lg:grid-cols-1">
+            {/* Step 1: Prerequisites */}
+            <div className="install-step-card flex flex-col justify-between">
+              <div>
+                <div className="mb-4 flex items-center justify-between">
+                  <span className="font-mono text-[10px] font-bold tracking-wider text-[#f09cb5] uppercase">
+                    Step 01
+                  </span>
+                  <span className="prereq-badge installed flex items-center gap-1.5">
+                    <Check className="h-3 w-3 stroke-[3] text-[#8de4c2]" />
+                    <span>Prerequisites</span>
+                  </span>
+                </div>
+                <h3 className="mt-2 mb-3 font-serif text-lg font-light text-white">
+                  Install Dependencies
+                </h3>
+                <p className="mb-4 text-xs leading-relaxed font-light text-zinc-400">
+                  Kunai requires <code className="font-mono text-zinc-200">mpv</code> for video
+                  playback and <code className="font-mono text-zinc-200">bun</code> as the CLI
+                  runtime.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {activeOs === "linux" && (
+                  <code className="flex items-center justify-between rounded-lg border border-[#f4d8e4]/5 bg-[#130f17]/80 px-3 py-1.5 font-mono text-[10px] text-zinc-300">
+                    <span>sudo apt install mpv chafa</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard("sudo apt install mpv chafa", "apt-install")}
+                      className="copy-btn shrink-0 cursor-pointer rounded border border-[#f4d8e4]/10 bg-[#1e1824]/60 px-2 py-0.5 text-[9px] text-[#f09cb5] transition-colors hover:text-white"
+                    >
+                      {copiedText === "apt-install" ? "Copied" : "Copy"}
+                    </button>
+                  </code>
+                )}
+                {activeOs === "macos" && (
+                  <code className="flex items-center justify-between rounded-lg border border-[#f4d8e4]/5 bg-[#130f17]/80 px-3 py-1.5 font-mono text-[10px] text-zinc-300">
+                    <span>brew install mpv chafa</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard("brew install mpv chafa", "brew-install")}
+                      className="copy-btn shrink-0 cursor-pointer rounded border border-[#f4d8e4]/10 bg-[#1e1824]/60 px-2 py-0.5 text-[9px] text-[#f09cb5] transition-colors hover:text-white"
+                    >
+                      {copiedText === "brew-install" ? "Copied" : "Copy"}
+                    </button>
+                  </code>
+                )}
+                {activeOs === "windows" && (
+                  <div className="rounded-lg border border-[#e4c180]/10 bg-[#e4c180]/5 p-2.5 text-[10px] font-light text-[#e4c180]">
+                    Install{" "}
+                    <a
+                      href="https://bun.sh"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-white"
+                    >
+                      Bun for Windows
+                    </a>{" "}
+                    and{" "}
+                    <a
+                      href="https://mpv.io"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-white"
+                    >
+                      mpv player
+                    </a>
+                    , then ensure they are in your path variables.
+                  </div>
+                )}
+                <div className="mt-2 flex items-center gap-1.5 font-mono text-[9px] text-[#f4d8e4]/40">
+                  <span>Verify with:</span>
+                  <code className="rounded bg-[#130f17] px-1 py-0.5">mpv --version</code>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2: Global Install */}
+            <div className="install-step-card flex flex-col justify-between">
+              <div>
+                <div className="mb-4 flex items-center justify-between">
+                  <span className="font-mono text-[10px] font-bold tracking-wider text-[#f09cb5] uppercase">
+                    Step 02
+                  </span>
+                  <span className="font-mono text-[9px] text-[#f4d8e4]/40">CLI Package</span>
+                </div>
+                <h3 className="mt-2 mb-3 font-serif text-lg font-light text-white">
+                  Install Kunai Shell
+                </h3>
+                <p className="mb-4 text-xs leading-relaxed font-light text-zinc-400">
+                  Install the package globally using Bun's package manager. This gives you the
+                  unified command entry.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <code className="flex items-center justify-between rounded-lg border border-[#f4d8e4]/5 bg-[#130f17]/80 px-3 py-1.5 font-mono text-[10px] text-zinc-300">
+                  <span>bun install -g @kitsunekode/kunai</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyToClipboard("bun install -g @kitsunekode/kunai", "global-install")
+                    }
+                    className="copy-btn shrink-0 cursor-pointer rounded border border-[#f4d8e4]/10 bg-[#1e1824]/60 px-2 py-0.5 text-[9px] text-[#f09cb5] transition-colors hover:text-white"
+                  >
+                    {copiedText === "global-install" ? "Copied" : "Copy"}
+                  </button>
+                </code>
+                <div className="font-mono text-[9px] text-[#f4d8e4]/40">
+                  Prefer Bun for global CLI packages as it executes sub-second.
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3: Setup configuration */}
+            <div className="install-step-card flex flex-col justify-between">
+              <div>
+                <div className="mb-4 flex items-center justify-between">
+                  <span className="font-mono text-[10px] font-bold tracking-wider text-[#f09cb5] uppercase">
+                    Step 03
+                  </span>
+                  <span className="font-mono text-[9px] text-[#f4d8e4]/40">First Run</span>
+                </div>
+                <h3 className="mt-2 mb-3 font-serif text-lg font-light text-white">
+                  Initialize Configuration
+                </h3>
+                <p className="mb-4 text-xs leading-relaxed font-light text-zinc-400">
+                  Initialize settings, select default folders, verify system libraries, and setup
+                  Discord Rich Presence.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <code className="flex items-center justify-between rounded-lg border border-[#f4d8e4]/5 bg-[#130f17]/80 px-3 py-1.5 font-mono text-[10px] text-zinc-300">
+                  <span>kunai --setup</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard("kunai --setup", "setup-cli")}
+                    className="copy-btn shrink-0 cursor-pointer rounded border border-[#f4d8e4]/10 bg-[#1e1824]/60 px-2 py-0.5 text-[9px] text-[#f09cb5] transition-colors hover:text-white"
+                  >
+                    {copiedText === "setup-cli" ? "Copied" : "Copy"}
+                  </button>
+                </code>
+                <div className="font-mono text-[9px] text-[#f4d8e4]/40">
+                  This writes atomic JSON to{" "}
+                  <code className="rounded bg-[#130f17] px-1 py-0.5">~/.config/kunai</code>.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      </section>
+
+      {/* 2. Real Active Providers Catalog */}
+      <section className="kunai-band relative">
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          whileInView={{ opacity: 1, x: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.6 }}
+        >
+          <p className="kunai-eyebrow">Scrapers Catalog</p>
+          <h2 className="bg-gradient-to-br from-white to-[#f4d8e4] bg-clip-text font-serif leading-[1.1] text-transparent">
+            Active Scrapers local in codebase.
+          </h2>
+          <p className="mt-4 font-sans text-sm leading-relaxed font-light text-zinc-400 md:text-base">
+            Kunai resolves source files directly using custom, localized decryptors located in{" "}
+            <code className="rounded border border-[#f4d8e4]/5 bg-[#1e1824]/60 px-1.5 py-0.5 font-mono text-[#f09cb5]">
+              packages/providers
+            </code>
+            . Fully sandboxed and browserless parsing engine.
+          </p>
+        </motion.div>
 
         <ProvidersCatalog
           providers={providers}
@@ -818,16 +1250,22 @@ export default function HomePage() {
 
       {/* 3. Interactive CLI Command Builder */}
       <section className="kunai-flow-section">
-        <div className="kunai-section-head">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.6 }}
+          className="kunai-section-head"
+        >
           <p className="kunai-eyebrow">Interactive Builder</p>
-          <h2 className="bg-gradient-to-br from-white to-pink-200 bg-clip-text text-transparent">
-            Compose CLI commands visually.
+          <h2 className="bg-gradient-to-br from-white to-[#f4d8e4] bg-clip-text font-serif leading-[1.1] text-transparent">
+            Compose commands visually.
           </h2>
-          <p className="text-fd-muted-foreground mt-4 max-w-3xl leading-7">
-            Kunai features a predictable argument layout. Toggle options below to compile a command
-            line, see its parsed description, and copy it to run directly in your local terminal.
+          <p className="mt-4 max-w-3xl text-sm leading-relaxed font-light text-zinc-400 md:text-base">
+            Construct argument scripts dynamically. Choose flags to compile the command line string,
+            inspect option descriptions, and execute it locally in your shell.
           </p>
-        </div>
+        </motion.div>
 
         <CliCommandBuilder
           flags={flags}
@@ -843,33 +1281,51 @@ export default function HomePage() {
 
       {/* 4. Playback Path Flow */}
       <section className="kunai-flow-section">
-        <div className="kunai-section-head">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.6 }}
+          className="kunai-section-head"
+        >
           <p className="kunai-eyebrow">Playback path</p>
-          <h2 className="bg-gradient-to-br from-white to-pink-200 bg-clip-text text-transparent">
+          <h2 className="bg-gradient-to-br from-white to-[#f4d8e4] bg-clip-text font-serif leading-[1.1] text-transparent">
             One readable path from intent to recovery.
           </h2>
-        </div>
+        </motion.div>
         <div className="kunai-flow">
           {homeFlow.map((step, index) => (
-            <article className={`kunai-flow-card kunai-state-${step.state}`} key={step.title}>
-              <div className="flex items-start justify-between">
-                <span className="text-[11px]">{String(index + 1).padStart(2, "0")}</span>
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    step.state === "focus"
-                      ? "bg-pink-400"
-                      : step.state === "ready"
-                        ? "bg-emerald-400"
-                        : step.state === "warn"
-                          ? "bg-amber-400"
-                          : step.state === "danger"
-                            ? "bg-rose-400"
-                            : "bg-zinc-500"
-                  }`}
-                ></span>
+            <article
+              className={`kunai-flow-card premium-card-hover kunai-state-${step.state} flex flex-col justify-between rounded-2xl border border-[#f4d8e4]/5 bg-[#130f17]/40 p-5 backdrop-blur-md`}
+              key={step.title}
+              style={{ animation: "none", animationDelay: `${index * 60}ms` }}
+            >
+              <div>
+                <div className="flex items-start justify-between">
+                  <span className="font-mono text-[10px] text-[#f4d8e4]/30">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <span
+                    className={`h-2.5 w-2.5 animate-pulse rounded-full shadow-sm ${
+                      step.state === "focus"
+                        ? "bg-[#f09cb5] shadow-[#f09cb5]/30"
+                        : step.state === "ready"
+                          ? "bg-[#8de4c2] shadow-[#8de4c2]/30"
+                          : step.state === "warn"
+                            ? "bg-[#e4c180] shadow-[#e4c180]/30"
+                            : step.state === "danger"
+                              ? "bg-[#ff8084] shadow-[#ff8084]/30"
+                              : "bg-[#f4d8e4]/20"
+                    }`}
+                  ></span>
+                </div>
+                <h3 className="mt-5 font-serif text-lg leading-snug font-light text-white">
+                  {step.title}
+                </h3>
+                <p className="mt-3 font-sans text-xs leading-relaxed font-light text-zinc-400">
+                  {step.description}
+                </p>
               </div>
-              <h3 className="text-white">{step.title}</h3>
-              <p className="mt-2 text-xs leading-5">{step.description}</p>
             </article>
           ))}
         </div>
@@ -877,17 +1333,32 @@ export default function HomePage() {
 
       {/* 5. Experience Promises */}
       <section className="kunai-band">
-        <div>
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          whileInView={{ opacity: 1, x: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.6 }}
+        >
           <p className="kunai-eyebrow">Experience promise</p>
-          <h2 className="bg-gradient-to-br from-white to-pink-200 bg-clip-text text-transparent">
-            Designed for the moment the provider does not behave.
+          <h2 className="bg-gradient-to-br from-white to-[#f4d8e4] bg-clip-text font-serif leading-[1.1] text-transparent">
+            Designed for provider drift.
           </h2>
-        </div>
+        </motion.div>
         <div className="kunai-highlight-grid">
           {homeHighlights.map((item) => (
-            <article className="kunai-highlight" key={item.label}>
-              <span>{item.label}</span>
-              <p>{item.detail}</p>
+            <article
+              className="kunai-highlight premium-card-hover flex flex-col justify-between rounded-2xl border border-[#f4d8e4]/5 bg-[#130f17]/40 p-5 backdrop-blur-md"
+              key={item.label}
+              style={{ animation: "none" }}
+            >
+              <div>
+                <span className="font-mono text-[10px] font-bold tracking-wider text-[#f09cb5] uppercase">
+                  {item.label}
+                </span>
+                <p className="margin-top-5 mt-4 font-sans text-sm leading-relaxed font-light text-zinc-300">
+                  {item.detail}
+                </p>
+              </div>
             </article>
           ))}
         </div>
@@ -895,25 +1366,51 @@ export default function HomePage() {
 
       {/* 6. Docs Map */}
       <section className="kunai-docs-section">
-        <div className="kunai-section-head">
-          <p className="kunai-eyebrow">Docs map</p>
-          <h2 className="bg-gradient-to-br from-white to-pink-200 bg-clip-text text-transparent">
-            Pick the guide by the job in front of you.
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.6 }}
+          className="kunai-section-head"
+        >
+          <p className="kunai-eyebrow">Guides map</p>
+          <h2 className="bg-gradient-to-br from-white to-[#f4d8e4] bg-clip-text font-serif leading-[1.1] text-transparent">
+            Select guide by specific operational role.
           </h2>
-        </div>
-        <div className="grid gap-5">
+        </motion.div>
+        <div className="grid gap-6">
           {homeSections.map((section) => (
-            <section className="kunai-doc-row" key={section.title}>
-              <div>
-                <p className="kunai-eyebrow">{section.eyebrow}</p>
-                <h3 className="text-white">{section.title}</h3>
-                <p className="mt-2 text-xs">{section.description}</p>
+            <section
+              className="kunai-doc-row flex flex-col gap-6 rounded-2xl border border-[#f4d8e4]/5 bg-[#130f17]/40 p-6 backdrop-blur-md lg:grid lg:grid-cols-[0.4fr_1fr]"
+              key={section.title}
+              style={{ animation: "none" }}
+            >
+              <div className="flex flex-col justify-between py-2">
+                <div>
+                  <p className="kunai-eyebrow text-[10px]">{section.eyebrow}</p>
+                  <h3 className="mt-2 font-serif text-xl leading-snug font-light text-white">
+                    {section.title}
+                  </h3>
+                  <p className="mt-2 font-sans text-xs leading-relaxed font-light text-zinc-400">
+                    {section.description}
+                  </p>
+                </div>
               </div>
               <div className="kunai-doc-links">
                 {section.items.map((item) => (
-                  <Link className="kunai-doc-card" href={item.href} key={item.href}>
-                    <span>{item.title}</span>
-                    <small className="mt-1 text-xs leading-5">{item.description}</small>
+                  <Link
+                    className="kunai-doc-card premium-card-hover group flex flex-col justify-between rounded-xl border border-[#f4d8e4]/5 bg-[#0b070e]/80 p-5"
+                    href={item.href}
+                    key={item.href}
+                  >
+                    <div>
+                      <span className="font-serif text-base font-light text-white transition-colors duration-200 group-hover:text-[#f09cb5]">
+                        {item.title}
+                      </span>
+                      <small className="mt-2 block font-sans text-xs leading-relaxed font-light text-zinc-400">
+                        {item.description}
+                      </small>
+                    </div>
                   </Link>
                 ))}
               </div>
@@ -924,37 +1421,62 @@ export default function HomePage() {
 
       {/* 7. Proof Grid */}
       <section className="kunai-proof-section">
-        <div className="kunai-section-head">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.6 }}
+          className="kunai-section-head"
+        >
           <p className="kunai-eyebrow">Reliability posture</p>
-          <h2 className="bg-gradient-to-br from-white to-pink-200 bg-clip-text text-transparent">
-            Useful feedback without leaking private runtime state.
+          <h2 className="bg-gradient-to-br from-white to-[#f4d8e4] bg-clip-text font-serif leading-[1.1] text-transparent">
+            Insightful metadata telemetry.
           </h2>
-        </div>
-        <div className="kunai-proof-grid">
+        </motion.div>
+        <div className="kunai-proof-grid grid grid-cols-3 gap-6 max-lg:grid-cols-1">
           {homeProof.map((item) => (
-            <article className="kunai-proof" key={item.label}>
-              <span>{item.label}</span>
-              <strong className="text-white">{item.value}</strong>
-              <p className="mt-3 text-xs leading-5">{item.detail}</p>
+            <article
+              className="kunai-proof premium-card-hover flex flex-col justify-between rounded-2xl border border-[#f4d8e4]/5 bg-[#130f17]/40 p-6 backdrop-blur-md"
+              key={item.label}
+              style={{ animation: "none" }}
+            >
+              <div>
+                <span className="font-mono text-[9px] font-bold tracking-wider text-[#f09cb5] uppercase">
+                  {item.label}
+                </span>
+                <strong className="mt-4 block font-serif text-3xl font-light tracking-tight text-white">
+                  {item.value}
+                </strong>
+                <p className="mt-3 font-sans text-xs leading-relaxed font-light text-zinc-400">
+                  {item.detail}
+                </p>
+              </div>
             </article>
           ))}
         </div>
       </section>
 
       {/* 8. Final Call to Action */}
-      <section className="kunai-final">
+      <section className="kunai-final flex items-center justify-between gap-6 rounded-2xl border border-[#f4d8e4]/10 bg-gradient-to-tr from-[#130f17] to-[#1e1824] p-8 max-md:flex-col">
         <div>
           <p className="kunai-eyebrow">Start here</p>
-          <h2 className="bg-gradient-to-br from-white to-pink-200 bg-clip-text text-transparent">
-            Install once. Keep playback explainable.
+          <h2 className="mt-2 max-w-xl bg-gradient-to-br from-white to-[#f4d8e4] bg-clip-text font-serif text-3xl leading-[1.1] font-light text-transparent md:text-4xl">
+            Install once. Keep stream pipeline diagnostic-rich.
           </h2>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <Link className="kunai-button" href={homeHero.primaryCta.href}>
-            {homeHero.primaryCta.label}
+        <div className="flex shrink-0 flex-wrap gap-4">
+          <Link
+            className="kunai-button kunai-button-primary shadow-lg"
+            href={homeHero.primaryCta.href}
+          >
+            <span>{homeHero.primaryCta.label}</span>
+            <ArrowRight className="ml-1.5 h-4 w-4" />
           </Link>
-          <Link className="kunai-button" href="/docs/users/diagnostics-and-reporting">
-            Debug a session
+          <Link
+            className="kunai-button border-[#f4d8e4]/15 hover:border-[#f09cb5]"
+            href="/docs/users/diagnostics-and-reporting"
+          >
+            <span>Debug a session</span>
           </Link>
         </div>
       </section>

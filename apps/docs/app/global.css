@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&display=swap');
+
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
 
@@ -9,9 +11,14 @@
 @source "../../../node_modules/fumadocs-ui/dist/**/*.js";
 
 :root {
-  --kunai-bg: #0f0b11;
-  --kunai-surface: #19141c;
-  --kunai-surface-strong: #251d2a;
+  --font-sans: "Outfit", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --font-serif: "Cormorant Garamond", Georgia, Cambria, "Times New Roman", Times, serif;
+
+  --kunai-bg: #0b070e;
+  --kunai-surface: #130f17;
+  --kunai-surface-strong: #1e1824;
+  --kunai-surface-elevated: #281f30;
   --kunai-line: color-mix(in oklab, #f4d8e4 8%, transparent);
   --kunai-accent: #f09cb5;
   --kunai-accent-deep: #c86884;
@@ -23,22 +30,99 @@
 
   --kunai-card-shadow:
     0 1px 0 color-mix(in oklab, white 4%, transparent) inset,
-    0 4px 12px color-mix(in oklab, black 12%, transparent),
-    0 16px 48px color-mix(in oklab, black 24%, transparent);
+    0 4px 12px color-mix(in oklab, black 16%, transparent),
+    0 16px 48px color-mix(in oklab, black 32%, transparent);
 
   --kunai-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --kunai-ease-soft: cubic-bezier(0.23, 1, 0.32, 1);
   --kunai-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Shadcn / Tailwind variables for Fumadocs compatibility */
+  --background: 274 33% 4.1%;
+  --foreground: 342 30% 92%;
+  --card: 270 21% 7.5%;
+  --card-foreground: 342 30% 92%;
+  --popover: 270 21% 7.5%;
+  --popover-foreground: 342 30% 92%;
+  --primary: 342 75% 77.6%;
+  --primary-foreground: 274 33% 4.1%;
+  --secondary: 270 21% 12%;
+  --secondary-foreground: 342 30% 92%;
+  --muted: 270 21% 7.5%;
+  --muted-foreground: 342 15% 65%;
+  --accent: 270 21% 12%;
+  --accent-foreground: 342 75% 77.6%;
+  --border: 271 21% 15.7%;
+  --ring: 342 75% 77.6%;
+
+  /* Fumadocs specific variables */
+  --color-fd-background: #0b070e;
+  --color-fd-foreground: #f4d8e4;
+  --color-fd-primary: #f09cb5;
+  --color-fd-primary-foreground: #0b070e;
+  --color-fd-border: color-mix(in oklab, #f4d8e4 8%, transparent);
+  --color-fd-muted: #130f17;
+  --color-fd-muted-foreground: color-mix(in oklab, #f4d8e4 60%, transparent);
+  --color-fd-accent: #1e1824;
+  --color-fd-accent-foreground: #f09cb5;
+  --color-fd-popover: #130f17;
+  --color-fd-popover-foreground: #f4d8e4;
+  --color-fd-card: #130f17;
+  --color-fd-card-foreground: #f4d8e4;
+}
+
+.dark {
+  --background: 274 33% 4.1%;
+  --foreground: 342 30% 92%;
+  --card: 270 21% 7.5%;
+  --card-foreground: 342 30% 92%;
+  --popover: 270 21% 7.5%;
+  --popover-foreground: 342 30% 92%;
+  --primary: 342 75% 77.6%;
+  --primary-foreground: 274 33% 4.1%;
+  --secondary: 270 21% 12%;
+  --secondary-foreground: 342 30% 92%;
+  --muted: 270 21% 7.5%;
+  --muted-foreground: 342 15% 65%;
+  --accent: 270 21% 12%;
+  --accent-foreground: 342 75% 77.6%;
+  --border: 271 21% 15.7%;
+  --ring: 342 75% 77.6%;
+
+  --color-fd-background: #0b070e;
+  --color-fd-foreground: #f4d8e4;
+  --color-fd-primary: #f09cb5;
+  --color-fd-primary-foreground: #0b070e;
+  --color-fd-border: color-mix(in oklab, #f4d8e4 8%, transparent);
+  --color-fd-muted: #130f17;
+  --color-fd-muted-foreground: color-mix(in oklab, #f4d8e4 60%, transparent);
+  --color-fd-accent: #1e1824;
+  --color-fd-accent-foreground: #f09cb5;
+  --color-fd-popover: #130f17;
+  --color-fd-popover-foreground: #f4d8e4;
+  --color-fd-card: #130f17;
+  --color-fd-card-foreground: #f4d8e4;
 }
 
 html {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+  font-family: var(--font-sans);
 }
 
 body {
+  font-family: var(--font-sans);
   letter-spacing: -0.01em;
   background-color: var(--kunai-bg);
+}
+
+h1, h2, h3, h4, h5, h6, .font-serif {
+  font-family: var(--font-serif);
+}
+
+code, pre, .font-mono {
+  font-family: var(--font-mono);
 }
 
 /* Custom Scrollbar */
@@ -64,12 +148,12 @@ body {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--kunai-line);
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
   background: var(--kunai-surface);
-  padding: 0.72rem 1.25rem;
+  padding: 0.72rem 1.5rem;
   color: var(--color-fd-foreground);
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 600;
   text-decoration: none;
   transition:
     border-color 180ms var(--kunai-ease-out),
@@ -77,6 +161,7 @@ body {
     box-shadow 180ms var(--kunai-ease-out),
     transform 180ms var(--kunai-ease-out);
   cursor: pointer;
+  letter-spacing: 0.02em;
 }
 
 .kunai-button:hover {
@@ -86,12 +171,12 @@ body {
 }
 
 .kunai-button:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
 .kunai-button-primary {
   border-color: var(--kunai-accent-deep);
-  background: linear-gradient(135deg, var(--kunai-accent-deep), #9e465f);
+  background: linear-gradient(135deg, var(--kunai-accent-deep), #8c2a44);
   color: #fff;
   box-shadow: 0 8px 24px color-mix(in oklab, var(--kunai-accent-deep) 20%, transparent);
 }
@@ -105,17 +190,18 @@ body {
 .kunai-home {
   isolation: isolate;
   background:
+    radial-gradient(circle at center, transparent 40%, var(--kunai-bg) 98%),
     linear-gradient(
       90deg,
-      color-mix(in oklab, var(--kunai-line) 42%, transparent) 1px,
+      color-mix(in oklab, var(--kunai-line) 24%, transparent) 1px,
       transparent 1px
     ),
     linear-gradient(
       180deg,
-      color-mix(in oklab, var(--kunai-line) 34%, transparent) 1px,
+      color-mix(in oklab, var(--kunai-line) 20%, transparent) 1px,
       transparent 1px
     );
-  background-size: 5.5rem 5.5rem;
+  background-size: 6.5rem 6.5rem;
   background-position: center top;
 }
 
@@ -124,12 +210,12 @@ body {
   color: var(--kunai-accent);
   font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .kunai-reveal {
-  animation: kunai-rise 600ms var(--kunai-ease-out) both;
+  animation: kunai-rise 700ms var(--kunai-ease-out) both;
 }
 
 .kunai-reveal-late {
@@ -139,12 +225,17 @@ body {
 @keyframes kunai-rise {
   from {
     opacity: 0;
-    transform: translateY(16px) scale(0.98);
+    transform: translateY(20px) scale(0.985);
   }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+@keyframes kunai-fade-in {
+  from { opacity: 0; filter: blur(4px); }
+  to { opacity: 1; filter: blur(0); }
 }
 
 /* Terminal & Interactive Terminal Simulator */
@@ -159,9 +250,11 @@ body {
   );
   padding: 0.85rem;
   box-shadow: var(--kunai-card-shadow);
+  will-change: transform;
   transition:
     border-color 300ms var(--kunai-ease-out),
-    box-shadow 300ms var(--kunai-ease-out);
+    box-shadow 300ms var(--kunai-ease-out),
+    transform 300ms var(--kunai-ease-out);
 }
 
 .kunai-terminal-stage.is-focused {
@@ -346,6 +439,7 @@ body {
 }
 
 .palette-item {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -357,6 +451,13 @@ body {
     transform 100ms var(--kunai-ease-out);
   font-family: "JetBrains Mono", monospace;
   font-size: 0.8rem;
+}
+
+.palette-item::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
 }
 
 .palette-item:hover,
@@ -386,7 +487,7 @@ body {
 .kunai-proof-section,
 .kunai-final {
   border-top: 1px solid var(--kunai-line);
-  padding-block: clamp(4rem, 8vw, 7rem);
+  padding-block: clamp(3.5rem, 6vw, 4.5rem);
 }
 
 .kunai-band {
@@ -444,7 +545,12 @@ body {
   min-height: 12rem;
   border-radius: 0.6rem;
   padding: 1.25rem;
+  animation: card-stagger-in 400ms var(--kunai-ease-out) both;
 }
+
+.kunai-highlight:nth-child(1) { animation-delay: 0ms; }
+.kunai-highlight:nth-child(2) { animation-delay: 80ms; }
+.kunai-highlight:nth-child(3) { animation-delay: 160ms; }
 
 .kunai-highlight span,
 .kunai-proof span {
@@ -483,6 +589,24 @@ body {
   min-height: 16rem;
   border-radius: 0.6rem;
   padding: 1.25rem;
+  animation: card-stagger-in 400ms var(--kunai-ease-out) both;
+}
+
+.kunai-flow-card:nth-child(1) { animation-delay: 0ms; }
+.kunai-flow-card:nth-child(2) { animation-delay: 60ms; }
+.kunai-flow-card:nth-child(3) { animation-delay: 120ms; }
+.kunai-flow-card:nth-child(4) { animation-delay: 180ms; }
+.kunai-flow-card:nth-child(5) { animation-delay: 240ms; }
+
+@keyframes card-stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .kunai-flow-card:hover {
@@ -532,7 +656,11 @@ body {
   border: 1px solid var(--kunai-line);
   background: var(--kunai-surface);
   cursor: pointer;
-  transition: all 160ms var(--kunai-ease-out);
+  transition:
+    border-color 160ms var(--kunai-ease-out),
+    background 160ms var(--kunai-ease-out),
+    box-shadow 160ms var(--kunai-ease-out),
+    transform 160ms var(--kunai-ease-out);
 }
 .provider-interactive-tab:hover {
   border-color: var(--kunai-accent);
@@ -612,7 +740,10 @@ body {
   border-radius: 0.375rem;
   border: 1px solid var(--kunai-line);
   cursor: pointer;
-  transition: all 180ms var(--kunai-ease-out);
+  transition:
+    border-color 180ms var(--kunai-ease-out),
+    background 180ms var(--kunai-ease-out),
+    transform 180ms var(--kunai-ease-out);
   user-select: none;
 }
 .flag-checkbox-wrapper:hover {
@@ -647,10 +778,17 @@ body {
   gap: 1.5rem;
   border-radius: 0.6rem;
   padding: clamp(1.2rem, 3vw, 1.8rem);
+  animation: card-stagger-in 400ms var(--kunai-ease-out) both;
 }
+
+.kunai-doc-row:nth-child(1) { animation-delay: 0ms; }
+.kunai-doc-row:nth-child(2) { animation-delay: 100ms; }
+.kunai-doc-row:nth-child(3) { animation-delay: 200ms; }
+.kunai-doc-row:nth-child(4) { animation-delay: 300ms; }
 
 .kunai-doc-row:hover {
   border-color: color-mix(in oklab, var(--kunai-accent) 20%, var(--kunai-line));
+  transform: translateY(-1px);
 }
 
 .kunai-doc-row h3 {
@@ -713,7 +851,12 @@ body {
   min-height: 12.5rem;
   border-radius: 0.6rem;
   padding: 1.25rem;
+  animation: card-stagger-in 400ms var(--kunai-ease-out) both;
 }
+
+.kunai-proof:nth-child(1) { animation-delay: 0ms; }
+.kunai-proof:nth-child(2) { animation-delay: 80ms; }
+.kunai-proof:nth-child(3) { animation-delay: 160ms; }
 
 .kunai-proof strong {
   display: block;
@@ -806,3 +949,273 @@ body {
     min-height: 200px;
   }
 }
+
+/* Premium Visual Utilities */
+
+.grain-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.8 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay;
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.03); }
+}
+
+/* Custom premium hover states */
+.premium-card-hover {
+  transition:
+    transform 350ms var(--kunai-ease-out),
+    border-color 350ms var(--kunai-ease-out),
+    box-shadow 350ms var(--kunai-ease-out);
+}
+
+.premium-card-hover:hover {
+  transform: translateY(-4px) scale(1.005);
+  border-color: var(--kunai-accent);
+  box-shadow:
+    0 12px 30px rgba(240, 156, 181, 0.05),
+    var(--kunai-card-shadow);
+}
+
+.premium-card-hover:active {
+  transform: translateY(-2px) scale(0.98);
+}
+
+/* Custom Fumadocs Polish Overrides */
+
+/* Header / Nav adjustments */
+.fd-nav, header, [data-transparent="false"] {
+  background-color: rgba(11, 7, 14, 0.82) !important;
+  backdrop-filter: blur(16px) !important;
+  border-bottom: 1px solid color-mix(in oklab, #f4d8e4 6%, transparent) !important;
+}
+
+/* Sidebar adjustments */
+.fd-sidebar, aside {
+  background-color: #0b070e !important;
+  border-right: 1px solid color-mix(in oklab, #f4d8e4 6%, transparent) !important;
+}
+
+/* Docs container and body spacing */
+.fd-layout, .fd-body {
+  background-color: #0b070e !important;
+}
+
+/* Active links in sidebar */
+.fd-sidebar a[data-active="true"] {
+  color: var(--kunai-accent) !important;
+  background-color: rgba(240, 156, 181, 0.08) !important;
+  font-weight: 600 !important;
+  border-left: 2px solid var(--kunai-accent) !important;
+}
+
+/* Custom TOC (Table of Contents) sidebar */
+.fd-toc, .fd-toc-container {
+  border-left: 1px solid color-mix(in oklab, #f4d8e4 6%, transparent) !important;
+}
+
+/* Search Dialog adjustments */
+.fd-search-dialog, [role="dialog"] {
+  background-color: #130f17 !important;
+  border: 1px solid var(--kunai-accent) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6) !important;
+}
+
+/* Remove default theme-toggle button if it still gets rendered */
+button.fd-theme-toggle {
+  display: none !important;
+}
+
+/* Hide theme toggle segmented control in the sidebar footer */
+.fd-sidebar button:has(.lucide-sun),
+.fd-sidebar button:has(.lucide-moon),
+.fd-sidebar div:has(> button:has(.lucide-sun)) {
+  display: none !important;
+}
+
+/* Tactile feedback for clickable elements */
+.kunai-button:active {
+  transform: scale(0.97);
+}
+
+/* Preset pills active scale */
+.kunai-terminal-stage button:active,
+.flag-checkbox-wrapper:active,
+.provider-interactive-tab:active,
+.kunai-doc-card:active,
+.kunai-flow-card:active,
+.os-tab-button:active {
+  transform: scale(0.97) !important;
+}
+
+/* Copy buttons active scale */
+.kunai-install button:active,
+.flag-cmd-preview button:active,
+.copy-btn:active {
+  transform: scale(0.95) !important;
+}
+
+/* Premium Code Blocks */
+.prose pre,
+.fd-codeblock,
+pre {
+  background-color: #0b070e !important;
+  border: 1px solid var(--kunai-line) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+  border-radius: 0.75rem !important;
+  transition: border-color 200ms var(--kunai-ease-out), box-shadow 200ms var(--kunai-ease-out);
+}
+.prose pre:hover,
+.fd-codeblock:hover,
+pre:hover {
+  border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line)) !important;
+  box-shadow: 0 4px 24px color-mix(in oklab, var(--kunai-accent) 4%, transparent), 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Premium Tables */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-block: 1.5rem;
+  border: 1px solid var(--kunai-line);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--kunai-surface) 40%, transparent);
+}
+th {
+  background: color-mix(in oklab, var(--kunai-surface-strong) 80%, transparent);
+  color: #fff;
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.85rem 1.1rem !important;
+  border-bottom: 1px solid var(--kunai-line);
+  text-align: left;
+}
+td {
+  padding: 0.85rem 1.1rem !important;
+  border-bottom: 1px solid var(--kunai-line);
+  font-size: 0.85rem;
+  color: var(--color-fd-muted-foreground);
+}
+tr:last-child td {
+  border-bottom: none;
+}
+tr:hover td {
+  color: #fff;
+  background: color-mix(in oklab, var(--kunai-surface-strong) 40%, transparent);
+}
+
+/* Ambient bottom glow */
+.ambient-glow-bottom {
+  pointer-events: none;
+  position: absolute;
+  bottom: 12%;
+  left: 15%;
+  width: 550px;
+  height: 550px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in oklab, var(--kunai-accent) 4%, transparent) 0%, transparent 70%);
+  filter: blur(100px);
+  z-index: -10;
+  animation: pulse-glow 14s infinite alternate;
+}
+
+/* Quick Install Section */
+.install-section {
+  position: relative;
+  margin-top: 4rem;
+  border: 1px solid var(--kunai-line);
+  background: linear-gradient(145deg, rgba(19, 15, 23, 0.4), rgba(30, 24, 36, 0.4));
+  backdrop-filter: blur(12px);
+  border-radius: 1.5rem;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  box-shadow: var(--kunai-card-shadow);
+}
+
+.os-tab-button {
+  position: relative;
+  padding: 0.6rem 1.25rem;
+  font-size: 0.825rem;
+  font-weight: 700;
+  border-radius: 0.5rem;
+  color: var(--color-fd-muted-foreground);
+  border: 1px solid transparent;
+  transition: color 200ms var(--kunai-ease-out), border-color 200ms var(--kunai-ease-out), background-color 200ms var(--kunai-ease-out);
+  cursor: pointer;
+}
+.os-tab-button:hover {
+  color: #fff;
+  border-color: var(--kunai-line);
+  background-color: var(--kunai-surface-strong);
+}
+.os-tab-button.active {
+  color: #fff;
+  border-color: var(--kunai-accent-deep);
+  background: linear-gradient(135deg, var(--kunai-accent-deep), #8c2a44);
+  box-shadow: 0 4px 12px var(--kunai-accent-glow);
+}
+
+.prereq-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  border: 1px solid var(--kunai-line);
+}
+.prereq-badge.installed {
+  background-color: color-mix(in oklab, var(--kunai-ok) 10%, transparent);
+  border-color: color-mix(in oklab, var(--kunai-ok) 30%, transparent);
+  color: var(--kunai-ok);
+}
+.prereq-badge.missing {
+  background-color: color-mix(in oklab, var(--kunai-warning) 10%, transparent);
+  border-color: color-mix(in oklab, var(--kunai-warning) 30%, transparent);
+  color: var(--kunai-warning);
+}
+
+.install-step-card {
+  background: color-mix(in oklab, var(--kunai-bg) 70%, transparent);
+  border: 1px solid var(--kunai-line);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  transition: border-color 200ms var(--kunai-ease-out), box-shadow 200ms var(--kunai-ease-out);
+}
+.install-step-card:hover {
+  border-color: var(--kunai-accent-glow);
+  box-shadow: 0 4px 20px color-mix(in oklab, var(--kunai-accent) 2%, transparent);
+}
+
+/* Hero Install Box */
+.hero-install-box {
+  border: 1px solid var(--kunai-line);
+  background: linear-gradient(135deg, rgba(19, 15, 23, 0.7), rgba(30, 24, 36, 0.7));
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  border-radius: 0.75rem;
+  transition: border-color 200ms var(--kunai-ease-out);
+}
+.hero-install-box:hover {
+  border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
+}
+
+
+

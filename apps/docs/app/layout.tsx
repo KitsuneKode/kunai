@@ -18,7 +18,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="flex min-h-screen flex-col">
-        <RootProvider>{children}</RootProvider>
+        <RootProvider theme={{ forcedTheme: "dark" }}>{children}</RootProvider>
       </body>
     </html>
   );
