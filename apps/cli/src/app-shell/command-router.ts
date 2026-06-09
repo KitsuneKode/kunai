@@ -45,6 +45,9 @@ type RoutedActionResult =
   | "toggle-autoskip"
   | "stop-after-current"
   | "resume"
+  | "next"
+  | "previous"
+  | "next-season"
   | "replay"
   | "recover"
   | "recompute"
@@ -210,6 +213,9 @@ export async function routePlaybackShellAction({
   if (action === "toggle-autoskip") return "toggle-autoskip";
   if (action === "stop-after-current") return "stop-after-current";
   if (action === "resume") return "resume";
+  if (action === "next") return "next";
+  if (action === "previous") return "previous";
+  if (action === "next-season") return "next-season";
   if (action === "replay") return "replay";
   if (action === "recover") return "recover";
   if (action === "recompute") return "recompute";

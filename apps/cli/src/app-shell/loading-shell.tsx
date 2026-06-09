@@ -19,14 +19,16 @@ import {
   stageLabel,
 } from "./loading-shell-runtime";
 import type { StageRailItem } from "./loading-shell-runtime";
+import { PlaybackPlayingRail } from "./playback-playing-rail";
+import { buildPlaybackPlayingRailView } from "./playback-playing-view";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import { applyPlaybackShellInputEffect, resolvePlaybackShellInput } from "./playback-shell-input";
+import { useShellCommandModeOpen } from "./shell-command-mode";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
 import { truncateLine } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
 import type { LoadingShellState, ShellPanelLine } from "./types";
-import { usePosterPreview } from "./use-poster-preview";
 import { useViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
@@ -396,7 +398,10 @@ export const LoadingShell = React.memo(function LoadingShell({
     ],
   );
 
+  const commandModeOpen = useShellCommandModeOpen();
+
   useInput((input, key) => {
+    if (commandModeOpen) return;
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestHardExit(0);
       return;
@@ -421,18 +426,35 @@ export const LoadingShell = React.memo(function LoadingShell({
       setMemoryPanelVisible((visible) => !visible);
     });
   });
-  const infoWidth = Math.min(76, Math.max(40, terminalColumns - 12));
-  // Poster rail on wide terminals — paints a real image where the prior surface's
-  // stale Kitty placement would otherwise bleed through (A6 ghost).
-  const showPlaybackPoster =
-    isPlaying && loadingViewport.breakpoint === "wide" && Boolean(state.posterUrl);
-  const { poster: playbackPoster } = usePosterPreview(state.posterUrl, {
-    rows: 11,
-    cols: 18,
-    enabled: showPlaybackPoster,
-    debounceMs: 120,
-    variant: "detail",
-  });
+  const isWidePlaying = isPlaying && loadingViewport.breakpoint === "wide";
+  const totalPlayingWidth = Math.max(60, terminalColumns - 2);
+  const playingRailWidth = isWidePlaying
+    ? Math.min(36, Math.max(28, Math.floor(totalPlayingWidth * 0.27)))
+    : 0;
+  const infoWidth = isWidePlaying
+    ? Math.max(28, totalPlayingWidth - playingRailWidth - 4)
+    : Math.max(40, terminalColumns - 4);
+  const playingRailView = React.useMemo(
+    () =>
+      buildPlaybackPlayingRailView({
+        title: state.title,
+        titleDetail: state.titleDetail,
+        posterUrl: state.posterUrl,
+        upNextLabel: state.upNextLabel,
+        nextEpisodeLabel: state.nextEpisodeLabel,
+        currentSeason: state.currentSeason,
+        isSeries: Boolean(state.isSeriesPlayback),
+      }),
+    [
+      state.title,
+      state.titleDetail,
+      state.posterUrl,
+      state.upNextLabel,
+      state.nextEpisodeLabel,
+      state.currentSeason,
+      state.isSeriesPlayback,
+    ],
+  );
 
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
   const stageRailItems = renderStageRail(activeStage, loadingIssue);
@@ -507,7 +529,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       }}
     >
       <Box flexDirection="column" justifyContent="space-between" flexGrow={1}>
-        <Box flexDirection="column" width={infoWidth} justifyContent="center" flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1} width="100%">
           {/* ── Resolving / Loading ───────────────────────────────────────── */}
           {!isPlaying && (
             <Box flexDirection="column" justifyContent="center" flexGrow={1} paddingY={1}>
@@ -668,8 +690,17 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                 ) : null}
 
+                {state.playbackSourceLine ? (
+                  <Box marginTop={2}>
+                    <Text color={palette.dim}>{"SRC  "}</Text>
+                    <Text color={palette.text}>
+                      {truncateLine(state.playbackSourceLine, infoWidth - 6)}
+                    </Text>
+                  </Box>
+                ) : null}
+
                 {/* NOW — facts on one line (quality · subs · session). */}
-                <Box marginTop={2}>
+                <Box marginTop={state.playbackSourceLine ? 1 : 2}>
                   <Text color={palette.dim}>{"NOW  "}</Text>
                   {activeTracksLine ? (
                     <Text
@@ -733,8 +764,8 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                 ) : null}
 
-                {/* Up next — the next episode, else a queued title (auto-plays after this). */}
-                {state.upNextLabel?.trim() ? (
+                {/* Up next on narrow/medium — wide terminals show this on the right rail. */}
+                {!isWidePlaying && state.upNextLabel?.trim() ? (
                   <Box marginTop={1}>
                     <Text color={palette.accent}>{"▶ "}</Text>
                     <Text color={palette.dim} dimColor>
@@ -761,10 +792,13 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                 ) : null}
               </Box>
-              {showPlaybackPoster && playbackPoster.kind !== "none" ? (
-                <Box marginLeft={2} flexShrink={0}>
-                  <Text>{playbackPoster.placeholder}</Text>
-                </Box>
+              {isWidePlaying ? (
+                <PlaybackPlayingRail
+                  title={state.title}
+                  railWidth={playingRailWidth}
+                  view={playingRailView}
+                  nextEpisodeThumbUrl={state.nextEpisodeThumbUrl}
+                />
               ) : null}
             </Box>
           )}

@@ -3125,6 +3125,71 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stopAfterCurrent: enabled,
               };
               continue postPlayback;
+            } else if (routedAction === "next" && title.type === "series") {
+              if (episodeAvailability.nextEpisode) {
+                pendingStart = await startNavigationToEpisode(episodeAvailability.nextEpisode);
+                stateManager.dispatch({
+                  type: "SELECT_EPISODE",
+                  episode: episodeAvailability.nextEpisode,
+                });
+                playbackSession = this.transitionPlaybackSession(
+                  context,
+                  playbackSession,
+                  "episode-navigation",
+                  {
+                    titleId: title.id,
+                    season: episodeAvailability.nextEpisode.season,
+                    episode: episodeAvailability.nextEpisode.episode,
+                    source: "next",
+                  },
+                );
+                break postPlayback;
+              }
+              continue postPlayback;
+            } else if (routedAction === "previous" && title.type === "series") {
+              if (episodeAvailability.previousEpisode) {
+                pendingStart = await startNavigationToEpisode(episodeAvailability.previousEpisode);
+                stateManager.dispatch({
+                  type: "SELECT_EPISODE",
+                  episode: episodeAvailability.previousEpisode,
+                });
+                playbackSession = this.transitionPlaybackSession(
+                  context,
+                  playbackSession,
+                  "episode-navigation",
+                  {
+                    titleId: title.id,
+                    season: episodeAvailability.previousEpisode.season,
+                    episode: episodeAvailability.previousEpisode.episode,
+                    source: "previous",
+                  },
+                );
+                break postPlayback;
+              }
+              continue postPlayback;
+            } else if (routedAction === "next-season" && title.type === "series") {
+              if (episodeAvailability.nextSeasonEpisode) {
+                pendingStart = await startNavigationToEpisode(
+                  episodeAvailability.nextSeasonEpisode,
+                );
+                stateManager.dispatch({
+                  type: "SELECT_EPISODE",
+                  episode: episodeAvailability.nextSeasonEpisode,
+                });
+                playbackSession = this.transitionPlaybackSession(
+                  context,
+                  playbackSession,
+                  "episode-navigation",
+                  {
+                    titleId: title.id,
+                    season: episodeAvailability.nextSeasonEpisode.season,
+                    episode: episodeAvailability.nextSeasonEpisode.episode,
+                    source: "next-season",
+                  },
+                );
+                break postPlayback;
+              }
+              continue postPlayback;
             } else if (routedAction === "resume") {
               pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
               const playbackAction = resolvePostPlaybackSessionAction("resume", playbackSession);
@@ -3469,12 +3534,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               continue postPlayback;
             } else {
-              await teardownPlaybackForPostPlayExit(
-                container,
-                episodePrefetch,
-                playbackIterationAbort,
-              );
-              return { status: "success", value: "back_to_search" };
+              logger.warn("Unhandled post-play shell action; staying on post-play menu", {
+                postAction,
+                routedAction,
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+              });
+              continue postPlayback;
             }
           }
         } catch (e) {

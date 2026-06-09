@@ -47,6 +47,8 @@ export function usePosterPreview(
     debounceMs = 120,
     variant = "preview",
     allowKitty = true,
+    inkEmbedded = false,
+    preserveTerminalImages = false,
   }: {
     rows: number;
     cols: number;
@@ -54,13 +56,15 @@ export function usePosterPreview(
     debounceMs?: number;
     variant?: "preview" | "detail";
     allowKitty?: boolean;
+    inkEmbedded?: boolean;
+    preserveTerminalImages?: boolean;
   },
 ): { poster: PosterResult; posterState: PosterState } {
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
 
   useEffect(() => {
     if (!url || !enabled) {
-      clearRenderedPosterImages();
+      if (!preserveTerminalImages) clearRenderedPosterImages();
       dispatch({ type: "reset", posterState: url ? "unavailable" : "idle" });
       return undefined;
     }
@@ -69,16 +73,16 @@ export function usePosterPreview(
     dispatch({ type: "loading" });
 
     const timer = setTimeout(() => {
-      fetchPoster(url, { rows, cols, variant, allowKitty })
+      fetchPoster(url, { rows, cols, variant, allowKitty, inkEmbedded })
         .then((result) => {
           if (cancelled) return undefined;
-          clearRenderedPosterImages();
+          if (!preserveTerminalImages) clearRenderedPosterImages();
           startTransition(() => dispatch({ type: "resolved", result }));
           return undefined;
         })
         .catch(() => {
           if (cancelled) return;
-          clearRenderedPosterImages();
+          if (!preserveTerminalImages) clearRenderedPosterImages();
           startTransition(() => dispatch({ type: "reset", posterState: "unavailable" }));
         });
     }, debounceMs);
@@ -89,7 +93,17 @@ export function usePosterPreview(
       // Do not call clearRenderedPosterImages here — the incoming effect's fetch
       // clears just before rendering its result, preserving the old image during load.
     };
-  }, [allowKitty, cols, debounceMs, enabled, rows, url, variant]);
+  }, [
+    allowKitty,
+    cols,
+    debounceMs,
+    enabled,
+    inkEmbedded,
+    preserveTerminalImages,
+    rows,
+    url,
+    variant,
+  ]);
 
   return { poster: state.poster, posterState: state.posterState };
 }

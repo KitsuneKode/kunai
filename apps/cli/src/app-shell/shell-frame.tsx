@@ -6,6 +6,7 @@ import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { requestHardExit } from "./graceful-exit";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
 import { useShellInput } from "./shell-command-input";
+import { ShellCommandModeProvider } from "./shell-command-mode";
 import {
   getPlaybackCommandPaletteMaxVisible,
   resolveCommandPaletteWidth,
@@ -103,7 +104,7 @@ export function ShellFrame({
         </Box>
         <Text color={palette.muted}>{truncateLine(subtitle, subtitleWidth)}</Text>
         <Box marginTop={1} flexDirection="column" flexGrow={1}>
-          {children}
+          <ShellCommandModeProvider open={commandMode}>{children}</ShellCommandModeProvider>
         </Box>
       </Box>
 

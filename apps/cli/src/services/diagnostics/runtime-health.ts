@@ -262,11 +262,10 @@ export function summarizeProviderHealth(
   ) {
     const stage =
       typeof providerEvent.context?.stage === "string" ? providerEvent.context.stage : "bootstrap";
-    const summary =
-      typeof providerEvent.context?.summary === "string" ? providerEvent.context.summary : null;
+    const readableStage = stage.replaceAll("-", " ");
     return {
       label: "Provider",
-      detail: summary ?? `${provider} · ${stage}`,
+      detail: `${provider} · ${readableStage}`,
       tone: "info",
     };
   }

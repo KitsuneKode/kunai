@@ -590,10 +590,30 @@ function buildSeriesCompleteRailFacts(
   return facts;
 }
 
+/** Post-play choices that should return to the playback bootstrap surface immediately. */
+export function isPostPlayPlaybackRestartResult(
+  result: import("./types").PlaybackShellResult,
+): boolean {
+  if (typeof result !== "string") return false;
+  return (
+    result === "resume" ||
+    result === "replay" ||
+    result === "next" ||
+    result === "previous" ||
+    result === "next-season" ||
+    result === "recover" ||
+    result === "recompute" ||
+    result === "fallback"
+  );
+}
+
+export function isPostPlayConfirmInput(input: string, key: { readonly return?: boolean }): boolean {
+  return Boolean(key.return) || input === "\r" || input === "\n";
+}
+
 /** Maps a highlighted post-play action row to the shell result PlaybackPhase expects. */
 export function resolvePostPlayMenuAction(
   action: PostPlayActionRow,
-  input: { readonly canResume: boolean },
 ): import("./types").PlaybackShellResult | null {
   switch (action.id) {
     case "try-again":
@@ -608,7 +628,7 @@ export function resolvePostPlayMenuAction(
     case "resume":
       return "resume";
     case "next":
-      return input.canResume ? "resume" : "next";
+      return "next";
     case "episodes":
       return "pick-episode";
     case "next-season":

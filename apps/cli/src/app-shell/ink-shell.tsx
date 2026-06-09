@@ -29,6 +29,7 @@ import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
+import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput } from "ink";
@@ -41,8 +42,14 @@ import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-pane";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
+import { resolveNextEpisodeThumbUrl } from "./playback-playing-view";
 import { PostPlayShell } from "./post-play-shell";
-import { buildPostPlayView, resolvePostPlayMenuAction } from "./post-play-view";
+import {
+  buildPostPlayView,
+  isPostPlayConfirmInput,
+  isPostPlayPlaybackRestartResult,
+  resolvePostPlayMenuAction,
+} from "./post-play-view";
 import { AppHeader } from "./primitives/AppHeader";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { SegmentedControl } from "./primitives/SegmentedControl";
@@ -821,6 +828,15 @@ function AppRoot({ container }: { container: Container }) {
     state.playbackStatus,
     state.stream,
   ]);
+  const playingTitleDetail = useMemo(() => {
+    const title = state.currentTitle;
+    if (!title) return undefined;
+    return peekTitleDetail(title.id, title.type);
+  }, [state.currentTitle]);
+  const playingNextEpisodeThumbUrl = useMemo(
+    () => resolveNextEpisodeThumbUrl(playingTitleDetail, state.episodeNavigation.nextLabel),
+    [playingTitleDetail, state.episodeNavigation.nextLabel],
+  );
 
   const onCommandAction = useCallback(
     (action: ShellAction) => {
@@ -1243,6 +1259,13 @@ function AppRoot({ container }: { container: Container }) {
                           : "";
                       return `${queued.title}${code}`;
                     })(),
+                titleDetail: playingTitleDetail,
+                nextEpisodeThumbUrl: playingNextEpisodeThumbUrl,
+                episodeLabel:
+                  state.currentEpisode && state.currentTitle?.type === "series"
+                    ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(state.currentEpisode.episode).padStart(2, "0")}`
+                    : undefined,
+                currentSeason: state.currentEpisode?.season,
                 onCommandAction: onCommandAction,
               }}
               onCancel={onCancel}
@@ -1386,9 +1409,17 @@ function buildPostPlayFooterActions(
         commandAction,
       ];
     case "season-finale":
+      if (postPlayState.hasNextSeason) {
+        return [
+          { key: "n", label: "next season", action: "next-season", primary: true },
+          { key: "r", label: "replay", action: "replay" },
+          quitAction,
+          commandAction,
+        ];
+      }
       return [
-        { key: "n", label: "next season", action: "next-season", primary: true },
-        { key: "r", label: "replay", action: "replay" },
+        { key: "s", label: "search", action: "search", primary: true },
+        { key: "e", label: "episodes", action: "pick-episode" },
         quitAction,
         commandAction,
       ];
@@ -1535,19 +1566,28 @@ function PlaybackShell({
         );
         return;
       }
+      // Flip to the playback surface before unmounting post-play so the root shell
+      // never flashes the idle/home screen between menu close and resolve restart.
+      if (isPostPlayPlaybackRestartResult(result)) {
+        container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          detail: result === "resume" ? "Resuming playback" : "Preparing playback",
+        });
+      }
       onResolve(result);
     },
-    [onResolve, openInlineTracks],
+    [container.stateManager, onResolve, openInlineTracks],
   );
 
   const runSelectedPostPlayAction = useCallback(() => {
     const action = postPlayView.actions[selectedActionIndex];
     if (!action) return;
-    const resolved = resolvePostPlayMenuAction(action, { canResume });
+    const resolved = resolvePostPlayMenuAction(action);
     if (resolved) {
       resolvePostPlayAction(resolved);
     }
-  }, [canResume, resolvePostPlayAction, postPlayView.actions, selectedActionIndex]);
+  }, [resolvePostPlayAction, postPlayView.actions, selectedActionIndex]);
 
   return (
     <ShellFrame
@@ -1573,7 +1613,7 @@ function PlaybackShell({
           );
           return;
         }
-        if (key.return || input === "c") {
+        if (isPostPlayConfirmInput(input, key)) {
           if (postPlayState.kind === "series-complete" && postPlayView.actions.length === 0) {
             const item = recommendations[0];
             if (item) {

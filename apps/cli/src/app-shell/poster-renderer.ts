@@ -197,9 +197,17 @@ async function renderChafaSymbols(
 
 export async function renderPoster(
   data: ArrayBuffer,
-  { rows, cols, allowKitty = true }: { rows: number; cols: number; allowKitty?: boolean },
+  {
+    rows,
+    cols,
+    allowKitty = true,
+    inkEmbedded = false,
+  }: { rows: number; cols: number; allowKitty?: boolean; inkEmbedded?: boolean },
 ): Promise<PosterResult> {
   try {
+    if (inkEmbedded) {
+      return await renderChafaSymbols(data, rows, cols);
+    }
     if (!allowKitty) return { kind: "none" };
     const capability = resolveAppShellPosterCapability(runtime.detectImageCapability());
     if (!capability.available || capability.renderer === "none") return { kind: "none" };

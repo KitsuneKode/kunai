@@ -1,3 +1,4 @@
+import { formatPlaybackStreamRoute } from "@/app/playback-startup-format";
 import { formatLanguageBadge, formatSourceEvidence } from "@/app/track-format";
 import {
   describeStreamCandidateMediaDetail,
@@ -370,6 +371,27 @@ export type PlaybackSessionControlInput = {
   readonly stopAfterCurrent?: boolean;
   readonly isSeries?: boolean;
 };
+
+/** Active source identity: flavor label · provider · CDN host (e.g. Luffy · videasy · light.goldweather.net). */
+export function formatPlaybackSourceLine(stream: StreamInfo | null): string | null {
+  const result = stream?.providerResolveResult;
+  if (!result) return formatPlaybackStreamRoute(stream ?? ({} as StreamInfo));
+
+  const projection = buildPlaybackSourceInventoryView(result, {
+    selectedSubtitleUrl: stream.subtitle,
+  });
+  const sourceName =
+    projection.sourceGroups.find((group) => group.state === "selected")?.label ??
+    projection.sourceGroups[0]?.label ??
+    result.sources?.find((source) => source.status === "selected")?.label;
+
+  const route = formatPlaybackStreamRoute(stream);
+  const host = route?.includes(" / ") ? route.split(" / ").slice(1).join(" / ") : null;
+  const parts = [sourceName, result.providerId, host].filter((part): part is string =>
+    Boolean(part?.trim()),
+  );
+  return parts.length > 0 ? parts.join(" · ") : route;
+}
 
 /** Stream inventory for the playback context strip (session toggles live on the keys line). */
 export function formatPlaybackSessionFactsStrip(input: PlaybackSessionControlInput): string {

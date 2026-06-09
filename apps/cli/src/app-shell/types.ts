@@ -199,8 +199,16 @@ export type LoadingShellState = {
   controlHint?: string;
   /** Inventory + autoplay/autoskip facts for the playing context strip. */
   playbackFactsStrip?: string;
+  /** Active source line (flavor · provider · host). */
+  playbackSourceLine?: string;
   /** Compact live-key legend under playback facts. */
   playbackKeysHint?: string;
+  /** Rich catalog metadata for the playing right rail. */
+  titleDetail?: import("@/domain/catalog/title-detail").TitleDetail;
+  /** Next-episode still for the playing up-next card. */
+  nextEpisodeThumbUrl?: string;
+  episodeLabel?: string;
+  currentSeason?: number;
   onCommandAction?: (action: ShellAction) => void;
   commands?: readonly ResolvedAppCommand[];
   footerMode?: ShellFooterMode;

@@ -50,9 +50,9 @@ describe("playback-bootstrap-presenter", () => {
       providerResolveResult: {
         streams: [{ qualityLabel: "1080p" }, { qualityLabel: "720p" }, { qualityLabel: "ORG" }],
         subtitles: [{}, {}],
-        sources: [{ label: "Neon" }],
+        sources: [{ label: "Luffy" }],
       },
     });
-    expect(summary).toBe("Neon · 1080p/720p/ORG · 2 subs");
+    expect(summary).toBe("Luffy · 1080p/720p/ORG · 2 subs");
   });
 });

@@ -77,14 +77,25 @@ export async function fetchPoster(
     cols,
     variant = "preview",
     allowKitty = true,
-  }: { rows: number; cols: number; variant?: "preview" | "detail"; allowKitty?: boolean },
+    inkEmbedded = false,
+  }: {
+    rows: number;
+    cols: number;
+    variant?: "preview" | "detail";
+    allowKitty?: boolean;
+    /** Chafa symbols inside Ink — does not claim Kitty placements. */
+    inkEmbedded?: boolean;
+  },
 ): Promise<PosterResult> {
   if (!url) return { kind: "none" };
-  if (!allowKitty) return { kind: "none" };
+  if (!inkEmbedded && !allowKitty) return { kind: "none" };
   const capability = runtime.detectImageCapability();
-  if (!capability.available || capability.renderer === "none") return { kind: "none" };
+  if (!inkEmbedded && (!capability.available || capability.renderer === "none")) {
+    return { kind: "none" };
+  }
   const resolved = resolvePosterUrl(url, { cols, variant });
-  const key = `${resolved}:${rows}x${cols}:${capability.renderer}`;
+  const rendererKey = inkEmbedded ? "ink-embedded" : capability.renderer;
+  const key = `${resolved}:${rows}x${cols}:${rendererKey}`;
 
   const cached = posterCache.get(key);
   if (cached) return cached;
@@ -99,7 +110,7 @@ export async function fetchPoster(
     try {
       const source = await fetchPosterSource(resolved, { cols, variant });
       result = source
-        ? await renderPoster(source.data, { rows, cols, allowKitty })
+        ? await renderPoster(source.data, { rows, cols, allowKitty, inkEmbedded })
         : { kind: "none" };
     } catch {
       result = { kind: "none" };
