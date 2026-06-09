@@ -23,7 +23,7 @@ import {
   type HistoryLaunchSelection,
 } from "@/app/launch-entry";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
-import { loadRandomResults } from "@/app/random-results";
+import { loadRandomResults, loadSurpriseResults } from "@/app/random-results";
 import { searchTitles } from "@/app/search-routing";
 import { applySearchSelectionSessionRouting } from "@/app/search-selection-routing";
 import { titleInfoFromSearchResult } from "@/app/title-info";
@@ -630,9 +630,11 @@ async function loadSearchRoute(
         }
       : route === "calendar"
         ? await loadCalendarResults(container, context.signal)
-        : route === "random" || route === "surprise"
-          ? await loadRandomResults(container, { signal: context.signal })
-          : await loadDiscoverResults(container);
+        : route === "surprise"
+          ? await loadSurpriseResults(container, { signal: context.signal })
+          : route === "random"
+            ? await loadRandomResults(container, { signal: context.signal })
+            : await loadDiscoverResults(container);
 
   const results = [...bundle.results];
   stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
