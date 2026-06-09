@@ -1,6 +1,17 @@
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import { shouldApplyStartAtSeek } from "@/mpv";
 
+export {
+  buildPersistentLoadfileCommand,
+  buildPersistentLoadfileOptions,
+  buildPersistentSessionHeadersKey,
+  normalizeStreamHttpHeaders,
+} from "./mpv-stream-http-headers";
+export type {
+  NormalizedStreamHttpHeaders,
+  PersistentLoadfileOptions,
+} from "./mpv-stream-http-headers";
+
 export type PersistentResumeStartChoice = "resume" | "start";
 
 export type PersistentStartSeekOptions = {
@@ -45,17 +56,4 @@ export function resolveNearEofPrefetchTriggerSeconds(
     .sort((left, right) => right - left)[0];
   if (creditsStart === undefined) return fallbackTrigger;
   return Math.max(0, Math.min(fallbackTrigger, creditsStart - 60));
-}
-
-export function buildPersistentLoadfileCommand(
-  url: string,
-  startAt?: number,
-): ["loadfile", string, "replace", -1, { start: string }] {
-  return [
-    "loadfile",
-    url,
-    "replace",
-    -1,
-    { start: shouldApplyStartAtSeek(startAt) ? String(startAt) : "0" },
-  ];
 }

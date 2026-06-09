@@ -34,24 +34,6 @@ describe("persistent mpv start policy", () => {
     ).toBeUndefined();
   });
 
-  test("builds file-local loadfile start options for every persistent replacement", () => {
-    expect(buildPersistentLoadfileCommand("https://cdn.example/next.m3u8")).toEqual([
-      "loadfile",
-      "https://cdn.example/next.m3u8",
-      "replace",
-      -1,
-      { start: "0" },
-    ]);
-
-    expect(buildPersistentLoadfileCommand("https://cdn.example/resume.m3u8", 562)).toEqual([
-      "loadfile",
-      "https://cdn.example/resume.m3u8",
-      "replace",
-      -1,
-      { start: "562" },
-    ]);
-  });
-
   test("keeps 0 start-at when offerResumeStartChoice handles it", () => {
     expect(
       resolvePersistentStartSeekTarget({

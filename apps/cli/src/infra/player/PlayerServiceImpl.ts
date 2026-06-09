@@ -313,7 +313,7 @@ export class PlayerServiceImpl implements PlayerService {
       await this.releasePersistentSession();
     }
 
-    if (this.persistentSession && !this.persistentSession.matchesHeaders(stream.headers ?? {})) {
+    if (this.persistentSession && !this.persistentSession.matchesSessionHeaders(stream.headers)) {
       await this.releasePersistentSession();
     }
 

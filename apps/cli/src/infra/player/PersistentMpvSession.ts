@@ -33,6 +33,10 @@ import {
 } from "./mpv-ipc-endpoint";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import {
+  buildPersistentLoadfileCommand,
+  buildPersistentSessionHeadersKey,
+} from "./mpv-stream-http-headers";
+import {
   applyEndFileEvent,
   createPlayerTelemetryState,
   finalizePlaybackResult,
@@ -45,7 +49,6 @@ import { PersistentMpvPropertyRouter } from "./persistent-mpv-property-router";
 import type { PersistentMpvSessionRuntime } from "./persistent-mpv-runtime";
 import { PersistentReadyWorkExecutor } from "./persistent-ready-work-executor";
 import {
-  buildPersistentLoadfileCommand,
   resolveNearEofPrefetchTriggerSeconds,
   resolvePersistentStartSeekTarget,
   type PersistentResumeStartChoice,
@@ -66,8 +69,8 @@ import type { ActivePlayerControl } from "./PlayerControlService";
 import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
 import { extractExternalSubtitleIds } from "./subtitle-track-cache";
 
+export { buildPersistentLoadfileCommand } from "./mpv-stream-http-headers";
 export {
-  buildPersistentLoadfileCommand,
   extractExternalSubtitleIds,
   resolveNearEofPrefetchTriggerSeconds,
   resolvePersistentStartSeekTarget,
@@ -169,7 +172,7 @@ export class PersistentMpvSession {
     observeWatchdog: (sample) => this.watchdog?.observe(sample),
   });
   private alive = false;
-  private currentHeadersKey = "";
+  private currentSessionHeadersKey = "";
   private currentControl: ActivePlayerControl;
   private hasLoadedFile = false;
   private currentPositionSeconds = 0;
@@ -228,7 +231,7 @@ export class PersistentMpvSession {
     private readonly runtime: PersistentMpvSessionRuntime,
   ) {
     this.playbackStream = initialStream;
-    this.currentHeadersKey = this.buildHeadersKey(initialStream.headers ?? {});
+    this.currentSessionHeadersKey = buildPersistentSessionHeadersKey(initialStream.headers);
     this.currentOptions = initialOptions;
     this.currentControl = {
       id: this.id,
@@ -348,7 +351,7 @@ export class PersistentMpvSession {
     }
 
     this.playbackStream = stream;
-    this.currentHeadersKey = this.buildHeadersKey(stream.headers ?? {});
+    this.currentSessionHeadersKey = buildPersistentSessionHeadersKey(stream.headers);
     const cycle = this.beginCycle(options, { acceptPlaybackProperties: false });
     this.resetCycleState();
     options.onPlaybackEvent?.({ type: "opening-stream" });
@@ -371,7 +374,7 @@ export class PersistentMpvSession {
     });
 
     const loadResult = await this.ipcSession?.send(
-      buildPersistentLoadfileCommand(stream.url, options.startAt),
+      buildPersistentLoadfileCommand(stream.url, options.startAt, stream.headers),
       3_000,
     );
 
@@ -414,8 +417,8 @@ export class PersistentMpvSession {
     return await cycle.promise;
   }
 
-  matchesHeaders(headers: Record<string, string> | undefined): boolean {
-    return this.currentHeadersKey === this.buildHeadersKey(headers ?? {});
+  matchesSessionHeaders(headers: Record<string, string> | undefined): boolean {
+    return this.currentSessionHeadersKey === buildPersistentSessionHeadersKey(headers);
   }
 
   isAlive(): boolean {
@@ -1149,14 +1152,6 @@ export class PersistentMpvSession {
     return await this.performSeekSkip(options, segment, false);
   }
 
-  private buildHeadersKey(headers: Record<string, string>): string {
-    return JSON.stringify({
-      referer: headers.referer ?? headers.Referer ?? "",
-      origin: headers.origin ?? headers.Origin ?? "",
-      userAgent: headers["user-agent"] ?? headers["User-Agent"] ?? "",
-    });
-  }
-
   private async waitForProcessClose(
     target: MpvProcess | null,
     timeoutMs: number,
@@ -1381,7 +1376,11 @@ export class PersistentMpvSession {
       this.pendingReadyWork = null;
 
       const loadResult = await this.ipcSession.send(
-        buildPersistentLoadfileCommand(this.playbackStream.url, shouldSeek ? seekSeconds : 0),
+        buildPersistentLoadfileCommand(
+          this.playbackStream.url,
+          shouldSeek ? seekSeconds : 0,
+          this.playbackStream.headers,
+        ),
         12_000,
       );
       if (!loadResult.ok) {

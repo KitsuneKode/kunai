@@ -167,6 +167,82 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     expect(result.watchedSeconds).toBe(20);
   });
 
+  test("applies per-episode HTTP headers on autoplay-chain loadfile", async () => {
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream({
+        headers: {
+          referer: "https://www.cineplay.to/tv/99/1/1",
+          origin: "https://www.cineplay.to",
+          "user-agent": "kunai-test",
+        },
+      }),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        mpvInProcessStreamReconnectMaxAttempts: 0,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    const firstPlayback = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+    await firstPlayback;
+
+    const nextHeaders = {
+      referer: "https://www.cineplay.to/tv/99/1/2",
+      origin: "https://www.cineplay.to",
+      "user-agent": "kunai-test",
+    };
+    const nextPlayback = session.play(
+      createStream({
+        url: "https://video.example/episode-2.m3u8",
+        headers: nextHeaders,
+      }),
+      { displayTitle: "Episode 2", primarySubtitle: null },
+    );
+    await waitFor(() =>
+      harness.commands.some(
+        (command) =>
+          command[0] === "loadfile" && command[1] === "https://video.example/episode-2.m3u8",
+      ),
+    );
+    harness.callbacks().onFileLoaded?.({ observedAt: 3 });
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 4 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 12, observedAt: 5 });
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 6 });
+    await nextPlayback;
+
+    expect(harness.commands).toContainEqual([
+      "loadfile",
+      "https://video.example/episode-2.m3u8",
+      "replace",
+      -1,
+      {
+        start: "0",
+        referrer: nextHeaders.referer,
+        "user-agent": nextHeaders["user-agent"],
+        "http-header-fields": "Origin: https://www.cineplay.to",
+      },
+    ]);
+    expect(
+      session.matchesSessionHeaders({
+        referer: "https://www.cineplay.to/tv/99/1/3",
+        origin: "https://www.cineplay.to",
+        "user-agent": "kunai-test",
+      }),
+    ).toBe(true);
+    expect(
+      session.matchesSessionHeaders({
+        referer: "https://www.cineplay.to/tv/99/1/3",
+        origin: "https://player.videasy.to",
+        "user-agent": "kunai-test",
+      }),
+    ).toBe(false);
+  });
+
   test("does not classify subtitle command timeouts as player stalls", async () => {
     const harness = createHarness();
     const events: unknown[] = [];
@@ -356,7 +432,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
       "https://video.example/reconnect.m3u8",
       "replace",
       -1,
-      { start: "100" },
+      { start: "100", referrer: "https://video.example" },
     ]);
     expect(harness.commands).toContainEqual([
       "sub-add",

@@ -14,6 +14,7 @@ import {
 } from "@/infra/player/mpv-ipc-endpoint";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
+import { normalizeStreamHttpHeaders } from "@/infra/player/mpv-stream-http-headers";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -390,10 +391,9 @@ export function isLocalHlsManifestPlaybackUrl(url: string): boolean {
   return /\.m3u8(?:[?#]|$)/i.test(trimmed);
 }
 
-/** True when we should seek / pass --start for a resume position (any positive second). */
-export function shouldApplyStartAtSeek(startAt: number | undefined): boolean {
-  return typeof startAt === "number" && Number.isFinite(startAt) && startAt > 0;
-}
+import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
+
+export { shouldApplyStartAtSeek };
 
 export function buildMpvArgs(
   opts: {
@@ -422,9 +422,7 @@ export function buildMpvArgs(
     args.push("--ytdl=no");
   }
 
-  const referer = opts.headers["referer"] ?? opts.headers["Referer"];
-  const userAgent = opts.headers["user-agent"] ?? opts.headers["User-Agent"];
-  const origin = opts.headers["origin"] ?? opts.headers["Origin"];
+  const { referer, userAgent, origin } = normalizeStreamHttpHeaders(opts.headers);
   if (referer) args.push(`--referrer=${referer}`);
   if (userAgent) args.push(`--user-agent=${userAgent}`);
   if (origin) args.push(`--http-header-fields=Origin: ${origin}`);
