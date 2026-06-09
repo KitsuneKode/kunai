@@ -1,7 +1,5 @@
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
-
-const VIDEASY_TRENDING_URL = "https://db.videasy.net/3/trending/all/week?language=en-US&page=1";
-const VIDEASY_TMDB_URL = "https://db.videasy.net/3";
+import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const DISCOVERY_CACHE_TTL_MS = 30 * 60 * 1000;
 const SURPRISE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -112,12 +110,12 @@ export function createCatalogDiscoveryService(
 }
 
 async function loadTmdbDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {
-  const response = await fetch(VIDEASY_TRENDING_URL, {
-    signal: signal ?? AbortSignal.timeout(3500),
-  }).catch(() => null);
-  if (!response?.ok) return [];
-
-  const data = (await response.json()) as Record<string, unknown>;
+  const data = (await fetchTmdbJsonCached(
+    "/trending/all/week?language=en-US&page=1",
+    signal,
+    3500,
+  ).catch(() => null)) as Record<string, unknown> | null;
+  if (!data) return [];
   const rawResults = Array.isArray(data.results) ? data.results : [];
 
   return rawResults
@@ -155,13 +153,12 @@ async function loadTmdbSurpriseList(
   const sortBy = pickRandom(sortOptions, options.random) ?? "popularity.desc";
   const page = 1 + Math.floor(options.random() * 20);
   const voteFloor = sortBy === "vote_average.desc" ? 150 : 50;
-  const response = await fetch(
-    `${VIDEASY_TMDB_URL}/discover/${mediaType}?language=en-US&page=${page}&sort_by=${sortBy}&vote_count.gte=${voteFloor}`,
-    { signal: signal ?? AbortSignal.timeout(3500) },
-  ).catch(() => null);
-  if (!response?.ok) return [];
-
-  const data = (await response.json()) as Record<string, unknown>;
+  const data = (await fetchTmdbJsonCached(
+    `/discover/${mediaType}?language=en-US&page=${page}&sort_by=${sortBy}&vote_count.gte=${voteFloor}`,
+    signal,
+    3500,
+  ).catch(() => null)) as Record<string, unknown> | null;
+  if (!data) return [];
   const rawResults = Array.isArray(data.results) ? data.results : [];
   return rawResults
     .map(readRecord)

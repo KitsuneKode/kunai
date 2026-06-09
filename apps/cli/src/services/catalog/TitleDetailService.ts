@@ -4,7 +4,7 @@
 // Public entry point: fetchTitleDetail(id, type, signal?)
 //   → Promise<TitleDetail>
 //
-// Fetches from TMDB (via db.videasy.net proxy with direct-API fallback) and
+// Fetches from TMDB (via db.videasy.to proxy with direct-API fallback) and
 // AniList in parallel, merges the results into the frozen TitleDetail contract
 // defined in domain/catalog/title-detail.ts, and caches the outcome so
 // repeated calls within a session are free.
@@ -33,16 +33,20 @@ import {
 } from "@/domain/catalog/title-detail";
 import type { ContentType } from "@/domain/types";
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
+import {
+  filterPlayableEpisodes,
+  isDefinitelyFutureAirDate,
+  isPlayableEpisode,
+  seasonHasPlayableEpisodes,
+  seasonSummaryNeedsEpisodeVerification,
+} from "@/services/catalog/tmdb-release";
 import type { ProviderExternalIds } from "@kunai/types";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const PROXY = "https://db.videasy.net/3";
-const DIRECT = "https://api.themoviedb.org/3";
-// Public key from luffy reference project — same as apps/cli/src/tmdb.ts
-const TMDB_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 const ANILIST_GRAPHQL = "https://graphql.anilist.co";
 
@@ -297,54 +301,109 @@ async function fetchTmdbDetail(
     );
 
     if (nonSpecials.length > 0) {
-      // Fetch up to 3 seasons in parallel for episode thumbnails (avoid too many requests)
-      const seasonNums = nonSpecials.map((s) => Number(s.season_number)).slice(0, 3);
-      const seasonFetches = seasonNums.map((n) =>
-        fetchJsonWithFallback(`/tv/${tmdbId}/season/${n}`, signal).catch(() => null),
-      );
-      const seasonResults = await Promise.allSettled(seasonFetches);
-
       const episodeThumbnailMap: Record<string, string> = {};
       const seasonPosterMap: Record<number, string> = {};
+      const playableSeasons: SeasonSummary[] = [];
+      const ambiguousSeasons: Array<{ seasonNum: number; seasonMeta: Record<string, unknown> }> =
+        [];
+      const fetchedSeasonPayloads = new Map<number, Record<string, unknown>>();
 
-      nonSpecials.forEach((s) => {
-        const posterPath = readString(s.poster_path);
+      for (const seasonMeta of nonSpecials) {
+        const seasonNum = Number(seasonMeta.season_number);
+        const seasonAirDate = readString(seasonMeta.air_date);
+        const posterPath = readString(seasonMeta.poster_path);
+
         if (posterPath) {
-          seasonPosterMap[Number(s.season_number)] = tmdbImage(posterPath, "w342");
+          seasonPosterMap[seasonNum] = tmdbImage(posterPath, "w342");
         }
-      });
 
-      seasonResults.forEach((result, idx) => {
-        if (result.status !== "fulfilled" || !result.value) return;
-        const sd = readRecord(result.value);
-        const episodes = Array.isArray(sd.episodes) ? sd.episodes.map(readRecord) : [];
-        const seasonNum = seasonNums[idx];
-        if (seasonNum === undefined) return;
-        for (const ep of episodes) {
-          const stillPath = readString(ep.still_path);
-          const epNum = Number(ep.episode_number);
-          if (stillPath && epNum > 0) {
-            episodeThumbnailMap[episodeThumbKey(seasonNum, epNum)] = tmdbImage(stillPath, "w300");
-          }
+        if (isDefinitelyFutureAirDate(seasonAirDate)) continue;
+
+        if (seasonSummaryNeedsEpisodeVerification(seasonAirDate)) {
+          ambiguousSeasons.push({ seasonNum, seasonMeta });
+          continue;
         }
+
+        playableSeasons.push({
+          season: seasonNum,
+          name: readString(seasonMeta.name) || `Season ${seasonNum}`,
+          episodeCount: Number(seasonMeta.episode_count) || undefined,
+          year: seasonAirDate.split("-")[0] || undefined,
+          posterUrl: posterPath ? tmdbImage(posterPath, "w342") : undefined,
+        });
+      }
+
+      if (ambiguousSeasons.length > 0) {
+        const ambiguousResults = await Promise.allSettled(
+          ambiguousSeasons.map(({ seasonNum }) =>
+            fetchJsonWithFallback(`/tv/${tmdbId}/season/${seasonNum}`, signal).catch(() => null),
+          ),
+        );
+
+        ambiguousResults.forEach((result, idx) => {
+          const entry = ambiguousSeasons[idx];
+          if (!entry || result.status !== "fulfilled" || !result.value) return;
+
+          const { seasonNum, seasonMeta } = entry;
+          const posterPath = readString(seasonMeta.poster_path);
+          const sd = readRecord(result.value);
+          fetchedSeasonPayloads.set(seasonNum, sd);
+          const episodes = Array.isArray(sd.episodes) ? sd.episodes.map(readRecord) : [];
+          const playableEpisodes = filterPlayableEpisodes(
+            episodes.map((ep) => ({
+              number: Number(ep.episode_number),
+              airDate: readString(ep.air_date),
+            })),
+          );
+          if (!seasonHasPlayableEpisodes(playableEpisodes)) return;
+
+          playableSeasons.push({
+            season: seasonNum,
+            name: readString(seasonMeta.name) || `Season ${seasonNum}`,
+            episodeCount: playableEpisodes.length || undefined,
+            year: readString(seasonMeta.air_date)?.split("-")[0] || undefined,
+            posterUrl: posterPath ? tmdbImage(posterPath, "w342") : undefined,
+          });
+        });
+      }
+
+      const thumbSeasonNums = playableSeasons
+        .map((season) => season.season)
+        .sort((left, right) => left - right)
+        .slice(0, 3);
+      const thumbFetches = await Promise.allSettled(
+        thumbSeasonNums
+          .filter((seasonNum) => !fetchedSeasonPayloads.has(seasonNum))
+          .map((seasonNum) =>
+            fetchJsonWithFallback(`/tv/${tmdbId}/season/${seasonNum}`, signal).catch(() => null),
+          ),
+      );
+      const thumbFetchSeasonNums = thumbSeasonNums.filter(
+        (seasonNum) => !fetchedSeasonPayloads.has(seasonNum),
+      );
+
+      for (const seasonNum of thumbSeasonNums) {
+        const cached = fetchedSeasonPayloads.get(seasonNum);
+        if (cached) {
+          appendEpisodeThumbnails(episodeThumbnailMap, seasonNum, cached);
+        }
+      }
+
+      thumbFetches.forEach((result, idx) => {
+        if (result.status !== "fulfilled" || !result.value) return;
+        const seasonNum = thumbFetchSeasonNums[idx];
+        if (seasonNum === undefined) return;
+
+        appendEpisodeThumbnails(episodeThumbnailMap, seasonNum, readRecord(result.value));
       });
 
       episodeThumbnails =
         Object.keys(episodeThumbnailMap).length > 0 ? episodeThumbnailMap : undefined;
       seasonPosters = Object.keys(seasonPosterMap).length > 0 ? seasonPosterMap : undefined;
-
-      seasons = nonSpecials
-        .map((s): SeasonSummary => {
-          const posterPath = readString(s.poster_path);
-          return {
-            season: Number(s.season_number),
-            name: readString(s.name) || `Season ${Number(s.season_number)}`,
-            episodeCount: Number(s.episode_count) || undefined,
-            year: readString(s.air_date)?.split("-")[0] || undefined,
-            posterUrl: posterPath ? tmdbImage(posterPath, "w342") : undefined,
-          };
-        })
-        .sort((a, b) => a.season - b.season);
+      seasons =
+        playableSeasons.length > 0
+          ? playableSeasons.sort((a, b) => a.season - b.season)
+          : undefined;
     }
   }
 
@@ -416,17 +475,13 @@ async function fetchTmdbDetail(
       : readString(d.first_air_date) || undefined;
   const year = releaseDate?.split("-")[0] || undefined;
 
-  // Season + episode counts (TV only)
+  // Season + episode counts (TV only) — playable rows only, not raw TMDB totals
   const seasonCount =
-    type === "series"
-      ? typeof d.number_of_seasons === "number"
-        ? d.number_of_seasons
-        : undefined
-      : undefined;
+    type === "series" ? (seasons && seasons.length > 0 ? seasons.length : undefined) : undefined;
   const episodeCount =
     type === "series"
-      ? typeof d.number_of_episodes === "number"
-        ? d.number_of_episodes
+      ? seasons && seasons.length > 0
+        ? seasons.reduce((total, season) => total + (season.episodeCount ?? 0), 0) || undefined
         : undefined
       : undefined;
 
@@ -661,22 +716,25 @@ function mapAniListStatus(raw: string): TitleStatus | undefined {
 // ---------------------------------------------------------------------------
 
 async function fetchJsonWithFallback(path: string, signal?: AbortSignal): Promise<unknown> {
-  const proxyUrl = `${PROXY}${path}`;
-  const directUrl = `${DIRECT}${path}${path.includes("?") ? "&" : "?"}api_key=${TMDB_KEY}`;
+  return fetchTmdbJsonCached(path, signal, FETCH_TIMEOUT_MS);
+}
 
-  const proxyRes = await fetch(proxyUrl, {
-    signal: withTimeoutSignal(signal, FETCH_TIMEOUT_MS),
-  }).catch(() => null);
-
-  if (proxyRes?.ok) return proxyRes.json();
-
-  const directRes = await fetch(directUrl, {
-    signal: withTimeoutSignal(signal, FETCH_TIMEOUT_MS),
-  }).catch(() => null);
-
-  if (directRes?.ok) return directRes.json();
-
-  throw new Error(`TMDB fetch failed for ${path}`);
+function appendEpisodeThumbnails(
+  episodeThumbnailMap: Record<string, string>,
+  seasonNum: number,
+  seasonPayload: Record<string, unknown>,
+): void {
+  const episodes = Array.isArray(seasonPayload.episodes)
+    ? seasonPayload.episodes.map(readRecord)
+    : [];
+  for (const ep of episodes) {
+    const stillPath = readString(ep.still_path);
+    const epNum = Number(ep.episode_number);
+    const airDate = readString(ep.air_date);
+    if (stillPath && epNum > 0 && isPlayableEpisode(airDate)) {
+      episodeThumbnailMap[episodeThumbKey(seasonNum, epNum)] = tmdbImage(stillPath, "w300");
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

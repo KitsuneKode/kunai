@@ -1,6 +1,12 @@
+import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
+import {
+  summarizeTmdbSeasonEpisodes as summarizeTmdbSeasonEpisodesImpl,
+  type TmdbSeasonAiring,
+} from "@/services/catalog/tmdb-release";
 import type { ReleaseNewSeason } from "@kunai/types";
 
-const VIDEASY_TMDB_URL = "https://db.videasy.net/3";
+export type { TmdbSeasonAiring };
+export const summarizeTmdbSeasonEpisodes = summarizeTmdbSeasonEpisodesImpl;
 const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const NEXT_RELEASE_TTL_MS = 2 * 60 * 60 * 1000;
 const RELEASING_TODAY_TTL_MS = 30 * 60 * 1000;
@@ -758,10 +764,7 @@ async function loadTmdbNextRelease(
   signal?: AbortSignal,
 ): Promise<CatalogScheduleItem | null> {
   if (!input.season || !input.episode) return null;
-  const data = await fetchJson(
-    `${VIDEASY_TMDB_URL}/tv/${input.titleId}/season/${input.season}`,
-    signal,
-  );
+  const data = await fetchJson(`/tv/${input.titleId}/season/${input.season}`, signal);
   const episodePayload = readRecord(data).episodes;
   const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
   const episode = episodes.find((candidate) => Number(candidate.episode_number) === input.episode);
@@ -781,50 +784,12 @@ async function loadTmdbNextRelease(
   };
 }
 
-export type TmdbSeasonAiring = {
-  readonly aired?: { readonly number: number; readonly releaseAt: string };
-  readonly next?: { readonly number: number; readonly releaseAt: string };
-};
-
-/**
- * Partition a TMDB season's episodes into the latest aired and the next upcoming,
- * by date key. Pure — unit-tested without the network; reused for the anchor season
- * and for the next-season probe.
- */
-export function summarizeTmdbSeasonEpisodes(
-  episodes: readonly Record<string, unknown>[],
-  today: string,
-): TmdbSeasonAiring {
-  const normalEpisodes = episodes
-    .map((episode) => ({
-      number: Number(episode.episode_number),
-      releaseAt: readString(episode.air_date),
-    }))
-    .filter(
-      (episode) =>
-        Number.isFinite(episode.number) && episode.number > 0 && episode.releaseAt.length > 0,
-    );
-  // Date-only precision: an episode dated *today* is treated as upcoming (its intraday
-  // air time is unknown), consistent with classifyReleaseStatus. Only strictly-past
-  // dates count as aired — avoids a one-day-early "+N new episode".
-  const aired = normalEpisodes
-    .filter((episode) => episode.releaseAt < today)
-    .sort((left, right) => right.number - left.number)[0];
-  const next = normalEpisodes
-    .filter((episode) => episode.releaseAt >= today)
-    .sort((left, right) => left.number - right.number)[0];
-  return { aired, next };
-}
-
 async function loadTmdbSeriesReleaseProgress(
   input: CatalogScheduleInput,
   signal?: AbortSignal,
 ): Promise<CatalogSeriesReleaseProgress | null> {
   if (!input.season) return null;
-  const data = await fetchJson(
-    `${VIDEASY_TMDB_URL}/tv/${input.titleId}/season/${input.season}`,
-    signal,
-  );
+  const data = await fetchJson(`/tv/${input.titleId}/season/${input.season}`, signal);
   const episodePayload = readRecord(data).episodes;
   const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
   const today = formatDateKey(new Date());
@@ -866,7 +831,7 @@ async function probeTmdbNextSeason(
   signal?: AbortSignal,
 ): Promise<ReleaseNewSeason | undefined> {
   try {
-    const data = await fetchJson(`${VIDEASY_TMDB_URL}/tv/${titleId}/season/${season}`, signal);
+    const data = await fetchJson(`/tv/${titleId}/season/${season}`, signal);
     const episodePayload = readRecord(data).episodes;
     const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
     const { aired, next } = summarizeTmdbSeasonEpisodes(episodes, today);
@@ -886,7 +851,7 @@ async function loadTmdbAiringToday(
   _window: CatalogScheduleWindow,
   signal?: AbortSignal,
 ): Promise<readonly CatalogScheduleItem[]> {
-  const data = await fetchJson(`${VIDEASY_TMDB_URL}/tv/airing_today?language=en-US&page=1`, signal);
+  const data = await fetchJson(`/tv/airing_today?language=en-US&page=1`, signal);
   const resultPayload = readRecord(data).results;
   const results = Array.isArray(resultPayload) ? resultPayload.map(readRecord) : [];
   return results.slice(0, 25).flatMap((item) => {
@@ -912,7 +877,7 @@ async function loadTmdbMovieUpcoming(
   window: CatalogScheduleWindow,
   signal?: AbortSignal,
 ): Promise<readonly CatalogScheduleItem[]> {
-  const data = await fetchJson(`${VIDEASY_TMDB_URL}/movie/upcoming?language=en-US&page=1`, signal);
+  const data = await fetchJson(`/movie/upcoming?language=en-US&page=1`, signal);
   const resultPayload = readRecord(data).results;
   const results = Array.isArray(resultPayload) ? resultPayload.map(readRecord) : [];
   const startKey = formatWindowDateKey(window.start);
@@ -968,11 +933,9 @@ async function postAniListGraphql<T>(
   }
 }
 
-async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
+async function fetchJson(path: string, signal?: AbortSignal): Promise<unknown> {
   try {
-    const response = await fetch(url, { signal: signal ?? AbortSignal.timeout(3500) });
-    if (!response.ok) throw catalogResponseError(response.status);
-    return response.json();
+    return await fetchTmdbJsonCached(path, signal, 3500);
   } catch (error) {
     throw normalizeCatalogError(error);
   }
