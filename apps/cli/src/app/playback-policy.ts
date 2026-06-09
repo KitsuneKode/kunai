@@ -6,6 +6,7 @@ import type {
   PlaybackTimingMetadata,
   TitleInfo,
 } from "@/domain/types";
+import { isPlayableEpisode } from "@/services/catalog/tmdb-release";
 
 export type QuitNearEndBehavior = "continue" | "pause";
 
@@ -34,11 +35,7 @@ export type EpisodeCatalogLoaders = {
 };
 
 function isReleased(episode: CatalogEpisode): boolean {
-  if (!episode.airDate) return true;
-  // If airDate is just a year "2024", new Date("2024") parses to Jan 1, 2024 UTC.
-  const airTime = new Date(episode.airDate).getTime();
-  if (isNaN(airTime)) return true;
-  return airTime <= Date.now();
+  return isPlayableEpisode(episode.airDate);
 }
 
 /** First strictly-after-current catalog slot that is not released (TMDB series path only; otherwise null). */
