@@ -54,7 +54,8 @@ describe("hls manifest materializer", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes("goldweather.net")) {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.hostname === "light.goldweather.net") {
         return new Response(manifest, {
           status: 200,
           headers: { "content-type": "application/vnd.apple.mpegurl" },

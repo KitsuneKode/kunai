@@ -34,8 +34,12 @@ export function highestChangelogVersion(content: string, prefix: "## " | "## v")
   return highest;
 }
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function sliceChangelogSection(content: string, header: string): string | null {
-  const headerRe = new RegExp(`^## ${header.replace(/\./g, "\\.")}\\s*$`, "m");
+  const headerRe = new RegExp(`^## ${escapeRegex(header)}\\s*$`, "m");
   const match = headerRe.exec(content);
   if (!match || match.index === undefined) return null;
 
