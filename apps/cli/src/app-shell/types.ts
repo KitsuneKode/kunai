@@ -267,6 +267,7 @@ export type ShellPickerOption<T> = {
   value: T;
   label: string;
   detail?: string;
+  previewBody?: string;
   previewImageUrl?: string;
   tone?: ShellStatusTone;
   badge?: string;

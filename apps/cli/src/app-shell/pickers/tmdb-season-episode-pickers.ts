@@ -1,10 +1,14 @@
 import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell";
 import type { ListShellActionContext } from "@/app-shell/pickers/list-shell-types";
 import { openSessionPicker } from "@/app-shell/session-picker";
-import { dedupeEpisodeLabel } from "@/app-shell/shell-text";
 import { describeEpisodeWatchPresentation } from "@/app/playback-episode-picker";
 import type { Container } from "@/container";
 import type { OverlayPickerOption } from "@/domain/session/SessionState";
+import {
+  formatEpisodePickerDetail,
+  formatEpisodePickerLabel,
+  formatEpisodePreviewSynopsis,
+} from "@/services/catalog/episode-display";
 import { isFinished } from "@/services/continuation/history-progress";
 import type { EpisodeInfo, SeasonSummary } from "@/tmdb";
 
@@ -128,8 +132,13 @@ export async function buildEpisodePickerOptions({
     const status = episodeStatus.get(episode.number);
     return {
       value: String(episode.number),
-      label: dedupeEpisodeLabel(episode.number, episode.name),
-      detail: episode.airDate || "unknown year",
+      label: formatEpisodePickerLabel(episode.number, episode.name, episode.overview),
+      detail: formatEpisodePickerDetail({
+        airDate: episode.airDate,
+        overview: episode.overview,
+        runtimeMinutes: episode.runtimeMinutes,
+      }),
+      previewBody: formatEpisodePreviewSynopsis(episode.overview),
       // Consistent glyph grammar (label stays neutral; badge is the only color):
       // ✓ watched (mint) · N% in-progress (rose) · ▸ current (rose).
       tone:

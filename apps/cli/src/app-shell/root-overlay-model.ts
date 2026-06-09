@@ -67,6 +67,7 @@ export function buildRootGenericPickerOptions(
     value: option.value,
     label: option.label,
     detail: option.detail,
+    previewBody: option.previewBody,
     previewImageUrl: option.previewImageUrl,
     tone: option.tone,
     badge: option.badge,

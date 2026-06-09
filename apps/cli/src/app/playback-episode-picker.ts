@@ -1,8 +1,11 @@
-import { dedupeEpisodeLabel } from "@/app-shell/shell-text";
 import type { ShellPickerOption } from "@/app-shell/types";
 import type { ShellStatusTone } from "@/app-shell/types";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
+import {
+  formatEpisodePickerDetail,
+  formatEpisodePickerLabel,
+} from "@/services/catalog/episode-display";
 import { formatTimestamp, isFinished } from "@/services/continuation/history-progress";
 import { fetchEpisodes } from "@/tmdb";
 import type { HistoryProgress } from "@kunai/storage";
@@ -103,8 +106,13 @@ export async function buildPlaybackEpisodePickerOptions({
     buildEpisodePickerOption({
       season: currentEpisode.season,
       episode: entry.number,
-      label: dedupeEpisodeLabel(entry.number, entry.name),
-      baseDetail: entry.airDate || "unknown year",
+      label: formatEpisodePickerLabel(entry.number, entry.name, entry.overview),
+      baseDetail:
+        formatEpisodePickerDetail({
+          airDate: entry.airDate,
+          overview: entry.overview,
+          runtimeMinutes: entry.runtimeMinutes,
+        }) ?? "unknown air date",
       releaseBadge: releaseBadges?.get(`${currentEpisode.season}:${entry.number}`),
       current: entry.number === currentEpisode.episode,
       history: watchedByEpisode.get(`${currentEpisode.season}:${entry.number}`),

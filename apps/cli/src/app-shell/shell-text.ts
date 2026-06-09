@@ -75,17 +75,28 @@ export function truncateLine(value: string, maxLength: number): string {
   return `${output}${ELLIPSIS}`;
 }
 
+const PLACEHOLDER_EPISODE_NAME = /^(?:tba|untitled|n\/a|none)$/i;
+
+/** True when TMDB/provider gave no real episode title (common for non-English shows in en-US). */
+export function isPlaceholderEpisodeName(episodeNumber: number, name: string | undefined): boolean {
+  const trimmed = name?.trim() ?? "";
+  if (!trimmed) return true;
+  if (PLACEHOLDER_EPISODE_NAME.test(trimmed)) return true;
+  if (/^[\s.\-_·…,;:]+$/.test(trimmed)) return true;
+  if (trimmed.toLowerCase() === `episode ${episodeNumber}`) return true;
+  return false;
+}
+
 /**
  * Episode label without the "Episode N · Episode N" duplication that occurs
  * when a provider returns the placeholder name "Episode N". Returns the real
  * title when one exists, otherwise just "Episode N".
  */
 export function dedupeEpisodeLabel(episodeNumber: number, name: string | undefined): string {
-  const trimmed = name?.trim();
-  if (!trimmed || trimmed.toLowerCase() === `episode ${episodeNumber}`) {
+  if (isPlaceholderEpisodeName(episodeNumber, name)) {
     return `Episode ${episodeNumber}`;
   }
-  return `Episode ${episodeNumber}  ·  ${trimmed}`;
+  return `Episode ${episodeNumber}  ·  ${name?.trim() ?? ""}`;
 }
 
 export function truncateAtWord(value: string, maxLength: number): string {

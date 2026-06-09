@@ -1151,6 +1151,11 @@ const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
             {truncateAtWord(option.label, Math.max(8, width))}
           </Text>
           {option.badge ? <Text color={badgeColor}>{option.badge}</Text> : null}
+          {option.previewBody ? (
+            <Text color={palette.dim}>
+              {truncateAtWord(option.previewBody, Math.max(8, width * 2))}
+            </Text>
+          ) : null}
           {option.detail ? (
             <Text color={palette.dim}>{truncateAtWord(option.detail, Math.max(8, width))}</Text>
           ) : null}

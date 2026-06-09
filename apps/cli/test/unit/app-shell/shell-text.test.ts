@@ -21,6 +21,7 @@ describe("dedupeEpisodeLabel", () => {
   test("falls back to 'Episode N' when no name is provided", () => {
     expect(dedupeEpisodeLabel(7, undefined)).toBe("Episode 7");
     expect(dedupeEpisodeLabel(7, "")).toBe("Episode 7");
+    expect(dedupeEpisodeLabel(7, ".")).toBe("Episode 7");
   });
 });
 
