@@ -133,7 +133,18 @@ export async function discoverVideasy(
       return response.status === "fulfilled";
     })
     .flatMap((response) => response.value);
-  if (fulfilled.length > 0) return fulfilled.slice(0, 20);
+  if (fulfilled.length > 0) {
+    const seen = new Set<string>();
+    const deduped: SearchResult[] = [];
+    for (const result of fulfilled) {
+      const key = `${result.type}:${result.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(result);
+      if (deduped.length >= 20) break;
+    }
+    return deduped;
+  }
 
   const firstFailure = responses.find(
     (response): response is PromiseRejectedResult => response.status === "rejected",

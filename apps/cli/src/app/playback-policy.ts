@@ -115,8 +115,12 @@ export function didPlaybackEndNearNaturalEnd(
   // Fallback for sources where mpv never reports a reliable duration (HLS/m3u8).
   // If the last known non-zero position is ≥ 95% of the last known non-zero duration,
   // treat playback as having ended near the natural end.
-  const pos = result.lastTrustedProgressSeconds ?? result.lastNonZeroPositionSeconds ?? 0;
-  const dur = result.lastNonZeroDurationSeconds ?? 0;
+  const pos =
+    result.lastTrustedProgressSeconds ??
+    result.lastNonZeroPositionSeconds ??
+    result.watchedSeconds ??
+    0;
+  const dur = result.lastNonZeroDurationSeconds ?? result.duration ?? 0;
   if (dur > 30 && pos / dur >= 0.95) return true;
 
   return false;

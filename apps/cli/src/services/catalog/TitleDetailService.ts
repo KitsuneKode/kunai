@@ -33,7 +33,7 @@ import {
 } from "@/domain/catalog/title-detail";
 import type { ContentType } from "@/domain/types";
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
-import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
+import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   filterPlayableEpisodes,
   isDefinitelyFutureAirDate,
@@ -74,6 +74,7 @@ function cacheKey(id: string, type: ContentType): string {
 /** Clear the session cache (for testing or manual refresh). */
 export function clearTitleDetailCache(): void {
   detailCache.clear();
+  clearTmdbSessionCache();
 }
 
 /**
