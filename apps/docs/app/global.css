@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&display=swap");
 
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
@@ -11,7 +11,8 @@
 @source "../../../node_modules/fumadocs-ui/dist/**/*.js";
 
 :root {
-  --font-sans: "Outfit", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans:
+    "Outfit", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
   --font-serif: "Cormorant Garamond", Georgia, Cambria, "Times New Roman", Times, serif;
 
@@ -117,11 +118,19 @@ body {
   background-color: var(--kunai-bg);
 }
 
-h1, h2, h3, h4, h5, h6, .font-serif {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-serif {
   font-family: var(--font-serif);
 }
 
-code, pre, .font-mono {
+code,
+pre,
+.font-mono {
   font-family: var(--font-mono);
 }
 
@@ -234,8 +243,14 @@ code, pre, .font-mono {
 }
 
 @keyframes kunai-fade-in {
-  from { opacity: 0; filter: blur(4px); }
-  to { opacity: 1; filter: blur(0); }
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
 }
 
 /* Terminal & Interactive Terminal Simulator */
@@ -548,9 +563,15 @@ code, pre, .font-mono {
   animation: card-stagger-in 400ms var(--kunai-ease-out) both;
 }
 
-.kunai-highlight:nth-child(1) { animation-delay: 0ms; }
-.kunai-highlight:nth-child(2) { animation-delay: 80ms; }
-.kunai-highlight:nth-child(3) { animation-delay: 160ms; }
+.kunai-highlight:nth-child(1) {
+  animation-delay: 0ms;
+}
+.kunai-highlight:nth-child(2) {
+  animation-delay: 80ms;
+}
+.kunai-highlight:nth-child(3) {
+  animation-delay: 160ms;
+}
 
 .kunai-highlight span,
 .kunai-proof span {
@@ -592,11 +613,21 @@ code, pre, .font-mono {
   animation: card-stagger-in 400ms var(--kunai-ease-out) both;
 }
 
-.kunai-flow-card:nth-child(1) { animation-delay: 0ms; }
-.kunai-flow-card:nth-child(2) { animation-delay: 60ms; }
-.kunai-flow-card:nth-child(3) { animation-delay: 120ms; }
-.kunai-flow-card:nth-child(4) { animation-delay: 180ms; }
-.kunai-flow-card:nth-child(5) { animation-delay: 240ms; }
+.kunai-flow-card:nth-child(1) {
+  animation-delay: 0ms;
+}
+.kunai-flow-card:nth-child(2) {
+  animation-delay: 60ms;
+}
+.kunai-flow-card:nth-child(3) {
+  animation-delay: 120ms;
+}
+.kunai-flow-card:nth-child(4) {
+  animation-delay: 180ms;
+}
+.kunai-flow-card:nth-child(5) {
+  animation-delay: 240ms;
+}
 
 @keyframes card-stagger-in {
   from {
@@ -781,10 +812,18 @@ code, pre, .font-mono {
   animation: card-stagger-in 400ms var(--kunai-ease-out) both;
 }
 
-.kunai-doc-row:nth-child(1) { animation-delay: 0ms; }
-.kunai-doc-row:nth-child(2) { animation-delay: 100ms; }
-.kunai-doc-row:nth-child(3) { animation-delay: 200ms; }
-.kunai-doc-row:nth-child(4) { animation-delay: 300ms; }
+.kunai-doc-row:nth-child(1) {
+  animation-delay: 0ms;
+}
+.kunai-doc-row:nth-child(2) {
+  animation-delay: 100ms;
+}
+.kunai-doc-row:nth-child(3) {
+  animation-delay: 200ms;
+}
+.kunai-doc-row:nth-child(4) {
+  animation-delay: 300ms;
+}
 
 .kunai-doc-row:hover {
   border-color: color-mix(in oklab, var(--kunai-accent) 20%, var(--kunai-line));
@@ -854,9 +893,15 @@ code, pre, .font-mono {
   animation: card-stagger-in 400ms var(--kunai-ease-out) both;
 }
 
-.kunai-proof:nth-child(1) { animation-delay: 0ms; }
-.kunai-proof:nth-child(2) { animation-delay: 80ms; }
-.kunai-proof:nth-child(3) { animation-delay: 160ms; }
+.kunai-proof:nth-child(1) {
+  animation-delay: 0ms;
+}
+.kunai-proof:nth-child(2) {
+  animation-delay: 80ms;
+}
+.kunai-proof:nth-child(3) {
+  animation-delay: 160ms;
+}
 
 .kunai-proof strong {
   display: block;
@@ -963,13 +1008,25 @@ code, pre, .font-mono {
 }
 
 @keyframes float-y {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50% { opacity: 0.8; transform: scale(1.03); }
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.03);
+  }
 }
 
 /* Custom premium hover states */
@@ -995,20 +1052,24 @@ code, pre, .font-mono {
 /* Custom Fumadocs Polish Overrides */
 
 /* Header / Nav adjustments */
-.fd-nav, header, [data-transparent="false"] {
+.fd-nav,
+header,
+[data-transparent="false"] {
   background-color: rgba(11, 7, 14, 0.82) !important;
   backdrop-filter: blur(16px) !important;
   border-bottom: 1px solid color-mix(in oklab, #f4d8e4 6%, transparent) !important;
 }
 
 /* Sidebar adjustments */
-.fd-sidebar, aside {
+.fd-sidebar,
+aside {
   background-color: #0b070e !important;
   border-right: 1px solid color-mix(in oklab, #f4d8e4 6%, transparent) !important;
 }
 
 /* Docs container and body spacing */
-.fd-layout, .fd-body {
+.fd-layout,
+.fd-body {
   background-color: #0b070e !important;
 }
 
@@ -1021,12 +1082,14 @@ code, pre, .font-mono {
 }
 
 /* Custom TOC (Table of Contents) sidebar */
-.fd-toc, .fd-toc-container {
+.fd-toc,
+.fd-toc-container {
   border-left: 1px solid color-mix(in oklab, #f4d8e4 6%, transparent) !important;
 }
 
 /* Search Dialog adjustments */
-.fd-search-dialog, [role="dialog"] {
+.fd-search-dialog,
+[role="dialog"] {
   background-color: #130f17 !important;
   border: 1px solid var(--kunai-accent) !important;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6) !important;
@@ -1074,13 +1137,17 @@ pre {
   border: 1px solid var(--kunai-line) !important;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
   border-radius: 0.75rem !important;
-  transition: border-color 200ms var(--kunai-ease-out), box-shadow 200ms var(--kunai-ease-out);
+  transition:
+    border-color 200ms var(--kunai-ease-out),
+    box-shadow 200ms var(--kunai-ease-out);
 }
 .prose pre:hover,
 .fd-codeblock:hover,
 pre:hover {
   border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line)) !important;
-  box-shadow: 0 4px 24px color-mix(in oklab, var(--kunai-accent) 4%, transparent), 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+  box-shadow:
+    0 4px 24px color-mix(in oklab, var(--kunai-accent) 4%, transparent),
+    0 4px 20px rgba(0, 0, 0, 0.3) !important;
 }
 
 /* Premium Tables */
@@ -1129,7 +1196,11 @@ tr:hover td {
   width: 550px;
   height: 550px;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in oklab, var(--kunai-accent) 4%, transparent) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--kunai-accent) 4%, transparent) 0%,
+    transparent 70%
+  );
   filter: blur(100px);
   z-index: -10;
   animation: pulse-glow 14s infinite alternate;
@@ -1155,7 +1226,10 @@ tr:hover td {
   border-radius: 0.5rem;
   color: var(--color-fd-muted-foreground);
   border: 1px solid transparent;
-  transition: color 200ms var(--kunai-ease-out), border-color 200ms var(--kunai-ease-out), background-color 200ms var(--kunai-ease-out);
+  transition:
+    color 200ms var(--kunai-ease-out),
+    border-color 200ms var(--kunai-ease-out),
+    background-color 200ms var(--kunai-ease-out);
   cursor: pointer;
 }
 .os-tab-button:hover {
@@ -1197,7 +1271,9 @@ tr:hover td {
   border: 1px solid var(--kunai-line);
   border-radius: 1rem;
   padding: 1.25rem;
-  transition: border-color 200ms var(--kunai-ease-out), box-shadow 200ms var(--kunai-ease-out);
+  transition:
+    border-color 200ms var(--kunai-ease-out),
+    box-shadow 200ms var(--kunai-ease-out);
 }
 .install-step-card:hover {
   border-color: var(--kunai-accent-glow);
@@ -1216,6 +1292,3 @@ tr:hover td {
 .hero-install-box:hover {
   border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
 }
-
-
-
