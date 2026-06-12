@@ -549,6 +549,19 @@ async function maybeRunAutoCleanupDownloads(
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   process.title = "kunai";
 
+  // `kunai upgrade` — channel-aware self-update subcommand. Handled before the
+  // shell boots so it can run standalone (and self-replace its own binary).
+  if (argv[0] === "upgrade") {
+    const { runUpgrade } = await import("./services/update/run-upgrade");
+    const checkOnly = argv.includes("--check");
+    process.exit(await runUpgrade({ checkOnly, currentVersion: KUNAI_VERSION }));
+  }
+
+  // Best-effort: clear any stale `*.old` left by a prior Windows self-replace.
+  void import("./services/update/self-replace").then(({ cleanupOldBinary }) =>
+    cleanupOldBinary(process.execPath).catch(() => {}),
+  );
+
   // Parse CLI arguments
   const args = parseArgs(argv);
   if (args.help) {
