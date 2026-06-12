@@ -352,7 +352,11 @@ packages/storage
      `bun run typecheck`, `bun run lint`, `bun run --cwd apps/cli fmt:check`.
 
 6. `refactor(shell): split workflow families`
-   - Status: Not started
+   - Status: In progress
+   - Done: setup/handoff workflows extracted to `app-shell/setup-workflows.ts`
+     with compatibility re-exports from `workflows.ts`.
+   - Verification: `bun run typecheck`, `bun run lint`,
+     `bun run --cwd apps/cli fmt:check`.
    - Settings/setup workflows.
    - History workflows.
    - Offline library workflows.

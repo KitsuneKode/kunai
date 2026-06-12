@@ -12,7 +12,6 @@ import { buildTracksPanelData } from "@/app-shell/tracks-panel-data";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { applySettingsToRuntime } from "@/app/apply-settings-to-runtime";
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
-import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import { markEntryWatched } from "@/app/history-actions";
 import { playCompletedDownload } from "@/app/offline-playback";
 import { titleInfoFromSearchResult } from "@/app/title-info";
@@ -86,7 +85,8 @@ import {
 import { resolveCommands } from "./commands";
 import { buildDiagnosticsPanelLines } from "./panel-data";
 import { createSessionPickerId, openSessionPicker, waitForSessionPicker } from "./session-picker";
-import { runSetupFlow } from "./setup-shell";
+import { runSetupWizard } from "./setup-workflows";
+export { confirmProtocolHandoff, runSetupWizard, type SetupWizardResult } from "./setup-workflows";
 import type { ShellAction } from "./types";
 
 export function waitForOverlayClose(
@@ -137,29 +137,6 @@ type CompletedDownloadAction =
 
 type ReleaseProgressCacheReader = Pick<ReleaseProgressCacheRepository, "getByTitleIds">;
 
-export type SetupWizardResult = "completed" | "cancelled" | "skipped";
-
-export async function confirmProtocolHandoff(handoff: KunaiHandoffLaunch): Promise<boolean> {
-  const choice = await chooseFromListShell({
-    title: "Open Kunai Link",
-    subtitle: describeKunaiHandoffLaunch(handoff),
-    options: [
-      {
-        value: "continue" as const,
-        label: "Continue",
-        detail: "Run this local Kunai action",
-      },
-      {
-        value: "cancel" as const,
-        label: "Cancel",
-        detail: "Ignore the external link and close",
-      },
-    ],
-  });
-
-  return choice === "continue";
-}
-
 const SUBTITLE_OPTIONS = [
   { value: "en", label: "English" },
   { value: "interactive", label: "Pick interactively" },
@@ -188,81 +165,6 @@ const QUALITY_OPTIONS = [
   { value: "720p", label: "720p", detail: "Prefer HD when available" },
   { value: "480p", label: "480p", detail: "Prefer lighter streams on limited networks" },
 ] as const;
-
-export async function runSetupWizard({
-  container,
-  force = false,
-}: {
-  container: Container;
-  force?: boolean;
-}): Promise<SetupWizardResult> {
-  const current = container.config.getRaw();
-  const needsOnboarding = current.onboardingVersion < 2 || !current.downloadOnboardingDismissed;
-  if (!force && !needsOnboarding) {
-    return "skipped";
-  }
-
-  const snapshot = container.capabilitySnapshot ?? {
-    mpv: Boolean(Bun.which("mpv")),
-    ffprobe: Boolean(Bun.which("ffprobe")),
-    ytDlp: Boolean(Bun.which("yt-dlp")),
-    chafa: Boolean(Bun.which("chafa")),
-    magick: Boolean(Bun.which("magick")),
-    image: {
-      renderer: "none",
-      terminal: "unknown",
-      available: false,
-    } as import("@/image").ImageCapability,
-    issues: [],
-  };
-
-  const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
-  const { result } = runSetupFlow(snapshot);
-  const { outcome, prefs } = await result;
-
-  if (outcome === "skipped") {
-    // Only mark done — never clobber existing preferences when the user skips.
-    await container.config.update({
-      onboardingVersion: 2,
-      downloadOnboardingDismissed: true,
-    });
-    await container.config.save();
-  } else {
-    const downloadsEnabled = prefs.downloadsEnabled;
-    const downloadPath = downloadsEnabled
-      ? current.downloadPath || defaultDownloadPath
-      : current.downloadPath;
-
-    await container.config.update({
-      onboardingVersion: 2,
-      downloadOnboardingDismissed: true,
-      downloadsEnabled,
-      downloadPath,
-      animeLanguageProfile: {
-        ...current.animeLanguageProfile,
-        audio: prefs.audio,
-        subtitle: prefs.subtitle,
-      },
-      seriesLanguageProfile: {
-        ...current.seriesLanguageProfile,
-        subtitle: prefs.subtitle,
-      },
-      movieLanguageProfile: {
-        ...current.movieLanguageProfile,
-        subtitle: prefs.subtitle,
-      },
-    });
-    await container.config.save();
-  }
-
-  container.diagnosticsService.record({
-    category: "session",
-    message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
-    context: { outcome, force },
-  });
-
-  return outcome === "completed" ? "completed" : "skipped";
-}
 
 function formatHistoryLabel(entry: HistoryProgress, newEpisodeCount = 0): string {
   const projected = projectWatchProgress({
