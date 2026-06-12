@@ -355,6 +355,8 @@ packages/storage
    - Status: In progress
    - Done: setup/handoff workflows extracted to `app-shell/setup-workflows.ts`
      with compatibility re-exports from `workflows.ts`.
+   - Done: provider/subtitle/tracks/season/episode picker workflows extracted
+     to `app-shell/picker-workflows.ts` with compatibility re-exports.
    - Verification: `bun run typecheck`, `bun run lint`,
      `bun run --cwd apps/cli fmt:check`.
    - Settings/setup workflows.
