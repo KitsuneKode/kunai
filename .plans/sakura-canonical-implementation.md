@@ -8,8 +8,8 @@ Source-of-truth order unchanged: **runtime code > design-system.md > this plan >
 ## Wave 0 — DONE (2026-05-27)
 
 - **F0** `apps/cli/src/domain/catalog/title-detail.ts`: `TitleDetail` + `ArtworkSet` + `CastMember`/`SeasonSummary` types and the pure, tested `mergeArtwork` best-of-provider policy (`ARTWORK_PREFERENCE`, `episodeThumbKey`). `titleDetail?: TitleDetail` wired into `PlaybackShellState`. 7 tests.
-- **F1** `apps/cli/test/harness/render-capture.ts`: width-controlled frame capture (`CAPTURE_WIDTHS` 72/100/140) + `captureSurface` (writes `test/__captures__/<surface>.<width>.txt`) + `countCommits` flicker probe. Built on Ink's `render` with a width-configurable stdout (ink-testing-library hardcodes columns=100). Proof test + `capture-demo.tsx` template. Baseline post-play capture confirms the drift (wide == medium, no rail). 4 tests.
-- Gate: typecheck clean, suite 1174 → **1185**, lint unaffected. Added devDep `ink-testing-library@4`.
+- **F1** `apps/cli/test/harness/render-capture.ts`: width-controlled frame capture (`CAPTURE_WIDTHS` 72/100/140) + `captureSurface` (writes `test/__captures__/<surface>.<width>.txt`) + deterministic `simulateTicks` flicker probe. Built on Ink's renderer with a width-configurable stdout; `ink-testing-library` is intentionally not used because it cannot cover Kunai's resize/stdin/flicker paths. Proof test + `capture-demo.tsx` template. Baseline post-play capture confirms the drift (wide == medium, no rail). 4 tests.
+- Gate: typecheck clean, suite 1174 → **1185**, lint unaffected. No `ink-testing-library` dependency.
 - **Next:** spin Wave 1 (ART, PP, NP, DET, BRZ) — some via me, some via the user's agents.
 
 ## Visibility findings (F1 sweep, 2026-05-27)

@@ -118,7 +118,7 @@ flattening sub/dub/hardsub structure without a provider-specific follow-up.
 
 **Files**
 
-- Modify: `packages/providers/src/vidking/direct.ts`
+- Modify: `packages/providers/src/videasy/direct.ts`
 - Modify: `packages/providers/src/rivestream/direct.ts`
 - Modify: `packages/providers/src/allmanga/direct.ts`
 - Modify: `packages/providers/src/miruro/direct.ts`

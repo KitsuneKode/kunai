@@ -53,7 +53,7 @@ Reliable Videasy resolve (no 15×12s timeout spiral), honest **Sources** UI with
 
 ## Phase 1 — Stop the bleeding (P0 backend) — **ship first**
 
-**Files:** `packages/providers/src/vidking/direct.ts`, `packages/core/src/provider-engine.ts`, provider cycle config.
+**Files:** `packages/providers/src/videasy/direct.ts`, `packages/core/src/provider-engine.ts`, provider cycle config.
 
 | Task | Change                                                                                       |
 | ---- | -------------------------------------------------------------------------------------------- |
@@ -84,7 +84,7 @@ Reliable Videasy resolve (no 15×12s timeout spiral), honest **Sources** UI with
 
 ## Phase 3 — Flavor registry (P0 for UX, P1 for full roster)
 
-**Files:** `packages/providers/src/vidking/flavors.ts` (new), migrate `cineby/index.ts` to import.
+**Files:** `packages/providers/src/videasy/flavors.ts`, migrate `cineby/index.ts` to import.
 
 | Task | Change                                                                                             |
 | ---- | -------------------------------------------------------------------------------------------------- |

@@ -86,7 +86,7 @@ Global ProviderEngine
 - Modify provider modules incrementally:
   - `packages/providers/src/allmanga/direct.ts`
   - `packages/providers/src/miruro/direct.ts`
-  - `packages/providers/src/vidking/direct.ts`
+  - `packages/providers/src/videasy/direct.ts`
   - `packages/providers/src/rivestream/direct.ts`
 
 ## Failure Classes

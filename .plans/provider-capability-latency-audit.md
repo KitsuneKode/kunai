@@ -47,7 +47,7 @@ The correct next step is generalized provider-key inventory and source-health ra
 | Provider id  | Package module                                | Default for          |
 | ------------ | --------------------------------------------- | -------------------- |
 | `allanime`   | `packages/providers/src/allmanga/*`           | Anime                |
-| `vidking`    | `packages/providers/src/vidking/direct.ts`    | Movies / TV          |
+| `videasy`    | `packages/providers/src/videasy/direct.ts`    | Movies / TV          |
 | `rivestream` | `packages/providers/src/rivestream/direct.ts` | Fallback (movies/TV) |
 | `miruro`     | `packages/providers/src/miruro/direct.ts`     | Anime fallback       |
 
@@ -185,7 +185,7 @@ Confidence: **Known** = code or fixture; **Suspected** = experiment report only;
 
 | ID  | Risk                                                                    | Owner file(s)                                   | Proof / test seam                                                                               |
 | --- | ----------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| R1  | VidKing 404/empty retried × query variants × servers × embed tier       | `packages/providers/src/vidking/direct.ts`      | Mock 404 → assert single HTTP per server; assert year variant skipped when only `tmdbId` needed |
+| R1  | Videasy 404/empty retried × query variants × servers × embed tier       | `packages/providers/src/videasy/direct.ts`      | Mock 404 → assert single HTTP per server; assert year variant skipped when only `tmdbId` needed |
 | R2  | VidKing WASM decode serialized globally                                 | `vidking/direct.ts` `wasmDecodeQueue`           | Concurrent resolve test (latency)                                                               |
 | R3  | Rivestream services fetched every cold resolve                          | `rivestream/direct.ts` ~306–319                 | Two resolves → one services fetch                                                               |
 | R4  | AllManga catalog GQL fallback doubles latency on miss                   | `allmanga/api-client.ts` `loadShowCatalogInfo`  | Cache negative referer; fixture for single path                                                 |

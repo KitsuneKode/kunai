@@ -168,7 +168,7 @@ expect(result.ledger.joinedBudgetLanes).toEqual(["near-need", "user-blocking"]);
 - Modify: `packages/core/src/provider-engine.ts`
 - Modify: `packages/core/test/provider-cycle-engine.test.ts`
 - Modify: `packages/core/test/core.test.ts`
-- Modify as evidence requires: `packages/providers/src/vidking/direct.ts`
+- Modify as evidence requires: `packages/providers/src/videasy/direct.ts`
 - Modify as evidence requires: `packages/providers/test/providers.test.ts`
 
 - [ ] Change the existing offline cycle test first: after a classified offline/network-unavailable result, no second local candidate is attempted.
@@ -224,7 +224,7 @@ bun run --cwd packages/providers test
 **Files:**
 
 - Modify selectively: `packages/providers/src/shared/source-inventory.ts`
-- Modify selectively: `packages/providers/src/vidking/direct.ts`
+- Modify selectively: `packages/providers/src/videasy/direct.ts`
 - Modify selectively: `packages/providers/src/rivestream/direct.ts`
 - Modify selectively: `packages/providers/src/miruro/direct.ts`
 - Modify selectively: `packages/providers/src/allmanga/direct.ts`

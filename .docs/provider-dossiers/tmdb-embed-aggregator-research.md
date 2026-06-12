@@ -491,7 +491,7 @@ If the project wants a VidAPI provider module, the shape would be:
   probe loop.
 - The `apps/cli/src/services/playback/PlaybackSourceInventoryProjection.ts`
   pattern for emitting source IDs into the shell's source picker.
-- The `packages/providers/src/vidking/flavors.ts` shape (with empty flavor
+- The `packages/providers/src/videasy/flavors.ts` shape (with empty flavor
   set since VidAPI only has one source — `justhd`).
 
 ### Open implementation questions

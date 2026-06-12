@@ -85,7 +85,7 @@ Read these before any provider-specific investigation:
 
 Read the active provider and runtime code:
 
-- `packages/providers/src/vidking/direct.ts`
+- `packages/providers/src/videasy/direct.ts`
 - `packages/providers/src/rivestream/direct.ts`
 - `packages/providers/src/miruro/direct.ts`
 - `packages/providers/src/allmanga/direct.ts`

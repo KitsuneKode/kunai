@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-06-09T16:48:18.092Z",
+  "syncedAt": "2026-06-12T14:54:44.518Z",
   "providers": [
     {
       "id": "allanime",
@@ -99,7 +99,7 @@
     {
       "id": "library",
       "label": "Library",
-      "aliases": ["library", "offline", "offline-library", "my-downloads", "downloads"],
+      "aliases": ["library", "offline", "offline-library", "my-downloads"],
       "description": "Browse offline library and manage downloads"
     },
     {

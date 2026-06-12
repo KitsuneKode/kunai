@@ -321,7 +321,7 @@ bun run test -- apps/cli/test/unit/app
 
 - Modify: `packages/types/src/index.ts`
 - Modify: `packages/core/src/resolver.ts`
-- Modify: `packages/providers/src/vidking/direct.ts`
+- Modify: `packages/providers/src/videasy/direct.ts`
 - Modify: `packages/providers/src/allmanga/direct.ts`
 - Test: `packages/core/test/core.test.ts`
 - Test: `packages/providers/test/providers.test.ts`
