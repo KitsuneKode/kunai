@@ -1012,6 +1012,8 @@ git commit -m "feat(install): binary-first, tty-correct, channel-aware installer
 
 ## Task 7: Windows `install.ps1`
 
+> **NOTE (2026-06-13):** No `pwsh` on the dev machine, so `install.ps1` was hand-reviewed (function definition order, checksum regex, MOTW/PATH handling) but not executed locally. CI runs PSScriptAnalyzer (Task 10). `-Upgrade`/`-Uninstall` delegate to the binary's own `kunai upgrade` / `kunai --uninstall`, which already implement the Windows rename-self dance.
+
 **Files:**
 
 - Create: `install.ps1`
