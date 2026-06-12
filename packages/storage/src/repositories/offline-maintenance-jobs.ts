@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { KunaiDatabase } from "../sqlite";
 
 export type OfflineMaintenanceOperation =
@@ -39,7 +37,7 @@ export class OfflineMaintenanceJobsRepository {
   }): OfflineMaintenanceJobRecord {
     const existing = this.getActive(input.assetId, input.operation);
     if (existing) return existing;
-    const id = randomUUID();
+    const id = crypto.randomUUID();
     this.db
       .query(
         `INSERT INTO offline_maintenance_jobs (

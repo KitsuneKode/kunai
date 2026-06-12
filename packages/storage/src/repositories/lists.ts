@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { KunaiDatabase } from "../sqlite";
 
 export type ListKind = "watchlist" | "favorites" | "custom";
@@ -106,7 +104,7 @@ export class ListRepository {
   }
 
   createList(input: { name: string; kind: ListKind; color?: string; icon?: string }): KunaiList {
-    const id = randomUUID();
+    const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const maxOrder = this.db
       .query<{ max_order: number | null }, []>("SELECT MAX(sort_order) AS max_order FROM lists")
@@ -164,7 +162,7 @@ export class ListRepository {
   }
 
   addItem(input: ListItemInput): ListItem {
-    const id = randomUUID();
+    const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const maxOrder = this.db
       .query<{ max_order: number | null }, [string]>(

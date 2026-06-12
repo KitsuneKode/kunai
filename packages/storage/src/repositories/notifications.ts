@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { KunaiDatabase } from "../sqlite";
 
 export interface NotificationRecord {
@@ -59,7 +57,7 @@ export class NotificationRepository {
 
   upsert(input: NotificationInput): NotificationRecord {
     const existing = this.getByDedupKey(input.dedupKey);
-    const id = existing?.id ?? randomUUID();
+    const id = existing?.id ?? crypto.randomUUID();
     this.db
       .query(
         `INSERT INTO notifications

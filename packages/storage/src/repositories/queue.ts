@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { KunaiDatabase } from "../sqlite";
 
 export interface QueueEntry {
@@ -110,7 +108,7 @@ export class QueueRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
   enqueue(input: QueueEntryInput): QueueEntry {
-    const id = randomUUID();
+    const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
     this.db

@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { MediaKind } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
@@ -97,7 +95,7 @@ export class OfflineAssetsRepository {
   upsertPlayable(input: OfflineAssetInput): OfflineAssetRecord {
     const identityKey = createOfflineAssetIdentityKey(input);
     const existing = this.getByIdentityKey(identityKey);
-    const id = existing?.id ?? randomUUID();
+    const id = existing?.id ?? crypto.randomUUID();
     const createdAt = existing?.createdAt ?? input.updatedAt;
     const protectedValue = input.protected ?? existing?.protected ?? false;
     this.db

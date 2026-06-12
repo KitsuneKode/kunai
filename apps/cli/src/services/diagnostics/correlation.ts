@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 export type DiagnosticCorrelation = {
   readonly sessionId?: string;
   readonly playbackCycleId?: string;
@@ -8,7 +6,7 @@ export type DiagnosticCorrelation = {
 };
 
 export function createCorrelationId(prefix: string): string {
-  return `${prefix}:${randomUUID()}`;
+  return `${prefix}:${crypto.randomUUID()}`;
 }
 
 export function withDiagnosticCorrelation<T extends object>(
