@@ -98,6 +98,11 @@ DIAGNOSTICS
   -h, --help                 Show this help
   -v, --version              Print the version
 
+MAINTENANCE
+  kunai upgrade              Update to the latest release (channel-aware)
+  kunai upgrade --check      Report whether an update is available
+      --uninstall            Remove kunai (add --purge to also delete user data)
+
 Inside the app, press / for the command palette and ? for keyboard help.
 `;
 }
@@ -127,6 +132,7 @@ export function parseArgs(argv: string[]): {
   dryRun: boolean;
   help: boolean;
   version: boolean;
+  uninstall: boolean;
   initialRoute?: "recommendation" | "calendar" | "random";
   shellChrome: ShellChrome;
 } {
@@ -154,6 +160,7 @@ export function parseArgs(argv: string[]): {
     dryRun: boolean;
     help: boolean;
     version: boolean;
+    uninstall: boolean;
     initialRoute?: "recommendation" | "calendar" | "random";
   } = {
     anime: false,
@@ -173,6 +180,7 @@ export function parseArgs(argv: string[]): {
     dryRun: false,
     help: false,
     version: false,
+    uninstall: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -245,6 +253,8 @@ export function parseArgs(argv: string[]): {
       args.help = true;
     } else if (arg === "-v" || arg === "--version") {
       args.version = true;
+    } else if (arg === "--uninstall") {
+      args.uninstall = true;
     }
   }
   const shellChrome: ShellChrome =
@@ -571,6 +581,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (args.version) {
     process.stdout.write(`kunai ${KUNAI_VERSION}\n`);
     return;
+  }
+  if (args.uninstall) {
+    const { runUninstall } = await import("./services/update/run-uninstall");
+    process.exit(await runUninstall({ purge: argv.includes("--purge") }));
   }
   if (args.installProtocolHandler) {
     const { buildProtocolHandlerInstallPlan, installKunaiProtocolHandler } =
