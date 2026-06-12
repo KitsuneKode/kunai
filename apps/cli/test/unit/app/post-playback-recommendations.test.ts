@@ -4,6 +4,7 @@ import { clearDiscoveryListCache } from "@/app/discovery-lists";
 import {
   loadPostPlaybackRecommendationItems,
   loadPostPlaybackRecommendationNames,
+  resolvePostPlaybackRecommendationLoadMode,
   seedPostPlaybackRecommendationItems,
 } from "@/app/post-playback-recommendations";
 
@@ -12,6 +13,59 @@ const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
   clearDiscoveryListCache();
+});
+
+test("load mode: skips when the seed already has items", () => {
+  expect(
+    resolvePostPlaybackRecommendationLoadMode({
+      seedCount: 3,
+      railEnabled: true,
+      alreadyAttempted: false,
+      autoContinueIntoRecommendationPossible: true,
+    }),
+  ).toBe("skip");
+});
+
+test("load mode: skips when the rail is disabled or already attempted", () => {
+  const base = { seedCount: 0, autoContinueIntoRecommendationPossible: false } as const;
+  expect(
+    resolvePostPlaybackRecommendationLoadMode({
+      ...base,
+      railEnabled: false,
+      alreadyAttempted: false,
+    }),
+  ).toBe("skip");
+  expect(
+    resolvePostPlaybackRecommendationLoadMode({
+      ...base,
+      railEnabled: true,
+      alreadyAttempted: true,
+    }),
+  ).toBe("skip");
+});
+
+test("load mode: blocks only when auto-continue into a recommendation is possible", () => {
+  expect(
+    resolvePostPlaybackRecommendationLoadMode({
+      seedCount: 0,
+      railEnabled: true,
+      alreadyAttempted: false,
+      autoContinueIntoRecommendationPossible: true,
+    }),
+  ).toBe("block");
+});
+
+test("load mode: backgrounds the menu rail (never blocks first paint) otherwise", () => {
+  // The common from-history case: empty seed, rail enabled, no auto-continue
+  // (e.g. a next episode exists or autoplay-recommendations is off).
+  expect(
+    resolvePostPlaybackRecommendationLoadMode({
+      seedCount: 0,
+      railEnabled: true,
+      alreadyAttempted: false,
+      autoContinueIntoRecommendationPossible: false,
+    }),
+  ).toBe("background");
 });
 
 function mockAniListDiscovery(media: readonly Record<string, unknown>[]): void {

@@ -29,6 +29,32 @@ export function seedPostPlaybackRecommendationItems({
   return dedupeRecommendationItems(prefetchedItems, currentTitle);
 }
 
+/**
+ * How the post-play loop should load recommendations when the synchronous seed
+ * is empty (e.g. starting from history, where nothing was prefetched):
+ *
+ * - `skip`     — seed already has items, the rail is disabled, or we already
+ *                attempted a load this session. Nothing to do.
+ * - `block`    — we might immediately auto-continue into the top recommendation
+ *                (end of series, autoplay-recommendations on), so we briefly
+ *                await a load to make that decision.
+ * - `background` — the menu just needs the cosmetic rail; never block first
+ *                paint. Load asynchronously and pick the items up on a later
+ *                loop iteration. This is what makes from-history episode
+ *                completion paint instantly instead of waiting on a fresh fetch.
+ */
+export type PostPlaybackRecommendationLoadMode = "skip" | "block" | "background";
+
+export function resolvePostPlaybackRecommendationLoadMode(input: {
+  readonly seedCount: number;
+  readonly railEnabled: boolean;
+  readonly alreadyAttempted: boolean;
+  readonly autoContinueIntoRecommendationPossible: boolean;
+}): PostPlaybackRecommendationLoadMode {
+  if (input.seedCount > 0 || !input.railEnabled || input.alreadyAttempted) return "skip";
+  return input.autoContinueIntoRecommendationPossible ? "block" : "background";
+}
+
 export async function loadPostPlaybackRecommendationNames(
   container: Pick<
     Container,

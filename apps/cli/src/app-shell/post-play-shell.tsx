@@ -24,7 +24,7 @@ import {
   type PostPlayUpNextCard,
   type PostPlayView,
 } from "./post-play-view";
-import { truncateLine } from "./shell-text";
+import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { PlaybackRecommendationRailItem } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
@@ -98,23 +98,31 @@ function ActionRows({
   readonly width: number;
   readonly selectedIndex?: number;
 }) {
-  const shortcutWidth = Math.max(5, ...actions.map((action) => action.shortcut.length + 3));
-  const detailWidth = Math.max(8, width - 28 - shortcutWidth);
+  const markerWidth = 2;
+  const labelWidth = Math.min(18, Math.max(10, Math.floor(width * 0.32)));
+  const shortcutWidth = Math.max(
+    5,
+    ...actions.map((action) => measureColumns(` [${action.shortcut}]`)),
+  );
+  const detailWidth = Math.max(0, width - markerWidth - labelWidth - shortcutWidth);
   const safeSelectedIndex = Math.min(Math.max(0, selectedIndex), Math.max(0, actions.length - 1));
   return (
     <Box flexDirection="column" marginTop={1}>
       {actions.map((action, idx) => {
         const isSelected = idx === safeSelectedIndex;
-        const shortcut = ` [${action.shortcut}]`.padStart(shortcutWidth);
+        const shortcut = padColumnsEnd(` [${action.shortcut}]`, shortcutWidth);
+        const label = padColumnsEnd(truncateLine(action.label, labelWidth), labelWidth);
         return (
           <Box key={action.id} flexDirection="row" flexWrap="nowrap">
             <Text color={isSelected ? palette.accent : palette.dim}>
               {isSelected ? "▌ " : "  "}
             </Text>
             <Text color={isSelected ? palette.text : palette.textDim} bold={isSelected}>
-              {action.label.padEnd(18).slice(0, 18)}
+              {label}
             </Text>
-            <Text color={palette.muted}>{truncateLine(action.detail, detailWidth)}</Text>
+            {detailWidth > 0 ? (
+              <Text color={palette.muted}>{truncateLine(action.detail, detailWidth)}</Text>
+            ) : null}
             <Text color={isSelected ? palette.accent : palette.dim}>{shortcut}</Text>
           </Box>
         );
@@ -207,7 +215,7 @@ function DiscoveryCards({
           {card.reason ? (
             <Text color={palette.dim}>
               {" "}
-              · {truncateLine(card.reason, Math.max(4, width - card.title.length - 6))}
+              · {truncateLine(card.reason, Math.max(4, width - measureColumns(card.title) - 6))}
             </Text>
           ) : null}
         </Box>

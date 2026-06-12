@@ -14,12 +14,21 @@
 
 ```text
 SLICE_ID: P8
-SLICE_STATUS: implemented
+SLICE_STATUS: complete
 SLICE_OWNER: codex
-SLICE_LAST_UPDATED: 2026-05-19
+SLICE_LAST_UPDATED: 2026-06-13
 SLICE_CURRENT_TASK: complete
 SLICE_BLOCKERS: none
 ```
+
+> **Completed 2026-06-13.** Root cause of the from-history lag confirmed: when the
+> synchronous recommendation seed is empty (nothing prefetched — the from-history
+> case), the post-play loop awaited a fresh recommendation fetch before first
+> paint. Fix: `resolvePostPlaybackRecommendationLoadMode` — only **block** when an
+> auto-continue into the top recommendation is reachable (end of series,
+> autoplay-recs on); otherwise load in the **background** so the menu paints
+> instantly and the rail fills on a later loop iteration. The bounded budget
+> (now 250 ms) only applies to the rare block path. Decision logic is unit-tested.
 
 ## File Ownership
 

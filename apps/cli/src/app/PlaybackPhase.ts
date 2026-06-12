@@ -110,6 +110,7 @@ import {
 import {
   loadPostPlaybackRecommendationItems,
   type PostPlaybackRecommendationItem,
+  resolvePostPlaybackRecommendationLoadMode,
   seedPostPlaybackRecommendationItems,
 } from "@/app/post-playback-recommendations";
 import {
@@ -2658,13 +2659,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // null = not yet attempted; [] = attempted (within budget) but empty.
           let postPlaybackLoadedRecommendations: readonly PostPlaybackRecommendationItem[] | null =
             null;
+          // Guards a single background recommendation load (menu rail only) so we
+          // never block first paint and never re-trigger while one is in flight.
+          let postPlaybackRecommendationLoadInFlight = false;
           let postPlayProviderId = stateManager.getState().provider;
           let openRecoverySourcePanelOnPostPlay =
             (result.suspectedDeadStream === true || didPlaybackFailToStart(result)) &&
             Boolean(preparedStream.providerResolveResult?.streams.length);
-          // Bound how long the post-play surface waits for a live recommendation
-          // load before painting without it (the seed handles the fast path).
-          const POST_PLAYBACK_RECOMMENDATION_BUDGET_MS = 1200;
+          // Keep first paint snappy. Prefetched recommendations still show
+          // immediately; live discovery is a nice-to-have rail and should never
+          // make episode completion feel stuck.
+          const POST_PLAYBACK_RECOMMENDATION_BUDGET_MS = 250;
 
           postPlayback: while (true) {
             const resumeSeconds = toHistoryTimestamp(
@@ -2782,38 +2787,73 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 ),
               },
             });
-            if (
-              recommendationRailItems.length === 0 &&
-              container.config.recommendationRailEnabled
+            // The seed (prefetched items) paints instantly. When it is empty
+            // (e.g. starting from history), only BLOCK for a live load if we might
+            // auto-continue into the top recommendation; otherwise load it in the
+            // BACKGROUND so the menu paints immediately and the rail fills on a
+            // later loop iteration. This removes the from-history post-play lag.
+            const autoContinueIntoRecommendationPossible =
+              !nextEpisode &&
+              result.endReason === "eof" &&
+              !playbackSession.autoplayPaused &&
+              !stateManager.getState().autoplaySessionPaused &&
+              !context.signal.aborted &&
+              !container.queueService.peekNext() &&
+              container.config.autoplayRecommendations;
+            const recommendationLoadMode = resolvePostPlaybackRecommendationLoadMode({
+              seedCount: recommendationRailItems.length,
+              railEnabled: container.config.recommendationRailEnabled,
+              alreadyAttempted: postPlaybackLoadedRecommendations !== null,
+              autoContinueIntoRecommendationPossible,
+            });
+            if (recommendationLoadMode === "block") {
+              const loadStartedAtMs = Date.now();
+              let recommendationLoadTimedOut = false;
+              postPlaybackLoadedRecommendations = await Promise.race([
+                loadPostPlaybackRecommendationItems(container, title, mode, null),
+                Bun.sleep(POST_PLAYBACK_RECOMMENDATION_BUDGET_MS).then(() => {
+                  recommendationLoadTimedOut = true;
+                  return [] as readonly PostPlaybackRecommendationItem[];
+                }),
+              ]).catch(() => [] as readonly PostPlaybackRecommendationItem[]);
+              diagnosticsService.record({
+                category: "playback",
+                operation: "post-playback.recommendations.load",
+                message: "Post-playback recommendations loaded before auto-continue decision",
+                context: {
+                  titleId: title.id,
+                  mode,
+                  itemCount: postPlaybackLoadedRecommendations.length,
+                  elapsedMs: Date.now() - loadStartedAtMs,
+                  timedOut: recommendationLoadTimedOut,
+                },
+              });
+            } else if (
+              recommendationLoadMode === "background" &&
+              !postPlaybackRecommendationLoadInFlight
             ) {
-              // Seed was empty (nothing prefetched). Briefly await a live load so
-              // the post-play surface can actually show recommendations instead of
-              // warming results into the void with no re-render path (A3). Loaded
-              // at most once per session, capped by a budget so the screen paints.
-              if (postPlaybackLoadedRecommendations === null) {
-                const loadStartedAtMs = Date.now();
-                postPlaybackLoadedRecommendations = await Promise.race([
-                  loadPostPlaybackRecommendationItems(container, title, mode, null),
-                  Bun.sleep(POST_PLAYBACK_RECOMMENDATION_BUDGET_MS).then(
-                    () => [] as readonly PostPlaybackRecommendationItem[],
-                  ),
-                ]).catch(() => [] as readonly PostPlaybackRecommendationItem[]);
-                diagnosticsService.record({
-                  category: "playback",
-                  operation: "post-playback.recommendations.load",
-                  message: "Post-playback recommendations loaded before first paint",
-                  context: {
-                    titleId: title.id,
-                    mode,
-                    itemCount: postPlaybackLoadedRecommendations.length,
-                    elapsedMs: Date.now() - loadStartedAtMs,
-                    timedOut: postPlaybackLoadedRecommendations.length === 0,
-                  },
+              postPlaybackRecommendationLoadInFlight = true;
+              const loadStartedAtMs = Date.now();
+              void loadPostPlaybackRecommendationItems(container, title, mode, null)
+                .catch(() => [] as readonly PostPlaybackRecommendationItem[])
+                .then((items) => {
+                  postPlaybackLoadedRecommendations = items;
+                  diagnosticsService.record({
+                    category: "playback",
+                    operation: "post-playback.recommendations.background",
+                    message: "Post-playback recommendations loaded in the background",
+                    context: {
+                      titleId: title.id,
+                      mode,
+                      itemCount: items.length,
+                      elapsedMs: Date.now() - loadStartedAtMs,
+                    },
+                  });
+                  return items;
                 });
-              }
-              if (postPlaybackLoadedRecommendations.length > 0) {
-                recommendationRailItems = postPlaybackLoadedRecommendations;
-              }
+            }
+            if (postPlaybackLoadedRecommendations && postPlaybackLoadedRecommendations.length > 0) {
+              recommendationRailItems = postPlaybackLoadedRecommendations;
             }
             // YouTube-style continuous play: a natural finish with no next episode and
             // an empty queue auto-continues into the top recommendation — same cancelable
