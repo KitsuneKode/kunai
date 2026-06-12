@@ -43,3 +43,22 @@ jobs:
 
       - name: Package check
         run: bun run pkg:check
+
+      - name: Lint installer scripts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck install.sh uninstall.sh
+
+      - name: Lint PowerShell installer
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $issues = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
+          if ($issues) { $issues | Format-Table; exit 1 }
+
+      - name: Build binaries (linux smoke)
+        run: |
+          bun run --cwd apps/cli build:binaries --only linux-x64
+          ./apps/cli/dist/bin/kunai-linux-x64 --version
