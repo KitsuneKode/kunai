@@ -1,56 +1,50 @@
 #!/usr/bin/env bash
-# Kunai interactive installer — curl-friendly, platform-aware, non-npm-only.
+# Kunai installer — binary-first, channel-aware, cross-platform.
+#
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
-#   ./install.sh
-#   ./install.sh --dry-run
+#   ./install.sh [--method binary|npm|bun|source] [--version X.Y.Z]
+#                [--upgrade] [--uninstall] [--yes] [--dry-run]
+#
+# The default method downloads a self-contained binary (no Bun/Node required).
+# npm/bun/source remain available for developers and Bun users.
 set -euo pipefail
 
 KUNAI_REPO="${KUNAI_REPO:-https://github.com/KitsuneKode/kunai.git}"
-KUNAI_REF="${KUNAI_REF:-main}"
 KUNAI_PACKAGE="${KUNAI_PACKAGE:-@kitsunekode/kunai}"
-INSTALL_DIR="${KUNAI_INSTALL_DIR:-$HOME/.local/share/kunai}"
+KUNAI_DL_BASE="${KUNAI_DL_BASE:-https://github.com/KitsuneKode/kunai/releases}"
 BIN_DIR="${KUNAI_BIN_DIR:-$HOME/.local/bin}"
-KUNAI_DRY_RUN="${KUNAI_DRY_RUN:-0}"
+CONFIG_DIR="${KUNAI_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kunai}"
+INSTALL_DIR="${KUNAI_INSTALL_DIR:-$HOME/.local/share/kunai}"
+
+METHOD="binary"
+VERSION="latest"
+DRY=0
+YES=0
+ACTION="install"
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 info() { printf '→ %s\n' "$*"; }
-warn() { printf '!\033[33m %s\033[0m\n' "$*"; }
+warn() { printf '! \033[33m%s\033[0m\n' "$*"; }
 err() { printf '✗ %s\n' "$*" >&2; }
-
 have() { command -v "$1" >/dev/null 2>&1; }
 
-require_tool() {
-  local name="$1"
-  local message="$2"
-  if [[ "$KUNAI_DRY_RUN" == "1" ]]; then
-    return 0
+# Prompt the user via the controlling terminal, so it still works under
+# `curl … | bash` (where stdin is the script pipe, not the keyboard).
+ask() {
+  local question="$1" default="${2:-y}" reply
+  if [[ "$YES" == 1 || ! -r /dev/tty ]]; then
+    [[ "$default" == y ]]
+    return
   fi
-  have "$name" || {
-    err "$message"
-    exit 1
-  }
+  read -r -p "$question [$default] " reply </dev/tty || true
+  reply="${reply:-$default}"
+  [[ "$reply" =~ ^([yY]|[yY][eE][sS])$ ]]
 }
 
-usage() {
-  cat <<'EOF'
-Kunai installer
-
-Usage:
-  ./install.sh [--dry-run]
-
-Environment:
-  KUNAI_INSTALL_METHOD=npm-global|bun-global|source
-  KUNAI_NONINTERACTIVE=1
-  KUNAI_DRY_RUN=1
-  KUNAI_REF=main
-EOF
-}
-
-run_cmd() {
-  if [[ "$KUNAI_DRY_RUN" == "1" ]]; then
-    printf '→ [dry-run] %q' "$1"
-    shift
+run() {
+  if [[ "$DRY" == 1 ]]; then
+    printf '→ [dry-run]'
     printf ' %q' "$@"
     printf '\n'
     return 0
@@ -58,243 +52,262 @@ run_cmd() {
   "$@"
 }
 
+require() { have "$1" || {
+  err "$1 is required for this step. Install it or choose another --method."
+  exit 1
+}; }
+
 detect_os() {
   case "$(uname -s)" in
     Linux) echo linux ;;
-    Darwin) echo macos ;;
+    Darwin) echo darwin ;;
     *) echo unknown ;;
   esac
 }
 
-detect_pm() {
-  if have brew; then echo brew; return; fi
-  if have pacman; then echo pacman; return; fi
-  if have apt-get; then echo apt; return; fi
-  if have dnf; then echo dnf; return; fi
-  echo none
-}
-
-prompt_yes_no() {
-  local question="$1"
-  local default="${2:-y}"
-  local reply
-  if [[ "${KUNAI_NONINTERACTIVE:-}" == "1" ]]; then
-    [[ "$default" == "y" ]]
-    return
-  fi
-  read -r -p "$question [$default] " reply || true
-  reply="${reply:-$default}"
-  case "$reply" in
-    y | Y | yes | Yes) return 0 ;;
-    *) return 1 ;;
+detect_arch() {
+  case "$(uname -m)" in
+    x86_64 | amd64) echo x64 ;;
+    aarch64 | arm64) echo arm64 ;;
+    *) echo unknown ;;
   esac
 }
 
-choose_install_method() {
-  if [[ -n "${KUNAI_INSTALL_METHOD:-}" ]]; then
-    echo "$KUNAI_INSTALL_METHOD"
+sha256_of() {
+  if have sha256sum; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+write_manifest() {
+  local channel="$1" version="$2" binpath="$3"
+  if [[ "$DRY" == 1 ]]; then
+    info "[dry-run] would write manifest ($channel) to $CONFIG_DIR/install.json"
     return
   fi
-  if [[ "${KUNAI_NONINTERACTIVE:-}" == "1" ]]; then
-    echo npm-global
-    return
-  fi
-  bold "How should Kunai be installed?" >&2
-  echo "  1) npm global (install via npm; runs on the Bun runtime)" >&2
-  echo "  2) bun global (install via Bun)" >&2
-  echo "  3) source checkout (developer / latest main)" >&2
-  local choice="1"
-  read -r -p "Choice [1]: " choice || true
-  choice="${choice:-1}"
-  case "$choice" in
-    2) echo bun-global ;;
-    3) echo source ;;
-    *) echo npm-global ;;
+  mkdir -p "$CONFIG_DIR"
+  cat >"$CONFIG_DIR/install.json" <<JSON
+{
+  "channel": "$channel",
+  "version": "$version",
+  "binPath": "$binpath",
+  "dlBase": "$KUNAI_DL_BASE",
+  "installedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+JSON
+  info "Recorded install method ($channel) in $CONFIG_DIR/install.json"
+}
+
+path_hint() {
+  local dir="$1"
+  case ":$PATH:" in
+    *":$dir:"*) info "kunai is on PATH ($dir)." ;;
+    *) warn "Add to PATH: export PATH=\"$dir:\$PATH\"" ;;
   esac
+}
+
+install_binary() {
+  local os arch asset base url sums tmp want got
+  os="$(detect_os)"
+  arch="$(detect_arch)"
+  if [[ "$os" == unknown || "$arch" == unknown ]]; then
+    err "No prebuilt binary for this OS/arch. Try --method npm or --method source."
+    exit 1
+  fi
+  asset="kunai-${os}-${arch}"
+
+  if [[ "$VERSION" == latest ]]; then
+    base="$KUNAI_DL_BASE/latest/download"
+  else
+    base="$KUNAI_DL_BASE/download/v$VERSION"
+  fi
+  url="$base/$asset"
+  sums="$base/SHA256SUMS"
+
+  require curl
+  mkdir -p "$BIN_DIR"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  info "Downloading $asset ..."
+  run curl -fsSL "$url" -o "$tmp/$asset"
+  run curl -fsSL "$sums" -o "$tmp/SHA256SUMS"
+
+  if [[ "$DRY" != 1 ]]; then
+    want="$(awk -v a="$asset" '$2==a {print $1}' "$tmp/SHA256SUMS")"
+    got="$(sha256_of "$tmp/$asset")"
+    if [[ -z "$want" || "$want" != "$got" ]]; then
+      err "Checksum mismatch for $asset (expected ${want:-<none>}, got $got)."
+      exit 1
+    fi
+    install -m 0755 "$tmp/$asset" "$BIN_DIR/kunai"
+    if [[ "$os" == darwin ]]; then
+      xattr -d com.apple.quarantine "$BIN_DIR/kunai" 2>/dev/null || true
+    fi
+  fi
+
+  write_manifest binary "$VERSION" "$BIN_DIR/kunai"
+  info "Installed kunai → $BIN_DIR/kunai"
+  path_hint "$BIN_DIR"
 }
 
 ensure_bun() {
-  # Kunai's binary is `#!/usr/bin/env bun` — Bun is the runtime for EVERY install
-  # method (npm-global included), so it must be present before we install.
   if have bun; then
     info "bun found: $(command -v bun)"
-    return 0
+    return
   fi
-  if [[ "$KUNAI_DRY_RUN" == "1" ]]; then
-    info "[dry-run] bun missing; would install via: curl -fsSL https://bun.sh/install | bash"
-    return 0
-  fi
-  warn "Bun is required to run kunai (the CLI runs on the Bun runtime)."
-  if prompt_yes_no "Install Bun now from https://bun.sh?" y; then
-    info "Installing Bun..."
-    curl -fsSL https://bun.sh/install | bash
-    # Make bun usable for the rest of this script run.
+  if ask "Bun is required for this method. Install it from bun.sh now?" y; then
+    run bash -c 'curl -fsSL https://bun.sh/install | bash'
     export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
     export PATH="$BUN_INSTALL/bin:$PATH"
     have bun || {
-      err "Bun installed but not on PATH. Open a new shell (or add $BUN_INSTALL/bin to PATH) and re-run."
+      err "Bun installed but not on PATH. Open a new shell and re-run."
       exit 1
     }
-    info "bun ready: $(command -v bun)"
   else
-    err "Bun is required. Install it with: curl -fsSL https://bun.sh/install | bash"
+    err "Bun is required for --method $METHOD."
     exit 1
   fi
 }
 
-install_kunai_package() {
-  local method="$1"
-  case "$method" in
-    npm-global)
-      require_tool npm "npm not found. Install Node.js or choose another method."
-      info "Installing $KUNAI_PACKAGE with npm..."
-      run_cmd npm install -g "$KUNAI_PACKAGE"
-      ;;
-    bun-global)
-      require_tool bun "bun not found. Install Bun from https://bun.sh or choose npm/source."
-      info "Installing $KUNAI_PACKAGE with bun..."
-      run_cmd bun install -g "$KUNAI_PACKAGE"
-      ;;
-    source)
-      require_tool git "git is required for source installs."
-      require_tool bun "bun is required for source installs."
-      info "Cloning Kunai into $INSTALL_DIR..."
-      run_cmd mkdir -p "$(dirname "$INSTALL_DIR")"
-      if [[ -d "$INSTALL_DIR/.git" ]]; then
-        run_cmd git -C "$INSTALL_DIR" fetch --depth 1 origin "$KUNAI_REF"
-        run_cmd git -C "$INSTALL_DIR" checkout "$KUNAI_REF"
-        run_cmd git -C "$INSTALL_DIR" pull --ff-only origin "$KUNAI_REF" || true
-      else
-        run_cmd rm -rf "$INSTALL_DIR"
-        run_cmd git clone --depth 1 --branch "$KUNAI_REF" "$KUNAI_REPO" "$INSTALL_DIR"
-      fi
-      info "Installing dependencies and linking global kunai..."
-      if [[ "$KUNAI_DRY_RUN" == "1" ]]; then
-        info "[dry-run] would run in $INSTALL_DIR: bun install"
-        info "[dry-run] would run in $INSTALL_DIR: bun run link:global"
-      else
-        (
-          cd "$INSTALL_DIR"
-          bun install
-          bun run link:global
-        )
-      fi
-      ;;
-    *)
-      err "Unknown install method: $method"
-      exit 1
-      ;;
-  esac
+install_npm() {
+  require npm
+  ensure_bun
+  info "Installing $KUNAI_PACKAGE with npm..."
+  run npm install -g "$KUNAI_PACKAGE"
+  write_manifest npm-global "$VERSION" "$(command -v kunai || echo kunai)"
+  have kunai && path_hint "$(dirname "$(command -v kunai)")"
+}
+
+install_bun() {
+  ensure_bun
+  info "Installing $KUNAI_PACKAGE with bun..."
+  run bun install -g "$KUNAI_PACKAGE"
+  write_manifest bun-global "$VERSION" "$(command -v kunai || echo kunai)"
+  have kunai && path_hint "$(dirname "$(command -v kunai)")"
+}
+
+install_source() {
+  require git
+  ensure_bun
+  info "Cloning Kunai into $INSTALL_DIR..."
+  run mkdir -p "$(dirname "$INSTALL_DIR")"
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    run git -C "$INSTALL_DIR" pull --ff-only
+  else
+    run rm -rf "$INSTALL_DIR"
+    run git clone --depth 1 "$KUNAI_REPO" "$INSTALL_DIR"
+  fi
+  if [[ "$DRY" == 1 ]]; then
+    info "[dry-run] would run in $INSTALL_DIR: bun install && bun run build && bun run link:global"
+  else
+    (cd "$INSTALL_DIR" && bun install && bun run build && bun run link:global)
+  fi
+  write_manifest source "$VERSION" "$(command -v kunai || echo kunai)"
 }
 
 install_optional_deps() {
-  local pm="$1"
-  local packages=()
-  prompt_yes_no "Install mpv (required for playback)?" y && packages+=(mpv)
-  prompt_yes_no "Install yt-dlp (offline downloads)?" n && packages+=(yt-dlp)
-  prompt_yes_no "Install chafa (terminal poster previews)?" n && packages+=(chafa)
+  local pkgs=()
+  ask "Install mpv (required for playback)?" y && pkgs+=(mpv)
+  ask "Install yt-dlp (offline downloads)?" n && pkgs+=(yt-dlp)
+  ask "Install chafa (terminal poster previews)?" n && pkgs+=(chafa)
+  ((${#pkgs[@]} == 0)) && return
 
-  if ((${#packages[@]} == 0)); then
-    return
+  if have brew; then
+    run brew install "${pkgs[@]}"
+  elif have pacman; then
+    run sudo pacman -S --needed --noconfirm "${pkgs[@]}"
+  elif have apt-get; then
+    run sudo apt-get update
+    run sudo apt-get install -y "${pkgs[@]}"
+  elif have dnf; then
+    run sudo dnf install -y "${pkgs[@]}"
+  else
+    warn "No supported package manager found. Install manually: ${pkgs[*]}"
   fi
-
-  case "$pm" in
-    pacman)
-      info "Installing ${packages[*]} with pacman..."
-      run_cmd sudo pacman -S --needed --noconfirm "${packages[@]}"
-      ;;
-    apt)
-      info "Installing ${packages[*]} with apt..."
-      run_cmd sudo apt-get update
-      run_cmd sudo apt-get install -y "${packages[@]}"
-      ;;
-    brew)
-      info "Installing ${packages[*]} with brew..."
-      run_cmd brew install "${packages[@]}"
-      ;;
-    dnf)
-      info "Installing ${packages[*]} with dnf..."
-      run_cmd sudo dnf install -y "${packages[@]}"
-      ;;
-    none)
-      warn "No supported package manager found. Install manually: ${packages[*]}"
-      ;;
-  esac
 }
 
-configure_discord_presence() {
-  if ! prompt_yes_no "Enable Discord Rich Presence tips in docs output?" n; then
-    return
-  fi
-  cat <<'EOF'
-
-Discord Rich Presence setup:
-  1. Install and run Discord desktop.
-  2. In Kunai run /presence and set provider to Discord.
-  3. Inspect optional local links:
-       kunai --install-protocol-handler
-  4. Playback cards can include a catalog button such as:
-       • View episode on TMDB
-       • View on AniList / IMDb / TMDB
-
-EOF
-}
-
-ensure_path_hint() {
+do_upgrade() {
   if have kunai; then
-    info "kunai is on PATH: $(command -v kunai)"
-    kunai --version 2>/dev/null || true
-    return
+    exec kunai upgrade
   fi
-  warn "kunai is not on PATH yet."
-  echo "Add this to your shell profile if needed:"
-  echo "  export PATH=\"$BIN_DIR:\$PATH\""
+  err "kunai is not installed yet. Run the installer first."
+  exit 1
+}
+
+do_uninstall() {
+  if have kunai; then
+    exec kunai --uninstall
+  fi
+  rm -f "$BIN_DIR/kunai" && info "Removed $BIN_DIR/kunai"
+  info "Config/data left in place: $CONFIG_DIR"
+}
+
+usage() {
+  sed -n '2,9p' "$0" | sed 's/^#\s\{0,1\}//'
 }
 
 main() {
-  for arg in "$@"; do
-    case "$arg" in
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --method)
+        METHOD="${2:-}"
+        shift 2
+        ;;
+      --version)
+        VERSION="${2:-}"
+        shift 2
+        ;;
+      --upgrade)
+        ACTION="upgrade"
+        shift
+        ;;
+      --uninstall)
+        ACTION="uninstall"
+        shift
+        ;;
+      --yes)
+        YES=1
+        shift
+        ;;
       --dry-run)
-        KUNAI_DRY_RUN=1
+        DRY=1
+        shift
         ;;
       -h | --help)
         usage
         exit 0
         ;;
       *)
-        err "Unknown option: $arg"
+        err "Unknown option: $1"
         usage
         exit 1
         ;;
     esac
   done
 
+  case "$ACTION" in
+    upgrade) do_upgrade ;;
+    uninstall) do_uninstall ;;
+  esac
+
   bold "Kunai installer"
-  if [[ "$KUNAI_DRY_RUN" == "1" ]]; then
-    info "Dry run enabled; no install commands will be executed."
-  fi
+  [[ "$DRY" == 1 ]] && info "Dry run: no install commands will be executed."
 
-  local os
-  os="$(detect_os)"
-  if [[ "$os" == unknown ]]; then
-    err "Unsupported OS. Use npm install -g $KUNAI_PACKAGE instead."
-    exit 1
-  fi
-  info "Detected OS: $os"
+  case "$METHOD" in
+    binary) install_binary ;;
+    npm) install_npm ;;
+    bun) install_bun ;;
+    source) install_source ;;
+    *)
+      err "Unknown method: $METHOD (use binary|npm|bun|source)"
+      exit 1
+      ;;
+  esac
 
-  local method
-  method="$(choose_install_method)"
-  ensure_bun
-  install_kunai_package "$method"
-
-  local pm
-  pm="$(detect_pm)"
-  if [[ "$os" != unknown ]]; then
-    install_optional_deps "$pm"
-  fi
-
-  configure_discord_presence
-  ensure_path_hint
+  install_optional_deps
 
   bold "Done."
   cat <<EOF
@@ -302,8 +315,8 @@ Try:
   kunai -S "Frieren" -a
   kunai --setup
 
-Install script (re-run anytime):
-  curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+Update any time:  kunai upgrade
+Remove:           kunai --uninstall
 EOF
 }
 
