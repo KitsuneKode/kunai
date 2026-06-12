@@ -611,6 +611,55 @@ export function isPostPlayConfirmInput(input: string, key: { readonly return?: b
   return Boolean(key.return) || input === "\r" || input === "\n";
 }
 
+export type PostPlayUnhandledInputContext = {
+  readonly blockedByOverlay?: boolean;
+  readonly postPlayStateKind: PostPlayState["kind"];
+  readonly selectedActionAvailable: boolean;
+  readonly recommendationCount: number;
+};
+
+export type PostPlayUnhandledInputResult =
+  | { readonly type: "run-selected-action" }
+  | { readonly type: "recommendation"; readonly index: number }
+  | { readonly type: "recommendation-actions"; readonly index: number }
+  | { readonly type: "shell-result"; readonly result: import("./types").PlaybackShellResult };
+
+export function resolvePostPlayUnhandledInput(
+  input: string,
+  key: { readonly return?: boolean; readonly ctrl?: boolean; readonly meta?: boolean },
+  context: PostPlayUnhandledInputContext,
+): PostPlayUnhandledInputResult | null {
+  if (context.blockedByOverlay) return null;
+  if (isPostPlayConfirmInput(input, key)) {
+    if (context.postPlayStateKind === "series-complete" && !context.selectedActionAvailable) {
+      return context.recommendationCount > 0 ? { type: "recommendation", index: 0 } : null;
+    }
+    return context.selectedActionAvailable ? { type: "run-selected-action" } : null;
+  }
+  if (input === "w" && context.postPlayStateKind === "caught-up") {
+    return { type: "shell-result", result: "watchlist" };
+  }
+  if (context.postPlayStateKind === "did-not-start") {
+    if (input === "r") return { type: "shell-result", result: "replay" };
+    if (input === "f") return { type: "shell-result", result: "fallback" };
+    if (input === "o") return { type: "shell-result", result: "source" };
+    if (input === "d") return { type: "shell-result", result: "diagnostics" };
+    if (input === "s") return { type: "shell-result", result: "search" };
+  }
+  if (input === "1" || input === "2" || input === "3") {
+    const index = Number(input) - 1;
+    return index < context.recommendationCount ? { type: "recommendation", index } : null;
+  }
+  if (input === "h" && !key.ctrl && !key.meta) {
+    return { type: "shell-result", result: "history" };
+  }
+  const actionIndex = input === "!" ? 0 : input === "@" ? 1 : input === "#" ? 2 : -1;
+  if (actionIndex >= 0 && actionIndex < context.recommendationCount) {
+    return { type: "recommendation-actions", index: actionIndex };
+  }
+  return null;
+}
+
 /** Maps a highlighted post-play action row to the shell result PlaybackPhase expects. */
 export function resolvePostPlayMenuAction(
   action: PostPlayActionRow,

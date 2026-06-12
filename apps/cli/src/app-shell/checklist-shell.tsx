@@ -1,3 +1,4 @@
+import { requestHardExit } from "@/app-shell/graceful-exit";
 import {
   getPickerChromeRows,
   getPickerLayout,
@@ -81,7 +82,7 @@ function ChecklistShell<T>({
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
-      process.exit(0);
+      requestHardExit(0);
     }
     if (key.escape) {
       if (filterQuery.length > 0) {

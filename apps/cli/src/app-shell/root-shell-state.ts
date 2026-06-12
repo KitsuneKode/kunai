@@ -102,9 +102,6 @@ export function resolveRootShellSurface(
 }
 
 export function resolveEscTransition(state: SessionState): StateTransition | null {
-  if (state.commandBar.open) {
-    return { type: "CLOSE_COMMAND_BAR" };
-  }
   if (state.activeModals.length > 0) {
     return { type: "CLOSE_TOP_OVERLAY" };
   }

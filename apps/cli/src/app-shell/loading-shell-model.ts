@@ -9,6 +9,9 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
     state.isSeriesPlayback || state.hasNextEpisode || state.hasPreviousEpisode,
   );
   if (state.operation === "playing") {
+    // These keys mirror the mpv Lua bridge and route through Ink while the
+    // shell supervises active playback. Keep the footer and bridge vocabulary
+    // aligned so navigation/source actions feel like one control surface.
     const playingFooterActions: readonly FooterAction[] = [
       { key: "/", label: "commands", action: "command-mode", primary: true },
       ...(state.hasNextEpisode ? [{ key: "n", label: "next", action: "next" as const }] : []),

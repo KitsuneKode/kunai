@@ -16,6 +16,8 @@ import {
   renderStageRail,
   shouldShowPlaybackRuntimeStrip,
   shouldShowLoadingElapsed,
+  shouldShowStallRecoveryPrompt,
+  stallRecoveryPromptDetail,
   stageLabel,
 } from "./loading-shell-runtime";
 import type { StageRailItem } from "./loading-shell-runtime";
@@ -495,6 +497,16 @@ export const LoadingShell = React.memo(function LoadingShell({
     Boolean(loadingIssue),
     state.progress !== undefined,
   );
+  // When loading has stalled for ≥ 20s and there is no fallback and the
+  // surface is not cancellable, the user would otherwise see an eternal
+  // spinner. Surface an explicit "wait / exit" prompt so they always have
+  // a way out. See shouldShowStallRecoveryPrompt in loading-shell-runtime.
+  const showStallPrompt = shouldShowStallRecoveryPrompt({
+    operation: state.operation,
+    elapsedSeconds: elapsed,
+    cancellable: Boolean(state.cancellable),
+    fallbackAvailable: state.fallbackAvailable === true,
+  });
 
   const footerActions = buildLoadingFooterActions(state);
 
@@ -601,6 +613,18 @@ export const LoadingShell = React.memo(function LoadingShell({
                       {formatElapsed(elapsed)} elapsed
                     </Text>
                   )}
+                  {showStallPrompt && (
+                    <Box flexDirection="column" marginTop={1}>
+                      <Text color={palette.warn} bold>
+                        Source not responding
+                      </Text>
+                      <Text color={palette.dim}>
+                        {stallRecoveryPromptDetail({
+                          canOpenDiagnostics: Boolean(state.onCommandAction),
+                        })}
+                      </Text>
+                    </Box>
+                  )}
                   {memoryPanelVisible && memoryLine && (
                     <Text color={palette.dim} dimColor>
                       Memory: {memoryLine}
@@ -688,7 +712,16 @@ export const LoadingShell = React.memo(function LoadingShell({
                       ) : null}
                     </Text>
                   </Box>
-                ) : null}
+                ) : (
+                  <Box marginTop={1} flexDirection="column">
+                    <Text color={palette.text} bold>
+                      Starting mpv session
+                    </Text>
+                    <Text color={palette.dim} dimColor>
+                      Waiting for first playback progress from mpv
+                    </Text>
+                  </Box>
+                )}
 
                 {state.playbackSourceLine ? (
                   <Box marginTop={2}>

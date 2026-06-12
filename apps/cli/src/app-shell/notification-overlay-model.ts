@@ -7,15 +7,24 @@ import type { NotificationRecord } from "@kunai/storage";
 
 export function buildNotificationPickerOptions(
   notifications: readonly NotificationRecord[],
+  options: { subActionsActive?: boolean } = {},
 ): readonly ShellPickerOption<string>[] {
+  const subActionsActive = options.subActionsActive === true;
   return notifications.map((notification) => {
     const primaryAction = getNotificationPrimaryAction(notification);
+    // The "x: dismiss" hint is a lie when the sub-action picker is open —
+    // `x` is gated by `notificationActionDedupKey` and only dismisses from
+    // the top-level picker. Drop the `x` segment in sub-actions mode so the
+    // badge never advertises a no-op.
+    const badge = subActionsActive
+      ? `enter: ${getNotificationActionBadge(primaryAction)}  ·  a: all actions  ·  esc: back`
+      : `enter: ${getNotificationActionBadge(primaryAction)}  ·  a: all actions  ·  x: dismiss`;
     return {
       value: notification.dedupKey,
       label: notification.title,
       detail: notification.body,
       tone: getNotificationTone(notification.kind),
-      badge: `enter: ${getNotificationActionBadge(primaryAction)}  ·  a: all actions  ·  x: dismiss`,
+      badge,
     };
   });
 }

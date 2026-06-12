@@ -38,6 +38,7 @@ import {
   type HistoryTab,
   type HistoryTypeFilter,
 } from "./history-view";
+import { helpSections, type HelpSection } from "./keybindings";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import { LibraryShell } from "./library-shell";
 import {
@@ -101,35 +102,40 @@ import { useShellDimensions } from "./use-viewport-policy";
 /** Stable empty favorites reference for non-tracks overlays (keeps effect deps referentially stable). */
 const EMPTY_TRACKS_FAVORITES: readonly string[] = [];
 
-const HELP_TABS = ["Navigation", "Playback", "Commands", "About"] as const;
-type HelpTab = (typeof HELP_TABS)[number];
+const HELP_TABS_INTERNAL = helpSections().map((section) => section.group);
+type HelpTab = (typeof HELP_TABS_INTERNAL)[number];
 
-const HELP_TAB_ROWS: Record<HelpTab, readonly { key: string; desc: string }[]> = {
-  Navigation: [
-    { key: "↑↓  jk", desc: "move through list" },
-    { key: "enter", desc: "select / play" },
-    { key: "esc  q", desc: "back / quit" },
-    { key: "/", desc: "open command palette" },
-    { key: "tab", desc: "toggle mode (anime / series)" },
-  ],
-  Playback: [
-    { key: "space", desc: "pause / resume" },
-    { key: "← →", desc: "seek 5 seconds" },
-    { key: "[ ]", desc: "seek 85 seconds (op skip)" },
-    { key: "n  p", desc: "next / previous episode" },
-    { key: "s", desc: "cycle subtitle track" },
-    { key: "q", desc: "stop and return to browse" },
-  ],
-  Commands: [
-    { key: "/history", desc: "watch history" },
-    { key: "/continue", desc: "continue watching" },
-    { key: "/discover", desc: "recommendations" },
-    { key: "/calendar", desc: "airing schedule" },
-    { key: "/settings", desc: "preferences" },
-    { key: "/diagnostics", desc: "system diagnostics" },
-  ],
-  About: [{ key: "runtime", desc: "Bun + Ink" }],
-} as const;
+const HELP_SECTION_BY_GROUP = new Map<string, HelpSection>(
+  helpSections().map((section) => [section.group, section]),
+);
+
+/**
+ * Render rows for a given help tab. Exported for testability — the live
+ * `HelpShell` calls this directly and the help-overlay test asserts the
+ * overlay's content matches the registry.
+ */
+export function helpTabRows(tab: string): readonly { key: string; desc: string }[] {
+  return (HELP_SECTION_BY_GROUP.get(tab)?.items ?? []).map((hint) => ({
+    key: hint.keys,
+    desc: hint.label,
+  }));
+}
+
+/**
+ * Ordered list of help tab groups. Mirrors `helpSections().map(s => s.group)`
+ * but is captured at module load so the renderer doesn't re-derive it on
+ * every render. Exported for testability.
+ */
+export const HELP_TABS: readonly string[] = HELP_TABS_INTERNAL;
+
+/**
+ * Test-only: build the live help tab rows from the same `helpTabRows`
+ * helper the overlay uses. Lets the test assert the registry-driven
+ * content without spinning up the full HelpShell component.
+ */
+export function buildHelpTabRows(tab: string): readonly { key: string; desc: string }[] {
+  return helpTabRows(tab);
+}
 
 function HelpShell({
   commandMode,
@@ -138,6 +144,7 @@ function HelpShell({
   commands,
   highlightedIndex,
   footerActions,
+  onClose,
 }: {
   commandMode: boolean;
   commandInput: string;
@@ -145,8 +152,10 @@ function HelpShell({
   commands: readonly ResolvedAppCommand[];
   highlightedIndex: number;
   footerActions: readonly FooterAction[];
+  onClose: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<HelpTab>("Navigation");
+  const initialTab = (HELP_TABS[0] ?? "Global") as HelpTab;
+  const [activeTab, setActiveTab] = useState<HelpTab>(initialTab);
 
   useInput(
     (input, key) => {
@@ -154,14 +163,23 @@ function HelpShell({
       if (key.tab) {
         setActiveTab((prev) => {
           const idx = HELP_TABS.indexOf(prev);
-          return HELP_TABS[(idx + 1) % HELP_TABS.length] ?? "Navigation";
+          const delta = key.shift ? -1 : 1;
+          const next = HELP_TABS[(idx + delta + HELP_TABS.length) % HELP_TABS.length];
+          return (next ?? HELP_TABS[0] ?? prev) as HelpTab;
         });
+        return;
+      }
+      if (input === "?") {
+        // The global `?` binding only fires "open help". When help is already
+        // at the top, the same key should close it. Bail to Esc-style close
+        // here so the user has a single, predictable toggle key.
+        onClose();
       }
     },
     { isActive: !commandMode },
   );
 
-  const rows = HELP_TAB_ROWS[activeTab];
+  const rows = helpTabRows(activeTab);
 
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
@@ -169,7 +187,7 @@ function HelpShell({
         <Text color={palette.text} bold>
           {"▸ Help"}
         </Text>
-        <Text color={palette.dim}>{"Tab cycles sections · Esc closes"}</Text>
+        <Text color={palette.dim}>{"Tab / Shift+Tab cycles sections · Esc or ? closes"}</Text>
         {/* Tab strip */}
         <Box flexDirection="row" marginTop={1} marginBottom={0}>
           {HELP_TABS.map((tab) => (
@@ -201,7 +219,7 @@ function HelpShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel={"Help  ·  Tab cycles sections, Esc closes"}
+          taskLabel={"Help  ·  Tab/Shift+Tab cycles sections, Esc or ? closes"}
           actions={footerActions}
           mode="detailed"
           commandMode={commandMode}
@@ -386,6 +404,7 @@ export function RootOverlayShell({
               : [rawConfig.provider, ...rawConfig.providerPriority],
           }),
           currentProvider: overlay.currentProvider,
+          previewImageUrl: state.currentTitle?.posterUrl,
         })
       : [];
   const providerInitialIndex =
@@ -611,7 +630,9 @@ export function RootOverlayShell({
   const filteredNotificationOptions =
     overlay.type === "notifications"
       ? rankFuzzyMatches(
-          buildNotificationPickerOptions(notificationRecords),
+          buildNotificationPickerOptions(notificationRecords, {
+            subActionsActive: notificationActionDedupKey !== null,
+          }),
           filterQuery,
           (option) => [
             { value: option.label, weight: 0 },
@@ -854,6 +875,21 @@ export function RootOverlayShell({
 
   useInput((input, key) => {
     if (commandMode) {
+      return;
+    }
+    if (input === "?" && !key.ctrl && !key.meta) {
+      // `?` is the global help toggle. The keybinding registry declares it
+      // global but only ShellFrame wired it before — every root overlay
+      // (history, settings, notifications, pickers) was missing it. Help has
+      // its own `?` close handler; for non-help overlays we open it here.
+      if (overlay.type === "help") {
+        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        return;
+      }
+      container.stateManager.dispatch({
+        type: "OPEN_OVERLAY",
+        overlay: { type: "help" },
+      });
       return;
     }
     if (overlay.type === "tracks_panel") {
@@ -1515,9 +1551,6 @@ export function RootOverlayShell({
         })();
         return;
       }
-      if (input === "/") {
-        return;
-      }
       if (filterEditor.handleInput(input, key)) {
         return;
       }
@@ -1737,6 +1770,7 @@ export function RootOverlayShell({
         commands={commands}
         highlightedIndex={highlightedIndex}
         footerActions={footerActions}
+        onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
       />
     );
   }

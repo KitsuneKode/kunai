@@ -152,6 +152,5 @@ function baseState(): SessionState {
     selectedResultId: null,
     activeModals: [],
     pickerResult: null,
-    commandBar: { open: false, query: "", highlightedCommandId: null },
   };
 }

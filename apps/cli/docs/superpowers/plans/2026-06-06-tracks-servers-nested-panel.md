@@ -644,7 +644,7 @@ git commit -m "feat(tracks): counts-header + subtitle-grid layout helpers"
 **Files:**
 
 - Modify: `apps/cli/src/app-shell/tracks-panel-shell.tsx` (full rewrite of the render body; keep the export name + props, add new optional props)
-- Test: `apps/cli/test/unit/app-shell/tracks-panel-shell.test.tsx` (render via `ink-testing-library`; search the repo for an existing `render(` shell test to copy the harness import)
+- Test: `apps/cli/test/unit/app-shell/tracks-panel-shell.test.tsx` (render via the local `apps/cli/test/harness/render-capture.ts` harness — width-controllable + flicker-probe; `ink-testing-library` is intentionally NOT used)
 
 New props (additive, defaulted so existing callers compile):
 

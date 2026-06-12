@@ -112,6 +112,18 @@ function clearShellScreen() {
   }
 }
 
+/**
+ * Render an unknown error in a user-visible string. An `Error` with a message
+ * gets its message; everything else gets `String(error)` so we never show
+ * `[object Object]` to the user (the old `String(error)` call did that when
+ * the caught value was a plain object).
+ */
+function formatError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return String(error);
+}
+
 export function BrowseShell<T>({
   provider,
   initialQuery,
@@ -357,7 +369,7 @@ export function BrowseShell<T>({
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
-      setErrorMessage(String(error));
+      setErrorMessage(formatError(error));
       setEmptyMessage("Search failed.");
     }
   }, [query, searchState, onSearch, resetCalendar]);
@@ -400,7 +412,7 @@ export function BrowseShell<T>({
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
-      setErrorMessage(String(error));
+      setErrorMessage(formatError(error));
       setEmptyMessage("Trending failed.");
     }
   };
@@ -451,7 +463,7 @@ export function BrowseShell<T>({
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
-      setErrorMessage(String(error));
+      setErrorMessage(formatError(error));
       setEmptyMessage("Recommendations failed.");
     }
   };

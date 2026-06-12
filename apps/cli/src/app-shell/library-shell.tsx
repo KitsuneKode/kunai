@@ -129,12 +129,18 @@ export function LibraryShell({
           <LibraryTab container={container} />
         )}
       </Box>
-      <Box marginTop={1}>
+      <Box marginTop={1} flexDirection="column">
         <Text color={palette.dim} dimColor>
           {tab === "library"
             ? "↑↓ navigate · ↵ open · x delete · p protect · Tab switch"
             : "Tab switch to library · d toggle downloads"}
         </Text>
+        {tab === "library" ? (
+          <Text color={palette.dim} dimColor>
+            Missing or broken artifacts: press <Text color={palette.accent}>x</Text> to remove, then
+            re-add via <Text color={palette.accent}>/download</Text>.
+          </Text>
+        ) : null}
       </Box>
     </Box>
   );

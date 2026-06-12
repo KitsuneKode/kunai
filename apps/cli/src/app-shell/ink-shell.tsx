@@ -36,7 +36,6 @@ import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
-import { DiscoverShell, type DiscoverShellResult } from "./discover-shell";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-pane";
@@ -46,8 +45,8 @@ import { resolveNextEpisodeThumbUrl } from "./playback-playing-view";
 import { PostPlayShell } from "./post-play-shell";
 import {
   buildPostPlayView,
-  isPostPlayConfirmInput,
   isPostPlayPlaybackRestartResult,
+  resolvePostPlayUnhandledInput,
   resolvePostPlayMenuAction,
 } from "./post-play-view";
 import { AppHeader } from "./primitives/AppHeader";
@@ -1613,56 +1612,32 @@ function PlaybackShell({
           );
           return;
         }
-        if (isPostPlayConfirmInput(input, key)) {
-          if (postPlayState.kind === "series-complete" && postPlayView.actions.length === 0) {
-            const item = recommendations[0];
-            if (item) {
-              onResolve({ type: "play-recommendation", item });
-            }
-            return;
-          }
+        const resolved = resolvePostPlayUnhandledInput(input, key, {
+          blockedByOverlay: overlayBlocksInput,
+          postPlayStateKind: postPlayState.kind,
+          selectedActionAvailable: postPlayView.actions[selectedActionIndex] !== undefined,
+          recommendationCount: recommendations.length,
+        });
+        if (!resolved) return;
+        if (resolved.type === "run-selected-action") {
           runSelectedPostPlayAction();
           return;
         }
-        if (input === "w" && postPlayState.kind === "caught-up") {
-          onResolve("watchlist");
+        if (resolved.type === "recommendation") {
+          const item = recommendations[resolved.index];
+          if (item) onResolve({ type: "play-recommendation", item });
           return;
         }
-        if (postPlayState.kind === "did-not-start") {
-          if (input === "r") {
-            onResolve("replay");
-            return;
-          }
-          if (input === "f") {
-            onResolve("fallback");
-            return;
-          }
-          if (input === "o") {
-            void openInlineTracks("source");
-            return;
-          }
-          if (input === "d") {
-            onResolve("diagnostics");
-            return;
-          }
-          if (input === "s") {
-            onResolve("search");
-            return;
-          }
+        if (resolved.type === "recommendation-actions") {
+          const item = recommendations[resolved.index];
+          if (item) onResolve({ type: "open-recommendation-actions", items: [item] });
+          return;
         }
-        if (input === "1" || input === "2" || input === "3") {
-          const item = recommendations[Number(input) - 1];
-          if (item) {
-            onResolve({ type: "play-recommendation", item });
-          }
+        if (resolved.result === "source") {
+          void openInlineTracks("source");
+          return;
         }
-        const actionIndex = input === "!" ? 0 : input === "@" ? 1 : input === "#" ? 2 : -1;
-        if (actionIndex >= 0) {
-          const item = recommendations[actionIndex];
-          if (item) {
-            onResolve({ type: "open-recommendation-actions", items: [item] });
-          }
-        }
+        onResolve(resolved.result);
       }}
       onResolve={resolvePostPlayAction}
     >
@@ -2224,11 +2199,11 @@ function StatsShell({
       setTabIdx((i) => (i + 1) % STATS_TABS.length);
       return;
     }
-    if ((key.tab || input === "\t") && key.shift) {
+    if (key.tab && key.shift) {
       setKindIdx((i) => (i + 1) % STATS_KINDS.length);
       return;
     }
-    if (key.tab || input === "\t") {
+    if (key.tab) {
       setRangeIdx((i) => (i + 1) % STATS_RANGES.length);
       return;
     }
@@ -2523,26 +2498,4 @@ export function openListShell<T>({
   };
 
   return run();
-}
-
-export function openDiscoverShell(
-  sections: import("@/services/recommendations/RecommendationService").RecommendationSection[],
-  onRefresh?: () => Promise<
-    readonly import("@/services/recommendations/RecommendationService").RecommendationSection[]
-  >,
-): Promise<DiscoverShellResult> {
-  const session = mountShell<DiscoverShellResult>({
-    renderShell: (finish) => (
-      <DiscoverShell
-        sections={sections}
-        onRefresh={onRefresh}
-        onResult={(result) => {
-          finish(result);
-        }}
-      />
-    ),
-    fallbackValue: { type: "back" },
-  });
-
-  return session.result;
 }

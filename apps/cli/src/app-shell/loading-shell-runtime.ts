@@ -13,6 +13,33 @@ function isPlaybackSupervisionOperation(operation: LoadingShellState["operation"
   return operation === "playing";
 }
 
+/**
+ * Stall recovery prompt: when loading has stalled for ≥ 20s and there is no
+ * fallback to try and no cancel available, the spinner used to spin forever
+ * (P0-10 from the UX audit). This helper lets LoadingShell render an explicit
+ * "wait, exit, or try again" prompt so the user always has a way out. The
+ * elapsed threshold matches `getProviderResolveWaitPresentation`'s slow-source
+ * warning so the prompt appears together with the copy, not after a delay.
+ */
+export function shouldShowStallRecoveryPrompt(input: {
+  operation: LoadingShellState["operation"];
+  elapsedSeconds: number;
+  cancellable: boolean;
+  fallbackAvailable: boolean;
+}): boolean {
+  if (input.operation === "playing") return false;
+  if (input.elapsedSeconds < 20) return false;
+  // If the user can already escape (cancellable or fallback), the footer
+  // hints are enough — don't stack a second prompt on top.
+  if (input.cancellable || input.fallbackAvailable) return false;
+  return true;
+}
+
+export function stallRecoveryPromptDetail(input: { canOpenDiagnostics: boolean }): string {
+  const base = "No fallback available. Press Ctrl+C to exit, or wait.";
+  return input.canOpenDiagnostics ? `${base} Diagnostics may help: try \`/diagnostics\`.` : base;
+}
+
 export function shouldShowLoadingElapsed(
   operation: LoadingShellState["operation"],
   elapsedSeconds: number,

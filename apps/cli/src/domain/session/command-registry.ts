@@ -209,7 +209,7 @@ export const COMMANDS: readonly AppCommand[] = [
   {
     id: "library",
     label: "Library",
-    aliases: ["library", "offline", "offline-library", "my-downloads", "downloads"],
+    aliases: ["library", "offline", "offline-library", "my-downloads"],
     description: "Browse offline library and manage downloads",
   },
   {

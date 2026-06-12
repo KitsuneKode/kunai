@@ -226,7 +226,7 @@ describe("SessionState overlays", () => {
     expect(state.stopAfterCurrent).toBe(false);
   });
 
-  test("Esc closes command entry before it closes the overlay stack", () => {
+  test("Esc closes the top overlay when one is open", () => {
     let state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
@@ -237,12 +237,16 @@ describe("SessionState overlays", () => {
       type: "OPEN_OVERLAY",
       overlay: { type: "help" },
     });
-    state = reduceState(state, { type: "OPEN_COMMAND_BAR" });
-
-    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_COMMAND_BAR" });
-
-    state = reduceState(state, { type: "CLOSE_COMMAND_BAR" });
     expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
+  });
+
+  test("Esc is a no-op when no overlay is open", () => {
+    const state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    expect(resolveEscTransition(state)).toBeNull();
   });
 
   test("mounted root content remains primary while overlays render inside it", () => {

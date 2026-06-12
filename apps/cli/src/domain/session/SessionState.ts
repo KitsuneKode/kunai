@@ -8,7 +8,6 @@
 import type { PlaybackProblem } from "../playback/playback-problem";
 import type { TrackCapabilityGroup, TrackCapabilitySection } from "../playback/track-capabilities";
 import type { EpisodeInfo, SearchResult, StreamInfo, TitleInfo } from "../types";
-import type { AppCommandId } from "./command-registry";
 import { rankFuzzyMatches } from "./fuzzy-match";
 import {
   DEFAULT_LAYOUT_PREFERENCES,
@@ -55,12 +54,6 @@ export interface EpisodeNavigationState {
   readonly previousUnavailableReason?: string;
   readonly nextUnavailableReason?: string;
   readonly nextSeasonUnavailableReason?: string;
-}
-
-export interface CommandBarState {
-  readonly open: boolean;
-  readonly query: string;
-  readonly highlightedCommandId: AppCommandId | null;
 }
 
 export interface OverlayPickerOption {
@@ -158,7 +151,6 @@ export interface SessionState {
 
   readonly activeModals: OverlayState[];
   readonly pickerResult: PickerModalResult | null;
-  readonly commandBar: CommandBarState;
 
   readonly viewport: ViewportSize;
   readonly layoutPreferences: LayoutPreferences;
@@ -211,10 +203,6 @@ export type StateTransition =
   | { type: "PUSH_MODAL"; modal: OverlayState }
   | { type: "POP_MODAL" }
   | { type: "CLOSE_ALL_MODALS" }
-  | { type: "OPEN_COMMAND_BAR" }
-  | { type: "CLOSE_COMMAND_BAR" }
-  | { type: "SET_COMMAND_QUERY"; query: string }
-  | { type: "HIGHLIGHT_COMMAND"; commandId: AppCommandId | null }
   | { type: "SET_TERMINAL_SIZE"; columns: number; rows: number }
   | { type: "TOGGLE_COMPANION_PANE" }
   | { type: "OPEN_DIAGNOSTICS_PANE" }
@@ -276,11 +264,6 @@ export function createInitialState(
     selectedResultId: null,
     activeModals: [],
     pickerResult: null,
-    commandBar: {
-      open: false,
-      query: "",
-      highlightedCommandId: null,
-    },
     viewport: DEFAULT_VIEWPORT,
     layoutPreferences,
     layout: deriveResponsiveLayout(DEFAULT_VIEWPORT, layoutPreferences),
@@ -565,44 +548,6 @@ export function reduceState(state: SessionState, transition: StateTransition): S
 
     case "CLOSE_ALL_MODALS":
       return { ...state, activeModals: [] };
-
-    case "OPEN_COMMAND_BAR":
-      return {
-        ...state,
-        commandBar: {
-          ...state.commandBar,
-          open: true,
-        },
-      };
-
-    case "CLOSE_COMMAND_BAR":
-      return {
-        ...state,
-        commandBar: {
-          open: false,
-          query: "",
-          highlightedCommandId: null,
-        },
-      };
-
-    case "SET_COMMAND_QUERY":
-      return {
-        ...state,
-        commandBar: {
-          ...state.commandBar,
-          open: true,
-          query: transition.query,
-        },
-      };
-
-    case "HIGHLIGHT_COMMAND":
-      return {
-        ...state,
-        commandBar: {
-          ...state.commandBar,
-          highlightedCommandId: transition.commandId,
-        },
-      };
 
     case "SET_TERMINAL_SIZE":
       return withLayout(state, {

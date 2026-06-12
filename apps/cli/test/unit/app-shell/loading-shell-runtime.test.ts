@@ -8,6 +8,8 @@ import {
   renderStageRail,
   shouldShowPlaybackRuntimeStrip,
   shouldShowLoadingElapsed,
+  shouldShowStallRecoveryPrompt,
+  stallRecoveryPromptDetail,
 } from "@/app-shell/loading-shell-runtime";
 import type { LoadingShellStage } from "@/app-shell/types";
 import {
@@ -158,6 +160,11 @@ describe("loading shell runtime policy", () => {
     );
     expect(normalizeProviderDetail("vidking · direct-http")).toBe("vidking · direct-http");
   });
+
+  test("stall prompt mentions diagnostics only when command actions are available", () => {
+    expect(stallRecoveryPromptDetail({ canOpenDiagnostics: true })).toContain("/diagnostics");
+    expect(stallRecoveryPromptDetail({ canOpenDiagnostics: false })).not.toContain("/diagnostics");
+  });
 });
 
 describe("runtime memory reporting", () => {
@@ -203,6 +210,71 @@ VmSwap:\t128 kB
         appSwapBytes: 7_118_108 * 1024,
       }),
     ).toBe("App 9.8 GiB · mpv 601.7 MiB · total 10.4 GiB · heap 80.0/128.0 MiB · swap 6.8 GiB");
+  });
+});
+
+describe("shouldShowStallRecoveryPrompt — P0-10 no-escape spinner", () => {
+  test("does not show during active playback", () => {
+    expect(
+      shouldShowStallRecoveryPrompt({
+        operation: "playing",
+        elapsedSeconds: 30,
+        cancellable: false,
+        fallbackAvailable: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("does not show before the 20-second slow-source threshold", () => {
+    expect(
+      shouldShowStallRecoveryPrompt({
+        operation: "loading",
+        elapsedSeconds: 8,
+        cancellable: false,
+        fallbackAvailable: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("does not show when the user can cancel — the footer hint is enough", () => {
+    expect(
+      shouldShowStallRecoveryPrompt({
+        operation: "loading",
+        elapsedSeconds: 25,
+        cancellable: true,
+        fallbackAvailable: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("does not show when a fallback is configured — the user has an alternative", () => {
+    expect(
+      shouldShowStallRecoveryPrompt({
+        operation: "loading",
+        elapsedSeconds: 25,
+        cancellable: false,
+        fallbackAvailable: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("shows when stalled ≥ 20s with no fallback and no cancel — the eternal-spinner escape hatch", () => {
+    expect(
+      shouldShowStallRecoveryPrompt({
+        operation: "loading",
+        elapsedSeconds: 25,
+        cancellable: false,
+        fallbackAvailable: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowStallRecoveryPrompt({
+        operation: "resolving",
+        elapsedSeconds: 45,
+        cancellable: false,
+        fallbackAvailable: false,
+      }),
+    ).toBe(true);
   });
 });
 
