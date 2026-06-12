@@ -10,7 +10,9 @@ Use this file as the planning index. It should stay short. Put implementation de
 
 ### Stable
 
-- Core Playwright interception flow works
+- Core direct-provider stream resolution works through `@kunai/providers` and
+  the provider engine. Legacy Playwright interception code is archived as
+  reference and is not part of the active beta runtime.
 - Movie/series providers and anime providers are both wired into the main loop
 - Search, playback, history, subtitles, and auto-next all exist
 - `AGENTS.md`, `.docs/`, and `.plans/` now have separated responsibilities
@@ -19,7 +21,9 @@ Use this file as the planning index. It should stay short. Put implementation de
 - Default startup mode is now configurable and honored by `apps/cli/src/main.ts`
 - Autoplay is now app-driven: mpv exits cleanly at EOF, then Kunai launches the next actually available released episode when enabled
 - The CLI now has a dedicated `apps/cli/test/` tree for integration, live smoke, provider templates, and VHS tapes
-- Browser/embed scraping in the new runtime now reads and writes the shared stream cache
+- Direct-provider stream and source-inventory resolves in the new runtime read
+  and write the shared cache. Browser/embed cache paths are legacy or future
+  runtime-browser work, not active beta defaults.
 - AllManga-compatible parity code lives in `@kunai/providers` so it is not mistaken for the generic anime provider base
 - `apps/cli/src/main.ts` is now the default runnable and build entrypoint
 - Shell-local debug POST instrumentation has been removed from the Ink UI path

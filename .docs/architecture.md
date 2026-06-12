@@ -96,14 +96,15 @@ For new providers or major provider hardening, do not jump straight from this do
 
 ## Why Key Decisions Exist
 
-| Decision                     | Reason                                                                                  |
-| ---------------------------- | --------------------------------------------------------------------------------------- |
-| Playwright over direct fetch | JS-driven players hide the real `.m3u8` until runtime                                   |
-| Detached `mpv`               | Keeps the terminal usable and matches ani-cli style behavior                            |
-| Lua position reporter        | `mpv` does not reliably expose final playback position on exit                          |
-| Injected `embedScraper`      | Lets API providers reuse Playwright scraping without circular imports                   |
-| Search-service registry      | Keeps room for multiple search backends without hardwiring everything into one provider |
-| `isAnimeProvider` flag       | Anime routing should be explicit and cheap to evaluate                                  |
+| Decision                          | Reason                                                                                  |
+| --------------------------------- | --------------------------------------------------------------------------------------- |
+| Direct-provider modules first     | Active beta providers resolve over HTTP/provider APIs without launching browser runtime |
+| Archive Playwright reference code | Browser interception remains useful for research evidence, not production defaults      |
+| Future runtime-browser package    | Any renewed Playwright path should be isolated behind a runtime boundary/lease model    |
+| Detached `mpv`                    | Keeps the terminal usable and matches ani-cli style behavior                            |
+| Lua position reporter             | `mpv` does not reliably expose final playback position on exit                          |
+| Search-service registry           | Keeps room for multiple search backends without hardwiring everything into one provider |
+| `isAnimeProvider` flag            | Anime routing should be explicit and cheap to evaluate                                  |
 
 ## Critical Invariants
 

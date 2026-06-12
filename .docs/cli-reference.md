@@ -2,7 +2,7 @@
 
 This document is the **canonical** description of command-line flags and common run patterns. It is written so a docs site can import or split it into MDX (clear `##` sections, tables, and copy-paste examples).
 
-Setup, Playwright, and troubleshooting live in [quickstart.md](./quickstart.md). Product scope and disclaimers live in [experience-overview.md](./experience-overview.md).
+Setup, provider runtime notes, and troubleshooting live in [quickstart.md](./quickstart.md). Product scope and disclaimers live in [experience-overview.md](./experience-overview.md).
 
 **Source of truth for flags:** `apps/cli/src/main.ts` — `parseArgs()`.
 

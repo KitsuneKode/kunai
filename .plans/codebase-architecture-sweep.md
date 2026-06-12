@@ -409,7 +409,11 @@ packages/storage
       `bun run --cwd apps/cli test:file test/unit/services/download/download-service.test.ts`.
 
 12. `docs: mark historical plans and update routing`
-    - Status: Not started
+    - Status: In progress
+    - Done: updated current roadmap and architecture docs to distinguish active
+      direct-provider runtime from archived/future Playwright/runtime-browser
+      work.
+    - Remaining: broader historical-plan classification pass.
     - Keep research.
     - Mark current vs historical plan surfaces.
     - Update `plan-implementation-truth.md` if statuses change.
