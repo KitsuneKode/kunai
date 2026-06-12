@@ -29,6 +29,50 @@ export type TracksPanelPickResult =
       readonly selection: StreamSelectionIntent;
     };
 
+export type TrackPickTransitionContext = {
+  readonly titleId: string;
+  readonly season: number;
+  readonly episode: number;
+  readonly fromProvider?: string;
+  readonly provider?: string;
+  readonly sourceId?: string;
+  readonly streamId?: string;
+  readonly audioMode?: "sub" | "dub";
+};
+
+export function buildTrackPickTransitionContext(input: {
+  readonly titleId: string;
+  readonly episode: EpisodeInfo;
+  readonly selection: StreamSelectionIntent;
+  readonly fromProviderId: string;
+}): TrackPickTransitionContext {
+  const base = {
+    titleId: input.titleId,
+    season: input.episode.season,
+    episode: input.episode.episode,
+  };
+
+  if (input.selection.crossProviderSource) {
+    return {
+      ...base,
+      fromProvider: input.fromProviderId,
+      provider: input.selection.crossProviderSource.providerId,
+      sourceId: input.selection.crossProviderSource.sourceId,
+    };
+  }
+  if (input.selection.providerId) {
+    return {
+      ...base,
+      fromProvider: input.fromProviderId,
+      provider: input.selection.providerId,
+    };
+  }
+  if (input.selection.sourceId) return { ...base, sourceId: input.selection.sourceId };
+  if (input.selection.streamId) return { ...base, streamId: input.selection.streamId };
+  if (input.selection.audioMode) return { ...base, audioMode: input.selection.audioMode };
+  return base;
+}
+
 export async function resolveTracksPanelPick(
   picked: DecodedTrackSelection,
   selection: StreamSelectionIntent | null,

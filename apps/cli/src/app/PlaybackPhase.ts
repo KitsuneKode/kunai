@@ -32,6 +32,7 @@ import {
   shouldReleasePersistentMpvBeforePostPlay,
 } from "@/app/mpv-session-lifecycle";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
+import { applyPlaybackControlSourceSelection } from "@/app/playback-control-source-selection";
 import {
   createDeadStreamUrlLedger,
   playbackDeadStreamScopeKey,
@@ -50,7 +51,10 @@ import {
   playbackSubtitlePreference,
 } from "@/app/playback-profile-context";
 import {
-  applyUserProviderSwitch,
+  pickCompatibleFallbackProvider,
+  switchPlaybackProviderFallback,
+} from "@/app/playback-provider-fallback";
+import {
   resolveStreamProviderId,
   resolveTitleProviderPreference,
 } from "@/app/playback-provider-switch";
@@ -101,6 +105,12 @@ import {
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
 } from "@/app/provider-resolve-copy";
+import {
+  recentPlaybackStreamKey,
+  recentPlaybackStreamMatchesProvider,
+  type RecentPlaybackStreamProvenance,
+  type RecentPlaybackStreamRecord,
+} from "@/app/recent-playback-stream";
 import { createResolveTraceStub } from "@/app/resolve-trace";
 import {
   applyPreferredStreamSelection,
@@ -115,6 +125,8 @@ import {
 import { choosePlaybackSubtitle, shouldAttemptLateSubtitleLookup } from "@/app/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import { titleInfoFromSearchResult } from "@/app/title-info";
+import { applyTrackPickRestart } from "@/app/track-pick-restart";
+import { buildTrackPickTransitionContext } from "@/app/tracks-panel-pick";
 import { episodeThumbKey } from "@/domain/catalog/title-detail";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import {
@@ -727,23 +739,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       // In-memory cache of recently played episode streams so backward navigation
       // (P key) reuses the exact same StreamInfo without provider resolve or cache lookup.
-      const recentEpisodeStreams = new Map<
-        string,
-        {
-          readonly stream: StreamInfo;
-          readonly selectedProviderId: string;
-          readonly resolvedProviderId: string;
-          readonly provenance: "fresh" | "cache" | "prefetch" | "fallback";
-        }
-      >();
+      const recentEpisodeStreams = new Map<string, RecentPlaybackStreamRecord>();
       const deadStreamUrls = createDeadStreamUrlLedger();
       let autoSourceRecoverAttempts = 0;
       let autoRecoverEpisodeKey: string | null = null;
       let consumedProviderSwitchSeq = providerSwitchSeqBeforeEpisodePicker;
-      const recentEpisodeStreamKey = (targetEpisode: EpisodeInfo): string =>
-        `${title.id}:${targetEpisode.season}:${targetEpisode.episode}`;
       const invalidateRecentEpisodeStream = (targetEpisode: EpisodeInfo): void => {
-        recentEpisodeStreams.delete(recentEpisodeStreamKey(targetEpisode));
+        recentEpisodeStreams.delete(recentPlaybackStreamKey(title.id, targetEpisode));
       };
       const recentStreamMatchesPreferred = (
         recent: { readonly stream: StreamInfo },
@@ -879,63 +881,31 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               reason,
             });
 
-            if (resolved.kind === "noop") {
-              return startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
-            }
-            if (resolved.kind === "provider-switch") {
-              resolvedProviderId = resolved.providerId;
-              recentEpisodeStreams.delete(
-                `${title.id}:${pickedEpisode.season}:${pickedEpisode.episode}`,
-              );
-              pendingSourceRefreshAction = "recover";
-              pendingRecomputeSources = false;
-              return startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
-            }
-            if (resolved.kind === "audio-mode-switch") {
-              recentEpisodeStreams.delete(
-                `${title.id}:${pickedEpisode.season}:${pickedEpisode.episode}`,
-              );
-              pendingSourceRefreshAction = "recover";
-              pendingRecomputeSources = false;
-              await prepareStreamSwitchRestart(pickedEpisode);
-              return startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
-            }
-            if (resolved.kind === "cross-provider-source") {
-              resolvedProviderId = resolved.providerId;
-              await selectionCoordinator.applyManualSourcePick(
-                resolved.providerId,
-                pickedEpisode,
-                resolved.sourceId,
-              );
-              recentEpisodeStreams.delete(
-                `${title.id}:${pickedEpisode.season}:${pickedEpisode.episode}`,
-              );
-              pendingSourceRefreshAction = "recover";
-              pendingRecomputeSources = false;
-              await prepareStreamSwitchRestart(pickedEpisode);
-              return startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
-            }
+            const restart = await applyTrackPickRestart({
+              resolved,
+              currentProviderId: resolvedProviderId,
+              episode: pickedEpisode,
+              resumeSeconds,
+              effects: {
+                applyManualSourcePick: (providerId, targetEpisode, sourceId) =>
+                  selectionCoordinator.applyManualSourcePick(providerId, targetEpisode, sourceId),
+                applyEpisodeSelection: (providerId, targetEpisode, streamSelection) =>
+                  selectionCoordinator.applyEpisodeSelection(
+                    providerId,
+                    targetEpisode,
+                    streamSelection,
+                  ),
+                invalidateRecentEpisodeStream,
+                prepareStreamSwitchRestart,
+              },
+            });
 
-            const { section, selection: streamSelection } = resolved;
-            if (section === "source" && streamSelection.sourceId) {
-              await selectionCoordinator.applyManualSourcePick(
-                resolvedProviderId,
-                pickedEpisode,
-                streamSelection.sourceId,
-              );
-            } else {
-              await selectionCoordinator.applyEpisodeSelection(
-                resolvedProviderId,
-                pickedEpisode,
-                streamSelection,
-              );
+            resolvedProviderId = restart.resolvedProviderId;
+            if (restart.requiresFreshResolve) {
+              pendingSourceRefreshAction = "recover";
+              pendingRecomputeSources = false;
             }
-            if (section === "source") {
-              await prepareStreamSwitchRestart(pickedEpisode);
-            }
-            return section === "source"
-              ? startEpisodeNavigation({ targetResumeSeconds: resumeSeconds })
-              : startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
+            return restart.startIntent;
           };
           const recordStartupMark = (stage: PlaybackStartupStage, activeStream?: StreamInfo) => {
             if (!startupTimeline.mark(stage)) return;
@@ -1002,32 +972,67 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           );
 
           const watchedEntries = historyRepository.listByTitle(title.id);
-          const currentAnimeEpisodes = await this.getAnimeEpisodeOptions({
+          const playbackMode = stateManager.getState().mode;
+          const isAnimePlayback = playbackMode === "anime";
+          const episodeLoadCache = new Map<
+            string,
+            Promise<Awaited<ReturnType<typeof fetchEpisodes>>>
+          >();
+          const loadEpisodesOnce = (tmdbId: string, season: number) => {
+            const cacheKey = `${tmdbId}:${season}`;
+            const cached = episodeLoadCache.get(cacheKey);
+            if (cached) return cached;
+            const task = fetchEpisodes(tmdbId, season);
+            episodeLoadCache.set(cacheKey, task);
+            return task;
+          };
+
+          stateManager.dispatch({
+            type: "SET_PLAYBACK_STATUS",
+            status: "loading",
+          });
+          stateManager.dispatch({ type: "SET_RESOLVE_RETRY_COUNT", count: 0 });
+          this.updatePlaybackFeedback(context, {
+            detail: "Preparing episode metadata",
+            note: "Warming episode names, navigation, and artwork",
+          });
+
+          const currentAnimeEpisodesPromise = this.getAnimeEpisodeOptions({
             title,
-            mode: stateManager.getState().mode,
+            mode: playbackMode,
             provider: currentProvider,
             cache: animeEpisodeCatalogByProvider,
             signal: resolveController.signal,
           });
-          const shellEpisodePicker = await buildPlaybackEpisodePickerOptions({
-            title,
-            currentEpisode,
-            isAnime: stateManager.getState().mode === "anime",
-            animeEpisodeCount: title.episodeCount,
-            animeEpisodes: currentAnimeEpisodes,
-            watchedEntries,
-          });
-          const episodeAvailability = await resolveEpisodeAvailability({
-            title,
-            currentEpisode,
-            isAnime: stateManager.getState().mode === "anime",
-            animeEpisodeCount: title.episodeCount,
-            animeEpisodes: currentAnimeEpisodes,
-            loaders: {
-              loadSeasons: fetchSeasons,
-              loadEpisodes: fetchEpisodes,
-            },
-          });
+          const shellEpisodePickerPromise = currentAnimeEpisodesPromise.then(
+            (currentAnimeEpisodes) =>
+              buildPlaybackEpisodePickerOptions({
+                title,
+                currentEpisode,
+                isAnime: isAnimePlayback,
+                animeEpisodeCount: title.episodeCount,
+                animeEpisodes: currentAnimeEpisodes,
+                watchedEntries,
+                loadEpisodes: loadEpisodesOnce,
+              }),
+          );
+          const episodeAvailabilityPromise = currentAnimeEpisodesPromise.then(
+            (currentAnimeEpisodes) =>
+              resolveEpisodeAvailability({
+                title,
+                currentEpisode,
+                isAnime: isAnimePlayback,
+                animeEpisodeCount: title.episodeCount,
+                animeEpisodes: currentAnimeEpisodes,
+                loaders: {
+                  loadSeasons: fetchSeasons,
+                  loadEpisodes: loadEpisodesOnce,
+                },
+              }),
+          );
+          const [currentAnimeEpisodes, shellEpisodePicker, episodeAvailability] = await Promise.all(
+            [currentAnimeEpisodesPromise, shellEpisodePickerPromise, episodeAvailabilityPromise],
+          );
           recordStartupMark("episode-context-ready");
 
           const navigationState = toEpisodeNavigationState(title.type, episodeAvailability, {
@@ -1051,12 +1056,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
-          // Resolve stream with loading UI
-          stateManager.dispatch({
-            type: "SET_PLAYBACK_STATUS",
-            status: "loading",
-          });
-          stateManager.dispatch({ type: "SET_RESOLVE_RETRY_COUNT", count: 0 });
           this.updatePlaybackFeedback(context, {
             detail: "Resolving provider stream",
             note: "Esc cancels this resolve and returns to results",
@@ -1155,7 +1154,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const prefetchWasPrepared = consumedBundle?.prepared === true;
 
           let stream: StreamInfo | null = consumedBundle?.stream ?? null;
-          let streamProvenance: "fresh" | "cache" | "prefetch" | "fallback" = consumedBundle
+          let streamProvenance: RecentPlaybackStreamProvenance = consumedBundle
             ? "prefetch"
             : "fresh";
           let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
@@ -1208,14 +1207,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // This lets P-navigation reuse the exact same StreamInfo without any
           // provider resolve, cache lookup, or health check.
           if (!stream && !sourceRefreshDecision) {
-            const recentKey = recentEpisodeStreamKey(currentEpisode);
+            const recentKey = recentPlaybackStreamKey(title.id, currentEpisode);
             const recent = recentEpisodeStreams.get(recentKey);
-            const recentMatchesProvider =
-              recent?.selectedProviderId === configuredProviderId &&
-              recent.resolvedProviderId === configuredProviderId;
             if (
-              recent &&
-              recentMatchesProvider &&
+              recentPlaybackStreamMatchesProvider(recent, currentProvider.metadata.id) &&
               recentStreamMatchesPreferred(recent, currentProvider.metadata.id, currentEpisode)
             ) {
               stream = recent.stream;
@@ -1251,6 +1246,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: currentEpisode,
                 mode: stateManager.getState().mode,
                 config,
+                selectedSourceId: currentPreferredStreamSelection.sourceId,
+                selectedStreamId: currentPreferredStreamSelection.streamId,
               });
             }
             const sourceRefreshIsRecover = sourceRefreshDecision?.kind === "recover";
@@ -1961,6 +1958,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const invalidateProviderId = consumedBundle
               ? (consumedBundle.target.providerId ?? resolvedProviderId)
               : resolvedProviderId;
+            const selectedResolveStream = preparedStream.providerResolveResult?.streams.find(
+              (candidate) =>
+                candidate.id === preparedStream.providerResolveResult?.selectedStreamId,
+            );
             deadStreamUrls.record(
               playbackDeadStreamScopeKey({
                 titleId: title.id,
@@ -1978,9 +1979,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               episode: currentEpisode,
               mode: stateManager.getState().mode,
               config,
+              selectedSourceId: selectedResolveStream?.sourceId,
+              selectedStreamId: preparedStream.providerResolveResult?.selectedStreamId,
             });
-            const recentKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
-            recentEpisodeStreams.delete(recentKey);
+            invalidateRecentEpisodeStream(currentEpisode);
             if (result.suspectedDeadStream === true) {
               container.titleProviderHealth.recordFailure(
                 title.id,
@@ -2138,33 +2140,31 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 quitThresholdMode,
               ),
             });
-            const fallback = providerRegistry
-              .getCompatible(title, stateManager.getState().mode)
-              .find((candidate) => candidate.metadata.id !== resolvedProviderId);
+            const fallback = pickCompatibleFallbackProvider(
+              providerRegistry.getCompatible(title, stateManager.getState().mode),
+              resolvedProviderId,
+            );
 
             if (fallback) {
               sessionSoftProviderId = null;
-              const fromProviderId = resolvedProviderId;
-              await applyUserProviderSwitch({
+              const switched = await switchPlaybackProviderFallback({
                 container,
-                fromProviderId,
+                fromProviderId: resolvedProviderId,
                 toProviderId: fallback.metadata.id,
                 title,
                 episode: currentEpisode,
                 mode: stateManager.getState().mode,
+                invalidateRecentEpisodeStream,
               });
-              resolvedProviderId = fallback.metadata.id;
-              recentEpisodeStreams.delete(
-                `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
-              );
+              resolvedProviderId = switched.providerId;
               pendingSourceRefreshAction = "recover";
               pendingRecomputeSources = false;
               diagnosticsService.record({
                 category: "playback",
                 message: "Switching to fallback provider after playback control request",
                 context: {
-                  from: fromProviderId,
-                  fallback: fallback.metadata.id,
+                  from: switched.fromProviderId,
+                  fallback: switched.providerId,
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
@@ -2283,11 +2283,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "pick-source") {
             if (confirmedStreamSelection) {
-              await setPreferredStreamSelection(
-                resolvedProviderId,
-                currentEpisode,
-                confirmedStreamSelection,
-              );
+              await applyPlaybackControlSourceSelection({
+                providerId: resolvedProviderId,
+                episode: currentEpisode,
+                selection: confirmedStreamSelection,
+                deps: {
+                  applyManualSourcePick: (providerId, targetEpisode, sourceId) =>
+                    selectionCoordinator.applyManualSourcePick(providerId, targetEpisode, sourceId),
+                  applyEpisodeSelection: (providerId, targetEpisode, selection) =>
+                    setPreferredStreamSelection(providerId, targetEpisode, selection),
+                },
+              });
               await prepareStreamSwitchRestart(currentEpisode);
               pendingStart = startEpisodeNavigation({
                 targetResumeSeconds: toHistoryTimestamp(
@@ -3045,6 +3051,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 if (!selection) {
                   continue postPlayback;
                 }
+                const fromProviderId = resolvedProviderId;
                 pendingStart = await completeSourceTrackPick(
                   currentEpisode,
                   picked,
@@ -3056,14 +3063,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   context,
                   playbackSession,
                   "episode-navigation",
-                  {
+                  buildTrackPickTransitionContext({
                     titleId: title.id,
-                    season: currentEpisode.season,
-                    episode: currentEpisode.episode,
-                    ...(selection.sourceId
-                      ? { sourceId: selection.sourceId }
-                      : { streamId: selection.streamId }),
-                  },
+                    episode: currentEpisode,
+                    selection,
+                    fromProviderId,
+                  }),
                 );
                 break postPlayback;
               }
@@ -3252,9 +3257,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (postPlayState.kind === "did-not-start") {
                 pendingSourceRefreshAction = "recover";
                 autoSourceRecoverAttempts = 0;
-                recentEpisodeStreams.delete(
-                  `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
-                );
+                invalidateRecentEpisodeStream(currentEpisode);
               }
               const playbackAction = resolvePostPlaybackSessionAction("replay", playbackSession);
               playbackSession = playbackAction.session;
@@ -3277,9 +3280,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               pendingSourceRefreshAction = "recover";
               pendingRecomputeSources = true;
               autoSourceRecoverAttempts = 0;
-              recentEpisodeStreams.delete(
-                `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
-              );
+              invalidateRecentEpisodeStream(currentEpisode);
               playbackSession = this.transitionPlaybackSession(
                 context,
                 playbackSession,
@@ -3305,26 +3306,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               break postPlayback;
             } else if (routedAction === "fallback") {
-              const fallback = providerRegistry
-                .getCompatible(title, stateManager.getState().mode)
-                .find((candidate) => candidate.metadata.id !== resolvedProviderId);
+              const fallback = pickCompatibleFallbackProvider(
+                providerRegistry.getCompatible(title, stateManager.getState().mode),
+                resolvedProviderId,
+              );
               if (!fallback) {
                 continue postPlayback;
               }
               sessionSoftProviderId = null;
-              await applyUserProviderSwitch({
+              const switched = await switchPlaybackProviderFallback({
                 container,
                 fromProviderId: resolvedProviderId,
                 toProviderId: fallback.metadata.id,
                 title,
                 episode: currentEpisode,
                 mode: stateManager.getState().mode,
+                invalidateRecentEpisodeStream,
               });
-              resolvedProviderId = fallback.metadata.id;
-              postPlayProviderId = fallback.metadata.id;
-              recentEpisodeStreams.delete(
-                `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
-              );
+              resolvedProviderId = switched.providerId;
+              postPlayProviderId = switched.providerId;
               pendingSourceRefreshAction = "recover";
               pendingRecomputeSources = false;
               pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
@@ -3336,16 +3336,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  fromProvider: resolvedProviderId,
-                  provider: fallback.metadata.id,
+                  fromProvider: switched.fromProviderId,
+                  provider: switched.providerId,
                 },
               );
               diagnosticsService.record({
                 category: "playback",
                 message: "Switching to fallback provider after shell command",
                 context: {
-                  from: resolvedProviderId,
-                  fallback: fallback.metadata.id,
+                  from: switched.fromProviderId,
+                  fallback: switched.providerId,
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
@@ -3381,6 +3381,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (!selection && picked.section !== "subtitle") {
                 continue postPlayback;
               }
+              const fromProviderId = resolvedProviderId;
               pendingStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
@@ -3392,29 +3393,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 context,
                 playbackSession,
                 "episode-navigation",
-                {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  ...(selection?.crossProviderSource
-                    ? {
-                        fromProvider: resolvedProviderId,
-                        provider: selection.crossProviderSource.providerId,
-                        sourceId: selection.crossProviderSource.sourceId,
-                      }
-                    : selection?.providerId
-                      ? {
-                          fromProvider: resolvedProviderId,
-                          provider: selection.providerId,
-                        }
-                      : selection?.sourceId
-                        ? { sourceId: selection.sourceId }
-                        : selection?.streamId
-                          ? { streamId: selection.streamId }
-                          : selection?.audioMode
-                            ? { audioMode: selection.audioMode }
-                            : {}),
-                },
+                selection
+                  ? buildTrackPickTransitionContext({
+                      titleId: title.id,
+                      episode: currentEpisode,
+                      selection,
+                      fromProviderId,
+                    })
+                  : {
+                      titleId: title.id,
+                      season: currentEpisode.season,
+                      episode: currentEpisode.episode,
+                    },
               );
               break postPlayback;
             } else if (routedAction === "download") {
@@ -3443,9 +3433,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 postPlayProviderId = nextProviderId;
                 resolvedProviderId = nextProviderId;
                 sessionSoftProviderId = null;
-                recentEpisodeStreams.delete(
-                  `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
-                );
+                invalidateRecentEpisodeStream(currentEpisode);
                 pendingSourceRefreshAction = "recover";
                 pendingRecomputeSources = false;
                 diagnosticsService.record({

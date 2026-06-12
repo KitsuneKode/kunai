@@ -67,6 +67,12 @@ describe("selectReadyStream — favorites", () => {
     expect(result.decision.reason).toBe("favorite-source");
   });
 
+  test("favorite source order wins before quality across different favorite sources", () => {
+    const result = selectReadyStream(streams, { favoriteSourceNames: ["fade", "neon"] });
+    expect(result.selected.id).toBe("b");
+    expect(result.decision.reason).toBe("favorite-source");
+  });
+
   test("explicit selection still wins over favorite", () => {
     expect(
       selectReadyStream(streams, { favoriteSourceNames: ["fade"], preferredStreamId: "a" }).selected

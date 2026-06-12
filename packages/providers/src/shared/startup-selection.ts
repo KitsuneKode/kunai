@@ -28,16 +28,29 @@ export function selectReadyStream(
         ? stream.sourceId === input.preferredSourceId
         : false,
   );
-  const favoriteSet = new Set(input.favoriteSourceNames ?? []);
+  const favoritePriority = new Map(
+    (input.favoriteSourceNames ?? []).map((sourceName, index) => [sourceName, index]),
+  );
   const favorite =
-    favoriteSet.size > 0
+    favoritePriority.size > 0
       ? [...streams]
           .filter((stream) =>
-            favoriteSet.has(
+            favoritePriority.has(
               normalizeSourceName(stream.serverName ?? stream.flavorLabel ?? stream.sourceId ?? ""),
             ),
           )
-          .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0))[0]
+          .sort((left, right) => {
+            const leftPriority =
+              favoritePriority.get(
+                normalizeSourceName(left.serverName ?? left.flavorLabel ?? left.sourceId ?? ""),
+              ) ?? Number.MAX_SAFE_INTEGER;
+            const rightPriority =
+              favoritePriority.get(
+                normalizeSourceName(right.serverName ?? right.flavorLabel ?? right.sourceId ?? ""),
+              ) ?? Number.MAX_SAFE_INTEGER;
+            if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+            return (right.qualityRank ?? 0) - (left.qualityRank ?? 0);
+          })[0]
       : undefined;
   const normalizedQualityPreference = input.qualityPreference?.toLowerCase();
   const preferredQuality = normalizedQualityPreference

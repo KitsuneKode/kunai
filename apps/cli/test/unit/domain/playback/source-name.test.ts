@@ -58,9 +58,9 @@ describe("sortByFavorites", () => {
     expect(out.map((r) => r.label)).toEqual(["Fade", "Neon", "Cypher"]);
   });
 
-  test("multiple favorites keep their original relative order", () => {
+  test("multiple favorites follow favorite priority order", () => {
     const out = sortByFavorites(rows, ["fade", "neon"], (r) => r.label);
-    expect(out.map((r) => r.label)).toEqual(["Neon", "Fade", "Cypher"]);
+    expect(out.map((r) => r.label)).toEqual(["Fade", "Neon", "Cypher"]);
   });
 
   test("no favorites = original order unchanged", () => {

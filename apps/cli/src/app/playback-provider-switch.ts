@@ -81,6 +81,7 @@ export async function applyUserProviderSwitch(input: {
   const state = stateManager.getState();
   const mode = input.mode ?? state.mode;
   const configRaw = config.getRaw();
+  let invalidatedProviders = 0;
 
   stateManager.dispatch({
     type: "SET_PROVIDER",
@@ -94,9 +95,13 @@ export async function applyUserProviderSwitch(input: {
   }
 
   if (title && episode) {
-    const providerIds = providerRegistry
-      .getCompatible(title, mode)
-      .map((provider) => provider.metadata.id);
+    const compatibleProviderIds = new Set(
+      providerRegistry.getCompatible(title, mode).map((provider) => provider.metadata.id),
+    );
+    const providerIds = [fromProviderId, toProviderId].filter((providerId, index, ids) => {
+      return ids.indexOf(providerId) === index && compatibleProviderIds.has(providerId);
+    });
+    invalidatedProviders = providerIds.length;
     await Promise.all(
       providerIds.map((providerId) =>
         invalidateEpisodePlaybackCaches({
@@ -123,8 +128,7 @@ export async function applyUserProviderSwitch(input: {
       season: episode?.season ?? null,
       episode: episode?.episode ?? null,
       persistedPreference: Boolean(title),
-      invalidatedProviders:
-        title && episode ? providerRegistry.getCompatible(title, mode).length : 0,
+      invalidatedProviders,
     },
   });
 }

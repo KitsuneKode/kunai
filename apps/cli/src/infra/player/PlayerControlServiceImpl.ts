@@ -55,6 +55,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   private waitsForActive: ActiveWait[] = [];
   private pickerRequestListeners = new Set<(action: PlaybackPickerAction) => void>();
   private episodeNavigationAvailability: EpisodeNavigationAvailability | null = null;
+  private stoppingCurrentFileForActiveId: string | null = null;
 
   constructor(
     private readonly deps: {
@@ -64,9 +65,6 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   ) {}
 
   setActive(control: ActivePlayerControl | null): void {
-    if (!control) {
-      this.drainStaleMpvActions();
-    }
     this.active = control;
     if (control && this.episodeNavigationAvailability) {
       void this.applyEpisodeNavigationAvailability(control, this.episodeNavigationAvailability);
@@ -114,11 +112,6 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     const action = this.lastAction;
     this.lastAction = null;
     return action;
-  }
-
-  private drainStaleMpvActions(): void {
-    this.lastAction = null;
-    this.pendingStreamSelection = null;
   }
 
   signalPlaybackAction(action: PlaybackControlAction): void {
@@ -475,28 +468,48 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       context: { id: active.id, action, reason, stopCurrentFile },
     });
     if (stopCurrentFile && active.stopCurrentFile) {
+      if (this.stoppingCurrentFileForActiveId === active.id) {
+        await this.showStopCurrentFileOverlay(active, action);
+        this.deps.diagnostics.record({
+          category: "playback",
+          message: "Coalesced playback file-stop request",
+          context: { id: active.id, action, reason },
+        });
+        return true;
+      }
+      this.stoppingCurrentFileForActiveId = active.id;
       await this.runPriorityCommand(action, reason, async () => {
-        const label =
-          this.pendingStreamSelection && action === "pick-source"
-            ? "Kunai · Switching source…"
-            : this.pendingStreamSelection && action === "pick-quality"
-              ? "Kunai · Switching quality…"
-              : this.pendingStreamSelection && action === "pick-stream"
-                ? "Kunai · Switching stream…"
-                : episodeTransitionLoadingLabel(action);
-        if (label) {
-          if (active.setEpisodeTransitionLoading) {
-            await active.setEpisodeTransitionLoading(label);
-          } else if (active.showOsdMessage) {
-            await active.showOsdMessage(label, 120_000);
-          }
-        }
+        await this.showStopCurrentFileOverlay(active, action);
         await active.stopCurrentFile?.(reason);
+      }).finally(() => {
+        if (this.stoppingCurrentFileForActiveId === active.id) {
+          this.stoppingCurrentFileForActiveId = null;
+        }
       });
       return true;
     }
     await this.runPriorityCommand(action, reason, async () => await active.stop(reason));
     return true;
+  }
+
+  private async showStopCurrentFileOverlay(
+    active: ActivePlayerControl,
+    action: PlaybackControlAction,
+  ): Promise<void> {
+    const label =
+      this.pendingStreamSelection && action === "pick-source"
+        ? "Kunai · Switching source…"
+        : this.pendingStreamSelection && action === "pick-quality"
+          ? "Kunai · Switching quality…"
+          : this.pendingStreamSelection && action === "pick-stream"
+            ? "Kunai · Switching stream…"
+            : episodeTransitionLoadingLabel(action);
+    if (!label) return;
+    if (active.setEpisodeTransitionLoading) {
+      await active.setEpisodeTransitionLoading(label);
+    } else if (active.showOsdMessage) {
+      await active.showOsdMessage(label, 120_000);
+    }
   }
 
   private async showPickerRequest(action: PlaybackControlAction, reason: string): Promise<boolean> {

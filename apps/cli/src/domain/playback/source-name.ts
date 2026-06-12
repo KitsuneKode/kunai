@@ -22,13 +22,19 @@ export function isFavoriteSource(favorites: readonly string[], label: string): b
   return favorites.includes(normalizeSourceName(label));
 }
 
-/** Stable sort: favorited rows (by normalized name) first, original order preserved within each group. */
+/** Stable sort: favorite order is priority; non-favorites keep original order. */
 export function sortByFavorites<T>(
   rows: readonly T[],
   favorites: readonly string[],
   labelOf: (row: T) => string,
 ): readonly T[] {
-  const favSet = new Set(favorites);
-  const isFav = (row: T): boolean => favSet.has(normalizeSourceName(labelOf(row)));
-  return [...rows.filter(isFav), ...rows.filter((row) => !isFav(row))];
+  const priorityByName = new Map(favorites.map((name, index) => [name, index]));
+  return [...rows].sort((left, right) => {
+    const leftPriority = priorityByName.get(normalizeSourceName(labelOf(left)));
+    const rightPriority = priorityByName.get(normalizeSourceName(labelOf(right)));
+    if (leftPriority === undefined && rightPriority === undefined) return 0;
+    if (leftPriority === undefined) return 1;
+    if (rightPriority === undefined) return -1;
+    return leftPriority - rightPriority;
+  });
 }

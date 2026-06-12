@@ -34,7 +34,7 @@ describe("playback provider switch", () => {
     expect(state.providerSwitchSeq).toBe(1);
   });
 
-  test("applyUserProviderSwitch invalidates caches for every compatible provider", async () => {
+  test("applyUserProviderSwitch invalidates only the switched providers", async () => {
     const deletedProviders: string[] = [];
     const stateManager = {
       getState: () => ({
@@ -71,7 +71,11 @@ describe("playback provider switch", () => {
       },
       titleProviderHealth: { clear: () => {} },
       providerRegistry: {
-        getCompatible: () => [{ metadata: { id: "vidking" } }, { metadata: { id: "rivestream" } }],
+        getCompatible: () => [
+          { metadata: { id: "vidking" } },
+          { metadata: { id: "rivestream" } },
+          { metadata: { id: "vidlink" } },
+        ],
       },
       diagnosticsService: { record: () => {} },
     } as never;

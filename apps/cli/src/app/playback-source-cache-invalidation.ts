@@ -41,13 +41,15 @@ export async function invalidateEpisodePlaybackCaches(input: {
   readonly episode: EpisodeInfo;
   readonly mode: ShellMode;
   readonly config: KitsuneConfig;
+  readonly selectedSourceId?: string | null;
+  readonly selectedStreamId?: string | null;
 }): Promise<void> {
   const profileContext = {
     mode: input.mode,
     title: input.title,
     config: input.config,
   };
-  const cacheKey = buildApiStreamResolveCacheKey({
+  const cacheKeyBase = {
     providerId: input.providerId,
     title: input.title,
     episode: input.episode,
@@ -56,12 +58,26 @@ export async function invalidateEpisodePlaybackCaches(input: {
     subtitlePreference: playbackSubtitlePreference(profileContext),
     qualityPreference: playbackQualityPreference(profileContext),
     startupPriority: input.config.startupPriority,
-  });
+  } as const;
+  const cacheKeys = new Set([
+    buildApiStreamResolveCacheKey(cacheKeyBase),
+    ...(input.selectedSourceId || input.selectedStreamId
+      ? [
+          buildApiStreamResolveCacheKey({
+            ...cacheKeyBase,
+            selectedSourceId: input.selectedSourceId ?? undefined,
+            selectedStreamId: input.selectedStreamId ?? undefined,
+          }),
+        ]
+      : []),
+  ]);
 
-  try {
-    await input.cacheStore.delete(cacheKey);
-  } catch {
-    // best-effort
+  for (const cacheKey of cacheKeys) {
+    try {
+      await input.cacheStore.delete(cacheKey);
+    } catch {
+      // best-effort
+    }
   }
 
   try {

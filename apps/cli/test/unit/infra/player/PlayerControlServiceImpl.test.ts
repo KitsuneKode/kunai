@@ -177,6 +177,79 @@ test("PlayerControlServiceImpl records next and previous episode intents as stop
   expect(stoppedCurrentReasons).toEqual(["next-key", "previous-key"]);
 });
 
+test("PlayerControlServiceImpl preserves pending navigation intent when active player is cleared", async () => {
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async stopCurrentFile() {},
+  });
+
+  expect(await service.nextCurrentPlayback("next-key")).toBe(true);
+  service.setActive(null);
+
+  expect(service.consumeLastAction()).toBe("next");
+});
+
+test("PlayerControlServiceImpl coalesces rapid episode navigation so the latest intent wins", async () => {
+  let releaseStop!: () => void;
+  const stopRelease = new Promise<void>((resolve) => {
+    releaseStop = resolve;
+  });
+  const stoppedCurrentReasons: string[] = [];
+  const overlays: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async setEpisodeTransitionLoading(message) {
+      overlays.push(message ?? "");
+    },
+    async stopCurrentFile(reason) {
+      stoppedCurrentReasons.push(reason ?? "");
+      await stopRelease;
+    },
+  });
+
+  const next = service.nextCurrentPlayback("next-key");
+  await Promise.resolve();
+  const previous = service.previousCurrentPlayback("previous-key");
+  releaseStop();
+
+  expect(await next).toBe(true);
+  expect(await previous).toBe(true);
+  expect(service.consumeLastAction()).toBe("previous");
+  expect(stoppedCurrentReasons).toEqual(["next-key"]);
+  expect(overlays).toEqual(["Kunai · Loading next episode…", "Kunai · Loading previous episode…"]);
+});
+
+test("PlayerControlServiceImpl preserves pending picker selections when active player is cleared", async () => {
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async stopCurrentFile() {},
+  });
+
+  expect(
+    await service.selectCurrentPlaybackStream(
+      "pick-source",
+      { sourceId: "source:zoro", streamId: null },
+      "source-key",
+    ),
+  ).toBe(true);
+  service.setActive(null);
+
+  expect(service.consumeLastAction()).toBe("pick-source");
+  expect(service.consumePendingStreamSelection()).toEqual({
+    sourceId: "source:zoro",
+    streamId: null,
+  });
+});
+
 test("PlayerControlServiceImpl rejects unavailable episode navigation before stopping", async () => {
   const stoppedCurrentReasons: string[] = [];
   const messages: string[] = [];

@@ -57,4 +57,28 @@ describe("playback-source-cache-invalidation", () => {
     expect(deletedCacheKeys.length).toBe(1);
     expect(deletedInventory).toEqual(["vidking:1396:5"]);
   });
+
+  test("invalidateEpisodePlaybackCaches clears base and selected source cache keys", async () => {
+    const deletedCacheKeys: string[] = [];
+
+    await invalidateEpisodePlaybackCaches({
+      cacheStore: {
+        delete: async (key: string) => {
+          deletedCacheKeys.push(key);
+        },
+      } as never,
+      sourceInventory: { delete: async () => {} },
+      providerId: "vidking",
+      title: { id: "1396", type: "series", name: "Breaking Bad" },
+      episode: { season: 1, episode: 5 },
+      mode: "series",
+      config,
+      selectedSourceId: "source:zoro",
+      selectedStreamId: "stream:zoro:1080",
+    });
+
+    expect(deletedCacheKeys).toHaveLength(2);
+    expect(deletedCacheKeys[0]).toContain(":balanced:none:none");
+    expect(deletedCacheKeys[1]).toContain(":balanced:source:zoro:stream:zoro:1080");
+  });
 });
