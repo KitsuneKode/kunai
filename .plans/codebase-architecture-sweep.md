@@ -314,30 +314,36 @@ packages/storage
 ## Implementation Commit Order
 
 1. `docs: add architecture sweep plan`
+   - Status: Done (`476266e4`, `0f4888d7`)
    - This file.
    - Merge explorer findings.
 
 2. `test(architecture): add boundary guardrails`
+   - Status: Done
    - Start allowlisted.
    - Prevent new app-shell imports from app/service code unless routed through
      approved adapters.
    - Keep existing runtime legacy/experiments guard.
 
 3. `refactor(playback): extract track action handling`
+   - Status: Not started
    - Revise provisional WIP into a policy-shaped helper before landing.
    - Return explicit persistence, restart, invalidation, and diagnostic effects.
    - Cover confirmed source, stream, quality selections, and tracks panel picks.
 
 4. `refactor(playback): extract episode navigation actions`
+   - Status: Not started
    - One helper for next, previous, manual episode picker, and post-play next
      restart preparation.
    - Preserve prefetch cancellation/handoff semantics.
 
 5. `refactor(playback): extract post-play routing`
+   - Status: Not started
    - Keep `PlaybackPhase` as orchestration.
    - Move routed post-play actions into an app-level router/helper.
 
 6. `refactor(shell): split workflow families`
+   - Status: Not started
    - Settings/setup workflows.
    - History workflows.
    - Offline library workflows.
@@ -346,6 +352,7 @@ packages/storage
    - Generic shell action routing.
 
 7. `refactor(shell): split ink shell surfaces`
+   - Status: Not started
    - Lifecycle host.
    - Loading shell.
    - Playback shell.
@@ -354,27 +361,32 @@ packages/storage
    - Shared hooks.
 
 8. `refactor(app): unify history and continuation entrypoints`
+   - Status: Not started
    - One continuation read model for `--continue`, history picker, search
      continue rows, result enrichment, and post-play.
    - Keep release reconciliation as the freshness source, not a UI concern.
 
 9. `refactor(app): unify queue and media actions`
+   - Status: Not started
    - Route queue/download/follow/list actions through a single media action
      boundary where possible.
    - Add explicit unsupported-action results when displayed actions lack an
      executor.
 
 10. `refactor(playback): extract up-next planner`
+    - Status: Not started
     - Catalog next episode wins.
     - Runtime queue is second.
     - Recommendation auto-advance is third.
     - Countdown/cancel policy stays in playback app orchestration.
 
 11. `test: remove replaceable timing sleeps`
+    - Status: Not started
     - Replace simple sleeps with explicit promises/fake schedulers.
     - Document process/IPC waits that remain.
 
 12. `docs: mark historical plans and update routing`
+    - Status: Not started
     - Keep research.
     - Mark current vs historical plan surfaces.
     - Update `plan-implementation-truth.md` if statuses change.
