@@ -343,9 +343,13 @@ packages/storage
      `bun run typecheck`, `bun run lint`, `bun run --cwd apps/cli fmt:check`.
 
 5. `refactor(playback): extract post-play routing`
-   - Status: Not started
-   - Keep `PlaybackPhase` as orchestration.
-   - Move routed post-play actions into an app-level router/helper.
+   - Status: Done
+   - Kept `PlaybackPhase` as orchestration.
+   - Added `post-playback-routing.ts` for exit outcomes, episode-navigation
+     route resolution, and track-panel section routing.
+   - Verification:
+     `bun run --cwd apps/cli test:file test/unit/app/post-playback-routing.test.ts`,
+     `bun run typecheck`, `bun run lint`, `bun run --cwd apps/cli fmt:check`.
 
 6. `refactor(shell): split workflow families`
    - Status: Not started

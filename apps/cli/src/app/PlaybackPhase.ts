@@ -113,6 +113,11 @@ import {
   seedPostPlaybackRecommendationItems,
 } from "@/app/post-playback-recommendations";
 import {
+  resolvePostPlaybackEpisodeNavigationRoute,
+  resolvePostPlaybackExitOutcome,
+  resolvePostPlaybackTrackPanelSection,
+} from "@/app/post-playback-routing";
+import {
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
 } from "@/app/provider-resolve-copy";
@@ -3027,41 +3032,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               container,
             });
 
-            if (routedAction === "quit") {
+            const exitOutcome = resolvePostPlaybackExitOutcome(routedAction);
+            if (exitOutcome) {
               await teardownPlaybackForPostPlayExit(
                 container,
                 episodePrefetch,
                 playbackIterationAbort,
               );
-              return { status: "quit" };
-            } else if (typeof routedAction === "object" && routedAction.type === "history-entry") {
-              await teardownPlaybackForPostPlayExit(
-                container,
-                episodePrefetch,
-                playbackIterationAbort,
-              );
-              return {
-                status: "success",
-                value: {
-                  type: "history_entry",
-                  title: routedAction.title,
-                  episode: routedAction.episode,
-                },
-              };
-            } else if (routedAction === "mode-switch") {
-              await teardownPlaybackForPostPlayExit(
-                container,
-                episodePrefetch,
-                playbackIterationAbort,
-              );
-              return { status: "success", value: "back_to_search" };
-            } else if (routedAction === "calendar" || routedAction === "random") {
-              await teardownPlaybackForPostPlayExit(
-                container,
-                episodePrefetch,
-                playbackIterationAbort,
-              );
-              return { status: "success", value: { type: "browse_route", route: routedAction } };
+              return exitOutcome;
             } else if (routedAction === "toggle-autoplay") {
               const playbackAction = resolvePostPlaybackSessionAction(
                 "toggle-autoplay",
@@ -3090,58 +3068,38 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stopAfterCurrent: enabled,
               };
               continue postPlayback;
-            } else if (routedAction === "next" && title.type === "series") {
-              if (episodeAvailability.nextEpisode) {
-                const target = episodeAvailability.nextEpisode;
-                pendingStart = await navigatePlaybackEpisode(target);
+            } else {
+              const navigationRoute = resolvePostPlaybackEpisodeNavigationRoute({
+                action: routedAction,
+                titleType: title.type,
+                availability: episodeAvailability,
+              });
+              if (navigationRoute) {
+                pendingStart = await navigatePlaybackEpisode(navigationRoute.episode);
                 playbackSession = this.transitionPlaybackSession(
                   context,
                   playbackSession,
                   "episode-navigation",
                   buildEpisodeNavigationTransitionContext({
                     titleId: title.id,
-                    episode: target,
-                    source: "next",
+                    episode: navigationRoute.episode,
+                    source: navigationRoute.source,
                   }),
                 );
                 break postPlayback;
               }
-              continue postPlayback;
-            } else if (routedAction === "previous" && title.type === "series") {
-              if (episodeAvailability.previousEpisode) {
-                const target = episodeAvailability.previousEpisode;
-                pendingStart = await navigatePlaybackEpisode(target);
-                playbackSession = this.transitionPlaybackSession(
-                  context,
-                  playbackSession,
-                  "episode-navigation",
-                  buildEpisodeNavigationTransitionContext({
-                    titleId: title.id,
-                    episode: target,
-                    source: "previous",
-                  }),
-                );
-                break postPlayback;
+              if (
+                routedAction === "next" ||
+                routedAction === "previous" ||
+                routedAction === "next-season"
+              ) {
+                continue postPlayback;
               }
-              continue postPlayback;
-            } else if (routedAction === "next-season" && title.type === "series") {
-              if (episodeAvailability.nextSeasonEpisode) {
-                const target = episodeAvailability.nextSeasonEpisode;
-                pendingStart = await navigatePlaybackEpisode(target);
-                playbackSession = this.transitionPlaybackSession(
-                  context,
-                  playbackSession,
-                  "episode-navigation",
-                  buildEpisodeNavigationTransitionContext({
-                    titleId: title.id,
-                    episode: target,
-                    source: "next-season",
-                  }),
-                );
-                break postPlayback;
-              }
-              continue postPlayback;
-            } else if (routedAction === "resume") {
+            }
+
+            const trackPanelSection = resolvePostPlaybackTrackPanelSection(routedAction);
+
+            if (routedAction === "resume") {
               pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
               const playbackAction = resolvePostPlaybackSessionAction("resume", playbackSession);
               playbackSession = playbackAction.session;
@@ -3261,27 +3219,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 },
               });
               break postPlayback;
-            } else if (
-              routedAction === "provider" ||
-              routedAction === "source" ||
-              routedAction === "quality" ||
-              routedAction === "audio" ||
-              routedAction === "subtitle"
-            ) {
+            } else if (trackPanelSection) {
               // Unified Tracks panel: each command deep-links its section. The
               // user may switch any section from the same panel, so restart
               // semantics follow the picked section, not the opening command.
-              const initialSection =
-                routedAction === "provider"
-                  ? "provider"
-                  : routedAction === "source"
-                    ? "source"
-                    : routedAction === "quality"
-                      ? "quality"
-                      : routedAction === "audio"
-                        ? "audio"
-                        : "subtitle";
-              const picked = await openTracksPanel(preparedStream, { initialSection }, container);
+              const picked = await openTracksPanel(
+                preparedStream,
+                { initialSection: trackPanelSection },
+                container,
+              );
               if (!picked) {
                 continue postPlayback;
               }
@@ -3321,20 +3267,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 reason: "post-playback-command",
               });
               continue postPlayback;
-            } else if (routedAction === "back-to-search") {
-              await teardownPlaybackForPostPlayExit(
-                container,
-                episodePrefetch,
-                playbackIterationAbort,
-              );
-              return { status: "success", value: "back_to_search" };
-            } else if (routedAction === "back-to-results") {
-              await teardownPlaybackForPostPlayExit(
-                container,
-                episodePrefetch,
-                playbackIterationAbort,
-              );
-              return { status: "success", value: "back_to_results" };
             } else if (routedAction === "handled") {
               const nextProviderId = stateManager.getState().provider;
               if (nextProviderId !== postPlayProviderId) {
@@ -3397,58 +3329,36 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 }),
               );
               break postPlayback;
-            } else if (postAction === "next" && title.type === "series") {
-              if (episodeAvailability.nextEpisode) {
-                const target = episodeAvailability.nextEpisode;
-                pendingStart = await navigatePlaybackEpisode(target);
-                playbackSession = this.transitionPlaybackSession(
-                  context,
-                  playbackSession,
-                  "episode-navigation",
-                  buildEpisodeNavigationTransitionContext({
-                    titleId: title.id,
-                    episode: target,
-                    source: "next",
-                  }),
-                );
-                break postPlayback;
-              }
-              continue postPlayback;
-            } else if (postAction === "previous" && title.type === "series") {
-              if (episodeAvailability.previousEpisode) {
-                const target = episodeAvailability.previousEpisode;
-                pendingStart = await navigatePlaybackEpisode(target);
-                playbackSession = this.transitionPlaybackSession(
-                  context,
-                  playbackSession,
-                  "episode-navigation",
-                  buildEpisodeNavigationTransitionContext({
-                    titleId: title.id,
-                    episode: target,
-                    source: "previous",
-                  }),
-                );
-                break postPlayback;
-              }
-              continue postPlayback;
-            } else if (postAction === "next-season" && title.type === "series") {
-              if (episodeAvailability.nextSeasonEpisode) {
-                const target = episodeAvailability.nextSeasonEpisode;
-                pendingStart = await navigatePlaybackEpisode(target);
-                playbackSession = this.transitionPlaybackSession(
-                  context,
-                  playbackSession,
-                  "episode-navigation",
-                  buildEpisodeNavigationTransitionContext({
-                    titleId: title.id,
-                    episode: target,
-                    source: "next-season",
-                  }),
-                );
-                break postPlayback;
-              }
-              continue postPlayback;
             } else {
+              const navigationRoute = resolvePostPlaybackEpisodeNavigationRoute({
+                action: postAction,
+                titleType: title.type,
+                availability: episodeAvailability,
+              });
+              if (navigationRoute) {
+                pendingStart = await navigatePlaybackEpisode(navigationRoute.episode);
+                playbackSession = this.transitionPlaybackSession(
+                  context,
+                  playbackSession,
+                  "episode-navigation",
+                  buildEpisodeNavigationTransitionContext({
+                    titleId: title.id,
+                    episode: navigationRoute.episode,
+                    source: navigationRoute.source,
+                  }),
+                );
+                break postPlayback;
+              }
+              if (
+                postAction === "next" ||
+                postAction === "previous" ||
+                postAction === "next-season"
+              ) {
+                continue postPlayback;
+              }
+            }
+
+            {
               logger.warn("Unhandled post-play shell action; staying on post-play menu", {
                 postAction,
                 routedAction,
