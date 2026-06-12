@@ -36,6 +36,10 @@ import {
   createDeadStreamUrlLedger,
   playbackDeadStreamScopeKey,
 } from "@/app/playback-dead-stream-ledger";
+import {
+  applyPlaybackEpisodeNavigation,
+  buildEpisodeNavigationTransitionContext,
+} from "@/app/playback-episode-navigation";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
 import {
@@ -610,6 +614,38 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             config.quitNearEndThresholdMode,
           ),
         });
+      const navigatePlaybackEpisode = async (
+        target: EpisodeInfo,
+        options: {
+          readonly cancelPrefetchReason?: string;
+          readonly loadingOrder?: "before-start" | "after-start" | "none";
+          readonly resetStopAfterCurrent?: boolean;
+          readonly resumeInterruptedAutoplay?: boolean;
+        } = {},
+      ) => {
+        const result = await applyPlaybackEpisodeNavigation({
+          episode: target,
+          session: playbackSession,
+          cancelPrefetchReason: options.cancelPrefetchReason,
+          loadingOrder: options.loadingOrder,
+          resetStopAfterCurrent: options.resetStopAfterCurrent,
+          resumeInterruptedAutoplay: options.resumeInterruptedAutoplay,
+          effects: {
+            cancelPrefetch: (reason) => episodePrefetch.cancel(reason),
+            showLoadingOverlay: (targetEpisode) =>
+              applyMpvEpisodeLoadingOverlay(playerControl.getActive(), targetEpisode),
+            startNavigationToEpisode,
+            selectEpisode: (targetEpisode) =>
+              stateManager.dispatch({ type: "SELECT_EPISODE", episode: targetEpisode }),
+            setStopAfterCurrent: (enabled) =>
+              stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled }),
+            setAutoplayPaused: (paused) =>
+              stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused }),
+          },
+        });
+        playbackSession = result.session;
+        return result.startIntent;
+      };
       const provider = providerRegistry.get(stateManager.getState().provider);
       const initialAnimeEpisodes = await this.getAnimeEpisodeOptions({
         title,
@@ -2231,29 +2267,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "next" && title.type === "series") {
             if (episodeAvailability.nextEpisode) {
-              await applyMpvEpisodeLoadingOverlay(
-                playerControl.getActive(),
-                episodeAvailability.nextEpisode,
-              );
-              stateManager.dispatch({
-                type: "SELECT_EPISODE",
-                episode: episodeAvailability.nextEpisode,
+              pendingStart = await navigatePlaybackEpisode(episodeAvailability.nextEpisode, {
+                loadingOrder: "before-start",
+                resetStopAfterCurrent: true,
+                resumeInterruptedAutoplay: true,
               });
-              pendingStart = await startNavigationToEpisode(episodeAvailability.nextEpisode);
-              stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
-              // Explicit navigation resumes autoplay if it was only interrupted (not user-paused).
-              if (playbackSession.autoplayPauseReason === "interrupted") {
-                stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
-                playbackSession = {
-                  ...playbackSession,
-                  stopAfterCurrent: false,
-                  autoplayPaused: false,
-                  autoplayPauseReason: null,
-                };
-              } else {
-                playbackSession = { ...playbackSession, stopAfterCurrent: false };
-              }
-
               const prefetchTarget = buildNextPrefetchTarget();
               if (prefetchTarget) {
                 await handoffNextEpisodePrefetch(prefetchTarget, "playback.prefetch-wait");
@@ -2264,55 +2282,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "previous" && title.type === "series") {
             if (episodeAvailability.previousEpisode) {
-              episodePrefetch.cancel("user-navigation");
-              pendingStart = await startNavigationToEpisode(episodeAvailability.previousEpisode);
-              await applyMpvEpisodeLoadingOverlay(
-                playerControl.getActive(),
-                episodeAvailability.previousEpisode,
-              );
-              stateManager.dispatch({
-                type: "SELECT_EPISODE",
-                episode: episodeAvailability.previousEpisode,
+              pendingStart = await navigatePlaybackEpisode(episodeAvailability.previousEpisode, {
+                cancelPrefetchReason: "user-navigation",
+                loadingOrder: "after-start",
+                resetStopAfterCurrent: true,
+                resumeInterruptedAutoplay: true,
               });
-              stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
-              if (playbackSession.autoplayPauseReason === "interrupted") {
-                stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
-                playbackSession = {
-                  ...playbackSession,
-                  stopAfterCurrent: false,
-                  autoplayPaused: false,
-                  autoplayPauseReason: null,
-                };
-              } else {
-                playbackSession = { ...playbackSession, stopAfterCurrent: false };
-              }
               continue;
             }
           }
 
           if (playbackControlAction === "pick-episode" && confirmedEpisodeSelection) {
-            episodePrefetch.cancel("user-navigation");
-            pendingStart = await startNavigationToEpisode(confirmedEpisodeSelection);
-            await applyMpvEpisodeLoadingOverlay(
-              playerControl.getActive(),
-              confirmedEpisodeSelection,
-            );
-            stateManager.dispatch({
-              type: "SELECT_EPISODE",
-              episode: confirmedEpisodeSelection,
+            pendingStart = await navigatePlaybackEpisode(confirmedEpisodeSelection, {
+              cancelPrefetchReason: "user-navigation",
+              loadingOrder: "after-start",
+              resetStopAfterCurrent: true,
+              resumeInterruptedAutoplay: true,
             });
-            stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
-            if (playbackSession.autoplayPauseReason === "interrupted") {
-              stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
-              playbackSession = {
-                ...playbackSession,
-                stopAfterCurrent: false,
-                autoplayPaused: false,
-                autoplayPauseReason: null,
-              };
-            } else {
-              playbackSession = { ...playbackSession, stopAfterCurrent: false };
-            }
             continue;
           }
 
@@ -2565,18 +2551,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 note: `S${String(nextEpisode.season).padStart(2, "0")}E${String(nextEpisode.episode).padStart(2, "0")}`,
               });
 
-              await applyMpvEpisodeLoadingOverlay(playerControl.getActive(), nextEpisode);
-
-              stateManager.dispatch({
-                type: "SELECT_EPISODE",
-                episode: nextEpisode,
+              pendingStart = await navigatePlaybackEpisode(nextEpisode, {
+                loadingOrder: "before-start",
+                resetStopAfterCurrent: true,
               });
-              pendingStart = await startNavigationToEpisode(nextEpisode);
-              stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
-              playbackSession = {
-                ...playbackSession,
-                stopAfterCurrent: false,
-              };
 
               const autoplayPrefetchTarget = buildPrefetchTarget(nextEpisode, resolvedProviderId);
               await handoffNextEpisodePrefetch(
@@ -2710,16 +2688,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   nextSeason: postPlayNextEpisode.season,
                   nextEpisode: postPlayNextEpisode.episode,
                 });
-                stateManager.dispatch({
-                  type: "SELECT_EPISODE",
-                  episode: postPlayNextEpisode,
+                pendingStart = await navigatePlaybackEpisode(postPlayNextEpisode, {
+                  resetStopAfterCurrent: true,
                 });
-                pendingStart = await startNavigationToEpisode(postPlayNextEpisode);
-                stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
-                playbackSession = {
-                  ...playbackSession,
-                  stopAfterCurrent: false,
-                };
                 const autoplayPrefetchTarget = buildPrefetchTarget(
                   postPlayNextEpisode,
                   resolvedProviderId,
@@ -3121,65 +3092,51 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               continue postPlayback;
             } else if (routedAction === "next" && title.type === "series") {
               if (episodeAvailability.nextEpisode) {
-                pendingStart = await startNavigationToEpisode(episodeAvailability.nextEpisode);
-                stateManager.dispatch({
-                  type: "SELECT_EPISODE",
-                  episode: episodeAvailability.nextEpisode,
-                });
+                const target = episodeAvailability.nextEpisode;
+                pendingStart = await navigatePlaybackEpisode(target);
                 playbackSession = this.transitionPlaybackSession(
                   context,
                   playbackSession,
                   "episode-navigation",
-                  {
+                  buildEpisodeNavigationTransitionContext({
                     titleId: title.id,
-                    season: episodeAvailability.nextEpisode.season,
-                    episode: episodeAvailability.nextEpisode.episode,
+                    episode: target,
                     source: "next",
-                  },
+                  }),
                 );
                 break postPlayback;
               }
               continue postPlayback;
             } else if (routedAction === "previous" && title.type === "series") {
               if (episodeAvailability.previousEpisode) {
-                pendingStart = await startNavigationToEpisode(episodeAvailability.previousEpisode);
-                stateManager.dispatch({
-                  type: "SELECT_EPISODE",
-                  episode: episodeAvailability.previousEpisode,
-                });
+                const target = episodeAvailability.previousEpisode;
+                pendingStart = await navigatePlaybackEpisode(target);
                 playbackSession = this.transitionPlaybackSession(
                   context,
                   playbackSession,
                   "episode-navigation",
-                  {
+                  buildEpisodeNavigationTransitionContext({
                     titleId: title.id,
-                    season: episodeAvailability.previousEpisode.season,
-                    episode: episodeAvailability.previousEpisode.episode,
+                    episode: target,
                     source: "previous",
-                  },
+                  }),
                 );
                 break postPlayback;
               }
               continue postPlayback;
             } else if (routedAction === "next-season" && title.type === "series") {
               if (episodeAvailability.nextSeasonEpisode) {
-                pendingStart = await startNavigationToEpisode(
-                  episodeAvailability.nextSeasonEpisode,
-                );
-                stateManager.dispatch({
-                  type: "SELECT_EPISODE",
-                  episode: episodeAvailability.nextSeasonEpisode,
-                });
+                const target = episodeAvailability.nextSeasonEpisode;
+                pendingStart = await navigatePlaybackEpisode(target);
                 playbackSession = this.transitionPlaybackSession(
                   context,
                   playbackSession,
                   "episode-navigation",
-                  {
+                  buildEpisodeNavigationTransitionContext({
                     titleId: title.id,
-                    season: episodeAvailability.nextSeasonEpisode.season,
-                    episode: episodeAvailability.nextSeasonEpisode.episode,
+                    episode: target,
                     source: "next-season",
-                  },
+                  }),
                 );
                 break postPlayback;
               }
@@ -3428,84 +3385,65 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 titleId: title.id,
                 animeEpisodes: currentAnimeEpisodes,
               });
-              stateManager.dispatch({
-                type: "SELECT_EPISODE",
-                episode: pickedEpisode,
-              });
+              pendingStart = await navigatePlaybackEpisode(pickedEpisode);
               playbackSession = this.transitionPlaybackSession(
                 context,
                 playbackSession,
                 "episode-navigation",
-                {
+                buildEpisodeNavigationTransitionContext({
                   titleId: title.id,
-                  season: selection.season,
-                  episode: selection.episode,
+                  episode: pickedEpisode,
                   source: "episode-picker",
-                },
+                }),
               );
-              pendingStart = await startNavigationToEpisode(pickedEpisode);
               break postPlayback;
             } else if (postAction === "next" && title.type === "series") {
               if (episodeAvailability.nextEpisode) {
-                pendingStart = await startNavigationToEpisode(episodeAvailability.nextEpisode);
-                stateManager.dispatch({
-                  type: "SELECT_EPISODE",
-                  episode: episodeAvailability.nextEpisode,
-                });
+                const target = episodeAvailability.nextEpisode;
+                pendingStart = await navigatePlaybackEpisode(target);
                 playbackSession = this.transitionPlaybackSession(
                   context,
                   playbackSession,
                   "episode-navigation",
-                  {
+                  buildEpisodeNavigationTransitionContext({
                     titleId: title.id,
-                    season: episodeAvailability.nextEpisode.season,
-                    episode: episodeAvailability.nextEpisode.episode,
+                    episode: target,
                     source: "next",
-                  },
+                  }),
                 );
                 break postPlayback;
               }
               continue postPlayback;
             } else if (postAction === "previous" && title.type === "series") {
               if (episodeAvailability.previousEpisode) {
-                pendingStart = await startNavigationToEpisode(episodeAvailability.previousEpisode);
-                stateManager.dispatch({
-                  type: "SELECT_EPISODE",
-                  episode: episodeAvailability.previousEpisode,
-                });
+                const target = episodeAvailability.previousEpisode;
+                pendingStart = await navigatePlaybackEpisode(target);
                 playbackSession = this.transitionPlaybackSession(
                   context,
                   playbackSession,
                   "episode-navigation",
-                  {
+                  buildEpisodeNavigationTransitionContext({
                     titleId: title.id,
-                    season: episodeAvailability.previousEpisode.season,
-                    episode: episodeAvailability.previousEpisode.episode,
+                    episode: target,
                     source: "previous",
-                  },
+                  }),
                 );
                 break postPlayback;
               }
               continue postPlayback;
             } else if (postAction === "next-season" && title.type === "series") {
               if (episodeAvailability.nextSeasonEpisode) {
-                pendingStart = await startNavigationToEpisode(
-                  episodeAvailability.nextSeasonEpisode,
-                );
-                stateManager.dispatch({
-                  type: "SELECT_EPISODE",
-                  episode: episodeAvailability.nextSeasonEpisode,
-                });
+                const target = episodeAvailability.nextSeasonEpisode;
+                pendingStart = await navigatePlaybackEpisode(target);
                 playbackSession = this.transitionPlaybackSession(
                   context,
                   playbackSession,
                   "episode-navigation",
-                  {
+                  buildEpisodeNavigationTransitionContext({
                     titleId: title.id,
-                    season: episodeAvailability.nextSeasonEpisode.season,
-                    episode: episodeAvailability.nextSeasonEpisode.episode,
+                    episode: target,
                     source: "next-season",
-                  },
+                  }),
                 );
                 break postPlayback;
               }

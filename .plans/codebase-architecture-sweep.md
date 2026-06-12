@@ -334,10 +334,13 @@ packages/storage
      `bun run typecheck`, `bun run lint`.
 
 4. `refactor(playback): extract episode navigation actions`
-   - Status: Not started
-   - One helper for next, previous, manual episode picker, and post-play next
-     restart preparation.
+   - Status: Done
+   - Added `playback-episode-navigation.ts` for next, previous, manual picker,
+     autoplay, and post-play restart preparation.
    - Preserve prefetch cancellation/handoff semantics.
+   - Verification:
+     `bun run --cwd apps/cli test:file test/unit/app/playback-episode-navigation.test.ts`,
+     `bun run typecheck`, `bun run lint`, `bun run --cwd apps/cli fmt:check`.
 
 5. `refactor(playback): extract post-play routing`
    - Status: Not started
