@@ -64,15 +64,18 @@ export class AniListAdapter implements SyncAdapter {
       };
     }
 
-    const port = await this.findFreePort();
-    const callbackUrl = `http://localhost:${port}/callback`;
+    // Bind the loopback callback server first so the OS assigns a free port
+    // (no TOCTOU gap between picking a port and binding it). The redirect URI is
+    // then derived from the bound port.
+    const callback = this.startCallbackServer(signal);
+    const callbackUrl = `http://localhost:${callback.port}/callback`;
     const authorizeUrl = `${OAUTH_BASE}/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code`;
 
     console.log(`\nAniList authorization URL:\n${authorizeUrl}\n`);
     console.log("Opening in browser… (60s timeout)");
     this.openUrl(authorizeUrl);
 
-    const code = await this.waitForCallback(port, signal);
+    const code = await callback.code;
     if (!code) {
       return { ok: false, error: "Authorization timed out or was cancelled." };
     }
@@ -163,59 +166,57 @@ export class AniListAdapter implements SyncAdapter {
     return res.json() as Promise<T>;
   }
 
-  private async findFreePort(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const net = require("node:net") as typeof import("node:net");
-      const srv = net.createServer();
-      srv.listen(0, "127.0.0.1", () => {
-        const addr = srv.address();
-        srv.close(() => {
-          if (addr && typeof addr === "object") resolve(addr.port);
-          else reject(new Error("Could not find free port"));
-        });
-      });
+  /**
+   * Start the OAuth loopback server on an OS-assigned free port (`Bun.serve`
+   * with `port: 0`) and return that port plus a promise that resolves with the
+   * authorization code (or null on timeout/abort). Replaces the previous
+   * `require("node:net")` free-port probe + separate server, removing both the
+   * dynamic ESM require and the find-then-rebind race.
+   */
+  private startCallbackServer(signal: AbortSignal): {
+    port: number;
+    code: Promise<string | null>;
+  } {
+    let settled = false;
+    let resolveCode!: (value: string | null) => void;
+    const code = new Promise<string | null>((resolve) => {
+      resolveCode = resolve;
     });
-  }
 
-  private async waitForCallback(port: number, signal: AbortSignal): Promise<string | null> {
-    return new Promise<string | null>((resolve) => {
-      let settled = false;
-      const settle = (value: string | null) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
+    const settle = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      server.stop(true);
+      resolveCode(value);
+    };
 
-      const timeout = setTimeout(() => {
-        server.stop(true);
-        settle(null);
-      }, OAUTH_TIMEOUT_MS);
+    const timeout = setTimeout(() => settle(null), OAUTH_TIMEOUT_MS);
+    signal.addEventListener("abort", () => settle(null));
 
-      signal.addEventListener("abort", () => {
-        clearTimeout(timeout);
-        server.stop(true);
-        settle(null);
-      });
-
-      const server = Bun.serve({
-        port,
-        hostname: "127.0.0.1",
-        fetch(req) {
-          const url = new URL(req.url);
-          const code = url.searchParams.get("code");
-          if (url.pathname === "/callback" && code) {
-            clearTimeout(timeout);
-            server.stop(true);
-            settle(code);
-            return new Response(
-              "<html><body><h2>Authorization complete. You can close this tab.</h2></body></html>",
-              { headers: { "Content-Type": "text/html" } },
-            );
-          }
-          return new Response("Waiting for authorization…");
-        },
-      });
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch(req) {
+        const url = new URL(req.url);
+        const oauthCode = url.searchParams.get("code");
+        if (url.pathname === "/callback" && oauthCode) {
+          settle(oauthCode);
+          return new Response(
+            "<html><body><h2>Authorization complete. You can close this tab.</h2></body></html>",
+            { headers: { "Content-Type": "text/html" } },
+          );
+        }
+        return new Response("Waiting for authorization…");
+      },
     });
+
+    const port = server.port;
+    if (port === undefined) {
+      server.stop(true);
+      throw new Error("OAuth callback server failed to bind a port");
+    }
+    return { port, code };
   }
 
   private openUrl(url: string): void {
