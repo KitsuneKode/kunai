@@ -46,6 +46,10 @@ import {
   toEpisodeNavigationState,
 } from "@/app/playback-policy";
 import {
+  preparePostPlaybackSurface,
+  teardownPlaybackForPostPlayExit,
+} from "@/app/playback-post-play-lifecycle";
+import {
   playbackAudioPreference,
   playbackQualityPreference,
   playbackSubtitlePreference,
@@ -227,29 +231,6 @@ export type PlaybackOutcome =
       season?: number;
       episode?: number;
     };
-
-/** Stop background playback work before/after the post-play menu (no new mpv). */
-function preparePostPlaybackSurface(
-  container: PhaseContext["container"],
-  episodePrefetch: EpisodePrefetchHandle,
-  playbackIterationAbort: AbortController,
-): void {
-  playbackIterationAbort.abort();
-  episodePrefetch.suspend("post-playback-menu");
-  container.playerControl.consumeLastAction();
-  container.playerControl.consumePendingStreamSelection();
-  container.playerControl.consumePendingEpisodeSelection();
-  container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-}
-
-async function teardownPlaybackForPostPlayExit(
-  container: PhaseContext["container"],
-  episodePrefetch: EpisodePrefetchHandle,
-  playbackIterationAbort: AbortController,
-): Promise<void> {
-  preparePostPlaybackSurface(container, episodePrefetch, playbackIterationAbort);
-  await container.player.releasePersistentSession();
-}
 
 export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
