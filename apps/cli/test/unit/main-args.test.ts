@@ -109,6 +109,44 @@ test("parseArgs ignores invalid --jump values without crashing", () => {
   expect(missing.jump).toBeUndefined();
 });
 
+test("parseArgs treats a bare argument as a search query", () => {
+  const single = parseArgs(["Dune"]);
+  const multi = parseArgs(["Cowboy", "Bebop"]);
+
+  expect(single.search).toBe("Dune");
+  expect(multi.search).toBe("Cowboy Bebop");
+});
+
+test("parseArgs prefers an explicit -S over bare positionals", () => {
+  const args = parseArgs(["-S", "Dune", "-a"]);
+
+  expect(args.search).toBe("Dune");
+  expect(args.anime).toBe(true);
+});
+
+test("parseArgs does not let a value flag swallow a following known flag", () => {
+  // `-S` with no value before `--anime` must NOT capture "--anime" as the query.
+  const args = parseArgs(["-S", "--anime"]);
+
+  expect(args.search).toBeUndefined();
+  expect(args.anime).toBe(true);
+});
+
+test("parseArgs still consumes negative-looking values for --jump", () => {
+  // `-1` is not a known flag, so it is consumed as the (invalid) jump value.
+  const args = parseArgs(["--jump", "-1", "Dune"]);
+
+  expect(args.jump).toBeUndefined();
+  expect(args.search).toBe("Dune");
+});
+
+test("parseArgs ignores unknown flags without dropping valid ones", () => {
+  const args = parseArgs(["--definitely-not-a-flag", "-S", "Dune", "-a"]);
+
+  expect(args.search).toBe("Dune");
+  expect(args.anime).toBe(true);
+});
+
 test("parseArgs routes --history / --offline / --continue to their bootstrap surfaces", () => {
   const history = parseArgs(["--history"]);
   const offline = parseArgs(["--offline"]);

@@ -107,6 +107,55 @@ Inside the app, press / for the command palette and ? for keyboard help.
 `;
 }
 
+// Every recognized flag token. Used so a value-consuming flag (e.g. `-S`) never
+// swallows a following *flag* as its value, and so unknown options surface a
+// warning instead of being silently dropped. Includes `--check`/`--purge` (read
+// by runCli, not here) to avoid false "unknown option" warnings.
+const KNOWN_FLAGS: ReadonlySet<string> = new Set([
+  "-S",
+  "--search",
+  "-i",
+  "--id",
+  "-t",
+  "--type",
+  "-a",
+  "--anime",
+  "-m",
+  "--minimal",
+  "-z",
+  "--zen",
+  "-q",
+  "--quick",
+  "--jump",
+  "--debug",
+  "--debug-json",
+  "--debug-session",
+  "--setup",
+  "--offline",
+  "--discover",
+  "--calendar",
+  "--random",
+  "--history",
+  "--continue",
+  "--resume",
+  "--download",
+  "--download-path",
+  "--handoff-url",
+  "--install-protocol-handler",
+  "--dry-run",
+  "--mpv-debug",
+  "--mpv-clean",
+  "--no-user-mpv-config",
+  "--mpv-log-file",
+  "-h",
+  "--help",
+  "-v",
+  "--version",
+  "--uninstall",
+  "--purge",
+  "--check",
+]);
+
 // Simple CLI arg parser
 export function parseArgs(argv: string[]): {
   search?: string;
@@ -182,14 +231,28 @@ export function parseArgs(argv: string[]): {
     version: false,
     uninstall: false,
   };
-  for (let i = 0; i < argv.length; i++) {
+  const warnings: string[] = [];
+  const positionals: string[] = [];
+  let i = 0;
+  // Read the next token as this flag's value — unless it is missing or is itself
+  // a known flag (in which case the value was omitted; warn and don't consume).
+  const takeValue = (flag: string): string | undefined => {
+    const next = argv[i + 1];
+    if (next === undefined || KNOWN_FLAGS.has(next)) {
+      warnings.push(`${flag} expected a value`);
+      return undefined;
+    }
+    i += 1;
+    return next;
+  };
+  for (; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-S" || arg === "--search") {
-      args.search = argv[++i];
+      args.search = takeValue(arg);
     } else if (arg === "-i" || arg === "--id") {
-      args.id = argv[++i];
+      args.id = takeValue(arg);
     } else if (arg === "-t" || arg === "--type") {
-      const rawType = argv[++i];
+      const rawType = takeValue(arg);
       args.type = rawType === "tv" ? "series" : rawType;
     } else if (arg === "-a" || arg === "--anime") {
       args.anime = true;
@@ -202,7 +265,7 @@ export function parseArgs(argv: string[]): {
     } else if (arg === "-q" || arg === "--quick") {
       args.quick = true;
     } else if (arg === "--jump") {
-      const raw = argv[++i];
+      const raw = takeValue(arg);
       const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
       if (Number.isFinite(parsed) && parsed >= 1) {
         args.jump = parsed;
@@ -233,9 +296,9 @@ export function parseArgs(argv: string[]): {
     } else if (arg === "--download") {
       args.download = true;
     } else if (arg === "--download-path") {
-      args.downloadPath = argv[++i];
+      args.downloadPath = takeValue(arg);
     } else if (arg === "--handoff-url") {
-      args.handoffUrl = argv[++i];
+      args.handoffUrl = takeValue(arg);
     } else if (arg === "--install-protocol-handler") {
       args.installProtocolHandler = true;
     } else if (arg === "--dry-run") {
@@ -247,7 +310,7 @@ export function parseArgs(argv: string[]): {
     } else if (arg === "--no-user-mpv-config") {
       args.mpv = { ...args.mpv, noUserConfig: true };
     } else if (arg === "--mpv-log-file") {
-      const value = argv[++i];
+      const value = takeValue(arg);
       if (value) args.mpv = { ...args.mpv, logFile: value };
     } else if (arg === "-h" || arg === "--help") {
       args.help = true;
@@ -255,7 +318,22 @@ export function parseArgs(argv: string[]): {
       args.version = true;
     } else if (arg === "--uninstall") {
       args.uninstall = true;
+    } else if (arg !== undefined && arg.startsWith("-") && arg !== "-") {
+      warnings.push(`unknown option ${arg}`);
+    } else if (arg !== undefined) {
+      positionals.push(arg);
     }
+  }
+
+  // A bare argument (no -S/-i) is the intuitive search form: `kunai "Dune"`.
+  // Leftover positionals when a target is already set are surfaced, not dropped.
+  if (args.search === undefined && args.id === undefined && positionals.length > 0) {
+    args.search = positionals.join(" ");
+  } else {
+    for (const positional of positionals) warnings.push(`ignored argument ${positional}`);
+  }
+  if (warnings.length > 0) {
+    console.warn(`kunai: ${warnings.join("; ")}`);
   }
   const shellChrome: ShellChrome =
     args.minimal || args.zen ? "minimal" : args.quick ? "quick" : "default";
