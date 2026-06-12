@@ -268,7 +268,7 @@ export function DownloadManagerContent({
       if (!job) return;
 
       if (key.return && (job.status === "completed" || job.status === "completed-with-notes")) {
-        void import("./workflows").then(({ playCompletedDownload }) =>
+        void import("@/app/offline-playback").then(({ playCompletedDownload }) =>
           playCompletedDownload(container, job.id),
         );
         return;

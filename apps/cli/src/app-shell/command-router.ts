@@ -1,6 +1,7 @@
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
 import { episodeFromHistorySelection, recordLocalHistorySourceDecision } from "@/app/launch-entry";
 import { switchSessionMode } from "@/app/mode-switch";
+import { playCompletedDownload } from "@/app/offline-playback";
 import type { Container } from "@/container";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
@@ -9,11 +10,7 @@ import { historyContentType } from "@/services/continuation/history-progress";
 import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import type { ShellAction } from "./types";
-import {
-  handleShellAction,
-  playCompletedDownload,
-  resolveQuitWithDownloadQueue,
-} from "./workflows";
+import { handleShellAction, resolveQuitWithDownloadQueue } from "./workflows";
 
 export type CommandPaletteSurface = "browse" | "playback" | "list" | "post-play";
 

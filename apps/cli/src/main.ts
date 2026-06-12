@@ -331,7 +331,7 @@ async function maybeOpenStartupHistory(
   container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
   if (!selection) return null;
   if (selection.localJobId) {
-    const { playCompletedDownload } = await import("./app-shell/workflows");
+    const { playCompletedDownload } = await import("./app/offline-playback");
     await playCompletedDownload(container, selection.localJobId);
     return null;
   }

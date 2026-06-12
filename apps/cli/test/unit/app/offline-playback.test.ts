@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { playCompletedDownload } from "@/app-shell/workflows";
+import { playCompletedDownload } from "@/app/offline-playback";
 import type { Container } from "@/container";
 
 test("playCompletedDownload keeps an explicit history local action provider-free and replenishes runway after persistence", async () => {
