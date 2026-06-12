@@ -26,6 +26,7 @@
     "test:live:vidking": "bun run --cwd apps/cli test:live:videasy",
     "ci": "turbo run typecheck lint fmt:check test --summarize",
     "build": "turbo run build --filter=@kitsunekode/kunai",
+    "build:binaries": "bun run --cwd apps/cli build:binaries",
     "build:all": "turbo run build",
     "build:docs": "turbo run build --filter=@kunai/docs",
     "check": "turbo run check",

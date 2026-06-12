@@ -215,6 +215,8 @@ git commit -m "feat(build): embed+extract runtime assets for single-file binarie
 
 ## Task 2: Binary build script (`build-binaries.ts`)
 
+> **AMENDED during execution (2026-06-13):** Implemented with the **`Bun.build` JS API** (`compile: { target, outfile }`), NOT the `bun build --compile` CLI — the CLI form cannot run plugins, so it fails to resolve `react-devtools-core`. The stub plugin + `DEV` define were extracted to a shared `apps/cli/scripts/build-shared.ts` and are reused by both `build.ts` and `build-binaries.ts`. **`--bytecode` was dropped:** it cannot compile Ink/yoga's top-level `await` (parse errors). Verified: linux-x64 binary runs in a clean `env -i` (no external Bun) and the embedded VidKing WASM instantiates inside the compiled binary; windows-x64 cross-compiles to a valid PE32+ executable. The npm bundle minify (originally Task 10) also landed here via the shared config (4.2 MB → 2.17 MB).
+
 **Files:**
 
 - Create: `apps/cli/scripts/build-binaries.ts`

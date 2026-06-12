@@ -11,13 +11,15 @@ import { existsSync } from "node:fs";
 import { chmod, rm } from "node:fs/promises";
 import { join } from "node:path";
 
+import { RELEASE_DEFINE, reactDevtoolsStubPlugin } from "./build-shared";
+
 const ROOT = join(import.meta.dirname, "..");
 const DIST = join(ROOT, "dist");
 const ENTRY = join(ROOT, "src/main.ts");
 const BIN = join(DIST, "kunai.js");
-const REACT_DEVTOOLS_STUB = join(ROOT, "src/infra/build/react-devtools-core-stub.ts");
 
 const clean = process.argv.includes("--clean");
+const noMinify = process.argv.includes("--no-minify");
 
 // Runtime assets (VidKing WASM, mpv Lua bridge) are no longer copied here. They
 // are referenced from source via `import … with { type: "file" }`, so Bun's
@@ -52,16 +54,7 @@ async function main(): Promise<void> {
      * @kunai/schemas, @kunai/types, etc.
      */
     packages: "bundle",
-    plugins: [
-      {
-        name: "kunai-release-stubs",
-        setup(build) {
-          build.onResolve({ filter: /^react-devtools-core$/ }, () => ({
-            path: REACT_DEVTOOLS_STUB,
-          }));
-        },
-      },
-    ],
+    plugins: [reactDevtoolsStubPlugin(ROOT)],
 
     naming: {
       entry: "kunai.js",
@@ -70,13 +63,11 @@ async function main(): Promise<void> {
     },
 
     sourcemap: "none",
-    minify: false,
+    // Minified by default for the published artifact; `--no-minify` keeps readable
+    // output for local debugging.
+    minify: !noMinify,
 
-    define: {
-      // Ink can optionally load react-devtools-core when DEV=true. Kunai release
-      // builds should not require that debug package.
-      "process.env.DEV": '"false"',
-    },
+    define: RELEASE_DEFINE,
 
     /**
      * IMPORTANT:
