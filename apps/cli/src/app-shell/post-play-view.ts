@@ -105,7 +105,7 @@ export type BuildPostPlayViewProps = {
   readonly nextEpisodeLabel?: string;
   /**
    * Head of the cross-title queue, if any. Surfaced as Up Next only when there is
-   * no episode-chain next (series finished / movie), mirroring resolveUpNext's
+   * no episode-chain next (series finished / movie), mirroring resolveNextUp's
    * Netflix-like policy: binge the current series first, else play the queue.
    */
   readonly queueNextLabel?: string;
@@ -154,7 +154,7 @@ function buildUpNextCard(
   queueNextLabel?: string,
 ): PostPlayUpNextCard | undefined {
   // Episode-chain next wins (binge the current series); otherwise fall back to the
-  // cross-title queue head. Mirrors resolveUpNext's policy at the view layer.
+  // cross-title queue head. Mirrors resolveNextUp's policy at the view layer.
   if (nextEpisodeLabel) {
     return {
       label: formatUpNextLabel(nextEpisodeLabel),

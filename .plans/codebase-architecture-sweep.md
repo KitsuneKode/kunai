@@ -389,7 +389,11 @@ packages/storage
      executor.
 
 10. `refactor(playback): extract up-next planner`
-    - Status: Not started
+    - Status: Done
+    - Existing canonical planner is `domain/playback/resolve-next-up.ts`.
+    - Removed the unused older `domain/playback/up-next.ts` planner and its
+      self-only test so there is one policy name for catalog next episode,
+      runtime queue, and recommendation order.
     - Catalog next episode wins.
     - Runtime queue is second.
     - Recommendation auto-advance is third.
