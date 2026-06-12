@@ -18,13 +18,12 @@ This is one coordinated sweep with scoped commits, not one giant rewrite.
 
 ## Current Provisional WIP
 
-There is an uncommitted candidate extraction:
+There is no active provisional WIP for this sweep.
 
-- `apps/cli/src/app/PlaybackPhase.ts`
-- `apps/cli/src/app/playback-control-track-action.ts`
-
-Treat it as provisional Slice 3. Keep only if the playback/provider audit agrees
-that source, stream, and quality override handling should be extracted this way.
+The earlier candidate extraction in `apps/cli/src/app/PlaybackPhase.ts` and
+`apps/cli/src/app/playback-control-track-action.ts` was intentionally discarded
+after explorer review. Do not recreate that helper shape unchanged. Slice 3
+should start from the policy/effects boundary described below.
 
 ## Primary Findings So Far
 
@@ -319,7 +318,7 @@ packages/storage
    - Merge explorer findings.
 
 2. `test(architecture): add boundary guardrails`
-   - Status: Done
+   - Status: Done (`cf038899`)
    - Start allowlisted.
    - Prevent new app-shell imports from app/service code unless routed through
      approved adapters.
