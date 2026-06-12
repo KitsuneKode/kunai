@@ -397,6 +397,34 @@ Only start workers after explorer findings are merged.
 Workers must not revert each other's changes. Each worker gets a disjoint write
 scope and reports changed files.
 
+## Do Not Do
+
+- Do not run a broad rewrite or split multiple god files in one commit.
+- Do not do broad file renames or naming normalization as part of behavior
+  refactors.
+- Do not split `PlaybackPhase.ts` and `app-shell/workflows.ts` in the same
+  worker lane.
+- Do not introduce a general `ShellPort` before workflow-family and shell-host
+  seams are stable enough to wrap.
+- Do not move CLI domain types into packages until adapter contract tests cover
+  provider request/result mapping.
+- Do not move provider-local source discovery, flavor probing, or retry/cycling
+  into app code.
+- Do not change provider behavior without provider tests.
+- Do not land the provisional playback-control extraction unchanged; reshape it
+  into an explicit policy/effects boundary first.
+- Do not delete historical plans, provider dossiers, brainstorms, or research
+  artifacts during implementation. Classify current vs historical first.
+- Do not add `ink-testing-library` as a default test dependency. Prefer model,
+  router, presenter, fake scheduler, and deferred-promise tests unless a real Ink
+  render/input lifecycle regression requires it.
+- Do not replace legitimate process, timeout, or IPC waits with fake hooks unless
+  the harness exposes an equivalent observable event.
+- Do not treat queue and durable playlists as the same product surface. Runtime
+  up-next belongs to queue; saved/shareable collections belong to playlists.
+- Do not add new packages for one-off helpers. Default to `apps/cli` unless
+  there are multiple consumers and a stable cross-surface contract.
+
 ## Subagent Worker Prompt Seeds
 
 Use these only after this plan is committed and the provisional WIP is either
