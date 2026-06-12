@@ -117,8 +117,9 @@ Keep it current with `kunai upgrade`; remove it with `kunai --uninstall`
 
 ### Install by platform
 
-mpv is the only required dependency besides Bun. The rest are optional and
-auto-detected — install what you want, then run `kunai --setup` to confirm.
+With the binary install, **mpv is the only required dependency**. The rest are
+optional and auto-detected — install what you want, then run `kunai --setup` to
+confirm.
 
 <details>
 <summary><b>Arch Linux</b></summary>
