@@ -46,6 +46,7 @@
     "dev": "bun run src/main.ts",
     "start": "bun run src/main.ts",
     "test": "bun test test/unit test/integration",
+    "test:file": "bun test",
     "test:unit": "bun test test/unit",
     "test:integration": "bun test test/integration",
     "test:live:allanime": "bun -e \"await import('./test/live/allanime-demonslayer.smoke.ts')\"",

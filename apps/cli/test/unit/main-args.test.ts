@@ -80,3 +80,54 @@ test("parseArgs supports dry-run protocol handler inspection", () => {
   expect(args.installProtocolHandler).toBe(true);
   expect(args.dryRun).toBe(true);
 });
+
+test("parseArgs supports --jump <n> for hands-off first-result playback", () => {
+  const args = parseArgs(["-S", "Dune", "--jump", "1"]);
+
+  expect(args.search).toBe("Dune");
+  expect(args.jump).toBe(1);
+});
+
+test("parseArgs supports -q / --quick as hands-off first-result", () => {
+  const quickShort = parseArgs(["-S", "Dune", "-q"]);
+  const quickLong = parseArgs(["-S", "Dune", "--quick"]);
+
+  expect(quickShort.search).toBe("Dune");
+  expect(quickShort.quick).toBe(true);
+  expect(quickLong.quick).toBe(true);
+});
+
+test("parseArgs ignores invalid --jump values without crashing", () => {
+  const negative = parseArgs(["-S", "Dune", "--jump", "-1"]);
+  const zero = parseArgs(["-S", "Dune", "--jump", "0"]);
+  const missing = parseArgs(["-S", "Dune", "--jump"]);
+
+  // Invalid --jump values fall back to "ask the user" — the field stays
+  // undefined so the bootstrap resolves the search to the browse surface.
+  expect(negative.jump).toBeUndefined();
+  expect(zero.jump).toBeUndefined();
+  expect(missing.jump).toBeUndefined();
+});
+
+test("parseArgs routes --history / --offline / --continue to their bootstrap surfaces", () => {
+  const history = parseArgs(["--history"]);
+  const offline = parseArgs(["--offline"]);
+  const continuePlayback = parseArgs(["--continue"]);
+
+  // The boot path is the user-facing contract documented in the smoke matrix:
+  // --history opens the history picker at startup, --offline opens the
+  // completed-downloads picker, --continue resumes the newest unfinished
+  // history entry. Each must set exactly one boolean so the bootstrap
+  // dispatch is unambiguous.
+  expect(history.history).toBe(true);
+  expect(history.offline).toBe(false);
+  expect(history.continuePlayback).toBe(false);
+
+  expect(offline.offline).toBe(true);
+  expect(offline.history).toBe(false);
+  expect(offline.continuePlayback).toBe(false);
+
+  expect(continuePlayback.continuePlayback).toBe(true);
+  expect(continuePlayback.history).toBe(false);
+  expect(continuePlayback.offline).toBe(false);
+});
