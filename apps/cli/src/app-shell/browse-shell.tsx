@@ -89,6 +89,7 @@ import {
   truncateLine,
 } from "./shell-text";
 import { contentTintColor, palette } from "./shell-theme";
+import { SkeletonRows } from "./skeleton";
 import {
   toShellAction,
   type FooterAction,
@@ -1297,6 +1298,16 @@ export function BrowseShell<T>({
             model={buildCalendarEmptyState(calendarEmptyModeLabel)}
             width={Math.min(innerWidth, 72)}
           />
+        ) : searchState === "loading" ? (
+          // Long request: fill the body with pulsing skeleton rows so the wait
+          // reads as "results are coming" rather than a frozen empty surface.
+          <Box marginTop={1} flexGrow={1}>
+            <SkeletonRows
+              rows={4}
+              titleWidth={Math.max(16, Math.min(30, innerWidth - 14))}
+              label={emptyMessage}
+            />
+          </Box>
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
           <Box marginTop={2} flexDirection="column" flexGrow={1}>
             <Text color={palette.dim}>{`◌  no results for "${lastSearchedQuery}"  `}</Text>
