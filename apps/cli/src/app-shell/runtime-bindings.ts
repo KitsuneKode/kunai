@@ -6,7 +6,7 @@ import {
   buildProviderPickerOptions,
   sortProvidersByConfigPriority,
 } from "@/app-shell/panel-data";
-import { applySettingsToRuntime } from "@/app-shell/workflows";
+import { applySettingsToRuntime } from "@/app/apply-settings-to-runtime";
 import type { Container } from "@/container";
 import {
   getRuntimeMemoryLine,

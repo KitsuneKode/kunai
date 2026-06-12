@@ -495,7 +495,7 @@ export function RootOverlayShell({
       void (async () => {
         const previous = container.config.getRaw();
         if (settingsEqual(next, previous)) return;
-        const { applySettingsToRuntime } = await import("./workflows");
+        const { applySettingsToRuntime } = await import("@/app/apply-settings-to-runtime");
         await applySettingsToRuntime({ container, next, previous });
       })();
     }, 300);
@@ -1349,7 +1349,7 @@ export function RootOverlayShell({
                 const snapshot = await container.presence.disconnect("settings-disconnect");
                 setSettingsError(`Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`);
               } else {
-                const { applySettingsToRuntime } = await import("./workflows");
+                const { applySettingsToRuntime } = await import("@/app/apply-settings-to-runtime");
                 await applySettingsToRuntime({
                   container,
                   next: settingsDraft,
@@ -1537,7 +1537,7 @@ export function RootOverlayShell({
         setSettingsError(null);
         void (async () => {
           try {
-            const { applySettingsToRuntime } = await import("./workflows");
+            const { applySettingsToRuntime } = await import("@/app/apply-settings-to-runtime");
             await applySettingsToRuntime({
               container,
               next: settingsDraft,
