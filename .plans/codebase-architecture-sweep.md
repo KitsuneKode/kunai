@@ -357,13 +357,12 @@ packages/storage
      with compatibility re-exports from `workflows.ts`.
    - Done: provider/subtitle/tracks/season/episode picker workflows extracted
      to `app-shell/picker-workflows.ts` with compatibility re-exports.
+   - Done: history picker workflows extracted to `app-shell/history-workflows.ts`.
    - Verification: `bun run typecheck`, `bun run lint`,
      `bun run --cwd apps/cli fmt:check`.
-   - Settings/setup workflows.
-   - History workflows.
+   - Settings workflows.
    - Offline library workflows.
    - Download workflows.
-   - Provider/track picker workflows.
    - Generic shell action routing.
 
 7. `refactor(shell): split ink shell surfaces`
