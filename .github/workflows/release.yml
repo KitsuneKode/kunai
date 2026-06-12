@@ -39,6 +39,8 @@ jobs:
     name: Version PR / Publish
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
 
     steps:
       - uses: actions/checkout@v5
@@ -72,11 +74,64 @@ jobs:
         run: bun run guard
 
       - name: Create release PR or publish
+        id: changesets
         uses: changesets/action@v1
         with:
           version: bun run version:packages
           publish: bun run release
           title: "chore: version packages"
           commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Cross-platform standalone binaries, built once per published version so npm
+  # and the binaries always ship in lockstep (Spec A §2.3). Gated on an actual
+  # publish so it never runs for the version PR.
+  binaries:
+    name: Build & upload release binaries
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build binaries
+        run: bun run build:binaries
+
+      - name: Smoke test (linux-x64)
+        run: |
+          ./apps/cli/dist/bin/kunai-linux-x64 --version
+          ./apps/cli/dist/bin/kunai-linux-x64 --help >/dev/null
+
+      - name: Resolve published version
+        id: ver
+        run: echo "tag=v$(bun -e 'console.log(require(\"./apps/cli/package.json\").version)')" >> "$GITHUB_OUTPUT"
+
+      # Publishes a release tagged `v<version>` and marks it latest, so the
+      # download contract (`releases/latest/download/<asset>` and
+      # `releases/download/v<version>/<asset>`) resolves to these binaries.
+      - name: Upload binaries to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          make_latest: true
+          files: |
+            apps/cli/dist/bin/kunai-linux-x64
+            apps/cli/dist/bin/kunai-linux-arm64
+            apps/cli/dist/bin/kunai-darwin-x64
+            apps/cli/dist/bin/kunai-darwin-arm64
+            apps/cli/dist/bin/kunai-windows-x64.exe
+            apps/cli/dist/bin/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

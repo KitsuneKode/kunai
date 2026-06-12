@@ -1,6 +1,14 @@
 import { expect, test } from "bun:test";
 
-import { fetchLatestVersion } from "@/services/update/latest-version";
+import { fetchLatestVersion, parseVersionFromTag } from "@/services/update/latest-version";
+
+test("parseVersionFromTag handles v-prefixed and changesets package tags", () => {
+  expect(parseVersionFromTag("v1.2.3")).toBe("1.2.3");
+  expect(parseVersionFromTag("@kitsunekode/kunai@0.3.0")).toBe("0.3.0");
+  expect(parseVersionFromTag("kunai-0.4.1")).toBe("0.4.1");
+  expect(parseVersionFromTag(undefined)).toBeNull();
+  expect(parseVersionFromTag("nightly")).toBeNull();
+});
 
 function fakeFetch(status: number, body: unknown): typeof fetch {
   return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;

@@ -1245,6 +1245,8 @@ git commit -m "feat(update): channel-aware uninstall (--uninstall/--purge)"
 
 ## Task 9: Release CI — build + upload binaries (version-lockstep)
 
+> **AMENDED (2026-06-13):** The `binaries` job is gated on `needs.release.outputs.published == 'true'` (exposed via an `id: changesets` step output). It publishes a release tagged **`v<version>`** with `make_latest: true`, so the download contract resolves to these binaries. **Tag-format caveat to verify on the first real release:** changesets tags its own published package as `@kitsunekode/kunai@<version>` and may create a separate GitHub Release. `fetchLatestVersion` was hardened (`parseVersionFromTag`, regex semver) to tolerate either tag being "latest." If two releases cause "latest" ambiguity, disable changesets' GitHub-release creation (`.changeset/config.json`) so the `v<version>` binaries release is the sole latest. The actionlint/schema validation passed locally; the publish path itself can only be exercised by a real release.
+
 **Files:**
 
 - Modify: `.github/workflows/release.yml` (add a `binaries` job that runs after publish)
