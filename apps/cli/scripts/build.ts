@@ -8,8 +8,8 @@
 // The mpv Lua bridge is copied separately since it is a runtime file path, not a JS import.
 
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdir, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { chmod, rm } from "node:fs/promises";
+import { join } from "node:path";
 
 const ROOT = join(import.meta.dirname, "..");
 const DIST = join(ROOT, "dist");
@@ -19,45 +19,10 @@ const REACT_DEVTOOLS_STUB = join(ROOT, "src/infra/build/react-devtools-core-stub
 
 const clean = process.argv.includes("--clean");
 
-type Asset = {
-  label: string;
-  from: string;
-  to: string;
-  required?: boolean;
-};
-
-const assets: Asset[] = [
-  {
-    label: "VidKing WASM",
-    from: join(ROOT, "../../packages/providers/src/videasy/assets/module1_patched.wasm"),
-    to: join(DIST, "assets/module1_patched.wasm"),
-    required: true,
-  },
-  {
-    label: "mpv Lua bridge",
-    from: join(ROOT, "assets/mpv/kunai-bridge.lua"),
-    to: join(DIST, "assets/mpv/kunai-bridge.lua"),
-    required: true,
-  },
-];
-
-async function copyAsset(asset: Asset): Promise<void> {
-  if (!existsSync(asset.from)) {
-    const message = `[build] ${asset.label} not found at ${asset.from}`;
-
-    if (asset.required) {
-      throw new Error(message);
-    }
-
-    console.warn(`warn: ${message}`);
-    return;
-  }
-
-  await mkdir(dirname(asset.to), { recursive: true });
-  await copyFile(asset.from, asset.to);
-
-  console.log(`[build] copied ${asset.label}`);
-}
+// Runtime assets (VidKing WASM, mpv Lua bridge) are no longer copied here. They
+// are referenced from source via `import … with { type: "file" }`, so Bun's
+// bundler emits them into dist/assets and rewrites the import paths. This also
+// makes `bun build --compile` embed them into single-file binaries automatically.
 
 async function main(): Promise<void> {
   const start = Date.now();
@@ -140,10 +105,6 @@ async function main(): Promise<void> {
     }
 
     process.exit(1);
-  }
-
-  for (const asset of assets) {
-    await copyAsset(asset);
   }
 
   await chmod(BIN, 0o755);

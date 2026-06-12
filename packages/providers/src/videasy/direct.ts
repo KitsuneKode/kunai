@@ -44,6 +44,10 @@ import {
 import { selectReadyStream } from "../shared/startup-selection";
 import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "../shared/stream-health";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+// Embedded so `bun build --compile` single-file binaries carry the WASM (resolves
+// to a real path in dev/npm-bundle, a `/$bunfs/` path in a compiled binary —
+// `Bun.file()` reads both). See docs/superpowers/plans/2026-06-13-*.
+import videasyWasm from "./assets/module1_patched.wasm" with { type: "file" };
 import {
   getPhaseAVidkingServers,
   getVidkingFlavor,
@@ -1477,9 +1481,7 @@ async function loadWasmExports(): Promise<WasmExports> {
 
   wasmExportsPromise = (async () => {
     const loader = await import("@assemblyscript/loader");
-    const wasmBuffer = await Bun.file(
-      new URL("./assets/module1_patched.wasm", import.meta.url),
-    ).arrayBuffer();
+    const wasmBuffer = await Bun.file(videasyWasm).arrayBuffer();
     const module = await loader.instantiate(wasmBuffer, {
       env: {
         seed: () => Date.now(),

@@ -24,6 +24,13 @@
 
 **Why first:** Without this, a single-file compiled binary cannot find the WASM or mpv Lua (no sibling `dist/assets/`). Everything else depends on a binary that actually runs.
 
+> **AMENDED during execution (verified empirically 2026-06-13):** `@kunai/providers` depends on `@kunai/core`+`@kunai/types` only (NOT `@kunai/storage`), so the original storage-coupled `resolveRuntimeAsset` util is dropped. Verified Bun behavior: an `import x from "./f" with { type: "file" }` resolves to a real path in dev/npm-bundle and to a `/$bunfs/...` path in a compiled binary; `Bun.file()` reads both and `existsSync()` returns true for both, but **Node `fs.copyFile` fails on `/$bunfs/` paths — only `Bun.write()` works**. Therefore:
+>
+> - **WASM (providers):** read bytes directly via `Bun.file(embeddedImport).arrayBuffer()` — no extraction, no storage dep, no new util.
+> - **mpv Lua (cli):** source from an embedded import and switch the existing copy from Node `copyFile` → `Bun.write` (handles bunfs). The existing "copy to writable config dir" flow is preserved.
+>
+> The `extractEmbeddedAsset`/`resolveRuntimeAsset`/`isCompiledBinary` files in Steps 3-6 below are superseded by this simpler approach; the real steps implemented are in this amendment.
+
 **Files:**
 
 - Create: `apps/cli/src/infra/build/runtime-assets.ts`

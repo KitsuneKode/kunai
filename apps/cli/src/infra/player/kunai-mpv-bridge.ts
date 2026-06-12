@@ -1,29 +1,25 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { getKunaiPaths } from "@kunai/storage";
 
-const BRIDGE_FILENAME = "kunai-bridge.lua";
+// Embedded so `bun build --compile` single-file binaries carry the Lua bridge.
+// Resolves to a real path in dev/npm-bundle and a `/$bunfs/` path in a compiled
+// binary; `Bun.file()` reads both, and `Bun.write()` (unlike Node `copyFile`)
+// can copy from a `/$bunfs/` source. See docs/superpowers/plans/2026-06-13-*.
+import bridgeLua from "../../../assets/mpv/kunai-bridge.lua" with { type: "file" };
+
 const SCRIPT_OPTS_ID = "kunai-bridge";
 
-/** Packaged / dev: bridge under `apps/cli/assets/mpv` (from `src/...` or `dist/kunai.js`). */
+/**
+ * Packaged / dev / compiled-binary source for the bridge. The `with { type: "file" }`
+ * import is correct in every runtime mode, so we no longer probe sibling dirs.
+ */
 export function bundledKunaiMpvBridgePath(): string {
-  const dir =
-    typeof import.meta.dirname !== "undefined"
-      ? import.meta.dirname
-      : dirname(fileURLToPath(import.meta.url));
-  // Packaged: `dist/kunai.js` ships `dist/assets/mpv` (npm `files`: dist only). Monorepo: sibling `cli/assets/mpv`. Dev: `src/infra/player` → cli root.
-  const fromDistBundle = join(dir, "assets", "mpv", BRIDGE_FILENAME);
-  if (existsSync(fromDistBundle)) return fromDistBundle;
-  const fromCliRoot = join(dir, "..", "assets", "mpv", BRIDGE_FILENAME);
-  if (existsSync(fromCliRoot)) return fromCliRoot;
-  const fromSrcTree = join(dir, "..", "..", "..", "assets", "mpv", BRIDGE_FILENAME);
-  if (existsSync(fromSrcTree)) return fromSrcTree;
-  return fromDistBundle;
+  return bridgeLua;
 }
 
 /** Writable copy of the bridge: same layout as Kunai `config.json` (`getKunaiPaths().mpvBridgePath`). */
@@ -31,18 +27,27 @@ export function userKunaiMpvBridgePath(): string {
   return getKunaiPaths().mpvBridgePath;
 }
 
-export async function ensureUserKunaiMpvBridge(bundledPath: string): Promise<void> {
-  const dest = userKunaiMpvBridgePath();
+/**
+ * Materialize the bridge at a writable path mpv can load via `--script=`.
+ * Uses `Bun.write` (not Node `copyFile`) so it works when `bundledPath` is a
+ * `/$bunfs/` embedded path inside a compiled binary. `dest` is injectable for tests.
+ */
+export async function ensureUserKunaiMpvBridge(
+  bundledPath: string,
+  dest: string = userKunaiMpvBridgePath(),
+): Promise<void> {
   await mkdir(dirname(dest), { recursive: true });
   if (!existsSync(bundledPath)) return;
   if (!existsSync(dest)) {
-    await copyFile(bundledPath, dest);
+    await Bun.write(dest, Bun.file(bundledPath));
     return;
   }
+  // Refresh when the source is newer. stat on a `/$bunfs/` path can throw; treat
+  // any failure as "leave the existing copy" (best-effort, matches prior behavior).
   const { statSync } = await import("node:fs");
   try {
     if (statSync(bundledPath).mtimeMs > statSync(dest).mtimeMs) {
-      await copyFile(bundledPath, dest);
+      await Bun.write(dest, Bun.file(bundledPath));
     }
   } catch {
     // best-effort
