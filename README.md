@@ -9,13 +9,11 @@ One fullscreen, keyboard-driven terminal session.
 &nbsp;![runtime](https://img.shields.io/badge/runtime-Bun%20%E2%89%A51.3.9-ff8fb0)
 &nbsp;![player](https://img.shields.io/badge/player-mpv-4fd1c5)
 &nbsp;![kinds](https://img.shields.io/badge/anime%20%C2%B7%20series%20%C2%B7%20movies-c98bff)
-&nbsp;![license](https://img.shields.io/badge/license-see%20repo-968a98)
+&nbsp;[![license](https://img.shields.io/badge/license-MIT-968a98)](LICENSE)
 
 ```bash
-# Bun is the runtime — install it first if you don't have it
-curl -fsSL https://bun.sh/install | bash
-
-npm install -g @kitsunekode/kunai
+# Zero prerequisites — installs a self-contained binary (no Bun/Node needed)
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
 kunai -S "Dune"
 ```
 
@@ -23,77 +21,170 @@ kunai -S "Dune"
 
 ---
 
+## Table of Contents
+
+- [Why Kunai](#why-kunai)
+- [Showcase](#showcase)
+- [Quick Start](#quick-start)
+  - [Install](#install)
+  - [Install by platform](#install-by-platform)
+  - [What you need up front](#what-you-need-up-front)
+- [Usage](#usage)
+- [Key Bindings](#key-bindings)
+- [Features](#features)
+- [Dependencies — in detail](#dependencies--in-detail)
+- [Configuration](#configuration)
+- [Providers](#providers)
+- [FAQ](#faq)
+- [Architecture](#architecture-for-contributors)
+- [Development](#development)
+- [Uninstall](#uninstall)
+- [Contributing](#contributing)
+- [Appreciation](#appreciation)
+- [Disclaimer](#disclaimer)
+
+---
+
+## Why Kunai
+
+Kunai is a terminal-first media shell. You search a title, pick a source, and it
+hands a direct stream to `mpv` — no browser, no tabs, no ads, no mouse. One
+fullscreen keyboard session covers anime, series, and movies, with offline
+downloads, a release calendar, watch history, and Discord Rich Presence built in.
+
+It takes the daily-driver confidence of tools like `ani-cli` and extends it into
+an app-grade browsing experience that keeps search, details, episodes, and
+playback connected — while staying a deterministic, scriptable CLI.
+
+---
+
+## Showcase
+
+The command palette (`/`) reaches every surface — here, the offline shell touring
+help, diagnostics, and watch history without leaving the session:
+
+<div align="center">
+
+![Kunai command palette tour](.design/brand/demo-command-palette.gif)
+
+</div>
+
+More demos — the setup wizard and the offline library — regenerate locally with
+`bun run --cwd apps/cli test:vhs:all` (output in the gitignored
+`apps/cli/test/vhs/golden/`).
+
+---
+
 ## Quick Start
 
 ### Install
 
-> **Prerequisite — Bun `>=1.3.9`.** Kunai runs on the Bun runtime (the `kunai`
-> binary is `#!/usr/bin/env bun`), so Bun is required for **every** install method,
-> including `npm install -g`. Install it with `curl -fsSL https://bun.sh/install | bash`.
-> The interactive installer below checks for Bun and offers to install it for you.
+The recommended install downloads a **self-contained binary** with the Bun
+runtime embedded — **no Bun or Node required**. It verifies a SHA256 checksum,
+records how you installed (so `kunai upgrade` does the right thing), and works on
+Linux, macOS, and Windows.
 
 ```bash
-# Interactive installer (detects OS, ensures Bun, optional deps, install method)
+# Recommended — zero prerequisites
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
 
-# Inspect installer actions first
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+
+# Inspect first, pin a version, or pick a channel
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
-
-# Manual: install Bun (runtime), then the package
-curl -fsSL https://bun.sh/install | bash
-npm install -g @kitsunekode/kunai
-
-# Or from source
-git clone https://github.com/kitsunekode/kunai.git
-cd kunai
-bun install
-bun run link:global
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --version 0.3.0
 ```
 
-### One search, that's it
+Then run `kunai` to open the shell, or `kunai -S "Dune"` to search directly.
+Inside the shell, `/` opens the command palette from anywhere.
+
+Keep it current with `kunai upgrade`; remove it with `kunai --uninstall`
+(add `--purge` to also delete config/history/cache).
+
+> **Alternatives for developers / Bun users** (these require Bun `>=1.3.9` at
+> runtime — the published `dist/kunai.js` starts with `#!/usr/bin/env bun`):
+>
+> ```bash
+> # npm or bun global
+> npm install -g @kitsunekode/kunai      # or: bun install -g @kitsunekode/kunai
+> # the installer can do this too: install.sh ... | bash -s -- --method npm
+>
+> # From source
+> git clone https://github.com/kitsunekode/kunai.git
+> cd kunai && bun install && bun run link:global
+> ```
+
+### Install by platform
+
+mpv is the only required dependency besides Bun. The rest are optional and
+auto-detected — install what you want, then run `kunai --setup` to confirm.
+
+<details>
+<summary><b>Arch Linux</b></summary>
 
 ```bash
-# Interactive shell
-kunai
-
-# Search directly
-kunai -S "Dune"
-kunai -a -S "Frieren"
+# Required
+sudo pacman -S mpv
+# Optional: downloads, poster previews, integrity checks
+sudo pacman -S yt-dlp chafa imagemagick ffmpeg
 ```
 
-Once inside the shell, `/` opens the command palette from anywhere.
+</details>
+
+<details>
+<summary><b>Debian / Ubuntu</b></summary>
+
+```bash
+# Required
+sudo apt install mpv
+# Optional: downloads, poster previews, integrity checks
+sudo apt install yt-dlp chafa imagemagick ffmpeg
+```
+
+</details>
+
+<details>
+<summary><b>macOS (Homebrew)</b></summary>
+
+```bash
+# Required
+brew install mpv
+# Optional: downloads, poster previews, integrity checks
+brew install yt-dlp chafa imagemagick ffmpeg
+```
+
+</details>
+
+<details>
+<summary><b>Windows (winget)</b></summary>
+
+```bash
+# Required
+winget install mpv
+# Optional: downloads, poster previews, integrity checks
+winget install yt-dlp hpjansson.Chafa ImageMagick.ImageMagick Gyan.FFmpeg
+```
+
+> `ffprobe` ships inside the FFmpeg package on every platform.
+
+</details>
 
 ### What you need up front
 
-| Tool            | Required? | Why                                                                      |
-| --------------- | --------- | ------------------------------------------------------------------------ |
-| **Bun** ≥1.3.9  | Required  | Runtime — Kunai runs on Bun. `curl -fsSL https://bun.sh/install \| bash` |
-| **mpv**         | Required  | Plays everything. `sudo pacman -S mpv` / `brew install mpv`              |
-| **yt-dlp**      | Optional  | Offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp`       |
-| **ffprobe**     | Optional  | Post-download integrity checks, if your platform provides it             |
-| **chafa**       | Optional  | Poster previews in non-Kitty terminals. `sudo pacman -S chafa`           |
-| **ImageMagick** | Optional  | Broader poster format support. `sudo pacman -S imagemagick`              |
-| **Discord**     | Optional  | Rich Presence (watching status on profile)                               |
+| Tool            | Required?      | Why                                                                         |
+| --------------- | -------------- | --------------------------------------------------------------------------- |
+| **Bun** ≥1.3.9  | npm/bun/source | Runtime for non-binary installs. The default binary embeds it — not needed. |
+| **mpv**         | Required       | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                 |
+| **yt-dlp**      | Optional       | Offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp`          |
+| **ffprobe**     | Optional       | Post-download integrity checks (ships with FFmpeg)                          |
+| **chafa**       | Optional       | Poster previews in non-Kitty terminals. `sudo pacman -S chafa`              |
+| **ImageMagick** | Optional       | Broader poster format support. `sudo pacman -S imagemagick`                 |
+| **Discord**     | Optional       | Rich Presence (watching status on profile)                                  |
 
 If mpv is missing, Kunai won't start playback. Everything else is optional and
 detected automatically — the setup wizard (`/setup` or `kunai --setup`) walks
 through each capability and what it enables.
-
-### All-in-one install by platform
-
-```bash
-# Arch Linux
-sudo pacman -S mpv yt-dlp chafa imagemagick
-
-# Debian/Ubuntu
-sudo apt install mpv yt-dlp chafa imagemagick
-
-# macOS (Homebrew)
-brew install mpv yt-dlp chafa imagemagick
-
-# Windows (winget)
-winget install mpv yt-dlp hpjansson.Chafa ImageMagick.ImageMagick
-```
 
 ---
 
@@ -112,6 +203,9 @@ kunai -S "Cowboy Bebop" --jump 1
 # Anime mode
 kunai -a -S "Attack on Titan"
 
+# Open a known TMDB id directly
+kunai -i 438631 -t movie
+
 # Resume where you left off
 kunai --continue
 kunai --history
@@ -129,14 +223,15 @@ kunai --download -S "Dune" --download-path ~/Videos/Kunai
 # Minimal chrome (zen mode)
 kunai --zen --offline
 
-# Setup wizard
+# Setup wizard / verbose traces
 kunai --setup
+kunai --debug
 ```
 
 ### Inside the shell
 
-Once you're in, every screen has a context-sensitive footer showing available keys.
-The most important ones:
+Every screen has a context-sensitive footer showing the keys available right
+there. The ones you'll reach for most:
 
 ```text
 /                 Command palette (from anywhere)
@@ -224,14 +319,17 @@ Ctrl+D            Download selected result (from browse)
 - **Autoplay** automatically advances to the next episode in a series chain.
 - **Post-playback** controls open from prefetched data first; recommendations warm in the background instead of delaying the menu.
 - **Autoskip** skips intros, recaps, previews, and credits (powered by IntroDB/AniSkip when available).
-- **Episode picker** jump to any episode in the current season.
-- **Subtitle management** picks preferred language first; alternate tracks available in mpv.
+- **Episode picker** jumps to any episode in the current season.
+- **Subtitle management** picks your preferred language first; alternate tracks remain available in mpv.
 
 ### Offline downloads
 
+Requires **yt-dlp** on your `PATH`. Without it, download features stay hidden and
+everything else works normally.
+
 - Queue downloads from any search result (`Ctrl+D`) or during playback (`d`).
 - Movies skip the episode picker — one key queues the download.
-- Download queue persists across sessions (backed by SQLite).
+- The download queue persists across sessions (backed by SQLite).
 - On restart, interrupted downloads are automatically resumed or retried.
 - Optional post-download integrity checks (`ffprobe`). Offline artwork uses cached poster assets when available.
 - Repairable sidecars: if the video is valid but subtitles/artwork need attention, retry repairs the sidecar without redownloading the whole video.
@@ -254,11 +352,13 @@ All completed downloads are grouped by title in the library panel (`/library`):
 
 ### Discord Rich Presence
 
-Enable via `/presence` or `/settings`. Shows what you're watching on your Discord profile:
+Enable via `/presence` or `/settings`. Kunai talks to Discord over its **local
+Unix-socket IPC** directly — there's no extra service or `discord-rpc` package to
+install; just have the Discord desktop app running. It shows what you're watching:
 
 - **Watching Kunai** — Attack on Titan · Season 1, Episode 5 · provider
-- Browsing state when searching between episodes
-- Private mode option hides title details
+- A browsing state when you're searching between episodes
+- Private mode hides title details
 
 ### Watch history
 
@@ -273,10 +373,11 @@ Enable via `/presence` or `/settings`. Shows what you're watching on your Discor
 - `kunai --debug` for verbose traces during troubleshooting.
 - `/export-diagnostics` generates a redacted JSON snapshot for issue reports.
 - `/report-issue` opens GitHub issue triage guidance.
+- Kunai checks for a newer published version on startup and notifies you in-shell — updating is a quick reinstall (see [Uninstall](#uninstall) / [Quick Start](#quick-start)).
 
 ---
 
-## Dependencies — In Detail
+## Dependencies — in detail
 
 ### Required
 
@@ -287,14 +388,14 @@ Enable via `/presence` or `/settings`. Shows what you're watching on your Discor
 
 ### Optional — what each enables
 
-| Tool                | What it gives you                                                                                | Without it                                           |
-| ------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| **yt-dlp**          | Download queue. Required for `/download`, `/library`, `Ctrl+D`.                                  | Download features are hidden. Everything else works. |
-| **ffprobe**         | Post-download integrity check. Verifies the file is playable.                                    | Downloads still work; integrity check is skipped.    |
-| **chafa**           | Poster previews in terminals that don't support Kitty protocol (Sixel/WezTerm/Windows Terminal). | No poster previews in those terminals.               |
-| **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                   | Posters work but may fail on unusual formats.        |
-| **Discord desktop** | Rich Presence — shows "Watching Kunai" on your Discord profile.                                  | No Discord integration.                              |
-| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                            | Falls back to chafa or none.                         |
+| Tool                | What it gives you                                                                                    | Without it                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| **yt-dlp**          | Download queue. Required for `/download`, `/library`, `Ctrl+D`.                                      | Download features are hidden. Everything else works. |
+| **ffprobe**         | Post-download integrity check. Verifies the file is playable. (Ships with FFmpeg.)                   | Downloads still work; integrity check is skipped.    |
+| **chafa**           | Poster previews in terminals that don't support the Kitty protocol (Sixel/WezTerm/Windows Terminal). | No poster previews in those terminals.               |
+| **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                       | Posters work but may fail on unusual formats.        |
+| **Discord desktop** | Rich Presence — shows "Watching Kunai" on your Discord profile.                                      | No Discord integration.                              |
+| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                                | Falls back to chafa or none.                         |
 
 ### Poster previews by terminal
 
@@ -322,17 +423,20 @@ KUNAI_IMAGE_DEBUG=1                     # Verbose poster logging
 
 ### Setup wizard
 
-Run `/setup` or `kunai --setup` for a guided walkthrough:
+Run `/setup` or `kunai --setup` for a guided walkthrough (six quick slides):
 
-1. Dependency guide (mpv, yt-dlp, chafa, ImageMagick, ffprobe)
-2. Poster preview check
-3. Enable/disable downloads
-4. Choose download location
-5. Review and finish
+1. Welcome
+2. System check — mpv, yt-dlp, ffprobe, chafa, and ImageMagick status
+3. Audio language preference
+4. Subtitle language preference
+5. Downloads — enable or disable the queue
+6. Tips — command palette, search, discovery, stream recovery, and rerunning setup
+
+Download location and finer preferences live in the [settings panel](#settings-panel).
 
 ### Settings panel
 
-`/settings` or `kunai` then `/settings` — all configurable from inside the shell:
+`/settings` (or `kunai` then `/settings`) — all configurable from inside the shell:
 
 - Default provider (anime and series)
 - Language profiles (audio, subtitle per content type)
@@ -341,28 +445,66 @@ Run `/setup` or `kunai --setup` for a guided walkthrough:
 - Skip behavior (recap, intro, preview, credits)
 - Display preferences (posters, memory usage, footer hints)
 
-### Config file
+### Config files
 
-`~/.config/kunai/config.json` — human-readable JSON. Editable directly, but the
-setup wizard and settings panel are the recommended interface.
+| Path                             | What it holds              |
+| -------------------------------- | -------------------------- |
+| `~/.config/kunai/config.json`    | Human-readable user config |
+| `~/.config/kunai/providers.json` | Provider overrides         |
+
+Both are editable directly, but the setup wizard and settings panel are the
+recommended interface.
 
 ---
 
-## Provider Reality
+## Providers
 
 Active providers:
 
-- **rivestream**, **vidking** — series and movies
-- **allanime**, **miruro** — anime
+- **videasy**, **vidlink**, **rivestream** — series and movies
+- **allmanga**, **miruro** — anime
 
 Providers are third-party integrations. Availability varies by title, region,
 subtitle track, and source mirror. Some streams are hard-sub only or expose
-incomplete subtitle metadata. Recovery paths are intentional: retry, source
-switch, provider fallback, diagnostics export.
+incomplete subtitle metadata. The recovery paths are intentional: retry (`r`),
+source switch (`k`), provider fallback (`f`), and diagnostics export.
 
 Legacy Playwright provider code is archived under `archive/legacy/` as reference.
 Experimental provider research lives in `apps/experiments/scratchpads/` and does
 not ship as runtime behavior.
+
+---
+
+## FAQ
+
+**Search works but playback fails or stalls.**
+Providers break when upstream sites change. In playback, press `r` to recover the
+stream, `f` to fall back to the next compatible provider, or `k` to pick another
+source/quality. If sources look stale, `/recompute` bypasses cached provider
+memory. Persistent issues → `/diagnostics`, then `/export-diagnostics` for a
+redacted snapshot to attach to a bug report.
+
+**"No results found" for a title I know exists.**
+Try the other mode — anime and series use different provider sets (`Tab` toggles,
+or launch with `-a`). Some titles are only indexed under an alternate name.
+
+**Kunai won't start playback.**
+mpv isn't installed or isn't on your `PATH`. Install it (see
+[Install by platform](#install-by-platform)) and re-run.
+
+**I don't see download options.**
+Install **yt-dlp** and restart. Download features are hidden when yt-dlp is
+missing; everything else keeps working.
+
+**No poster previews.**
+Kitty and Ghostty render natively. Other terminals need **chafa** for Sixel/symbol
+output. Check `/diagnostics` for the detected renderer, or set
+`KUNAI_IMAGE_DEBUG=1` for verbose logging.
+
+**How do I update?**
+Kunai notifies you in-shell when a newer version is published. Update by
+reinstalling: `npm install -g @kitsunekode/kunai` (or re-run the installer / `git
+pull && bun run relink:global` from source).
 
 ---
 
@@ -402,7 +544,7 @@ bun run lint
 bun run test
 bun run typecheck
 
-# Build/release confidence
+# Build / release confidence
 bun run build
 bun run pkg:check
 
@@ -419,13 +561,60 @@ Provider and Rich Presence smokes are opt-in release checks; see
 [.docs/release-reliability-gate.md](.docs/release-reliability-gate.md) for the
 current gate.
 
-### VHS demos
+### Terminal demos
+
+The README gifs are generated with [VHS](https://github.com/charmbracelet/vhs)
+(needs `vhs`, `ttyd`, and `ffmpeg` on your `PATH`). Every demo drives a
+network-free surface, so they regenerate deterministically:
 
 ```bash
-bun run --cwd apps/cli test:vhs:browse
-bun run --cwd apps/cli test:vhs:offline
-bun run --cwd apps/cli test:vhs:all
+bun run --cwd apps/cli test:vhs:setup     # setup wizard
+bun run --cwd apps/cli test:vhs:offline   # offline library + download queue
+bun run --cwd apps/cli test:vhs:palette   # command-palette tour (help, diagnostics, history)
+bun run --cwd apps/cli test:vhs:all       # all of the above
 ```
+
+Output lands in `apps/cli/test/vhs/golden/`. Tapes deliberately avoid live search
+and trending so they never depend on provider availability.
+
+---
+
+## Uninstall
+
+`kunai --uninstall` is channel-aware — it removes the binary, runs the matching
+`npm`/`bun` uninstall, or prints source-checkout steps, based on how you
+installed. It keeps your data by default.
+
+```bash
+kunai --uninstall            # remove kunai, keep config/history/cache
+kunai --uninstall --purge    # also delete config, data, and cache
+```
+
+Manual fallback if `kunai` isn't on PATH:
+
+```bash
+# npm / bun global
+npm uninstall -g @kitsunekode/kunai   # or: bun uninstall -g @kitsunekode/kunai
+
+# Source install
+bun run unlink:global   # from the repo, or: bun unlink
+
+# Binary install
+rm -f ~/.local/bin/kunai
+```
+
+User data locations (removed by `--purge`): Linux `~/.config/kunai`,
+`~/.local/share/kunai`, `~/.cache/kunai`; macOS `~/Library/Application Support/kunai`
+and `~/Library/Caches/kunai`; Windows `%APPDATA%\kunai` and `%LOCALAPPDATA%\kunai`.
+
+---
+
+## Contributing
+
+Contributions are welcome — bug fixes, provider parity, platform testing, and test
+coverage all help. Provider fixes with `/diagnostics` output and macOS/Windows
+parity notes are the highest-value areas. See [CONTRIBUTING.md](CONTRIBUTING.md)
+to get started.
 
 ---
 
@@ -435,10 +624,10 @@ Kunai stands on the shoulders of terminal-first and streaming UX inspirations:
 
 - **ani-cli** for proving fast, shell-native playback can be joyful
 - App-grade browsing UX patterns that keep search, details, episodes, and playback connected
-- The `discord-rpc` and `yt-dlp` ecosystems that make Rich Presence and offline downloads possible
+- **mpv** and **yt-dlp**, which make reliable playback and offline downloads possible
 
-The goal is not to clone those tools, but to bring that same daily-driver confidence
-into a deterministic CLI workflow.
+The goal is not to clone those tools, but to bring that same daily-driver
+confidence into a deterministic CLI workflow.
 
 ---
 
