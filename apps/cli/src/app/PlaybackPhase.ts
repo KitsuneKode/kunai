@@ -32,7 +32,6 @@ import {
   shouldReleasePersistentMpvBeforePostPlay,
 } from "@/app/mpv-session-lifecycle";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
-import { applyPlaybackControlSourceSelection } from "@/app/playback-control-source-selection";
 import {
   createDeadStreamUrlLedger,
   playbackDeadStreamScopeKey,
@@ -94,6 +93,10 @@ import {
   playbackStartupStageForPlayerEvent,
   summarizeStartupStreamSource,
 } from "@/app/playback-startup-format";
+import {
+  applyPlaybackControlTrackSelection,
+  buildTrackOverrideDiagnosticContext,
+} from "@/app/playback-track-selection-policy";
 import {
   buildPostPlayEpisodeLabel,
   buildPostPlayInputFromPlaybackContext,
@@ -887,6 +890,57 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               pendingRecomputeSources = false;
             }
             return restart.startIntent;
+          };
+          const applyConfirmedPlaybackTrackSelection = async (
+            action: "pick-source" | "pick-stream" | "pick-quality",
+            selection: StreamSelectionIntent,
+            resumeSeconds: number,
+          ) => {
+            const outcome = await applyPlaybackControlTrackSelection({
+              action,
+              providerId: resolvedProviderId,
+              episode: currentEpisode,
+              selection,
+              resumeSeconds,
+              effects: {
+                applyManualSourcePick: (providerId, targetEpisode, sourceId) =>
+                  selectionCoordinator.applyManualSourcePick(providerId, targetEpisode, sourceId),
+                applyEpisodeSelection: (providerId, targetEpisode, streamSelection) =>
+                  setPreferredStreamSelection(providerId, targetEpisode, streamSelection),
+                prepareStreamSwitchRestart,
+              },
+            });
+
+            diagnosticsService.record({
+              category: "playback",
+              message: outcome.diagnostic.message,
+              context: {
+                ...outcome.diagnostic.context,
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+              },
+            });
+
+            return outcome.startIntent;
+          };
+          const recordTrackOverrideSelected = (
+            picked: DecodedTrackSelection,
+            selection: StreamSelectionIntent,
+          ) => {
+            diagnosticsService.record({
+              category: "playback",
+              message: "Track override selected",
+              context: {
+                ...buildTrackOverrideDiagnosticContext({
+                  section: picked.section,
+                  selection,
+                }),
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+              },
+            });
           };
           const recordStartupMark = (stage: PlaybackStartupStage, activeStream?: StreamInfo) => {
             if (!startupTimeline.mark(stage)) return;
@@ -2264,36 +2318,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "pick-source") {
             if (confirmedStreamSelection) {
-              await applyPlaybackControlSourceSelection({
-                providerId: resolvedProviderId,
-                episode: currentEpisode,
-                selection: confirmedStreamSelection,
-                deps: {
-                  applyManualSourcePick: (providerId, targetEpisode, sourceId) =>
-                    selectionCoordinator.applyManualSourcePick(providerId, targetEpisode, sourceId),
-                  applyEpisodeSelection: (providerId, targetEpisode, selection) =>
-                    setPreferredStreamSelection(providerId, targetEpisode, selection),
-                },
-              });
-              await prepareStreamSwitchRestart(currentEpisode);
-              pendingStart = startEpisodeNavigation({
-                targetResumeSeconds: toHistoryTimestamp(
+              pendingStart = await applyConfirmedPlaybackTrackSelection(
+                playbackControlAction,
+                confirmedStreamSelection,
+                toHistoryTimestamp(
                   result,
                   effectiveTiming.current,
                   config.quitNearEndThresholdMode,
                 ),
-              });
-              diagnosticsService.record({
-                category: "playback",
-                message: "Source override selected",
-                context: {
-                  sourceId: confirmedStreamSelection.sourceId,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  resumeSeconds: pendingStart.resumePromptAt,
-                },
-              });
+              );
               continue;
             }
             const picked = await openTracksPanel(
@@ -2315,48 +2348,22 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 restartResume,
                 "playback-control-track-override",
               );
-              diagnosticsService.record({
-                category: "playback",
-                message: "Track override selected",
-                context: {
-                  section: picked.section,
-                  sourceId: selection.sourceId ?? undefined,
-                  streamId: selection.streamId ?? undefined,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                },
-              });
+              recordTrackOverrideSelected(picked, selection);
               continue;
             }
           }
 
           if (playbackControlAction === "pick-stream") {
             if (confirmedStreamSelection) {
-              await setPreferredStreamSelection(
-                resolvedProviderId,
-                currentEpisode,
+              pendingStart = await applyConfirmedPlaybackTrackSelection(
+                playbackControlAction,
                 confirmedStreamSelection,
-              );
-              await prepareStreamSwitchRestart(currentEpisode);
-              pendingStart = startEpisodeNavigation({
-                targetResumeSeconds: toHistoryTimestamp(
+                toHistoryTimestamp(
                   result,
                   effectiveTiming.current,
                   config.quitNearEndThresholdMode,
                 ),
-              });
-              diagnosticsService.record({
-                category: "playback",
-                message: "Stream override selected",
-                context: {
-                  streamId: confirmedStreamSelection.streamId,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  resumeSeconds: pendingStart.resumePromptAt,
-                },
-              });
+              );
               continue;
             }
             const picked = await openTracksPanel(preparedStream, {}, container);
@@ -2374,48 +2381,22 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 restartResume,
                 "playback-control-track-override",
               );
-              diagnosticsService.record({
-                category: "playback",
-                message: "Track override selected",
-                context: {
-                  section: picked.section,
-                  sourceId: selection.sourceId ?? undefined,
-                  streamId: selection.streamId ?? undefined,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                },
-              });
+              recordTrackOverrideSelected(picked, selection);
               continue;
             }
           }
 
           if (playbackControlAction === "pick-quality") {
             if (confirmedStreamSelection) {
-              await setPreferredStreamSelection(
-                resolvedProviderId,
-                currentEpisode,
+              pendingStart = await applyConfirmedPlaybackTrackSelection(
+                playbackControlAction,
                 confirmedStreamSelection,
-              );
-              pendingStart = startAtResumePoint(
                 toHistoryTimestamp(
                   result,
                   effectiveTiming.current,
                   config.quitNearEndThresholdMode,
                 ),
-                { suppressResumePrompt: true },
               );
-              diagnosticsService.record({
-                category: "playback",
-                message: "Quality override selected",
-                context: {
-                  streamId: confirmedStreamSelection.streamId,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  resumeSeconds: pendingStart.startAt,
-                },
-              });
               continue;
             }
             const picked = await openTracksPanel(
@@ -2437,18 +2418,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 restartResume,
                 "playback-control-track-override",
               );
-              diagnosticsService.record({
-                category: "playback",
-                message: "Track override selected",
-                context: {
-                  section: picked.section,
-                  sourceId: selection.sourceId ?? undefined,
-                  streamId: selection.streamId ?? undefined,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                },
-              });
+              recordTrackOverrideSelected(picked, selection);
               continue;
             }
           }

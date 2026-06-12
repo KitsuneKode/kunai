@@ -325,10 +325,13 @@ packages/storage
    - Keep existing runtime legacy/experiments guard.
 
 3. `refactor(playback): extract track action handling`
-   - Status: Not started
-   - Revise provisional WIP into a policy-shaped helper before landing.
+   - Status: Done
+   - Added `playback-track-selection-policy.ts` as the policy/effects boundary.
    - Return explicit persistence, restart, invalidation, and diagnostic effects.
    - Cover confirmed source, stream, quality selections, and tracks panel picks.
+   - Verification:
+     `bun run --cwd apps/cli test:file test/unit/app/playback-track-selection-policy.test.ts test/unit/app/playback-control-source-selection.test.ts test/unit/app/track-pick-restart.test.ts`,
+     `bun run typecheck`, `bun run lint`.
 
 4. `refactor(playback): extract episode navigation actions`
    - Status: Not started
