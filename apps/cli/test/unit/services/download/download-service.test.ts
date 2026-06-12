@@ -916,7 +916,7 @@ describe("DownloadService", () => {
     });
 
     const running = service.processQueue();
-    await Bun.sleep(10);
+    await waitUntil(() => repo.get(job.id)?.status === "running");
     await service.abort(job.id);
     await running;
 
@@ -957,7 +957,7 @@ describe("DownloadService", () => {
     });
 
     const running = service.processQueue();
-    await Bun.sleep(10);
+    await waitUntil(() => repo.get(job.id)?.status === "running");
     await service.pauseActiveJobsForShutdown("download paused by test shutdown");
     await running;
 

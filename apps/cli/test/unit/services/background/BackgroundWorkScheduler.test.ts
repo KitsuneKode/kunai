@@ -102,19 +102,24 @@ describe("BackgroundWorkScheduler", () => {
   test("coalesces overlapping drains without running the same item twice", async () => {
     const scheduler = new BackgroundWorkScheduler({ maxConcurrent: 1 });
     const order: string[] = [];
+    let releaseSlow!: () => void;
+    const slowGate = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
 
     scheduler.enqueue({
       id: "slow",
       lane: "recommendation-warm",
       run: async () => {
         order.push("slow:start");
-        await Bun.sleep(5);
+        await slowGate;
         order.push("slow:end");
       },
     });
 
     const firstDrain = scheduler.drain();
     const secondDrain = scheduler.drain();
+    releaseSlow();
     const [first, second] = await Promise.all([firstDrain, secondDrain]);
 
     expect(order).toEqual(["slow:start", "slow:end"]);

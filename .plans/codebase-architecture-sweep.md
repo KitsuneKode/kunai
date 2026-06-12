@@ -396,9 +396,17 @@ packages/storage
     - Countdown/cancel policy stays in playback app orchestration.
 
 11. `test: remove replaceable timing sleeps`
-    - Status: Not started
-    - Replace simple sleeps with explicit promises/fake schedulers.
-    - Document process/IPC waits that remain.
+    - Status: In progress
+    - Done: replaced simple settle waits in `PlayerControlServiceImpl`,
+      `BackgroundWorkScheduler`, and `DownloadService` tests with explicit
+      gates or state polling.
+    - Remaining: provider retry delay, persistent mpv IPC harness waits, and
+      the bounded `waitUntil` polling helper still need case-by-case harness
+      seams or documentation.
+    - Verification:
+      `bun run --cwd apps/cli test:file test/unit/infra/player/PlayerControlServiceImpl.test.ts`,
+      `bun run --cwd apps/cli test:file test/unit/services/background/BackgroundWorkScheduler.test.ts`,
+      `bun run --cwd apps/cli test:file test/unit/services/download/download-service.test.ts`.
 
 12. `docs: mark historical plans and update routing`
     - Status: Not started

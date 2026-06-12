@@ -516,8 +516,12 @@ test("PlayerControlServiceImpl records classified late subtitle attachment outco
 
 test("PlayerControlServiceImpl runs queued playback commands in FIFO order", async () => {
   let releaseReload!: () => void;
+  let markReloadStarted!: () => void;
   const reloadGate = new Promise<void>((resolve) => {
     releaseReload = resolve;
+  });
+  const reloadStarted = new Promise<void>((resolve) => {
+    markReloadStarted = resolve;
   });
   const ordering: string[] = [];
   const service = makeService();
@@ -529,6 +533,7 @@ test("PlayerControlServiceImpl runs queued playback commands in FIFO order", asy
     },
     async reloadSubtitles() {
       ordering.push("reload:start");
+      markReloadStarted();
       await reloadGate;
       ordering.push("reload:end");
     },
@@ -540,7 +545,7 @@ test("PlayerControlServiceImpl runs queued playback commands in FIFO order", asy
 
   const reloadPromise = service.reloadCurrentSubtitles("reload");
   const skipPromise = service.skipCurrentSegment("skip");
-  await Bun.sleep(0);
+  await reloadStarted;
 
   expect(ordering).toEqual(["reload:start"]);
   releaseReload();
