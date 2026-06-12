@@ -620,6 +620,7 @@ describe("panel-data", () => {
   test("buildProviderPickerOptions marks current provider", () => {
     const options = buildProviderPickerOptions({
       currentProvider: "allanime",
+      previewImageUrl: "https://img.example/poster.jpg",
       providers: [
         {
           id: "allanime",
@@ -640,6 +641,10 @@ describe("panel-data", () => {
 
     expect(options[0]?.label).toContain("current");
     expect(options[1]?.label).not.toContain("current");
+    expect(options.map((option) => option.previewImageUrl)).toEqual([
+      "https://img.example/poster.jpg",
+      "https://img.example/poster.jpg",
+    ]);
   });
 
   test("buildHistoryPickerOptions sorts newest entries first and keeps ids", () => {

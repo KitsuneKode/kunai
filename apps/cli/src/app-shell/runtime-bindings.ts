@@ -46,6 +46,7 @@ export function buildShellRuntimeBindings(container: Container) {
     providerOptions: buildProviderPickerOptions({
       providers: state.mode === "anime" ? animeProviders : seriesProviders,
       currentProvider: state.provider,
+      previewImageUrl: state.currentTitle?.posterUrl,
     }),
     settings: rawConfig,
     settingsSeriesProviderOptions: buildProviderPickerOptions({

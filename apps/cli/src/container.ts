@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { initLogger } from "@/logger";
-import { createProviderEngine, type CoreProviderModule, type ProviderEngine } from "@kunai/core";
+import { createProviderEngine, type ProviderEngine } from "@kunai/core";
 import {
   allmangaProviderModule,
   miruroProviderModule,
@@ -117,6 +117,7 @@ import { VideasyLazySourceProbeService } from "./services/playback/VideasyLazySo
 import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
+import { orderProviderModulesByPriority } from "./services/providers/provider-priority";
 import type { ProviderRegistry } from "./services/providers/ProviderRegistry";
 import { createProviderRegistry } from "./services/providers/ProviderRegistry";
 import type { RecommendationService } from "./services/recommendations/RecommendationService";
@@ -392,7 +393,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
   // Engine: single source of truth for provider resolution
-  const providerModules = orderProviderModules(
+  const providerModules = orderProviderModulesByPriority(
     [
       videasyProviderModule,
       vidlinkProviderModule,
@@ -441,6 +442,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       sourceInventory,
       titleProviderHealth,
       diagnostics: diagnosticsService,
+      getProviderPriority: () => ({
+        providerPriority: [config.provider, ...config.providerPriority],
+        animeProviderPriority: [config.animeProvider, ...config.animeProviderPriority],
+      }),
     }),
     {
       onCompletedLedger: (ledger) => diagnosticsService.recordResolveWorkLedger(ledger),
@@ -653,32 +658,4 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   });
 
   return container;
-}
-
-function orderProviderModules(
-  modules: readonly CoreProviderModule[],
-  options: {
-    readonly providerPriority: readonly string[];
-    readonly animeProviderPriority: readonly string[];
-  },
-): CoreProviderModule[] {
-  const seriesRank = buildFirstSeenRank(options.providerPriority);
-  const animeRank = buildFirstSeenRank(options.animeProviderPriority);
-  return [...modules].sort((a, b) => {
-    const aRank = a.manifest.mediaKinds.includes("anime")
-      ? animeRank.get(a.providerId)
-      : seriesRank.get(a.providerId);
-    const bRank = b.manifest.mediaKinds.includes("anime")
-      ? animeRank.get(b.providerId)
-      : seriesRank.get(b.providerId);
-    return (aRank ?? Number.MAX_SAFE_INTEGER) - (bRank ?? Number.MAX_SAFE_INTEGER);
-  });
-}
-
-function buildFirstSeenRank(providerIds: readonly string[]): Map<string, number> {
-  const rank = new Map<string, number>();
-  providerIds.forEach((providerId, index) => {
-    if (!rank.has(providerId)) rank.set(providerId, index);
-  });
-  return rank;
 }

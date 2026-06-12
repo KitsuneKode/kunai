@@ -1023,9 +1023,11 @@ export function sortProvidersByConfigPriority({
 export function buildProviderPickerOptions({
   providers,
   currentProvider,
+  previewImageUrl,
 }: {
   providers: readonly ProviderMetadata[];
   currentProvider: string;
+  previewImageUrl?: string;
 }): readonly ShellPickerOption<string>[] {
   return providers.map((provider) => ({
     value: provider.id,
@@ -1034,6 +1036,7 @@ export function buildProviderPickerOptions({
         ? `${formatProviderName(provider)}  ·  current`
         : formatProviderName(provider),
     detail: formatProviderDetail(provider),
+    previewImageUrl,
   }));
 }
 

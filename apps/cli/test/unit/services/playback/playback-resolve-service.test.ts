@@ -955,6 +955,61 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
   expect(observedCandidates).toEqual([["primary", "anime-ok"]]);
 });
 
+test("PlaybackResolveService reads provider priority at resolve time", async () => {
+  const cache = createMemoryCache(null);
+  const observedCandidates: ProviderId[][] = [];
+  let priority = {
+    providerPriority: ["primary", "fallback-a", "fallback-b"],
+    animeProviderPriority: [] as string[],
+  };
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    {
+      modules: [
+        {
+          providerId: "primary" as ProviderId,
+          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+        },
+        {
+          providerId: "fallback-a" as ProviderId,
+          manifest: createManifest("fallback-a" as ProviderId, ["series", "movie"]),
+        },
+        {
+          providerId: "fallback-b" as ProviderId,
+          manifest: createManifest("fallback-b" as ProviderId, ["series", "movie"]),
+        },
+      ],
+      onCandidateIds: (candidateIds) => observedCandidates.push([...candidateIds]),
+    },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    getProviderPriority: () => priority,
+  });
+
+  const resolveInput = {
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series" as const,
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+  };
+
+  await service.resolve({ ...resolveInput, signal: new AbortController().signal });
+  priority = {
+    providerPriority: ["primary", "fallback-b", "fallback-a"],
+    animeProviderPriority: [],
+  };
+  await service.resolve({ ...resolveInput, signal: new AbortController().signal });
+
+  expect(observedCandidates).toEqual([
+    ["primary", "fallback-a", "fallback-b"],
+    ["primary", "fallback-b", "fallback-a"],
+  ]);
+});
+
 test("PlaybackResolveService sends refresh intent and ignores provider health on explicit recompute", async () => {
   const cache = createMemoryCache(null);
   const observedCandidates: ProviderId[][] = [];

@@ -160,4 +160,17 @@ test("ProviderRegistry sorts compatible providers by configured priority", () =>
   expect(animeProviders.map((provider) => provider.metadata.id)).toEqual(["miruro", "allanime"]);
   expect(registry.getDefault(false).metadata.id).toBe("vidking");
   expect(registry.getDefault(true).metadata.id).toBe("miruro");
+
+  registry.setPriority({
+    providerPriority: ["rivestream", "vidlink"],
+    animeProviderPriority: ["allanime", "miruro"],
+  });
+
+  expect(
+    registry
+      .getCompatible({ id: "movie:1", type: "movie", name: "Movie" }, "series")
+      .map((provider) => provider.metadata.id),
+  ).toEqual(["rivestream", "vidlink", "vidking"]);
+  expect(registry.getDefault(false).metadata.id).toBe("rivestream");
+  expect(registry.getDefault(true).metadata.id).toBe("allanime");
 });

@@ -36,6 +36,10 @@ export type PlaybackResolveCoordinatorDeps = {
   readonly streamHealth?: StreamHealthChecker;
   readonly streamHealthService?: StreamHealthService;
   readonly diagnostics?: DiagnosticsService;
+  readonly getProviderPriority?: () => {
+    readonly providerPriority: readonly string[];
+    readonly animeProviderPriority: readonly string[];
+  };
   readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
   readonly titleProviderHealth?: Pick<
     TitleProviderHealthService,
@@ -82,6 +86,7 @@ export class PlaybackResolveCoordinator {
       streamHealthService: this.deps.streamHealthService,
       sourceInventory: this.deps.sourceInventory,
       titleProviderHealth: this.deps.titleProviderHealth,
+      getProviderPriority: this.deps.getProviderPriority,
     });
   }
 

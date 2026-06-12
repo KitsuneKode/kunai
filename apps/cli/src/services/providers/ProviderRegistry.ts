@@ -11,6 +11,7 @@ export interface ProviderRegistry {
   getCompatible(title: TitleInfo, mode?: ShellMode): Provider[];
   getDefault(isAnime: boolean): Provider;
   getMetadata(id: string): ProviderMetadata | undefined;
+  setPriority(options: ProviderRegistryOptions): void;
 }
 
 export interface ProviderRegistryOptions {
@@ -20,11 +21,14 @@ export interface ProviderRegistryOptions {
 
 export class ProviderRegistryImpl implements ProviderRegistry {
   private readonly providersById = new Map<string, Provider>();
+  private seriesRank = new Map<string, number>();
+  private animeRank = new Map<string, number>();
 
   constructor(
     private readonly engine: ProviderEngine,
-    private readonly options: ProviderRegistryOptions = {},
+    private options: ProviderRegistryOptions = {},
   ) {
+    this.rebuildPriorityRanks();
     for (const module of engine.modules) {
       const provider = createProviderFromModule(module, {
         mode: module.manifest.mediaKinds.includes("anime") ? "anime" : "series",
@@ -136,16 +140,22 @@ export class ProviderRegistryImpl implements ProviderRegistry {
     return this.providersById.get(id)?.metadata;
   }
 
+  setPriority(options: ProviderRegistryOptions): void {
+    this.options = {
+      providerPriority: options.providerPriority ?? this.options.providerPriority,
+      animeProviderPriority: options.animeProviderPriority ?? this.options.animeProviderPriority,
+    };
+    this.rebuildPriorityRanks();
+  }
+
   private sortByPriority(providers: readonly Provider[]): Provider[] {
-    const seriesRank = this.buildRank(this.options.providerPriority);
-    const animeRank = this.buildRank(this.options.animeProviderPriority);
     return [...providers].sort((a, b) => {
       const aRank = a.metadata.isAnimeProvider
-        ? animeRank.get(a.metadata.id)
-        : seriesRank.get(a.metadata.id);
+        ? this.animeRank.get(a.metadata.id)
+        : this.seriesRank.get(a.metadata.id);
       const bRank = b.metadata.isAnimeProvider
-        ? animeRank.get(b.metadata.id)
-        : seriesRank.get(b.metadata.id);
+        ? this.animeRank.get(b.metadata.id)
+        : this.seriesRank.get(b.metadata.id);
       return (aRank ?? Number.MAX_SAFE_INTEGER) - (bRank ?? Number.MAX_SAFE_INTEGER);
     });
   }
@@ -154,6 +164,11 @@ export class ProviderRegistryImpl implements ProviderRegistry {
     return isAnime
       ? (this.options.animeProviderPriority ?? [])
       : (this.options.providerPriority ?? []);
+  }
+
+  private rebuildPriorityRanks(): void {
+    this.seriesRank = this.buildRank(this.options.providerPriority);
+    this.animeRank = this.buildRank(this.options.animeProviderPriority);
   }
 
   private buildRank(providerIds: readonly string[] | undefined): Map<string, number> {

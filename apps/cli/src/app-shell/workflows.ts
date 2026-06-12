@@ -1333,6 +1333,11 @@ export async function applySettingsToRuntime({
   await config.update(next);
   await config.save();
 
+  container.providerRegistry.setPriority({
+    providerPriority: [next.provider, ...next.providerPriority],
+    animeProviderPriority: [next.animeProvider, ...next.animeProviderPriority],
+  });
+
   const state = stateManager.getState();
   stateManager.dispatch({
     type: "SET_DEFAULT_PROVIDER",

@@ -19,6 +19,7 @@ import {
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
 import type { CacheStore } from "@/services/persistence/CacheStore";
+import { orderProviderModulesByPriority } from "@/services/providers/provider-priority";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 import {
@@ -185,6 +186,10 @@ export class PlaybackResolveService {
       readonly streamHealth?: StreamHealthChecker;
       readonly streamHealthService?: StreamHealthService;
       readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
+      readonly getProviderPriority?: () => {
+        readonly providerPriority: readonly string[];
+        readonly animeProviderPriority: readonly string[];
+      };
       readonly titleProviderHealth?: Pick<
         TitleProviderHealthService,
         "recordFailure" | "recordCleanSuccess"
@@ -379,7 +384,7 @@ export class PlaybackResolveService {
       primaryProviderId: input.providerId as ProviderId,
       mediaKind: resolveInput.mediaKind,
       recoveryMode,
-      modules: this.deps.engine.modules,
+      modules: this.getPriorityOrderedModules(),
       getProviderHealth:
         input.ignoreProviderHealth === true
           ? undefined
@@ -684,6 +689,13 @@ export class PlaybackResolveService {
       cacheStatus: "miss",
       cacheProvenance: cachedStream ? "refetched" : "fresh",
     };
+  }
+
+  private getPriorityOrderedModules() {
+    const priority = this.deps.getProviderPriority?.();
+    return priority
+      ? orderProviderModulesByPriority(this.deps.engine.modules, priority)
+      : this.deps.engine.modules;
   }
 
   private async persistResolvedStream(
