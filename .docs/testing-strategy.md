@@ -39,7 +39,7 @@ worth keeping. Do not add `ink-testing-library` as a dependency.
 | `captureAllWidths(node)`                | Same node at 72 / 100 / 140                       | Returns `{ narrow, medium, wide }`.                                                                                         |
 | `captureSurface(name, node)`            | Write `.txt` snapshots under `test/__captures__/` | For review diffs and committed goldens.                                                                                     |
 | `captureResizeSequence(node, steps)`    | Simulate `useStdout` resize events                | Emits `stdout.emit("resize")`; Ink reads new `columns` from the stream.                                                     |
-| `countCommits(node, { durationMs })`    | Real-time flicker probe                           | Real timers; use only for "is this surface calm?" assertions.                                                               |
+| `countCommits(node, { durationMs })`    | Manual real-time flicker probe                    | Avoid in default unit tests; prefer `simulateTicks` unless you are deliberately probing real timer behavior.                |
 | `simulateTicks(node, { rounds, tick })` | Deterministic flicker probe                       | Replaces `setInterval` with a shim that fires once per `act()` round. No real timers; commit count is exactly `1 + rounds`. |
 | `render(node, { columns, rows })`       | Long-lived handle with `rerender` + `stdin`       | Use this to drive `useInput` from tests, change props, or read frame history.                                               |
 
@@ -73,11 +73,12 @@ Differences from `ink-testing-library`'s `Instance`:
 
 ### Determinism: prefer `simulateTicks` over `countCommits`
 
-`countCommits` uses real `setTimeout`, which the testing-strategy doc already
-forbids for new tests. The same property — "this surface commits at most N
-frames in a window" — is provable with `simulateTicks` instead, with no time
-dependence. Use `countCommits` only for the "is the surface calm?" idle
-assertion where the exact frame count doesn't matter.
+`countCommits` uses real `setTimeout`, which is sensitive to CI load. The same
+property — "this surface commits at most N frames in a window" — is usually
+provable with `simulateTicks` instead, with no time dependence. Keep
+`countCommits` available for manual or deliberately real-time probes, but do
+not add it to default unit tests without a reason that `simulateTicks` cannot
+cover.
 
 ### Wiring `act`
 

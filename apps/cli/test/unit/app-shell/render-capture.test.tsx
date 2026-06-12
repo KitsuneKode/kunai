@@ -9,7 +9,6 @@ import {
   captureAllWidths,
   captureFrame,
   captureResizeSequence,
-  countCommits,
   render,
   simulateTicks,
 } from "../../harness/render-capture";
@@ -61,8 +60,9 @@ describe("render-capture harness", () => {
     expect(frames.wide).toContain("cols=140");
   });
 
-  test("flicker probe: a calm surface settles to a single frame", async () => {
-    const report = await countCommits(<Calm />, { durationMs: 120 });
+  test("flicker probe: a calm surface stays on a single frame across simulated ticks", () => {
+    const report = simulateTicks(<Calm />, { rounds: 5 });
+    expect(report.commits).toBe(1);
     expect(report.distinctFrames).toBe(1);
   });
 

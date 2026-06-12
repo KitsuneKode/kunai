@@ -1,4 +1,4 @@
-import { isPlaceholderEpisodeName, truncateAtWord } from "@/app-shell/shell-text";
+import { isPlaceholderEpisodeName, truncateAtWord } from "@/domain/text-display";
 
 export { isPlaceholderEpisodeName };
 

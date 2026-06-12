@@ -3,6 +3,7 @@ export * from "./embed-url";
 export * from "./provider-engine";
 export * from "./provider-cycle-engine";
 export * from "./provider-manifest";
+export * from "./provider-priority";
 export * from "./provider-sdk";
 export * from "./providers/factory";
 export * from "./resolver";

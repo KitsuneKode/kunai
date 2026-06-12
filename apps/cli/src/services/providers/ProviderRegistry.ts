@@ -1,5 +1,5 @@
 import type { ProviderMetadata, ShellMode, TitleInfo } from "@/domain/types";
-import type { CoreProviderManifest, ProviderEngine } from "@kunai/core";
+import { buildFirstSeenRank, type CoreProviderManifest, type ProviderEngine } from "@kunai/core";
 
 import { createProviderFromModule, type Provider } from "./Provider";
 
@@ -167,16 +167,8 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   private rebuildPriorityRanks(): void {
-    this.seriesRank = this.buildRank(this.options.providerPriority);
-    this.animeRank = this.buildRank(this.options.animeProviderPriority);
-  }
-
-  private buildRank(providerIds: readonly string[] | undefined): Map<string, number> {
-    const rank = new Map<string, number>();
-    (providerIds ?? []).forEach((providerId, index) => {
-      if (!rank.has(providerId)) rank.set(providerId, index);
-    });
-    return rank;
+    this.seriesRank = buildFirstSeenRank(this.options.providerPriority);
+    this.animeRank = buildFirstSeenRank(this.options.animeProviderPriority);
   }
 }
 

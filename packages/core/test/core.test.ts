@@ -10,6 +10,7 @@ import {
   createProviderEngine,
   defineProviderManifest,
   DEFAULT_PROVIDER_RETRY_POLICY,
+  orderProviderModulesByPriority,
   ProviderResolveFailureError,
   resolveWithFallback,
   type CoreProviderModule,
@@ -193,6 +194,29 @@ test("anime provider manifests expose only implemented media kinds", () => {
   expect(allanimeManifest.mediaKinds).not.toContain("series");
 });
 
+test("provider module priority is mode-aware and keeps unlisted modules available", () => {
+  const modules = [
+    providerModule("vidlink", rivestreamManifest),
+    providerModule("rivestream", rivestreamManifest),
+    providerModule("miruro", miruroManifest),
+    providerModule("allanime", allanimeManifest),
+    providerModule("vidking", vidkingManifest),
+  ];
+
+  const ordered = orderProviderModulesByPriority(modules, {
+    providerPriority: ["vidking", "rivestream"],
+    animeProviderPriority: ["allanime"],
+  });
+
+  expect(ordered.map((module) => module.providerId)).toEqual([
+    "vidking",
+    "rivestream",
+    "allanime",
+    "miruro",
+    "vidlink",
+  ]);
+});
+
 test("provider cache policy normalizes deterministic key parts", () => {
   const policy = createProviderCachePolicy({
     providerId: "VidKing",
@@ -216,6 +240,19 @@ test("provider cache policy normalizes deterministic key parts", () => {
   ]);
   expect(policy.allowStale).toBe(true);
 });
+
+function providerModule(
+  providerId: CoreProviderModule["providerId"],
+  manifest: CoreProviderModule["manifest"],
+): CoreProviderModule {
+  return {
+    providerId,
+    manifest: { ...manifest, id: providerId },
+    async resolve() {
+      throw new Error("not used");
+    },
+  };
+}
 
 test("provider sdk helpers create runtime context and typed trace events", () => {
   const events: ReturnType<typeof createProviderTraceEvent>[] = [];

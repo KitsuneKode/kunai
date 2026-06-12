@@ -1,12 +1,12 @@
-# Provider: VidKing
+# Provider: Videasy
 
 ## Production status (2026-05-27)
 
-- **Module:** `packages/providers/src/vidking/direct.ts` + `packages/providers/src/vidking/flavors.ts`
+- **Module:** `packages/providers/src/videasy/direct.ts` + `packages/providers/src/videasy/flavors.ts`
 - **Videasy fetch timeout:** **90s** per server attempt; engine `attemptTimeoutMs` aligned (~300s cap for full cycle).
 - **Default resolve (Phase A):** up to **3** English mirrors in order — **Luffy** (`mb-flix`) → **Zoro** (`cdn`) → **Nami** (`downloader2`); no 4+4 embed fanout on the default path.
-- **Phase B (lazy):** remaining English flavors + preferred audio language (e.g. Brook / German) probed in background via `VidkingLazySourceProbeService`; inventory merges without blocking first play.
-- **Source presentation:** providers emit `source.label` (themed name), `metadata.flavorArchetype` (subtitle), stable `source:vidking:videasy:{endpoint}` ids — shell does not map endpoints.
+- **Phase B (lazy):** remaining English flavors + preferred audio language (e.g. Brook / German) probed in background via `VideasyLazySourceProbeService`; inventory merges without blocking first play.
+- **Source presentation:** providers emit `source.label` (themed name), `metadata.flavorArchetype` (subtitle), stable `source:videasy:videasy:{endpoint}` ids — shell does not map endpoints.
 - **Title health:** advisory only; does not reorder resolve (see `.docs/title-provider-health-and-cache-reset.md`).
 - **Query parity:** `tmdbId`, season/episode, `year`, `imdbId`, `_t` on Videasy requests.
 - **Handoff docs:** `.docs/flavor-naming-and-source-inventory-ux.md`, `.plans/vidking-videasy-health-and-sources-implementation.md`
@@ -21,6 +21,7 @@
 - **Server/source model:** Videasy **endpoints** (`mb-flix`, `cdn`, …) exposed in UI as themed **sources** (Luffy, Zoro, …). Same endpoint → same label and `sourceId` on every episode.
 - **Quality model:** Standard (1080p, 720p). Muxed in the `.m3u8` manifest or passed directly as stream metadata.
 - **Thumbnail/poster support:** Yes. Episode thumbnails via TMDB `still_path`. Seek-bar thumbnails natively available in `#EXT-X-IMAGE-STREAM-INF` within the resolved HLS manifest.
+- **Legacy alias:** `vidking` remains accepted as a config/cache/provider-id alias for this provider.
 - **Known failure modes:** Videasy slow responses (>12s historically caused false timeouts — now 90s). Empty WASM keys (`""`) causing decryption faults. Upstream TMDB rate-limiting. HLS manifests missing image streams randomly. Shared endpoints (`meine`, `hdmovie`) need `languageQuery` / `filterQuality` to pick the correct flavor row.
 
 ## User-Facing Capabilities

@@ -9,7 +9,11 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { initLogger } from "@/logger";
-import { createProviderEngine, type ProviderEngine } from "@kunai/core";
+import {
+  createProviderEngine,
+  orderProviderModulesByPriority,
+  type ProviderEngine,
+} from "@kunai/core";
 import {
   allmangaProviderModule,
   miruroProviderModule,
@@ -117,7 +121,6 @@ import { VideasyLazySourceProbeService } from "./services/playback/VideasyLazySo
 import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
-import { orderProviderModulesByPriority } from "./services/providers/provider-priority";
 import type { ProviderRegistry } from "./services/providers/ProviderRegistry";
 import { createProviderRegistry } from "./services/providers/ProviderRegistry";
 import type { RecommendationService } from "./services/recommendations/RecommendationService";

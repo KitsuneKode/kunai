@@ -2,17 +2,17 @@
 
 ## Production status (2026-05-27)
 
-- **Module:** `packages/providers/src/cineby/index.ts` — **research wrapper** over `resolveVidkingDirect` (not the default beta provider order).
-- **Flavor table:** shared with VidKing via `listVidkingFlavors()`; Cineby **alias** names (Neon, Yoru, …) are diagnostics-only; playback inventory uses **One Piece** themed labels when the wrapper is used (same stable `source:vidking:videasy:{endpoint}` ids).
+- **Module:** `packages/providers/src/cineby/index.ts` — **research wrapper** over the Videasy direct resolver (not the default beta provider order).
+- **Flavor table:** shared with Videasy; Cineby **alias** names (Neon, Yoru, …) are diagnostics-only; playback inventory uses **One Piece** themed labels when the wrapper is used (same stable `source:videasy:videasy:{endpoint}` ids).
 - **Selection:** one flavor per resolve from `preferredAudioLanguage` (movies-only flavors skipped on series).
-- **Inherit:** Videasy timeouts, Phase A mirrors, and presentation contract from VidKing — do not maintain a separate decrypt stack.
+- **Inherit:** Videasy timeouts, Phase A mirrors, and presentation contract from Videasy — do not maintain a separate decrypt stack.
 
 ## Summary
 
 - **Media kinds:** Movies, TV Series.
 - **Search support:** Yes, proxy to TMDB API.
 - **Episode catalog support:** Yes, TMDB proxy.
-- **Stream resolve support:** Yes — delegates to VidKing/Videasy (`packages/providers/src/vidking/direct.ts`).
+- **Stream resolve support:** Yes — delegates to Videasy (`packages/providers/src/videasy/direct.ts`).
 - **Language/audio/subtitle model:** Flavor registry maps agent/endpoint + optional `languageQuery` / `filterQuality` (see `flavors.ts`).
 - **Server/source model:** Cineby “agents” are **display aliases** for Videasy endpoints; Kunai **sources** use themed names (Luffy, Brook, …) when resolved through this wrapper.
 - **Quality model:** Derived from the final `.m3u8` manifest.
@@ -75,7 +75,7 @@ sequenceDiagram
 
 ## Recommended Contract Changes
 
-- **Implemented:** Flavor → endpoint table in `packages/providers/src/vidking/flavors.ts` (`cinebyAlias` field for Neon / Yoru / …).
+- **Implemented:** Flavor → endpoint table in `packages/providers/src/videasy/flavors.ts` (`cinebyAlias` field for Neon / Yoru / …).
 - **Cache key dimensions:** Follow VidKing cache policy; wrapper remaps `providerId` to `cineby` on the resolve result.
 - **Diagnostics events:** WAF / timeout evidence same as VidKing.
 - **Tests:** Wrapper inherits VidKing unit/live tests; dedicated Cineby matrix remains in `apps/experiments/scratchpads/provider-cineby/` (local notes gitignored).

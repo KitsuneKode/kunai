@@ -19,7 +19,6 @@ import {
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
 import type { CacheStore } from "@/services/persistence/CacheStore";
-import { orderProviderModulesByPriority } from "@/services/providers/provider-priority";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 import {
@@ -27,6 +26,7 @@ import {
   type ProviderEngineEvent,
   type ProviderEngineResolveAttempt,
   type ResolveAttempt,
+  orderProviderModulesByPriority,
 } from "@kunai/core";
 import { isOrgOnlyProviderResolveResult } from "@kunai/providers";
 import type { StreamHealthPhase } from "@kunai/providers";

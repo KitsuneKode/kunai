@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { DotMatrixLoader } from "@/app-shell/dot-matrix-loader";
 import React from "react";
 
-import { countCommits, simulateTicks } from "../../harness/render-capture";
+import { simulateTicks } from "../../harness/render-capture";
 
 describe("DotMatrixLoader animation", () => {
   test("flicker probe: one commit per animation tick without duplicate frames", () => {
@@ -25,10 +25,10 @@ describe("DotMatrixLoader animation", () => {
     expect(report.distinctFrames).toBeGreaterThanOrEqual(3);
   });
 
-  test("flicker probe: inactive loader stays on a single frame", async () => {
-    const report = await countCommits(
+  test("flicker probe: inactive loader stays on a single frame", () => {
+    const report = simulateTicks(
       <DotMatrixLoader variant="flux-columns" intervalMs={80} active={false} />,
-      { durationMs: 200 },
+      { rounds: 5 },
     );
     expect(report.distinctFrames).toBe(1);
     expect(report.commits).toBe(1);

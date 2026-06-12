@@ -672,7 +672,7 @@ Render contract:
 ```tsx
 // apps/cli/test/unit/app-shell/tracks-panel-shell.test.tsx
 import { describe, expect, test } from "bun:test";
-import { render } from "ink-testing-library";
+import { render } from "../../harness/render-capture";
 import React from "react";
 import { TracksPanelShell } from "@/app-shell/tracks-panel-shell";
 import { createInitialTracksNav } from "@/app-shell/tracks-panel-nav";

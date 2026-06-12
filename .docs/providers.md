@@ -70,7 +70,9 @@ Provider priority is user-configurable:
 - `provider` / `animeProvider` remain the default provider for a new session mode.
 - `providerPriority` controls movie/series fallback and picker order.
 - `animeProviderPriority` controls anime fallback and picker order.
-- Priority lists are applied when the provider engine is built at startup.
+- Priority lists are applied when the provider engine is built and read again
+  during playback resolve, so settings changes affect fallback order without a
+  restart.
 - Unknown provider ids in priority arrays are ignored at runtime; known providers not listed stay available after configured entries.
 
 ## Source Model
@@ -159,9 +161,11 @@ interface PlaywrightProvider extends BaseProvider {
 }
 ```
 
-### `ApiProvider`
+### Historical `ApiProvider`
 
-Use this when metadata or stream URLs can be resolved over HTTP/GraphQL, with optional Playwright help for the last embed step.
+Older plans used this shape for HTTP/GraphQL providers with optional Playwright
+help for the final embed step. Do not use it for new active providers; implement
+`CoreProviderModule` in `packages/providers`.
 
 ```ts
 interface ApiProvider extends BaseProvider {
@@ -177,7 +181,8 @@ interface ApiProvider extends BaseProvider {
 }
 ```
 
-`opts.embedScraper` is a legacy pattern kept for archival/reference providers. Active beta providers resolve through direct module adapters in `apps/cli/src/services/providers/definitions/`.
+`opts.embedScraper` is a legacy pattern kept for archival/reference providers.
+Active beta providers resolve through direct modules in `packages/providers`.
 
 ## When A Playwright Provider Can Become Browser-Less
 
@@ -366,11 +371,13 @@ Active providers are registered in `apps/cli/src/container.ts` via `createProvid
 | ------------ | ------------- | ----------- | --------------------------------------------- |
 | `vidlink`    | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`    |
 | `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
-| `vidking`    | movie, series | direct-http | `packages/providers/src/vidking/direct.ts`    |
+| `videasy`    | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`    |
 | `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
 | `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
 
 All active providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback. Candidate providers can live in `packages/providers` or `apps/experiments`, but they are not registered in `apps/cli/src/container.ts` until they pass the quality gate.
+
+`vidking` remains accepted as a legacy config/cache alias for `videasy`.
 
 Legacy Playwright providers live under `archive/legacy/apps/cli/src/providers/` as reference-only code.
 For current beta publish scope, Playwright is not a required runtime dependency.

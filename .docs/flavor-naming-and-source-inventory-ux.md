@@ -1,6 +1,6 @@
 # Flavor naming & source inventory UX
 
-Status: **implemented** (2026-05-27). Registry: `packages/providers/src/vidking/flavors.ts`. UI reads `source.label` + `metadata.flavorArchetype` from resolve results (no shell-side endpoint mapping).
+Status: **implemented** (2026-05-27). Registry: `packages/providers/src/videasy/flavors.ts`. UI reads `source.label` + `metadata.flavorArchetype` from resolve results (no shell-side endpoint mapping).
 
 **Visual mockup:** open [`.design/cli/sources-overlay-mockup.html`](../.design/cli/sources-overlay-mockup.html) in a browser (ASCII + styled Sources panel, Phase A/B timeline).
 

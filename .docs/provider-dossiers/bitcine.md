@@ -8,7 +8,7 @@
 - **Search support:** site UI only. Kunai runtime uses canonical catalog ids.
 - **Episode/catalog support:** site UI paths such as `/tv/{tmdbId}/{season}/{episode}` map to Videasy episode resolves.
 - **Stream resolution path:** BitCine's Next.js player bundle wires server aliases to `api.videasy.net/{endpoint}/sources-with-title`.
-- **Quality/source inventory behavior:** server aliases are ordered and user-visible. Kunai maps them through `packages/providers/src/vidking/flavors.ts`.
+- **Quality/source inventory behavior:** server aliases are ordered and user-visible. Kunai maps them through `packages/providers/src/videasy/flavors.ts`.
 - **Header/referrer/user-agent requirements:** inherited from VidKing/Videasy direct resolver.
 - **Cache key and TTL recommendations:** inherited from source inventory and stream manifest cache policy.
 - **Known failure modes:** Videasy endpoint 404/timeout, upstream source missing, provider TOS video replacement, stale cached source inventory.
