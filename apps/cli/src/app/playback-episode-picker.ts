@@ -60,6 +60,7 @@ export async function buildPlaybackEpisodePickerOptions({
           episode: entry.index,
           label: entry.label,
           baseDetail: entry.detail,
+          previewImageUrl: entry.previewImageUrl,
           releaseBadge: releaseBadges?.get(`1:${entry.index}`),
           current: entry.index === currentEpisode.episode,
           history: watchedByEpisode.get(`1:${entry.index}`),
@@ -107,6 +108,7 @@ export async function buildPlaybackEpisodePickerOptions({
       season: currentEpisode.season,
       episode: entry.number,
       label: formatEpisodePickerLabel(entry.number, entry.name, entry.overview),
+      previewImageUrl: entry.stillPath,
       baseDetail:
         formatEpisodePickerDetail({
           airDate: entry.airDate,
@@ -216,6 +218,7 @@ export function buildEpisodePickerOption({
   episode,
   label,
   baseDetail,
+  previewImageUrl,
   releaseBadge,
   current,
   history,
@@ -224,6 +227,7 @@ export function buildEpisodePickerOption({
   episode: number;
   label: string;
   baseDetail?: string;
+  previewImageUrl?: string;
   releaseBadge?: string;
   current: boolean;
   history?: HistoryProgress;
@@ -249,6 +253,7 @@ export function buildEpisodePickerOption({
     label,
     // Row detail stays minimal (air date / release badge); the glyph carries state.
     detail: mergeEpisodeDetail(undefined, undefined, releaseBadge, baseDetail),
+    previewImageUrl,
     tone,
     badge,
   };

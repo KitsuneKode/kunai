@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { clearTmdbSessionCache } from "@/services/catalog/tmdb-proxy";
+
 const originalFetch = globalThis.fetch;
 
 type FetchFixture = (input: string | URL | Request) => Promise<Response>;
@@ -16,6 +18,7 @@ function setFetchRouter(router: (url: string) => unknown): void {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  clearTmdbSessionCache();
 });
 
 describe("TMDB series artwork", () => {
@@ -80,5 +83,40 @@ describe("TMDB series artwork", () => {
 
     const episodes = await fetchEpisodes("mixed-season", 1);
     expect(episodes?.map((episode) => episode.number)).toEqual([1]);
+  });
+
+  test("keeps English synopsis labels instead of replacing placeholder names with original-language names", async () => {
+    const { fetchEpisodes } = await import("@/tmdb");
+    setFetchRouter((url) => {
+      if (url.includes("/tv/english-synopsis?language=en-US")) {
+        return { original_language: "ko" };
+      }
+      if (url.includes("/tv/english-synopsis/season/1?language=ko")) {
+        return {
+          episodes: [
+            {
+              episode_number: 1,
+              name: "사장님, 사랑해요",
+              air_date: "2020-03-01",
+              overview: "",
+            },
+          ],
+        };
+      }
+      return {
+        episodes: [
+          {
+            episode_number: 1,
+            name: ".",
+            air_date: "2020-03-01",
+            overview: "The team faces a difficult choice.",
+          },
+        ],
+      };
+    });
+
+    const episodes = await fetchEpisodes("english-synopsis", 1);
+    expect(episodes?.[0]?.name).toBe(".");
+    expect(episodes?.[0]?.overview).toBe("The team faces a difficult choice.");
   });
 });

@@ -108,12 +108,12 @@ async function enrichEpisodesWithOriginalLanguage(
       const localized = localizedByNumber.get(episode.number);
       if (!localized) return episode;
 
-      const name = isPlaceholderEpisodeName(episode.number, episode.name)
-        ? localized.name
-        : episode.name;
-      const overview = cleanEpisodeSynopsis(episode.overview)
-        ? episode.overview
-        : localized.overview || episode.overview;
+      const englishSynopsis = cleanEpisodeSynopsis(episode.overview);
+      const name =
+        isPlaceholderEpisodeName(episode.number, episode.name) && !englishSynopsis
+          ? localized.name
+          : episode.name;
+      const overview = englishSynopsis ? episode.overview : localized.overview || episode.overview;
 
       return {
         ...episode,

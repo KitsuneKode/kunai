@@ -133,7 +133,12 @@ describe("buildPlaybackEpisodePickerOptions", () => {
   test("uses provider episode catalogs for anime and marks the current episode", async () => {
     const animeEpisodes: EpisodePickerOption[] = [
       { index: 1, label: "Episode 1", detail: "Source episode 1" },
-      { index: 2, label: "Episode 2", detail: "Source episode 2" },
+      {
+        index: 2,
+        label: "Episode 2",
+        detail: "Source episode 2",
+        previewImageUrl: "https://img.example/anime-e2.jpg",
+      },
     ];
 
     const result = await buildPlaybackEpisodePickerOptions({
@@ -150,6 +155,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
         value: "1:1",
         label: "Episode 1",
         detail: "Source episode 1",
+        previewImageUrl: undefined,
         tone: undefined,
         badge: undefined,
       },
@@ -157,6 +163,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
         value: "1:2",
         label: "Episode 2",
         detail: "Source episode 2",
+        previewImageUrl: "https://img.example/anime-e2.jpg",
         tone: "warning",
         badge: "▸",
       },
@@ -195,6 +202,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
             name: "The Current One",
             airDate: "2026-01-01",
             overview: "A test overview",
+            stillPath: "https://img.example/s02e05.jpg",
           },
           {
             number: 6,
@@ -212,6 +220,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
           value: "2:5",
           label: "Episode 5  ·  The Current One",
           detail: "Jan 1, 2026",
+          previewImageUrl: "https://img.example/s02e05.jpg",
           tone: "success",
           badge: "✓",
         },
@@ -219,6 +228,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
           value: "2:6",
           label: "Episode 6  ·  The Next One",
           detail: "unknown air date",
+          previewImageUrl: undefined,
           tone: "warning",
           badge: "17%",
         },

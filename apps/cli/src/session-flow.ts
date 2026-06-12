@@ -14,6 +14,7 @@ import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { EpisodePickerOption } from "@/domain/types";
 import { cyan, dim, yellow } from "@/menu";
+import { formatEpisodePickerLabel } from "@/services/catalog/episode-display";
 import { isFinished } from "@/services/continuation/history-progress";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { fetchEpisodes, fetchSeriesData, type EpisodeInfo as TmdbEpisodeInfo } from "@/tmdb";
@@ -355,19 +356,25 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
     season: number,
     episode: number,
   ): Promise<string | undefined> => {
-    const raw = opts.isAnime
-      ? opts.animeEpisodes?.find((option) => option.index === episode)?.name
-      : (await loadSeasonEpisodes(season))?.find((entry) => entry.number === episode)?.name;
-    const name = raw?.trim();
-    return name && !/^episode\s+\d+$/i.test(name) ? name : undefined;
+    if (opts.isAnime) {
+      const raw = opts.animeEpisodes?.find((option) => option.index === episode)?.name;
+      const name = raw?.trim();
+      return name && !/^episode\s+\d+$/i.test(name) ? name : undefined;
+    }
+    const entry = (await loadSeasonEpisodes(season))?.find((row) => row.number === episode);
+    if (!entry) return undefined;
+    const label = formatEpisodePickerLabel(entry.number, entry.name, entry.overview);
+    const prefix = `Episode ${entry.number}  ·  `;
+    if (!label.startsWith(prefix)) return undefined;
+    return label.slice(prefix.length).trim() || undefined;
   };
 
-  const currentName = finished
-    ? undefined
-    : await resolveEpisodeName(historySeason, historyEpisode);
-  const nextName = nextEpisode
-    ? await resolveEpisodeName(nextEpisode.season, nextEpisode.episode)
-    : undefined;
+  const [currentName, nextName] = await Promise.all([
+    finished ? Promise.resolve(undefined) : resolveEpisodeName(historySeason, historyEpisode),
+    nextEpisode
+      ? resolveEpisodeName(nextEpisode.season, nextEpisode.episode)
+      : Promise.resolve(undefined),
+  ]);
   const withName = (base: string, name: string | undefined): string =>
     name ? `${base} · ${name}` : base;
 
