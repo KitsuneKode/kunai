@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-06-12T14:54:44.518Z",
+  "syncedAt": "2026-06-12T20:42:50.545Z",
   "providers": [
     {
       "id": "allanime",
@@ -593,6 +593,11 @@
     {
       "short": "-v",
       "long": "--version",
+      "description": ""
+    },
+    {
+      "short": "",
+      "long": "--uninstall",
       "description": ""
     }
   ]
