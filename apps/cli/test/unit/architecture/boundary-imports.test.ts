@@ -43,7 +43,6 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     "apps/cli/src/app/DownloadOnlyPhase.ts",
     ["@/app-shell/pickers/choose-from-list-shell", "@/app-shell/workflows"],
   ],
-  ["apps/cli/src/app/OfflineLibraryPhase.ts", ["@/app-shell/workflows"]],
   [
     "apps/cli/src/app/PlaybackPhase.ts",
     [
