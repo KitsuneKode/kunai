@@ -61,16 +61,27 @@ test("notification action menu exposes explicit safe row actions", () => {
   ]);
 });
 
-test("notification action menu hides actions the root overlay cannot execute yet", () => {
+test("notification action menu exposes actions the root overlay can execute", () => {
   const notice = {
     ...base,
     kind: "new-episode",
-    actionJson: JSON.stringify(["download", "queue-end", "follow", "dismiss"]),
+    actionJson: JSON.stringify([
+      "download",
+      "queue-end",
+      "follow",
+      "play-now",
+      "open-details",
+      "dismiss",
+    ]),
   };
 
-  expect(getNotificationPrimaryAction(notice)).toBe("queue-end");
+  expect(getNotificationPrimaryAction(notice)).toBe("download");
   expect(buildNotificationActionOptions(notice).map((option) => option.value)).toEqual([
+    "download",
     "queue-end",
+    "follow",
+    "play-now",
+    "open-details",
     "dismiss",
   ]);
 });

@@ -9,6 +9,7 @@ import { historyContentType } from "@/services/continuation/history-progress";
 
 import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { waitForRootHistorySelection } from "./root-history-bridge";
+import { openNotificationsOverlay, openRootOwnedOverlay } from "./root-overlay-bridge";
 import type { ShellAction } from "./types";
 import { handleShellAction, resolveQuitWithDownloadQueue } from "./workflows";
 
@@ -63,40 +64,6 @@ type RoutedActionResult =
   | "random"
   | { type: "history-entry"; title: TitleInfo; episode?: EpisodeInfo }
   | "unhandled";
-
-async function openRootOwnedOverlay(
-  container: Container,
-  overlay: Extract<
-    import("@/domain/session/SessionState").OverlayState,
-    {
-      type:
-        | "help"
-        | "about"
-        | "diagnostics"
-        | "downloads"
-        | "notifications"
-        | "provider_picker"
-        | "history"
-        | "settings";
-    }
-  >,
-): Promise<void> {
-  const { stateManager } = container;
-
-  stateManager.dispatch({
-    type: stateManager.getState().activeModals.length > 0 ? "REPLACE_TOP_OVERLAY" : "OPEN_OVERLAY",
-    overlay,
-  });
-  await new Promise<void>((resolve) => {
-    const unsubscribe = stateManager.subscribe((state) => {
-      const top = state.activeModals.at(-1);
-      if (!top || top.type !== overlay.type) {
-        unsubscribe();
-        resolve();
-      }
-    });
-  });
-}
 
 async function openRootHistorySelection(
   container: Container,
@@ -177,7 +144,14 @@ export async function routeSearchShellAction({
     return "handled";
   }
   if (action === "notifications") {
-    await openRootOwnedOverlay(container, { type: "notifications" });
+    const { playback } = await openNotificationsOverlay(container);
+    if (playback) {
+      return {
+        type: "history-entry",
+        title: playback.title,
+        episode: playback.episode,
+      };
+    }
     return "handled";
   }
   if (action === "provider") return "provider";
@@ -244,7 +218,14 @@ export async function routePlaybackShellAction({
     return "handled";
   }
   if (action === "notifications") {
-    await openRootOwnedOverlay(container, { type: "notifications" });
+    const { playback } = await openNotificationsOverlay(container);
+    if (playback) {
+      return {
+        type: "history-entry",
+        title: playback.title,
+        episode: playback.episode,
+      };
+    }
     return "handled";
   }
   if (action === "provider") return "provider";

@@ -5,11 +5,17 @@ import {
 } from "@/services/notifications/NotificationActionRouter";
 import type { NotificationRecord } from "@kunai/storage";
 
-const ROOT_NOTIFICATION_ACTIONS = new Set<NotificationActionId>([
+const OVERLAY_NOTIFICATION_ACTIONS = new Set<NotificationActionId>([
   "restore-queue",
   "queue-next",
   "queue-after-current-chain",
   "queue-end",
+  "download",
+  "follow",
+  "mute",
+  "add-to-playlist",
+  "play-now",
+  "open-details",
   "dismiss",
 ]);
 
@@ -63,7 +69,7 @@ function parseExecutableNotificationActions(
   notification: NotificationRecord,
 ): readonly NotificationActionId[] {
   return parseNotificationActionIds(notification).filter((action) =>
-    ROOT_NOTIFICATION_ACTIONS.has(action),
+    OVERLAY_NOTIFICATION_ACTIONS.has(action),
   );
 }
 

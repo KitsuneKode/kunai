@@ -1,4 +1,8 @@
 import { useLineEditor } from "@/app-shell/line-editor";
+import {
+  applyMediaItemSessionRouting,
+  playbackIntentFromMediaItem,
+} from "@/app/notification-media-session";
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
@@ -9,7 +13,7 @@ import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import { historyContentType } from "@/services/continuation/history-progress";
 import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
-import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
+import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import {
   NotificationActionRouter,
   type NotificationActionId,
@@ -77,6 +81,10 @@ import {
   releaseProgressToContinueHistoryRelease,
   type RootHistorySelection,
 } from "./root-history-bridge";
+import {
+  stageNotificationDetailsItem,
+  stageNotificationPlaybackIntent,
+} from "./root-overlay-bridge";
 import {
   buildRootGenericPickerOptions,
   getRootOverlayInitialIndex,
@@ -508,6 +516,10 @@ export function RootOverlayShell({
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
   const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
+  const [notificationPlayConfirm, setNotificationPlayConfirm] = useState<{
+    readonly dedupKey: string;
+    readonly actionId: NotificationActionId;
+  } | null>(null);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
   const [historyNextReleases, setHistoryNextReleases] = useState<
     NonNullable<HistoryPickerOptionsContext["nextReleases"]>
@@ -590,6 +602,7 @@ export function RootOverlayShell({
                 failed: container.downloadService.listFailed(200).length,
               },
               releaseSummary: container.releaseProgressCache.summarizeActive(),
+              releaseDiagnostics: container.releaseProgressCache.summarizeDiagnostics(),
               presenceSnapshot: container.presence.getSnapshot(),
               memorySamples: getRuntimeMemorySamples(),
             })
@@ -678,6 +691,18 @@ export function RootOverlayShell({
         ],
       )
     : [];
+  const notificationPlayConfirmOptions = [
+    {
+      value: "confirm" as const,
+      label: "Play now",
+      detail: "Switch playback to this notice",
+    },
+    {
+      value: "cancel" as const,
+      label: "Cancel",
+      detail: "Keep current playback",
+    },
+  ];
   const settingsPanel =
     overlay.type === "settings" && settingsDraft
       ? settingsChoice
@@ -851,17 +876,48 @@ export function RootOverlayShell({
   const runNotificationAction = (
     dedupKey: string | null | undefined,
     actionId?: NotificationActionId,
+    options?: { readonly confirmedContextSwitch?: boolean },
   ): void => {
     if (!dedupKey) return;
     const notification = notificationRecords.find((record) => record.dedupKey === dedupKey);
     if (!notification) return;
     const resolvedAction = actionId ?? getNotificationPrimaryAction(notification);
+    const playbackActive =
+      state.playbackStatus === "loading" ||
+      state.playbackStatus === "ready" ||
+      state.playbackStatus === "buffering" ||
+      state.playbackStatus === "seeking" ||
+      state.playbackStatus === "stalled" ||
+      state.playbackStatus === "playing";
+
+    if (
+      resolvedAction === "play-now" &&
+      playbackActive &&
+      options?.confirmedContextSwitch !== true
+    ) {
+      setNotificationPlayConfirm({ dedupKey, actionId: resolvedAction });
+      setNotificationActionDedupKey(null);
+      return;
+    }
+
     const router = new NotificationActionRouter({
       playlist: container.queueService,
-      mediaActions: new MediaActionRouter({
-        queue: {
-          enqueueMediaItem: (item, options) => {
-            container.queueService.enqueueMediaItem(item, options);
+      mediaActions: createContainerMediaActionRouter(container, {
+        onDownloadQueued: (item) => {
+          setOverlayStatus(`Queued download for ${item.title}`);
+        },
+        playback: {
+          playNow: async (item) => {
+            applyMediaItemSessionRouting(container, item);
+            stageNotificationPlaybackIntent(playbackIntentFromMediaItem(item));
+            await container.notificationService.dismiss(notification.dedupKey);
+            container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+          },
+        },
+        details: {
+          open: async (item) => {
+            stageNotificationDetailsItem(item);
+            container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
           },
         },
       }),
@@ -872,23 +928,31 @@ export function RootOverlayShell({
 
     void (async () => {
       try {
+        setNotificationPlayConfirm(null);
         await router.run({
           notification,
           actionId: resolvedAction,
-          playbackActive:
-            state.playbackStatus === "loading" ||
-            state.playbackStatus === "ready" ||
-            state.playbackStatus === "buffering" ||
-            state.playbackStatus === "seeking" ||
-            state.playbackStatus === "stalled" ||
-            state.playbackStatus === "playing",
+          playbackActive,
+          confirmedContextSwitch: options?.confirmedContextSwitch,
         });
         setOverlayStatus(
           resolvedAction === "dismiss"
             ? "Notification dismissed"
             : resolvedAction === "restore-queue"
               ? "Queue restored"
-              : "Action queued",
+              : resolvedAction === "download"
+                ? "Download flow opened"
+                : resolvedAction === "follow"
+                  ? "Following releases"
+                  : resolvedAction === "mute"
+                    ? "Release notices muted"
+                    : resolvedAction === "add-to-playlist"
+                      ? "Saved to watchlist"
+                      : resolvedAction === "play-now"
+                        ? "Starting playback"
+                        : resolvedAction === "open-details"
+                          ? "Opening details"
+                          : "Action queued",
         );
         onRedraw();
       } catch (error) {
@@ -990,6 +1054,12 @@ export function RootOverlayShell({
         setSettingsChoice(null);
         setFilterQuery("");
         setSelectedIndex(settingsParentIndex);
+        return;
+      }
+      if (overlay.type === "notifications" && notificationPlayConfirm) {
+        setNotificationPlayConfirm(null);
+        setFilterQuery("");
+        setSelectedIndex(0);
         return;
       }
       if (overlay.type === "notifications" && notificationActionDedupKey) {
@@ -1479,6 +1549,19 @@ export function RootOverlayShell({
             : null,
         );
       } else if (overlay.type === "notifications") {
+        if (notificationPlayConfirm) {
+          const choice = notificationPlayConfirmOptions[selectedIndex]?.value ?? "cancel";
+          if (choice === "confirm") {
+            runNotificationAction(
+              notificationPlayConfirm.dedupKey,
+              notificationPlayConfirm.actionId,
+              { confirmedContextSwitch: true },
+            );
+          } else {
+            setNotificationPlayConfirm(null);
+          }
+          return;
+        }
         if (notificationActionDedupKey) {
           const actionId = filteredNotificationActionOptions[selectedIndex]?.value;
           runNotificationAction(notificationActionDedupKey, actionId);
@@ -1609,20 +1692,26 @@ export function RootOverlayShell({
         : overlay.type === "notifications"
           ? {
               type: "history-picker",
-              title,
-              subtitle: notificationActionDedupKey
-                ? "Choose an explicit action for this notice"
-                : effectiveSubtitle,
-              options: notificationActionDedupKey
-                ? filteredNotificationActionOptions
-                : filteredNotificationOptions,
-              filterQuery,
+              title: notificationPlayConfirm ? "Switch playback?" : title,
+              subtitle: notificationPlayConfirm
+                ? "Confirm play now — current playback will change"
+                : notificationActionDedupKey
+                  ? "Choose an explicit action for this notice"
+                  : effectiveSubtitle,
+              options: notificationPlayConfirm
+                ? notificationPlayConfirmOptions
+                : notificationActionDedupKey
+                  ? filteredNotificationActionOptions
+                  : filteredNotificationOptions,
+              filterQuery: notificationPlayConfirm ? "" : filterQuery,
               selectedIndex: Math.min(
                 selectedIndex,
                 Math.max(
-                  (notificationActionDedupKey
-                    ? filteredNotificationActionOptions
-                    : filteredNotificationOptions
+                  (notificationPlayConfirm
+                    ? notificationPlayConfirmOptions
+                    : notificationActionDedupKey
+                      ? filteredNotificationActionOptions
+                      : filteredNotificationOptions
                   ).length - 1,
                   0,
                 ),

@@ -74,6 +74,12 @@ function parseQueueSessionId(notification: NotificationRecord): string | null {
     : null;
 }
 
+export function parseNotificationMediaItem(
+  notification: NotificationRecord,
+): MediaItemIdentity | null {
+  return parseMediaItem(notification);
+}
+
 function parseMediaItem(notification: NotificationRecord): MediaItemIdentity | null {
   const parsed = parseJson(notification.itemJson);
   if (!isRecord(parsed)) return null;

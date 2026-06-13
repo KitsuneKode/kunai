@@ -56,6 +56,7 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
   [
     "apps/cli/src/app/SearchPhase.ts",
     [
+      "@/app-shell/browse-idle-context",
       "@/app-shell/calendar-ui.model",
       "@/app-shell/command-router",
       "@/app-shell/commands",
