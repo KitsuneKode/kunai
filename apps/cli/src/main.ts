@@ -70,7 +70,7 @@ LAUNCH
       --discover             Open recommendations
       --calendar             Open the release calendar
       --random               Open the random picks tray
-      --download             Open the download queue
+      --download             Download a title without playback (-S or -i required)
       --setup                Run the setup wizard
 
 DISPLAY
