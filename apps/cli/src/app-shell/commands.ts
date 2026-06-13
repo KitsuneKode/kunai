@@ -33,6 +33,8 @@ const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "source",
   "quality",
   "provider",
+  "bookmark",
+  "mark-watched",
   "playlist",
   "search",
   "recommendation",

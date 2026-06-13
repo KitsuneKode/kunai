@@ -60,6 +60,8 @@ describe("resolveCommandContext scoped surfaces", () => {
       "source",
       "quality",
       "provider",
+      "bookmark",
+      "mark-watched",
       "playlist",
       "search",
       "recommendation",

@@ -24,6 +24,8 @@ describe("command registry contexts", () => {
       "mark-anime",
       "mark-series",
       "share",
+      "bookmark",
+      "mark-watched",
       "pick-episode",
       "download",
       "next",
@@ -87,6 +89,8 @@ describe("command registry contexts", () => {
       "mark-anime",
       "mark-series",
       "share",
+      "bookmark",
+      "mark-watched",
       "pick-episode",
       "download",
       "library",
@@ -151,6 +155,13 @@ describe("command registry contexts", () => {
     expect(parseCommand("/mem")?.id).toBe("memory");
   });
 
+  test("resolves bookmark and mark-watched aliases to current-title commands", () => {
+    expect(parseCommand("/bookmark")?.id).toBe("bookmark");
+    expect(parseCommand("/save-current")?.id).toBe("bookmark");
+    expect(parseCommand("/mark-watched")?.id).toBe("mark-watched");
+    expect(parseCommand("/watched")?.id).toBe("mark-watched");
+  });
+
   test("keeps root overlay command order focused on first-run actions", () => {
     expect([...COMMAND_CONTEXTS.rootOverlay].slice(0, 10)).toEqual([
       "continue",
@@ -177,6 +188,25 @@ describe("command registry contexts", () => {
       id: "playlist-add",
       enabled: false,
       reason: "Select a title before adding it to the queue.",
+    });
+  });
+
+  test("does not offer bookmark or mark-watched until a title is selected", () => {
+    const state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    expect(resolveCommands(state, ["bookmark"])[0]).toMatchObject({
+      id: "bookmark",
+      enabled: false,
+      reason: "Play or select a title before bookmarking it.",
+    });
+    expect(resolveCommands(state, ["mark-watched"])[0]).toMatchObject({
+      id: "mark-watched",
+      enabled: false,
+      reason: "Play or select a title before marking it watched.",
     });
   });
 

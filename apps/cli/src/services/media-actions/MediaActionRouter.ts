@@ -16,6 +16,16 @@ export interface MediaActionRouterDeps {
   readonly downloads?: {
     readonly queueDownload: (item: MediaItemIdentity) => Promise<void> | void;
   };
+  readonly playlists?: {
+    readonly addToPlaylist: (item: MediaItemIdentity) => Promise<void> | void;
+  };
+  readonly attention?: {
+    readonly follow: (item: MediaItemIdentity) => Promise<void> | void;
+    readonly mute: (item: MediaItemIdentity) => Promise<void> | void;
+  };
+  readonly details?: {
+    readonly open: (item: MediaItemIdentity) => Promise<void> | void;
+  };
   readonly notifications?: {
     readonly dismissByItem: (item: MediaItemIdentity) => Promise<void> | void;
   };
@@ -43,25 +53,28 @@ export class MediaActionRouter {
     }
 
     if (input.actionId === "play-now") {
-      await this.deps.playback?.playNow(input.item);
+      await requireAction(this.deps.playback?.playNow, "play-now")(input.item);
       return;
     }
     if (input.actionId === "queue-next") {
-      await this.deps.queue?.enqueueMediaItem(input.item, {
+      await requireAction(this.deps.queue?.enqueueMediaItem, "queue-next")(input.item, {
         placement: "next",
         source: input.source,
       });
       return;
     }
     if (input.actionId === "queue-after-current-chain") {
-      await this.deps.queue?.enqueueMediaItem(input.item, {
-        placement: "after-current-chain",
-        source: input.source,
-      });
+      await requireAction(this.deps.queue?.enqueueMediaItem, "queue-after-current-chain")(
+        input.item,
+        {
+          placement: "after-current-chain",
+          source: input.source,
+        },
+      );
       return;
     }
     if (input.actionId === "queue-end") {
-      await this.deps.queue?.enqueueMediaItem(input.item, {
+      await requireAction(this.deps.queue?.enqueueMediaItem, "queue-end")(input.item, {
         placement: "end",
         source: input.source,
       });
@@ -74,13 +87,39 @@ export class MediaActionRouter {
       ) {
         throw new Error("download requires provider resolution confirmation");
       }
-      await this.deps.downloads?.queueDownload(input.item);
+      await requireAction(this.deps.downloads?.queueDownload, "download")(input.item);
+      return;
+    }
+    if (input.actionId === "add-to-playlist") {
+      await requireAction(this.deps.playlists?.addToPlaylist, "add-to-playlist")(input.item);
+      return;
+    }
+    if (input.actionId === "follow") {
+      await requireAction(this.deps.attention?.follow, "follow")(input.item);
+      return;
+    }
+    if (input.actionId === "mute") {
+      await requireAction(this.deps.attention?.mute, "mute")(input.item);
+      return;
+    }
+    if (input.actionId === "open-details") {
+      await requireAction(this.deps.details?.open, "open-details")(input.item);
       return;
     }
     if (input.actionId === "dismiss") {
-      await this.deps.notifications?.dismissByItem(input.item);
+      await requireAction(this.deps.notifications?.dismissByItem, "dismiss")(input.item);
     }
   }
+}
+
+function requireAction<TArgs extends readonly unknown[]>(
+  fn: ((...args: TArgs) => Promise<void> | void) | undefined,
+  actionId: MediaActionId,
+): (...args: TArgs) => Promise<void> | void {
+  if (!fn) {
+    throw new Error(`media action is unavailable: ${actionId}`);
+  }
+  return fn;
 }
 
 function requiresProviderResolutionConfirmation(source: string): boolean {

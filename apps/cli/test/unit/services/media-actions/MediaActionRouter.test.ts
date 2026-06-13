@@ -76,3 +76,42 @@ test("recommendation downloads require explicit provider resolution confirmation
 
   expect(calls).toEqual(["download"]);
 });
+
+test("durable media actions delegate to their owning services", async () => {
+  const calls: string[] = [];
+  const router = new MediaActionRouter({
+    playlists: {
+      addToPlaylist: async () => {
+        calls.push("playlist");
+      },
+    },
+    attention: {
+      follow: async () => {
+        calls.push("follow");
+      },
+      mute: async () => {
+        calls.push("mute");
+      },
+    },
+    details: {
+      open: async () => {
+        calls.push("details");
+      },
+    },
+  });
+
+  await router.run({ actionId: "add-to-playlist", item, source: "history" });
+  await router.run({ actionId: "follow", item, source: "history" });
+  await router.run({ actionId: "mute", item, source: "history" });
+  await router.run({ actionId: "open-details", item, source: "history" });
+
+  expect(calls).toEqual(["playlist", "follow", "mute", "details"]);
+});
+
+test("unsupported media actions fail clearly instead of silently doing nothing", async () => {
+  const router = new MediaActionRouter({});
+
+  await expect(router.run({ actionId: "queue-end", item, source: "history" })).rejects.toThrow(
+    "media action is unavailable: queue-end",
+  );
+});

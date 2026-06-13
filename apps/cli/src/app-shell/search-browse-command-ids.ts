@@ -7,6 +7,7 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "random",
   "surprise",
   "calendar",
+  "bookmark",
   "watchlist",
   "playlist",
   "stats",

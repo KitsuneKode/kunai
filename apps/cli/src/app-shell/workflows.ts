@@ -9,6 +9,7 @@ import {
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { applySettingsToRuntime } from "@/app/apply-settings-to-runtime";
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
+import { markEntryWatched } from "@/app/history-actions";
 import { playCompletedDownload } from "@/app/offline-playback";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
@@ -16,6 +17,7 @@ import { effectiveFooterHints } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
+import type { SessionState } from "@/domain/session/SessionState";
 import { decodeShareCode, encodeShareCode } from "@/domain/share/share-code";
 import type { EpisodeInfo as PlaybackEpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
 import { copyToClipboard, readClipboard } from "@/infra/clipboard";
@@ -52,7 +54,8 @@ import { isFinished, type HistoryStore } from "@/services/persistence/HistorySto
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
-import { getKunaiPaths, type DownloadJobRecord } from "@kunai/storage";
+import { getKunaiPaths, historyProgressToInput, type DownloadJobRecord } from "@kunai/storage";
+import type { MediaKind } from "@kunai/types";
 
 import { resolveCommands } from "./commands";
 import { openHistoryShell, relativeHistoryDate } from "./history-workflows";
@@ -806,6 +809,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   "mark-anime": (c) => handleMarkKind(c, "anime"),
   "mark-series": (c) => handleMarkKind(c, "series"),
   share: (c) => handleShare(c),
+  bookmark: (c) => handleBookmark(c),
+  "mark-watched": (c) => handleMarkWatched(c),
   watch: (c) => handleWatch(c),
   watchlist: (c) => handleWatchlist(c),
   favorites: (c) => handleFavorites(c),
@@ -2157,6 +2162,92 @@ async function handleShare(container: Container): Promise<"handled"> {
       : `Share code (copy manually): ${code}`,
   });
   return "handled";
+}
+
+async function handleBookmark(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  if (!title) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Play or select a title before bookmarking it.",
+    });
+    return "handled";
+  }
+
+  const episode = state.currentEpisode;
+  const result = container.listService.toggleWatchlist({
+    titleId: title.id,
+    mediaKind: resolveCurrentMediaKind(state),
+    title: title.name,
+    season: episode?.season,
+    episode: episode?.episode,
+  });
+
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note:
+      result === "added"
+        ? `Bookmarked "${title.name}" in your watchlist.`
+        : `Removed "${title.name}" from your watchlist.`,
+  });
+  return "handled";
+}
+
+async function handleMarkWatched(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  if (!title) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Play or select a title before marking it watched.",
+    });
+    return "handled";
+  }
+
+  const episode = title.type === "series" ? state.currentEpisode : null;
+  const mediaKind = resolveCurrentMediaKind(state);
+  const titleIdentity = {
+    id: title.id,
+    kind: mediaKind,
+    title: title.name,
+    externalIds: title.externalIds,
+  };
+  const episodeIdentity = episode
+    ? {
+        season: episode.season,
+        episode: episode.episode,
+        externalIds: episode.externalIds,
+      }
+    : undefined;
+  const existing = container.historyRepository.getProgress(titleIdentity, episodeIdentity);
+
+  container.historyRepository.upsertProgress(
+    existing
+      ? historyProgressToInput(markEntryWatched(existing))
+      : {
+          title: titleIdentity,
+          episode: episodeIdentity,
+          positionSeconds: 0,
+          completed: true,
+          posterUrl: title.posterUrl,
+        },
+  );
+
+  const episodeLabel = episode
+    ? ` S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`
+    : "";
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Marked "${title.name}${episodeLabel}" as watched.`,
+  });
+  return "handled";
+}
+
+function resolveCurrentMediaKind(state: SessionState): MediaKind {
+  const title = state.currentTitle;
+  if (title?.type === "movie") return "movie";
+  return state.mode === "anime" || title?.isAnime === true ? "anime" : "series";
 }
 
 /** Decode a Kunai share code from the clipboard and play that title. */

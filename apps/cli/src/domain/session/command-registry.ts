@@ -42,6 +42,8 @@ export type AppCommandId =
   | "mark-series"
   | "share"
   | "watch"
+  | "bookmark"
+  | "mark-watched"
   | "pick-episode"
   | "next"
   | "previous"
@@ -112,6 +114,8 @@ export const COMMAND_CONTEXTS = {
     "mark-anime",
     "mark-series",
     "share",
+    "bookmark",
+    "mark-watched",
     "pick-episode",
     "download",
     "next",
@@ -141,6 +145,8 @@ export const COMMAND_CONTEXTS = {
     "mark-anime",
     "mark-series",
     "share",
+    "bookmark",
+    "mark-watched",
     "pick-episode",
     "download",
     "library",
@@ -455,6 +461,18 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Share This",
     aliases: ["share", "share-link", "share-code"],
     description: "Copy a 'watch this' code for the current title to your clipboard",
+  },
+  {
+    id: "bookmark",
+    label: "Bookmark Current",
+    aliases: ["bookmark", "bookmarks-add", "save-current", "watchlist-add"],
+    description: "Save or unsave the current title in your watchlist",
+  },
+  {
+    id: "mark-watched",
+    label: "Mark Watched",
+    aliases: ["mark-watched", "watched", "complete", "finish"],
+    description: "Mark the current movie or episode as fully watched",
   },
   {
     id: "watch",
@@ -912,6 +930,8 @@ function resolveCommandState(
     case "mark-anime":
     case "mark-series":
     case "share":
+    case "bookmark":
+    case "mark-watched":
       return state.currentTitle
         ? { enabled: true }
         : {
@@ -919,7 +939,11 @@ function resolveCommandState(
             reason:
               id === "share"
                 ? "Play or select a title before sharing it."
-                : "Play or select a title before reclassifying it.",
+                : id === "bookmark"
+                  ? "Play or select a title before bookmarking it."
+                  : id === "mark-watched"
+                    ? "Play or select a title before marking it watched."
+                    : "Play or select a title before reclassifying it.",
           };
 
     case "watch":
