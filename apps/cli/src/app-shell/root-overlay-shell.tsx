@@ -749,33 +749,47 @@ export function RootOverlayShell({
         action === "history" ||
         action === "provider"
       ) {
+        const nextOverlay =
+          action === "provider"
+            ? {
+                type: "provider_picker" as const,
+                currentProvider: state.provider,
+                isAnime: state.mode === "anime",
+              }
+            : action === "history"
+              ? { type: "history" as const }
+              : action === "notifications"
+                ? { type: "notifications" as const }
+                : action === "downloads"
+                  ? { type: "downloads" as const }
+                  : action === "settings" || action === "presence"
+                    ? { type: "settings" as const }
+                    : { type: action };
         if (isRootMediaPickerOverlay(overlay) && overlay.id) {
           container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+          container.stateManager.dispatch({
+            type: "OPEN_OVERLAY",
+            overlay: nextOverlay,
+          });
         } else {
-          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+          container.stateManager.dispatch({
+            type: "REPLACE_TOP_OVERLAY",
+            overlay: nextOverlay,
+          });
         }
-        container.stateManager.dispatch({
-          type: "OPEN_OVERLAY",
-          overlay:
-            action === "provider"
-              ? {
-                  type: "provider_picker",
-                  currentProvider: state.provider,
-                  isAnime: state.mode === "anime",
-                }
-              : action === "history"
-                ? { type: "history" }
-                : action === "notifications"
-                  ? { type: "notifications" }
-                  : action === "downloads"
-                    ? { type: "downloads" }
-                    : action === "settings" || action === "presence"
-                      ? { type: "settings" }
-                      : { type: action },
-        });
         return;
       }
-      if (action === "library" || action === "update" || action === "report-issue") {
+      if (action === "library") {
+        const nextOverlay = { type: "library" as const, view: "library" as const };
+        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+          container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
+        } else {
+          container.stateManager.dispatch({ type: "REPLACE_TOP_OVERLAY", overlay: nextOverlay });
+        }
+        return;
+      }
+      if (action === "update" || action === "report-issue") {
         if (isRootMediaPickerOverlay(overlay) && overlay.id) {
           container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         } else {

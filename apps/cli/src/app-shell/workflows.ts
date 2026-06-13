@@ -846,7 +846,10 @@ const withOverlay = async <T>(
   try {
     return await run();
   } finally {
-    stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+    const top = stateManager.getState().activeModals.at(-1);
+    if (top?.type === overlay.type) {
+      stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+    }
   }
 };
 

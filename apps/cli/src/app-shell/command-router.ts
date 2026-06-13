@@ -83,7 +83,10 @@ async function openRootOwnedOverlay(
 ): Promise<void> {
   const { stateManager } = container;
 
-  stateManager.dispatch({ type: "OPEN_OVERLAY", overlay });
+  stateManager.dispatch({
+    type: stateManager.getState().activeModals.length > 0 ? "REPLACE_TOP_OVERLAY" : "OPEN_OVERLAY",
+    overlay,
+  });
   await new Promise<void>((resolve) => {
     const unsubscribe = stateManager.subscribe((state) => {
       const top = state.activeModals.at(-1);

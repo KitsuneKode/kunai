@@ -69,6 +69,64 @@ describe("SessionState overlays", () => {
     expect(state.activeModals).toHaveLength(0);
   });
 
+  test("replaces the active root overlay without stacking duplicate panels", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    state = reduceState(state, {
+      type: "OPEN_OVERLAY",
+      overlay: { type: "settings" },
+    });
+    state = reduceState(state, {
+      type: "REPLACE_TOP_OVERLAY",
+      overlay: { type: "history", initialFilterMode: "watching" },
+    });
+
+    expect(state.activeModals).toEqual([{ type: "history", initialFilterMode: "watching" }]);
+
+    state = reduceState(state, {
+      type: "REPLACE_TOP_OVERLAY",
+      overlay: { type: "downloads" },
+    });
+
+    expect(state.activeModals).toEqual([{ type: "downloads" }]);
+  });
+
+  test("opening the same root overlay twice updates it instead of stacking it", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    state = reduceState(state, {
+      type: "OPEN_OVERLAY",
+      overlay: { type: "history", initialFilterMode: "all" },
+    });
+    state = reduceState(state, {
+      type: "OPEN_OVERLAY",
+      overlay: { type: "history", initialFilterMode: "watching" },
+    });
+
+    expect(state.activeModals).toEqual([{ type: "history", initialFilterMode: "watching" }]);
+  });
+
+  test("replace opens the overlay when no panel is active", () => {
+    const state = reduceState(
+      createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      { type: "REPLACE_TOP_OVERLAY", overlay: { type: "notifications" } },
+    );
+
+    expect(state.activeModals).toEqual([{ type: "notifications" }]);
+  });
+
   test("stores picker state result and closes only the resolved picker", () => {
     let state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },

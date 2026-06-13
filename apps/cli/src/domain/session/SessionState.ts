@@ -187,6 +187,7 @@ export type StateTransition =
   | { type: "CLEAR_PLAYBACK_PROBLEM" }
   | { type: "SET_RESOLVE_RETRY_COUNT"; count: number }
   | { type: "OPEN_OVERLAY"; overlay: OverlayState }
+  | { type: "REPLACE_TOP_OVERLAY"; overlay: OverlayState }
   | {
       type: "UPDATE_TRACKS_PANEL_GROUPS";
       id: string;
@@ -443,7 +444,18 @@ export function reduceState(state: SessionState, transition: StateTransition): S
     case "OPEN_OVERLAY":
       return {
         ...state,
-        activeModals: [...state.activeModals, transition.overlay],
+        activeModals: shouldReplaceOpenOverlay(state.activeModals.at(-1), transition.overlay)
+          ? [...state.activeModals.slice(0, -1), transition.overlay]
+          : [...state.activeModals, transition.overlay],
+      };
+
+    case "REPLACE_TOP_OVERLAY":
+      return {
+        ...state,
+        activeModals:
+          state.activeModals.length === 0
+            ? [transition.overlay]
+            : [...state.activeModals.slice(0, -1), transition.overlay],
       };
 
     case "UPDATE_TRACKS_PANEL_GROUPS":
@@ -679,6 +691,10 @@ function isPickerOverlay(
     overlay.type === "subtitle_picker" ||
     overlay.type === "recommendation_picker";
   return picker && (id === undefined || overlay.id === id);
+}
+
+function shouldReplaceOpenOverlay(current: OverlayState | undefined, next: OverlayState): boolean {
+  return Boolean(current && current.type === next.type && next.type !== "confirm");
 }
 
 function normalizePickerIndex(index: number, length: number): number {
