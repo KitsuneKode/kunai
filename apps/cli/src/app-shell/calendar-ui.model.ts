@@ -455,18 +455,24 @@ export function buildCalendarRenderRows<T>(
     const groupLabel = option.calendar?.display.groupLabel ?? option.previewGroup;
     const dayHeaderLabel =
       selectedDayKey === null && groupLabel ? calendarDayKeyFromGroup(groupLabel) : null;
-    const weekHeaderLabel =
-      selectedDayKey === null && dayHeaderLabel
-        ? calendarWeekHeaderLabel(calendarWeekKeyFromIsoDay(dayHeaderLabel), nowMs)
-        : null;
-    const weekChanged = weekHeaderLabel !== null && weekHeaderLabel !== lastWeekHeader;
-    if (weekChanged) lastWeekHeader = weekHeaderLabel;
+    // The week marker must be derived from the ISO day key — NOT the display label
+    // (e.g. "THU 11"), which `calendarWeekKeyFromIsoDay` cannot parse and would
+    // echo back, duplicating the day header. Falls back to null when no ISO key.
+    const isoDayKey = option.calendar?.dayKey ?? option.previewDayKey ?? null;
+    const weekKey =
+      selectedDayKey === null && isoDayKey ? calendarWeekKeyFromIsoDay(isoDayKey) : null;
+    const weekChanged = weekKey !== null && weekKey !== lastWeekHeader;
+    if (weekChanged) lastWeekHeader = weekKey;
     const showDayHeader = dayHeaderLabel !== null && dayHeaderLabel !== lastDayHeader;
     if (showDayHeader) lastDayHeader = dayHeaderLabel;
-    // The week marker rides the day header (no separate band). Lowercased so it
-    // reads as a quiet tag ("next week"), not a second heading.
+    // The week marker rides the day header (no separate band) as a quiet tag.
+    // Only future weeks earn a tag — the current week is implied, so it stays
+    // unlabelled to avoid "this week" noise next to today's rows.
+    const currentWeekKey = calendarWeekKeyFromIsoDay(new Date(nowMs).toISOString().slice(0, 10));
     const weekTag =
-      showDayHeader && weekChanged && weekHeaderLabel ? weekHeaderLabel.toLowerCase() : null;
+      showDayHeader && weekChanged && weekKey && weekKey !== currentWeekKey
+        ? calendarWeekHeaderLabel(weekKey, nowMs).toLowerCase()
+        : null;
 
     const badge = option.previewBadge;
     const episodeCode =

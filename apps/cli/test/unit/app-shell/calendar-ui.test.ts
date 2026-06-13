@@ -277,6 +277,24 @@ test("emits a weekTag (not a separate week header) when the week changes", () =>
   expect(typeof rows[0]!.weekTag === "string" || rows[0]!.weekTag === null).toBe(true);
 });
 
+test("weekTag derives from the ISO day key, never echoing the display day label", () => {
+  const nowMs = Date.parse("2026-06-11T00:00:00");
+  // groupLabel is a DISPLAY label ("THU 11"); the ISO key lives in previewDayKey.
+  const options = [
+    dayStripOption({ label: "A", previewGroup: "THU 11", previewDayKey: "2026-06-11" }),
+    dayStripOption({ label: "B", previewGroup: "THU 18", previewDayKey: "2026-06-18" }),
+  ];
+  const rows = buildCalendarRenderRows(options, 0, options.length, nowMs, null, false);
+
+  expect(rows[0]!.dayHeaderLabel).toBe("THU 11");
+  // Current week stays untagged (no "this week" noise next to today).
+  expect(rows[0]!.weekTag).toBeNull();
+  // Next week is tagged with a real week label — NOT a lowercased day label.
+  expect(rows[1]!.dayHeaderLabel).toBe("THU 18");
+  expect(rows[1]!.weekTag).toBe("next week");
+  expect(rows[1]!.weekTag).not.toBe("thu 18");
+});
+
 test("calendarRowLineCost counts headers as extra lines", () => {
   const base = {
     option: dayStripOption({ label: "X" }),
