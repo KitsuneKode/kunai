@@ -647,6 +647,8 @@ export function BrowseShell<T>({
   }, [provider, selectedOption]);
 
   const { compact, ultraCompact, minColumns, minRows } = viewport;
+  // Short terminals: collapse schedule chrome margins so the list keeps its rows.
+  const denseChrome = viewport.rows < 28;
   const browseBreakpoint = viewport.breakpoint;
   const showCompanionLayout = browseBreakpoint === "wide" || browseBreakpoint === "medium";
   const effectiveFooterMode = "minimal";
@@ -1202,12 +1204,18 @@ export function BrowseShell<T>({
 
         {isCalendarView && calendarDays.length > 0 && !ultraCompact ? (
           <Box flexDirection="column">
-            <CalendarTypeTabs activeTab={calendarTypeTab} compact={compact} maxWidth={listWidth} />
+            <CalendarTypeTabs
+              activeTab={calendarTypeTab}
+              compact={compact}
+              maxWidth={listWidth}
+              dense={denseChrome}
+            />
             <CalendarDayStrip
               days={calendarDays}
               selectedDayKey={calendarDayFilter}
               narrow={viewport.breakpoint === "narrow"}
               maxWidth={listWidth}
+              dense={denseChrome}
             />
           </Box>
         ) : null}
