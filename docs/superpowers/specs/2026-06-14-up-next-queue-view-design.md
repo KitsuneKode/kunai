@@ -20,9 +20,19 @@
 - Changing queue semantics/priority logic (`QueuePlanner`) — view only.
 - Download queue, notifications, settings, playback, post-play posters — separate specs in the roadmap.
 
+## Keymap consolidation (precursor)
+
+Keymaps currently live in three places — the `keybindings.ts` `KEYBINDINGS` registry, the mpv Lua bridge (`apps/cli/assets/mpv/kunai-bridge.lua`), and per-surface `useInput` handlers (browse-shell, root-overlay-shell, history, etc.). This fragmentation hides collisions (e.g. an autoskip `u` that lives outside the registry). Before adding the queue's keys, do a bounded consolidation:
+
+1. **Inventory:** extend `KEYBINDINGS` to document every live chord, including the mpv-bridge keys and the overlay/list-controller keys, each tagged with `scope` and `helpOnly` where another layer owns matching (mirrors the existing pattern). Add the queue's scope (`queue`).
+2. **Collision test:** add a unit test that fails when two non-`helpOnly` bindings share the same chord within a scope (accounting for global inheritance via `bindingsForScope`). This makes future key additions safe by construction.
+3. **Pick queue keys from verified-free space** once the inventory + test are green.
+
+This precursor is small and de-risks the queue surface and every future one (settings, playback, etc.).
+
 ## Navigation & mount
 
-- **Open:** add a new command `queue` (label "Up Next", aliases `queue`, `up-next`) to the app command registry (`apps/cli/src/app-shell/commands.ts` `AppCommandId` + `POST_PLAYBACK_SURFACE_COMMANDS` and the browse/root command sets) and a keybinding in `keybindings.ts` (e.g. global `u`). The existing `playlist` command (enqueue the highlighted title) stays unchanged; this is a distinct **open** action.
+- **Open:** add a `queue` command (label "Up Next", aliases `/queue`, `/up-next`) to the command registry (`apps/cli/src/app-shell/commands.ts` `AppCommandId` + the relevant command sets), a **footer affordance**, and a **global hotkey verified free by the collision test** — candidate `Shift+Q` (mnemonic pairing: browse `q` adds to queue, `Shift+Q` opens it). The existing `playlist` / `browse-queue` enqueue action stays unchanged; this is a distinct **open** action.
 - **Mount:** render `QueueShell` in `root-overlay-shell.tsx` as a sibling surface to `HistoryShell`, gated by a `queue` surface state (follow the exact pattern used for history/download: a surface kind + render branch + Esc-to-close + footer task label).
 - **Entry points:** the command/hotkey, and a "View queue" affordance from post-play and the playback rail's "Up next" card.
 
@@ -115,18 +125,30 @@ Two-pane, reusing `MediaListShell` (list left, rail right; rail auto-hides < 124
 
 ## Interactions
 
-| Key                      | Action                                         | Service call                                                                                                                  |
-| ------------------------ | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `↑` / `↓`                | move selection                                 | —                                                                                                                             |
-| `⏎`                      | play selected now                              | mark prior played + start playback for the selected entry (wire through the existing playback-start path; see Open Questions) |
-| `J` / `K` (or `]` / `[`) | reorder selected down/up among unplayed        | `moveDown(id)` / `moveUp(id)`                                                                                                 |
-| `x`                      | remove selected                                | `remove(id)`                                                                                                                  |
-| `c`                      | clear queue (confirm)                          | `clear()`                                                                                                                     |
-| `C`                      | clear played only                              | `clearPlayed()`                                                                                                               |
-| `r`                      | restore last recoverable session (empty state) | `restoreRecoverableSession(id)`                                                                                               |
-| `Esc`                    | close surface                                  | —                                                                                                                             |
+| Key       | Action                                             | Service call                                                                                                                  |
+| --------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `↑` / `↓` | move selection                                     | —                                                                                                                             |
+| `⏎`       | play selected now                                  | mark prior played + start playback for the selected entry (wire through the existing playback-start path; see Open Questions) |
+| `J` / `K` | reorder selected down / up one slot (unplayed)     | `moveDown(id)` / `moveUp(id)`                                                                                                 |
+| `g` / `G` | move to top / bottom of unplayed (`g` = play next) | `moveToTop(id)` / `moveToBottom(id)`                                                                                          |
+| `x`       | remove selected                                    | `remove(id)`                                                                                                                  |
+| `c`       | clear queue (confirm)                              | `clear()`                                                                                                                     |
+| `C`       | clear played only                                  | `clearPlayed()`                                                                                                               |
+| `r`       | restore last recoverable session (empty state)     | `restoreRecoverableSession(id)`                                                                                               |
+| `Esc`     | close surface                                      | —                                                                                                                             |
 
-Reorder/remove re-run `buildQueueView` from the service's fresh `getAll()` so the view always reflects persisted truth. Selection stays on the moved item after reorder.
+YouTube-style "any order": `J/K` nudge one slot, `g/G` jump to top/bottom; moving to the top of the unplayed tail is effectively "play next". Reorder/remove re-run `buildQueueView` from the service's fresh `getAll()` so the view always reflects persisted truth. Selection stays on the moved item after reorder.
+
+### QueueService additions
+
+`moveUp` / `moveDown` already exist. Add two methods using the same `setQueuePositions` mechanism, operating on the unplayed tail only and preserving the played-items prefix:
+
+```ts
+moveToTop(id: string): boolean;     // selected → front of unplayed ("play next")
+moveToBottom(id: string): boolean;  // selected → end of unplayed
+```
+
+Both return whether the queue actually changed.
 
 ## States
 
@@ -148,15 +170,21 @@ Reorder/remove re-run `buildQueueView` from the service's fresh `getAll()` so th
 **Modified**
 
 - `root-overlay-shell.tsx` — mount `QueueShell`, wire `QueueService` + resolver + input handlers, footer task label, Esc/close.
-- `commands.ts` — add `queue` command id + include in relevant command sets.
-- `keybindings.ts` — add open-queue binding (and the in-surface reorder/remove/clear/restore bindings).
+- `commands.ts` — add `queue` command id (aliases `/queue`, `/up-next`) + include in relevant command sets.
+- `keybindings.ts` — keymap consolidation (inventory mpv + overlay keys, add the `queue` scope), the verified open-queue hotkey (`Shift+Q`), and the in-surface reorder/remove/clear/restore bindings.
+- `domain/queue/QueueService.ts` — add `moveToTop` / `moveToBottom`.
 - `container.ts` — expose the poster resolver dependency if not already reachable.
+
+**New (keymap precursor)**
+
+- `apps/cli/test/unit/app-shell/keybindings-collision.test.ts` — fails on duplicate chords per scope (accounting for global inheritance).
 
 ## Testing
 
 - **`queue-view.test.ts`** (pure): episode/source label mapping; played-then-unplayed ordering; 1-based positions; state derivation (playing/pending/played); empty vs recoverable hint; rail model for selected.
 - **`queue-shell.test.tsx`** (render-capture): full-frame snapshots at 72/100/140 + short height; assert no detached rule lines / clean rows (reuse the schedule/history harness patterns); rail shows on wide only.
-- **Interaction/logic:** reorder keeps selection on moved item; remove updates positions; empty→restore path. (Logic via the pure builder + thin handler tests; avoid driving real playback.)
+- **Interaction/logic:** reorder keeps selection on moved item; `moveToTop`/`moveToBottom` place correctly and preserve the played prefix; remove updates positions; empty→restore path. (Logic via the pure builder + thin handler tests; avoid driving real playback.)
+- **Keymap collision test:** duplicate-chord-per-scope guard is green after the inventory; `Shift+Q` confirmed free.
 - Mini-poster fallback to initials tile when resolver returns `undefined`.
 
 ## Risks / open questions
@@ -164,7 +192,7 @@ Reorder/remove re-run `buildQueueView` from the service's fresh `getAll()` so th
 1. **Play wiring:** starting playback for an arbitrary queue entry must reuse the existing session-start flow (`apps/cli/src/main.ts` / session-flow), not a new path. Exact handoff (how `⏎` from the queue hands an entry to the player and advances the queue) to be confirmed against the current playback-start code during planning.
 2. **Mini-poster performance:** many rows × `chafa` text renders. Mitigation: text-mode only, small `cols`, debounce, and a URL+size cache. If `image-pane` lacks a text-render cache, add one in the plan.
 3. **Poster resolver source of truth:** confirm the persisted-poster lookup history uses is reachable by `titleId` for arbitrary queue items (some queue items may never have been watched → no poster → initials tile, which is acceptable).
-4. **Open-key collision:** confirm `u` (or chosen key) is free in the global keymap.
+4. **Keymap inventory completeness:** the consolidation must capture the undocumented live keys (e.g. autoskip `u`) so the collision test is meaningful; confirm all `useInput` handlers + mpv bridge keys are folded into the registry as `helpOnly` where another layer matches them.
 
 ## Rollout
 
