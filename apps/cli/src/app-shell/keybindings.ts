@@ -15,7 +15,14 @@ import type { LineEditorKey } from "@/app-shell/line-editor";
  * in `ink-shell.tsx`. When you add or move a binding in those files, update it here.
  */
 
-export type KeyScope = "global" | "editing" | "browse" | "search" | "player" | "postPlayback";
+export type KeyScope =
+  | "global"
+  | "editing"
+  | "browse"
+  | "search"
+  | "player"
+  | "postPlayback"
+  | "queue";
 
 export type KeyChord = {
   /** Printable trigger character, e.g. "/", "?", "n". Omit for pure named keys. */
