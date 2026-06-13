@@ -969,6 +969,10 @@ function setupSignalHandlers(): void {
 
 export async function startCli(argv = process.argv.slice(2)): Promise<void> {
   setupSignalHandlers();
+  // Always-on memory safety net: a separate-thread watchdog that SIGKILLs a
+  // runaway even when the main event loop is jammed (the closed-terminal case).
+  const { installMemoryWatchdog } = await import("./infra/diagnostics/memory-watchdog");
+  installMemoryWatchdog();
   // Opt-in heap profiler for the anime-mode memory-runaway hunt (inert otherwise).
   if (process.env.KUNAI_HEAP_PROFILE === "1") {
     const { installHeapProfiler } = await import("./infra/diagnostics/heap-profiler");

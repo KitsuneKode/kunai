@@ -16,6 +16,19 @@ export type ViewportDimensions = {
   readonly rows: number;
 };
 
+/**
+ * Sanitize a terminal dimension to a usable positive integer. When the
+ * controlling terminal closes, `process.stdout.columns`/`rows` can report `0`
+ * (which `?? fallback` does NOT catch) or `NaN` — and a size-0 re-render feeds
+ * the shell layout zero/degenerate widths. Guarding here keeps dimensions sane
+ * so the closed-terminal path can never drive a zero-size render.
+ */
+export function sanitizeDimension(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
 export function getShellTerminalProfile(env: ShellEnv = process.env): ShellTerminalProfile {
   if (env.SSH_CONNECTION || env.SSH_TTY || env.TMUX || env.STY) return "constrained";
   if (/^(?:screen|tmux)(?:-|$)/i.test(env.TERM ?? "")) return "constrained";
@@ -33,15 +46,15 @@ export function shouldSettleViewportImmediately(
 export function useShellDimensions(): ViewportDimensions {
   const { stdout } = useStdout();
   const [size, setSize] = useState<ViewportDimensions>(() => ({
-    cols: stdout.columns ?? 80,
-    rows: stdout.rows ?? 24,
+    cols: sanitizeDimension(stdout.columns, 80),
+    rows: sanitizeDimension(stdout.rows, 24),
   }));
 
   useEffect(() => {
     const onResize = () => {
       setSize({
-        cols: stdout.columns ?? 80,
-        rows: stdout.rows ?? 24,
+        cols: sanitizeDimension(stdout.columns, 80),
+        rows: sanitizeDimension(stdout.rows, 24),
       });
     };
     stdout.on("resize", onResize);
