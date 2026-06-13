@@ -46,6 +46,22 @@ Offline titles are grouped by series/movie name so a shelf does not become a fla
 Inside a title group you can play a completed item, reveal the folder, re-download an item,
 repair missing local files, or delete a whole local title after confirmation.
 
+## Launch download mode
+
+`kunai --download` is a **process flag**, not the same as `/downloads` in the shell:
+
+```sh
+kunai --download -S "Dune"
+kunai --download -i 438631 -t movie
+```
+
+This resolves a title at launch, runs the download flow, and exits without opening the interactive shell queue UI. You need `-S` or `-i` bootstrap.
+
+Inside a normal session:
+
+- `/downloads` — queue overlay (queued, running, failed jobs)
+- `/download` during playback — queue the current item for offline
+
 ## Safety Rules
 
 - Kunai does not silently delete completed artifacts.
@@ -56,6 +72,6 @@ repair missing local files, or delete a whole local title after confirmation.
 - Delete actions ask for confirmation before removing a whole offline title.
 - Network handoff stays explicit: if the local shelf is exhausted, Kunai points you toward online search instead of silently switching modes.
 
-More design detail lives in [`../../.docs/download-offline-onboarding.md`](../../.docs/download-offline-onboarding.md).
+More detail is in [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) and the [CLI reference](/docs/users/cli-reference#mpv-and-diagnostics).
 Continue Watching behavior is covered in
 [`continue-watching-and-new-episodes.mdx`](./continue-watching-and-new-episodes.mdx).

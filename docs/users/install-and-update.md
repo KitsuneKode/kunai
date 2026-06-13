@@ -3,7 +3,7 @@ title: Install And Update
 description: Install Kunai across platforms and keep source, global, and packaged installs current.
 ---
 
-Kunai supports source installs, global package installs, and packaged binary-style installs.
+Kunai supports global package installs and source checkouts. During beta you need **Bun** and **mpv** on your PATH. Packaged binaries may be available from GitHub Releases depending on your platform; the install script detects what is available.
 
 ## Install
 
@@ -49,17 +49,12 @@ The update panel shows install-method-aware guidance:
 
 You can snooze automatic checks for seven days or disable them from the update panel. Manual `/update` remains available.
 
-## Release Notes
+## Release notes
 
-Every published package should include:
+Published versions are listed on [GitHub Releases](https://github.com/KitsuneKode/kunai/releases). After updating, run `/update` inside Kunai to confirm the active version and install method.
 
-- a Changesets-generated version bump in `apps/cli/package.json`
-- a human-readable entry in `apps/cli/CHANGELOG.md`
-- `bun run typecheck`, `bun run lint`, `bun run fmt:check`, and `bun run test` passing locally
-- `bun run pkg:check` passing before publish
-- `bun run release:dry-run` passing before the final `bun run release`
-- one opt-in live provider smoke pass for the provider paths the release depends on, using the isolated `test/live` profile output as evidence
+For support reports after an update, run `/report-issue` from Kunai. For verbose traces, launch with `--debug-session`, reproduce the issue, then run `/export-diagnostics`.
 
-For support reports after an update, run `/report-issue` from Kunai. For developer reproduction, launch with `--debug-session`, reproduce the issue, then run `/export-diagnostics`.
+Contributor release steps live in [Docs maintenance](/docs/developer/docs-maintenance).
 
-More flag details live in [`../../.docs/cli-reference.md`](../../.docs/cli-reference.md).
+More flag details live in the [CLI reference](/docs/users/cli-reference).

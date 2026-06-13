@@ -46,7 +46,7 @@ not as a final error. Use `/diagnostics` or `/export-diagnostics` to inspect the
 
 Diagnostics should redact stream URLs, sensitive headers, and local home paths before export. Review exported files before sharing them publicly.
 
-More detail lives in [`../../.docs/diagnostics-guide.md`](../../.docs/diagnostics-guide.md).
+More detail is in [Reliability and privacy](/docs/users/reliability-and-privacy) and the [Feature tour](/docs/users/feature-tour#diagnostics-flow).
 
 For user-facing reliability expectations, see
 [`reliability-and-privacy.mdx`](./reliability-and-privacy.mdx).

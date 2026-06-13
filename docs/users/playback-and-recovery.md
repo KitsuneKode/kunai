@@ -36,4 +36,4 @@ Provider availability can drift. Recovery commands are part of normal usage, not
 - Additional subtitle tracks are attached when available, so you can switch inside mpv without another Kunai lookup.
 - Source/quality/language-like provider variants are selected from already resolved stream inventory where possible to avoid extra network calls.
 
-More detail lives in [`../../.docs/diagnostics-guide.md`](../../.docs/diagnostics-guide.md).
+More detail is in [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) and [Commands and shortcuts](/docs/users/commands-and-shortcuts).

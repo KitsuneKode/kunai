@@ -1,0 +1,138 @@
+---
+title: Feature Tour
+description: Every Kunai capability — what works, what is experimental, and what the shell can do.
+---
+
+Kunai is a terminal-first media shell. It resolves media streams from third-party
+providers, hands playback to `mpv`, and keeps recovery, offline, and diagnostics
+in the same session.
+
+## Launch entry points
+
+Common launch patterns. For the full flag list synced from `kunai --help`, see
+[CLI reference](/docs/users/cli-reference).
+
+| Invocation | What it does |
+| --- | --- |
+| `kunai` | Open the shell — search, browse, or pick from history |
+| `kunai -S "Title"` | Search and show results |
+| `kunai -S "Title" --jump 1` | Search, auto-select first result |
+| `kunai -S "Title" -q` | Quick mode — same as `--jump 1` with search |
+| `kunai -a -S "Anime"` | Anime mode (anime providers) |
+| `kunai --id 438631 -t movie` | Open a specific TMDB ID directly |
+| `kunai --continue` | Jump to the newest unfinished history entry |
+| `kunai --history` | Open watch history first |
+| `kunai --offline` | Open completed offline library first |
+| `kunai --discover` | Open recommendations first |
+| `kunai --calendar` | Open release calendar first |
+| `kunai --random` | Open random picks tray first |
+| `kunai --setup` | Run setup wizard |
+| `kunai --download -S "Title"` | Download-only flow for a title (no shell queue UI) |
+| `kunai --zen` | Minimal chrome mode |
+| `kunai --debug` | Verbose logging to `./logs.txt` |
+
+### Download vs queue
+
+- **`kunai --download`** (with `-S` or `-i`) — bootstrap a title, run downloads, exit.
+- **`/downloads`** in the shell — manage the download queue while the shell is open.
+- **`/download`** during playback — queue the current item for offline.
+
+## Shell commands
+
+Press `/` to open the context-aware command palette. The table below is generated
+from the CLI command registry — it updates when you run `bun run generate` in `apps/docs`.
+
+<CommandReference />
+
+## Active providers
+
+<ProviderTable />
+
+### Providers not in the production engine
+
+- **Cineby** — Videasy flavor research module; not registered in the CLI container.
+- **VidKing** — legacy config/cache alias for Videasy. Do not use in new code.
+
+## What works well
+
+- Search by title with TMDB-backed metadata
+- Movie and series playback through Videasy and VidLink
+- Anime playback through AllManga-compatible client (`allanime` id)
+- Watch history with resume support
+- Continue Watching with unfinished/new episode detection
+- Release calendar with cached schedule data
+- Recommendations and discovery surfaces
+- Offline downloads via yt-dlp with artifact validation
+- Library browsing from local SQLite
+- Diagnostics panel and redacted support bundle export
+- Discord Rich Presence
+- AniList and TMDB sync for watch progress
+- Cache-first stream resolution with health checks
+- Provider fallback chain and recovery flows
+
+## What is experimental / candidate
+
+- Rivestream and Miruro — candidate status in manifests; quality varies by title
+- Zen mode (`--zen`) — minimal chrome, still settling
+- Notifications inbox — active, alert delivery maturing
+- Playlist queue — durable service active, multi-session recovery being validated
+
+## What is not supported
+
+- Browser-based scraping (Playwright) — archive-only reference
+- Cloud proxy infrastructure for stream resolution
+- First-party streaming service authentication
+- Content hosting or redistribution
+- Native GUI outside the terminal
+- Packaged OS installers during beta (install via Bun + mpv)
+- Silent mode-switching between online and offline
+- Stream URLs in unredacted support bundles
+
+## Hotkeys
+
+| Context | Keys | Action |
+| --- | --- | --- |
+| Anywhere | `/` | Open command palette |
+| Browse results | `Enter` | Open or play selected result |
+| Browse results | `Shift+Enter` / `i` | Open title details |
+| Browse results | `Ctrl+F` | Focus filters |
+| Browse results | `Ctrl+D` | Queue for download |
+| Browse / pickers | `Esc` | Clear, close, or go back |
+| Playback | `r` | Recover current stream |
+| Playback | `f` | Try next compatible provider |
+| Playback | `d` | Queue for download |
+| Playback | `k` | Open tracks/source/quality |
+| Playback | `n` / `p` | Next / previous episode |
+| Playback | `a` / `u` | Toggle autoplay / autoskip |
+
+## Diagnostics flow
+
+```
+/diagnostics        → runtime panel with provider timeline
+/export-diagnostics → redacted JSON bundle (no URLs, no tokens)
+/report-issue       → GitHub issue page with bundle guidance
+--debug             → verbose startup and runtime logging
+--debug-json        → structured JSONL event stream
+--debug-session     → full session trace
+```
+
+See [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) for the user-facing guide.
+
+## Platform support
+
+| Platform | Playback | Downloads | Poster previews |
+| --- | --- | --- | --- |
+| Linux | mpv | yt-dlp + ffprobe | Kitty / chafa |
+| macOS | mpv | yt-dlp + ffprobe | chafa |
+| Windows | mpv | yt-dlp | chafa (limited) |
+
+## Storage architecture
+
+| Store | Type | Contents |
+| --- | --- | --- |
+| Config | JSON | `~/.config/kunai/config.json`, provider overrides |
+| Data DB | SQLite | History, lists, playlists, notifications, downloads |
+| Cache DB | SQLite | Stream URLs, provider health, schedules |
+| Logs | File | `./logs.txt` when `--debug` is enabled |
+
+<SyncedAt />

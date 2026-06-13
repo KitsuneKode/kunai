@@ -1,0 +1,62 @@
+---
+title: CLI reference
+description: Launch flags, bootstrap flows, and mpv options synced from the Kunai CLI help text.
+---
+
+Kunai is a terminal-first CLI. Most day-to-day work happens inside the interactive shell
+after launch — history, provider pickers, recovery, and diagnostics are shell commands,
+not separate argv flags.
+
+This page lists **process flags** parsed from `kunai --help`. For shell commands, see
+[Commands and shortcuts](/docs/users/commands-and-shortcuts) or the generated command table
+on the [Feature tour](/docs/users/feature-tour).
+
+## Install and run
+
+| Command | When to use |
+| --- | --- |
+| `bun install -g @kitsunekode/kunai` | Install the published CLI (Bun required during beta) |
+| `kunai` | Open the interactive shell |
+| `kunai -S "Title"` | Bootstrap with a search query |
+| `kunai -i 438631 -t movie` | Open a known TMDB id (non-anime) |
+| `kunai -a -S "Anime"` | Anime mode with bootstrap search |
+
+From a repo clone, use `bun run dev -- <flags>` so Bun forwards argv to the CLI.
+
+## Launch flows
+
+1. **Interactive** — no bootstrap flags: the Ink shell opens and you search or pick from history.
+2. **Bootstrap search** — `-S` / `--search`: runs the first search and lands on results. Does not auto-play unless you add `--jump` or `--quick`.
+3. **Bootstrap TMDB title** — `-i` / `--id` with `-t movie` or `series`: skips the initial title search for that id. Not supported together with anime mode (`-a`).
+4. **Anime mode** — `-a` / `--anime`: anime discovery and providers.
+5. **Continue watching** — `--continue` / `--resume`: newest unfinished local history entry.
+6. **History first** — `--history`: watch history picker at startup.
+7. **Offline library first** — `--offline`: completed downloads only (same intent as `/library`).
+8. **Discover / calendar / random** — `--discover`, `--calendar`, `--random`: open those trays first without auto-play.
+
+## Download modes (do not confuse)
+
+| Entry | What it does |
+| --- | --- |
+| `kunai --download -S "Title"` | **Download-only launch flag.** Resolves a title, then runs the download flow and exits — no interactive shell queue UI. Requires `-S` or `-i` bootstrap. |
+| `kunai --download -i 438631 -t movie` | Same download-only path with a fixed TMDB id. |
+| `/downloads` in the shell | **Queue overlay** while the shell is running — queued, running, and failed jobs. |
+| `/download` during playback | Queue the **current** item for offline from inside a session. |
+
+## Launch flags
+
+<CliFlagsTable />
+
+## mpv and diagnostics
+
+- **mpv:** `--mpv-debug`, `--mpv-clean`, `--no-user-mpv-config`, `--mpv-log-file <path>` forward into the player for this run.
+- **Diagnostics:** `--debug` writes verbose logs to `./logs.txt`. `--debug-json` and `--debug-session` add structured traces for support bundles.
+- **Dry run:** `--dry-run` prints the planned bootstrap without changing state.
+
+## Providers
+
+Production providers are registered in the CLI container and listed here for reference:
+
+<ProviderTable />
+
+<SyncedAt />

@@ -31,6 +31,7 @@ kunai --calendar
 - `--offline` opens completed local downloads first.
 - `--zen --offline` opens the completed offline library with minimal chrome.
 - `--discover`, `--random`, and `--calendar` start directly in recommendation, surprise, or release views.
+- `kunai --download -S "Title"` runs a **download-only** bootstrap (resolve title, queue downloads, exit). Use `/downloads` inside the shell to manage the queue while Kunai is running.
 
 ## In The Shell
 
@@ -51,4 +52,4 @@ kunai --calendar
 4. Try `/discover`, `/random`, or `/calendar` when you do not know what to watch.
 5. If playback has provider trouble, use `/recover`, `/fallback`, then `/diagnostics`.
 
-More flag details live in [`../../.docs/cli-reference.md`](../../.docs/cli-reference.md).
+More flag details live in the [CLI reference](/docs/users/cli-reference).
