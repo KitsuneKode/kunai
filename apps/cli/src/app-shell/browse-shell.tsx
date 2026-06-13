@@ -1235,8 +1235,7 @@ export function BrowseShell<T>({
                       statusGlyph={row.statusGlyph}
                       showDayHeader={row.showDayHeader}
                       dayHeaderLabel={row.dayHeaderLabel}
-                      showWeekHeader={row.showWeekHeader}
-                      weekHeaderLabel={row.weekHeaderLabel}
+                      weekTag={row.weekTag}
                       showForYouHeader={calendarDayFilter === null}
                       showForYouHeaderOnce={row.showForYouHeaderOnce}
                     />

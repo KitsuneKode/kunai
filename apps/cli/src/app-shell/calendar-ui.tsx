@@ -125,8 +125,7 @@ export function CalendarScheduleRow<T>({
   statusGlyph,
   showForYouHeader,
   showForYouHeaderOnce,
-  showWeekHeader,
-  weekHeaderLabel,
+  weekTag,
 }: {
   option: BrowseShellOption<T>;
   selected: boolean;
@@ -141,8 +140,7 @@ export function CalendarScheduleRow<T>({
   statusGlyph?: string;
   showForYouHeader?: boolean;
   showForYouHeaderOnce?: boolean;
-  showWeekHeader?: boolean;
-  weekHeaderLabel?: string | null;
+  weekTag?: string | null;
   showTimeHeader?: boolean;
   showTbdHeader?: boolean;
   showSectionHeader?: string | null;
@@ -185,11 +183,8 @@ export function CalendarScheduleRow<T>({
       {showForYouHeader && showForYouHeaderOnce ? (
         <SectionGroup label="For you · releasing today" marginTop={1} />
       ) : null}
-      {showWeekHeader && weekHeaderLabel ? (
-        <SectionGroup label={weekHeaderLabel} marginTop={1} />
-      ) : null}
       {showDayHeader && dayHeaderLabel ? (
-        <SectionGroup label={dayHeaderLabel} marginTop={1} />
+        <SectionGroup label={dayHeaderLabel} tag={weekTag ?? undefined} marginTop={1} />
       ) : null}
       <ListRow
         selected={selected}
