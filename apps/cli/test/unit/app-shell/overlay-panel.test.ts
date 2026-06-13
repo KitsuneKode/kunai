@@ -291,6 +291,11 @@ test("applySeriesProviderOrder writes default plus fallback chain", () => {
 test("moveProviderInOrder swaps neighbors and clamps at ends", () => {
   const order = ["vidking", "vidlink", "rivestream"];
   expect(moveProviderInOrder(order, "vidlink", "up")).toEqual(["vidlink", "vidking", "rivestream"]);
+  expect(moveProviderInOrder(order, "vidlink", "down")).toEqual([
+    "vidking",
+    "rivestream",
+    "vidlink",
+  ]);
   expect(moveProviderInOrder(order, "vidking", "up")).toEqual(order);
   expect(moveProviderInOrder(order, "rivestream", "down")).toEqual(order);
 });
@@ -308,6 +313,7 @@ test("provider order settings screen lists numbered providers", () => {
   });
 
   expect(overlay.title).toBe("Series provider order");
+  expect(overlay.subtitle).toBe("Shift+↑/↓ or [ ] reorder  ·  S saves  ·  first = default");
   expect(overlay.options.map((option) => option.label)).toEqual([
     "1. Videasy",
     "2. VidLink",

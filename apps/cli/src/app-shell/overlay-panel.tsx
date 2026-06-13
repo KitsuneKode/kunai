@@ -796,7 +796,7 @@ export function buildSettingsChoiceOverlay({
     }));
   } else if (setting === "providerPriority") {
     title = "Series provider order";
-    subtitle = "[ move up  ] move down  ·  first = default, then fallbacks";
+    subtitle = "Shift+↑/↓ or [ ] reorder  ·  S saves  ·  first = default";
     options = resolveSeriesProviderOrder(config).map((providerId, index) => {
       const option = seriesProviderOptions.find((entry) => entry.value === providerId);
       const name = option?.label.replace(/  ·  current$/, "") ?? providerId;
@@ -808,7 +808,7 @@ export function buildSettingsChoiceOverlay({
     });
   } else if (setting === "animeProviderPriority") {
     title = "Anime provider order";
-    subtitle = "[ move up  ] move down  ·  first = default, then fallbacks";
+    subtitle = "Shift+↑/↓ or [ ] reorder  ·  S saves  ·  first = default";
     options = resolveAnimeProviderOrder(config).map((providerId, index) => {
       const option = animeProviderOptions.find((entry) => entry.value === providerId);
       const name = option?.label.replace(/  ·  current$/, "") ?? providerId;

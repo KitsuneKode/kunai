@@ -1061,14 +1061,20 @@ export function RootOverlayShell({
       settingsDraft &&
       (settingsChoice === "providerPriority" || settingsChoice === "animeProviderPriority")
     ) {
-      if (input === "[" || input === "]") {
+      const reorderDirection =
+        input === "[" || (key.shift && key.upArrow)
+          ? "up"
+          : input === "]" || (key.shift && key.downArrow)
+            ? "down"
+            : null;
+      if (reorderDirection) {
         const picked = filteredSettingsOptions[selectedIndex]?.value;
         if (!picked) return;
         const isAnime = settingsChoice === "animeProviderPriority";
         const order = isAnime
           ? resolveAnimeProviderOrder(settingsDraft)
           : resolveSeriesProviderOrder(settingsDraft);
-        const moved = moveProviderInOrder(order, picked, input === "[" ? "up" : "down");
+        const moved = moveProviderInOrder(order, picked, reorderDirection);
         if (moved.join("|") !== order.join("|")) {
           setSettingsDraft(
             isAnime
