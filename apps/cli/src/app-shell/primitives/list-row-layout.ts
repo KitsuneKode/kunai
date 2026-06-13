@@ -31,11 +31,11 @@ export type QueueRowLayout = {
   readonly flexColumnIndex: number;
 };
 
-/** Schedule list: fixed time + flex title + optional episode + status. */
-export function computeCalendarRowLayout(rowWidth: number, hasEpisode: boolean): CalendarRowLayout {
-  const timeWidth = 6;
-  const episodeWidth = hasEpisode ? 7 : 0;
-  const statusWidth = Math.min(22, Math.max(14, Math.floor(rowWidth * 0.24)));
+/** Schedule list: fixed time + flex title + episode slot + status. */
+export function computeCalendarRowLayout(rowWidth: number): CalendarRowLayout {
+  const timeWidth = 7;
+  const episodeWidth = 8;
+  const statusWidth = Math.min(18, Math.max(12, Math.floor(rowWidth * 0.22)));
   return {
     timeWidth,
     titleWidth: 12,
@@ -136,7 +136,7 @@ export function buildListRowLayoutFixtures(): readonly ListRowLayoutFixture[] {
       innerWidth,
       listWidth,
       rowWidth,
-      schedule: computeCalendarRowLayout(rowWidth, true),
+      schedule: computeCalendarRowLayout(rowWidth),
       history: computeMediaListRowLayout(rowWidth, { hasEpisode: true, hasRecency: true }),
       library: computeMediaListRowLayout(rowWidth, { hasEpisode: true }),
       queue: computeQueueRowLayout(breakpoint),
@@ -158,7 +158,7 @@ export function buildCalendarRowColumns(input: {
   return [
     listRowTimeColumn(input.timeLabel, input.layout.timeWidth),
     listRowTitleColumn(input.title, input.layout.titleWidth),
-    ...(ep.length > 0 ? [listRowEpColumn(ep, input.layout.episodeWidth, input.episodeColor)] : []),
+    listRowEpColumn(ep, input.layout.episodeWidth, input.episodeColor),
     listRowStatusColumn(
       input.statusText,
       input.layout.statusWidth,

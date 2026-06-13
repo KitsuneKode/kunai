@@ -154,7 +154,7 @@ export function CalendarScheduleRow<T>({
   const color = statusColor ?? presentation.color;
   const dim = statusDim ?? presentation.dim;
   const glyph = statusGlyph ?? presentation.glyph.trim();
-  const layout = computeCalendarRowLayout(rowWidth, ep.length > 0);
+  const layout = computeCalendarRowLayout(rowWidth);
   const statusText = compactCalendarStatusLabel(
     glyph ? `${glyph} ${status}` : status,
     layout.statusWidth,

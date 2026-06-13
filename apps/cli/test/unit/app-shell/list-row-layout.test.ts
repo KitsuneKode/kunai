@@ -16,8 +16,8 @@ describe("list-row-layout", () => {
   });
 
   test("calendar layout reserves wider status cells on wide rows", () => {
-    const narrow = computeCalendarRowLayout(60, true);
-    const wide = computeCalendarRowLayout(100, true);
+    const narrow = computeCalendarRowLayout(60);
+    const wide = computeCalendarRowLayout(100);
     expect(wide.statusWidth).toBeGreaterThan(narrow.statusWidth);
   });
 

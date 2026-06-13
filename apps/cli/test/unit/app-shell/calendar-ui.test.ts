@@ -315,9 +315,10 @@ test("formatCalendarRowTimeLabel compacts clock times for the schedule column", 
 
 test("compactCalendarStatusLabel shortens aired copy for narrow status cells", () => {
   expect(compactCalendarStatusLabel("aired · resolving", 12)).toBe("resolving");
+  expect(compactCalendarStatusLabel("· aired · not available", 14)).toBe("not available");
 });
 
-test("computeCalendarRowLayout omits episode width when there is no code", () => {
-  expect(computeCalendarRowLayout(80, false).episodeWidth).toBe(0);
-  expect(computeCalendarRowLayout(80, true).episodeWidth).toBe(7);
+test("computeCalendarRowLayout keeps a fixed episode slot for column alignment", () => {
+  expect(computeCalendarRowLayout(80).episodeWidth).toBe(8);
+  expect(computeCalendarRowLayout(80).timeWidth).toBe(7);
 });

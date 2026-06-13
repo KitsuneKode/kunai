@@ -7,6 +7,7 @@ import type { SearchResult } from "@/domain/types";
 
 import type { StateBlockModel } from "./primitives/StateBlock.model";
 import { RETURN_LOOP_CALENDAR_EMPTY_TAIL } from "./return-loop-copy";
+import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
 export type CalendarDay = {
@@ -223,11 +224,11 @@ export { computeCalendarRowLayout } from "./primitives/list-row-layout";
 
 /** Shorten long schedule status copy so the right column stays readable. */
 export function compactCalendarStatusLabel(label: string, maxColumns: number): string {
-  const normalized = label.trim();
+  let normalized = label.trim().replace(/^[·✓◷◐×]\s+/, "");
   if (normalized.length <= maxColumns) return normalized;
   if (normalized.startsWith("aired · ")) {
     const tail = normalized.slice("aired · ".length);
-    if (tail.length <= maxColumns) return tail;
+    return tail.length <= maxColumns ? tail : truncateLine(tail, maxColumns);
   }
   if (normalized.startsWith("airs today · ")) {
     return "today";
@@ -235,10 +236,7 @@ export function compactCalendarStatusLabel(label: string, maxColumns: number): s
   if (normalized.startsWith("released today · ")) {
     return "today";
   }
-  if (normalized.length > maxColumns) {
-    return `${normalized.slice(0, Math.max(1, maxColumns - 1))}…`;
-  }
-  return normalized;
+  return truncateLine(normalized, maxColumns);
 }
 
 export function formatReleaseCountdown(remainingMs: number): string {
