@@ -282,7 +282,7 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "notifications",
     label: "Notifications",
     aliases: ["notifications", "inbox", "alerts"],
-    description: "Review new episodes, queue recovery, downloads, and app notices",
+    description: "Review actionable app notices and recoverable queues",
   },
   {
     id: "toggle-mode",

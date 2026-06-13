@@ -46,6 +46,7 @@ export type CalendarItem = {
   readonly averageScore?: number;
   readonly newEpisodeCount?: number;
   readonly inWatchlist?: boolean;
+  readonly inHistory?: boolean;
   readonly display: {
     readonly time: string | null;
     readonly statusLabel: string;
@@ -58,6 +59,7 @@ export type CalendarItem = {
 export type CalendarItemContext = {
   readonly nowMs: number;
   readonly inWatchlist?: boolean;
+  readonly inHistory?: boolean;
   readonly newEpisodeCount?: number;
   readonly providerConfirmed?: boolean;
 };
@@ -97,6 +99,7 @@ export function buildCalendarItem(
     averageScore: item.averageScore,
     newEpisodeCount: ctx.newEpisodeCount,
     inWatchlist: ctx.inWatchlist,
+    inHistory: ctx.inHistory,
     display: {
       time,
       statusLabel: formatStatusLabel({ item, reason, releaseStatus, releasedToday, time }),

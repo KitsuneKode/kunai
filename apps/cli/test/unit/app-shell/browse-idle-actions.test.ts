@@ -23,7 +23,7 @@ describe("browse idle actions", () => {
     expect(resolveIdleContinueAction(undefined)).toBe("continue");
   });
 
-  test("buildBrowseIdleReturnLoopModel surfaces catalog-new episodes without implying playability", () => {
+  test("buildBrowseIdleReturnLoopModel surfaces catalog-new episodes without personalizing them", () => {
     const model = buildBrowseIdleReturnLoopModel(
       {
         continueWatching: {
@@ -39,7 +39,7 @@ describe("browse idle actions", () => {
     );
     expect(model?.rows.map((row) => row.id)).toEqual(["continue", "ready-now"]);
     expect(model?.rows[0]?.hint).toBe("↵ resume first");
-    expect(model?.rows[1]?.title).toBe("Ready for you now");
+    expect(model?.rows[1]?.title).toBe("Unwatched releases");
     expect(model?.rows[1]?.meta).toBe("2 new episodes · 1 show");
   });
 });

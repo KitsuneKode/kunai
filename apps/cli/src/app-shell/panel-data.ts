@@ -169,7 +169,7 @@ export function buildHelpPanelLines(): readonly ShellPanelLine[] {
     { label: "/wl", detail: "View and manage your watchlist" },
     { label: "/playlist", detail: "View and manage your playback queue" },
     { label: "/stats", detail: "Watch statistics and streak" },
-    { label: "/notifications", detail: "App notices · new episodes · queue recovery" },
+    { label: "/notifications", detail: "Actionable app notices and queue recovery" },
     { label: "/diagnostics", detail: "Session health, provider, and network status" },
     { label: "/downloads", detail: "Manage queued, running, and failed download jobs" },
     { label: "/library", detail: "Play completed local downloads" },

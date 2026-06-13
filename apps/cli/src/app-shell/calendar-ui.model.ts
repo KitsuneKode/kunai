@@ -53,7 +53,11 @@ export type CalendarRenderRow<T> = {
 const CALENDAR_WEEKDAY_FORMATTER = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 
 function isCalendarTrackedOption<T>(option: BrowseShellOption<T>): boolean {
-  return option.calendar?.inWatchlist === true || option.previewBadge === "wl";
+  return (
+    option.calendar?.inWatchlist === true ||
+    option.calendar?.inHistory === true ||
+    option.previewBadge === "wl"
+  );
 }
 
 export function calendarPriorityBand<T>(option: BrowseShellOption<T>): CalendarPriorityBand {
@@ -288,6 +292,11 @@ export function buildCalendarPreviewRailModel(
           ? ("danger" as const)
           : ("muted" as const);
   const tracked = isCalendarTrackedOption(option);
+  const trackedValue = option.calendar?.inWatchlist
+    ? "on your list"
+    : option.calendar?.inHistory
+      ? "watch history"
+      : "tracked";
   const actionLabel =
     state === "available"
       ? "Enter to open"
@@ -297,7 +306,7 @@ export function buildCalendarPreviewRailModel(
 
   const normalizedFacts: PreviewRailModel["facts"] = [
     { label: "Schedule", value: stateLabel, tone: stateTone },
-    ...(tracked ? [{ label: "Tracked", value: "on your list", tone: "success" as const }] : []),
+    ...(tracked ? [{ label: "Tracked", value: trackedValue, tone: "success" as const }] : []),
     ...(option.previewTime
       ? [{ label: "Airs", value: option.previewTime, tone: "muted" as const }]
       : []),

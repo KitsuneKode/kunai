@@ -84,7 +84,7 @@ Keep these composable; screen-specific policy lives in the caller.
 - **`ListRow` / `SectionGroup` / `ResumeCard`** — History makeover list rhythm (title · ep · status · recency) with resume card under selection.
 - **Calendar (locked)** — visual authority: [`.design/cli/kunai-sakura-calendar-locked.html`](../.design/cli/kunai-sakura-calendar-locked.html). Shipped shape: `ClaudeTabRow` type tabs + horizontal day strip + unified schedule rows (`calendar-ui.tsx`), not the canonical 7-day grid comp.
 - **Discover** — hybrid list + preview rail per [`.design/cli/surfaces/recommendations-viewer.md`](../.design/cli/surfaces/recommendations-viewer.md); section header + **emphasized reason line** (`discover-reason.ts`) in the list, reason echoed in the rail note.
-- **Return loop copy** — shared strings in `return-loop-copy.ts` for browse idle “Ready for you now”, calendar empty tail, history new-episodes section, and post-play caught-up calendar action.
+- **Return loop copy** — shared strings in `return-loop-copy.ts` for browse idle “Unwatched releases”, calendar empty tail, history new-episodes section “Ready for you now”, and post-play caught-up calendar action.
 
 F1 layout captures: `bun apps/cli/test/harness/capture-*.tsx` → `apps/cli/test/__captures__/*.txt` (see `render-capture.ts`).
 

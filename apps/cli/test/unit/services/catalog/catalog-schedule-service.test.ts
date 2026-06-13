@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
 import {
   buildLocalDayWindow,
@@ -272,6 +272,84 @@ describe("CatalogScheduleService", () => {
 
     expect(calls).toBe(1);
     expect(service.peekAnimeReleaseProgress("21")?.latestAiredEpisode).toBe(28);
+  });
+
+  test("default AniList progress loader records latest release timestamp for ongoing anime", async () => {
+    const releaseAt = new Date(1_715_395_200 * 1000).toISOString();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              Page: {
+                media: [
+                  {
+                    id: 21,
+                    episodes: null,
+                    status: "RELEASING",
+                    nextAiringEpisode: { episode: 29, airingAt: 1_716_000_000 },
+                    airingSchedule: { nodes: [{ episode: 28, airingAt: 1_715_395_200 }] },
+                    relations: { edges: [] },
+                  },
+                ],
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    ) as unknown as typeof fetch;
+
+    try {
+      const service = new CatalogScheduleService(undefined, () => NOW);
+      await service.prefetchAnimeReleaseProgressForTitles(["21"], new AbortController().signal);
+      expect(service.peekAnimeReleaseProgress("21")).toMatchObject({
+        latestAiredEpisode: 28,
+        latestKnownReleaseAt: releaseAt,
+        sourceFingerprint: `anilist:21:ongoing:29:1716000000:${releaseAt}`,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("default AniList progress loader records latest release timestamp for finished anime", async () => {
+    const releaseAt = new Date(1_715_395_200 * 1000).toISOString();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              Page: {
+                media: [
+                  {
+                    id: 21,
+                    episodes: 28,
+                    status: "FINISHED",
+                    nextAiringEpisode: null,
+                    airingSchedule: { nodes: [{ episode: 28, airingAt: 1_715_395_200 }] },
+                    relations: { edges: [] },
+                  },
+                ],
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    ) as unknown as typeof fetch;
+
+    try {
+      const service = new CatalogScheduleService(undefined, () => NOW);
+      await service.prefetchAnimeReleaseProgressForTitles(["21"], new AbortController().signal);
+      expect(service.peekAnimeReleaseProgress("21")).toMatchObject({
+        latestAiredEpisode: 28,
+        latestKnownReleaseAt: releaseAt,
+        sourceFingerprint: `anilist:21:finished:28:${releaseAt}`,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test("propagates typed transient catalog failures so reconciliation can back off", async () => {

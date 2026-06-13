@@ -108,6 +108,7 @@ export async function loadCalendarResults(
     const calendar = buildCalendarItem(item, {
       nowMs: Date.now(),
       inWatchlist: isInWatchlist(item.titleId),
+      inHistory: historyMatches.has(item.titleId),
       newEpisodeCount: activeNewEpisodeCount(progress),
       providerConfirmed: false,
     });

@@ -57,6 +57,7 @@ function calOption(partial: {
   status?: CalendarReleaseStatus;
   inWatchlist?: boolean;
   providerConfirmed?: boolean;
+  inHistory?: boolean;
   episode?: number;
   season?: number;
   overview?: string;
@@ -78,6 +79,7 @@ function calOption(partial: {
     {
       nowMs: partial.nowMs ?? Date.now(),
       inWatchlist: partial.inWatchlist,
+      inHistory: partial.inHistory,
       providerConfirmed: partial.providerConfirmed,
     },
   );
@@ -160,6 +162,15 @@ test("filterCalendarOptionsByType keeps watchlist rows on Tracked tab", () => {
   ];
   const filtered = filterCalendarOptionsByType(options, "Tracked");
   expect(filtered.map((row) => row.label)).toEqual(["Tracked"]);
+});
+
+test("filterCalendarOptionsByType keeps watched rows on Tracked tab", () => {
+  const options = [
+    calOption({ label: "Watched", releaseAt: todayAt(20), inHistory: true }),
+    calOption({ label: "Other", releaseAt: todayAt(20) }),
+  ];
+  const filtered = filterCalendarOptionsByType(options, "Tracked");
+  expect(filtered.map((row) => row.label)).toEqual(["Watched"]);
 });
 
 test("deriveCalendarReleaseState treats today's catalog released as resolving", () => {
@@ -245,6 +256,7 @@ test("buildCalendarRenderRows emits unified timestamp rows without band headers"
 
 test("calendarPriorityBand prefers tracked titles in for-you", () => {
   const tracked = calOption({ label: "Tracked", releaseAt: todayAt(20), inWatchlist: true });
+  const watched = calOption({ label: "Watched", releaseAt: todayAt(20), inHistory: true });
   const other = calOption({
     label: "Other",
     releaseAt: todayAt(20),
@@ -252,7 +264,22 @@ test("calendarPriorityBand prefers tracked titles in for-you", () => {
     status: "upcoming",
   });
   expect(calendarPriorityBand(tracked)).toBe("for-you");
+  expect(calendarPriorityBand(watched)).toBe("for-you");
   expect(calendarPriorityBand(other)).toBe("also-today");
+});
+
+test("buildCalendarPreviewRailModel distinguishes watch-history tracking", () => {
+  const option = calOption({
+    label: "Watched",
+    releaseAt: todayAt(20),
+    inHistory: true,
+  });
+  const model = buildCalendarPreviewRailModel(option, "none");
+  expect(model?.facts).toContainEqual({
+    label: "Tracked",
+    value: "watch history",
+    tone: "success",
+  });
 });
 
 test("buildCalendarPreviewRailModel avoids watch-now copy for resolving rows", () => {

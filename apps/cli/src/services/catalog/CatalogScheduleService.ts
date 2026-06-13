@@ -539,7 +539,7 @@ async function loadAniListReleaseProgressBatch(
 ): Promise<ReadonlyMap<string, CatalogSeriesReleaseProgress | null>> {
   const ids = titleIds.map(Number).filter(Number.isFinite);
   if (ids.length === 0) return new Map();
-  const query = `query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){id episodes status nextAiringEpisode{airingAt episode} relations{edges{relationType node{id type status episodes nextAiringEpisode{episode airingAt}}}}}}}`;
+  const query = `query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){id episodes status nextAiringEpisode{airingAt episode} airingSchedule(notYetAired:false,perPage:1){nodes{airingAt episode}} relations{edges{relationType node{id type status episodes nextAiringEpisode{episode airingAt}}}}}}}`;
   const data = await postAniListGraphql<{
     readonly data?: {
       readonly Page?: {
@@ -551,6 +551,7 @@ async function loadAniListReleaseProgressBatch(
             readonly airingAt?: number | null;
             readonly episode?: number | null;
           } | null;
+          readonly airingSchedule?: AniListAiringSchedule | null;
           readonly relations?: { readonly edges?: readonly AniListRelationEdge[] | null } | null;
         }[];
       } | null;
@@ -566,26 +567,60 @@ async function loadAniListReleaseProgressBatch(
       ? `:seq${newSeason.mediaId}:${newSeason.latestAiredEpisode ?? newSeason.nextAiringEpisode ?? "-"}`
       : "";
     if (typeof airing?.episode === "number" && airing.episode > 0) {
+      const latestAiredEpisode = Math.max(0, airing.episode - 1);
+      const latestKnownReleaseAt = latestKnownReleaseAtFromAniListSchedule(
+        media.airingSchedule,
+        latestAiredEpisode,
+      );
       progress.set(titleId, {
-        latestAiredEpisode: Math.max(0, airing.episode - 1),
+        latestAiredEpisode,
         nextAiringEpisode: airing.episode,
         nextAiringAt: airing.airingAt ? new Date(airing.airingAt * 1000).toISOString() : undefined,
+        latestKnownReleaseAt,
         newSeason,
-        sourceFingerprint: `anilist:${titleId}:ongoing:${airing.episode}:${airing.airingAt ?? "-"}${sequelFingerprint}`,
+        sourceFingerprint: `anilist:${titleId}:ongoing:${airing.episode}:${airing.airingAt ?? "-"}:${latestKnownReleaseAt ?? "-"}${sequelFingerprint}`,
       });
       continue;
     }
     if (media.status === "FINISHED" && typeof media.episodes === "number" && media.episodes > 0) {
+      const latestKnownReleaseAt = latestKnownReleaseAtFromAniListSchedule(
+        media.airingSchedule,
+        media.episodes,
+      );
       progress.set(titleId, {
         latestAiredEpisode: media.episodes,
+        latestKnownReleaseAt,
         newSeason,
-        sourceFingerprint: `anilist:${titleId}:finished:${media.episodes}${sequelFingerprint}`,
+        sourceFingerprint: `anilist:${titleId}:finished:${media.episodes}:${latestKnownReleaseAt ?? "-"}${sequelFingerprint}`,
       });
     } else {
       progress.set(titleId, null);
     }
   }
   return progress;
+}
+
+type AniListAiringSchedule = {
+  readonly nodes?:
+    | readonly {
+        readonly airingAt?: number | null;
+        readonly episode?: number | null;
+      }[]
+    | null;
+};
+
+function latestKnownReleaseAtFromAniListSchedule(
+  schedule: AniListAiringSchedule | null | undefined,
+  latestAiredEpisode: number | undefined,
+): string | undefined {
+  if (typeof latestAiredEpisode !== "number" || latestAiredEpisode <= 0) return undefined;
+  const node = schedule?.nodes?.find(
+    (entry) =>
+      entry?.episode === latestAiredEpisode &&
+      typeof entry.airingAt === "number" &&
+      entry.airingAt > 0,
+  );
+  return node?.airingAt ? new Date(node.airingAt * 1000).toISOString() : undefined;
 }
 
 type AniListRelationEdge = {

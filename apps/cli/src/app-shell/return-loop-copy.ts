@@ -3,6 +3,7 @@
 // =============================================================================
 
 export const RETURN_LOOP_READY_HEADING = "Ready for you now";
+export const RETURN_LOOP_BROWSE_RELEASES_HEADING = "Unwatched releases";
 
 export function formatReadyForYouNowMeta(episodeCount: number, titleCount: number): string {
   const episodes = episodeCount === 1 ? "1 new episode" : `${episodeCount} new episodes`;

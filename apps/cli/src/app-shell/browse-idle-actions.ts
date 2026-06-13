@@ -1,7 +1,7 @@
 import {
   formatReadyForYouNowMeta,
+  RETURN_LOOP_BROWSE_RELEASES_HEADING,
   RETURN_LOOP_NAV_HINT,
-  RETURN_LOOP_READY_HEADING,
 } from "./return-loop-copy";
 import { palette } from "./shell-theme";
 import type { BrowseIdleContext, ShellAction } from "./types";
@@ -67,7 +67,7 @@ export function buildBrowseIdleReturnLoopModel(
       id: "ready-now",
       glyph: "✦",
       glyphColor: palette.accent,
-      title: RETURN_LOOP_READY_HEADING,
+      title: RETURN_LOOP_BROWSE_RELEASES_HEADING,
       meta: formatReadyForYouNowMeta(readyCount, titleCount),
       hint: RETURN_LOOP_NAV_HINT,
       focused: false,
