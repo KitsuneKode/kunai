@@ -120,6 +120,35 @@ export class QueueService {
     return this.moveUnplayed(id, 1);
   }
 
+  /**
+   * Jump an unplayed item to the front ("play next") or back of the Up Next
+   * queue. Played items keep their leading slots; only the unplayed tail moves.
+   * Returns true if the queue actually changed.
+   */
+  private moveUnplayedToEnd(id: string, end: "top" | "bottom"): boolean {
+    const all = this.repo.getAll(this.sessionId);
+    const played = all.filter((entry) => entry.playedAt !== undefined);
+    const unplayed = all.filter((entry) => entry.playedAt === undefined);
+    const index = unplayed.findIndex((entry) => entry.id === id);
+    if (index < 0) return false;
+    const target = end === "top" ? 0 : unplayed.length - 1;
+    if (index === target) return false;
+    const [moved] = unplayed.splice(index, 1);
+    if (!moved) return false;
+    if (end === "top") unplayed.unshift(moved);
+    else unplayed.push(moved);
+    this.repo.setQueuePositions([...played, ...unplayed].map((entry) => entry.id));
+    return true;
+  }
+
+  moveToTop(id: string): boolean {
+    return this.moveUnplayedToEnd(id, "top");
+  }
+
+  moveToBottom(id: string): boolean {
+    return this.moveUnplayedToEnd(id, "bottom");
+  }
+
   getAll(): QueueEntry[] {
     return this.repo.getAll(this.sessionId);
   }

@@ -14,6 +14,7 @@ export type RootOwnedOverlay = Extract<
       | "notifications"
       | "provider_picker"
       | "history"
+      | "queue"
       | "settings";
   }
 >;

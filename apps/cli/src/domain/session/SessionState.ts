@@ -92,6 +92,7 @@ export type OverlayState =
     }
   | { type: "history"; initialFilterMode?: "all" | "watching" | "completed" }
   | { type: "notifications" }
+  | { type: "queue" }
   | { type: "downloads" }
   | { type: "library"; view?: "library" | "queue" }
   | { type: "diagnostics" }

@@ -10,6 +10,7 @@ import { historyContentType } from "@/services/continuation/history-progress";
 import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import { openNotificationsOverlay, openRootOwnedOverlay } from "./root-overlay-bridge";
+import { waitForRootQueueSelection } from "./root-queue-bridge";
 import type { ShellAction } from "./types";
 import { handleShellAction, resolveQuitWithDownloadQueue } from "./workflows";
 
@@ -107,6 +108,25 @@ async function openRootHistorySelection(
   };
 }
 
+async function openRootQueueSelection(container: Container): Promise<RoutedActionResult> {
+  const selectionPromise = waitForRootQueueSelection();
+  await openRootOwnedOverlay(container, { type: "queue" });
+  const selection = await selectionPromise;
+  if (!selection) return "handled";
+  return {
+    type: "history-entry",
+    title: {
+      id: selection.titleId,
+      type: selection.mediaKind === "movie" ? "movie" : "series",
+      name: selection.title,
+    },
+    episode:
+      selection.season !== undefined && selection.episode !== undefined
+        ? { season: selection.season, episode: selection.episode }
+        : undefined,
+  };
+}
+
 export async function routeSearchShellAction({
   action,
   container,
@@ -155,6 +175,7 @@ export async function routeSearchShellAction({
     return "handled";
   }
   if (action === "provider") return "provider";
+  if (action === "playlist") return openRootQueueSelection(container);
   if (action === "continue") return openRootHistorySelection(container, "continue");
   if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {
@@ -229,6 +250,7 @@ export async function routePlaybackShellAction({
     return "handled";
   }
   if (action === "provider") return "provider";
+  if (action === "playlist") return openRootQueueSelection(container);
   if (action === "continue") return openRootHistorySelection(container, "continue");
   if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {

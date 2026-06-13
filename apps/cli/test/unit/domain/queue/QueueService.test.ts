@@ -77,6 +77,78 @@ test("moveUp / moveDown reorder unplayed queue items and clamp at the ends", () 
   db.close();
 });
 
+test("moveToTop / moveToBottom jump unplayed items to the ends and clamp", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "s",
+    status: "active",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:00:00.000Z",
+  });
+  const enqueue = (titleId: string) =>
+    repo.enqueue({
+      title: titleId,
+      mediaKind: "series",
+      titleId,
+      source: "manual",
+      sessionId: "s",
+    });
+  const a = enqueue("a");
+  enqueue("b");
+  const c = enqueue("c");
+
+  const service = new QueueService(repo, "s");
+  expect(service.getUnplayed().map((i) => i.titleId)).toEqual(["a", "b", "c"]);
+
+  // c → top ("play next").
+  expect(service.moveToTop(c.id)).toBe(true);
+  expect(service.getUnplayed().map((i) => i.titleId)).toEqual(["c", "a", "b"]);
+
+  // a → bottom.
+  expect(service.moveToBottom(a.id)).toBe(true);
+  expect(service.getUnplayed().map((i) => i.titleId)).toEqual(["c", "b", "a"]);
+
+  // No-op when already at the requested end.
+  expect(service.moveToTop(service.getUnplayed()[0]!.id)).toBe(false);
+  expect(service.moveToBottom(service.getUnplayed()[2]!.id)).toBe(false);
+
+  db.close();
+});
+
+test("moveToTop keeps played items ahead of the unplayed tail", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "s",
+    status: "active",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:00:00.000Z",
+  });
+  const enqueue = (titleId: string) =>
+    repo.enqueue({
+      title: titleId,
+      mediaKind: "series",
+      titleId,
+      source: "manual",
+      sessionId: "s",
+    });
+  const done = enqueue("done");
+  enqueue("x");
+  const y = enqueue("y");
+  repo.markPlayed(done.id);
+
+  const service = new QueueService(repo, "s");
+  expect(service.moveToTop(y.id)).toBe(true);
+  // Played item stays first overall; y is now first among unplayed.
+  expect(service.getAll().map((i) => i.titleId)).toEqual(["done", "y", "x"]);
+  expect(service.getUnplayed().map((i) => i.titleId)).toEqual(["y", "x"]);
+
+  db.close();
+});
+
 test("QueueService restore only moves pending items and never autoplays them", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

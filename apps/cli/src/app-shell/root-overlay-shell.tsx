@@ -74,6 +74,9 @@ import {
   type HistoryPickerOptionsContext,
   sortProvidersByConfigPriority,
 } from "./panel-data";
+import { createQueuePosterResolver } from "./queue-poster-resolver";
+import { QueueShell } from "./queue-shell";
+import { buildQueueView } from "./queue-view";
 import {
   buildRootHistorySelection,
   hasPendingRootHistorySelection,
@@ -93,6 +96,7 @@ import {
   isRootChoiceOverlay,
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
+import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-queue-bridge";
 import { type RootOwnedOverlay } from "./root-shell-state";
 import { useShellInput } from "./shell-command-input";
 import { CommandPalette } from "./shell-command-ui";
@@ -660,6 +664,29 @@ export function RootOverlayShell({
       cols,
     ],
   );
+  // Up Next queue: bumping the tick after a mutation (reorder/remove/clear/restore)
+  // recomputes the view from the service's fresh getAll().
+  const [queueTick, setQueueTick] = useState(0);
+  const queuePosterResolver = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const { titleId, entry } of historySelections) {
+      if (entry.posterUrl) map.set(titleId, entry.posterUrl);
+    }
+    return createQueuePosterResolver({ getPosterUrl: (id) => map.get(id) });
+  }, [historySelections]);
+  const queueView = useMemo(
+    () =>
+      buildQueueView({
+        entries: overlay.type === "queue" ? container.queueService.getAll() : [],
+        selectedId: null,
+        resolvePoster: queuePosterResolver,
+        recoverableSessions:
+          overlay.type === "queue" ? container.queueService.listRecoverableSessions().length : 0,
+        stale: overlay.type === "queue" ? container.queueService.getStatus().isStale : false,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- queueTick forces a fresh service read after mutations
+    [overlay.type, queueTick, queuePosterResolver, container.queueService],
+  );
   const notificationRecords =
     overlay.type === "notifications" ? container.notificationService.listActive() : [];
   const filteredNotificationOptions =
@@ -1089,6 +1116,9 @@ export function RootOverlayShell({
       if (overlay.type === "history" && hasPendingRootHistorySelection()) {
         resolveRootHistorySelection(null);
       }
+      if (overlay.type === "queue" && hasPendingRootQueueSelection()) {
+        resolveRootQueueSelection(null);
+      }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
     }
@@ -1135,6 +1165,77 @@ export function RootOverlayShell({
         onRedraw();
       }
       return;
+    }
+    if (overlay.type === "queue") {
+      // Handle queue management keys; let arrows / filtering fall through to the
+      // generic choice handlers below (queue is in the optionCount switch).
+      const queueRows = queueView.rows;
+      const refresh = () => setQueueTick((tick) => tick + 1);
+      const sel = queueRows.length === 0 ? -1 : Math.min(selectedIndex, queueRows.length - 1);
+      const row = sel >= 0 ? queueRows[sel] : undefined;
+      if (key.return && row) {
+        const entry = container.queueService.getAll().find((candidate) => candidate.id === row.id);
+        if (entry) {
+          resolveRootQueueSelection({
+            kind: "play",
+            titleId: entry.titleId,
+            title: entry.title,
+            mediaKind: entry.mediaKind,
+            season: entry.season,
+            episode: entry.episode,
+          });
+          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        }
+        return;
+      }
+      if (input === "J" && row) {
+        if (container.queueService.moveDown(row.id))
+          setSelectedIndex((c) => Math.min(c + 1, queueRows.length - 1));
+        refresh();
+        return;
+      }
+      if (input === "K" && row) {
+        if (container.queueService.moveUp(row.id)) setSelectedIndex((c) => Math.max(c - 1, 0));
+        refresh();
+        return;
+      }
+      if (input === "g" && row) {
+        container.queueService.moveToTop(row.id);
+        refresh();
+        return;
+      }
+      if (input === "G" && row) {
+        container.queueService.moveToBottom(row.id);
+        refresh();
+        return;
+      }
+      if (input.toLowerCase() === "x" && row) {
+        container.queueService.remove(row.id);
+        setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
+        refresh();
+        return;
+      }
+      if (input === "C") {
+        container.queueService.clearPlayed();
+        setSelectedIndex(0);
+        refresh();
+        return;
+      }
+      if (input === "c" && !key.ctrl) {
+        container.queueService.clear();
+        setSelectedIndex(0);
+        refresh();
+        return;
+      }
+      if (input.toLowerCase() === "r") {
+        const session = container.queueService.listRecoverableSessions()[0];
+        if (session) {
+          container.queueService.restoreRecoverableSession(session.id);
+          refresh();
+        }
+        return;
+      }
+      // No early return — arrows + filtering fall through.
     }
     if (overlay.type === "notifications" && input.toLowerCase() === "x") {
       if (notificationActionDedupKey) return;
@@ -1607,15 +1708,17 @@ export function RootOverlayShell({
         const optionCount =
           overlay.type === "provider_picker"
             ? filteredProviderOptions.length
-            : overlay.type === "history"
-              ? historyView.flatRows.length
-              : overlay.type === "notifications"
-                ? notificationActionDedupKey
-                  ? filteredNotificationActionOptions.length
-                  : filteredNotificationOptions.length
-                : overlay.type === "settings"
-                  ? filteredSettingsOptions.length
-                  : filteredGenericPickerOptions.length;
+            : overlay.type === "queue"
+              ? queueView.rows.length
+              : overlay.type === "history"
+                ? historyView.flatRows.length
+                : overlay.type === "notifications"
+                  ? notificationActionDedupKey
+                    ? filteredNotificationActionOptions.length
+                    : filteredNotificationOptions.length
+                  : overlay.type === "settings"
+                    ? filteredSettingsOptions.length
+                    : filteredGenericPickerOptions.length;
         if (optionCount > 0) {
           if (overlay.type === "settings") {
             const delta = key.upArrow ? -1 : 1;
@@ -1827,6 +1930,66 @@ export function RootOverlayShell({
             ]}
             mode="minimal"
             commandMode={commandMode}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (overlay.type === "queue") {
+    const { innerWidth, listWidth: pickerListWidth, rowWidth } = getPickerLayout(cols, rows);
+    const listWidth = pickerListWidth ?? innerWidth;
+    const qSelected =
+      queueView.rows.length === 0 ? 0 : Math.min(selectedIndex, queueView.rows.length - 1);
+    const qRow = queueView.rows[qSelected];
+    const queueViewForRender = {
+      ...queueView,
+      selectedIndex: qSelected,
+      rail: qRow
+        ? {
+            title: qRow.title,
+            episodeLabel: qRow.episodeLabel,
+            sourceLabel: qRow.sourceLabel,
+            posterUrl: qRow.posterUrl,
+          }
+        : null,
+    };
+
+    return (
+      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
+        <Box flexDirection="column" flexGrow={1}>
+          <ContextStrip
+            items={[
+              { label: title, tone: "info" },
+              {
+                label: `${queueView.counts.unplayed} up next · ${queueView.counts.total} total`,
+                tone: "neutral",
+              },
+            ]}
+          />
+          <QueueShell
+            view={queueViewForRender}
+            columns={cols}
+            listWidth={listWidth}
+            rowWidth={rowWidth}
+          />
+        </Box>
+
+        <Box flexDirection="column">
+          {commandMode ? (
+            <CommandPalette
+              input={commandInput}
+              cursor={commandCursor}
+              commands={commands}
+              highlightedIndex={highlightedIndex}
+            />
+          ) : null}
+          <ShellFooter
+            taskLabel="Up Next  ·  ⏎ play · J/K reorder · g/G ends · x remove · c clear · r restore · Esc close"
+            actions={footerActions}
+            mode="detailed"
+            commandMode={commandMode}
+            terminalWidth={cols}
           />
         </Box>
       </Box>
