@@ -1,3 +1,5 @@
+# Offline library + download queue — network-free (`--offline` makes no provider
+# calls). Run via: bun run --cwd apps/cli test:vhs:offline
 Output test/vhs/golden/offline-library.gif
 
 Set Width 1600
@@ -12,8 +14,6 @@ Set Framerate 30
 Set PlaybackSpeed 0.8
 
 Hide
-Type "cd /home/kitsunekode/Projects/hacking/kitsunesnipe"
-Enter
 Type "clear"
 Enter
 Show
@@ -28,6 +28,6 @@ Sleep 250ms
 Type "downloads"
 Sleep 250ms
 Enter
-Sleep 1400ms
+Sleep 1600ms
 Ctrl+C
 Wait
