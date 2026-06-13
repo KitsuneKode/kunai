@@ -55,7 +55,7 @@ export function buildBrowseIdleReturnLoopModel(
       glyphColor: palette.ok,
       title: next.title,
       meta: next.ep,
-      hint: "up next in playlist",
+      hint: "up next in queue",
       focused: false,
     });
   }

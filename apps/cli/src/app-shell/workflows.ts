@@ -2378,7 +2378,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
     const subtitle =
       all.length > 0
         ? `${status.unplayedCount} up next · ${all.length - status.unplayedCount} played${staleNote}`
-        : "Playlist is empty. Add titles via /playlist-add or [r] refill from watchlist.";
+        : "Queue is empty. Add titles via /playlist-add or [r] refill from watchlist.";
 
     const firstUnplayedId = all.find((i) => !i.playedAt)?.id;
 
@@ -2420,7 +2420,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
         ? [{ value: { type: "clear-played" as const }, label: "Clear played items" }]
         : []),
       ...(all.length > 0
-        ? [{ value: { type: "clear-all" as const }, label: "Clear entire playlist" }]
+        ? [{ value: { type: "clear-all" as const }, label: "Clear entire queue" }]
         : []),
       ...(all.length > 0
         ? [
@@ -2446,7 +2446,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
     ];
 
     const picked = await chooseFromListShell({
-      title: `Playlist · ${status.unplayedCount} up next`,
+      title: `Up Next Queue · ${status.unplayedCount} up next`,
       subtitle,
       actionContext,
       options,
@@ -2502,7 +2502,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
 
     if (picked.type === "clear-all") {
       const confirm = await chooseFromListShell({
-        title: "Clear entire playlist?",
+        title: "Clear entire queue?",
         subtitle: "This cannot be undone",
         actionContext,
         options: [
@@ -2703,7 +2703,7 @@ async function handlePlaylistAdd(container: Container): Promise<"handled"> {
   if (!title) {
     stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "No current title to add to playlist.",
+      note: "No current title to add to queue.",
     });
     return "handled";
   }
@@ -2719,7 +2719,7 @@ async function handlePlaylistAdd(container: Container): Promise<"handled"> {
 
   stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
-    note: `Added "${title.name}" to playlist.`,
+    note: `Added "${title.name}" to queue.`,
   });
   return "handled";
 }

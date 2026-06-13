@@ -165,7 +165,7 @@ export async function openHistoryShell(
         ? [
             {
               value: "queue" as EntryAction,
-              label: "Add to playlist queue",
+              label: "Add to queue",
               detail: "Queue without starting playback now",
             },
           ]

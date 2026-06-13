@@ -25,7 +25,7 @@ import type {
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import type { StartupPriority } from "@kunai/types";
 import { Box, Text, useInput } from "ink";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
 import { DownloadManagerContent } from "./download-manager-shell";
@@ -520,6 +520,27 @@ export function RootOverlayShell({
   >(new Map());
   const [historyTab, setHistoryTab] = useState<HistoryTab>(initialHistoryTab);
   const [historyTypeFilter, setHistoryTypeFilter] = useState<HistoryTypeFilter>("all");
+  const reloadHistoryOverlay = useCallback(async () => {
+    const entries = await container.historyStore.getAll();
+    const historyEntries = Object.entries(entries);
+    setHistorySelections(
+      historyEntries.map(([titleId, entry]) => ({
+        titleId,
+        entry,
+      })),
+    );
+    const cachedProgress = container.releaseProgressCache.getByTitleIds(
+      historyEntries.map(([titleId]) => titleId),
+    );
+    const nextReleases = readCachedHistoryNextReleases(historyEntries, cachedProgress);
+    const projections = readCachedHistoryProjections(historyEntries, container, cachedProgress);
+    const releaseSignals = readCachedHistoryReleaseSignals(historyEntries, cachedProgress);
+    setAsyncLines(buildHistoryPanelLines(historyEntries));
+    setHistoryNextReleases(nextReleases);
+    setHistoryProjections(projections);
+    setHistoryReleaseSignals(releaseSignals);
+    return historyEntries;
+  }, [container]);
   const trackGroups = overlay.type === "tracks_panel" ? overlay.groups : [];
   const commands = resolveCommandContext(state, "rootOverlay");
   const historyPickerContext: HistoryPickerOptionsContext = {
@@ -779,31 +800,19 @@ export function RootOverlayShell({
 
     let cancelled = false;
 
-    void container.historyStore
-      .getAll()
-      .then((entries) => {
+    void reloadHistoryOverlay()
+      .then((historyEntries) => {
         if (cancelled) return undefined;
-        const historyEntries = Object.entries(entries);
-        setHistorySelections(
-          historyEntries.map(([titleId, entry]) => ({
-            titleId,
-            entry,
-          })),
-        );
-        const cachedProgress = container.releaseProgressCache.getByTitleIds(
-          historyEntries.map(([titleId]) => titleId),
-        );
-        const nextReleases = readCachedHistoryNextReleases(historyEntries, cachedProgress);
-        const projections = readCachedHistoryProjections(historyEntries, container, cachedProgress);
-        const releaseSignals = readCachedHistoryReleaseSignals(historyEntries, cachedProgress);
-        setAsyncLines(buildHistoryPanelLines(historyEntries));
-        setHistoryNextReleases(nextReleases);
-        setHistoryProjections(projections);
-        setHistoryReleaseSignals(releaseSignals);
         enqueueReleaseReconciliation(
           container,
           historyEntries.map(([, entry]) => entry),
           "history",
+          undefined,
+          {
+            onComplete: async () => {
+              if (!cancelled) await reloadHistoryOverlay();
+            },
+          },
         );
         return undefined;
       })
@@ -816,7 +825,7 @@ export function RootOverlayShell({
     return () => {
       cancelled = true;
     };
-  }, [container, container.historyStore, overlay.type]);
+  }, [container, overlay.type, reloadHistoryOverlay]);
 
   useEffect(() => {
     if (!overlayStatus) return undefined;

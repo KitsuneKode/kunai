@@ -31,6 +31,7 @@ export function enqueueReleaseReconciliation(
   rows: readonly HistoryProgress[],
   trigger: ReleaseReconciliationTrigger,
   signal?: AbortSignal,
+  options: { readonly onComplete?: () => void | Promise<void> } = {},
 ): void {
   if (container.config.powerSaverMode && POWER_SAVER_PASSIVE_TRIGGERS.has(trigger)) {
     return;
@@ -79,6 +80,7 @@ export function enqueueReleaseReconciliation(
           skippedReasons: result.skipped.map((skip) => skip.reason),
         },
       });
+      await options.onComplete?.();
     },
   });
   void container.backgroundWorkScheduler.drain();

@@ -2602,7 +2602,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           );
 
           // Playlist auto-advance: if catalog autoplay didn't fire, check the
-          // user's playlist queue for a cross-title advance.
+          // user's Up Next queue for a cross-title advance.
           if (
             !nextEpisode &&
             result.endReason === "eof" &&

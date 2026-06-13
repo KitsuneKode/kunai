@@ -108,3 +108,42 @@ test("release reconciliation batches offline policy attention lookup once per tr
     { "anilist:1": "continue-visible", "anilist:2": "offline-enrolled" },
   ]);
 });
+
+test("release reconciliation completion callback runs after cache write pass", async () => {
+  const events: string[] = [];
+  const runs: Promise<void>[] = [];
+  const container = {
+    config: { powerSaverMode: false },
+    offlineTitlePolicies: { listByTitleIds: () => [] },
+    backgroundWorkScheduler: {
+      enqueue: (item: { readonly run: () => Promise<void> }) => {
+        runs.push(item.run());
+      },
+      drain: async () => ({ completed: [], failed: [], skipped: [] }),
+    },
+    releaseReconciliationService: {
+      reconcile: async () => {
+        events.push("reconcile");
+        return { candidateCount: 1, fetchedCount: 1, writtenCount: 1, skipped: [] };
+      },
+    },
+    diagnosticsService: {
+      record: () => events.push("diagnostics"),
+    },
+  };
+
+  enqueueReleaseReconciliation(
+    container as never,
+    [row({ titleId: "anilist:1" })],
+    "history",
+    undefined,
+    {
+      onComplete: () => {
+        events.push("complete");
+      },
+    },
+  );
+  await Promise.all(runs);
+
+  expect(events).toEqual(["reconcile", "diagnostics", "complete"]);
+});

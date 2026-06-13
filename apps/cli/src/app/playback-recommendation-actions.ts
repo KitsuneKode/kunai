@@ -64,7 +64,7 @@ export async function openPostPlaybackRecommendationActionPanel({
       {
         value: { type: "queue" as const, item },
         label: `Queue  ·  ${titleLabel}`,
-        detail: "Add to playlist queue without resolving a stream",
+        detail: "Add to queue without resolving a stream",
       },
       {
         value: { type: "download" as const, item },

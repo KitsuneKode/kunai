@@ -176,7 +176,7 @@ describe("command registry contexts", () => {
     expect(resolveCommands(state, ["playlist-add"])[0]).toMatchObject({
       id: "playlist-add",
       enabled: false,
-      reason: "Select a title before adding it to the playlist.",
+      reason: "Select a title before adding it to the queue.",
     });
   });
 
@@ -187,10 +187,20 @@ describe("command registry contexts", () => {
       movie: { audio: "original", subtitle: "en" },
     });
 
-    expect(resolveCommands(state, ["downloads", "recommendation"])).toEqual([
+    expect(
+      resolveCommands(state, ["downloads", "playlist", "playlist-add", "recommendation"]),
+    ).toEqual([
       expect.objectContaining({
         id: "downloads",
         label: "Download Queue",
+      }),
+      expect.objectContaining({
+        id: "playlist",
+        label: "Up Next Queue",
+      }),
+      expect.objectContaining({
+        id: "playlist-add",
+        label: "Add to Queue",
       }),
       expect.objectContaining({
         id: "recommendation",

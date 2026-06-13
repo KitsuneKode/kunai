@@ -72,6 +72,7 @@ import { TracerImpl } from "./infra/tracer/TracerImpl";
 import type { WorkControlService } from "./infra/work/WorkControlService";
 import { WorkControlServiceImpl } from "./infra/work/WorkControlServiceImpl";
 import { AttentionRefreshWorker } from "./services/attention/AttentionRefreshWorker";
+import { projectReleaseAvailability } from "./services/attention/ReleaseAvailabilityService";
 import { BackgroundWorkScheduler } from "./services/background/BackgroundWorkScheduler";
 import {
   createCatalogScheduleService,
@@ -454,6 +455,11 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       onCompletedLedger: (ledger) => diagnosticsService.recordResolveWorkLedger(ledger),
     },
   );
+  const notificationService = new NotificationService({
+    repo: notificationRepository,
+    getMutedTitleIds: () =>
+      new Set(followedTitleRepository.listByPreference("muted").map((item) => item.titleId)),
+  });
 
   const downloadService = new DownloadService({
     repo: downloadJobs,
@@ -463,7 +469,23 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     ffprobeAvailable: Boolean(Bun.which("ffprobe")),
     diagnostics: diagnosticsService,
     onCompletedArtifact: (job) => {
-      offlineAssetService.adoptCompletedJob(job);
+      const asset = offlineAssetService.adoptCompletedJob(job);
+      if (asset?.state !== "ready") return;
+      if (asset.mediaKind === "movie" || asset.episode === undefined) return;
+      const projection = projectReleaseAvailability({
+        titleId: asset.titleId,
+        mediaKind: asset.mediaKind,
+        title: asset.titleName,
+        season: asset.season,
+        episode: asset.episode,
+        released: true,
+        providerConfirmed: true,
+        providerId: job.providerId,
+        availableAt: asset.updatedAt,
+      });
+      if (projection.notificationSignal) {
+        notificationService.recordSignals([projection.notificationSignal], asset.updatedAt);
+      }
     },
     resolveDownloadStream: async (intent) => {
       const controller = new AbortController();
@@ -509,11 +531,6 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     jobs: offlineMaintenanceJobs,
     assets: offlineAssetService,
     diagnostics: diagnosticsService,
-  });
-  const notificationService = new NotificationService({
-    repo: notificationRepository,
-    getMutedTitleIds: () =>
-      new Set(followedTitleRepository.listByPreference("muted").map((item) => item.titleId)),
   });
   const startupAt = new Date().toISOString();
   queueRepository.markActiveQueueSessionsRecoverable(sessionId, startupAt);

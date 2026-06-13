@@ -524,13 +524,13 @@ export const COMMANDS: readonly AppCommand[] = [
   },
   {
     id: "playlist",
-    label: "Up Next / Playlist",
+    label: "Up Next Queue",
     aliases: ["playlist", "pl", "queue-playlist", "queue", "up-next", "upnext"],
     description: "View and manage the Up Next queue — play, clear, save as playlist, import/export",
   },
   {
     id: "playlist-add",
-    label: "Add to Playlist",
+    label: "Add to Queue",
     aliases: ["playlist-add", "pl-add", "add-to-playlist"],
     description: "Queue the current title for sequential playback",
   },
@@ -995,7 +995,7 @@ function resolveCommandState(
         ? { enabled: true }
         : {
             enabled: false,
-            reason: "Select a title before adding it to the playlist.",
+            reason: "Select a title before adding it to the queue.",
           };
 
     case "previous":
