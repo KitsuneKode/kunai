@@ -173,6 +173,13 @@ test("release progress cache repository stores summaries and due projections", (
     titleCount: 1,
     episodeCount: 2,
   });
+  expect(repo.summarizeDiagnostics("2026-05-23T12:30:00.000Z")).toMatchObject({
+    trackedCount: 2,
+    activeTitleCount: 1,
+    activeEpisodeCount: 2,
+    errorTitleCount: 0,
+    dueNowCount: 1,
+  });
   expect(repo.listDue("2026-05-23T12:30:00.000Z", 10).map((row) => row.titleId)).toEqual([
     "anilist:1",
   ]);

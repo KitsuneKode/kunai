@@ -38,6 +38,28 @@ export interface ReleaseProgressSummary {
   readonly episodeCount: number;
 }
 
+export interface ReleaseProgressDiagnosticsSummary {
+  readonly trackedCount: number;
+  readonly activeTitleCount: number;
+  readonly activeEpisodeCount: number;
+  readonly lastCheckedAt: string | null;
+  readonly nextDueAt: string | null;
+  readonly staleCount: number;
+  readonly errorTitleCount: number;
+  readonly dueNowCount: number;
+}
+
+interface ReleaseProgressDiagnosticsRow {
+  readonly tracked_count: number | null;
+  readonly active_title_count: number | null;
+  readonly active_episode_count: number | null;
+  readonly last_checked_at: string | null;
+  readonly next_due_at: string | null;
+  readonly stale_count: number | null;
+  readonly error_title_count: number | null;
+  readonly due_now_count: number | null;
+}
+
 interface ReleaseProgressRow {
   readonly title_id: string;
   readonly media_kind: MediaKind;
@@ -192,6 +214,74 @@ export class ReleaseProgressCacheRepository {
     return {
       titleCount: row?.title_count ?? 0,
       episodeCount: row?.episode_count ?? 0,
+    };
+  }
+
+  summarizeDiagnostics(nowIso = new Date().toISOString()): ReleaseProgressDiagnosticsSummary {
+    const row = this.db
+      .query<ReleaseProgressDiagnosticsRow, [string, string, string, string, string]>(
+        `
+          SELECT
+            COUNT(*) AS tracked_count,
+            SUM(
+              CASE
+                WHEN status = 'new-episodes'
+                  AND new_episode_count > 0
+                  AND stale_after_at > ?
+                THEN 1
+                ELSE 0
+              END
+            ) AS active_title_count,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN status = 'new-episodes'
+                    AND new_episode_count > 0
+                    AND stale_after_at > ?
+                  THEN new_episode_count
+                  ELSE 0
+                END
+              ),
+              0
+            ) AS active_episode_count,
+            MAX(checked_at) AS last_checked_at,
+            MIN(
+              CASE
+                WHEN next_check_at > ? THEN next_check_at
+              END
+            ) AS next_due_at,
+            SUM(
+              CASE
+                WHEN stale_after_at <= ? THEN 1
+                ELSE 0
+              END
+            ) AS stale_count,
+            SUM(
+              CASE
+                WHEN error_count > 0 THEN 1
+                ELSE 0
+              END
+            ) AS error_title_count,
+            SUM(
+              CASE
+                WHEN next_check_at <= ? THEN 1
+                ELSE 0
+              END
+            ) AS due_now_count
+          FROM release_progress_cache
+        `,
+      )
+      .get(nowIso, nowIso, nowIso, nowIso, nowIso);
+
+    return {
+      trackedCount: row?.tracked_count ?? 0,
+      activeTitleCount: row?.active_title_count ?? 0,
+      activeEpisodeCount: row?.active_episode_count ?? 0,
+      lastCheckedAt: row?.last_checked_at ?? null,
+      nextDueAt: row?.next_due_at ?? null,
+      staleCount: row?.stale_count ?? 0,
+      errorTitleCount: row?.error_title_count ?? 0,
+      dueNowCount: row?.due_now_count ?? 0,
     };
   }
 

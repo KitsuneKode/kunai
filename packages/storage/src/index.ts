@@ -60,6 +60,7 @@ export type {
   ReleaseProgressSource,
   ReleaseProgressStatus,
   ReleaseProgressSummary,
+  ReleaseProgressDiagnosticsSummary,
 } from "./repositories/release-progress-cache";
 export { ScheduleCacheRepository } from "./repositories/schedule-cache";
 export type { ScheduleCacheEntry, ScheduleCacheSetOptions } from "./repositories/schedule-cache";
