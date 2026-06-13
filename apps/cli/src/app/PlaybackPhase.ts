@@ -53,6 +53,11 @@ import {
   teardownPlaybackForPostPlayExit,
 } from "@/app/playback-post-play-lifecycle";
 import {
+  canAutoContinueIntoRecommendation,
+  canResumePlayback as resolveCanResumePlayback,
+  isNearEndVoluntaryQuit,
+} from "@/app/playback-postplay-policy";
+import {
   playbackAudioPreference,
   playbackQualityPreference,
   playbackSubtitlePreference,
@@ -2677,18 +2682,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               effectiveTiming.current,
               config.quitNearEndThresholdMode,
             );
-            const nearEndVoluntaryQuit =
-              result.endReason === "quit" &&
-              config.quitNearEndBehavior === "continue" &&
-              playbackSession.mode === "autoplay-chain" &&
-              !playbackSession.autoplayPaused &&
-              !playbackSession.stopAfterCurrent &&
-              Boolean(episodeAvailability.nextEpisode) &&
-              didPlaybackEndNearNaturalEnd(
+            const nearEndVoluntaryQuit = isNearEndVoluntaryQuit({
+              endReason: result.endReason,
+              quitNearEndBehavior: config.quitNearEndBehavior,
+              sessionMode: playbackSession.mode,
+              autoplayPaused: playbackSession.autoplayPaused,
+              stopAfterCurrent: playbackSession.stopAfterCurrent,
+              hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
+              endedNearNaturalEnd: didPlaybackEndNearNaturalEnd(
                 result,
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
-              );
+              ),
+            });
             if (nearEndVoluntaryQuit && episodeAvailability.nextEpisode) {
               const postPlayNextEpisode = episodeAvailability.nextEpisode;
               const countdownResult = await this.runAutoNextCountdown(context, postPlayNextEpisode);
@@ -2726,10 +2732,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               effectiveTiming.current,
               config.quitNearEndThresholdMode,
             );
-            const canResumePlayback =
-              resumeSeconds > 10 &&
-              (result.duration <= 0 || resumeSeconds < Math.max(0, result.duration - 5)) &&
-              (result.endReason !== "eof" || !nearNaturalEpisodeEnd);
+            const canResumePlayback = resolveCanResumePlayback({
+              resumeSeconds,
+              durationSeconds: result.duration,
+              endReason: result.endReason,
+              endedNearNaturalEnd: nearNaturalEpisodeEnd,
+            });
             if (openRecoverySourcePanelOnPostPlay) {
               openRecoverySourcePanelOnPostPlay = false;
               const picked = await openTracksPanel(
@@ -2792,14 +2800,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             // auto-continue into the top recommendation; otherwise load it in the
             // BACKGROUND so the menu paints immediately and the rail fills on a
             // later loop iteration. This removes the from-history post-play lag.
-            const autoContinueIntoRecommendationPossible =
-              !nextEpisode &&
-              result.endReason === "eof" &&
-              !playbackSession.autoplayPaused &&
-              !stateManager.getState().autoplaySessionPaused &&
-              !context.signal.aborted &&
-              !container.queueService.peekNext() &&
-              container.config.autoplayRecommendations;
+            const autoContinueIntoRecommendationPossible = canAutoContinueIntoRecommendation({
+              hasNextEpisode: Boolean(nextEpisode),
+              endReason: result.endReason,
+              autoplayPaused: playbackSession.autoplayPaused,
+              autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
+              aborted: context.signal.aborted,
+              hasQueuedNext: Boolean(container.queueService.peekNext()),
+              autoplayRecommendationsEnabled: container.config.autoplayRecommendations,
+            });
             const recommendationLoadMode = resolvePostPlaybackRecommendationLoadMode({
               seedCount: recommendationRailItems.length,
               railEnabled: container.config.recommendationRailEnabled,
