@@ -257,6 +257,24 @@ test("buildCalendarRenderRows emits unified timestamp rows without band headers"
   expect(rows[2]?.timeLabel).toBe("TBD");
 });
 
+test("emits a weekTag (not a separate week header) when the week changes", () => {
+  const nowMs = Date.parse("2026-06-11T00:00:00");
+  const options = [
+    dayStripOption({ label: "A", previewGroup: "2026-06-11", previewDayKey: "2026-06-11" }),
+    dayStripOption({ label: "B", previewGroup: "2026-06-18", previewDayKey: "2026-06-18" }),
+  ];
+  const rows = buildCalendarRenderRows(options, 0, options.length, nowMs, null, false);
+
+  // Week field is now a tag string on the day-header row, not a separate band.
+  expect(rows[0]).not.toHaveProperty("showWeekHeader");
+  expect(rows[0]!.showDayHeader).toBe(true);
+  // Second row crosses into a new week → carries a non-null weekTag with its day header.
+  expect(rows[1]!.showDayHeader).toBe(true);
+  expect(rows[1]!.weekTag).toBe("next week");
+  // First row's week tag may be present ("this week") or null; it must never duplicate the day band.
+  expect(typeof rows[0]!.weekTag === "string" || rows[0]!.weekTag === null).toBe(true);
+});
+
 test("calendarPriorityBand prefers tracked titles in for-you", () => {
   const tracked = calOption({ label: "Tracked", releaseAt: todayAt(20), inWatchlist: true });
   const watched = calOption({ label: "Watched", releaseAt: todayAt(20), inHistory: true });

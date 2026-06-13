@@ -46,8 +46,8 @@ export type CalendarRenderRow<T> = {
   readonly statusColor: string;
   readonly statusDim: boolean;
   readonly statusGlyph: string;
-  readonly showWeekHeader: boolean;
-  readonly weekHeaderLabel: string | null;
+  /** Quiet week marker shown inline on the day header when the week changes. */
+  readonly weekTag: string | null;
   readonly showDayHeader: boolean;
   readonly dayHeaderLabel: string | null;
   readonly showForYouHeaderOnce: boolean;
@@ -459,10 +459,13 @@ export function buildCalendarRenderRows<T>(
       selectedDayKey === null && dayHeaderLabel
         ? calendarWeekHeaderLabel(calendarWeekKeyFromIsoDay(dayHeaderLabel), nowMs)
         : null;
-    const showWeekHeader = weekHeaderLabel !== null && weekHeaderLabel !== lastWeekHeader;
-    if (showWeekHeader) lastWeekHeader = weekHeaderLabel;
+    const weekChanged = weekHeaderLabel !== null && weekHeaderLabel !== lastWeekHeader;
+    if (weekChanged) lastWeekHeader = weekHeaderLabel;
     const showDayHeader = dayHeaderLabel !== null && dayHeaderLabel !== lastDayHeader;
     if (showDayHeader) lastDayHeader = dayHeaderLabel;
+    // The week marker rides the day header (no separate band). Lowercased so it
+    // reads as a quiet tag ("next week"), not a second heading.
+    const weekTag = showDayHeader && weekChanged ? weekHeaderLabel!.toLowerCase() : null;
 
     const badge = option.previewBadge;
     const episodeCode =
@@ -480,8 +483,7 @@ export function buildCalendarRenderRows<T>(
       statusColor: presentation.color,
       statusDim: presentation.dim,
       statusGlyph: presentation.glyph.trim(),
-      showWeekHeader,
-      weekHeaderLabel: showWeekHeader ? weekHeaderLabel : null,
+      weekTag,
       showDayHeader,
       dayHeaderLabel: showDayHeader ? dayHeaderLabel : null,
       showForYouHeaderOnce,
