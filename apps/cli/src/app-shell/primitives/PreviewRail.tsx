@@ -35,18 +35,28 @@ export function PreviewRail({
   const overviewLines = model.overview ? wrapText(model.overview, bodyWidth, 3) : [];
   return (
     <Box flexDirection="column" width={width}>
-      {/* Borderless poster slot — height-reserved so the metadata below never
-          jumps when artwork resolves. Renders the real poster; falls back to a
-          quiet letter tile only while loading or when no art is available. */}
-      <Box minHeight={hasPosterImage ? undefined : 6} justifyContent="center">
-        {hasPosterImage ? (
+      {/* Poster slot — height-reserved so the metadata below never jumps when
+          artwork resolves. The real poster renders borderless; the fallback is a
+          framed placeholder tile (initials centred in a poster-shaped frame) so it
+          reads as "art pending" instead of two letters floating in empty space. */}
+      {hasPosterImage ? (
+        <Box minHeight={undefined} justifyContent="center">
           <Text>{poster.placeholder}</Text>
-        ) : (
+        </Box>
+      ) : (
+        <Box
+          minHeight={6}
+          width={bodyWidth}
+          justifyContent="center"
+          alignItems="center"
+          borderStyle="round"
+          borderColor={palette.lineSoft}
+        >
           <Text color={model.posterState === "loading" ? palette.muted : palette.dim} bold>
             {posterLabel}
           </Text>
-        )}
-      </Box>
+        </Box>
+      )}
       <Box marginTop={1} flexDirection="column">
         <Text color={palette.text} bold wrap="truncate">
           {truncateLine(model.title, bodyWidth)}
