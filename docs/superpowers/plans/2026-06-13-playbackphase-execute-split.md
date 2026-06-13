@@ -36,6 +36,29 @@ Plus ~12 sibling `private` methods already extracted (these are fine; the monste
 
 ---
 
+## REASSESSMENT 2026-06-13 (after Stage 1) — split is at its sensible stopping point
+
+Investigating Stages 0/2 revealed the post-play **decision/state-machine logic is already
+extracted into pure, tested resolvers** — `routePlaybackShellAction`,
+`resolvePostPlaybackExitOutcome`, `resolvePostPlaybackSessionAction`,
+`resolvePostPlaybackEpisodeNavigationRoute`, `resolvePostPlaybackTrackPanelSection`,
+`resolvePostPlayState` (in `post-playback-routing.ts` / `playback-session-controller.ts`),
+each with tests. So:
+
+- **Stage 0 (characterization):** effectively satisfied — the branching decisions are pure and unit-tested.
+- **Stage 2 (extract step resolver):** largely pre-done — the loop already calls these resolvers and only applies side effects.
+- **Stage 1 (predicates):** DONE this session.
+- **Stages 3/4 (extract outer-loop nav glue + setup closures): NOT WORTH IT.** The setup block
+  (570–800) is `let` mutable locals + closures that capture and reassign each other across both
+  `while(true)` loops. Extracting them forces a large mutable "context object" indirection that
+  ADDS coupling for only line-count reduction — high regression risk in the critical playback
+  path, low sanity gain (the actual complexity is already isolated + tested).
+
+**Conclusion:** `execute()` is long but the bug-surface (decisions/state) is factored out and
+tested. Remaining length is tightly-coupled imperative orchestration that reads more clearly
+inline than threaded through a context object. Stop here unless a concrete bug motivates a
+specific extraction. Do NOT pursue Stages 3/4 mechanically.
+
 ## Staged extraction order (lowest risk → highest)
 
 ### Stage 0: Characterization safety net
