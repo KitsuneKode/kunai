@@ -164,6 +164,7 @@ export const ROOT_CHROME_ROWS = 4;
 const BROWSE_BASE_CHROME_ROWS = 10;
 const BROWSE_FOOTER_ROWS = 5;
 const BROWSE_INK_BUFFER_ROWS = 3;
+const SCROLL_AFFORDANCE_ROWS = 2;
 
 export function getBrowseChromeRows(flags: {
   readonly hasResultSubtitle: boolean;
@@ -191,7 +192,12 @@ export function getBrowseListMaxVisible(
   rootHeaderRows: number = ROOT_CHROME_ROWS,
 ): number {
   const available =
-    rows - rootHeaderRows - chromeRows - BROWSE_FOOTER_ROWS - BROWSE_INK_BUFFER_ROWS;
+    rows -
+    rootHeaderRows -
+    chromeRows -
+    BROWSE_FOOTER_ROWS -
+    BROWSE_INK_BUFFER_ROWS -
+    SCROLL_AFFORDANCE_ROWS;
   return Math.max(1, Math.min(18, available));
 }
 
@@ -216,7 +222,12 @@ export function getPickerListMaxVisible(
   rootHeaderRows: number = ROOT_CHROME_ROWS,
 ): number {
   const available =
-    rows - rootHeaderRows - chromeRows - PICKER_FOOTER_ROWS - PICKER_INK_BUFFER_ROWS;
+    rows -
+    rootHeaderRows -
+    chromeRows -
+    PICKER_FOOTER_ROWS -
+    PICKER_INK_BUFFER_ROWS -
+    SCROLL_AFFORDANCE_ROWS;
   return Math.max(1, available);
 }
 
