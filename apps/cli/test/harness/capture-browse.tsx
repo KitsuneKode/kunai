@@ -22,6 +22,7 @@ function BrowseIdleReturnLoopPreview() {
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold>Search · idle return loop</Text>
+      <Text bold>{model.heading}</Text>
       {model.rows.map((row) => (
         <Text key={row.id}>
           {row.focused ? "▌ " : "  "}

@@ -1,9 +1,17 @@
+import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-item";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import type { SearchResult } from "@/domain/types";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, useInput } from "ink";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import {
   applyBrowseResultFilters,
@@ -21,7 +29,7 @@ import {
   type BrowseFocusZoneContext,
   type BrowseFocusZoneEvent,
 } from "./browse-focus-zone";
-import { buildBrowseIdleReturnLoopModel, resolveIdleContinueAction } from "./browse-idle-actions";
+import { buildBrowseIdleReturnLoopModel, resolveIdleRowAction } from "./browse-idle-actions";
 import {
   browseResultStatusLine,
   buildPreviewRailModelFromBrowseOption,
@@ -73,6 +81,11 @@ import { OverlayPanel } from "./overlay-panel";
 import { PreviewRail } from "./primitives/PreviewRail";
 import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { mountRootContent } from "./root-content-state";
+import {
+  getNotificationDetailsPending,
+  subscribeNotificationDetails,
+  takeNotificationDetailsItem,
+} from "./root-overlay-bridge";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
@@ -229,6 +242,7 @@ export function BrowseShell<T>({
       ),
     }),
   );
+  const [idleSelectedIndex, setIdleSelectedIndex] = useState(0);
   const focusZoneContextRef = useRef<BrowseFocusZoneContext>({
     hasResults: false,
     hasFilterBar: false,
@@ -473,22 +487,51 @@ export function BrowseShell<T>({
     setActiveOverlay(null);
   };
 
-  const openDetailsOverlay = () => {
-    const panel = buildBrowseDetailsPanel(selectedOption);
-    const sheetLines = buildDetailsSheetLines(selectedOption, companionDetails.secondary);
-    setCommandMode(false);
-    setFocusZone("query");
-    setActiveOverlay({
-      type: "details",
-      title: panel.title,
-      subtitle: panel.subtitle,
-      lines: sheetLines.length > 0 ? sheetLines : panel.lines,
-      detailData: companionDetails,
-      imageUrl: panel.imageUrl,
-      loading: false,
-      scrollIndex: 0,
-    });
-  };
+  useEffect(() => {
+    if (displayOptions.length === 0) {
+      setSelectedIndex(0);
+      return;
+    }
+    setSelectedIndex((current) => Math.min(current, displayOptions.length - 1));
+  }, [displayOptions.length]);
+
+  const boundedSelectedIndex =
+    displayOptions.length === 0 ? 0 : Math.min(selectedIndex, displayOptions.length - 1);
+  const selectedOption = displayOptions[boundedSelectedIndex];
+
+  const openDetailsOverlay = useCallback(
+    (option?: BrowseShellOption<T>) => {
+      const resolved = option ?? selectedOption;
+      if (!resolved) return;
+      const panel = buildBrowseDetailsPanel(resolved);
+      const sheetLines = buildDetailsSheetLines(resolved, companionDetails.secondary);
+      setCommandMode(false);
+      setFocusZone("query");
+      setActiveOverlay({
+        type: "details",
+        title: panel.title,
+        subtitle: panel.subtitle,
+        lines: sheetLines.length > 0 ? sheetLines : panel.lines,
+        detailData: buildDetailsPanelDataFromBrowseOption(resolved),
+        imageUrl: panel.imageUrl,
+        loading: false,
+        scrollIndex: 0,
+      });
+    },
+    [companionDetails.secondary, selectedOption],
+  );
+
+  const notificationDetailsPending = useSyncExternalStore(
+    subscribeNotificationDetails,
+    getNotificationDetailsPending,
+    () => false,
+  );
+  useEffect(() => {
+    if (!notificationDetailsPending) return;
+    const item = takeNotificationDetailsItem();
+    if (!item) return;
+    openDetailsOverlay(browseOptionFromMediaItem(item) as BrowseShellOption<T>);
+  }, [notificationDetailsPending, openDetailsOverlay]);
 
   const handleLocalAction = (action: ShellAction): boolean => {
     if (action === "details") {
@@ -522,17 +565,6 @@ export function BrowseShell<T>({
     return false;
   };
 
-  useEffect(() => {
-    if (displayOptions.length === 0) {
-      setSelectedIndex(0);
-      return;
-    }
-    setSelectedIndex((current) => Math.min(current, displayOptions.length - 1));
-  }, [displayOptions.length]);
-
-  const boundedSelectedIndex =
-    displayOptions.length === 0 ? 0 : Math.min(selectedIndex, displayOptions.length - 1);
-  const selectedOption = displayOptions[boundedSelectedIndex];
   const listFocused = isBrowseListFocused(focusZone);
   const resultFilterFocused = isBrowseFilterFocused(focusZone);
   const idleFocused = isBrowseIdleFocused(focusZone);
@@ -552,11 +584,18 @@ export function BrowseShell<T>({
     setFocusZone((current) => browseFocusZoneReducer(current, event, focusZoneContextRef.current));
   }, []);
 
-  const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(idleContext, { idleFocused });
-  const canFocusContinue =
+  useEffect(() => {
+    setIdleSelectedIndex(0);
+  }, [idleContext]);
+
+  const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(idleContext, {
+    idleFocused,
+    selectedIndex: idleSelectedIndex,
+  });
+  const canFocusIdleRows =
     options.length === 0 &&
     searchState === "idle" &&
-    Boolean(idleReturnLoopModel?.hasSelectableContinue);
+    Boolean(idleReturnLoopModel?.hasSelectableRows);
 
   // Local narrow mode only earns space on long result sets. It is explicit
   // (/filters or Ctrl+F) so normal title search stays calm and single-purpose.
@@ -570,7 +609,7 @@ export function BrowseShell<T>({
   focusZoneContextRef.current = {
     hasResults: displayOptions.length > 0,
     hasFilterBar: showResultFilterBar,
-    canFocusIdle: canFocusContinue,
+    canFocusIdle: canFocusIdleRows,
     selectedIndex: boundedSelectedIndex,
   };
 
@@ -849,10 +888,13 @@ export function BrowseShell<T>({
       return;
     }
 
-    const canFocusContinueInInput =
-      options.length === 0 &&
-      searchState === "idle" &&
-      Boolean(idleReturnLoopModel?.hasSelectableContinue);
+    const canFocusContinueInInput = canFocusIdleRows;
+
+    const resolveFocusedIdleAction = (): ShellAction | null => {
+      const row = idleReturnLoopModel?.rows[idleSelectedIndex];
+      if (!row?.actionable) return null;
+      return resolveIdleRowAction(row.id, idleContext);
+    };
 
     // Calendar: Tab / Shift+Tab cycle the type tabs (All · Anime · TV · Movies ·
     // Tracked). Mode toggle is unavailable while browsing the schedule.
@@ -933,11 +975,23 @@ export function BrowseShell<T>({
     }
 
     if (key.return && idleFocused && canFocusContinueInInput) {
-      onResolve(resolveIdleContinueAction(idleContext));
+      const action = resolveFocusedIdleAction();
+      if (action) {
+        onResolve(action);
+        return;
+      }
+    }
+
+    if (key.downArrow && idleFocused && idleReturnLoopModel) {
+      setIdleSelectedIndex((current) => Math.min(current + 1, idleReturnLoopModel.rows.length - 1));
       return;
     }
 
     if (key.upArrow && idleFocused) {
+      if (idleSelectedIndex > 0) {
+        setIdleSelectedIndex((current) => Math.max(0, current - 1));
+        return;
+      }
       dispatchFocusZone({ type: "escape" });
       return;
     }
@@ -1127,11 +1181,12 @@ export function BrowseShell<T>({
 
         {isCalendarView && calendarDays.length > 0 && !ultraCompact ? (
           <Box flexDirection="column">
-            <CalendarTypeTabs activeTab={calendarTypeTab} compact={compact} />
+            <CalendarTypeTabs activeTab={calendarTypeTab} compact={compact} maxWidth={listWidth} />
             <CalendarDayStrip
               days={calendarDays}
               selectedDayKey={calendarDayFilter}
               narrow={viewport.breakpoint === "narrow"}
+              maxWidth={listWidth}
             />
           </Box>
         ) : null}
@@ -1180,6 +1235,8 @@ export function BrowseShell<T>({
                       statusGlyph={row.statusGlyph}
                       showDayHeader={row.showDayHeader}
                       dayHeaderLabel={row.dayHeaderLabel}
+                      showWeekHeader={row.showWeekHeader}
+                      weekHeaderLabel={row.weekHeaderLabel}
                       showForYouHeader={calendarDayFilter === null}
                       showForYouHeaderOnce={row.showForYouHeaderOnce}
                     />
@@ -1327,8 +1384,11 @@ export function BrowseShell<T>({
             ) : null}
             {!commandMode &&
             idleReturnLoopModel &&
-            (!viewport.ultraCompact || idleReturnLoopModel.hasSelectableContinue) ? (
+            (!viewport.ultraCompact || idleReturnLoopModel.rows.length > 0) ? (
               <Box flexDirection="column" marginTop={1} gap={0}>
+                <Text color={palette.dim} bold>
+                  {idleReturnLoopModel.heading}
+                </Text>
                 {idleReturnLoopModel.rows.map((row) => (
                   <Text key={row.id} color={row.focused ? palette.text : palette.muted}>
                     {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
@@ -1402,7 +1462,7 @@ export function BrowseShell<T>({
             ? [{ key: "^D", label: "download", action: "download" as const }]
             : []),
           ...(onQueueSelected && options.length > 0 && !queryDirty
-            ? [{ key: "q", label: "queue", action: "playlist" as const }]
+            ? [{ key: "q", label: "up next", action: "playlist" as const }]
             : []),
           { key: "esc", label: "clear/back", action: "quit" },
         ];

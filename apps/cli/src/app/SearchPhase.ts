@@ -5,12 +5,14 @@
 // Returns the selected title or cancellation/quit signals.
 // =============================================================================
 
+import { buildBrowseIdleContext } from "@/app-shell/browse-idle-context";
 import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
+import type { BrowseShellOption } from "@/app-shell/types";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
 import { loadCalendarResults } from "@/app/calendar-results";
@@ -20,7 +22,6 @@ import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
   titleFromHistorySelection,
-  type HistoryLaunchSelection,
 } from "@/app/launch-entry";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { loadRandomResults, loadSurpriseResults } from "@/app/random-results";
@@ -28,17 +29,21 @@ import { searchTitles } from "@/app/search-routing";
 import { applySearchSelectionSessionRouting } from "@/app/search-selection-routing";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import { effectiveFooterHints } from "@/container";
-import { mediaItemFromSearchResult } from "@/domain/media/media-item-adapters";
+import {
+  episodeInfoFromQueueEntry,
+  mediaItemFromSearchResult,
+  titleInfoFromMediaItemIdentity,
+  titleInfoFromQueueEntry,
+} from "@/domain/media/media-item-adapters";
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import type { SearchResult, TitleInfo } from "@/domain/types";
 import {
   resultEnrichmentKey,
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
-import { historyContentType } from "@/services/continuation/history-progress";
-import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
+import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
-import type { HistoryProgress } from "@kunai/storage";
+import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -202,17 +207,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         const shellRuntime = buildShellRuntimeBindings(container);
-        const browseContext = await loadBrowseDisplayContext(container, currentState.searchResults);
 
-        const playlistNextItem = container.queueService.peekNext();
-        const releaseSummary = container.releaseProgressCache.summarizeActive();
-        const todayReleaseCount = releaseSummary.episodeCount;
-
-        // Find the most-recent in-progress history entry to show a "continue" hint
-        let continueWatching: import("@/app-shell/types").BrowseIdleContext["continueWatching"];
-        let continueWatchingSelection: HistoryLaunchSelection | null = null;
+        let allHistory: Record<string, HistoryProgress> = {};
         try {
-          const allHistory = await container.historyStore.getAll();
+          allHistory = await container.historyStore.getAll();
           enqueueReleaseReconciliation(
             container,
             Object.values(allHistory),
@@ -220,54 +218,21 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             context.signal,
           );
           this.hasQueuedStartupReleaseReconciliation = true;
-          const inProgress = Object.entries(allHistory)
-            .filter(([, e]) => !e.completed && e.positionSeconds > 30)
-            .sort(
-              ([, a], [, b]) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-            );
-          const topEntry = inProgress[0];
-          if (topEntry) {
-            const [titleId, top] = topEntry;
-            continueWatchingSelection = { titleId, entry: top };
-            const ep =
-              historyContentType(top) === "series" &&
-              typeof top.season === "number" &&
-              typeof top.episode === "number"
-                ? `S${String(top.season).padStart(2, "0")}E${String(top.episode).padStart(2, "0")}`
-                : undefined;
-            const topDuration = top.durationSeconds ?? 0;
-            const remainingSecs = topDuration > 0 ? topDuration - top.positionSeconds : 0;
-            const remainingLabel =
-              remainingSecs > 60 ? `${Math.ceil(remainingSecs / 60)}m left` : undefined;
-            continueWatching = {
-              title: top.title,
-              ep,
-              remainingLabel,
-              titleId,
-              mediaKind: historyContentType(top) === "movie" ? "movie" : "series",
-            };
-          }
         } catch {
           // best-effort
         }
 
-        const idleContext =
-          playlistNextItem || continueWatching || todayReleaseCount > 0
-            ? {
-                playlistNext: playlistNextItem
-                  ? {
-                      title: playlistNextItem.title,
-                      ep:
-                        playlistNextItem.season !== null && playlistNextItem.episode !== null
-                          ? `S${String(playlistNextItem.season).padStart(2, "0")}E${String(playlistNextItem.episode).padStart(2, "0")}`
-                          : undefined,
-                    }
-                  : undefined,
-                continueWatching,
-                todayReleaseCount,
-                todayReleaseTitleCount: releaseSummary.titleCount,
-              }
-            : undefined;
+        const browseContext = await loadBrowseDisplayContext(
+          container,
+          currentState.searchResults,
+          {
+            preloadedHistory: allHistory,
+          },
+        );
+
+        const { idleContext, continueWatchingSelection } = await buildBrowseIdleContext(container, {
+          preloadedHistory: allHistory,
+        });
 
         const initialCalendarTypeTab = pendingCalendarType;
         pendingCalendarType = undefined;
@@ -278,13 +243,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           initialCalendarTypeTab,
           initialQuery: currentState.searchQuery,
           initialResults: currentState.searchResults.map((r) =>
-            toBrowseResultOption(
-              r,
-              browseContext.historyMap[r.id] ?? null,
-              container.config.animeTitlePreference,
-              browseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
-              container.listService,
-            ),
+            mapBrowseResultOption(container, browseContext, r),
           ),
           initialResultSubtitle:
             currentState.searchResults.length > 0
@@ -298,13 +257,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           commands: resolveCommands(currentState, SEARCH_BROWSE_COMMAND_IDS),
           idleContext,
           onQueueSelected: async (result) => {
-            const router = new MediaActionRouter({
-              queue: {
-                enqueueMediaItem: (item, options) => {
-                  container.queueService.enqueueMediaItem(item, options);
-                },
-              },
-            });
+            const router = createContainerMediaActionRouter(container);
             await router.run({
               actionId: "queue-end",
               item: mediaItemFromSearchResult(result),
@@ -356,15 +309,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
-              options: results.map((r) =>
-                toBrowseResultOption(
-                  r,
-                  freshBrowseContext.historyMap[r.id] ?? null,
-                  container.config.animeTitlePreference,
-                  freshBrowseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
-                  container.listService,
-                ),
-              ),
+              options: results.map((r) => mapBrowseResultOption(container, freshBrowseContext, r)),
               subtitle: `${results.length} results · ${search.sourceName}`,
               upstreamFilterBadges: search.evidence.upstream,
               localFilterBadges: search.evidence.local,
@@ -394,15 +339,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
-              options: results.map((r) =>
-                toBrowseResultOption(
-                  r,
-                  freshBrowseContext.historyMap[r.id] ?? null,
-                  container.config.animeTitlePreference,
-                  freshBrowseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
-                  container.listService,
-                ),
-              ),
+              options: results.map((r) => mapBrowseResultOption(container, freshBrowseContext, r)),
               subtitle: `${results.length} trending · ${mode === "anime" ? "AniList" : "TMDB"}`,
               emptyMessage: "Trending is unavailable right now. Search still works normally.",
             };
@@ -418,13 +355,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               const freshBrowseContext = await loadBrowseDisplayContext(container, results);
               return {
                 options: results.map((r) =>
-                  toBrowseResultOption(
-                    r,
-                    freshBrowseContext.historyMap[r.id] ?? null,
-                    container.config.animeTitlePreference,
-                    freshBrowseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
-                    container.listService,
-                  ),
+                  mapBrowseResultOption(container, freshBrowseContext, r),
                 ),
                 subtitle: discover.subtitle,
                 emptyMessage: discover.emptyMessage,
@@ -438,13 +369,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               hasDiscoverLoaded && currentResults.length > 0
                 ? {
                     options: currentResults.map((r) =>
-                      toBrowseResultOption(
-                        r,
-                        browseContext.historyMap[r.id] ?? null,
-                        container.config.animeTitlePreference,
-                        browseContext.enrichments.get(resultEnrichmentKey(r)) ?? null,
-                        container.listService,
-                      ),
+                      mapBrowseResultOption(container, browseContext, r),
                     ),
                     subtitle: `${currentResults.length} recommendation picks · cached`,
                     emptyMessage: "No recommendations available.",
@@ -507,6 +432,38 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const title = titleFromHistorySelection(continueWatchingSelection);
             stateManager.dispatch({ type: "SELECT_TITLE", title });
             const episode = episodeFromHistorySelection(continueWatchingSelection);
+            if (episode) {
+              stateManager.dispatch({ type: "SELECT_EPISODE", episode });
+            }
+            return { status: "success", value: title };
+          }
+
+          if (outcome.action === "play-offline-ready") {
+            const jobId = idleContext?.offlineReadyNext?.offlineJobId;
+            if (!jobId) {
+              logger.info("Offline-ready idle row requested without a local job");
+              continue;
+            }
+            const { playCompletedDownload } = await import("./offline-playback");
+            await playCompletedDownload(container, jobId);
+            const offline = idleContext?.offlineReadyNext;
+            const title = titleInfoFromMediaItemIdentity({
+              titleId: offline?.titleId ?? jobId,
+              title: offline?.title ?? "Offline title",
+              mediaKind: "series",
+            });
+            return { status: "success", value: title };
+          }
+
+          if (outcome.action === "play-queue-next") {
+            const next = container.queueService.peekNext();
+            if (!next) {
+              logger.info("Queue-next idle row requested with an empty queue");
+              continue;
+            }
+            const title = titleInfoFromQueueEntry(next);
+            stateManager.dispatch({ type: "SELECT_TITLE", title });
+            const episode = episodeInfoFromQueueEntry(next);
             if (episode) {
               stateManager.dispatch({ type: "SELECT_EPISODE", episode });
             }
@@ -730,16 +687,51 @@ function appendSearchFilterChip(query: string, chip: string): string {
 type BrowseDisplayContext = {
   readonly historyMap: Record<string, HistoryProgress>;
   readonly enrichments: ReadonlyMap<string, ResultEnrichment>;
+  readonly queueTitleIds: ReadonlySet<string>;
+  readonly followPreferenceByTitleId: ReadonlyMap<string, FollowedTitlePreference>;
 };
 
 async function loadBrowseDisplayContext(
   container: PhaseContext["container"],
   results: readonly SearchResult[],
+  options?: { readonly preloadedHistory?: Record<string, HistoryProgress> },
 ): Promise<BrowseDisplayContext> {
-  const historyMap = await container.historyStore.getAll().catch(() => ({}));
+  const historyMap =
+    options?.preloadedHistory ?? (await container.historyStore.getAll().catch(() => ({})));
   const enrichments = await container.resultEnrichmentService
     .enrichResults(results, { preloadedHistory: historyMap })
     .catch(() => new Map<string, ResultEnrichment>());
+  const queueTitleIds = new Set(
+    container.queueService
+      .getAll()
+      .filter((item) => !item.playedAt)
+      .map((item) => item.titleId),
+  );
+  const followPreferenceByTitleId = new Map<string, FollowedTitlePreference>();
+  for (const result of results) {
+    const preference = container.followedTitleRepository.get(result.id)?.preference;
+    if (preference && preference !== "implicit") {
+      followPreferenceByTitleId.set(result.id, preference);
+    }
+  }
 
-  return { historyMap, enrichments };
+  return { historyMap, enrichments, queueTitleIds, followPreferenceByTitleId };
+}
+
+function mapBrowseResultOption(
+  container: PhaseContext["container"],
+  context: BrowseDisplayContext,
+  result: SearchResult,
+): BrowseShellOption<SearchResult> {
+  return toBrowseResultOption(
+    result,
+    context.historyMap[result.id] ?? null,
+    container.config.animeTitlePreference,
+    context.enrichments.get(resultEnrichmentKey(result)) ?? null,
+    container.listService,
+    {
+      followPreference: context.followPreferenceByTitleId.get(result.id),
+      inUpNextQueue: context.queueTitleIds.has(result.id),
+    },
+  );
 }
