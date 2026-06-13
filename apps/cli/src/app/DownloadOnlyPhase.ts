@@ -322,16 +322,27 @@ async function confirmDownloadProfile({
     const target = draft.outputDirectory ? "configured folder" : "default offline library";
     const cleanup =
       draft.cleanupPolicy.mode === "cleanup-watched"
-        ? `cleanup suggestions after ${draft.cleanupPolicy.graceDays} days`
-        : "keep last watched local";
+        ? `suggest cleanup after ${draft.cleanupPolicy.graceDays} days watched`
+        : "keep last watched episode local";
+    const episodeCodes = episodes
+      .map(
+        (episode) =>
+          `S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`,
+      )
+      .join(", ");
     const profileDetail = [
       `${draft.audioPreference} audio`,
       `${draft.subtitlePreference} subtitles`,
-      draft.qualityPreference ? `${draft.qualityPreference}` : "highest quality",
-      draft.cacheArtwork ? "artwork saved" : "no artwork",
-      target,
+      draft.qualityPreference ? `${draft.qualityPreference} quality` : "highest available quality",
+      draft.cacheArtwork
+        ? title.posterUrl
+          ? "poster saved with download"
+          : "artwork caching on (no poster yet)"
+        : "no artwork saved",
+      `destination: ${target}`,
       cleanup,
-      "disk space checked first",
+      "disk space checked before queueing",
+      "provider resolve happens only after you confirm",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -339,17 +350,17 @@ async function confirmDownloadProfile({
       "queue" | "runway" | "back" | DownloadConfirmationEditAction
     >({
       title: `Download ${title.name}?`,
-      subtitle: `${episodes.length} ${episodes.length === 1 ? "item" : "items"} selected · profile edits are local until you queue`,
+      subtitle: `${episodes.length} ${episodes.length === 1 ? "episode" : "episodes"} · ${episodeCodes} · edits stay local until you queue`,
       actionContext: buildPickerActionContext({ container, taskLabel: `Download: ${title.name}` }),
       options: [
         // Primary action leads. Settings sit below; Cancel is last (Esc also backs out).
-        { value: "queue", label: "Download", detail: profileDetail },
+        { value: "queue", label: "Queue download", detail: profileDetail },
         ...(title.type !== "movie"
           ? [
               {
                 value: "runway" as const,
-                label: "Download + auto-keep next episodes ready",
-                detail: `${profileDetail} · keeps up to ${draft.runwayTarget ?? 1} released episodes ready offline`,
+                label: "Queue download + keep next episodes ready",
+                detail: `${profileDetail} · offline runway keeps up to ${draft.runwayTarget ?? 1} released episodes ready`,
               },
             ]
           : []),
