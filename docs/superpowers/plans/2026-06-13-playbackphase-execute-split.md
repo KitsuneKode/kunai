@@ -44,15 +44,15 @@ Plus ~12 sibling `private` methods already extracted (these are fine; the monste
 - [ ] Add characterization tests for the **post-play menu state machine** specifically: given a post-play action + session state, assert the resulting directive (advance / stay / recover / exit). This is the segment with the most branches and the highest extraction value.
 - [ ] Commit: `test(playback): characterize post-play menu transitions`.
 
-### Stage 1: Pure predicates (near-zero risk)
+### Stage 1: Pure predicates (near-zero risk) — DONE 2026-06-13
 
-Extract the inline boolean derivations into pure, tested functions in a new `apps/cli/src/app/playback-postplay-policy.ts`:
+Extracted into `apps/cli/src/app/playback-postplay-policy.ts` (+ truth-table tests):
 
-- [ ] `nearEndVoluntaryQuit(...)` (currently ~2676–2687)
-- [ ] `canResumePlayback(...)` (currently ~2725–2728)
-- [ ] `autoContinueIntoRecommendationPossible(...)` (currently ~2786, already a named local — promote to a pure fn)
-- [ ] Unit-test each with a truth table. Replace the inline expressions with calls.
-- [ ] Commit: `refactor(playback): extract post-play predicates`.
+- [x] `isNearEndVoluntaryQuit(...)`
+- [x] `canResumePlayback(...)`
+- [x] `canAutoContinueIntoRecommendation(...)`
+- [x] Unit-tested; inline expressions in `execute()` replaced with calls. 1710 tests green, behavior unchanged.
+- [x] Committed: `refactor(playback): extract pure post-play predicates (execute-split stage 1)`.
 
 ### Stage 2: Post-play action handler (the big win)
 
