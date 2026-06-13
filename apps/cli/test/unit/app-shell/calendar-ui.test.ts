@@ -6,6 +6,8 @@ import {
   buildCalendarPreviewRailModel,
   buildCalendarRenderRows,
   calendarDayKeyFromGroup,
+  calendarRowLineCost,
+  windowCalendarRowsByLines,
   calendarPriorityBand,
   compactCalendarStatusLabel,
   computeCalendarRowLayout,
@@ -273,6 +275,48 @@ test("emits a weekTag (not a separate week header) when the week changes", () =>
   expect(rows[1]!.weekTag).toBe("next week");
   // First row's week tag may be present ("this week") or null; it must never duplicate the day band.
   expect(typeof rows[0]!.weekTag === "string" || rows[0]!.weekTag === null).toBe(true);
+});
+
+test("calendarRowLineCost counts headers as extra lines", () => {
+  const base = {
+    option: dayStripOption({ label: "X" }),
+    optionIndex: 0,
+    timeLabel: "6 PM",
+    episodeCode: "E1",
+    statusLabel: "resolving",
+    statusColor: "#fff",
+    statusDim: true,
+    statusGlyph: "·",
+    weekTag: null as string | null,
+    showDayHeader: false,
+    dayHeaderLabel: null as string | null,
+    showForYouHeaderOnce: false,
+  };
+  expect(calendarRowLineCost(base)).toBe(1);
+  expect(calendarRowLineCost({ ...base, showDayHeader: true, dayHeaderLabel: "THU 11" })).toBe(3);
+  expect(calendarRowLineCost({ ...base, showForYouHeaderOnce: true })).toBe(3);
+});
+
+test("windowCalendarRowsByLines keeps the selected row inside the line budget", () => {
+  const rows = Array.from({ length: 40 }, (_, i) => ({
+    option: dayStripOption({ label: `row-${i}` }),
+    optionIndex: i,
+    timeLabel: "6 PM",
+    episodeCode: "E1",
+    statusLabel: "resolving",
+    statusColor: "#fff",
+    statusDim: true,
+    statusGlyph: "·",
+    weekTag: null as string | null,
+    showDayHeader: i % 5 === 0,
+    dayHeaderLabel: i % 5 === 0 ? "DAY" : null,
+    showForYouHeaderOnce: false,
+  }));
+  const { start, end } = windowCalendarRowsByLines(rows, 22, 10);
+  expect(start).toBeLessThanOrEqual(22);
+  expect(end).toBeGreaterThan(22);
+  const lines = rows.slice(start, end).reduce((sum, r) => sum + calendarRowLineCost(r), 0);
+  expect(lines).toBeLessThanOrEqual(10);
 });
 
 test("calendarPriorityBand prefers tracked titles in for-you", () => {
