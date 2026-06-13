@@ -390,9 +390,9 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       heroSub: airLine,
       actions: [
         {
-          id: "watchlist",
-          label: "Watchlist",
-          detail: "add to watchlist for release alerts",
+          id: "bookmark",
+          label: "Bookmark",
+          detail: "save to watchlist for release alerts",
           shortcut: "w",
           primary: true,
         },
@@ -637,7 +637,7 @@ export function resolvePostPlayUnhandledInput(
     return context.selectedActionAvailable ? { type: "run-selected-action" } : null;
   }
   if (input === "w" && context.postPlayStateKind === "caught-up") {
-    return { type: "shell-result", result: "watchlist" };
+    return { type: "shell-result", result: "bookmark" };
   }
   if (context.postPlayStateKind === "did-not-start") {
     if (input === "r") return { type: "shell-result", result: "replay" };
@@ -682,8 +682,8 @@ export function resolvePostPlayMenuAction(
       return "pick-episode";
     case "next-season":
       return "next-season";
-    case "watchlist":
-      return "watchlist";
+    case "bookmark":
+      return "bookmark";
     case "calendar":
       return "calendar";
     case "session-controls":

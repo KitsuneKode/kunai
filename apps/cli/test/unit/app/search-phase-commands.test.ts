@@ -12,6 +12,7 @@ test("search browse command palette exposes discover, random, inbox, and offline
     "surprise",
     "calendar",
     "bookmark",
+    "follow",
     "watchlist",
     "playlist",
     "stats",
@@ -19,7 +20,6 @@ test("search browse command palette exposes discover, random, inbox, and offline
     "library",
     "downloads",
     "notifications",
-    "history",
   ]);
 });
 

@@ -60,3 +60,17 @@ test("notification action menu exposes explicit safe row actions", () => {
     },
   ]);
 });
+
+test("notification action menu hides actions the root overlay cannot execute yet", () => {
+  const notice = {
+    ...base,
+    kind: "new-episode",
+    actionJson: JSON.stringify(["download", "queue-end", "follow", "dismiss"]),
+  };
+
+  expect(getNotificationPrimaryAction(notice)).toBe("queue-end");
+  expect(buildNotificationActionOptions(notice).map((option) => option.value)).toEqual([
+    "queue-end",
+    "dismiss",
+  ]);
+});

@@ -810,6 +810,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   "mark-series": (c) => handleMarkKind(c, "series"),
   share: (c) => handleShare(c),
   bookmark: (c) => handleBookmark(c),
+  follow: (c) => handleAttentionPreference(c, "following"),
+  mute: (c) => handleAttentionPreference(c, "muted"),
   "mark-watched": (c) => handleMarkWatched(c),
   watch: (c) => handleWatch(c),
   watchlist: (c) => handleWatchlist(c),
@@ -2190,6 +2192,41 @@ async function handleBookmark(container: Container): Promise<"handled"> {
       result === "added"
         ? `Bookmarked "${title.name}" in your watchlist.`
         : `Removed "${title.name}" from your watchlist.`,
+  });
+  return "handled";
+}
+
+async function handleAttentionPreference(
+  container: Container,
+  preference: "following" | "muted",
+): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  if (!title) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note:
+        preference === "following"
+          ? "Play or select a title before following releases."
+          : "Play or select a title before muting releases.",
+    });
+    return "handled";
+  }
+
+  container.followedTitleRepository.upsert({
+    titleId: title.id,
+    mediaKind: resolveCurrentMediaKind(state),
+    title: title.name,
+    preference,
+    updatedAt: new Date().toISOString(),
+  });
+
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note:
+      preference === "following"
+        ? `Following future releases for "${title.name}".`
+        : `Muted future release notices for "${title.name}".`,
   });
   return "handled";
 }

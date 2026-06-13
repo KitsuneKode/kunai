@@ -5,6 +5,14 @@ import {
 } from "@/services/notifications/NotificationActionRouter";
 import type { NotificationRecord } from "@kunai/storage";
 
+const ROOT_NOTIFICATION_ACTIONS = new Set<NotificationActionId>([
+  "restore-queue",
+  "queue-next",
+  "queue-after-current-chain",
+  "queue-end",
+  "dismiss",
+]);
+
 export function buildNotificationPickerOptions(
   notifications: readonly NotificationRecord[],
   options: { subActionsActive?: boolean } = {},
@@ -33,14 +41,15 @@ export function getNotificationPrimaryAction(
   notification: NotificationRecord,
 ): NotificationActionId {
   return (
-    parseNotificationActionIds(notification).find((action) => action !== "dismiss") ?? "dismiss"
+    parseExecutableNotificationActions(notification).find((action) => action !== "dismiss") ??
+    "dismiss"
   );
 }
 
 export function buildNotificationActionOptions(
   notification: NotificationRecord,
 ): readonly ShellPickerOption<NotificationActionId>[] {
-  const actions = parseNotificationActionIds(notification);
+  const actions = parseExecutableNotificationActions(notification);
   const normalized = actions.length > 0 ? actions : (["dismiss"] as const);
   return normalized.map((action) => ({
     value: action,
@@ -48,6 +57,14 @@ export function buildNotificationActionOptions(
     detail: getNotificationActionDetail(action),
     tone: action === "restore-queue" ? "warning" : action === "download" ? "success" : "neutral",
   }));
+}
+
+function parseExecutableNotificationActions(
+  notification: NotificationRecord,
+): readonly NotificationActionId[] {
+  return parseNotificationActionIds(notification).filter((action) =>
+    ROOT_NOTIFICATION_ACTIONS.has(action),
+  );
 }
 
 function getNotificationTone(kind: string): ShellStatusTone {

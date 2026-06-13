@@ -38,3 +38,36 @@ test("NotificationService stores derived notices and lists active inbox rows", (
 
   db.close();
 });
+
+test("NotificationService only stores notification actions the root overlay can execute", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const service = new NotificationService({
+    repo: new NotificationRepository(db),
+    getMutedTitleIds: () => new Set(),
+  });
+
+  service.recordSignals(
+    [
+      {
+        type: "new-playable-episode",
+        titleId: "tmdb:1",
+        mediaKind: "series",
+        title: "Example",
+        season: 1,
+        episode: 6,
+        providerId: "vidking",
+        availableAt: "2026-05-17T00:00:00.000Z",
+      },
+    ],
+    "2026-05-17T00:01:00.000Z",
+  );
+
+  expect(JSON.parse(service.listActive()[0]?.actionJson ?? "[]")).toEqual([
+    "queue-next",
+    "queue-end",
+    "dismiss",
+  ]);
+
+  db.close();
+});

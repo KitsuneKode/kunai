@@ -46,5 +46,5 @@ export class NotificationService {
 
 function defaultNotificationActionIds(kind: string): readonly string[] {
   if (kind === "queue-recovery") return ["restore-queue", "dismiss"];
-  return ["queue-next", "queue-end", "download", "dismiss"];
+  return ["queue-next", "queue-end", "dismiss"];
 }

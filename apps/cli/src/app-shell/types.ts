@@ -48,6 +48,8 @@ export type ShellAction =
   | "mark-series"
   | "share"
   | "bookmark"
+  | "follow"
+  | "mute"
   | "mark-watched"
   | "watch"
   | "download"
@@ -365,6 +367,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "mark-series":
     case "share":
     case "bookmark":
+    case "follow":
+    case "mute":
     case "mark-watched":
     case "watch":
     case "continue":

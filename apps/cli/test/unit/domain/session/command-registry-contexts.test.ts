@@ -25,6 +25,8 @@ describe("command registry contexts", () => {
       "mark-series",
       "share",
       "bookmark",
+      "follow",
+      "mute",
       "mark-watched",
       "pick-episode",
       "download",
@@ -90,6 +92,8 @@ describe("command registry contexts", () => {
       "mark-series",
       "share",
       "bookmark",
+      "follow",
+      "mute",
       "mark-watched",
       "pick-episode",
       "download",
@@ -158,6 +162,8 @@ describe("command registry contexts", () => {
   test("resolves bookmark and mark-watched aliases to current-title commands", () => {
     expect(parseCommand("/bookmark")?.id).toBe("bookmark");
     expect(parseCommand("/save-current")?.id).toBe("bookmark");
+    expect(parseCommand("/follow")?.id).toBe("follow");
+    expect(parseCommand("/mute")?.id).toBe("mute");
     expect(parseCommand("/mark-watched")?.id).toBe("mark-watched");
     expect(parseCommand("/watched")?.id).toBe("mark-watched");
   });
@@ -191,7 +197,7 @@ describe("command registry contexts", () => {
     });
   });
 
-  test("does not offer bookmark or mark-watched until a title is selected", () => {
+  test("does not offer current-title actions until a title is selected", () => {
     const state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
@@ -202,6 +208,16 @@ describe("command registry contexts", () => {
       id: "bookmark",
       enabled: false,
       reason: "Play or select a title before bookmarking it.",
+    });
+    expect(resolveCommands(state, ["follow"])[0]).toMatchObject({
+      id: "follow",
+      enabled: false,
+      reason: "Play or select a title before following releases.",
+    });
+    expect(resolveCommands(state, ["mute"])[0]).toMatchObject({
+      id: "mute",
+      enabled: false,
+      reason: "Play or select a title before muting releases.",
     });
     expect(resolveCommands(state, ["mark-watched"])[0]).toMatchObject({
       id: "mark-watched",

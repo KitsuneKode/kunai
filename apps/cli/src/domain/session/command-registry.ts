@@ -43,6 +43,8 @@ export type AppCommandId =
   | "share"
   | "watch"
   | "bookmark"
+  | "follow"
+  | "mute"
   | "mark-watched"
   | "pick-episode"
   | "next"
@@ -115,6 +117,8 @@ export const COMMAND_CONTEXTS = {
     "mark-series",
     "share",
     "bookmark",
+    "follow",
+    "mute",
     "mark-watched",
     "pick-episode",
     "download",
@@ -146,6 +150,8 @@ export const COMMAND_CONTEXTS = {
     "mark-series",
     "share",
     "bookmark",
+    "follow",
+    "mute",
     "mark-watched",
     "pick-episode",
     "download",
@@ -467,6 +473,18 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Bookmark Current",
     aliases: ["bookmark", "bookmarks-add", "save-current", "watchlist-add"],
     description: "Save or unsave the current title in your watchlist",
+  },
+  {
+    id: "follow",
+    label: "Follow Releases",
+    aliases: ["follow", "track", "track-releases"],
+    description: "Track future releases and notices for the current title",
+  },
+  {
+    id: "mute",
+    label: "Mute Releases",
+    aliases: ["mute", "mute-title", "mute-releases", "hide-releases"],
+    description: "Stop release notices for the current title",
   },
   {
     id: "mark-watched",
@@ -931,6 +949,8 @@ function resolveCommandState(
     case "mark-series":
     case "share":
     case "bookmark":
+    case "follow":
+    case "mute":
     case "mark-watched":
       return state.currentTitle
         ? { enabled: true }
@@ -941,9 +961,13 @@ function resolveCommandState(
                 ? "Play or select a title before sharing it."
                 : id === "bookmark"
                   ? "Play or select a title before bookmarking it."
-                  : id === "mark-watched"
-                    ? "Play or select a title before marking it watched."
-                    : "Play or select a title before reclassifying it.",
+                  : id === "follow"
+                    ? "Play or select a title before following releases."
+                    : id === "mute"
+                      ? "Play or select a title before muting releases."
+                      : id === "mark-watched"
+                        ? "Play or select a title before marking it watched."
+                        : "Play or select a title before reclassifying it.",
           };
 
     case "watch":

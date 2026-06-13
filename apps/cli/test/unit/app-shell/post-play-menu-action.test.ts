@@ -28,6 +28,15 @@ describe("post-play menu actions", () => {
     ).toBe("next");
     expect(
       resolvePostPlayMenuAction({
+        id: "bookmark",
+        label: "Bookmark",
+        detail: "",
+        shortcut: "w",
+        primary: true,
+      }),
+    ).toBe("bookmark");
+    expect(
+      resolvePostPlayMenuAction({
         id: "session-controls",
         label: "Session",
         detail: "",
