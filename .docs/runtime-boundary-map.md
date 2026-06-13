@@ -32,6 +32,50 @@ why the overlap is temporary.
 | `archive/legacy/apps/cli/src` | Quarantined old runtime/provider/browser reference code                                                      | Active beta runtime imports                 |
 | `apps/experiments`            | Provider research and scratchpads                                                                            | Production runtime behavior                 |
 
+## Naming And Placement Rules
+
+The current names are a mix of newer boundaries and migration-era files. Use
+these meanings for new work and for cleanup when touching an area:
+
+| Name pattern      | Meaning                                                             | Belongs in                                       |
+| ----------------- | ------------------------------------------------------------------- | ------------------------------------------------ |
+| `*-view.ts`       | Pure presentation model builder, no Ink and no I/O                  | `app-shell` or `domain`                          |
+| `*-shell.tsx`     | Ink render surface and input handling for one screen                | `app-shell`                                      |
+| `*-workflows.ts`  | Shell-owned picker/overlay flows that collect user intent           | `app-shell`, split by feature family             |
+| `*-routing.ts`    | Pure mapping from user/shell action to app-level route/result       | `app` or `domain` if fully pure                  |
+| `*-policy.ts`     | Deterministic rule that returns decisions/effects, not side effects | `domain` for pure rules, `app` for session rules |
+| `*-service.ts`    | I/O orchestration behind a stable contract                          | `services`                                       |
+| `*-repository.ts` | Storage read/write abstraction                                      | `packages/storage`                               |
+| `*-adapter.ts`    | Boundary translation between two models/contracts                   | closest owner of the consuming boundary          |
+| `*-lifecycle.ts`  | Start/stop/cleanup ordering for a runtime resource                  | `app` for policy, `infra` for mechanics          |
+| `*-input.ts`      | Data shape builder for another model or subsystem                   | nearest caller boundary                          |
+
+Avoid using `manager`, `controller`, or `helper` for new files unless the file
+really coordinates stateful ownership. Prefer a name that says what decision or
+surface it owns.
+
+### Current confusing names
+
+- `app-shell/workflows.ts` is a migration bucket. New shell flows should move
+  into feature-family files such as `history-workflows.ts`,
+  `picker-workflows.ts`, and `setup-workflows.ts`.
+- `app-shell/ink-shell.tsx` is still both host and surface code. New render
+  extraction should move one surface or presenter at a time; do not add more
+  policy there.
+- `app/PlaybackPhase.ts` is still the playback state machine plus too much
+  surrounding orchestration. Extract only tested transition slices from it.
+- `domain/types.ts` is a CLI-domain type bridge, not the package contract. Do
+  not move it into `packages/types` until adapter tests cover the conversion.
+
+### Rename policy
+
+Do not mass-rename for style. Rename or move a file only when:
+
+1. The destination boundary is clear.
+2. Tests cover the old behavior.
+3. Imports can be updated mechanically.
+4. The commit does not also change unrelated behavior.
+
 ## Playback Intent Contract
 
 Playback actions should be named intents before they touch mpv:

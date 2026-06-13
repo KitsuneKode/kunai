@@ -46,6 +46,9 @@ interfaces. Shell modules render, collect intent, and return typed actions.
 - `apps/cli/src/app/PlaybackPhase.ts` mixes playback orchestration, provider
   resolve, source switching, mpv lifecycle, prefetch, navigation, autoplay,
   post-play, recommendations, recovery, late subtitles, and diagnostics.
+  Its size is a correctness risk because state such as `pendingStart`,
+  `resolvedProviderId`, `playbackSession`, prefetch handles, abort controllers,
+  and post-play resume offsets are mutated across distant branches.
 - `apps/cli/src/app-shell/workflows.ts` mixes setup, history, offline library,
   downloads, provider/track pickers, settings, diagnostics, and shell actions.
 - `apps/cli/src/app-shell/ink-shell.tsx` mixes app lifecycle, render surfaces,
@@ -77,6 +80,14 @@ interfaces. Shell modules render, collect intent, and return typed actions.
 - UI/picker behavior:
   picker action context, tracks panel selection, root overlays, loading shell,
   post-play shell, and playback UI state all need clearer presentation models.
+- Process and memory lifecycle:
+  mpv child processes, persistent mpv IPC sockets, download workers, background
+  schedulers, Discord IPC, poster renderers, and abort controllers need an
+  explicit orphan/leak audit after the architecture split.
+- Build and binary ergonomics:
+  compiled CLI size, startup process title, dependency footprint, and package
+  entrypoints need a release-build audit so the shipped command behaves like
+  `kunai` in process monitors and stays small enough to distribute comfortably.
 
 ### Test Reliability
 
@@ -278,6 +289,29 @@ Decisions:
 - Add adapter contract tests before moving shared types.
 - Reconcile stale roadmap claims during the docs cleanup slice.
 
+### Naming And Navigation
+
+The repo has both newer boundary names and older migration-era names. The target
+vocabulary is documented in `.docs/runtime-boundary-map.md`.
+
+Risks:
+
+- `workflow`, `router`, `controller`, `phase`, `service`, and `manager` are not
+  always used consistently.
+- Some files are named after what they used to contain rather than what they own
+  now.
+- Large bucket files make it hard to tell whether a change belongs to shell,
+  app policy, domain logic, service orchestration, or infra mechanics.
+
+Decisions:
+
+- No big-bang naming cleanup.
+- Normalize names while extracting tested slices.
+- Prefer concrete suffixes: `*-view.ts` for pure view models, `*-shell.tsx` for
+  Ink surfaces, `*-policy.ts` for deterministic decisions, `*-routing.ts` for
+  route mapping, `*-service.ts` for I/O orchestration, and `*-lifecycle.ts` for
+  resource cleanup ordering.
+
 ## Target Architecture
 
 ```text
@@ -420,6 +454,40 @@ packages/storage
     - Keep research.
     - Mark current vs historical plan surfaces.
     - Update `plan-implementation-truth.md` if statuses change.
+
+13. `perf(playback): audit post-play first paint and prefetch timing`
+    - Status: In progress
+    - Done: capped non-prefetched post-play recommendation blocking to a small
+      first-paint budget; prefetched recommendations still render immediately.
+    - Done: fixed post-play action-row width calculations to use terminal
+      display columns instead of JS string length.
+    - Remaining: add timing diagnostics for mpv release, prefetch handoff,
+      catalog-detail warmup, and post-play shell open; move first-paint assembly
+      into a presenter so tests can assert it never awaits network-only rails.
+
+14. `ops(cli): audit orphan processes, memory leaks, and process title`
+    - Status: Not started
+    - Check mpv process/session cleanup, IPC socket cleanup, download worker
+      shutdown, Discord IPC shutdown, poster renderer cleanup, abort-controller
+      ownership, and background scheduler cancellation.
+    - Make the running command/process show as `kunai` where Bun and platform
+      constraints allow it; document any OS/runtime limits.
+    - Add deterministic tests or smoke scripts for orphan mpv/socket cleanup.
+
+15. `perf(build): audit binary size and startup speed`
+    - Status: Not started
+    - Measure built `dist/kunai.js` and compiled binaries per target.
+    - Inspect bundle contributors and optional-heavy dependencies.
+    - Keep startup hot path free of provider/browser/recommendation work until
+      the user asks for it.
+    - Add a repeatable local benchmark script before optimizing blindly.
+
+16. `docs(architecture): normalize naming and placement guidance`
+    - Status: In progress
+    - Done: added naming and placement rules to
+      `.docs/runtime-boundary-map.md`.
+    - Remaining: add guardrails or lint-style architecture tests only after the
+      names stabilize through a few extraction commits.
 
 ## Worker Ownership Model
 
