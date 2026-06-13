@@ -1526,9 +1526,16 @@ function PlaybackShell({
     stopAfterCurrent: state.stopAfterCurrent,
   });
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
-  useEffect(() => {
+  // Reset the highlighted action when the post-play context changes. Done inline
+  // during render with a prev-key compare (React's "adjust state on prop change"
+  // pattern) rather than a useEffect, which would commit a stale selection first
+  // and force an extra render. See react.dev/learn/you-might-not-need-an-effect.
+  const postPlayResetKey = `${postPlayState.kind}|${state.episodeLabel ?? ""}|${state.resumeLabel ?? ""}`;
+  const [prevPostPlayResetKey, setPrevPostPlayResetKey] = useState(postPlayResetKey);
+  if (postPlayResetKey !== prevPostPlayResetKey) {
+    setPrevPostPlayResetKey(postPlayResetKey);
     setSelectedActionIndex(0);
-  }, [postPlayState.kind, state.episodeLabel, state.resumeLabel]);
+  }
 
   const openInlineTracks = useCallback(
     async (initialSection: DecodedTrackSelection["section"]) => {
