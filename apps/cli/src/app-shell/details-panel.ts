@@ -162,6 +162,7 @@ export function resolveBrowseDetailsSecondary<T>(
 
 const LOCAL_FACT_LABELS = new Set(["Local progress", "Offline"]);
 const RELEASE_FACT_LABELS = new Set(["Release", "Watch history"]);
+const MANAGEMENT_FACT_LABELS = new Set(["Watchlist", "Release follow", "Up Next Queue"]);
 
 export type BrowseDetailsPanel = {
   title: string;
@@ -190,12 +191,16 @@ export function buildBrowseDetailsPanel<T>(
   const title = option.previewTitle ?? option.label;
   const previewFacts = option.previewFacts ?? [];
   const localFacts = previewFacts.filter((fact) => LOCAL_FACT_LABELS.has(fact.label));
+  const managementFacts = previewFacts.filter((fact) => MANAGEMENT_FACT_LABELS.has(fact.label));
   const releaseFacts = previewFacts.filter(
     (fact) => RELEASE_FACT_LABELS.has(fact.label) && !LOCAL_FACT_LABELS.has(fact.label),
   );
   const nonLocalFacts = previewFacts.filter(
     (fact) =>
-      !LOCAL_FACT_LABELS.has(fact.label) && fact.label !== "Poster" && fact.label !== "Rating",
+      !LOCAL_FACT_LABELS.has(fact.label) &&
+      !MANAGEMENT_FACT_LABELS.has(fact.label) &&
+      fact.label !== "Poster" &&
+      fact.label !== "Rating",
   );
   const detailsFacts = nonLocalFacts.filter((fact) => !RELEASE_FACT_LABELS.has(fact.label));
   // Compact model: one "At a glance" line carries type · year · rating · episodes,
@@ -206,10 +211,11 @@ export function buildBrowseDetailsPanel<T>(
     glanceParts.push(option.previewRating);
   }
   const mediaType = resolveOptionMediaType(option);
-  const actionDetail =
-    mediaType === "series"
-      ? "Enter open episodes · /bookmark watchlist · /follow releases · /download offline"
-      : "Enter play · /bookmark watchlist · /download offline · /playlist queue";
+  const actionDetail = buildDetailsActionGuidance(mediaType, {
+    localFacts,
+    managementFacts,
+    releaseFacts,
+  });
   const lines: ShellPanelLine[] = [
     { label: "Title", detail: title, tone: "success" },
     ...(glanceParts.length > 0
@@ -220,6 +226,9 @@ export function buildBrowseDetailsPanel<T>(
       : []),
     ...(releaseFacts.length > 0
       ? [{ label: "─── Watching", detail: "", tone: "info" as const }, ...releaseFacts]
+      : []),
+    ...(managementFacts.length > 0
+      ? [{ label: "─── Management", detail: "", tone: "info" as const }, ...managementFacts]
       : []),
     { label: "─── Synopsis", detail: "", tone: "info" },
     { label: "Overview", detail: option.previewBody || "No overview available yet." },
@@ -246,6 +255,45 @@ function resolveOptionMediaType<T>(option: BrowseShellOption<T>): "movie" | "ser
   if (meta.includes("Movie")) return "movie";
   if (isSearchResultValue(option.value)) return option.value.type === "movie" ? "movie" : "series";
   return "series";
+}
+
+function buildDetailsActionGuidance(
+  mediaType: "movie" | "series",
+  facts: {
+    readonly localFacts: readonly ShellPanelLine[];
+    readonly managementFacts: readonly ShellPanelLine[];
+    readonly releaseFacts: readonly ShellPanelLine[];
+  },
+): string {
+  const hasOffline = facts.localFacts.some((fact) => fact.label === "Offline");
+  const hasProgress = facts.localFacts.some((fact) => fact.label === "Local progress");
+  const onWatchlist = facts.managementFacts.some(
+    (fact) => fact.label === "Watchlist" && fact.detail?.startsWith("On watchlist"),
+  );
+  const inQueue = facts.managementFacts.some((fact) => fact.label === "Up Next Queue");
+  const newEpisodes = facts.releaseFacts.some(
+    (fact) => fact.label === "Release" && /\d+\s+new/i.test(fact.detail ?? ""),
+  );
+
+  const parts: string[] = [];
+  if (mediaType === "series") {
+    parts.push(hasProgress ? "Enter resume episodes" : "Enter open episodes");
+  } else {
+    parts.push(hasOffline ? "Enter play offline" : "Enter play");
+  }
+  if (!onWatchlist) parts.push("/bookmark watchlist");
+  if (
+    mediaType === "series" &&
+    !facts.managementFacts.some(
+      (fact) => fact.label === "Release follow" && fact.detail?.startsWith("Following"),
+    )
+  ) {
+    parts.push("/follow releases");
+  }
+  if (!hasOffline) parts.push("/download offline");
+  if (!inQueue) parts.push("/playlist-add for Up Next Queue");
+  if (newEpisodes) parts.push("/mark-watched when caught up");
+  return parts.join(" · ");
 }
 
 export function buildPreviewMetaLine<T>(option: BrowseShellOption<T>): string {

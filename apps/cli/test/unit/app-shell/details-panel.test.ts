@@ -63,6 +63,11 @@ describe("buildBrowseDetailsPanel", () => {
       previewMeta: ["Series", "2026", "continue S02E07 · 30:00 (50%)", "downloaded"],
       previewFacts: [
         {
+          label: "Watchlist",
+          detail: "Not saved · /bookmark to add",
+          tone: "neutral",
+        },
+        {
           label: "Local progress",
           detail: "continue S02E07 · 30:00 (50%)",
           tone: "warning",
@@ -89,6 +94,12 @@ describe("buildBrowseDetailsPanel", () => {
           label: "Offline",
           detail: "downloaded",
           tone: "success",
+        },
+        { label: "─── Management", detail: "", tone: "info" },
+        {
+          label: "Watchlist",
+          detail: "Not saved · /bookmark to add",
+          tone: "neutral",
         },
       ]),
     );

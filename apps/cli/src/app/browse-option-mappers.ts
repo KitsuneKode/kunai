@@ -6,7 +6,7 @@ import type { SearchResult, TitleAliasKind } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import { historyContentType, isFinished } from "@/services/continuation/history-progress";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
-import type { HistoryProgress } from "@kunai/storage";
+import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
 
@@ -76,12 +76,18 @@ function buildHistoryBadge(entry: HistoryProgress | null | undefined): string | 
   return "In progress";
 }
 
+export type BrowseResultOptionContext = {
+  readonly followPreference?: FollowedTitlePreference;
+  readonly inUpNextQueue?: boolean;
+};
+
 export function toBrowseResultOption(
   result: SearchResult,
   historyEntry?: HistoryProgress | null,
   titlePreference: TitleAliasKind | "provider" = "provider",
   enrichment?: ResultEnrichment | null,
   listService?: ListService,
+  optionContext?: BrowseResultOptionContext,
 ): BrowseShellOption<SearchResult> {
   if (isCalendarSearchResult(result)) {
     return toCalendarBrowseOption(result, listService);
@@ -117,6 +123,7 @@ export function toBrowseResultOption(
     previewBadge: inWatchlist ? "wl" : undefined,
     previewFacts: [
       ...buildLocalEnrichmentFacts(enrichment),
+      ...buildManagementFacts(result, listService, optionContext),
       ...(historyEntry
         ? [
             {
@@ -193,6 +200,51 @@ function decodeHtmlEntities(value: string): string {
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&amp;/gi, "&");
+}
+
+function buildManagementFacts(
+  result: SearchResult,
+  listService?: ListService,
+  optionContext?: BrowseResultOptionContext,
+): NonNullable<BrowseShellOption<SearchResult>["previewFacts"]> {
+  const facts: Array<NonNullable<BrowseShellOption<SearchResult>["previewFacts"]>[number]> = [];
+  const inWatchlist = listService?.isInWatchlist(result.id) ?? false;
+  facts.push({
+    label: "Watchlist",
+    detail: inWatchlist ? "On watchlist · /bookmark to remove" : "Not saved · /bookmark to add",
+    tone: inWatchlist ? "success" : "neutral",
+  });
+
+  const followPreference = optionContext?.followPreference;
+  if (followPreference === "following") {
+    facts.push({
+      label: "Release follow",
+      detail: "Following releases · /follow or /mute to change",
+      tone: "success",
+    });
+  } else if (followPreference === "muted") {
+    facts.push({
+      label: "Release follow",
+      detail: "Muted · new-episode nudges suppressed · /follow to resume",
+      tone: "warning",
+    });
+  } else if (inWatchlist) {
+    facts.push({
+      label: "Release follow",
+      detail: "Not following releases · /follow to track new episodes",
+      tone: "neutral",
+    });
+  }
+
+  if (optionContext?.inUpNextQueue) {
+    facts.push({
+      label: "Up Next Queue",
+      detail: "Queued for playback · /playlist to review order",
+      tone: "info",
+    });
+  }
+
+  return facts;
 }
 
 function buildLocalEnrichmentFacts(

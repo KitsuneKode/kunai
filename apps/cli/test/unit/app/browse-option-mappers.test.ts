@@ -25,6 +25,11 @@ describe("toBrowseResultOption", () => {
       previewMeta: ["Series", "2019", "26 episodes", "8.5/10 TMDB"],
       previewFacts: [
         {
+          label: "Watchlist",
+          detail: "Not saved · /bookmark to add",
+          tone: "neutral",
+        },
+        {
           label: "Metadata source",
           detail: "provider response",
           tone: "neutral",
@@ -87,6 +92,7 @@ describe("toBrowseResultOption", () => {
       previewTitle: "Demon Slayer",
       previewImageUrl: "https://img.example/demon.jpg",
       previewFacts: [
+        { label: "Watchlist", detail: "Not saved · /bookmark to add", tone: "neutral" },
         { label: "Metadata source", detail: "AniList", tone: "success" },
         {
           label: "Title aliases",
