@@ -46,8 +46,8 @@ export type CalendarRenderRow<T> = {
   readonly statusColor: string;
   readonly statusDim: boolean;
   readonly statusGlyph: string;
-  readonly showWeekHeader: boolean;
-  readonly weekHeaderLabel: string | null;
+  /** Quiet week marker shown inline on the day header when the week changes. */
+  readonly weekTag: string | null;
   readonly showDayHeader: boolean;
   readonly dayHeaderLabel: string | null;
   readonly showForYouHeaderOnce: boolean;
@@ -455,14 +455,24 @@ export function buildCalendarRenderRows<T>(
     const groupLabel = option.calendar?.display.groupLabel ?? option.previewGroup;
     const dayHeaderLabel =
       selectedDayKey === null && groupLabel ? calendarDayKeyFromGroup(groupLabel) : null;
-    const weekHeaderLabel =
-      selectedDayKey === null && dayHeaderLabel
-        ? calendarWeekHeaderLabel(calendarWeekKeyFromIsoDay(dayHeaderLabel), nowMs)
-        : null;
-    const showWeekHeader = weekHeaderLabel !== null && weekHeaderLabel !== lastWeekHeader;
-    if (showWeekHeader) lastWeekHeader = weekHeaderLabel;
+    // The week marker must be derived from the ISO day key — NOT the display label
+    // (e.g. "THU 11"), which `calendarWeekKeyFromIsoDay` cannot parse and would
+    // echo back, duplicating the day header. Falls back to null when no ISO key.
+    const isoDayKey = option.calendar?.dayKey ?? option.previewDayKey ?? null;
+    const weekKey =
+      selectedDayKey === null && isoDayKey ? calendarWeekKeyFromIsoDay(isoDayKey) : null;
+    const weekChanged = weekKey !== null && weekKey !== lastWeekHeader;
+    if (weekChanged) lastWeekHeader = weekKey;
     const showDayHeader = dayHeaderLabel !== null && dayHeaderLabel !== lastDayHeader;
     if (showDayHeader) lastDayHeader = dayHeaderLabel;
+    // The week marker rides the day header (no separate band) as a quiet tag.
+    // Only future weeks earn a tag — the current week is implied, so it stays
+    // unlabelled to avoid "this week" noise next to today's rows.
+    const currentWeekKey = calendarWeekKeyFromIsoDay(new Date(nowMs).toISOString().slice(0, 10));
+    const weekTag =
+      showDayHeader && weekChanged && weekKey && weekKey !== currentWeekKey
+        ? calendarWeekHeaderLabel(weekKey, nowMs).toLowerCase()
+        : null;
 
     const badge = option.previewBadge;
     const episodeCode =
@@ -480,8 +490,7 @@ export function buildCalendarRenderRows<T>(
       statusColor: presentation.color,
       statusDim: presentation.dim,
       statusGlyph: presentation.glyph.trim(),
-      showWeekHeader,
-      weekHeaderLabel: showWeekHeader ? weekHeaderLabel : null,
+      weekTag,
       showDayHeader,
       dayHeaderLabel: showDayHeader ? dayHeaderLabel : null,
       showForYouHeaderOnce,
@@ -489,4 +498,51 @@ export function buildCalendarRenderRows<T>(
   }
 
   return rows;
+}
+
+/** Rendered line cost of a calendar row: the row itself + any headers it carries.
+ *  A header is a SectionGroup = 1 margin line + 1 label line = 2 extra lines. */
+export function calendarRowLineCost<T>(row: CalendarRenderRow<T>): number {
+  let lines = 1;
+  if (row.showForYouHeaderOnce) lines += 2;
+  if (row.showDayHeader) lines += 2;
+  return lines;
+}
+
+/** Pick a contiguous slice of pre-built render rows that fits `maxLines` of
+ *  rendered height while keeping `selectedIndex` visible. Grows downward first
+ *  (natural reading order), then upward to use any remaining budget. */
+export function windowCalendarRowsByLines<T>(
+  rows: readonly CalendarRenderRow<T>[],
+  selectedIndex: number,
+  maxLines: number,
+): { readonly start: number; readonly end: number } {
+  const budget = Math.max(1, maxLines);
+  const anchor = Math.min(Math.max(0, selectedIndex), rows.length - 1);
+  const anchorRow = rows[anchor];
+  if (!anchorRow) return { start: 0, end: 0 };
+
+  let used = calendarRowLineCost(anchorRow);
+  let start = anchor;
+  let end = anchor + 1; // exclusive
+
+  // Grow downward.
+  while (end < rows.length) {
+    const row = rows[end];
+    if (!row) break;
+    const next = used + calendarRowLineCost(row);
+    if (next > budget) break;
+    used = next;
+    end += 1;
+  }
+  // Grow upward with whatever budget remains.
+  while (start > 0) {
+    const row = rows[start - 1];
+    if (!row) break;
+    const next = used + calendarRowLineCost(row);
+    if (next > budget) break;
+    used = next;
+    start -= 1;
+  }
+  return { start, end };
 }

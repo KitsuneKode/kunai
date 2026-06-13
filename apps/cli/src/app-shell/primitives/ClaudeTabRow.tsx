@@ -11,18 +11,20 @@ export const ClaudeTabRow = React.memo(function ClaudeTabRow({
   activeIndex,
   hint,
   maxWidth,
+  dense = false,
 }: {
   readonly labels: readonly string[];
   readonly activeIndex: number;
   readonly hint?: string;
   readonly maxWidth?: number;
+  readonly dense?: boolean;
 }) {
   const segments = segmentGeometry(labels, activeIndex);
   return (
     <Box
       flexDirection="row"
-      marginTop={1}
-      marginBottom={1}
+      marginTop={dense ? 0 : 1}
+      marginBottom={dense ? 0 : 1}
       alignItems="center"
       width={maxWidth}
       overflow="hidden"

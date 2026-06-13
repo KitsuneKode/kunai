@@ -55,6 +55,7 @@ import {
   buildCalendarRenderRows,
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
+  windowCalendarRowsByLines,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
@@ -646,6 +647,8 @@ export function BrowseShell<T>({
   }, [provider, selectedOption]);
 
   const { compact, ultraCompact, minColumns, minRows } = viewport;
+  // Short terminals: collapse schedule chrome margins so the list keeps its rows.
+  const denseChrome = viewport.rows < 28;
   const browseBreakpoint = viewport.breakpoint;
   const showCompanionLayout = browseBreakpoint === "wide" || browseBreakpoint === "medium";
   const effectiveFooterMode = "minimal";
@@ -720,6 +723,26 @@ export function BrowseShell<T>({
   const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
+
+  // Calendar rows inject section headers (For You / day bands) that cost extra
+  // rendered lines, so the schedule windows by rendered LINES, not option count —
+  // otherwise headers push rows past the viewport and into the footer.
+  const calendarRenderRows = isCalendarView
+    ? buildCalendarRenderRows(
+        displayOptions as readonly BrowseShellOption<import("@/domain/types").SearchResult>[],
+        0,
+        displayOptions.length,
+        calendarNow,
+        calendarDayFilter,
+        calendarDayFilter === null,
+      )
+    : [];
+  const calendarWindow = windowCalendarRowsByLines(
+    calendarRenderRows,
+    boundedSelectedIndex,
+    maxVisible,
+  );
+  const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -1181,12 +1204,18 @@ export function BrowseShell<T>({
 
         {isCalendarView && calendarDays.length > 0 && !ultraCompact ? (
           <Box flexDirection="column">
-            <CalendarTypeTabs activeTab={calendarTypeTab} compact={compact} maxWidth={listWidth} />
+            <CalendarTypeTabs
+              activeTab={calendarTypeTab}
+              compact={compact}
+              maxWidth={listWidth}
+              dense={denseChrome}
+            />
             <CalendarDayStrip
               days={calendarDays}
               selectedDayKey={calendarDayFilter}
               narrow={viewport.breakpoint === "narrow"}
               maxWidth={listWidth}
+              dense={denseChrome}
             />
           </Box>
         ) : null}
@@ -1210,18 +1239,11 @@ export function BrowseShell<T>({
           >
             {/* Result list */}
             <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
-              {windowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+              {(isCalendarView ? calendarWindow.start : windowStart) > 0 ? (
+                <Text color={palette.dim}> ▲ ...</Text>
+              ) : null}
               {isCalendarView
-                ? buildCalendarRenderRows(
-                    displayOptions as readonly BrowseShellOption<
-                      import("@/domain/types").SearchResult
-                    >[],
-                    windowStart,
-                    windowEnd,
-                    calendarNow,
-                    calendarDayFilter,
-                    calendarDayFilter === null,
-                  ).map((row) => (
+                ? visibleCalendarRows.map((row) => (
                     <CalendarScheduleRow
                       key={`${row.option.label}-${row.optionIndex}-${row.timeLabel}`}
                       option={row.option}
@@ -1235,8 +1257,7 @@ export function BrowseShell<T>({
                       statusGlyph={row.statusGlyph}
                       showDayHeader={row.showDayHeader}
                       dayHeaderLabel={row.dayHeaderLabel}
-                      showWeekHeader={row.showWeekHeader}
-                      weekHeaderLabel={row.weekHeaderLabel}
+                      weekTag={row.weekTag}
                       showForYouHeader={calendarDayFilter === null}
                       showForYouHeaderOnce={row.showForYouHeaderOnce}
                     />
@@ -1315,7 +1336,13 @@ export function BrowseShell<T>({
                       </Box>
                     );
                   })}
-              {windowEnd < displayOptions.length ? <Text color={palette.dim}> ▼ ...</Text> : null}
+              {(
+                isCalendarView
+                  ? calendarWindow.end < calendarRenderRows.length
+                  : windowEnd < displayOptions.length
+              ) ? (
+                <Text color={palette.dim}> ▼ ...</Text>
+              ) : null}
             </Box>
 
             {/* Companion pane */}

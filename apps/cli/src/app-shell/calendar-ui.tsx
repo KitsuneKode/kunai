@@ -37,12 +37,15 @@ export function CalendarDayStrip({
   selectedDayKey,
   narrow = false,
   maxWidth,
+  dense = false,
 }: {
   days: readonly CalendarDay[];
   selectedDayKey: string | null;
   narrow?: boolean;
   /** When set, navigation hint hides instead of wrapping past the list edge. */
   maxWidth?: number;
+  /** Short terminals: collapse vertical margins so the list keeps its rows. */
+  dense?: boolean;
 }) {
   const { windowDays, hasPrev, hasNext } = windowCalendarDayStrip(days, selectedDayKey, narrow);
   const showHint = maxWidth === undefined || maxWidth >= 92;
@@ -50,8 +53,8 @@ export function CalendarDayStrip({
   return (
     <Box
       flexDirection="row"
-      marginTop={1}
-      marginBottom={1}
+      marginTop={dense ? 0 : 1}
+      marginBottom={dense ? 0 : 1}
       alignItems="center"
       width={maxWidth}
       overflow="hidden"
@@ -93,10 +96,12 @@ export function CalendarTypeTabs({
   activeTab,
   compact,
   maxWidth,
+  dense = false,
 }: {
   activeTab: CalendarTypeTab;
   compact: boolean;
   maxWidth?: number;
+  dense?: boolean;
 }) {
   if (compact) return null;
   const labels = CALENDAR_TYPE_TABS.map((tab) => (tab === "TV" ? "Series" : tab));
@@ -107,6 +112,7 @@ export function CalendarTypeTabs({
       activeIndex={activeIndex}
       hint={maxWidth === undefined || maxWidth >= 100 ? "⇥ Tab cycles type" : undefined}
       maxWidth={maxWidth}
+      dense={dense}
     />
   );
 }
@@ -125,8 +131,7 @@ export function CalendarScheduleRow<T>({
   statusGlyph,
   showForYouHeader,
   showForYouHeaderOnce,
-  showWeekHeader,
-  weekHeaderLabel,
+  weekTag,
 }: {
   option: BrowseShellOption<T>;
   selected: boolean;
@@ -141,8 +146,7 @@ export function CalendarScheduleRow<T>({
   statusGlyph?: string;
   showForYouHeader?: boolean;
   showForYouHeaderOnce?: boolean;
-  showWeekHeader?: boolean;
-  weekHeaderLabel?: string | null;
+  weekTag?: string | null;
   showTimeHeader?: boolean;
   showTbdHeader?: boolean;
   showSectionHeader?: string | null;
@@ -185,11 +189,8 @@ export function CalendarScheduleRow<T>({
       {showForYouHeader && showForYouHeaderOnce ? (
         <SectionGroup label="For you · releasing today" marginTop={1} />
       ) : null}
-      {showWeekHeader && weekHeaderLabel ? (
-        <SectionGroup label={weekHeaderLabel} marginTop={1} />
-      ) : null}
       {showDayHeader && dayHeaderLabel ? (
-        <SectionGroup label={dayHeaderLabel} marginTop={1} />
+        <SectionGroup label={dayHeaderLabel} tag={weekTag ?? undefined} marginTop={1} />
       ) : null}
       <ListRow
         selected={selected}

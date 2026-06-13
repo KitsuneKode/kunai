@@ -6,6 +6,8 @@ import {
   buildCalendarPreviewRailModel,
   buildCalendarRenderRows,
   calendarDayKeyFromGroup,
+  calendarRowLineCost,
+  windowCalendarRowsByLines,
   calendarPriorityBand,
   compactCalendarStatusLabel,
   computeCalendarRowLayout,
@@ -255,6 +257,84 @@ test("buildCalendarRenderRows emits unified timestamp rows without band headers"
   expect(rows[0]?.timeLabel).toBe("9 PM");
   expect(rows[1]?.timeLabel).toBe("9 PM");
   expect(rows[2]?.timeLabel).toBe("TBD");
+});
+
+test("emits a weekTag (not a separate week header) when the week changes", () => {
+  const nowMs = Date.parse("2026-06-11T00:00:00");
+  const options = [
+    dayStripOption({ label: "A", previewGroup: "2026-06-11", previewDayKey: "2026-06-11" }),
+    dayStripOption({ label: "B", previewGroup: "2026-06-18", previewDayKey: "2026-06-18" }),
+  ];
+  const rows = buildCalendarRenderRows(options, 0, options.length, nowMs, null, false);
+
+  // Week field is now a tag string on the day-header row, not a separate band.
+  expect(rows[0]).not.toHaveProperty("showWeekHeader");
+  expect(rows[0]!.showDayHeader).toBe(true);
+  // Second row crosses into a new week → carries a non-null weekTag with its day header.
+  expect(rows[1]!.showDayHeader).toBe(true);
+  expect(rows[1]!.weekTag).toBe("next week");
+  // First row's week tag may be present ("this week") or null; it must never duplicate the day band.
+  expect(typeof rows[0]!.weekTag === "string" || rows[0]!.weekTag === null).toBe(true);
+});
+
+test("weekTag derives from the ISO day key, never echoing the display day label", () => {
+  const nowMs = Date.parse("2026-06-11T00:00:00");
+  // groupLabel is a DISPLAY label ("THU 11"); the ISO key lives in previewDayKey.
+  const options = [
+    dayStripOption({ label: "A", previewGroup: "THU 11", previewDayKey: "2026-06-11" }),
+    dayStripOption({ label: "B", previewGroup: "THU 18", previewDayKey: "2026-06-18" }),
+  ];
+  const rows = buildCalendarRenderRows(options, 0, options.length, nowMs, null, false);
+
+  expect(rows[0]!.dayHeaderLabel).toBe("THU 11");
+  // Current week stays untagged (no "this week" noise next to today).
+  expect(rows[0]!.weekTag).toBeNull();
+  // Next week is tagged with a real week label — NOT a lowercased day label.
+  expect(rows[1]!.dayHeaderLabel).toBe("THU 18");
+  expect(rows[1]!.weekTag).toBe("next week");
+  expect(rows[1]!.weekTag).not.toBe("thu 18");
+});
+
+test("calendarRowLineCost counts headers as extra lines", () => {
+  const base = {
+    option: dayStripOption({ label: "X" }),
+    optionIndex: 0,
+    timeLabel: "6 PM",
+    episodeCode: "E1",
+    statusLabel: "resolving",
+    statusColor: "#fff",
+    statusDim: true,
+    statusGlyph: "·",
+    weekTag: null as string | null,
+    showDayHeader: false,
+    dayHeaderLabel: null as string | null,
+    showForYouHeaderOnce: false,
+  };
+  expect(calendarRowLineCost(base)).toBe(1);
+  expect(calendarRowLineCost({ ...base, showDayHeader: true, dayHeaderLabel: "THU 11" })).toBe(3);
+  expect(calendarRowLineCost({ ...base, showForYouHeaderOnce: true })).toBe(3);
+});
+
+test("windowCalendarRowsByLines keeps the selected row inside the line budget", () => {
+  const rows = Array.from({ length: 40 }, (_, i) => ({
+    option: dayStripOption({ label: `row-${i}` }),
+    optionIndex: i,
+    timeLabel: "6 PM",
+    episodeCode: "E1",
+    statusLabel: "resolving",
+    statusColor: "#fff",
+    statusDim: true,
+    statusGlyph: "·",
+    weekTag: null as string | null,
+    showDayHeader: i % 5 === 0,
+    dayHeaderLabel: i % 5 === 0 ? "DAY" : null,
+    showForYouHeaderOnce: false,
+  }));
+  const { start, end } = windowCalendarRowsByLines(rows, 22, 10);
+  expect(start).toBeLessThanOrEqual(22);
+  expect(end).toBeGreaterThan(22);
+  const lines = rows.slice(start, end).reduce((sum, r) => sum + calendarRowLineCost(r), 0);
+  expect(lines).toBeLessThanOrEqual(10);
 });
 
 test("calendarPriorityBand prefers tracked titles in for-you", () => {
