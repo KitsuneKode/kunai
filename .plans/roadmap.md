@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-05-17
+Last updated: 2026-06-13
 
 Use this file as the planning index. It should stay short. Put implementation detail in the linked plan files, not here.
 
