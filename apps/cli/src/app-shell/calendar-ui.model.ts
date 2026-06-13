@@ -465,7 +465,8 @@ export function buildCalendarRenderRows<T>(
     if (showDayHeader) lastDayHeader = dayHeaderLabel;
     // The week marker rides the day header (no separate band). Lowercased so it
     // reads as a quiet tag ("next week"), not a second heading.
-    const weekTag = showDayHeader && weekChanged ? weekHeaderLabel!.toLowerCase() : null;
+    const weekTag =
+      showDayHeader && weekChanged && weekHeaderLabel ? weekHeaderLabel.toLowerCase() : null;
 
     const badge = option.previewBadge;
     const episodeCode =
@@ -510,24 +511,29 @@ export function windowCalendarRowsByLines<T>(
   selectedIndex: number,
   maxLines: number,
 ): { readonly start: number; readonly end: number } {
-  if (rows.length === 0) return { start: 0, end: 0 };
   const budget = Math.max(1, maxLines);
   const anchor = Math.min(Math.max(0, selectedIndex), rows.length - 1);
+  const anchorRow = rows[anchor];
+  if (!anchorRow) return { start: 0, end: 0 };
 
-  let used = calendarRowLineCost(rows[anchor]!);
+  let used = calendarRowLineCost(anchorRow);
   let start = anchor;
   let end = anchor + 1; // exclusive
 
   // Grow downward.
   while (end < rows.length) {
-    const next = used + calendarRowLineCost(rows[end]!);
+    const row = rows[end];
+    if (!row) break;
+    const next = used + calendarRowLineCost(row);
     if (next > budget) break;
     used = next;
     end += 1;
   }
   // Grow upward with whatever budget remains.
   while (start > 0) {
-    const next = used + calendarRowLineCost(rows[start - 1]!);
+    const row = rows[start - 1];
+    if (!row) break;
+    const next = used + calendarRowLineCost(row);
     if (next > budget) break;
     used = next;
     start -= 1;
