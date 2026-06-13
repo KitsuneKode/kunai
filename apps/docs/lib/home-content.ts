@@ -105,7 +105,7 @@ export const homeProof: readonly HomeProof[] = [
     label: "Runtime model",
     value: "Bun CLI",
     detail:
-      "Terminal-first. 66 shell commands across 3 context groups. 5 provider modules. 1 SQLite history DB. Predictable daily use.",
+      "Terminal-first shell with codegen-synced command and provider counts. Predictable daily use.",
   },
 ] as const;
 
