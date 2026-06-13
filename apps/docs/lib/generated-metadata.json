@@ -1,48 +1,9 @@
 {
-  "syncedAt": "2026-06-13T14:39:58.612Z",
+  "syncedAt": "2026-06-13T14:57:55.868Z",
+  "version": "0.2.5",
+  "commandCount": 65,
+  "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro"],
   "providers": [
-    {
-      "id": "allanime",
-      "displayName": "AllManga",
-      "description": "AllManga-compatible anime API client (sub & dub, no browser needed)",
-      "domain": "allmanga.to",
-      "recommended": false,
-      "mediaKinds": ["anime"],
-      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
-      "status": "active",
-      "notes": [
-        "AllManga-compatible client uses local fetch/decode logic for search",
-        "catalog",
-        "and source resolution.",
-        "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure."
-      ]
-    },
-    {
-      "id": "miruro",
-      "displayName": "Miruro",
-      "description": "Miruro anime direct resolver (pipe API + XOR decrypt)",
-      "domain": "miruro.tv",
-      "recommended": true,
-      "mediaKinds": ["anime"],
-      "capabilities": ["episode-list", "source-resolve", "multi-source", "quality-ranked"],
-      "status": "candidate",
-      "notes": [
-        "Uses miruro.tv pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
-        "Sources from vault-10.uwucdn.top CDN with referer from stream payload.",
-        "May hit Cloudflare rate limits if called too frequently."
-      ]
-    },
-    {
-      "id": "rivestream",
-      "displayName": "Rivestream",
-      "description": "Rivestream direct resolver candidate (MurmurHash)",
-      "domain": "rivestream.app",
-      "recommended": true,
-      "mediaKinds": ["movie", "series"],
-      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
-      "status": "candidate",
-      "notes": ["Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js."]
-    },
     {
       "id": "videasy",
       "displayName": "Videasy",
@@ -74,6 +35,48 @@
         "then sources are fetched from vidlink.pro/api/b.",
         "Returns a multi-quality HLS playlist (mpv selects the rendition) plus provider subtitles.",
         "External dependency: relies on enc-dec.app for the id-encryption step; falls back to other providers if it is unavailable."
+      ]
+    },
+    {
+      "id": "rivestream",
+      "displayName": "Rivestream",
+      "description": "Rivestream direct resolver candidate (MurmurHash)",
+      "domain": "rivestream.app",
+      "recommended": true,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
+      "status": "candidate",
+      "notes": ["Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js."]
+    },
+    {
+      "id": "allanime",
+      "displayName": "AllManga",
+      "description": "AllManga-compatible anime API client (sub & dub, no browser needed)",
+      "domain": "allmanga.to",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
+      "status": "active",
+      "notes": [
+        "AllManga-compatible client uses local fetch/decode logic for search",
+        "catalog",
+        "and source resolution.",
+        "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure."
+      ]
+    },
+    {
+      "id": "miruro",
+      "displayName": "Miruro",
+      "description": "Miruro anime direct resolver (pipe API + XOR decrypt)",
+      "domain": "miruro.tv",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": ["episode-list", "source-resolve", "multi-source", "quality-ranked"],
+      "status": "candidate",
+      "notes": [
+        "Uses miruro.tv pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
+        "Sources from vault-10.uwucdn.top CDN with referer from stream payload.",
+        "May hit Cloudflare rate limits if called too frequently."
       ]
     }
   ],
@@ -480,149 +483,154 @@
   ],
   "cliOptions": [
     {
+      "short": "-S",
+      "long": "--search",
+      "description": "Search for a title on launch"
+    },
+    {
       "short": "-i",
       "long": "--id",
-      "description": "Specify a title ID directly"
+      "description": "Open a specific title id"
     },
     {
       "short": "-t",
       "long": "--type",
-      "description": "Specify media type (movie or tv)"
+      "description": "Content type for --id (tv = series)"
     },
     {
       "short": "-a",
       "long": "--anime",
-      "description": "Anime mode"
-    },
-    {
-      "short": "-m",
-      "long": "--minimal",
-      "description": "Minimal footer for this session"
-    },
-    {
-      "short": "-z",
-      "long": "--zen",
-      "description": "Enable zen mode (minimalist UI, quick play)"
-    },
-    {
-      "short": "-q",
-      "long": "--quick",
-      "description": "Jump to playback immediately"
+      "description": "Anime mode (AllAnime providers)"
     },
     {
       "short": "",
-      "long": "--jump",
-      "description": "Directly pick index result"
-    },
-    {
-      "short": "",
-      "long": "--debug",
-      "description": "Enable debug log output"
-    },
-    {
-      "short": "",
-      "long": "--debug-json",
-      "description": ""
-    },
-    {
-      "short": "",
-      "long": "--debug-session",
-      "description": ""
-    },
-    {
-      "short": "",
-      "long": "--setup",
-      "description": "Run Setup Wizard"
-    },
-    {
-      "short": "",
-      "long": "--offline",
-      "description": "Open completed offline library first"
-    },
-    {
-      "short": "",
-      "long": "--discover",
-      "description": "Open recommendations first"
-    },
-    {
-      "short": "",
-      "long": "--calendar",
-      "description": "Open releases airing today first"
-    },
-    {
-      "short": "",
-      "long": "--random",
-      "description": "Open a rerollable random recommendation tray first"
+      "long": "--resume",
+      "description": "Jump into Continue Watching"
     },
     {
       "short": "",
       "long": "--history",
-      "description": "Open watch history first"
+      "description": "Open watch history"
     },
     {
-      "short": "--continue",
-      "long": "--resume",
-      "description": "Continue newest unfinished local history entry"
+      "short": "",
+      "long": "--offline",
+      "description": "Offline library only (no provider calls)"
+    },
+    {
+      "short": "",
+      "long": "--discover",
+      "description": "Open recommendations"
+    },
+    {
+      "short": "",
+      "long": "--calendar",
+      "description": "Open the release calendar"
+    },
+    {
+      "short": "",
+      "long": "--random",
+      "description": "Open the random picks tray"
     },
     {
       "short": "",
       "long": "--download",
-      "description": "Queue selected item for download"
+      "description": "Download-only flow for a selected title (use with -S or -i; does not open the shell queue)"
     },
     {
       "short": "",
-      "long": "--download-path",
-      "description": ""
+      "long": "--setup",
+      "description": "Run the setup wizard"
+    },
+    {
+      "short": "-m",
+      "long": "--minimal",
+      "description": "Minimal chrome"
+    },
+    {
+      "short": "-z",
+      "long": "--zen",
+      "description": "Zen mode (bare, ani-cli-style)"
+    },
+    {
+      "short": "-q",
+      "long": "--quick",
+      "description": "Quick layout"
     },
     {
       "short": "",
-      "long": "--handoff-url",
-      "description": ""
-    },
-    {
-      "short": "",
-      "long": "--install-protocol-handler",
-      "description": ""
-    },
-    {
-      "short": "",
-      "long": "--dry-run",
-      "description": ""
+      "long": "--jump",
+      "description": "Resume/seek to episode n"
     },
     {
       "short": "",
       "long": "--mpv-debug",
-      "description": ""
+      "description": "Verbose mpv logging"
     },
     {
       "short": "",
       "long": "--mpv-clean",
-      "description": ""
+      "description": "Ignore your mpv config for this run"
     },
     {
       "short": "",
       "long": "--no-user-mpv-config",
-      "description": ""
+      "description": "Same, explicit"
     },
     {
       "short": "",
       "long": "--mpv-log-file",
-      "description": ""
+      "description": "Write the mpv log to a file"
+    },
+    {
+      "short": "",
+      "long": "--download-path",
+      "description": "Override the download directory"
+    },
+    {
+      "short": "",
+      "long": "--install-protocol-handler",
+      "description": "Register the kunai:// URL handler"
+    },
+    {
+      "short": "",
+      "long": "--handoff-url",
+      "description": "Internal: open a kunai:// deep link"
+    },
+    {
+      "short": "",
+      "long": "--dry-run",
+      "description": "Print what would happen, change nothing"
+    },
+    {
+      "short": "",
+      "long": "--debug",
+      "description": "Verbose logging to ./logs.txt"
+    },
+    {
+      "short": "",
+      "long": "--debug-json",
+      "description": "Debug + JSON event stream"
+    },
+    {
+      "short": "",
+      "long": "--debug-session",
+      "description": "Debug + full session trace"
     },
     {
       "short": "-h",
       "long": "--help",
-      "description": ""
+      "description": "Show this help"
     },
     {
       "short": "-v",
       "long": "--version",
-      "description": ""
+      "description": "Print the version"
     },
     {
       "short": "",
       "long": "--uninstall",
-      "description": ""
+      "description": "Remove kunai (add --purge to also delete user data)"
     }
   ]
 }

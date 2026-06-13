@@ -29,6 +29,23 @@ type CliOptionMetadata = {
   readonly description: string;
 };
 
+const PROVIDER_MODULE_DIR: Record<string, string> = {
+  videasyProviderModule: "videasy",
+  vidlinkProviderModule: "vidlink",
+  rivestreamProviderModule: "rivestream",
+  allmangaProviderModule: "allmanga",
+  miruroProviderModule: "miruro",
+};
+
+const PROVIDER_ID_CONSTANTS: Record<string, string> = {
+  ALLANIME_PROVIDER_ID: "allanime",
+  CINEBY_PROVIDER_ID: "cineby",
+  MIRURO_PROVIDER_ID: "miruro",
+  RIVESTREAM_PROVIDER_ID: "rivestream",
+  VIDEOSY_PROVIDER_ID: "videasy",
+  VIDLINK_PROVIDER_ID: "vidlink",
+};
+
 function formatGeneratedFile(filePath: string) {
   const result = Bun.spawnSync(["oxfmt", "--write", filePath], {
     cwd: ROOT_DIR,
@@ -56,7 +73,6 @@ function metadataPayload(value: Record<string, unknown>) {
   return JSON.stringify(payload);
 }
 
-// Helper to extract values using RegExp
 function extractString(content: string, prop: string): string | null {
   const regex = new RegExp(`${prop}:\\s*["']([^"']+)["']`);
   const match = content.match(regex);
@@ -79,81 +95,75 @@ function extractArray(content: string, prop: string): string[] {
     .filter((val) => val.length > 0);
 }
 
-// 1. Sync Providers
-function syncProviders() {
-  // Derived from apps/cli/src/container.ts providerModules registration
-  // NOT from packages/providers/src/index.ts barrel — only actively registered modules count.
-  const providerDirs = [
-    { name: "allmanga", path: "packages/providers/src/allmanga/manifest.ts" },
-    { name: "miruro", path: "packages/providers/src/miruro/manifest.ts" },
-    { name: "rivestream", path: "packages/providers/src/rivestream/manifest.ts" },
-    { name: "videasy", path: "packages/providers/src/videasy/manifest.ts" },
-    { name: "vidlink", path: "packages/providers/src/vidlink/manifest.ts" },
-  ];
+function resolveProviderId(rawId: string, fallbackDir: string): string {
+  let id = rawId.replace(/['"]/g, "");
+  if (PROVIDER_ID_CONSTANTS[id]) {
+    id = PROVIDER_ID_CONSTANTS[id];
+  }
+  return id || fallbackDir;
+}
+
+function parseManifest(manifestPath: string, fallbackDir: string): ProviderMetadata {
+  const content = fs.readFileSync(manifestPath, "utf-8");
+  const normalizedContent = content.replace(/\n\s*/g, " ");
+
+  const idMatch = content.match(/id:\s*([A-Za-z0-9_]+|["'][^"']+["'])/);
+  const id = idMatch ? resolveProviderId(idMatch[1], fallbackDir) : fallbackDir;
+
+  return {
+    id,
+    displayName: extractString(normalizedContent, "displayName") || fallbackDir,
+    description: extractString(normalizedContent, "description") || "",
+    domain: extractString(normalizedContent, "domain") || "",
+    recommended: extractBoolean(normalizedContent, "recommended"),
+    mediaKinds: extractArray(normalizedContent, "mediaKinds"),
+    capabilities: extractArray(normalizedContent, "capabilities"),
+    status: extractString(normalizedContent, "status") || "active",
+    notes: extractArray(normalizedContent, "notes"),
+  };
+}
+
+function syncProvidersFromContainer(): ProviderMetadata[] {
+  const containerPath = path.join(ROOT_DIR, "apps/cli/src/container.ts");
+  const content = fs.readFileSync(containerPath, "utf-8");
+  const arrayMatch = content.match(/orderProviderModulesByPriority\(\s*\[([\s\S]*?)\],\s*\{/);
+  if (!arrayMatch) {
+    throw new Error("Could not parse providerModules from apps/cli/src/container.ts");
+  }
+
+  const moduleNames = [...arrayMatch[1].matchAll(/(\w+ProviderModule)/g)].map((m) => m[1]);
+  if (moduleNames.length === 0) {
+    throw new Error("No provider modules found in container.ts");
+  }
 
   const providers: ProviderMetadata[] = [];
-
-  for (const entry of providerDirs) {
-    const fullPath = path.join(ROOT_DIR, entry.path);
-    if (!fs.existsSync(fullPath)) {
-      console.warn(`File not found: ${fullPath}`);
-      continue;
+  for (const moduleName of moduleNames) {
+    const dir = PROVIDER_MODULE_DIR[moduleName];
+    if (!dir) {
+      throw new Error(`Unknown provider module in container.ts: ${moduleName}`);
     }
-
-    const content = fs.readFileSync(fullPath, "utf-8");
-
-    // Clean up content to make regex matching simple (remove newlines inside arrays)
-    const normalizedContent = content.replace(/\n\s*/g, " ");
-
-    const idMatch = content.match(/id:\s*([A-Za-z0-9_]+|["'][^"']+["'])/);
-    let id = idMatch ? idMatch[1].replace(/['"]/g, "") : entry.name;
-    if (id === "ALLANIME_PROVIDER_ID") id = "allanime";
-    if (id === "CINEBY_PROVIDER_ID") id = "cineby";
-    if (id === "MIRURO_PROVIDER_ID") id = "miruro";
-    if (id === "RIVESTREAM_PROVIDER_ID") id = "rivestream";
-    if (id === "VIDEOSY_PROVIDER_ID") id = "videasy";
-    if (id === "VIDLINK_PROVIDER_ID") id = "vidlink";
-
-    const displayName = extractString(normalizedContent, "displayName") || entry.name;
-    const description = extractString(normalizedContent, "description") || "";
-    const domain = extractString(normalizedContent, "domain") || "";
-    const recommended = extractBoolean(normalizedContent, "recommended");
-    const mediaKinds = extractArray(normalizedContent, "mediaKinds");
-    const capabilities = extractArray(normalizedContent, "capabilities");
-    const status = extractString(normalizedContent, "status") || "active";
-    const notes = extractArray(normalizedContent, "notes");
-
-    providers.push({
-      id,
-      displayName,
-      description,
-      domain,
-      recommended,
-      mediaKinds,
-      capabilities,
-      status,
-      notes,
-    });
+    const manifestPath = path.join(ROOT_DIR, `packages/providers/src/${dir}/manifest.ts`);
+    if (!fs.existsSync(manifestPath)) {
+      throw new Error(`Missing manifest for registered provider: ${manifestPath}`);
+    }
+    providers.push(parseManifest(manifestPath, dir));
   }
 
   return providers;
 }
 
-// 2. Sync Commands from apps/cli/src/domain/session/command-registry.ts
-function syncCommands() {
+function syncCommands(): CommandMetadata[] {
   const cmdRegistryPath = path.join(ROOT_DIR, "apps/cli/src/domain/session/command-registry.ts");
   if (!fs.existsSync(cmdRegistryPath)) {
-    console.warn(`Command registry not found: ${cmdRegistryPath}`);
-    return [];
+    throw new Error(`Command registry not found: ${cmdRegistryPath}`);
   }
 
   const content = fs.readFileSync(cmdRegistryPath, "utf-8");
-
-  // Locate the COMMANDS array
   const startIndex = content.indexOf("export const COMMANDS: readonly AppCommand[] = [");
-  if (startIndex === -1) return [];
+  if (startIndex === -1) {
+    throw new Error("COMMANDS array not found in command-registry.ts");
+  }
 
-  // Parse objects manually using regex
   const block = content.slice(startIndex);
   const items: CommandMetadata[] = [];
   const itemRegex =
@@ -161,7 +171,7 @@ function syncCommands() {
 
   let match;
   while ((match = itemRegex.exec(block)) !== null) {
-    const [_, id, label, rawAliases, description] = match;
+    const [, id, label, rawAliases, description] = match;
     const aliases = rawAliases
       ? rawAliases
           .split(",")
@@ -179,91 +189,79 @@ function syncCommands() {
   return items;
 }
 
-// 3. Sync CLI Options from apps/cli/src/main.ts
-function syncCliOptions() {
-  const mainPath = path.join(ROOT_DIR, "apps/cli/src/main.ts");
-  if (!fs.existsSync(mainPath)) {
-    console.warn(`main.ts not found: ${mainPath}`);
-    return [];
-  }
-
-  const content = fs.readFileSync(mainPath, "utf-8");
+function parseHelpTextFlags(helpText: string): CliOptionMetadata[] {
   const options: CliOptionMetadata[] = [];
+  const lines = helpText.split("\n");
 
-  // Parse lines matching args pattern in parseArgs
-  const argRegex =
-    /else if\s*\(\s*arg\s*===\s*["']([^"']+)["']\s*(?:\|\|\s*arg\s*===\s*["']([^"']+)["'])?\s*\)/g;
-  let match;
-
-  // We can also extract help comments
-  const lines = content.split("\n");
-  const commentsMap = new Map<string, string>();
   for (const line of lines) {
-    const commentMatch = line.match(
-      /\/\/\s+(bun run dev\s+--\s+)?(-[A-Za-z]|--[A-Za-z0-9-]+)\s+#\s+(.+)/,
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("USAGE") || trimmed.startsWith("LAUNCH")) continue;
+    if (trimmed.startsWith("DISPLAY") || trimmed.startsWith("PATHS")) continue;
+    if (trimmed.startsWith("DIAGNOSTICS") || trimmed.startsWith("MAINTENANCE")) continue;
+    if (trimmed.startsWith("mpv") || trimmed.startsWith("Inside the app")) continue;
+    if (trimmed.startsWith("Kunai ")) continue;
+
+    const flagMatch = trimmed.match(
+      /^(?:([a-zA-Z0-9-]+),\s+)?(--[a-zA-Z0-9-]+)(?:\s+<[^>]+>)?\s{2,}(.+)$/,
     );
-    if (commentMatch) {
-      const flag = commentMatch[2];
-      const desc = commentMatch[3];
-      commentsMap.set(flag, desc);
-    }
-  }
+    if (!flagMatch) continue;
 
-  // Parse the else if args block
-  while ((match = argRegex.exec(content)) !== null) {
-    const flag1 = match[1];
-    const flag2 = match[2] || "";
-    const primary = flag2 || flag1;
-    const short = flag2 ? flag1 : "";
-
-    let description = commentsMap.get(primary) || commentsMap.get(short) || "";
-    if (!description) {
-      if (primary === "--search") description = "Search for movies or tv shows";
-      else if (primary === "--id") description = "Specify a title ID directly";
-      else if (primary === "--type") description = "Specify media type (movie or tv)";
-      else if (primary === "--anime") description = "Enable anime mode";
-      else if (primary === "--minimal") description = "Enable minimal footer UI";
-      else if (primary === "--zen") description = "Enable zen mode (minimalist UI, quick play)";
-      else if (primary === "--quick") description = "Jump to playback immediately";
-      else if (primary === "--jump") description = "Directly pick index result";
-      else if (primary === "--debug") description = "Enable debug log output";
-      else if (primary === "--setup") description = "Run Setup Wizard";
-      else if (primary === "--offline") description = "Open offline download library";
-      else if (primary === "--discover") description = "Open discovery dashboard";
-      else if (primary === "--calendar") description = "Open release calendar";
-      else if (primary === "--random") description = "Open random tray selector";
-      else if (primary === "--history") description = "Open watch history";
-      else if (primary === "--continue") description = "Continue watching newest item";
-      else if (primary === "--download") description = "Queue selected item for download";
-    }
+    const [, shortPart, longFlag, description] = flagMatch;
+    const short = shortPart?.startsWith("-") && !shortPart.startsWith("--") ? shortPart : "";
 
     options.push({
       short,
-      long: primary,
-      description,
+      long: longFlag,
+      description: description.trim(),
     });
   }
 
-  // Deduplicate and filter options
+  return options;
+}
+
+function syncCliOptionsFromHelp(): CliOptionMetadata[] {
+  const mainPath = path.join(ROOT_DIR, "apps/cli/src/main.ts");
+  const content = fs.readFileSync(mainPath, "utf-8");
+  const helpMatch = content.match(
+    /export function buildHelpText\(\): string \{\s*return `([\s\S]*?)`;\s*\}/,
+  );
+  if (!helpMatch) {
+    throw new Error("buildHelpText() not found in main.ts");
+  }
+
+  const options = parseHelpTextFlags(helpMatch[1]);
+  const download = options.find((opt) => opt.long === "--download");
+  if (download) {
+    download.description =
+      "Download-only flow for a selected title (use with -S or -i; does not open the shell queue)";
+  }
+
   const seen = new Set<string>();
-  const uniqueOptions = options.filter((opt) => {
-    const key = opt.long;
-    if (seen.has(key)) return false;
-    seen.add(key);
+  return options.filter((opt) => {
+    if (seen.has(opt.long)) return false;
+    seen.add(opt.long);
     return true;
   });
+}
 
-  return uniqueOptions;
+function readPackageVersion(): string {
+  const pkgPath = path.join(ROOT_DIR, "apps/cli/package.json");
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { version?: string };
+  return pkg.version ?? "0.0.0";
 }
 
 function main() {
   console.log("Syncing code metadata as source of truth for docs...");
-  const providers = syncProviders();
+  const providers = syncProvidersFromContainer();
   const commands = syncCommands();
-  const cliOptions = syncCliOptions();
+  const cliOptions = syncCliOptionsFromHelp();
+  const version = readPackageVersion();
 
   const metadata = {
     syncedAt: new Date().toISOString(),
+    version,
+    commandCount: commands.length,
+    providerIds: providers.map((p) => p.id),
     providers,
     commands,
     cliOptions,
