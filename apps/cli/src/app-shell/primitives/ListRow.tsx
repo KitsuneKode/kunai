@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { padColumnsEnd, truncateLine } from "../shell-text";
+import { padColumnsEnd, padColumnsStart, truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import type { ListRowColumn } from "./ListRow.model";
 
@@ -34,16 +34,22 @@ export const ListRow = React.memo(function ListRow({
       width={rowWidth}
       backgroundColor={selected ? palette.surfaceActive : undefined}
       flexDirection="row"
+      overflow="hidden"
     >
       <Text color={selected ? palette.accent : palette.dim}>{selected ? `${marker} ` : "  "}</Text>
       {columns.map((col, index) => {
         const width = index === flexIndex ? col.width + colBudget : col.width;
-        const text = truncateLine(col.text, width);
+        const clipped = truncateLine(col.text, width);
         const padded =
-          col.align === "right" ? padColumnsEnd(text, width) : truncateLine(text, width);
+          col.align === "right" ? padColumnsStart(clipped, width) : padColumnsEnd(clipped, width);
         return (
-          <Box key={`${col.align ?? "left"}:${col.width}:${col.text}`} width={width + 1}>
+          <Box
+            key={`${col.align ?? "left"}:${col.width}:${col.text}`}
+            width={width + 1}
+            overflow="hidden"
+          >
             <Text
+              wrap="truncate"
               color={col.color ?? (selected ? palette.text : palette.textDim)}
               bold={selected && index === flexIndex}
               dimColor={col.dim ?? !selected}

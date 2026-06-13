@@ -7,8 +7,11 @@ import {
   buildCalendarRenderRows,
   calendarDayKeyFromGroup,
   calendarPriorityBand,
+  compactCalendarStatusLabel,
+  computeCalendarRowLayout,
   deriveCalendarReleaseState,
   filterCalendarOptionsByType,
+  formatCalendarRowTimeLabel,
   formatReleaseCountdown,
   hasProviderConfirmedAvailability,
   parsePreviewTimeTodayMs,
@@ -249,8 +252,8 @@ test("buildCalendarRenderRows emits unified timestamp rows without band headers"
     dayStripOption({ label: "Unknown", previewGroup: "MON 1" }),
   ];
   const rows = buildCalendarRenderRows(options, 0, options.length);
-  expect(rows[0]?.timeLabel).toBe("9:00 PM");
-  expect(rows[1]?.timeLabel).toBe("9:00 PM");
+  expect(rows[0]?.timeLabel).toBe("9 PM");
+  expect(rows[1]?.timeLabel).toBe("9 PM");
   expect(rows[2]?.timeLabel).toBe("TBD");
 });
 
@@ -302,4 +305,19 @@ test("buildCalendarErrorState offers catalog refresh without provider lookup", (
     id: "retry-calendar",
     detail: "Retry catalog metadata without touching providers",
   });
+});
+
+test("formatCalendarRowTimeLabel compacts clock times for the schedule column", () => {
+  expect(formatCalendarRowTimeLabel("9:00 PM")).toBe("9 PM");
+  expect(formatCalendarRowTimeLabel("9:30 PM")).toBe("9:30p");
+  expect(formatCalendarRowTimeLabel(null)).toBe("TBD");
+});
+
+test("compactCalendarStatusLabel shortens aired copy for narrow status cells", () => {
+  expect(compactCalendarStatusLabel("aired · resolving", 12)).toBe("resolving");
+});
+
+test("computeCalendarRowLayout omits episode width when there is no code", () => {
+  expect(computeCalendarRowLayout(80, false).episodeWidth).toBe(0);
+  expect(computeCalendarRowLayout(80, true).episodeWidth).toBe(7);
 });

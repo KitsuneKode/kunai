@@ -2,7 +2,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import type { PosterResult } from "../poster-types";
-import { truncateLine } from "../shell-text";
+import { truncateLine, wrapText } from "../shell-text";
 import { palette } from "../shell-theme";
 import {
   getPreviewPosterLabel,
@@ -31,6 +31,8 @@ export function PreviewRail({
   const facts = visiblePreviewFacts(model.facts).slice(0, 4);
   const posterLabel = getPreviewPosterLabel(model);
   const hasPosterImage = poster !== undefined && poster.kind !== "none";
+  const bodyWidth = Math.max(16, width - 2);
+  const overviewLines = model.overview ? wrapText(model.overview, bodyWidth, 3) : [];
   return (
     <Box flexDirection="column" width={width}>
       {/* Borderless poster slot — height-reserved so the metadata below never
@@ -46,15 +48,21 @@ export function PreviewRail({
         )}
       </Box>
       <Box marginTop={1} flexDirection="column">
-        <Text color={palette.text} bold>
-          {truncateLine(model.title, width - 2)}
+        <Text color={palette.text} bold wrap="truncate">
+          {truncateLine(model.title, bodyWidth)}
         </Text>
         {model.subtitle ? (
-          <Text color={palette.muted}>{truncateLine(model.subtitle, width - 2)}</Text>
+          <Text color={palette.muted} wrap="truncate">
+            {truncateLine(model.subtitle, bodyWidth)}
+          </Text>
         ) : null}
-        {model.overview ? (
-          <Box marginTop={1}>
-            <Text color={palette.dim}>{truncateLine(model.overview, width - 2)}</Text>
+        {overviewLines.length > 0 ? (
+          <Box marginTop={1} flexDirection="column">
+            {overviewLines.map((line) => (
+              <Text key={line} color={palette.dim} wrap="truncate">
+                {line}
+              </Text>
+            ))}
           </Box>
         ) : null}
       </Box>

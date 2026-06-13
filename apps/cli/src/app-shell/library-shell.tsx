@@ -1,12 +1,11 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
-import { ListRow } from "@/app-shell/primitives/ListRow";
 import {
-  listRowEpColumn,
-  listRowStatusColumn,
-  listRowTitleColumn,
-} from "@/app-shell/primitives/ListRow.model";
+  buildMediaListRowColumns,
+  computeMediaListRowLayout,
+} from "@/app-shell/primitives/list-row-layout";
+import { ListRow } from "@/app-shell/primitives/ListRow";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
 import {
   shouldRenderPreviewRail,
@@ -365,9 +364,7 @@ function LibraryTab({ container }: { container: Container }) {
   });
   const listWidth = showRail ? Math.max(40, columns - railWidth - 4) : columns;
   const rowWidth = listWidth;
-  const epWidth = 8;
-  const statusWidth = 16;
-  const titleWidth = Math.max(12, rowWidth - epWidth - statusWidth - 4);
+  const rowLayout = computeMediaListRowLayout(rowWidth, { hasEpisode: true });
 
   const list = (
     <Box flexDirection="column" flexGrow={1}>
@@ -399,11 +396,15 @@ function LibraryTab({ container }: { container: Container }) {
             }
             selected={selected}
             rowWidth={rowWidth}
-            columns={[
-              listRowTitleColumn(title, titleWidth),
-              listRowEpColumn(ep, epWidth),
-              listRowStatusColumn(status.label, statusWidth, status.color, status.dim),
-            ]}
+            flexColumnIndex={rowLayout.flexColumnIndex}
+            columns={buildMediaListRowColumns({
+              title,
+              episodeCode: ep,
+              statusLabel: status.label,
+              statusColor: status.color,
+              statusDim: status.dim,
+              layout: rowLayout,
+            })}
           />
         );
       })}

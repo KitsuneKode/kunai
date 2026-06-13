@@ -45,6 +45,8 @@ export type CalendarRenderRow<T> = {
   readonly statusColor: string;
   readonly statusDim: boolean;
   readonly statusGlyph: string;
+  readonly showWeekHeader: boolean;
+  readonly weekHeaderLabel: string | null;
   readonly showDayHeader: boolean;
   readonly dayHeaderLabel: string | null;
   readonly showForYouHeaderOnce: boolean;
@@ -126,6 +128,27 @@ export function calendarDayKeyFromGroup(group: string): string {
   return separatorIdx >= 0 ? group.slice(0, separatorIdx) : group;
 }
 
+export function calendarWeekKeyFromIsoDay(isoKey: string): string {
+  const date = new Date(`${isoKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return isoKey;
+  const day = date.getDay();
+  const mondayOffset = (day + 6) % 7;
+  date.setDate(date.getDate() - mondayOffset);
+  return date.toISOString().slice(0, 10);
+}
+
+export function calendarWeekHeaderLabel(weekKey: string, nowMs: number = Date.now()): string {
+  const thisWeekKey = calendarWeekKeyFromIsoDay(new Date(nowMs).toISOString().slice(0, 10));
+  if (weekKey === thisWeekKey) return "This week";
+  const nextWeekDate = new Date(`${thisWeekKey}T00:00:00`);
+  nextWeekDate.setDate(nextWeekDate.getDate() + 7);
+  if (weekKey === nextWeekDate.toISOString().slice(0, 10)) return "Next week";
+  const weekStart = new Date(`${weekKey}T00:00:00`);
+  if (Number.isNaN(weekStart.getTime())) return weekKey;
+  const formatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+  return `Week of ${formatter.format(weekStart)}`;
+}
+
 export function filterCalendarOptionsByDay<T>(
   options: readonly BrowseShellOption<T>[],
   dayKey: string | null,
@@ -170,6 +193,52 @@ export function parsePreviewTimeTodayMs(timeLabel: string, nowMs: number): numbe
   const date = new Date(nowMs);
   date.setHours(hours, minutes, 0, 0);
   return date.getTime();
+}
+
+/** Fit broadcast times into the fixed schedule time column. */
+export function formatCalendarRowTimeLabel(raw: string | null | undefined): string {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed) return "TBD";
+  const upper = trimmed.toUpperCase();
+  if (upper === "TBD" || upper === "DATE TBA") return "TBD";
+
+  const clock = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (clock) {
+    const hour = Number(clock[1]);
+    const minute = Number(clock[2]);
+    const meridiem = clock[3]?.toUpperCase();
+    if (!meridiem) return trimmed;
+    if (minute === 0) return `${hour} ${meridiem}`;
+    return `${hour}:${String(minute).padStart(2, "0")}${meridiem === "AM" ? "a" : "p"}`;
+  }
+
+  const compact = trimmed.match(/^(\d{1,2})\s*(AM|PM)$/i);
+  if (compact && compact[2]) return `${compact[1]} ${compact[2].toUpperCase()}`;
+
+  return trimmed.length <= 7 ? trimmed : `${trimmed.slice(0, 6)}…`;
+}
+
+export type { CalendarRowLayout } from "./primitives/list-row-layout";
+export { computeCalendarRowLayout } from "./primitives/list-row-layout";
+
+/** Shorten long schedule status copy so the right column stays readable. */
+export function compactCalendarStatusLabel(label: string, maxColumns: number): string {
+  const normalized = label.trim();
+  if (normalized.length <= maxColumns) return normalized;
+  if (normalized.startsWith("aired · ")) {
+    const tail = normalized.slice("aired · ".length);
+    if (tail.length <= maxColumns) return tail;
+  }
+  if (normalized.startsWith("airs today · ")) {
+    return "today";
+  }
+  if (normalized.startsWith("released today · ")) {
+    return "today";
+  }
+  if (normalized.length > maxColumns) {
+    return `${normalized.slice(0, Math.max(1, maxColumns - 1))}…`;
+  }
+  return normalized;
 }
 
 export function formatReleaseCountdown(remainingMs: number): string {
@@ -375,16 +444,25 @@ export function buildCalendarRenderRows<T>(
 ): readonly CalendarRenderRow<T>[] {
   const rows: CalendarRenderRow<T>[] = [];
   let lastDayHeader: string | null = null;
+  let lastWeekHeader: string | null = null;
   let forYouHeaderShown = false;
 
   for (let index = windowStart; index < windowEnd; index += 1) {
     const option = options[index];
     if (!option) continue;
     const presentation = calendarReleaseRowPresentation(option, nowMs);
-    const timeLabel = (option.calendar?.display.time ?? option.previewTime?.trim() ?? "") || "TBD";
+    const timeLabel = formatCalendarRowTimeLabel(
+      option.calendar?.display.time ?? option.previewTime?.trim() ?? null,
+    );
     const groupLabel = option.calendar?.display.groupLabel ?? option.previewGroup;
     const dayHeaderLabel =
       selectedDayKey === null && groupLabel ? calendarDayKeyFromGroup(groupLabel) : null;
+    const weekHeaderLabel =
+      selectedDayKey === null && dayHeaderLabel
+        ? calendarWeekHeaderLabel(calendarWeekKeyFromIsoDay(dayHeaderLabel), nowMs)
+        : null;
+    const showWeekHeader = weekHeaderLabel !== null && weekHeaderLabel !== lastWeekHeader;
+    if (showWeekHeader) lastWeekHeader = weekHeaderLabel;
     const showDayHeader = dayHeaderLabel !== null && dayHeaderLabel !== lastDayHeader;
     if (showDayHeader) lastDayHeader = dayHeaderLabel;
 
@@ -404,6 +482,8 @@ export function buildCalendarRenderRows<T>(
       statusColor: presentation.color,
       statusDim: presentation.dim,
       statusGlyph: presentation.glyph.trim(),
+      showWeekHeader,
+      weekHeaderLabel: showWeekHeader ? weekHeaderLabel : null,
       showDayHeader,
       dayHeaderLabel: showDayHeader ? dayHeaderLabel : null,
       showForYouHeaderOnce,

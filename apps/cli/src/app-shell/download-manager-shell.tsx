@@ -3,6 +3,7 @@ import {
   getPickerListMaxVisible,
   ROOT_CHROME_ROWS,
 } from "@/app-shell/layout-policy";
+import { computeQueueRowLayout } from "@/app-shell/primitives/list-row-layout";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
 import { ResizeBlocker } from "@/app-shell/shell-primitives";
@@ -15,10 +16,7 @@ import type { DownloadJobRecord } from "@kunai/storage";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useState } from "react";
 
-/** Fixed queue columns — matches kunai-sakura-systems.html qrow grid. */
-const QUEUE_STATE_COL = 18;
-const QUEUE_PROGRESS_COL = 22;
-const QUEUE_META_COL = 14;
+/** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
 
 function refreshJobLists(container: Container) {
   return {
@@ -81,7 +79,7 @@ function queueMetaLine(job: DownloadJobRecord): {
       primary:
         job.status === "repairable"
           ? "sidecar"
-          : truncateLine(job.errorMessage ?? "source gone", QUEUE_META_COL),
+          : truncateLine(job.errorMessage ?? "source gone", 12),
       tone: palette.dim,
     };
   }
@@ -304,6 +302,7 @@ export function DownloadManagerContent({
 
   const { tooSmall, minColumns, minRows } = viewport;
   const shellWidth = viewport.columns ?? 80;
+  const queueLayout = computeQueueRowLayout(shellWidth);
 
   if (tooSmall) {
     return (
@@ -318,7 +317,7 @@ export function DownloadManagerContent({
 
   const titleCol = Math.max(
     20,
-    shellWidth - QUEUE_STATE_COL - QUEUE_PROGRESS_COL - QUEUE_META_COL - 4,
+    shellWidth - 2 - queueLayout.stateWidth - queueLayout.progressWidth - queueLayout.metaWidth - 4,
   );
   const isConfirming = (index: number) =>
     confirmingDeleteIndex === index && selectedIndex === index;
@@ -336,42 +335,57 @@ export function DownloadManagerContent({
     return (
       <Box
         key={job.id}
-        flexDirection="row"
+        flexDirection="column"
         width={shellWidth}
         backgroundColor={isSelected ? palette.surfaceActive : undefined}
       >
-        <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
-        <Box width={titleCol}>
-          <Text color={isSelected ? palette.text : palette.textDim} bold={isSelected}>
-            {titleLine}
-          </Text>
-        </Box>
-        <Box width={QUEUE_STATE_COL}>
-          <Text color={state.color}>{truncateLine(state.label, QUEUE_STATE_COL - 1)}</Text>
-        </Box>
-        <Box width={QUEUE_PROGRESS_COL}>
-          <ProgressBar
-            value={progressBarValue(job)}
-            max={100}
-            width={QUEUE_PROGRESS_COL - 2}
-            color={progressBarColor(job)}
-          />
-        </Box>
-        <Box width={QUEUE_META_COL} flexDirection="row" justifyContent="flex-end">
-          <Text color={meta.tone} bold={job.status === "running"}>
-            {meta.primary}
-          </Text>
-          {meta.secondary ? (
-            <Text color={palette.dim} dimColor>
-              {" "}
-              {meta.secondary}
+        <Box flexDirection="row" width={shellWidth} overflow="hidden">
+          <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
+          <Box width={titleCol} overflow="hidden">
+            <Text
+              wrap="truncate"
+              color={isSelected ? palette.text : palette.textDim}
+              bold={isSelected}
+            >
+              {titleLine}
             </Text>
-          ) : null}
+          </Box>
+          <Box width={queueLayout.stateWidth} overflow="hidden">
+            <Text wrap="truncate" color={state.color}>
+              {truncateLine(state.label, queueLayout.stateWidth - 1)}
+            </Text>
+          </Box>
+          <Box width={queueLayout.progressWidth}>
+            <ProgressBar
+              value={progressBarValue(job)}
+              max={100}
+              width={queueLayout.progressWidth - 2}
+              color={progressBarColor(job)}
+            />
+          </Box>
+          <Box
+            width={queueLayout.metaWidth}
+            flexDirection="row"
+            justifyContent="flex-end"
+            overflow="hidden"
+          >
+            <Text wrap="truncate" color={meta.tone} bold={job.status === "running"}>
+              {truncateLine(meta.primary, queueLayout.metaWidth - 1)}
+            </Text>
+            {meta.secondary ? (
+              <Text color={palette.dim} dimColor wrap="truncate">
+                {" "}
+                {truncateLine(meta.secondary, 6)}
+              </Text>
+            ) : null}
+          </Box>
         </Box>
         {isConfirming(index) ? (
-          <Text color={palette.accentDeep} bold>
-            {"  "}x again
-          </Text>
+          <Box marginLeft={2}>
+            <Text color={palette.accentDeep} bold>
+              Press x again to remove this download
+            </Text>
+          </Box>
         ) : null}
       </Box>
     );

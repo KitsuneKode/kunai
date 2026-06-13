@@ -3,12 +3,8 @@ import React from "react";
 
 import type { HistoryView } from "./history-view";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
+import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
-import {
-  listRowEpColumn,
-  listRowStatusColumn,
-  listRowTitleColumn,
-} from "./primitives/ListRow.model";
 import { MediaListShell } from "./primitives/MediaListShell";
 import { ProgressBar } from "./primitives/ProgressBar";
 import { ResumeCard } from "./primitives/ResumeCard";
@@ -29,10 +25,7 @@ export function HistoryShell({
   readonly listWidth: number;
   readonly rowWidth: number;
 }) {
-  const epWidth = 8;
-  const statusWidth = Math.min(16, Math.max(10, Math.floor(rowWidth * 0.18)));
-  const recencyWidth = 8;
-  const titleWidth = Math.max(12, rowWidth - epWidth - statusWidth - recencyWidth - 4);
+  const rowLayout = computeMediaListRowLayout(rowWidth, { hasEpisode: true, hasRecency: true });
   // Resolve the selected row's stored poster for the preview rail (same mechanism
   // as browse). Wide-only; the URL now comes from history (persisted on watch).
   const railPosterUrl = view.rail?.posterUrl;
@@ -62,12 +55,14 @@ export function HistoryShell({
           <ClaudeTabRow
             labels={view.tabLabels}
             activeIndex={view.tabIndex}
-            hint="⇥ Tab cycles filter"
+            hint={listWidth >= 100 ? "⇥ Tab cycles filter" : undefined}
+            maxWidth={listWidth}
           />
           <ClaudeTabRow
             labels={view.typeFilterLabels}
             activeIndex={view.typeFilterIndex}
-            hint="⇧⇥ type"
+            hint={listWidth >= 100 ? "⇧⇥ type" : undefined}
+            maxWidth={listWidth}
           />
         </>
       )}
@@ -114,17 +109,16 @@ export function HistoryShell({
                 <ListRow
                   selected={selected}
                   rowWidth={rowWidth}
-                  columns={[
-                    listRowTitleColumn(row.title, titleWidth),
-                    listRowEpColumn(row.episodeCode, epWidth),
-                    listRowStatusColumn(
-                      row.statusLabel,
-                      statusWidth,
-                      row.statusColor,
-                      row.statusDim,
-                    ),
-                    listRowStatusColumn(row.recencyLabel, recencyWidth, palette.muted, true),
-                  ]}
+                  flexColumnIndex={rowLayout.flexColumnIndex}
+                  columns={buildMediaListRowColumns({
+                    title: row.title,
+                    episodeCode: row.episodeCode,
+                    statusLabel: row.statusLabel,
+                    statusColor: row.statusColor,
+                    statusDim: row.statusDim,
+                    recencyLabel: row.recencyLabel,
+                    layout: rowLayout,
+                  })}
                 />
                 {row.progress && !row.progress.completed ? (
                   <Box marginLeft={2}>

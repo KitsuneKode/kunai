@@ -5,18 +5,14 @@ import React from "react";
 import {
   CALENDAR_TYPE_TABS,
   calendarReleaseRowPresentation,
+  compactCalendarStatusLabel,
   windowCalendarDayStrip,
   type CalendarDay,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
+import { buildCalendarRowColumns, computeCalendarRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
-import {
-  listRowEpColumn,
-  listRowStatusColumn,
-  listRowTimeColumn,
-  listRowTitleColumn,
-} from "./primitives/ListRow.model";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
@@ -40,15 +36,26 @@ export function CalendarDayStrip({
   days,
   selectedDayKey,
   narrow = false,
+  maxWidth,
 }: {
   days: readonly CalendarDay[];
   selectedDayKey: string | null;
   narrow?: boolean;
+  /** When set, navigation hint hides instead of wrapping past the list edge. */
+  maxWidth?: number;
 }) {
   const { windowDays, hasPrev, hasNext } = windowCalendarDayStrip(days, selectedDayKey, narrow);
+  const showHint = maxWidth === undefined || maxWidth >= 92;
 
   return (
-    <Box flexDirection="row" marginTop={1} marginBottom={1} alignItems="center">
+    <Box
+      flexDirection="row"
+      marginTop={1}
+      marginBottom={1}
+      alignItems="center"
+      width={maxWidth}
+      overflow="hidden"
+    >
       <Text color={palette.dim} dimColor>
         {hasPrev ? "‹ " : "  "}
       </Text>
@@ -71,11 +78,13 @@ export function CalendarDayStrip({
       <Text color={palette.dim} dimColor>
         {hasNext ? " ›" : "  "}
       </Text>
-      <Box marginLeft={1}>
-        <Text color={palette.dim} dimColor>
-          {selectedDayKey !== null ? "← → day · a/esc all days" : "a/→ pick a day"}
-        </Text>
-      </Box>
+      {showHint ? (
+        <Box marginLeft={1}>
+          <Text color={palette.dim} dimColor>
+            {selectedDayKey !== null ? "← → day · a/esc all" : "a/→ pick day"}
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }
@@ -83,14 +92,23 @@ export function CalendarDayStrip({
 export function CalendarTypeTabs({
   activeTab,
   compact,
+  maxWidth,
 }: {
   activeTab: CalendarTypeTab;
   compact: boolean;
+  maxWidth?: number;
 }) {
   if (compact) return null;
   const labels = CALENDAR_TYPE_TABS.map((tab) => (tab === "TV" ? "Series" : tab));
   const activeIndex = CALENDAR_TYPE_TABS.indexOf(activeTab);
-  return <ClaudeTabRow labels={labels} activeIndex={activeIndex} hint="⇥ Tab cycles type" />;
+  return (
+    <ClaudeTabRow
+      labels={labels}
+      activeIndex={activeIndex}
+      hint={maxWidth === undefined || maxWidth >= 100 ? "⇥ Tab cycles type" : undefined}
+      maxWidth={maxWidth}
+    />
+  );
 }
 
 export function CalendarScheduleRow<T>({
@@ -107,6 +125,8 @@ export function CalendarScheduleRow<T>({
   statusGlyph,
   showForYouHeader,
   showForYouHeaderOnce,
+  showWeekHeader,
+  weekHeaderLabel,
 }: {
   option: BrowseShellOption<T>;
   selected: boolean;
@@ -121,6 +141,8 @@ export function CalendarScheduleRow<T>({
   statusGlyph?: string;
   showForYouHeader?: boolean;
   showForYouHeaderOnce?: boolean;
+  showWeekHeader?: boolean;
+  weekHeaderLabel?: string | null;
   showTimeHeader?: boolean;
   showTbdHeader?: boolean;
   showSectionHeader?: string | null;
@@ -132,6 +154,11 @@ export function CalendarScheduleRow<T>({
   const color = statusColor ?? presentation.color;
   const dim = statusDim ?? presentation.dim;
   const glyph = statusGlyph ?? presentation.glyph.trim();
+  const layout = computeCalendarRowLayout(rowWidth, ep.length > 0);
+  const statusText = compactCalendarStatusLabel(
+    glyph ? `${glyph} ${status}` : status,
+    layout.statusWidth,
+  );
   const kind = option.calendar?.contentKind;
   const epColor =
     kind === "anime"
@@ -142,18 +169,24 @@ export function CalendarScheduleRow<T>({
           ? palette.typeSeries
           : palette.muted;
 
-  const timeWidth = 7;
-  const epWidth = 8;
-  const statusWidth = Math.min(18, Math.max(12, Math.floor(rowWidth * 0.22)));
-  // The title is the FLEX column (flexColumnIndex=1) — give it a small base; ListRow
-  // hands it the leftover row width. The time/ep/status columns keep fixed widths so
-  // they stay aligned across rows and a long title truncates instead of pushing them.
-  const titleWidth = 12;
+  const columns = buildCalendarRowColumns({
+    timeLabel,
+    title: option.label,
+    episodeCode: ep,
+    episodeColor: epColor,
+    statusText,
+    statusColor: color,
+    statusDim: dim,
+    layout,
+  });
 
   return (
     <Box flexDirection="column" width={rowWidth} marginBottom={0}>
       {showForYouHeader && showForYouHeaderOnce ? (
         <SectionGroup label="For you · releasing today" marginTop={1} />
+      ) : null}
+      {showWeekHeader && weekHeaderLabel ? (
+        <SectionGroup label={weekHeaderLabel} marginTop={1} />
       ) : null}
       {showDayHeader && dayHeaderLabel ? (
         <SectionGroup label={dayHeaderLabel} marginTop={1} />
@@ -161,13 +194,8 @@ export function CalendarScheduleRow<T>({
       <ListRow
         selected={selected}
         rowWidth={rowWidth}
-        flexColumnIndex={1}
-        columns={[
-          listRowTimeColumn(timeLabel, timeWidth),
-          listRowTitleColumn(option.label, titleWidth),
-          listRowEpColumn(ep, epWidth, epColor),
-          listRowStatusColumn(`${glyph} ${status}`, statusWidth, color, dim),
-        ]}
+        flexColumnIndex={layout.flexColumnIndex}
+        columns={columns}
       />
     </Box>
   );
