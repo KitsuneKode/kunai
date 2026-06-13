@@ -79,7 +79,7 @@
     "prepack": "bun run build"
   },
   "dependencies": {
-    "ink": "^7.0.5",
+    "ink": "^7.0.6",
     "react": "^19.2.7"
   },
   "devDependencies": {
