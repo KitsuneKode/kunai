@@ -91,9 +91,9 @@ function getNotificationActionLabel(action: NotificationActionId): string {
   if (action === "dismiss") return "Dismiss";
   if (action === "play-now") return "Play now";
   if (action === "open-details") return "Open details";
-  if (action === "add-to-playlist") return "Add to playlist";
-  if (action === "follow") return "Follow";
-  if (action === "mute") return "Mute";
+  if (action === "add-to-playlist") return "Save to playlist";
+  if (action === "follow") return "Follow releases";
+  if (action === "mute") return "Mute release notices";
   return "Run action";
 }
 

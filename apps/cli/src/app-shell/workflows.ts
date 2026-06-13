@@ -2395,11 +2395,18 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
 
     if (!picked || picked.type === "back") return "handled";
 
-    type SubAction = "search" | "remove" | "back";
+    const attentionPreference = container.followedTitleRepository.get(picked.titleId)?.preference;
+    const isMuted = attentionPreference === "muted";
+    const isFollowing = attentionPreference === "following";
+
+    type SubAction = "search" | "follow" | "mute" | "remove" | "back";
 
     const sub = await chooseFromListShell({
       title: picked.title,
-      subtitle: "What would you like to do?",
+      subtitle: [
+        "Watchlist title",
+        isMuted ? "muted" : isFollowing ? "following releases" : "not following releases",
+      ].join("  ·  "),
       actionContext,
       options: [
         {
@@ -2407,6 +2414,24 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
           label: "Open in search",
           detail: "Search for this title to play it",
         },
+        ...(isFollowing
+          ? []
+          : [
+              {
+                value: "follow" as SubAction,
+                label: "Follow releases",
+                detail: "Surface new episodes in Calendar, Home, and notifications",
+              },
+            ]),
+        ...(isMuted
+          ? []
+          : [
+              {
+                value: "mute" as SubAction,
+                label: "Mute release notices",
+                detail: "Keep it in Watchlist, but stop new-episode nudges",
+              },
+            ]),
         { value: "remove" as SubAction, label: "Remove from watchlist" },
         { value: "back" as SubAction, label: "Back" },
       ],
@@ -2417,6 +2442,24 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     if (sub === "search") {
       container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: picked.title });
       return "handled";
+    }
+
+    if (sub === "follow" || sub === "mute") {
+      container.followedTitleRepository.upsert({
+        titleId: picked.titleId,
+        mediaKind: items.find((item) => item.titleId === picked.titleId)?.mediaKind ?? "series",
+        title: picked.title,
+        preference: sub === "follow" ? "following" : "muted",
+        updatedAt: new Date().toISOString(),
+      });
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          sub === "follow"
+            ? `Following future releases for "${picked.title}".`
+            : `Muted future release notices for "${picked.title}".`,
+      });
+      continue;
     }
 
     if (sub === "remove") {

@@ -57,14 +57,14 @@ export function getMediaActions(input: MediaActionPolicyInput): readonly MediaAc
   actions.push({ id: "queue-end", label: "Queue at end" });
 
   if (context.playlistsEnabled) {
-    actions.push({ id: "add-to-playlist", label: "Add to playlist" });
+    actions.push({ id: "add-to-playlist", label: "Save to playlist" });
   }
   if (context.downloadsEnabled) {
     actions.push({ id: "download", label: "Download" });
   }
   if (context.followEnabled) {
-    actions.push({ id: "follow", label: "Follow" });
-    actions.push({ id: "mute", label: "Mute", dangerous: true });
+    actions.push({ id: "follow", label: "Follow releases" });
+    actions.push({ id: "mute", label: "Mute release notices", dangerous: true });
   }
   actions.push({ id: "open-details", label: "Open details" });
   if (context.canDismiss) {

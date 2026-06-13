@@ -45,6 +45,26 @@ describe("root history bridge return loop", () => {
       },
     });
     expect(detail).toContain("new since E5");
+    expect(detail).toContain("open next aired episode");
+  });
+
+  test("describeHistoryReturnLoopDetail names scheduled and unknown caught-up states", () => {
+    const upcoming = describeHistoryReturnLoopDetail({
+      entry: seriesEntry(),
+      nextRelease: {
+        status: "upcoming",
+        releaseAt: "2026-06-15T10:00:00.000Z",
+        season: 1,
+        episode: 6,
+      },
+    });
+    const unknown = describeHistoryReturnLoopDetail({
+      entry: seriesEntry(),
+      nextRelease: { status: "unknown", releaseAt: null },
+    });
+
+    expect(upcoming).toContain("caught up · next airs");
+    expect(unknown).toBe("caught up · release unknown");
   });
 
   test("buildRootHistorySelection targets the next episode when a new release is available", () => {

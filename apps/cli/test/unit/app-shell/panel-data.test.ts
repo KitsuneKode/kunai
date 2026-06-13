@@ -744,7 +744,7 @@ describe("panel-data", () => {
     const row = options.find((option) => option.value === "anilist:123");
     expect(row?.label).toContain("S01E07");
     expect(row?.detail).toContain("new since E6");
-    expect(row?.detail).toContain("ready when a source resolves");
+    expect(row?.detail).toContain("open next aired episode");
     expect(row?.badge).toBe("new");
     expect(row?.tone).toBe("success");
   });

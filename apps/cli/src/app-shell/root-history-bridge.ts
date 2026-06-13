@@ -3,7 +3,7 @@ import {
   type ContinueHistoryRelease,
 } from "@/domain/continuation/history-reconciliation";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
-import { historyContentType } from "@/services/continuation/history-progress";
+import { historyContentType, isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
 
 export type RootHistorySelection = {
@@ -52,6 +52,10 @@ export function describeHistoryReturnLoopDetail(input: {
   readonly entry: HistoryProgress;
   readonly nextRelease?: ContinueHistoryRelease | null;
 }): string {
+  if (isFinished(input.entry) && input.nextRelease?.status === "unknown") {
+    return "caught up · release unknown";
+  }
+
   const decision = reconcileContinueHistory({
     titleId: "history-row",
     entries: [["history-row", input.entry]],
@@ -67,7 +71,7 @@ export function describeHistoryReturnLoopDetail(input: {
       historyContentType(input.entry) === "series"
         ? formatNewSinceEpisodeLabel(previousEpisode, decision.episode)
         : null;
-    return newSince ? `${newSince} · ready when a source resolves` : "new episode ready";
+    return newSince ? `${newSince} · open next aired episode` : "new episode ready";
   }
 
   if (decision.kind === "resume") {
@@ -76,12 +80,19 @@ export function describeHistoryReturnLoopDetail(input: {
 
   if (decision.kind === "up-to-date") {
     if (input.nextRelease?.status === "upcoming" && input.nextRelease.releaseAt) {
-      return "caught up · next release scheduled";
+      return `caught up · next airs ${formatShortReleaseDate(input.nextRelease.releaseAt)}`;
     }
+    if (input.nextRelease?.status === "unknown") return "caught up · release unknown";
     return "caught up";
   }
 
   return "pick up from history";
+}
+
+function formatShortReleaseDate(releaseAt: string): string {
+  const date = new Date(releaseAt);
+  if (Number.isNaN(date.getTime())) return "later";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
 }
 
 export function buildRootHistorySelection(

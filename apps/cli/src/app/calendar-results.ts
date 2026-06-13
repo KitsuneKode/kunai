@@ -103,17 +103,20 @@ export async function loadCalendarResults(
       releaseProgress = new Map(releaseProgress).set(item.titleId, projection);
     }
   }
-  const results = sorted.map((item) => {
+  const calendarPairs = sorted.map((item) => {
     const progress = releaseProgress.get(item.titleId);
-    const calendar = buildCalendarItem(item, {
-      nowMs: Date.now(),
-      inWatchlist: isInWatchlist(item.titleId),
-      inHistory: historyMatches.has(item.titleId),
-      newEpisodeCount: activeNewEpisodeCount(progress),
-      providerConfirmed: false,
-    });
-    return toCalendarSearchResult(item, calendar);
+    return {
+      item,
+      calendar: buildCalendarItem(item, {
+        nowMs: Date.now(),
+        inWatchlist: isInWatchlist(item.titleId),
+        inHistory: historyMatches.has(item.titleId),
+        newEpisodeCount: activeNewEpisodeCount(progress),
+        providerConfirmed: false,
+      }),
+    };
   });
+  const results = calendarPairs.map(({ item, calendar }) => toCalendarSearchResult(item, calendar));
   const releasedCount = sorted.filter((item) => item.status === "released").length;
   const airingTodayCount = sorted.filter(
     (item) => item.status !== "released" && isSameLocalDay(item.releaseAt, Date.now()),
@@ -122,13 +125,15 @@ export async function loadCalendarResults(
     (total, projection) => total + activeNewEpisodeCount(projection),
     0,
   );
+  const forYouCount = calendarPairs.filter(({ calendar }) => isCalendarItemForYou(calendar)).length;
   const newEpisodeSuffix = newEpisodeCount > 0 ? ` · ${newEpisodeCount} new for you` : "";
+  const forYouSuffix = forYouCount > 0 ? ` · ${forYouCount} tracked` : "";
 
   return {
     results,
     subtitle:
       results.length > 0
-        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released${newEpisodeSuffix}`
+        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released${newEpisodeSuffix}${forYouSuffix}`
         : "No releases found for the next week",
     emptyMessage:
       "No releases found for the next week. Search and recommendations still work normally.",
@@ -190,9 +195,7 @@ function toCalendarSearchResult(item: CatalogScheduleItem, calendar: CalendarIte
           : undefined,
     title: item.titleName,
     year,
-    overview: calendar.display.episodeCode
-      ? `${calendar.display.episodeCode} · ${calendar.display.statusLabel}`
-      : calendar.display.statusLabel,
+    overview: formatCalendarOverview(calendar),
     posterPath: item.posterPath ?? null,
     metadataSource: `${item.source === "anilist" ? "AniList" : "TMDB"} calendar`,
     rating: typeof item.averageScore === "number" ? item.averageScore / 10 : undefined,
@@ -200,6 +203,27 @@ function toCalendarSearchResult(item: CatalogScheduleItem, calendar: CalendarIte
     calendar,
     episodeCount: item.episode,
   };
+}
+
+function isCalendarItemForYou(calendar: CalendarItem): boolean {
+  return (
+    calendar.inWatchlist === true ||
+    calendar.inHistory === true ||
+    Boolean(calendar.newEpisodeCount && calendar.newEpisodeCount > 0)
+  );
+}
+
+function formatCalendarOverview(calendar: CalendarItem): string {
+  const parts = [
+    calendar.display.episodeCode || null,
+    calendar.display.statusLabel,
+    calendar.newEpisodeCount && calendar.newEpisodeCount > 0
+      ? `${calendar.newEpisodeCount} new for you`
+      : null,
+    calendar.inWatchlist ? "watchlist" : null,
+    calendar.inHistory && !calendar.inWatchlist ? "from history" : null,
+  ].filter((value): value is string => Boolean(value));
+  return parts.join(" · ");
 }
 
 function activeNewEpisodeCount(projection: ReleaseProgressProjection | undefined): number {
