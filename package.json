@@ -42,7 +42,8 @@
     "unlink:global": "bun run --cwd apps/cli unlink:global",
     "relink:global": "bun run --cwd apps/cli relink:global",
     "prepare": "husky",
-    "prototype:serve": "node .prototypes/_harness/server.js"
+    "prototype:serve": "node .prototypes/_harness/server.js",
+    "prototype:layout-fixtures": "bun run apps/cli/scripts/export-list-row-layout-fixtures.ts"
   },
   "dependencies": {
     "typescript": "^6.0.3"
