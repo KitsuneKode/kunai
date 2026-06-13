@@ -1,6 +1,6 @@
-import type { SearchResult } from "@/domain/types";
+import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import { historyContentType } from "@/services/continuation/history-progress";
-import type { HistoryProgress } from "@kunai/storage";
+import type { HistoryProgress, QueueEntry } from "@kunai/storage";
 
 import type { MediaItemIdentity } from "./media-item-identity";
 
@@ -24,5 +24,51 @@ export function mediaItemFromSearchResult(result: SearchResult): MediaItemIdenti
     sourceId: result.metadataSource,
     titleId: result.id,
     title: result.title,
+  };
+}
+
+export function titleInfoFromMediaItemIdentity(item: MediaItemIdentity): TitleInfo {
+  return {
+    id: item.titleId,
+    type: item.mediaKind === "movie" ? "movie" : "series",
+    name: item.title,
+  };
+}
+
+export function episodeInfoFromMediaItemIdentity(item: MediaItemIdentity): EpisodeInfo | undefined {
+  if (item.mediaKind === "movie") return undefined;
+  if (
+    item.season === undefined &&
+    item.episode === undefined &&
+    item.absoluteEpisode === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    season: item.season ?? 1,
+    episode: item.episode ?? item.absoluteEpisode ?? 1,
+  };
+}
+
+export function titleInfoFromQueueEntry(entry: QueueEntry): TitleInfo {
+  return {
+    id: entry.titleId,
+    type: entry.mediaKind === "movie" ? "movie" : "series",
+    name: entry.title,
+  };
+}
+
+export function episodeInfoFromQueueEntry(entry: QueueEntry): EpisodeInfo | undefined {
+  if (entry.mediaKind === "movie") return undefined;
+  if (
+    entry.season === undefined &&
+    entry.episode === undefined &&
+    entry.absoluteEpisode === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    season: entry.season ?? 1,
+    episode: entry.episode ?? entry.absoluteEpisode ?? 1,
   };
 }
