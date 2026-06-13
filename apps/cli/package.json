@@ -44,7 +44,8 @@
   },
   "scripts": {
     "dev": "bun run src/main.ts",
-    "start": "bun run src/main.ts",
+    "profile:anime": "KUNAI_HEAP_PROFILE=1 KUNAI_HEAP_CAP_MB=2048 bun run src/main.ts -a --debug",
+    "start": "bun run dist/kunai.js",
     "test": "bun test test/unit test/integration",
     "test:file": "bun test",
     "test:unit": "bun test test/unit",

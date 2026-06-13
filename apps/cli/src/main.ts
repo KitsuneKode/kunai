@@ -969,6 +969,11 @@ function setupSignalHandlers(): void {
 
 export async function startCli(argv = process.argv.slice(2)): Promise<void> {
   setupSignalHandlers();
+  // Opt-in heap profiler for the anime-mode memory-runaway hunt (inert otherwise).
+  if (process.env.KUNAI_HEAP_PROFILE === "1") {
+    const { installHeapProfiler } = await import("./infra/diagnostics/heap-profiler");
+    installHeapProfiler();
+  }
   await runCli(argv);
 }
 
