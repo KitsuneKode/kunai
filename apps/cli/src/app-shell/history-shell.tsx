@@ -1,12 +1,12 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { compactProgressBar } from "./format/bar";
 import type { HistoryView } from "./history-view";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
 import { MediaListShell } from "./primitives/MediaListShell";
-import { ProgressBar } from "./primitives/ProgressBar";
 import { ResumeCard } from "./primitives/ResumeCard";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
@@ -51,20 +51,22 @@ export function HistoryShell({
           </Text>
         </Box>
       ) : (
-        <>
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <ClaudeTabRow
             labels={view.tabLabels}
             activeIndex={view.tabIndex}
             hint={listWidth >= 100 ? "⇥ Tab cycles filter" : undefined}
             maxWidth={listWidth}
+            dense
           />
           <ClaudeTabRow
             labels={view.typeFilterLabels}
             activeIndex={view.typeFilterIndex}
             hint={listWidth >= 100 ? "⇧⇥ type" : undefined}
             maxWidth={listWidth}
+            dense
           />
-        </>
+        </Box>
       )}
 
       {view.state === "loading" ? (
@@ -104,28 +106,29 @@ export function HistoryShell({
               return <SectionGroup key={`section-${item.label}`} label={item.label} />;
             }
             const { row, selected } = item;
+            // In-progress rows show a compact inline meter + percent in the status
+            // cell — keeps every row one line tall (no detached full-width bar that
+            // broke the list rhythm) while still reading as "continue watching".
+            const progress = row.progress && !row.progress.completed ? row.progress : null;
+            const statusLabel = progress
+              ? `${compactProgressBar(progress.percentage)} ${Math.round(progress.percentage)}%`
+              : row.statusLabel;
             return (
-              <Box key={`${row.titleId}-${item.flatIndex}`} flexDirection="column">
-                <ListRow
-                  selected={selected}
-                  rowWidth={rowWidth}
-                  flexColumnIndex={rowLayout.flexColumnIndex}
-                  columns={buildMediaListRowColumns({
-                    title: row.title,
-                    episodeCode: row.episodeCode,
-                    statusLabel: row.statusLabel,
-                    statusColor: row.statusColor,
-                    statusDim: row.statusDim,
-                    recencyLabel: row.recencyLabel,
-                    layout: rowLayout,
-                  })}
-                />
-                {row.progress && !row.progress.completed ? (
-                  <Box marginLeft={2}>
-                    <ProgressBar value={row.progress.percentage} max={100} width={18} />
-                  </Box>
-                ) : null}
-              </Box>
+              <ListRow
+                key={`${row.titleId}-${item.flatIndex}`}
+                selected={selected}
+                rowWidth={rowWidth}
+                flexColumnIndex={rowLayout.flexColumnIndex}
+                columns={buildMediaListRowColumns({
+                  title: row.title,
+                  episodeCode: row.episodeCode,
+                  statusLabel,
+                  statusColor: row.statusColor,
+                  statusDim: row.statusDim,
+                  recencyLabel: row.recencyLabel,
+                  layout: rowLayout,
+                })}
+              />
             );
           })}
           {view.showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}

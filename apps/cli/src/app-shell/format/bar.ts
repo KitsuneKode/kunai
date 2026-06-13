@@ -11,3 +11,15 @@ export function barFill(value: number, max: number, width: number): BarSegments 
   const filled = Math.round(ratio * width);
   return { filled, track: width - filled };
 }
+
+/**
+ * Compact single-color progress meter (e.g. "▰▰▱▱▱") for single-line list rows —
+ * keeps continue-watching rows scannable without a full-width detached bar.
+ */
+export function compactProgressBar(percentage: number, cells = 5): string {
+  const safe = Number.isFinite(percentage) ? Math.min(100, Math.max(0, percentage)) : 0;
+  // Any started title shows at least one filled cell (Netflix-style sliver) so a
+  // low percent never reads as "not started".
+  const filled = safe <= 0 ? 0 : Math.max(1, Math.round((safe / 100) * cells));
+  return "▰".repeat(filled) + "▱".repeat(cells - filled);
+}
