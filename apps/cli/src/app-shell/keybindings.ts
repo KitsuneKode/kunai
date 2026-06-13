@@ -293,6 +293,66 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "After playback",
     helpOnly: true,
   },
+
+  // ── Up Next queue ──
+  {
+    id: "queue-open",
+    chord: { input: "Q", shift: true },
+    display: "Shift+Q",
+    label: "Open the Up Next queue",
+    scope: "global",
+    group: "Global",
+    footerPriority: 45,
+  },
+  {
+    id: "queue-play",
+    chord: { named: "return" },
+    label: "Play the selected item now",
+    scope: "queue",
+    group: "Up Next",
+    footerPriority: 10,
+  },
+  {
+    id: "queue-reorder",
+    chord: { input: "J" },
+    display: "J / K",
+    label: "Move item down / up one slot",
+    scope: "queue",
+    group: "Up Next",
+    footerPriority: 15,
+  },
+  {
+    id: "queue-move-ends",
+    chord: { input: "g" },
+    display: "g / G",
+    label: "Move to top (play next) / bottom",
+    scope: "queue",
+    group: "Up Next",
+    footerPriority: 20,
+  },
+  {
+    id: "queue-remove",
+    chord: { input: "x" },
+    label: "Remove the selected item",
+    scope: "queue",
+    group: "Up Next",
+    footerPriority: 25,
+  },
+  {
+    id: "queue-clear",
+    chord: { input: "c" },
+    display: "c / C",
+    label: "Clear queue / clear played",
+    scope: "queue",
+    group: "Up Next",
+  },
+  {
+    id: "queue-restore",
+    chord: { input: "r" },
+    label: "Restore your last queue",
+    scope: "queue",
+    group: "Up Next",
+  },
 ];
 
 /** Human-readable chord, e.g. "Esc", "↑", "/", "Ctrl+C". */
