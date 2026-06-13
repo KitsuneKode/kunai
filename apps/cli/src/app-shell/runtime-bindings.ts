@@ -109,6 +109,7 @@ export function buildShellRuntimeBindings(container: Container) {
           failed: container.downloadService.listFailed(200).length,
         },
         releaseSummary: container.releaseProgressCache.summarizeActive(),
+        releaseDiagnostics: container.releaseProgressCache.summarizeDiagnostics(),
         presenceSnapshot: container.presence.getSnapshot(),
       });
     },

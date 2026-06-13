@@ -3,6 +3,8 @@
 // =============================================================================
 
 export const RETURN_LOOP_READY_HEADING = "Ready for you now";
+export const RETURN_LOOP_FOR_YOU_NOW_HEADING = "For you now";
+/** @deprecated use RETURN_LOOP_FOR_YOU_NOW_HEADING */
 export const RETURN_LOOP_BROWSE_RELEASES_HEADING = "Unwatched releases";
 
 export function formatReadyForYouNowMeta(episodeCount: number, titleCount: number): string {

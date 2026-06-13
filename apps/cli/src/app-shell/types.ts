@@ -74,7 +74,9 @@ export type ShellAction =
   | "report-issue"
   | "provider"
   | "resume-continue-watching"
-  | "continue";
+  | "continue"
+  | "play-offline-ready"
+  | "play-queue-next";
 
 export type ShellMode = "series" | "anime";
 
@@ -219,7 +221,15 @@ export type LoadingShellState = {
 };
 
 export type BrowseIdleContext = {
-  playlistNext?: { title: string; ep?: string };
+  playlistNext?: {
+    title: string;
+    ep?: string;
+    titleId: string;
+    mediaKind: string;
+    season?: number;
+    episode?: number;
+    absoluteEpisode?: number;
+  };
   continueWatching?: {
     title: string;
     ep?: string;
@@ -227,8 +237,17 @@ export type BrowseIdleContext = {
     titleId?: string;
     mediaKind?: "movie" | "series";
   };
+  offlineReadyNext?: {
+    title: string;
+    ep?: string;
+    titleId?: string;
+    offlineJobId?: string;
+  };
   todayReleaseCount?: number;
   todayReleaseTitleCount?: number;
+  calendarNudge?: {
+    airingTodayCount: number;
+  };
 };
 
 export type BrowseShellOption<T> = {
