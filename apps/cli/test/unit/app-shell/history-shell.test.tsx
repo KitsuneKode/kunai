@@ -15,6 +15,7 @@ function row(
   status: string,
   pct: number | null,
   recency: string,
+  badge?: string,
 ): HistoryViewRow {
   return {
     titleId: title,
@@ -25,6 +26,7 @@ function row(
     statusDim: true,
     detail: "",
     recencyLabel: recency,
+    badge,
     progress: pct === null ? null : { percentage: pct, completed: false },
     resumeAction: "resume where you left off",
   };
@@ -32,7 +34,7 @@ function row(
 
 function renderHistory(): string {
   const rows: HistoryViewRow[] = [
-    row("Teach You a Lesson", "S01E11", "new", null, "1w ago"),
+    row("Teach You a Lesson", "S01E11", "new", 22, "1w ago", "new"),
     row("Pro Bono", "S01E02", "8%", 8, "2w ago"),
     row("The Eminence in Shadow", "S01E07", "39%", 39, "4w ago"),
   ];
@@ -68,10 +70,12 @@ test("progress renders inline in the row, never on a detached line", () => {
   expect(detached).toHaveLength(0);
 });
 
-test("rows without progress keep their plain status label", () => {
+test("a badge row keeps its badge as status, even with progress (no meter)", () => {
+  // "Teach You a Lesson" has a `new` badge AND progress — the badge must win so the
+  // "new episode" signal is never replaced by a progress meter.
   const lines = renderHistory().split("\n");
-  const plainRow = lines.find((l) => l.includes("Teach You a Lesson"));
-  expect(plainRow).toBeDefined();
-  expect(plainRow).toContain("new");
-  expect(plainRow).not.toContain("▰");
+  const badgeRow = lines.find((l) => l.includes("Teach You a Lesson"));
+  expect(badgeRow).toBeDefined();
+  expect(badgeRow).toContain("new");
+  expect(badgeRow).not.toContain("▰");
 });

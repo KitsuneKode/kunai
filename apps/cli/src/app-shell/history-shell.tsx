@@ -109,7 +109,10 @@ export function HistoryShell({
             // In-progress rows show a compact inline meter + percent in the status
             // cell — keeps every row one line tall (no detached full-width bar that
             // broke the list rhythm) while still reading as "continue watching".
-            const progress = row.progress && !row.progress.completed ? row.progress : null;
+            // A row that carries a badge (e.g. "new") keeps the badge as its status;
+            // the meter only replaces a bare percentage.
+            const progress =
+              !row.badge && row.progress && !row.progress.completed ? row.progress : null;
             const statusLabel = progress
               ? `${compactProgressBar(progress.percentage)} ${Math.round(progress.percentage)}%`
               : row.statusLabel;
