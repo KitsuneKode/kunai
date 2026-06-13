@@ -836,6 +836,32 @@ git commit -m "feat(cli): add QueueShell render with text mini-posters"
 
 ---
 
+## Task 7 — DISCOVERED WIRING MAP (read before implementing)
+
+Investigation during execution found the precise integration points and one key fact:
+
+- **The existing `handlePlaylist` workflow (`workflows.ts:1844`) IS the current "weird" queue UI** — a `chooseFromListShell` generic picker. It already implements play / move-up / move-down / remove / clear-played / clear-all / refill / snapshot / export / import. **Play works by returning `{ type: "history-entry", title: { id: titleId, type: mediaKind==="movie"?"movie":"series", name }, episode: { season, episode } }`** (workflows.ts:2076-2087) — the phase loop resolves the provider/source from that. Queue entries have no `providerId`; relying on this result (no `providerId`) is the proven path.
+- **Goal:** replace `handlePlaylist`'s picker rendering with the new `QueueShell`, rendered as a `{ type: "queue" }` root overlay, using a queue selection bridge for the Enter→play handoff (mirror `root-history-bridge.ts` + `command-router.openRootHistorySelection`, which returns the same `history-entry` result shape).
+
+**Exact files / anchors:**
+
+1. `domain/session/SessionState.ts:95` — add `| { type: "queue" }` to `OverlayState` (next to `downloads`).
+2. `app-shell/root-shell-state.ts:6-20` + `:32-48` — add `"queue"` to the `RootOwnedOverlay` Extract union and the `isRootOwnedOverlay` guard.
+3. `app-shell/root-overlay-model.ts` — `isRootChoiceOverlay` (add `overlay.type === "queue"` so arrow-nav + the choice path apply), `getRootOverlayTitle` → "Up Next", `getRootOverlaySubtitle` → e.g. "Reorder, remove, and play your queue".
+4. `app-shell/root-overlay-shell.tsx`:
+   - Build `queueView` via `useMemo` mirroring `historyView` (`:631`), using `buildQueueView({ entries: container.queueService.getAll(), selectedId, resolvePoster, recoverableSessions: container.queueService.listRecoverableSessions().length, stale: container.queueService.getStatus().isStale })`. Map the shared `selectedIndex` → `selectedId = queueView.rows[selectedIndex]?.id ?? null`. Inject `resolvePoster` via `createQueuePosterResolver({ getPosterUrl })` reusing the persisted-poster lookup history uses.
+   - Add `overlay.type === "queue"` to the arrow `optionCount` switch (`:1607-1618`) → `queueView.rows.length`.
+   - Add a render branch mirroring `history` (`:1836`) → `<QueueShell view={queueView} columns={cols} listWidth={listWidth} rowWidth={rowWidth} />` with `getPickerLayout(cols, rows)` widths + a `ShellFooter` (`taskLabel="Up Next  ·  ⏎ play, J/K reorder, g/G ends, x remove, c clear, r restore, Esc close"`).
+   - Input handlers (guard `overlay.type === "queue"`, mirror history's `:1095-1138`): `J`/`K` → `queueService.moveDown/moveUp(selectedId)`; `g`/`G` → `moveToTop/moveToBottom`; `x` → `remove`; `c` → `clear` (confirm), `C` → `clearPlayed`; `r` → `restoreRecoverableSession(listRecoverableSessions()[0]?.id)`; `Enter` → resolve the queue bridge with the selected entry then close (returns the `history-entry` result via the command-router open fn); `Esc` → if pending queue selection, `resolveRootQueueSelection(null)` then `CLOSE_TOP_OVERLAY`. After each mutation, bump a refresh tick so `queueView` recomputes; keep `selectedId` on the edited item.
+5. `app-shell/root-queue-bridge.ts` (new) — copy `root-history-bridge.ts`, renamed; selection payload = the chosen `QueueEntry` (enough to build the `history-entry` result).
+6. `app-shell/command-router.ts` — add `openRootQueueSelection(container)` mirroring `openRootHistorySelection` (`:68`): `waitForRootQueueSelection()`, `openRootOwnedOverlay(container, { type: "queue" })`, await, then return `{ type: "history-entry", title, episode }` built from the entry. Route `action === "playlist"` to it in `routeSearchShellAction` + `routePlaybackShellAction` (replacing the `handlePlaylist` dispatch at `workflows.ts:789`).
+7. `workflows.ts` — remove/retire the `chooseFromListShell` body of `handlePlaylist` (keep the durable-playlist export/import/snapshot actions reachable elsewhere or fold into the new surface later — out of scope for first landing).
+8. `keybindings`/global hotkey — route `Shift+Q` (`queue-open`) to the same `playlist` action/open.
+
+**First-landing scope option (lower risk):** ship open/render/manage (reorder/remove/clear/restore/navigate) + Enter via the bridge; keep durable-playlist export/import as a follow-up. The whole point (a visible, manageable queue) lands; the picker is replaced.
+
+---
+
 ## Task 7: Mount the surface + wire input, play handoff, footer
 
 **Files:**
