@@ -11,6 +11,7 @@ export function isRootChoiceOverlay(
   RootOwnedOverlay,
   | { type: "provider_picker" }
   | { type: "history" }
+  | { type: "queue" }
   | { type: "notifications" }
   | { type: "settings" }
   | { type: "season_picker" }
@@ -21,6 +22,7 @@ export function isRootChoiceOverlay(
   return (
     overlay.type === "provider_picker" ||
     overlay.type === "history" ||
+    overlay.type === "queue" ||
     overlay.type === "notifications" ||
     overlay.type === "settings" ||
     isRootMediaPickerOverlay(overlay)
@@ -81,6 +83,7 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay, _state: SessionSt
   if (overlay.type === "downloads") return "Downloads";
   if (overlay.type === "library") return "Library";
   if (overlay.type === "history") return "History";
+  if (overlay.type === "queue") return "Up Next";
   if (overlay.type === "notifications") return "Notifications";
   if (overlay.type === "settings") return "Settings";
   if (overlay.type === "season_picker") return "Choose season";
@@ -113,6 +116,8 @@ export function getRootOverlaySubtitle({
     return "Offline library · resume-ready downloads · queue and cleanup controls";
   if (overlay.type === "history")
     return "Resume-first · new since last watched · continue without leaving the shell";
+  if (overlay.type === "queue")
+    return "Reorder, remove, and play what's next · g play-next · x remove · c clear";
   if (overlay.type === "notifications")
     return "New episodes, queue recovery, downloads, and app notices";
   if (overlay.type === "settings")
