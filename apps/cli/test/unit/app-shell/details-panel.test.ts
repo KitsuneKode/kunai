@@ -33,6 +33,9 @@ describe("buildBrowseDetailsPanel", () => {
     expect(panel.lines.find((line) => line.label === "Type")).toBeUndefined();
     expect(panel.lines.find((line) => line.label === "Artwork")).toBeUndefined();
     expect(panel.lines.find((line) => line.label === "Open")).toBeUndefined();
+    expect(panel.lines.find((line) => line.label === "Series actions")?.detail).toContain(
+      "/follow releases",
+    );
   });
 
   test("uses explicit placeholders when providers omit details", () => {
@@ -89,6 +92,31 @@ describe("buildBrowseDetailsPanel", () => {
         },
       ]),
     );
+  });
+
+  test("groups release and history facts into a watching section", () => {
+    const option: BrowseShellOption<string> = {
+      value: "demo",
+      label: "Weekly Anime",
+      previewTitle: "Weekly Anime",
+      previewMeta: ["Series", "2026"],
+      previewFacts: [
+        { label: "Release", detail: "3 new for you", tone: "success" },
+        { label: "Watch history", detail: "Watched · S01E05", tone: "success" },
+        { label: "Metadata source", detail: "AniList calendar", tone: "success" },
+      ],
+    };
+
+    const panel = buildBrowseDetailsPanel(option);
+
+    expect(panel.lines).toEqual(
+      expect.arrayContaining([
+        { label: "─── Watching", detail: "", tone: "info" },
+        { label: "Release", detail: "3 new for you", tone: "success" },
+        { label: "Watch history", detail: "Watched · S01E05", tone: "success" },
+      ]),
+    );
+    expect(panel.lines.find((line) => line.label === "─── Details")).toBeDefined();
   });
 
   test("builds compact companion facts for the selected browse result", () => {

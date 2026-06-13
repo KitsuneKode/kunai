@@ -555,6 +555,7 @@ describe("panel-data", () => {
         },
       ],
       downloadSummary: { active: 0, completed: 2, failed: 1 },
+      releaseSummary: { titleCount: 2, episodeCount: 4 },
       presenceSnapshot: {
         provider: "discord",
         status: "ready",
@@ -569,6 +570,7 @@ describe("panel-data", () => {
     expect(lines[0]?.tone).toMatch(/warning|error|success/);
     expect(lines.find((line) => line.label === "Session")?.detail).toContain("stalled");
     expect(lines.find((line) => line.label === "Downloads")?.tone).toBe("warning");
+    expect(lines.find((line) => line.label === "Release sync")?.detail).toContain("4 new episodes");
     expect(lines.findIndex((line) => line.label === "Session")).toBeLessThan(
       lines.findIndex((line) => line.label === "─── Export"),
     );

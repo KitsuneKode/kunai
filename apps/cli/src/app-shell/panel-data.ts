@@ -249,6 +249,7 @@ export function buildDiagnosticsPanelLines({
   recentEvents,
   capabilitySnapshot,
   downloadSummary,
+  releaseSummary,
   presenceSnapshot,
   memorySamples,
 }: {
@@ -256,6 +257,7 @@ export function buildDiagnosticsPanelLines({
   recentEvents: readonly DiagnosticEvent[];
   capabilitySnapshot?: CapabilitySnapshot | null;
   downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  releaseSummary?: { titleCount: number; episodeCount: number } | null;
   presenceSnapshot?: PresenceSnapshot | null;
   memorySamples?: readonly RuntimeMemorySample[];
 }): readonly ShellPanelLine[] {
@@ -287,6 +289,7 @@ export function buildDiagnosticsPanelLines({
     state,
     recentEvents,
     downloadSummary,
+    releaseSummary,
     presenceSnapshot,
     runtimeProviderLine: runtimeHealth.provider,
     runtimeNetworkLine: runtimeHealth.network,
@@ -432,6 +435,11 @@ export function buildDiagnosticsPanelLines({
         : "neutral",
     },
     {
+      label: "Release sync",
+      detail: formatReleaseSyncSummary(releaseSummary),
+      tone: releaseSummary ? (releaseSummary.episodeCount > 0 ? "success" : "neutral") : "neutral",
+    },
+    {
       label: "Presence",
       detail: presenceSnapshot
         ? `${presenceSnapshot.provider}  ·  ${presenceSnapshot.status}`
@@ -459,6 +467,7 @@ function buildDiagnosticsHealthSummary({
   state,
   recentEvents,
   downloadSummary,
+  releaseSummary,
   presenceSnapshot,
   runtimeProviderLine,
   runtimeNetworkLine,
@@ -468,6 +477,7 @@ function buildDiagnosticsHealthSummary({
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
   downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  releaseSummary?: { titleCount: number; episodeCount: number } | null;
   presenceSnapshot?: PresenceSnapshot | null;
   runtimeProviderLine: ShellPanelLine;
   runtimeNetworkLine: ShellPanelLine;
@@ -537,6 +547,15 @@ function buildDiagnosticsHealthSummary({
       tone: downloadSummary ? (failedDownloads > 0 ? "warning" : "success") : "neutral",
     },
     {
+      label: "Release sync",
+      detail: releaseSummary
+        ? releaseSummary.episodeCount > 0
+          ? `OK  ·  ${releaseSummary.episodeCount} new episode${releaseSummary.episodeCount === 1 ? "" : "s"} across ${releaseSummary.titleCount} tracked title${releaseSummary.titleCount === 1 ? "" : "s"}`
+          : "OK  ·  no active new-episode projections"
+        : "Unknown  ·  release cache summary unavailable",
+      tone: releaseSummary ? "success" : "neutral",
+    },
+    {
       label: "Network",
       detail: `${runtimeNetworkLine.tone === "error" ? "Failed" : runtimeNetworkLine.tone === "warning" ? "Needs attention" : "OK"}  ·  ${runtimeNetworkLine.detail ?? runtimeNetworkLine.label}`,
       tone: runtimeNetworkLine.tone,
@@ -550,6 +569,14 @@ function buildDiagnosticsHealthSummary({
           : runtimeMemoryLine.tone,
     },
   ];
+}
+
+function formatReleaseSyncSummary(
+  summary: { titleCount: number; episodeCount: number } | null | undefined,
+): string {
+  if (!summary) return "cache summary unavailable";
+  if (summary.episodeCount <= 0) return "no active new-episode projections";
+  return `${summary.episodeCount} new episode${summary.episodeCount === 1 ? "" : "s"} across ${summary.titleCount} tracked title${summary.titleCount === 1 ? "" : "s"}`;
 }
 
 function formatProviderTimelineEvent(event: DiagnosticEvent | undefined): string {

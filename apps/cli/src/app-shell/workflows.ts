@@ -978,6 +978,7 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
       completed: container.downloadService.listCompleted(200).length,
       failed: container.downloadService.listFailed(200).length,
     },
+    releaseSummary: container.releaseProgressCache.summarizeActive(),
     presenceSnapshot: container.presence.getSnapshot(),
   });
   await withOverlay(stateManager, { type: "diagnostics" }, () =>

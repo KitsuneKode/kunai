@@ -161,6 +161,7 @@ export function resolveBrowseDetailsSecondary<T>(
 }
 
 const LOCAL_FACT_LABELS = new Set(["Local progress", "Offline"]);
+const RELEASE_FACT_LABELS = new Set(["Release", "Watch history"]);
 
 export type BrowseDetailsPanel = {
   title: string;
@@ -189,10 +190,14 @@ export function buildBrowseDetailsPanel<T>(
   const title = option.previewTitle ?? option.label;
   const previewFacts = option.previewFacts ?? [];
   const localFacts = previewFacts.filter((fact) => LOCAL_FACT_LABELS.has(fact.label));
+  const releaseFacts = previewFacts.filter(
+    (fact) => RELEASE_FACT_LABELS.has(fact.label) && !LOCAL_FACT_LABELS.has(fact.label),
+  );
   const nonLocalFacts = previewFacts.filter(
     (fact) =>
       !LOCAL_FACT_LABELS.has(fact.label) && fact.label !== "Poster" && fact.label !== "Rating",
   );
+  const detailsFacts = nonLocalFacts.filter((fact) => !RELEASE_FACT_LABELS.has(fact.label));
   // Compact model: one "At a glance" line carries type · year · rating · episodes,
   // so the separate Type/Year/Rating facts and the "Open"/"Selection" scaffolding
   // are dropped to avoid the sparse, duplicated overlay.
@@ -200,6 +205,11 @@ export function buildBrowseDetailsPanel<T>(
   if (option.previewRating && !glanceParts.includes(option.previewRating)) {
     glanceParts.push(option.previewRating);
   }
+  const mediaType = resolveOptionMediaType(option);
+  const actionDetail =
+    mediaType === "series"
+      ? "Enter open episodes · /bookmark watchlist · /follow releases · /download offline"
+      : "Enter play · /bookmark watchlist · /download offline · /playlist queue";
   const lines: ShellPanelLine[] = [
     { label: "Title", detail: title, tone: "success" },
     ...(glanceParts.length > 0
@@ -208,14 +218,17 @@ export function buildBrowseDetailsPanel<T>(
     ...(localFacts.length > 0
       ? [{ label: "─── Local", detail: "", tone: "info" as const }, ...localFacts]
       : []),
+    ...(releaseFacts.length > 0
+      ? [{ label: "─── Watching", detail: "", tone: "info" as const }, ...releaseFacts]
+      : []),
     { label: "─── Synopsis", detail: "", tone: "info" },
     { label: "Overview", detail: option.previewBody || "No overview available yet." },
-    ...(nonLocalFacts.length > 0
-      ? [{ label: "─── Details", detail: "", tone: "info" as const }, ...nonLocalFacts]
+    ...(detailsFacts.length > 0
+      ? [{ label: "─── Details", detail: "", tone: "info" as const }, ...detailsFacts]
       : []),
     {
-      label: "Actions",
-      detail: "Enter play · /watchlist save · /download offline · /commands more",
+      label: mediaType === "series" ? "Series actions" : "Actions",
+      detail: actionDetail,
       tone: "info",
     },
   ];
@@ -226,6 +239,13 @@ export function buildBrowseDetailsPanel<T>(
     lines,
     imageUrl: option.previewImageUrl,
   };
+}
+
+function resolveOptionMediaType<T>(option: BrowseShellOption<T>): "movie" | "series" {
+  const meta = option.previewMeta ?? [];
+  if (meta.includes("Movie")) return "movie";
+  if (isSearchResultValue(option.value)) return option.value.type === "movie" ? "movie" : "series";
+  return "series";
 }
 
 export function buildPreviewMetaLine<T>(option: BrowseShellOption<T>): string {

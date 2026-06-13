@@ -33,9 +33,15 @@ function queueStatePresentation(job: DownloadJobRecord): { label: string; color:
   if (job.status === "running") return { label: "↓ downloading", color: palette.accent };
   if (job.status === "queued") return { label: "○ queued", color: palette.muted };
   if (job.status === "completed" || job.status === "completed-with-notes") {
-    return { label: "✓ complete", color: palette.ok };
+    return {
+      label: job.status === "completed-with-notes" ? "✓ playable" : "✓ complete",
+      color: palette.ok,
+    };
   }
-  if (job.status === "failed" || job.status === "repairable") {
+  if (job.status === "repairable") {
+    return { label: "◇ repairable", color: palette.accent };
+  }
+  if (job.status === "failed") {
     return { label: "✗ failed", color: palette.danger };
   }
   return { label: "— aborted", color: palette.dim };
@@ -72,7 +78,10 @@ function queueMetaLine(job: DownloadJobRecord): {
   }
   if (job.status === "failed" || job.status === "repairable") {
     return {
-      primary: truncateLine(job.errorMessage ?? "source gone", QUEUE_META_COL),
+      primary:
+        job.status === "repairable"
+          ? "sidecar"
+          : truncateLine(job.errorMessage ?? "source gone", QUEUE_META_COL),
       tone: palette.dim,
     };
   }
@@ -394,9 +403,9 @@ export function DownloadManagerContent({
         <StateBlock
           model={{
             kind: "empty",
-            title: "No active or recent downloads",
+            title: "No downloads queued",
             detail:
-              "Queue episodes from playback with / → Download current episode. Completed files live in Offline Library.",
+              "Use /download from a selected title or playback. Kunai confirms the profile before resolving provider streams.",
           }}
         />
       ) : (
@@ -433,11 +442,11 @@ export function DownloadManagerContent({
             selected.status === "running"
               ? "x to abort"
               : selected.status === "repairable"
-                ? "r to repair sidecar  ·  x to delete"
+                ? "r to repair subtitle/artwork sidecars  ·  x to delete"
                 : selected.status === "failed" || selected.status === "aborted"
                   ? "r to retry  ·  x to delete"
                   : selected.status === "completed" || selected.status === "completed-with-notes"
-                    ? "enter to play  ·  x to delete"
+                    ? "enter to play local file  ·  x to delete"
                     : selected.status === "queued"
                       ? "x to remove from queue"
                       : null;

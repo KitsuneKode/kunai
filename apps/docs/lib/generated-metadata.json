@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-06-12T20:42:50.545Z",
+  "syncedAt": "2026-06-13T14:39:58.612Z",
   "providers": [
     {
       "id": "allanime",
@@ -172,7 +172,7 @@
       "id": "notifications",
       "label": "Notifications",
       "aliases": ["notifications", "inbox", "alerts"],
-      "description": "Review new episodes, queue recovery, downloads, and app notices"
+      "description": "Review actionable app notices and recoverable queues"
     },
     {
       "id": "toggle-mode",
@@ -346,6 +346,30 @@
       "description": "Copy a 'watch this' code for the current title to your clipboard"
     },
     {
+      "id": "bookmark",
+      "label": "Bookmark Current",
+      "aliases": ["bookmark", "bookmarks-add", "save-current", "watchlist-add"],
+      "description": "Save or unsave the current title in your watchlist"
+    },
+    {
+      "id": "follow",
+      "label": "Follow Releases",
+      "aliases": ["follow", "track", "track-releases"],
+      "description": "Track future releases and notices for the current title"
+    },
+    {
+      "id": "mute",
+      "label": "Mute Releases",
+      "aliases": ["mute", "mute-title", "mute-releases", "hide-releases"],
+      "description": "Stop release notices for the current title"
+    },
+    {
+      "id": "mark-watched",
+      "label": "Mark Watched",
+      "aliases": ["mark-watched", "watched", "complete", "finish"],
+      "description": "Mark the current movie or episode as fully watched"
+    },
+    {
       "id": "watch",
       "label": "Watch a Shared Code",
       "aliases": ["watch", "open-share", "watch-code"],
@@ -413,13 +437,13 @@
     },
     {
       "id": "playlist",
-      "label": "Up Next / Playlist",
+      "label": "Up Next Queue",
       "aliases": ["playlist", "pl", "queue-playlist", "queue", "up-next", "upnext"],
       "description": "View and manage the Up Next queue — play, clear, save as playlist, import/export"
     },
     {
       "id": "playlist-add",
-      "label": "Add to Playlist",
+      "label": "Add to Queue",
       "aliases": ["playlist-add", "pl-add", "add-to-playlist"],
       "description": "Queue the current title for sequential playback"
     },
