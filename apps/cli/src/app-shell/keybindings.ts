@@ -300,8 +300,8 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     chord: { input: "Q", shift: true },
     display: "Shift+Q",
     label: "Open the Up Next queue",
-    scope: "global",
-    group: "Global",
+    scope: "browse",
+    group: "While browsing",
     footerPriority: 45,
   },
   {

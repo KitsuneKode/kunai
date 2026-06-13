@@ -884,6 +884,12 @@ export function BrowseShell<T>({
       return;
     }
 
+    // Open the Up Next queue (results zone; from the query field use /queue).
+    if (listFocused && input === "Q") {
+      onResolve("playlist");
+      return;
+    }
+
     // Download: Ctrl+D anywhere, or bare `d` in the results zone.
     if (
       (input === "d" && key.ctrl) ||
