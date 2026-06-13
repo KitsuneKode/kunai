@@ -114,7 +114,7 @@ export function buildRootStatusSummary({
       crumbParts.push("sync✗");
     }
     if (playlistCount !== undefined && playlistCount > 0) {
-      crumbParts.push(`${playlistCount} queued`);
+      crumbParts.push(`${playlistCount} up next`);
     }
     if (notificationCount !== undefined && notificationCount > 0) {
       crumbParts.push(

@@ -23,6 +23,7 @@ import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playb
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { describePresenceConfiguration } from "@/services/presence/PresenceServiceImpl";
 import type { CapabilitySnapshot } from "@/ui";
+import type { ReleaseProgressDiagnosticsSummary } from "@kunai/storage";
 import type { HistoryProgress } from "@kunai/storage";
 
 import { helpSections } from "./keybindings";
@@ -250,6 +251,7 @@ export function buildDiagnosticsPanelLines({
   capabilitySnapshot,
   downloadSummary,
   releaseSummary,
+  releaseDiagnostics,
   presenceSnapshot,
   memorySamples,
 }: {
@@ -258,6 +260,7 @@ export function buildDiagnosticsPanelLines({
   capabilitySnapshot?: CapabilitySnapshot | null;
   downloadSummary?: { active: number; completed: number; failed?: number } | null;
   releaseSummary?: { titleCount: number; episodeCount: number } | null;
+  releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   presenceSnapshot?: PresenceSnapshot | null;
   memorySamples?: readonly RuntimeMemorySample[];
 }): readonly ShellPanelLine[] {
@@ -272,6 +275,9 @@ export function buildDiagnosticsPanelLines({
   );
   const playbackStartupEvent = recentEvents.find(
     (event) => event.operation === "playback.startup.timeline",
+  );
+  const releaseReconciliationEvent = recentEvents.find(
+    (event) => event.operation === "release-reconciliation.refresh",
   );
   const activeCorrelation = findActiveCorrelation(recentEvents);
   const subtitleOutcome = formatSubtitleOutcome(recentEvents);
@@ -290,11 +296,13 @@ export function buildDiagnosticsPanelLines({
     recentEvents,
     downloadSummary,
     releaseSummary,
+    releaseDiagnostics,
     presenceSnapshot,
     runtimeProviderLine: runtimeHealth.provider,
     runtimeNetworkLine: runtimeHealth.network,
     runtimeMemoryLine: runtimeHealth.memory,
     runtimeMemoryTrendLine: runtimeHealth.memoryTrend,
+    releaseReconciliationEvent,
   });
 
   const issueCount = healthSummary.filter(
@@ -436,8 +444,12 @@ export function buildDiagnosticsPanelLines({
     },
     {
       label: "Release sync",
-      detail: formatReleaseSyncSummary(releaseSummary),
-      tone: releaseSummary ? (releaseSummary.episodeCount > 0 ? "success" : "neutral") : "neutral",
+      detail: formatReleaseSyncSummary(
+        releaseSummary,
+        releaseDiagnostics,
+        releaseReconciliationEvent,
+      ),
+      tone: formatReleaseSyncTone(releaseSummary, releaseDiagnostics),
     },
     {
       label: "Presence",
@@ -468,21 +480,25 @@ function buildDiagnosticsHealthSummary({
   recentEvents,
   downloadSummary,
   releaseSummary,
+  releaseDiagnostics,
   presenceSnapshot,
   runtimeProviderLine,
   runtimeNetworkLine,
   runtimeMemoryLine,
   runtimeMemoryTrendLine,
+  releaseReconciliationEvent,
 }: {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
   downloadSummary?: { active: number; completed: number; failed?: number } | null;
   releaseSummary?: { titleCount: number; episodeCount: number } | null;
+  releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   presenceSnapshot?: PresenceSnapshot | null;
   runtimeProviderLine: ShellPanelLine;
   runtimeNetworkLine: ShellPanelLine;
   runtimeMemoryLine: ShellPanelLine;
   runtimeMemoryTrendLine: ShellPanelLine;
+  releaseReconciliationEvent?: DiagnosticEvent;
 }): readonly ShellPanelLine[] {
   const playbackIssue = recentEvents.find(
     (event) =>
@@ -548,12 +564,12 @@ function buildDiagnosticsHealthSummary({
     },
     {
       label: "Release sync",
-      detail: releaseSummary
-        ? releaseSummary.episodeCount > 0
-          ? `OK  ·  ${releaseSummary.episodeCount} new episode${releaseSummary.episodeCount === 1 ? "" : "s"} across ${releaseSummary.titleCount} tracked title${releaseSummary.titleCount === 1 ? "" : "s"}`
-          : "OK  ·  no active new-episode projections"
-        : "Unknown  ·  release cache summary unavailable",
-      tone: releaseSummary ? "success" : "neutral",
+      detail: formatReleaseSyncSummary(
+        releaseSummary,
+        releaseDiagnostics,
+        releaseReconciliationEvent,
+      ),
+      tone: formatReleaseSyncTone(releaseSummary, releaseDiagnostics),
     },
     {
       label: "Network",
@@ -573,10 +589,74 @@ function buildDiagnosticsHealthSummary({
 
 function formatReleaseSyncSummary(
   summary: { titleCount: number; episodeCount: number } | null | undefined,
+  diagnostics?: ReleaseProgressDiagnosticsSummary | null,
+  recentReconciliation?: DiagnosticEvent,
 ): string {
-  if (!summary) return "cache summary unavailable";
-  if (summary.episodeCount <= 0) return "no active new-episode projections";
-  return `${summary.episodeCount} new episode${summary.episodeCount === 1 ? "" : "s"} across ${summary.titleCount} tracked title${summary.titleCount === 1 ? "" : "s"}`;
+  if (!summary && !diagnostics) return "cache summary unavailable";
+
+  const parts: string[] = [];
+  if (summary && summary.episodeCount > 0) {
+    parts.push(
+      `${summary.episodeCount} new episode${summary.episodeCount === 1 ? "" : "s"} across ${summary.titleCount} tracked title${summary.titleCount === 1 ? "" : "s"}`,
+    );
+  } else {
+    parts.push("no active new-episode projections");
+  }
+
+  if (diagnostics) {
+    parts.push(`${diagnostics.trackedCount} tracked in cache`);
+    if (diagnostics.lastCheckedAt) {
+      parts.push(`last checked ${formatDiagnosticsTimestamp(diagnostics.lastCheckedAt)}`);
+    }
+    if (diagnostics.nextDueAt) {
+      parts.push(`next due ${formatDiagnosticsTimestamp(diagnostics.nextDueAt)}`);
+    }
+    if (diagnostics.dueNowCount > 0) {
+      parts.push(`${diagnostics.dueNowCount} due now`);
+    }
+    if (diagnostics.staleCount > 0) {
+      parts.push(`${diagnostics.staleCount} stale`);
+    }
+    if (diagnostics.errorTitleCount > 0) {
+      parts.push(`${diagnostics.errorTitleCount} with errors`);
+    }
+  }
+
+  const context = recentReconciliation?.context;
+  if (context) {
+    const skippedCount = context.skippedCount;
+    const fetchedCount = context.fetchedCount;
+    const trigger = context.trigger;
+    if (typeof trigger === "string") parts.push(`last run ${trigger}`);
+    if (typeof fetchedCount === "number") parts.push(`${fetchedCount} refreshed`);
+    if (typeof skippedCount === "number" && skippedCount > 0) {
+      parts.push(`${skippedCount} skipped by budget`);
+    }
+  }
+
+  return parts.join("  ·  ");
+}
+
+function formatReleaseSyncTone(
+  summary: { titleCount: number; episodeCount: number } | null | undefined,
+  diagnostics?: ReleaseProgressDiagnosticsSummary | null,
+): ShellPanelLine["tone"] {
+  if (diagnostics && (diagnostics.errorTitleCount > 0 || diagnostics.staleCount > 0)) {
+    return "warning";
+  }
+  if (summary && summary.episodeCount > 0) return "success";
+  return "neutral";
+}
+
+function formatDiagnosticsTimestamp(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  const deltaMinutes = Math.round((Date.now() - ms) / 60_000);
+  if (deltaMinutes < 1) return "just now";
+  if (deltaMinutes < 60) return `${deltaMinutes}m ago`;
+  const deltaHours = Math.round(deltaMinutes / 60);
+  if (deltaHours < 48) return `${deltaHours}h ago`;
+  return iso.slice(0, 10);
 }
 
 function formatProviderTimelineEvent(event: DiagnosticEvent | undefined): string {

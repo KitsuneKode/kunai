@@ -7,7 +7,6 @@ import {
   type ShellOption,
 } from "@/app-shell/pickers";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
-import { applySettingsToRuntime } from "@/app/apply-settings-to-runtime";
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { markEntryWatched } from "@/app/history-actions";
 import { playCompletedDownload } from "@/app/offline-playback";
@@ -70,6 +69,7 @@ export {
   openSubtitlePicker,
   openTracksPanel,
 } from "./picker-workflows";
+import { openRootOwnedOverlay } from "./root-overlay-bridge";
 import { runSetupWizard } from "./setup-workflows";
 export { confirmProtocolHandoff, runSetupWizard, type SetupWizardResult } from "./setup-workflows";
 import type { ShellAction } from "./types";
@@ -979,6 +979,7 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
       failed: container.downloadService.listFailed(200).length,
     },
     releaseSummary: container.releaseProgressCache.summarizeActive(),
+    releaseDiagnostics: container.releaseProgressCache.summarizeDiagnostics(),
     presenceSnapshot: container.presence.getSnapshot(),
   });
   await withOverlay(stateManager, { type: "diagnostics" }, () =>
@@ -1037,30 +1038,7 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
 }
 
 async function handleSettings(container: Container): Promise<"handled"> {
-  const { stateManager, config, providerRegistry } = container;
-  const next = await withOverlay(stateManager, { type: "settings" }, () =>
-    openSettingsShell({
-      container,
-      current: config.getRaw(),
-      historyStore: container.historyStore,
-      actionContext: buildPickerActionContext({
-        container,
-        taskLabel: "Adjust settings",
-        allowed: ["history", "diagnostics", "help", "about", "quit"],
-      }),
-      seriesProviders: providerRegistry
-        .getAll()
-        .map((p) => p.metadata)
-        .filter((p) => !p.isAnimeProvider),
-      animeProviders: providerRegistry
-        .getAll()
-        .map((p) => p.metadata)
-        .filter((p) => p.isAnimeProvider),
-    }),
-  );
-  if (next) {
-    await applySettingsToRuntime({ container, next, previous: config.getRaw() });
-  }
+  await openRootOwnedOverlay(container, { type: "settings" });
   return "handled";
 }
 
@@ -2520,7 +2498,7 @@ async function handleFavorites(container: Container): Promise<"handled"> {
 
 async function handlePlaylist(container: Container): Promise<ShellWorkflowResult> {
   const { queueService, listService } = container;
-  const actionContext = buildPickerActionContext({ container, taskLabel: "Playlist" });
+  const actionContext = buildPickerActionContext({ container, taskLabel: "Up Next Queue" });
 
   while (true) {
     const status = queueService.getStatus();
@@ -2553,7 +2531,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
     const subtitle =
       all.length > 0
         ? `${status.unplayedCount} up next · ${all.length - status.unplayedCount} played${staleNote}`
-        : "Queue is empty. Add titles via /playlist-add or [r] refill from watchlist.";
+        : "Up Next Queue is empty. Add titles via /playlist-add or refill from watchlist.";
 
     const firstUnplayedId = all.find((i) => !i.playedAt)?.id;
 
