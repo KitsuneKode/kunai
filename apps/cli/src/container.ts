@@ -72,7 +72,6 @@ import { TracerImpl } from "./infra/tracer/TracerImpl";
 import type { WorkControlService } from "./infra/work/WorkControlService";
 import { WorkControlServiceImpl } from "./infra/work/WorkControlServiceImpl";
 import { AttentionRefreshWorker } from "./services/attention/AttentionRefreshWorker";
-import { projectReleaseAvailability } from "./services/attention/ReleaseAvailabilityService";
 import { BackgroundWorkScheduler } from "./services/background/BackgroundWorkScheduler";
 import {
   createCatalogScheduleService,
@@ -473,21 +472,32 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     onCompletedArtifact: (job) => {
       const asset = offlineAssetService.adoptCompletedJob(job);
       if (asset?.state !== "ready") return;
-      if (asset.mediaKind === "movie" || asset.episode === undefined) return;
-      const projection = projectReleaseAvailability({
-        titleId: asset.titleId,
-        mediaKind: asset.mediaKind,
-        title: asset.titleName,
-        season: asset.season,
-        episode: asset.episode,
-        released: true,
-        providerConfirmed: true,
-        providerId: job.providerId,
-        availableAt: asset.updatedAt,
-      });
-      if (projection.notificationSignal) {
-        notificationService.recordSignals([projection.notificationSignal], asset.updatedAt);
-      }
+      notificationService.recordSignals(
+        [
+          {
+            type: "download-complete",
+            titleId: asset.titleId,
+            mediaKind: asset.mediaKind,
+            title: asset.titleName,
+            season: asset.season,
+            episode: asset.episode,
+          },
+        ],
+        asset.updatedAt,
+      );
+    },
+    onTerminalFailure: (job, error) => {
+      notificationService.recordSignals([
+        {
+          type: "download-failed",
+          titleId: job.titleId,
+          mediaKind: job.mediaKind,
+          title: job.titleName,
+          season: job.season,
+          episode: job.episode,
+          error,
+        },
+      ]);
     },
     resolveDownloadStream: async (intent) => {
       const controller = new AbortController();

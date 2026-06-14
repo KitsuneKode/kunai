@@ -16,6 +16,9 @@ type ReleaseReconciliationContainer = Pick<
   | "diagnosticsService"
   | "offlineTitlePolicies"
   | "config"
+  | "followedTitleRepository"
+  | "releaseProgressCache"
+  | "notificationService"
 >;
 
 const POWER_SAVER_PASSIVE_TRIGGERS: ReadonlySet<ReleaseReconciliationTrigger> = new Set([
@@ -67,6 +70,33 @@ export function enqueueReleaseReconciliation(
         attentionByTitleId,
         signal: workSignal,
       });
+
+      // Surface reconciliation-found new episodes as notifications for followed
+      // (non-muted) titles. The shared release-progress projection is the source
+      // of truth; the writer race is resolved upstream (ReleaseProgressWriter).
+      const followedTitleIds = new Set(
+        container.followedTitleRepository
+          .listByPreference("following")
+          .map((entry) => entry.titleId),
+      );
+      if (followedTitleIds.size > 0) {
+        const projections = container.releaseProgressCache.getByTitleIds([...followedTitleIds]);
+        const newEpisodeSignals = [...projections.values()]
+          .filter((projection) => projection.newEpisodeCount > 0)
+          .map((projection) => ({
+            type: "new-playable-episode" as const,
+            titleId: projection.titleId,
+            mediaKind: projection.mediaKind,
+            title: projection.title,
+            season: projection.latestAiredSeason,
+            episode: projection.latestAiredEpisode,
+            providerId: projection.source,
+            availableAt: projection.checkedAt,
+          }));
+        if (newEpisodeSignals.length > 0) {
+          container.notificationService.recordSignals(newEpisodeSignals);
+        }
+      }
       container.diagnosticsService.record({
         category: "cache",
         operation: "release-reconciliation.refresh",
