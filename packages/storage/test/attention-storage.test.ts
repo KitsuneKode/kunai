@@ -152,7 +152,8 @@ test("NotificationRepository: upsert dedupes and dismiss hides active rows", () 
   });
 
   expect(repo.listActive()).toHaveLength(1);
-  repo.dismissByDedupKey("new-playable-episode:tmdb:1:1:2:vidking", "2026-05-17T00:02:00.000Z");
+  // Active is now defined by archive state (read/archive model); archive hides the row.
+  repo.archive("new-playable-episode:tmdb:1:1:2:vidking", "2026-05-17T00:02:00.000Z");
   expect(repo.listActive()).toHaveLength(0);
 
   db.close();
