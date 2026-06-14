@@ -71,3 +71,34 @@ test("NotificationService only stores notification actions the root overlay can 
 
   db.close();
 });
+
+test("NotificationService lifecycle: records, counts unread, archives", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const service = new NotificationService({
+    repo: new NotificationRepository(db),
+    getMutedTitleIds: () => new Set(),
+  });
+
+  service.recordSignals(
+    [
+      {
+        type: "queue-recoverable",
+        queueSessionId: "q1",
+        itemCount: 3,
+        updatedAt: "2026-06-14T01:00:00.000Z",
+      },
+    ],
+    "2026-06-14T01:00:00.000Z",
+  );
+  expect(service.countUnread()).toBe(1);
+  service.markAllRead("2026-06-14T02:00:00.000Z");
+  expect(service.countUnread()).toBe(0);
+
+  const first = service.listActive(50, 0)[0];
+  service.archive(first!.dedupKey, "2026-06-14T03:00:00.000Z");
+  expect(service.listActive(50, 0)).toHaveLength(0);
+  expect(service.listArchived(50, 0)).toHaveLength(1);
+
+  db.close();
+});

@@ -35,8 +35,32 @@ export class NotificationService {
     }
   }
 
-  listActive(limit = 50): NotificationRecord[] {
-    return this.deps.repo.listActive(limit);
+  listActive(limit = 50, offset = 0): NotificationRecord[] {
+    return this.deps.repo.listActive(limit, offset);
+  }
+
+  listArchived(limit = 50, offset = 0): NotificationRecord[] {
+    return this.deps.repo.listArchived(limit, offset);
+  }
+
+  countUnread(): number {
+    return this.deps.repo.countUnread();
+  }
+
+  countActive(): number {
+    return this.deps.repo.countActive();
+  }
+
+  markRead(dedupKey: string, now = new Date().toISOString()): void {
+    this.deps.repo.markRead(dedupKey, now);
+  }
+
+  markAllRead(now = new Date().toISOString()): void {
+    this.deps.repo.markAllRead(now);
+  }
+
+  archive(dedupKey: string, now = new Date().toISOString()): void {
+    this.deps.repo.archive(dedupKey, now);
   }
 
   dismiss(dedupKey: string, now = new Date().toISOString()): void {
